@@ -1,15 +1,18 @@
 # Needs Richard — Electron-parity seams (PU-1…R7)
 
 The pure decision logic for these features is ported into `sundayrec-core` and
-fully unit-tested; the impure seams sit behind cargo features. **Five of them
-are in `default`** — `editor`, `whisper`, `tray`, `updater` and `email` — so
-the Rediger-screen, transcription, the tray, auto-update and
-failure e-mail all ship in a normal build. Scheduler/wake are always
-compiled. (v0.14: `streaming`, `ndi` and `bridge` were REMOVED together with
-the Direkte page; R1 «Frivilligen først» 2026-08-23 removed the sharing
-cluster — cloud backup, podcast RSS + `publish`, the chat webhook, the Gmail
-transport, the Sunday-suite integrations + `sundayrec://`, cover art and the
-review queue. Their sections below are kept only as struck history.) The items below need a real account / desktop session / device
+fully unit-tested; the impure seams sit behind cargo features. **Four of them
+are in `default`** — `editor`, `tray`, `updater` and `email` — so the
+Rediger-screen, the tray, auto-update and failure e-mail all ship in a normal
+build. Scheduler/wake are always compiled. (v0.14: `streaming`, `ndi` and
+`bridge` were REMOVED together with the Direkte page; R1 «Frivilligen først»
+2026-08-23 removed the sharing cluster — cloud backup, podcast RSS + `publish`,
+the chat webhook, the Gmail transport, the Sunday-suite integrations +
+`sundayrec://`, cover art and the review queue; R2 the same day removed the
+content cluster — `whisper` transcription (the only C/C++ dependency), the AI
+companion, chapter detection, the learning cards + local adaptivity, the dead
+settings fields and the Video tab's quality knobs. Their sections below are
+kept only as struck history.) The items below need a real account / desktop session / device
 / signing identity that the headless gate cannot provide. None block the default
 build or the gate. The consolidated "what only Richard can provide" checklist is
 at the bottom of this file.
@@ -162,21 +165,13 @@ the sharing cluster. Git history is the feature flag.
 - **Missed-recording persistence** still waits on a `status`/`error` column on
   the `recording` table (see the `scheduler/mod.rs` honest-gaps note).
 
-## PU-5 — Whisper transcription (`--features whisper`)
+## ~~PU-5 — Whisper transcription (`--features whisper`)~~ — **FJERNET R2 2026-08-23**
 
-- **A C/C++ toolchain + CMake.** The `whisper` feature pulls `whisper-rs`, which
-  compiles libwhisper from source. The default build + the CI gate carry no
-  whisper dep; `whisper_transcribe` returns `feature_disabled` there. Only the
-  `sundayrec-core::whisper` decisions (model registry, argv/thread heuristic,
-  convert argv, progress/exit parse, JSON-sidecar normalise, chunk/merge,
-  language map) are unit-tested.
-- **A downloaded model + a real recording.** The model download (the registry
-  has the URLs + SHAs; the download/SHA-verify itself is not yet wired — the
-  Electron `downloadModel` redirect-follow + hash check is the remaining glue),
-  the ffmpeg 16 kHz-mono conversion, and the inference are HARDWARE-UNVERIFIED
-  (smoke §10b). A whisper-cli sidecar path (instead of the `whisper-rs`
-  in-process binding) could be offered as an alternative — the argv builder
-  already matches the Electron `whisper-cli` invocation.
+Transcription left with the content cluster: the `whisper` feature, whisper-rs
+(libwhisper — the build's only C/C++ toolchain dependency, now gone), the
+model registry/download, the Transkribering panel, SRT/VTT/TXT export and the
+transcript search. No rig item remains. `.transcript.json` sidecars that
+already exist still travel with their recording through the trash.
 
 ## ~~PU-6 — Episode prep + review queue + Stage import~~ — **FJERNET R1 2026-08-23**
 
@@ -184,8 +179,10 @@ The prep pipeline, the review queue + reminder ladder, the tray callout and
 the Stage manifest import left with the sharing cluster. One consequence for
 the owner: `learning::record_trim_deltas` / `current_tuning` (the E8/E10
 trim-correction loop and the local nudge) were only ever driven from the
-review path and now have no caller — left untouched for R2's learning
-decision.
+review path and had no caller — R2 removed the local nudge, the learning
+viewer cards and the `localAdaptivity` setting («dead → delete»); the
+trim-adjustment RECORD and its telemetry projection stay, dormant, for the
+day the editor writes it (`docs/LEARNING.md` §Status).
 
 ## R1 — Non-destructive editor (`--features editor`)
 
@@ -204,12 +201,11 @@ decision.
     drag-to-mark cut UI + waveform-overlaid timeline (the Electron
     `renderer/pages/editor/*`) is the renderer work for the next phase; the
     backend already accepts `cutRegions` and the core plans the keeps.
-  - **Intro/outro + chapter metadata on export.** The core builds the
-    intro/outro concat graph + the `;FFMETADATA1` chapter sidecar
-    (`audio_export_filter_complex(has_intro, has_outro)`, `ffmetadata`,
-    `metadata_args`), but the R1 `EditorExportRequest` doesn't yet carry those
-    fields — wire them through when the editor UI surfaces intro/outro pickers +
-    a chapter editor.
+  - **Chapter metadata on export.** The core still builds the `;FFMETADATA1`
+    chapter sidecar (`ffmetadata`, `metadata_args`, kept + tested), but since
+    R2 nothing produces chapters — the transcript-driven detector and the
+    chapter list left with the content cluster — so the export hands it an
+    empty list. A future chapter source only has to fill that list.
   - **Replace-mode + atomic swap.** R1 exports a new `*_redigert.<fmt>` file
     only. The Electron `saveEdited`/`safeReplaceFile` in-place replace (with the
     `.__editor_tmp`/`.__editor_bak` crash-recovery sweep) + the FORCE_WAV
@@ -310,26 +306,11 @@ decision.
   stream-stop. Bundle the SDK in `tauri.conf.json` (`externalBin`/resources) the
   way the Electron app `asarUnpack`-ed `vendor/grandiose`.
 
-## P6 — Transcript search backend wiring (no feature flag)
+## ~~P6 — Transcript search backend wiring (no feature flag)~~ — **FJERNET R2 2026-08-23**
 
-The transcript search **logic** is pure + gate-tested
-(`src/features/search/searchIndex.ts`: build-index / substring-scan / context /
-group / stats, 13 tests). What remains is the thin glue Richard's rig will need
-to make it live:
-
-- **A `transcript_list_all` command** (mirrors the Electron
-  `window.api.transcriptListAll`): enumerate every `<name>.transcript.json`
-  sidecar in the known recording folders and return `{ filePath, transcript }`
-  tuples for `buildIndex` to consume. The sidecar read/parse path already exists
-  in the editor seam; this is an aggregation over the save folder.
-- **A search panel + a `search` view** in the shell: the panel feeds the IPC
-  result to `searchTranscripts`, renders the grouped hits, and on click hands the
-  file + seek-time to the editor (the Electron `openEditorWithFile(fp, atSec)`
-  contract). Pure search is done; only the IPC list command + the render/route
-  are outstanding (GUI-deferred; smoke §6b).
-
-No new account, key, or device is required for this — it is in-repo glue, listed
-here so the search feature is not assumed fully wired end-to-end.
+The transcript index (`transcripts_list`), the hit-snippet rows and the «Med
+transkript» chip left with whisper. Historikk's search box still filters by
+filename, date and note (e2e-pinned).
 
 ## E2 — Observability: crash ring, log file, capture/video probes (no feature flag)
 
@@ -384,9 +365,12 @@ None of it blocks the default build or the gate.
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
   wired but unproven on a device.
-- **Whisper** (`whisper`, in `default`, smoke §10b): a C/C++ toolchain + CMake,
-  a downloaded model (download + SHA-256 verify are wired, with a real
-  percentage), and a real recording.
+- **The classic ffmpeg pre-roll hatch** (`classicFfmpegPreroll`, no UI): R2
+  kept this field ON PURPOSE — it is the only fallback to the legacy rolling
+  ffmpeg pre-roll engine, and the native cpal buffer is still unproven on the
+  rig. Once a real Sunday has proven the native buffer, the owner decides
+  whether the hatch AND the classic engine (`recorder/preroll.rs`
+  `ClassicPrerollEngine`) go — a live-path decision, not a settings sweep.
 - **OS wake-timers** (smoke §11): a real box for the `pmset` admin prompt, the
   Windows `SetWaitableTimer` resume, and a true sleep/wake cycle. The argument
   shaping, quoting and escalation ladders are unit-tested; the resume is not and
@@ -402,11 +386,10 @@ None of it blocks the default build or the gate.
 - **SMTP credentials** (`--features email`, SMTP path): host/port/user +
   app-password. The password is stored in the OS keychain, never the settings
   bag; the host/port/user now have a UI (R7).
-- **Anthropic API key** (`ANTHROPIC_API_KEY`): NOT currently consumed by
-  SundayRec — there is no LLM seam in this app (the AI rerank/translate work
-  lives in SundaySong). Listed here only so it isn't assumed to be wired; if a
-  future SundayRec feature wants Claude, follow the `getEmbedder()`/`getLlmClient()`
-  fetch-seam pattern from the suite (free tier works without a key).
+- **Anthropic API key**: NOT consumed by SundayRec — the AI sermon companion
+  (the one seam that read it, from the keychain slot `companion.llm_api_key`)
+  left in R2. A key stored there by an earlier build is left alone, like the
+  other retired keychain slots; delete it by hand if wanted.
 
 ### Signing, notarization & auto-update
 

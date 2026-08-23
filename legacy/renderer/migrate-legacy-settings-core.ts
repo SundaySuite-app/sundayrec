@@ -17,11 +17,12 @@
  *
  * Vocabulary translations (old TS name → unified name), applied HERE only —
  * no living compat code elsewhere:
- *   - `videoSeparate: boolean`     → `outputMode: "separate" | "combined"`
  *   - `videoKeepAudio` (abs.=true) → `keepSeparateAudio`
- *   - `format` (was overloaded)    → also seeds `separateAudioFormat`, because
- *     the bridge always sent `separateAudioFormat = format` — a migrated
- *     install keeps the sidecar-audio format it was actually getting.
+ *   - (`videoSeparate` → `outputMode` and `format` → `separateAudioFormat`
+ *     were translations until v0.15; both targets left with the dead settings.
+ *     The sidecar-audio format now FOLLOWS `format` in the backend, which is
+ *     exactly the value the old bridge used to copy into `separateAudioFormat`,
+ *     so a migrated install keeps getting the sidecar format it always got.)
  *
  * Dropped on the floor, with their real homes:
  *   - `recordingHistory` → the `recording` table (already authoritative)
@@ -54,11 +55,6 @@ type Dict = Record<string, unknown>;
 function int(v: unknown, lo: number, hi: number): number | undefined {
   if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
   return Math.min(hi, Math.max(lo, Math.round(v)));
-}
-
-function num(v: unknown, lo: number, hi: number): number | undefined {
-  if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
-  return Math.min(hi, Math.max(lo, v));
 }
 
 function bool(v: unknown): boolean | undefined {
@@ -150,7 +146,6 @@ export function mapLegacyBlob(raw: string): Dict | null {
 
   // System
   put("language", strOrNull(s.language));
-  put("hasLaunched", bool(s.hasLaunched));
   put("onboardingDone", bool(s.onboardingDone));
 
   // Audio device + per-device channel map
@@ -162,17 +157,10 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("videoEnabled", bool(s.videoEnabled));
   put("videoDeviceName", strOrNull(s.videoDeviceName));
   put("videoDeviceIndex", s.videoDeviceIndex === null ? null : int(s.videoDeviceIndex, -1, 999));
-  put("videoResolution", oneOf(s.videoResolution, ["480p", "720p", "1080p", "2160p"]));
-  put("videoFramerate", int(s.videoFramerate, 1, 120));
-  put("videoContainer", oneOf(s.videoContainer, ["mp4", "mov"]));
-  put("videoCodec", oneOf(s.videoCodec, ["h264", "h265"]));
-  put("videoEncoder", oneOf(s.videoEncoder, ["software", "hardware"]));
+  // (videoResolution / videoFramerate / videoContainer / videoCodec /
+  // videoEncoder: constants since v0.15 — never copied.)
   put("videoFlip", bool(s.videoFlip));
-  put("videoBitrate", int(s.videoBitrate, 0, 50_000));
-  // Renames: the boolean pair → the Rust vocabulary. Absent means default.
-  if (typeof s.videoSeparate === "boolean") {
-    put("outputMode", s.videoSeparate ? "separate" : "combined");
-  }
+  // Rename: the boolean → the Rust vocabulary. Absent means default.
   if (s.videoKeepAudio !== undefined) {
     put("keepSeparateAudio", s.videoKeepAudio !== false);
   }
@@ -182,24 +170,12 @@ export function mapLegacyBlob(raw: string): Dict | null {
 
   // Audio processing
   put("channels", oneOf(s.channels, ["stereo", "monoL", "monoR", "monoMix"]));
-  put("sampleRate", int(s.sampleRate, 8_000, 192_000));
   put("sampleRateMode", oneOf(s.sampleRateMode, ["auto", "r44100", "r48000", "r96000"]));
-  put("inputVolume", int(s.inputVolume, 0, 200));
-  put("eqBass", int(s.eqBass, -24, 24));
-  put("eqMid", int(s.eqMid, -24, 24));
-  put("eqTreble", int(s.eqTreble, -24, 24));
-  put("compEnabled", bool(s.compEnabled));
-  put("compThreshold", num(s.compThreshold, -60, 0));
-  put("compRatio", num(s.compRatio, 1, 100));
-  put("compAttack", num(s.compAttack, 0.1, 2000));
-  put("compRelease", num(s.compRelease, 1, 9000));
-  put("limiterEnabled", bool(s.limiterEnabled));
-  put("limiterCeiling", num(s.limiterCeiling, -10, 0));
+  // (sampleRate, inputVolume, the EQ/compressor/limiter fields: dead Electron
+  // capture-chain knobs, removed in v0.15 — never copied.)
 
-  // Output. `format` seeds BOTH fields — see the module header.
-  const format = oneOf(s.format, FORMATS);
-  put("format", format);
-  put("separateAudioFormat", format);
+  // Output. (`format` used to seed `separateAudioFormat` too — see the header.)
+  put("format", oneOf(s.format, FORMATS));
   put("bitrate", s.bitrate === undefined ? undefined : String(s.bitrate));
   put("filenamePattern", oneOf(s.filenamePattern, ["date", "church", "plain", "datetime"]));
   put("saveFolder", strOrNull(s.saveFolder));
@@ -215,16 +191,13 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("silenceThreshold", int(s.silenceThreshold, -90, 0));
   put("silenceTimeoutMinutes", int(s.silenceTimeoutMinutes, 1, 120));
   put("splitMinutes", int(s.splitMinutes, 0, 480));
-  put("trimSilence", bool(s.trimSilence));
   put("manualMaxMinutes", int(s.manualMaxMinutes, 0, 1440));
   put("preRollSeconds", int(s.preRollSeconds, 0, 60));
   put("prerollEnabled", bool(s.prerollEnabled));
-  put("showLiveLevels", bool(s.showLiveLevels));
   put("reminderMinutes", int(s.reminderMinutes, 0, 60));
 
   // System behaviour
   put("launchAtLogin", bool(s.launchAtLogin));
-  put("minimizeToTray", bool(s.minimizeToTray));
   put("wakeFromSleep", bool(s.wakeFromSleep));
   put("protectRecording", bool(s.protectRecording));
 
@@ -249,7 +222,7 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("askOpenEditor", bool(s.askOpenEditor));
   put("editorIntroPath", strOrNull(s.editorIntroPath));
   put("editorOutroPath", strOrNull(s.editorOutroPath));
-  put("editorHwEncode", bool(s.editorHwEncode));
+  // (editorHwEncode: automatic since v0.15 — never copied.)
 
   // Live streaming (removed in v0.14) and cloud backup (removed with the
   // sharing cluster): old blobs may still carry streamDestinations/
@@ -260,7 +233,11 @@ export function mapLegacyBlob(raw: string): Dict | null {
   // Misc
   put("autoUpdate", bool(s.autoUpdate));
   put("updateChannel", oneOf(s.updateChannel, ["stable", "beta"]));
-  put("localAdaptivity", bool(s.localAdaptivity));
+  // Removed in v0.15 and likewise never copied: `localAdaptivity` (the learning
+  // cards), `hasLaunched`, `avSync`, `minimizeToTray`, `videoBitrate`,
+  // `outputMode`/`videoSeparate`, `trimSilence`, `showLiveLevels`,
+  // `separateAudioFormat` and the capture-chain knobs above — see
+  // `mapLegacyBlob` tests for the old blob that carries all of them.
 
   return out;
 }

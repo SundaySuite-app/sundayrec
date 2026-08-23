@@ -46,6 +46,50 @@ use crate::ffmpeg::{
 };
 use crate::settings::ChannelMode;
 
+// ── The recording's video knobs (v0.15: constants, no longer settings) ────────
+//
+// «Lyd + video, ett valg»: the Video tab is camera on/off, which camera, and
+// whether to keep a separate audio file. Everything a volunteer used to be able
+// to mis-set — resolution, frame rate, container, codec, encoder backend,
+// bitrate, combined-vs-separate — is decided HERE, once, with the argument for
+// each value next to it. A church that needs something else needs a different
+// build, not a settings screen; git history is the feature flag.
+//
+// The argv builders below still take these as PARAMETERS (a pure builder is
+// tested with both codecs and both encoder paths), and `CaptureOpts::default()`
+// carries the constants so every caller that does not override gets them.
+
+/// The resolution tag the camera-mode probe targets. 1080p: the modern default
+/// for an uploaded church service, storage is ample, and the hardware encoder
+/// keeps it light. The probe still caps it to what the camera ADVERTISES
+/// ([`resolve_camera_mode`]) — a 720p webcam records 720p, never upscaled.
+pub const RECORDING_VIDEO_RESOLUTION: &str = "1080p";
+
+/// The OUTPUT frame rate (`-r … -fps_mode cfr`). 30 fps is what every camera
+/// the app has met advertises at 1080p, and is the rate the A/V-sync lesson
+/// (a VFR camera drifting against the audio clock over a whole service) was
+/// learned against. The INPUT rate is probed per camera and may differ.
+pub const RECORDING_FRAMERATE: u32 = 30;
+
+/// The recording container. mp4 (`+faststart`): universal, H.264 + AAC, and
+/// what every sharing target — YouTube included — accepts as-is. (mov was the
+/// other option; it bought nothing over mp4 for a church and confused the
+/// "which one do I upload" question.)
+pub const RECORDING_VIDEO_CONTAINER: &str = "mp4";
+
+/// The recording codec. H.264: plays everywhere, including the church PC that
+/// will be asked to play the file back on Monday. H.265 halves the size but
+/// still fails on enough players to be the wrong default for a volunteer.
+pub const RECORDING_VIDEO_CODEC: crate::editor::VideoCodec = crate::editor::VideoCodec::H264;
+
+/// Whether the capture asks for the hardware encoder. Always — the builder
+/// itself gates it to macOS ([`push_video_encoder_args`] honours it only on
+/// `Platform::MacOS`; elsewhere software x264 is used), so "hardware where it
+/// exists, software elsewhere" is one boolean rather than a per-machine
+/// setting. VideoToolbox is what keeps the live preview and the meters smooth
+/// while recording 1080p (software x264 pegged the CPU and made them lag).
+pub const RECORDING_HW_ACCEL: bool = true;
+
 /// Depth of avfoundation's input `-thread_queue_size` on mac/linux. A TUNABLE
 /// KNOB: avfoundation's internal capture buffer is tiny, so under scheduling
 /// jitter it silently DROPS samples → choppy ("hakkete") audio. A deeper queue
@@ -645,7 +689,7 @@ impl Default for CaptureOpts {
         Self {
             stop_on_silence: false,
             silence_threshold_db: None,
-            framerate: 30,
+            framerate: RECORDING_FRAMERATE,
             channel_mode: ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
@@ -654,8 +698,8 @@ impl Default for CaptureOpts {
             live_levels: true,
             preview_jpg: None,
             video_input: None,
-            video_codec: crate::editor::VideoCodec::H264,
-            hw_accel: false,
+            video_codec: RECORDING_VIDEO_CODEC,
+            hw_accel: RECORDING_HW_ACCEL,
         }
     }
 }
@@ -1359,9 +1403,11 @@ mod tests {
         // MJPEG preview second output, so not the literal last args).
         let y = args.iter().position(|a| a == "-y").expect("a -y");
         assert_eq!(args[y + 1], "/tmp/sermon.mp4");
-        // Codecs unchanged by the added telemetry filter.
+        // Codecs unchanged by the added telemetry filter. (v0.15 re-bless: the
+        // default encoder on macOS is VideoToolbox now — `RECORDING_HW_ACCEL` —
+        // where this used to read libx264.)
         assert!(has_pair(&args, "-c:a", "aac"));
-        assert!(has_pair(&args, "-c:v", "libx264"));
+        assert!(has_pair(&args, "-c:v", "h264_videotoolbox"));
     }
 
     #[test]
@@ -1451,8 +1497,13 @@ mod tests {
 
     #[test]
     fn h265_recording_uses_libx265_with_hvc1_tag() {
+        // The SOFTWARE H.265 path, pinned explicitly: since v0.15 the default
+        // `hw_accel` is on, so without the override macOS would answer with
+        // `hevc_videotoolbox` (the hardware path is covered by
+        // `hw_accel_uses_videotoolbox_on_mac_with_bitrate`).
         let opts = CaptureOpts {
             video_codec: crate::editor::VideoCodec::H265,
+            hw_accel: false,
             ..CaptureOpts::default()
         };
         let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mp4", &opts);
@@ -1629,13 +1680,14 @@ mod tests {
 
     /// A VIDEO recording is a SINGLE clean output ending in the mp4 path — NO
     /// second MJPEG/`pipe:1` output (that fragile preview tee was removed because a
-    /// stalled stdout drain could block + freeze the whole capture). libx264 + the
-    /// CFR sync lock are present; the args end with `-y <path>`.
+    /// stalled stdout drain could block + freeze the whole capture). The H.264
+    /// encoder (x264 on Windows, VideoToolbox on macOS since the v0.15
+    /// constants) + the CFR sync lock are present; the args end with `-y <path>`.
     #[test]
     fn video_is_single_clean_output_with_cfr_and_no_pipe() {
-        for (plat, vid, aud) in [
-            (Platform::Windows, Some("Cam"), "Mic"),
-            (Platform::MacOS, Some("0"), "1"),
+        for (plat, vid, aud, encoder) in [
+            (Platform::Windows, Some("Cam"), "Mic", "libx264"),
+            (Platform::MacOS, Some("0"), "1", "h264_videotoolbox"),
         ] {
             let args = build_unified_capture_args(
                 plat,
@@ -1660,7 +1712,7 @@ mod tests {
             );
             assert!(!args.iter().any(|a| a == "mjpeg"), "got: {args:?}");
             // Video codec + the A/V-sync CFR lock are still there.
-            assert!(has_pair(&args, "-c:v", "libx264"), "got: {args:?}");
+            assert!(has_pair(&args, "-c:v", encoder), "got: {args:?}");
             assert!(has_pair(&args, "-fps_mode", "cfr"), "got: {args:?}");
             // No preview output unless one is requested.
             assert!(!args.iter().any(|a| a == "-update"), "got: {args:?}");

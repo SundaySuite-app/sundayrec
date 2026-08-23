@@ -357,27 +357,6 @@
       </div>
     </div>
 
-    <!-- ─── Publisering-info-strip ────────────────────────────────
-         Smart-vis: hvert kort har display:none som default; home.ts
-         setter display='' kun når innstillingen faktisk er konfigurert.
-         Holder hjem ryddig for brukere som ikke har satt opp transkripsjon. -->
-    <div id="publish-info-strip" class="info-strip publish-info-strip" style="display:none">
-
-      <!-- Transkripsjon (Whisper) -->
-      <div class="info-card info-card-publish" id="home-whisper-card" style="display:none">
-        <div class="info-card-icon">
-          <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z"/><path d="M5.5 9.5a.5.5 0 011 0 3.5 3.5 0 007 0 .5.5 0 011 0 4.5 4.5 0 01-4 4.474V16h2a.5.5 0 010 1h-5a.5.5 0 010-1h2v-2.026a4.5 4.5 0 01-4-4.474z"/></svg>
-        </div>
-        <div class="info-card-body">
-          <div class="info-card-label" data-i18n="home.whisperLabel">TRANSKRIPSJON</div>
-          <div class="info-card-value" id="home-whisper-model">—</div>
-          <div class="info-card-sub" id="home-whisper-status"></div>
-        </div>
-        <a href="#" class="info-card-action" id="btn-go-whisper" data-i18n="home.changeSettings">Endre</a>
-      </div>
-
-    </div>
-
     <!-- Video-mode 3-column layout — populated by relocateVuForVideoMode()
          in home.ts when video is toggled on. The VU section, video preview
          section and info cards are physically moved into the slots below
@@ -652,8 +631,7 @@
   <section id="page-settings" class="page">
     <!-- Five tabs, not seven. «Publisering» and «Varsler» were two halves of
          one question — who gets the recording afterwards — so they are now
-         sections of Deling; the companion key lives behind an Avansert
-         disclosure at the bottom of System. The fallbacks below match the locale values
+         sections of Deling. The fallbacks below match the locale values
          exactly (they used to say «Lyd» while no.json said «Lydkilde»). -->
     <div class="inner-tabs" id="settings-tabs">
       <button class="inner-tab active" data-tab="settings-audio" data-i18n="nav.audio">Lyd</button>
@@ -894,13 +872,6 @@
           <input type="number" class="form-input inline-field-input" id="auto-delete-days" value="90" min="1" max="3650" />
           <span class="inline-field-label" data-i18n="files.days">dager</span>
         </div>
-        <div class="toggle-row mt">
-          <div>
-            <div class="toggle-title" data-i18n="files.trimSilence">Trim stillhet</div>
-            <div class="toggle-desc" data-i18n="files.trimSilenceDesc">Kutter automatisk stille sekunder i starten og slutten av opptaket</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-trim-silence" /><span class="toggle-track"></span></label>
-        </div>
       </div>
 
       <!-- ── Opptaksoppførsel (recording behaviour) ─────────────────── -->
@@ -1131,138 +1102,19 @@
             <button class="btn-secondary" id="btn-video-refresh-devices" data-i18n="video.refresh">Oppdater</button>
           </div>
           <p class="form-hint" data-i18n="video.cameraHint">USB-webkamera og HDMI-opptakskort støttes på macOS og Windows.</p>
+          <div id="video-camera-info" class="form-hint" style="display:none;margin-top:4px"></div>
         </div>
 
         <div class="card">
-          <div class="card-title" data-i18n="video.qualityTitle">Kvalitet</div>
-          <label class="form-label" data-i18n="video.resolution">OPPLØSNING</label>
-          <!-- Ingen statiske «~X GB/t»-estimater: tallene forutsatte H.264 med
-               auto-bitrate og ingenting oppdaterte dem når kodek (H.265) eller
-               egendefinert bitrate endret regnestykket. -->
-          <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr 1fr">
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="480p" />
-              <div class="option-card-name">480p</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="720p" />
-              <div class="option-card-name">720p</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="1080p" checked />
-              <div class="option-card-name">1080p</div>
-              <div class="option-card-badge" data-i18n="video.recommended">Anbefalt</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="2160p" />
-              <div class="option-card-name">4K</div>
-            </label>
-          </div>
-          <div id="video-res-warning" class="form-hint" style="display:none;color:var(--warning,#d08700);margin-top:4px"></div>
-
-          <label class="form-label mt" data-i18n="video.framerate">BILDERATE</label>
-          <select class="form-input" id="video-fps-select" style="max-width:200px">
-            <option value="24">24 fps</option>
-            <option value="25">25 fps</option>
-            <option value="30" selected data-i18n="video.fps30Recommended">30 fps (Anbefalt)</option>
-            <option value="50">50 fps</option>
-            <option value="60">60 fps</option>
-          </select>
-
-          <label class="form-label mt" data-i18n="video.container">FORMAT</label>
-          <select class="form-input" id="video-container-select" style="max-width:200px">
-            <option value="mp4" selected>MP4</option>
-            <option value="mov">MOV (QuickTime)</option>
-          </select>
-
-          <label class="form-label mt" data-i18n="video.codec">VIDEO-KODEK</label>
-          <select class="form-input" id="video-codec-select" style="max-width:280px">
-            <option value="h264" selected data-i18n="video.codecH264">H.264 (universell)</option>
-            <option value="h265" data-i18n="video.codecH265">H.265 / HEVC (mindre fil)</option>
-          </select>
-
-          <label class="form-label mt" data-i18n="video.encoder">ENKODER</label>
-          <select class="form-input" id="video-encoder-select" style="max-width:420px">
-            <option value="hardware" selected data-i18n="video.encoderHardware">Hardware – VideoToolbox (lett &amp; jevn, anbefalt)</option>
-            <option value="software" data-i18n="video.encoderSoftware">Software – x264/x265 (maks kvalitet pr. byte)</option>
-          </select>
-          <div class="form-hint" data-i18n="video.encoderHint">Hardware (VideoToolbox, kun Mac): lav CPU-bruk → jevn live-forhåndsvisning, mindre varme/batteri, og sann-tids 4K/H.265. Svært god kvalitet ved tilstrekkelig bitrate — anbefalt for de fleste. Software (x264/x265): litt bedre kvalitet pr. filstørrelse, men bruker mye CPU og kan gjøre forhåndsvisning og målere hakkete under opptak — velg den når kvalitet pr. byte betyr aller mest og maskinen ikke gjør annet samtidig.</div>
-
-          <label class="form-label mt" data-i18n="video.bitrate">BITHASTIGHET</label>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <label class="video-bitrate-radio">
-              <input type="radio" name="video-bitrate" id="opt-video-bitrate-auto" checked />
-              <span data-i18n="video.bitrateAuto">Automatisk (anbefalt — basert på oppløsning)</span>
-            </label>
-            <label class="video-bitrate-radio">
-              <input type="radio" name="video-bitrate" id="opt-video-bitrate-custom" />
-              <span data-i18n="video.bitrateCustom">Egendefinert</span>
-            </label>
-          </div>
-          <div id="video-bitrate-custom-row" class="inline-field-row" style="display:none">
-            <input type="number" class="form-input inline-field-input" id="video-bitrate-value" value="4000" min="500" max="50000" />
-            <span class="inline-field-label">kbps</span>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-title" data-i18n="video.outputFormat">Utdataformat</div>
-          <p class="card-desc" data-i18n="video.outputFormatDesc">Velg om lyd og video skal kombineres til én fil eller lagres separat.</p>
-          <div class="option-cards" style="grid-template-columns:1fr 1fr">
-            <label class="option-card">
-              <input type="radio" name="video-mode" value="combined" checked />
-              <svg viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <rect x="2" y="4" width="28" height="12" rx="2"/>
-                <path d="M10 10h12"/>
-                <path d="M8 7l2 3-2 3"/>
-              </svg>
-              <div class="option-card-name" data-i18n="video.combinedName">Kombinert MP4</div>
-              <div class="option-card-desc" data-i18n="video.combinedDesc">Lyd + video i én fil — klar for YouTube</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-mode" value="separate" />
-              <svg viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <rect x="1" y="3" width="13" height="14" rx="2"/>
-                <rect x="18" y="3" width="13" height="14" rx="2"/>
-                <path d="M5 10h5M22 8v4"/>
-              </svg>
-              <div class="option-card-name" data-i18n="video.separateName">Separate filer</div>
-              <div class="option-card-desc" data-i18n="video.separateDesc">Lyd og video lagres hver for seg</div>
-            </label>
-          </div>
-          <div id="video-split-warning" class="notice-warn" style="display:none" data-i18n="video.splitWarning">
-            Delt opptak er aktivt — video lagres alltid som separat fil uavhengig av valget over. Deaktiver automatisk oppdeling i planleggingsinnstillingene for å kombinere lyd og video til én MP4.
-          </div>
-          <p class="form-hint" id="video-split-hint" data-i18n="video.splitHint">Ved automatisk oppdeling av filer brukes alltid separate filer.</p>
-
-          <!-- Keep audio toggle — only visible when "combined" mode is selected -->
-          <div id="video-keep-audio-row" class="toggle-row video-keep-audio-row">
+          <div class="card-title" data-i18n="video.outputTitle">Filene</div>
+          <p class="card-desc" data-i18n="video.outputDesc">Videoopptak lagres som MP4 (1080p, 30 bilder/s, H.264) — eller så høyt som kameraet leverer. Lydfilen ved siden av følger lydformatet du har valgt under Filer.</p>
+          <div class="toggle-row video-keep-audio-row">
             <div class="video-keep-audio-text">
               <div class="toggle-title" data-i18n="video.keepAudioTitle">Behold separat lydfil</div>
               <div class="toggle-desc" data-i18n="video.keepAudioDesc">Lagrer også den høykvalitets lydfilen ved siden av den kombinerte MP4</div>
             </div>
             <label class="toggle"><input type="checkbox" id="opt-video-keep-audio" checked /><span class="toggle-track"></span></label>
           </div>
-
-          <!-- Hardware video encode (VideoToolbox) — opt-in, macOS only. Applies
-               to the EDITOR's video export, not to recording (recording has its
-               own encoder picker above). A hardware render that fails is retried
-               once in software, so this can only make an export faster. -->
-          <div class="toggle-row">
-            <div>
-              <div class="toggle-title" data-i18n="video.hwEncode">Maskinvare-koding (VideoToolbox)</div>
-              <div class="toggle-desc" data-i18n="video.hwEncodeDesc">Bruker maskinvare-koding (VideoToolbox) for raskere video-eksport på Mac. Faller automatisk tilbake til programvare hvis det feiler.</div>
-            </div>
-            <label class="toggle"><input type="checkbox" id="opt-editor-hw-encode" /><span class="toggle-track"></span></label>
-          </div>
-
-          <!-- Unified-recorder toggle — default ON since v4.51. Single
-               ffmpeg opens both camera and microphone in one process so
-               A/V sync is frame-accurate from the first frame. Power
-               users can opt out if they hit an unusual edge case. -->
-          <!-- Perfekt A/V-synk er ALLTID på (unified recorder): én ffmpeg-prosess
-               for lyd + bilde. Valget er fjernet — det skal alltid være perfekt
-               sync. `useUnifiedRecorder` tvinges til true i video-page.ts. -->
         </div>
       </div>
 
@@ -1426,73 +1278,6 @@
         </div>
       </div>
 
-      <!-- «Hva appen har lagt merke til» (E8.T) — read-only transparency for
-           the three correction signals crates/sundayrec-core/src/feedback.rs
-           records: sermon-pick corrections, trim adjustments, and companion-
-           suggestion outcomes. The panel can show only counts, durations and
-           closed-vocabulary directions — never audio, transcript text,
-           suggestion text, a recording name, a path or a time of day, because
-           that is all LearningSummary (the Rust type this reads) is able to
-           hold.
-
-           Loads on demand, from a button, and never automatically: this reads
-           every recording's <stem>.feedback.json sidecar off disk, and while
-           that is cheap for a normal history, "cheap" and "safe to run
-           unprompted mid-service" are different bars — see
-           general-page.ts's setupLearningSummaryCard(), which also refuses to
-           run this while a recording is active. -->
-      <div class="card">
-        <div class="card-title" data-i18n="general.learningCardTitle">Hva appen har lagt merke til</div>
-        <p class="card-desc" data-i18n="general.learningCardDesc">Disse observasjonene finnes for at den automatiske gjenkjenningen skal kunne bli bedre — det er rettelsene dine som lærer den opp. Ingenting herfra deles med noen med mindre anonym diagnostikk er slått på.</p>
-        <p class="card-desc" data-i18n="general.learningCardWhere">Alt lagres lokalt, sammen med opptaket det gjelder. Sletter du et opptak, forsvinner observasjonene fra det opptaket også.</p>
-        <button type="button" class="btn-secondary" id="btn-learning-summary-load" data-i18n="general.learningLoadBtn">Vis hva appen har lagt merke til</button>
-        <!-- Loading / failed / "not while recording" — one host, mutually
-             exclusive with the two below, painted purely from JS (the text
-             depends on which of three states applies, so no single
-             data-i18n fallback could cover it — same reasoning as
-             #telemetry-queue-status above). -->
-        <div id="learning-summary-status" class="form-hint" style="display:none"></div>
-        <!-- The common case: nothing corrected yet. Static text, so a plain
-             data-i18n fallback is enough — general-page.ts only ever toggles
-             this row's visibility, never its wording. -->
-        <div id="learning-summary-empty" class="form-hint" style="display:none" data-i18n="general.learningEmptyBody">Ingenting å vise ennå — helt normalt. Dette fylles bare ut når du retter noe appen har gjettet feil på.</div>
-        <div id="learning-summary-body" style="display:none">
-          <p id="learning-summary-sermon-pick" class="card-desc"></p>
-          <p id="learning-summary-start-tendency" class="card-desc" style="display:none"></p>
-          <p id="learning-summary-end-tendency" class="card-desc" style="display:none"></p>
-          <p id="learning-summary-companion" class="card-desc" style="display:none"></p>
-        </div>
-      </div>
-
-      <!-- «Hva appen har justert» (E10) — the ONLY surface on which this
-           install's own learning is visible, and the reason it is allowed to
-           exist at all. The card above says what the app has noticed; this one
-           says what it has DONE about it, in seconds, in Norwegian, next to the
-           switch that turns it off and the button that undoes it.
-
-           Shipped OFF (see local_adaptivity.rs's DEFAULT_LOCAL_ADAPTIVITY_ENABLED
-           for the argument). The four lines below are painted from JS rather
-           than carrying data-i18n fallbacks because every one of them
-           interpolates a number — the same reason the learning-summary lines
-           above have none. -->
-      <div class="card">
-        <div class="card-title" data-i18n="general.localNudgeCardTitle">Hva appen har justert</div>
-        <p class="card-desc" data-i18n="general.localNudgeCardDesc">Retter du det samme hver søndag, kan appen flytte sitt eget forslag den veien — for denne maskinen alene. Ingenting her deles med noen, og du kan når som helst nullstille.</p>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="general.localNudgeToggle">La appen lære av rettelsene mine</div>
-            <div class="toggle-desc" id="local-nudge-toggle-hint"></div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-local-adaptivity" /><span class="toggle-track"></span></label>
-        </div>
-        <p id="local-nudge-headline" class="card-desc"></p>
-        <p id="local-nudge-start" class="card-desc" style="display:none"></p>
-        <p id="local-nudge-end" class="card-desc" style="display:none"></p>
-        <p id="local-nudge-at-limit" class="card-desc" style="display:none"></p>
-        <button type="button" class="btn-ghost btn-ghost-danger" id="btn-local-nudge-reset" style="display:none" data-i18n="general.localNudgeResetBtn">Nullstill det appen har lært</button>
-        <div id="local-nudge-status" class="form-hint" style="display:none"></div>
-      </div>
-
       <!-- Steinberg ASIO attribution. Required by the ASIO SDK licence and shown
            ONLY in the Windows build (the only build with ASIO support) — revealed
            by general-page.ts when the platform is Windows. The trademark notice is
@@ -1506,41 +1291,18 @@
       </div>
 
 
-      <!-- ── Avansert ──────────────────────────────────────────────────
-           One click further in than «hvor lagres opptakene»: the optional AI
-           sermon-companion key. (The Sunday-suite integrations that shared
-           this disclosure left in R1 of «Frivilligen først».) -->
-      <details class="adv-disclosure" id="settings-advanced">
-        <summary class="adv-disclosure-summary" data-i18n="general.suiteAdvanced">Avansert</summary>
-        <div id="settings-advanced-body" class="settings-section">
-      <!-- R8: optional AI sermon-companion summary key. Chapters/highlights
-           always work on-device; this only upgrades the summary/title prose
-           from a language model. The key is stored in the OS keychain only,
-           never in settings or a bundle. -->
-      <div class="card" id="companion-key-card">
-        <div class="card-title" data-i18n="companion.settingsTitle">Prekenhjelp — AI-oppsummering (valgfritt)</div>
-        <p class="card-desc" data-i18n="companion.settingsDesc">Kapitler og sitater lages alltid lokalt på enheten. Vil du ha en finere oppsummering og tittel kan du lime inn en Anthropic API-nøkkel — den lagres kun i nøkkelringen (OS keychain), aldri i innstillinger. Uten nøkkel brukes en lokal oppsummering.</p>
-        <div class="form-row">
-          <input type="password" class="form-input" id="companion-apikey" placeholder="sk-ant-…" style="max-width:360px" autocomplete="off" />
-          <button class="btn-ghost btn-sm" id="btn-companion-apikey-save" data-i18n="companion.keySave">Lagre</button>
-          <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-companion-apikey-clear" data-i18n="companion.keyClear">Fjern</button>
-        </div>
-        <div class="form-hint" id="companion-apikey-status"></div>
-      </div>
-        </div>
-      </details>
     </div><!-- /settings-general -->
 
   </section>
 
   <!-- ══ REDIGER ═════════════════════════════════════════════════ -->
   <!-- ──────────────────────────────────────────────────────────────────
-       SEARCH — full-text search across all transcripts
+       HISTORIKK — the recording history with a metadata search over it
        ────────────────────────────────────────────────────────────────── -->
   <section id="page-search" class="page">
     <div class="page-header">
       <h1 data-i18n="search.title">Historikk</h1>
-      <p class="page-subtitle" data-i18n="search.subtitle">Søk i preken-tekst eller filnavn, og se hele opptakshistorikken. Klikk et tekst-treff for å åpne opptaket på det punktet.</p>
+      <p class="page-subtitle" data-i18n="search.subtitle">Søk i filnavn, dato eller notat, og se hele opptakshistorikken.</p>
     </div>
 
     <div class="search-controls">
@@ -1548,12 +1310,11 @@
         type="search"
         id="search-query"
         class="form-input search-query-input"
-        placeholder="Søk i preken eller filnavn…"
+        placeholder="Søk i filnavn, dato eller notat…"
         data-i18n-placeholder="search.placeholder"
         autocomplete="off"
         spellcheck="false"
       />
-      <button class="btn-secondary btn-sm" id="btn-search-reindex" data-i18n="search.reindex">↻ Oppdater indeks</button>
       <!-- Label + count are written from TS (history.ts), so it can say
            «Papirkurv (3)» and stay hidden while the trash is empty. It lives up
            here rather than in the table's own header because after «Slett
@@ -1566,9 +1327,8 @@
 
     <div id="search-index-status" class="search-index-status"></div>
 
-    <!-- Full recording history (relocated from home). The unified search above
-         filters these rows by metadata + transcript text; matching sermons get
-         inline hit-snippets. -->
+    <!-- Full recording history (relocated from home). The search above
+         filters these rows by filename / date / note. -->
     <div id="search-history-wrap">
       <div class="section-header">
         <h2 data-i18n="home.recentRecordings">Siste opptak</h2>
@@ -1590,7 +1350,6 @@
         <button type="button" class="hist-chip hist-chip-active" data-filter="all" aria-pressed="true" data-i18n="history.filterAll">Alle</button>
         <button type="button" class="hist-chip" data-filter="audio" aria-pressed="false" data-i18n="history.filterAudio">Lyd</button>
         <button type="button" class="hist-chip" data-filter="video" aria-pressed="false" data-i18n="history.filterVideo">Video</button>
-        <button type="button" class="hist-chip" data-filter="transcript" aria-pressed="false" data-i18n="history.filterTranscript">Med transkript</button>
       </div>
       <table class="rec-table">
         <thead><tr>
@@ -1627,7 +1386,7 @@
         </svg>
       </div>
       <div class="search-empty-title" data-i18n="search.noRecordingsTitle">Ingen opptak ennå</div>
-      <div class="search-empty-desc" data-i18n="search.noRecordingsDesc">Når du har tatt opp en gudstjeneste, dukker den opp her. Transkriber et opptak i Rediger for å kunne søke i selve preken-teksten.</div>
+      <div class="search-empty-desc" data-i18n="search.noRecordingsDesc">Når du har tatt opp en gudstjeneste, dukker den opp her.</div>
     </div>
   </section>
 
@@ -2009,43 +1768,13 @@
         </div>
       </div>
 
-      <!-- Transcription panel -->
-      <div id="editor-transcript-section" class="editor-transcript-section">
-        <div class="editor-transcript-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h8a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
-          <span class="editor-transcript-title" data-i18n="transcript.title">Transkribering</span>
-          <span style="flex:1"></span>
-          <button class="btn-primary btn-sm" id="btn-transcribe" data-i18n="transcript.start">▶ Transkriber</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-export" style="display:none" data-i18n="transcript.export">↧ SRT</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-export-vtt" style="display:none" data-i18n="transcript.exportVtt">↧ VTT</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-export-txt" style="display:none" data-i18n="transcript.exportTxt">↧ Tekst</button>
-          <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
-        </div>
-        <div id="editor-transcript-body" class="editor-transcript-body">
-          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.</div>
-        </div>
-      </div>
-
-      <!-- R8 AI sermon companion: chapters + highlights + Norwegian summary from
-           the transcript. Hidden until a transcript exists. The optional summary
-           uses an Anthropic seam when a key is set; otherwise a local fallback. -->
-      <div id="editor-companion-section" class="editor-companion-section" style="display:none">
-        <div class="editor-transcript-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M10 2l1.9 4.6L17 7.2l-3.6 3.1L14.5 16 10 13.3 5.5 16l1.1-5.7L3 7.2l5.1-.6L10 2z"/></svg>
-          <span class="editor-transcript-title" data-i18n="companion.title">Prekenhjelp</span>
-          <span style="flex:1"></span>
-          <span id="editor-companion-header-controls" class="editor-companion-header-controls"></span>
-        </div>
-        <div id="editor-companion-body" class="editor-companion-body"></div>
-      </div>
-
       </div><!-- /tabpanel -->
 
 
       <!-- ── Tab: Klipp-verktøy ──────────────────────────────────────── -->
       <div class="editor-tabpanel" id="editor-tabpanel-clip" role="tabpanel" aria-labelledby="editor-tab-clip" hidden>
 
-      <!-- Analyse panel (merged: segments + chapters) -->
+      <!-- Analyse panel (segments; the merged chapter markers left in v0.15) -->
       <div class="editor-chapters-panel" id="editor-segments-panel">
         <div class="editor-chapters-header">
           <div class="editor-chapters-title">
@@ -2074,61 +1803,6 @@
       </div>
 
       </div><!-- /tabpanel -->
-
-      <!-- Transcribe dialogs. Direct children of the workspace, not of a
-           tab panel: a modal inside a `hidden` panel is a modal that never
-           opens. -->
-      <!-- Transcribe modal: choose model + language -->
-      <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-modal-title">
-        <div class="modal modal-sm transcribe-modal">
-          <div class="modal-header">
-            <span class="modal-title" id="transcribe-modal-title" data-i18n="transcript.modalTitle">Transkriber tale til tekst</span>
-            <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
-          </div>
-          <p class="modal-desc" data-i18n="transcript.modalDesc">Bruker lokal AI (whisper.cpp) — ingen data sendes til skyen. Velg modell og språk.</p>
-
-          <label class="form-label" data-i18n="transcript.modelLabel">MODELL</label>
-          <div id="transcribe-model-list" class="transcribe-model-list"></div>
-
-          <label class="form-label mt" data-i18n="transcript.langLabel">SPRÅK</label>
-          <select id="transcribe-language" class="form-input">
-            <option value="auto" data-i18n="transcript.langAuto">Auto-detekter</option>
-            <option value="no" selected>Norsk</option>
-            <option value="en">English</option>
-            <option value="sv">Svenska</option>
-            <option value="da">Dansk</option>
-            <option value="de">Deutsch</option>
-            <option value="fr">Français</option>
-            <option value="pl">Polski</option>
-            <option value="es">Español</option>
-          </select>
-
-          <label class="transcribe-translate-row mt">
-            <input type="checkbox" id="transcribe-translate" />
-            <span data-i18n="transcript.translateToEn">Oversett til engelsk samtidig</span>
-          </label>
-
-          <div class="modal-actions">
-            <button class="btn-ghost" id="btn-transcribe-cancel" data-i18n="transcript.cancel">Avbryt</button>
-            <button class="btn-primary" id="btn-transcribe-start" data-i18n="transcript.run">Start</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Transcribe progress modal -->
-      <div id="transcribe-progress-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-progress-title" data-no-escape>
-        <div class="modal modal-sm transcribe-progress-modal">
-          <!-- No ✕: a job is running, and "Avbryt" is the only honest way out. -->
-          <div class="modal-header">
-            <span class="modal-title" id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</span>
-          </div>
-          <!-- Bar + percentage + «ca. 2 min igjen», built by ui/progress.ts. -->
-          <div id="transcribe-progress-host"></div>
-          <div class="modal-actions">
-            <button class="btn-ghost" id="btn-transcribe-progress-cancel" data-i18n="transcript.cancel">Avbryt</button>
-          </div>
-        </div>
-      </div>
 
       <!-- Save bar -->
       <div class="editor-save-bar">

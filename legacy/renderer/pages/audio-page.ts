@@ -132,9 +132,8 @@ export function applyAudioSettingsToUI(): void {
   if (classicEl) classicEl.checked = !!settings.classicDirectshow
   const classicFfEl = document.getElementById('opt-classic-ffmpeg') as HTMLInputElement | null
   if (classicFfEl) classicFfEl.checked = !!settings.classicFfmpegAudio
-  // NB: compressor/limiter/EQ/inputVolume are settings WITHOUT UI (record-raw
-  // philosophy since v4.31). The hidden mirror-inputs this function used to
-  // write are gone — the values live untouched in the settings blob.
+  // (The compressor/limiter/EQ/inputVolume fields — record-raw philosophy since
+  // v4.31, never read by the recorder — left the settings model in v0.15.)
   // The DOM was just rewritten from settings — rebase every binding's "last
   // committed value" so the next edit is compared against what is on screen.
   resyncBoundSettings()
@@ -169,10 +168,6 @@ function collectAudioSettings(): void {
   const classicDirectshow = !!(document.getElementById('opt-classic-dshow') as HTMLInputElement | null)?.checked
   const classicFfmpegAudio = !!(document.getElementById('opt-classic-ffmpeg') as HTMLInputElement | null)?.checked
 
-  // NB: the compressor/limiter/EQ/input-volume fields are NOT saved here. They are
-  // hidden, inert inputs (record-raw philosophy since v4.31 — dynamics/EQ live in
-  // the editor, not the capture pipeline), so they keep their DEFAULT_SETTINGS
-  // values. The audio-page only persists what it actually controls.
   const patch = {
     deviceId,
     deviceName,
@@ -180,13 +175,6 @@ function collectAudioSettings(): void {
     sampleRateMode: srMode,
     classicDirectshow,
     classicFfmpegAudio,
-    // Keep the numeric sampleRate in sync for client-side use (VU monitor + disk
-    // estimate). Only auto / 44.1 kHz / 48 kHz exist in this picker today (no
-    // 96 kHz option), so the two-way ternary below is exhaustive: auto and
-    // r48000 both map to 48 kHz as a reasonable client-side estimate — the
-    // recorder itself uses sampleRateMode (auto = native, no forced rate), not
-    // this field. Revisit if a higher-rate mode is ever added to the UI.
-    sampleRate:     srMode === 'r44100' ? 44100 : 48000,
   }
 
   patchSettings(patch)

@@ -108,7 +108,7 @@ pub async fn plan_recording_opts(
     video: Option<bool>,
 ) -> AppResult<RecordingOpts> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    crate::scheduler::build_opts(
+    crate::recorder::opts::build_opts(
         &app,
         &s,
         custom_name.as_deref(),
@@ -595,7 +595,6 @@ mod tests {
             stop_on_silence: false,
             silence_threshold_db: None,
             silence_timeout_minutes: 5,
-            framerate: 30,
             channel_mode: ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
@@ -606,9 +605,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            video_resolution: String::new(),
-            video_codec: String::new(),
-            video_encoder: String::new(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,

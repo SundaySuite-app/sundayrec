@@ -11,9 +11,11 @@
 //!     ([`sundayrec_core::schedule::upcoming_events`]), sleeps until the nearest,
 //!     fires it, then recomputes — woken early by [`SchedulerEngine::reschedule`]
 //!     whenever settings change,
-//!   - building the [`RecordingOpts`] for a scheduled start and calling the
-//!     recorder engine directly (so a scheduled recording runs even when the
-//!     window is hidden in the tray),
+//!   - asking [`crate::recorder::opts::build_opts`] for the [`RecordingOpts`]
+//!     of a scheduled start and calling the recorder engine directly (so a
+//!     scheduled recording runs even when the window is hidden in the tray) —
+//!     the opts composition itself is NOT the scheduler's (v0.15 moved it next
+//!     to the engine, so the manual path no longer depends on this module),
 //!   - firing native reminder/preflight notifications,
 //!   - pruning expired specials and persisting the trimmed list.
 //!
@@ -49,17 +51,16 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 use ts_rs::TS;
 
-use sundayrec_core::filename::{build_filename, FilenameParams};
 use sundayrec_core::schedule::{
     active_within, capped_supervisor_sleep_ms, missed_recordings, next_recording, prune_specials,
     scheduled_max_minutes, supervisor_should_fire, upcoming_dates, upcoming_events, ScheduledEvent,
     ScheduledEventKind, TriggerKind, MISSED_WINDOW_MS,
 };
-use sundayrec_core::settings::{FileFormat, Settings};
+use sundayrec_core::settings::Settings;
 
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::recorder::engine::{RecorderEngine, RecordingOpts};
+use crate::recorder::engine::RecorderEngine;
 use crate::settings;
 use crate::util::lock_recover;
 
@@ -351,7 +352,13 @@ async fn fire(
             // backstop, so even a missed Stop event can't leave it recording until
             // the disk fills.
             let max_minutes = scheduled_max_minutes(slot_max);
-            match build_opts(app, settings, custom_name.as_deref(), max_minutes, None) {
+            match crate::recorder::opts::build_opts(
+                app,
+                settings,
+                custom_name.as_deref(),
+                max_minutes,
+                None,
+            ) {
                 Ok(opts) => {
                     // SAFEGUARD: bound the start. A stuck device-open must not wedge
                     // the supervisor (which would then miss EVERY later recording).
@@ -444,123 +451,6 @@ async fn fire(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//   Opts building
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Build [`RecordingOpts`] for a scheduled recording from the persisted
-/// settings. Resolves the save folder (creating it), names the file via the
-/// core [`build_filename`], and maps the audio-processing settings the slim
-/// Tauri `RecordingOpts` carries.
-pub(crate) fn build_opts(
-    app: &AppHandle,
-    settings: &Settings,
-    custom_name: Option<&str>,
-    max_minutes: u32,
-    // `Some(b)` overrides the persisted `video_enabled` (the Home video toggle is
-    // local UI state that isn't persisted); `None` uses the setting (scheduler).
-    video_override: Option<bool>,
-) -> AppResult<RecordingOpts> {
-    let folder = crate::save_folder::resolve(app, settings.save_folder.as_deref())?;
-    std::fs::create_dir_all(&folder)?;
-
-    // Video is on when the user wants it (override, else the setting) AND a camera
-    // is actually configured. When video is on the main file MUST be a video
-    // container (mp4) — an audio container like .wav can't hold a video stream, so
-    // ffmpeg would drop the camera and silently record audio-only (the ".wav
-    // instead of .mp4 / no video" bug). The chosen audio `format` /
-    // `separate_audio_format` then only governs the SEPARATE audio sidecar;
-    // audio-only recordings still use it.
-    let camera_configured =
-        settings.video_device_name.is_some() || settings.video_device_index.is_some();
-    let video_on = video_override.unwrap_or(settings.video_enabled) && camera_configured;
-    // Video recordings use the configured container (mp4 default, or mov); audio
-    // recordings use the chosen audio format. `validate()` has already normalised
-    // `video_container` to mp4/mov, so this is always a safe extension.
-    let main_ext = if video_on {
-        match settings.video_container.as_str() {
-            "mov" => "mov",
-            _ => "mp4",
-        }
-    } else {
-        format_ext(settings.format)
-    };
-    let fname = build_filename(&FilenameParams {
-        format: main_ext,
-        pattern: settings.filename_pattern,
-        custom_name,
-        // church-calendar name not ported yet → falls back to "gudstjeneste".
-        church_name: None,
-        split_timestamp: None,
-        now: Local::now().naive_local(),
-    });
-    let output_path = folder.join(fname).to_string_lossy().into_owned();
-    // Never overwrite a same-day recording: bump to `_2`, `_3`, … if the chosen
-    // filename already exists on disk (pure suffix logic in core; `Path::exists`
-    // is the only I/O seam).
-    let output_path = sundayrec_core::filename::make_unique_path(&output_path, |p| {
-        std::path::Path::new(p).exists()
-    });
-
-    Ok(RecordingOpts {
-        audio_device_name: settings.device_name.clone().unwrap_or_default(),
-        video_device_name: if video_on {
-            settings.video_device_name.clone()
-        } else {
-            None
-        },
-        output_path,
-        stop_on_silence: settings.stop_on_silence,
-        silence_threshold_db: Some(settings.silence_threshold),
-        silence_timeout_minutes: settings.silence_timeout_minutes.max(1) as u32,
-        framerate: settings.video_framerate.clamp(1, 120) as u32,
-        channel_mode: settings.channels,
-        input_channel_l: settings.input_channel_l,
-        input_channel_r: settings.input_channel_r,
-        // Auto (native) → None (omit -ar, no resample → no choppiness); explicit
-        // modes → Some(hz). The legacy `sample_rate: i32` field is NOT used.
-        sample_rate: settings.resolved_sample_rate(),
-        bitrate_kbps: settings.bitrate_kbps(),
-        split_minutes: settings.split_minutes.max(0) as u32,
-        manual_max_minutes: max_minutes,
-        // The overlay L/R meters + waveform are driven by THIS backend `astats`
-        // telemetry (`recording://levels`) instead of a second getUserMedia mic
-        // stream. Opening the mic twice (ffmpeg + getUserMedia) made macOS re-mux
-        // the shared device and drop samples → choppy capture; ffmpeg's own astats
-        // reads the already-captured signal, so the mic is opened exactly once. The
-        // engine reader drains stderr, so the astats lines don't back-pressure the
-        // capture. Honour the user's `show_live_levels` setting so the meters (and
-        // their ~141 lines/s astats stderr) can be turned OFF for maximum stability
-        // on a struggling machine — previously hardcoded `true`, leaving the setting
-        // dead.
-        live_levels: settings.show_live_levels,
-        keep_separate_audio: settings.keep_separate_audio,
-        separate_audio_format: format_ext(settings.separate_audio_format).to_string(),
-        // The probe targets this resolution so 1080p actually records 1080p.
-        video_resolution: settings.video_resolution.clone(),
-        // H.264 (default) or H.265/HEVC for the recording.
-        video_codec: settings.video_codec.clone(),
-        // software (libx264/5) or hardware (VideoToolbox, mac) encoder backend.
-        video_encoder: settings.video_encoder.clone(),
-        // Windows: force legacy DirectShow audio instead of cpal (WASAPI/ASIO).
-        classic_directshow: settings.classic_directshow,
-        // Escape hatch: force legacy ffmpeg audio capture instead of the native
-        // cpal engine (removable once the rig has verified 0 % loss).
-        classic_ffmpeg_audio: settings.classic_ffmpeg_audio,
-        // Resolved server-side by the recorder's camera-mode probe at start.
-        video_input: None,
-    })
-}
-
-fn format_ext(f: FileFormat) -> &'static str {
-    match f {
-        FileFormat::Mp3 => "mp3",
-        FileFormat::Wav => "wav",
-        FileFormat::Flac => "flac",
-        FileFormat::Aac => "aac",
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //   Preflight + missed-check
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -649,7 +539,13 @@ pub async fn check_missed(
             ),
             TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
         };
-        match build_opts(app, &settings, custom_name.as_deref(), max_minutes, None) {
+        match crate::recorder::opts::build_opts(
+            app,
+            &settings,
+            custom_name.as_deref(),
+            max_minutes,
+            None,
+        ) {
             Ok(opts) => {
                 let engine = app.state::<RecorderEngine>();
                 let late = engine
@@ -892,14 +788,6 @@ mod tests {
         // Unknown language → Norwegian.
         assert_eq!(reminder_body(Some("xx"), 5), "Opptak starter om 5 minutter");
         assert_eq!(reminder_body(None, 30), "Opptak starter om 30 minutter");
-    }
-
-    #[test]
-    fn format_ext_maps_every_variant() {
-        assert_eq!(format_ext(FileFormat::Mp3), "mp3");
-        assert_eq!(format_ext(FileFormat::Wav), "wav");
-        assert_eq!(format_ext(FileFormat::Flac), "flac");
-        assert_eq!(format_ext(FileFormat::Aac), "aac");
     }
 
     // ── Scheduler decision contract (time-injected) ─────────────────────────

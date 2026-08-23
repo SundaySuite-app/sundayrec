@@ -12,4 +12,4 @@
  * The wire strings are dotted namespaces (`area.thing.variant`) so the endpoint
  * can aggregate by prefix.
  */
-export type CounterName = "recording.started.manual" | "recording.started.scheduled" | "recording.stopped" | "recording.preroll.started" | "recording.selftest" | "editor.opened" | "editor.export.mp3" | "editor.export.wav" | "editor.export.flac" | "editor.export.video" | "editor.export.other" | "editor.master.applied" | "editor.chapters.detected" | "transcribe.run" | "companion.build" | "trash.moved" | "trash.restored" | "diagnose.run" | "update.installed";
+export type CounterName = "recording.started.manual" | "recording.started.scheduled" | "recording.stopped" | "recording.preroll.started" | "recording.selftest" | "editor.opened" | "editor.export.mp3" | "editor.export.wav" | "editor.export.flac" | "editor.export.video" | "editor.export.other" | "editor.master.applied" | "trash.moved" | "trash.restored" | "diagnose.run" | "update.installed";

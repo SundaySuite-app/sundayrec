@@ -45,9 +45,9 @@ often started once and left unattended for the length of a service. The
 operator is not a security professional, and the machine is not IT-managed.
 Trust boundaries the app has to defend at:
 
-- **Media files and their sidecars** — recordings, intro/outro clips,
-  transcripts — paths and content that ultimately come from outside the
-  process (a picked file, an imported recording).
+- **Media files and their sidecars** — recordings, intro/outro clips, the
+  `.meta`/`.cuts-draft`/`.feedback` JSON — paths and content that ultimately
+  come from outside the process (a picked file, an imported recording).
 - **User-configured endpoints** — the SMTP host the operator types in, which
   can point anywhere, including the local network.
 - (The `sundayrec://` deep-link scheme, the chat webhook and the integration
@@ -107,15 +107,14 @@ So a future auditor doesn't have to re-derive these from scratch:
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output
   (`crates/sundayrec-core/src/redact.rs`).
-- **Whisper model integrity.** Downloaded transcription models are
-  SHA-256-verified against a pinned hash and only renamed into place
-  (`.partial` → final) after the hash matches; a mismatch deletes the partial
-  instead of promoting it.
+- (**Whisper model integrity** — the SHA-256-verified model download — left
+  with transcription in R2 of «Frivilligen først». The app downloads no
+  models any more; the VAD model is vendored and verified at build + load.)
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.
-- **OS keychain for credentials.** OAuth refresh tokens, the
-  SMTP password, and API keys are stored via the OS-native credential store
+- **OS keychain for credentials.** The SMTP password is stored via the
+  OS-native credential store
   (macOS Keychain / Windows Credential Manager through the `keyring` crate;
   `src-tauri/src/secrets/`) — never in plaintext settings files. (E1.6 closed
   a legacy gap where the SMTP password had leaked into a plaintext

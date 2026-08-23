@@ -851,8 +851,10 @@ function showOverlay(opts: RecordingOpts): void {
     // IPC frames; the Tauri recorder writes a file instead — a poll is the match.)
     // Poll roughly at the backend preview rate (12 fps → ~83 ms). The cap was
     // 150 ms (~6.7 fps), which threw away half the preview frames and made the
-    // image feel laggy even when the backend produced more.
-    const recPollMs = Math.max(80, Math.floor(1000 / (opts.videoFramerate ?? settings.videoFramerate ?? 15)))
+    // image feel laggy even when the backend produced more. (Until v0.15 this
+    // derived from the frame-rate setting; the recording is 30 fps now, and
+    // the preview JPEG is written at 12 fps regardless.)
+    const recPollMs = 83
     // In-flight guard: the tick awaits an IPC round trip, and setInterval does
     // not care whether the previous tick finished. On a slow disk or a busy
     // backend the calls pile up — 12 overlapping reads a second, each decoding

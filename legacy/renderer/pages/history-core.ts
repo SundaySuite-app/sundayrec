@@ -13,7 +13,7 @@
  *    future sort. The real invariant is in the recorder: the separate-audio
  *    sidecar is written as `{stem}.{audio_ext}` next to `{stem}.{video_ext}` in
  *    the same directory (`extract_separate_audio`), so the pair share a base
- *    path. That is the key we use — the same one transcript sidecars join on.
+ *    path. That is the key we use.
  *
  *  - **Total duration** was recovered by regex out of the *display string*
  *    (`"1t 30m"`), so it silently dropped any row whose label didn't match that
@@ -45,7 +45,7 @@ export interface PairedRecording {
 
 export type HistorySortKey = 'time' | 'duration'
 export type SortDir = 'asc' | 'desc'
-export type HistoryFilter = 'all' | 'audio' | 'video' | 'transcript'
+export type HistoryFilter = 'all' | 'audio' | 'video'
 
 /** Container extensions that mean "this row is the video half of a session".
  *  Mirrors the api-shim's VIDEO_EXT list. */
@@ -54,8 +54,8 @@ const VIDEO_EXTS = new Set([
   '3gp', 'asf', 'f4v',
 ])
 
-/** A recording's base path without its extension — the join key for both the
- *  audio/video pair and the transcript sidecar. */
+/** A recording's base path without its extension — the join key for the
+ *  audio/video pair. */
 export function baseNoExt(p: string | undefined): string {
   if (!p) return ''
   return p.replace(/\.[^./\\]+$/, '')
@@ -140,13 +140,11 @@ export function pairRecordings(rows: RecordingEntry[]): PairedRecording[] {
 export function filterRecordings(
   rows: RecordingEntry[],
   filter: HistoryFilter,
-  hasTranscript: (r: RecordingEntry) => boolean = () => false,
 ): RecordingEntry[] {
   switch (filter) {
-    case 'audio':      return rows.filter(r => !isVideoRow(r))
-    case 'video':      return rows.filter(r => isVideoRow(r))
-    case 'transcript': return rows.filter(r => hasTranscript(r))
-    default:           return rows.slice()
+    case 'audio': return rows.filter(r => !isVideoRow(r))
+    case 'video': return rows.filter(r => isVideoRow(r))
+    default:      return rows.slice()
   }
 }
 

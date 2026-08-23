@@ -73,7 +73,6 @@
     "signalLoud": "Högt",
     "signalGood": "Bra",
     "signalWeak": "Svagt",
-    "whisperLabel": "TRANSKRIBERING",
     "seeAll": "Visa alla →",
     "sourceChannels": "Kanal {l}/{r}",
     "sourceChannelMono": "Kanal {n}",
@@ -101,7 +100,9 @@
     "vuScaleQuiet": "Tyst",
     "vuScaleMax": "Max",
     "cameraLabel": "KAMERA",
-    "videoQualityLabel": "VIDEOKVALITET"
+    "videoQualityLabel": "VIDEOKVALITET",
+    "videoWithSeparateAudio": "+ separat ljudfil",
+    "videoOnlyMp4": "Endast MP4"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -148,7 +149,6 @@
     "filterAll": "Alla",
     "filterAudio": "Ljud",
     "filterVideo": "Video",
-    "filterTranscript": "Med transkription",
     "thisRecording": "den här inspelningen",
     "deleteFailed": "Kunde inte radera",
     "clearNone": "Listan är tom",
@@ -490,8 +490,6 @@
     "format": "Format & kvalitet",
     "autoDelete": "Radera automatiskt efter 90 dagar",
     "autoDeleteDesc": "Frigör diskutrymme automatiskt genom att radera gamla inspelningar",
-    "trimSilence": "Klipp bort tystnad",
-    "trimSilenceDesc": "Klipper automatiskt bort tysta sekunder i början och slutet av inspelningen",
     "confirmAutoDeleteShort": {
       "one": "Inspelningar äldre än {n} dag tas bort automatiskt och kan inte återställas.",
       "other": "Inspelningar äldre än {n} dagar tas bort automatiskt och kan inte återställas."
@@ -572,7 +570,6 @@
     "diagnoseTitle": "Diagnostik för ljudenhet",
     "savedChip": "Sparat ✓",
     "saveFailed": "Kunde inte spara inställningen",
-    "suiteAdvanced": "Avancerat",
     "showInFolder": "Visa i mapp",
     "telemetryCardTitle": "Integritet och diagnostik",
     "telemetryCardDesc": "Hjälp Sunday Suite göra SundayRec bättre med anonym diagnostik. Frivilligt och avstängt som standard — det ändrar ingenting i hur SundayRec fungerar.",
@@ -602,82 +599,6 @@
     "telemetryPreviewHistoryHint": "Diagnostik är avstängt. Det här visar formen på datan från din egen lokala historik — inget skickas.",
     "telemetryPreviewEmptyHint": "Inget att skicka just nu.",
     "telemetryPreviewFailed": "Kunde inte hämta förhandsvisningen.",
-    "learningCardTitle": "Vad appen har lagt märke till",
-    "learningCardDesc": "Dessa observationer finns så att den automatiska igenkänningen kan bli bättre — det är dina rättelser som lär upp den. Ingenting härifrån delas med någon om inte anonym diagnostik är påslagen.",
-    "learningCardWhere": "Allt lagras lokalt, tillsammans med inspelningen det gäller. Raderar du en inspelning försvinner observationerna från den inspelningen också.",
-    "learningLoadBtn": "Visa vad appen har lagt märke till",
-    "learningLoading": "Hämtar…",
-    "learningLoadFailed": "Kunde inte hämta översikten. Försök igen.",
-    "learningUnavailableRecording": "Inte tillgängligt medan en inspelning pågår.",
-    "learningEmptyBody": "Inget att visa än — helt normalt. Det här fylls bara i när du rättar något appen gissade fel på.",
-    "learningSermonPickZero": "Det automatiska predikovalet har inte rättats än.",
-    "learningSermonPick": {
-      "one": "Det automatiska predikovalet har rättats {n} gång.",
-      "other": "Det automatiska predikovalet har rättats {n} gånger."
-    },
-    "learningStartTooEarly": {
-      "one": "Den automatiska starten hamnar ofta för tidigt — i snitt har du flyttat den {n} sekund senare.",
-      "other": "Den automatiska starten hamnar ofta för tidigt — i snitt har du flyttat den {n} sekunder senare."
-    },
-    "learningStartTooLate": {
-      "one": "Den automatiska starten hamnar ofta för sent — i snitt har du flyttat den {n} sekund tidigare.",
-      "other": "Den automatiska starten hamnar ofta för sent — i snitt har du flyttat den {n} sekunder tidigare."
-    },
-    "learningEndTooEarly": {
-      "one": "Det automatiska slutet klipps ofta för tidigt — i snitt har du flyttat det {n} sekund senare.",
-      "other": "Det automatiska slutet klipps ofta för tidigt — i snitt har du flyttat det {n} sekunder senare."
-    },
-    "learningEndTooLate": {
-      "one": "Det automatiska slutet hamnar ofta för sent — i snitt har du flyttat det {n} sekund tidigare.",
-      "other": "Det automatiska slutet hamnar ofta för sent — i snitt har du flyttat det {n} sekunder tidigare."
-    },
-    "learningCompanionSummary": "Av AI-förslagen har {accepted} använts ({edited} omskrivna efteråt), och {leftAlone} lämnats orörda.",
-    "localNudgeCardTitle": "Vad appen har justerat",
-    "localNudgeCardDesc": "Rättar du samma sak varje söndag kan appen flytta sitt eget förslag åt det hållet — bara för den här maskinen. Inget härifrån delas med någon, och du kan nollställa när som helst.",
-    "localNudgeToggle": "Låt appen lära sig av mina rättelser",
-    "localNudgeToggleHint": "När det här är på flyttar appen sitt eget förslag på predikans start och slut efter hur du brukar rätta det.",
-    "localNudgeLimitSeconds": {
-      "one": "Aldrig mer än {n} sekund.",
-      "other": "Aldrig mer än {n} sekunder."
-    },
-    "localNudgeLimitRecordings": {
-      "one": "Och aldrig innan du har rättat minst {n} inspelning.",
-      "other": "Och aldrig innan du har rättat minst {n} inspelningar."
-    },
-    "localNudgeOff": "Appen justerar inte sina egna förslag. Den gissar på exakt samma sätt som en nyinstallerad app.",
-    "localNudgeWaiting": {
-      "one": "Appen har inte justerat något ännu. Den väntar tills du har rättat minst {n} inspelning.",
-      "other": "Appen har inte justerat något ännu. Den väntar tills du har rättat minst {n} inspelningar."
-    },
-    "localNudgeWaitingSoFar": {
-      "one": "Hittills har den {n} inspelning.",
-      "other": "Hittills har den {n} inspelningar."
-    },
-    "localNudgeOn": "Appen har justerat sina egna förslag efter dina rättelser:",
-    "localNudgeStartLater": {
-      "one": "Appen föreslår nu att predikan börjar {n} sekund senare än den annars skulle ha gjort.",
-      "other": "Appen föreslår nu att predikan börjar {n} sekunder senare än den annars skulle ha gjort."
-    },
-    "localNudgeStartEarlier": {
-      "one": "Appen föreslår nu att predikan börjar {n} sekund tidigare än den annars skulle ha gjort.",
-      "other": "Appen föreslår nu att predikan börjar {n} sekunder tidigare än den annars skulle ha gjort."
-    },
-    "localNudgeEndLater": {
-      "one": "Appen föreslår nu att predikan slutar {n} sekund senare än den annars skulle ha gjort.",
-      "other": "Appen föreslår nu att predikan slutar {n} sekunder senare än den annars skulle ha gjort."
-    },
-    "localNudgeEndEarlier": {
-      "one": "Appen föreslår nu att predikan slutar {n} sekund tidigare än den annars skulle ha gjort.",
-      "other": "Appen föreslår nu att predikan slutar {n} sekunder tidigare än den annars skulle ha gjort."
-    },
-    "localNudgeEvidence": {
-      "one": "Det bygger på {n} rättelse från dig.",
-      "other": "Det bygger på {n} rättelser från dig."
-    },
-    "localNudgeAtLimit": "Dina rättelser pekar ännu längre, men appen flyttar aldrig ett förslag mer än {limit} sekunder. Om förslaget fortfarande träffar dåligt är det inspelningarna som bör ses över — inte den här inställningen.",
-    "localNudgeResetBtn": "Nollställ det appen har lärt sig",
-    "localNudgeResetDone": "Nollställt. Appen gissar nu på exakt samma sätt som en nyinstallerad app och lär sig inget mer förrän du slår på det igen.",
-    "localNudgeLoadFailed": "Kunde inte hämta vad appen har justerat. Försök igen.",
     "settingsProfileTitle": "Inställningsprofil",
     "settingsProfileDesc": "Spara alla inställningar som en enda fil — som säkerhetskopia, eller för att sätta upp en annan maskin likadant (t.ex. via USB-minne). Lösenord och strömnycklar följer aldrig med.",
     "settingsExportBtn": "Exportera inställningar…",
@@ -790,8 +711,6 @@
     "errTimeout": "Exporten tog för lång tid och stoppades. Försök igen, eller dela filen i mindre inspelningar.",
     "errFileNotFound": "Originalfilen är inte tillgänglig — är disken frånkopplad?",
     "errCutData": "Internt fel i klippdata. Försök ladda om filen.",
-    "chaptersEmpty": "Inga kapitel ännu. Klicka på \"+ Lägg till vid uppspelningsmarkör\" för att starta.",
-    "chapterClickSeek": "Klicka för att söka",
     "playbackViaProxy": "Uppspelningen går via en tillfällig mellanfil (full kvalitet). Exporten använder alltid originalet.",
     "analyzingWaveform": "Analyserar vågform…",
     "preparingPlayback": "Förbereder uppspelning…",
@@ -911,8 +830,6 @@
     "cancelAutostop": "Avbryt autostopp"
   },
   "video": {
-    "minBitrateWarn": "Minsta bithastighet är 500 kbps",
-    "maxBitrateWarn": "Högsta bithastighet är 50 000 kbps",
     "title": "Videoinspelning",
     "enableTitle": "Aktivera videoinspelning",
     "enableDesc": "Spelar in video utöver ljud vid varje inspelning",
@@ -921,40 +838,13 @@
     "cameraSearchPrompt": "Klicka på Uppdatera för att söka efter kameror",
     "refresh": "Uppdatera",
     "cameraHint": "USB-webbkameror och HDMI-fångstkort stöds på macOS och Windows.",
-    "qualityTitle": "Kvalitet",
-    "resolution": "UPPLÖSNING",
-    "recommended": "Rekommenderas",
-    "framerate": "BILDFREKVENS",
-    "fps30Recommended": "30 fps (Rekommenderas)",
-    "bitrate": "BITHASTIGHET",
-    "bitrateAuto": "Automatisk (rekommenderas — baserat på upplösning)",
-    "bitrateCustom": "Anpassad",
-    "outputFormat": "Utdataformat",
-    "outputFormatDesc": "Välj om ljud och video ska kombineras i en fil eller sparas separat.",
-    "combinedName": "Kombinerad MP4",
-    "combinedDesc": "Ljud + video i en fil — redo för YouTube",
-    "separateName": "Separata filer",
-    "separateDesc": "Ljud och video sparas var för sig",
-    "splitWarning": "Filuppdelning är aktiv — video sparas alltid som en separat fil oavsett valet ovan. Inaktivera automatisk uppdelning i schemainställningar för att kombinera ljud och video i en MP4.",
-    "splitHint": "Vid automatisk filuppdelning används alltid separata filer.",
     "keepAudioTitle": "Behåll separat ljudfil",
     "keepAudioDesc": "Sparar också den högkvalitativa ljudfilen vid sidan av den kombinerade MP4-filen",
-    "hwEncode": "Hårdvarukodning (VideoToolbox)",
-    "hwEncodeDesc": "Använder hårdvarukodning (VideoToolbox) för snabbare videoexport på Mac. Faller automatiskt tillbaka till mjukvara om det misslyckas.",
     "cameraDelivers": "Kameran levererar max",
-    "codec": "VIDEOKODEK",
-    "codecH264": "H.264 (universell)",
-    "codecH265": "H.265 / HEVC (mindre fil)",
-    "container": "FORMAT",
-    "encoder": "ENKODER",
-    "encoderHardware": "Hårdvara – VideoToolbox (lätt & jämn, rekommenderas)",
-    "encoderHint": "Hårdvara (VideoToolbox, endast Mac): låg CPU-användning → jämn liveförhandsvisning, mindre värme/batteri och realtids-4K/H.265. Mycket god kvalitet vid tillräcklig bitrate — rekommenderas för de flesta. Mjukvara (x264/x265): något bättre kvalitet per filstorlek, men använder mycket CPU och kan göra förhandsvisning och mätare hackiga under inspelning — välj den när kvalitet per byte betyder allra mest och datorn inte gör något annat samtidigt.",
-    "encoderSoftware": "Mjukvara – x264/x265 (maximal kvalitet per byte)",
-    "probeFailed": "Kunde inte läsa kamerans upplösningar — begränsat till 1080p för att undvika uppskalning. 4K kräver en kamera som levererar äkta 4K.",
-    "resNative": "kamerans max",
-    "resNotSupported": "stöds inte",
-    "resUnsupportedShort": "Vald upplösning stöds inte — satt till kamerans max.",
-    "guardDevice": "Byta kamera"
+    "probeFailed": "Kunde inte läsa kamerans upplösningar — inspelningen använder det kameran faktiskt levererar, upp till 1080p.",
+    "guardDevice": "Byta kamera",
+    "outputTitle": "Filerna",
+    "outputDesc": "Videoinspelningar sparas som MP4 (1080p, 30 bilder/s, H.264) — eller så högt som kameran levererar. Ljudfilen bredvid följer ljudformatet du valt under Filer."
   },
   "onboarding": {
     "welcomeTitle": "Välkommen till SundayRec",
@@ -1012,7 +902,7 @@
     "consentDesc": "Du kan dela anonym diagnostik och användningsstatistik med Sunday Suite, som utvecklar SundayRec. Det är alltid frivilligt och ändrar ingenting i hur appen fungerar — du kan ändra ditt svar när som helst under Inställningar → System.",
     "consentDetailsSummary": "Vad skulle i så fall samlas in?",
     "consentCatCrash": "Kraschrapporter — feltyp, programmets felmeddelande, app- och OS-version. Filsökvägar tvättas bort. Aldrig text från predikan.",
-    "consentCatQuality": "Kvalitetsdata — om en inspelning blev komplett (bortfallsprocent, utfall), grova intervall för dina korrigeringar i redigeraren, t.ex. ”30–60 sekunder tidigare”, och vilka typer av automatiska förslag du använder — titel, sammanfattning eller kapitelmarkeringar — och om du behöll eller skrev om resultatet. Aldrig ljudinnehållet eller text. Tidpunkten följer med, utan din tidszon.",
+    "consentCatQuality": "Kvalitetsdata — om en inspelning blev komplett (bortfallsprocent, utfall), grova intervall för dina korrigeringar i redigeraren, t.ex. ”30–60 sekunder tidigare”. Aldrig ljudinnehållet eller text. Tidpunkten följer med, utan din tidszon.",
     "consentCatUsage": "Funktionsanvändning — vilka funktioner du använder, t.ex. ”export till MP3”. Bara antal, aldrig innehåll.",
     "consentNever": "Aldrig: ljud, transkriptioner, predikotext, namn, e-post, enhetsnamn eller församlingsnamn.",
     "consentReadMore": "Läs hela integritetspolicyn →",
@@ -1022,7 +912,7 @@
     "promptTitle": "Dela anonym diagnostik?",
     "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System.",
     "rePromptTitle": "Vi frågar dig igen",
-    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Appen kan dessutom ange vilken typ av förslag du använde — titel, sammanfattning eller kapitelmarkeringar — och om du behöll det som det var eller skrev om det. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här.",
+    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här.",
     "skipBtn": "Hoppa över"
   },
   "time": {
@@ -1092,96 +982,14 @@
     "kbdHints": "Visa kortkommandon",
     "timelineLayers": "Vad tidslinjen visar"
   },
-  "transcript": {
-    "title": "Transkribering",
-    "start": "▶ Transkribera",
-    "export": "↧ SRT",
-    "delete": "Radera",
-    "empty": "Ingen transkribering ännu. Klicka \"Transkribera\" för att skapa sökbar text.",
-    "modalTitle": "Transkribera tal till text",
-    "modalDesc": "Använder lokal AI (whisper.cpp) — inga data skickas till molnet.",
-    "modelLabel": "MODELL",
-    "langLabel": "SPRÅK",
-    "langAuto": "Auto-upptäck",
-    "translateToEn": "Översätt till engelska samtidigt",
-    "cancel": "Avbryt",
-    "run": "Starta",
-    "progressTitle": "Transkriberar…",
-    "downloadTitle": "Laddar ner modell…",
-    "recommended": "Rekommenderas",
-    "speed": "Hastighet",
-    "size": "Storlek",
-    "modelInstalled": "✓ Nedladdad",
-    "segments": "segment",
-    "confirmDelete": "Radera transkriberingen?",
-    "unavailable": "✕ Inte tillgänglig",
-    "unavailableHint": "Transkribering är inte tillgänglig i den här versionen av appen på den här datorn.",
-    "errNoBinary": "Whisper är inte tillgänglig på denna plattform.",
-    "errStatusFailed": "Kunde inte kontrollera Whisper-status",
-    "errDownload": "Modellnedladdning misslyckades",
-    "errFailed": "Transkribering misslyckades",
-    "exportVtt": "↧ VTT",
-    "chaptersAdded": "kapitel tillagda",
-    "chaptersAllPresent": "Alla hittade kapitel finns redan",
-    "chaptersNoneFound": "Hittade inga temakapitel i talet",
-    "detectChapters": "✦ Generera kapitel från teman",
-    "detecting": "Analyserar teman…",
-    "errUnknownModel": "Okänd modell",
-    "exportTxt": "↧ Text",
-    "exportDone": "Transkription sparad",
-    "exportFailed": "Kunde inte spara transkriptionen",
-    "cancelling": "Avbryter…",
-    "preparingModel": "Förbereder modell…"
-  },
-  "companion": {
-    "title": "Predikohjälp",
-    "build": "✦ Skapa predikohjälp",
-    "working": "Skapar predikohjälp…",
-    "unavailable": "AI-predikohjälp är inte tillgänglig just nu. Transkription och kapitel fungerar fortfarande.",
-    "modeAi": "AI-läge",
-    "modeLocal": "Lokalt läge",
-    "modeAiHint": "En API-nyckel är konfigurerad — sammanfattningen skapas av en språkmodell",
-    "modeLocalHint": "Ingen API-nyckel — sammanfattningen skapas lokalt på enheten",
-    "sourceAi": "AI-sammanfattning",
-    "sourceLocal": "Lokal sammanfattning",
-    "sourceAiHint": "Sammanfattningen skapades av en språkmodell på servern",
-    "sourceLocalHint": "Lokal sammanfattning (ingen API-nyckel) — helt på enheten",
-    "highlightsTitle": "Citat",
-    "noHighlights": "Inga tydliga höjdpunkter hittades",
-    "useMeta": "→ Använd i metadata",
-    "useMetaHint": "Lägg titel + sammanfattning i metadata — används vid export och av SundayEdit/Stage",
-    "useChapters": {
-      "one": "→ Lägg till {n} kapitel",
-      "other": "→ Lägg till {n} kapitel"
-    },
-    "copy": "⧉ Kopiera",
-    "copied": "Kopierat",
-    "copyFailed": "Kunde inte kopiera",
-    "metaApplied": "Tillagt i metadata",
-    "metaAlready": "Redan i metadata",
-    "settingsTitle": "Predikohjälp — AI-sammanfattning (valfritt)",
-    "settingsDesc": "Kapitel och citat skapas alltid lokalt på enheten. Vill du ha en finare sammanfattning och titel kan du klistra in en Anthropic API-nyckel — den lagras endast i nyckelringen (OS keychain), aldrig i inställningar. Utan nyckel används en lokal sammanfattning.",
-    "keySave": "Spara",
-    "keyClear": "Ta bort",
-    "keyStored": "✓ API-nyckel sparad (nyckelring)",
-    "keyNone": "Ingen nyckel — lokal sammanfattning används",
-    "errKeyEmpty": "Klistra in nyckeln först",
-    "errKeySaveFailed": "Kunde inte spara nyckeln",
-    "errKeyClearFailed": "Kunde inte ta bort nyckeln"
-  },
   "search": {
     "title": "Historik",
-    "subtitle": "Sök i predikotext eller filnamn och se hela inspelningshistoriken. Klicka på en textträff för att öppna inspelningen på den punkten.",
-    "placeholder": "Sök i predikan eller filnamn…",
-    "reindex": "↻ Uppdatera index",
-    "transcriptsLoaded": "transkriberingar indexerade",
-    "segments": "segment",
+    "subtitle": "Sök på filnamn, datum eller anteckning, och se hela inspelningshistoriken.",
+    "placeholder": "Sök på filnamn, datum eller anteckning…",
     "recordings": "inspelningar",
-    "matches": "träffar",
     "noHits": "Inga träffar för",
-    "indexFailed": "Kunde inte ladda index",
     "noRecordingsTitle": "Inga inspelningar ännu",
-    "noRecordingsDesc": "När du spelat in en gudstjänst visas den här. Transkribera en inspelning i Redigera för att söka i själva predikotexten."
+    "noRecordingsDesc": "När du har spelat in en gudstjänst dyker den upp här."
   },
   "dialog": {
     "ok": "OK",
@@ -1197,7 +1005,6 @@
     "autoDeleteConfirm": "Ja, ta bort automatiskt",
     "wakeTestTitle": "Testa väckning ur viloläge?",
     "wakeTestConfirm": "Starta testet",
-    "deleteTranscriptBody": "Själva inspelningen behålls. Du kan transkribera på nytt senare.",
     "discardEditsBody": "Klippen du har gjort går förlorade. Själva inspelningsfilen rörs inte.",
     "discardEdits": "Förkasta ändringarna"
   },
@@ -1250,7 +1057,6 @@
     "etaSeconds": "ca {n} s kvar",
     "etaMinutes": "ca {n} min kvar",
     "etaHours": "ca {h} tim kvar",
-    "etaHoursMinutes": "ca {h} tim {m} min kvar",
-    "preparing": "Förbereder …"
+    "etaHoursMinutes": "ca {h} tim {m} min kvar"
   }
 }

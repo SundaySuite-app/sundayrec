@@ -21,14 +21,6 @@ import {
   type EmailFacts,
 } from '../ui/feature-gate-core'
 import {
-  applyParams,
-  buildLearningSummaryView,
-  buildLocalNudgeView,
-  MAX_BOUNDARY_NUDGE_SEC,
-  MIN_CORRECTIONS_FOR_NUDGE,
-  type CopyLine,
-} from './learning-summary-core'
-import {
   AUTO_UPDATE_INTERVAL_MS,
   autoUpdateEnabled,
   planAutoUpdateSchedule,
@@ -109,8 +101,6 @@ export function setupGeneralPage(): void {
   void refreshEmailGate()
   setupSettingsProfileCard()
   setupTelemetryCard()
-  setupLearningSummaryCard()
-  setupLocalNudgeCard()
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
 
@@ -646,270 +636,6 @@ async function deleteTelemetryData(): Promise<void> {
   if (success) void refreshTelemetryCard()
 }
 
-/**
- * «Hva appen har lagt merke til» (E8.T) — wires the load button. Nothing
- * fires on tab-open: unlike `setupTelemetryCard`'s `refreshTelemetryCard()`,
- * this card starts life as a title, two lines of static explanation and a
- * button, and stays that way until the operator asks for more.
- *
- * That is a deliberate departure from `search-page.ts`'s transcript index
- * (which DOES build itself on first tab visit): a transcript index feeds a
- * search box the operator is about to type into, so the cost is paid once,
- * right before it is needed. Nobody is about to search this card — it is a
- * "what has this thing been doing" check the operator runs on their own
- * schedule, so there is no moment where fetching it unprompted pays for
- * itself, and every moment where doing so during a live recording would not.
- */
-function setupLearningSummaryCard(): void {
-  document
-    .getElementById('btn-learning-summary-load')
-    ?.addEventListener('click', () => void loadLearningSummary())
-}
-
-/** Re-entrancy guard — a second click while the first round-trip is still in
- *  flight must not fire a second one (or paint over its own "Henter…"). */
-let learningSummaryLoading = false
-
-async function loadLearningSummary(): Promise<void> {
-  if (learningSummaryLoading) return
-  const statusEl = document.getElementById('learning-summary-status')
-  const emptyEl = document.getElementById('learning-summary-empty')
-  const bodyEl = document.getElementById('learning-summary-body')
-  if (!statusEl || !emptyEl || !bodyEl) return
-
-  // The read this triggers walks every recording's `<stem>.feedback.json`
-  // sidecar off disk. Fine at rest; not something to run while a service is
-  // being captured, so the button stays clickable (a volunteer mid-recording
-  // should not have to wonder why a whole card vanished) but the read itself
-  // never happens — checked HERE, at the moment of the click, rather than by
-  // disabling the button on a recording-start event, so a recording that
-  // starts between page-load and click is still caught.
-  if (window.__isRecording) {
-    bodyEl.style.display = 'none'
-    emptyEl.style.display = 'none'
-    statusEl.textContent = t('general.learningUnavailableRecording', 'Ikke tilgjengelig mens opptak pågår.')
-    statusEl.style.display = ''
-    return
-  }
-
-  learningSummaryLoading = true
-  bodyEl.style.display = 'none'
-  emptyEl.style.display = 'none'
-  statusEl.textContent = t('general.learningLoading', 'Henter…')
-  statusEl.style.display = ''
-
-  try {
-    const summary = await window.api.learningFeedbackSummary()
-    if (!summary) {
-      // A real IPC failure — NEVER rendered as the empty state. All-zeros is
-      // a legitimate answer ("nothing corrected yet"); a failed round-trip
-      // must not look like it, or a broken read reads as "you're all caught
-      // up" instead of "try again".
-      statusEl.textContent = t('general.learningLoadFailed', 'Kunne ikke hente oversikten. Prøv igjen.')
-      return
-    }
-    renderLearningSummary(summary)
-  } finally {
-    learningSummaryLoading = false
-  }
-}
-
-function renderLearningSummary(summary: import('../../bindings/LearningSummary').LearningSummary): void {
-  const statusEl = document.getElementById('learning-summary-status')
-  const emptyEl = document.getElementById('learning-summary-empty')
-  const bodyEl = document.getElementById('learning-summary-body')
-  if (!statusEl || !emptyEl || !bodyEl) return
-  statusEl.style.display = 'none'
-
-  const view = buildLearningSummaryView(summary)
-  if (view.isEmpty) {
-    // The common case, and the one that must not look broken or accusatory —
-    // a fresh install has corrected nothing, and that is normal, not an
-    // error state. `emptyEl`'s text is the static, translated
-    // "nothing yet — this is normal" line baked into index.html.
-    emptyEl.style.display = ''
-    bodyEl.style.display = 'none'
-    return
-  }
-  emptyEl.style.display = 'none'
-  bodyEl.style.display = ''
-
-  paintLearningLine('learning-summary-sermon-pick', view.sermonPick)
-  paintLearningLine('learning-summary-start-tendency', view.startTendency)
-  paintLearningLine('learning-summary-end-tendency', view.endTendency)
-  paintLearningLine('learning-summary-companion', view.companion)
-}
-
-/**
- * «Hva appen har justert» (E10) — the switch, the four sentences, and the
- * reset.
- *
- * Unlike `setupLearningSummaryCard` above, this one DOES paint itself on tab
- * open (`populateGeneral` calls `refreshLocalNudgeCard`). The reason is the
- * difference in what the read costs and what the card is for: the summary walks
- * every recording's sidecar off disk and answers a question the operator came
- * looking for, while this reads one settings row and answers a question they did
- * not ask — "is this thing changing what happens on Sunday, and by how much".
- * A card that only tells you that after you press a button is a card that never
- * tells most people at all, and an invisible adjustment is the whole failure
- * this feature was built to avoid.
- */
-function setupLocalNudgeCard(): void {
-  bindSetting('opt-local-adaptivity', generalBinding({
-    key: 'localAdaptivity',
-    // Repaint AFTER the persist, not on the change event: the card describes
-    // what the backend will actually do next Sunday, and a switch whose card
-    // updated optimistically would claim an adjustment that a failed write left
-    // un-armed.
-    after: () => { void refreshLocalNudgeCard() },
-  }))
-  document
-    .getElementById('btn-local-nudge-reset')
-    ?.addEventListener('click', () => void resetLocalNudge())
-}
-
-/** Re-entrancy guard, same reasoning as `learningSummaryLoading`. */
-let localNudgeLoading = false
-
-async function refreshLocalNudgeCard(): Promise<void> {
-  if (localNudgeLoading) return
-  const hintEl = document.getElementById('local-nudge-toggle-hint')
-  const statusEl = document.getElementById('local-nudge-status')
-  if (!hintEl || !statusEl) return
-
-  // Three sentences rather than one string: the promise («aldri mer enn 60
-  // sekunder») and the bar («minst 12 opptak») count different nouns, and one
-  // plural group inflects for one number. Polish reads «60 sekund» and «12
-  // nagrań» — two forms the single sentence could never both be right about.
-  hintEl.textContent = [
-    t(
-      'general.localNudgeToggleHint',
-      'Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det.',
-    ),
-    tn(
-      'general.localNudgeLimitSeconds',
-      MAX_BOUNDARY_NUDGE_SEC,
-      {},
-      'Aldri mer enn {n} sekunder.',
-    ),
-    tn(
-      'general.localNudgeLimitRecordings',
-      MIN_CORRECTIONS_FOR_NUDGE,
-      {},
-      'Aldri før du har rettet minst {n} opptak.',
-    ),
-  ].join(' ')
-
-  // Reading the nudge re-folds every recording's sidecar (see
-  // `learning::refresh_nudge` for why it is a recompute and not a cached read),
-  // so it inherits the learning summary's refusal above: the switch and its
-  // explanation stay on screen — a volunteer mid-recording should not find a
-  // card missing — but the read itself waits.
-  if (window.__isRecording) {
-    for (const id of ['local-nudge-headline', 'local-nudge-start', 'local-nudge-end', 'local-nudge-at-limit']) {
-      const el = document.getElementById(id)
-      if (el) el.style.display = 'none'
-    }
-    const resetBtn = document.getElementById('btn-local-nudge-reset')
-    if (resetBtn) resetBtn.style.display = 'none'
-    statusEl.textContent = t('general.learningUnavailableRecording', 'Ikke tilgjengelig mens opptak pågår.')
-    statusEl.style.display = ''
-    return
-  }
-
-  localNudgeLoading = true
-  try {
-    const nudge = await window.api.learningLocalNudge()
-    if (!nudge) {
-      // A real IPC failure, never rendered as "nothing adjusted" — the same
-      // distinction the learning summary makes, and it matters more here: an
-      // adjustment shown as absent is exactly the invisible state this card
-      // exists to prevent.
-      statusEl.textContent = t(
-        'general.localNudgeLoadFailed',
-        'Kunne ikke hente hva appen har justert. Prøv igjen.',
-      )
-      statusEl.style.display = ''
-      return
-    }
-    statusEl.style.display = 'none'
-    renderLocalNudge(nudge)
-  } finally {
-    localNudgeLoading = false
-  }
-}
-
-function renderLocalNudge(nudge: import('../../bindings/LocalNudge').LocalNudge): void {
-  const enabled = !!(document.getElementById('opt-local-adaptivity') as HTMLInputElement | null)
-    ?.checked
-  const view = buildLocalNudgeView(nudge, enabled)
-  paintLearningLine('local-nudge-headline', view.headline)
-  paintLearningLine('local-nudge-start', view.start)
-  paintLearningLine('local-nudge-end', view.end)
-  paintLearningLine('local-nudge-at-limit', view.atLimit)
-  const resetBtn = document.getElementById('btn-local-nudge-reset')
-  if (resetBtn) resetBtn.style.display = view.canReset ? '' : 'none'
-}
-
-/**
- * The one click that puts the detector back to the shipped constants.
- *
- * No confirmation dialog. Every other destructive button in this app asks first
- * because the thing it destroys cannot be rebuilt — a recording, a queue entry,
- * a login item. This one throws away a derived number that the corrections on
- * disk can produce again the moment the operator switches adaptivity back on,
- * so a dialog would be asking permission to undo something undoable, and would
- * put one more step between a confused volunteer and a recorder that behaves
- * like every other install.
- */
-async function resetLocalNudge(): Promise<void> {
-  const nudge = await window.api.learningLocalNudgeReset()
-  if (!nudge) {
-    toast('error', t('general.localNudgeLoadFailed', 'Kunne ikke hente hva appen har justert. Prøv igjen.'))
-    return
-  }
-  // The backend cleared the flag as well as the value; the checkbox has to
-  // follow, or the card would read "off" from a switch still showing "on".
-  setCheckbox('opt-local-adaptivity', false)
-  patchSettings({ localAdaptivity: false })
-  renderLocalNudge(nudge)
-  toast(
-    'success',
-    t(
-      'general.localNudgeResetDone',
-      'Nullstilt. Appen gjetter nå på nøyaktig samme måte som en nyinstallert app, og lærer ikke mer før du slår det på igjen.',
-    ),
-  )
-}
-
-/** One optional sentence: hidden when `line` is `null` (e.g. the trim
- *  tendency is still `Unclear`), translated + interpolated otherwise. */
-function paintLearningLine(id: string, line: CopyLine | null): void {
-  const el = document.getElementById(id)
-  if (!el) return
-  if (!line) {
-    el.style.display = 'none'
-    return
-  }
-  el.textContent = renderCopyLine(line)
-  el.style.display = ''
-}
-
-/** A count-governed unit resolves through `tn` (CLDR plural form), everything
- *  else through `t` — see CopyLine.count in learning-summary-core.ts. A line
- *  that names two counts is several such units (CopyLine.extra), each inflected
- *  by its own number and joined here with a space; nothing in the catalogue
- *  ever has to pick one noun form for two counts. */
-function renderCopyLine(line: CopyLine): string {
-  return [line, ...(line.extra ?? [])]
-    .map(part =>
-      part.count === undefined
-        ? applyParams(t(part.key, part.fallback), part.params)
-        : tn(part.key, part.count, part.params ?? {}, part.fallback),
-    )
-    .join(' ')
-}
-
 // Lifetime `window.api.on` subscriptions + the hourly auto-check interval —
 // unsubscribes kept, wiring guarded so a re-run of setupGeneralPage can never
 // stack duplicate handlers (or a second interval).
@@ -1092,8 +818,6 @@ export function applyGeneralSettingsToUI(): void {
   setVal('opt-update-channel',        settings.updateChannel ?? 'stable')
   paintActiveUpdateChannel()
   setCheckbox('opt-ask-open-editor',  settings.askOpenEditor !== false)
-  setCheckbox('opt-local-adaptivity', !!settings.localAdaptivity)
-  void refreshLocalNudgeCard()
   setVal('email-address', settings.emailAddress   ?? '')
   setVal('email-smtp',    settings.emailSmtp      ?? '')
   setVal('email-port',    settings.emailSmtpPort  ?? 587)
@@ -1165,8 +889,7 @@ function collectGeneralSettings(): void {
     // Anything the select cannot produce is not a channel; the backend applies
     // the same fallback (UpdateChannel::parse), so the two ends agree.
     updateChannel:     (document.getElementById('opt-update-channel') as HTMLSelectElement | null)?.value === 'beta' ? 'beta' : 'stable',
-    askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked,
-    localAdaptivity:   !!(document.getElementById('opt-local-adaptivity')   as HTMLInputElement | null)?.checked
+    askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked
   })
 }
 

@@ -13,9 +13,10 @@
 //!
 //! # Why the model is vendored rather than downloaded
 //!
-//! The programme's plan originally copied the whisper delivery route — download
-//! at run time, pin the SHA — because that keeps the installer small. Whisper's
-//! models are hundreds of megabytes, so that trade is real there. This one is
+//! The programme's plan originally copied the whisper delivery route (the
+//! transcription feature that left in v0.15) — download at run time, pin the
+//! SHA — because that keeps the installer small. Whisper's models were hundreds
+//! of megabytes, so that trade was real there. This one is
 //! 2.8 MB. Downloading it would buy a download UI, progress reporting, failure
 //! states, a cache location and a "model missing" branch in the analysis path,
 //! to save 2.8 MB. It ships in the binary instead: analysis then works offline,

@@ -37,8 +37,7 @@ use sqlx::SqlitePool;
 use sundayrec_core::selftest::RecordingTelemetry;
 use sundayrec_core::telemetry::{
     crash_report, finding_report, quality_report, sanitize_language, wake_failure_report,
-    CompanionOutcomeReport, CorrectionReport, CounterReport, FindingReport, TelemetryPayload,
-    NIL_INSTALL_ID,
+    CorrectionReport, CounterReport, FindingReport, TelemetryPayload, NIL_INSTALL_ID,
 };
 
 use crate::db::store;
@@ -148,10 +147,6 @@ pub struct GatherContext<'a> {
     /// by design, so there is no watermark that could make a sidecar sweep
     /// idempotent, and it would re-report the same corrections every drain.
     pub corrections: Vec<CorrectionReport>,
-    /// The companion-outcome snapshot to include (E8; empty means none).
-    /// Accumulated in memory as outcomes are recorded, for the reason above —
-    /// they live in the same timestamp-free sidecar.
-    pub companion_outcomes: Vec<CompanionOutcomeReport>,
 }
 
 /// Build the payload for everything newer than `since`, returning it alongside
@@ -179,7 +174,6 @@ pub async fn build(
     payload.settings = sundayrec_core::telemetry::WireSettings::from_settings(&settings);
     payload.counters = ctx.counters.clone();
     payload.corrections = ctx.corrections.clone();
-    payload.companion_outcomes = ctx.companion_outcomes.clone();
 
     // ── Crashes + supervised restarts (E2.1/E2.2's rings) ────────────────────
     let crash_dir = ctx.app_data_dir.join("crashes");
@@ -282,7 +276,6 @@ mod tests {
             consent_version: 1,
             counters,
             corrections: Vec::new(),
-            companion_outcomes: Vec::new(),
         }
     }
 
@@ -574,37 +567,6 @@ mod tests {
         assert!(text.contains("30_60s"), "{text}");
         assert!(!text.contains("deltaSec"), "{text}");
         assert!(!text.contains("startDeltaSec"), "{text}");
-    }
-
-    #[tokio::test]
-    async fn the_companion_outcomes_are_carried_through_and_carry_no_text() {
-        use sundayrec_core::telemetry::companion::{CompanionKey, CompanionKind, CompanionOutcome};
-        let (pool, dir) = temp_pool().await;
-        let mut c = ctx(dir.path(), vec![]);
-        c.companion_outcomes = vec![CompanionOutcomeReport::new(
-            CompanionKey {
-                kind: CompanionKind::Title,
-                outcome: CompanionOutcome::AcceptedEdited,
-            },
-            2,
-        )];
-
-        let (p, _) = build(&pool, &c, Watermarks::default(), Some("x"))
-            .await
-            .unwrap();
-        assert_eq!(p.companion_outcomes.len(), 1);
-        assert_eq!(p.companion_outcomes[0].count, 2);
-        assert!(
-            !p.is_empty(),
-            "what a person did with a suggestion is worth sending on its own"
-        );
-
-        // What the collection is FOR: the categories travel and the suggestion
-        // does not.
-        let text = serde_json::to_string(&p).unwrap();
-        assert!(text.contains("accepted_edited"), "{text}");
-        assert!(!text.contains("suggested"), "{text}");
-        assert!(!text.contains("transcript"), "{text}");
     }
 
     #[tokio::test]

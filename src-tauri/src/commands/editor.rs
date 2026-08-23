@@ -18,11 +18,11 @@
 //! symmetry.
 
 use crate::editor::{
-    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorDecodeProgress,
-    EditorExportProgress, EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
+    self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
+    EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
     EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
-    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
+    EditorSidecar, EditorStreamInfo, ExportEngine, MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -238,23 +238,6 @@ pub fn editor_master_presets() -> AppResult<Vec<crate::editor::EditorMasterPrese
     Ok(editor::master_presets())
 }
 
-/// Detect topic chapters from a transcript (Bible references + enumeration
-/// points). Pure/offline/deterministic — no ffmpeg, works without the `whisper`
-/// or `editor` features. Returns chapters on the original recording timeline.
-#[tauri::command]
-pub fn editor_detect_chapters(
-    lines: Vec<EditorTranscriptLine>,
-    lang: Option<String>,
-) -> AppResult<Vec<EditorChapter>> {
-    crate::telemetry::counters::count(
-        sundayrec_core::telemetry::CounterName::EditorChaptersDetected,
-    );
-    Ok(editor::detect_chapters(
-        &lines,
-        lang.as_deref().unwrap_or("no"),
-    ))
-}
-
 /// Analyse a recording's stereo channel balance and recommend a repair
 /// (swap / duplicate the good channel / per-channel makeup). HARDWARE-UNVERIFIED.
 #[tauri::command]
@@ -325,28 +308,28 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
-    db: State<'_, crate::db::Db>,
     engine: State<'_, ExportEngine>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
-    // Hardware video encode is a per-install preference, not part of the export
-    // request: the renderer never has to know whether this machine has
-    // VideoToolbox. A settings read that fails is simply "off" (the default).
-    let hw_encode = crate::settings::load(&db.pool)
-        .await
-        .map(|s| s.editor_hw_encode)
-        .unwrap_or(false);
     crate::telemetry::counters::count(export_counter_for_format(&request.format));
-    editor::export(&engine, &request, hw_encode, move |pct, phase| {
-        let _ = app.emit(
-            "editor://export-progress",
-            EditorExportProgress {
-                pct,
-                phase: phase.to_string(),
-            },
-        );
-    })
+    // v0.15: hardware video encode is automatic — hardware first where the
+    // platform has it, software on a failed render (the `editorHwEncode`
+    // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
+    editor::export(
+        &engine,
+        &request,
+        editor::HW_ENCODE_FIRST,
+        move |pct, phase| {
+            let _ = app.emit(
+                "editor://export-progress",
+                EditorExportProgress {
+                    pct,
+                    phase: phase.to_string(),
+                },
+            );
+        },
+    )
     .await
 }
 
@@ -382,7 +365,7 @@ pub fn editor_read_sidecar(
 /// a record this build cannot parse, and the atomic temp-and-rename that keeps a
 /// crash mid-write from truncating it. [`editor_delete_sidecar`] would skip
 /// `RecordingFeedback::is_empty` and remove the whole record — a person's
-/// corrections, the trim adjustments and the companion outcomes together.
+/// corrections and the trim adjustments together.
 ///
 /// The typed commands below are the only way in. This turns an intent that was
 /// only ever written down into one the wiring enforces.
@@ -445,33 +428,6 @@ pub fn editor_sermon_pick(
 ) -> AppResult<Option<u32>> {
     super::path_guard::checked_path(&media_path)?;
     Ok(editor::sermon_pick_index(&media_path, &segments))
-}
-
-/// Record what became of one of the AI companion's suggestions (E8), into the
-/// recording's `<stem>.feedback.json`. Returns whether it persisted.
-///
-/// The parameters ARE the privacy boundary: a kind, an outcome and a bool, all
-/// from closed vocabularies. There is no parameter the suggested title, the
-/// summary, the user's rewrite or the transcript could travel in, which is why
-/// this takes three scalars instead of the renderer's event object — and the app
-/// version is stamped here rather than sent, so the renderer cannot claim one.
-///
-/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
-/// commands; the target is a file next to a recording the user opened.
-#[tauri::command]
-pub fn editor_record_companion_suggestion(
-    media_path: String,
-    kind: sundayrec_core::feedback::CompanionSuggestionKind,
-    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-) -> AppResult<bool> {
-    super::path_guard::checked_path(&media_path)?;
-    Ok(editor::record_companion_suggestion(
-        &media_path,
-        kind,
-        outcome,
-        edited_after_accept,
-    ))
 }
 
 /// Probe just has_video/has_audio for the editor's audio-vs-video layout.
@@ -711,7 +667,6 @@ mod tests {
         for sidecar in [
             EditorSidecar::Meta,
             EditorSidecar::CutsDraft,
-            EditorSidecar::Transcript,
             EditorSidecar::Peaks,
             EditorSidecar::Segments,
         ] {

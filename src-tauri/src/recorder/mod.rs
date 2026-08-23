@@ -34,6 +34,9 @@
 pub mod concat;
 pub mod cpal_capture;
 pub mod engine;
+// v0.15: the opts composition (save folder / filename / formats) the manual
+// and scheduled paths share — moved here from the scheduler.
+pub mod opts;
 pub mod stderr_tail;
 // E6.2/E6.4 — the headless long-run harness (forced-split + fault injection).
 // Test-only: it re-implements the supervisor's control flow around the REAL

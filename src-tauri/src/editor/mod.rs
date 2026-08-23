@@ -2,7 +2,7 @@
 //!
 //! The impure half of the non-destructive editor. Every *decision* lives in the
 //! unit-tested core:
-//!   - cut/keep planning + filter-graph + codec + output-path + chapters →
+//!   - cut/keep planning + filter-graph + codec + output-path + metadata →
 //!     [`sundayrec_core::editor`],
 //!   - EBU R128 loudness measure/apply filter chains + the loudnorm JSON parse →
 //!     [`sundayrec_core::mastering`],
@@ -37,8 +37,8 @@
 //! the gate only compiles the I/O seam in or out. The public entry points
 //! compile either way; when the
 //! feature is OFF they return a clear `feature_disabled` error so the renderer
-//! can surface "editing isn't built into this build" (mirrors the `whisper`
-//! idiom). Enable with `--features editor` for the smoke test.
+//! can surface "editing isn't built into this build". Enable with
+//! `--features editor` for the smoke test.
 //!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
@@ -179,8 +179,9 @@ pub struct EditorCutRegion {
 }
 
 /// Export request — the cut-plan + a chosen format + optional mastering preset,
-/// intro/outro jingles, and topic chapters. Mirrors the non-video subset of the
-/// Electron `EditorExportParams` the editor UI sent (mp4 video re-encode aside).
+/// intro/outro jingles, and title/speaker/description. Mirrors the non-video
+/// subset of the Electron `EditorExportParams` the editor UI sent (mp4 video
+/// re-encode aside).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "../../src/lib/bindings/EditorExportRequest.ts")]
 #[serde(rename_all = "camelCase")]
@@ -205,12 +206,11 @@ pub struct EditorExportRequest {
     /// Optional peak-normalization gain (dB) applied as a `volume` filter — what
     /// the editor's "Normalize" button computes. `None`/`0` is a no-op.
     pub gain_db: Option<f64>,
-    /// Topic chapters to embed in the exported file (FFMETADATA → ID3 CHAP/CTOC).
-    /// Times are in the ORIGINAL recording timeline; export remaps them through
-    /// the cut-plan and drops any that fall inside a cut. Empty = none embedded.
-    #[serde(default)]
-    pub chapters: Vec<EditorChapter>,
-    /// Optional file title (FFMETADATA `title`); also used as the chapter header.
+    // (v0.15: `chapters` left the request with the chapter UI — no source
+    // produces them any more. The core's FFMETADATA/ID3 CHAP path is kept and
+    // is simply handed an empty list, which makes it a no-op; see `export`.
+    // serde ignores the key if an old renderer still sends it.)
+    /// Optional file title (FFMETADATA `title`).
     #[serde(default)]
     pub title: Option<String>,
     /// Optional speaker (FFMETADATA `artist`).
@@ -235,26 +235,6 @@ pub struct EditorExportRequest {
     /// for ~half the size). Ignored for audio formats.
     #[serde(default)]
     pub video_codec: Option<String>,
-}
-
-/// One chapter marker (a title at a time, in seconds). The renderer-facing mirror
-/// of [`sundayrec_core::editor::Chapter`].
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChapter.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorChapter {
-    pub time: f64,
-    pub title: String,
-}
-
-/// One timestamped transcript line fed to chapter detection. Mirrors the whisper
-/// `TranscriptSegment` subset the detector needs (start + text).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorTranscriptLine.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorTranscriptLine {
-    pub start: f64,
-    pub text: String,
 }
 
 /// How to repair the channel layout (mirror of
@@ -510,29 +490,6 @@ pub struct EditorExportResult {
     pub output_path: String,
 }
 
-/// Detect topic chapters from a transcript (Bible references + enumeration
-/// points) in the transcript's language (`lang_code`: `en` → English, otherwise
-/// Norwegian). Pure, offline, deterministic — no ffmpeg, so it compiles + runs
-/// regardless of the `editor`/`whisper` features. Times are in the original
-/// recording timeline; `editor_export` remaps them through the cut-plan.
-pub fn detect_chapters(lines: &[EditorTranscriptLine], lang_code: &str) -> Vec<EditorChapter> {
-    use sundayrec_core::chapters::{detect_chapters as core_detect, Language, TranscriptLine};
-    let core_lines: Vec<TranscriptLine> = lines
-        .iter()
-        .map(|l| TranscriptLine {
-            start: l.start,
-            text: l.text.clone(),
-        })
-        .collect();
-    core_detect(&core_lines, Language::from_code(lang_code))
-        .into_iter()
-        .map(|c| EditorChapter {
-            time: c.time,
-            title: c.title,
-        })
-        .collect()
-}
-
 /// Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
 /// Maps 1:1 to [`sundayrec_core::editor::Sidecar`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
@@ -541,7 +498,9 @@ pub fn detect_chapters(lines: &[EditorTranscriptLine], lang_code: &str) -> Vec<E
 pub enum EditorSidecar {
     Meta,
     CutsDraft,
-    Transcript,
+    // (`Transcript` left this renderer-facing enum in v0.15 with whisper; the
+    // core `Sidecar::Transcript` stays so old files still travel with their
+    // recording.)
     /// `<stem>.peaks.json` — the waveform cache (P3). Written/read by the seam
     /// itself, never by the renderer, but it shares the same path policy.
     Peaks,
@@ -558,7 +517,6 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
         match s {
             EditorSidecar::Meta => sundayrec_core::editor::Sidecar::Meta,
             EditorSidecar::CutsDraft => sundayrec_core::editor::Sidecar::CutsDraft,
-            EditorSidecar::Transcript => sundayrec_core::editor::Sidecar::Transcript,
             EditorSidecar::Peaks => sundayrec_core::editor::Sidecar::Peaks,
             EditorSidecar::Segments => sundayrec_core::editor::Sidecar::Segments,
             EditorSidecar::Feedback => sundayrec_core::editor::Sidecar::Feedback,
@@ -753,9 +711,8 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 // correction", "what does it replace", "which block does it mean now" lives in
 // `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
 //
-// Three callers now share that read-modify-write: the sermon dropdown, review's
-// publish, and the AI companion panel. They are independent — a companion batch
-// finalises three events at once while a publish is in flight — and a
+// More than one caller shares that read-modify-write (the sermon dropdown, the
+// dormant trim seam, the shadow observer). They are independent, and a
 // read-modify-write of one file from two places at once loses whichever write
 // lands first. `FEEDBACK_LOCK` serialises them. It is deliberately ONE lock for
 // all recordings rather than one per path: these writes are a few hundred bytes
@@ -765,14 +722,13 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 /// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
 static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Tell the telemetry accumulators what a successful fold changed, as the file's
-/// PROJECTIONS before and after.
+/// Tell the telemetry accumulator what a successful fold changed, as the file's
+/// PROJECTION before and after.
 ///
-/// Called by all three seams and folding BOTH projections at every one — so a
-/// signal added to either projection later is reported from every seam at once
-/// rather than from the ones somebody remembered. The two read disjoint
-/// collections of the same file (`banded_corrections` the picks and trims,
-/// `companion_outcomes` the suggestions), so a record cannot be counted twice.
+/// Called by every correction seam — so a signal added to the projection later
+/// is reported from every seam at once rather than from the ones somebody
+/// remembered. (Until v0.15 a second, disjoint projection — the companion's
+/// suggestion outcomes — was folded here too.)
 ///
 /// Projections, not the event: a correction REPLACES the previous answer to the
 /// same baseline, so someone cycling through four blocks has made one decision,
@@ -784,7 +740,6 @@ fn observe_feedback_change(
     after: &sundayrec_core::feedback::RecordingFeedback,
 ) {
     crate::telemetry::corrections::observe_files(before, after);
-    crate::telemetry::companion::observe_files(before, after);
 }
 
 /// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
@@ -867,18 +822,6 @@ fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::Recording
     }
 }
 
-/// Read one recording's feedback file for the transparency summary (E8.T),
-/// treating "corrupt" the same as "missing" rather than as an error.
-///
-/// [`read_feedback`]'s `Err(())` exists to stop a WRITE from clobbering a file
-/// it cannot parse — there is nothing to clobber here. A summary is read-only
-/// and best-effort by nature: one unreadable sidecar among a whole history
-/// must shrink the count by one recording's worth of corrections, not fail
-/// the whole screen the operator opened to see what the app has noticed.
-pub fn read_feedback_for_summary(media_path: &str) -> sundayrec_core::feedback::RecordingFeedback {
-    read_feedback(media_path).unwrap_or_default()
-}
-
 /// Which block of `segments` the human's stored correction means, or `None`.
 ///
 /// This is what makes a correction outlive the editor window: on reopen the
@@ -951,9 +894,13 @@ pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -
 /// `Some` carries the pure layer's verdict, including the two that write nothing
 /// (the operator published the proposal untouched, or moved the boundaries back
 /// onto it). `None` means we could not persist: an unreadable or newer-schema
-/// file we refuse to overwrite, or a failed write. The caller
-/// ([`crate::learning::record_trim_deltas`]) turns that into a log line — never
-/// into anything the operator sees.
+/// file we refuse to overwrite, or a failed write.
+///
+/// DORMANT since v0.15 (R1 removed its only caller, the review queue's
+/// `review_update_trim` → `learning::record_trim_deltas`). Kept, with its
+/// tests, because the trim-correction signal is part of the consented
+/// telemetry contract and the editor is the obvious next writer; see
+/// `docs/LEARNING.md`.
 pub fn record_trim_adjustment(
     media_path: &str,
     deltas: sundayrec_core::trim_feedback::TrimDeltas,
@@ -975,37 +922,6 @@ pub fn record_trim_adjustment(
     Some(outcome)
 }
 
-/// Append one companion-suggestion outcome to the recording's feedback file.
-/// Returns whether it persisted; `false` is an unreadable file we left alone or
-/// a failed write, and never reaches the panel.
-pub fn record_companion_suggestion(
-    media_path: &str,
-    kind: sundayrec_core::feedback::CompanionSuggestionKind,
-    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-) -> bool {
-    let _guard = feedback_lock();
-    let Ok(mut file) = read_feedback(media_path) else {
-        return false;
-    };
-    let before = file.clone();
-    sundayrec_core::feedback::record_companion_suggestion(
-        &mut file,
-        kind,
-        outcome,
-        edited_after_accept,
-        env!("CARGO_PKG_VERSION"),
-    );
-    // Only after the write, exactly as the two correction seams do: an outcome
-    // that did not reach the disk must not be counted as something the person
-    // told us, or the telemetry would report what the app itself has lost.
-    let written = write_feedback(media_path, &file);
-    if written {
-        observe_feedback_change(&before, &file);
-    }
-    written
-}
-
 /// Fold one shadow-mode observation into the recording's feedback file.
 ///
 /// Returns whether it persisted; `false` is an unreadable or newer-schema file
@@ -1014,7 +930,7 @@ pub fn record_companion_suggestion(
 /// become something the operator sees.
 ///
 /// **`observe_feedback_change` is deliberately NOT called here**, and that is
-/// the one line of this function that matters. The other three seams report
+/// the one line of this function that matters. The other seams report
 /// their change to the telemetry accumulators; this one must not, because a
 /// disagreement between two detectors is outside the three categories the
 /// consent text covers (crash reports, quality data, feature-usage counters).
@@ -1221,7 +1137,7 @@ pub struct EditorMasterProgress {
 /// Both mutexes are locked with `unwrap_or_else(|e| e.into_inner())`: they guard
 /// plain maps with no invariant a panic could half-break, so recovering a
 /// poisoned guard is correct — one panicked mastering job must not crash every
-/// later apply/cancel (same idiom as the whisper guards).
+/// later apply/cancel.
 pub struct MasterEngine {
     /// Pure legitimacy bookkeeping — register/cancel/complete.
     registry: std::sync::Mutex<sundayrec_core::mastering::JobRegistry>,
@@ -1495,12 +1411,20 @@ pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult
     disabled("masteringAnalyze")
 }
 
+/// What the export command passes for `hw_first` (v0.15): always try the
+/// hardware encoder where the platform has one. A toggle for this was a setting
+/// nobody could reason about ("is my Mac's VideoToolbox good?") guarding a
+/// path that can only make an export faster — a failed hardware render is
+/// retried once in software. The parameter itself stays so the real-ffmpeg
+/// smoke tests can pin the software path on any machine.
+pub const HW_ENCODE_FIRST: bool = true;
+
 /// Render the cut-plan (+ optional mastering gain) to the requested format.
 #[cfg(not(feature = "editor"))]
 pub async fn export<F>(
     _engine: &ExportEngine,
     _req: &EditorExportRequest,
-    _hw_encode: bool,
+    _hw_first: bool,
     _on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
@@ -2548,27 +2472,26 @@ where
 /// Tauri event. The in-flight child is parked in `engine` so
 /// [`cancel_export`] can kill it. HARDWARE-UNVERIFIED.
 ///
-/// `hw_encode` is the user's `editor_hw_encode` setting: on a VIDEO export on
-/// macOS it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a
-/// hardware render that fails is retried once in software (see
+/// `hw_first` ([`HW_ENCODE_FIRST`] in production): on a VIDEO export on macOS
+/// it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a hardware
+/// render that fails is retried once in software (see
 /// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
-/// so the toggle can never cost the user their export.
+/// so it can never cost the user their export.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
-    hw_encode: bool,
+    hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
     F: Fn(f32, &str),
 {
     use std::path::Path;
-    use sundayrec_core::chapters::remap_chapters_to_keeps;
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
         collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
-        video_filter_complex, Chapter as CoreChapter, CutRegion, RecordingMetadata,
+        video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
@@ -2779,28 +2702,22 @@ where
     let has_outro = outro.is_some();
     let main_input_idx = if has_intro { 1 } else { 0 };
 
-    // 4b. Topic chapters → FFMETADATA. The detector timed them on the ORIGINAL
-    //     recording; remap them through the cut-plan onto the exported timeline
-    //     and drop any inside a cut. Title/speaker/description ride along as tags.
-    //     NOTE: an intro jingle shifts the audio later; chapter times here are
-    //     relative to the main audio (no intro offset) — fine for the common
-    //     no-jingle podcast export, slightly early if a long intro is prepended.
-    let core_chapters: Vec<CoreChapter> = req
-        .chapters
-        .iter()
-        .map(|c| CoreChapter {
-            time: c.time,
-            title: c.title.clone(),
-        })
-        .collect();
+    // 4b. Title/speaker/description → tags, and chapters → FFMETADATA. Since
+    //     v0.15 nothing in the app produces chapters (the transcript-driven
+    //     detector left with the content cluster), so the list handed to the
+    //     core is ALWAYS empty and `ffmetadata` returns `None`: no metadata
+    //     input, no `-map_metadata`, and the tags go through `metadata_args`
+    //     alone. The FFMETADATA/ID3 CHAP path itself is kept in the core,
+    //     tested there, so a future chapter source only has to fill this list.
     let meta = RecordingMetadata {
         title: req.title.clone(),
         speaker: req.speaker.clone(),
         description: req.description.clone(),
-        chapters: remap_chapters_to_keeps(&core_chapters, &keeps),
+        chapters: Vec::new(),
     };
     // Write the `;FFMETADATA1` sidecar to a temp file ffmpeg reads as an extra
-    // input (`-map_metadata <idx>`). `None` when there are no chapters.
+    // input (`-map_metadata <idx>`). `None` when there are no chapters — i.e.
+    // always, today.
     let meta_path: Option<String> = match ffmetadata(&meta, kept_duration) {
         Some(text) => {
             // UNIQUE per export: the old `<stem>_chapters.ffmeta` collided
@@ -2826,12 +2743,12 @@ where
         Some("h265") | Some("hevc") => sundayrec_core::editor::VideoCodec::H265,
         _ => sundayrec_core::editor::VideoCodec::H264,
     };
-    // Hardware (VideoToolbox) video encode is an opt-in macOS speed-up. It has no
-    // CRF, so it needs a target bitrate, which depends on the source resolution —
+    // Hardware (VideoToolbox) video encode is a macOS speed-up. It has no CRF,
+    // so it needs a target bitrate, which depends on the source resolution —
     // probed ONLY when the hardware path is actually taken. An unreadable size
     // falls back to the 1080p rung rather than to a nonsense `0k`.
     bail_if_cancelled(engine)?;
-    let want_hw = is_video && hw_encode && cfg!(target_os = "macos");
+    let want_hw = is_video && hw_first && cfg!(target_os = "macos");
     let hw_bitrate_kbps = if want_hw {
         let (w, h) = probe_video_size(&req.input_path)
             .await
@@ -3413,7 +3330,6 @@ mod tests {
             intro_path: None,
             outro_path: None,
             gain_db: None,
-            chapters: Vec::new(),
             title: None,
             speaker: None,
             description: None,
@@ -3571,10 +3487,9 @@ mod tests {
     /// [`tmp_media`] for a test that WRITES a feedback record, plus the telemetry
     /// modules' process-wide test lock.
     ///
-    /// Every write here goes through `observe_feedback_change`, which feeds two
-    /// process-global accumulators. Those are shared mutable state, and the tests
-    /// that assert on them (`telemetry::corrections`, `telemetry::companion`)
-    /// take this same lock — so a feedback test running beside one of them would
+    /// Every write here goes through `observe_feedback_change`, which feeds a
+    /// process-global accumulator. That is shared mutable state, and the tests
+    /// that assert on it (`telemetry::corrections`) take this same lock — so a feedback test running beside one of them would
     /// otherwise add counts to a map another test is measuring. The lock also
     /// leaves consent OFF for the duration, which makes both seams inert and
     /// keeps THESE tests about the file rather than about telemetry.
@@ -3714,14 +3629,14 @@ mod tests {
     }
 
     /// Rewrite the sidecar as the build that only knew about sermon picks left
-    /// it: the two later collections ABSENT, not empty.
+    /// it: the later collections ABSENT, not empty.
     fn strip_to_phase_a_shape(media: &str) {
         let path = feedback_path(media);
         let mut json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let obj = json.as_object_mut().unwrap();
         obj.remove("trimAdjustments");
-        obj.remove("companionSuggestions");
+        obj.remove("shadowObservations");
         std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     }
 
@@ -3760,12 +3675,6 @@ mod tests {
         strip_to_phase_a_shape(&media);
 
         assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_some());
-        assert!(record_companion_suggestion(
-            &media,
-            sundayrec_core::feedback::CompanionSuggestionKind::Title,
-            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
-            false,
-        ));
 
         let file = stored(&media);
         assert_eq!(
@@ -3775,7 +3684,6 @@ mod tests {
         );
         assert_eq!(file.sermon_picks[0].chosen.index, 3);
         assert_eq!(file.trim_adjustments.len(), 1);
-        assert_eq!(file.companion_suggestions.len(), 1);
         // And the reopen path still answers with the human's block.
         assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
     }
@@ -3817,39 +3725,15 @@ mod tests {
         std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
 
         assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_none());
-        assert!(!record_companion_suggestion(
-            &media,
-            sundayrec_core::feedback::CompanionSuggestionKind::Title,
-            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
-            false,
-        ));
         assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
-    }
-
-    #[test]
-    fn a_companion_batch_appends_each_kind_and_writes_down_no_text() {
-        use sundayrec_core::feedback::{CompanionSuggestionKind as K, CompanionSuggestionOutcome};
-        let (_dir, media, _telemetry) = feedback_media();
-        for kind in [K::Title, K::Description, K::Chapters] {
-            assert!(record_companion_suggestion(
-                &media,
-                kind,
-                CompanionSuggestionOutcome::LeftAlone,
-                false,
-            ));
-        }
-        assert_eq!(stored(&media).companion_suggestions.len(), 3);
-
-        let raw = std::fs::read_to_string(feedback_path(&media)).unwrap();
-        assert!(!raw.contains("service"), "the recording's name leaked");
-        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
     }
 
     /// Every writer of `<stem>.feedback.json` must take [`FEEDBACK_LOCK`].
     ///
-    /// These four seams are genuinely concurrent in the app: shadow mode writes
+    /// These seams are genuinely concurrent in the app: shadow mode writes
     /// from a DETACHED task that is still running minutes after the editor
-    /// opened, while the companion panel finalises a batch and review publishes.
+    /// opened, while the sermon dropdown (and, once it has a writer again, the
+    /// trim seam) fold their own records.
     /// A read-modify-write of one file from two places at once loses whichever
     /// write lands first, and it loses it in the quietest possible way — the
     /// second writer's record is simply not in the file, and every function
@@ -3859,25 +3743,19 @@ mod tests {
     /// writer that forgets the guard fails here instead of in someone's service.
     #[test]
     fn concurrent_writers_do_not_lose_each_others_records() {
-        use sundayrec_core::feedback::{
-            build_shadow_observation, CompanionSuggestionKind as K, CompanionSuggestionOutcome,
-        };
+        use sundayrec_core::feedback::build_shadow_observation;
         let (_dir, media, _telemetry) = feedback_media();
 
         const ROUNDS: usize = 12;
         std::thread::scope(|s| {
-            // The companion panel, appending.
+            // The sermon dropdown, flipping between two blocks.
             s.spawn(|| {
-                for _ in 0..ROUNDS {
-                    assert!(record_companion_suggestion(
-                        &media,
-                        K::Title,
-                        CompanionSuggestionOutcome::Accepted,
-                        false,
-                    ));
+                for i in 0..ROUNDS {
+                    let chosen = if i % 2 == 0 { 3 } else { 2 };
+                    assert!(record_sermon_pick(&media, &pick_request(Some(1), chosen)));
                 }
             });
-            // Review's publish, replacing its one record over and over.
+            // The trim seam, replacing its one record over and over.
             s.spawn(|| {
                 for i in 0..ROUNDS {
                     assert!(record_trim_adjustment(&media, deltas(i as f64 + 1.0, 0.0)).is_some());
@@ -3898,9 +3776,14 @@ mod tests {
 
         let file = stored(&media);
         assert_eq!(
-            file.companion_suggestions.len(),
-            ROUNDS,
-            "an append-only record was lost to a concurrent writer"
+            file.sermon_picks.len(),
+            1,
+            "one detector baseline, one correction — the settled one"
+        );
+        assert_eq!(
+            file.sermon_picks[0].chosen.index,
+            2,
+            "the last pick (ROUNDS is even, so the final chosen block is 2) must be the one on file"
         );
         assert_eq!(
             file.trim_adjustments.len(),
@@ -3933,16 +3816,12 @@ mod tests {
     }
 
     #[test]
-    fn cuts_draft_and_transcript_use_distinct_files() {
+    fn cuts_draft_and_meta_use_distinct_files() {
         let (_dir, media) = tmp_media();
         let cuts = serde_json::json!({ "cuts": [{ "start": 1.0, "end": 2.0 }], "ts": 5 });
-        let transcript = serde_json::json!({ "segments": [] });
+        let meta = serde_json::json!({ "title": "Søndag" });
         assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &cuts));
-        assert!(write_sidecar(
-            &media,
-            EditorSidecar::Transcript,
-            &transcript
-        ));
+        assert!(write_sidecar(&media, EditorSidecar::Meta, &meta));
         assert_eq!(
             read_sidecar(&media, EditorSidecar::CutsDraft)
                 .unwrap()
@@ -3950,10 +3829,8 @@ mod tests {
             cuts
         );
         assert_eq!(
-            read_sidecar(&media, EditorSidecar::Transcript)
-                .unwrap()
-                .unwrap(),
-            transcript
+            read_sidecar(&media, EditorSidecar::Meta).unwrap().unwrap(),
+            meta
         );
     }
 
@@ -4730,7 +4607,9 @@ mod tests {
         }
 
         /// An export request for `input_path` into `output_folder` (pass `""`
-        /// for the "Samme mappe" default), cutting the middle 0.5 s out.
+        /// for the "Samme mappe" default), cutting the middle 0.5 s out. Carries
+        /// a title so the zero-chapter metadata path (tags via `-metadata`, no
+        /// FFMETADATA input) is exercised on every real export.
         fn cut_to_mp3_request(input_path: String, output_folder: &str) -> EditorExportRequest {
             EditorExportRequest {
                 input_path,
@@ -4747,8 +4626,7 @@ mod tests {
                 intro_path: None,
                 outro_path: None,
                 gain_db: None,
-                chapters: Vec::new(),
-                title: None,
+                title: Some("Søndag".into()),
                 speaker: None,
                 description: None,
                 vocal_chain_preset: None,
@@ -4785,7 +4663,6 @@ mod tests {
                 intro_path: None,
                 outro_path: None,
                 gain_db: None,
-                chapters: Vec::new(),
                 title: None,
                 speaker: None,
                 description: None,
@@ -5044,11 +4921,36 @@ mod tests {
                 !video.contains("video"),
                 "an audio export of a video source must carry no video stream; ffprobe: {video}"
             );
+            // v0.15: the request carries NO chapters any more, so the FFMETADATA
+            // input is absent — and the file must still be valid AND still carry
+            // the title tag, which now travels through `-metadata` alone.
+            let tags = probe_format_tags(&ffprobe, out);
+            assert!(
+                tags.contains("Søndag"),
+                "the title tag must survive a zero-chapter export; ffprobe tags: {tags}"
+            );
             eprintln!(
                 "editor export smoke: wrote {} ({dur:.2}s mp3, {} progress ticks)",
                 out.display(),
                 ticks.lock().unwrap().len()
             );
+        }
+
+        /// ffprobe the container's format tags (`title=…` lines).
+        fn probe_format_tags(ffprobe: &std::path::Path, path: &std::path::Path) -> String {
+            let probe = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format_tags=title",
+                    "-of",
+                    "default=noprint_wrappers=1",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run on the export output");
+            String::from_utf8_lossy(&probe.stdout).into_owned()
         }
 
         /// ffprobe every stream's codec_type — proves the simple audio path drops

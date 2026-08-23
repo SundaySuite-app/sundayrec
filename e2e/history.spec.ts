@@ -45,7 +45,6 @@ const HISTORY_FIXTURES: Fixtures = {
   ...BOOT_FIXTURES,
   recordings_list: ROWS,
   trash_list: [],
-  transcripts_list: [],
 };
 
 async function openHistory(
@@ -136,15 +135,28 @@ test.describe("historikk", () => {
     await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(2);
     await expect(page.locator("#history-tbody")).not.toContainText("Konsert");
 
-    // A filter that matches nothing must say so in ITS words, not the
-    // never-recorded-anything words.
-    await chip("transcript").click();
+    await chip("all").click();
+    await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(3);
+  });
+
+  test("a filter that matches nothing says so in its own words", async ({
+    page,
+  }) => {
+    // Not the never-recorded-anything words: an audio-only history under the
+    // «Video» chip is a filtered-empty table, not an empty history. (Until
+    // v0.15 this was asserted through the «Med transkript» chip.)
+    await openHistory(page, {
+      ...HISTORY_FIXTURES,
+      recordings_list: ROWS.filter(
+        (r) => !String(r.file_path).endsWith(".mp4"),
+      ),
+    });
+    const chip = (f: string) => page.locator(`.hist-chip[data-filter="${f}"]`);
+    await chip("video").click();
     await expect(page.locator("#history-tbody")).toContainText(
       "Ingen opptak i dette filteret",
     );
-
-    await chip("all").click();
-    await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(3);
+    await expect(page.locator("#search-empty")).toBeHidden();
   });
 
   test("delete trashes the recording and offers «Angre» — no confirm dialog", async ({

@@ -35,7 +35,7 @@ export interface BootOptions {
    * `?goto=<page>[:<tab>]`. Pages: `home`, `schedule`, `settings`,
    * `search` (that is Historikk — there is no `history` page), `editor`.
    *
-   * ⚠️ `?goto=` also forces `hasLaunched`/`onboardingDone` true so screenshots
+   * ⚠️ `?goto=` also forces `onboardingDone` true so screenshots
    * skip first-run. Any spec that wants the onboarding wizard must boot WITHOUT
    * it (see onboarding.spec.ts).
    */
@@ -244,7 +244,7 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
  * explicit means a spec that later drops `?goto=` does not silently gain a
  * wizard.)
  */
-export const SETTLED_SETTINGS = { onboardingDone: true, hasLaunched: true };
+export const SETTLED_SETTINGS = { onboardingDone: true };
 
 /**
  * The commands the app touches on EVERY boot, answered with something harmless.
@@ -261,9 +261,7 @@ export const BOOT_FIXTURES: Fixtures = {
   get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500_000_000_000 },
   recordings_list: [],
   trash_list: [],
-  transcripts_list: [],
   list_audio_devices: [],
-  whisper_list_models: [],
   email_status: { featureBuilt: false },
   email_has_smtp_password: false,
   get_launch_at_login: false,

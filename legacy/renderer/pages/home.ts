@@ -404,20 +404,16 @@ export async function startVideoPreview(): Promise<void> {
   if (phDiv) phDiv.style.display = ''
 
   try {
-    // Request the configured resolution in 16:9 so the preview matches the
-    // recording (the default getUserMedia mode is 640×480 4:3 → letterboxed).
-    const RES_DIMS: Record<string, [number, number]> = {
-      '480p': [854, 480], '720p': [1280, 720], '1080p': [1920, 1080], '2160p': [3840, 2160],
-    }
-    const [rw] = RES_DIMS[settings.videoResolution ?? '720p'] ?? [1280, 720]
-    // The preview is only a MONITOR — it never needs more than 1080p. Asking a
-    // 1080p camera (e.g. FaceTime HD) for 4K made WKWebView collapse the
-    // unsatisfiable width+height+aspectRatio ideals into a cropped 1920×1920
-    // SQUARE (zoomed in). Cap the request at 1080p and specify width + aspectRatio
-    // ONLY (no fighting height) so the browser always returns a clean 16:9 frame
-    // at the camera's real max. The overlay still reports the true delivered size.
+    // Request 1080p in 16:9 so the preview matches the recording (the default
+    // getUserMedia mode is 640×480 4:3 → letterboxed; the recording itself is
+    // 1080p since v0.15 — `RECORDING_VIDEO_RESOLUTION` in the core).
+    // The preview is only a MONITOR. Specify width + aspectRatio ONLY (no
+    // fighting height) so the browser always returns a clean 16:9 frame at the
+    // camera's real max — a 1080p camera asked for more than it has made
+    // WKWebView collapse the unsatisfiable ideals into a cropped square. The
+    // overlay still reports the true delivered size.
     const videoConstraint: MediaTrackConstraints = {
-      width:       { ideal: Math.min(rw, 1920) },
+      width:       { ideal: 1920 },
       aspectRatio: { ideal: 16 / 9 },
     }
     // Map the chosen camera (an ffmpeg device NAME) to a browser deviceId by
@@ -965,13 +961,6 @@ export function setupHome(): void {
     navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
-  // The transcription card routes to the Deling tab (Whisper has no
-  // dedicated settings surface yet, so we land users there and they can
-  // browse from there until we promote Whisper config out of the editor).
-  document.getElementById('btn-go-whisper')?.addEventListener('click', (e: Event) => {
-    e.preventDefault()
-    navigateTo('settings', { tab: 'settings-sharing', anchor: '#settings-notifications' })
-  })
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => {
     navigateTo('settings', { tab: 'settings-audio' })
   })
@@ -1228,6 +1217,21 @@ function startCountdownTicker(): void {
   }, 1000)
 }
 
+/**
+ * The sample rate to ESTIMATE with (disk budget, the Home info strip), from the
+ * mode the recorder actually consults. `auto` records at the device's native
+ * rate, which the renderer cannot know without opening the device — 48 kHz is
+ * the estimate the old numeric `sampleRate` field carried for it (that field
+ * left in v0.15; it was never read by the recorder).
+ */
+function estimatedSampleRateHz(mode: string | null | undefined): number {
+  switch (mode) {
+    case 'r44100': return 44100
+    case 'r96000': return 96000
+    default:       return 48000
+  }
+}
+
 async function loadDiskSpace(): Promise<void> {
   const disk       = await window.api.getDiskSpace()
   setCardLoading('home-storage-card', false)
@@ -1251,7 +1255,7 @@ async function loadDiskSpace(): Promise<void> {
   const fmt = (settings.format ?? 'mp3').toLowerCase()
   let kbps: number
   if (fmt === 'wav') {
-    const sr = parseInt(String(settings.sampleRate ?? 48000))
+    const sr = estimatedSampleRateHz(settings.sampleRateMode)
     const ch = settings.channels === 'stereo' ? 2 : 1
     kbps = Math.round(sr * ch * 16 / 1000)
   } else if (fmt === 'flac') {
@@ -1406,13 +1410,15 @@ export function loadVideoInfoStrip(): void {
     }
   }
 
-  const res     = settings.videoResolution ?? '720p'
-  const fps     = settings.videoFramerate  ?? 30
-  const bitrate = (settings.videoBitrate && settings.videoBitrate > 0)
-    ? ` · ${settings.videoBitrate} kbps`
-    : ''
-  if (qualityEl) qualityEl.textContent = `${res} · ${fps} fps${bitrate}`
-  if (modeEl)    modeEl.textContent    = settings.outputMode === 'separate' ? 'Separate filer (video + lyd)' : 'Kombinert MP4'
+  // v0.15: the recording's video quality is fixed (1080p / 30 fps / MP4 — the
+  // constants in the core), so the card states it and says whether the
+  // separate audio file rides along — the one choice left on the Video tab.
+  if (qualityEl) qualityEl.textContent = '1080p · 30 fps · MP4'
+  if (modeEl) {
+    modeEl.textContent = settings.keepSeparateAudio
+      ? t('home.videoWithSeparateAudio', '+ separat lydfil')
+      : t('home.videoOnlyMp4', 'Kun MP4')
+  }
 }
 
 export async function loadHomeInfoStrip(): Promise<void> {
@@ -1453,55 +1459,11 @@ export async function loadHomeInfoStrip(): Promise<void> {
   const hasBr   = settings.format !== 'flac' && settings.format !== 'wav'
   const br      = hasBr ? `${settings.bitrate ?? 256}k` : ''
   const ch      = settings.channels === 'stereo' ? t('audio.stereo', 'Stereo') : t('audio.monoL', 'Mono')
-  const srHz    = parseInt(String(settings.sampleRate ?? 44100))
+  const srHz    = estimatedSampleRateHz(settings.sampleRateMode)
   const srLabel = `${(srHz / 1000).toFixed(srHz % 1000 === 0 ? 0 : 1)} kHz`
   const fmtEl   = document.getElementById('home-format-value')
   const fmtSub  = document.getElementById('home-format-sub')
   if (fmtEl) fmtEl.textContent = br ? `${fmt} · ${br}` : fmt
   if (fmtSub) fmtSub.textContent = `${ch} · ${srLabel}`
-
-  // Refresh the transcript strip — the card decides whether to show itself
-  // based on actual disk state. Smart visibility: nothing is rendered when it
-  // is not configured, keeping the home page short for fresh users.
-  void loadPublishInfoStrip()
 }
 
-/**
- * Loads the bottom info-strip with: transkripsjon (Whisper). The card toggles
- * its own display — the parent strip is hidden when it is off.
- */
-async function loadPublishInfoStrip(): Promise<void> {
-  const strip = document.getElementById('publish-info-strip')
-  if (!strip) return
-  const whisperShown = await renderWhisperCard()
-  strip.style.display = whisperShown ? '' : 'none'
-}
-
-/** @returns true when the transkripsjon card was rendered visible. */
-async function renderWhisperCard(): Promise<boolean> {
-  const card = document.getElementById('home-whisper-card')
-  if (!card) return false
-  let installedModel: { label: string; quality?: string } | null = null
-  try {
-    const status = await window.api.whisperStatus()
-    const installed = status.models?.find(m => (m as { installed?: boolean }).installed) as
-      | { id: string; label: string; quality?: string }
-      | undefined
-    if (status.binaryAvailable && installed) installedModel = installed
-  } catch {
-    // Whisper IPC unavailable — skip card.
-  }
-  if (!installedModel) {
-    card.style.display = 'none'
-    return false
-  }
-  card.style.display = ''
-  const valEl = document.getElementById('home-whisper-model')
-  const subEl = document.getElementById('home-whisper-status')
-  if (valEl) valEl.textContent = installedModel.label
-  if (subEl) {
-    subEl.textContent = installedModel.quality ?? 'Klar'
-    subEl.style.color = 'var(--green)'
-  }
-  return true
-}

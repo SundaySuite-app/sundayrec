@@ -6,10 +6,10 @@
  * keys) are intentionally absent — see the module docs: the report cannot leak
  * what the type cannot hold.
  */
-export type SettingsSummary = { language: string | null, deviceName: string | null, channels: string, sampleRate: number, 
+export type SettingsSummary = { language: string | null, deviceName: string | null, channels: string, 
 /**
  * The sample-rate MODE that actually drives capture: `"auto"` (native, no
  * `-ar`) or a forced `"r44100"/"r48000"/"r96000"`. A forced rate that
  * doesn't match the device resamples and can cause stutter.
  */
-sampleRateMode: string, inputVolume: number, format: string, bitrate: string, filenamePattern: string, videoEnabled: boolean, videoDeviceName: string | null, stopOnSilence: boolean, silenceThreshold: number, splitMinutes: number, trimSilence: boolean, autoDeleteDays: number, saveFolder: string | null, };
+sampleRateMode: string, format: string, bitrate: string, filenamePattern: string, videoEnabled: boolean, videoDeviceName: string | null, stopOnSilence: boolean, silenceThreshold: number, splitMinutes: number, autoDeleteDays: number, saveFolder: string | null, };

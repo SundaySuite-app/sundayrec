@@ -73,7 +73,6 @@
     "signalLoud": "Høyt",
     "signalGood": "Bra",
     "signalWeak": "Svakt",
-    "whisperLabel": "TRANSKRIPSJON",
     "seeAll": "Se alle →",
     "sourceChannels": "Kanal {l}/{r}",
     "sourceChannelMono": "Kanal {n}",
@@ -101,7 +100,9 @@
     "vuScaleQuiet": "Stille",
     "vuScaleMax": "Maks",
     "cameraLabel": "KAMERA",
-    "videoQualityLabel": "VIDEOKVALITET"
+    "videoQualityLabel": "VIDEOKVALITET",
+    "videoWithSeparateAudio": "+ separat lydfil",
+    "videoOnlyMp4": "Kun MP4"
   },
   "update": {
     "checking": "Sjekker etter oppdateringer…",
@@ -148,7 +149,6 @@
     "filterAll": "Alle",
     "filterAudio": "Lyd",
     "filterVideo": "Video",
-    "filterTranscript": "Med transkript",
     "thisRecording": "dette opptaket",
     "deleteFailed": "Kunne ikke slette",
     "clearNone": "Listen er tom",
@@ -490,8 +490,6 @@
     "format": "Format & Kvalitet",
     "autoDelete": "Slett automatisk etter 90 dager",
     "autoDeleteDesc": "Frigjør diskplass automatisk ved å slette gamle opptak",
-    "trimSilence": "Trim stillhet",
-    "trimSilenceDesc": "Kutter automatisk stille sekunder i starten og slutten av opptaket",
     "confirmAutoDeleteShort": {
       "one": "Opptak eldre enn {n} dag slettes automatisk og kan ikke gjenopprettes.",
       "other": "Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes."
@@ -572,7 +570,6 @@
     "diagnoseTitle": "Lydenhetsdiagnose",
     "savedChip": "Lagret ✓",
     "saveFailed": "Kunne ikke lagre innstillingen",
-    "suiteAdvanced": "Avansert",
     "showInFolder": "Vis i mappe",
     "telemetryCardTitle": "Personvern og diagnostikk",
     "telemetryCardDesc": "Hjelp Sunday Suite gjøre SundayRec bedre med anonym diagnostikk. Frivillig, og av som standard — det endrer ingenting i hvordan SundayRec fungerer.",
@@ -602,82 +599,6 @@
     "telemetryPreviewHistoryHint": "Diagnostikk er av. Dette viser formen på dataene fra din egen historikk lokalt — ingenting sendes.",
     "telemetryPreviewEmptyHint": "Ingenting å sende akkurat nå.",
     "telemetryPreviewFailed": "Kunne ikke hente forhåndsvisningen.",
-    "learningCardTitle": "Hva appen har lagt merke til",
-    "learningCardDesc": "Disse observasjonene finnes for at den automatiske gjenkjenningen skal kunne bli bedre — det er rettelsene dine som lærer den opp. Ingenting herfra deles med noen med mindre anonym diagnostikk er slått på.",
-    "learningCardWhere": "Alt lagres lokalt, sammen med opptaket det gjelder. Sletter du et opptak, forsvinner observasjonene fra det opptaket også.",
-    "learningLoadBtn": "Vis hva appen har lagt merke til",
-    "learningLoading": "Henter…",
-    "learningLoadFailed": "Kunne ikke hente oversikten. Prøv igjen.",
-    "learningUnavailableRecording": "Ikke tilgjengelig mens opptak pågår.",
-    "learningEmptyBody": "Ingenting å vise ennå — helt normalt. Dette fylles bare ut når du retter noe appen har gjettet feil på.",
-    "learningSermonPickZero": "Det automatiske prekenvalget er ikke rettet ennå.",
-    "learningSermonPick": {
-      "one": "Det automatiske prekenvalget er rettet {n} gang.",
-      "other": "Det automatiske prekenvalget er rettet {n} ganger."
-    },
-    "learningStartTooEarly": {
-      "one": "Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekund senere.",
-      "other": "Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekunder senere."
-    },
-    "learningStartTooLate": {
-      "one": "Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekund tidligere.",
-      "other": "Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere."
-    },
-    "learningEndTooEarly": {
-      "one": "Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekund senere.",
-      "other": "Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekunder senere."
-    },
-    "learningEndTooLate": {
-      "one": "Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekund tidligere.",
-      "other": "Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere."
-    },
-    "learningCompanionSummary": "Av AI-forslagene er {accepted} tatt i bruk ({edited} skrevet om etterpå), og {leftAlone} latt være urørt.",
-    "localNudgeCardTitle": "Hva appen har justert",
-    "localNudgeCardDesc": "Retter du det samme hver søndag, kan appen flytte sitt eget forslag den veien — for denne maskinen alene. Ingenting her deles med noen, og du kan når som helst nullstille.",
-    "localNudgeToggle": "La appen lære av rettelsene mine",
-    "localNudgeToggleHint": "Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det.",
-    "localNudgeLimitSeconds": {
-      "one": "Aldri mer enn {n} sekund.",
-      "other": "Aldri mer enn {n} sekunder."
-    },
-    "localNudgeLimitRecordings": {
-      "one": "Aldri før du har rettet minst {n} opptak.",
-      "other": "Aldri før du har rettet minst {n} opptak."
-    },
-    "localNudgeOff": "Appen justerer ikke sine egne forslag. Den gjetter på nøyaktig samme måte som en nyinstallert app.",
-    "localNudgeWaiting": {
-      "one": "Appen har ikke justert noe ennå. Den venter til du har rettet minst {n} opptak.",
-      "other": "Appen har ikke justert noe ennå. Den venter til du har rettet minst {n} opptak."
-    },
-    "localNudgeWaitingSoFar": {
-      "one": "Så langt har den {n} opptak.",
-      "other": "Så langt har den {n} opptak."
-    },
-    "localNudgeOn": "Appen har justert sine egne forslag etter rettelsene dine:",
-    "localNudgeStartLater": {
-      "one": "Appen foreslår nå at prekenen starter {n} sekund senere enn den ellers ville gjort.",
-      "other": "Appen foreslår nå at prekenen starter {n} sekunder senere enn den ellers ville gjort."
-    },
-    "localNudgeStartEarlier": {
-      "one": "Appen foreslår nå at prekenen starter {n} sekund tidligere enn den ellers ville gjort.",
-      "other": "Appen foreslår nå at prekenen starter {n} sekunder tidligere enn den ellers ville gjort."
-    },
-    "localNudgeEndLater": {
-      "one": "Appen foreslår nå at prekenen slutter {n} sekund senere enn den ellers ville gjort.",
-      "other": "Appen foreslår nå at prekenen slutter {n} sekunder senere enn den ellers ville gjort."
-    },
-    "localNudgeEndEarlier": {
-      "one": "Appen foreslår nå at prekenen slutter {n} sekund tidligere enn den ellers ville gjort.",
-      "other": "Appen foreslår nå at prekenen slutter {n} sekunder tidligere enn den ellers ville gjort."
-    },
-    "localNudgeEvidence": {
-      "one": "Det bygger på {n} rettelse fra deg.",
-      "other": "Det bygger på {n} rettelser fra deg."
-    },
-    "localNudgeAtLimit": "Rettelsene dine peker enda lenger, men appen flytter aldri et forslag mer enn {limit} sekunder. Treffer forslaget fortsatt dårlig, er det opptakene som bør ses på — ikke denne innstillingen.",
-    "localNudgeResetBtn": "Nullstill det appen har lært",
-    "localNudgeResetDone": "Nullstilt. Appen gjetter nå på nøyaktig samme måte som en nyinstallert app, og lærer ikke mer før du slår det på igjen.",
-    "localNudgeLoadFailed": "Kunne ikke hente hva appen har justert. Prøv igjen.",
     "settingsProfileTitle": "Innstillingsprofil",
     "settingsProfileDesc": "Lagre alle innstillingene som én fil — for sikkerhetskopi, eller for å sette opp en annen maskin likt (f.eks. via minnepinne). Passord og strømmenøkler er aldri med.",
     "settingsExportBtn": "Eksporter innstillinger…",
@@ -790,8 +711,6 @@
     "errTimeout": "Eksporten tok for lang tid og ble stoppet. Prøv igjen, eller del filen i flere mindre opptak.",
     "errFileNotFound": "Originalfilen er ikke tilgjengelig — er disken frakoblet?",
     "errCutData": "Intern feil i kuttdataene. Prøv å laste filen på nytt.",
-    "chaptersEmpty": "Ingen kapitler ennå. Klikk «+ Legg til ved playhead» for å starte.",
-    "chapterClickSeek": "Klikk for å søke",
     "playbackViaProxy": "Avspilling går via en midlertidig mellomfil (full kvalitet). Eksport bruker alltid originalen.",
     "analyzingWaveform": "Analyserer bølgeform…",
     "preparingPlayback": "Klargjør avspilling…",
@@ -911,8 +830,6 @@
     "cancelAutostop": "Avbryt auto-stopp"
   },
   "video": {
-    "minBitrateWarn": "Minste bitrate er 500 kbps",
-    "maxBitrateWarn": "Største bitrate er 50 000 kbps",
     "title": "Videoopptak",
     "enableTitle": "Aktiver videoopptak",
     "enableDesc": "Tar opp video i tillegg til lyd ved hvert opptak",
@@ -921,40 +838,13 @@
     "cameraSearchPrompt": "Trykk Oppdater for å søke etter kameraer",
     "refresh": "Oppdater",
     "cameraHint": "USB-webkamera og HDMI-opptakskort støttes på macOS og Windows.",
-    "qualityTitle": "Kvalitet",
-    "resolution": "OPPLØSNING",
-    "recommended": "Anbefalt",
-    "framerate": "BILDERATE",
-    "fps30Recommended": "30 fps (Anbefalt)",
-    "bitrate": "BITHASTIGHET",
-    "bitrateAuto": "Automatisk (anbefalt — basert på oppløsning)",
-    "bitrateCustom": "Egendefinert",
-    "outputFormat": "Utdataformat",
-    "outputFormatDesc": "Velg om lyd og video skal kombineres til én fil eller lagres separat.",
-    "combinedName": "Kombinert MP4",
-    "combinedDesc": "Lyd + video i én fil — klar for YouTube",
-    "separateName": "Separate filer",
-    "separateDesc": "Lyd og video lagres hver for seg",
-    "splitWarning": "Delt opptak er aktivt — video lagres alltid som separat fil uavhengig av valget over. Deaktiver automatisk oppdeling i planleggingsinnstillingene for å kombinere lyd og video til én MP4.",
-    "splitHint": "Ved automatisk oppdeling av filer brukes alltid separate filer.",
     "keepAudioTitle": "Behold separat lydfil",
     "keepAudioDesc": "Lagrer også den høykvalitets lydfilen ved siden av den kombinerte MP4",
-    "hwEncode": "Maskinvare-koding (VideoToolbox)",
-    "hwEncodeDesc": "Bruker maskinvare-koding (VideoToolbox) for raskere video-eksport på Mac. Faller automatisk tilbake til programvare hvis det feiler.",
     "cameraDelivers": "Kameraet leverer maks",
-    "codec": "VIDEO-KODEK",
-    "codecH264": "H.264 (universell)",
-    "codecH265": "H.265 / HEVC (mindre fil)",
-    "container": "FORMAT",
-    "encoder": "ENKODER",
-    "encoderHardware": "Hardware – VideoToolbox (lett & jevn, anbefalt)",
-    "encoderHint": "Hardware (VideoToolbox, kun Mac): lav CPU-bruk → jevn live-forhåndsvisning, mindre varme/batteri, og sann-tids 4K/H.265. Svært god kvalitet ved tilstrekkelig bitrate — anbefalt for de fleste. Software (x264/x265): litt bedre kvalitet pr. filstørrelse, men bruker mye CPU og kan gjøre forhåndsvisning og målere hakkete under opptak — velg den når kvalitet pr. byte betyr aller mest og maskinen ikke gjør annet samtidig.",
-    "encoderSoftware": "Software – x264/x265 (maks kvalitet pr. byte)",
-    "probeFailed": "Kunne ikke lese kameraets oppløsninger — begrenset til 1080p for å unngå oppskalering. 4K krever et kamera som leverer ekte 4K.",
-    "resNative": "kameraets maks",
-    "resNotSupported": "ikke støttet",
-    "resUnsupportedShort": "Valgt oppløsning støttes ikke — satt til kameraets maks.",
-    "guardDevice": "Bytte kamera"
+    "probeFailed": "Kunne ikke lese kameraets oppløsninger — opptaket bruker det kameraet faktisk leverer, opptil 1080p.",
+    "guardDevice": "Bytte kamera",
+    "outputTitle": "Filene",
+    "outputDesc": "Videoopptak lagres som MP4 (1080p, 30 bilder/s, H.264) — eller så høyt som kameraet leverer. Lydfilen ved siden av følger lydformatet du har valgt under Filer."
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",
@@ -1012,7 +902,7 @@
     "consentDesc": "Du kan dele anonym diagnostikk og bruksstatistikk med Sunday Suite, som utvikler SundayRec. Det er alltid frivillig og endrer ingenting i hvordan appen fungerer — du kan når som helst endre svaret under Innstillinger → System.",
     "consentDetailsSummary": "Hva samles i så fall inn?",
     "consentCatCrash": "Krasjrapporter — feiltype, feilmeldingen fra programmet, app- og OS-versjon. Filstier vaskes bort. Aldri tekst fra prekenen.",
-    "consentCatQuality": "Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt), grove intervaller for korrigeringene dine i redigeringsverktøyet, f.eks. «30–60 sekunder tidligere», og hvilke typer automatiske forslag du bruker — tittel, sammendrag eller kapittelmerker — og om du beholdt eller skrev om resultatet. Aldri lydinnhold eller tekst. Tidspunktet følger med, uten tidssonen din.",
+    "consentCatQuality": "Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt) og grove intervaller for korrigeringene dine i redigeringsverktøyet, f.eks. «30–60 sekunder tidligere». Aldri lydinnhold eller tekst. Tidspunktet følger med, uten tidssonen din.",
     "consentCatUsage": "Funksjonsbruk — hvilke funksjoner du bruker, f.eks. «eksport til MP3». Bare antall, ikke innhold.",
     "consentNever": "Aldri: lyd, transkripsjoner, prekentekst, navn, e-post, enhetsnavn eller kirkenavn.",
     "consentReadMore": "Les hele personvernerklæringen →",
@@ -1022,7 +912,7 @@
     "promptTitle": "Del anonym diagnostikk?",
     "promptDesc": "SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → System.",
     "rePromptTitle": "Vi spør deg om igjen",
-    "rePromptDesc": "Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Appen kan i tillegg si hvilken type forslag du brukte — tittel, sammendrag eller kapittelmerker — og om du beholdt det slik det var eller skrev det om. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.",
+    "rePromptDesc": "Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.",
     "skipBtn": "Hopp over"
   },
   "time": {
@@ -1092,96 +982,14 @@
     "kbdHints": "Vis hurtigtaster",
     "timelineLayers": "Hva vises på tidslinjen"
   },
-  "transcript": {
-    "title": "Transkribering",
-    "start": "▶ Transkriber",
-    "export": "↧ SRT",
-    "delete": "Slett",
-    "empty": "Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.",
-    "modalTitle": "Transkriber tale til tekst",
-    "modalDesc": "Bruker lokal AI (whisper.cpp) — ingen data sendes til skyen. Velg modell og språk.",
-    "modelLabel": "MODELL",
-    "langLabel": "SPRÅK",
-    "langAuto": "Auto-detekter",
-    "translateToEn": "Oversett til engelsk samtidig",
-    "cancel": "Avbryt",
-    "run": "Start",
-    "progressTitle": "Transkriberer…",
-    "downloadTitle": "Laster ned modell…",
-    "recommended": "Anbefalt",
-    "speed": "Hastighet",
-    "size": "Størrelse",
-    "modelInstalled": "✓ Lastet ned",
-    "segments": "segmenter",
-    "confirmDelete": "Slett transkripsjonen?",
-    "unavailable": "✕ Ikke tilgjengelig",
-    "unavailableHint": "Transkribering er ikke tilgjengelig i denne versjonen av appen på denne maskinen.",
-    "errNoBinary": "Whisper er ikke tilgjengelig på denne plattformen. Kontakt support.",
-    "errStatusFailed": "Kunne ikke sjekke Whisper-status",
-    "errDownload": "Modell-nedlasting feilet",
-    "errFailed": "Transkribering feilet",
-    "exportVtt": "↧ VTT",
-    "chaptersAdded": "kapitler lagt til",
-    "chaptersAllPresent": "Alle funne kapitler finnes allerede",
-    "chaptersNoneFound": "Fant ingen tema-kapitler i talen",
-    "detectChapters": "✦ Generer kapitler fra tema",
-    "detecting": "Analyserer tema…",
-    "errUnknownModel": "Ukjent modell",
-    "exportTxt": "↧ Tekst",
-    "exportDone": "Transkripsjon lagret",
-    "exportFailed": "Kunne ikke lagre transkripsjonen",
-    "cancelling": "Avbryter…",
-    "preparingModel": "Klargjør modell…"
-  },
-  "companion": {
-    "title": "Prekenhjelp",
-    "build": "✦ Lag prekenhjelp",
-    "working": "Lager prekenhjelp…",
-    "unavailable": "AI-prekenhjelp er ikke tilgjengelig akkurat nå. Transkripsjon og kapitler virker fortsatt.",
-    "modeAi": "AI-modus",
-    "modeLocal": "Lokal modus",
-    "modeAiHint": "En API-nøkkel er konfigurert — oppsummeringen lages av en språkmodell",
-    "modeLocalHint": "Ingen API-nøkkel — oppsummeringen lages lokalt på enheten",
-    "sourceAi": "AI-oppsummering",
-    "sourceLocal": "Lokal oppsummering",
-    "sourceAiHint": "Oppsummeringen er laget av en språkmodell på serveren",
-    "sourceLocalHint": "Lokal oppsummering (ingen API-nøkkel) — helt på enheten",
-    "highlightsTitle": "Sitater",
-    "noHighlights": "Ingen tydelige høydepunkter funnet",
-    "useMeta": "→ Bruk i metadata",
-    "useMetaHint": "Legg tittel + oppsummering i metadata — brukes ved eksport og av SundayEdit/Stage",
-    "useChapters": {
-      "one": "→ Legg til {n} kapittel",
-      "other": "→ Legg til {n} kapitler"
-    },
-    "copy": "⧉ Kopier",
-    "copied": "Kopiert",
-    "copyFailed": "Kunne ikke kopiere",
-    "metaApplied": "Lagt i metadata",
-    "metaAlready": "Allerede i metadata",
-    "settingsTitle": "Prekenhjelp — AI-oppsummering (valgfritt)",
-    "settingsDesc": "Kapitler og sitater lages alltid lokalt på enheten. Vil du ha en finere oppsummering og tittel kan du lime inn en Anthropic API-nøkkel — den lagres kun i nøkkelringen (OS keychain), aldri i innstillinger. Uten nøkkel brukes en lokal oppsummering.",
-    "keySave": "Lagre",
-    "keyClear": "Fjern",
-    "keyStored": "✓ API-nøkkel lagret (nøkkelring)",
-    "keyNone": "Ingen nøkkel — lokal oppsummering brukes",
-    "errKeyEmpty": "Lim inn nøkkelen først",
-    "errKeySaveFailed": "Kunne ikke lagre nøkkelen",
-    "errKeyClearFailed": "Kunne ikke fjerne nøkkelen"
-  },
   "search": {
     "title": "Historikk",
-    "subtitle": "Søk i preken-tekst eller filnavn, og se hele opptakshistorikken. Klikk et tekst-treff for å åpne opptaket på det punktet.",
-    "placeholder": "Søk i preken eller filnavn…",
-    "reindex": "↻ Oppdater indeks",
-    "transcriptsLoaded": "transkripsjoner indeksert",
-    "segments": "segmenter",
+    "subtitle": "Søk i filnavn, dato eller notat, og se hele opptakshistorikken.",
+    "placeholder": "Søk i filnavn, dato eller notat…",
     "recordings": "opptak",
-    "matches": "treff",
     "noHits": "Ingen treff for",
-    "indexFailed": "Klarte ikke laste indeks",
     "noRecordingsTitle": "Ingen opptak ennå",
-    "noRecordingsDesc": "Når du har tatt opp en gudstjeneste, dukker den opp her. Transkriber et opptak i Rediger for å kunne søke i selve preken-teksten."
+    "noRecordingsDesc": "Når du har tatt opp en gudstjeneste, dukker den opp her."
   },
   "dialog": {
     "ok": "OK",
@@ -1197,7 +1005,6 @@
     "autoDeleteConfirm": "Ja, slett automatisk",
     "wakeTestTitle": "Teste vekking fra dvale?",
     "wakeTestConfirm": "Start testen",
-    "deleteTranscriptBody": "Selve opptaket beholdes. Du kan transkribere på nytt senere.",
     "discardEditsBody": "Kuttene du har gjort går tapt. Selve opptaksfilen røres ikke.",
     "discardEdits": "Forkast endringene"
   },
@@ -1250,7 +1057,6 @@
     "etaSeconds": "ca. {n} s igjen",
     "etaMinutes": "ca. {n} min igjen",
     "etaHours": "ca. {h} t igjen",
-    "etaHoursMinutes": "ca. {h} t {m} min igjen",
-    "preparing": "Forbereder …"
+    "etaHoursMinutes": "ca. {h} t {m} min igjen"
   }
 }

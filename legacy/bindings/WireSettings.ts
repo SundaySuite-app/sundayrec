@@ -34,11 +34,31 @@ sampleRateMode: SampleRate,
 /**
  * The resolved forced rate in Hz, or `None` for native capture.
  */
-sampleRate: number | null, format: FileFormat, bitrateKbps: number, filenamePattern: FilenamePattern, inputVolume: number, videoEnabled: boolean, stopOnSilence: boolean, silenceThreshold: number, splitMinutes: number, autoDeleteDays: number, trimSilence: boolean, 
+sampleRate: number | null, format: FileFormat, bitrateKbps: number, filenamePattern: FilenamePattern, 
+/**
+ * WIRE-FROZEN since v0.15: the `inputVolume` setting left the app (the
+ * recorder records raw), but the Worker's `parseSettings` lists every
+ * settings key as REQUIRED — a missing one is `missing_field` → 400 → the
+ * payload is dropped from the outbox without retry. So the key stays and
+ * carries the constant the reader used to default to (100 %). Remove it
+ * here only AFTER `sunday-telemetry/src/schema.ts` makes it optional; the
+ * Worker ships first (its own rule 2).
+ */
+inputVolume: number, videoEnabled: boolean, stopOnSilence: boolean, silenceThreshold: number, splitMinutes: number, autoDeleteDays: number, 
+/**
+ * WIRE-FROZEN since v0.15 (see `input_volume`): the control left, the
+ * recorder never trimmed silence, so the constant is `false`.
+ */
+trimSilence: boolean, 
 /**
  * Whether a pre-roll buffer is armed at all (not how long it is).
  */
-prerollEnabled: boolean, showLiveLevels: boolean, 
+prerollEnabled: boolean, 
+/**
+ * WIRE-FROZEN since v0.15 (see `input_volume`): the meters are always on
+ * now, so the constant is `true`.
+ */
+showLiveLevels: boolean, 
 /**
  * The escape hatch back to ffmpeg audio capture. Whether anyone still needs
  * it decides when the legacy path can be deleted.

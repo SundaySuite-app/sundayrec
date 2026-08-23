@@ -73,7 +73,6 @@
     "signalLoud": "Loud",
     "signalGood": "Good",
     "signalWeak": "Weak",
-    "whisperLabel": "TRANSCRIPTION",
     "seeAll": "See all →",
     "sourceChannels": "Channel {l}/{r}",
     "sourceChannelMono": "Channel {n}",
@@ -101,7 +100,9 @@
     "vuScaleQuiet": "Quiet",
     "vuScaleMax": "Max",
     "cameraLabel": "CAMERA",
-    "videoQualityLabel": "VIDEO QUALITY"
+    "videoQualityLabel": "VIDEO QUALITY",
+    "videoWithSeparateAudio": "+ separate audio file",
+    "videoOnlyMp4": "MP4 only"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -148,7 +149,6 @@
     "filterAll": "All",
     "filterAudio": "Audio",
     "filterVideo": "Video",
-    "filterTranscript": "With transcript",
     "thisRecording": "this recording",
     "deleteFailed": "Could not delete",
     "clearNone": "The list is empty",
@@ -490,8 +490,6 @@
     "format": "Format & Quality",
     "autoDelete": "Delete automatically after 90 days",
     "autoDeleteDesc": "Frees up disk space automatically by removing old recordings",
-    "trimSilence": "Trim silence",
-    "trimSilenceDesc": "Automatically trims silent seconds at the start and end of the recording",
     "confirmAutoDeleteShort": {
       "one": "Recordings older than {n} day are deleted automatically and cannot be recovered.",
       "other": "Recordings older than {n} days are deleted automatically and cannot be recovered."
@@ -572,7 +570,6 @@
     "diagnoseTitle": "Audio device diagnostics",
     "savedChip": "Saved ✓",
     "saveFailed": "Could not save the setting",
-    "suiteAdvanced": "Advanced",
     "showInFolder": "Show in folder",
     "telemetryCardTitle": "Privacy and diagnostics",
     "telemetryCardDesc": "Help Sunday Suite make SundayRec better with anonymous diagnostics. Optional, and off by default — it changes nothing about how SundayRec works.",
@@ -602,82 +599,6 @@
     "telemetryPreviewHistoryHint": "Diagnostics are off. This shows the shape of the data from your own local history — nothing is sent.",
     "telemetryPreviewEmptyHint": "Nothing to send right now.",
     "telemetryPreviewFailed": "Could not load the preview.",
-    "learningCardTitle": "What the app has noticed",
-    "learningCardDesc": "These observations exist so the automatic detection can get better — your corrections are what teach it. Nothing here is shared with anyone unless anonymous diagnostics is switched on.",
-    "learningCardWhere": "Everything is stored locally, next to the recording it belongs to. Deleting a recording deletes its observations too.",
-    "learningLoadBtn": "Show what the app has noticed",
-    "learningLoading": "Loading…",
-    "learningLoadFailed": "Could not load the overview. Try again.",
-    "learningUnavailableRecording": "Not available while a recording is running.",
-    "learningEmptyBody": "Nothing to show yet — that's normal. This fills in only when you correct something the app got wrong.",
-    "learningSermonPickZero": "The automatic sermon pick has not been corrected yet.",
-    "learningSermonPick": {
-      "one": "The automatic sermon pick has been corrected {n} time.",
-      "other": "The automatic sermon pick has been corrected {n} times."
-    },
-    "learningStartTooEarly": {
-      "one": "The automatic start often lands too early — on average you have moved it {n} second later.",
-      "other": "The automatic start often lands too early — on average you have moved it {n} seconds later."
-    },
-    "learningStartTooLate": {
-      "one": "The automatic start often lands too late — on average you have moved it {n} second earlier.",
-      "other": "The automatic start often lands too late — on average you have moved it {n} seconds earlier."
-    },
-    "learningEndTooEarly": {
-      "one": "The automatic end is often cut too early — on average you have moved it {n} second later.",
-      "other": "The automatic end is often cut too early — on average you have moved it {n} seconds later."
-    },
-    "learningEndTooLate": {
-      "one": "The automatic end often lands too late — on average you have moved it {n} second earlier.",
-      "other": "The automatic end often lands too late — on average you have moved it {n} seconds earlier."
-    },
-    "learningCompanionSummary": "Of the AI suggestions, {accepted} were used ({edited} rewritten afterwards), and {leftAlone} were left alone.",
-    "localNudgeCardTitle": "What the app has adjusted",
-    "localNudgeCardDesc": "If you correct the same thing every Sunday, the app can move its own suggestion that way — for this machine alone. Nothing here is shared with anyone, and you can reset it at any time.",
-    "localNudgeToggle": "Let the app learn from my corrections",
-    "localNudgeToggleHint": "When this is on, the app moves its own suggested sermon start and end toward the way you usually correct them.",
-    "localNudgeLimitSeconds": {
-      "one": "Never by more than {n} second.",
-      "other": "Never by more than {n} seconds."
-    },
-    "localNudgeLimitRecordings": {
-      "one": "And never before you have corrected at least {n} recording.",
-      "other": "And never before you have corrected at least {n} recordings."
-    },
-    "localNudgeOff": "The app does not adjust its own suggestions. It guesses in exactly the same way as a freshly installed app.",
-    "localNudgeWaiting": {
-      "one": "The app has not adjusted anything yet. It waits until you have corrected at least {n} recording.",
-      "other": "The app has not adjusted anything yet. It waits until you have corrected at least {n} recordings."
-    },
-    "localNudgeWaitingSoFar": {
-      "one": "So far it has {n} recording.",
-      "other": "So far it has {n} recordings."
-    },
-    "localNudgeOn": "The app has adjusted its own suggestions based on your corrections:",
-    "localNudgeStartLater": {
-      "one": "The app now suggests that the sermon starts {n} second later than it otherwise would.",
-      "other": "The app now suggests that the sermon starts {n} seconds later than it otherwise would."
-    },
-    "localNudgeStartEarlier": {
-      "one": "The app now suggests that the sermon starts {n} second earlier than it otherwise would.",
-      "other": "The app now suggests that the sermon starts {n} seconds earlier than it otherwise would."
-    },
-    "localNudgeEndLater": {
-      "one": "The app now suggests that the sermon ends {n} second later than it otherwise would.",
-      "other": "The app now suggests that the sermon ends {n} seconds later than it otherwise would."
-    },
-    "localNudgeEndEarlier": {
-      "one": "The app now suggests that the sermon ends {n} second earlier than it otherwise would.",
-      "other": "The app now suggests that the sermon ends {n} seconds earlier than it otherwise would."
-    },
-    "localNudgeEvidence": {
-      "one": "That is based on {n} correction from you.",
-      "other": "That is based on {n} corrections from you."
-    },
-    "localNudgeAtLimit": "Your corrections point further still, but the app never moves a suggestion by more than {limit} seconds. If the suggestion is still wide of the mark, it is the recordings that need a look — not this setting.",
-    "localNudgeResetBtn": "Reset what the app has learned",
-    "localNudgeResetDone": "Reset. The app now guesses in exactly the same way as a freshly installed app, and will not learn any more until you switch this back on.",
-    "localNudgeLoadFailed": "Could not fetch what the app has adjusted. Please try again.",
     "settingsProfileTitle": "Settings profile",
     "settingsProfileDesc": "Save every setting as a single file — as a backup, or to set up another machine identically (e.g. via a USB stick). Passwords and stream keys are never included.",
     "settingsExportBtn": "Export settings…",
@@ -790,8 +711,6 @@
     "errTimeout": "Export took too long and was stopped. Try again, or split the file into smaller recordings.",
     "errFileNotFound": "Original file is not available — is the disk disconnected?",
     "errCutData": "Internal error in cut data. Try reloading the file.",
-    "chaptersEmpty": "No chapters yet. Click \"+ Add at playhead\" to start.",
-    "chapterClickSeek": "Click to seek",
     "playbackViaProxy": "Playback runs through a temporary intermediate file (full quality). Export always uses the original.",
     "analyzingWaveform": "Analyzing waveform…",
     "preparingPlayback": "Preparing playback…",
@@ -911,8 +830,6 @@
     "cancelAutostop": "Cancel auto-stop"
   },
   "video": {
-    "minBitrateWarn": "Minimum bitrate is 500 kbps",
-    "maxBitrateWarn": "Maximum bitrate is 50,000 kbps",
     "title": "Video recording",
     "enableTitle": "Enable video recording",
     "enableDesc": "Captures video alongside audio for every recording",
@@ -921,40 +838,13 @@
     "cameraSearchPrompt": "Click Refresh to search for cameras",
     "refresh": "Refresh",
     "cameraHint": "USB webcams and HDMI capture cards are supported on macOS and Windows.",
-    "qualityTitle": "Quality",
-    "resolution": "RESOLUTION",
-    "recommended": "Recommended",
-    "framerate": "FRAME RATE",
-    "fps30Recommended": "30 fps (Recommended)",
-    "bitrate": "BITRATE",
-    "bitrateAuto": "Automatic (recommended — based on resolution)",
-    "bitrateCustom": "Custom",
-    "outputFormat": "Output format",
-    "outputFormatDesc": "Choose whether audio and video are combined in one file or saved separately.",
-    "combinedName": "Combined MP4",
-    "combinedDesc": "Audio + video in one file — ready for YouTube",
-    "separateName": "Separate files",
-    "separateDesc": "Audio and video are saved separately",
-    "splitWarning": "File splitting is active — video is always saved as a separate file regardless of the choice above. Disable automatic splitting in schedule settings to combine audio and video into one MP4.",
-    "splitHint": "When automatic file splitting is enabled, separate files are always used.",
     "keepAudioTitle": "Keep separate audio file",
     "keepAudioDesc": "Also saves the high-quality audio file alongside the combined MP4",
-    "hwEncode": "Hardware encoding (VideoToolbox)",
-    "hwEncodeDesc": "Uses hardware encoding (VideoToolbox) for faster video export on Mac. Falls back to software automatically if it fails.",
     "cameraDelivers": "The camera delivers at most",
-    "codec": "VIDEO CODEC",
-    "codecH264": "H.264 (universal)",
-    "codecH265": "H.265 / HEVC (smaller file)",
-    "container": "FORMAT",
-    "encoder": "ENCODER",
-    "encoderHardware": "Hardware – VideoToolbox (light & smooth, recommended)",
-    "encoderHint": "Hardware (VideoToolbox, Mac only): low CPU use → smooth live preview, less heat/battery, and real-time 4K/H.265. Very good quality at sufficient bitrate — recommended for most. Software (x264/x265): slightly better quality per file size, but uses a lot of CPU and can make the preview and meters choppy during recording — choose it when quality per byte matters most and the machine isn’t doing anything else.",
-    "encoderSoftware": "Software – x264/x265 (max quality per byte)",
-    "probeFailed": "Could not read the camera’s resolutions — limited to 1080p to avoid upscaling. 4K requires a camera that delivers true 4K.",
-    "resNative": "the camera’s max",
-    "resNotSupported": "not supported",
-    "resUnsupportedShort": "Selected resolution is not supported — set to the camera’s max.",
-    "guardDevice": "Change camera"
+    "probeFailed": "Could not read the camera's resolutions — the recording uses what the camera actually delivers, up to 1080p.",
+    "guardDevice": "Change camera",
+    "outputTitle": "The files",
+    "outputDesc": "Video recordings are saved as MP4 (1080p, 30 fps, H.264) — or as high as the camera delivers. The audio file beside it follows the audio format you chose under Files."
   },
   "onboarding": {
     "welcomeTitle": "Welcome to SundayRec",
@@ -1012,7 +902,7 @@
     "consentDesc": "You can share anonymous diagnostics and usage statistics with Sunday Suite, who develop SundayRec. It's always optional and changes nothing about how the app works — you can change your answer any time under Settings → System.",
     "consentDetailsSummary": "What would be collected?",
     "consentCatCrash": "Crash reports — error type, the program's error message, app and OS version. File paths are scrubbed out. Never text from the sermon.",
-    "consentCatQuality": "Quality data — whether a recording came through complete (loss percentage, verdict), coarse ranges for your corrections in the editor, e.g. “30–60 seconds earlier”, and which kinds of automatic suggestion you use — title, summary or chapter marks — and whether you kept or rewrote the result. Never the audio content or any text. The time it happened is included, without your time zone.",
+    "consentCatQuality": "Quality data — whether a recording came through complete (loss percentage, verdict), coarse ranges for your corrections in the editor, e.g. “30–60 seconds earlier”. Never the audio content or any text. The time it happened is included, without your time zone.",
     "consentCatUsage": "Feature usage — which features you use, e.g. «export to MP3». Counts only, never content.",
     "consentNever": "Never: audio, transcripts, sermon text, names, e-mail, device names or church names.",
     "consentReadMore": "Read the full privacy notice →",
@@ -1022,7 +912,7 @@
     "promptTitle": "Share anonymous diagnostics?",
     "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → System.",
     "rePromptTitle": "We are asking you again",
-    "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The app can also say which kind of suggestion you used — a title, a summary or chapter marks — and whether you kept it as it was or rewrote it. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here.",
+    "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here.",
     "skipBtn": "Skip"
   },
   "time": {
@@ -1092,96 +982,14 @@
     "kbdHints": "Show keyboard shortcuts",
     "timelineLayers": "What the timeline shows"
   },
-  "transcript": {
-    "title": "Transcription",
-    "start": "▶ Transcribe",
-    "export": "↧ SRT",
-    "delete": "Delete",
-    "empty": "No transcription yet. Click \"Transcribe\" to create searchable text from the speech.",
-    "modalTitle": "Transcribe speech to text",
-    "modalDesc": "Uses local AI (whisper.cpp) — no data sent to the cloud. Choose model and language.",
-    "modelLabel": "MODEL",
-    "langLabel": "LANGUAGE",
-    "langAuto": "Auto-detect",
-    "translateToEn": "Translate to English at the same time",
-    "cancel": "Cancel",
-    "run": "Start",
-    "progressTitle": "Transcribing…",
-    "downloadTitle": "Downloading model…",
-    "recommended": "Recommended",
-    "speed": "Speed",
-    "size": "Size",
-    "modelInstalled": "✓ Installed",
-    "segments": "segments",
-    "confirmDelete": "Delete the transcription?",
-    "unavailable": "✕ Not available",
-    "unavailableHint": "Transcription is not available in this version of the app on this machine.",
-    "errNoBinary": "Whisper is not available on this platform. Contact support.",
-    "errStatusFailed": "Could not check Whisper status",
-    "errDownload": "Model download failed",
-    "errFailed": "Transcription failed",
-    "exportVtt": "↧ VTT",
-    "chaptersAdded": "chapters added",
-    "chaptersAllPresent": "All detected chapters already exist",
-    "chaptersNoneFound": "No topic chapters found in the talk",
-    "detectChapters": "✦ Generate chapters from topics",
-    "detecting": "Analyzing topics…",
-    "errUnknownModel": "Unknown model",
-    "exportTxt": "↧ Text",
-    "exportDone": "Transcript saved",
-    "exportFailed": "Could not save the transcript",
-    "cancelling": "Cancelling…",
-    "preparingModel": "Preparing model…"
-  },
-  "companion": {
-    "title": "Sermon helper",
-    "build": "✦ Build sermon helper",
-    "working": "Building sermon helper…",
-    "unavailable": "AI sermon helper isn't available right now. Transcript and chapters still work.",
-    "modeAi": "AI mode",
-    "modeLocal": "Local mode",
-    "modeAiHint": "An API key is configured — the summary is produced by a language model",
-    "modeLocalHint": "No API key — the summary is produced locally on this device",
-    "sourceAi": "AI summary",
-    "sourceLocal": "Local summary",
-    "sourceAiHint": "The summary was produced by a language model on the server",
-    "sourceLocalHint": "Local summary (no API key) — entirely on-device",
-    "highlightsTitle": "Quotes",
-    "noHighlights": "No clear highlights found",
-    "useMeta": "→ Use in metadata",
-    "useMetaHint": "Put the title + summary in metadata — used on export and by SundayEdit/Stage",
-    "useChapters": {
-      "one": "→ Add {n} chapter",
-      "other": "→ Add {n} chapters"
-    },
-    "copy": "⧉ Copy",
-    "copied": "Copied",
-    "copyFailed": "Couldn't copy",
-    "metaApplied": "Added to metadata",
-    "metaAlready": "Already in metadata",
-    "settingsTitle": "Sermon helper — AI summary (optional)",
-    "settingsDesc": "Chapters and quotes are always produced locally on this device. For a nicer summary and title you can paste an Anthropic API key — it's stored only in the OS keychain, never in settings. Without a key, a local summary is used.",
-    "keySave": "Save",
-    "keyClear": "Remove",
-    "keyStored": "✓ API key saved (keychain)",
-    "keyNone": "No key — the local summary is used",
-    "errKeyEmpty": "Paste the key first",
-    "errKeySaveFailed": "Could not save the key",
-    "errKeyClearFailed": "Could not remove the key"
-  },
   "search": {
     "title": "History",
-    "subtitle": "Search sermon text or filename, and browse your full recording history. Click a text hit to open the recording at that point.",
-    "placeholder": "Search sermon text or filename…",
-    "reindex": "↻ Refresh index",
-    "transcriptsLoaded": "transcripts indexed",
-    "segments": "segments",
+    "subtitle": "Search by filename, date or note, and browse your full recording history.",
+    "placeholder": "Search by filename, date or note…",
     "recordings": "recordings",
-    "matches": "matches",
     "noHits": "No matches for",
-    "indexFailed": "Could not load index",
     "noRecordingsTitle": "No recordings yet",
-    "noRecordingsDesc": "Once you record a service it shows up here. Transcribe a recording in Edit to search inside the sermon text."
+    "noRecordingsDesc": "Once you record a service it shows up here."
   },
   "dialog": {
     "ok": "OK",
@@ -1197,7 +1005,6 @@
     "autoDeleteConfirm": "Yes, delete automatically",
     "wakeTestTitle": "Test waking from sleep?",
     "wakeTestConfirm": "Start the test",
-    "deleteTranscriptBody": "The recording itself is kept. You can transcribe it again later.",
     "discardEditsBody": "The cuts you have made will be lost. The recording file itself is untouched.",
     "discardEdits": "Discard the changes"
   },
@@ -1250,7 +1057,6 @@
     "etaSeconds": "about {n} s left",
     "etaMinutes": "about {n} min left",
     "etaHours": "about {h} h left",
-    "etaHoursMinutes": "about {h} h {m} min left",
-    "preparing": "Preparing …"
+    "etaHoursMinutes": "about {h} h {m} min left"
   }
 }

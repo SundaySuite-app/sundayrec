@@ -41,16 +41,9 @@ jobs:
           # ffmpeg sidecar matches. Intel/universal is a follow-up (needs both
           # ffmpeg arches + a universal target).
           #
-          # macOS ships `whisper` (transcription) with the Metal GPU backend
-          # (Cargo.toml's macOS target gives whisper-rs the `metal` feature) —
-          # without it the installed app could neither download a model nor
-          # transcribe (everything degraded to `feature_disabled`).
-          # History: an earlier release hit a ggml i8mm-intrinsic compile error
-          # (`vmmlaq_s32` vs "requires target feature 'i8mm'") on the M1 runner
-          # and whisper was dropped. The crate builds cleanly on a local M1 Pro
-          # (same arch as the runner), so it's re-enabled; if the runner's
-          # toolchain still trips, drop `whisper` from this line only and fall
-          # back to shipping whisper-cli as a sidecar (the Electron approach).
+          # (v0.15: `whisper` left this line with the transcription feature —
+          # the build has no C/C++ toolchain dependency any more, so the old
+          # ggml i8mm-intrinsic caveat is history too.)
           # The leading `--` forwards the rest to cargo (tauri-action runs
           # `tauri build <args>`, and tauri-cli only passes args after `--` on).
           # `tray` ships the menubar/tray icon. It
@@ -59,18 +52,17 @@ jobs:
           # `email` ships the SMTP alerter — pure-Rust `lettre`, no native
           # dep. THESE LISTS ARE EXPLICIT: flipping Cargo.toml's `default` alone
           # never reaches a release, so both platform lines carry `email` too.
-          # (`streaming` left both lines in v0.14 — the feature is gone.)
+          # (`streaming` left both lines in v0.14, `whisper` in v0.15 — both
+          # features are gone.)
           - platform: macos-latest
-            args: "-- --no-default-features --features editor,tray,updater,whisper,email"
+            args: "-- --no-default-features --features editor,tray,updater,email"
           # Windows adds `asio`: a low-latency, single-device multichannel audio
           # backend for pro interfaces (the dshow path splits them into stereo
           # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
           # set up by the windows-only steps below (see docs/BUILD_ASIO.md). The
           # recorder falls back to WASAPI automatically when no ASIO driver exists.
-          # `whisper` stays OFF here pending a RUNTIME verification on a real
-          # Windows box (the MSVC *compile* is proven green on every push by
-          # ci.yml's windows-check job, which checks default features incl.
-          # whisper — enabling it here is an owner decision + rig test).
+          # ci.yml's windows-check job compiles this list minus `asio` on every
+          # push.
           - platform: windows-latest
             args: "-- --no-default-features --features editor,tray,asio,updater,email"
 

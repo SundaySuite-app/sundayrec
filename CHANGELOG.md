@@ -3,6 +3,43 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Upublisert (v0.15) — «Frivilligen først» R2: innholdsfunksjonene er fjernet
+
+SundayRec gjør fire ting nå — og bare dem: tar opp gudstjenesten, lar deg
+redigere opptaket, mikser/mastrer lyden og eksporterer fila. Runde to tar ut
+alt som handlet om INNHOLDET i prekenen heller enn opptaket av den. Koden
+ligger i git-historikken om noen trenger den igjen:
+
+- **Transkribering** (whisper) — «Transkriber»-knappen, modellnedlastingen,
+  SRT/VTT/TXT-eksporten, søket i preken-tekst under Historikk og kortet på
+  Hjem. Historikk-søket finner fortsatt filnavn, dato og notat. Transkripsjon
+  gjøres bedre av verktøy laget for det, og dette var den eneste delen av appen
+  som krevde en C/C++-kompilator for å bygge.
+- **Prekenhjelp** (AI-oppsummering, tittel og sitater) — panelet i
+  redigeringen og nøkkelfeltet under System. Har du lagt inn en
+  Anthropic-nøkkel, ligger den igjen i maskinens nøkkelring; slett den der om
+  du vil (Nøkkelringtilgang → søk «sundayrec»). Diagnostikken sender ikke
+  lenger hvilke forslag du tok i bruk — spørsmålet om samtykke er det samme,
+  det dekker nå mindre.
+- **Kapittelmerker** — «Legg til kapitler» og kapittellista. Et opptak som
+  allerede har kapitler i sidefila beholder dem, men de vises og eksporteres
+  ikke lenger.
+- **«Hva appen har lagt merke til» og «Hva appen har justert»** under System,
+  og bryteren «La appen lære av rettelsene mine». Rettelsene dine i
+  redigeringen («Er ikke dette prekenen?») lagres fortsatt ved opptaket og
+  telles (med samtykke) i diagnostikken — det er bare visningen og den lokale
+  justeringen som er borte.
+- **Video-fanen** har nå ett valg: kamera av/på, hvilket kamera, og om du vil
+  beholde en separat lydfil. Oppløsning (1080p eller kameraets maks), 30
+  bilder/s, MP4/H.264 og maskinvarekoding på Mac er bestemt én gang for alle.
+  Den separate lydfila følger lydformatet du har valgt under Filer.
+  Video-eksporten i redigeringen prøver alltid maskinvarekoding først på Mac
+  og faller tilbake til programvare om den feiler — bryteren er borte.
+- **Døde innstillinger** (felter ingenting leste: inngangsvolum, EQ,
+  kompressor, limiter, «trim stillhet», «minimer til menylinje» m.fl.) er
+  tatt ut av modellen. Gamle innstillinger og eksporterte profiler leses
+  trygt — de feltene droppes stille, alt annet beholdes.
+
 ## Uutgitt — «Frivilligen først» R1: delingsfunksjonene er fjernet
 
 SundayRec gjør fire jobber: ta opp, redigere, mikse/mastre og eksportere. Alt
@@ -23,8 +60,8 @@ noen trenger den igjen:
   bare via SMTP (vertsnavn, brukernavn og app-passord).
 
 Beholdt: «Send e-post ved feil» med én mottaker og SMTP-oppsettet, diagnostikk
-(med samtykke), og det appen lærer av rettelsene dine (visningen kommer i neste
-runde). Gamle innstillinger leses trygt — feltene som hørte til det fjernede
+(med samtykke), og det appen lærer av rettelsene dine (visningen ble tatt ut i
+R2 over). Gamle innstillinger leses trygt — feltene som hørte til det fjernede
 droppes stille, alt annet beholdes. Nøkler du hadde lagret for Google eller
 SundaySong ligger igjen i maskinens nøkkelring; slett dem der om du vil
 (Nøkkelringtilgang → søk «sundayrec»).

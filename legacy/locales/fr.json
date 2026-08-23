@@ -73,7 +73,6 @@
     "signalLoud": "Fort",
     "signalGood": "Bon",
     "signalWeak": "Faible",
-    "whisperLabel": "TRANSCRIPTION",
     "seeAll": "Voir tout →",
     "sourceChannels": "Canal {l}/{r}",
     "sourceChannelMono": "Canal {n}",
@@ -101,7 +100,9 @@
     "vuScaleQuiet": "Silence",
     "vuScaleMax": "Max",
     "cameraLabel": "CAMÉRA",
-    "videoQualityLabel": "QUALITÉ VIDÉO"
+    "videoQualityLabel": "QUALITÉ VIDÉO",
+    "videoWithSeparateAudio": "+ fichier audio séparé",
+    "videoOnlyMp4": "MP4 uniquement"
   },
   "update": {
     "checking": "Recherche de mises à jour…",
@@ -148,7 +149,6 @@
     "filterAll": "Tout",
     "filterAudio": "Audio",
     "filterVideo": "Vidéo",
-    "filterTranscript": "Avec transcription",
     "thisRecording": "cet enregistrement",
     "deleteFailed": "Suppression impossible",
     "clearNone": "La liste est vide",
@@ -490,8 +490,6 @@
     "format": "Format et qualité",
     "autoDelete": "Supprimer automatiquement après 90 jours",
     "autoDeleteDesc": "Libère automatiquement de l’espace disque en supprimant les anciens enregistrements",
-    "trimSilence": "Couper les silences",
-    "trimSilenceDesc": "Coupe automatiquement les secondes silencieuses au début et à la fin de l’enregistrement",
     "confirmAutoDeleteShort": {
       "one": "Les enregistrements de plus de {n} jour sont supprimés automatiquement et ne peuvent pas être récupérés.",
       "other": "Les enregistrements de plus de {n} jours sont supprimés automatiquement et ne peuvent pas être récupérés."
@@ -572,7 +570,6 @@
     "diagnoseTitle": "Diagnostic du périphérique audio",
     "savedChip": "Enregistré ✓",
     "saveFailed": "Impossible d’enregistrer le réglage",
-    "suiteAdvanced": "Avancé",
     "showInFolder": "Afficher dans le dossier",
     "telemetryCardTitle": "Confidentialité et diagnostics",
     "telemetryCardDesc": "Aidez Sunday Suite à améliorer SundayRec avec des diagnostics anonymes. Facultatif et désactivé par défaut — cela ne change rien au fonctionnement de SundayRec.",
@@ -602,82 +599,6 @@
     "telemetryPreviewHistoryHint": "Les diagnostics sont désactivés. Ceci montre la forme des données de votre propre historique local — rien n’est envoyé.",
     "telemetryPreviewEmptyHint": "Rien à envoyer pour le moment.",
     "telemetryPreviewFailed": "Impossible de charger l’aperçu.",
-    "learningCardTitle": "Ce que l’application a remarqué",
-    "learningCardDesc": "Ces observations existent pour que la détection automatique puisse s’améliorer — ce sont vos corrections qui la forment. Rien de tout cela n’est partagé, sauf si le diagnostic anonyme est activé.",
-    "learningCardWhere": "Tout est stocké localement, à côté de l’enregistrement concerné. Supprimer un enregistrement supprime aussi ses observations.",
-    "learningLoadBtn": "Afficher ce que l’application a remarqué",
-    "learningLoading": "Chargement…",
-    "learningLoadFailed": "Impossible de charger l’aperçu. Réessayez.",
-    "learningUnavailableRecording": "Indisponible pendant qu’un enregistrement est en cours.",
-    "learningEmptyBody": "Rien à afficher pour l’instant — c’est normal. Cela ne se remplit que lorsque vous corrigez quelque chose que l’application a mal deviné.",
-    "learningSermonPickZero": "Le choix automatique de la prédication n’a pas encore été corrigé.",
-    "learningSermonPick": {
-      "one": "Le choix automatique de la prédication a été corrigé {n} fois.",
-      "other": "Le choix automatique de la prédication a été corrigé {n} fois."
-    },
-    "learningStartTooEarly": {
-      "one": "Le début automatique tombe souvent trop tôt — en moyenne, vous l’avez déplacé de {n} seconde plus tard.",
-      "other": "Le début automatique tombe souvent trop tôt — en moyenne, vous l’avez déplacé de {n} secondes plus tard."
-    },
-    "learningStartTooLate": {
-      "one": "Le début automatique tombe souvent trop tard — en moyenne, vous l’avez déplacé de {n} seconde plus tôt.",
-      "other": "Le début automatique tombe souvent trop tard — en moyenne, vous l’avez déplacé de {n} secondes plus tôt."
-    },
-    "learningEndTooEarly": {
-      "one": "La fin automatique est souvent coupée trop tôt — en moyenne, vous l’avez déplacée de {n} seconde plus tard.",
-      "other": "La fin automatique est souvent coupée trop tôt — en moyenne, vous l’avez déplacée de {n} secondes plus tard."
-    },
-    "learningEndTooLate": {
-      "one": "La fin automatique tombe souvent trop tard — en moyenne, vous l’avez déplacée de {n} seconde plus tôt.",
-      "other": "La fin automatique tombe souvent trop tard — en moyenne, vous l’avez déplacée de {n} secondes plus tôt."
-    },
-    "learningCompanionSummary": "Parmi les suggestions de l’IA, {accepted} ont été utilisées ({edited} réécrites ensuite), et {leftAlone} laissées telles quelles.",
-    "localNudgeCardTitle": "Ce que l'application a ajusté",
-    "localNudgeCardDesc": "Si vous corrigez la même chose chaque dimanche, l'application peut déplacer sa propre proposition dans ce sens — pour cette machine uniquement. Rien n'est partagé avec qui que ce soit, et vous pouvez réinitialiser à tout moment.",
-    "localNudgeToggle": "Laisser l'application apprendre de mes corrections",
-    "localNudgeToggleHint": "Lorsque cette option est activée, l'application déplace sa propre proposition de début et de fin de prédication selon la façon dont vous la corrigez habituellement.",
-    "localNudgeLimitSeconds": {
-      "one": "Jamais de plus de {n} seconde.",
-      "other": "Jamais de plus de {n} secondes."
-    },
-    "localNudgeLimitRecordings": {
-      "one": "Et jamais avant que vous ayez corrigé au moins {n} enregistrement.",
-      "other": "Et jamais avant que vous ayez corrigé au moins {n} enregistrements."
-    },
-    "localNudgeOff": "L'application n'ajuste pas ses propres propositions. Elle devine exactement comme une application fraîchement installée.",
-    "localNudgeWaiting": {
-      "one": "L'application n'a encore rien ajusté. Elle attend que vous ayez corrigé au moins {n} enregistrement.",
-      "other": "L'application n'a encore rien ajusté. Elle attend que vous ayez corrigé au moins {n} enregistrements."
-    },
-    "localNudgeWaitingSoFar": {
-      "one": "Pour l'instant, elle en a {n} enregistrement.",
-      "other": "Pour l'instant, elle en a {n} enregistrements."
-    },
-    "localNudgeOn": "L'application a ajusté ses propres propositions d'après vos corrections :",
-    "localNudgeStartLater": {
-      "one": "L'application propose désormais que la prédication commence {n} seconde plus tard qu'elle ne l'aurait fait.",
-      "other": "L'application propose désormais que la prédication commence {n} secondes plus tard qu'elle ne l'aurait fait."
-    },
-    "localNudgeStartEarlier": {
-      "one": "L'application propose désormais que la prédication commence {n} seconde plus tôt qu'elle ne l'aurait fait.",
-      "other": "L'application propose désormais que la prédication commence {n} secondes plus tôt qu'elle ne l'aurait fait."
-    },
-    "localNudgeEndLater": {
-      "one": "L'application propose désormais que la prédication se termine {n} seconde plus tard qu'elle ne l'aurait fait.",
-      "other": "L'application propose désormais que la prédication se termine {n} secondes plus tard qu'elle ne l'aurait fait."
-    },
-    "localNudgeEndEarlier": {
-      "one": "L'application propose désormais que la prédication se termine {n} seconde plus tôt qu'elle ne l'aurait fait.",
-      "other": "L'application propose désormais que la prédication se termine {n} secondes plus tôt qu'elle ne l'aurait fait."
-    },
-    "localNudgeEvidence": {
-      "one": "Cela repose sur {n} correction de votre part.",
-      "other": "Cela repose sur {n} corrections de votre part."
-    },
-    "localNudgeAtLimit": "Vos corrections vont encore plus loin, mais l'application ne déplace jamais une proposition de plus de {limit} secondes. Si la proposition tombe toujours à côté, ce sont les enregistrements qu'il faut examiner — pas ce réglage.",
-    "localNudgeResetBtn": "Réinitialiser ce que l'application a appris",
-    "localNudgeResetDone": "Réinitialisé. L'application devine désormais exactement comme une application fraîchement installée et n'apprendra plus rien tant que vous ne réactivez pas l'option.",
-    "localNudgeLoadFailed": "Impossible de récupérer ce que l'application a ajusté. Réessayez.",
     "settingsProfileTitle": "Profil de réglages",
     "settingsProfileDesc": "Enregistrer tous les réglages dans un seul fichier — comme sauvegarde, ou pour configurer une autre machine à l’identique (p. ex. via une clé USB). Les mots de passe et clés de stream ne sont jamais inclus.",
     "settingsExportBtn": "Exporter les réglages…",
@@ -790,8 +711,6 @@
     "errTimeout": "L’export a pris trop de temps et a été arrêté. Réessayez ou divisez le fichier en plusieurs enregistrements.",
     "errFileNotFound": "Le fichier original n’est pas disponible — le disque est-il déconnecté ?",
     "errCutData": "Erreur interne dans les données de coupe. Essayez de recharger le fichier.",
-    "chaptersEmpty": "Pas encore de chapitres. Cliquez sur « + Ajouter à la tête de lecture » pour commencer.",
-    "chapterClickSeek": "Cliquer pour rechercher",
     "playbackViaProxy": "La lecture passe par un fichier intermédiaire temporaire (pleine qualité). L'export utilise toujours l'original.",
     "analyzingWaveform": "Analyse de la forme d’onde…",
     "preparingPlayback": "Préparation de la lecture…",
@@ -911,8 +830,6 @@
     "cancelAutostop": "Annuler l'arrêt auto"
   },
   "video": {
-    "minBitrateWarn": "Le débit minimal est de 500 kbps",
-    "maxBitrateWarn": "Le débit maximal est de 50 000 kbps",
     "title": "Enregistrement vidéo",
     "enableTitle": "Activer l’enregistrement vidéo",
     "enableDesc": "Capture la vidéo en plus de l’audio à chaque enregistrement",
@@ -921,40 +838,13 @@
     "cameraSearchPrompt": "Cliquez sur Actualiser pour rechercher des caméras",
     "refresh": "Actualiser",
     "cameraHint": "Les webcams USB et les cartes de capture HDMI sont prises en charge sur macOS et Windows.",
-    "qualityTitle": "Qualité",
-    "resolution": "RÉSOLUTION",
-    "recommended": "Recommandé",
-    "framerate": "FRÉQUENCE",
-    "fps30Recommended": "30 fps (Recommandé)",
-    "bitrate": "DÉBIT BINAIRE",
-    "bitrateAuto": "Automatique (recommandé — basé sur la résolution)",
-    "bitrateCustom": "Personnalisé",
-    "outputFormat": "Format de sortie",
-    "outputFormatDesc": "Choisissez si l’audio et la vidéo sont combinés dans un fichier ou enregistrés séparément.",
-    "combinedName": "MP4 combiné",
-    "combinedDesc": "Audio + vidéo dans un fichier — prêt pour YouTube",
-    "separateName": "Fichiers séparés",
-    "separateDesc": "L’audio et la vidéo sont enregistrés séparément",
-    "splitWarning": "Le découpage de fichier est actif — la vidéo est toujours enregistrée comme fichier séparé indépendamment du choix ci-dessus. Désactivez le découpage automatique dans les paramètres de planification pour combiner audio et vidéo en un MP4.",
-    "splitHint": "Avec le découpage automatique de fichiers, des fichiers séparés sont toujours utilisés.",
     "keepAudioTitle": "Conserver le fichier audio séparé",
     "keepAudioDesc": "Enregistre également le fichier audio haute qualité à côté du MP4 combiné",
-    "hwEncode": "Encodage matériel (VideoToolbox)",
-    "hwEncodeDesc": "Utilise l'encodage matériel (VideoToolbox) pour un export vidéo plus rapide sur Mac. Bascule automatiquement vers le logiciel en cas d'échec.",
     "cameraDelivers": "La caméra fournit au maximum",
-    "codec": "CODEC VIDÉO",
-    "codecH264": "H.264 (universel)",
-    "codecH265": "H.265 / HEVC (fichier plus petit)",
-    "container": "FORMAT",
-    "encoder": "ENCODEUR",
-    "encoderHardware": "Matériel – VideoToolbox (léger & fluide, recommandé)",
-    "encoderHint": "Matériel (VideoToolbox, Mac uniquement) : faible usage CPU → aperçu en direct fluide, moins de chaleur/batterie et 4K/H.265 en temps réel. Très bonne qualité avec un débit suffisant — recommandé pour la plupart. Logiciel (x264/x265) : qualité légèrement meilleure par taille de fichier, mais utilise beaucoup de CPU et peut rendre l’aperçu et les vumètres saccadés pendant l’enregistrement — choisissez-le quand la qualité par octet compte avant tout et que la machine ne fait rien d’autre en même temps.",
-    "encoderSoftware": "Logiciel – x264/x265 (qualité max par octet)",
-    "probeFailed": "Impossible de lire les résolutions de la caméra — limité à 1080p pour éviter la mise à l’échelle. La 4K nécessite une caméra qui fournit de la vraie 4K.",
-    "resNative": "maximum de la caméra",
-    "resNotSupported": "non pris en charge",
-    "resUnsupportedShort": "La résolution choisie n’est pas prise en charge — réglée sur le maximum de la caméra.",
-    "guardDevice": "Changer de caméra"
+    "probeFailed": "Impossible de lire les résolutions de la caméra — l'enregistrement utilise ce que la caméra fournit réellement, jusqu'à 1080p.",
+    "guardDevice": "Changer de caméra",
+    "outputTitle": "Les fichiers",
+    "outputDesc": "Les enregistrements vidéo sont sauvegardés en MP4 (1080p, 30 i/s, H.264) — ou à la résolution maximale de la caméra. Le fichier audio à côté suit le format audio choisi sous Fichiers."
   },
   "onboarding": {
     "welcomeTitle": "Bienvenue dans SundayRec",
@@ -1012,7 +902,7 @@
     "consentDesc": "Vous pouvez partager des diagnostics et des statistiques d’utilisation anonymes avec Sunday Suite, qui développe SundayRec. C’est toujours facultatif et cela ne change rien au fonctionnement de l’application — vous pouvez modifier votre réponse à tout moment dans Paramètres → Système.",
     "consentDetailsSummary": "Qu’est-ce qui serait collecté dans ce cas ?",
     "consentCatCrash": "Rapports de plantage — type d’erreur, le message d’erreur du programme, version de l’application et du système. Les chemins de fichiers sont nettoyés. Jamais de texte du sermon.",
-    "consentCatQuality": "Données de qualité — si un enregistrement a été complet (pourcentage de perte, verdict), des plages approximatives pour vos corrections dans l’éditeur, p. ex. « 30–60 secondes plus tôt », et quels types de suggestions automatiques vous utilisez — titre, résumé ou marques de chapitre — et si vous avez conservé ou réécrit le résultat. Jamais le contenu audio ni de texte. L’heure de l’événement est incluse, sans votre fuseau horaire.",
+    "consentCatQuality": "Données de qualité — si un enregistrement a été complet (pourcentage de perte, verdict), des plages approximatives pour vos corrections dans l’éditeur, p. ex. « 30–60 secondes plus tôt ». Jamais le contenu audio ni de texte. L’heure de l’événement est incluse, sans votre fuseau horaire.",
     "consentCatUsage": "Utilisation des fonctions — quelles fonctions vous utilisez, par ex. « export en MP3 ». Seulement des comptages, jamais le contenu.",
     "consentNever": "Jamais : audio, transcriptions, texte du sermon, noms, e-mail, noms d’appareils ou noms d’église.",
     "consentReadMore": "Lire la politique de confidentialité complète →",
@@ -1022,7 +912,7 @@
     "promptTitle": "Partager des diagnostics anonymes ?",
     "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Paramètres → Système.",
     "rePromptTitle": "Nous vous reposons la question",
-    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. L’application peut en outre indiquer quel type de suggestion vous avez utilisé — titre, résumé ou marques de chapitre — et si vous l’avez conservé tel quel ou réécrit. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici.",
+    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici.",
     "skipBtn": "Passer"
   },
   "time": {
@@ -1092,96 +982,14 @@
     "kbdHints": "Afficher les raccourcis clavier",
     "timelineLayers": "Ce que la timeline affiche"
   },
-  "transcript": {
-    "title": "Transcription",
-    "start": "▶ Transcrire",
-    "export": "↧ SRT",
-    "delete": "Supprimer",
-    "empty": "Aucune transcription. Cliquez sur « Transcrire » pour créer un texte consultable.",
-    "modalTitle": "Transcrire la parole en texte",
-    "modalDesc": "Utilise une IA locale (whisper.cpp) — aucune donnée vers le cloud.",
-    "modelLabel": "MODÈLE",
-    "langLabel": "LANGUE",
-    "langAuto": "Auto-détection",
-    "translateToEn": "Traduire en anglais simultanément",
-    "cancel": "Annuler",
-    "run": "Démarrer",
-    "progressTitle": "Transcription…",
-    "downloadTitle": "Téléchargement du modèle…",
-    "recommended": "Recommandé",
-    "speed": "Vitesse",
-    "size": "Taille",
-    "modelInstalled": "✓ Installé",
-    "segments": "segments",
-    "confirmDelete": "Supprimer la transcription ?",
-    "unavailable": "✕ Non disponible",
-    "unavailableHint": "La transcription n'est pas disponible dans cette version de l'application sur cette machine.",
-    "errNoBinary": "Whisper n’est pas disponible sur cette plateforme.",
-    "errStatusFailed": "Impossible de vérifier l’état de Whisper",
-    "errDownload": "Échec du téléchargement du modèle",
-    "errFailed": "Transcription échouée",
-    "exportVtt": "↧ VTT",
-    "chaptersAdded": "chapitres ajoutés",
-    "chaptersAllPresent": "Tous les chapitres détectés existent déjà",
-    "chaptersNoneFound": "Aucun chapitre thématique trouvé dans le discours",
-    "detectChapters": "✦ Générer des chapitres à partir des thèmes",
-    "detecting": "Analyse des thèmes…",
-    "errUnknownModel": "Modèle inconnu",
-    "exportTxt": "↧ Texte",
-    "exportDone": "Transcription enregistrée",
-    "exportFailed": "Impossible d'enregistrer la transcription",
-    "cancelling": "Annulation…",
-    "preparingModel": "Préparation du modèle…"
-  },
-  "companion": {
-    "title": "Aide au sermon",
-    "build": "✦ Créer l'aide au sermon",
-    "working": "Création de l'aide au sermon…",
-    "unavailable": "L'aide au sermon par IA n'est pas disponible pour le moment. La transcription et les chapitres fonctionnent toujours.",
-    "modeAi": "Mode IA",
-    "modeLocal": "Mode local",
-    "modeAiHint": "Une clé API est configurée — le résumé est produit par un modèle de langage",
-    "modeLocalHint": "Pas de clé API — le résumé est produit localement sur l'appareil",
-    "sourceAi": "Résumé IA",
-    "sourceLocal": "Résumé local",
-    "sourceAiHint": "Le résumé a été produit par un modèle de langage sur le serveur",
-    "sourceLocalHint": "Résumé local (pas de clé API) — entièrement sur l'appareil",
-    "highlightsTitle": "Citations",
-    "noHighlights": "Aucun temps fort net trouvé",
-    "useMeta": "→ Utiliser dans les métadonnées",
-    "useMetaHint": "Placer le titre + le résumé dans les métadonnées — utilisés à l'export et par SundayEdit/Stage",
-    "useChapters": {
-      "one": "→ Ajouter {n} chapitre",
-      "other": "→ Ajouter {n} chapitres"
-    },
-    "copy": "⧉ Copier",
-    "copied": "Copié",
-    "copyFailed": "Impossible de copier",
-    "metaApplied": "Ajouté aux métadonnées",
-    "metaAlready": "Déjà dans les métadonnées",
-    "settingsTitle": "Aide au sermon — résumé IA (facultatif)",
-    "settingsDesc": "Les chapitres et les citations sont toujours produits localement sur l'appareil. Pour un résumé et un titre plus soignés, vous pouvez coller une clé API Anthropic — elle est stockée uniquement dans le trousseau (OS keychain), jamais dans les réglages. Sans clé, un résumé local est utilisé.",
-    "keySave": "Enregistrer",
-    "keyClear": "Supprimer",
-    "keyStored": "✓ Clé API enregistrée (trousseau)",
-    "keyNone": "Aucune clé — le résumé local est utilisé",
-    "errKeyEmpty": "Collez d’abord la clé",
-    "errKeySaveFailed": "Impossible d'enregistrer la clé",
-    "errKeyClearFailed": "Impossible de supprimer la clé"
-  },
   "search": {
     "title": "Historique",
-    "subtitle": "Recherchez dans le texte du sermon ou le nom de fichier, et parcourez tout l'historique des enregistrements. Cliquez sur un résultat pour ouvrir l'enregistrement à ce point.",
-    "placeholder": "Rechercher dans le sermon ou le nom de fichier…",
-    "reindex": "↻ Actualiser l’index",
-    "transcriptsLoaded": "transcriptions indexées",
-    "segments": "segments",
+    "subtitle": "Recherchez par nom de fichier, date ou note, et parcourez tout l’historique des enregistrements.",
+    "placeholder": "Rechercher par nom de fichier, date ou note…",
     "recordings": "enregistrements",
-    "matches": "résultats",
     "noHits": "Aucun résultat pour",
-    "indexFailed": "Impossible de charger l’index",
     "noRecordingsTitle": "Aucun enregistrement pour l'instant",
-    "noRecordingsDesc": "Une fois un office enregistré, il apparaît ici. Transcrivez un enregistrement dans Éditer pour rechercher dans le texte du sermon."
+    "noRecordingsDesc": "Une fois un culte enregistré, il apparaît ici."
   },
   "dialog": {
     "ok": "OK",
@@ -1197,7 +1005,6 @@
     "autoDeleteConfirm": "Oui, supprimer automatiquement",
     "wakeTestTitle": "Tester le réveil depuis la veille ?",
     "wakeTestConfirm": "Lancer le test",
-    "deleteTranscriptBody": "L’enregistrement lui-même est conservé. Vous pourrez le transcrire à nouveau plus tard.",
     "discardEditsBody": "Les coupes que vous avez faites seront perdues. Le fichier d’enregistrement lui-même n’est pas touché.",
     "discardEdits": "Abandonner les modifications"
   },
@@ -1250,7 +1057,6 @@
     "etaSeconds": "environ {n} s restantes",
     "etaMinutes": "environ {n} min restantes",
     "etaHours": "environ {h} h restantes",
-    "etaHoursMinutes": "environ {h} h {m} min restantes",
-    "preparing": "Préparation …"
+    "etaHoursMinutes": "environ {h} h {m} min restantes"
   }
 }

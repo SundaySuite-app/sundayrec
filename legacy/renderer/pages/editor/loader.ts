@@ -11,10 +11,9 @@ import { clampPlayable, clampMain } from './geometry'
 import { snapOutOfCut } from './canvas-input'
 import { stopPlay, startPlay, seekMediaTo, updateTimecode, updateTotalTime } from './playback'
 import { renderAnalyzePanel, runDetection } from './detection'
-import { renderMetaPanel, renderChapterList } from './metadata'
+import { renderMetaPanel } from './metadata'
 import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
-import { loadTranscriptForFile } from '../editor-transcript'
 
 import { showState, showEditorError, updateHeaderSummary } from '../editor-page'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
@@ -33,7 +32,7 @@ import { attachProgress, type ProgressHandle } from '../../ui/progress'
 //      whole file, which is why big files sounded like a telephone.
 //   3. The waveform: the backend streams the decode into 100 peaks/s and caches
 //      it beside the recording, so every reopen is a JSON read.
-//   4. Sidecars — metadata, transcript, unsaved cuts — none of them blocking.
+//   4. Sidecars — metadata, unsaved cuts — none of them blocking.
 //
 // `E.loadSeq` guards all of it: every await re-checks it, so a user who opens a
 // second file mid-load never gets the first one's peaks, duration or transport.
@@ -211,7 +210,7 @@ async function loadAudioFile(fp: string, ext: string, seq: number): Promise<bool
   E.duration = duration
 
   if (!E.peaks) {
-    // Flat waveform rather than an empty screen: cuts, chapters and export all
+    // Flat waveform rather than an empty screen: cuts and export all
     // work off the timeline, which we now have.
     E.peaks = new Float32Array(Math.ceil(E.duration * 100))
     console.log('[editor] no peaks available (flat waveform), duration:', E.duration.toFixed(1) + 's')
@@ -265,7 +264,7 @@ export async function loadFile(fp: string): Promise<void> {
   // new file's is set up below.
   teardownPlayback()
   E.playStartSec = 0
-  E.meta = { title: '', speaker: '', description: '', chapters: [] }
+  E.meta = { title: '', speaker: '', description: '' }
   E.metaDirty = false
   // Fresh file → drop any previous peak-normalize gain and reset the UI.
   E.audioGainDb = 0
@@ -401,7 +400,6 @@ export async function loadFile(fp: string): Promise<void> {
   // Load metadata sidecar (fire-and-forget — it carries `seq` so a slow read
   // for THIS file can't overwrite a newer file's metadata when it lands).
   void loadMetadataSidecar(fp, fname, seq)
-  void loadTranscriptForFile(fp)
 
   // Restore unsaved cuts from a previous editing session that ended abruptly.
   // The sidecar is written every 2 s during editing and cleared on successful
@@ -737,13 +735,13 @@ export function updateEditorIntroOutroDisplay(): void {
 }
 
 /**
- * Read the `.meta` sidecar for `fp` and paint the metadata/chapter panels.
+ * Read the `.meta` sidecar for `fp` and paint the metadata panel.
  *
  * `seq` is the caller's `E.loadSeq` at the time it started, re-checked after the
  * await like every other step in this file (see the header's invariant). It was
  * the one loader step that did NOT: called fire-and-forget, a slow read for file
- * A resolved after the user had opened B and stamped A's title, speaker,
- * description and chapters onto B — which then got SAVED under B on the next
+ * A resolved after the user had opened B and stamped A's title, speaker and
+ * description onto B — which then got SAVED under B on the next
  * metadata edit. Omitting `seq` keeps the old unguarded behaviour for any caller
  * that genuinely has no load in flight.
  */
@@ -762,9 +760,7 @@ export async function loadMetadataSidecar(
       title: fname.replace(/\.[^.]+$/, '').replace(/_redigert(_\d+)?$/, '').replace(/_/g, ' '),
       speaker: '',
       description: '',
-      chapters: [],
     }
   }
   renderMetaPanel()
-  renderChapterList()
 }

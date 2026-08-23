@@ -73,7 +73,6 @@
     "signalLoud": "Højt",
     "signalGood": "Godt",
     "signalWeak": "Svagt",
-    "whisperLabel": "TRANSSKRIPTION",
     "seeAll": "Se alle →",
     "sourceChannels": "Kanal {l}/{r}",
     "sourceChannelMono": "Kanal {n}",
@@ -101,7 +100,9 @@
     "vuScaleQuiet": "Stille",
     "vuScaleMax": "Maks",
     "cameraLabel": "KAMERA",
-    "videoQualityLabel": "VIDEOKVALITET"
+    "videoQualityLabel": "VIDEOKVALITET",
+    "videoWithSeparateAudio": "+ separat lydfil",
+    "videoOnlyMp4": "Kun MP4"
   },
   "update": {
     "checking": "Søger efter opdateringer…",
@@ -148,7 +149,6 @@
     "filterAll": "Alle",
     "filterAudio": "Lyd",
     "filterVideo": "Video",
-    "filterTranscript": "Med transskription",
     "thisRecording": "denne optagelse",
     "deleteFailed": "Kunne ikke slette",
     "clearNone": "Listen er tom",
@@ -490,8 +490,6 @@
     "format": "Format & Kvalitet",
     "autoDelete": "Slet automatisk efter 90 dage",
     "autoDeleteDesc": "Frigør diskplads automatisk ved at slette gamle optagelser",
-    "trimSilence": "Klip stilhed væk",
-    "trimSilenceDesc": "Beskærer automatisk stille sekunder i starten og slutningen af optagelsen",
     "confirmAutoDeleteShort": {
       "one": "Optagelser ældre end {n} dag slettes automatisk og kan ikke gendannes.",
       "other": "Optagelser ældre end {n} dage slettes automatisk og kan ikke gendannes."
@@ -572,7 +570,6 @@
     "diagnoseTitle": "Diagnose af lydenhed",
     "savedChip": "Gemt ✓",
     "saveFailed": "Kunne ikke gemme indstillingen",
-    "suiteAdvanced": "Avanceret",
     "showInFolder": "Vis i mappe",
     "telemetryCardTitle": "Privatliv og diagnostik",
     "telemetryCardDesc": "Hjælp Sunday Suite med at gøre SundayRec bedre med anonym diagnostik. Frivilligt og slået fra som standard — det ændrer intet ved, hvordan SundayRec fungerer.",
@@ -602,82 +599,6 @@
     "telemetryPreviewHistoryHint": "Diagnostik er slået fra. Dette viser formen på dataene fra din egen lokale historik — intet sendes.",
     "telemetryPreviewEmptyHint": "Intet at sende lige nu.",
     "telemetryPreviewFailed": "Kunne ikke hente forhåndsvisningen.",
-    "learningCardTitle": "Hvad appen har lagt mærke til",
-    "learningCardDesc": "Disse observationer findes, så den automatiske genkendelse kan blive bedre — det er dine rettelser, der lærer den op. Intet herfra deles med nogen, medmindre anonym diagnostik er slået til.",
-    "learningCardWhere": "Alt gemmes lokalt, sammen med den optagelse det gælder. Sletter du en optagelse, forsvinder observationerne fra den optagelse også.",
-    "learningLoadBtn": "Vis hvad appen har lagt mærke til",
-    "learningLoading": "Henter…",
-    "learningLoadFailed": "Kunne ikke hente oversigten. Prøv igen.",
-    "learningUnavailableRecording": "Ikke tilgængelig mens en optagelse kører.",
-    "learningEmptyBody": "Intet at vise endnu — helt normalt. Dette udfyldes kun, når du retter noget, appen gættede forkert på.",
-    "learningSermonPickZero": "Det automatiske prækenvalg er ikke rettet endnu.",
-    "learningSermonPick": {
-      "one": "Det automatiske prækenvalg er rettet {n} gang.",
-      "other": "Det automatiske prækenvalg er rettet {n} gange."
-    },
-    "learningStartTooEarly": {
-      "one": "Den automatiske start rammer ofte for tidligt — i gennemsnit har du flyttet den {n} sekund senere.",
-      "other": "Den automatiske start rammer ofte for tidligt — i gennemsnit har du flyttet den {n} sekunder senere."
-    },
-    "learningStartTooLate": {
-      "one": "Den automatiske start rammer ofte for sent — i gennemsnit har du flyttet den {n} sekund tidligere.",
-      "other": "Den automatiske start rammer ofte for sent — i gennemsnit har du flyttet den {n} sekunder tidligere."
-    },
-    "learningEndTooEarly": {
-      "one": "Den automatiske slutning bliver ofte klippet for tidligt — i gennemsnit har du flyttet den {n} sekund senere.",
-      "other": "Den automatiske slutning bliver ofte klippet for tidligt — i gennemsnit har du flyttet den {n} sekunder senere."
-    },
-    "learningEndTooLate": {
-      "one": "Den automatiske slutning rammer ofte for sent — i gennemsnit har du flyttet den {n} sekund tidligere.",
-      "other": "Den automatiske slutning rammer ofte for sent — i gennemsnit har du flyttet den {n} sekunder tidligere."
-    },
-    "learningCompanionSummary": "Af AI-forslagene er {accepted} taget i brug ({edited} omskrevet bagefter), og {leftAlone} ladt urørt.",
-    "localNudgeCardTitle": "Hvad appen har justeret",
-    "localNudgeCardDesc": "Retter du det samme hver søndag, kan appen flytte sit eget forslag den vej — kun for denne maskine. Intet herfra deles med nogen, og du kan nulstille når som helst.",
-    "localNudgeToggle": "Lad appen lære af mine rettelser",
-    "localNudgeToggleHint": "Når dette er slået til, flytter appen sit eget forslag til prædikenens start og slut efter, hvordan du plejer at rette det.",
-    "localNudgeLimitSeconds": {
-      "one": "Aldrig mere end {n} sekund.",
-      "other": "Aldrig mere end {n} sekunder."
-    },
-    "localNudgeLimitRecordings": {
-      "one": "Og aldrig før du har rettet mindst {n} optagelse.",
-      "other": "Og aldrig før du har rettet mindst {n} optagelser."
-    },
-    "localNudgeOff": "Appen justerer ikke sine egne forslag. Den gætter på nøjagtig samme måde som en nyinstalleret app.",
-    "localNudgeWaiting": {
-      "one": "Appen har ikke justeret noget endnu. Den venter, til du har rettet mindst {n} optagelse.",
-      "other": "Appen har ikke justeret noget endnu. Den venter, til du har rettet mindst {n} optagelser."
-    },
-    "localNudgeWaitingSoFar": {
-      "one": "Indtil videre har den {n} optagelse.",
-      "other": "Indtil videre har den {n} optagelser."
-    },
-    "localNudgeOn": "Appen har justeret sine egne forslag efter dine rettelser:",
-    "localNudgeStartLater": {
-      "one": "Appen foreslår nu, at prædikenen starter {n} sekund senere, end den ellers ville.",
-      "other": "Appen foreslår nu, at prædikenen starter {n} sekunder senere, end den ellers ville."
-    },
-    "localNudgeStartEarlier": {
-      "one": "Appen foreslår nu, at prædikenen starter {n} sekund tidligere, end den ellers ville.",
-      "other": "Appen foreslår nu, at prædikenen starter {n} sekunder tidligere, end den ellers ville."
-    },
-    "localNudgeEndLater": {
-      "one": "Appen foreslår nu, at prædikenen slutter {n} sekund senere, end den ellers ville.",
-      "other": "Appen foreslår nu, at prædikenen slutter {n} sekunder senere, end den ellers ville."
-    },
-    "localNudgeEndEarlier": {
-      "one": "Appen foreslår nu, at prædikenen slutter {n} sekund tidligere, end den ellers ville.",
-      "other": "Appen foreslår nu, at prædikenen slutter {n} sekunder tidligere, end den ellers ville."
-    },
-    "localNudgeEvidence": {
-      "one": "Det bygger på {n} rettelse fra dig.",
-      "other": "Det bygger på {n} rettelser fra dig."
-    },
-    "localNudgeAtLimit": "Dine rettelser peger endnu længere, men appen flytter aldrig et forslag mere end {limit} sekunder. Rammer forslaget stadig dårligt, er det optagelserne, der bør ses på — ikke denne indstilling.",
-    "localNudgeResetBtn": "Nulstil det, appen har lært",
-    "localNudgeResetDone": "Nulstillet. Appen gætter nu på nøjagtig samme måde som en nyinstalleret app og lærer ikke mere, før du slår det til igen.",
-    "localNudgeLoadFailed": "Kunne ikke hente, hvad appen har justeret. Prøv igen.",
     "settingsProfileTitle": "Indstillingsprofil",
     "settingsProfileDesc": "Gem alle indstillinger som én fil — som sikkerhedskopi, eller for at sætte en anden maskine op på samme måde (fx via USB-stik). Adgangskoder og streamnøgler er aldrig med.",
     "settingsExportBtn": "Eksportér indstillinger…",
@@ -790,8 +711,6 @@
     "errTimeout": "Eksporten tog for lang tid og blev stoppet. Prøv igen, eller del filen i mindre optagelser.",
     "errFileNotFound": "Originalfilen er ikke tilgængelig — er disken afbrudt?",
     "errCutData": "Intern fejl i klippedata. Prøv at genindlæse filen.",
-    "chaptersEmpty": "Ingen kapitler endnu. Klik på \"+ Tilføj ved afspilningsmarkør\" for at starte.",
-    "chapterClickSeek": "Klik for at søge",
     "playbackViaProxy": "Afspilningen går via en midlertidig mellemfil (fuld kvalitet). Eksport bruger altid originalen.",
     "analyzingWaveform": "Analyserer bølgeform…",
     "preparingPlayback": "Klargør afspilning…",
@@ -911,8 +830,6 @@
     "cancelAutostop": "Annullér autostop"
   },
   "video": {
-    "minBitrateWarn": "Mindste bitrate er 500 kbps",
-    "maxBitrateWarn": "Største bitrate er 50.000 kbps",
     "title": "Videooptagelse",
     "enableTitle": "Aktivér videooptagelse",
     "enableDesc": "Optager video udover lyd ved hver optagelse",
@@ -921,40 +838,13 @@
     "cameraSearchPrompt": "Klik på Opdater for at søge efter kameraer",
     "refresh": "Opdater",
     "cameraHint": "USB-webkameraer og HDMI-optagelseskort understøttes på macOS og Windows.",
-    "qualityTitle": "Kvalitet",
-    "resolution": "OPLØSNING",
-    "recommended": "Anbefales",
-    "framerate": "BILLEDFREKVENS",
-    "fps30Recommended": "30 fps (Anbefales)",
-    "bitrate": "BITHASTIGHED",
-    "bitrateAuto": "Automatisk (anbefales — baseret på opløsning)",
-    "bitrateCustom": "Brugerdefineret",
-    "outputFormat": "Outputformat",
-    "outputFormatDesc": "Vælg om lyd og video skal kombineres i én fil eller gemmes separat.",
-    "combinedName": "Kombineret MP4",
-    "combinedDesc": "Lyd + video i én fil — klar til YouTube",
-    "separateName": "Separate filer",
-    "separateDesc": "Lyd og video gemmes hver for sig",
-    "splitWarning": "Filopdeling er aktiv — video gemmes altid som separat fil uanset valget ovenfor. Deaktiver automatisk opdeling i planlægningsindstillinger for at kombinere lyd og video i én MP4.",
-    "splitHint": "Ved automatisk filopdeling bruges altid separate filer.",
     "keepAudioTitle": "Behold separat lydfil",
     "keepAudioDesc": "Gemmer også den højkvalitets lydfil ved siden af den kombinerede MP4",
-    "hwEncode": "Hardwarekodning (VideoToolbox)",
-    "hwEncodeDesc": "Bruger hardwarekodning (VideoToolbox) til hurtigere videoeksport på Mac. Falder automatisk tilbage til software, hvis det fejler.",
     "cameraDelivers": "Kameraet leverer maks.",
-    "codec": "VIDEOCODEC",
-    "codecH264": "H.264 (universel)",
-    "codecH265": "H.265 / HEVC (mindre fil)",
-    "container": "FORMAT",
-    "encoder": "ENCODER",
-    "encoderHardware": "Hardware – VideoToolbox (let & jævn, anbefales)",
-    "encoderHint": "Hardware (VideoToolbox, kun Mac): lavt CPU-forbrug → jævn live-forhåndsvisning, mindre varme/batteri og realtids-4K/H.265. Meget god kvalitet ved tilstrækkelig bitrate — anbefales til de fleste. Software (x264/x265): lidt bedre kvalitet pr. filstørrelse, men bruger meget CPU og kan gøre forhåndsvisning og målere hakkende under optagelse — vælg den, når kvalitet pr. byte betyder allermest, og maskinen ikke laver andet samtidig.",
-    "encoderSoftware": "Software – x264/x265 (maks. kvalitet pr. byte)",
-    "probeFailed": "Kunne ikke læse kameraets opløsninger — begrænset til 1080p for at undgå opskalering. 4K kræver et kamera, der leverer ægte 4K.",
-    "resNative": "kameraets maks.",
-    "resNotSupported": "understøttes ikke",
-    "resUnsupportedShort": "Den valgte opløsning understøttes ikke — sat til kameraets maks.",
-    "guardDevice": "Skifte kamera"
+    "probeFailed": "Kunne ikke læse kameraets opløsninger — optagelsen bruger det, kameraet faktisk leverer, op til 1080p.",
+    "guardDevice": "Skifte kamera",
+    "outputTitle": "Filerne",
+    "outputDesc": "Videooptagelser gemmes som MP4 (1080p, 30 billeder/s, H.264) — eller så højt som kameraet leverer. Lydfilen ved siden af følger det lydformat, du har valgt under Filer."
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",
@@ -1012,7 +902,7 @@
     "consentDesc": "Du kan dele anonym diagnostik og brugsstatistik med Sunday Suite, som udvikler SundayRec. Det er altid frivilligt og ændrer intet ved, hvordan appen fungerer — du kan ændre dit svar når som helst under Indstillinger → System.",
     "consentDetailsSummary": "Hvad ville i så fald blive indsamlet?",
     "consentCatCrash": "Nedbrudsrapporter — fejltype, programmets fejlmeddelelse, app- og OS-version. Filstier vaskes bort. Aldrig tekst fra prædikenen.",
-    "consentCatQuality": "Kvalitetsdata — om en optagelse blev komplet (tabsprocent, resultat), grove intervaller for dine rettelser i redigeringsværktøjet, f.eks. »30–60 sekunder tidligere«, og hvilke typer automatiske forslag du bruger — titel, resumé eller kapitelmærker — og om du beholdt eller omskrev resultatet. Aldrig lydindholdet eller tekst. Tidspunktet følger med, uden din tidszone.",
+    "consentCatQuality": "Kvalitetsdata — om en optagelse blev komplet (tabsprocent, resultat), grove intervaller for dine rettelser i redigeringsværktøjet, f.eks. »30–60 sekunder tidligere«. Aldrig lydindholdet eller tekst. Tidspunktet følger med, uden din tidszone.",
     "consentCatUsage": "Funktionsbrug — hvilke funktioner du bruger, f.eks. »eksport til MP3«. Kun antal, aldrig indhold.",
     "consentNever": "Aldrig: lyd, transskriptioner, prædikentekst, navne, e-mail, enhedsnavne eller kirkenavne.",
     "consentReadMore": "Læs hele privatlivspolitikken →",
@@ -1022,7 +912,7 @@
     "promptTitle": "Dele anonym diagnostik?",
     "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → System.",
     "rePromptTitle": "Vi spørger dig igen",
-    "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Appen kan desuden angive hvilken type forslag du brugte — titel, resumé eller kapitelmærker — og om du beholdt det, som det var, eller omskrev det. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her.",
+    "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her.",
     "skipBtn": "Spring over"
   },
   "time": {
@@ -1092,96 +982,14 @@
     "kbdHints": "Vis tastaturgenveje",
     "timelineLayers": "Hvad tidslinjen viser"
   },
-  "transcript": {
-    "title": "Transskribering",
-    "start": "▶ Transskribér",
-    "export": "↧ SRT",
-    "delete": "Slet",
-    "empty": "Ingen transskribering endnu. Klik \"Transskribér\" for at lave søgbar tekst.",
-    "modalTitle": "Transskribér tale til tekst",
-    "modalDesc": "Bruger lokal AI (whisper.cpp) — ingen data sendes til skyen.",
-    "modelLabel": "MODEL",
-    "langLabel": "SPROG",
-    "langAuto": "Auto-detektér",
-    "translateToEn": "Oversæt til engelsk samtidig",
-    "cancel": "Annullér",
-    "run": "Start",
-    "progressTitle": "Transskriberer…",
-    "downloadTitle": "Henter model…",
-    "recommended": "Anbefales",
-    "speed": "Hastighed",
-    "size": "Størrelse",
-    "modelInstalled": "✓ Hentet",
-    "segments": "segmenter",
-    "confirmDelete": "Slet transskriberingen?",
-    "unavailable": "✕ Ikke tilgængelig",
-    "unavailableHint": "Transskribering er ikke tilgængelig i denne version af appen på denne maskine.",
-    "errNoBinary": "Whisper er ikke tilgængelig på denne platform.",
-    "errStatusFailed": "Kunne ikke tjekke Whisper-status",
-    "errDownload": "Model-download mislykkedes",
-    "errFailed": "Transskribering mislykkedes",
-    "exportVtt": "↧ VTT",
-    "chaptersAdded": "kapitler tilføjet",
-    "chaptersAllPresent": "Alle fundne kapitler findes allerede",
-    "chaptersNoneFound": "Fandt ingen temakapitler i talen",
-    "detectChapters": "✦ Generér kapitler ud fra temaer",
-    "detecting": "Analyserer temaer…",
-    "errUnknownModel": "Ukendt model",
-    "exportTxt": "↧ Tekst",
-    "exportDone": "Transskription gemt",
-    "exportFailed": "Kunne ikke gemme transskriptionen",
-    "cancelling": "Annullerer…",
-    "preparingModel": "Forbereder model…"
-  },
-  "companion": {
-    "title": "Prædikenhjælp",
-    "build": "✦ Lav prædikenhjælp",
-    "working": "Laver prædikenhjælp…",
-    "unavailable": "AI-prædikenhjælp er ikke tilgængelig lige nu. Transskription og kapitler virker stadig.",
-    "modeAi": "AI-tilstand",
-    "modeLocal": "Lokal tilstand",
-    "modeAiHint": "En API-nøgle er konfigureret — opsummeringen laves af en sprogmodel",
-    "modeLocalHint": "Ingen API-nøgle — opsummeringen laves lokalt på enheden",
-    "sourceAi": "AI-opsummering",
-    "sourceLocal": "Lokal opsummering",
-    "sourceAiHint": "Opsummeringen er lavet af en sprogmodel på serveren",
-    "sourceLocalHint": "Lokal opsummering (ingen API-nøgle) — helt på enheden",
-    "highlightsTitle": "Citater",
-    "noHighlights": "Ingen tydelige højdepunkter fundet",
-    "useMeta": "→ Brug i metadata",
-    "useMetaHint": "Læg titel + opsummering i metadata — bruges ved eksport og af SundayEdit/Stage",
-    "useChapters": {
-      "one": "→ Tilføj {n} kapitel",
-      "other": "→ Tilføj {n} kapitler"
-    },
-    "copy": "⧉ Kopiér",
-    "copied": "Kopieret",
-    "copyFailed": "Kunne ikke kopiere",
-    "metaApplied": "Tilføjet til metadata",
-    "metaAlready": "Allerede i metadata",
-    "settingsTitle": "Prædikenhjælp — AI-opsummering (valgfrit)",
-    "settingsDesc": "Kapitler og citater laves altid lokalt på enheden. Vil du have en finere opsummering og titel, kan du indsætte en Anthropic API-nøgle — den gemmes kun i nøgleringen (OS keychain), aldrig i indstillinger. Uden nøgle bruges en lokal opsummering.",
-    "keySave": "Gem",
-    "keyClear": "Fjern",
-    "keyStored": "✓ API-nøgle gemt (nøglering)",
-    "keyNone": "Ingen nøgle — lokal opsummering bruges",
-    "errKeyEmpty": "Indsæt nøglen først",
-    "errKeySaveFailed": "Kunne ikke gemme nøglen",
-    "errKeyClearFailed": "Kunne ikke fjerne nøglen"
-  },
   "search": {
     "title": "Historik",
-    "subtitle": "Søg i prædikentekst eller filnavn, og se hele optagelseshistorikken. Klik på et tekst-træf for at åbne optagelsen på det punkt.",
-    "placeholder": "Søg i prædiken eller filnavn…",
-    "reindex": "↻ Opdater indeks",
-    "transcriptsLoaded": "transskriberinger indekseret",
-    "segments": "segmenter",
+    "subtitle": "Søg i filnavn, dato eller note, og se hele optagelseshistorikken.",
+    "placeholder": "Søg i filnavn, dato eller note…",
     "recordings": "optagelser",
-    "matches": "hits",
     "noHits": "Ingen hits for",
-    "indexFailed": "Kunne ikke indlæse indeks",
     "noRecordingsTitle": "Ingen optagelser endnu",
-    "noRecordingsDesc": "Når du har optaget en gudstjeneste, vises den her. Transskriber en optagelse i Rediger for at søge i selve prædikenteksten."
+    "noRecordingsDesc": "Når du har optaget en gudstjeneste, dukker den op her."
   },
   "dialog": {
     "ok": "OK",
@@ -1197,7 +1005,6 @@
     "autoDeleteConfirm": "Ja, slet automatisk",
     "wakeTestTitle": "Test opvågning fra dvale?",
     "wakeTestConfirm": "Start testen",
-    "deleteTranscriptBody": "Selve optagelsen beholdes. Du kan transskribere igen senere.",
     "discardEditsBody": "De klip, du har lavet, går tabt. Selve optagelsesfilen røres ikke.",
     "discardEdits": "Kassér ændringerne"
   },
@@ -1250,7 +1057,6 @@
     "etaSeconds": "ca. {n} s tilbage",
     "etaMinutes": "ca. {n} min tilbage",
     "etaHours": "ca. {h} t tilbage",
-    "etaHoursMinutes": "ca. {h} t {m} min tilbage",
-    "preparing": "Forbereder …"
+    "etaHoursMinutes": "ca. {h} t {m} min tilbage"
   }
 }

@@ -443,7 +443,10 @@ describe("the folded history", () => {
     expect(s.unrecognised).toBe(4);
   });
 
-  it("companion outcomes merge the same way", () => {
+  it("companion outcomes are reported as not collected since v0.15, with the leftover count", () => {
+    // The AI companion left in v0.15 and `companionOutcomes` left the wire
+    // with it. Rows the Worker still holds from older builds are counted as
+    // history, never rendered as if a constant could move on them.
     const summary = {
       ...emptySummary,
       companionOutcomes: [{ kind: "title", outcome: "kept", n: 3 }],
@@ -462,6 +465,18 @@ describe("the folded history", () => {
       bar: BAR,
       generatedAt: "2026-08-08T00:00:00.000Z",
     });
-    expect(text).toContain("kept 3, kept 7   (10)");
+    expect(text).toContain("COMPANION SUGGESTIONS — NOT COLLECTED since v0.15");
+    expect(text).toContain("10 historical outcome(s)");
+    expect(text).not.toContain("kept 3");
+
+    const none = renderReport({
+      summary: emptySummary,
+      channels,
+      history: null,
+      bar: BAR,
+      generatedAt: "2026-08-08T00:00:00.000Z",
+    });
+    expect(none).toContain("NOT COLLECTED since v0.15");
+    expect(none).not.toContain("historical outcome");
   });
 });

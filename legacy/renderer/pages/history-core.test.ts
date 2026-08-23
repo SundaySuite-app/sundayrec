@@ -178,35 +178,23 @@ describe('filterRecordings', () => {
     row({ path: AUDIO }),
     row({ path: '/rec/preken.flac' }),
   ]
-  const transcribed = new Set(['/rec/preken'])
-  const hasTranscript = (r: RecordingEntry): boolean => transcribed.has(baseNoExt(r.path))
 
   it('passes everything through on «Alle»', () => {
-    expect(filterRecordings(rows, 'all', hasTranscript)).toHaveLength(3)
+    expect(filterRecordings(rows, 'all')).toHaveLength(3)
   })
 
   it('keeps only audio containers on «Lyd»', () => {
-    expect(filterRecordings(rows, 'audio', hasTranscript).map(r => r.path)).toEqual([
+    expect(filterRecordings(rows, 'audio').map(r => r.path)).toEqual([
       AUDIO, '/rec/preken.flac',
     ])
   })
 
   it('keeps only video containers on «Video»', () => {
-    expect(filterRecordings(rows, 'video', hasTranscript).map(r => r.path)).toEqual([VIDEO])
-  })
-
-  it('keeps only rows with a transcript sidecar on «Med transkript»', () => {
-    expect(filterRecordings(rows, 'transcript', hasTranscript).map(r => r.path)).toEqual([
-      '/rec/preken.flac',
-    ])
-  })
-
-  it('treats a missing transcript index as "nothing is transcribed"', () => {
-    expect(filterRecordings(rows, 'transcript')).toEqual([])
+    expect(filterRecordings(rows, 'video').map(r => r.path)).toEqual([VIDEO])
   })
 
   it('does not mutate the input', () => {
-    const copy = filterRecordings(rows, 'all', hasTranscript)
+    const copy = filterRecordings(rows, 'all')
     copy.pop()
     expect(rows).toHaveLength(3)
   })

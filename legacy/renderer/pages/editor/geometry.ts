@@ -3,7 +3,7 @@ import { E } from './state'
 // Coordinate model
 // ----------------
 // `vpStart` / `vpEnd` are in MAIN-FILE seconds — the same coordinate system
-// that `cuts`, `chapters`, `peaks`, and playback seek use.
+// that `cuts`, `peaks`, and playback seek use.
 //
 // When `includeIntroOutro` is enabled and the viewport reaches the file edges
 // (vpStart=0 or vpEnd=duration), the canvas is split into three regions:

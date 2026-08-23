@@ -37,7 +37,6 @@ import { toast } from "./ui/toast";
 import { t } from "./i18n";
 import type { TrashEntry } from "../bindings/TrashEntry";
 import type { Settings } from "../bindings/Settings";
-import { errorCode } from "./error-code-core";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
@@ -304,8 +303,6 @@ const EVENT_MAP: Record<string, string> = {
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "master-progress": "editor-master-progress",
-  "whisper-progress": "whisper://progress",
-  "whisper-model-progress": "whisper://model-progress",
   "editor-export-progress": "editor://export-progress",
   // Fase 9: the three editor passes that used to run for minutes behind a
   // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
@@ -445,7 +442,7 @@ async function loadSettingsFromBackend(): Promise<Settings> {
   }
   if (VERIFY_GOTO) {
     // Skip onboarding during verify screenshots (session-only, never saved).
-    s = { ...s, hasLaunched: true, onboardingDone: true };
+    s = { ...s, onboardingDone: true };
   }
   return s;
 }
@@ -1092,55 +1089,6 @@ const api: Record<string, unknown> = {
     }
   },
 
-  // ── Learning-feedback transparency (E8.T) ─────────────────────────────────
-  // `learning_feedback_summary` (commands/db.rs) walks the recording history
-  // and folds every `<stem>.feedback.json` sidecar it finds into counts + a
-  // trim-direction verdict — never audio, transcript text, suggestion text,
-  // a recording name, a path, or a clock time (see LearningSummary's own doc
-  // comment). `null` ONLY on a genuine IPC failure: unlike `call()`'s usual
-  // zero-value fallback, a summary of all zeros is itself a real answer ("no
-  // corrections yet"), so this must never be confused with "the read failed".
-  learningFeedbackSummary: async () => {
-    try {
-      return await invoke<import("../bindings/LearningSummary").LearningSummary>(
-        "learning_feedback_summary",
-      );
-    } catch (e) {
-      console.warn("[api-shim] learning_feedback_summary failed", e);
-      return null;
-    }
-  },
-
-  // ── What the app has adjusted about itself (E10) ──────────────────────────
-  // `learning_local_nudge` reads one `app_setting` row and returns two clamped
-  // offsets plus their evidence counts — the same privacy shape as
-  // LearningSummary above, and no history walk. `null` ONLY on a genuine IPC
-  // failure, for the same reason: an all-zero nudge is a real answer ("the app
-  // has adjusted nothing"), and a failed round-trip must never be shown as one.
-  learningLocalNudge: async () => {
-    try {
-      return await invoke<import("../bindings/LocalNudge").LocalNudge>("learning_local_nudge");
-    } catch (e) {
-      console.warn("[api-shim] learning_local_nudge failed", e);
-      return null;
-    }
-  },
-
-  // Zeroes the learned offsets AND turns adaptivity off — see
-  // `learning::reset_nudge` for why neither half alone is a reset. `null` on
-  // failure so the card can say "that did not work" instead of showing the
-  // shipped state it did not actually return to.
-  learningLocalNudgeReset: async () => {
-    try {
-      return await invoke<import("../bindings/LocalNudge").LocalNudge>(
-        "learning_local_nudge_reset",
-      );
-    } catch (e) {
-      console.warn("[api-shim] learning_local_nudge_reset failed", e);
-      return null;
-    }
-  },
-
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone
@@ -1320,14 +1268,8 @@ const api: Record<string, unknown> = {
     const o = (params ?? {}) as Record<string, unknown>;
     const fmt = (o.outputFormat ?? o.format ?? "mp3") as string;
     const m = (o.metadata ?? {}) as Record<string, unknown>;
-    // Topic chapters (+title/speaker/description) ride along so they get
-    // embedded as ID3 CHAP/CTOC. Chapters are { time, title } in seconds —
-    // exactly EditorChapter; pass through, dropping any malformed entry.
-    const chapters = Array.isArray(m.chapters)
-      ? (m.chapters as Array<Record<string, unknown>>)
-          .filter((c) => c && typeof c.time === "number" && typeof c.title === "string")
-          .map((c) => ({ time: c.time as number, title: c.title as string }))
-      : [];
+    // Title/speaker/description ride along as tags. (v0.15: chapters no
+    // longer travel — the chapter UI left with the content cluster.)
     return editorCall(
       "editor_export",
       {
@@ -1346,7 +1288,6 @@ const api: Record<string, unknown> = {
           introPath: o.introPath ?? null,
           outroPath: o.outroPath ?? null,
           gainDb: o.gainDb ?? null,
-          chapters,
           title: (m.title as string) || null,
           speaker: (m.speaker as string) || null,
           description: (m.description as string) || null,
@@ -1370,7 +1311,7 @@ const api: Record<string, unknown> = {
   // button did nothing and a 90-minute render was unkillable.)
   editorCancelExport: async () => call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
-  // Sidecars (meta / cutsDraft / transcript) are clean JSON key-value via
+  // Sidecars (meta / cutsDraft) are clean JSON key-value via
   // editor_read/write/delete_sidecar — no media decode needed.
   editorReadMeta: async (fp: string) =>
     call("editor_read_sidecar", { mediaPath: fp, sidecar: "meta" }, null),
@@ -1410,51 +1351,6 @@ const api: Record<string, unknown> = {
   // indices in a stored record mean nothing once detection has run again.
   editorSermonPick: async (fp: string, segments: unknown) =>
     call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
-  // E8 — what became of one AI-companion suggestion, into the same sidecar.
-  // Three scalars from closed vocabularies rather than the tracker's event
-  // object, so there is no argument the suggested text, the user's rewrite or
-  // the transcript could ride along in; the app version is stamped in the
-  // backend, never sent from here.
-  editorRecordCompanionSuggestion: async (
-    fp: string,
-    kind: string,
-    outcome: string,
-    editedAfterAccept: boolean,
-  ) =>
-    call(
-      "editor_record_companion_suggestion",
-      { mediaPath: fp, kind, outcome, editedAfterAccept },
-      false,
-    ),
-  // Topic chapters from the transcript (Bible refs + enumeration points). Pure
-  // offline detection in Rust; returns [{ time, title }] on the original
-  // recording timeline. Empty array on any failure (no transcript = no chapters).
-  editorDetectChapters: async (lines: unknown, lang?: string) =>
-    call("editor_detect_chapters", { lines: lines ?? [], lang: lang ?? null }, []),
-
-  // R8 AI sermon companion — chapters + highlights + Norwegian summary from a
-  // finished transcript. Deterministic detectors run on-device; the summary
-  // uses the OPTIONAL Anthropic seam when a key is configured, else a local
-  // extractive fallback (summarySource tells which). Returns null on any failure
-  // so the panel shows a calm "ikke tilgjengelig" state rather than throwing.
-  companionBuild: async (transcript: unknown, useLlm?: boolean) =>
-    call(
-      "companion_build",
-      { transcript, useLlm: useLlm ?? null },
-      null,
-    ),
-  // Whether the OPTIONAL LLM summary is wired (keychain or ANTHROPIC_API_KEY).
-  companionLlmConfigured: async () =>
-    call("companion_llm_configured", undefined, false),
-  // Save/clear the Anthropic key in the OS keychain (never settings/bundle).
-  // Bare `invoke`, not `call()`: these back a «✓ lagret»-style receipt, and the
-  // old `call(…, false).then(() => true)` turned a FAILED keychain write into
-  // `true` — the panel then showed ✓ over a key that was never stored. The
-  // rejection must travel so the panel's catch can show the real reason.
-  companionSetLlmKey: async (key: string) =>
-    invoke("companion_set_llm_key", { key }).then(() => true),
-  companionClearLlmKey: async () =>
-    invoke("companion_clear_llm_key", undefined).then(() => true),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
@@ -1512,11 +1408,6 @@ const api: Record<string, unknown> = {
     const o = (params ?? {}) as Record<string, unknown>;
     const m = (o.metadata ?? {}) as Record<string, unknown>;
     const fmt = (o.videoFormat as string) || "mp4";
-    const chapters = Array.isArray(m.chapters)
-      ? (m.chapters as Array<Record<string, unknown>>)
-          .filter((c) => c && typeof c.time === "number" && typeof c.title === "string")
-          .map((c) => ({ time: c.time as number, title: c.title as string }))
-      : [];
     return editorCall("editor_export", {
       request: {
         inputPath: o.inputPath,
@@ -1533,7 +1424,6 @@ const api: Record<string, unknown> = {
         // track exactly as it does to an audio export — this used to be
         // hard-coded `null`, so "Normaliser" was silently a no-op for video.
         gainDb: o.gainDb ?? null,
-        chapters,
         title: (m.title as string) || null,
         speaker: (m.speaker as string) || null,
         description: (m.description as string) || null,
@@ -1550,19 +1440,6 @@ const api: Record<string, unknown> = {
   // .hasVideo (undefined) instead of taking the null branch. Return null.
   editorProbeStreams: async (fp: string) =>
     call("editor_probe_streams", { inputPath: fp }, null),
-  editorReadTranscript: async (fp: string) =>
-    call("editor_read_sidecar", { mediaPath: fp, sidecar: "transcript" }, null),
-  editorWriteTranscript: async (fp: string, t: unknown) =>
-    call(
-      "editor_write_sidecar",
-      { mediaPath: fp, sidecar: "transcript", value: t },
-      false,
-    ).then(() => true),
-  editorDeleteTranscript: async (fp: string) =>
-    call("editor_delete_sidecar", { mediaPath: fp, sidecar: "transcript" }, false).then(
-      () => true,
-    ),
-
   // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────
   // The 4 built-in mastering presets from the core (id/label/description +
   // targets/filters). Without this the preset dropdown was empty → the whole
@@ -1601,35 +1478,6 @@ const api: Record<string, unknown> = {
 
   registerTrustedPath: async () => true,
 
-  // ── Transcripts / whisper ───────────────────────────────────────────────
-  // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this
-  // ONE call — while it returned `[]` the sermon search silently found nothing
-  // and the "N transkripsjoner indeksert" status stayed blank. `transcripts_list`
-  // (commands/db.rs) walks the history, reads each `<name>.transcript.json`
-  // sidecar and returns `{ basePath, transcript }` — `basePath` is the recording
-  // path with its media extension stripped, which is exactly the join key
-  // `baseNoExt(row.path)` the history rows use. Fallback `[]` keeps a missing
-  // sidecar dir from breaking the page.
-  transcriptListAll: async () =>
-    call<Array<{ basePath: string; transcript: unknown }>>(
-      "transcripts_list",
-      undefined,
-      [],
-    ),
-  // Render a transcript to SRT/VTT/TXT at a user-chosen path. Pure formatting +
-  // one fs write in the backend (works in every build — no `whisper` feature).
-  whisperExportTranscript: async (
-    data: unknown,
-    format: "srt" | "vtt" | "txt",
-    path: string,
-  ) => {
-    try {
-      await invoke("whisper_export_transcript", { data, format, path });
-      return { ok: true as const };
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
   // Native "save as" picker (the dialog plugin's counterpart to `pickPath`).
   // A cancel yields null — never throws, same contract as the open pickers.
   pickSavePath: async (opts: {
@@ -1651,84 +1499,6 @@ const api: Record<string, unknown> = {
       return null;
     }
   },
-  // whisper_list_models gives the catalogue; whisper_model_status the per-model
-  // on-disk {installed, sizeOk}. The renderer's model picker needs both merged
-  // (the old Electron whisper-status did this server-side) — without the
-  // installed flags every transcription re-downloaded the model from scratch.
-  whisperStatus: async () => {
-    const models = await call<Array<Record<string, unknown>>>(
-      "whisper_list_models",
-      undefined,
-      [],
-    );
-    const merged = await Promise.all(
-      models.map(async (m) => ({
-        ...m,
-        ...(await call(
-          "whisper_model_status",
-          { id: m.id },
-          { installed: false, sizeOk: false },
-        )),
-        id: m.id,
-      })),
-    );
-    return {
-      models: merged,
-      installed: merged.filter((m) => m.installed).map((m) => m.id),
-      active: null,
-      binaryAvailable: true,
-      available: true,
-    };
-  },
-  // whisper_* commands take `id`, not `model_id`. The command returns `()` on
-  // success and an AppError on failure; surface a real {ok,error} shape (the
-  // generic `call` fallback would hide the reason → "feilet: undefined").
-  whisperDownloadModel: async (modelId: string) => {
-    try {
-      await invoke("whisper_download_model", { id: modelId });
-      return { ok: true as const };
-    } catch (e) {
-      // The renderer suppresses the alert only for the exact "cancelled" —
-      // matched on the stable code (R3-C), not the message's tail.
-      return {
-        ok: false as const,
-        error: errorCode(e) === "cancelled" ? "cancelled" : ipcErrText(e),
-      };
-    }
-  },
-  // WRITES — bare invoke, rejection travels (R3-B). A model "deleted" while
-  // still on disk used to report `true`; editor-transcript.ts catches.
-  whisperCancelDownload: async (modelId: string) =>
-    invoke("whisper_cancel_download", { id: modelId }).then(() => true),
-  whisperDeleteModel: async (modelId: string) =>
-    invoke("whisper_delete_model", { id: modelId }).then(() => true),
-  // old { filePath, modelId, language, translate, jobId } → whisper_transcribe
-  // (input_path, model_id, language, translate, subtitle_style, job_id). The
-  // command returns the TranscriptData itself on success — wrap it in the
-  // {ok, transcript} envelope the legacy renderer pattern-matches on, and map a
-  // rejected invoke to {ok:false, error} (the renderer suppresses the alert for
-  // the exact string "cancelled", so strip thiserror's "validation: " prefix).
-  whisperTranscribe: async (params: unknown) => {
-    const o = (params ?? {}) as Record<string, unknown>;
-    try {
-      const transcript = await invoke("whisper_transcribe", {
-        inputPath: o.filePath,
-        modelId: o.modelId,
-        language: o.language ?? null,
-        translate: o.translate ?? null,
-        subtitleStyle: null,
-        jobId: o.jobId ?? null,
-      });
-      return { ok: true as const, transcript };
-    } catch (e) {
-      return {
-        ok: false as const,
-        error: errorCode(e) === "cancelled" ? "cancelled" : ipcErrText(e),
-      };
-    }
-  },
-  whisperCancelTranscribe: async (jobId: string) =>
-    call("whisper_cancel_transcribe", { jobId }, false),
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
   notifyWeakSignal: noop,

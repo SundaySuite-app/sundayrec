@@ -356,13 +356,14 @@ mod imp {
         let args: Vec<String> = match &video {
             Some(v) => build_cpal_pipe_video_args(
                 &v.name,
-                opts.framerate.max(1),
+                sundayrec_core::capture::RECORDING_FRAMERATE,
                 sample_rate,
                 out_ch,
                 &opts.output_path,
                 opts.sample_rate,
                 opts.bitrate_kbps,
-                video_codec_of(&opts),
+                // v0.15: the recording codec is a constant (H.264).
+                sundayrec_core::capture::RECORDING_VIDEO_CODEC,
                 None, // live preview wiring deferred for the cpal path
             ),
             None => build_cpal_pipe_audio_args(
@@ -638,15 +639,6 @@ mod imp {
         scheduled_stop.send_replace(None);
         set_state(&app, &last_state, RecorderState::Stopped, None);
         tracing::info!(host = label, "recorder: cpal session stopped cleanly");
-    }
-
-    /// Map the recording opts' video-codec tag to the core enum (H.264 default).
-    fn video_codec_of(opts: &RecordingOpts) -> sundayrec_core::editor::VideoCodec {
-        if opts.video_codec.eq_ignore_ascii_case("h265") {
-            sundayrec_core::editor::VideoCodec::H265
-        } else {
-            sundayrec_core::editor::VideoCodec::H264
-        }
     }
 
     /// Emit a `recording://state` payload and update the shared last-state mirror,

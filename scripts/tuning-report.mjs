@@ -18,7 +18,8 @@
 //                             come from a build that captures corrections, so
 //                             "what is promoted" is part of reading the number.
 //   GET /v1/admin/history   — OPTIONAL: what the purge has already folded into
-//                             `agg_corrections`/`agg_companion`, i.e. everything
+//                             `agg_corrections` (and `agg_companion`, which only
+//                             pre-v0.15 builds ever fed), i.e. everything
 //                             older than the raw window. A 404 means the Worker
 //                             predates the route; the tool then says so instead
 //                             of silently reading less than exists.
@@ -501,30 +502,34 @@ function renderSkew(s, bar) {
   return `→ ${share} % lean ${lean}${because}, but not distinguishable from a coin flip${pText}.`;
 }
 
-/** The companion's outcomes, which the same ritual reads and the same bar governs. */
+/**
+ * The companion's outcomes — NOT COLLECTED since v0.15. The AI sermon companion
+ * left SundayRec with the content cluster («Frivilligen først» R2), and the
+ * `companionOutcomes` field left the payload with it. The Worker still serves
+ * whatever pre-v0.15 builds reported (raw rows until the retention purge folds
+ * them into `agg_companion`, then history), so this section says so in one
+ * line and counts what is left rather than pretending the rows are current:
+ * they describe a feature that no longer ships, and no constant can move on
+ * them.
+ */
 function renderCompanion(summary, history = null) {
   const raw = Array.isArray(summary?.companionOutcomes)
     ? summary.companionOutcomes
     : [];
-  // Same normalisation as the corrections: history serves `total`, raw serves
-  // `n`, and the two sides of the purge cutoff never overlap.
   const folded = Array.isArray(history?.companion?.rows)
     ? history.companion.rows.map((r) => ({ ...r, n: r.total }))
     : [];
-  const rows = [...raw, ...folded];
-  const total = rows.reduce((a, r) => a + (Number(r.n) || 0), 0);
-  if (total === 0) {
-    return "COMPANION SUGGESTIONS\n  NOTHING TO READ — no outcome has been reported.\n";
-  }
-  const lines = ["COMPANION SUGGESTIONS — counts per kind"];
-  const kinds = [...new Set(rows.map((r) => r.kind))].sort();
-  for (const kind of kinds) {
-    const mine = rows.filter((r) => r.kind === kind);
-    const n = mine.reduce((a, r) => a + (Number(r.n) || 0), 0);
-    const parts = mine
-      .map((r) => `${r.outcome} ${Number(r.n) || 0}`)
-      .join(", ");
-    lines.push(`  ${pad(kind, 12)} ${parts}   (${n})`);
+  const total = [...raw, ...folded].reduce((a, r) => a + (Number(r.n) || 0), 0);
+  const lines = [
+    "COMPANION SUGGESTIONS — NOT COLLECTED since v0.15 (the AI companion left the app)",
+  ];
+  if (total > 0) {
+    lines.push(
+      `  ${total} historical outcome(s) from pre-v0.15 builds remain in the Worker's`,
+    );
+    lines.push(
+      "  aggregates. They describe a feature that no longer ships; nothing moves on them.",
+    );
   }
   lines.push("");
   return lines.join("\n");

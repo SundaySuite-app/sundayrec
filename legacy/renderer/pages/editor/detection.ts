@@ -127,10 +127,9 @@ export async function runDetection(auto = false): Promise<void> {
  * three on-timeline toggles (speech/music/silence), and the
  * "Marker preken automatisk" button.
  *
- * Backwards-compat note: `meta.chapters` is still maintained as the
- * underlying data model but no longer surfaced as its own card — chapter
- * dots still render on the canvas if present, and any history sidecar
- * with existing chapter metadata is preserved on save.
+ * (v0.15: chapters left the editor entirely — a `.meta.json` that still
+ * carries a `chapters` key passes through the loader/saver untouched, but
+ * nothing draws or exports it.)
  */
 export function renderAnalyzePanel(): void {
   const summary  = $('editor-analyze-summary')

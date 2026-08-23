@@ -40,11 +40,6 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
-// E8 learning loops — the persistence edge for the corrections a human makes to
-// the detector's proposals. Writes into the `Feedback` sidecar via
-// `editor::record_trim_adjustment`; the decisions behind it are
-// `sundayrec_core::trim_feedback` and `sundayrec_core::feedback`.
-pub mod learning;
 // E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
 // `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
 // has no console and a macOS .app from Finder discards stdout, so an installed
@@ -121,12 +116,6 @@ pub mod util;
 #[cfg(feature = "vad")]
 pub mod vad;
 pub mod wake;
-// PU-5 whisper transcription — `whisper` feature, in `default` and the macOS
-// release (Metal path verified on a real M1 Pro; Windows-runtime still an owner
-// rig test). The model registry/argv/normalise are `sundayrec_core::whisper`;
-// this seam runs inference (whisper-rs). The pure list/status entry points
-// compile without it; `transcribe` returns `feature_disabled` when off.
-pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -229,13 +218,7 @@ pub fn run() {
         // The export engine holds the ONE in-flight render so
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
-        .manage(editor::ExportEngine::new())
-        // Tracks in-flight whisper model downloads so `whisper_cancel_download`
-        // can abort one (one entry per active model id).
-        .manage(whisper::DownloadGuard::new())
-        // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
-        // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new());
+        .manage(editor::ExportEngine::new());
 
     // PU-1: ONE alert throttle window for the whole process lifetime. The gate
     // (10 min per recipient+error pair) is what stops a flapping device from
@@ -492,10 +475,6 @@ pub fn run() {
             commands::recorder::run_test_recording,
             commands::recorder::run_capture_bench,
             commands::db::recordings_list,
-            commands::db::transcripts_list,
-            commands::db::learning_feedback_summary,
-            commands::db::learning_local_nudge,
-            commands::db::learning_local_nudge_reset,
             commands::db::recordings_delete,
             commands::db::recordings_clear,
             commands::db::recording_update_note,
@@ -536,7 +515,6 @@ pub fn run() {
             commands::editor::editor_probe_peak,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
-            commands::editor::editor_detect_chapters,
             commands::editor::editor_diagnose_channels,
             commands::editor::editor_auto_process,
             commands::editor::editor_mastering_analyze,
@@ -549,7 +527,6 @@ pub fn run() {
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
-            commands::editor::editor_record_companion_suggestion,
             commands::editor::editor_probe_streams,
             commands::editor::editor_read_file,
             commands::editor::editor_cleanup_temp_files,
@@ -574,24 +551,6 @@ pub fn run() {
             commands::wake::wake_cancel_test,
             commands::wake::wake_failure_history,
             commands::wake::wake_clear_failure_history,
-            // PU-5 whisper transcription (model registry pure; transcribe gated).
-            commands::whisper::whisper_list_models,
-            commands::whisper::whisper_model_status,
-            commands::whisper::whisper_download_model,
-            commands::whisper::whisper_cancel_download,
-            commands::whisper::whisper_delete_model,
-            commands::whisper::whisper_transcribe,
-            commands::whisper::whisper_cancel_transcribe,
-            commands::whisper::whisper_export_transcript,
-            // R8 AI sermon companion — chapters/highlights/summary from a
-            // transcript. Pure detectors in sundayrec-core; the OPTIONAL Anthropic
-            // summary seam is NETWORK-UNVERIFIED and falls back to a fully-local
-            // extractive summary when no key is configured.
-            commands::companion::companion_build,
-            commands::companion::companion_llm_configured,
-            commands::companion::companion_llm_status,
-            commands::companion::companion_set_llm_key,
-            commands::companion::companion_clear_llm_key,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,

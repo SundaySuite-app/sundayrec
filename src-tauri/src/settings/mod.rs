@@ -96,7 +96,7 @@ pub async fn import_from_path(pool: &SqlitePool, path: &Path) -> AppResult<Setti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sundayrec_core::settings::{ChannelMode, FileFormat};
+    use sundayrec_core::settings::{ChannelMode, FileFormat, SampleRate};
 
     /// A pool over a temp-dir database file, fully migrated.
     async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
@@ -121,7 +121,7 @@ mod tests {
             language: Some("en".to_string()),
             channels: ChannelMode::MonoMix,
             format: FileFormat::Wav,
-            input_volume: 150,
+            silence_threshold: -40,
             ..Default::default()
         };
 
@@ -136,30 +136,30 @@ mod tests {
     async fn save_validates_before_persisting() {
         let (pool, _d) = temp_pool().await;
         let s = Settings {
-            sample_rate: 999_999,
-            input_volume: 5_000,
+            silence_threshold: 5,
+            split_minutes: 9_999,
             ..Default::default()
         };
         let stored = save(&pool, s).await.unwrap();
-        assert_eq!(stored.sample_rate, 192_000);
-        assert_eq!(stored.input_volume, 200);
+        assert_eq!(stored.silence_threshold, 0);
+        assert_eq!(stored.split_minutes, 480);
         // Persisted value is the clamped one.
         let loaded = load(&pool).await.unwrap();
-        assert_eq!(loaded.sample_rate, 192_000);
-        assert_eq!(loaded.input_volume, 200);
+        assert_eq!(loaded.silence_threshold, 0);
+        assert_eq!(loaded.split_minutes, 480);
     }
 
     #[tokio::test]
     async fn load_merges_partial_stored_blob_over_defaults() {
         let (pool, _d) = temp_pool().await;
         // Simulate an older/partial blob written directly to the store.
-        store::set_setting(&pool, SETTINGS_KEY, r#"{ "sampleRate": 44100 }"#)
+        store::set_setting(&pool, SETTINGS_KEY, r#"{ "silenceThreshold": -40 }"#)
             .await
             .unwrap();
         let loaded = load(&pool).await.unwrap();
-        assert_eq!(loaded.sample_rate, 44_100);
+        assert_eq!(loaded.silence_threshold, -40);
         // Everything else defaulted.
-        assert_eq!(loaded.input_volume, 100);
+        assert_eq!(loaded.silence_timeout_minutes, 5);
         assert_eq!(loaded.channels, ChannelMode::Stereo);
     }
 
@@ -167,7 +167,7 @@ mod tests {
     async fn reset_persists_defaults() {
         let (pool, _d) = temp_pool().await;
         let s = Settings {
-            input_volume: 150,
+            silence_threshold: -40,
             ..Default::default()
         };
         save(&pool, s).await.unwrap();
@@ -202,7 +202,7 @@ mod tests {
         let (pool, _d) = temp_pool().await;
         let imported = import(&pool, r#"{ "language": "fr" }"#).await.unwrap();
         assert_eq!(imported.language, Some("fr".to_string()));
-        assert_eq!(imported.input_volume, 100);
+        assert_eq!(imported.silence_timeout_minutes, 5);
     }
 
     #[tokio::test]
@@ -211,7 +211,7 @@ mod tests {
         let s = Settings {
             language: Some("de".to_string()),
             format: FileFormat::Flac,
-            input_volume: 150,
+            silence_threshold: -40,
             ..Default::default()
         };
         save(&pool, s.clone()).await.unwrap();
@@ -247,7 +247,7 @@ mod tests {
         save(
             &pool,
             Settings {
-                input_volume: 150,
+                silence_threshold: -40,
                 ..Default::default()
             },
         )
@@ -258,13 +258,13 @@ mod tests {
         save(
             &pool,
             Settings {
-                input_volume: 80,
+                silence_threshold: -30,
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-        assert_eq!(load(&pool).await.unwrap().input_volume, 80);
+        assert_eq!(load(&pool).await.unwrap().silence_threshold, -30);
         // Exactly one row backs the settings key.
         assert_eq!(
             store::get_all_settings(&pool)
@@ -291,15 +291,15 @@ mod tests {
     async fn import_clamps_out_of_range_values_before_persisting() {
         let (pool, _d) = temp_pool().await;
         // An imported blob with an out-of-range numeric is clamped on the way in.
-        let imported = import(&pool, r#"{ "inputVolume": 9000, "sampleRate": 1 }"#)
+        let imported = import(&pool, r#"{ "silenceThreshold": 9000, "splitMinutes": -1 }"#)
             .await
             .unwrap();
-        assert_eq!(imported.input_volume, 200);
-        assert_eq!(imported.sample_rate, 8_000);
+        assert_eq!(imported.silence_threshold, 0);
+        assert_eq!(imported.split_minutes, 0);
         // The persisted value is the clamped one, not the raw import.
         let loaded = load(&pool).await.unwrap();
-        assert_eq!(loaded.input_volume, 200);
-        assert_eq!(loaded.sample_rate, 8_000);
+        assert_eq!(loaded.silence_threshold, 0);
+        assert_eq!(loaded.split_minutes, 0);
     }
 
     #[tokio::test]
@@ -338,12 +338,11 @@ mod tests {
         let (pool, _d) = temp_pool().await;
         let full = Settings {
             language: Some("de".to_string()),
-            has_launched: true,
             onboarding_done: true,
             channels: ChannelMode::MonoR,
             format: FileFormat::Flac,
-            input_volume: 175,
-            sample_rate: 96_000,
+            sample_rate_mode: SampleRate::R96000,
+            silence_threshold: -40,
             ..Default::default()
         };
         // Sanity: this is genuinely different from the defaults.

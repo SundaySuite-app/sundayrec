@@ -10,7 +10,27 @@ Read it beside `docs/VAD.md`, which covers the other half — the neural detecto
 that is being measured against the same corpus and is not allowed to decide
 anything yet.
 
-## Status: the loop is built and has never run
+## Status after v0.15 («Frivilligen først» R2) — what is live, what is dormant, what is gone
+
+The loop shrank in R1/R2. Read this table before anything below, because the
+sections that follow describe the mechanism, and the mechanism now has fewer
+inputs than it was built with:
+
+| Signal                                          | Local record           | On the wire                | State in v0.15                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------- | ---------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| «Er ikke dette prekenen?» (the sermon dropdown) | `sermonPicks`          | `corrections` (pick bands) | **Live.** `editor_record_sermon_pick` writes, `corrections::observe_files` projects.                                                                                                                                                                                                                                      |
+| Moving the proposed trim's edges                | `trimAdjustments`      | `corrections` (start/end)  | **Dormant.** The only writer (`review_update_trim` → `learning::record_trim_deltas`) left with the review queue in R1. The record, the projection and the wire field all stay — the consented contract is unchanged and the editor is the obvious next writer — but nothing calls `editor::record_trim_adjustment` today. |
+| The AI companion's suggestion outcomes          | `companionSuggestions` | `companionOutcomes`        | **Gone** (R2). The companion left the app; the collection is ignored on read and not written back; the wire field is not sent (the Worker accepts its absence — it was optional). `PRIVACY.md` says so.                                                                                                                   |
+| Shadow observations (VAD vs heuristic)          | `shadowObservations`   | nothing                    | Unchanged: local only, by design.                                                                                                                                                                                                                                                                                         |
+| The per-install nudge (E10 local adaptivity)    | `app_settings` row     | nothing                    | **Gone** (R2). It only ever acted on trim adjustments, which stopped being written in R1; the «Hva appen har justert» card and the `localAdaptivity` setting went with it.                                                                                                                                                |
+| The «Hva appen har lagt merke til» card         | —                      | —                          | **Gone** (R2). It was a viewer; the records it summarised are listed above.                                                                                                                                                                                                                                               |
+
+So what the ritual below can read today is the **sermon-pick** rows. The
+trim rows exist in the schema and will fill again the day a writer is wired
+back into the editor; until then a zero there means "no writer", not "no
+disagreement".
+
+### The original status, kept for the record
 
 Checked against the live admin API and the release tags on **2026-08-08**:
 
@@ -30,33 +50,36 @@ completely different things.
 
 `scripts/tuning-report.mjs` prints both facts side by side for that reason.
 
-Two branches are in flight against this same etappe and are referenced here by
-name rather than described, because they are not merged:
+Two branches were in flight against this etappe at the time; both landed, and
+one has since left again:
 
-- **`learn/e10-tuning-table`** — collects the detector's constants into one
+- **`learn/e10-tuning-table`** landed — the detector's constants are one
   documented table in `crates/sundayrec-core/src/tuning.rs`, with golden tests.
-  When it lands, "the constant" in the ritual below means a row in that table.
-- **`learn/e10-local-adaptivity`** — bounded per-install nudging, i.e. a second
-  learning path that never leaves the machine and therefore never appears in the
-  aggregate this document is about. The two must not be confused: this loop
-  changes what everyone's next release does; that one changes what one install
-  does today.
+  "The constant" in the ritual below means a row in that table.
+- **`learn/e10-local-adaptivity`** landed and was **removed in v0.15**: bounded
+  per-install nudging only ever acted on trim adjustments, and those lost their
+  writer in R1. The distinction it was built on still holds and is worth keeping
+  in mind: this loop changes what everyone's next release does; a local nudge
+  would change what one install does today.
 
 ---
 
 ## 1. Signal — what a person does that counts
 
-Exactly three seams write a correction, and they are the three moments where the
-app guesses and a person quietly fixes it:
+Two seams write a correction, and they are the two moments where the app
+guesses and a person quietly fixes it:
 
-| Seam                   | Command                              | What the human said                     |
-| ---------------------- | ------------------------------------ | --------------------------------------- |
-| The sermon dropdown    | `editor_record_sermon_pick`          | "you picked the wrong block, this one"  |
-| Review's publish       | `learning::record_trim_deltas`       | "right block, wrong edges"              |
-| The AI companion panel | `editor_record_companion_suggestion` | "this suggestion was / was not any use" |
+| Seam                             | Entry point                      | What the human said                    | State                        |
+| -------------------------------- | -------------------------------- | -------------------------------------- | ---------------------------- |
+| The sermon dropdown              | `editor_record_sermon_pick`      | "you picked the wrong block, this one" | live                         |
+| Moving the proposed trim's edges | `editor::record_trim_adjustment` | "right block, wrong edges"             | dormant — no caller since R1 |
 
-All three go through one read-modify-write in `src-tauri/src/editor/mod.rs`,
-serialised by `FEEDBACK_LOCK`, and all three call `observe_feedback_change` with
+(Until v0.15 a third seam, the AI companion panel's
+`editor_record_companion_suggestion`, recorded "this suggestion was / was not
+any use". It left with the companion.)
+
+Both go through one read-modify-write in `src-tauri/src/editor/mod.rs`,
+serialised by `FEEDBACK_LOCK`, and both call `observe_feedback_change` with
 the file's projections **before and after** — never the event. That is not a
 detail: `record_sermon_pick` REPLACES the previous answer to the same baseline,
 so somebody auditioning block 2, then 3, then settling on 4 has made **one**
@@ -70,22 +93,27 @@ Two cases that deliberately do not count:
   the real corrections under a much larger number of artefacts all pointing the
   same way, which looks exactly like a signal.
 - **Dragging a boundary back onto the proposal** is not "nothing happened" — it
-  WITHDRAWS an adjustment recorded earlier. `record_trim_deltas`'s doc comment
-  spells out why the unchanged case has to reach the function rather than being
-  dropped by the caller: a record that still claims a correction the person has
+  WITHDRAWS an adjustment recorded earlier. `editor::record_trim_adjustment`'s
+  doc comment (and `feedback::record_trim_adjustment`'s) spells out why the
+  unchanged case has to reach the function rather than being dropped by the
+  caller: a record that still claims a correction the person has
   since taken back is not weak evidence, it is false evidence.
 
 ## 2. Local record — `<stem>.feedback.json`, beside the recording
 
 `RecordingFeedback` (`crates/sundayrec-core/src/feedback.rs`) is the whole file.
-Four collections, each with a bound and an explicit append-or-replace rule:
+Three collections, each with a bound and an explicit append-or-replace rule:
 
-| Collection             | Bound | Rule                                   | Whose it is               |
-| ---------------------- | ----- | -------------------------------------- | ------------------------- |
-| `sermonPicks`          | 20    | replace per detector baseline          | the human's               |
-| `trimAdjustments`      | 20    | replace per app version                | the human's               |
-| `companionSuggestions` | 60    | **append** (3 per companion build)     | the human's               |
-| `shadowObservations`   | 20    | replace per version + `ShadowSettings` | the app's, not a person's |
+| Collection           | Bound | Rule                                   | Whose it is               |
+| -------------------- | ----- | -------------------------------------- | ------------------------- |
+| `sermonPicks`        | 20    | replace per detector baseline          | the human's               |
+| `trimAdjustments`    | 20    | replace per app version                | the human's               |
+| `shadowObservations` | 20    | replace per version + `ShadowSettings` | the app's, not a person's |
+
+(A fourth, `companionSuggestions` — append-only, bound 60 — existed until
+v0.15. A file that still carries it loads whole; the key is ignored and not
+written back. `a_file_carrying_the_retired_companion_collection_still_loads_whole`
+pins that.)
 
 Both halves of each rule are load-bearing and they fail in opposite directions:
 replacing where you should append loses the record of a genuinely separate
@@ -124,12 +152,11 @@ sweep's error is unbounded and grows).
 
 ## 3. What leaves the machine, and what does not
 
-| Local record           | On the wire                       |
-| ---------------------- | --------------------------------- |
-| `sermonPicks`          | signal + direction + band + count |
-| `trimAdjustments`      | signal + direction + band + count |
-| `companionSuggestions` | kind + outcome + count            |
-| `shadowObservations`   | **nothing. Ever.**                |
+| Local record         | On the wire                       |
+| -------------------- | --------------------------------- |
+| `sermonPicks`        | signal + direction + band + count |
+| `trimAdjustments`    | signal + direction + band + count |
+| `shadowObservations` | **nothing. Ever.**                |
 
 A correction becomes a **signal** (which guess), a **direction** (which way),
 and a **coarse band** (roughly how far) — and then a count of how many
@@ -138,13 +165,11 @@ possible facts and a number against each. That is the entire vocabulary; there
 is no field on `CorrectionKey` or `CorrectionReport` a duration, a timestamp, a
 name or a path could occupy.
 
-The companion projection is the same discipline over a different collection:
-kind (`title | description | chapters`) × outcome (`accepted |
-accepted_edited | rejected | left_alone`), counted. `editedAfterAccept` does not
-travel as its own field — it is folded into `accepted_edited` by
-`CompanionOutcome::from_record`, so there is one value per fate rather than a
-flag whose meaning depends on another field. The suggested title, the rewrite
-and the transcript it came from have no field to occupy, on either side.
+(The companion projection — kind × outcome, counted — was the same discipline
+over a different collection until v0.15. It is gone from the sender; the Worker
+keeps accepting payloads without it because the field was always optional, and
+`scripts/tuning-report.mjs` reports the section as «not collected since
+v0.15».)
 
 The band ladder is `under_15s | 15_30s | 30_60s | 60_120s | over_120s`,
 half-open, lower bound inclusive. It is not a tuning choice: the Norwegian
@@ -160,8 +185,7 @@ plan.** The consent text covers crash reports, quality data and feature-usage
 counters; a disagreement between two of the app's own detectors is a fourth
 category, and sending it would be collecting something nobody agreed to however
 anonymous the numbers look. `feedback.rs`'s `ShadowObservation` doc comment says
-so, and neither `telemetry::corrections` nor `telemetry::companion` reads that
-collection. The A/B harness wants them locally anyway, which is where they are.
+so, and `telemetry::corrections` does not read that collection. The A/B harness wants them locally anyway, which is where they are.
 
 ### Consent gates all of it
 
@@ -267,9 +291,9 @@ release, and none of them is automatic.
    it written into the commit message. Today's candidates live in
    `crates/sundayrec-core/src/detect.rs` (`MIN_SERMON_START_SEC`,
    `MIN_SERMON_DURATION_SEC`, `ATTENTION_CONFIDENCE_THRESHOLD`) and
-   `audio_analysis.rs` (`SILENCE_DB`, `SMOOTH_HALF_WIN`, `MIN_SEGMENT_SEC`);
-   `learn/e10-tuning-table` is collecting them into one table so that the
-   candidate set is a list rather than a grep.
+   `audio_analysis.rs` (`SILENCE_DB`, `SMOOTH_HALF_WIN`, `MIN_SEGMENT_SEC`),
+   all re-exported from the one table in `tuning.rs`, so the candidate set is
+   a list rather than a grep.
    **Note what is NOT there: there is no padding constant on the trim.**
    `prep::build_episode_prep` copied the sermon segment's own bounds into
    `suggested_trim` verbatim (R1 «Frivilligen først» removed the review queue
@@ -320,10 +344,10 @@ re-analysed to the same answer, and the golden tests above stop characterising
 anything that ships. A detector nobody can reproduce is a detector nobody can
 debug — and this one runs unattended, on a Sunday, in front of a volunteer.
 
-The same argument does not forbid `learn/e10-local-adaptivity`, which is why
-that branch exists: a bounded nudge computed **on the machine, from that
-machine's own corrections**, is reproducible from things the machine can show
-you. A number pushed from a server is not.
+The same argument did not forbid the (since-removed) local adaptivity: a
+bounded nudge computed **on the machine, from that machine's own corrections**,
+is reproducible from things the machine can show you. A number pushed from a
+server is not.
 
 ## 6. The evidence bar
 
@@ -393,14 +417,12 @@ Be concrete about this. Every item below is a real limit, not a caveat.
 
 | File                                                       | What                                                                 |
 | ---------------------------------------------------------- | -------------------------------------------------------------------- |
-| `crates/sundayrec-core/src/feedback.rs`                    | The local record: four collections, bounds, replace/append rules     |
+| `crates/sundayrec-core/src/feedback.rs`                    | The local record: three collections, bounds, replace/append rules    |
 | `crates/sundayrec-core/src/trim_feedback.rs`               | What a trim delta means, and which ones are real                     |
 | `crates/sundayrec-core/src/telemetry/corrections.rs`       | The banded projection — the narrowing, and the band ladder           |
-| `crates/sundayrec-core/src/telemetry/companion.rs`         | The suggestion-outcome projection (disjoint collection, same file)   |
 | `crates/sundayrec-core/src/telemetry/consent.rs`           | The gate: three states, two rules, `CONSENT_VERSION`                 |
 | `crates/sundayrec-core/src/ab_eval.rs`                     | The evidence bar and the corpus judgement                            |
-| `src-tauri/src/editor/mod.rs`                              | The three seams, one lock, `observe_feedback_change`                 |
-| `src-tauri/src/learning.rs`                                | Review's publish → trim deltas, infallible by signature              |
+| `src-tauri/src/editor/mod.rs`                              | The seams, one lock, `observe_feedback_change`                       |
 | `src-tauri/src/telemetry/corrections.rs`                   | The accumulator: consent mirror, subtract-on-drain, one settings row |
 | `crates/sundayrec-core/tests/detector_characterisation.rs` | The golden record a tuning change is read against                    |
 | `scripts/tuning-report.mjs`                                | Reads the aggregate; states the bar; says nothing over nothing       |

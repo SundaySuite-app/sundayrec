@@ -221,7 +221,7 @@ struct Answer {
     /// attention reason fired, else `NeedsAttention`.
     prep_status: String,
     /// What `build_episode_prep` copied into `suggested_trim`: the strict pick's
-    /// own bounds, verbatim (the local nudge is the no-op `SHIPPED_TUNING`).
+    /// own bounds, verbatim.
     prep_trim: Option<(f64, f64)>,
     /// What `build_episode_prep` copied into `sermon_confidence`.
     prep_sermon_confidence: Option<f64>,
@@ -235,7 +235,6 @@ struct Answer {
 /// rewrite — the golden file it is compared against is frozen.
 fn run(input: &[AnalysisSegment]) -> Answer {
     use sundayrec_core::detect::{self, PrepAnalysisSegment, SuggestedTrim};
-    use sundayrec_core::local_adaptivity::{apply_to_trim, SHIPPED_TUNING};
 
     let segments: Vec<PrepAnalysisSegment> = input.iter().map(PrepAnalysisSegment::from).collect();
     let detection = detect::detect(segments.clone());
@@ -267,14 +266,14 @@ fn run(input: &[AnalysisSegment]) -> Answer {
     } else {
         "NeedsAttention".to_string()
     };
+    // v0.15: the local-adaptivity offset seam (`apply_to_trim` over a shipped
+    // all-zero tuning) is gone. It was the identity on this path — the golden
+    // file did not move, which is the proof.
     let prep_trim = sermon.map(|s| {
-        let t = apply_to_trim(
-            &SHIPPED_TUNING,
-            SuggestedTrim {
-                start_sec: s.start_sec,
-                end_sec: s.end_sec,
-            },
-        );
+        let t = SuggestedTrim {
+            start_sec: s.start_sec,
+            end_sec: s.end_sec,
+        };
         (t.start_sec, t.end_sec)
     });
 

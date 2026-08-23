@@ -913,13 +913,12 @@ mod tests {
         assert_eq!(p.channels, 2);
         assert_eq!(p.sample_rate, Some(44_100));
 
-        // Default (Auto) → native (None), matching the main recorder — the dead
-        // `sample_rate` field must NOT force a rate anymore.
+        // Default (Auto) → native (None), matching the main recorder. (The dead
+        // numeric `sample_rate` field this used to guard against left in v0.15.)
         let native = Settings {
             pre_roll_seconds: 30,
             device_name: Some("Soundcraft".into()),
             channels: ChannelMode::MonoMix,
-            sample_rate: 48_000, // back-compat field set, but ignored now
             ..Default::default()
         };
         let np = preroll_settings_from(&native).unwrap();

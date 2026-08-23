@@ -36,12 +36,9 @@
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
 //!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
 //!   - [`detect`] — the ONE sermon detector over those segments (E9)
-//!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
-//!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick, the proposed trim, and the AI companion's suggestions — what to store, what counts as a correction, and what a later one replaces (E8)
+//!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick and the proposed trim — what to store, what counts as a correction, and what a later one replaces (E8)
 //!   - [`trim_feedback`] — how far the operator moved the proposed sermon trim, and the sign convention that makes the deltas readable (E8)
-//!   - [`learning_summary`] — folding every recording's feedback file into the counts + trim-direction verdict the transparency screen shows (E8)
-//!   - [`local_adaptivity`] — the first thing that ACTS on those corrections: a hard-clamped, opt-in, one-click-resettable offset on the proposed sermon boundaries, derived from this install's own corrections (E10)
 //!   - [`vad`]         — the neural voice-activity seam (E9): the 576-sample framing + two-piece per-stream state a Silero-class model needs, and the `VadBackend` trait that keeps ONNX out of this crate. NOT wired into sermon detection yet
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
 //!   - [`tuning`]       — EVERY number the sermon detector decides with, in one documented table: what each means, what moving it does, and honestly which ones nobody can justify. [`audio_analysis`] and [`detect`] re-export from here, so there is one definition of each (E10)
@@ -50,9 +47,7 @@ pub mod ab_eval;
 pub mod audio;
 pub mod audio_analysis;
 pub mod capture;
-pub mod chapters;
 pub mod church_calendar;
-pub mod companion;
 pub mod detect;
 pub mod device_enum;
 pub mod device_match;
@@ -64,9 +59,7 @@ pub mod feedback;
 pub mod ffmpeg;
 pub mod filename;
 pub mod history;
-pub mod learning_summary;
 pub mod levels;
-pub mod local_adaptivity;
 pub mod mastering;
 pub mod notify;
 pub mod preflight;
@@ -93,4 +86,3 @@ pub mod update;
 pub mod vad;
 pub mod wake;
 pub mod wav;
-pub mod whisper;

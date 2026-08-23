@@ -1,6 +1,6 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
-import type { Settings, SermonCompanion, EditorSegment } from '../types'
+import type { Settings, EditorSegment } from '../types'
 import type { TrashEntry } from '../bindings/TrashEntry'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
@@ -20,7 +20,6 @@ import { setupEditorPage, openEditorWithFile, deactivateEditor, reactivateEditor
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
-import { setupCompanionKeyCard } from './pages/companion-key-card'
 import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
@@ -198,16 +197,6 @@ declare global {
       editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
       /** Index into `segments` of the block the human corrected us to, or null. */
       editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
-      /** Record what became of one companion suggestion (E8). Categories only —
-       *  the generated bindings are the vocabulary, so a kind or an outcome the
-       *  backend does not know fails to compile here rather than at runtime. */
-      editorRecordCompanionSuggestion: (
-        filePath: string,
-        kind: import('../bindings/CompanionSuggestionKind').CompanionSuggestionKind,
-        outcome: import('../bindings/CompanionSuggestionOutcome').CompanionSuggestionOutcome,
-        editedAfterAccept: boolean,
-      ) => Promise<boolean>
-      editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
       editorAutoProcess:      (filePath: string) => Promise<{ diagnosis: { code: string; recommended: { mode: string; leftDb: number; rightDb: number } }; vocalChainPreset: string; masterPreset: string; summary: string } | null>
@@ -226,23 +215,8 @@ declare global {
       listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
       registerTrustedPath: (filePath: string) => Promise<boolean>
 
-      /** Every transcribed recording's sidecar. `basePath` is the recording path
-       *  with its media extension stripped — the join key against `baseNoExt(row.path)`. */
-      transcriptListAll:       () => Promise<Array<{ basePath: string; transcript: import('../types').TranscriptData }>>
-      /** Render a transcript to SRT/VTT/TXT at `path` (native save dialog picks it). */
-      whisperExportTranscript: (data: import('../types').TranscriptData, format: 'srt' | 'vtt' | 'txt', path: string) => Promise<{ ok: boolean; error?: string }>
       /** Native "save as" picker — returns the chosen path, or null on cancel. */
       pickSavePath:            (opts: { defaultPath?: string; name?: string; extensions?: string[] }) => Promise<string | null>
-
-      editorReadTranscript:    (filePath: string) => Promise<import('../types').TranscriptData | null>
-      editorWriteTranscript:   (filePath: string, t: unknown) => Promise<boolean>
-      editorDeleteTranscript:  (filePath: string) => Promise<boolean>
-      whisperStatus:        () => Promise<{ binaryAvailable: boolean; models: Array<{ id: string; label: string; description: string; sizeBytes: number; quality: string; realtimeFactor: number; installed: boolean; sizeOk: boolean }> }>
-      whisperDownloadModel: (modelId: string) => Promise<{ ok: boolean; error?: string }>
-      whisperCancelDownload:(modelId: string) => Promise<boolean>
-      whisperDeleteModel:   (modelId: string) => Promise<boolean>
-      whisperTranscribe:    (params: { filePath: string; modelId: string; language?: string; translate?: boolean; jobId?: string }) => Promise<{ ok: boolean; transcript?: import('../types').TranscriptData; error?: string }>
-      whisperCancelTranscribe: (jobId: string) => Promise<boolean>
 
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
@@ -301,35 +275,6 @@ declare global {
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>
 
-      // ── Learning-feedback transparency (E8.T) ────────────────────────────
-      /** Fold every recording's `<stem>.feedback.json` into the counts + the
-       *  trim-direction verdict the System-tab card shows. `null` ONLY on a
-       *  real IPC failure — a summary of all zeros IS the legitimate empty
-       *  state, so callers must never let a failed round-trip collapse into
-       *  that same shape (see `learning-summary-core.ts`'s empty-state
-       *  handling for why the distinction matters). */
-      learningFeedbackSummary: () => Promise<import('../bindings/LearningSummary').LearningSummary | null>
-
-      // ── What the app has adjusted about itself (E10) ─────────────────────
-      /** The two clamped boundary offsets this install has learned, or the
-       *  shipped zeroes when adaptivity is off. `null` ONLY on a real IPC
-       *  failure — same rule as above, and for the same reason: "nothing
-       *  adjusted" is a legitimate answer that must not be reachable by a
-       *  failed read. */
-      learningLocalNudge: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
-      /** Back to the shipped detector, now: zeroes the offsets and turns
-       *  adaptivity off. `null` on failure. */
-      learningLocalNudgeReset: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
-
-
-      // R8 AI sermon companion (chapters + highlights + Norwegian summary).
-      // companionBuild returns null on any failure; the optional LLM summary is
-      // keychain-only (companionSetLlmKey) and degrades to a local extractive
-      // summary when no key is configured.
-      companionBuild:          (transcript: unknown, useLlm?: boolean) => Promise<SermonCompanion | null>
-      companionLlmConfigured:  () => Promise<boolean>
-      companionSetLlmKey:      (key: string) => Promise<boolean>
-      companionClearLlmKey:    () => Promise<boolean>
     }
     appVersion?: string
   }
@@ -392,9 +337,8 @@ function showPage(id: string): void {
  * Five tabs since Fase 3: Lyd · Video · Opptak · Deling · System.
  *
  * «Publisering» and «Varsler» answered halves of the same question — who gets
- * the recording afterwards — and are now sections of Deling; the companion key
- * is an Avansert disclosure at the bottom of System. Old tab ids still resolve:
- * `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
+ * the recording afterwards — and are now sections of Deling. Old tab ids still
+ * resolve: `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
  */
 function setupSettingsTabs(): void {
   document.querySelectorAll<HTMLElement>('#settings-tabs .inner-tab').forEach(btn => {
@@ -510,7 +454,6 @@ async function init(): Promise<void> {
   setupVideoPage()
   setupRecording()
   setupEditorPage()
-  void setupCompanionKeyCard()
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()

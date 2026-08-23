@@ -1,12 +1,8 @@
 /**
  * Recording history — the full list + its tools (delete / note / prune / clear /
- * stats). This used to live on the home page; it now backs the merged
- * «Søk & historikk» tab (see search-page.ts), which composes this list with
- * transcript search. The home page keeps only a compact «Siste 5» of its own.
- *
- * The renderer can optionally interleave transcript hit-snippets under the
- * recordings that matched a text query (`hitsByBase`), so one unified list
- * serves both "browse all recordings" and "search inside sermons".
+ * stats). This used to live on the home page; it now backs the «Historikk» tab
+ * (see search-page.ts), which puts a metadata search box over this list. The
+ * home page keeps only a compact «Siste 5» of its own.
  */
 
 import { t, tf, tn } from '../i18n'
@@ -33,13 +29,6 @@ import {
 export { baseNoExt }
 export type { RecordingEntry }
 
-/** One transcript hit to render as a sub-row under its recording: the seek
- *  target (seconds) + the pre-highlighted snippet HTML. Built by search-page. */
-export interface HistoryHit {
-  start: number
-  html:  string
-}
-
 let fullHistory: RecordingEntry[] = []
 
 // ── View state (sort + filter) ──────────────────────────────────────────────
@@ -47,10 +36,6 @@ let fullHistory: RecordingEntry[] = []
 let sortKey: HistorySortKey = 'time'
 let sortDir: SortDir        = 'desc'
 let activeFilter: HistoryFilter = 'all'
-/** Base paths (no extension) that have a transcript sidecar — fed by
- *  search-page once its index is loaded, so the «Med transkript» chip can
- *  answer without a second IPC round-trip. */
-let transcriptBases = new Set<string>()
 
 /** The current in-memory history (newest-first), for callers that need to
  *  filter it themselves (e.g. the unified search). */
@@ -58,20 +43,11 @@ export function getFullHistory(): RecordingEntry[] {
   return fullHistory
 }
 
-/** Tell the history which recordings have a transcript (from `transcripts_list`). */
-export function setTranscriptBasePaths(bases: Set<string>): void {
-  transcriptBases = bases
-}
-
-function hasTranscript(r: RecordingEntry): boolean {
-  return transcriptBases.has(baseNoExt(r.path))
-}
-
 /** Apply the active chip filter + column sort. The caller has already narrowed
  *  by the search query; this is the last step before rendering, so the table
  *  and the stats line always describe the same set of rows. */
 export function applyHistoryView(rows: RecordingEntry[]): RecordingEntry[] {
-  return sortRecordings(filterRecordings(rows, activeFilter, hasTranscript), sortKey, sortDir)
+  return sortRecordings(filterRecordings(rows, activeFilter), sortKey, sortDir)
 }
 
 /** Fetch the full history into the module cache. Rendering is driven by the
@@ -187,15 +163,12 @@ export function updateHistoryStats(history: RecordingEntry[]): void {
 
 /**
  * Render the full history table into `tbody`. Audio+video pairs from the same
- * session collapse into one row. When `hitsByBase` is supplied, a recording with
- * transcript hits gets a snippet sub-row right under it (clicking a snippet opens
- * the editor at that timestamp).
+ * session collapse into one row.
  */
 export function renderHistoryRows(
   tbody: HTMLElement | null,
   rows: RecordingEntry[],
   showReveal: boolean,
-  hitsByBase?: Map<string, HistoryHit[]>,
 ): void {
   if (!tbody) return
   tbody.innerHTML = ''
@@ -330,9 +303,6 @@ export function renderHistoryRows(
         const vidIdx = fullHistory.findIndex(h => h.timestamp === videoEntry.timestamp)
         if (vidIdx >= 0) fullHistory.splice(vidIdx, 1)
       }
-      // Drop the recording's row and any transcript sub-row that follows it.
-      const sub = tr.nextElementSibling
-      if (sub && sub.classList.contains('hist-transcript-hits')) sub.remove()
       tr.remove()
       if (!tbody.querySelector('tr')) renderHistoryRows(tbody, [], false)
       // Recompute from the rows THIS render is showing, minus the two just
@@ -365,36 +335,7 @@ export function renderHistoryRows(
     })
     tr.appendChild(tdStatus); tr.appendChild(tdActions)
     tbody.appendChild(tr)
-
-    // Transcript hit-snippets for this recording (unified search): a sub-row
-    // spanning all columns, each snippet seeking the editor to its timestamp.
-    const hits = hitsByBase?.get(baseNoExt(r.path))
-    if (hits && hits.length && r.path) {
-      const hitTr = document.createElement('tr')
-      hitTr.className = 'hist-transcript-hits'
-      const hitTd = document.createElement('td')
-      hitTd.colSpan = 5
-      for (const h of hits) {
-        const row = document.createElement('div')
-        row.className = 'search-hit-row'
-        row.innerHTML = `<span class="search-hit-time">${fmtClock(h.start)}</span><span class="search-hit-text">${h.html}</span>`
-        row.addEventListener('click', () => window.openEditorWithFile(r.path!, h.start))
-        hitTd.appendChild(row)
-      }
-      hitTr.appendChild(hitTd)
-      tbody.appendChild(hitTr)
-    }
   })
-}
-
-/** mm:ss / h:mm:ss for a seconds offset (snippet timestamps). */
-function fmtClock(sec: number): string {
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = Math.floor(sec % 60)
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    : `${m}:${String(s).padStart(2, '0')}`
 }
 
 /**
@@ -705,7 +646,7 @@ function renderSortIndicators(): void {
 
 // ── Filter chips ────────────────────────────────────────────────────────────
 
-const FILTERS: HistoryFilter[] = ['all', 'audio', 'video', 'transcript']
+const FILTERS: HistoryFilter[] = ['all', 'audio', 'video']
 
 function setupFilterChips(rerender: () => void): void {
   for (const chip of document.querySelectorAll<HTMLElement>('#history-filter-chips .hist-chip')) {

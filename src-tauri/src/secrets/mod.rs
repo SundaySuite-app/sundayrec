@@ -2,19 +2,20 @@
 //! the `keyring` crate — NEVER plaintext files. Replaces Electron's
 //! `safeStorage`.
 //!
-//! The SMTP password (and, until R2, the companion LLM key) are written here;
-//! Phase 0 established the seam and the resolution precedence so the rest of
+//! The SMTP password is written here (until v0.15 the AI companion's Anthropic
+//! key was too); Phase 0 established the seam and the resolution precedence so the rest of
 //! the app has one place to reach for a credential.
 //!
 //! ## Retired slots
 //!
 //! Earlier builds also wrote OAuth refresh tokens for Google Drive
 //! (`oauth.google_drive`), YouTube (`oauth.youtube`) and Gmail (`oauth.gmail`),
-//! a SundaySong API key (`integrations.song_api_key`) and RTMP stream keys
-//! (`stream.key`, `stream.key.{destId}`). Those features are gone (cloud
-//! backup, podcast publishing, the Gmail mail transport, the Sunday-suite
-//! integrations, live streaming), so nothing reads or writes the slots any
-//! more — but the
+//! a SundaySong API key (`integrations.song_api_key`), RTMP stream keys
+//! (`stream.key`, `stream.key.{destId}`) and — until v0.15 — the AI sermon
+//! companion's Anthropic API key (`companion.llm_api_key`). Those features are
+//! gone (cloud backup, podcast publishing, the Gmail mail transport, the
+//! Sunday-suite integrations, live streaming, the companion), so nothing reads
+//! or writes the slots any more — but the
 //! entries may still sit in users' keychains. They are left alone on purpose:
 //! keyring cannot enumerate accounts, and a startup sweep could block launch on
 //! a locked-keychain authorization prompt. The strings above are the contract
@@ -41,10 +42,6 @@ pub enum SecretProvider {
     /// SMTP password for the email-alert mailer (never persisted in settings;
     /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
     SmtpPassword,
-    /// Anthropic API key for the OPTIONAL AI sermon-companion summary seam (R8).
-    /// Stored in the OS keychain only — NEVER in settings, NEVER in a bundle. When
-    /// unset the companion falls back to the fully-local extractive summary.
-    CompanionLlmKey,
 }
 
 impl SecretProvider {
@@ -53,17 +50,12 @@ impl SecretProvider {
         match self {
             SecretProvider::StreamKey => "stream.key",
             SecretProvider::SmtpPassword => "email.smtp_password",
-            SecretProvider::CompanionLlmKey => "companion.llm_api_key",
         }
     }
 
     /// All providers — handy for a "disconnect everything" sweep.
-    pub fn all() -> [SecretProvider; 3] {
-        [
-            SecretProvider::StreamKey,
-            SecretProvider::SmtpPassword,
-            SecretProvider::CompanionLlmKey,
-        ]
+    pub fn all() -> [SecretProvider; 2] {
+        [SecretProvider::StreamKey, SecretProvider::SmtpPassword]
     }
 }
 
@@ -185,7 +177,7 @@ mod tests {
     // the historical StreamKey slot with a sentinel value it always cleans up —
     // deliberately: it is the ONE provider nothing real writes any more, so the
     // test's delete can never destroy a credential an install depends on
-    // (SmtpPassword/CompanionLlmKey are live slots).
+    // (SmtpPassword is the live slot).
     #[test]
     fn real_keychain_round_trip_or_skip() {
         if !keychain_test_opted_in() {
