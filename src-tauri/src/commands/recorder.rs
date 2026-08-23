@@ -108,7 +108,7 @@ pub async fn plan_recording_opts(
     video: Option<bool>,
 ) -> AppResult<RecordingOpts> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    crate::scheduler::build_opts(
+    crate::recorder::opts::build_opts(
         &app,
         &s,
         custom_name.as_deref(),
