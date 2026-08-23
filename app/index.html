@@ -5,11 +5,13 @@
     <!--
       The CSP must be BYTE-IDENTICAL to app.security.csp in
       src-tauri/tauri.conf.json — legacy/security-sync.test.ts fails CI if the
-      two drift, and it covers this file as well as the legacy one. Keeping it
-      here (rather than trusting the Tauri header alone) is what makes a plain
-      `vite --mode app` browser boot enforce the SAME policy the shipped
-      WKWebView does, which is the whole point of the S0 spike: script-src
-      'self' alone, with no dynamic code evaluation and no remote script.
+      two drift. Keeping it here (rather than trusting the Tauri header alone)
+      is what makes a plain `npm run dev` browser boot enforce the SAME policy
+      the shipped WKWebView does, which is the whole point of the S0 spike:
+      script-src 'self' alone, with no dynamic code evaluation and no remote
+      script. This is the only index.html in the repo since fase B; the test's
+      covers-every-shell assertion stays so a SECOND one cannot arrive with no
+      policy check at all, which looks exactly like green.
 
       (The two forbidden constructs are deliberately not spelled out here: the
       spike's proof is a grep of the BUILT bundle for them, and a comment that
