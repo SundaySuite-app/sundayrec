@@ -15,3 +15,9 @@ legacy
 # copy lives at legacy/bindings (already covered by the `legacy` entry above —
 # generated code is never reformatted).
 src/lib/bindings
+
+# The atlas (Fase A, «Frivilligen først»): PNGs plus two markdown reports that
+# `npm run atlas` REGENERATES on every run (e2e/atlas/report.ts). Format-gating
+# generated output would mean every photo session leaves the tree dirty.
+# docs/design/ATLAS.md is hand-written and stays covered.
+docs/design/atlas

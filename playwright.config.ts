@@ -24,6 +24,19 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
 
+  // `e2e/atlas/` is the ATLAS tier — a photographer for the «Frivilligen først»
+  // redesign, run by `npm run atlas` through `playwright.atlas.config.ts`. It
+  // takes ~140 screenshots and asserts almost nothing, so it must never run as
+  // part of this gate (nor on CI). Keep this in step with that config's
+  // `testDir`.
+  //
+  // A REGEX, not the glob `**/atlas/**`: Playwright matches these against the
+  // ABSOLUTE path, so the glob also excludes the whole suite whenever any
+  // ancestor directory happens to be called `atlas` (a git worktree named after
+  // this branch does exactly that, and the symptom is «No tests found» for the
+  // browser tier). Anchoring on `e2e/atlas/` can only match the real thing.
+  testIgnore: [/e2e[\\/]atlas[\\/]/],
+
   // A journey is boot + navigate + a few interactions. 45 s is roomy for that
   // and still short enough that a hang fails rather than stalls the run. It was
   // 30 s until the night audit measured the editor cut-row journey at 24.9 s
@@ -63,7 +76,12 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testIgnore: /app\//,
+      // BOTH exclusions have to live here. A project-level `testIgnore`
+      // REPLACES the top-level one rather than adding to it, so listing the
+      // atlas only at the top of this file would silently let it back in the
+      // moment a project set its own — which is exactly what happened when the
+      // `app` project arrived.
+      testIgnore: [/app\//, /e2e[\\/]atlas[\\/]/],
       use: { ...devices["Desktop Chrome"] },
     },
     {
