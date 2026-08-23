@@ -3,7 +3,10 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Upublisert
+## v0.15.1-beta.1
+
+Beta-ringens oppfriskning etter v0.15.0 — samme app, pluss tre endringer i
+opptaks-ryggraden som fortjener en runde i ringen før de når alle.
 
 ### Å lukke vinduet stopper ikke lenger opptaket
 
@@ -18,6 +21,18 @@ kunne en lukking før ødelegge en ellers ferdig fil.
 
 Er det ingen opptak i gang, avslutter lukkeknappen appen som før. Avslutt-valget
 (Cmd+Q / «Avslutt» i menylinja) stopper fortsatt opptaket med vilje.
+
+### «Ta opp automatisk» kan slås av uten å miste tidene
+
+Å slå av automatisk opptak sletter ikke lenger den ukentlige tidsplanen —
+tidene blir stående og venter til bryteren slås på igjen. Planlagte
+spesialopptak (enkeltdatoer) går som før uansett.
+
+### Forhåndsbufferen er på fra start
+
+Nye installasjoner får 15 sekunders forhåndsbuffer — lyd fra like før du
+trykket Start blir med i opptaket. Har du allerede valgt en verdi (også 0),
+røres den ikke.
 
 ## v0.15.0 — SundayRec gjør fire ting
 
