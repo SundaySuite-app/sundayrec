@@ -177,3 +177,46 @@ export function wakeWord(facts: WakeFacts | null): WakeWord {
   if (!facts.canWakeFromSleep) return "cannot";
   return facts.needsAdmin ? "needsAdmin" : "can";
 }
+
+/** Hva `wake_reschedule` betyr for setningen under «Aktiver vekking». */
+export type WakeArmWord =
+  /** Ikke forsøkt ennå — raden sier hva knappen kommer til å gjøre. */
+  | "idle"
+  | "ok"
+  | "needsAdmin"
+  | "disabled"
+  | "unsupported"
+  | "cancelled"
+  | "failed";
+
+/**
+ * Ett ord av `WakeResult`.
+ *
+ * Bakendens `reason` er `disabled | cancelled | permission | unsupported |
+ * error` (`src-tauri/src/wake/mod.rs`), og de betyr forskjellige ting for den
+ * som står der: «trenger administratorpassord» er noe man kan GJØRE noe med,
+ * «denne maskinen kan ikke vekkes» er det ikke. Å vise dem som én «det gikk
+ * galt» ville kastet nettopp den forskjellen.
+ *
+ * En ukjent `reason` faller til `failed`: en feil vi ikke har et ord for er
+ * fortsatt en feil, og aldri «det gikk bra». Ren funksjon, så tabellen står
+ * ett sted.
+ */
+export function wakeArmWord(
+  result: { ok: boolean; reason: string | null } | null,
+): WakeArmWord {
+  if (result === null) return "idle";
+  if (result.ok) return "ok";
+  switch (result.reason) {
+    case "permission":
+      return "needsAdmin";
+    case "disabled":
+      return "disabled";
+    case "unsupported":
+      return "unsupported";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "failed";
+  }
+}

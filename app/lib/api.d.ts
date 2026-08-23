@@ -19,6 +19,8 @@
 
 import type { Settings, EditorSegment } from "../../legacy/types";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
+import type { WakeResult } from "../../legacy/bindings/WakeResult";
+import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 
 declare global {
   interface Window {
@@ -129,6 +131,19 @@ declare global {
         knownIssues:      string[]
         recommendations:  string[]
       }>
+      /**
+       * (Re)register the OS wake timers for the coming schedule, NOW. User-
+       * initiated, so it is allowed to prompt for admin — which is why it is a
+       * button in Avansert and not something the scheduler does silently.
+       * `ok:false` + `reason` when it did not happen.
+       */
+      wakeReschedule:      () => Promise<WakeResult>
+      /**
+       * What the OS says it has actually scheduled. The hero's «Maskinen vekkes
+       * automatisk kl. …» is rendered off THIS, not off the stored setting: the
+       * setting is an intention, this is the fact.
+       */
+      wakeVerifyScheduled: () => Promise<WakeStatus>
       on:                  (channel: string, fn: (...args: unknown[]) => void) => (() => void) | undefined
       toAssetUrl:             (path: string) => string
       editorPickFile:         ()                 => Promise<string | null>

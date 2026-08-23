@@ -35,6 +35,8 @@ import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { Settings } from "../../legacy/bindings/Settings";
+import type { WakeResult } from "../../legacy/bindings/WakeResult";
+import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
@@ -194,9 +196,11 @@ function toAssetUrl(path: string): string {
 //
 const FIXTURE_GATE: FixtureGate = {
   inTauri: isTauri(),
-  // Vite inlines this as the literal `false` in a production build, so the
-  // in-Tauri branch of `fixturesHonored` is dead-code-eliminated out of the
-  // shipped bundle: a shipped SundayRec cannot be driven by fixtures.
+  // Vite inlines this as the literal `false` in a production build, so
+  // `FIXTURES_HONORED` below is a constant `false` inside a shipped Tauri
+  // bundle — the branch still exists in `fixturesHonored`, but nothing can
+  // make it answer `true` here. A shipped SundayRec cannot be driven by
+  // fixtures.
   devBuild: !!import.meta.env?.DEV,
   requested: new URLSearchParams(location.search).has(FIXTURE_QUERY_PARAM),
 };
@@ -448,16 +452,34 @@ const settingsMigration = migrateLegacySettingsOnce({
   },
 });
 
-/** Whether the defaults-fallback toast has fired this session — once is
- *  information, once a second is an outage of its own. */
-let settingsLoadFailureToasted = false;
-
 /**
  * `settings_get`, with the two renderer-side responsibilities that remain:
  * wait for the one-shot migration, and make a FAILED read loud. The fallback
  * is `SETTINGS_DEFAULTS` so the UI still renders, but never silently — a
  * broken settings store rendered as "everything is default" is exactly the
  * kind of quiet lie E2.4 exists to end.
+ *
+ * ## Why "loud" is a BANNER here and not a toast
+ *
+ * This one failure used to say itself TWICE: a `toast("error", …)` from right
+ * here, and the shell's own `hydrate-error` banner (`state/settings.ts` reads
+ * the failure ring, `Shell.tsx` renders it) — with the SAME sentence, from the
+ * same catalogue key. Two copies of one message is bad on its own; this pair
+ * was worse, because an `error` toast has `durationMs: 0` (see `ui/toast.ts`:
+ * the one message you cannot afford to miss must not vanish while you look
+ * away). So the duplicate sat on top of the shell forever, next to a banner
+ * saying the same thing, and dismissing it changed nothing.
+ *
+ * The house rule decides which one survives: a toast is a RECEIPT for
+ * something the user just did, a banner is a STATE that stays wrong until
+ * something changes. A settings store that could not be read is a state. So
+ * the report belongs to the failure ring — which is already recorded below,
+ * and which `hydrateSettings` reads to raise the banner — and this function
+ * says nothing itself.
+ *
+ * That is a narrowing of ONE path, not of the shim's failure toasts in
+ * general: `call()`'s E2.4 toast for other commands is untouched, and so is
+ * the corrupt-migration toast above (that one has no banner behind it).
  */
 async function loadSettingsFromBackend(): Promise<Settings> {
   await settingsMigration;
@@ -466,20 +488,10 @@ async function loadSettingsFromBackend(): Promise<Settings> {
     s = await invoke<Settings>("settings_get");
   } catch (e) {
     console.warn("[api-shim] settings_get failed → defaults", e);
+    // The ring IS the report: `hydrateSettings` asks it whether this read
+    // failed, and the shell's `hydrate-error` banner is the one surface that
+    // says so. See the note above for why there is no toast here.
     recordFailure(ipcFailures, "settings_get", ipcErrText(e), Date.now());
-    // Outside Tauri (dev/fixture boot in a browser) every unfixtured command
-    // rejects by construction — same guard as E2.4's failure toast.
-    if (isTauri() && !settingsLoadFailureToasted) {
-      settingsLoadFailureToasted = true;
-      const n = notifier.current();
-      n.toast(
-        "error",
-        n.t(
-          "error.settingsLoadFailed",
-          "Kunne ikke lese innstillingene — viser standardinnstillinger. Endringer du gjør nå kan gå tapt.",
-        ),
-      );
-    }
     s = { ...SETTINGS_DEFAULTS };
   }
   if (VERIFY_GOTO) {
@@ -1108,6 +1120,41 @@ const api: Record<string, unknown> = {
       needsAdmin: false,
       knownIssues: [],
       recommendations: [],
+    }),
+  // `wake_reschedule` and `wake_verify` came BACK in the settings/status review
+  // round. Fase B dropped them with the legacy schedule page — which was the
+  // right call for the six-panel diagnostics card that was their only caller,
+  // and the wrong one for these two, because between them they are the whole
+  // difference between the app SAYING the machine will wake up and the machine
+  // actually being armed to:
+  //
+  //   • `wake_reschedule` is the only user-initiated way to register the OS
+  //     wake timers (it may prompt for admin — which is precisely why it can
+  //     not live inside the scheduler's own silent pass). Without it the
+  //     «Vekk maskinen fra dvale» toggle wrote a boolean nobody could act on.
+  //   • `wake_verify` is the only way to know whether the timers are REALLY
+  //     there. The hero's «Maskinen vekkes automatisk kl. 10:50» was rendered
+  //     off the stored setting alone, i.e. off an intention, not a fact.
+  //
+  // A FAILED reschedule must report `ok:false` — the Electron shim's old
+  // `{ ok:true }` fallback painted a silent failure as success, which is the
+  // exact lie this pair exists to end. Same for verify: an unanswered command
+  // means "no wakes confirmed", never "all good".
+  wakeReschedule: async () =>
+    call<WakeResult>("wake_reschedule", undefined, {
+      ok: false,
+      count: null,
+      nextWake: null,
+      reason: "error",
+      message: null,
+    }),
+  wakeVerifyScheduled: async () =>
+    call<WakeStatus>("wake_verify", undefined, {
+      expectedWakes: [],
+      observedWakes: [],
+      hasMismatch: false,
+      onBattery: null,
+      standbyEnabled: null,
     }),
 
   // ── Editor ──────────────────────────────────────────────────────────────

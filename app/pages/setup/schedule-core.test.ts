@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
+
+import type { Settings } from "../../state/settings";
 import {
+  anythingScheduled,
+  autoRecordOn,
   DEFAULT_PLAN,
   durationBetween,
   isValidTime,
@@ -117,4 +122,59 @@ describe("slotsFromPlan", () => {
     const plan = { day: 3, start: "18:15", minutes: 45 } as const;
     expect(planFromSlots(slotsFromPlan(plan, []))).toEqual(plan);
   });
+});
+
+describe("kommer det til å skje noe av seg selv?", () => {
+  const SLOT = { days: [6], start: "11:00", stop: "12:30", max: null };
+  const SPECIAL = {
+    id: null,
+    date: "2026-12-24",
+    name: "Julaften",
+    start: "16:00",
+    stop: "17:00",
+    deviceId: null,
+  };
+  const s = (over: Partial<Settings>): Settings => ({
+    ...SETTINGS_DEFAULTS,
+    ...over,
+  });
+
+  it.each([
+    ["ingenting satt opp", {}, false, false],
+    ["en fast tid, bryteren på", { slots: [SLOT] }, true, true],
+    [
+      "en fast tid, bryteren AV — tidene står, men ingenting skjer",
+      { slots: [SLOT], autoRecordEnabled: false },
+      false,
+      false,
+    ],
+    [
+      "bryteren på, men ingen tid — et armert flagg uten en slot er ikke «på»",
+      { autoRecordEnabled: true },
+      false,
+      false,
+    ],
+    [
+      "bare et spesialopptak — det skjer uansett hva bryteren står på",
+      { specialRecordings: [SPECIAL] },
+      false,
+      true,
+    ],
+    [
+      "bryteren AV, men et spesialopptak ligger der",
+      { slots: [SLOT], autoRecordEnabled: false, specialRecordings: [SPECIAL] },
+      false,
+      true,
+    ],
+  ] as Array<[string, Partial<Settings>, boolean, boolean]>)(
+    "%s",
+    (_name, over, auto, anything) => {
+      expect(autoRecordOn(s(over))).toBe(auto);
+      // Funnet: helten leste «(slots ?? []).length > 0» og sa derfor «Alt er
+      // klart» med bryteren av. Bakenden gater slots på flagget
+      // (`Settings::active_slots`) og lar spesialopptak gå gjennom — dette er
+      // det samme uttrykket, på riktig side av skjøten.
+      expect(anythingScheduled(s(over))).toBe(anything);
+    },
+  );
 });

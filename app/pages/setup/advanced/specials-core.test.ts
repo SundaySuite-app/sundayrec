@@ -9,6 +9,7 @@ import {
   slotDay,
   slotRows,
   specialRows,
+  wakeArmWord,
   wakeWord,
   withoutIndex,
   withSlot,
@@ -154,4 +155,26 @@ describe("wakeWord", () => {
       "cannot",
     );
   });
+});
+
+describe("wakeArmWord", () => {
+  it.each([
+    ["ikke forsøkt", null, "idle"],
+    ["registrert", { ok: true, reason: null }, "ok"],
+    ["trenger admin", { ok: false, reason: "permission" }, "needsAdmin"],
+    ["bryteren er av", { ok: false, reason: "disabled" }, "disabled"],
+    ["maskinen kan ikke", { ok: false, reason: "unsupported" }, "unsupported"],
+    ["brukeren avbrøt", { ok: false, reason: "cancelled" }, "cancelled"],
+    ["generisk feil", { ok: false, reason: "error" }, "failed"],
+    // En grunn vi ikke har et ord for er fortsatt en FEIL. Å la den falle til
+    // «det gikk bra» ville vært den ene løgnen denne raden finnes for å slutte
+    // med: bryteren sa «på», og ingenting var armet.
+    ["ukjent grunn", { ok: false, reason: "noe-nytt-fra-rust" }, "failed"],
+    ["ingen grunn i det hele tatt", { ok: false, reason: null }, "failed"],
+  ] as Array<[string, { ok: boolean; reason: string | null } | null, string]>)(
+    "%s",
+    (_name, result, word) => {
+      expect(wakeArmWord(result)).toBe(word);
+    },
+  );
 });

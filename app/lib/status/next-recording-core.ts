@@ -83,8 +83,19 @@ export interface NextRecording {
 
 /** When (and whether) the machine wakes itself for `next`. */
 export interface WakeInfo {
-  /** The user's "vekk maskin automatisk" setting. */
+  /** The user's "vekk maskin automatisk" setting. An INTENTION. */
   enabled: boolean
+  /**
+   * Whether `wake_verify` has confirmed the OS really holds a wake timer.
+   * `null` = not asked yet / the command did not answer.
+   *
+   * `enabled` and this are not the same fact, and the gap between them is
+   * where the old hero line lied: the setting is what the operator asked for,
+   * this is what the machine will do. macOS needs an admin prompt the
+   * scheduler's silent pass cannot show; Windows needs wake timers switched on
+   * in the power plan. Both fail with the toggle still reading «på».
+   */
+  armed: boolean | null
   /** Lead time actually used by the backend. */
   leadMinutes: number
   /** Epoch ms of the wake point (`next.atMs − leadMinutes`). */
@@ -158,10 +169,11 @@ export function buildNext(
 export function computeWake(
   next: NextRecording | null,
   enabled: boolean,
+  armed: boolean | null = null,
   leadMinutes: number = WAKE_LEAD_MINUTES,
 ): WakeInfo | null {
   if (!next) return null
-  return { enabled, leadMinutes, atMs: next.atMs - leadMinutes * 60_000 }
+  return { enabled, armed, leadMinutes, atMs: next.atMs - leadMinutes * 60_000 }
 }
 
 // ── Date rendering seam ──────────────────────────────────────────────────────
@@ -296,10 +308,32 @@ export function formatSidebarStatus(
  *
  * Returns null when there is nothing to say — no schedule, or the user turned
  * wake-from-sleep off. The lead time is the backend's, not a UI guess.
+ *
+ * ## Why `armed` and not `enabled` decides the sentence
+ *
+ * "Maskinen vekkes automatisk kl. 10:50" is a PROMISE about hardware. It used
+ * to be rendered off the stored setting alone, i.e. off the fact that somebody
+ * once flipped a toggle — and a toggle is not a wake timer. On macOS the
+ * timers need an admin prompt the scheduler's silent pass cannot show; on
+ * Windows they need wake timers enabled in the power plan. In both cases the
+ * toggle keeps reading «på», the OS holds nothing, and the machine sleeps
+ * through the service while the app says it will not.
+ *
+ * So the promise is made only when `wake_verify` has CONFIRMED it. Anything
+ * else — not armed, or not asked yet — gets the honest line instead: the
+ * machine has to be awake or asleep (not off) when the recording starts. Not
+ * silence: "we cannot confirm a wake-up" is exactly the thing an operator
+ * needs to read on a Saturday, and an empty space says nothing on any day.
  */
 export function formatWakeHint(state: NextRecordingState, ctx: FormatCtx): string | null {
   const wake = state.wake
   if (!wake || !wake.enabled || !state.next) return null
+  if (wake.armed !== true) {
+    return ctx.t(
+      'home.wakesNotArmed',
+      'Maskinen må være på eller i dvale når opptaket starter — vi har ikke fått bekreftet noen vekking.',
+    )
+  }
   const time = ctx.parts(wake.atMs).time
   return ctx.tf('home.wakesBefore', { time }, 'Maskinen vekkes automatisk kl. {time}')
     + ' '

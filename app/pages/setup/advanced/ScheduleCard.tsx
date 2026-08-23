@@ -40,6 +40,8 @@ import {
   saveSettingsDebounced,
   settings,
 } from "../../../state/settings";
+import { useReceipt } from "../../../settings/use-receipt";
+import { refreshNextRecording } from "../../../state/next-recording";
 import { BoundToggle } from "../../../ui/Bound/Bound";
 import { Button } from "../../../ui/Button/Button";
 import { Card } from "../../../ui/Card/Card";
@@ -60,6 +62,7 @@ import {
   slotDay,
   slotRows,
   specialRows,
+  wakeArmWord,
   wakeWord,
   withoutIndex,
   withSlot,
@@ -371,14 +374,36 @@ function Specials() {
 }
 
 /**
- * «Vekk maskinen fra dvale» — bryteren, og ÉN setning om hva maskinen klarer.
+ * «Vekk maskinen fra dvale» — bryteren, én setning om hva maskinen klarer, og
+ * handlingen som gjør bryteren til noe.
  *
  * `wake_capabilities` svarer med seks felter og to lister. Fem av dem er
  * diagnostikk for den som feilsøker; det som avgjør om søndagen blir tatt opp
  * er om maskinen kan vekkes i det hele tatt.
+ *
+ * ## Hvorfor det MÅ finnes en knapp
+ *
+ * Bryteren skrev en boolean, og ingenting mer. Planleggeren armer OS-vekkingen
+ * i sin egen stille runde — men den runden kan ikke be om et
+ * administratorpassord, og på macOS er det nøyaktig det arming koster. Så på
+ * en fersk Mac sto bryteren på «på», OS-et hadde ingen vekking, og appen
+ * lovte likevel på TA OPP at maskinen ville våkne. `wake_reschedule` er
+ * bakendens EGEN vei rundt det (`allow_admin = true`, «user-initiated, so it
+ * may prompt»), og uten en knapp fantes den veien ikke i det nye skallet.
+ *
+ * Svaret vises som en setning og ikke som en toast: «trenger
+ * administratorpassord» er noe man skal kunne lese om igjen mens man leter
+ * etter passordet, ikke noe som glir bort etter fem sekunder.
  */
 function WakeRow() {
   const [facts, setFacts] = useState<WakeFacts | null>(null);
+  const [armResult, setArmResult] = useState<{
+    ok: boolean;
+    reason: string | null;
+  } | null>(null);
+  const [arming, setArming] = useState(false);
+  const { receipt, show: showReceipt } = useReceipt();
+  const on = settings.value.wakeFromSleep !== false;
 
   useEffect(() => {
     void window.api
@@ -394,6 +419,30 @@ function WakeRow() {
       .catch(() => setFacts(null));
   }, []);
 
+  async function arm(): Promise<void> {
+    if (arming) return;
+    setArming(true);
+    showReceipt("saving");
+    try {
+      const result = await window.api.wakeReschedule();
+      setArmResult(result);
+      showReceipt(result.ok ? "saved" : "failed");
+      // Helten på TA OPP leser `wake_verify`, ikke bryteren. Etter en armering
+      // skal den lese den på nytt med én gang — ellers står den ærlige
+      // «vi har ikke fått bekreftet noen vekking» igjen på en maskin som
+      // nettopp ble armet, til neste minuttpoll.
+      if (result.ok) await refreshNextRecording();
+    } catch (err) {
+      // En avvist kommando er ikke «det gikk bra». Shimmen svarer med
+      // `{ ok:false, reason:"error" }`, men et kast herfra må lande samme sted.
+      console.warn("[schedule] wake_reschedule failed:", err);
+      setArmResult({ ok: false, reason: "error" });
+      showReceipt("failed");
+    } finally {
+      setArming(false);
+    }
+  }
+
   return (
     <>
       <BoundToggle
@@ -405,6 +454,30 @@ function WakeRow() {
       <p data-testid="adv-wake-caps" class={styles.hint}>
         {tDyn("app.setup.advanced.wakeWord", wakeWord(facts))}
       </p>
+      <SettingRow
+        label={t("app.setup.advanced.wakeArm")}
+        description={tDyn(
+          "app.setup.advanced.wakeArmWord",
+          wakeArmWord(armResult),
+        )}
+        receipt={receipt}
+        // Grået ut når bryteren er av: å registrere en vekking for en
+        // innstilling som sier «ikke vekk meg» er en handling uten mening, og
+        // bakenden svarer `reason: "disabled"` uansett.
+        disabled={!on}
+        testId="adv-wake-arm"
+      >
+        <Button
+          variant="secondary"
+          busy={arming}
+          disabled={!on}
+          disabledReason={t("app.setup.advanced.wakeArmWord.disabled")}
+          testId="adv-wake-arm-control-input"
+          onClick={() => void arm()}
+        >
+          {t("app.setup.advanced.wakeArm")}
+        </Button>
+      </SettingRow>
     </>
   );
 }

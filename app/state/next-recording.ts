@@ -36,6 +36,7 @@ import {
   type NextRecordingState,
 } from "@lib/status/next-recording-core";
 
+import { anythingScheduled } from "../pages/setup/schedule-core";
 import { isRecording } from "./recording";
 import { settings } from "./settings";
 
@@ -56,6 +57,19 @@ export const nextRecording = signal<NextRecordingState>(emptyState());
 let lastNextIso: string | null = null;
 
 /**
+ * Har OS-et FAKTISK en vekking? `null` = ikke spurt (eller ikke svart).
+ *
+ * `wakeFromSleep` er en intensjon: noen har vippet en bryter. Om maskinen
+ * faktisk våkner er et annet spørsmål, og bare `wake_verify` kan svare på det
+ * — macOS vil ha et administratorpassord planleggerens stille runde ikke kan
+ * be om, Windows vil ha vekketimere slått på i strømplanen, og bryteren står
+ * og sier «på» gjennom begge. Helten lovte «Maskinen vekkes automatisk kl.
+ * 10:50» av bryteren alene; nå lover den det bare når dette er `true`
+ * (`formatWakeHint` i `@lib/status/next-recording-core`).
+ */
+let wakeArmed: boolean | null = null;
+
+/**
  * Regn om de avledede delene fra `lastNextIso` + innstillingene som gjelder nå.
  *
  * `peek()` på egen tilstand er ikke en detalj: leses `nextRecording.value` her,
@@ -69,8 +83,14 @@ function derive(): void {
     ...nextRecording.peek(),
     next,
     isRecording: isRecording.value,
-    hasAnySchedule: (s.slots ?? []).length > 0 || specials.length > 0,
-    wake: computeWake(next, s.wakeFromSleep !== false),
+    // `anythingScheduled` og ikke «finnes det en slot?»: bryteren «Ta opp
+    // automatisk» kan stå AV med tidene i behold (den er et eget flagg siden
+    // P1b, nettopp for ikke å måtte slette dem). Uten flagget i uttrykket sa
+    // helten «Alt er klart» på en app der ingenting kom til å skje av seg
+    // selv. Regelen har ett hjem — `schedule-core.ts` — og dette er en LESER
+    // av den, ikke en andre kopi.
+    hasAnySchedule: anythingScheduled(s),
+    wake: computeWake(next, s.wakeFromSleep !== false, wakeArmed),
   };
 }
 
@@ -86,6 +106,39 @@ export async function refreshNextRecording(): Promise<void> {
     // å stoppe.
     console.warn("[next-recording] status poll failed:", err);
   }
+  await refreshWakeArmed();
+}
+
+/**
+ * Spør OS-et om vekkingen faktisk er registrert.
+ *
+ * Går sammen med planleggerpollen, fordi det er den samme tidsplanen som
+ * avgjør begge — og fordi en vekking som ble armet av «Aktiver vekking» i
+ * Avansert skal slå gjennom på helten uten at brukeren må laste appen på nytt.
+ *
+ * Ingen vekking å spørre om når bryteren står av: kommandoen ville svart
+ * `expectedWakes: []`, som er sant, men å kalle den for å få et svar vi
+ * allerede kjenner er en rundtur uten mottaker. Verdien settes til `null` —
+ * «ikke spurt» — og `formatWakeHint` sier ingenting uansett når bryteren er av.
+ *
+ * Et FEILET kall lander på `null` og ikke på `false`: at vi ikke fikk spurt er
+ * ikke bevis for at ingenting er armet. Begge fører til den ærlige setningen,
+ * men forskjellen er verdt å beholde — `false` er et svar, `null` er stillhet.
+ */
+async function refreshWakeArmed(): Promise<void> {
+  const before = wakeArmed;
+  if (settings.peek().wakeFromSleep === false) {
+    wakeArmed = null;
+  } else {
+    try {
+      const status = await window.api.wakeVerifyScheduled();
+      wakeArmed = (status?.expectedWakes?.length ?? 0) > 0;
+    } catch (err) {
+      console.warn("[next-recording] wake_verify failed:", err);
+      wakeArmed = null;
+    }
+  }
+  if (wakeArmed !== before) derive();
 }
 
 /** Tøm det savnede-opptak-varselet når brukeren har sett det. */

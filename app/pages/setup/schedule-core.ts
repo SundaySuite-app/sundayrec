@@ -38,6 +38,34 @@ export function autoRecordOn(settings: Settings): boolean {
   );
 }
 
+/**
+ * Kommer det til å skje NOE av seg selv?
+ *
+ * `autoRecordOn` er de faste tidene; et spesialopptak er en enkelt dato noen
+ * har lagt inn, og det skjer uansett hva bryteren står på. Det er ikke en
+ * mening om saken — det er nøyaktig hva bakenden gjør: `scheduler/mod.rs`
+ * sender `settings.active_slots()` (gatet av flagget) OG
+ * `settings.special_recordings` (ugatet) inn i `next_recording`.
+ *
+ * Finnes her, ved siden av regelen den bygger på, fordi den har mer enn én
+ * leser: `state/next-recording.ts` fyller `hasAnySchedule` med den, og
+ * `@lib/status/next-recording-core`s `formatNextTitle` velger «Alt er klart»
+ * kontra «Klar — sett opp en tidsplan» på den. Uttrykket der var
+ * «(slots ?? []).length > 0», altså tidene UTEN flagget: en app med bryteren
+ * av og tidene i behold ville sagt «Alt er klart» om en søndag ingenting kom
+ * til å skje.
+ *
+ * ⚠️ `formatNextTitle` har ingen kallsted i skallet i dag — helten på TA OPP
+ * viser «neste tid» direkte. Feilen var derfor latent, ikke synlig, og det er
+ * nettopp derfor den fortjener en tabell i stedet for en skjerm: den venter
+ * på den første siden som leser den.
+ */
+export function anythingScheduled(settings: Settings): boolean {
+  return (
+    autoRecordOn(settings) || (settings.specialRecordings ?? []).length > 0
+  );
+}
+
 /** Ukedag: 0 = mandag … 6 = søndag. Samme tall som `ScheduleSlot.days`. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
