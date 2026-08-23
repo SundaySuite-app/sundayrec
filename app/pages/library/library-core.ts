@@ -46,7 +46,7 @@
  */
 
 import { pairRecordings } from "@lib/pages/history-core";
-import type { RecordingEntry } from "@lib/../types";
+import type { RecordingEntry } from "@legacy/types";
 
 /** Grensen søket slår inn på. Legacys egen: under to tegn filtreres ingenting,
  *  fordi «a» ville skjult nesten hele arkivet ved første tastetrykk. */

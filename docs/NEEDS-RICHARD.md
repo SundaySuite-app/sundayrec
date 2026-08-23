@@ -417,7 +417,8 @@ None of it blocks the default build or the gate.
 Etter wake-from-sleep-funnet (merget i PR #2) gjorde jeg en systematisk audit av
 (a) hvilke `Settings`-felt backend-konsumentene faktisk leser vs. hva
 `syncBackendRecordingSettings` (api-shim → `settings_save`) sender, og (b) hele
-`call()`/`invoke()`-seamen i `legacy/renderer/api-shim.ts` mot Rust-signaturene.
+`call()`/`invoke()`-seamen i api-shim (`legacy/renderer/api-shim.ts` den gang,
+`app/lib/api-shim.ts` etter fase B) mot Rust-signaturene.
 Bakgrunn: backend-sqlite får KUN det kuraterte opptaks-subsettet; alt utenfor det
 re-defaultes av `#[serde(default)]` ved HVER lagring.
 

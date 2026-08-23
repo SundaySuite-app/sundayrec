@@ -24,15 +24,22 @@ import { describe, expect, it } from "vitest";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..", "..");
-const RENDERER_ROOT = HERE;
+/** The ported inventory — this file's own directory, `app/lib/`. */
+const LIB_ROOT = HERE;
 /**
  * «Frivilligen først»'s Preact shell. It is covered from the day it exists, not
  * added later: the pin is a CLASS-level promise ("no renderer code may touch
  * the old key again"), and a class-level promise that quietly excludes the tree
  * where all the new code is being written is not one.
+ *
+ * ONE root since fase B PR B moved the inventory to `app/lib/`: `app/` now
+ * contains both trees, and listing them separately would walk half of it twice.
+ * The vacuity test below still checks that BOTH halves are in the scan, which
+ * is the property that mattered — a single root that silently stopped
+ * containing the port would look exactly like green.
  */
 const APP_ROOT = join(REPO_ROOT, "app");
-const SOURCE_ROOTS = [RENDERER_ROOT, APP_ROOT];
+const SOURCE_ROOTS = [APP_ROOT];
 
 /** The retired key, assembled so THIS file doesn't trip its own guard. */
 const LEGACY_KEY = ["sundayrec", "settings"].join(".");
@@ -50,8 +57,9 @@ function codeOf(path: string): string {
     .replace(/ \/\/[^"'`\n]*$/gm, "");
 }
 
-/** Every .ts/.tsx source under either shell (tests excluded — they assert ON
- *  the key; the guard is about production code). */
+/** Every .ts/.tsx source under `app/` — shell and ported inventory alike
+ *  (tests excluded — they assert ON the key; the guard is about production
+ *  code). */
 function rendererSources(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -65,22 +73,23 @@ function rendererSources(): string[] {
   return out;
 }
 
-/** Repo-relative, so an offender in either shell is named unambiguously. */
+/** Repo-relative, so an offender in either tree is named unambiguously. */
 const rel = (p: string): string => relative(REPO_ROOT, p);
 
 /** Files allowed to name the legacy key: the migration, and nothing else. */
-const ALLOWLIST = new Set([
-  "legacy/renderer/migrate-legacy-settings-core.ts",
-]);
+const ALLOWLIST = new Set(["app/lib/migrate-legacy-settings-core.ts"]);
 
 describe("settings store pin — sqlite is the ONE store", () => {
-  it("covers BOTH shells — a pin that scans an empty set proves nothing", () => {
-    // The one way this whole file could go silently vacuous: the app tree stops
-    // being walked (renamed, moved, filter tightened) and every assertion below
-    // starts passing for the wrong reason.
+  it("covers BOTH the shell and the ported inventory — a pin that scans an empty set proves nothing", () => {
+    // The one way this whole file could go silently vacuous: one of the two
+    // trees stops being walked (renamed, moved, filter tightened) and every
+    // assertion below starts passing for the wrong reason. Both halves are
+    // named, not just their common root, precisely because they now share one.
     const scanned = rendererSources().map(rel);
-    expect(scanned.some((p) => p.startsWith("legacy/renderer/"))).toBe(true);
-    expect(scanned.some((p) => p.startsWith("app/"))).toBe(true);
+    expect(scanned.some((p) => p.startsWith("app/lib/"))).toBe(true);
+    expect(
+      scanned.some((p) => p.startsWith("app/") && !p.startsWith("app/lib/")),
+    ).toBe(true);
     expect(scanned.some((p) => p.endsWith(".tsx"))).toBe(true);
   });
 
@@ -102,7 +111,7 @@ describe("settings store pin — sqlite is the ONE store", () => {
     // shim calling localStorage again would be the split growing back at its
     // root. (Pages may use localStorage for pure UI prefs — remembered tab,
     // preview size — that is not settings state and not covered by this pin.)
-    const source = codeOf(join(RENDERER_ROOT, "api-shim.ts"));
+    const source = codeOf(join(LIB_ROOT, "api-shim.ts"));
     expect(
       source.includes("localStorage"),
       "api-shim.ts references localStorage — settings live in sqlite; if this is a new UI pref, put it in its own module",
@@ -135,7 +144,7 @@ describe("settings store pin — sqlite is the ONE store", () => {
     // `backendRecordingSettings` was the curated-subset bridge — 180 lines of
     // per-field archaeology that existed to compensate for the dual store.
     // Reintroducing anything by that name would mean the split is back.
-    const source = codeOf(join(RENDERER_ROOT, "api-shim.ts"));
+    const source = codeOf(join(LIB_ROOT, "api-shim.ts"));
     expect(source.includes("backendRecordingSettings")).toBe(false);
   });
 });

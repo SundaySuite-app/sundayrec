@@ -40,7 +40,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import type { ScheduleSlot } from "@lib/../bindings/ScheduleSlot";
+import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
 import { t, tDyn, tf } from "../../i18n";
 import { navigate } from "../../router/router";

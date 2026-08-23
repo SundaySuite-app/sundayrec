@@ -36,7 +36,7 @@
  * ## `--unused` — FEILENDE siden fase B
  *
  * Lister nøkler i no.json ingen leser. Den var informativ mens
- * `legacy/renderer` eide mesteparten av katalogen; nå er skallet borte, og en
+ * inventaret eide mesteparten av katalogen; nå er skallet borte, og en
  * nøkkel ingen leser er en setning ingen ser — som likevel må oversettes til
  * sju språk, holdes i paritet og leses på nytt hver gang noen rydder.
  *
@@ -52,7 +52,7 @@
  * Derfor to kilder til «brukt»:
  *   1. AST-vandringen over `app/**` (nøyaktig, ser formen kallet forutsetter),
  *   2. et STRENGLITERAL-søk over inventarets kildefiler under
- *      `legacy/renderer/**` — samme metode som
+ *      `app/lib/**` — samme metode som
  *      `scripts/check-command-reachability.mjs` bruker og begrunner, og av
  *      samme grunn: det er bredere enn nødvendig, og det er den riktige
  *      retningen å ta feil i for en gate som SLETTER.
@@ -86,8 +86,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const LOCALE_DIR = path.join(ROOT, "legacy", "locales");
 const APP_DIR = path.join(ROOT, "app");
-/** Den delte kjernen `app/` når gjennom `@lib/*`. Se `--unused` over. */
-const LIB_DIR = path.join(ROOT, "legacy", "renderer");
+/**
+ * Den delte kjernen `app/` når gjennom `@lib/*`. Se `--unused` over.
+ *
+ * Den ligger UNDER `APP_DIR` siden fase B PR B, og er derfor eksplisitt holdt
+ * utenfor AST-vandringen (`sourceFiles(APP_DIR, [LIB_DIR])`). Det er ikke en
+ * glipe: inventaret er en verbatim port med legacy-signaturen `t(key,
+ * fallback)`, og fallback-argumentet er nettopp det denne gaten forbyr i
+ * `app/`. Skulle vandringen dekket det, ville flyttingen alene gjort ~30 kall
+ * til gate-feil — en regelendring forkledd som en filflytting. Inventaret
+ * teller der det hører hjemme: som strengliteral-kilde under `--unused`.
+ */
+const LIB_DIR = path.join(APP_DIR, "lib");
 
 /**
  * Språkene `app/` er oversatt til NÅ. Speiler `ACTIVE_LOCALES` i
@@ -387,7 +397,7 @@ function main() {
     ]),
   );
 
-  const files = sourceFiles(APP_DIR);
+  const files = sourceFiles(APP_DIR, [LIB_DIR]);
   const errors = [];
   const used = new Set();
   const usedPrefixes = [];
@@ -427,7 +437,7 @@ function main() {
       console.error(
         `\n${unused.length} nøkkel/nøkler i legacy/locales/*.json som verken ` +
           "et `t/tf/tn/tArr/tDyn`-kall i app/ eller en delt kjerne under " +
-          "legacy/renderer/ nevner.\nSlett dem i ALLE sju katalogene " +
+          "app/lib/ nevner.\nSlett dem i ALLE sju katalogene " +
           "(parity.test.ts krever «ingen ekstra nøkler» overalt), og ta dem ut " +
           "av PAUSED_KEYS hvis de står der.",
       );

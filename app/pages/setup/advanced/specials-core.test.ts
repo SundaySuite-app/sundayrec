@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { ScheduleSlot } from "@lib/../bindings/ScheduleSlot";
-import type { SpecialRecording } from "@lib/../bindings/SpecialRecording";
+import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
+import type { SpecialRecording } from "@legacy/bindings/SpecialRecording";
 
 import {
   checkSpecial,

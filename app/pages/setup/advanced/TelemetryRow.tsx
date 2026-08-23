@@ -26,7 +26,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import type { TelemetryConsent } from "@lib/../bindings/TelemetryConsent";
+import type { TelemetryConsent } from "@legacy/bindings/TelemetryConsent";
 
 import { t } from "../../../i18n";
 import { Button } from "../../../ui/Button/Button";

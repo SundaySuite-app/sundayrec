@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FIRST_ASK, RE_ASK, promptCopyFor } from './telemetry-consent-copy-core'
-import no from '../locales/no.json'
+import no from '../../legacy/locales/no.json'
 
 describe('consent prompt copy', () => {
   it('asks a never-asked install the plain first-time question', () => {

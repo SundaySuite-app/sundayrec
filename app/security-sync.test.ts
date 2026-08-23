@@ -6,11 +6,11 @@
 // (The third pair — SENSITIVE_HOME_SUBPATHS ↔ tauri.conf.json's asset-scope
 // deny list — is covered as a Rust test in
 // src-tauri/src/commands/path_guard.rs, next to the constant it guards.)
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
 
-const repoRoot = path.resolve(__dirname, '..')
+const repoRoot = path.resolve(__dirname, "..");
 
 // ── CSP: tauri.conf.json vs the <meta> tag in the source index.html ────────
 //
@@ -25,58 +25,70 @@ const repoRoot = path.resolve(__dirname, '..')
 // shipped WKWebView enforces, and the only way that claim stays true is if a
 // drift in either file fails here.
 //
+// This file lives beside the `index.html` it guards since PR B (it was
+// `legacy/security-sync.test.ts`, from back when the tag it watched was over
+// there too). Its second half — the ci.yml/release.yml feature-list pair — has
+// nothing to do with `app/` and never did; it rides along because both halves
+// are the same KIND of thing: a list this repo keeps in sync by hand, with a
+// tripwire instead of a comment asking nicely.
+//
 // The loop and the covers-every-shell test are KEPT rather than flattened to a
 // single assertion: what they guard against is a SECOND index.html arriving
 // with no policy check at all, which looks exactly like green.
 
-describe('CSP duplication (tauri.conf.json vs each shell\'s index.html)', () => {
+describe("CSP duplication (tauri.conf.json vs each shell's index.html)", () => {
   function normalizeCsp(csp: string): string {
-    return csp.trim().replace(/\s+/g, ' ')
+    return csp.trim().replace(/\s+/g, " ");
   }
 
   function confCsp(): string {
-    const confPath = path.join(repoRoot, 'src-tauri', 'tauri.conf.json')
-    const conf = JSON.parse(readFileSync(confPath, 'utf8')) as {
-      app?: { security?: { csp?: string } }
-    }
-    const csp = conf.app?.security?.csp
-    expect(csp, `app.security.csp missing from ${confPath}`).toBeTypeOf('string')
-    return csp as string
+    const confPath = path.join(repoRoot, "src-tauri", "tauri.conf.json");
+    const conf = JSON.parse(readFileSync(confPath, "utf8")) as {
+      app?: { security?: { csp?: string } };
+    };
+    const csp = conf.app?.security?.csp;
+    expect(csp, `app.security.csp missing from ${confPath}`).toBeTypeOf(
+      "string",
+    );
+    return csp as string;
   }
 
   /** Every index.html that declares the policy for itself. Prettier formats
    *  `app/`, so the attribute may sit on its own line — hence `[\s\S]` in the
    *  tag match and the whitespace normalisation below. */
   const SHELLS: Array<[string, string[]]> = [
-    ['app shell (Preact)', ['app', 'index.html']],
-  ]
+    ["app shell (Preact)", ["app", "index.html"]],
+  ];
 
   for (const [name, segments] of SHELLS) {
-    const relPath = segments.join('/')
+    const relPath = segments.join("/");
     it(`the <meta> CSP in ${relPath} matches app.security.csp in tauri.conf.json`, () => {
-      const htmlPath = path.join(repoRoot, ...segments)
-      const html = readFileSync(htmlPath, 'utf8')
+      const htmlPath = path.join(repoRoot, ...segments);
+      const html = readFileSync(htmlPath, "utf8");
       const match = html.match(
         /<meta[\s\S]*?http-equiv="Content-Security-Policy"[\s\S]*?content="([^"]+)"/,
-      )
-      expect(match, `no <meta http-equiv="Content-Security-Policy"> tag found in ${htmlPath}`).not.toBeNull()
+      );
+      expect(
+        match,
+        `no <meta http-equiv="Content-Security-Policy"> tag found in ${htmlPath}`,
+      ).not.toBeNull();
 
       expect(
         normalizeCsp(match![1]),
         `${relPath}'s CSP <meta> tag (the ${name}) has drifted from ` +
           `tauri.conf.json's app.security.csp — update ${relPath} to match (or ` +
           `vice versa) so the two stay identical`,
-      ).toBe(normalizeCsp(confCsp()))
-    })
+      ).toBe(normalizeCsp(confCsp()));
+    });
   }
 
-  it('covers every shell that exists — a new index.html must be added here', () => {
+  it("covers every shell that exists — a new index.html must be added here", () => {
     // The failure this catches is a third shell (or a rename) landing with no
     // policy check at all, which looks exactly like green.
-    const covered = SHELLS.map(([, s]) => s.join('/')).sort()
-    expect(covered).toEqual(['app/index.html'])
-  })
-})
+    const covered = SHELLS.map(([, s]) => s.join("/")).sort();
+    expect(covered).toEqual(["app/index.html"]);
+  });
+});
 
 // ── windows-check feature list (ci.yml) vs the release.yml Windows matrix ──
 //
@@ -84,37 +96,49 @@ describe('CSP duplication (tauri.conf.json vs each shell\'s index.html)', () => 
 // SDK, which ci.yml's windows-check job deliberately skips (see its comment),
 // so ci.yml's list must equal release.yml's Windows list minus `asio`.
 
-function extractFeatureList(text: string, pattern: RegExp, describeWhere: string): string[] {
-  const match = text.match(pattern)
-  expect(match, `could not find ${describeWhere} — the workflow's shape has changed; update the regex in legacy/security-sync.test.ts`).not.toBeNull()
-  return match![1].split(',')
+function extractFeatureList(
+  text: string,
+  pattern: RegExp,
+  describeWhere: string,
+): string[] {
+  const match = text.match(pattern);
+  expect(
+    match,
+    `could not find ${describeWhere} — the workflow's shape has changed; update the regex in app/security-sync.test.ts`,
+  ).not.toBeNull();
+  return match![1].split(",");
 }
 
-describe('windows-check feature list (ci.yml) vs release.yml Windows matrix', () => {
-  it('ci.yml windows-check equals release.yml Windows features minus asio', () => {
-    const ciPath = path.join(repoRoot, '.github', 'workflows', 'ci.yml')
-    const ciText = readFileSync(ciPath, 'utf8')
+describe("windows-check feature list (ci.yml) vs release.yml Windows matrix", () => {
+  it("ci.yml windows-check equals release.yml Windows features minus asio", () => {
+    const ciPath = path.join(repoRoot, ".github", "workflows", "ci.yml");
+    const ciText = readFileSync(ciPath, "utf8");
     const ciFeatures = extractFeatureList(
       ciText,
       /cargo check --workspace --no-default-features --features ([a-zA-Z0-9_,]+)/,
       `the windows-check "cargo check (Windows release feature combo, minus asio)" step in ${ciPath}`,
-    )
+    );
 
-    const releasePath = path.join(repoRoot, '.github', 'workflows', 'release.yml')
-    const releaseText = readFileSync(releasePath, 'utf8')
+    const releasePath = path.join(
+      repoRoot,
+      ".github",
+      "workflows",
+      "release.yml",
+    );
+    const releaseText = readFileSync(releasePath, "utf8");
     const releaseFeatures = extractFeatureList(
       releaseText,
       /- platform: windows-latest\s*\n\s*args: "-- --no-default-features --features ([a-zA-Z0-9_,]+)"/,
       `the windows-latest matrix entry's args in ${releasePath}`,
-    )
+    );
 
-    const expected = releaseFeatures.filter(f => f !== 'asio')
+    const expected = releaseFeatures.filter((f) => f !== "asio");
     expect(
       ciFeatures,
       `.github/workflows/ci.yml's windows-check feature list has drifted from ` +
         `.github/workflows/release.yml's Windows matrix features (minus asio, which ` +
         `ci.yml intentionally skips — it needs the Steinberg SDK). Update whichever ` +
         `file didn't get the feature change.`,
-    ).toEqual(expected)
-  })
-})
+    ).toEqual(expected);
+  });
+});

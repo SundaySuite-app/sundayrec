@@ -47,7 +47,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { acquireVuFeed } from "@lib/audio/vu-feed";
 import { isBuiltInDevice } from "@lib/audio/capture";
 import { nextSignalState } from "@lib/pages/channel-grid-logic";
-import type { VuLevels } from "@lib/../bindings/VuLevels";
+import type { VuLevels } from "@legacy/bindings/VuLevels";
 
 import { t, tf } from "../../i18n";
 import { navigate } from "../../router/router";

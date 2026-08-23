@@ -18,13 +18,13 @@
 // derived, so changing a Polish form to the wrong one turns a test red.
 import { describe, expect, it } from 'vitest'
 import { interpolate, pluralCategory, selectPluralForm, t, tf, tn } from './i18n'
-import no from '../locales/no.json'
-import en from '../locales/en.json'
-import sv from '../locales/sv.json'
-import da from '../locales/da.json'
-import de from '../locales/de.json'
-import fr from '../locales/fr.json'
-import pl from '../locales/pl.json'
+import no from '../../legacy/locales/no.json'
+import en from '../../legacy/locales/en.json'
+import sv from '../../legacy/locales/sv.json'
+import da from '../../legacy/locales/da.json'
+import de from '../../legacy/locales/de.json'
+import fr from '../../legacy/locales/fr.json'
+import pl from '../../legacy/locales/pl.json'
 
 type Tree = Record<string, unknown>
 

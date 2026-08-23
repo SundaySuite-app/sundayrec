@@ -53,6 +53,13 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const APP_DIR = path.join(ROOT, "app");
+/**
+ * Det porterte inventaret, som fase B PR B flyttet inn under `app/`. Holdt
+ * utenfor vandringen med vilje — se `sourceFiles` i `lib/tsx-i18n-scan.mjs`.
+ * Baselinen her er 0 fordi SKALLET ikke har gjeld; porten har det, og en
+ * baseline som endrer seg fordi en mappe flyttet er ingen baseline.
+ */
+const LIB_DIR = path.join(APP_DIR, "lib");
 
 /**
  * «Minst ett ord på ≥3 bokstaver med minst én liten bokstav.»
@@ -297,7 +304,7 @@ function main() {
   selfTest();
 
   const args = process.argv.slice(2);
-  const files = sourceFiles(APP_DIR);
+  const files = sourceFiles(APP_DIR, [LIB_DIR]);
   const findings = [];
 
   for (const file of files) {

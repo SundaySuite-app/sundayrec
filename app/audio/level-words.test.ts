@@ -9,11 +9,11 @@ import { describe, expect, it } from "vitest";
 
 import { VU_FLOOR_DB } from "@lib/audio/vu-feed-core";
 
-// Gjennom aliaset, ikke en relativ sti ut av `app/`: ESLint tillater bare
-// `@lib/*` som vei inn i legacy-treet, så den dagen `legacy/` flytter er det
-// én sti å endre. (`@lib` peker på `legacy/renderer`; katalogene ligger ett
-// hakk opp — samme form som `@lib/../bindings/*`.)
-import no from "@lib/../locales/no.json";
+// Gjennom aliaset, ikke en relativ sti: ESLint tillater bare `@legacy/*` som
+// vei inn i `legacy/`, så den dagen katalogene flytter er det én sti å endre.
+// (`@legacy` er `legacy/`, `@lib` er det porterte inventaret i `app/lib/` —
+// to aliaser fordi det er to trær, og ingen av dem nås relativt.)
+import no from "@legacy/locales/no.json";
 
 import {
   HEARD_DB,

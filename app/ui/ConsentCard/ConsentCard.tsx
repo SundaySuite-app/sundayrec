@@ -42,7 +42,7 @@
 import { useState } from "preact/hooks";
 
 import { FIRST_ASK, promptCopyFor } from "@lib/telemetry-consent-copy-core";
-import type { ConsentStatus } from "@lib/../bindings/ConsentStatus";
+import type { ConsentStatus } from "@legacy/bindings/ConsentStatus";
 
 import { t } from "../../i18n";
 import { Button } from "../Button/Button";

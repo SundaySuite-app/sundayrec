@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { soundChosen, toDeviceOptions } from "./devices";
-import type { TaggedAudioInput } from "@lib/../bindings/TaggedAudioInput";
+import type { TaggedAudioInput } from "@legacy/bindings/TaggedAudioInput";
 
 function input(over: Partial<TaggedAudioInput> = {}): TaggedAudioInput {
   return {

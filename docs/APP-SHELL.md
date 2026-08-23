@@ -1,7 +1,8 @@
 # `app/` — the shell
 
-> **⚠️ THE PARALLEL PERIOD IS OVER.** Fase B made `app/` the shipped frontend
-> and deleted `legacy/renderer/`'s shell. Everything below from «S1a» down was
+> **⚠️ THE PARALLEL PERIOD IS OVER.** Fase B made `app/` the shipped frontend:
+> PR A deleted `legacy/renderer/`'s shell, PR B moved what was left of it to
+> `app/lib/`. Everything below from «S1a» down was
 > written while there were two, and is kept as the record of WHY each contract
 > is shaped the way it is — the reasoning is still load-bearing even where the
 > tense has moved on. What changed at the switch is written here, at the top,
@@ -20,14 +21,44 @@ somebody deliberately pointed Tauri at it. That is what fase B did — by moving
 the root and the port rather than by adding a switch, so there is still no
 runtime branch anywhere and never was.
 
-What survives of `legacy/` is the **inventory**: the IPC layer and everything
+What survived the delete is the **inventory**: the IPC layer and everything
 pure underneath it, reached through the `@lib/*` alias (`@lib/api-shim`,
-`@lib/i18n`, the `*-core.ts` modules). 40 source files, down from 132. The
-directory keeps its name until PR B moves them under `app/lib/`; the alias is
-what makes that a one-line change.
+`@lib/i18n`, the `*-core.ts` modules). 40 source files, down from 132.
 
-The dependency still runs **one way**. `app/` may import from `legacy/` through
-`@lib/*`; `legacy/` may never import from `app/` (ESLint enforces it).
+**PR B moved it to `app/lib/`** — 76 files (the sources and their tests) by
+`git mv` and nothing else, plus the one line in `vite.config.ts` the alias
+existed to make possible. What is left under `legacy/` is generated code and
+data: `bindings/`, `locales/`, `types/`, `shared/`, reached from the shell
+through a second alias, **`@legacy/*`**.
+
+> `@legacy/*` is new, and it is the one import spelling PR B had to change:
+> the shell used to reach the bindings as `@lib/../bindings/X` — walking OUT of
+> one alias with `..` to land in a directory that only happened to be its
+> neighbour. 24 files did it, and all 24 broke the moment `@lib` moved. An alias
+> written relative to another alias is a dependency on where the other one
+> points, not on what is being imported.
+
+The dependency still runs **one way**, and now says so from inside `app/`:
+`app/lib/` may never import the shell around it. ESLint enforces it per
+directory depth, since inside `app/` there is no longer an `app/` segment for a
+glob to match on.
+
+`app/lib/` is a **verbatim port**, and PR B kept it one rather than promoting it
+by moving it:
+
+- its own ESLint block (`any` and `no-unused-vars` loosened, exactly the rules
+  the `legacy/**` block gave it), so nobody reads a file under `app/` and assumes
+  it has been through the review the shell has;
+- still outside `prettier` (`.prettierignore` carries `app/lib`), because a
+  reformat is a whole-file diff on 76 files and would have buried the proof that
+  the move changed nothing;
+- and outside the two i18n AST gates, which forbid the fallback argument
+  (`t(key, 'norsk')`) that IS the port's signature — a gate that doubled its
+  reach because a directory moved would be a rule change dressed as a rename.
+
+Each is undone **file by file, on touch**: when one of these is opened for a real
+reason, it leaves the ignore and the block in the same PR as the change that made
+you open it.
 
 ## Why **not** `@preact/preset-vite`
 
@@ -147,9 +178,10 @@ That last one is the ordering that cannot be reversed: `setLocale` awaits
 first would give one frame of Norwegian text under an English locale, on every
 switch — a bug nobody reports and nobody finds.
 
-`loadLocaleCatalogue` is the one **additive** export S1a added to
-`legacy/renderer/i18n.ts`: the data half of `loadLocale`, without the
-`document`-touching `applyTranslations()` pass. `loadLocale` calls it and
+`loadLocaleCatalogue` is the one **additive** export S1a added to the locale
+loader (`legacy/renderer/i18n.ts` then, `app/lib/i18n.ts` since PR B): the
+data half of `loadLocale`, without the `document`-touching
+`applyTranslations()` pass. `loadLocale` calls it and
 behaves exactly as before.
 
 ### `tDyn` — the one door for a dynamic key
@@ -183,7 +215,7 @@ stop reading carefully.
 ✅ **Fase B did half of it, and the useful half first.** 653 keys nothing reads
 were deleted from all seven catalogues before any translating starts — the five
 paused languages went from 895 keys to 244. `PAUSED_KEYS` is 442 (the `app.*`
-surface). The translation round itself comes after PR B.
+surface). PR B is done; the translation round itself is what comes next.
 
 A stored language outside `ACTIVE_LOCALES` picks the nearest active one
 (`resolveStartupLocale`: sv/da → no, everything else → en) instead of rendering
@@ -605,7 +637,8 @@ is meant to read; it is now something only e2e sees.
 
 ## The one legacy change
 
-`window.api.on()` in `legacy/renderer/api-shim.ts` attached no `.catch` to
+`window.api.on()` in the IPC shim (`legacy/renderer/api-shim.ts` then,
+`app/lib/api-shim.ts` since PR B) attached no `.catch` to
 `listen(...)`, and `listen` reaches `__TAURI_INTERNALS__` directly. Outside
 Tauri — a plain `npm run dev`, or any page without the e2e harness — every
 subscription rejected, so each one became an **unhandled promise rejection**:
@@ -619,7 +652,7 @@ only visible difference is that a browser boot stops shouting, and that `on()`
 keeps its promise either way: it always returns an unsubscribe that is safe to
 call. The warning is once per **channel**, not per call.
 
-Pinned two ways: `legacy/renderer/api-shim-listen.test.ts` (node, with the
+Pinned two ways: `app/lib/api-shim-listen.test.ts` (node, with the
 internals deliberately absent) and a bare-`page.goto` case in
 `e2e/boot.spec.ts` — S0's boot spec had to go through the harness for
 exactly this reason, and no longer does.
@@ -1748,7 +1781,7 @@ spørsmål og ett klikk som svar.
 
 Planens arkitekturkontrakt, holdt til punkt og prikke: `app/editor/model.ts`
 har det samme muterbare objektet, med de samme feltnavnene og den samme
-betydningen som `legacy/renderer/pages/editor/state.ts`. Det er ikke nostalgi —
+betydningen som `@lib/pages/editor/state`. Det er ikke nostalgi —
 det er den ene hete stien i appen. Tegneløkka leser `cuts`, `peaks`, `vpStart`
 og `playStartSec` opptil seksti ganger i sekundet, og et signal per felt ville
 betydd seksti sporede lesninger per frame og en re-render av treet hver gang
@@ -2246,14 +2279,15 @@ Fiksturene ligger i `e2e/editor-fixtures.ts` (`EXPORT_OK`, `EXPORT_HELD`,
    slettet, så tabellen i `export-core.ts` er den ENESTE nå. Det er ikke en
    sammenslåing, det er at den andre halvdelen forsvant — men speilet er borte.
 6. **`app.editor.mx.*`** er første store prosamengde i skallet (23 etiketter ×
-   2 språk). De fem pausete språkene får dem i oversettelsesrunden etter PR B.
+   2 språk). De fem pausete språkene får dem i oversettelsesrunden, som nå er neste.
 
 ---
 
 # Etter byttet
 
-Fase B, PR A gjorde `app/` til skallet og slettet `legacy/renderer/`s. Dette er
-den samlede restanselista — alt som er kjent åpent, ett sted, så ingen av delene
+Fase B, PR A gjorde `app/` til skallet og slettet `legacy/renderer/`s skall;
+PR B flyttet inventaret som ble igjen til `app/lib/`. Dette er den samlede
+restanselista — alt som er kjent åpent, ett sted, så ingen av delene
 finnes bare i en commit-melding.
 
 ## 1. ⚠️ Vekking fra dvale spør aldri om administratorpassord
@@ -2324,24 +2358,41 @@ re-peking.
 `legacy/locales/parity.test.ts` unnskylder 442 nøkler i sv/da/de/fr/pl. Fase B
 ryddet 653 DØDE nøkler ut av alle sju katalogene først, nettopp så
 oversettelsesrunden ikke går på tekst ingen ser: sv/da/de/fr/pl gikk fra 895 til
-244 nøkler, no/en fra 1339 til 686. Oversettelsesrunden kommer etter PR B.
+244 nøkler, no/en fra 1339 til 686. PR B er ute; oversettelsesrunden er neste.
 
-## 6. PR B: flytt inventaret
+## 6. ✅ PR B: inventaret er flyttet
 
-`legacy/renderer/` er 40 kildefiler og deres tester nå. PR B flytter dem til
-`app/lib/`, `@lib`-aliaset peker på den nye stien, og `legacy/` blir
-`bindings` + `locales` + `types` + `shared`. Mekanisk, og lettere å lese som sin
-egen commit enn blandet inn i en sletting på 24 000 linjer.
+`legacy/renderer/**` → `app/lib/**`, 76 filer, `git mv` og ingenting annet i
+sin egen commit — så `git log --follow` bærer historikken og en leser kan se
+med øynene at ingen linje er skrevet om. `legacy/` er `bindings` + `locales` +
+`types` + `shared`, og `@lib`-aliaset peker på den nye stien i vite, vitest og
+tsconfig.
 
-Det som følger med den flyttingen:
+De tre restansene denne flyttingen bar med seg, og hva de ble:
 
-- **`.prettierignore`s `legacy`-linje.** Inventaret er fortsatt uformatert fordi
-  det er en verbatim port; etter flyttingen er spørsmålet om det skal formateres
-  som resten av `app/`.
-- **ESLints legacy-blokk.** Den løsner `any` og `no-unused-vars` for en port.
-  Etter flyttingen bør de 40 filene enten holdes til `app/`-reglene eller ha en
-  egen, navngitt blokk.
-- **`window.__isRecording`.** `audio/vu-feed.ts` LESER den som en vakt mot
-  `start_vu` under et opptak. Ingen skriver den, så vakten er inert — trygt i
-  dag fordi skallet vokter det samme ved MONTERING (se `RecordPage.tsx`), men
-  det er to steder som må være enige, og det er verdt å samle når filen flytter.
+- **`.prettierignore`.** Inventaret formateres **fortsatt ikke** — `legacy`-linja
+  er byttet mot `app/lib`. Grunnen er den samme og står i fila: en reformat er
+  en helfil-diff på 76 filer, og under flyttingen ville den skjult nettopp det
+  flyttingen skal kunne bevises på. Det gjøres **fil for fil ved berøring**.
+- **ESLints legacy-blokk.** `app/lib/**` fikk sin **egen navngitte blokk** med
+  de samme løsnede reglene, og den strenge `app/**`-blokken utelukker
+  `app/lib/**` ved navn (ikke ved regel-overstyring — utelukkelsen er poenget og
+  skal være synlig). Samme fil-for-fil-opptrapping. Énveisregelen er beholdt og
+  skrevet om: `app/lib/` importerer aldri skallet rundt seg, håndhevet per
+  mappedybde fordi det ikke lenger finnes et `app/`-ledd å matche på.
+- **`window.__isRecording`** — IKKE lukket, se punkt 7. Den er en
+  adferdsendring, og PR B var en flytting.
+
+## 7. ⚠️ `window.__isRecording`: to steder som må være enige
+
+`app/lib/audio/vu-feed.ts` LESER flagget som en vakt mot `start_vu` under et
+opptak. **Ingen skriver det** — `app/` gjenskaper med vilje ikke globalen — så
+vakten er inert. Det er trygt i dag, og bare fordi skallet vokter det samme ved
+**MONTERING**: ingen måler i treet, ingen `start_vu`
+(`app/pages/record/RecordPage.tsx`).
+
+To steder som må være enige om én sannhet er nøyaktig formen dette skallet
+finnes for å avslutte. Å samle dem er lite arbeid — `vu-feed` tar `isRecording`
+som et ARGUMENT i stedet for å lese en global — men det er en adferdsendring med
+egen test, ikke en flytting. Alle tre lesestedene peker på hverandre i mellomtiden
+(`vu-feed.ts`, `api.d.ts`, `RecordPage.tsx`).

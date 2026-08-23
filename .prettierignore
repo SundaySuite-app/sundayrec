@@ -6,15 +6,29 @@ src-tauri/gen
 src-tauri/binaries
 target
 
-# What is left of the ported old Electron renderer: the shared inventory the
-# shell reaches through `@lib/*`. Still unformatted, still on purpose — these
-# files are a verbatim port, and PR B moves them under `app/lib/` unchanged. A
-# reformat would put a whole-file diff under both the delete and the move.
+# The ported old Electron renderer's inventory, now at `app/lib/` — the IPC
+# shim, the locale loader and the pure `*-core` modules the shell reaches
+# through `@lib/*`.
+#
+# Still unformatted, still on purpose. These 76 files are a VERBATIM port
+# (single quotes, no semicolons, the old app's house style), and a reformat is
+# a whole-file diff on every one of them. Put under the move it would have made
+# PR B unreadable — a reviewer could no longer see that not one line changed;
+# put here on its own it is a 12 000-line commit that says nothing.
+#
+# So it happens FILE BY FILE, when a file is opened for a real reason: take it
+# out of this ignore, format it, tighten it to `app/`'s ESLint rules (see the
+# `app/lib/**` block in eslint.config.js), in the same PR as the change that
+# made you open it. The day the list is empty, both lines go.
+app/lib
+
+# `legacy/` is what the inventory left behind: the ts-rs `bindings/` (generated
+# code is never reformatted), the seven locale catalogues, `types/` and
+# `shared/` — all verbatim port or generated output, same reasoning as above.
 legacy
 
 # ts-rs bindings: src/lib/bindings is the transient regen target; the committed
-# copy lives at legacy/bindings (already covered by the `legacy` entry above —
-# generated code is never reformatted).
+# copy lives at legacy/bindings (already covered by the `legacy` entry above).
 src/lib/bindings
 
 # The atlas (Fase A, «Frivilligen først»): PNGs plus two markdown reports that

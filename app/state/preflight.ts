@@ -36,7 +36,7 @@
  */
 
 import { buildHealthFindings } from "@lib/status/health-findings";
-import type { PreflightFinding } from "@lib/../bindings/PreflightFinding";
+import type { PreflightFinding } from "@legacy/bindings/PreflightFinding";
 
 import { t } from "../i18n";
 import { setPreflightFindings } from "./next-recording";

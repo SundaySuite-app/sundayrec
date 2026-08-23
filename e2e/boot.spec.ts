@@ -14,7 +14,7 @@ import { boot, BOOT_FIXTURES, fn, SETTLED_SETTINGS } from "./harness";
 //      is not used — it is a Babel plugin, and Vite 8 here is rolldown + oxc)
 //      would produce a page that builds fine and is blank in the app.
 //   2. `@lib/*` reaches the legacy renderer: the heading text comes from
-//      legacy/locales/no.json through legacy/renderer/i18n.ts, and the shim is
+//      legacy/locales/no.json through app/lib/i18n.ts, and the shim is
 //      imported for its side effects.
 //   3. NOTHING logs an error on boot. `api-shim` outside Tauri rejects every
 //      unfixtured command by construction, so a console error here means a real

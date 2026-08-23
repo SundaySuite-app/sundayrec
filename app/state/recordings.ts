@@ -20,7 +20,7 @@
  */
 
 import { computed, signal } from "@preact/signals";
-import type { RecordingEntry } from "@lib/../types";
+import type { RecordingEntry } from "@legacy/types";
 
 /**
  * Radene, nyeste først — `recordings_list` er `ORDER BY created_at DESC`, og

@@ -41,15 +41,30 @@ export function isScannableFile(name) {
   return /\.tsx?$/.test(name);
 }
 
-/** Alle skannbare filer under `dir`, rekursivt. Tom liste for en mappe som
- *  ikke finnes (gaten skal ikke krasje på et halvt sjekket ut tre). */
-export function sourceFiles(dir) {
+/**
+ * Alle skannbare filer under `dir`, rekursivt. Tom liste for en mappe som
+ * ikke finnes (gaten skal ikke krasje på et halvt sjekket ut tre).
+ *
+ * `exclude` er absolutte stier vandringen ikke går inn i. Den finnes for ÉN
+ * ting: `app/lib/` — det porterte inventaret, som fase B flyttet INN i `app/`.
+ * Begge gatene under stiller krav ingen av de 76 portede filene er skrevet
+ * for (fallback-argumentet er selve legacy-signaturen: `t('a.b', 'norsk')`), og
+ * en gate som plutselig dekker dobbelt så mye fordi en mappe FLYTTET er ikke
+ * en strengere gate — det er en gate ingen har bestemt seg for. Inventaret
+ * bidrar der det faktisk hører hjemme: som strengliteral-kilde i
+ * `check-i18n-keys.mjs --unused`.
+ */
+export function sourceFiles(dir, exclude = []) {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) return sourceFiles(p);
-    return e.isFile() && isScannableFile(e.name) ? [p] : [];
-  });
+  const skip = new Set(exclude.map((p) => path.resolve(p)));
+  const walk = (d) =>
+    fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+      const p = path.join(d, e.name);
+      if (skip.has(path.resolve(p))) return [];
+      if (e.isDirectory()) return walk(p);
+      return e.isFile() && isScannableFile(e.name) ? [p] : [];
+    });
+  return walk(dir);
 }
 
 /** Parse én fil. `.tsx` MÅ parses som TSX — ellers leses `<Foo/>` som en
