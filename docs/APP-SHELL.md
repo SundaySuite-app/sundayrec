@@ -933,14 +933,14 @@ tall?» som avgjør. Tabelltestet i `use-setting-core.test.ts`.
 
 ## Det P1b IKKE tok med
 
-- **«Oppdater automatisk» og den timesvise sjekken.** `autoUpdate` er en av de
-  fire uten bakendleser (ATLAS §2.6); timeren bor i `general-page.ts`, og
-  canvasens sett 5.4 lar raden være ute. Konsekvensen er reell og må tas før
-  skallet byttes: **det nye skallet sjekker ikke etter oppdateringer av seg
-  selv**, og det er den samme veien beta-ringens kill-switch når folk. Én fil
-  (`app/state/auto-update.ts` over `auto-update-schedule-core`) pluss én rad
-  hvis eieren vil ha bryteren tilbake. PRIVACY.md lover at den KAN slås av, så
-  timeren og bryteren hører sammen.
+- **«Oppdater automatisk» og den timesvise sjekken.** ✅ **Tatt i P3.** `autoUpdate`
+  er en av de fire uten bakendleser (ATLAS §2.6); timeren bodde i
+  `general-page.ts`, og canvasens sett 5.4 lot raden være ute. Konsekvensen var
+  reell — **det nye skallet sjekket ikke etter oppdateringer av seg selv**, og
+  det er den samme veien beta-ringens kill-switch når folk. Nå: én fil
+  (`app/state/auto-update.ts` over `auto-update-schedule-core`) og én rad på
+  Avansert, fordi PRIVACY.md lover at den KAN slås av og timeren og bryteren
+  derfor hører sammen. Se P3 under.
 - **Diagnose-modalen** (`btn-audio-diagnose` → `run_diagnostics`). Ingen plass i
   den nye informasjonsarkitekturen ennå; legacy-specen dekker den fortsatt.
 - **Mikser og lydbehandling.** Canvasen tegner raden med en «Åpne»-knapp;
@@ -1323,3 +1323,247 @@ To ting proben fant som ingen test ville ha funnet:
    profil har `preRollSeconds` på 0 (Avansert viser «Av»). Brikka er derfor
    ikke sett live — den er bevist i Playwright i stedet, med begge svar fra
    `preroll_start`.
+
+---
+
+# P3 — Bibliotek, og den timesvise sjekken P1b lot være
+
+P2 bygde stedet man tar opp. P3 bygger stedet man finner opptaket igjen — og
+lukker den ene konsekvensen P1b skrev ned som en eiersak.
+
+|                       | før (`legacy/renderer`)                                     | nå (`app/`)                                              |
+| --------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
+| Historikk             | tabell m/ 5 kolonner, 2 sorterbare, 3 filterbrikker (11 kt) | én liste, nyeste først (`pages/library/LibraryPage`)     |
+| Radens tittel         | filnavn i kolonne 3, dato i kolonne 1                       | «Søndag 16. august 2026 · 11:00»                         |
+| Slett                 | ikon i en rad m/ fire ikoner                                | «Slett», og en toast med «Angre»                         |
+| Papirkurven           | en lenke som SKJULER SEG når kurven er tom                  | en inngang som alltid er der (`pages/library/TrashPage`) |
+| Notat                 | modal + `recording_update_note`                             | vises på raden, redigeres ikke (eiervalg)                |
+| «Oppdater automatisk» | bryter + timer i `general-page.ts`                          | rad på Avansert + `state/auto-update.ts`                 |
+
+## Raden er en ØKT, ikke en fil
+
+Et opptak med kamera skriver TO historikkrader (`{stem}.mp4` og lyd-sidevognen
+`{stem}.wav`). `pairRecordings` i `@lib/pages/history-core` folder dem til én
+rad på den delte grunnstien, og den avgjørelsen er GJENBRUKT — kommentaren over
+den forklarer hvorfor nabolagsheuristikken den erstattet ikke kunne virke under
+Tauri-shimmen.
+
+Det gir også den ene brikka som overlevde: **Video**. `historyTotals` er derimot
+IKKE gjenbrukt, og det er et funn: den summerer `durationSec` per OPPFØRING, så
+en økt med kamera bidrar med sin egen lengde to ganger. Legacys statistikklinje
+gjør nettopp det. `totalSeconds` summerer over radene.
+
+## ⚠️ Datoen kom fra feil felt — `startedAt` er lagt til i shimmen
+
+`rowToEntry` satte `timestamp: created_at ?? started_at`. `created_at` stemples
+av `insert_recording` når RADEN skrives, altså når gudstjenesten er ferdig. Så
+lenge tabellen bare viste en dato spilte det ingen rolle; canvasens 3.1 setter
+klokkeslettet i radens tittel, og der er «12:05» ikke en unøyaktighet — det er
+feil tid, med hele opptakets lengde.
+
+api-shimmen bærer derfor `startedAt` videre, ADDITIVT (`legacy/types`
+`RecordingEntry` fikk et valgfritt felt, `pairRecordings` ble generisk over
+radtypen — begge type-only). Ingen legacy-adferd er endret; `rowToEntry` legger
+én nøkkel til på et objekt alle andre lesere leser ved navn.
+
+## De tre brikkene som ikke finnes
+
+Canvasens 3.1 har «Eksportert», «Redigert» og «Avbrutt», og «manuelt» som et
+dempet tillegg i tittelen. `recordings_list`-raden er `id, file_path,
+device_name, started_at, duration_ms, byte_size, created_at, note` og ikke noe
+mer, og `rowToEntry` setter `status: "ok"` KONSTANT («recordings_list only holds
+completed recordings»). Det finnes altså ingen kilde til noen av dem — verken
+til «Avbrutt» eller til skillet manuelt/planlagt. Et merke som gjettes er verre
+enn ingen merke, samme regel som P2 skrev ned.
+
+Papirkurv-raden er magrere av samme grunn: `TrashEntry` er `id, originalPath,
+trashedPath, name, deletedAt, related, byteSize`. Historikkraden ligger igjen i
+basen med både starttid og varighet — det er dét som gjør at en gjenoppretting
+gir tilbake notatet — men `getHistory` filtrerer bort alt som ligger i kurven,
+på originalstien, og det filteret er det som hindrer at en slettet fil dukker
+opp som et opptak som finnes. Så raden sier filnavnet, når den ble slettet, og
+hvor lenge det er igjen. Canvasens dato + varighet i 3.3 er ikke med.
+
+## Papirkurven har alltid en inngang
+
+Atlaset §5, funn 9: `refreshTrashButton()` setter `display:none` på
+«Papirkurv»-lenken når `trash_list` er tom, og lukker samtidig visningen hvis
+den står åpen. En frivillig som slettet noe i går og leter etter det i dag
+finner ingen dør hvis sveipen har vært innom i mellomtiden — og tilstanden er
+derfor ikke engang fotograferbar i atlaset.
+
+Bunnlinja i Bibliotek har nå tre former: «Papirkurv» (ikke lest ennå — et tall
+vi ikke har er ikke null), «Papirkurven er tom», og «Papirkurv (N)». Alle tre
+er en knapp som går samme sted. `e2e/app/library.spec.ts` har mutasjonsprøven.
+
+De 30 dagene er ekte: `AUTO_PURGE_DAYS = 30` i `src-tauri/src/trash/mod.rs`, og
+`trash::sweep::spawn` armes fra `setup` — første tikk etter 90 sekunder, så hver 12. time — og sletter det som er eldre sammen med historikkradene.
+`TRASH_KEEP_DAYS` i `trash-core` speiler tallet, og skjermen sier det.
+
+## To tellende setninger uten en ny `tn()`
+
+«Slettes om {n} dager» og «Slettes automatisk etter {n} dager» er begge
+tellende, og `check-i18n-plurals.mjs` krever hver flertallsgruppe i ALLE sju
+språk uten unntak for de fem som er pauset. Så kjernen velger FORMEN
+(`dueLine`, `autoDeleteLine`) og hver form har en `tf()`-nøkkel som er riktig
+for tallområdet den vises for — samme mønster som `spanOfMinutes` i P2.
+
+Alt papirkurven ellers sier er GJENBRUKTE `trash.*`-nøkler, som finnes i alle
+sju språk fra før: «Papirkurven er tom», «Slett for godt», «Slett {n} opptak
+for godt?», «i går», «+ {n} tilhørende filer».
+
+## Slett spør ikke — og den ene raden som likevel ikke er angrbar
+
+Et slett flytter fila, sidevognene og videosøsteren til papirkurven, og toasten
+tilbyr «Angre» i 9 sekunder (legacys eget vindu — husets `info`-standard er 3,2
+sekunder, som er for kort til å rekke å lese at det finnes en vei tilbake).
+
+⚠️ Unntaket er raden hvis fil allerede var borte fra disken. `trash_move` hopper
+over det som ikke er der, så det er ingenting å flytte og ingenting å legge
+tilbake; historikkraden ryddes bort (`recordings_delete`) slik legacy også gjør
+det, og toasten kommer da UTEN «Angre» i stedet for med en knapp som ikke kunne
+gjort noe.
+
+De to permanente handlingene — «Slett nå» og «Tøm papirkurven» — er de eneste
+med en dialog, og den er `danger`: AVBRYT får Enter, og bekreft er RØD SEKUNDÆR,
+aldri en rød primær (canvas sett 7).
+
+## Den timesvise sjekken, og hvorfor den er en sikkerhetssak
+
+`app/state/auto-update.ts` er `applyAutoUpdateSchedule` fra `general-page.ts`
+over den samme rene kjernen (`auto-update-schedule-core`): arm = sjekk ÉN gang
+nå og så hver `AUTO_UPDATE_INTERVAL_MS` (60 min), og planen rapporterer bare
+OVERGANGER, så en re-anvendelse aldri kan stable en andre timer.
+
+Gaten er `autoUpdate`, og raden er tilbake på Avansert fordi PRIVACY.md lover
+at den kan slås av: «Slår du den av, tar appen ikke kontakt med serveren —
+verken ved oppstart eller den vanlige sjekken hver time.» Den manuelle knappen
+er med vilje ugatet — det er PRIVACY.mds eget unntak.
+
+`initAutoUpdate()` står ETTER `await hydrateSettings()` i `main.tsx`, og den
+rekkefølgen er løftet: revisjonsfunn #11 var at gaten ble lest FØR den lagrede
+blobben landet, så `undefined !== false` kontaktet serveren på hver oppstart
+uansett hva eieren hadde valgt.
+
+**Kill-switchen har ingen klient-bryter å respektere.** Den virker ved at
+Workerens feed slutter å tilby en versjon; `docs/ROLLBACK.md` regner med at en
+kjørende installasjon nås «within the hour» nettopp fordi appen spør omtrent
+hver time. Det eneste klienten skylder den, er å spørre — og fram til nå gjorde
+ikke det nye skallet det.
+
+**Sjekken laster ikke ned.** `update_check` spør; `update_download_install`
+kjøres bare når noen trykker. Radens forklaring sier derfor «Sjekker hver time
+om det finnes en nyere versjon. Ingenting lastes ned før du sier ja.»
+
+### Én lytter, ikke to
+
+De sju `update-*`-kanalene abonneres ÉN gang, i butikken, og fasen bor i et
+signal. `UpdateRow` leste dem selv i P1b — riktig da den var eneste leser, og
+feil nå som banneret er den andre: to lyttere med hver sin tilstand er
+skjøtefeilen `reference-seam-bugs` handler om. `update-core.ts` flyttet derfor
+fra `pages/setup/advanced/` til `state/`, ved siden av `status-line.ts` og
+`disk.ts`.
+
+Fasen overlever også at man forlater Avansert, som er den lille gevinsten: en
+nedlasting som fortsetter mens man ser på OPPTAK kan raden gjøre rede for når
+man kommer tilbake.
+
+### Banneret, ikke en toast
+
+Tre av de sju fasene reiser et gult banner over den siden man er på —
+`available`, `downloading`, `ready`. `checking`, `upToDate` og `failed` gjør
+ikke: en frivillig fem minutter før gudstjenesten skal ikke se en gul stripe om
+at en sjekk pågår, og et banner per fase er hvordan folk lærer å lukke bannere
+uten å lese dem.
+
+Det er `warn` og ikke `bad` (`role="status"`, ikke `role="alert"`): en
+oppdatering som venter er ikke noe som er galt. Og aldri en egen toast —
+canvasens sett 7 har ÉN toast-form, og «det finnes en oppdatering» er ikke en
+kvittering som skal forsvinne av seg selv.
+
+Banneret bor i den DELTE køen (`state/banners.ts`), med nøkkelen `update`, så
+«tilgjengelig» → «laster ned 40 %» → «klar» oppdaterer ÉN stripe i stedet for å
+stable tre. Skallet rendrer den ene; `RecordPage` filtrerer nå eksplisitt på
+sine egne to nøkler i stedet for å ha en else-gren som ville malt en tredje som
+et kvalitetsbanner.
+
+## e2e
+
+`e2e/app/history.spec.ts` er `e2e/history.spec.ts` re-pekt, med hver TITTEL
+uendret. Fire av legacys ni fulgte ikke med, og hver av dem er en skjerm som
+ikke finnes lenger — sorterbare kolonner, filterbrikkene, den chip-filtrerte
+tomtilstanden og notat-modalen. Alle fire står forklart i fila, og legacy-filen
+er urørt og grønn.
+
+Én fikstur måtte endre form, og forskjellen er verdt å kjenne: legacys
+`trash_move` svarer statisk, fordi den gamle siden splicer raden ut av sin egen
+kopi. Det nye skallet LESER LISTA PÅ NYTT etter enhver endring, så fiksturen må
+modellere invarianten lesningen hviler på — et flyttet opptak ligger i
+papirkurven. Nærmere appen, og den eneste måten «raden forsvant» kan bety det
+den skal.
+
+`e2e/app/library.spec.ts` er ny: tellelinja, datoen fra `startedAt`, «—» for en
+ukjent varighet, Video-brikka på en foldet økt, papirkurv-inngangen ved tom kurv
+(med mutasjonsprøven), «Legg tilbake», og begge de farlige dialogene med rød
+sekundær og AVBRYT på Enter.
+
+`e2e/app/auto-update.spec.ts` fikk «auto-update toggle»-describen TILBAKE — de
+fire titlene byte-identiske, `spyIntervals`/`armedUpdateIntervals`/
+`delaySettingsLoad` ordrett fra legacy-specen, fordi det er den samme sømmen:
+`update_check`-invoken telt på fikstur-grensen, og timerregisteret i stedet for
+å vente en time på at ingenting skjer.
+
+## Bevist i en ekte WKWebView
+
+Samme metode som S1b og P2 (skjermbilder er upålitelige under TCC på denne
+maskinen): en midlertidig Vite-plugin, aldri innsjekket, serverer en MODUL —
+`script-src 'self'` forbyr en inline en — som leser DOM-tilstand og POSTer
+svaret tilbake til dev-serveren. Kjørt på eierens EGEN profil, med 26 ekte
+opptak, uten å røre Slett:
+
+```jsonc
+{
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 …",
+  "hasSafariToken": false, // uendret fra S1b — se der
+  "heading": "Bibliotek",
+  "sub": "Opptak: 26 · 10 min",
+  "rowCount": 26,
+  "rows[0]": "Lørdag 8. august 2026 · 22:12 · Under 1 min · 2026-08-08.flac",
+  "unknownSpans": 0,
+  "zeroSpans": 0, // ⚠️ var 5 i første runde — se under
+  "searchPresent": true,
+  "autoDelete": "Opptak slettes ikke automatisk",
+  "trashLinkPresent": true,
+  "trashLinkText": "Papirkurven er tom", // funn 9, live
+  "updateChecks": 1, // ⬅ den timesvise sjekken FYRTE, én gang, ved oppstart
+  "banners": [],
+  "trash": {
+    "heading": "Papirkurv",
+    "lede": "Opptak her slettes for godt etter 30 dager.",
+    "empty": true,
+    "backPresent": true,
+    "railStillLibrary": true,
+  },
+  "overlaysRootIsSibling": true,
+  "cspViolations": [],
+  "errors": [],
+  "rejections": [],
+  "consoleErrors": [],
+}
+```
+
+To ting proben fant som ingen test ville ha funnet:
+
+1. **⚠️ «0 min» på fem av eierens rader.** `spanOfSeconds` runder til nærmeste
+   minutt, og fem testopptak fra Qu-5-runden varte under et halvt minutt. Det er
+   den samme setningen P2 fjernet fra «Siste opptak»-kortet — men med motsatt
+   årsak: der var 0 UKJENT, her er den KJENT og likevel usann, for opptaket
+   varte ikke null sekunder. `rowSpan` har derfor en tredje form, `under`, med
+   grensen nøyaktig der `spanOfSeconds` runder, så de to aldri kan bli uenige
+   om et opptak på 45 sekunder. Andre runde: `zeroSpans: 0`.
+
+2. **Den timesvise sjekken fyrer for ekte.** `updateChecks: 1` er
+   `window.api.checkForUpdates` talt i selve webviewet — altså at
+   `initAutoUpdate` armet, at gaten leste eierens lagrede `autoUpdate`, og at
+   sjekken gikk én gang og ikke to. Ingen banner, fordi `update_check` i en
+   dev-build svarer `upToDate` uten å ta kontakt med noen.
