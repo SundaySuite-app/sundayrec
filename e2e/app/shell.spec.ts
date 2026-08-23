@@ -21,6 +21,29 @@ const SOUND_CHOSEN = {
   churchName: "Bryn menighet",
 };
 
+/**
+ * …og enheten FINNES.
+ *
+ * `soundChosen` betyr valgt OG til stede (`app/state/devices.ts`), og fra P2
+ * leser OPPTAK-siden enhetslisten selv — den må, for å kunne si «Finner ikke
+ * Behringer X32». Uten enheten i fiksturen er `BOOT_FIXTURES`' tomme liste et
+ * EKTE svar, og skinnen sier med rette «Lyden er ikke koblet til». Det er
+ * skjøten som ble lukket i P1a, nå synlig fra begge sider.
+ */
+const CHOSEN_FIXTURES = {
+  ...BOOT_FIXTURES,
+  list_audio_devices: [
+    {
+      id: "x32",
+      name: "Behringer X32",
+      backend: "coreaudio",
+      inputChannels: 2,
+      sampleRates: [48000],
+      isDefault: true,
+    },
+  ],
+};
+
 test.describe("skinnen", () => {
   test("de tre destinasjonene bytter rute, og fokus følger med", async ({
     page,
@@ -95,7 +118,7 @@ test.describe("skinnen", () => {
   }) => {
     await boot(page, {
       fixtures: {
-        ...BOOT_FIXTURES,
+        ...CHOSEN_FIXTURES,
         // 250 GB ledig ≫ to timer opptak, så `lowdisk` gjelder ikke.
         get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500e9 },
       },
@@ -144,7 +167,7 @@ test.describe("skinnen", () => {
     page,
   }) => {
     await boot(page, {
-      fixtures: BOOT_FIXTURES,
+      fixtures: CHOSEN_FIXTURES,
       settings: { ...SOUND_CHOSEN, language: "en" },
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
@@ -164,7 +187,10 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     });
     await expect(page.getByTestId("record-no-source")).toBeVisible();
     await page.getByTestId("record-choose-sound").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    // P2: knappen lander på SPØRSMÅLET, ikke på toppen av Oppsett. «Velg lyd»
+    // som åpner en liste med fem spørsmål er ett klikk til for den som allerede
+    // har sagt hva hun vil gjøre.
+    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
   });
 
   test("BIBLIOTEK viser tomtilstanden når det FAKTISK er tomt", async ({

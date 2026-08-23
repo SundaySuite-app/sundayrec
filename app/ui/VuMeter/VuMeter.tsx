@@ -34,6 +34,18 @@
  * feilklassen bak Qu-5-hendelsen 2026-07-31, der en webview som hadde åpnet
  * enheten holdt den låst til 2 kanaler mens opptaket ville hatt 32.
  * `release()` ved unmount er derfor ikke ryddighet, det er hele kontrakten.
+ *
+ * ## `source` — den ene grunnen måleren kan lese noe annet (P2)
+ *
+ * Under et opptak eier opptaksmotoren enheten, og `start_recording` stopper
+ * VU-strømmen selv. Måleren i opptaksoverlegget leser derfor motorens EGEN
+ * telemetri (`recording://levels`) i stedet, akkurat som legacy-overlegget
+ * gjør — og ikke fordi det er penere, men fordi alternativet er å be om den
+ * samme enheten opptaket holder, midt i en gudstjeneste.
+ *
+ * Det er den samme komponenten, med den samme tegningen og de samme ordene:
+ * to canvas-implementasjoner ville betydd to steder fargebåndet kunne begynne
+ * å bety forskjellige ting. `source` bytter bare hvor pakkene kommer fra.
  */
 
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -73,6 +85,28 @@ const DEFAULT_PICK: VuPick = { mode: "stereo", chL: 0, chR: 1 };
 const BAR_H = 14;
 const BAR_GAP = 8;
 
+/** Én pakke, slik en alternativ kilde leverer den. dBFS hele veien. */
+export interface VuPacket {
+  /** Nivået stolpene tegner (RMS der kilden har det). */
+  l: number;
+  r: number;
+  /** Toppene ORDET leses av — «for høyt» handler om toppene. */
+  peakL: number;
+  peakR: number;
+  /** Kilden har bare én kanal: ÉN stolpe, ikke to som viser det samme. */
+  mono?: boolean;
+}
+
+/**
+ * En alternativ pakkekilde. Abonnerer og returnerer en avslutter — samme
+ * kontrakt som `acquireVuFeed`, så unmount rydder likt uansett hvor pakkene
+ * kom fra.
+ *
+ * MÅ ha stabil identitet (en modulnivå-funksjon), ellers rives abonnementet
+ * opp og settes på nytt for hver render.
+ */
+export type VuSource = (emit: (packet: VuPacket) => void) => () => void;
+
 export interface VuMeterProps {
   /** Enheten som skal måles. `undefined` = «hva som enn kjører». */
   deviceName?: string | null;
@@ -87,6 +121,20 @@ export interface VuMeterProps {
   pick?: () => VuPick;
   /** dB-tall ved siden av stolpene. Av på nivå 1 — se toppen av fila. */
   showNumbers?: boolean;
+  /**
+   * Les pakkene herfra i stedet for fra den delte VU-strømmen. Se toppen av
+   * fila; `deviceName` og `pick` er da uten betydning.
+   */
+  source?: VuSource;
+  /**
+   * AVSLÅTT: ingen strøm i det hele tatt.
+   *
+   * Finnes for opptakssidens 2.2 — ingen lydkilde er valgt. Å måle
+   * «systemets standardinngang» der ville vært å åpne nøyaktig den mikrofonen
+   * hele sett 2 finnes for å slutte å ta opp fra uten å spørre. Stolpene står
+   * tomme og sier det de vet: vi hører ingenting.
+   */
+  off?: boolean;
   testId?: string;
 }
 
@@ -101,6 +149,8 @@ export function VuMeter({
   deviceName,
   pick,
   showNumbers = false,
+  source,
+  off = false,
   testId,
 }: VuMeterProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -111,8 +161,10 @@ export function VuMeter({
     peakR: VU_FLOOR_DB,
   });
   const [word, setWord] = useState<LevelWord>("nothing");
-  const [feedState, setFeedState] = useState<VuFeedState>("idle");
+  const [feedState, setFeedState] = useState<VuFeedState | "off">("idle");
+  const [mono, setMono] = useState(false);
   const wordRef = useRef<LevelWord>("nothing");
+  const monoRef = useRef(false);
   const [readout, setReadout] = useState<{ l: number; r: number } | null>(null);
   // Kanalvalget leses per pakke gjennom en ref, så et nytt par ikke river opp
   // abonnementet — og dermed ikke starter enheten på nytt.
@@ -121,6 +173,51 @@ export function VuMeter({
 
   // ── Strømmen ──────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Avslått: ingen enhet åpnes, og ordet blir stående på «vi hører
+    // ingenting», som er sant.
+    if (off) {
+      levels.current = {
+        l: VU_FLOOR_DB,
+        r: VU_FLOOR_DB,
+        peakL: VU_FLOOR_DB,
+        peakR: VU_FLOOR_DB,
+      };
+      wordRef.current = "nothing";
+      setWord("nothing");
+      setFeedState("off");
+      return;
+    }
+
+    // En alternativ kilde (opptaksoverlegget) — se toppen av fila.
+    if (source) {
+      let seen = false;
+      setFeedState("connecting");
+      return source((packet) => {
+        levels.current = {
+          l: packet.l,
+          r: packet.r,
+          peakL: packet.peakL,
+          peakR: packet.peakR,
+        };
+        // Pakker ER livstegnet. Bare den FØRSTE utløser en render — 30 i
+        // sekundet ville ellers vært 30 render av alt som står rundt.
+        if (!seen) {
+          seen = true;
+          setFeedState("live");
+        }
+        const nextMono = packet.mono === true;
+        if (nextMono !== monoRef.current) {
+          monoRef.current = nextMono;
+          setMono(nextMono);
+        }
+        const next = levelWordFor(packet.peakL, packet.peakR);
+        if (next !== wordRef.current) {
+          wordRef.current = next;
+          setWord(next);
+        }
+      });
+    }
+
     const release = acquireVuFeed({
       deviceName,
       pick: () => pickRef.current?.() ?? DEFAULT_PICK,
@@ -138,7 +235,7 @@ export function VuMeter({
       onState: (state) => setFeedState(state),
     });
     return release;
-  }, [deviceName]);
+  }, [deviceName, source, off]);
 
   // ── Tegningen ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -217,7 +314,9 @@ export function VuMeter({
       const l = smoothL.step(levels.current.l, dt);
       const r = smoothR.step(levels.current.r, dt);
       paintBar(0, barH, w, l);
-      paintBar(barH + gap, barH, w, r);
+      // Mono: ÉN stolpe. En andre stolpe som viser den samme kanalen én gang
+      // til er en påstand om en høyrekanal som ikke finnes.
+      if (!monoRef.current) paintBar(barH + gap, barH, w, r);
 
       raf = requestAnimationFrame(frame);
     };
@@ -254,6 +353,7 @@ export function VuMeter({
       data-testid={testId}
       data-word={word}
       data-feed={feedState}
+      data-mono={mono ? "true" : undefined}
       class={styles.vu}
     >
       <div class={styles.head}>

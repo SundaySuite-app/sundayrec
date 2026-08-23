@@ -95,8 +95,13 @@ declare global {
       scanDeviceChannels:  (deviceName: string, secs: number) => Promise<{ channel: number; peakDb: number }[]>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
       pickFolder:          () => Promise<string | null>
-      openFolder:          (p: string) => Promise<void>
-      revealFile:          (p: string) => Promise<void>
+      /** Open a folder in the OS file manager. Resolves FALSE when the
+       *  opener refused — the shim catches, so the boolean is the only place
+       *  the difference survives (it answered `boolean` all along; the type
+       *  said `void`). */
+      openFolder:          (p: string) => Promise<boolean>
+      /** Reveal a file in Finder/Explorer. Same contract as `openFolder`. */
+      revealFile:          (p: string) => Promise<boolean>
       clearSmtpPassword:   () => Promise<boolean>
       /** Store the SMTP password in the OS keychain (undefined/'' clears it).
        *  Resolves true when a password is now stored. Rejects on a keychain

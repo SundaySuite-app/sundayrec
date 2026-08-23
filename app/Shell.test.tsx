@@ -1,10 +1,12 @@
 import { render } from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 
+import type { RecordingEntry } from "@lib/../types";
+
 import { Overlays, Shell } from "./Shell";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
-import { recordingCount } from "./state/recordings";
+import { recordings } from "./state/recordings";
 import { patchSettings } from "./state/settings";
 
 // Fortsatt det ene stedet i enhetsgaten som beviser (a) at `.tsx` kompilerer
@@ -14,6 +16,22 @@ import { patchSettings } from "./state/settings";
 //
 // S1b legger til det som er nytt: at skinnen faktisk er der, og at hver
 // destinasjon viser det som er SANT i stedet for en plassholdertekst.
+/** Én historikkrad, i formen `getHistory` faktisk svarer med. */
+function row(over: Partial<RecordingEntry> = {}): RecordingEntry {
+  return {
+    date: "2026-08-23T11:00:00.000Z",
+    startTime: "",
+    duration: "1t 2m",
+    filename: "2026-08-23.mp3",
+    path: "/Users/x/SundayRec/2026-08-23.mp3",
+    status: "ok",
+    timestamp: 1_756_000_000_000,
+    durationSec: 3734,
+    fileSizeBytes: 112_000_000,
+    ...over,
+  };
+}
+
 describe("Shell", () => {
   it("rendrer skinnen med sidenavnet fra katalogen, ikke fra en literal", () => {
     navigate("record");
@@ -56,19 +74,31 @@ describe("Shell", () => {
     expect(html).toContain('data-testid="record-choose-sound"');
   });
 
-  it("OPPTAK viser måleren når kilden ER valgt", () => {
+  it("OPPTAK viser kilden og måleren når kilden ER valgt", () => {
     navigate("record");
     patchSettings({ deviceName: "Behringer X32", deviceId: "x32" });
     const html = render(<Shell />);
-    expect(html).toContain('data-testid="record-listening"');
+    expect(html).toContain('data-testid="record-source"');
+    expect(html).toContain('data-testid="record-vu"');
     expect(html).toContain("Behringer X32");
     expect(html).not.toContain('data-testid="record-no-source"');
     patchSettings({ deviceName: null, deviceId: null });
   });
 
+  it("OPPTAK sperrer Start med en GRUNN, ikke med en grå knapp", () => {
+    navigate("record");
+    patchSettings({ deviceName: null, deviceId: null });
+    const html = render(<Shell />);
+    // `aria-disabled`, aldri `disabled`: en tastaturbruker skal kunne komme
+    // fram til knappen for å HØRE hvorfor den er av.
+    expect(html).toMatch(/data-testid="record-start"[^>]*aria-disabled="true"/);
+    expect(html).not.toMatch(/data-testid="record-start"[^>]* disabled/);
+    expect(html).toContain("Start er sperret til lyden er valgt");
+  });
+
   it("BIBLIOTEK påstår ingenting før opptakene er talt", () => {
     navigate("library");
-    recordingCount.value = null;
+    recordings.value = null;
     const html = render(<Shell />);
     // Verken «ingen opptak» eller et antall: vi vet ikke ennå.
     expect(html).not.toContain('data-testid="library-empty"');
@@ -77,14 +107,14 @@ describe("Shell", () => {
 
   it("BIBLIOTEK viser tomtilstanden bare når det FAKTISK er tomt", () => {
     navigate("library");
-    recordingCount.value = 0;
+    recordings.value = [];
     expect(render(<Shell />)).toContain('data-testid="library-empty"');
 
-    recordingCount.value = 3;
+    recordings.value = [row(), row(), row()];
     const withRows = render(<Shell />);
     expect(withRows).toContain('data-testid="library-stored"');
     expect(withRows).not.toContain('data-testid="library-empty"');
-    recordingCount.value = null;
+    recordings.value = null;
   });
 
   it("OPPSETT viser de fem spørsmålene, med svaret som gjelder nå", () => {

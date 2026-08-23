@@ -1,0 +1,71 @@
+/*
+ * Opptaksoverlegget — hele vinduet, mens gudstjenesten går.
+ *
+ * Ikke et kort på en side: mens det tas opp er DET appen. Skinnen, kortene og
+ * navigasjonen er ting man gjør før og etter, og et overlegg som lot dem stå
+ * ville invitert til å klikke seg videre midt i en take.
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-recording);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-5);
+  padding: var(--sp-7);
+  text-align: center;
+  background:
+    radial-gradient(ellipse at 50% 30%, var(--rec-soft), transparent 60%),
+    var(--bg);
+}
+
+/* Bannere øverst, ikke midt i: de skal ikke flytte klokken når de kommer. */
+.banners {
+  position: absolute;
+  top: var(--sp-5);
+  left: var(--sp-5);
+  right: var(--sp-5);
+  display: grid;
+  gap: var(--sp-2);
+  text-align: start;
+}
+
+.timer {
+  font-size: 72px;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Klokken stopper når motoren skriver ferdig — den dempes så det synes. */
+.timerDone {
+  color: var(--ink-2);
+}
+
+.meter {
+  width: min(720px, 100%);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2) var(--sp-4);
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+}
+
+.hint {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.stop {
+  min-width: 280px;
+}
