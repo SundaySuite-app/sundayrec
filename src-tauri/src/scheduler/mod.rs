@@ -257,9 +257,9 @@ async fn supervisor(
                 //
                 // The supervisor re-runs on every settings change and every
                 // timer, so the expected failures are reported ONCE per launch
-                // and counted after that (`should_log_background_wake`); the
-                // count itself goes into the one line, so a later reader can see
-                // how long it has been true.
+                // and silently counted after that
+                // (`background_wake_log_action`). A real failure still logs
+                // every time, and never spends that one report.
                 let quiet_so_far = QUIET_WAKE_REPORTS.load(Ordering::Relaxed);
                 let action =
                     background_wake_log_action(res.ok, res.reason.as_deref(), quiet_so_far);
