@@ -974,7 +974,10 @@ mod tests {
         // On (the default) → unchanged behaviour.
         assert!(settings.auto_record_enabled, "a fresh profile is armed");
         let on = next_recording(settings.active_slots(), &settings.special_recordings, now);
-        assert_eq!(fmt_dt(on.expect("armed → a next start")), "2026-06-07T11:00:00");
+        assert_eq!(
+            fmt_dt(on.expect("armed → a next start")),
+            "2026-06-07T11:00:00"
+        );
 
         // Off → nothing planned, and the TIME IS STILL THERE.
         settings.auto_record_enabled = false;
@@ -982,7 +985,11 @@ mod tests {
             next_recording(settings.active_slots(), &settings.special_recordings, now).is_none(),
             "disarmed → no next start"
         );
-        assert_eq!(settings.slots.len(), 1, "the switch must not delete the plan");
+        assert_eq!(
+            settings.slots.len(),
+            1,
+            "the switch must not delete the plan"
+        );
     }
 
     #[test]
@@ -1027,7 +1034,10 @@ mod tests {
             ..Settings::default()
         };
         let next = next_recording(settings.active_slots(), &settings.special_recordings, now);
-        assert_eq!(fmt_dt(next.expect("the special still stands")), "2026-06-05T19:00:00");
+        assert_eq!(
+            fmt_dt(next.expect("the special still stands")),
+            "2026-06-05T19:00:00"
+        );
     }
 
     #[test]
