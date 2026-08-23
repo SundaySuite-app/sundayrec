@@ -6,8 +6,10 @@ src-tauri/gen
 src-tauri/binaries
 target
 
-# The ported old Electron renderer is a VERBATIM copy — reformatting it would
-# break the byte-for-byte parity with the old app. Leave it exactly as shipped.
+# What is left of the ported old Electron renderer: the shared inventory the
+# shell reaches through `@lib/*`. Still unformatted, still on purpose — these
+# files are a verbatim port, and PR B moves them under `app/lib/` unchanged. A
+# reformat would put a whole-file diff under both the delete and the move.
 legacy
 
 # ts-rs bindings: src/lib/bindings is the transient regen target; the committed

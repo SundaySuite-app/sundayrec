@@ -31,9 +31,7 @@ import {
   open as openDialog,
   save as saveDialog,
 } from "@tauri-apps/plugin-dialog";
-import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { navigateTo } from "./ui/navigate";
-import { toast } from "./ui/toast";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type { TrashEntry } from "../bindings/TrashEntry";
 import type { Settings } from "../bindings/Settings";
@@ -41,7 +39,6 @@ import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
   createIpcFailureState,
-  failureSummary,
   recentFailures,
   recordFailure,
   type IpcFailure,
@@ -74,14 +71,6 @@ const VIDEO_EXT = [
   "mp4", "mov", "mkv", "m4v", "webm", "avi", "wmv", "ts", "mts", "m2ts", "flv",
   "3gp", "asf", "f4v",
 ];
-// The "les mer"-link every telemetry consent surface offers (onboarding step
-// 5, the startup toast, the System-tab card). The repo is public
-// (github.com/SundaySuite-app/sundayrec), and `opener:default` already
-// bundles `allow-default-urls` — https:// with no pre-configured scope — so
-// opening it needs no capability change (src-tauri/capabilities/default.json
-// already carries `opener:default`; see openPrivacyPolicy below).
-const PRIVACY_POLICY_URL = "https://github.com/SundaySuite-app/sundayrec/blob/main/PRIVACY.md";
-
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
 const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
@@ -90,20 +79,34 @@ const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
 //
 // The shim needs three things from whatever shell sits on top of it: a way to
 // SAY something went wrong, a way to NAVIGATE (the `?goto=` hook), and a way to
-// TRANSLATE the copy for the first. Until «Frivilligen først» those were three
-// hard imports of the legacy renderer's own modules, which is fine while there
-// is one shell and wrong the moment there are two: the Preact shell in `app/`
-// has its own toast surface and its own router, and a shim that can only talk
-// to the old DOM would have to be forked to serve it.
+// TRANSLATE the copy for the first. They used to be three hard imports of the
+// legacy renderer's own `ui/toast` + `ui/navigate`, which was fine while there
+// was one shell and wrong the moment there were two — so S0 put them behind a
+// slot with those modules as the defaults.
 //
-// So they go through a slot whose DEFAULTS are exactly those legacy modules.
-// With nobody calling `setShimNotifier`, every call below resolves to the same
-// function it called before — the behaviour is unchanged by construction, not
-// by inspection. The slot itself (and the partial-override merge) is the pure,
-// unit-tested `shim-notifier-core`.
+// Fase B deleted the modules with the shell. The defaults are now what is
+// TRUE before a host installs its own surfaces: there is no toast stack and no
+// router yet, so the only honest thing to do with a message is put it in the
+// console, and the only honest thing to do with a navigation is decline it
+// loudly. `app/main.tsx` calls `setShimNotifier` as its second act — before
+// anything can invoke — so in the shipped app these are unreachable. They exist
+// for the window between this module evaluating (which arms the one-shot
+// settings migration) and that call, and for a browser boot with no host at
+// all; a default that threw, or one that reached for a `document` that has no
+// toast root, would turn that window into a crash.
+//
+// `t` is real, because i18n is not a surface: it is the catalogue, and the
+// catalogue is loaded either way. The slot itself (and the partial-override
+// merge) is the pure, unit-tested `shim-notifier-core`.
 const notifier = createNotifierSlot({
-  toast,
-  navigate: navigateTo,
+  toast: (kind, msg) => {
+    console[kind === "error" ? "error" : "warn"](`[api-shim] ${kind}: ${msg}`);
+  },
+  navigate: (page, opts) => {
+    console.warn(
+      `[api-shim] navigate(${page}${opts?.tab ? ":" + opts.tab : ""}) before a host installed a router — ignored`,
+    );
+  },
   t,
 });
 
@@ -502,7 +505,6 @@ async function syncLaunchAtLogin(s: unknown): Promise<void> {
   }
 }
 
-const noop = (): void => {};
 const off = () => {}; // unsubscribe stub
 
 // ── Updater bridge ──────────────────────────────────────────────────────────
@@ -537,13 +539,6 @@ function emitLocal(channel: string, payload?: unknown): void {
     }
   }
 }
-
-// Platform from the webview UA (the renderer's init() also checks this).
-const platform = navigator.userAgent.toLowerCase().includes("mac")
-  ? "darwin"
-  : navigator.userAgent.toLowerCase().includes("win")
-    ? "win32"
-    : "linux";
 
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
 type RecordingRow = {
@@ -641,7 +636,6 @@ const api: Record<string, unknown> = {
   // renderer-side memory, not a backend call, so it still answers when the
   // backend is the thing that is broken — which is the only time it matters.
   getRecentIpcFailures: (): IpcFailure[] => recentFailures(ipcFailures),
-  getIpcFailureSummary: () => failureSummary(ipcFailures),
 
   // ── Settings (R4: sqlite is the ONE store) ──────────────────────────────
   getSettings: async () => loadSettingsFromBackend(),
@@ -718,25 +712,6 @@ const api: Record<string, unknown> = {
     if (!id) return false;
     return call("recordings_delete", { id }, false).then(() => true);
   },
-  clearHistory: async () => call("recordings_clear", undefined, false).then(() => true),
-  // recordings_prune returns a PruneSummary object; the consumer compares the
-  // result to 0 ("Ingen å rydde"), so return the numeric deleted count, not the
-  // object (an object is never === 0, so that hint never showed).
-  pruneHistory: async () => {
-    const r = await call<{ deleted?: number }>(
-      "recordings_prune",
-      undefined,
-      { deleted: 0 },
-    );
-    return r && typeof r === "object" ? (r.deleted ?? 0) : 0;
-  },
-  // recording_update_note(id, note) — map the renderer's timestamp key back to the
-  // Rust row id (same map deleteHistoryEntry uses).
-  updateHistoryNote: async (ts: number, note: string) => {
-    const id = historyIdByTs.get(ts);
-    if (!id) return false;
-    return call("recording_update_note", { id, note: note || null }, false).then(() => true);
-  },
 
   // ── Disk / recording ────────────────────────────────────────────────────
   // get_disk_space returns { freeBytes } (camelCase) — exactly what home.ts reads.
@@ -774,17 +749,6 @@ const api: Record<string, unknown> = {
   // was never coming instead of running its own teardown catch.
   stopRecordingNow: async () => invoke("stop_recording", undefined).then(() => true),
   // ── Auto-stop, owned by the recorder ───────────────────────────────────
-  // The overlay's "+30 min" / "Avbryt auto-stopp" used to be renderer-local
-  // setTimeouts that RE-implemented (and disagreed with) the engine's real
-  // deadline. These three commands are the truth: extend/cancel move the
-  // engine's watch value, the running loop re-pins its timer and re-emits
-  // `recording://state` with the new `scheduled_stop_ms`, and the getter lets a
-  // remounting overlay rehydrate the countdown without waiting for a transition.
-  extendAutostop: async (minutes: number) =>
-    invoke<void>("recording_extend_autostop", { minutes }),
-  cancelAutostop: async () => invoke<void>("recording_cancel_autostop"),
-  scheduledStopMs: async () =>
-    call<number | null>("recording_scheduled_stop_ms", undefined, null),
   // ── Pre-roll rolling buffer ────────────────────────────────────────────
   // `start_recording` has always harvested a pre-roll clip, but nothing ever
   // started the loop that produces one — so `preRollSeconds` captured nothing.
@@ -806,18 +770,6 @@ const api: Record<string, unknown> = {
       engine: "native",
       channels: 0,
     }),
-  // run_test_recording returns { ok, signal, sizeBytes, error }. The fallback
-  // must match that shape ({ ok: false }) — the old { level, message } fallback
-  // didn't match what the consumer reads.
-  runTestRecording: async () =>
-    call("run_test_recording", undefined, { ok: false }),
-  // Precision capture bench: real recording argv for N s → ffprobed +
-  // verdict-judged SelfTestReport (camelCase). Throws on hard failure so the
-  // button can show the actual error text.
-  // Real input channel count via the ffmpeg backend — the device's own count,
-  // not a stereo pair.
-  probeDeviceChannels: async (deviceName: string) =>
-    invoke<number>("probe_device_channels", { deviceName }),
   // Engine-side VU metering: starts the cpal stream on the device (negotiated
   // FULL channel count — a Qu-5's 32, not getUserMedia's 2) and streams
   // `vu-levels` events (~30/s, one peak+RMS entry per native channel) until
@@ -825,18 +777,6 @@ const api: Record<string, unknown> = {
   startVu: async (deviceName: string | null) =>
     invoke<number>("start_vu", { deviceName }),
   stopVu: async () => invoke<void>("stop_vu"),
-  // cpal device list (instant, no ffmpeg spawn): real max channel counts +
-  // supported standard rates per input device.
-  listInputDevices: async () =>
-    invoke<import("../bindings/AudioDeviceList").AudioDeviceList>("list_input_devices"),
-  // Per-channel peak scan — "which mixer channels carry the mix?"
-  scanDeviceChannels: async (deviceName: string, secs: number) =>
-    invoke<{ channel: number; peakDb: number }[]>("scan_device_channels", { deviceName, secs }),
-  runCaptureBench: async (secs: number) =>
-    invoke<import("../bindings/SelfTestReport").SelfTestReport>(
-      "run_capture_bench",
-      { secs },
-    ),
   // run_preflight returns Vec<PreflightFinding> directly; old code reads { findings }.
   runPreflight: async () => ({
     findings: await call<unknown[]>("run_preflight", undefined, []),
@@ -860,8 +800,6 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
-  pickAudioFile: async () =>
-    pickPath({ name: "Lyd", extensions: AUDIO_EXT }),
 
   // ── Email ───────────────────────────────────────────────────────────────
   //
@@ -900,8 +838,6 @@ const api: Record<string, unknown> = {
       return { ok: false, error: ipcErrText(e) };
     }
   },
-  clearSmtpPassword: async () =>
-    call<boolean>("email_clear_smtp_password", undefined, false),
 
   // The keychain write path — the SMTP password's ONLY home (it is not a
   // `Settings` field, so it can never ride a settings save into the store; the
@@ -923,7 +859,6 @@ const api: Record<string, unknown> = {
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
     (await call<{ version?: string }>("app_info", undefined, {})).version ?? "—",
-  getPlatform: async () => platform,
   // The menubar tray renders its labels in Rust. Since R4 the backend COULD
   // read `settings.language` from sqlite itself, but the tray must also follow
   // a locale change the moment it happens (and the "follow the OS" null case
@@ -1022,61 +957,6 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
-  // The purpose-built audio probe behind the Lyd tab's "Diagnose" button: one
-  // enumeration, shaped into the flat name lists the panel renders. (The generic
-  // `run_diagnostics` below is the whole-system report, still used for the
-  // copy-to-support markdown.)
-  diagnoseAudio: async () =>
-    call<import("../bindings/AudioDiagnostics").AudioDiagnostics>(
-      "diagnose_audio",
-      undefined,
-      { dshow: [], wasapi: [], wasapiAvailable: false },
-    ),
-  // Comprehensive diagnose: backend gathers system/devices/ffmpeg/disk/
-  // permissions/audio-engine/last-error and returns structured `findings` (the
-  // SR-* error codes) + a full markdown report. On failure → an empty report so
-  // the panel still opens.
-  runDiagnostics: async () =>
-    call<{
-      markdown: string;
-      findings: {
-        code: string;
-        severity: "ok" | "info" | "warning" | "critical";
-        title: string;
-        detail: string;
-        hint: string;
-      }[];
-      savedTo: string | null;
-      captureOk: boolean | null;
-      videoOk: boolean | null;
-    }>("run_diagnostics", undefined, {
-      markdown: "",
-      findings: [],
-      savedTo: null,
-      captureOk: null,
-      videoOk: null,
-    }),
-
-  // ── Electron-era app-data cleanup (R3-F) ────────────────────────────────
-  // Both commands are argument-less by design (the target directory is derived
-  // and re-validated in Rust — see commands/legacy_data.rs). No UI calls these
-  // yet; the System/Diagnostikk row that offers «Rydd opp gamle programdata
-  // (X MB)» is a follow-up. READ degrades to "nothing found"; the CLEAN is a
-  // write, so the rejection travels.
-  legacyDataScan: async () =>
-    call<import("../bindings/LegacyDataInfo").LegacyDataInfo | null>(
-      "legacy_data_scan",
-      undefined,
-      null,
-    ),
-  legacyDataClean: async () =>
-    invoke<import("../bindings/LegacyDataInfo").LegacyDataInfo>("legacy_data_clean", undefined),
-
-  // ── Log file (E2.6) ─────────────────────────────────────────────────────
-  // Backs the System tab's «Vis logg» / «Kopier siste logg». Both Rust
-  // commands are deliberately path-less (see commands/logs.rs's doc comment:
-  // the log directory is computed in-process), so there is nothing for either
-  // wrapper to supply beyond the byte cap.
   logsReveal: async () => {
     try {
       await invoke("logs_reveal");
@@ -1124,15 +1004,6 @@ const api: Record<string, unknown> = {
       return null;
     }
   },
-  openPrivacyPolicy: async () => {
-    try {
-      await openUrl(PRIVACY_POLICY_URL);
-      return true;
-    } catch (e) {
-      console.warn("[api-shim] openPrivacyPolicy failed", e);
-      return false;
-    }
-  },
 
   // ── Telemetry (E3.7) — the settings-panel surface: preview, queue, delete ─
   // "Vis hva som sendes" — the REAL next payload as pretty JSON. `null` ONLY
@@ -1150,14 +1021,6 @@ const api: Record<string, unknown> = {
       return null;
     }
   },
-  // Informational only — an empty-queue fallback just means the settings
-  // panel shows nothing extra, never a false alarm.
-  telemetryQueueStatus: async () =>
-    call<import("../bindings/TelemetryQueueStatus").TelemetryQueueStatus>(
-      "telemetry_queue_status",
-      undefined,
-      { pending: 0, failed: 0, oldestAt: null, lastError: null },
-    ),
   // "Slett mine data", the local half: retires the install id. `false` only
   // on a real failure — the caller must not claim success it cannot back up.
   telemetryRegenerateInstallId: async () => {
@@ -1216,36 +1079,6 @@ const api: Record<string, unknown> = {
       undefined,
       [],
     ),
-  // ASIO driver names = the asio-backend entries of that same list (empty on
-  // macOS / when the `asio` feature is off / no driver installed, so the picker
-  // simply shows no ASIO cards). See `audio::asio`.
-  listAsioDrivers: async () => {
-    const devs = await call<{ name: string; backend: string }[]>(
-      "list_audio_devices",
-      undefined,
-      [],
-    );
-    return devs.filter((d) => d.backend === "asio").map((d) => d.name);
-  },
-  // The ASIO device's real input channels WITH driver labels, so the channel
-  // grid can show channel names, not just numbers. Empty when ASIO is
-  // unavailable → the caller falls back to a sensible default.
-  listAsioInputChannels: async (deviceId: string) =>
-    call<{ index: number; label: string }[]>(
-      "list_audio_input_channels",
-      { deviceId },
-      [],
-    ),
-  // The ffmpeg/dshow audio inputs, for the "selected device not seen by ffmpeg"
-  // warning. audio-page.ts calls `.some(...)` on the result → must be an array.
-  listFfmpegAudioDevices: async () => {
-    const inv = await call<{ audio_inputs?: { name: string; index: number }[] }>(
-      "list_devices",
-      undefined,
-      {},
-    );
-    return (inv.audio_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
-  },
   // list_devices → { video_inputs: FfmpegDevice[] }; old renderer wants
   // { name, index }[]. FfmpegDevice already carries both fields.
   listVideoDevices: async () => {
@@ -1256,13 +1089,6 @@ const api: Record<string, unknown> = {
     );
     return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
   },
-  // The SETUP-phase camera preview on HOME is client-side getUserMedia
-  // (home.ts) — no backend involvement there. (The idle backend preview engine
-  // that served the old Direkte page is gone with that page.)
-  // DURING recording the backend owns the camera and writes a preview JPEG to a
-  // file; the renderer polls this (~base64 JPEG, or null when no fresh frame).
-  recordingPreviewFrame: async () =>
-    call<string | null>("recording_preview_frame", undefined, null),
   // Probe what the selected camera can actually capture, to gate the
   // resolution/fps UI. `token` is the device index (avfoundation) or name.
   // Returns null on failure → caller offers everything.
@@ -1270,23 +1096,6 @@ const api: Record<string, unknown> = {
     call("get_camera_capabilities", { deviceToken: token }, null),
 
   // ── Wake from sleep (wake_* commands) ───────────────────────────────────
-  // wake_reschedule returns WakeResult { ok, … }. A FAILED reschedule must report
-  // ok:false — the old { ok:true } fallback painted a silent failure as success.
-  scheduleOsWakes: async () =>
-    call("wake_reschedule", undefined, { ok: false, reason: "error" }),
-  scheduleOsWakesAdmin: async () =>
-    call("wake_reschedule", undefined, { ok: false, reason: "error" }),
-  // SleepConfig (wake_get_sleep_config) carries NO `platform` field — but the
-  // schedule-page diagnostic branches on cfg.platform === 'darwin'/'win32' to pick
-  // the right warnings, so without it every machine fell through to "unsupported
-  // platform" (telling a Mac/Windows user wake won't work when it can). Inject the
-  // platform the webview already knows; a real backend field (if ever added) wins.
-  getSleepConfig: async () => ({
-    platform,
-    ...(await call<Record<string, unknown>>("wake_get_sleep_config", undefined, {})),
-  }),
-  fixMacSleep: async () => call("wake_fix_sleep", undefined, { ok: false }),
-  fixWinWakeTimers: async () => call("wake_fix_sleep", undefined, { ok: false }),
   // Fallbacks must match the real WakeCapabilities / WakeStatus shapes — the
   // schedule-page reads caps.knownIssues.length / status.expectedWakes.length, so a
   // wrong-shape fallback ({canWake}/{scheduled}) made the reliability card throw and
@@ -1300,40 +1109,11 @@ const api: Record<string, unknown> = {
       knownIssues: [],
       recommendations: [],
     }),
-  wakeVerifyScheduled: async () =>
-    call("wake_verify", undefined, {
-      expectedWakes: [],
-      observedWakes: [],
-      hasMismatch: false,
-      onBattery: null,
-      standbyEnabled: null,
-    }),
-  wakeTest: async (secondsAhead?: number) =>
-    call("wake_test", { secondsAhead: secondsAhead ?? null }, { ok: false }),
-  // WRITES — bare invoke, rejection travels (R3-B): a cancel/clear that
-  // silently didn't happen used to report `true` anyway.
-  wakeCancelTest: async () => invoke("wake_cancel_test", undefined).then(() => true),
-  wakeFailureHistory: async () => call("wake_failure_history", undefined, []),
-  wakeClearFailureHistory: async () =>
-    invoke("wake_clear_failure_history", undefined).then(() => true),
 
   // ── Editor ──────────────────────────────────────────────────────────────
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks
   // file://). Sync — convertFileSrc returns a string.
   toAssetUrl: (path: string) => toAssetUrl(path),
-  // editor_read_file → { tooLarge, size, bytes }. The old loader expects EITHER
-  // a raw byte array (→ Web Audio decode, the client-side waveform path) OR a
-  // { tooLarge } marker (→ ffmpeg-extract fallback). Adapt to that.
-  editorReadFile: async (fp: string) => {
-    const r = await call<{ tooLarge?: boolean; bytes?: number[] | null }>(
-      "editor_read_file",
-      { mediaPath: fp },
-      null as unknown as { tooLarge?: boolean; bytes?: number[] | null },
-    );
-    if (!r) return null;
-    if (r.tooLarge) return { tooLarge: true };
-    return new Uint8Array(r.bytes ?? []);
-  },
   editorPickFile: async () =>
     pickPath({
       filters: [
@@ -1379,10 +1159,6 @@ const api: Record<string, unknown> = {
       },
     );
   },
-  // Analyse stereo channel balance → { code, imbalanceDb, peakLeftDb,
-  // peakRightDb, recommended }. Throws-free: empty diagnosis on failure.
-  editorDiagnoseChannels: async (fp: string) =>
-    call("editor_diagnose_channels", { inputPath: fp }, null),
   // One-click "best result": diagnose + recommended preset bundle.
   editorAutoProcess: async (fp: string) =>
     call("editor_auto_process", { inputPath: fp }, null),
@@ -1392,14 +1168,6 @@ const api: Record<string, unknown> = {
   // button did nothing and a 90-minute render was unkillable.)
   editorCancelExport: async () => call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
-  // Sidecars (meta / cutsDraft) are clean JSON key-value via
-  // editor_read/write/delete_sidecar — no media decode needed.
-  editorReadMeta: async (fp: string) =>
-    call("editor_read_sidecar", { mediaPath: fp, sidecar: "meta" }, null),
-  editorSaveMeta: async (fp: string, meta: unknown) =>
-    call("editor_write_sidecar", { mediaPath: fp, sidecar: "meta", value: meta }, false).then(
-      () => true,
-    ),
   editorReadCutsDraft: async (fp: string) =>
     call("editor_read_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, null),
   // The old main wrapped the cut array as { cuts, ts }; preserve that so the
@@ -1475,13 +1243,6 @@ const api: Record<string, unknown> = {
   // unavailable — cuts and export still run on the original).
   editorExtractPlaybackProxy: async (fp: string) =>
     call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
-  // editor_probe_peak → true max_volume (dBFS) of the ORIGINAL file via
-  // volumedetect. Normalize's honest basis: the waveform peaks are an 8 kHz mono
-  // downmix that under-reads the real peak by several dB.
-  editorProbePeak: async (fp: string) =>
-    call<number | null>("editor_probe_peak", { inputPath: fp }, null),
-  editorPickVideoFile: async () =>
-    pickPath({ name: "Video", extensions: VIDEO_EXT }),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
   // (h264/h265). Maps the renderer params to EditorExportRequest just like
   // editorExportFile (the old raw-passthrough shape didn't match the request).
@@ -1515,17 +1276,7 @@ const api: Record<string, unknown> = {
       },
     });
   },
-  // editor_probe_streams → EditorStreamInfo { hasVideo, hasAudio } | (on failure)
-  // null. The old { streams: [] } fallback was the wrong shape: the consumer does
-  // `!streams || streams.hasVideo`, so a truthy {streams:[]} made it read
-  // .hasVideo (undefined) instead of taking the null branch. Return null.
-  editorProbeStreams: async (fp: string) =>
-    call("editor_probe_streams", { inputPath: fp }, null),
   // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────
-  // The 4 built-in mastering presets from the core (id/label/description +
-  // targets/filters). Without this the preset dropdown was empty → the whole
-  // mastering panel was unusable.
-  masterPresets: async () => call("editor_master_presets", undefined, []),
   // editor_master_preview/apply take a single `request` struct; cancel takes jobId.
   // Mastering commands return bare structs; the consumer expects { ok, … }.
   masterPreview: async (
@@ -1537,25 +1288,6 @@ const api: Record<string, unknown> = {
     editorCall("editor_master_preview", {
       request: { inputPath, presetId, startSec, durationSec },
     }),
-  // The consumer reads `measureRes.ok` + `measureRes.measurement.inputI`, but the
-  // Rust returns a FLAT EditorLoudness — wrap it under `measurement`.
-  masterMeasure: async (inputPath: string, presetId: string) => {
-    const r = await call<Record<string, unknown> | { ok: false }>(
-      "editor_mastering_analyze",
-      { inputPath, presetId },
-      { ok: false },
-    );
-    if (r && typeof r === "object" && (r as { ok?: unknown }).ok === false) {
-      return { ok: false };
-    }
-    return { ok: true, measurement: r };
-  },
-  masterApply: async (params: unknown) =>
-    editorCall("editor_master_apply", { request: params }),
-  // WRITE — bare invoke, rejection travels (R3-B); mastering.ts already
-  // wraps its call in try/catch.
-  masterCancel: async (jobId: string) =>
-    invoke("editor_master_cancel", { jobId }).then(() => true),
 
   registerTrustedPath: async () => true,
 
@@ -1582,7 +1314,6 @@ const api: Record<string, unknown> = {
   },
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
-  notifyWeakSignal: noop,
 
   // ── Event subscriptions ─────────────────────────────────────────────────
   // Map the old Electron channel to its Tauri event and forward the payload.

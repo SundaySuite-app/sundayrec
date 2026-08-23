@@ -24,21 +24,19 @@ export let T: LocaleData = LOCALE_MAP['no']
 export let currentLang = 'no'
 
 /**
- * Load a locale's CATALOGUE and make it active — the half of `loadLocale` that
- * is about DATA rather than about the DOM.
+ * Load a locale's CATALOGUE and make it active.
  *
- * ADDITIVE, for «Frivilligen først»'s second shell (`app/`). That shell has no
- * `data-i18n` nodes at all: `app/i18n/index.ts` wraps `t`/`tf`/`tn`/`tArr` in a
- * `locale` signal, so a language switch re-renders the components that read
- * them. Calling `loadLocale` there would run `applyTranslations()` over a DOM
- * that has nothing to translate — harmless in a browser, but it TOUCHES
- * `document`, which puts the app shell's i18n outside the node-env unit gate
- * for no gain. Splitting the data half out lets `app/` await the catalogue and
- * then flip its signal, so a render can never happen with the new language and
- * the old catalogue.
+ * This used to be the DATA half of `loadLocale`, split out in S1a because the
+ * other half — `applyTranslations()`, which walked the document rewriting every
+ * `[data-i18n]` node — is meaningless in a Preact tree and would have dragged
+ * `document` into the node-env unit gate for nothing. Fase B deleted the DOM
+ * half along with the shell that had the attributes, so this is the whole
+ * function now.
  *
- * `loadLocale` keeps its exact previous behaviour: this, then the data-i18n
- * pass, then the tray push, in that order.
+ * `app/i18n/index.ts` awaits this and only THEN flips its `locale` signal, so a
+ * render can never happen with the new language and the old catalogue. It also
+ * pushes the language to the tray afterwards — the one thing `loadLocale` did
+ * that was not about the DOM.
  */
 export async function loadLocaleCatalogue(lang: string): Promise<void> {
   if (!LOCALE_MAP[lang]) {
@@ -53,24 +51,6 @@ export async function loadLocaleCatalogue(lang: string): Promise<void> {
   }
   T = LOCALE_MAP[lang] ?? LOCALE_MAP['no']
   currentLang = LOCALE_MAP[lang] ? lang : 'no'
-}
-
-/**
- * Activate a locale, lazy-loading it on first use. Async now (was sync) because
- * the non-default locales are fetched on demand. Always resolves — an unknown
- * language or a failed import falls back to the eagerly-bundled `no`. Callers at
- * startup should await this before building localized UI; the language-switch
- * caller can fire-and-forget (applyTranslations re-applies when it resolves).
- */
-export async function loadLocale(lang: string): Promise<void> {
-  await loadLocaleCatalogue(lang)
-  applyTranslations()
-  // The menubar tray renders its own labels in Rust and cannot read the UI
-  // language: it lives in this renderer's settings blob, which the backend's
-  // curated recording settings never carried. Push it from the ONE place the
-  // language actually changes, so startup and a live switch are the same path.
-  // Fire-and-forget — a tray-less build answers with a harmless no-op.
-  void window.api?.traySetLanguage?.(currentLang)
 }
 
 /** Raw catalogue lookup — may return a string, a plural group object, an array
@@ -91,11 +71,7 @@ export function t(key: string, fallback = ''): string {
  * The ONE BCP-47 tag for date/number/plural formatting: bokmål for 'no' (plain
  * 'no' gives nynorsk-flavoured output in some engines), else the UI language.
  *
- * Lives here rather than in helpers.ts because `currentLang` lives here, and
- * `tn()` needs the tag: importing it back from helpers.ts would put i18n.ts in
- * an import cycle with helpers.ts (which imports `t`) and drag `ui/toast` into
- * i18n's module graph. helpers.ts re-exports it, so its ~30 call sites are
- * unchanged.
+ * Lives here because `currentLang` lives here and `tn()` needs the tag.
  */
 export function localeTag(lang: string = currentLang): string {
   return lang === 'no' ? 'nb-NO' : lang
@@ -190,53 +166,4 @@ export function tn(
 export function tArr(key: string, fallback: string[]): string[] {
   const val = key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], T)
   return Array.isArray(val) ? val as string[] : fallback
-}
-
-let _applyTranslations = (): void => {}
-
-export function setApplyHook(fn: () => void): void {
-  _applyTranslations = fn
-}
-
-/**
- * Live-painted surfaces vs. the data-i18n pass.
- *
- * `applyTranslations()` rewrites every `[data-i18n]` node from the locale
- * table — which is exactly wrong for the ~20 nodes whose text is painted from
- * STATE (the sidebar status, the wake card, the stop button mid-finalize…):
- * a language switch used to reset them to their markup defaults, erasing live
- * truth. The house fix (index.html's update-channel comment) is "repaint via
- * hook": modules register a cheap, synchronous repaint-from-cached-state here,
- * and it runs AFTER the data-i18n pass — so the cold-render default still
- * translates, and live state always wins the same synchronous frame.
- *
- * Callbacks must be idempotent, synchronous and safe to run at any time
- * (including before the page they paint has been visited).
- */
-const localeRepaints = new Set<() => void>()
-
-export function onLocaleApplied(fn: () => void): void {
-  localeRepaints.add(fn)
-}
-
-function applyTranslations(): void {
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = (el as HTMLElement).dataset.i18n!
-    const v = t(key); if (v) el.textContent = v
-  })
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    const key = (el as HTMLInputElement).dataset.i18nPlaceholder!
-    const v = t(key); if (v) (el as HTMLInputElement).placeholder = v
-  })
-  document.querySelectorAll('[data-i18n-title]').forEach(el => {
-    const key = (el as HTMLElement).dataset.i18nTitle!
-    const v = t(key); if (v) el.setAttribute('title', v)
-  })
-  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
-    const key = (el as HTMLElement).dataset.i18nAriaLabel!
-    const v = t(key); if (v) el.setAttribute('aria-label', v)
-  })
-  _applyTranslations()
-  // After the attribute pass, so live state repaints over the defaults.
-  for (const fn of localeRepaints) fn()
 }

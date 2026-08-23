@@ -598,12 +598,21 @@ gated by it — they are dates somebody entered for one concert.
    - **Expected:** the time is still there. A profile written before the flag
      existed defaults to ON (`serde(default = "default_true")`) — `false` would
      have silently disarmed every congregation that already had a Sunday time.
-3. **macOS:** enable wake-from-sleep under Avansert, reschedule (accept the
-   admin prompt), sleep the Mac just before a slot.
-   - **Expected:** the machine wakes and records. Cross-check with
-     `pmset -g sched` — and note that on Apple Silicon the IOKit read and
-     `pmset` can legitimately disagree; the app is deliberately pessimistic, so
-     "missing" means "schedule it again", not "broken".
+3. **macOS:** enable wake-from-sleep under Avansert, then sleep the Mac just
+   before a slot.
+   - ⚠️ **There is no «Planlegg» button and no admin prompt.** The scheduler
+     arms the OS wake ITSELF whenever `wakeFromSleep` is on, unelevated and
+     non-interactive (`scheduler/mod.rs`). The INTERACTIVE path — the one
+     `wake_reschedule` triggers, which escalates a failed unelevated
+     `pmset schedule wake` to a single `osascript … with administrator
+privileges` prompt — has no caller in the new shell, so a Mac that needs
+     root to write a power event will not be asked for it.
+     That is the most consequential gap this switch leaves open: on such a Mac
+     the app records fine while AWAKE and does not wake from sleep. It is
+     written up as the first item under «Etter byttet» in `docs/APP-SHELL.md`.
+   - **Expected on a Mac that does not need the prompt:** the machine wakes and
+     records. Cross-check with `pmset -g sched` — and note that on Apple Silicon
+     the IOKit read and `pmset` can legitimately disagree.
 4. **Windows:** enable wake-from-sleep, reschedule (no prompt should appear),
    confirm `powercfg -waketimers` lists a timer set by `[PROCESS] …SundayRec.exe`,
    then sleep the machine just before a slot.
@@ -1197,20 +1206,22 @@ BACKEND is untouched and only the surface is gone.
 
 The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet».
 
-| gone                                                        | what is left, and where                                                                                                                                         |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The Diagnose modal** (Innstillinger → Lyd)                | `run_diagnostics` / `diagnose_audio` still run and are Rust-tested; nothing calls them. The recording numbers are in `<app-data>/last-recording.json` (§5b).    |
-| **The capture/video probe's three paths**                   | still in the backend, refusals and all — unreachable by hand until a screen exists (§13).                                                                       |
-| **Editing a recording's note**                              | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                             |
-| **The Lyd / Video filter chips, sortable columns**          | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                |
-| **The month calendar + day detail + wake-diagnostics card** | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                |
-| **The export MODAL**                                        | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                            |
-| **The «Normaliser» toggle**                                 | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4). |
-| **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                              |
-| **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                             |
-| **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».  |
-| **`#modal-manual`** (source/camera/filename)                | those are Oppsett's answers now; start is one button (§5).                                                                                                      |
-| **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                       |
+| gone                                                        | what is left, and where                                                                                                                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The Diagnose modal** (Innstillinger → Lyd)                | `run_diagnostics` / `diagnose_audio` still run and are Rust-tested; nothing calls them. The recording numbers are in `<app-data>/last-recording.json` (§5b).        |
+| **The capture/video probe's three paths**                   | still in the backend, refusals and all — unreachable by hand until a screen exists (§13).                                                                           |
+| **Editing a recording's note**                              | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                 |
+| **The Lyd / Video filter chips, sortable columns**          | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                    |
+| **The month calendar + day detail + wake-diagnostics card** | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                    |
+| **The export MODAL**                                        | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                |
+| **The «Normaliser» toggle**                                 | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).     |
+| **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                  |
+| **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                 |
+| **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».      |
+| **`#modal-manual`** (source/camera/filename)                | those are Oppsett's answers now; start is one button (§5).                                                                                                          |
+| **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                           |
+| **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open. |
+| **`healStoredDeviceId`**                                    | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.  |
 
 ### Claims this runbook used to point at a test for, and no longer can
 

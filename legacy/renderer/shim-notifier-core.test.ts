@@ -161,7 +161,23 @@ describe("api-shim goes through the notifier seam", () => {
     expect(code).toContain("export function setShimNotifier");
   });
 
-  it("still defaults to the legacy modules, so an uninjected boot is unchanged", () => {
-    expect(code).toMatch(/createNotifierSlot\(\{\s*toast,\s*navigate: navigateTo,\s*t,\s*\}\)/);
+  // Until fase B the defaults WERE the legacy modules (`toast`, `navigateTo`),
+  // and this pinned that spelling so an uninjected boot behaved exactly as it
+  // had before the slot existed. Those modules were deleted with the shell they
+  // painted into, so the property changed with them: the defaults must now be
+  // things that are TRUE before a host installs its own surfaces — no DOM to
+  // reach for, and nothing that throws in the window between this module
+  // evaluating (which arms the settings migration) and `setShimNotifier`.
+  it("defaults to surfaces that exist before a host has installed any", () => {
+    // No import of a UI module at all — that is the whole point of the seam,
+    // and the deleted ones must not come back through a new file.
+    expect(code).not.toMatch(/from\s+["']\.\/ui\//);
+    // `t` is real: i18n is the catalogue, not a surface, and it is loaded
+    // either way. A stubbed translator here would render the shim's own error
+    // copy as a key.
+    expect(code).toMatch(/createNotifierSlot\(\{[\s\S]*?\bt,\s*\}\)/);
+    // The two host services are inline and console-only.
+    expect(code).toMatch(/createNotifierSlot\(\{\s*toast: \(/);
+    expect(code).toMatch(/navigate: \(page, opts\) =>/);
   });
 });

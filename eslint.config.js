@@ -24,10 +24,16 @@ export default tseslint.config(
     ],
   },
 
-  // The ported legacy Electron renderer (vanilla TS, browser runtime). It is a
-  // faithful verbatim copy of a shipped app, so we run the recommended rules but
-  // do NOT bikeshed its style: `any` and unused-vars are downgraded so a 1:1 port
-  // never fails the lint gate.
+  // What is LEFT of the ported legacy Electron renderer (vanilla TS, browser
+  // runtime). Fase B deleted the shell — index.html, main.ts, every page and
+  // every DOM module — and kept only the INVENTORY the new shell reaches
+  // through `@lib/*`: the IPC shim, the locale loader and the pure `*-core`
+  // modules. That is 40 source files and their tests, down from 132.
+  //
+  // The loosened rules stay for the same reason they were loosened: these files
+  // are still a verbatim port, not code written to this repo's house style, and
+  // PR B moves them under `app/lib/` unchanged. Tightening them here would mean
+  // a rewrite diff on top of a move diff on top of a delete diff.
   {
     files: ["legacy/**/*.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
@@ -121,11 +127,6 @@ export default tseslint.config(
               ],
               message:
                 "Reach the legacy renderer through the `@lib/*` alias only. One spelling means the shared surface is greppable, and the day legacy/ moves there is one path to change.",
-            },
-            {
-              group: ["@lib/**/*.css", "@lib/*.css"],
-              message:
-                "The legacy stylesheet belongs to the legacy DOM — importing it here drags 108 kB of selectors written for an element tree app/ does not have. The new shell gets its own styles.",
             },
           ],
         },
