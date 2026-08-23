@@ -22,7 +22,6 @@
 //! |---|---|---|
 //! | [`PathPolicy::UserChosenRead`] | absolute, exists, not protected | a file the user picked in a native OPEN dialog |
 //! | [`PathPolicy::UserChosenWrite`] | absolute, no `..`, not protected, target may not exist | a destination the user picked in a native SAVE dialog |
-//! | [`PathPolicy::ReadOnlyMedia`] | `UserChosenRead` + an extension allowlist | media/sidecars handed to another process or to ffmpeg |
 //! | [`PathPolicy::RecordingsRooted`] | must resolve INSIDE the configured save folder | anything a REMOTE party (a deep link) can name, and anything that leaves the machine |
 //!
 //! The tension the table resolves: settings export/import legitimately targets
@@ -30,6 +29,12 @@
 //! folder would break a real flow for no gain — the dialog IS the authorisation.
 //! A deep link, by contrast, carries no user intent at all, so it gets the
 //! narrowest policy plus an explicit confirmation (see `commands::deeplink`).
+//!
+//! (Until v0.15 a fourth policy, `ReadOnlyMedia` — `UserChosenRead` plus an
+//! extension allowlist — guarded `whisper_transcribe`, the one command that
+//! decoded whatever it was pointed at. It left with its only caller; the
+//! allowlist idea is in git if a future command hands a user file to another
+//! process.)
 
 use crate::error::{AppError, AppResult};
 use std::path::{Component, Path, PathBuf};
@@ -135,30 +140,6 @@ fn deepest_existing_canonical(path: &Path, raw: &str) -> AppResult<PathBuf> {
     }
 }
 
-/// A path's lowercase extension (no dot), or `None` when it has none.
-fn extension_lower(raw: &str) -> Option<String> {
-    Path::new(raw)
-        .extension()
-        .map(|e| e.to_string_lossy().to_ascii_lowercase())
-}
-
-/// Validate a path that must name an existing file whose extension is in
-/// `allowed` (lowercase, no dot). The extension check is the cheap half of
-/// "this is media, not `/etc/passwd`" — it cannot prove a file's contents, but
-/// it removes the whole class of "point the reader at an arbitrary secret".
-pub fn checked_media_file(raw: &str, allowed: &[&str]) -> AppResult<()> {
-    match extension_lower(raw) {
-        Some(ext) if allowed.contains(&ext.as_str()) => {}
-        _ => {
-            return Err(AppError::Validation(format!(
-                "unsupported file type (expected one of {}): {raw}",
-                allowed.join(", ")
-            )))
-        }
-    }
-    checked_input_file(raw)
-}
-
 /// Validate a path that must resolve INSIDE `root` (the configured save
 /// folder). The target itself may not exist yet — a sidecar written beside a
 /// recording is the motivating case — but `..` is rejected and the deepest
@@ -196,8 +177,6 @@ pub enum PathPolicy<'a> {
     UserChosenRead,
     /// A destination the user picked in a native SAVE dialog (may not exist).
     UserChosenWrite,
-    /// An existing file whose extension must be in the allowlist.
-    ReadOnlyMedia(&'a [&'a str]),
     /// Must resolve inside the configured save folder.
     RecordingsRooted(&'a Path),
 }
@@ -207,18 +186,9 @@ pub fn check(raw: &str, policy: PathPolicy<'_>) -> AppResult<()> {
     match policy {
         PathPolicy::UserChosenRead => checked_input_file(raw),
         PathPolicy::UserChosenWrite => checked_path(raw),
-        PathPolicy::ReadOnlyMedia(allowed) => checked_media_file(raw, allowed),
         PathPolicy::RecordingsRooted(root) => checked_under_root(raw, root),
     }
 }
-
-/// Containers the recorder writes and the editor opens. Used as the
-/// [`PathPolicy::ReadOnlyMedia`] allowlist wherever a *recording* is handed to
-/// another process (whisper).
-pub const MEDIA_EXTENSIONS: &[&str] = &[
-    "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "aiff", "aif", "caf", "mp4", "mov", "mkv",
-    "m4v", "webm", "avi",
-];
 
 /// The effective recordings root: the configured `save_folder`, or the default
 /// `<Documents>/SundayRec` — via [`crate::save_folder::resolve`], the same
@@ -282,36 +252,6 @@ mod tests {
     fn dotdot_is_rejected_for_lenient_paths() {
         let path = std::env::temp_dir().join("x/../secret");
         assert_validation(checked_path(path.to_str().unwrap()));
-    }
-
-    // ── E1.2: the extension allowlist ────────────────────────────────────────
-
-    #[test]
-    fn media_allowlist_accepts_a_recording_and_rejects_anything_else() {
-        let dir = std::env::temp_dir().join("sundayrec-path-guard-ext");
-        std::fs::create_dir_all(&dir).unwrap();
-        let media = dir.join("service.mp3");
-        std::fs::write(&media, b"x").unwrap();
-        checked_media_file(media.to_str().unwrap(), MEDIA_EXTENSIONS).unwrap();
-        // Case-insensitive: a camera writes .MOV.
-        let shouty = dir.join("service.MOV");
-        std::fs::write(&shouty, b"x").unwrap();
-        checked_media_file(shouty.to_str().unwrap(), MEDIA_EXTENSIONS).unwrap();
-
-        // The whole point: an existing, readable, non-media file is refused
-        // BEFORE anything opens it.
-        let secret = dir.join("id_rsa");
-        std::fs::write(&secret, b"x").unwrap();
-        assert_validation(checked_media_file(
-            secret.to_str().unwrap(),
-            MEDIA_EXTENSIONS,
-        ));
-        let wrong = dir.join("notes.txt");
-        std::fs::write(&wrong, b"x").unwrap();
-        assert_validation(checked_media_file(
-            wrong.to_str().unwrap(),
-            MEDIA_EXTENSIONS,
-        ));
     }
 
     // ── E1.2: root scoping ───────────────────────────────────────────────────
@@ -378,10 +318,7 @@ mod tests {
         let raw = file.to_str().unwrap();
         check(raw, PathPolicy::UserChosenRead).unwrap();
         check(raw, PathPolicy::UserChosenWrite).unwrap();
-        check(raw, PathPolicy::ReadOnlyMedia(MEDIA_EXTENSIONS)).unwrap();
         check(raw, PathPolicy::RecordingsRooted(&dir)).unwrap();
-        // A narrower allowlist refuses the same file.
-        assert_validation(check(raw, PathPolicy::ReadOnlyMedia(&["wav"])));
         assert_validation(check("relative.mp3", PathPolicy::UserChosenRead));
     }
 

@@ -36,7 +36,6 @@
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
 //!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
 //!   - [`detect`] — the ONE sermon detector over those segments (E9)
-//!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 //!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick and the proposed trim — what to store, what counts as a correction, and what a later one replaces (E8)
 //!   - [`trim_feedback`] — how far the operator moved the proposed sermon trim, and the sign convention that makes the deltas readable (E8)
@@ -88,4 +87,3 @@ pub mod update;
 pub mod vad;
 pub mod wake;
 pub mod wav;
-pub mod whisper;

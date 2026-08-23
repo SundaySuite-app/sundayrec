@@ -3,7 +3,7 @@
  *
  * Everything below the waveform used to be one vertical stack of cards:
  * normalize, intro/outro, metadata, analyse, transcript, sermon helper,
- * mastering, cover art. Eight cards, most of them idle most of the time, and
+ * mastering, cover art (several of them since removed). Eight cards, most of them idle most of the time, and
  * the one you wanted was reliably three scrolls away. The owner's word for it
  * was «rotete».
  *
@@ -11,8 +11,8 @@
  *
  *  1. **Nothing unmounts.** Switching flips the `hidden` attribute on a panel
  *     that is already in the DOM. No panel is created, re-initialised or torn
- *     down, so the transcript you just generated, a running mastering job, the
- *     cover-art preview and every event listener survive a switch. The waveform
+ *     down, so a running mastering job, the analysis you just ran and every
+ *     event listener survive a switch. The waveform
  *     lives OUTSIDE the tabs and is never touched by one.
  *
  *  2. **Nothing hides behind a tab.** Work that finishes while its panel is not

@@ -14,7 +14,6 @@ import { renderAnalyzePanel, runDetection } from './detection'
 import { renderMetaPanel, renderChapterList } from './metadata'
 import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
-import { loadTranscriptForFile } from '../editor-transcript'
 
 import { showState, showEditorError, updateHeaderSummary } from '../editor-page'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
@@ -33,7 +32,7 @@ import { attachProgress, type ProgressHandle } from '../../ui/progress'
 //      whole file, which is why big files sounded like a telephone.
 //   3. The waveform: the backend streams the decode into 100 peaks/s and caches
 //      it beside the recording, so every reopen is a JSON read.
-//   4. Sidecars — metadata, transcript, unsaved cuts — none of them blocking.
+//   4. Sidecars — metadata, unsaved cuts — none of them blocking.
 //
 // `E.loadSeq` guards all of it: every await re-checks it, so a user who opens a
 // second file mid-load never gets the first one's peaks, duration or transport.
@@ -401,7 +400,6 @@ export async function loadFile(fp: string): Promise<void> {
   // Load metadata sidecar (fire-and-forget — it carries `seq` so a slow read
   // for THIS file can't overwrite a newer file's metadata when it lands).
   void loadMetadataSidecar(fp, fname, seq)
-  void loadTranscriptForFile(fp)
 
   // Restore unsaved cuts from a previous editing session that ended abruptly.
   // The sidecar is written every 2 s during editing and cleared on successful

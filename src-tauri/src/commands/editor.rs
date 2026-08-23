@@ -684,7 +684,6 @@ mod tests {
         for sidecar in [
             EditorSidecar::Meta,
             EditorSidecar::CutsDraft,
-            EditorSidecar::Transcript,
             EditorSidecar::Peaks,
             EditorSidecar::Segments,
         ] {

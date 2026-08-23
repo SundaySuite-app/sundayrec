@@ -63,8 +63,6 @@ const GUARDED: &[&str] = &[
     // ── Papirkurv ────────────────────────────────────────────────────────────
     "trash_move",
     // ── E1.2 ─────────────────────────────────────────────────────────────────
-    "whisper_transcribe",
-    "whisper_export_transcript",
     "settings_export_to_file",
     "settings_import_from_file",
 ];
@@ -246,7 +244,6 @@ fn the_parser_actually_finds_commands() {
     );
     for known in [
         "editor_peaks",
-        "whisper_transcribe",
         "settings_export_to_file",
         "editor_read_sidecar",
     ] {

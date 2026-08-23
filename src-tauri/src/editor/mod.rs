@@ -37,8 +37,8 @@
 //! the gate only compiles the I/O seam in or out. The public entry points
 //! compile either way; when the
 //! feature is OFF they return a clear `feature_disabled` error so the renderer
-//! can surface "editing isn't built into this build" (mirrors the `whisper`
-//! idiom). Enable with `--features editor` for the smoke test.
+//! can surface "editing isn't built into this build". Enable with
+//! `--features editor` for the smoke test.
 //!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
@@ -541,7 +541,9 @@ pub fn detect_chapters(lines: &[EditorTranscriptLine], lang_code: &str) -> Vec<E
 pub enum EditorSidecar {
     Meta,
     CutsDraft,
-    Transcript,
+    // (`Transcript` left this renderer-facing enum in v0.15 with whisper; the
+    // core `Sidecar::Transcript` stays so old files still travel with their
+    // recording.)
     /// `<stem>.peaks.json` — the waveform cache (P3). Written/read by the seam
     /// itself, never by the renderer, but it shares the same path policy.
     Peaks,
@@ -558,7 +560,6 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
         match s {
             EditorSidecar::Meta => sundayrec_core::editor::Sidecar::Meta,
             EditorSidecar::CutsDraft => sundayrec_core::editor::Sidecar::CutsDraft,
-            EditorSidecar::Transcript => sundayrec_core::editor::Sidecar::Transcript,
             EditorSidecar::Peaks => sundayrec_core::editor::Sidecar::Peaks,
             EditorSidecar::Segments => sundayrec_core::editor::Sidecar::Segments,
             EditorSidecar::Feedback => sundayrec_core::editor::Sidecar::Feedback,
@@ -1179,7 +1180,7 @@ pub struct EditorMasterProgress {
 /// Both mutexes are locked with `unwrap_or_else(|e| e.into_inner())`: they guard
 /// plain maps with no invariant a panic could half-break, so recovering a
 /// poisoned guard is correct — one panicked mastering job must not crash every
-/// later apply/cancel (same idiom as the whisper guards).
+/// later apply/cancel.
 pub struct MasterEngine {
     /// Pure legitimacy bookkeeping — register/cancel/complete.
     registry: std::sync::Mutex<sundayrec_core::mastering::JobRegistry>,
@@ -3858,16 +3859,12 @@ mod tests {
     }
 
     #[test]
-    fn cuts_draft_and_transcript_use_distinct_files() {
+    fn cuts_draft_and_meta_use_distinct_files() {
         let (_dir, media) = tmp_media();
         let cuts = serde_json::json!({ "cuts": [{ "start": 1.0, "end": 2.0 }], "ts": 5 });
-        let transcript = serde_json::json!({ "segments": [] });
+        let meta = serde_json::json!({ "title": "Søndag" });
         assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &cuts));
-        assert!(write_sidecar(
-            &media,
-            EditorSidecar::Transcript,
-            &transcript
-        ));
+        assert!(write_sidecar(&media, EditorSidecar::Meta, &meta));
         assert_eq!(
             read_sidecar(&media, EditorSidecar::CutsDraft)
                 .unwrap()
@@ -3875,10 +3872,8 @@ mod tests {
             cuts
         );
         assert_eq!(
-            read_sidecar(&media, EditorSidecar::Transcript)
-                .unwrap()
-                .unwrap(),
-            transcript
+            read_sidecar(&media, EditorSidecar::Meta).unwrap().unwrap(),
+            meta
         );
     }
 

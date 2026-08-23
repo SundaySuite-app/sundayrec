@@ -216,23 +216,8 @@ declare global {
       listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
       registerTrustedPath: (filePath: string) => Promise<boolean>
 
-      /** Every transcribed recording's sidecar. `basePath` is the recording path
-       *  with its media extension stripped — the join key against `baseNoExt(row.path)`. */
-      transcriptListAll:       () => Promise<Array<{ basePath: string; transcript: import('../types').TranscriptData }>>
-      /** Render a transcript to SRT/VTT/TXT at `path` (native save dialog picks it). */
-      whisperExportTranscript: (data: import('../types').TranscriptData, format: 'srt' | 'vtt' | 'txt', path: string) => Promise<{ ok: boolean; error?: string }>
       /** Native "save as" picker — returns the chosen path, or null on cancel. */
       pickSavePath:            (opts: { defaultPath?: string; name?: string; extensions?: string[] }) => Promise<string | null>
-
-      editorReadTranscript:    (filePath: string) => Promise<import('../types').TranscriptData | null>
-      editorWriteTranscript:   (filePath: string, t: unknown) => Promise<boolean>
-      editorDeleteTranscript:  (filePath: string) => Promise<boolean>
-      whisperStatus:        () => Promise<{ binaryAvailable: boolean; models: Array<{ id: string; label: string; description: string; sizeBytes: number; quality: string; realtimeFactor: number; installed: boolean; sizeOk: boolean }> }>
-      whisperDownloadModel: (modelId: string) => Promise<{ ok: boolean; error?: string }>
-      whisperCancelDownload:(modelId: string) => Promise<boolean>
-      whisperDeleteModel:   (modelId: string) => Promise<boolean>
-      whisperTranscribe:    (params: { filePath: string; modelId: string; language?: string; translate?: boolean; jobId?: string }) => Promise<{ ok: boolean; transcript?: import('../types').TranscriptData; error?: string }>
-      whisperCancelTranscribe: (jobId: string) => Promise<boolean>
 
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>

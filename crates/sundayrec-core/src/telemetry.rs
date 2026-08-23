@@ -320,13 +320,9 @@ pub enum CounterName {
     /// Chapters were auto-detected.
     #[serde(rename = "editor.chapters.detected")]
     EditorChaptersDetected,
-
-    // ── Post-production ──────────────────────────────────────────────────────
-    /// A whisper transcription was started.
-    #[serde(rename = "transcribe.run")]
-    TranscribeRun,
-    // (v0.15: `companion.build` left the vocabulary with the AI companion. Same
-    // rule as v0.14 below: removing the SENDER is enough.)
+    // (v0.15: `transcribe.run` and `companion.build` left the vocabulary with
+    // whisper transcription and the AI companion. Same rule as v0.14 below:
+    // removing the SENDER is enough.)
 
     // ── Files ────────────────────────────────────────────────────────────────
     /// A recording was moved to the trash.
@@ -365,7 +361,6 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorExportOther,
     CounterName::EditorMasterApplied,
     CounterName::EditorChaptersDetected,
-    CounterName::TranscribeRun,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
     CounterName::DiagnoseRun,
@@ -393,7 +388,6 @@ impl CounterName {
             Self::EditorExportOther => "editor.export.other",
             Self::EditorMasterApplied => "editor.master.applied",
             Self::EditorChaptersDetected => "editor.chapters.detected",
-            Self::TranscribeRun => "transcribe.run",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
             Self::DiagnoseRun => "diagnose.run",
@@ -2288,11 +2282,12 @@ mod tests {
             "duplicate counter wire name"
         );
         // R1 of «Frivilligen først» retired the review/publish/cloud counters
-        // with their features (the Worker treats names as opaque strings, so a
-        // sender that stops sending one costs nothing); the floor follows.
+        // with their features, R2 the transcribe/companion/chapter ones (the
+        // Worker treats names as opaque strings, so a sender that stops sending
+        // one costs nothing); the floor follows.
         assert!(
-            ALL_COUNTERS.len() >= 18,
-            "the seam coverage target is ~18 counters, found {}",
+            ALL_COUNTERS.len() >= 15,
+            "the seam coverage target is ~15 counters, found {}",
             ALL_COUNTERS.len()
         );
         // Every name is a dotted, lowercase namespace — the endpoint aggregates

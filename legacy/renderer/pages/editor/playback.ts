@@ -5,7 +5,6 @@ import { nextRegion, regionPosToTimeline, resolvePosition, type RegionTimeline }
 import { formatTime } from './format'
 import { drawWaveform, updateMinimapViewport } from './waveform'
 import { DRAW_INTERVAL_MS, nextDrawGate } from '../../ui/frame-gate'
-import { setCurrentTranscriptTime } from '../editor-transcript'
 import { snapOutOfCut } from './canvas-input'
 
 // ── Playback engine, seek/scroll + timecode display ─────────────────────────
@@ -407,7 +406,6 @@ export function animate(): void {
 
   updateTimecode(curSec)
   autoScrollToPlayhead(curSec)
-  setCurrentTranscriptTime(curSec)
   drawWaveformThrottled()
   E.rafId = requestAnimationFrame(animate)
 }

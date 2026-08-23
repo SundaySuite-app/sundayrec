@@ -116,12 +116,6 @@ pub mod util;
 #[cfg(feature = "vad")]
 pub mod vad;
 pub mod wake;
-// PU-5 whisper transcription — `whisper` feature, in `default` and the macOS
-// release (Metal path verified on a real M1 Pro; Windows-runtime still an owner
-// rig test). The model registry/argv/normalise are `sundayrec_core::whisper`;
-// this seam runs inference (whisper-rs). The pure list/status entry points
-// compile without it; `transcribe` returns `feature_disabled` when off.
-pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -224,13 +218,7 @@ pub fn run() {
         // The export engine holds the ONE in-flight render so
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
-        .manage(editor::ExportEngine::new())
-        // Tracks in-flight whisper model downloads so `whisper_cancel_download`
-        // can abort one (one entry per active model id).
-        .manage(whisper::DownloadGuard::new())
-        // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
-        // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new());
+        .manage(editor::ExportEngine::new());
 
     // PU-1: ONE alert throttle window for the whole process lifetime. The gate
     // (10 min per recipient+error pair) is what stops a flapping device from
@@ -487,7 +475,6 @@ pub fn run() {
             commands::recorder::run_test_recording,
             commands::recorder::run_capture_bench,
             commands::db::recordings_list,
-            commands::db::transcripts_list,
             commands::db::recordings_delete,
             commands::db::recordings_clear,
             commands::db::recording_update_note,
@@ -565,15 +552,6 @@ pub fn run() {
             commands::wake::wake_cancel_test,
             commands::wake::wake_failure_history,
             commands::wake::wake_clear_failure_history,
-            // PU-5 whisper transcription (model registry pure; transcribe gated).
-            commands::whisper::whisper_list_models,
-            commands::whisper::whisper_model_status,
-            commands::whisper::whisper_download_model,
-            commands::whisper::whisper_cancel_download,
-            commands::whisper::whisper_delete_model,
-            commands::whisper::whisper_transcribe,
-            commands::whisper::whisper_cancel_transcribe,
-            commands::whisper::whisper_export_transcript,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,

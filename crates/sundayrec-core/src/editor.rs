@@ -1390,7 +1390,10 @@ pub enum Sidecar {
     Meta,
     /// `<base>.cuts-draft.json` — autosaved cut regions for crash recovery.
     CutsDraft,
-    /// `<base>.transcript.json` — the saved transcript.
+    /// `<base>.transcript.json` — the saved whisper transcript. Nothing writes
+    /// or reads one since v0.15 (transcription left the app); the kind stays in
+    /// this table so a sidecar a pre-v0.15 build wrote still TRAVELS with its
+    /// recording through the trash — the same reason `.cover.*` stays there.
     Transcript,
     /// `<base>.peaks.json` — the quantised waveform cache (P3). Derived data,
     /// not user state: deleting it costs one recompute, nothing else.

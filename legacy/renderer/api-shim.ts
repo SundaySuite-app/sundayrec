@@ -37,7 +37,6 @@ import { toast } from "./ui/toast";
 import { t } from "./i18n";
 import type { TrashEntry } from "../bindings/TrashEntry";
 import type { Settings } from "../bindings/Settings";
-import { errorCode } from "./error-code-core";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
@@ -304,8 +303,6 @@ const EVENT_MAP: Record<string, string> = {
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "master-progress": "editor-master-progress",
-  "whisper-progress": "whisper://progress",
-  "whisper-model-progress": "whisper://model-progress",
   "editor-export-progress": "editor://export-progress",
   // Fase 9: the three editor passes that used to run for minutes behind a
   // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
@@ -1321,7 +1318,7 @@ const api: Record<string, unknown> = {
   // button did nothing and a 90-minute render was unkillable.)
   editorCancelExport: async () => call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
-  // Sidecars (meta / cutsDraft / transcript) are clean JSON key-value via
+  // Sidecars (meta / cutsDraft) are clean JSON key-value via
   // editor_read/write/delete_sidecar — no media decode needed.
   editorReadMeta: async (fp: string) =>
     call("editor_read_sidecar", { mediaPath: fp, sidecar: "meta" }, null),
@@ -1462,19 +1459,6 @@ const api: Record<string, unknown> = {
   // .hasVideo (undefined) instead of taking the null branch. Return null.
   editorProbeStreams: async (fp: string) =>
     call("editor_probe_streams", { inputPath: fp }, null),
-  editorReadTranscript: async (fp: string) =>
-    call("editor_read_sidecar", { mediaPath: fp, sidecar: "transcript" }, null),
-  editorWriteTranscript: async (fp: string, t: unknown) =>
-    call(
-      "editor_write_sidecar",
-      { mediaPath: fp, sidecar: "transcript", value: t },
-      false,
-    ).then(() => true),
-  editorDeleteTranscript: async (fp: string) =>
-    call("editor_delete_sidecar", { mediaPath: fp, sidecar: "transcript" }, false).then(
-      () => true,
-    ),
-
   // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────
   // The 4 built-in mastering presets from the core (id/label/description +
   // targets/filters). Without this the preset dropdown was empty → the whole
@@ -1513,35 +1497,6 @@ const api: Record<string, unknown> = {
 
   registerTrustedPath: async () => true,
 
-  // ── Transcripts / whisper ───────────────────────────────────────────────
-  // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this
-  // ONE call — while it returned `[]` the sermon search silently found nothing
-  // and the "N transkripsjoner indeksert" status stayed blank. `transcripts_list`
-  // (commands/db.rs) walks the history, reads each `<name>.transcript.json`
-  // sidecar and returns `{ basePath, transcript }` — `basePath` is the recording
-  // path with its media extension stripped, which is exactly the join key
-  // `baseNoExt(row.path)` the history rows use. Fallback `[]` keeps a missing
-  // sidecar dir from breaking the page.
-  transcriptListAll: async () =>
-    call<Array<{ basePath: string; transcript: unknown }>>(
-      "transcripts_list",
-      undefined,
-      [],
-    ),
-  // Render a transcript to SRT/VTT/TXT at a user-chosen path. Pure formatting +
-  // one fs write in the backend (works in every build — no `whisper` feature).
-  whisperExportTranscript: async (
-    data: unknown,
-    format: "srt" | "vtt" | "txt",
-    path: string,
-  ) => {
-    try {
-      await invoke("whisper_export_transcript", { data, format, path });
-      return { ok: true as const };
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
   // Native "save as" picker (the dialog plugin's counterpart to `pickPath`).
   // A cancel yields null — never throws, same contract as the open pickers.
   pickSavePath: async (opts: {
@@ -1563,84 +1518,6 @@ const api: Record<string, unknown> = {
       return null;
     }
   },
-  // whisper_list_models gives the catalogue; whisper_model_status the per-model
-  // on-disk {installed, sizeOk}. The renderer's model picker needs both merged
-  // (the old Electron whisper-status did this server-side) — without the
-  // installed flags every transcription re-downloaded the model from scratch.
-  whisperStatus: async () => {
-    const models = await call<Array<Record<string, unknown>>>(
-      "whisper_list_models",
-      undefined,
-      [],
-    );
-    const merged = await Promise.all(
-      models.map(async (m) => ({
-        ...m,
-        ...(await call(
-          "whisper_model_status",
-          { id: m.id },
-          { installed: false, sizeOk: false },
-        )),
-        id: m.id,
-      })),
-    );
-    return {
-      models: merged,
-      installed: merged.filter((m) => m.installed).map((m) => m.id),
-      active: null,
-      binaryAvailable: true,
-      available: true,
-    };
-  },
-  // whisper_* commands take `id`, not `model_id`. The command returns `()` on
-  // success and an AppError on failure; surface a real {ok,error} shape (the
-  // generic `call` fallback would hide the reason → "feilet: undefined").
-  whisperDownloadModel: async (modelId: string) => {
-    try {
-      await invoke("whisper_download_model", { id: modelId });
-      return { ok: true as const };
-    } catch (e) {
-      // The renderer suppresses the alert only for the exact "cancelled" —
-      // matched on the stable code (R3-C), not the message's tail.
-      return {
-        ok: false as const,
-        error: errorCode(e) === "cancelled" ? "cancelled" : ipcErrText(e),
-      };
-    }
-  },
-  // WRITES — bare invoke, rejection travels (R3-B). A model "deleted" while
-  // still on disk used to report `true`; editor-transcript.ts catches.
-  whisperCancelDownload: async (modelId: string) =>
-    invoke("whisper_cancel_download", { id: modelId }).then(() => true),
-  whisperDeleteModel: async (modelId: string) =>
-    invoke("whisper_delete_model", { id: modelId }).then(() => true),
-  // old { filePath, modelId, language, translate, jobId } → whisper_transcribe
-  // (input_path, model_id, language, translate, subtitle_style, job_id). The
-  // command returns the TranscriptData itself on success — wrap it in the
-  // {ok, transcript} envelope the legacy renderer pattern-matches on, and map a
-  // rejected invoke to {ok:false, error} (the renderer suppresses the alert for
-  // the exact string "cancelled", so strip thiserror's "validation: " prefix).
-  whisperTranscribe: async (params: unknown) => {
-    const o = (params ?? {}) as Record<string, unknown>;
-    try {
-      const transcript = await invoke("whisper_transcribe", {
-        inputPath: o.filePath,
-        modelId: o.modelId,
-        language: o.language ?? null,
-        translate: o.translate ?? null,
-        subtitleStyle: null,
-        jobId: o.jobId ?? null,
-      });
-      return { ok: true as const, transcript };
-    } catch (e) {
-      return {
-        ok: false as const,
-        error: errorCode(e) === "cancelled" ? "cancelled" : ipcErrText(e),
-      };
-    }
-  },
-  whisperCancelTranscribe: async (jobId: string) =>
-    call("whisper_cancel_transcribe", { jobId }, false),
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
   notifyWeakSignal: noop,

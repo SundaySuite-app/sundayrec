@@ -2,19 +2,18 @@ import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingEntry, RecordingMetadata } from '../../types'
-import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { confirmDialog } from '../ui/dialog'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
 import { computePeakGain, setNormalizeUI } from './editor/peaks'
-import { minPlayableSec, maxPlayableSec, clampPlayable, clampMain, xToSec, getRegionAtX } from './editor/geometry'
+import { minPlayableSec, maxPlayableSec, xToSec, getRegionAtX } from './editor/geometry'
 import { deleteCut, undoCut, redoCut, getRemainingDuration, updateRemainingDisplay, renderCutList, pushCutHistory } from './editor/cuts'
 import { runDetection, applySermonTrim, setSermonSegment, hideSuggestionBanner } from './editor/detection'
 import { saveMetadata } from './editor/metadata'
 import { syncCanvasSize, drawWaveform, drawMinimap, updateMinimapViewport } from './editor/waveform'
-import { togglePlay, stopPlay, seekTo, seekBy, jumpToCutBoundary, updateTimecode, seekMediaTo } from './editor/playback'
+import { togglePlay, stopPlay, seekTo, seekBy, jumpToCutBoundary, updateTimecode } from './editor/playback'
 import { fitAll, zoomBy } from './editor/viewport'
-import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction, snapOutOfCut } from './editor/canvas-input'
+import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction } from './editor/canvas-input'
 import { openExportModal, closeExportModal, runExport, updateExportFormatUI } from './editor/export'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupEditorTabs, flagEditorTab } from './editor/tabs'
@@ -332,13 +331,6 @@ export function setupEditorPage(): void {
 
   setupMinimapInteraction()
   setupKeyboardShortcuts()
-  const seekToSec = (sec: number): void => {
-    E.playStartSec = clampPlayable(snapOutOfCut(sec))
-    updateTimecode(E.playStartSec)
-    seekMediaTo(clampMain(E.playStartSec))
-    drawWaveform()
-  }
-  setupTranscriptPanel(seekToSec)
   setupDragDrop()
 
   if (E.canvas && E.canvas.parentElement) {
@@ -801,7 +793,6 @@ async function confirmDiscardIfDirty(intent: 'open' | 'close'): Promise<boolean>
  */
 function closeCurrentFile(): void {
   stopPlay()
-  clearTranscript()
   // The shared AudioContext is deliberately NOT closed — it is the app's only
   // one and the jingle buffers below belong to it (see audio-ctx.ts).
   E.introBuffer = null

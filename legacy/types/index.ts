@@ -11,7 +11,6 @@ import type { FilenamePattern } from '../bindings/FilenamePattern'
 import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
 import type { EditorSegment } from '../bindings/EditorSegment'
 import type { ChapterMarker } from '../bindings/ChapterMarker'
-import type { TranscriptSegment } from '../bindings/TranscriptSegment'
 import type { UpdateChannel } from '../bindings/UpdateChannel'
 import type { Settings as SettingsGen } from '../bindings/Settings'
 import type { DeviceChannels } from '../bindings/DeviceChannels'
@@ -27,7 +26,6 @@ export type {
   PrepAnalysisSegment,
   EditorSegment,
   ChapterMarker,
-  TranscriptSegment,
   UpdateChannel,
 }
 // ────────────────────────────────────────────────────────────────────────────
@@ -106,26 +104,5 @@ export interface RecordingMetadata {
   speaker: string
   description: string
   chapters: ChapterMarker[]
-}
-
-// TranscriptSegment is generated (re-exported above): one whisper.cpp segment,
-// `start`/`end` in seconds into the recording.
-
-/** Sidecar file written alongside the recording at <name>.transcript.json.
- *  Schema-versioned so we can evolve format without breaking older files. */
-export interface TranscriptData {
-  /** Schema version. Bump when format changes incompatibly. */
-  version:   1
-  /** Whisper model id used (e.g. "ggml-base", "ggml-medium"). */
-  model:     string
-  /** BCP-47-ish language code Whisper detected/was told (e.g. "no", "en", "auto"). */
-  language:  string
-  /** Total media duration in seconds — for sanity-checking and percentage display. */
-  duration:  number
-  /** Epoch-ms when this transcript was generated. */
-  createdAt: number
-  /** True if user asked Whisper to translate output to English. */
-  translated?: boolean
-  segments:  TranscriptSegment[]
 }
 

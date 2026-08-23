@@ -338,7 +338,6 @@ fn trim_to_line_start(buf: &[u8], started_mid_file: bool) -> &[u8] {
 pub fn log_startup_banner() {
     let features: Vec<&str> = [
         ("editor", cfg!(feature = "editor")),
-        ("whisper", cfg!(feature = "whisper")),
         ("email", cfg!(feature = "email")),
         ("tray", cfg!(feature = "tray")),
         ("updater", cfg!(feature = "updater")),

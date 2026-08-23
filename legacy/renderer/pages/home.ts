@@ -965,13 +965,6 @@ export function setupHome(): void {
     navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
-  // The transcription card routes to the Deling tab (Whisper has no
-  // dedicated settings surface yet, so we land users there and they can
-  // browse from there until we promote Whisper config out of the editor).
-  document.getElementById('btn-go-whisper')?.addEventListener('click', (e: Event) => {
-    e.preventDefault()
-    navigateTo('settings', { tab: 'settings-sharing', anchor: '#settings-notifications' })
-  })
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => {
     navigateTo('settings', { tab: 'settings-audio' })
   })
@@ -1459,49 +1452,5 @@ export async function loadHomeInfoStrip(): Promise<void> {
   const fmtSub  = document.getElementById('home-format-sub')
   if (fmtEl) fmtEl.textContent = br ? `${fmt} · ${br}` : fmt
   if (fmtSub) fmtSub.textContent = `${ch} · ${srLabel}`
-
-  // Refresh the transcript strip — the card decides whether to show itself
-  // based on actual disk state. Smart visibility: nothing is rendered when it
-  // is not configured, keeping the home page short for fresh users.
-  void loadPublishInfoStrip()
 }
 
-/**
- * Loads the bottom info-strip with: transkripsjon (Whisper). The card toggles
- * its own display — the parent strip is hidden when it is off.
- */
-async function loadPublishInfoStrip(): Promise<void> {
-  const strip = document.getElementById('publish-info-strip')
-  if (!strip) return
-  const whisperShown = await renderWhisperCard()
-  strip.style.display = whisperShown ? '' : 'none'
-}
-
-/** @returns true when the transkripsjon card was rendered visible. */
-async function renderWhisperCard(): Promise<boolean> {
-  const card = document.getElementById('home-whisper-card')
-  if (!card) return false
-  let installedModel: { label: string; quality?: string } | null = null
-  try {
-    const status = await window.api.whisperStatus()
-    const installed = status.models?.find(m => (m as { installed?: boolean }).installed) as
-      | { id: string; label: string; quality?: string }
-      | undefined
-    if (status.binaryAvailable && installed) installedModel = installed
-  } catch {
-    // Whisper IPC unavailable — skip card.
-  }
-  if (!installedModel) {
-    card.style.display = 'none'
-    return false
-  }
-  card.style.display = ''
-  const valEl = document.getElementById('home-whisper-model')
-  const subEl = document.getElementById('home-whisper-status')
-  if (valEl) valEl.textContent = installedModel.label
-  if (subEl) {
-    subEl.textContent = installedModel.quality ?? 'Klar'
-    subEl.style.color = 'var(--green)'
-  }
-  return true
-}

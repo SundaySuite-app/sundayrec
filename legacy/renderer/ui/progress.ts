@@ -147,7 +147,7 @@ export function attachProgress(host: HTMLElement, opts: ProgressOpts = {}): Prog
     rafId = raf(paint)
   }
 
-  /** The ETA line has to keep counting down between events — a transcription
+  /** The ETA line has to keep counting down between events — an export
    *  emits every few seconds, and a frozen «ca. 2 min igjen» reads as a hang. */
   function startTicker(): void {
     if (timer || !showEta) return

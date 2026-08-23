@@ -32,10 +32,10 @@ let inerted: HTMLElement[] = []
  * Make everything except the open modal inert — no focus, no clicks, no screen
  * reader.
  *
- * Naively inerting #main and #sidebar is WRONG here: two of the eight modal
- * roots (`transcribe-modal`, `transcribe-progress-modal`) are authored inside
- * `#main`, so that would have made those modals inert along with the page and
- * left them looking open but dead to every click.
+ * Naively inerting #main and #sidebar is WRONG here: a modal root authored
+ * inside `#main` (the transcribe modals were, until v0.15) would have been
+ * made inert along with the page and left looking open but dead to every
+ * click.
  *
  * Instead, walk from the modal up to <body> and inert each ancestor's other
  * children. At body level that resolves to exactly #main + #sidebar; for a
