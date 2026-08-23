@@ -711,8 +711,6 @@
     "errTimeout": "L’export a pris trop de temps et a été arrêté. Réessayez ou divisez le fichier en plusieurs enregistrements.",
     "errFileNotFound": "Le fichier original n’est pas disponible — le disque est-il déconnecté ?",
     "errCutData": "Erreur interne dans les données de coupe. Essayez de recharger le fichier.",
-    "chaptersEmpty": "Pas encore de chapitres. Cliquez sur « + Ajouter à la tête de lecture » pour commencer.",
-    "chapterClickSeek": "Cliquer pour rechercher",
     "playbackViaProxy": "La lecture passe par un fichier intermédiaire temporaire (pleine qualité). L'export utilise toujours l'original.",
     "analyzingWaveform": "Analyse de la forme d’onde…",
     "preparingPlayback": "Préparation de la lecture…",

@@ -18,11 +18,11 @@
 //! symmetry.
 
 use crate::editor::{
-    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorDecodeProgress,
-    EditorExportProgress, EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
+    self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
+    EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
     EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
-    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
+    EditorSidecar, EditorStreamInfo, ExportEngine, MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -236,23 +236,6 @@ fn shadow_the_analysis(
 #[tauri::command]
 pub fn editor_master_presets() -> AppResult<Vec<crate::editor::EditorMasterPreset>> {
     Ok(editor::master_presets())
-}
-
-/// Detect topic chapters from a transcript (Bible references + enumeration
-/// points). Pure/offline/deterministic — no ffmpeg, works without the `whisper`
-/// or `editor` features. Returns chapters on the original recording timeline.
-#[tauri::command]
-pub fn editor_detect_chapters(
-    lines: Vec<EditorTranscriptLine>,
-    lang: Option<String>,
-) -> AppResult<Vec<EditorChapter>> {
-    crate::telemetry::counters::count(
-        sundayrec_core::telemetry::CounterName::EditorChaptersDetected,
-    );
-    Ok(editor::detect_chapters(
-        &lines,
-        lang.as_deref().unwrap_or("no"),
-    ))
 }
 
 /// Analyse a recording's stereo channel balance and recommend a repair

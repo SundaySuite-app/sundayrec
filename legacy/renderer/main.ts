@@ -197,7 +197,6 @@ declare global {
       editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
       /** Index into `segments` of the block the human corrected us to, or null. */
       editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
-      editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
       editorAutoProcess:      (filePath: string) => Promise<{ diagnosis: { code: string; recommended: { mode: string; leftDb: number; rightDb: number } }; vocalChainPreset: string; masterPreset: string; summary: string } | null>

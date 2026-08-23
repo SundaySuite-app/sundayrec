@@ -317,12 +317,9 @@ pub enum CounterName {
     /// Mastering was applied to a recording.
     #[serde(rename = "editor.master.applied")]
     EditorMasterApplied,
-    /// Chapters were auto-detected.
-    #[serde(rename = "editor.chapters.detected")]
-    EditorChaptersDetected,
-    // (v0.15: `transcribe.run` and `companion.build` left the vocabulary with
-    // whisper transcription and the AI companion. Same rule as v0.14 below:
-    // removing the SENDER is enough.)
+    // (v0.15: `editor.chapters.detected`, `transcribe.run` and `companion.build`
+    // left the vocabulary with chapter detection, whisper transcription and the
+    // AI companion. Same rule as v0.14 below: removing the SENDER is enough.)
 
     // ── Files ────────────────────────────────────────────────────────────────
     /// A recording was moved to the trash.
@@ -360,7 +357,6 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorExportVideo,
     CounterName::EditorExportOther,
     CounterName::EditorMasterApplied,
-    CounterName::EditorChaptersDetected,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
     CounterName::DiagnoseRun,
@@ -387,7 +383,6 @@ impl CounterName {
             Self::EditorExportVideo => "editor.export.video",
             Self::EditorExportOther => "editor.export.other",
             Self::EditorMasterApplied => "editor.master.applied",
-            Self::EditorChaptersDetected => "editor.chapters.detected",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
             Self::DiagnoseRun => "diagnose.run",

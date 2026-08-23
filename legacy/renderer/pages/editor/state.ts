@@ -81,8 +81,8 @@ export const E = {
   videoIntroPath: '',
   videoOutroPath: '',
 
-  // Metadata + chapters
-  meta: { title: '', speaker: '', description: '', chapters: [] } as RecordingMetadata,
+  // Metadata
+  meta: { title: '', speaker: '', description: '' } as RecordingMetadata,
   metaDirty: false,
 
   // Viewport (seconds visible in main canvas)

@@ -2424,7 +2424,8 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .meta-form-row:last-child { margin-bottom: 0; }
 .meta-form-row .form-label { margin: 0; }
 
-/* ── Editor: chapters panel ───────────────────────────────────── */
+/* ── Editor: panel chrome (named for the chapters panel it was built for;
+   the analyse + I/O panels share it, the chapters panel itself left in v0.15) ── */
 .editor-chapters-panel {
   margin: 6px 0; border: 1px solid var(--border); border-radius: 8px;
   overflow: hidden;
@@ -2437,37 +2438,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .editor-chapters-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 13px; font-weight: 600; color: var(--text2);
-}
-.editor-chapter-count {
-  font-size: 11px; font-weight: 700; color: var(--accent);
-  background: rgba(235,184,75,.12); border-radius: 8px; padding: 1px 6px;
-}
-.editor-chapter-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px; border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.editor-chapter-row:last-child { border-bottom: none; }
-.editor-chapter-time {
-  font-variant-numeric: tabular-nums; color: var(--accent);
-  font-size: 12px; font-weight: 600; min-width: 54px; cursor: pointer;
-}
-.editor-chapter-time:hover { text-decoration: underline; }
-.editor-chapter-name {
-  flex: 1; background: none; border: none; color: var(--text1);
-  font-size: 13px; padding: 1px 4px; border-radius: 4px; outline: none;
-}
-.editor-chapter-name:focus {
-  background: var(--surface2); box-shadow: 0 0 0 2px rgba(235,184,75,.25);
-}
-.editor-chapter-del {
-  background: none; border: none; cursor: pointer; color: var(--text3);
-  font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px;
-  transition: color .15s, background .15s;
-}
-.editor-chapter-del:hover { color: var(--red); background: rgba(239,68,68,.08); }
-.editor-chapters-empty {
-  padding: 12px; text-align: center; font-size: 13px; color: var(--text3);
 }
 
 /* ── Segment suggestions ──────────────────────────────────────── */

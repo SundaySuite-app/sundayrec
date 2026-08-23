@@ -808,7 +808,7 @@ function closeCurrentFile(): void {
   E.clipTimes = []
   E.lastAnalyzedAt = 0
   flagEditorTab('clip', false)
-  E.meta = { title: '', speaker: '', description: '', chapters: [] }
+  E.meta = { title: '', speaker: '', description: '' }
   clearDirty()
   if (E.videoEl) {
     E.videoEl.pause()

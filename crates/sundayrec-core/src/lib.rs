@@ -47,7 +47,6 @@ pub mod ab_eval;
 pub mod audio;
 pub mod audio_analysis;
 pub mod capture;
-pub mod chapters;
 pub mod church_calendar;
 pub mod detect;
 pub mod device_enum;

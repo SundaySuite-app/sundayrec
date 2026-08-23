@@ -11,7 +11,7 @@ import { clampPlayable, clampMain } from './geometry'
 import { snapOutOfCut } from './canvas-input'
 import { stopPlay, startPlay, seekMediaTo, updateTimecode, updateTotalTime } from './playback'
 import { renderAnalyzePanel, runDetection } from './detection'
-import { renderMetaPanel, renderChapterList } from './metadata'
+import { renderMetaPanel } from './metadata'
 import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
 
@@ -210,7 +210,7 @@ async function loadAudioFile(fp: string, ext: string, seq: number): Promise<bool
   E.duration = duration
 
   if (!E.peaks) {
-    // Flat waveform rather than an empty screen: cuts, chapters and export all
+    // Flat waveform rather than an empty screen: cuts and export all
     // work off the timeline, which we now have.
     E.peaks = new Float32Array(Math.ceil(E.duration * 100))
     console.log('[editor] no peaks available (flat waveform), duration:', E.duration.toFixed(1) + 's')
@@ -264,7 +264,7 @@ export async function loadFile(fp: string): Promise<void> {
   // new file's is set up below.
   teardownPlayback()
   E.playStartSec = 0
-  E.meta = { title: '', speaker: '', description: '', chapters: [] }
+  E.meta = { title: '', speaker: '', description: '' }
   E.metaDirty = false
   // Fresh file → drop any previous peak-normalize gain and reset the UI.
   E.audioGainDb = 0
@@ -735,13 +735,13 @@ export function updateEditorIntroOutroDisplay(): void {
 }
 
 /**
- * Read the `.meta` sidecar for `fp` and paint the metadata/chapter panels.
+ * Read the `.meta` sidecar for `fp` and paint the metadata panel.
  *
  * `seq` is the caller's `E.loadSeq` at the time it started, re-checked after the
  * await like every other step in this file (see the header's invariant). It was
  * the one loader step that did NOT: called fire-and-forget, a slow read for file
- * A resolved after the user had opened B and stamped A's title, speaker,
- * description and chapters onto B — which then got SAVED under B on the next
+ * A resolved after the user had opened B and stamped A's title, speaker and
+ * description onto B — which then got SAVED under B on the next
  * metadata edit. Omitting `seq` keeps the old unguarded behaviour for any caller
  * that genuinely has no load in flight.
  */
@@ -760,9 +760,7 @@ export async function loadMetadataSidecar(
       title: fname.replace(/\.[^.]+$/, '').replace(/_redigert(_\d+)?$/, '').replace(/_/g, ' '),
       speaker: '',
       description: '',
-      chapters: [],
     }
   }
   renderMetaPanel()
-  renderChapterList()
 }

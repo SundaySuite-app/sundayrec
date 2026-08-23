@@ -711,8 +711,6 @@
     "errTimeout": "Export dauerte zu lange und wurde gestoppt. Versuchen Sie es erneut oder teilen Sie die Datei in kleinere Aufnahmen.",
     "errFileNotFound": "Originaldatei ist nicht verfügbar — ist der Datenträger getrennt?",
     "errCutData": "Interner Fehler in Schnittdaten. Versuchen Sie, die Datei neu zu laden.",
-    "chaptersEmpty": "Noch keine Kapitel. Klicken Sie auf „+ An Wiedergabeposition hinzufügen\", um zu beginnen.",
-    "chapterClickSeek": "Zum Suchen klicken",
     "playbackViaProxy": "Die Wiedergabe läuft über eine temporäre Zwischendatei (volle Qualität). Der Export nutzt immer das Original.",
     "analyzingWaveform": "Wellenform wird analysiert…",
     "preparingPlayback": "Wiedergabe wird vorbereitet…",

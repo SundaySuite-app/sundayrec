@@ -2,7 +2,7 @@
 //!
 //! The impure half of the non-destructive editor. Every *decision* lives in the
 //! unit-tested core:
-//!   - cut/keep planning + filter-graph + codec + output-path + chapters →
+//!   - cut/keep planning + filter-graph + codec + output-path + metadata →
 //!     [`sundayrec_core::editor`],
 //!   - EBU R128 loudness measure/apply filter chains + the loudnorm JSON parse →
 //!     [`sundayrec_core::mastering`],
@@ -179,8 +179,9 @@ pub struct EditorCutRegion {
 }
 
 /// Export request — the cut-plan + a chosen format + optional mastering preset,
-/// intro/outro jingles, and topic chapters. Mirrors the non-video subset of the
-/// Electron `EditorExportParams` the editor UI sent (mp4 video re-encode aside).
+/// intro/outro jingles, and title/speaker/description. Mirrors the non-video
+/// subset of the Electron `EditorExportParams` the editor UI sent (mp4 video
+/// re-encode aside).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "../../src/lib/bindings/EditorExportRequest.ts")]
 #[serde(rename_all = "camelCase")]
@@ -205,12 +206,11 @@ pub struct EditorExportRequest {
     /// Optional peak-normalization gain (dB) applied as a `volume` filter — what
     /// the editor's "Normalize" button computes. `None`/`0` is a no-op.
     pub gain_db: Option<f64>,
-    /// Topic chapters to embed in the exported file (FFMETADATA → ID3 CHAP/CTOC).
-    /// Times are in the ORIGINAL recording timeline; export remaps them through
-    /// the cut-plan and drops any that fall inside a cut. Empty = none embedded.
-    #[serde(default)]
-    pub chapters: Vec<EditorChapter>,
-    /// Optional file title (FFMETADATA `title`); also used as the chapter header.
+    // (v0.15: `chapters` left the request with the chapter UI — no source
+    // produces them any more. The core's FFMETADATA/ID3 CHAP path is kept and
+    // is simply handed an empty list, which makes it a no-op; see `export`.
+    // serde ignores the key if an old renderer still sends it.)
+    /// Optional file title (FFMETADATA `title`).
     #[serde(default)]
     pub title: Option<String>,
     /// Optional speaker (FFMETADATA `artist`).
@@ -235,26 +235,6 @@ pub struct EditorExportRequest {
     /// for ~half the size). Ignored for audio formats.
     #[serde(default)]
     pub video_codec: Option<String>,
-}
-
-/// One chapter marker (a title at a time, in seconds). The renderer-facing mirror
-/// of [`sundayrec_core::editor::Chapter`].
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChapter.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorChapter {
-    pub time: f64,
-    pub title: String,
-}
-
-/// One timestamped transcript line fed to chapter detection. Mirrors the whisper
-/// `TranscriptSegment` subset the detector needs (start + text).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorTranscriptLine.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorTranscriptLine {
-    pub start: f64,
-    pub text: String,
 }
 
 /// How to repair the channel layout (mirror of
@@ -508,29 +488,6 @@ pub fn master_presets() -> Vec<EditorMasterPreset> {
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportResult {
     pub output_path: String,
-}
-
-/// Detect topic chapters from a transcript (Bible references + enumeration
-/// points) in the transcript's language (`lang_code`: `en` → English, otherwise
-/// Norwegian). Pure, offline, deterministic — no ffmpeg, so it compiles + runs
-/// regardless of the `editor`/`whisper` features. Times are in the original
-/// recording timeline; `editor_export` remaps them through the cut-plan.
-pub fn detect_chapters(lines: &[EditorTranscriptLine], lang_code: &str) -> Vec<EditorChapter> {
-    use sundayrec_core::chapters::{detect_chapters as core_detect, Language, TranscriptLine};
-    let core_lines: Vec<TranscriptLine> = lines
-        .iter()
-        .map(|l| TranscriptLine {
-            start: l.start,
-            text: l.text.clone(),
-        })
-        .collect();
-    core_detect(&core_lines, Language::from_code(lang_code))
-        .into_iter()
-        .map(|c| EditorChapter {
-            time: c.time,
-            title: c.title,
-        })
-        .collect()
 }
 
 /// Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
@@ -2523,11 +2480,10 @@ where
     F: Fn(f32, &str),
 {
     use std::path::Path;
-    use sundayrec_core::chapters::remap_chapters_to_keeps;
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
         collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
-        video_filter_complex, Chapter as CoreChapter, CutRegion, RecordingMetadata,
+        video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
@@ -2738,28 +2694,22 @@ where
     let has_outro = outro.is_some();
     let main_input_idx = if has_intro { 1 } else { 0 };
 
-    // 4b. Topic chapters → FFMETADATA. The detector timed them on the ORIGINAL
-    //     recording; remap them through the cut-plan onto the exported timeline
-    //     and drop any inside a cut. Title/speaker/description ride along as tags.
-    //     NOTE: an intro jingle shifts the audio later; chapter times here are
-    //     relative to the main audio (no intro offset) — fine for the common
-    //     no-jingle podcast export, slightly early if a long intro is prepended.
-    let core_chapters: Vec<CoreChapter> = req
-        .chapters
-        .iter()
-        .map(|c| CoreChapter {
-            time: c.time,
-            title: c.title.clone(),
-        })
-        .collect();
+    // 4b. Title/speaker/description → tags, and chapters → FFMETADATA. Since
+    //     v0.15 nothing in the app produces chapters (the transcript-driven
+    //     detector left with the content cluster), so the list handed to the
+    //     core is ALWAYS empty and `ffmetadata` returns `None`: no metadata
+    //     input, no `-map_metadata`, and the tags go through `metadata_args`
+    //     alone. The FFMETADATA/ID3 CHAP path itself is kept in the core,
+    //     tested there, so a future chapter source only has to fill this list.
     let meta = RecordingMetadata {
         title: req.title.clone(),
         speaker: req.speaker.clone(),
         description: req.description.clone(),
-        chapters: remap_chapters_to_keeps(&core_chapters, &keeps),
+        chapters: Vec::new(),
     };
     // Write the `;FFMETADATA1` sidecar to a temp file ffmpeg reads as an extra
-    // input (`-map_metadata <idx>`). `None` when there are no chapters.
+    // input (`-map_metadata <idx>`). `None` when there are no chapters — i.e.
+    // always, today.
     let meta_path: Option<String> = match ffmetadata(&meta, kept_duration) {
         Some(text) => {
             // UNIQUE per export: the old `<stem>_chapters.ffmeta` collided
@@ -3372,7 +3322,6 @@ mod tests {
             intro_path: None,
             outro_path: None,
             gain_db: None,
-            chapters: Vec::new(),
             title: None,
             speaker: None,
             description: None,
@@ -4650,7 +4599,9 @@ mod tests {
         }
 
         /// An export request for `input_path` into `output_folder` (pass `""`
-        /// for the "Samme mappe" default), cutting the middle 0.5 s out.
+        /// for the "Samme mappe" default), cutting the middle 0.5 s out. Carries
+        /// a title so the zero-chapter metadata path (tags via `-metadata`, no
+        /// FFMETADATA input) is exercised on every real export.
         fn cut_to_mp3_request(input_path: String, output_folder: &str) -> EditorExportRequest {
             EditorExportRequest {
                 input_path,
@@ -4667,8 +4618,7 @@ mod tests {
                 intro_path: None,
                 outro_path: None,
                 gain_db: None,
-                chapters: Vec::new(),
-                title: None,
+                title: Some("Søndag".into()),
                 speaker: None,
                 description: None,
                 vocal_chain_preset: None,
@@ -4705,7 +4655,6 @@ mod tests {
                 intro_path: None,
                 outro_path: None,
                 gain_db: None,
-                chapters: Vec::new(),
                 title: None,
                 speaker: None,
                 description: None,
@@ -4964,11 +4913,36 @@ mod tests {
                 !video.contains("video"),
                 "an audio export of a video source must carry no video stream; ffprobe: {video}"
             );
+            // v0.15: the request carries NO chapters any more, so the FFMETADATA
+            // input is absent — and the file must still be valid AND still carry
+            // the title tag, which now travels through `-metadata` alone.
+            let tags = probe_format_tags(&ffprobe, out);
+            assert!(
+                tags.contains("Søndag"),
+                "the title tag must survive a zero-chapter export; ffprobe tags: {tags}"
+            );
             eprintln!(
                 "editor export smoke: wrote {} ({dur:.2}s mp3, {} progress ticks)",
                 out.display(),
                 ticks.lock().unwrap().len()
             );
+        }
+
+        /// ffprobe the container's format tags (`title=…` lines).
+        fn probe_format_tags(ffprobe: &std::path::Path, path: &std::path::Path) -> String {
+            let probe = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format_tags=title",
+                    "-of",
+                    "default=noprint_wrappers=1",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run on the export output");
+            String::from_utf8_lossy(&probe.stdout).into_owned()
         }
 
         /// ffprobe every stream's codec_type — proves the simple audio path drops

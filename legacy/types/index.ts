@@ -99,10 +99,13 @@ export interface UpdateInfo {
 
 // ChapterMarker is generated (re-exported above): { time (sec from start of
 // main content), title }.
+/** The `<name>.meta.json` sidecar. (Until v0.15 it also carried
+ *  `chapters: ChapterMarker[]`; the chapter UI left, and a sidecar that still
+ *  has the key passes through untouched — the loader assigns the raw object,
+ *  the saver writes it back — it is simply not drawn or exported any more.) */
 export interface RecordingMetadata {
   title: string
   speaker: string
   description: string
-  chapters: ChapterMarker[]
 }
 

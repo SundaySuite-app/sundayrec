@@ -711,8 +711,6 @@
     "errTimeout": "Eksporten tog for lang tid og blev stoppet. Prøv igen, eller del filen i mindre optagelser.",
     "errFileNotFound": "Originalfilen er ikke tilgængelig — er disken afbrudt?",
     "errCutData": "Intern fejl i klippedata. Prøv at genindlæse filen.",
-    "chaptersEmpty": "Ingen kapitler endnu. Klik på \"+ Tilføj ved afspilningsmarkør\" for at starte.",
-    "chapterClickSeek": "Klik for at søge",
     "playbackViaProxy": "Afspilningen går via en midlertidig mellemfil (fuld kvalitet). Eksport bruger altid originalen.",
     "analyzingWaveform": "Analyserer bølgeform…",
     "preparingPlayback": "Klargør afspilning…",

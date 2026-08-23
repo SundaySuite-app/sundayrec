@@ -747,8 +747,6 @@
     "errTimeout": "Eksport trwał zbyt długo i został zatrzymany. Spróbuj ponownie lub podziel plik na mniejsze nagrania.",
     "errFileNotFound": "Plik oryginalny nie jest dostępny — czy dysk jest odłączony?",
     "errCutData": "Wewnętrzny błąd danych wycięć. Spróbuj ponownie wczytać plik.",
-    "chaptersEmpty": "Brak rozdziałów. Kliknij \"+ Dodaj w pozycji odtwarzania\", aby zacząć.",
-    "chapterClickSeek": "Kliknij, aby przejść",
     "playbackViaProxy": "Odtwarzanie korzysta z tymczasowego pliku pośredniego (pełna jakość). Eksport zawsze używa oryginału.",
     "analyzingWaveform": "Analizowanie przebiegu fali…",
     "preparingPlayback": "Przygotowywanie odtwarzania…",

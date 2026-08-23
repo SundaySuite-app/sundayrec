@@ -1268,14 +1268,8 @@ const api: Record<string, unknown> = {
     const o = (params ?? {}) as Record<string, unknown>;
     const fmt = (o.outputFormat ?? o.format ?? "mp3") as string;
     const m = (o.metadata ?? {}) as Record<string, unknown>;
-    // Topic chapters (+title/speaker/description) ride along so they get
-    // embedded as ID3 CHAP/CTOC. Chapters are { time, title } in seconds —
-    // exactly EditorChapter; pass through, dropping any malformed entry.
-    const chapters = Array.isArray(m.chapters)
-      ? (m.chapters as Array<Record<string, unknown>>)
-          .filter((c) => c && typeof c.time === "number" && typeof c.title === "string")
-          .map((c) => ({ time: c.time as number, title: c.title as string }))
-      : [];
+    // Title/speaker/description ride along as tags. (v0.15: chapters no
+    // longer travel — the chapter UI left with the content cluster.)
     return editorCall(
       "editor_export",
       {
@@ -1294,7 +1288,6 @@ const api: Record<string, unknown> = {
           introPath: o.introPath ?? null,
           outroPath: o.outroPath ?? null,
           gainDb: o.gainDb ?? null,
-          chapters,
           title: (m.title as string) || null,
           speaker: (m.speaker as string) || null,
           description: (m.description as string) || null,
@@ -1358,12 +1351,6 @@ const api: Record<string, unknown> = {
   // indices in a stored record mean nothing once detection has run again.
   editorSermonPick: async (fp: string, segments: unknown) =>
     call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
-  // Topic chapters from the transcript (Bible refs + enumeration points). Pure
-  // offline detection in Rust; returns [{ time, title }] on the original
-  // recording timeline. Empty array on any failure (no transcript = no chapters).
-  editorDetectChapters: async (lines: unknown, lang?: string) =>
-    call("editor_detect_chapters", { lines: lines ?? [], lang: lang ?? null }, []),
-
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
@@ -1421,11 +1408,6 @@ const api: Record<string, unknown> = {
     const o = (params ?? {}) as Record<string, unknown>;
     const m = (o.metadata ?? {}) as Record<string, unknown>;
     const fmt = (o.videoFormat as string) || "mp4";
-    const chapters = Array.isArray(m.chapters)
-      ? (m.chapters as Array<Record<string, unknown>>)
-          .filter((c) => c && typeof c.time === "number" && typeof c.title === "string")
-          .map((c) => ({ time: c.time as number, title: c.title as string }))
-      : [];
     return editorCall("editor_export", {
       request: {
         inputPath: o.inputPath,
@@ -1442,7 +1424,6 @@ const api: Record<string, unknown> = {
         // track exactly as it does to an audio export — this used to be
         // hard-coded `null`, so "Normaliser" was silently a no-op for video.
         gainDb: o.gainDb ?? null,
-        chapters,
         title: (m.title as string) || null,
         speaker: (m.speaker as string) || null,
         description: (m.description as string) || null,

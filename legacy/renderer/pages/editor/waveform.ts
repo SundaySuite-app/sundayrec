@@ -290,43 +290,6 @@ export function drawWaveform(): void {
     }
   }
 
-  // ── Chapter markers ───────────────────────────────────────────────
-  const CHAPTER_COLOR = '#06b6d4'
-  for (const ch of E.meta.chapters) {
-    const x = secToX(ch.time, W)
-    if (x < -2 || x > W + 2) continue
-    ctx.strokeStyle = CHAPTER_COLOR
-    ctx.lineWidth   = 1.5
-    ctx.globalAlpha = 0.85
-    ctx.setLineDash([4, 3])
-    ctx.beginPath(); ctx.moveTo(x, RULER); ctx.lineTo(x, H); ctx.stroke()
-    ctx.setLineDash([])
-    ctx.globalAlpha = 1
-
-    // Small triangle at top
-    ctx.fillStyle = CHAPTER_COLOR
-    ctx.beginPath()
-    ctx.moveTo(x - 4, RULER)
-    ctx.lineTo(x + 4, RULER)
-    ctx.lineTo(x, RULER + 7)
-    ctx.closePath()
-    ctx.fill()
-
-    // Label
-    ctx.font = '600 9px system-ui, -apple-system, sans-serif'
-    ctx.textBaseline = 'top'
-    const label = ch.title.length > 14 ? ch.title.slice(0, 13) + '…' : ch.title
-    const tw    = ctx.measureText(label).width
-    const tx    = Math.min(Math.max(x + 3, 2), W - tw - 4)
-    ctx.fillStyle = 'rgba(6,182,212,0.15)'
-    if (ctx.roundRect) ctx.roundRect(tx - 2, RULER + 8, tw + 4, 13, 2)
-    else ctx.rect(tx - 2, RULER + 8, tw + 4, 13)
-    ctx.fill()
-    ctx.fillStyle = CHAPTER_COLOR
-    ctx.fillText(label, tx, RULER + 9)
-    ctx.textBaseline = 'middle'
-  }
-
   // ── Section labels ("Intro" / "Hovedopptak" / "Outro") in the ruler ──
   if (geom.introPx > 0 || geom.outroPx > 0) {
     ctx.font = '600 10px system-ui, -apple-system, sans-serif'

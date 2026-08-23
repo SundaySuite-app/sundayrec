@@ -711,8 +711,6 @@
     "errTimeout": "Export took too long and was stopped. Try again, or split the file into smaller recordings.",
     "errFileNotFound": "Original file is not available — is the disk disconnected?",
     "errCutData": "Internal error in cut data. Try reloading the file.",
-    "chaptersEmpty": "No chapters yet. Click \"+ Add at playhead\" to start.",
-    "chapterClickSeek": "Click to seek",
     "playbackViaProxy": "Playback runs through a temporary intermediate file (full quality). Export always uses the original.",
     "analyzingWaveform": "Analyzing waveform…",
     "preparingPlayback": "Preparing playback…",
