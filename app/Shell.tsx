@@ -34,9 +34,12 @@
  *
  * ## Overlays er søsken av `#app`
  *
- * `DialogHost` og `ToastHost` rendres i et EGET Preact-tre, inn i
- * `#overlays`. Grunnen står i DialogHost: verten setter `inert` på `#app`
- * mens en dialog er åpen, og en dialog inne i `#app` ville slått av seg selv.
+ * `DialogHost`, `ToastHost` og `RecordingOverlay` rendres i et EGET
+ * Preact-tre, inn i `#overlays`. Grunnen står i DialogHost: verten setter
+ * `inert` på `#app` mens en dialog er åpen, og en dialog inne i `#app` ville
+ * slått av seg selv. Opptaksoverlegget er der av to grunner til: det skal
+ * ligge OVER skinnen, og det skal ikke rives ned av et rutebytte — et opptak
+ * som går er ikke en side man er på.
  *
  * ## Menylinjens «Åpne opptaksmappen»
  *
@@ -50,6 +53,7 @@ import { useEffect } from "preact/hooks";
 
 import { t, tDyn } from "./i18n";
 import { RecordPage } from "./pages/record/RecordPage";
+import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
 import {
@@ -112,10 +116,11 @@ export function Shell({ probe }: ShellProps) {
   );
 }
 
-/** Dialog- og toastverten. Montert i `#overlays` — se toppen av fila. */
+/** Dialog-, toast- og opptaksverten. Montert i `#overlays` — se toppen av fila. */
 export function Overlays() {
   return (
     <>
+      <RecordingOverlay />
       <DialogHost />
       <ToastHost />
     </>
