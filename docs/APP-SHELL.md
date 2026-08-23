@@ -1567,3 +1567,310 @@ To ting proben fant som ingen test ville ha funnet:
    `initAutoUpdate` armet, at gaten leste eierens lagrede `autoUpdate`, og at
    sjekken gikk én gang og ikke to. Ingen banner, fordi `update_check` i en
    dev-build svarer `upToDate` uten å ta kontakt med noen.
+
+---
+
+# P4a — Rediger, steg 1: «Klipp»
+
+P3 bygde stedet man finner opptaket igjen. P4a bygger det man kom for å gjøre
+med det: finne prekenen. Canvasens sett 4, artboard 4.1 — ÉN skjerm med ett
+spørsmål og ett klikk som svar.
+
+|                | før (`legacy/renderer/pages/editor*`)                        | nå (`app/editor/`)                                    |
+| -------------- | ------------------------------------------------------------ | ----------------------------------------------------- |
+| Kontroller     | 47 i tre faner + 25 i eksportmodalen                         | forslagskort, bølgeform, transport, kuttliste         |
+| Å finne preken | fane «Klipp-verktøy» → «Marker preken automatisk» (2 klikk)  | kortet står ved åpning, ett klikk                     |
+| Justering      | dra kuttgrensene i bølgeformen etter at kuttene er lagt      | to gullhåndtak, FØR og ETTER anvendelsen              |
+| Resultat       | «Resultat 28m 10s (fjerner 33m 50s)», skjult til det er kutt | «Resultat: 28 min 10 s (av 1 t 2 min)», alltid        |
+| Avspilling     | to knapper: «spill» og «forhåndslytt»                        | én, og den hopper alltid over kuttene                 |
+| Angre          | Cmd+Z, og en «Fjern alle kutt» som dukket opp                | «Angre»/«Gjør om» i kuttlista, som åpnes av ett klikk |
+
+## `E` er PORTET, ikke oversatt
+
+Planens arkitekturkontrakt, holdt til punkt og prikke: `app/editor/model.ts`
+har det samme muterbare objektet, med de samme feltnavnene og den samme
+betydningen som `legacy/renderer/pages/editor/state.ts`. Det er ikke nostalgi —
+det er den ene hete stien i appen. Tegneløkka leser `cuts`, `peaks`, `vpStart`
+og `playStartSec` opptil seksti ganger i sekundet, og et signal per felt ville
+betydd seksti sporede lesninger per frame og en re-render av treet hver gang
+spillehodet flyttet seg en piksel.
+
+Ved siden av står SPEILENE, ett signal per ting treet viser, og regelen er én
+linje lang:
+
+```ts
+E.cuts = neste; //  sannheten, for tegneløkka
+cuts.value = E.cuts.slice(); // speilet, for treet
+```
+
+Legacy har allerede nøyaktig det paret, bare med `drawWaveform()` som andre
+halvdel («anvend, så tegn»). Her ER andre halvdel signalet, og tegningen
+abonnerer på det.
+
+| ble et signal                                                                                                                                                                                                                                                                                                            | forble muterbart i `E`                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cuts` · `segments` · `suggestion` · `applied` · `dismissed` · `duration` · `filePath` · `fileName` · `startedAtMs` · `dirty` · `playing` · `playheadSec` · `viewport` · `loadState` · `loadPhase` · `loadProgress` · `loadError` · `playbackSource` · `activeStep` · `manualMode` · `analyzing` · `canUndo` · `canRedo` | `peaks` · `cutHistory`/`cutHistoryIdx` · `vpStart`/`vpEnd` · `playStartSec` · `isPlaying` · `playerEl` · `loadSeq` · `hoverSec` · dragfeltene · `canvas`/`minimap` |
+
+To ting ingen bryter: **ingenting inne i en rAF-løkke leser et signal** (det er
+`E` eller `peek()` der — `@preact/signals` sporer lesninger uansett hvor dypt i
+kallstakken de skjer), og **ingen skriver et speil uten å ha skrevet `E`
+først**.
+
+`playheadSec` er det ene signalet løkka skriver, og den skriver det på husets
+tegne-kadens (`@lib/ui/frame-gate`), ikke per frame: «0:21:08» endrer seg ett
+sekund om gangen.
+
+## Gjenbrukt · portet · ikke bygget ennå
+
+**Importert uendret gjennom `@lib/pages/editor/*`** — de er allerede
+enhetstestet i legacy, og de er stedene en feil ville vært stille:
+
+`cut-ops` (klemming, minstelengde, fletting) · `cut-history` (angre/gjør om som
+en ren tilstandsmaskin) · `keep-segments` (hva som blir igjen) ·
+`draft-scheduler` (debouncen som ikke kan skrive til feil fil) ·
+`sermon-candidates` (den ENE lista både tilbudet og korreksjonen bygges på) ·
+`sermon-feedback` (E8-nyttelasten, bygget FØR forfremmelsen) · `haptics` ·
+`play-regions` (`routePlayback`).
+
+**Portet til `app/editor/`** — de rører DOM eller lerret, så algoritmen er
+legacys og oppkoblingen er ny: `waveform.ts` (stolpene, linjalens tikk-tetthet,
+«det som er spilt av er dempet») · `canvas-input.ts` (måle-cachen, snappingen
+mot analysens grenser, hjul-zoomens forankring) · `viewport.ts` · `playback.ts`
+(de-klikket, `canplay`-stien, generasjonstelleren) · `loader.ts` (fire steg med
+`loadSeq` over alle) · `sermon.ts`.
+
+**Skrevet nytt, og node-testet**: `editor-core.ts` — prekenvinduet, veien fra
+vindu til kutt, `sermonCutRegions` (ordrett legacys `applySermonTrim`, som selv
+speiler Rustens `sermon_cut_regions`) og de tre tidsformene.
+
+### Prekenvinduet er ÉN idé, ikke to
+
+De to gullhåndtakene gjør to forskjellige ting: FØR «Behold bare prekenen»
+justerer de FORSLAGET, etterpå justerer de KUTTGRENSENE. Det er én idé — «hvor
+begynner og slutter prekenen» — med to representasjoner under seg, og hvis de to
+representasjonene får hver sin kode blir de uenige. `sermonWindow()` svarer
+derfor alltid med det samme vinduet uansett hvilken side av knappen man står på,
+og `windowToCuts()` er den ene veien tilbake (og tar med seg kuttene som lå
+INNE i vinduet, så et håndtaksdrag ikke sletter musikk-kuttet anvendelsen la
+inn).
+
+## Den utvidede tidslinja er IKKE portet
+
+Legacys `geometry.ts` deler lerretet i tre regioner — intro, hovedopptak,
+outro — og lar `playStartSec` gå NEGATIV for å bety «inne i intro-jingelen».
+Alt det finnes for jinglene, og jingler er ikke i sett 4 i det hele tatt.
+
+Så `app/editor/geometry.ts` er fire funksjoner: `secToX`, `xToSec`,
+`clampToFile` og `grabThreshold`. `clampPlayable` og `clampMain` er den samme
+funksjonen når intro og outro er null, og da skal den ha ett navn og ikke to som
+en dag rekker å bli uenige.
+
+⚠️ Jinglene er ikke FJERNET — legacy-skallet har dem fortsatt, og det er det som
+sendes ut. De er ikke bygget ennå. Det samme gjelder **videobildet**: en
+videofil åpnes og klippes som før (tidslinja, kuttene og eksporten er lydens
+uansett), men P4a har ingen `<video>`, så den som redigerer en mp4 ser bare
+bølgeformen. Begge er eierbeslutninger for P4b.
+
+## Stegstripa har ett steg
+
+Canvasen har tre — 1 Klipp · 2 Lyd · 3 Eksporter — og P4a bygger det første.
+De to andre står IKKE i stripa, hverken som knapper eller som dempede
+plassholdere: S1bs husregel er at ingenting sier «kommer senere» og at ingen
+knapp finnes uten å gjøre noe, og en dempet «2 Lyd» ville vært begge deler på én
+gang.
+
+Å droppe stripa helt til alle tre finnes ville skjult FORMEN, og formen er halve
+poenget: en frivillig skal se at dette er en vei med et endepunkt. Så stripa
+står med ett steg. `Tabs` var allerede bygget for det (`TabItem.done`,
+«editorens steg»); P4a la til `TabItem.step` — tegnet i sirkelen, `aria-hidden`,
+fordi `role="tab"` allerede sier «1 av 3».
+
+## Tre steder kuttverktøyene åpner seg selv
+
+`manualMode` er den ENE sannheten om hvorvidt kuttlista står. «Klipp manuelt»
+slår den på og av; tre andre steder slår den PÅ, og hvert av dem er en setning
+som ellers hadde vært usann:
+
+1. **Etter «Behold bare prekenen».** Det man nettopp fjernet skal være synlig,
+   og ANGRE skal være innen rekkevidde. Ett klikk skal kunne tas tilbake med ett
+   klikk — uten å måtte lete etter «Klipp manuelt» først.
+2. **Når analysen ikke fant noen preken.** Da er dette den eneste veien videre,
+   og et klikk for å avsløre den eneste veien videre er et klikk for ingenting.
+   (Kortet vises ikke da. Ikke et tomt kort, ikke en unnskyldning — ingenting.)
+3. **Når et kutt-utkast ble lagt tilbake.** Hele poenget med gjenopprettingen er
+   at man ser hva forrige økt rakk. Legacy gjorde det stille, og stille er greit
+   — usynlig er det ikke.
+
+Alle tre SKRIVER flagget i stedet for å legge til en betingelse i komponenten.
+To skrivere på ett flagg er greit; to REGLER om det samme flagget er skjøten
+dette skallet er skrevet for å unngå.
+
+## Avspilling: én knapp, og den hopper over kuttene
+
+Legacy har to — «spill» (hele fila) og «forhåndslytt» (hopp over kutt). En
+frivillig som nettopp trykket «Behold bare prekenen» vil høre RESULTATET; å
+måtte vite hvilken av to knapper som viser det er nøyaktig valget sett 4 fjerner.
+
+`<audio>`-elementet eies av MODELLEN og ikke av JSX: et element i treet ville
+mistet `src`-en sin hver gang noe over det rendret, og avspilling som stopper
+uten at noe feiler er den verste formen for feil. Ett element, gjenbrukt for
+hver fil (legacys `persistentPlayerEl` — et nytt per fil lekket en dekoder og et
+åpent filhåndtak hver gang).
+
+De-klikket er portet ordrett: tone ned over tre frames, hopp over kuttet, tone
+opp. `volume` er den eneste knappen et medieelement gir, og det er akkurat det
+et de-klikk trenger.
+
+**Tre ærlige tilstander**, og de to siste har legacys egne tekster (og finnes
+derfor i alle sju språk): `original` sier ingenting · `proxy` sier at
+avspillingen går via en mellomfil · `none` sier at den ikke er tilgjengelig, og
+da er avspillingsknappen `aria-disabled` med den samme setningen som grunn.
+Atlasets forbehold består: i en ren nettleser er `asset://` død, så `none` er
+det man ser der, og det er sant.
+
+## Lastingen sier hvilken fase den er i
+
+«Analyserer …» alene er ikke sant nok. Fire steg, `loadSeq` over alle
+(hver `await` sjekker den på nytt), og de to som tar ekte tid har hver sin tekst
+OG en ekte bar fra bakendens egne tikk (`editor-peaks-progress`,
+`editor-proxy-progress`): `editor.analyzingWaveform` og
+`editor.preparingPlayback`.
+
+## Inngangene
+
+- **`window.openEditorWithFile(path, seekToSec?)`** — samme kontrakt, samme
+  signatur, samme `declare global` som legacy. `e2e/editor.spec.ts` og
+  atlas-scenene åpner editoren gjennom den. Installeres i `main.tsx` ved siden
+  av `showPage`, fordi den hører til samme klasse: noe UTENFOR treet hviler på
+  at den finnes.
+- **`library/edit`** — `TAB_ALIASES` hadde raden fra S1a (`editor` → `library` /
+  `edit`); P4a er den andre halvdelen av den.
+- **«Rediger» på biblioteksraden** er nå PRIMÆR (canvas 3.1). P3 satte «Vis i
+  Finder» der fordi flaten ikke fantes; nå gjør den det, og Finder er sekundær.
+  Raden sender med DATOEN sin — editoren kan ikke lese den ut av fila, og den er
+  overskriften begge steder.
+- **«Åpne i Rediger» på kvitteringen** (`editor.promptOpen`, en gammel nøkkel) —
+  P2 utelot den av samme grunn, og den er primær nå.
+- **Slippsonen** er ETT element som ALLTID står. Tauri fanger OS-drag selv, og
+  api-shimmen sender dem tilbake som syntetiske `dragover`/`drop` mot
+  `document.elementFromPoint(…)` med `File.path` satt — en overlay som først
+  dukker opp ved `dragenter` finnes ikke å treffe når hendelsen kommer.
+  Filtypen sjekkes IKKE: lasteren prøver fila og sier ærlig fra. En fjerde kopi
+  av lista over lydformater (api-shimmen har én, legacys editor to) ville vært
+  en fjerde ting å drifte fra hverandre.
+
+## i18n
+
+26 nye nøkler under `app.editor.*`, i `PAUSED_KEYS`. Ti setninger er GJENBRUKTE
+legacy-nøkler som finnes i alle sju språk fra før, og det er ikke gjerrighet —
+det er de samme ordene om de samme tingene: `nav.editor` («Rediger»),
+`editor.openFile`, `editor.promptOpen`, `editor.closeFile`,
+`editor.sermonPickerLabel`, `editor.cutsTitle`, `editor.cutsNone`,
+`editor.deleteCut`, `editor.dragHint`, `editor.dropFile`,
+`editor.analyzingWaveform`, `editor.preparingPlayback`, `editor.qualityFallback`,
+`editor.playbackViaProxy`, `editor.confirmClose`, `dialog.discardEdits*`,
+`trash.undo`, `tooltip.play`, `tooltip.unsavedChanges`, `app.record.last`.
+
+Ingen ny `tn()`. «45 s» / «28 min 10 s» / «1 t 2 min» er tre `tf()`-nøkler, av
+samme grunn som `span-text.ts`: `check-i18n-plurals.mjs` krever hver
+flertallsgruppe i ALLE sju språk uten unntak for de fem som er pauset, og «s»,
+«min» og «t» er invariante forkortelser i hele tallområdet de vises for.
+
+⚠️ **Klokka er `timecode()`, ikke `formatTime()`.** Legacys formatter dropper
+timetallet under en time, så en gudstjeneste på 1 t 2 min hopper fra «59:59» til
+«1:00:00» og gjør talltegnene ustabile midt i avspillingen. Her er formen den
+samme hele veien.
+
+## e2e
+
+`e2e/app/editor.spec.ts`, 15 tester. Åtte titler er ORDRETT legacys, fordi de
+beskriver den samme oppførselen på en ny flate — og `docs/SMOKE-TEST.md` peker
+på to av dem som `sti::tittel`.
+
+Tre av legacys titler er ikke med, og det er ikke forglemmelse: «the three tabs
+switch, and switching does not redo the work» og «the chosen tab is remembered
+across a reopen» beskriver tre faner som ikke finnes (stegstripa har ett steg),
+og «the export modal is honest about destination and level» er P4b.
+
+`editorFixtures` bor nå i `e2e/app/editor-fixtures.ts` og leses av BEGGE
+skallenes spec. En andre kopi ville vært en andre ting å drifte fra hverandre:
+poenget med fiksturene er at de står for det bakenden legger på ledningen, så de
+to skallene må fôres med den samme ledningen. `e2e/editor.spec.ts` er ellers
+urørt — hver test-tittel og hver assertion står.
+
+Mutasjonsprøven: slutter «Behold bare prekenen» å anvende forslaget, går TRE
+spec-er røde (kuttlista, forskyvnings-regresjonen og ett-klikk-testen).
+
+## Bevist i en ekte WKWebView
+
+Samme grunn som S1b, P2 og P3: Chromium er ikke motoren denne appen sendes ut
+i, og SundayEdits E5 målte en 42× regresjon i den ekte WKWebView-en som var
+usynlig i Chromium.
+
+⚠️ **Metoden måtte endres, og det er verdt å vite hvorfor.** De tidligere
+probene kjørte `npm run tauri:app` mot eierens egen profil. Det går ikke lenger:
+eierens installerte SundayRec kjørte, og **enkeltinstans-vakta** (FIKS 1,
+`tauri_plugin_single_instance` som FØRSTE plugin i `src-tauri/src/lib.rs`)
+blokkerer en andre oppstart — `a second SundayRec launch was blocked — focusing
+the existing window`. Å avslutte eierens app for å komme rundt den er ikke en
+beslutning en agent tar mens eieren er borte: SundayRec er opptaksappen, og en
+avsluttet app er et opptak som ikke starter.
+
+Så proben kjørte i en **ekte WKWebView uten Tauri**: en liten Swift-vert
+(aldri innsjekket) laster `npm run dev:app` og injiserer fikstursømmen som et
+`WKUserScript` ved `documentStart` — nøyaktig den samme sømmen `e2e/harness.ts`
+bruker. Det gir den ekte motoren, den ekte CSP-en og den ekte tegningen, med et
+fikstureid opptak i stedet for eierens. Eierens app, database og
+opptaksmappe ble aldri rørt (mappelista er bit for bit uendret før og etter).
+
+```jsonc
+{
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 …",
+  "hasSafariToken": false, // uendret fra S1b — se der
+  "editButton": "Rediger", // biblioteksradens PRIMÆRknapp åpner editoren
+  "editorState": "ready",
+  "heading": "Tirsdag 9. juni 2026", // datoen fra RADEN, ikke fra fila
+  "sub": "2026-06-14 Gudstjeneste.mp3 · 10 min",
+  "total": "0:10:00",
+  "result": "Resultat: 10 min 0 s (av 10 min 0 s)",
+  "step": "1Klipp", // stegstripa, med sirkelen
+  "suggestion": "Vi tror prekenen er her",
+  "suggestionDetail": "Fra 0:03:30 til 0:07:00 — 3 min 30 s. Dra i håndtakene …",
+  "keepWindow": true,
+  "keepLabel": "Preken · 3 min 30 s",
+  "handles": 2,
+  "pickerOptions": 3, // «Er ikke dette prekenen?» — tre troverdige blokker
+  "canvasSized": "1996x490", // ResizeObserver + DPR 2
+  "waveformPixels": 7436, // ⇦ lerretet er TEGNET, ikke tomt
+  "drawMsPerFrame": 0.3, // 60 fulle tegninger av et 10-min opptak
+  "minimapSized": "1996x66",
+  "playbackNotice": "Avspilling er ikke tilgjengelig for denne filen — …",
+  "playDisabled": "true",
+  "cspViolations": [],
+  "errors": [],
+  "rejections": [],
+  "consoleErrors": [],
+}
+```
+
+**Tegne-ytelsen er ikke et problem i denne motoren.** 0,3 ms for en full
+tegning av et ti minutters opptak på et 1996 px bredt lerret — altså under to
+prosent av et 16,7 ms frame-budsjett. Bølgeformen kan tegnes hver frame uten at
+det merkes, og gaten i `playback.ts` er derfor et budsjett vi ikke bruker opp,
+ikke et plaster.
+
+**To ting proben fant som ingen test ville ha funnet:**
+
+1. **Gullvinduet og forslagskortet sa forskjellige tall.** Etiketten i
+   bølgeformen rundet til hele minutter («Preken · 4 min») mens kortet rett over
+   var sekundpresist («… — 3 min 30 s»). To tall om det samme, samtidig, på
+   samme skjerm. Begge går nå gjennom `spanLabel` i `app/editor/span.ts`.
+2. **Undertittelen brukte resultatlinjas form.** «2026-06-14 Gudstjeneste.mp3 ·
+   10 min 0 s» — sekunder på et spørsmål som ikke er et sekundspørsmål, og en
+   annen setning enn den samme raden i Bibliotek. Den bruker nå
+   `spanText(spanOfSeconds(…))`, som er bibliotekets egen.
+
+👤 **Gjenstår for eieren:** den samme runden gjennom `npm run tauri:app` mot et
+EKTE opptak — altså med `editor_peaks` og `editor_segments` fra den virkelige
+bakenden, og med `asset://`-avspilling som faktisk kan gå. Kommandoen er
+`npm run tauri:app`, og den krever at SundayRec ikke allerede kjører.
