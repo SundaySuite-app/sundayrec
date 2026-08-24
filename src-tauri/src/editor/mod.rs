@@ -1014,7 +1014,10 @@ pub async fn startup_sweep(pool: &sqlx::SqlitePool) -> usize {
     .await
     .unwrap_or(0);
     if removed > 0 {
-        tracing::info!(removed, "startup: swept editor temp/backup + mastering-preview leftovers");
+        tracing::info!(
+            removed,
+            "startup: swept editor temp/backup + mastering-preview leftovers"
+        );
     }
     removed
 }
