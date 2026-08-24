@@ -1162,6 +1162,12 @@ const api: Record<string, unknown> = {
       nextWake: null,
       reason: "error",
       message: null,
+      // `null`, og det er ikke en formalitet: `idleReason` svarer på «hvorfor
+      // armerte en VELLYKKET reschedule ingenting?». Denne reserven er
+      // `ok: false` — kommandoen svarte ikke i det hele tatt — så det finnes
+      // ingen tomgangsgrunn å oppgi. Å finne på en her ville vært å forklare
+      // bort en feil som en tilstand.
+      idleReason: null,
     }),
   wakeVerifyScheduled: async () =>
     call<WakeStatus>("wake_verify", undefined, {
