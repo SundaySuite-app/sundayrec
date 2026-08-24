@@ -34,7 +34,7 @@ import { alertDialog, confirmDialog } from "../../../ui/dialog";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../../ui/Toggle/Toggle";
 import { toast } from "../../../ui/toast";
-import type { Receipt as ReceiptState } from "../../../settings/use-setting-core";
+import { useReceipt } from "../../../settings/use-receipt";
 
 /** Samtykket slik bakenden ser det. `null` = ikke lest ennå. */
 export function useConsent(): {
@@ -84,18 +84,18 @@ export async function showTelemetryPreview(): Promise<void> {
 
 export function TelemetryRow() {
   const { consent, refresh } = useConsent();
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
+  const { receipt, show: showReceipt } = useReceipt();
   const [busy, setBusy] = useState(false);
 
   async function setGranted(next: boolean): Promise<void> {
     if (busy) return;
     setBusy(true);
-    setReceipt("saving");
+    showReceipt("saving");
     try {
       // `null` = IPC-en feilet. Aldri en oppdiktet «lagret» — hele poenget med
       // «spør én gang» er at et tapt svar må spørres om på nytt.
       const result = await window.api.telemetryConsentSet(next);
-      setReceipt(result ? "saved" : "failed");
+      showReceipt(result ? "saved" : "failed");
       if (!result) toast("error", t("general.saveFailed"));
       await refresh();
     } finally {

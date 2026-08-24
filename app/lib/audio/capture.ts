@@ -26,16 +26,19 @@
  * `list_audio_devices` and shapes it for the screens, and two shapers over one
  * list is the seam class this whole redesign exists to stop making.
  *
- * ⚠️ `healStoredDeviceId()` is gone too, and that one was BEHAVIOUR, not a
- * duplicate. It re-pointed a stored `deviceId` that no longer resolved by
- * matching on the stored NAME - which mattered twice: Windows reassigns device
- * ids after a reboot or a driver update, and ids written by a pre-backend build
- * are Web Audio hashes. The channel-grid L/R picks are keyed BY id, so without
- * the heal a Qu-5 rig silently reverts to channels 1/2 and nobody finds out
- * until the recording is of the wrong source. The new shell never called it
- * (and could not have: it read a module-scope `settings` mirror the shell does
- * not populate). Rebuilding it over `app/state/settings.ts` is a named restanse
- * - see docs/APP-SHELL.md, "Etter byttet".
+ * `healStoredDeviceId()` went with it, and that one was BEHAVIOUR, not a
+ * duplicate: it re-pointed a stored `deviceId` that no longer resolved by
+ * matching on the stored NAME - which matters twice, because Windows reassigns
+ * device ids after a reboot or a driver update, and ids written by a
+ * pre-backend build are Web Audio hashes. The channel-grid L/R picks are keyed
+ * BY id, so without the heal a Qu-5 rig silently reverts to channels 1/2 and
+ * nobody finds out until the recording is of the wrong source.
+ *
+ * It is BACK, rebuilt over `app/state/settings.ts` where the shell's settings
+ * actually live: `planDeviceHeal` in `app/state/devices.ts` (pure, table-tested)
+ * plus the one caller in `loadAudioDevices`. Two things are stricter than the
+ * legacy version - it heals only on EXACTLY ONE name match, and it MOVES the
+ * channel pair to the new id rather than copying it. See that file.
  */
 
 /**

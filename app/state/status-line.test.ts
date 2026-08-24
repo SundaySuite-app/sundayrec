@@ -8,6 +8,11 @@
 
 import { describe, expect, it } from "vitest";
 
+import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
+
+import { soundChosen } from "./devices";
+import type { Settings } from "./settings";
+import { sourceState, type DeviceFact } from "../pages/record/record-core";
 import { formatNextWhen, LOW_DISK_MINUTES, statusLine } from "./status-line";
 
 const SUNDAY_11 = Date.UTC(2026, 7, 30, 9, 0, 0);
@@ -112,4 +117,56 @@ describe("formatNextWhen", () => {
     expect(text).toMatch(/\d{1,2}[.:]\d{2}/);
     expect(text.length).toBeGreaterThan(5);
   });
+});
+
+describe("skjøten mot opptakssidens `sourceState` — to halvdeler, ett svar", () => {
+  // Statuslinjen og TA OPP-siden svarer på det samme spørsmålet fra hver sin
+  // kant: `soundChosen` avgjør om skinnen får si «Alt er klart», `sourceState`
+  // om Start får trykkes. To sanne halvdeler som er uenige i skjøten er
+  // nøyaktig formen `reference-seam-bugs` handler om — og her ville den vært
+  // synlig for en frivillig i ett blikk: grønn linje, død knapp.
+  const settingsWith = (over: Partial<Settings>): Settings => ({
+    ...SETTINGS_DEFAULTS,
+    ...over,
+  });
+
+  const CASES: Array<[string, Partial<Settings>, DeviceFact[] | null]> = [
+    ["ingenting valgt, listen lest", {}, []],
+    ["ingenting valgt, listen ikke lest", {}, null],
+    ["navn uten id, listen ikke lest", { deviceName: "Behringer X32" }, null],
+    [
+      "navn uten id, listen lest",
+      { deviceName: "Behringer X32" },
+      [{ id: "x32", name: "Behringer X32", channels: 32, isDefault: false }],
+    ],
+    [
+      "valgt og til stede",
+      { deviceId: "x32", deviceName: "Behringer X32" },
+      [{ id: "x32", name: "Behringer X32", channels: 32, isDefault: false }],
+    ],
+    [
+      "valgt, listen ikke lest",
+      { deviceId: "x32", deviceName: "Behringer X32" },
+      null,
+    ],
+  ];
+
+  it.each(CASES)(
+    "%s — skinnen sier aldri «ready» når Start er sperret",
+    (_name, over, devices) => {
+      const s = settingsWith(over);
+      const source = sourceState(s, devices);
+      const line = statusLine({
+        isRecording: false,
+        soundChosen: soundChosen(s, devices),
+        roomMinutes: 600,
+        nextAtMs: null,
+      });
+      if (source.kind === "no-source") {
+        expect(line.kind).toBe("nosound");
+      } else {
+        expect(line.kind).not.toBe("nosound");
+      }
+    },
+  );
 });

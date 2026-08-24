@@ -40,16 +40,13 @@
  * viser åpent.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 
 import { t, tDyn } from "../../i18n";
 import { route } from "../../router/router";
 import { confirmIfRecordingImminent } from "../../settings/guards";
-import {
-  patchSettings,
-  saveSettingsDebounced,
-  settings,
-} from "../../state/settings";
+import { usePatch } from "../../settings/use-patch";
+import { settings, type Settings } from "../../state/settings";
 import {
   BoundNumberField,
   BoundSelect,
@@ -59,8 +56,6 @@ import { Card } from "../../ui/Card/Card";
 import { Select } from "../../ui/Select/Select";
 import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
-import { toast } from "../../ui/toast";
-import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import { AsioAttribution } from "./advanced/AsioAttribution";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
 import { currentOs } from "./advanced/platform-core";
@@ -176,12 +171,19 @@ export function AdvancedPage() {
  * DirectShow-valget finnes bare på Windows, slik legacy også gjør det — men
  * avgjørelsen kommer fra `detectOs`, ikke fra en delstreng i UA-linja. En gate
  * som gjetter feil vei viser en bryter som skriver en verdi ingenting leser.
+ *
+ * ⚠️ Raden hadde sin EGEN lagringsmodell: patch, lagre, kvittering,
+ * tilbakerulling og toast skrevet for hånd. Den manglet nedtellingen på
+ * «Lagret ✓» (som ble stående for alltid) og leste tilbakerullingens
+ * øyeblikksbilde fra render-lukningen, altså fra en tilstand som kunne være
+ * foreldet. `usePatch` er den samme sekvensen som `useSetting` kjører, bare
+ * over flere nøkler — og den finnes nettopp fordi «omtrent samme lagring, en
+ * gang til» er hvordan de to begynner å oppføre seg forskjellig.
  */
 function EngineRow() {
   const s = settings.value;
   const os = currentOs();
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
-  const [busy, setBusy] = useState(false);
+  const engine = usePatch();
 
   const current: Engine = s.classicDirectshow
     ? "dshow"
@@ -192,42 +194,11 @@ function EngineRow() {
   const options: Engine[] =
     os === "win" ? ["native", "ffmpeg", "dshow"] : ["native", "ffmpeg"];
 
-  async function choose(next: Engine): Promise<void> {
-    if (busy || next === current) return;
-    // Å bytte motor fire minutter før gudstjenesten er endringen som stille
-    // koster opptaket. Samme vakt som legacy, samme terskel som alt annet.
-    const ok = await confirmIfRecordingImminent(
-      t("app.setup.advanced.engineConfirm"),
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setReceipt("saving");
-    const before = {
-      classicFfmpegAudio: s.classicFfmpegAudio,
-      classicDirectshow: s.classicDirectshow,
-    };
-    try {
-      patchSettings({
-        classicFfmpegAudio: next === "ffmpeg",
-        classicDirectshow: next === "dshow",
-      });
-      const saved = await saveSettingsDebounced(120);
-      setReceipt(saved ? "saved" : "failed");
-      if (!saved) {
-        patchSettings(before);
-        toast("error", t("general.saveFailed"));
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <SettingRow
       label={t("app.setup.advanced.engine")}
       description={t("app.setup.advanced.engineDesc")}
-      receipt={receipt}
+      receipt={engine.receipt}
       testId="adv-engine"
     >
       {(ids) => (
@@ -237,8 +208,24 @@ function EngineRow() {
             value: id,
             label: tDyn("app.setup.advanced.engineChoice", id),
           }))}
-          onChange={(next) => void choose(next as Engine)}
-          disabled={busy}
+          onChange={(next) =>
+            void engine.write(
+              {
+                classicFfmpegAudio: next === "ffmpeg",
+                classicDirectshow: next === "dshow",
+              },
+              {
+                // Å bytte motor fire minutter før gudstjenesten er endringen
+                // som stille koster opptaket. Samme vakt som lydenheten og
+                // kameraet, samme terskel som alt annet.
+                confirm: () =>
+                  confirmIfRecordingImminent(
+                    t("app.setup.advanced.engineConfirm"),
+                  ),
+              },
+            )
+          }
+          disabled={engine.busy}
           labelId={ids.labelId}
           describedBy={ids.describedBy}
           testId="adv-engine-control-input"
@@ -292,41 +279,30 @@ function NumericToggleRow({
   label,
   description,
   checked,
-  onChange,
+  patchFor,
   testId,
 }: {
   label: string;
   description: string;
   checked: boolean;
-  onChange: (on: boolean) => Promise<boolean>;
+  /** Nøkkelen og tallet bryteren skriver — «på» velger en standard, «av» er 0. */
+  patchFor: (on: boolean) => Partial<Settings>;
   testId: string;
 }) {
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
-  const [busy, setBusy] = useState(false);
-
-  async function flip(next: boolean): Promise<void> {
-    if (busy) return;
-    setBusy(true);
-    setReceipt("saving");
-    try {
-      setReceipt((await onChange(next)) ? "saved" : "failed");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const row = usePatch();
 
   return (
     <SettingRow
       label={label}
       description={description}
-      receipt={receipt}
+      receipt={row.receipt}
       testId={testId}
     >
       {(ids: RowIds) => (
         <Toggle
           checked={checked}
-          onChange={(next) => void flip(next)}
-          disabled={busy}
+          onChange={(next) => void row.write(patchFor(next))}
+          disabled={row.busy}
           labelId={ids.labelId}
           describedBy={ids.describedBy}
           testId={`${testId}-control-input`}
@@ -334,21 +310,6 @@ function NumericToggleRow({
       )}
     </SettingRow>
   );
-}
-
-/** Skriv ett tallfelt, og rull tilbake hvis basen sa nei. */
-async function writeNumber(
-  key: "splitMinutes" | "autoDeleteDays",
-  next: number,
-  before: number,
-): Promise<boolean> {
-  patchSettings({ [key]: next });
-  const ok = await saveSettingsDebounced(120);
-  if (!ok) {
-    patchSettings({ [key]: before });
-    toast("error", t("general.saveFailed"));
-  }
-  return ok;
 }
 
 function SplitRows() {
@@ -359,9 +320,9 @@ function SplitRows() {
         label={t("app.setup.advanced.split")}
         description={t("app.setup.advanced.splitDesc")}
         checked={minutes > 0}
-        onChange={(on) =>
-          writeNumber("splitMinutes", on ? SPLIT_DEFAULT_MINUTES : 0, minutes)
-        }
+        patchFor={(on) => ({
+          splitMinutes: on ? SPLIT_DEFAULT_MINUTES : 0,
+        })}
         testId="adv-split"
       />
       {minutes > 0 ? (
@@ -387,9 +348,9 @@ function AutoDeleteRows() {
         label={t("app.setup.advanced.autoDelete")}
         description={t("app.setup.advanced.autoDeleteDesc")}
         checked={days > 0}
-        onChange={(on) =>
-          writeNumber("autoDeleteDays", on ? AUTO_DELETE_DEFAULT_DAYS : 0, days)
-        }
+        patchFor={(on) => ({
+          autoDeleteDays: on ? AUTO_DELETE_DEFAULT_DAYS : 0,
+        })}
         testId="adv-autodelete"
       />
       {days > 0 ? (

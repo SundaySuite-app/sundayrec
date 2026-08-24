@@ -2,11 +2,16 @@ import { SAVED_CHIP_MS, SAVE_COALESCE_MS } from "@lib/ui/bind-setting-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  IDLE_COMMIT_QUEUE,
   narrowToStored,
   runCommit,
+  runPatchCommit,
+  stepCommitQueue,
   type CommitDeps,
   type CommitOutcome,
+  type CommitQueue,
   type GuardDescriptor,
+  type PatchCommitDeps,
 } from "./use-setting-core";
 
 /**
@@ -262,4 +267,139 @@ describe("narrowToStored", () => {
       ).toBe(expected);
     },
   );
+});
+
+describe("stepCommitQueue — ingen commit forsvinner stille", () => {
+  const busy: CommitQueue = { busy: true, queued: false };
+  const busyQueued: CommitQueue = { busy: true, queued: true };
+
+  it.each([
+    ["ledig + forespørsel ⇒ kjør", IDLE_COMMIT_QUEUE, "request", "run", busy],
+    [
+      "opptatt + forespørsel ⇒ køes, ikke kastes",
+      busy,
+      "request",
+      "queue",
+      busyQueued,
+    ],
+    [
+      "opptatt+kø + enda en forespørsel ⇒ fortsatt ÉN plass",
+      busyQueued,
+      "request",
+      "queue",
+      busyQueued,
+    ],
+    ["ferdig uten kø ⇒ ledig", busy, "settled", "idle", IDLE_COMMIT_QUEUE],
+    ["ferdig MED kø ⇒ kjør en gang til", busyQueued, "settled", "run", busy],
+  ] as Array<
+    [string, CommitQueue, "request" | "settled", string, CommitQueue]
+  >)("%s", (_name, state, event, action, next) => {
+    const step = stepCommitQueue(state, event);
+    expect(step.action).toBe(action);
+    expect(step.next).toEqual(next);
+  });
+
+  it("en byge redigeringer under ÉN skrivning blir én ekstra kjøring", () => {
+    // «900 dager på skjermen, 90 i basen»: den gamle hooken ryddet den ventende
+    // timeren og returnerte så tomhendt fordi den var opptatt. Sekvensen under
+    // er nøyaktig den — skriv, la commiten starte, skriv to ganger til — og
+    // den MÅ ende i en kjøring som leser utkastet på nytt.
+    let q = IDLE_COMMIT_QUEUE;
+    const actions: string[] = [];
+    for (const event of [
+      "request",
+      "request",
+      "request",
+      "settled",
+      "settled",
+    ] as const) {
+      const step = stepCommitQueue(q, event);
+      q = step.next;
+      actions.push(step.action);
+    }
+    expect(actions).toEqual(["run", "queue", "queue", "run", "idle"]);
+    expect(q).toEqual(IDLE_COMMIT_QUEUE);
+  });
+});
+
+describe("runPatchCommit — den samme sekvensen for flere nøkler", () => {
+  function patchHarness(over: Partial<PatchCommitDeps> = {}) {
+    const log: string[] = [];
+    const deps: PatchCommitDeps = {
+      changed: true,
+      apply: () => log.push("apply"),
+      persist: async () => {
+        log.push("persist");
+        return true;
+      },
+      revert: () => log.push("revert"),
+      toast: (kind, msg) => log.push(`toast:${kind}:${msg}`),
+      saveFailedMessage: () => "Kunne ikke lagre innstillingen",
+      after: () => {
+        log.push("after");
+      },
+      onReceipt: (r) => log.push(`receipt:${r}`),
+      ...over,
+    };
+    return { deps, log };
+  }
+
+  it("anvender, skriver, kvitterer — i den rekkefølgen", async () => {
+    const { deps, log } = patchHarness();
+    expect(await runPatchCommit(deps)).toBe("saved");
+    expect(log).toEqual([
+      "apply",
+      "receipt:saving",
+      "persist",
+      "receipt:saved",
+      "after",
+    ]);
+  });
+
+  it("en ikke-endring skriver ingenting og kvitterer ikke", async () => {
+    // En «Lagret ✓» for noe som ikke endret seg lærer brukeren å ignorere
+    // kvitteringen — den samme regelen `isRealChange` gir `runCommit`.
+    const { deps, log } = patchHarness({ changed: false });
+    expect(await runPatchCommit(deps)).toBe("skipped");
+    expect(log).toEqual([]);
+  });
+
+  it("vakten spør FØR noe anvendes, og et nei ruller tilbake", async () => {
+    const { deps, log } = patchHarness({
+      confirm: async () => {
+        log.push("confirm");
+        return false;
+      },
+    });
+    expect(await runPatchCommit(deps)).toBe("declined");
+    expect(log).toEqual(["confirm", "revert"]);
+  });
+
+  it("en feilet skrivning ruller tilbake, sier fra, og kvitteringen blir stående", async () => {
+    // Strengere enn legacy, og av samme grunn som `runCommit`: skjermen skal
+    // ikke stå og påstå noe basen ikke har.
+    const { deps, log } = patchHarness({
+      persist: async () => {
+        log.push("persist");
+        return false;
+      },
+    });
+    expect(await runPatchCommit(deps)).toBe("failed");
+    expect(log).toEqual([
+      "apply",
+      "receipt:saving",
+      "persist",
+      "revert",
+      "toast:error:Kunne ikke lagre innstillingen",
+      "receipt:failed",
+    ]);
+  });
+
+  it("`after` kjøres bare når skrivningen faktisk landet", async () => {
+    const { deps, log } = patchHarness({
+      persist: async () => false,
+    });
+    await runPatchCommit(deps);
+    expect(log).not.toContain("after");
+  });
 });

@@ -262,14 +262,44 @@ describe('formatWakeHint', () => {
     expect(formatWakeHint(state, ctx())).toBeNull()
   })
 
-  it('reports the wake POINT and the real lead time', () => {
+  it('reports the wake POINT and the real lead time — once VERIFIED', () => {
     const next = buildNext(AT)
-    const state = stateWith({ next, wake: computeWake(next, true) })
+    const state = stateWith({ next, wake: computeWake(next, true, true) })
     const out = formatWakeHint(state, ctx())!
     expect(out).toContain(`TIME@${AT_MS - 10 * 60_000}`)
     expect(out).toContain('10')
     expect(out).not.toContain('{time}')
     expect(out).not.toContain('{min}')
+  })
+
+  // The setting is an INTENTION; `wake_verify` is the fact. Promising
+  // «Maskinen vekkes automatisk kl. 10:50» off the toggle alone is how a
+  // machine sleeps through the service while the app says it will not — macOS
+  // wants an admin prompt the scheduler cannot show, Windows wants wake timers
+  // enabled in the power plan, and the toggle keeps reading «på» through both.
+  it.each([
+    ['verify says NOT armed', false],
+    ['verify has not answered yet', null],
+  ] as Array<[string, boolean | null]>)(
+    'says the honest thing instead when %s',
+    (_name, armed) => {
+      const next = buildNext(AT)
+      const state = stateWith({ next, wake: computeWake(next, true, armed) })
+      const out = formatWakeHint(state, ctx())!
+      expect(out).toContain('home.wakesNotArmed')
+      // …and never the promise.
+      expect(out).not.toContain('home.wakesBefore')
+      expect(out).not.toContain(`TIME@${AT_MS - 10 * 60_000}`)
+    },
+  )
+
+  it('stays null when the operator turned wake-from-sleep off — armed or not', () => {
+    // Off is a decision, not a problem: there is nothing to be honest ABOUT.
+    const next = buildNext(AT)
+    for (const armed of [true, false, null]) {
+      const state = stateWith({ next, wake: computeWake(next, false, armed) })
+      expect(formatWakeHint(state, ctx())).toBeNull()
+    }
   })
 })
 

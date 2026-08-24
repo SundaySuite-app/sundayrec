@@ -218,7 +218,7 @@
           "dshow": "Classic (DirectShow)"
         },
         "preroll": "Pre-roll buffer",
-        "prerollDesc": "Sound kept from before you pressed Start.",
+        "prerollDesc": "Sound kept from before you pressed Start. The buffer holds the microphone open in the background for as long as the app is ready to record.",
         "prerollChoice": {
           "0": "Off",
           "15": "15 seconds",
@@ -358,12 +358,27 @@
           "needsAdmin": "This machine can be woken, but asks for an administrator password the first time.",
           "unknown": "We do not know yet whether this machine can be woken."
         },
+        "wakeArm": "Activate wake-up",
+        "wakeArmWord": {
+          "idle": "Register the wake-up with the operating system now. May ask for an administrator password.",
+          "ok": "The wake-up is registered with the operating system.",
+          "needsAdmin": "Needs an administrator password — try again and answer the prompt.",
+          "disabled": "Turn on «Wake the machine from sleep» first.",
+          "unsupported": "This machine cannot be woken by the app.",
+          "cancelled": "You cancelled — nothing was registered.",
+          "failed": "The wake-up was not registered."
+        },
         "audioTech": "Audio technology"
       }
     },
     "language": {
       "no": "Norwegian",
-      "en": "English"
+      "en": "English",
+      "sv": "Swedish",
+      "da": "Danish",
+      "de": "German",
+      "fr": "French",
+      "pl": "Polish"
     },
     "first": {
       "step": "Step {n} of {total}",
@@ -543,7 +558,8 @@
     "readyNoSchedule": "Ready — set up a schedule to start recordings automatically",
     "wakesBefore": "The computer wakes automatically at {time}",
     "nextShort": "next",
-    "wakesLead": "({min} min before)"
+    "wakesLead": "({min} min before)",
+    "wakesNotArmed": "The machine must be on or asleep when the recording starts — no wake-up has been confirmed."
   },
   "history": {
     "deleteFailed": "Could not delete"

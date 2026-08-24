@@ -28,53 +28,48 @@ import {
   diskFreeBytes,
   refreshDiskSpace,
 } from "../../state/disk";
-import {
-  patchSettings,
-  saveSettingsDebounced,
-  settings,
-} from "../../state/settings";
+import { usePatch } from "../../settings/use-patch";
+import { settings } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { Receipt } from "../../ui/Receipt/Receipt";
-import { toast } from "../../ui/toast";
-import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
 
 export function FolderPage() {
   const folder = (settings.value.saveFolder ?? "").trim();
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
-  const [busy, setBusy] = useState(false);
+  // Den delte lagringsmodellen (`usePatch`), ikke en håndlagd: kvitteringen
+  // teller ned, og en feilet skrivning ruller tilbake i stedet for å la
+  // skjermen stå og påstå en mappe basen ikke har.
+  const save = usePatch();
+  const [picking, setPicking] = useState(false);
 
   async function pick(): Promise<void> {
-    if (busy) return;
-    setBusy(true);
+    if (picking || save.busy) return;
+    setPicking(true);
     try {
       const chosen = await window.api.pickFolder();
       // Avbrutt dialog: ingen endring, ingen kvittering. En «Lagret ✓» her
       // ville vært en kvittering for noe som ikke skjedde.
       if (!chosen) return;
-      setReceipt("saving");
-      patchSettings({ saveFolder: chosen });
-      const ok = await saveSettingsDebounced(120);
-      setReceipt(ok ? "saved" : "failed");
-      if (!ok) {
-        toast("error", t("general.saveFailed"));
-        return;
-      }
-      // Ny disk, nytt tall: plassen på den gamle mappen sier ingenting om den
-      // nye, og «plass til 300 t» må ikke bli stående fra forrige valg.
-      await refreshDiskSpace();
+      await save.write(
+        { saveFolder: chosen },
+        {
+          // Ny disk, nytt tall: plassen på den gamle mappen sier ingenting om
+          // den nye, og «plass til 300 t» må ikke bli stående fra forrige valg.
+          after: () => refreshDiskSpace(),
+        },
+      );
     } finally {
-      setBusy(false);
+      setPicking(false);
     }
   }
 
   const pickButton = (
     <Button
       variant={folder ? "secondary" : "primary"}
-      busy={busy}
+      busy={picking || save.busy}
       testId="folder-pick"
       onClick={() => void pick()}
     >
@@ -97,7 +92,7 @@ export function FolderPage() {
             {spaceText()}
           </p>
           <div class={styles.footer}>
-            <Receipt state={receipt} testId="folder-receipt" />
+            <Receipt state={save.receipt} testId="folder-receipt" />
           </div>
         </Card>
       ) : (

@@ -46,7 +46,7 @@ import { Chip } from "../../../ui/Chip/Chip";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
 import { TextField } from "../../../ui/TextField/TextField";
 import { toast } from "../../../ui/toast";
-import type { Receipt as ReceiptState } from "../../../settings/use-setting-core";
+import { useReceipt } from "../../../settings/use-receipt";
 import styles from "../setup.module.css";
 
 /** Samme regex som spørsmål 5 og legacy bruker på det samme feltet. */
@@ -61,7 +61,7 @@ interface SmtpDraft {
 export function SmtpCard() {
   const s = settings.value;
   const facts = emailFacts.value;
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
+  const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,8 +99,8 @@ export function SmtpCard() {
       return;
     }
     setError(null);
-    setReceipt("saving");
-    setReceipt((await form.save()) ? "saved" : "failed");
+    showReceipt("saving");
+    showReceipt((await form.save()) ? "saved" : "failed");
   }
 
   return (
@@ -120,7 +120,7 @@ export function SmtpCard() {
           <TextField
             value={form.draft.host}
             onInput={(next) => {
-              setReceipt("idle");
+              resetReceipt();
               form.set({ host: next });
             }}
             labelId={ids.labelId}
@@ -138,7 +138,7 @@ export function SmtpCard() {
           <TextField
             value={form.draft.user}
             onInput={(next) => {
-              setReceipt("idle");
+              resetReceipt();
               form.set({ user: next });
             }}
             labelId={ids.labelId}
@@ -161,7 +161,7 @@ export function SmtpCard() {
             invalid={fromInvalid}
             onInput={(next) => {
               setError(null);
-              setReceipt("idle");
+              resetReceipt();
               form.set({ from: next });
             }}
             labelId={ids.labelId}
@@ -188,7 +188,7 @@ export function SmtpCard() {
           testId="adv-smtp-cancel"
           onClick={() => {
             setError(null);
-            setReceipt("idle");
+            resetReceipt();
             form.cancel();
           }}
         >
@@ -210,17 +210,17 @@ export function SmtpCard() {
  */
 function PasswordRow({ stored }: { stored: boolean }) {
   const [value, setValue] = useState("");
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
+  const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
   const [busy, setBusy] = useState(false);
 
   async function write(password: string | undefined): Promise<void> {
     if (busy) return;
     setBusy(true);
-    setReceipt("saving");
+    showReceipt("saving");
     try {
       await window.api.emailSetSmtpPassword(password);
       setValue("");
-      setReceipt("saved");
+      showReceipt("saved");
       toast(
         "success",
         password
@@ -231,7 +231,7 @@ function PasswordRow({ stored }: { stored: boolean }) {
     } catch (err) {
       // IKKE svelget: en feilet nøkkelring-skrivning som ser ut som en
       // vellykket er hvordan en menighet tror varslene er satt opp.
-      setReceipt("failed");
+      showReceipt("failed");
       toast(
         "error",
         tf("app.setup.advanced.smtpPasswordFailed", {
@@ -265,7 +265,7 @@ function PasswordRow({ stored }: { stored: boolean }) {
             type="password"
             disabled={busy}
             onInput={(next) => {
-              setReceipt("idle");
+              resetReceipt();
               setValue(next);
             }}
             labelId={ids.labelId}

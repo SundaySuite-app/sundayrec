@@ -52,26 +52,21 @@ import type { VuLevels } from "@legacy/bindings/VuLevels";
 import { t, tf } from "../../i18n";
 import { navigate } from "../../router/router";
 import { confirmIfRecordingImminent } from "../../settings/guards";
+import { usePatch } from "../../settings/use-patch";
 import {
   audioDevices,
   loadAudioDevices,
   type AudioDeviceOption,
 } from "../../state/devices";
 import { reconcilePreroll } from "../../state/preroll";
-import {
-  patchSettings,
-  saveSettingsDebounced,
-  settings,
-  type Settings,
-} from "../../state/settings";
+import { isRecording } from "../../state/recording";
+import { settings, type Settings } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
-import { toast } from "../../ui/toast";
-import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import { channelPairFor, channelPairs } from "./decisions-core";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
@@ -93,12 +88,20 @@ export function SoundPage() {
   // 0-indeksert internt (det er slik `deviceChannels` lagres); brikkene viser
   // +1, fordi et miksebord er merket fra 1.
   const [pairL, setPairL] = useState<number>(storedPair ? storedPair.l - 1 : 0);
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
-  const [busy, setBusy] = useState(false);
+  // Én lagringsmodell, også her: `usePatch` kjører den samme sekvensen som
+  // `useSetting` (anvend → skriv → kvittering | rull tilbake), bare over de tre
+  // nøklene et enhetsvalg ER. Kvitteringen teller ned av seg selv.
+  const save = usePatch();
 
   const device = devices?.find((d) => d.id === picked) ?? null;
   const multi = (device?.channels ?? 0) > 2;
-  const lit = useChannelSignals(device?.name ?? null, device?.channels ?? 0);
+  const lit = useChannelSignals(
+    device?.name ?? null,
+    device?.channels ?? 0,
+    // Samme invariant som måleren under: ikke be om enheten mens den er
+    // opptatt av å ta opp en gudstjeneste.
+    !isRecording.value,
+  );
 
   // Et enhetsbytte i lista skal ta med seg enhetens EGET lagrede par — ikke
   // det forrige valgets. Uten dette ville «kanal 15–16» fulgt med over på et
@@ -107,7 +110,7 @@ export function SoundPage() {
     setPicked(id);
     const pair = channelPairFor(settings.peek(), id);
     setPairL(pair ? pair.l - 1 : 0);
-    setReceipt("idle");
+    save.reset();
   }
 
   const changed =
@@ -115,54 +118,44 @@ export function SoundPage() {
     (multi && pairL !== (storedPair ? storedPair.l - 1 : 0));
 
   async function useThis(): Promise<void> {
-    if (busy || !device) return;
-    setBusy(true);
-    setReceipt("saving");
-    try {
-      // Bare ved BYTTE — se toppen av fila.
-      if (picked !== stored) {
-        const proceed = await confirmIfRecordingImminent(
-          t("audio.guardDevice"),
-        );
-        if (!proceed) {
-          setReceipt("idle");
-          return;
-        }
-      }
+    if (save.busy || !device) return;
 
-      const patch: Partial<Settings> = {
-        deviceId: device.id,
-        deviceName: device.name,
+    const patch: Partial<Settings> = {
+      deviceId: device.id,
+      deviceName: device.name,
+    };
+    if (multi) {
+      patch.deviceChannels = {
+        ...(settings.peek().deviceChannels ?? {}),
+        [device.id]: { channelL: pairL, channelR: pairL + 1 },
       };
-      if (multi) {
-        patch.deviceChannels = {
-          ...(settings.peek().deviceChannels ?? {}),
-          [device.id]: { channelL: pairL, channelR: pairL + 1 },
-        };
-      }
-      // Kanalmodus settes BARE når enheten faktisk byttes: et bevisst mono-valg
-      // på enheten man allerede bruker skal ikke overskrives fordi noen
-      // bekreftet kanalparet. En 1-kanals enhet kan ikke levere stereo — den
-      // ville gitt en død høyrekanal — så den tvinges til monoL, akkurat som
-      // legacy-rutenettets `onGridChannelCount` gjør.
-      if (picked !== stored) {
-        patch.channels = device.channels === 1 ? "monoL" : "stereo";
-      }
-      patchSettings(patch);
-
-      const ok = await saveSettingsDebounced(120);
-      setReceipt(ok ? "saved" : "failed");
-      if (!ok) {
-        toast("error", t("general.saveFailed"));
-        return;
-      }
-      // Forhåndsbufferen adresserer enheten ved NAVN — pek den på den nye før
-      // noe annet åpner enheten (legacy gjør det i samme rekkefølge).
-      await reconcilePreroll(true);
-      navigate("setup", { anchor: "sound" });
-    } finally {
-      setBusy(false);
     }
+    // Kanalmodus settes BARE når enheten faktisk byttes: et bevisst mono-valg
+    // på enheten man allerede bruker skal ikke overskrives fordi noen
+    // bekreftet kanalparet. En 1-kanals enhet kan ikke levere stereo — den
+    // ville gitt en død høyrekanal — så den tvinges til monoL, akkurat som
+    // legacy-rutenettets `onGridChannelCount` gjør.
+    const switching = picked !== stored;
+    if (switching) {
+      patch.channels = device.channels === 1 ? "monoL" : "stereo";
+    }
+
+    await save.write(patch, {
+      // `changed` er sidens eget spørsmål: å bekrefte det SAMME kanalparet på
+      // den samme enheten er ingen endring, men patchen bærer likevel
+      // `deviceChannels`, som er et nytt objekt hver gang.
+      changed,
+      // Bare ved BYTTE — se toppen av fila.
+      confirm: switching
+        ? () => confirmIfRecordingImminent(t("audio.guardDevice"))
+        : undefined,
+      after: async () => {
+        // Forhåndsbufferen adresserer enheten ved NAVN — pek den på den nye før
+        // noe annet åpner enheten (legacy gjør det i samme rekkefølge).
+        await reconcilePreroll(true);
+        navigate("setup", { anchor: "sound" });
+      },
+    });
   }
 
   if (devices !== null && devices.length === 0) {
@@ -214,7 +207,7 @@ export function SoundPage() {
                 }`}
                 onClick={() => {
                   setPairL(left);
-                  setReceipt("idle");
+                  save.reset();
                 }}
               >
                 {`${left + 1}–${left + 2}`}
@@ -228,6 +221,11 @@ export function SoundPage() {
       <Card testId="sound-meter" description={t("app.setup.sound.testHint")}>
         <VuMeter
           testId="sound-vu"
+          // AVSLÅTT mens det tas opp — samme invariant som nivå 1 og
+          // sekvensen (`use-vu-word.ts`): Rust stopper VU-strømmen når
+          // `start_recording` åpner enheten, og en `start_vu` etterpå ber om
+          // nøyaktig den enheten opptaket holder. Midt i en gudstjeneste.
+          off={isRecording.value}
           deviceName={device?.name ?? null}
           pick={() => ({
             mode: multi ? "stereo" : settings.peek().channels,
@@ -252,11 +250,11 @@ export function SoundPage() {
         >
           {t("app.setup.advanced.soundLink")}
         </Button>
-        <Receipt state={receipt} testId="sound-receipt" />
+        <Receipt state={save.receipt} testId="sound-receipt" />
         <Button
           variant="primary"
           size="lg"
-          busy={busy}
+          busy={save.busy}
           disabled={!device || !changed}
           disabledReason={
             !device
@@ -301,10 +299,16 @@ function toOption(device: AudioDeviceOption): RadioOption {
  * pakkene kommer 30 ganger i sekundet, og en `setState` per pakke ville rendret
  * hele siden 30 ganger i sekundet for å tenne en brikke som skifter noen ganger
  * i minuttet.
+ *
+ * `active` er `false` mens det TAS OPP, av nøyaktig samme grunn som `off` på
+ * måleren og `active` i `use-vu-word.ts`: opptaksmotoren eier enheten, og en
+ * `start_vu` derfra ville bedt om den midt i en gudstjeneste. Brikkene slukner
+ * i stedet, som er sant — vi måler ingenting.
  */
 function useChannelSignals(
   deviceName: string | null,
   channels: number,
+  active: boolean,
 ): boolean[] {
   const [lit, setLit] = useState<boolean[]>([]);
   const state = useRef<boolean[]>([]);
@@ -312,7 +316,7 @@ function useChannelSignals(
   useEffect(() => {
     state.current = [];
     setLit([]);
-    if (!deviceName || channels <= 2) return;
+    if (!active || !deviceName || channels <= 2) return;
     const release = acquireVuFeed({
       deviceName,
       onLevels: (_l, _r, raw: VuLevels) => {
@@ -335,7 +339,7 @@ function useChannelSignals(
       },
     });
     return release;
-  }, [deviceName, channels]);
+  }, [deviceName, channels, active]);
 
   return lit;
 }
