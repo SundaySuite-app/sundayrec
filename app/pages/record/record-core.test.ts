@@ -285,17 +285,15 @@ describe("qualityReasonSuffix", () => {
     // Katalogene er sannheten her; tabellen er bare navnene. En rad som pekte
     // på en nøkkel ingen hadde skrevet ville gitt tom tekst i banneret som
     // sier «ikke stol på dette opptaket».
-    const codes = [
-      "no_audio_captured",
-      "silent_take",
-      "gap_fail",
-      "drops_fail",
-      "forced_sample_rate",
-      "gap_warn",
-      "low_signal",
-      "drops_warn",
-      "clean",
-    ];
+    // Kodene leses ut av den GENERERTE bindingen, ikke skrevet av: den er
+    // Rustens `QualityReason`, og en variant som skifter stavemåte skal gjøre
+    // denne testen rød i stedet for å bli et oppslag som bommer i stillhet.
+    const binding = readFileSync(
+      join(import.meta.dirname, "../../../legacy/bindings/QualityReason.ts"),
+      "utf8",
+    );
+    const codes = [...binding.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+    expect(codes.length).toBe(9);
     for (const lang of ["no", "en"]) {
       const cat = JSON.parse(
         readFileSync(

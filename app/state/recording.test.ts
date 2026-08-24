@@ -171,9 +171,9 @@ describe("kvalitetsalarmen skiller «ingen koder» fra «koder finnes ikke»", (
       measuredSec: 3120,
       expectedSec: 5400,
       reasons: ["3.42s manglende/stille lyd — hakking/dropp"],
-      reasonCodes: ["gap_fail"],
+      reasonCodes: ["large-gap"],
     });
-    expect(qualityBanner().reasonCodes).toEqual(["gap_fail"]);
+    expect(qualityBanner().reasonCodes).toEqual(["large-gap"]);
     h.off();
   });
 
@@ -183,9 +183,9 @@ describe("kvalitetsalarmen skiller «ingen koder» fra «koder finnes ikke»", (
       measuredSec: 1,
       expectedSec: 2,
       reasons: [],
-      reason_codes: ["low_signal"],
+      reason_codes: ["low-signal"],
     });
-    expect(qualityBanner().reasonCodes).toEqual(["low_signal"]);
+    expect(qualityBanner().reasonCodes).toEqual(["low-signal"]);
     h.off();
   });
 

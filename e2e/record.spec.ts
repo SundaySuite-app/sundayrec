@@ -583,7 +583,7 @@ test.describe("kvalitetsalarmens årsaker", () => {
         "3.42s manglende/stille lyd — hakking/dropp",
         "Svakt signal — vurder å øke gain",
       ],
-      reasonCodes: ["gap_fail", "low_signal"],
+      reasonCodes: ["large-gap", "low-signal"],
     });
 
     const banner = page.getByTestId("banner-recording-quality");
@@ -624,7 +624,7 @@ test.describe("kvalitetsalarmens årsaker", () => {
       measuredSec: 10,
       expectedSec: 20,
       reasons: ["Kosmisk stråling traff disken"],
-      reasonCodes: ["cosmic_rays"],
+      reasonCodes: ["cosmic-rays"],
     });
 
     await expect(page.getByTestId("banner-recording-quality")).toContainText(
