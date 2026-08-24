@@ -32,7 +32,7 @@ use crate::recorder::engine::current_platform;
 
 /// One channel's measured max peak over the scan window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/ChannelPeak.ts")]
+#[ts(export, export_to = "ChannelPeak.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelPeak {
     /// 1-based channel number as astats reports it (channel 1 = input 1).

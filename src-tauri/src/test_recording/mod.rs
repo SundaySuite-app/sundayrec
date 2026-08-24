@@ -475,7 +475,7 @@ async fn run_astats_rms(path: &str) -> Option<f64> {
 /// (camelCase): on success, the captured file's size + measured signal; on
 /// failure, the classified error kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TestRecordingResult.ts")]
+#[ts(export, export_to = "TestRecordingResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TestRecordingResult {
     /// Whether the test produced a plausible recording.

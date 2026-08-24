@@ -27,6 +27,17 @@
 //! * `crate::menu`'s Quit item (macOS — see that module for why the app menu
 //!   had to be rebuilt for Cmd+Q to be interceptable at all).
 //!
+//! ## The fourth door: the updater's relaunch
+//!
+//! `crate::update::relaunch` is not a quit and cannot be refused after the fact
+//! (`prevent_exit` is a no-op for tauri's `RESTART_EXIT_CODE`), so it does not
+//! go through [`request_quit`] — but it must not step over a finalisation
+//! either, and it used to: `RecorderEngine::stop()` followed by `app.exit(0)`,
+//! one click, mid-service. It now shares the half of this module that matters:
+//! [`arm_wait_then`], the same single bounded wait, ending in the restart
+//! instead of the exit. The decision is
+//! [`sundayrec_core::window::relaunch_plan`].
+//!
 //! ## ⚠️ GUI-UNVERIFIED
 //!
 //! ## Why the decision is not in the closure
@@ -252,10 +263,54 @@ pub fn request_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> QuitVerdict
 /// Returns [`QuitVerdict::Proceed`] when no wait could be armed — the caller
 /// must then quit immediately rather than leave an app that cannot die.
 fn arm_wait<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> QuitVerdict {
-    if WAITING.swap(true, Ordering::SeqCst) {
+    match arm_wait_then(app, AfterWait::Exit) {
+        WaitArm::Armed => QuitVerdict::Handled,
         // A wait was armed between the load in `request_quit` and here. One
         // waiter is enough; this press becomes the override.
-        return QuitVerdict::Proceed;
+        WaitArm::AlreadyWaiting => QuitVerdict::Proceed,
+    }
+}
+
+/// What the bounded wait does once the recording's file is safe (or the cap has
+/// run out).
+///
+/// The two ways out of the process that must not step over a finalisation, in
+/// the one place that knows how to wait for one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AfterWait {
+    /// Quit: the confirmed Cmd+Q / tray «Avslutt».
+    Exit,
+    /// Restart into the staged update ([`crate::update::relaunch`]).
+    ///
+    /// It cannot be an `app.exit(0)` followed by a restart request from
+    /// somewhere else: `ExitRequestApi::prevent_exit` is a no-op for
+    /// `RESTART_EXIT_CODE`, so a restart, once asked for, cannot be held back.
+    /// The waiting therefore has to end IN the relaunch, not before it.
+    #[cfg(feature = "updater")]
+    Relaunch,
+}
+
+/// Whether this caller owns the wait it just asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WaitArm {
+    /// The wait is armed and this caller's [`AfterWait`] will run when it ends.
+    Armed,
+    /// Someone else is already waiting for the same file. The caller must NOT
+    /// arm a second one — see each caller for what it does instead.
+    AlreadyWaiting,
+}
+
+/// Arm the bounded wait for the finalisation, ending in `after`.
+///
+/// One waiter at a time ([`WAITING`]), one poll loop, one cap — so the quit and
+/// the updater's relaunch cannot disagree about how long a recording's file is
+/// worth waiting for, and cannot both be counting.
+pub(crate) fn arm_wait_then<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    after: AfterWait,
+) -> WaitArm {
+    if WAITING.swap(true, Ordering::SeqCst) {
+        return WaitArm::AlreadyWaiting;
     }
     let app = app.clone();
     let cap = Duration::from_millis(RecorderTimeouts::QUIT_WAIT_CAP_MS);
@@ -271,16 +326,27 @@ fn arm_wait<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> QuitVerdict {
         match outcome {
             QuitWait::Capped => tracing::error!(
                 cap_ms = RecorderTimeouts::QUIT_WAIT_CAP_MS,
-                "quit waited out the cap without the recorder reaching rest — exiting anyway"
+                ?after,
+                "waited out the cap without the recorder reaching rest — continuing anyway"
             ),
-            _ => tracing::info!("recording finalised — quitting"),
+            _ => tracing::info!(?after, "recording finalised"),
         }
-        // BOTH arms end here. This is a programmatic exit, so it comes back as
-        // `ExitRequested { code: Some(0) }` and passes straight through the
-        // policy to the ordinary sidecar cleanup.
-        app.exit(0);
+        // BOTH arms end here.
+        match after {
+            // A programmatic exit, so it comes back as
+            // `ExitRequested { code: Some(0) }` and passes straight through the
+            // policy to the ordinary sidecar cleanup.
+            AfterWait::Exit => app.exit(0),
+            // The file is safe: NOW the updater may replace the process.
+            #[cfg(feature = "updater")]
+            AfterWait::Relaunch => {
+                if let Err(e) = crate::update::relaunch_now(&app) {
+                    tracing::error!("relaunch after the wait failed: {e}");
+                }
+            }
+        }
     });
-    QuitVerdict::Handled
+    WaitArm::Armed
 }
 
 /// Poll the recorder until the file is safe (or the cap has run out — belt and

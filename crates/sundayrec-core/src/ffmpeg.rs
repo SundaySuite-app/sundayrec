@@ -12,7 +12,7 @@ use ts_rs::TS;
 /// Capture host platform. We only branch on it where the underlying OS audio
 /// stack actually forces a difference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/Platform.ts")]
+#[ts(export, export_to = "Platform.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     MacOS,

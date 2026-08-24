@@ -959,8 +959,16 @@ Avansert viser sekundene, og bare dem. Da MÅ sekundene også være det som
 avgjør, ellers står det «15 sekunder» på en skjerm der ingenting blir bufret —
 så `app/state/preroll.ts` utleder `enabled` fra `seconds > 0`. Standarden er 15
 i både Rust og `settings-defaults.ts` (eiervalget «pre-roll på og usynlig»); en
-profil som allerede har et tall beholder sitt. `prerollEnabled` er urørt i basen
-og fortsatt legacy-skallets bryter — de to skallene kjører aldri samtidig.
+profil som allerede har et tall beholder sitt.
+
+**Restansen er lukket:** `prerollEnabled` var «fortsatt legacy-skallets bryter»
+helt til fase B slettet det skallet. Feltet har nå INGEN leser — hverken i Rust
+eller i skallet — og doccen på `Settings::preroll_enabled` navnga likevel
+`preroll-lifecycle.ts` som portvakten sin, altså en fil som ikke finnes.
+Doccen sier nå sannheten og merker feltet utdatert. Feltet BLIR STÅENDE: lagrede
+profiler bærer nøkkelen, og å fjerne den er en migrasjon for én bool ingen leser.
+`preroll_enabled_is_stored_but_never_the_answer` pinner begge halvdelene — at
+sekundene avgjør (begge veier), og at en lagret verdi overlever rundturen.
 
 ## `narrowToStored` — en skjøt som ville avvist HELE lagringen
 
@@ -1283,6 +1291,36 @@ før; gjenopprettingsskanningen er sikkerhetsnettet. Å tette det hullet krever
 `app.exit(0)` i meny/systemstatusfelt); `Handled` betyr «appen skal leve — jeg
 har tatt over».
 
+### 🆕 Den fjerde døra: oppdateringens omstart
+
+Dørene over dekket ikke `update::relaunch`. Den kalte `RecorderEngine::stop()`
+og drepte prosessen rett etterpå — altså nøyaktig utfallet fra før vernet, nådd
+med ETT klikk på «Start på nytt og installer». `stop()` blokkerer ikke, så
+concat, leveransetranskodingen og historikkraden døde med prosessen.
+
+Beslutningen ligger nå i den rene
+`sundayrec_core::window::relaunch_plan(RecorderState) -> RelaunchPlan`, med
+samme statsdeling som `quit_action`, uten nekt-og-bekreft-dansen:
+
+- **`StopThenWait`** (`Preparing`/`Recording`/`Reconnecting`) — stopp pent, vent
+  på fila, start så på nytt.
+- **`WaitOnly`** (`Stopping`) — ingenting å stoppe, alt å miste: vent, start så.
+- **`Now`** (`Idle`/`Stopped`/`Failed`) — som før, umiddelbart.
+
+⚠️ **Hvorfor ventingen må skje FØR omstarten og ikke kan angres etterpå:**
+avslutninger kan tas tilbake i `ExitRequested` (`api.prevent_exit()`), men
+omstarter kan ikke. Tauri dokumenterer OG implementerer
+`ExitRequestApi::prevent_exit` som en no-op når koden er `RESTART_EXIT_CODE`
+(`if self.code != Some(RESTART_EXIT_CODE)`, 2.11.5 `src/app.rs`), og
+`AppHandle::restart()` på hovedtråden hopper over hendelsen helt. Å be om
+omstarten ER omstarten. Derfor: `relaunch` tar beslutningen, armerer den SAMME
+avgrensede ventingen som den bekreftede Cmd+Q (`window::arm_wait_then`, én
+venter om gangen, samme `QUIT_WAIT_CAP_MS`-tak), og først når fila er trygg
+kalles `update::relaunch_now` — helperen/`app.restart()` som faktisk bytter ut
+prosessen. Er en avslutning allerede i vente, står omstarten ned og logger det:
+oppdateringen ligger alt på disk, så neste oppstart er den nye versjonen
+uansett.
+
 ### ⚠️ Rigg-test (GUI-UNVERIFIED)
 
 Ingenting av dette kan verifiseres uten en ekte skrivebordsøkt, og et opptak må
@@ -1312,6 +1350,15 @@ faktisk gå. Når eier tester på rigg:
    systemstatusfeltets «Avslutt». Og bekreft at macOS-menyen fortsatt er hel:
    Cmd+C / Cmd+V i et tekstfelt, Cmd+W, fullskjerm, og «Om SundayRec».
 9. **Uten opptak.** Cmd+Q og «Avslutt» avslutter på første trykk, som før.
+10. **🆕 Oppdateringens omstart under opptak** (krever en signert utgivelse å
+    oppdatere TIL — se docs/NEEDS-RICHARD.md). Start et opptak, last ned
+    oppdateringen, trykk «Start på nytt og installer». **Forventet:** opptaket
+    stoppes pent, appen blir stående mens fila skrives (samme venting som punkt
+    6), og først når historikkraden OG leveransefila finnes starter appen på nytt
+    i den nye versjonen. `<app_data>/update-relaunch.log` skal vise linjene
+    «recorder state … → plan StopThenWait», «live capture stopped — waiting for
+    the file», «restart armed behind the finalisation wait» og til slutt
+    «restarting now» — i den rekkefølgen.
 
 ## Måleren under et opptak leser opptaket
 

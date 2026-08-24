@@ -22,6 +22,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::telemetry::QualityReason;
 use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
 
 // ── Stderr stat parsers (pure) ──────────────────────────────────────────────
@@ -208,7 +209,7 @@ pub const FAIL_XRUNS: u64 = 5;
 
 /// The facts the impure shell feeds in after running the capture + analysis.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SelfTestFacts.ts")]
+#[ts(export, export_to = "SelfTestFacts.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SelfTestFacts {
     /// The `-t N` duration we asked ffmpeg to capture.
@@ -234,7 +235,7 @@ pub struct SelfTestFacts {
 
 /// Pass/Warn/Fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SelfTestVerdict.ts")]
+#[ts(export, export_to = "SelfTestVerdict.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum SelfTestVerdict {
     Pass,
@@ -245,14 +246,39 @@ pub enum SelfTestVerdict {
 /// The self-test result: a verdict, the human reasons, and the flat numbers the
 /// diagnose report + the user paste verbatim.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/SelfTestReport.ts")]
+#[ts(export, export_to = "SelfTestReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SelfTestReport {
     /// `true` unless the verdict is `Fail` — i.e. capture works (possibly with a
     /// warning). Drives the diagnose `capture_ok` tri-state.
     pub ok: bool,
     pub verdict: SelfTestVerdict,
+    /// WHY, in Norwegian prose, rendered verbatim by whoever shows the report.
+    ///
+    /// ⚠️ These sentences are written HERE, in Rust, and the quality banner
+    /// showed them word for word in all seven UI languages — a German volunteer
+    /// read «Svakt signal — vurder å øke gain». Rust cannot translate them
+    /// (the UI language lives in the settings row, and this function is pure),
+    /// so the fix is to stop asking it to: [`Self::reason_codes`] carries the
+    /// same list as machine-readable codes for the renderer to localise. The
+    /// prose stays for the diagnose report and the paste-into-a-support-mail
+    /// path, where a stable Norwegian sentence is the point.
     pub reasons: Vec<String>,
+    /// The same conditions as [`Self::reasons`], as codes — one per prose line,
+    /// in the same order, set by the same branch.
+    ///
+    /// Not re-derived from the numbers afterwards (that is
+    /// [`crate::telemetry::derive_reason_codes`]'s job, and a second reading is
+    /// a second thing to drift): every `escalate` here pushes the sentence and
+    /// its code together, so "the codes follow the prose 1:1" is true by
+    /// construction and asserted over a fact matrix by
+    /// `every_prose_reason_carries_its_code`.
+    ///
+    /// `#[serde(default)]` so a report stored before the field existed still
+    /// deserialises — as an empty list, which is honestly "this payload predates
+    /// codes" rather than "nothing was wrong".
+    #[serde(default)]
+    pub reason_codes: Vec<QualityReason>,
     pub drops: u64,
     pub dups: u64,
     pub xruns: u64,
@@ -285,24 +311,35 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     let signal = classify_signal(f.strongest_rms_db);
 
     let mut reasons: Vec<String> = Vec::new();
+    let mut codes: Vec<QualityReason> = Vec::new();
     let mut verdict = SelfTestVerdict::Pass;
-    let escalate =
-        |v: SelfTestVerdict, why: String, reasons: &mut Vec<String>, cur: &mut SelfTestVerdict| {
-            reasons.push(why);
-            // Fail dominates Warn dominates Pass.
-            if v == SelfTestVerdict::Fail
-                || (v == SelfTestVerdict::Warn && *cur == SelfTestVerdict::Pass)
-            {
-                *cur = v;
-            }
-        };
+    // The prose and its code are pushed by the SAME call, so the two lists
+    // cannot fall out of step — the banner's translation depends on the code at
+    // index i meaning the sentence at index i.
+    let escalate = |v: SelfTestVerdict,
+                    why: String,
+                    code: QualityReason,
+                    reasons: &mut Vec<String>,
+                    codes: &mut Vec<QualityReason>,
+                    cur: &mut SelfTestVerdict| {
+        reasons.push(why);
+        codes.push(code);
+        // Fail dominates Warn dominates Pass.
+        if v == SelfTestVerdict::Fail
+            || (v == SelfTestVerdict::Warn && *cur == SelfTestVerdict::Pass)
+        {
+            *cur = v;
+        }
+    };
 
     // FAIL conditions.
     if !size_is_plausible(f.size_bytes) {
         escalate(
             SelfTestVerdict::Fail,
             format!("Ingen lyd fanget (fil {} B er for liten)", f.size_bytes),
+            QualityReason::NoAudioCaptured,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
@@ -310,7 +347,9 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
         escalate(
             SelfTestVerdict::Fail,
             "Stille opptak — ingen signal (sjekk enhet/gain)".to_string(),
+            QualityReason::SilentTake,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
@@ -318,7 +357,9 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
         escalate(
             SelfTestVerdict::Fail,
             format!("{gap_sec:.2}s manglende/stille lyd — hakking/dropp"),
+            QualityReason::LargeGap,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
@@ -326,7 +367,9 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
         escalate(
             SelfTestVerdict::Fail,
             format!("Mange dropp ({}) / xruns ({})", f.drops, f.xruns),
+            QualityReason::ManyDrops,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
@@ -339,7 +382,9 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
                 format!(
                     "Tvunget samplingsrate {forced} Hz ≠ enhetens {native} Hz (resampling kan gi dropp)"
                 ),
+                QualityReason::ForcedRateMismatch,
                 &mut reasons,
+                &mut codes,
                 &mut verdict,
             );
         }
@@ -348,7 +393,9 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
         escalate(
             SelfTestVerdict::Warn,
             format!("{gap_sec:.2}s liten gap/stillhet i opptaket"),
+            QualityReason::SmallGap,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
@@ -356,7 +403,9 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
         escalate(
             SelfTestVerdict::Warn,
             "Svakt signal — vurder å øke gain".to_string(),
+            QualityReason::LowSignal,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
@@ -364,19 +413,23 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
         escalate(
             SelfTestVerdict::Warn,
             format!("Noen dropp ({}) / xruns ({})", f.drops, f.xruns),
+            QualityReason::SomeDrops,
             &mut reasons,
+            &mut codes,
             &mut verdict,
         );
     }
 
     if verdict == SelfTestVerdict::Pass {
         reasons.push("Jevnt opptak, ingen dropp".to_string());
+        codes.push(QualityReason::Clean);
     }
 
     SelfTestReport {
         ok: verdict != SelfTestVerdict::Fail,
         verdict,
         reasons,
+        reason_codes: codes,
         drops: f.drops,
         dups: f.dups,
         xruns: f.xruns,
@@ -424,7 +477,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
 ///   `measured_sec`** are summed by the engine per segment / per deliverable and
 ///   are likewise correct.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/RecordingTelemetry.ts")]
+#[ts(export, export_to = "RecordingTelemetry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingTelemetry {
     /// Frames ffmpeg DISCARDED across the whole session (an avfoundation/USB
@@ -988,6 +1041,175 @@ clean line";
         // cap 0 → always empty
         push_capped(&mut ring, 99, 0);
         assert!(ring.is_empty());
+    }
+
+    // ── The codes beside the prose ──────────────────────────────────────────
+
+    /// Facts that trip every condition `selftest_verdict` knows, one per row,
+    /// plus the clean case — the matrix the two lists are compared over.
+    fn every_condition() -> Vec<(&'static str, SelfTestFacts)> {
+        let clean = SelfTestFacts {
+            expected_sec: 10.0,
+            measured_sec: 10.0,
+            silence_total_sec: 0.0,
+            strongest_rms_db: Some(-20.0),
+            size_bytes: 4_000_000,
+            drops: 0,
+            dups: 0,
+            xruns: 0,
+            native_sample_rate: Some(48_000),
+            forced_sample_rate: Some(48_000),
+        };
+        vec![
+            ("clean", clean.clone()),
+            (
+                "no audio captured",
+                SelfTestFacts {
+                    size_bytes: 0,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "silent take",
+                SelfTestFacts {
+                    strongest_rms_db: None,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "large gap",
+                SelfTestFacts {
+                    measured_sec: 2.0,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "many drops",
+                SelfTestFacts {
+                    drops: FAIL_DROPS,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "many xruns",
+                SelfTestFacts {
+                    xruns: FAIL_XRUNS,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "forced rate mismatch",
+                SelfTestFacts {
+                    forced_sample_rate: Some(44_100),
+                    ..clean.clone()
+                },
+            ),
+            (
+                "small gap",
+                SelfTestFacts {
+                    silence_total_sec: (WARN_GAP_SEC + FAIL_GAP_SEC) / 2.0,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "low signal",
+                SelfTestFacts {
+                    strongest_rms_db: Some(-55.0),
+                    ..clean.clone()
+                },
+            ),
+            (
+                "some drops",
+                SelfTestFacts {
+                    drops: 1,
+                    ..clean.clone()
+                },
+            ),
+            (
+                "everything at once",
+                SelfTestFacts {
+                    size_bytes: 10,
+                    measured_sec: 1.0,
+                    strongest_rms_db: None,
+                    drops: FAIL_DROPS,
+                    xruns: FAIL_XRUNS,
+                    forced_sample_rate: Some(44_100),
+                    ..clean
+                },
+            ),
+        ]
+    }
+
+    #[test]
+    fn every_prose_reason_carries_its_code() {
+        // The banner rendered these Norwegian sentences verbatim in all seven UI
+        // languages. The codes are what the renderer translates instead — so
+        // there must be exactly one per sentence, always, or the banner would
+        // silently drop or invent a line.
+        for (name, facts) in every_condition() {
+            let r = selftest_verdict(&facts);
+            assert_eq!(
+                r.reasons.len(),
+                r.reason_codes.len(),
+                "{name}: {:?} vs {:?}",
+                r.reasons,
+                r.reason_codes
+            );
+            assert!(
+                !r.reason_codes.is_empty(),
+                "{name}: a verdict always says why"
+            );
+        }
+    }
+
+    #[test]
+    fn the_codes_are_the_same_reading_the_wire_makes() {
+        // `derive_reason_codes` re-reads the SAME conditions from the numbers
+        // for telemetry. Two readings of one rule is exactly the seam this
+        // codebase keeps finding bugs in, so it is pinned rather than hoped
+        // for: if either side gains a condition the other lacks, this fails.
+        for (name, facts) in every_condition() {
+            let r = selftest_verdict(&facts);
+            assert_eq!(
+                r.reason_codes,
+                crate::telemetry::derive_reason_codes(&r),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_clean_take_says_so_in_both_lists() {
+        let (_, clean) = every_condition().remove(0);
+        let r = selftest_verdict(&clean);
+        assert_eq!(r.verdict, SelfTestVerdict::Pass);
+        assert_eq!(r.reason_codes, vec![QualityReason::Clean]);
+        assert_eq!(r.reasons.len(), 1);
+    }
+
+    #[test]
+    fn an_older_stored_report_deserialises_without_codes() {
+        // `reason_codes` is additive: a payload written before it existed must
+        // still load, and must not claim a condition it never carried.
+        let json = serde_json::json!({
+            "ok": true,
+            "verdict": "pass",
+            "reasons": ["Jevnt opptak, ingen dropp"],
+            "drops": 0,
+            "dups": 0,
+            "xruns": 0,
+            "expectedSec": 10.0,
+            "measuredSec": 10.0,
+            "gapSec": 0.0,
+            "rmsDb": -20.0,
+            "silenceRatio": 0.0,
+            "sizeBytes": 4_000_000,
+            "nativeSampleRate": 48_000,
+            "forcedSampleRate": 48_000,
+        });
+        let r: SelfTestReport = serde_json::from_value(json).unwrap();
+        assert!(r.reason_codes.is_empty());
+        assert_eq!(r.reasons.len(), 1);
     }
 }
 

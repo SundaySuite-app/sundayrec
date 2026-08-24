@@ -37,7 +37,7 @@ use crate::schedule::{ScheduleSlot, SpecialRecording};
 /// (`'stereo' | 'monoL' | 'monoR' | 'monoMix'`, see `types/index.ts:1`), so the
 /// tags are camelCase — NOT snake_case — to match stored/exported settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ChannelMode.ts")]
+#[ts(export, export_to = "ChannelMode.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum ChannelMode {
     /// Both channels, stereo.
@@ -56,7 +56,7 @@ pub enum ChannelMode {
 /// audio). The explicit rates force that rate via `-ar`. Serialised camelCase
 /// (`"auto" | "r44100" | "r48000" | "r96000"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SampleRate.ts")]
+#[ts(export, export_to = "SampleRate.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum SampleRate {
     /// Capture at the device's native rate (omit `-ar`).
@@ -72,7 +72,7 @@ pub enum SampleRate {
 /// Output audio container/codec. Serialised lowercase to match the Electron
 /// union (`'mp3' | 'wav' | 'flac' | 'aac'`, see `types/index.ts:2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FileFormat.ts")]
+#[ts(export, export_to = "FileFormat.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FileFormat {
     Mp3,
@@ -85,7 +85,7 @@ pub enum FileFormat {
 /// Electron union (`'date' | 'church' | 'plain' | 'datetime'`,
 /// see `types/index.ts:3`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FilenamePattern.ts")]
+#[ts(export, export_to = "FilenamePattern.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FilenamePattern {
     /// Date only (the Electron default).
@@ -103,7 +103,7 @@ pub enum FilenamePattern {
 /// (`/v1/update/{channel}`, see [`crate::update::channel_feed_url`]), so a
 /// renamed variant is a renamed live URL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/UpdateChannel.ts")]
+#[ts(export, export_to = "UpdateChannel.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannel {
     /// Versions that have already been through a real Sunday somewhere. Where
@@ -181,7 +181,7 @@ where
 /// the recorder reads are DERIVED from this map in [`Settings::validate`].
 /// Serialised camelCase to match the Electron `DeviceChannels`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/DeviceChannels.ts")]
+#[ts(export, export_to = "DeviceChannels.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceChannels {
     /// 0-based device channel routed to the LEFT output. Clamped 0..=31.
@@ -199,7 +199,7 @@ pub struct DeviceChannels {
 /// `store.get(key, default)` semantics, see [`Settings::from_json_merged`].
 /// Numeric ranges are enforced separately by [`Settings::validate`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/Settings.ts")]
+#[ts(export, export_to = "Settings.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     // ── System ──────────────────────────────────────────────────────────────
@@ -358,13 +358,27 @@ pub struct Settings {
     /// gets 15.
     #[serde(default = "default_pre_roll_seconds")]
     pub pre_roll_seconds: i32,
-    /// Advanced opt-in for the ROLLING pre-roll buffer (R4). Distinct from
-    /// `pre_roll_seconds` on purpose and NOT derivable from it: the buffer is a
-    /// continuous background capture on the recording microphone, so a user who
-    /// picked a pre-roll length but never flipped this stays un-armed — deriving
-    /// it from `pre_roll_seconds > 0` would silently start that capture for
-    /// them. The renderer's `preroll-lifecycle.ts` is the gatekeeper that reads
-    /// it. Default false.
+    /// ⚠️ **DEPRECATED — stored, never read.** Kept only so an existing profile
+    /// survives a round-trip through `settings_save` unchanged.
+    ///
+    /// It was the advanced opt-in for the ROLLING pre-roll buffer (R4), and the
+    /// doc here used to name `preroll-lifecycle.ts` as its gatekeeper. That
+    /// renderer is gone: the redesigned Advanced screen shows the SECONDS and
+    /// only the seconds, so the seconds had to become the switch — otherwise a
+    /// screen saying «15 sekunder» would buffer nothing. `app/state/preroll.ts`
+    /// derives `enabled` from `pre_roll_seconds > 0`, and telemetry's
+    /// `WireSettings::preroll_enabled` derives it the same way. Nothing reads
+    /// THIS field, in Rust or in the shell.
+    ///
+    /// The old reasoning — "not derivable, or a user who picked a length but
+    /// never flipped the switch would get a background capture they never asked
+    /// for" — was answered by removing the second control instead: the length
+    /// IS the asking now. See `docs/APP-SHELL.md` («Forhåndsbufferen er ÉN
+    /// kontroll nå»).
+    ///
+    /// Do NOT delete the field. Stored profiles carry `prerollEnabled`, and
+    /// `Settings` deserialises strictly enough that dropping a key nobody reads
+    /// is churn with a migration attached. It costs one bool.
     #[serde(default)]
     pub preroll_enabled: bool,
     // (v0.15: `trimSilence` — a control with no consumer — and `showLiveLevels`
@@ -411,7 +425,16 @@ pub struct Settings {
     /// [`crate::schedule`] for the decision logic.
     ///
     /// ⚠️ Read them through [`Settings::active_slots`], never directly: that is
-    /// the one place `auto_record_enabled` is honoured.
+    /// the one place `auto_record_enabled` is honoured. The claim was false for
+    /// a while — both wake commands read this field raw, so a machine with «Ta
+    /// opp automatisk» OFF still woke at 10:50 on a Sunday for a recording the
+    /// scheduler would refuse to make, and `wake_verify` then reported the
+    /// wakes it had itself cancelled as missing.
+    ///
+    /// The ONE deliberate raw reader is [`crate::telemetry::WireSettings`]'s
+    /// `slot_count`, which reports what is CONFIGURED and carries
+    /// `auto_record_enabled` beside it (see that field's doc). Anything else
+    /// that reads `slots` directly is a bug in waiting.
     #[serde(default)]
     pub slots: Vec<ScheduleSlot>,
     /// One-off dated recordings (concerts, special services). Empty by default.
@@ -1321,6 +1344,40 @@ mod tests {
         for key in ["deviceChannels", "prerollEnabled"] {
             assert!(obj.contains_key(key), "missing camelCase key {key}");
         }
+    }
+
+    #[test]
+    fn preroll_enabled_is_stored_but_never_the_answer() {
+        // The doc on the field used to name a reader (`preroll-lifecycle.ts`)
+        // that no longer exists, which is how a dead field keeps looking alive.
+        // The seconds ARE the switch now — in the shell (`app/state/preroll.ts`)
+        // and on the wire — so the stored bool must not be able to change any
+        // answer. Both directions, because "false wins" and "true wins" are two
+        // different ways of re-wiring it by accident.
+        let armed_but_flag_off = Settings {
+            pre_roll_seconds: 15,
+            preroll_enabled: false,
+            ..Default::default()
+        };
+        let unarmed_but_flag_on = Settings {
+            pre_roll_seconds: 0,
+            preroll_enabled: true,
+            ..Default::default()
+        };
+        assert!(
+            crate::telemetry::WireSettings::from_settings(&armed_but_flag_off).preroll_enabled,
+            "15 s with the legacy flag off is pre-roll ON — the seconds decide"
+        );
+        assert!(
+            !crate::telemetry::WireSettings::from_settings(&unarmed_but_flag_on).preroll_enabled,
+            "0 s with the legacy flag on is pre-roll OFF — the seconds decide"
+        );
+
+        // …and it still survives a save/load round-trip, which is the ONLY
+        // reason the field is still here.
+        let json = serde_json::to_string(&unarmed_but_flag_on).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert!(back.preroll_enabled, "a stored profile keeps its own value");
     }
 
     #[test]

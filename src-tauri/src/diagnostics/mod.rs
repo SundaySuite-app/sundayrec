@@ -43,7 +43,7 @@ use ts_rs::TS;
 /// subset of the Electron `DiagnosticsReport`; `clipboardOk` is dropped because
 /// the clipboard write is a UI-side concern (`navigator.clipboard`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/DiagnosticsReport.ts")]
+#[ts(export, export_to = "DiagnosticsReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsReport {
     /// The full markdown report (rendered by the panel + copied to clipboard).

@@ -76,7 +76,17 @@ classicDirectshow: boolean,
  */
 autoUpdate: boolean, launchAtLogin: boolean, wakeFromSleep: boolean, 
 /**
- * How many weekly slots are configured — not what they are called.
+ * How many weekly slots are CONFIGURED — not what they are called, and
+ * deliberately not how many are active.
+ *
+ * ⚠️ The one place in the codebase that reads `Settings::slots` raw rather
+ * than through [`crate::settings::Settings::active_slots`], and it is a
+ * choice, not an oversight: `auto_record_enabled` travels on this same
+ * payload, so "3 slots, switch off" and "0 slots" stay distinguishable on
+ * the receiving end. Gating the count here would fold the two into one
+ * number and lose exactly the difference worth reporting. Every OTHER
+ * reader — the scheduler and both wake commands — must go through
+ * `active_slots`.
  */
 slotCount: number, 
 /**

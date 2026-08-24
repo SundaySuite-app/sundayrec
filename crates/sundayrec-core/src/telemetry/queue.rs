@@ -76,7 +76,7 @@ pub const QUEUE_MAX: usize = 50;
 /// Where a queued payload is in its lifecycle. Serialised lowercase, matching
 /// the `status` CHECK constraint in migration 0005.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryStatus.ts")]
+#[ts(export, export_to = "TelemetryStatus.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryStatus {
     /// Waiting for its `next_attempt` time to pass.
@@ -266,10 +266,7 @@ pub fn overflow_victims(entries: &[TelemetryEntry], cap: usize) -> Vec<String> {
 /// A compact status line for the settings panel: how many are waiting, how old
 /// the oldest is, and what went wrong last.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../src/lib/bindings/TelemetryQueueStatus.ts"
-)]
+#[ts(export, export_to = "TelemetryQueueStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryQueueStatus {
     /// Rows not yet delivered (pending + sending).

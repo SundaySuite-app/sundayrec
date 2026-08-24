@@ -65,7 +65,7 @@ pub mod code {
 /// How loud a [`BackendWarning`] is. Serialised lowercase to match the
 /// renderer's `'warn' | 'error'` union.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WarnSeverity.ts")]
+#[ts(export, export_to = "WarnSeverity.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum WarnSeverity {
     /// Something is degraded; the recording can still happen.
@@ -82,7 +82,7 @@ pub enum WarnSeverity {
 /// backend that learns a new warning before the renderer does still says
 /// something true instead of nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/BackendWarning.ts")]
+#[ts(export, export_to = "BackendWarning.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct BackendWarning {
     /// Stable snake_case code — see [`code`].

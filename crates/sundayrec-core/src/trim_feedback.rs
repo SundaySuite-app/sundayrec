@@ -46,7 +46,7 @@ use crate::detect::SuggestedTrim;
 /// than copying the two numbers out, so the sign convention above is stated in
 /// exactly one place and cannot be inverted by a second, well-meaning copy.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TrimDeltas.ts")]
+#[ts(export, export_to = "TrimDeltas.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TrimDeltas {
     /// Seconds the settled start sits AFTER the proposed start (negative = before).

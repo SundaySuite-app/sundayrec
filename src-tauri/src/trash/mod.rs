@@ -86,7 +86,7 @@ pub const SIDECAR_SUFFIXES: [&str; 10] = [
 
 /// One file inside the trash: where it is now, and where it came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TrashItem.ts")]
+#[ts(export, export_to = "TrashItem.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TrashItem {
     /// Absolute path the file had before it was trashed.
@@ -98,7 +98,7 @@ pub struct TrashItem {
 /// One trashed recording — the media file plus the companions that moved with
 /// it. The unit the Papirkurv view lists, restores and purges.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TrashEntry.ts")]
+#[ts(export, export_to = "TrashEntry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TrashEntry {
     /// Stable id (UUID v7 — time-ordered, so the manifest reads chronologically).

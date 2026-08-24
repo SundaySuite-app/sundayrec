@@ -52,6 +52,17 @@
 //! loop, and the non-blocking one turns a failed dialog into an app that cannot
 //! be quit. A refusal + a notification degrades the other way — worst case the
 //! volunteer sees no notice and presses again, which is the outcome they wanted.
+//!
+//! ## …and the updater's restart, which walked past BOTH
+//!
+//! [`relaunch_plan`] is the third rule in this file for the same reason the
+//! second one exists: `update::relaunch` was neither a close nor a quit, so it
+//! reached neither guard — and «Start på nytt og installer» during a service
+//! stopped the capture and killed the process on top of it, with one click. It
+//! draws the same line as the other two (a test asserts all three agree, state
+//! for state); what it cannot do is refuse afterwards, because tauri's
+//! `prevent_exit` is a no-op for a restart. The wait therefore has to come
+//! first.
 
 use crate::recorder::RecorderState;
 use crate::tray::TrayLang;
@@ -249,6 +260,91 @@ pub fn quit_action(state: RecorderState, prior_refusal_age_ms: Option<u64>) -> Q
         // but the process waits for the file.
         RecorderState::Stopping => QuitAction::WaitOnly,
         RecorderState::Idle | RecorderState::Stopped | RecorderState::Failed => QuitAction::ExitNow,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//   The update's relaunch — the fourth way out of the process
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// What a staged-update **relaunch** must do before the process may be replaced.
+///
+/// ## The hole this closes
+///
+/// [`quit_action`] guards Cmd+Q, the app menu and the tray. It never saw the
+/// updater: `update::relaunch` called `RecorderEngine::stop()` and then killed
+/// the process itself, so «Start på nytt og installer» mid-service was the
+/// pre-guard outcome reached with one click. `stop()` does not block — it
+/// signals the supervisor and returns — so the concat, the delivery transcode
+/// and the history row all died with the process, and the recording's rescue
+/// fell back to the next launch's recovery scan.
+///
+/// ## Why the wait cannot be bolted on where the quit's is
+///
+/// The quit's wait works by REFUSING the exit (`api.prevent_exit()` in the
+/// `ExitRequested` handler) and finishing later. That door is nailed shut for a
+/// restart: tauri's `ExitRequestApi::prevent_exit` is documented — and
+/// implemented — as a no-op when the code is `RESTART_EXIT_CODE`
+/// (`if self.code != Some(RESTART_EXIT_CODE)`, tauri 2.11.5 `src/app.rs`), and
+/// `AppHandle::restart()` called on the main thread skips the event entirely.
+/// So the relaunch cannot be taken back once asked for: the wait must happen
+/// BEFORE tauri is asked to restart at all. That is what this type sequences —
+/// [`RelaunchPlan::waits_for_the_file`] is the shell's instruction to hold the
+/// restart, not to undo it.
+///
+/// ## Why there is no `Refuse` arm
+///
+/// The quit refuses the first press because a quit is one keystroke. Reaching a
+/// relaunch takes a check, a download and a deliberate "restart & install", and
+/// a refusal that the shell cannot explain (the update panel's own text belongs
+/// to the renderer) would read as a dead button. The recording is not sacrificed
+/// by that choice: [`RelaunchPlan::StopThenWait`] stops it the graceful way and
+/// the file lands before the restart. A confirm step, if the renderer ever wants
+/// one, belongs in the panel that knows what it is asking about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelaunchPlan {
+    /// Nothing is running: restart now, exactly as the updater always did.
+    Now,
+    /// A capture is live: stop it the graceful way, then wait for the file
+    /// before restarting.
+    StopThenWait,
+    /// The stop is already in flight (`Stopping` — i.e. inside `finalize_pending`,
+    /// where the concat and the delivery transcode live): nothing to stop, but
+    /// the restart still waits for the file.
+    WaitOnly,
+}
+
+impl RelaunchPlan {
+    /// Whether the shell must call `RecorderEngine::stop()` first.
+    ///
+    /// Read by the shell so the sequence is this tested function's answer rather
+    /// than a second copy of the rule in an untestable Tauri closure.
+    pub fn stops_the_capture(self) -> bool {
+        matches!(self, Self::StopThenWait)
+    }
+
+    /// Whether the restart must wait for the recorder to reach rest first.
+    ///
+    /// `false` is the ONLY way a restart happens immediately, so this is the
+    /// predicate that decides whether a service survives the update.
+    pub fn waits_for_the_file(self) -> bool {
+        matches!(self, Self::StopThenWait | Self::WaitOnly)
+    }
+}
+
+/// THE relaunch decision. Pure, exhaustively matched (no `_` arm), so a new
+/// [`RecorderState`] forces a choice here rather than defaulting into "restart
+/// on top of a live service".
+///
+/// The state split is [`quit_action`]'s, minus the refuse/confirm dance: live
+/// stops-then-waits, finalising waits, at rest restarts.
+pub fn relaunch_plan(state: RecorderState) -> RelaunchPlan {
+    match state {
+        RecorderState::Preparing | RecorderState::Recording | RecorderState::Reconnecting => {
+            RelaunchPlan::StopThenWait
+        }
+        RecorderState::Stopping => RelaunchPlan::WaitOnly,
+        RecorderState::Idle | RecorderState::Stopped | RecorderState::Failed => RelaunchPlan::Now,
     }
 }
 
@@ -832,5 +928,115 @@ mod tests {
             wait_outcome(RecorderState::Stopped, u64::MAX, 1_000),
             QuitWait::Settled
         );
+    }
+
+    // ── The updater's relaunch (the fourth way out of the process) ───────────
+
+    #[test]
+    fn a_live_capture_is_stopped_and_waited_out_before_the_update_restarts() {
+        // THE regression: `update::relaunch` used to call `RecorderEngine::stop()`
+        // and kill the process on top of it. `stop()` only signals the
+        // supervisor, so the concat + delivery transcode + history row died with
+        // the process — the pre-guard outcome, reached with one click on
+        // «Start på nytt og installer».
+        for state in [
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+        ] {
+            let plan = relaunch_plan(state);
+            assert_eq!(plan, RelaunchPlan::StopThenWait, "{state:?}");
+            assert!(plan.stops_the_capture(), "{state:?} must stop gracefully");
+            assert!(
+                plan.waits_for_the_file(),
+                "{state:?} must hold the restart until the file lands"
+            );
+        }
+    }
+
+    #[test]
+    fn finalising_waits_for_the_file_without_a_second_stop() {
+        // `Stopping` is emitted BEFORE `finalize_pending`, so the transcode of a
+        // 90-minute service happens inside it. Nothing left to stop; everything
+        // left to lose.
+        let plan = relaunch_plan(RecorderState::Stopping);
+        assert_eq!(plan, RelaunchPlan::WaitOnly);
+        assert!(!plan.stops_the_capture());
+        assert!(plan.waits_for_the_file());
+    }
+
+    #[test]
+    fn at_rest_the_update_restarts_immediately_exactly_as_before() {
+        // No behaviour change outside a session: the whole point of an update
+        // panel is that pressing restart restarts.
+        for state in [
+            RecorderState::Idle,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            let plan = relaunch_plan(state);
+            assert_eq!(plan, RelaunchPlan::Now, "{state:?}");
+            assert!(!plan.stops_the_capture(), "{state:?}");
+            assert!(!plan.waits_for_the_file(), "{state:?}");
+        }
+    }
+
+    #[test]
+    fn no_state_that_hides_the_window_lets_the_update_restart_straight_through() {
+        // The three doors out of the process must draw the SAME line, or the one
+        // that draws it differently is the one that loses the service.
+        // `close_action` hides, `quit_action` refuses-or-waits, and the relaunch
+        // waits — for exactly the same states.
+        for state in [
+            RecorderState::Idle,
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+            RecorderState::Stopping,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            assert_eq!(
+                relaunch_plan(state).waits_for_the_file(),
+                close_action(state) != CloseAction::Exit,
+                "{state:?}: the relaunch and the close button disagree about \
+                 whether something is at stake"
+            );
+            assert_eq!(
+                relaunch_plan(state).waits_for_the_file(),
+                quit_action(state, None) != QuitAction::ExitNow,
+                "{state:?}: the relaunch and the quit disagree"
+            );
+        }
+    }
+
+    #[test]
+    fn the_relaunch_never_restarts_before_it_waits() {
+        // The sequence, as a rule rather than as a comment: `Now` is the only
+        // plan the shell may act on synchronously, and it is the only one that
+        // does not wait. Anything else must reach the restart THROUGH the wait —
+        // which matters because tauri cannot take a restart back
+        // (`prevent_exit` is a no-op for `RESTART_EXIT_CODE`).
+        for state in [
+            RecorderState::Idle,
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+            RecorderState::Stopping,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            let plan = relaunch_plan(state);
+            assert_eq!(
+                plan == RelaunchPlan::Now,
+                !plan.waits_for_the_file(),
+                "{state:?}"
+            );
+            // A stop is never ordered without the wait that collects its file.
+            assert!(
+                !plan.stops_the_capture() || plan.waits_for_the_file(),
+                "{state:?}: stopping without waiting is the old bug"
+            );
+        }
     }
 }

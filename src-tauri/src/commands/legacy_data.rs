@@ -42,7 +42,7 @@ const LEGACY_DIR_NAME: &str = "SundayRec";
 
 /// What the scan found: where the old profile is and how many bytes it holds.
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/LegacyDataInfo.ts")]
+#[ts(export, export_to = "LegacyDataInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct LegacyDataInfo {
     /// Absolute path of the old Electron profile directory.

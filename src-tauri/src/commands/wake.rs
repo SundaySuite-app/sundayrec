@@ -13,7 +13,9 @@ use chrono::Local;
 use tauri::State;
 
 use sundayrec_core::schedule::upcoming_dates;
-use sundayrec_core::wake::{detect_capabilities, wake_points, WakeCapabilities, WAKE_LEAD_MINUTES};
+use sundayrec_core::wake::{
+    detect_capabilities, wake_idle_reason, wake_points, WakeCapabilities, WAKE_LEAD_MINUTES,
+};
 
 use sundayrec_core::wake::WakeFailureEntry;
 
@@ -66,6 +68,11 @@ pub async fn wake_verify(db: State<'_, Db>) -> AppResult<WakeStatus> {
 
 /// (Re)register OS wake timers for the upcoming schedule now. User-initiated, so
 /// `allow_admin = true` — a Mac may show one admin prompt.
+///
+/// The result is the whole point of the command: it is the ONE wake path that
+/// may prompt for elevation, so `ok`/`reason`/`message` is how the volunteer
+/// learns whether the machine will actually wake up — and [`WakeIdleReason`] is
+/// how they learn why an `ok` answer armed nothing.
 #[tauri::command]
 pub async fn wake_reschedule(
     engine: State<'_, WakeEngine>,
@@ -73,10 +80,16 @@ pub async fn wake_reschedule(
 ) -> AppResult<WakeResult> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let now = Local::now().naive_local();
-    let upcoming = upcoming_dates(&s.slots, &s.special_recordings, now, WAKE_HORIZON_DAYS);
-    Ok(engine
+    let upcoming = upcoming_for_wake(&s, now);
+    let mut res = engine
         .reschedule(&upcoming, now, s.wake_from_sleep, true)
-        .await)
+        .await;
+    // "Armed 0 wakes" is not an answer to a button press. Say which nothing it
+    // is — the level-1 switch, or an empty horizon.
+    if res.ok && res.count.unwrap_or(0) == 0 {
+        res.idle_reason = wake_idle_reason(s.auto_record_enabled, upcoming.len());
+    }
+    Ok(res)
 }
 
 /// Schedule a manual test-wake `seconds_ahead` from now (default 60 s). Returns
@@ -106,11 +119,148 @@ pub async fn wake_clear_failure_history(db: State<'_, Db>) -> AppResult<bool> {
     Ok(true)
 }
 
+/// The recording starts inside the wake horizon — **through
+/// [`Settings::active_slots`], never `settings.slots`**.
+///
+/// ⚠️ Both wake commands read the schedule, and both used the raw list. That is
+/// the level-1 switch («Ta opp automatisk») honoured everywhere except the two
+/// places that decide when the MACHINE gets out of bed: with the switch off,
+/// `wake_reschedule` armed a 10:50 wake for a 11:00 recording the scheduler
+/// would then refuse to make, and `wake_verify` reported the cancelled wakes as
+/// missing and told the volunteer their machine was misconfigured. One helper,
+/// so the two cannot drift apart again — and so the rule has one test rather
+/// than two hopes.
+fn upcoming_for_wake(
+    s: &sundayrec_core::settings::Settings,
+    now: chrono::NaiveDateTime,
+) -> Vec<chrono::NaiveDateTime> {
+    upcoming_dates(
+        s.active_slots(),
+        &s.special_recordings,
+        now,
+        WAKE_HORIZON_DAYS,
+    )
+}
+
 /// The wake points we expect the OS to have scheduled, derived from the current
 /// schedule (upcoming starts minus the lead).
 async fn expected_wakes(pool: &sqlx::SqlitePool) -> AppResult<Vec<chrono::NaiveDateTime>> {
     let s = settings::load(pool).await.unwrap_or_default();
     let now = Local::now().naive_local();
-    let upcoming = upcoming_dates(&s.slots, &s.special_recordings, now, WAKE_HORIZON_DAYS);
-    Ok(wake_points(&upcoming, now, WAKE_LEAD_MINUTES))
+    Ok(wake_points(
+        &upcoming_for_wake(&s, now),
+        now,
+        WAKE_LEAD_MINUTES,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sundayrec_core::schedule::ScheduleSlot;
+    use sundayrec_core::settings::Settings;
+    use sundayrec_core::wake::WakeIdleReason;
+
+    /// A profile with one weekly slot, Sunday 11:00.
+    fn sunday_profile(auto_record_enabled: bool) -> Settings {
+        Settings {
+            auto_record_enabled,
+            slots: vec![ScheduleSlot {
+                // 6 = Sunday (0 = Monday).
+                days: vec![6],
+                start: "11:00".to_string(),
+                stop: "12:30".to_string(),
+                max: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// A Wednesday, so the next Sunday slot is comfortably inside the horizon.
+    fn now() -> chrono::NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(2026, 8, 19)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap()
+    }
+
+    #[test]
+    fn wake_reschedule_arms_nothing_when_auto_record_is_off() {
+        // The `wake_reschedule` site. Raw `settings.slots` here woke the machine
+        // at 10:50 on a Sunday for a recording the scheduler refuses to make.
+        assert!(
+            upcoming_for_wake(&sunday_profile(false), now()).is_empty(),
+            "a disarmed weekly plan must not wake the machine"
+        );
+        // …and the switch is the only thing that changed.
+        assert_eq!(
+            upcoming_for_wake(&sunday_profile(true), now()).len(),
+            1,
+            "armed, the same profile plans the coming Sunday"
+        );
+    }
+
+    #[test]
+    fn wake_verify_expects_nothing_when_auto_record_is_off() {
+        // The `expected_wakes` site (the `wake_verify` command). Raw
+        // `settings.slots` here made verification report the wakes it had itself
+        // cancelled as MISSING — an honest OS blamed for the app's own
+        // bookkeeping.
+        let expected = wake_points(
+            &upcoming_for_wake(&sunday_profile(false), now()),
+            now(),
+            WAKE_LEAD_MINUTES,
+        );
+        assert!(expected.is_empty(), "nothing planned, nothing expected");
+        assert!(!wake_points(
+            &upcoming_for_wake(&sunday_profile(true), now()),
+            now(),
+            WAKE_LEAD_MINUTES
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_dated_special_still_wakes_a_disarmed_profile() {
+        // `active_slots` gates the WEEKLY plan only: a concert somebody entered
+        // by hand is not covered by «Ta opp automatisk», so the machine must
+        // still get out of bed for it — and the button must not claim the plan
+        // is switched off when it just armed one.
+        let mut s = sunday_profile(false);
+        s.special_recordings = vec![sundayrec_core::schedule::SpecialRecording {
+            id: None,
+            date: "2026-08-21".to_string(),
+            name: "Konsert".to_string(),
+            start: "19:00".to_string(),
+            stop: "20:30".to_string(),
+            device_id: None,
+        }];
+        let upcoming = upcoming_for_wake(&s, now());
+        assert_eq!(upcoming.len(), 1);
+        assert_eq!(
+            wake_idle_reason(s.auto_record_enabled, upcoming.len()),
+            None
+        );
+    }
+
+    #[test]
+    fn an_empty_result_names_the_switch_that_emptied_it() {
+        // What `wake_reschedule` hands the UI when it armed nothing.
+        assert_eq!(
+            wake_idle_reason(
+                false,
+                upcoming_for_wake(&sunday_profile(false), now()).len()
+            ),
+            Some(WakeIdleReason::AutoRecordOff)
+        );
+        let empty = Settings::default();
+        assert_eq!(
+            wake_idle_reason(
+                empty.auto_record_enabled,
+                upcoming_for_wake(&empty, now()).len()
+            ),
+            Some(WakeIdleReason::NothingUpcoming),
+            "armed but nothing scheduled is a different nothing"
+        );
+    }
 }

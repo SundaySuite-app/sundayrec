@@ -65,8 +65,8 @@ use sundayrec_core::wake::{
     classify_win_error, compare_expected_to_observed, decide_reschedule, key_of,
     parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched, parse_pmset_standby,
     parse_powercfg_waketimers, parse_win_wake_timers, parse_wmic_battery_status, wake_points,
-    SleepConfig, VerifiedWake, WakeErrorReason, WakePlatform, WakeRescheduleAction, WinErrorKind,
-    WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
+    SleepConfig, VerifiedWake, WakeErrorReason, WakeIdleReason, WakePlatform, WakeRescheduleAction,
+    WinErrorKind, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
 };
 
 use crate::util::lock_recover;
@@ -81,7 +81,7 @@ use win_timer::{plan_wake_timers, WaitableTimers};
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/WakeResult.ts")]
+#[ts(export, export_to = "WakeResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeResult {
     pub ok: bool,
@@ -91,6 +91,16 @@ pub struct WakeResult {
     /// Why it failed: `disabled | cancelled | permission | unsupported | error`.
     pub reason: Option<String>,
     pub message: Option<String>,
+    /// Why a SUCCESSFUL reschedule armed nothing (`ok: true, count: 0`).
+    ///
+    /// The engine never sets this — it does not know about the level-1 switch,
+    /// only about the points it was handed. `commands::wake::wake_reschedule`
+    /// fills it in, because "nothing to arm" and "why nothing to arm" are the
+    /// difference between a button that looks broken and one that explains
+    /// itself. `#[serde(default)]` so an older stored/queued payload still
+    /// deserialises.
+    #[serde(default)]
+    pub idle_reason: Option<WakeIdleReason>,
 }
 
 impl WakeResult {
@@ -101,6 +111,7 @@ impl WakeResult {
             next_wake,
             reason: None,
             message: None,
+            idle_reason: None,
         }
     }
     fn fail(reason: WakeErrorReason, message: Option<String>) -> Self {
@@ -110,13 +121,14 @@ impl WakeResult {
             next_wake: None,
             reason: Some(reason.as_str().to_string()),
             message,
+            idle_reason: None,
         }
     }
 }
 
 /// One OS-observed wake, for the verification panel.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/ObservedWake.ts")]
+#[ts(export, export_to = "ObservedWake.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ObservedWake {
     pub scheduled_at: String,
@@ -131,7 +143,7 @@ pub struct ObservedWake {
 /// embed produces a broken relative import path; commands returning core types
 /// separately are the codebase convention).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/WakeStatus.ts")]
+#[ts(export, export_to = "WakeStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeStatus {
     pub expected_wakes: Vec<String>,
@@ -143,7 +155,7 @@ pub struct WakeStatus {
 
 /// Result of a "fix sleep settings" action.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/WakeFixResult.ts")]
+#[ts(export, export_to = "WakeFixResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeFixResult {
     pub ok: bool,
@@ -369,7 +381,7 @@ fn schedule_windows(
 /// `testWake`'s return: on success a `jobId` the renderer can cancel, plus the
 /// scheduled wall-clock time the resume handler will compare against.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TestWakeResult.ts")]
+#[ts(export, export_to = "TestWakeResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TestWakeResult {
     pub ok: bool,

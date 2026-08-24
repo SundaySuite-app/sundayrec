@@ -35,7 +35,7 @@ const STANDARD_RATES: [u32; 6] = [44_100, 48_000, 88_200, 96_000, 176_400, 192_0
 /// the user can see they're getting the low-latency multichannel path — the rest
 /// of the picker UI is identical across backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/AudioBackendKind.ts")]
+#[ts(export, export_to = "AudioBackendKind.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum AudioBackendKind {
     /// Windows ASIO (low-latency, single-device multichannel).
@@ -50,7 +50,7 @@ pub enum AudioBackendKind {
 /// the same string today (ASIO addresses devices by name); `id` is kept separate
 /// so a later backend can use a stabler handle without changing the contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/AsioDevice.ts")]
+#[ts(export, export_to = "AsioDevice.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct AsioDevice {
     /// Stable-ish identifier the recorder addresses (the ASIO device name).
@@ -74,7 +74,7 @@ pub struct AsioDevice {
 /// *count*, not per-channel driver names, so v1 labels are `"Input N"`; true
 /// driver-supplied names would need the ASIO SDK's `ASIOGetChannelInfo` (TODO).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/AudioChannel.ts")]
+#[ts(export, export_to = "AudioChannel.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct AudioChannel {
     /// 0-based channel index as the recorder addresses it.
@@ -160,7 +160,7 @@ pub fn route_frame(plan: &[ChannelRoute], frame: &[f32], out: &mut Vec<f32>) {
 /// ASIO devices and the host's cpal (WASAPI/CoreAudio) devices share this one
 /// shape so the frontend renders them identically, differing only in the badge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TaggedAudioInput.ts")]
+#[ts(export, export_to = "TaggedAudioInput.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TaggedAudioInput {
     /// Identifier the recorder addresses (device name today).

@@ -123,7 +123,7 @@ pub struct PrerollSettings {
 /// `start_offset_ms` are the core mat's verdict, kept on the clip for
 /// diagnostics.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/PrerollClip.ts")]
+#[ts(export, export_to = "PrerollClip.ts")]
 pub struct PrerollClip {
     /// Absolute path to the trimmed clip.
     pub raw_path: String,
@@ -138,7 +138,7 @@ pub struct PrerollClip {
 
 /// Which implementation is (or would be) running the buffer.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export, export_to = "../../src/lib/bindings/PrerollEngineKind.ts")]
+#[ts(export, export_to = "PrerollEngineKind.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum PrerollEngineKind {
     /// The cpal buffer: one stream, rotating segments, byte-copy harvest.
@@ -149,7 +149,7 @@ pub enum PrerollEngineKind {
 
 /// The pre-roll status surfaced to the UI ("preroll aktiv").
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/PrerollStatus.ts")]
+#[ts(export, export_to = "PrerollStatus.ts")]
 pub struct PrerollStatus {
     /// Whether the rolling capture loop is currently active.
     pub active: bool,

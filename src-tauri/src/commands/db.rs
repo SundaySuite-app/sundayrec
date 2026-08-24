@@ -47,7 +47,7 @@ pub async fn recording_update_note(
 /// The outcome of one auto-delete prune pass. Mirrors the Electron
 /// `cleanupOldRecordings` bookkeeping (`deleted`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/PruneSummary.ts")]
+#[ts(export, export_to = "PruneSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PruneSummary {
     /// Recordings whose file was deleted and history row dropped.

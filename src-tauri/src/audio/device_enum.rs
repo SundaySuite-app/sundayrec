@@ -41,7 +41,7 @@ use crate::media::ffmpeg::spawn_ffmpeg;
 /// The capture devices ffmpeg can see, split by direction. Audio inputs feed the
 /// recorder's mic match; video inputs feed the camera match.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Default)]
-#[ts(export, export_to = "../../src/lib/bindings/DeviceInventory.ts")]
+#[ts(export, export_to = "DeviceInventory.ts")]
 pub struct DeviceInventory {
     /// Microphones / line inputs ffmpeg enumerated (avfoundation index on macOS,
     /// dshow name on Windows). The VU meter still uses the cpal list; these carry
