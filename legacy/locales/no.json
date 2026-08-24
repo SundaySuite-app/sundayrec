@@ -362,6 +362,8 @@
         "wakeArmWord": {
           "idle": "Registrer vekkingen i operativsystemet nå. Kan kreve administratorpassord.",
           "ok": "Vekkingen er registrert i operativsystemet.",
+          "autoRecordOff": "Ingen vekkinger å registrere — «Ta opp automatisk» er av.",
+          "nothingUpcoming": "Ingen vekkinger å registrere — ingenting er planlagt framover.",
           "needsAdmin": "Trenger et administratorpassord — prøv igjen og svar på spørsmålet.",
           "disabled": "Slå på «Vekk maskinen fra dvale» først.",
           "unsupported": "Denne maskinen kan ikke vekkes av appen.",

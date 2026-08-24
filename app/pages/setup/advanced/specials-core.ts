@@ -183,11 +183,25 @@ export type WakeArmWord =
   /** Ikke forsøkt ennå — raden sier hva knappen kommer til å gjøre. */
   | "idle"
   | "ok"
+  /** Lyktes, men armet INGENTING: «Ta opp automatisk» er av. */
+  | "autoRecordOff"
+  /** Lyktes, men armet ingenting: ingenting ligger innenfor horisonten. */
+  | "nothingUpcoming"
   | "needsAdmin"
   | "disabled"
   | "unsupported"
   | "cancelled"
   | "failed";
+
+/** Det `wakeArmWord` trenger av `WakeResult`. */
+export interface WakeArmResult {
+  ok: boolean;
+  reason: string | null;
+  /** Hvor mange vekkinger som faktisk ble registrert. */
+  count?: number | null;
+  /** Hvorfor et VELLYKKET forsøk armet null (`WakeIdleReason`). */
+  idleReason?: string | null;
+}
 
 /**
  * Ett ord av `WakeResult`.
@@ -198,15 +212,26 @@ export type WakeArmWord =
  * «denne maskinen kan ikke vekkes» er det ikke. Å vise dem som én «det gikk
  * galt» ville kastet nettopp den forskjellen.
  *
+ * ⚠️ `ok: true` er heller ikke ETT svar. En vellykket runde som registrerte
+ * NULL vekkinger er ikke «vekkingen er registrert» — det er en knapp som ser
+ * ut som den virket. Bakenden sier hvilken ingenting det er (`idleReason`:
+ * bryteren er av, eller ingenting ligger innenfor horisonten), og den
+ * forskjellen er hele grunnen feltet finnes. Mangler den på et `count: 0`-svar
+ * (en eldre payload — feltet er `serde(default)`), faller vi til den generelle
+ * av de to, som er sann i begge tilfellene.
+ *
  * En ukjent `reason` faller til `failed`: en feil vi ikke har et ord for er
  * fortsatt en feil, og aldri «det gikk bra». Ren funksjon, så tabellen står
  * ett sted.
  */
-export function wakeArmWord(
-  result: { ok: boolean; reason: string | null } | null,
-): WakeArmWord {
+export function wakeArmWord(result: WakeArmResult | null): WakeArmWord {
   if (result === null) return "idle";
-  if (result.ok) return "ok";
+  if (result.ok) {
+    if ((result.count ?? 0) > 0) return "ok";
+    return result.idleReason === "autoRecordOff"
+      ? "autoRecordOff"
+      : "nothingUpcoming";
+  }
   switch (result.reason) {
     case "permission":
       return "needsAdmin";

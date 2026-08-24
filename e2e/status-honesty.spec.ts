@@ -155,6 +155,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
           nextWake: null,
           reason: "permission",
           message: null,
+          idleReason: null,
         },
       },
       settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
@@ -180,6 +181,7 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
           nextWake: "2026-12-24T10:50:00",
           reason: null,
           message: null,
+          idleReason: null,
         },
         wake_verify: WAKE_ARMED,
       },
@@ -194,5 +196,35 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
     await expect(page.getByTestId("adv-wake-arm")).toContainText(
       /registrert i operativsystemet/,
     );
+  });
+
+  test("et «ok» som armet NULL vekkinger blir ikke en «Lagret ✓»", async ({
+    page,
+  }) => {
+    // `ok: true, count: 0` er ikke et svar på et knappetrykk. Bakenden sier
+    // hvilken ingenting det er (`idleReason`), og raden skal si DET — en
+    // kvittering over «ingen vekkinger å registrere» er en knapp som ser ut
+    // som den virket.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        wake_reschedule: {
+          ok: true,
+          count: 0,
+          nextWake: null,
+          reason: null,
+          message: null,
+          idleReason: "autoRecordOff",
+        },
+      },
+      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      goto: "settings:general",
+    });
+
+    await page.getByTestId("adv-wake-arm-control-input").click();
+    await expect(page.getByTestId("adv-wake-arm")).toContainText(
+      /«Ta opp automatisk» er av/,
+    );
+    await expect(page.getByTestId("adv-wake-arm-receipt")).toHaveText("");
   });
 });

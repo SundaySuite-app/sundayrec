@@ -362,6 +362,8 @@
         "wakeArmWord": {
           "idle": "Register the wake-up with the operating system now. May ask for an administrator password.",
           "ok": "The wake-up is registered with the operating system.",
+          "autoRecordOff": "No wake-ups to register — «Record automatically» is off.",
+          "nothingUpcoming": "No wake-ups to register — nothing is scheduled ahead.",
           "needsAdmin": "Needs an administrator password — try again and answer the prompt.",
           "disabled": "Turn on «Wake the machine from sleep» first.",
           "unsupported": "This machine cannot be woken by the app.",

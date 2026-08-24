@@ -64,6 +64,7 @@ import {
   specialRows,
   wakeArmWord,
   wakeWord,
+  type WakeArmResult,
   withoutIndex,
   withSlot,
   withSpecial,
@@ -397,12 +398,9 @@ function Specials() {
  */
 function WakeRow() {
   const [facts, setFacts] = useState<WakeFacts | null>(null);
-  const [armResult, setArmResult] = useState<{
-    ok: boolean;
-    reason: string | null;
-  } | null>(null);
+  const [armResult, setArmResult] = useState<WakeArmResult | null>(null);
   const [arming, setArming] = useState(false);
-  const { receipt, show: showReceipt } = useReceipt();
+  const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
   const on = settings.value.wakeFromSleep !== false;
 
   useEffect(() => {
@@ -426,17 +424,23 @@ function WakeRow() {
     try {
       const result = await window.api.wakeReschedule();
       setArmResult(result);
-      showReceipt(result.ok ? "saved" : "failed");
+      // ÉN vekking registrert er en kvittering. NULL registrerte er det ikke —
+      // «Lagret ✓» over «ingen vekkinger å registrere» er en knapp som ser ut
+      // som den virket. Setningen under raden bærer svaret i det tilfellet.
+      const armed = result.ok && (result.count ?? 0) > 0;
+      if (armed) showReceipt("saved");
+      else if (result.ok) resetReceipt();
+      else showReceipt("failed");
       // Helten på TA OPP leser `wake_verify`, ikke bryteren. Etter en armering
       // skal den lese den på nytt med én gang — ellers står den ærlige
       // «vi har ikke fått bekreftet noen vekking» igjen på en maskin som
       // nettopp ble armet, til neste minuttpoll.
-      if (result.ok) await refreshNextRecording();
+      if (armed) await refreshNextRecording();
     } catch (err) {
       // En avvist kommando er ikke «det gikk bra». Shimmen svarer med
       // `{ ok:false, reason:"error" }`, men et kast herfra må lande samme sted.
       console.warn("[schedule] wake_reschedule failed:", err);
-      setArmResult({ ok: false, reason: "error" });
+      setArmResult({ ok: false, reason: "error", count: null });
       showReceipt("failed");
     } finally {
       setArming(false);

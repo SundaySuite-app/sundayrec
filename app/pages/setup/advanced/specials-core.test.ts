@@ -11,6 +11,7 @@ import {
   specialRows,
   wakeArmWord,
   wakeWord,
+  type WakeArmResult,
   withoutIndex,
   withSlot,
   withSpecial,
@@ -160,7 +161,7 @@ describe("wakeWord", () => {
 describe("wakeArmWord", () => {
   it.each([
     ["ikke forsøkt", null, "idle"],
-    ["registrert", { ok: true, reason: null }, "ok"],
+    ["registrert to vekkinger", { ok: true, reason: null, count: 2 }, "ok"],
     ["trenger admin", { ok: false, reason: "permission" }, "needsAdmin"],
     ["bryteren er av", { ok: false, reason: "disabled" }, "disabled"],
     ["maskinen kan ikke", { ok: false, reason: "unsupported" }, "unsupported"],
@@ -171,7 +172,33 @@ describe("wakeArmWord", () => {
     // med: bryteren sa «på», og ingenting var armet.
     ["ukjent grunn", { ok: false, reason: "noe-nytt-fra-rust" }, "failed"],
     ["ingen grunn i det hele tatt", { ok: false, reason: null }, "failed"],
-  ] as Array<[string, { ok: boolean; reason: string | null } | null, string]>)(
+    // `ok: true` er ikke ETT svar. En vellykket runde som armet NULL er en
+    // knapp som ser ut som den virket, og bakenden sier hvilken ingenting det
+    // er (`WakeIdleReason`).
+    [
+      "lyktes, men «Ta opp automatisk» er av",
+      { ok: true, reason: null, count: 0, idleReason: "autoRecordOff" },
+      "autoRecordOff",
+    ],
+    [
+      "lyktes, men ingenting ligger innenfor horisonten",
+      { ok: true, reason: null, count: 0, idleReason: "nothingUpcoming" },
+      "nothingUpcoming",
+    ],
+    // Feltet er `serde(default)`, så en eldre payload kan mangle det. Da
+    // faller vi til den generelle av de to — som er sann i begge tilfellene —
+    // og aldri til «registrert».
+    [
+      "lyktes med null, uten en grunn",
+      { ok: true, reason: null, count: 0 },
+      "nothingUpcoming",
+    ],
+    [
+      "lyktes uten et tall i det hele tatt",
+      { ok: true, reason: null },
+      "nothingUpcoming",
+    ],
+  ] as Array<[string, WakeArmResult | null, string]>)(
     "%s",
     (_name, result, word) => {
       expect(wakeArmWord(result)).toBe(word);
