@@ -440,10 +440,25 @@ describe("en sperret knapp bærer grunnen sin", () => {
 });
 
 describe("ToastHost", () => {
-  it("er ingenting når køen er tom, og viser meldingen når den ikke er det", () => {
+  // ⚠️ Denne het en gang «er ingenting når køen er tom». Det VAR den, og det
+  // var feilen: en `aria-live`-region som opprettes i samme oppdatering som sin
+  // egen første melding blir ikke annonsert. Regionen må stå der på forhånd for
+  // at skjermleseren skal ha noe å observere endringen i — ellers er hver
+  // første toast stum.
+  //
+  // MUTASJONSPRØVEN: legg `if (queue.length === 0) return null` tilbake øverst i
+  // ToastHost, og denne testen blir rød på første linje.
+  it("holder aria-live-regionen stående også når køen er tom", () => {
     toasts.value = [];
-    expect(render(<ToastHost />)).toBe("");
+    const empty = render(<ToastHost />);
+    expect(empty).toContain('data-testid="toast-host"');
+    expect(empty).toContain('aria-live="polite"');
+    // …og den er tom: ingen toast-rader inni den stående regionen.
+    expect(empty).not.toContain("data-kind");
+    expect(empty).toContain('data-empty="true"');
+  });
 
+  it("viser meldingen når køen ikke er tom", () => {
     toasts.value = [
       { id: 7, kind: "error", msg: "Kunne ikke lagre", durationMs: 0 },
     ];

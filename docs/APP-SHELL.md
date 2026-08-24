@@ -2389,16 +2389,40 @@ som ikke finnes lenger». De som er mer enn opprydding:
 - **Kamerabildet.** `recording_preview_frame` er unåbar. Overlegget har en
   brikke som NAVNGIR kameraet; ingenting viser at det kommer bilder, så et dødt
   kamera oppdages først når fila åpnes.
-- **«+30 min» / «Avbryt auto-stopp».** Overlegget sier fortsatt «Stopper av seg
-  selv om …», men fristen kan ikke skyves. `manualMaxMinutes` er 0 som standard,
-  så det rammer bare en rigg som har slått på sikkerhetsnettet — og da rammer
-  det midt i gudstjenesten.
+- ~~**«+30 min» / «Avbryt auto-stopp».**~~ **LUKKET** i granskningsrunden
+  (`fix/review-events`). Overlegget sa «Stopper av seg selv om …» og kunne ikke
+  flytte fristen; `manualMaxMinutes` er 0 som standard, så det rammet bare en
+  rigg som hadde slått PÅ sikkerhetsnettet — og da rammet det midt i
+  gudstjenesten. Knappene står nå under nedtellingen, og bare når det finnes en
+  frist. Steget er **15 minutter**, ikke 30: et lite steg man kan ta to ganger
+  er ærligere enn et stort man ikke kan ta tilbake. `recording_extend_autostop`
+  / `recording_cancel_autostop` er ute av unreachable-baselinen.
 - **Notat-redigering** (`recording_update_note`) — eiervalg, P3.
 - **Mastringspanelet** (`editor_master_apply` m.fl.) — erstattet av tre ord og
   mikseren.
 
 Rust-kommandoene er IKKE slettet. Det er en egen opprydding med sin egen
 vurdering per kommando.
+
+### ⚠️ Baselinen ble REGENERERT i #156, og det var med vilje
+
+`scripts/command-reachability-baseline.json` ble skrevet på nytt i byttets egen
+PR. Det er verdt å si høyt, fordi det er det ene grepet som gjør en gate stille:
+de 35 kommandonavnene over gikk fra «nåbar» til «unåbar» i samme commit som
+baselinen lærte at de var unåbare, så gaten hadde ingenting å klage på.
+
+Regenereringen er riktig — en dør som lukkes med begrunnelse ER en klassifisert
+beslutning, og det er nettopp det baselinen er til for å bære — men den er ikke
+en fribillett. To ting følger av den:
+
+1. **Gaten sier nå tallet.** Suksesslinja i
+   `check-command-reachability.mjs` skriver hvor mange kommandoer som fortsatt
+   står i unreachable-baselinen. «Ingen regresjoner» er en påstand om
+   BEVEGELSE, og uten tallet ved siden av leses den som «alt er koblet opp».
+2. **Restansen er denne lista, ikke baselinen.** Baselinen husker at noen sa ja
+   en gang; §3 her sier hva de sa ja TIL. En kommando som forsvinner ut av
+   baselinen fordi den ble koblet opp igjen (som «+ 15 min» /
+   «Avbryt auto-stopp» ble) skal strykes her samtidig.
 
 ## 4. Atlas-fotografen er borte
 

@@ -58,7 +58,13 @@ import {
   pendingAction,
 } from "../../router/router";
 import { showTelemetryPreview } from "../setup/advanced/TelemetryRow";
-import { banners, dismissBanner } from "../../state/banners";
+import {
+  banners,
+  dismissBanner,
+  type BackendWarningBanner,
+  type BannerData,
+} from "../../state/banners";
+import { interpolate, WARNING_SUFFIXES } from "../../state/backend-warning";
 import {
   audioDevices,
   loadAudioDevices,
@@ -105,6 +111,7 @@ import {
   formatBytes,
   nativeErrorSuffix,
   nativeErrorSuffixFromText,
+  qualityReasonSuffix,
   sourceState,
   spanOfMinutes,
   spanOfSeconds,
@@ -694,14 +701,19 @@ function Done() {
  * stopper søndagen, så det som stoppet forrige søndag.
  */
 function RecordBanners() {
-  // BARE opptakssidens egne to. Køen er delt, og P3 la til `update`, som ikke
+  // BARE opptakssidens egne. Køen er delt, og P3 la til `update`, som ikke
   // hører til noen side og derfor rendres av skallet — over hvilken side som
-  // enn står. Et filter og ikke en else-gren: en tredje nøkkel som havnet her
-  // ville blitt malt som et kvalitetsbanner uten at noe sa fra.
+  // enn står. Et filter og ikke en else-gren: en nøkkel som havnet her uten å
+  // være ventet ville blitt malt som et kvalitetsbanner uten at noe sa fra.
   const list = banners.value.filter(
     (entry) =>
       entry.key === "recording-error" || entry.key === "recording-quality",
   );
+  // Bakendens egne advarsler (`backend://warning`) — se
+  // `state/backend-warning.ts`, som eier både kanalen og dedupliseringen mot
+  // stripene under. De rendres HER og ikke i skallet fordi alle fire handler om
+  // opptaket: forhåndsbufferen, gjenopprettingen, lydenheten, disken.
+  const warnings = banners.value.filter(isBackendWarning);
   const state = nextRecording.value;
   const room = currentRoomMinutes();
   const lowDisk = room !== null && room < LOW_DISK_MINUTES;
@@ -738,13 +750,7 @@ function RecordBanners() {
               m: entry.measuredSec,
               e: entry.expectedSec,
             })}
-            detail={
-              entry.reasons.length
-                ? tf("recording.qualityReasons", {
-                    r: entry.reasons.join(", "),
-                  })
-                : undefined
-            }
+            detail={qualityReasonText(entry.reasonCodes, entry.reasons)}
             onDismiss={() => dismissBanner("recording-quality")}
             actions={
               <Button
@@ -758,6 +764,19 @@ function RecordBanners() {
           />
         ),
       )}
+
+      {warnings.map((entry) => (
+        <Banner
+          key={entry.key}
+          // Bakendens egen alvorlighetsgrad, ikke vår gjetning. `error` er
+          // `role="alert"`: en mikser som ikke er i huset en halvtime før et
+          // planlagt opptak SKAL avbryte det skjermleseren holder på med.
+          tone={entry.severity === "error" ? "bad" : "warn"}
+          testId={`banner-${entry.key}`}
+          title={warningText(entry.code, entry.msg, entry.params)}
+          onDismiss={() => dismissBanner(entry.key)}
+        />
+      ))}
 
       {lowDisk ? (
         <Banner
@@ -836,6 +855,81 @@ function preflightHeadline(findings: readonly PreflightFinding[]): string {
   return errors > 0
     ? tn("status.preflightErrors", errors)
     : tn("status.preflightWarns", findings.length);
+}
+
+/**
+ * Er dette en bakende-advarsel?
+ *
+ * En typevakt og ikke et `startsWith` i filteret: `BannerData` er en union, og
+ * et filter som ikke SIER at det smalner den lar `entry.severity` være et
+ * felt TypeScript ikke vet finnes. Vakten er det ene stedet «hvilke nøkler er
+ * bakendens» står skrevet, og `BackendWarningKey` i `state/banners.ts` er
+ * listen den holdes mot.
+ */
+function isBackendWarning(entry: BannerData): entry is BackendWarningBanner {
+  return entry.key.startsWith("backend-");
+}
+
+/**
+ * Årsakslinja under kvalitetsalarmen.
+ *
+ * ## ⚠️ Den var motorens hardkodede NORSKE prosa
+ *
+ * `sundayrec_core::selftest` setter sammen setninger som «3.42s manglende/
+ * stille lyd — hakking/dropp» med `format!`, og de gikk rett inn i banneret.
+ * En engelsk bruker fikk altså norsk teknisk sjargong i det ene varselet som
+ * betyr «ikke stol på dette opptaket».
+ *
+ * Motoren sender nå kodene ved siden av prosaen. Regelen er én linje:
+ *
+ *   • `reasonCodes === null` — FELTET mangler, altså en eldre bakende. Da er
+ *     prosaen alt som finnes, og en sann setning på feil språk slår en tom
+ *     linje. (Samme avveining som `backend://warning`s ukjente koder.)
+ *   • ellers oversettes hver kode; en kode katalogen ikke kjenner faller
+ *     tilbake på motorens prosalinje på SAMME indeks, ikke på en generisk
+ *     «ukjent årsak» — den ville byttet informasjon mot språk.
+ */
+function qualityReasonText(
+  codes: readonly string[] | null,
+  reasons: readonly string[],
+): string | undefined {
+  if (codes === null) {
+    return reasons.length
+      ? tf("recording.qualityReasons", { r: reasons.join(", ") })
+      : undefined;
+  }
+  if (codes.length === 0) return undefined;
+  const parts = codes.map((code, i) => {
+    const suffix = qualityReasonSuffix(code);
+    return suffix ? tDyn("recording", suffix) : (reasons[i] ?? code);
+  });
+  return tf("recording.qualityReasons", { r: parts.join(", ") });
+}
+
+/**
+ * Setningen for én bakende-advarsel.
+ *
+ * Rekkefølgen er legacys, og den er hele designet:
+ *
+ *   1. `code` → en `notify.*`-nøkkel → setningen på brukerens språk,
+ *   2. ellers `msg`, motorens egen (norske) ordlyd,
+ *   3. ellers den bare koden.
+ *
+ * Steg 2 er det som gjør det trygt for bakenden å lære en ny advarsel før
+ * denne katalogen gjør det: brukeren får en SANN setning på feil språk i
+ * stedet for stillhet. Stillhet er nøyaktig det denne kanalen produserte i
+ * månedsvis. `tDyn` kaster i DEV på en ukjent nøkkel, så oppslaget gjøres bare
+ * for koder tabellen faktisk kjenner — en ny kode skal falle til steg 2, ikke
+ * ta ned siden.
+ */
+function warningText(
+  code: string,
+  msg: string | null,
+  params: Readonly<Record<string, string>>,
+): string {
+  const suffix = WARNING_SUFFIXES[code];
+  const template = suffix ? tDyn("notify", suffix) : (msg ?? code);
+  return interpolate(template, { ...params });
 }
 
 /** «11:42» — klokkeslettet i en feilmelding er halve informasjonen. */

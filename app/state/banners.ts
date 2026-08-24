@@ -30,9 +30,27 @@
 
 import { signal } from "@preact/signals";
 
+/**
+ * Bakendens fire advarsler, én nøkkel hver — og én oppsamler.
+ *
+ * Én nøkkel PER KODE, ikke én felles: «gjenopprettingen hoppet over en fil» og
+ * «disken fylles» er to fakta, og et nøklet banner som erstattet det andre med
+ * det første ville stilltiende kastet en av dem. Fem stykker fordi
+ * `backend-warning` fanger en kode denne katalogen ikke kjenner — se
+ * `state/backend-warning.ts` for hvorfor motorens egen setning er bedre enn
+ * ingen setning.
+ */
+export type BackendWarningKey =
+  | "backend-preroll-dead"
+  | "backend-recovery-skipped"
+  | "backend-device-missing"
+  | "backend-disk-low"
+  | "backend-warning";
+
 /** Nøklene. Lukket liste: et nytt banner er en beslutning, ikke noe som siger
  *  inn i en tilfeldig handler. */
-export type BannerKey = "recording-error" | "recording-quality" | "update";
+export type BannerKey =
+  "recording-error" | "recording-quality" | "update" | BackendWarningKey;
 
 export type BannerData =
   /**
@@ -55,7 +73,21 @@ export type BannerData =
       key: "recording-quality";
       measuredSec: number;
       expectedSec: number;
+      /**
+       * Motorens egen PROSA, hardkodet norsk fra `sundayrec_core::selftest`.
+       * Diagnostikk og reserve — aldri UI-tekst når `reasonCodes` finnes.
+       */
       reasons: readonly string[];
+      /**
+       * De samme årsakene som STABILE KODER, parallelt med `reasons`.
+       *
+       * `null` betyr «motoren sendte ikke feltet» — en eldre bakende — og BARE
+       * da leses prosaen over som tekst. Skillet er hele grunnen til at feltet
+       * er nullbart i stedet for en tom liste: «ingen koder» og «koder finnes
+       * ikke i denne versjonen» er to forskjellige svar, og bare det andre er
+       * en grunn til å vise norsk til en engelsk bruker.
+       */
+      reasonCodes: readonly string[] | null;
     }
   /**
    * En nyere versjon finnes (P3). NØKLET er hele poenget her: den samme
@@ -77,7 +109,32 @@ export type BannerData =
       version: string;
       /** 0–100. Meningsløs utenfor `downloading`. */
       percent: number;
+    }
+  /**
+   * `backend://warning` — motoren så noe den vil ha på skjermen NÅ.
+   *
+   * FAKTA og ikke setning, av fillas egen grunn: `code` slås opp i `notify.*`
+   * og `params` settes inn av siden, så et banner som ble reist på norsk ikke
+   * blir stående på norsk gjennom et språkbytte. `msg` er motorens EGEN
+   * setning, og brukes bare når koden er ukjent for katalogen — se
+   * `state/backend-warning.ts`.
+   */
+  | {
+      key: BackendWarningKey;
+      /** Motorens stabile kode (`preroll_dead`, …). Tom = ukjent payload. */
+      code: string;
+      /** Motorens egen (norske) setning, eller `null`. Reserve, ikke UI-tekst. */
+      msg: string | null;
+      severity: "warn" | "error";
+      /** `{file}`, `{device}`, `{freeGb}` … — innsettingene siden trenger. */
+      params: Readonly<Record<string, string>>;
     };
+
+/** Bare bakende-advarslenes variant, for de som bygger en. */
+export type BackendWarningBanner = Extract<
+  BannerData,
+  { key: BackendWarningKey }
+>;
 
 /** Bannerne som står nå, eldst først. */
 export const banners = signal<readonly BannerData[]>([]);

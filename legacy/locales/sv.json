@@ -251,8 +251,17 @@
     "videoListError": "Fel vid inläsning av kameror",
     "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver.",
     "autostopIn": "Autostopp om",
-    "extend30": "+ 30 min",
-    "cancelAutostop": "Avbryt autostopp"
+    "extend15": "+ 15 min",
+    "cancelAutostop": "Avbryt autostopp",
+    "qrNoAudio": "Inget ljud fångades — filen är för liten för att innehålla något.",
+    "qrSilent": "Inspelningen är tyst — ingen signal. Kontrollera enhet och gain.",
+    "qrGapFail": "Delar av ljudet saknas eller är tyst — hackningar eller bortfall.",
+    "qrDropsFail": "Många bortfall från ljudenheten.",
+    "qrSampleRate": "Samplingsfrekvensen tvingades bort från enhetens egen — omvandlingen kan ge bortfall.",
+    "qrGapWarn": "En liten lucka eller tystnad i inspelningen.",
+    "qrLowSignal": "Svag signal — överväg att höja gain.",
+    "qrDropsWarn": "Några enstaka bortfall från ljudenheten.",
+    "qrClean": "Jämn inspelning, inga bortfall."
   },
   "video": {
     "guardDevice": "Byta kamera"
@@ -301,5 +310,11 @@
     "etaMinutes": "ca {n} min kvar",
     "etaHours": "ca {h} tim kvar",
     "etaHoursMinutes": "ca {h} tim {m} min kvar"
+  },
+  "notify": {
+    "prerollDead": "Förbufferten fungerar inte — ljud från innan du trycker på inspelning sparas inte.",
+    "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
+    "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
+    "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full."
   }
 }

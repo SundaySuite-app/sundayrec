@@ -9,6 +9,14 @@
   max-width: min(460px, calc(100vw - var(--sp-8)));
 }
 
+/* Den stående, tomme regionen. Se ToastHost.tsx: roten rendres alltid, fordi en
+   aria-live-region må finnes FØR den første meldingen legges i den. Uten barn er
+   den 0 × 0, men vi sier det uansett — en usynlig, fast plassert flate over
+   høyre hjørne er ikke noe man skal måtte utlede av grid-reglene. */
+.stack:empty {
+  pointer-events: none;
+}
+
 .toast {
   display: flex;
   align-items: center;

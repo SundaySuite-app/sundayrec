@@ -261,8 +261,17 @@
     "videoListError": "Błąd ładowania kamer",
     "autostopFailed": "Nie udało się zmienić automatycznego zatrzymania. Nagrywanie trwa — zatrzymaj ręcznie w razie potrzeby.",
     "autostopIn": "Automatyczne zatrzymanie za",
-    "extend30": "+ 30 min",
-    "cancelAutostop": "Anuluj automatyczne zatrzymanie"
+    "extend15": "+ 15 min",
+    "cancelAutostop": "Anuluj automatyczne zatrzymanie",
+    "qrNoAudio": "Nie zarejestrowano dźwięku — plik jest za mały, aby cokolwiek zawierać.",
+    "qrSilent": "Nagranie jest ciche — brak sygnału. Sprawdź urządzenie i wzmocnienie.",
+    "qrGapFail": "Brakuje fragmentów dźwięku lub są ciche — zacinanie albo przerwy.",
+    "qrDropsFail": "Wiele przerw z urządzenia audio.",
+    "qrSampleRate": "Częstotliwość próbkowania została wymuszona inna niż własna urządzenia — konwersja może powodować przerwy.",
+    "qrGapWarn": "Niewielka luka lub cisza w nagraniu.",
+    "qrLowSignal": "Słaby sygnał — rozważ zwiększenie wzmocnienia.",
+    "qrDropsWarn": "Kilka przerw z urządzenia audio.",
+    "qrClean": "Równe nagranie, bez przerw."
   },
   "video": {
     "guardDevice": "Zmienić kamerę"
@@ -315,5 +324,11 @@
     "etaMinutes": "ok. {n} min pozostało",
     "etaHours": "ok. {h} godz. pozostało",
     "etaHoursMinutes": "ok. {h} godz. {m} min pozostało"
+  },
+  "notify": {
+    "prerollDead": "Bufor wstępny nie działa — dźwięk sprzed naciśnięcia nagrywania nie jest zachowywany.",
+    "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
+    "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
+    "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni."
   }
 }

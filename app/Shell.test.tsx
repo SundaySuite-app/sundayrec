@@ -195,8 +195,17 @@ describe("Shell", () => {
     expect(render(<Shell />)).not.toContain('data-testid="hydrate-error"');
   });
 
-  it("Overlays er dialog- og toastverten, og ingenting når begge er tomme", () => {
-    expect(render(<Overlays />)).toBe("");
+  it("Overlays er dialog- og toastverten, og bare den stående live-regionen når begge er tomme", () => {
+    // ⚠️ Den var «ingenting». Toastverten returnerte `null` på tom kø, og en
+    // `aria-live`-region som opprettes i samme oppdatering som sin egen første
+    // melding blir ikke annonsert — hver første toast var stum. Regionen står
+    // nå alltid; TOM, men der. Se `ui/ToastHost/ToastHost.tsx`.
+    const html = render(<Overlays />);
+    expect(html).toContain('data-testid="toast-host"');
+    expect(html).toContain('data-empty="true"');
+    // Ingen dialog, og ingen toast-rad inni den tomme regionen.
+    expect(html).not.toContain('data-testid="dialog"');
+    expect(html).not.toContain("data-kind");
   });
 
   it("monterer utviklingsproben bare når den blir bedt om det", () => {

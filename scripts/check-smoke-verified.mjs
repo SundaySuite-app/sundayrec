@@ -30,6 +30,40 @@
 // what a VERIFIED-BY pointer always claimed. Rust is unchanged: `fn <name>(`.
 // A renamed or deleted test still makes it vanish; a title quoted in a comment
 // no longer counts as coverage.
+//
+// ── ⚠️ THE FAILURE THIS FILE WAS REOPENED FOR ────────────────────────────────
+//
+// Everything above only ever looked at lines the POINTER REGEX matched. A line
+// that says VERIFIED-BY but does not parse — a single `:` instead of `::`, a
+// missing name, a stray line break after the file — simply fell out of
+// `matchAll` and was never counted, never checked, never mentioned. The gate
+// then printed a smaller, entirely truthful-sounding number and exited 0.
+//
+// Three broken separators took the count from 43 to 38 and nothing went red.
+// That is worse than a stale pointer: a stale pointer at least claims something
+// checkable, while a malformed one silently converts "this claim is covered"
+// into "this claim was never here". The runbook keeps reading as if it were
+// covered, because the sentence is still on the page for a human.
+//
+// Two rules close it, and they are the whole of §1 and §4 below:
+//
+//   1. A CLAIM LINE — VERIFIED-BY at the start of its own line, bullet or not —
+//      must parse. If it does not, that is an error, with the line quoted.
+//      A prose mention MID-SENTENCE is not a claim (this file's own prose, and
+//      the runbook's, both do it), and that is the discriminator: a pointer is
+//      a claim on its own line; prose mentions it inside a sentence.
+//   2. The pointer count is a RATCHET, pinned at MIN_POINTERS. Pointers may be
+//      added freely; losing one has to be a deliberate edit of this constant,
+//      with the reason in the commit. Deletion by typo is exactly what rule 1
+//      catches, and this is the belt under it: it also catches deletion by
+//      DELETION — a pointer line removed wholesale leaves no malformed line
+//      behind to notice.
+//
+// Both rules, and the resolution rules above them, are exercised by a SELF-TEST
+// against an embedded fixture with a known answer — one known failure per
+// class — that runs before the gate is allowed to speak. A gate that can mutate
+// into "always green" is not a gate. (Same house pattern as
+// scripts/check-i18n-keys.mjs.)
 
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,15 +71,53 @@ import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DOC = "docs/SMOKE-TEST.md";
-const doc = readFileSync(join(root, DOC), "utf8");
 
-// ── 1. The burndown number ──────────────────────────────────────────────────
-const unverified = doc.match(/UNVERIFIED/g)?.length ?? 0;
+/**
+ * The floor the pointer count may not fall below.
+ *
+ * Not a target and not a snapshot of "how many there happen to be": a ratchet.
+ * Raising it when pointers are added is optional; LOWERING it is the deliberate
+ * act this constant exists to force, because every step down means a claim in
+ * the runbook stopped being covered by anything.
+ */
+const MIN_POINTERS = 43;
 
-// ── 2. Every pointer resolves ───────────────────────────────────────────────
-const pointers = [...doc.matchAll(/VERIFIED-BY:\s*(\S+)::(.+?)\s*$/gm)].map(
-  (m) => ({ file: m[1], name: m[2] }),
-);
+// ── 1. Claim lines, and which of them parse ─────────────────────────────────
+
+/**
+ * A line that CLAIMS coverage: `VERIFIED-BY` opening the line, allowing a
+ * markdown bullet and/or a code-span backtick in front of it. Every real
+ * pointer in the runbook is written that way — as its own bullet — while the
+ * prose that talks ABOUT the convention mentions it mid-sentence.
+ */
+const CLAIM_LINE = /^\s*(?:[-*+]\s+)?`?VERIFIED-BY\b/;
+
+/** A well-formed pointer: `VERIFIED-BY: <file>::<name>` to end of line. */
+const POINTER = /^\s*(?:[-*+]\s+)?`?VERIFIED-BY:\s*(\S+)::(.+?)`?\s*$/;
+
+/**
+ * Split the runbook into the claims it makes and the ones that are broken.
+ *
+ * Pure, and given the doc as a string, so the self-test can hand it a fixture.
+ */
+function collectPointers(doc) {
+  const pointers = [];
+  const malformed = [];
+  const lines = doc.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!CLAIM_LINE.test(line)) continue;
+    const m = POINTER.exec(line);
+    if (!m) {
+      malformed.push({ line: i + 1, text: line.trim() });
+      continue;
+    }
+    pointers.push({ file: m[1], name: m[2].trim(), line: i + 1 });
+  }
+  return { pointers, malformed };
+}
+
+// ── 2. Titles a test file actually declares ─────────────────────────────────
 
 /**
  * Every title declared by a `test` / `it` / `describe` call in one file.
@@ -56,52 +128,183 @@ const pointers = [...doc.matchAll(/VERIFIED-BY:\s*(\S+)::(.+?)\s*$/gm)].map(
  * and that is the right answer, because a VERIFIED-BY pointer names a title
  * somebody can read in the runbook and then grep for.
  */
-const titleCache = new Map();
-function testTitles(abs, src) {
-  if (titleCache.has(abs)) return titleCache.get(abs);
+function testTitles(src) {
   const titles = new Set();
   const CALL =
     /\b(?:test|it|describe)(?:\.(?:only|skip|todo|fails|concurrent|sequential|each|describe))*\s*\(\s*(["'])((?:[^\\]|\\.)*?)\1/g;
   for (const m of src.matchAll(CALL)) {
     titles.add(m[2].replace(/\\(["'\\])/g, "$1"));
   }
-  titleCache.set(abs, titles);
   return titles;
 }
 
-const problems = [];
-const fileCache = new Map();
-for (const { file, name } of pointers) {
-  const abs = join(root, file);
-  if (!existsSync(abs)) {
-    problems.push(`${file} :: ${name}\n      the file does not exist`);
-    continue;
-  }
-  if (!fileCache.has(abs)) fileCache.set(abs, readFileSync(abs, "utf8"));
-  const src = fileCache.get(abs);
-  const found = file.endsWith(".rs")
+/** Does `file` declare a test called `name`? Rust is `fn <name>(`. */
+function declares(file, src, name) {
+  return file.endsWith(".rs")
     ? new RegExp(
         `fn\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(`,
       ).test(src)
-    : testTitles(abs, src).has(name);
-  if (!found) {
+    : testTitles(src).has(name);
+}
+
+// ── 3. The audit, over an injected file reader ──────────────────────────────
+
+/**
+ * Audit one runbook.
+ *
+ * `read(file)` answers the file's source, or `null` when it does not exist —
+ * injected so the self-test never touches the disk and the gate never grows a
+ * second way of asking the same question.
+ */
+function auditDoc(doc, read, minPointers = MIN_POINTERS) {
+  const { pointers, malformed } = collectPointers(doc);
+  const problems = [];
+
+  for (const { line, text } of malformed) {
     problems.push(
-      `${file} :: ${name}\n      no test by that name in the file (renamed, deleted — or only quoted in a comment?)`,
+      `${DOC}:${line}\n      ${text}\n      ` +
+        "this line claims coverage but is not a `VERIFIED-BY: <file>::<test name>` " +
+        "pointer — a malformed pointer used to be skipped in silence, which turned " +
+        "a covered claim into no claim at all",
     );
+  }
+
+  const cache = new Map();
+  for (const { file, name, line } of pointers) {
+    if (!cache.has(file)) cache.set(file, read(file));
+    const src = cache.get(file);
+    if (src === null || src === undefined) {
+      problems.push(
+        `${DOC}:${line}  ${file} :: ${name}\n      the file does not exist`,
+      );
+      continue;
+    }
+    if (!declares(file, src, name)) {
+      problems.push(
+        `${DOC}:${line}  ${file} :: ${name}\n      no test by that name in the file ` +
+          "(renamed, deleted — or only quoted in a comment?)",
+      );
+    }
+  }
+
+  if (pointers.length < minPointers) {
+    problems.push(
+      `the runbook is down to ${pointers.length} VERIFIED-BY pointer(s), ` +
+        `below the ratchet of ${minPointers}\n      ` +
+        "a pointer that disappears takes a covered claim with it. If the loss is " +
+        "deliberate (the claim itself was retired), lower MIN_POINTERS in " +
+        "scripts/check-smoke-verified.mjs in the same commit and say why.",
+    );
+  }
+
+  const unverified = doc.match(/UNVERIFIED/g)?.length ?? 0;
+  return { pointers, malformed, problems, unverified };
+}
+
+// ── 4. Self-test: one known failure per class ───────────────────────────────
+
+function selfTest() {
+  const spec = [
+    "// a title only QUOTED in a comment: 'ghost claim'",
+    'test("a real spec title", async () => {})',
+    'describe.only("a described group", () => {})',
+  ].join("\n");
+  const rust = "#[test]\nfn live_probe_is_callable() { }";
+  const read = (f) =>
+    f === "e2e/x.spec.ts" ? spec : f === "src-tauri/src/y.rs" ? rust : null;
+
+  const fixture = [
+    "Prose that mentions VERIFIED-BY mid-sentence must NOT count as a claim.",
+    "- VERIFIED-BY: e2e/x.spec.ts::a real spec title",
+    "   - VERIFIED-BY: e2e/x.spec.ts::a described group",
+    "- VERIFIED-BY: src-tauri/src/y.rs::live_probe_is_callable",
+    "- VERIFIED-BY: e2e/x.spec.ts::ghost claim",
+    "- VERIFIED-BY: e2e/gone.spec.ts::anything at all",
+    "- VERIFIED-BY: e2e/x.spec.ts:a real spec title",
+    "- VERIFIED-BY: e2e/x.spec.ts::",
+    "Still UNVERIFIED, and one more UNVERIFIED for the count.",
+  ].join("\n");
+
+  const { pointers, malformed, problems, unverified } = auditDoc(
+    fixture,
+    read,
+    3,
+  );
+  const fail = [];
+  const want = (cond, why) => {
+    if (!cond) fail.push(why);
+  };
+
+  want(pointers.length === 5, `parsed ${pointers.length} pointers, wanted 5`);
+  // The two broken separators — a single `:` and an empty name — are the whole
+  // point: neither parses, and neither may be skipped.
+  want(
+    malformed.length === 2,
+    `flagged ${malformed.length} malformed claim line(s), wanted 2`,
+  );
+  want(
+    malformed.every((m) => /VERIFIED-BY/.test(m.text)),
+    "a malformed claim is reported without its own line",
+  );
+  // Prose is not a claim; if it were, this fixture's first line would be a
+  // third malformed entry.
+  want(
+    !malformed.some((m) => m.text.startsWith("Prose")),
+    "a mid-sentence mention of VERIFIED-BY was mistaken for a pointer",
+  );
+  // 2 malformed + 1 ghost (comment-only title) + 1 missing file = 4.
+  want(problems.length === 4, `reported ${problems.length} problems, wanted 4`);
+  want(
+    problems.some((p) => p.includes("does not exist")),
+    "a pointer at a missing file was not caught",
+  );
+  want(
+    problems.some((p) => p.includes("no test by that name")),
+    "a title that only appears in a comment was credited as coverage",
+  );
+  want(unverified === 2, `counted ${unverified} UNVERIFIED, wanted 2`);
+
+  // …and the ratchet itself, with the same fixture held one notch higher.
+  const ratcheted = auditDoc(fixture, read, 6);
+  want(
+    ratcheted.problems.some((p) => p.includes("below the ratchet")),
+    "the pointer-count ratchet did not fire when the count fell below it",
+  );
+
+  if (fail.length) {
+    console.error("check-smoke-verified SELVTEST FEILET:");
+    for (const f of fail) console.error("  ✗ " + f);
+    process.exit(2);
   }
 }
 
-if (problems.length) {
-  console.error(
-    `✗ ${DOC} has ${problems.length} stale VERIFIED-BY pointer(s):`,
+// ── 5. Gate ─────────────────────────────────────────────────────────────────
+
+function main() {
+  selfTest();
+
+  const doc = readFileSync(join(root, DOC), "utf8");
+  const read = (file) => {
+    const abs = join(root, file);
+    return existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  };
+
+  const { pointers, problems, unverified } = auditDoc(doc, read);
+
+  if (problems.length) {
+    console.error(`✗ ${DOC} has ${problems.length} problem(s):`);
+    for (const p of problems) console.error(`    ${p}`);
+    console.error(
+      "  Fix the pointer (or restore the test) — a pointer at nothing, and a " +
+        "pointer that does not parse, both claim coverage that does not exist.",
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `✓ smoke runbook: ${pointers.length} VERIFIED-BY pointer(s) all parse and ` +
+      `resolve (ratchet ${MIN_POINTERS}) · ${unverified} UNVERIFIED marker(s) remain`,
   );
-  for (const p of problems) console.error(`    ${p}`);
-  console.error(
-    "  Fix the pointer (or restore the test) — a pointer at nothing claims coverage that does not exist.",
-  );
-  process.exit(1);
 }
 
-console.log(
-  `✓ smoke runbook: ${pointers.length} VERIFIED-BY pointer(s) all resolve · ${unverified} UNVERIFIED marker(s) remain`,
-);
+main();

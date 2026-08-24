@@ -788,8 +788,17 @@
     "videoListError": "Feil ved lasting av kameraer",
     "autostopFailed": "Kunne ikke endre auto-stopp. Opptaket fortsetter — stopp manuelt hvis du må.",
     "autostopIn": "Auto-stopp om",
-    "extend30": "+ 30 min",
-    "cancelAutostop": "Avbryt auto-stopp"
+    "extend15": "+ 15 min",
+    "cancelAutostop": "Avbryt auto-stopp",
+    "qrNoAudio": "Ingen lyd ble fanget — fila er for liten til å inneholde noe.",
+    "qrSilent": "Opptaket er stille — ingen signal. Sjekk enhet og gain.",
+    "qrGapFail": "Deler av lyden mangler eller er stille — hakking eller dropp.",
+    "qrDropsFail": "Mange dropp fra lydenheten.",
+    "qrSampleRate": "Samplingsraten ble tvunget bort fra enhetens egen — omregningen kan gi dropp.",
+    "qrGapWarn": "Et lite hull eller en stillhet i opptaket.",
+    "qrLowSignal": "Svakt signal — vurder å øke gain.",
+    "qrDropsWarn": "Noen få dropp fra lydenheten.",
+    "qrClean": "Jevnt opptak, ingen dropp."
   },
   "video": {
     "guardDevice": "Bytte kamera"
@@ -838,5 +847,11 @@
     "etaMinutes": "ca. {n} min igjen",
     "etaHours": "ca. {h} t igjen",
     "etaHoursMinutes": "ca. {h} t {m} min igjen"
+  },
+  "notify": {
+    "prerollDead": "Forhåndsbufferen virker ikke — lyd fra før du trykker opptak blir ikke tatt vare på.",
+    "recoverySkipped": "Et avbrutt opptak kunne ikke gjenopprettes helt: {file}",
+    "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
+    "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full."
   }
 }

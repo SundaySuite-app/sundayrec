@@ -106,11 +106,35 @@ export function pushCutHistory(): void {
   scheduleDraftSave();
 }
 
+/**
+ * Invarianten: null kutt betyr at ingenting av «Behold bare prekenen» står
+ * igjen, og da er den ikke ANVENDT.
+ *
+ * ## ⚠️ Hvorfor den er en egen funksjon og ikke tre kopier
+ *
+ * `E.applied` styrer om forslagskortet vises (`applied || dismissed ⇒ borte`).
+ * Den ble satt av `applySermon` og — tilbake til null kutt — nullstilt av
+ * `undoCut`. Ingen andre. Så alle de andre veiene til en tom kuttliste lot den
+ * stå: sletter man kuttene ett for ett fra lista, eller gjør om TIL den tomme
+ * versjonen, blir `applied` stående `true` over en fil der ingenting er
+ * trimmet — og kortet som ville tilbudt trimmingen på nytt kommer aldri
+ * tilbake. Ingenting feiler; tilbudet er bare borte.
+ *
+ * `commit` er den ene veien en mutasjon setter kuttlista, og angre/gjør om er
+ * de to som setter `E.cuts` direkte. Alle tre går gjennom denne.
+ */
+function reconcileApplied(): void {
+  if (E.cuts.length > 0 || !E.applied) return;
+  E.applied = false;
+  syncSuggestion();
+}
+
 /** Sett kuttlista, registrer den og speil den. Den ENE veien inn. */
 function commit(next: Cut[]): void {
   E.cuts = mergeCuts(next);
   pushCutHistory();
   markDirty();
+  reconcileApplied();
   syncCuts();
   scheduleDraw();
 }
@@ -144,13 +168,41 @@ export function deleteCut(index: number): void {
   commit(E.cuts.filter((_, i) => i !== index));
 }
 
+/**
+ * «Fjern alle kutt».
+ *
+ * ⚠️ Den nullstilte `applied` og lot `dismissed` stå. Halve svaret: kortets to
+ * svar er ETT svar på ETT tilbud, og `undoCut` tilbake til null kutt har hele
+ * tiden nullstilt begge — med en kommentar om at «da skal kortet komme
+ * tilbake». To veier til nøyaktig samme tilstand (ingen kutt, fila urørt) ga
+ * to forskjellige skjermer, og den ene av dem hadde ingen vei tilbake til
+ * tilbudet i det hele tatt.
+ */
 export function clearCuts(): void {
   if (E.cuts.length === 0) return;
   E.applied = false;
+  E.dismissed = false;
   syncSuggestion();
   commit([]);
 }
 
+/**
+ * Angre.
+ *
+ * ## ⚠️ `markDirty()`, som manglet
+ *
+ * Angre og gjør om ENDRER kuttlista, men var de eneste mutasjonene som ikke
+ * gikk gjennom `commit()` og derfor de eneste som ikke merket fila som endret.
+ * Det så harmløst ut, fordi `dirty` uansett var satt av kuttet man angret på —
+ * helt til man husker at `clearDirty()` finnes, og hvem som kaller den: en
+ * VELLYKKET EKSPORT (`editor/export.ts`). Angrestabelen overlever eksporten.
+ * Så «eksporter, så angre» endret kuttene på en fil skallet nettopp hadde
+ * erklært ren: ingen prikk, og ingen «vil du forkaste endringene?» ved
+ * lukking. Redigeringen forsvant uten at noen ble spurt.
+ *
+ * Merkingen står ETTER `if (!r) return`: en angring som ikke hadde noe å angre
+ * skal ikke gi et spørsmål ved lukking om en endring som aldri skjedde.
+ */
 export function undoCut(): void {
   // Aldri bytt ut lista under et pågående drag — det foreldreløser dragets
   // endringer og korrumperer historikken ved museslipp. Legacys egen regel.
@@ -163,18 +215,23 @@ export function undoCut(): void {
   E.cutHistoryIdx = r.idx;
   E.cuts = r.cuts;
   // Angre TILBAKE til ingen kutt betyr at forslaget ikke er anvendt lenger, og
-  // da skal kortet komme tilbake — det er dét «angre» betyr her.
+  // da skal kortet komme tilbake — det er dét «angre» betyr her. `dismissed`
+  // hører til denne grenen og ikke til invarianten: «Behold alt» er et svar
+  // brukeren ga, og bare en handling som eksplisitt går tilbake til utgangs-
+  // punktet (angre, eller «Fjern alle kutt») tar det tilbake.
   if (E.cuts.length === 0) {
-    E.applied = false;
     E.dismissed = false;
     syncSuggestion();
   }
+  reconcileApplied();
+  markDirty();
   syncHistory();
   syncCuts();
   scheduleDraftSave();
   scheduleDraw();
 }
 
+/** Gjør om. Samme `markDirty`-historie som `undoCut` — se den. */
 export function redoCut(): void {
   if (E.handleDrag || E.isDragging) return;
   const r = redoSnapshot({ history: E.cutHistory, idx: E.cutHistoryIdx });
@@ -182,7 +239,9 @@ export function redoCut(): void {
   E.cutHistoryIdx = r.idx;
   E.cuts = r.cuts;
   if (E.cuts.length > 0 && E.suggestion) E.applied = true;
+  reconcileApplied();
   syncSuggestion();
+  markDirty();
   syncHistory();
   syncCuts();
   scheduleDraftSave();

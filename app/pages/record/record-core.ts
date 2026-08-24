@@ -45,6 +45,8 @@
  * av hvilken ICU-versjon node eller WebKit er bygget med.
  */
 
+import type { QualityReason } from "@legacy/bindings/QualityReason";
+
 import type { ChannelPair } from "../setup/decisions-core";
 import { channelPairFor } from "../setup/decisions-core";
 import type { Settings } from "../../state/settings";
@@ -305,4 +307,58 @@ export function nativeErrorSuffixFromText(text: string | null): string {
   }
   console.warn("[record] ukjent feiltekst fra motoren:", text);
   return "errorUnknown";
+}
+
+// ── Kvalitetsalarmens årsaker ───────────────────────────────────────────────
+
+/**
+ * Motorens kvalitetskode → et suffiks under `recording.*`.
+ *
+ * ## ⚠️ Hvorfor tabellen finnes
+ *
+ * `recording://quality` bar bare `reasons`: HARDKODET NORSK PROSA fra
+ * `sundayrec_core::selftest` («3.42s manglende/stille lyd — hakking/dropp»),
+ * satt sammen med `format!` og sendt rett i et banner. En engelsk bruker fikk
+ * norsk teknisk sjargong i det ene varselet som betyr at opptaket ikke er til
+ * å stole på. Motoren sender nå KODER ved siden av prosaen, og de oversettes
+ * her.
+ *
+ * ## Nøklene er RUSTENS, ikke våre
+ *
+ * Typen er `Record<QualityReason, string>` over den GENERERTE bindingen, ikke
+ * `Record<string, string>` over navn noen skrev av. Det er hele forskjellen:
+ * en variant som forsvinner, kommer til eller skifter kebab-stavemåte i
+ * `crates/sundayrec-core/src/telemetry.rs` blir en TYPEFEIL her, i stedet for
+ * et oppslag som bommer i stillhet og faller tilbake på norsk prosa som om
+ * ingenting var galt. (Første utkast av denne tabellen GJETTET snake_case-navn
+ * og bommet på åtte av ni — nøyaktig den stille feilen.)
+ *
+ * Bommer en kode likevel — en payload fra en nyere motor enn denne
+ * builden — faller siden tilbake til motorens egen prosalinje på samme indeks,
+ * altså dagens oppførsel, ikke stillhet.
+ */
+const QUALITY_REASONS: Record<QualityReason, string> = {
+  "no-audio-captured": "qrNoAudio",
+  "silent-take": "qrSilent",
+  "large-gap": "qrGapFail",
+  "many-drops": "qrDropsFail",
+  "forced-rate-mismatch": "qrSampleRate",
+  "small-gap": "qrGapWarn",
+  "low-signal": "qrLowSignal",
+  "some-drops": "qrDropsWarn",
+  clean: "qrClean",
+};
+
+/**
+ * Suffikset for én kvalitetskode, eller `null` når koden er ukjent her.
+ *
+ * `null` og ikke et «errorUnknown»: en ukjent kode har en SANN setning ved
+ * siden av seg (motorens egen prosa), og den er bedre enn en generisk. Se
+ * `qualityReasonText` i `RecordPage.tsx`.
+ */
+export function qualityReasonSuffix(code: string): string | null {
+  const hit = QUALITY_REASONS[code as QualityReason];
+  if (hit) return hit;
+  console.warn("[record] ukjent kvalitetskode fra motoren:", code);
+  return null;
 }

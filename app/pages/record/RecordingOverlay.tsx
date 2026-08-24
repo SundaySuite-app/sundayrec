@@ -52,6 +52,7 @@ import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { currentRoomMinutes } from "../../state/disk";
 import {
   clearSilence,
+  dismissReconnecting,
   finalizing,
   isRecording,
   reconnecting,
@@ -61,6 +62,7 @@ import {
   silenceDetail,
 } from "../../state/recording";
 import { settings } from "../../state/settings";
+import { cancelAutostop, extendAutostop } from "./autostop";
 import { formatClock, spanOfMinutes } from "./record-core";
 import { recordingLevelsSource } from "./recording-levels";
 import { spanText } from "./span-text";
@@ -125,6 +127,9 @@ function Overlay() {
                 ? tf("app.overlay.reconnect", { name: device })
                 : t("app.overlay.reconnectAnon")
             }
+            // Se `dismissReconnecting` i state/recording.ts: stripa hadde ingen
+            // vei ned uten et `recording://reconnected` som ikke alltid kommer.
+            onDismiss={dismissReconnecting}
           />
         ) : null}
         {silenceActive.value ? (
@@ -196,9 +201,32 @@ function Overlay() {
           {t("app.overlay.finalizingHint")}
         </p>
       ) : stopAt !== null && stopAt > now ? (
-        <p data-testid="overlay-autostop" class={styles.hint}>
-          {tf("app.overlay.autoStop", { left: formatClock(stopAt - now) })}
-        </p>
+        <>
+          <p data-testid="overlay-autostop" class={styles.hint}>
+            {tf("app.overlay.autoStop", { left: formatClock(stopAt - now) })}
+          </p>
+          {/* ⚠️ Nedtellingen var en KUNNGJØRING og ikke en kontroll: fristen
+              kunne vises og ikke flyttes (se `./autostop.ts`). Knappene står
+              bare når det FINNES en frist — `manualMaxMinutes` er 0 som
+              standard, og to knapper for noe som ikke skal skje er to knapper
+              å lure på midt i en gudstjeneste. */}
+          <div data-testid="overlay-autostop-actions" class={styles.autostop}>
+            <Button
+              variant="secondary"
+              testId="overlay-autostop-extend"
+              onClick={() => void extendAutostop()}
+            >
+              {t("recording.extend15")}
+            </Button>
+            <Button
+              variant="ghost"
+              testId="overlay-autostop-cancel"
+              onClick={() => void cancelAutostop()}
+            >
+              {t("recording.cancelAutostop")}
+            </Button>
+          </div>
+        </>
       ) : null}
     </div>
   );

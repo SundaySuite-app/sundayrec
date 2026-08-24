@@ -445,3 +445,318 @@ test.describe("bannerne på opptakssiden", () => {
     );
   });
 });
+
+test.describe("bakendens egne advarsler (backend://warning)", () => {
+  // ⚠️ Kanalen var kartlagt i shimmen og emittert fra fire steder i Rust, og
+  // hadde INGEN lytter i skallet. «Mikseren er ikke tilkoblet», en halvtime før
+  // et planlagt opptak, gikk rett i gulvet. Reglene er node-testet
+  // (`app/state/backend-warning.test.ts`); det denne legger til er SKJØTEN —
+  // at et event fra motoren faktisk blir en stripe på skjermen, og at den
+  // står på brukerens språk og ikke på motorens.
+
+  test("hver av de fire kodene blir sin egen stripe, på katalogens språk", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    expect(
+      await emit(page, "backend-warning", {
+        code: "preroll_dead",
+        msg: "irrelevant — koden er kjent",
+        severity: "warn",
+        params: {},
+      }),
+    ).toBeGreaterThan(0);
+    await expect(page.getByTestId("banner-backend-preroll-dead")).toContainText(
+      "Forhåndsbufferen virker ikke",
+    );
+
+    await emit(page, "backend-warning", {
+      code: "recovery_skipped",
+      msg: null,
+      severity: "warn",
+      params: { file: "2026-08-16.flac" },
+    });
+    const recovery = page.getByTestId("banner-backend-recovery-skipped");
+    // Innsettingen skjer i SIDEN, av `params` — køen bærer fakta, ikke setninger.
+    await expect(recovery).toContainText("2026-08-16.flac");
+
+    await emit(page, "backend-warning", {
+      code: "disk_low",
+      msg: null,
+      severity: "warn",
+      params: { freeBytes: "3221225472" },
+    });
+    // 3 221 225 472 B = 3,0 GiB — regnet ut her, ikke gjettet av bakenden.
+    await expect(page.getByTestId("banner-backend-disk-low")).toContainText(
+      "3.0 GB",
+    );
+
+    // …og enheten, som er `error` i Rust og derfor `role="alert"`.
+    await emit(page, "backend-warning", {
+      code: "device_missing",
+      msg: null,
+      severity: "error",
+      params: { device: "Behringer X32" },
+    });
+    const device = page.getByTestId("banner-backend-device-missing");
+    await expect(device).toContainText("Behringer X32");
+    await expect(device).toHaveAttribute("data-tone", "bad");
+
+    // Fire koder, fire stripper — ingen som erstattet en annen.
+    await expect(page.getByTestId("banner-backend-preroll-dead")).toBeVisible();
+    await expect(recovery).toBeVisible();
+
+    await page.getByTestId("banner-backend-device-missing-dismiss").click();
+    await expect(device).toHaveCount(0);
+  });
+
+  test("PREROLL_DEAD slukker «Lytter»-brikka — den sto over en død buffer", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, preroll_start: true },
+      settings: { ...CHOSEN, preRollSeconds: 15 },
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-listening")).toHaveText("Lytter");
+
+    await emit(page, "backend-warning", {
+      code: "preroll_dead",
+      msg: null,
+      severity: "warn",
+      params: {},
+    });
+
+    await expect(page.getByTestId("record-listening")).toHaveCount(0);
+    await expect(page.getByTestId("banner-backend-preroll-dead")).toBeVisible();
+  });
+
+  test("DEVICE_MISSING sier det ikke to ganger når «Finner ikke …» alt står", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      // Enheten er valgt, men bare den innebygde finnes — opptakssiden viser
+      // sitt eget «Finner ikke Behringer X32».
+      fixtures: { ...FIXTURES, list_audio_devices: [BUILT_IN] },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-source-missing")).toBeVisible();
+
+    await emit(page, "backend-warning", {
+      code: "device_missing",
+      msg: null,
+      severity: "error",
+      params: { device: "Behringer X32" },
+    });
+
+    // Ett faktum, én flate. MUTASJONSPRØVEN: ta `deduped`-grenen ut av
+    // `planWarning`, og denne linja blir rød.
+    await expect(page.getByTestId("banner-backend-device-missing")).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("record-source-missing")).toBeVisible();
+  });
+});
+
+test.describe("kvalitetsalarmens årsaker", () => {
+  // ⚠️ Årsakslinja var motorens HARDKODEDE NORSKE prosa fra
+  // `sundayrec_core::selftest` («3.42s manglende/stille lyd — hakking/dropp»),
+  // satt sammen med `format!` og sendt rett i et banner. En engelsk bruker fikk
+  // norsk teknisk sjargong i det ene varselet som betyr «ikke stol på dette
+  // opptaket». Motoren sender nå kodene ved siden av prosaen.
+
+  test("koder fra motoren blir katalogens setninger, ikke motorens", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-quality", {
+      measuredSec: 3120,
+      expectedSec: 5400,
+      reasons: [
+        "3.42s manglende/stille lyd — hakking/dropp",
+        "Svakt signal — vurder å øke gain",
+      ],
+      reasonCodes: ["large-gap", "low-signal"],
+    });
+
+    const banner = page.getByTestId("banner-recording-quality");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("3120 av 5400 sekunder");
+    await expect(banner).toContainText(
+      "Deler av lyden mangler eller er stille",
+    );
+    await expect(banner).toContainText("Svakt signal");
+    // …og INGEN av motorens egne setninger. MUTASJONSPRØVEN: fjern
+    // `reasonCodes`-grenen i `qualityReasonText`, og denne linja blir rød.
+    await expect(banner).not.toContainText("hakking/dropp");
+  });
+
+  test("en ELDRE motor uten feltet får prosaen sin vist — sant slår tomt", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-quality", {
+      measuredSec: 3120,
+      expectedSec: 5400,
+      reasons: ["3.42s manglende/stille lyd — hakking/dropp"],
+    });
+
+    const banner = page.getByTestId("banner-recording-quality");
+    await expect(banner).toContainText("hakking/dropp");
+  });
+
+  test("en kode katalogen ikke kjenner faller på motorens egen linje", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-quality", {
+      measuredSec: 10,
+      expectedSec: 20,
+      reasons: ["Kosmisk stråling traff disken"],
+      reasonCodes: ["cosmic-rays"],
+    });
+
+    await expect(page.getByTestId("banner-recording-quality")).toContainText(
+      "Kosmisk stråling",
+    );
+  });
+});
+
+test.describe("auto-stoppen kan skyves", () => {
+  // ⚠️ Nedtellingen var en KUNNGJØRING og ikke en kontroll. Overlegget har vist
+  // «Stopper av seg selv om …» hele tiden, mens `recording_extend_autostop` og
+  // `recording_cancel_autostop` sto registrert i Rust uten en eneste dør —
+  // klassifisert som unåbare i reachability-baselinen siden byttet.
+  // `manualMaxMinutes` er 0 som standard, så det rammet bare en rigg som hadde
+  // slått PÅ sikkerhetsnettet, og da rammet det midt i gudstjenesten.
+
+  const AUTOSTOP_SPIES: Fixtures = {
+    recording_extend_autostop: fn(`(a) => {
+      (window.__E2E_CALLS__ ||= {}).recording_extend_autostop =
+        ((window.__E2E_CALLS__.recording_extend_autostop || 0) + 1);
+      window.__E2E_EXTEND_MINUTES__ = a && a.minutes;
+      return null;
+    }`),
+    recording_cancel_autostop: fn(`() => {
+      (window.__E2E_CALLS__ ||= {}).recording_cancel_autostop =
+        ((window.__E2E_CALLS__.recording_cancel_autostop || 0) + 1);
+      return null;
+    }`),
+  };
+
+  /** Løft overlegget med en frist motoren har satt. */
+  async function liveWithDeadline(page: Page): Promise<void> {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, ...AUTOSTOP_SPIES },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 20 * 60_000,
+    });
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  }
+
+  test("knappene står bare når det FINNES en frist", async ({ page }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, ...AUTOSTOP_SPIES },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    // Et opptak uten auto-stopp: ingen nedtelling, og derfor heller ingen
+    // knapper å lure på midt i en gudstjeneste.
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: null,
+    });
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("overlay-autostop")).toHaveCount(0);
+    await expect(page.getByTestId("overlay-autostop-actions")).toHaveCount(0);
+  });
+
+  test("«+ 15 min» når motoren, med minuttene som argument", async ({
+    page,
+  }) => {
+    await liveWithDeadline(page);
+    await expect(page.getByTestId("overlay-autostop")).toContainText(
+      "Stopper av seg selv",
+    );
+
+    await page.getByTestId("overlay-autostop-extend").click();
+
+    // MUTASJONSPRØVEN: fjern knappen (eller `recordingExtendAutostop` fra
+    // shimmen), og denne blir rød.
+    await expect
+      .poll(async () => (await calls(page)).recording_extend_autostop)
+      .toBe(1);
+    expect(
+      await page.evaluate(() => (window as any).__E2E_EXTEND_MINUTES__),
+    ).toBe(15);
+
+    // …og nedtellingen kommer fra MOTOREN, ikke fra en lokal gjetning: den nye
+    // fristen rir på neste tilstandsemit.
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 35 * 60_000,
+    });
+    await expect(page.getByTestId("overlay-autostop")).toContainText("34:5");
+  });
+
+  test("«Avbryt auto-stopp» tar nedtellingen bort helt", async ({ page }) => {
+    await liveWithDeadline(page);
+    await page.getByTestId("overlay-autostop-cancel").click();
+    await expect
+      .poll(async () => (await calls(page)).recording_cancel_autostop)
+      .toBe(1);
+
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: null,
+    });
+    await expect(page.getByTestId("overlay-autostop")).toHaveCount(0);
+    await expect(page.getByTestId("overlay-autostop-actions")).toHaveCount(0);
+    // Opptaket går fortsatt — det var fristen som ble avlyst, ikke økta.
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  });
+
+  test("en avvist kommando SIER det, i stedet for å late som", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        recording_extend_autostop: fn(
+          "() => { throw new Error('recorder is not running') }",
+        ),
+      },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 20 * 60_000,
+    });
+    await page.getByTestId("overlay-autostop-extend").click();
+
+    // En teller som fortsetter mot en stopp brukeren tror hun flyttet er
+    // nøyaktig løgnen shimmens «en write som feiler må AVVISE» finnes for.
+    await expect(page.getByTestId("toast-host")).toContainText(
+      "Kunne ikke endre auto-stopp",
+    );
+  });
+});

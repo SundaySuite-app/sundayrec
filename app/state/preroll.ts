@@ -125,17 +125,62 @@ export async function reconcilePreroll(force = false): Promise<void> {
   await apply(decision);
 }
 
-/** Spør backenden om løkka virkelig går, og republiser. */
-export async function refreshPrerollStatus(): Promise<void> {
-  try {
-    const st = await window.api.prerollStatus?.();
-    prerollActive.value = st?.active === true;
-  } catch {
-    prerollActive.value = false;
-  }
+/**
+ * Bakenden har gitt opp løkka (`backend://warning` med `preroll_dead`, etter
+ * `PREROLL_DEAD_AFTER_ATTEMPTS` mislykkede forsøk).
+ *
+ * ## ⚠️ «Lytter»-brikka sto over en død buffer
+ *
+ * `prerollActive` er brikkas eneste kilde, og den ble bare skrevet av `apply()`
+ * — altså av det siste `preroll_start` som svarte `true`. Når bakenden senere
+ * ga opp, sa den fra på en kanal ingen hørte på (se `state/backend-warning.ts`),
+ * og brikka ble stående og påstå at lyden fra før knappetrykket ble tatt vare
+ * på. Det er den ene løgnen pre-roll ikke har råd til: hele funksjonen er et
+ * løfte om de sekundene ingen kan ta om igjen.
+ *
+ * `applied` nullstilles med, av samme grunn som i `apply()`s catch: vår
+ * hukommelse om hva bakenden gjør er ikke lenger sann, så neste forlik skal
+ * avgjøre fra bunnen i stedet for å hoppe over kommandoen fordi «vi har jo
+ * allerede bedt om run». Ingen umiddelbar gjenoppstart — effekten kjører først
+ * når en betingelse faktisk endrer seg, og å prøve igjen med én gang ville vært
+ * å slåss med en bakende som nettopp ga opp.
+ */
+export function markPrerollDead(): void {
+  applied = null;
+  prerollActive.value = false;
 }
 
+/**
+ * ## ⚠️ `refreshPrerollStatus()` er SLETTET, ikke koblet
+ *
+ * Den sto her uten et eneste kallsted: «spør `preroll_status` og republiser
+ * `prerollActive`». Det ser ut som beltet under `apply()`, og granskningen
+ * foreslo å koble den ved oppstart og enhetsbytte. Det ble prøvd, og det er
+ * feil vei rundt.
+ *
+ * Grunnen er shimmens reservesvar. `prerollStatus` går gjennom `call()` med
+ * `{ active: false }` som fallback, og `call()` svelger enhver feil — så en IPC
+ * som ikke svarer, og en bakende som ikke finnes i det hele tatt
+ * (nettleser-nivået, `npm run dev`, hele e2e-suiten), er UMULIG å skille fra et
+ * ekte «nei». Lesningen kan altså bare gjøre én ting med brikka: slå den AV.
+ * Aldri på. (Den e2e-testen som pinner at brikka står når `preroll_start`
+ * svarer `true`, ble rød på første forsøk — det er nettopp denne feilen, målt.)
+ *
+ * En andre leser hvis eneste mulige utslag er å motsi den første, på et
+ * grunnlag som ikke kan skilles fra «vet ikke», er ikke belte og bukseseler.
+ * Det er et andre svar på étt spørsmål, altså nøyaktig skjøten denne modulen
+ * ble skrevet for å fjerne. Brikka har ÉN skriver: `apply()`, av det
+ * `preroll_start` SELV svarte — og `markPrerollDead()`, når bakenden senere
+ * sier at den ga opp. Det er de to øyeblikkene der noen faktisk vet noe.
+ *
+ * `preroll_status` er fortsatt registrert i Rust og fortsatt nåbar gjennom
+ * shimmen; det er kommandoen som er uten kaller, ikke uten mening.
+ */
+
 let dispose: (() => void) | null = null;
+
+/** Enheten forrige forlik gjaldt. `null` = ingen forlik ennå (oppstart). */
+let lastDeviceKey: string | null = null;
 
 /**
  * Koble livsløpet. Idempotent — et andre kall gir den samme opprydderen.
@@ -149,8 +194,18 @@ export function initPreroll(): () => void {
   const stopEffect = effect(() => {
     // Abonnementene. `currentConditions()` leser begge signalene, så et bytte
     // i enhet, sekunder, av/på eller opptaksstatus forliker av seg selv.
+    const s = settings.value;
     currentConditions();
-    void reconcilePreroll();
+    const deviceKey = `${s.deviceId ?? ""} ${s.deviceName ?? ""}`;
+    // Et enhetsbytte er det ene tilfellet der «run» betyr noe annet enn det
+    // gjorde et øyeblikk før: en ANNEN enhet. Da må kommandoen gjenutstedes
+    // selv om avgjørelsen er uendret, ellers blir bufferen stående på den
+    // forrige enheten mens innstillingene viser den nye. `reconcilePreroll`
+    // har lovet nettopp dette i doc-kommentaren sin hele tiden; ingen hadde
+    // koblet løftet til noe.
+    const force = lastDeviceKey !== null && lastDeviceKey !== deviceKey;
+    lastDeviceKey = deviceKey;
+    void reconcilePreroll(force);
   });
 
   // Oppstart: `force`, fordi en tidligere kjøring (eller et krasj) kan ha
@@ -162,6 +217,7 @@ export function initPreroll(): () => void {
       clearTimeout(restartTimer);
       restartTimer = null;
     }
+    lastDeviceKey = null;
     stopEffect();
     dispose = null;
   };
