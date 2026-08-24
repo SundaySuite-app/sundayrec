@@ -29,6 +29,17 @@ import { defineConfig, devices } from "@playwright/test";
 // B deleted the old one, and with it the 13 legacy specs whose `app/` copies had
 // been carrying byte-identical test titles for exactly this day. What is left is
 // one shell, one server, one project, and one place a spec can live.
+// ## The port is a knob, not a constant
+//
+// Default 1420, overridable with SUNDAYREC_E2E_PORT. The failure mode the knob
+// exists for (observed 2026-08-24, review round): with several git-worktrees of
+// this repo on one machine, whichever checkout starts Vite first owns :1420 —
+// and `reuseExistingServer` then makes every OTHER checkout's `npx playwright
+// test` attach to it and report green about code it never loaded. `--strictPort`
+// below is part of the fix: without it Vite silently picks a free port and the
+// reuse problem just moves.
+const PORT = Number(process.env.SUNDAYREC_E2E_PORT ?? 1420);
+
 export default defineConfig({
   testDir: "./e2e",
 
@@ -50,7 +61,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
 
   use: {
-    baseURL: "http://localhost:1420",
+    baseURL: `http://localhost:${PORT}`,
     // A trace is worth having exactly when something failed and you are not
     // watching. Not `on`: a full trace per passing test is megabytes of nothing.
     trace: "retain-on-failure",
@@ -73,8 +84,8 @@ export default defineConfig({
   // command — no "remember to run the dev server first". Reuses a server you
   // already have running locally; on CI always starts a clean one.
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:1420",
+    command: `npm run dev -- --port ${PORT} --strictPort`,
+    url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     // `predev` fetches the ffmpeg sidecars on a cold checkout, which dominates
     // this on the first run.

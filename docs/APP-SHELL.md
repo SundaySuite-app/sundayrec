@@ -137,7 +137,9 @@ looks right in `npm run dev` is unproven until `npm run tauri dev` shows it.
 - `app/**/*.test.{ts,tsx}` run in the ordinary `npm run test` (vitest, **node
   env**). A component that needs a DOM should be reduced to a pure core the way
   the shared `*-core.ts` modules are, rather than dragging jsdom in.
-- `e2e/*.spec.ts` run in Playwright's one `chromium` project against :1420,
+- `e2e/*.spec.ts` run in Playwright's one `chromium` project against :1420
+  (override with `SUNDAYREC_E2E_PORT=<port>` — Vite gets `--strictPort`, so two
+  worktrees can never silently share one server and test each other's code),
   started by `npm run e2e`. They lived under `e2e/app/`, in a second project on
   :1430, until fase B; the move needed no path change in `docs/SMOKE-TEST.md`,
   because every copied test kept its title byte-identical for exactly that day.

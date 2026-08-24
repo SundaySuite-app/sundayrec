@@ -1004,15 +1004,43 @@ pub async fn startup_sweep(pool: &sqlx::SqlitePool) -> usize {
             }
         }
     }
-    if folders.is_empty() {
-        return 0;
-    }
-    // Blocking readdir/unlink off the async runtime.
-    let removed = tokio::task::spawn_blocking(move || cleanup_temp_files(&folders))
-        .await
-        .unwrap_or(0);
+
+    // Blocking readdir/unlink off the async runtime. The mastering-preview
+    // sweep rides in the same blocking task: same lifecycle, same best-effort
+    // contract, one log line.
+    let removed = tokio::task::spawn_blocking(move || {
+        cleanup_temp_files(&folders) + cleanup_preview_temp_files(&std::env::temp_dir())
+    })
+    .await
+    .unwrap_or(0);
     if removed > 0 {
-        tracing::info!(removed, "startup: swept crashed-edit temp/backup leftovers");
+        tracing::info!(
+            removed,
+            "startup: swept editor temp/backup + mastering-preview leftovers"
+        );
+    }
+    removed
+}
+
+/// Sweep the OS temp dir for leftover mastering-preview mp3s
+/// (`sundayrec-master-preview-*.mp3`, written by [`master_preview`]). Each is
+/// ~800 kB (20 s @ 320 kbps) and the Lyd step renders one per sound profile per
+/// recording, so a machine that auditions freely accumulates megabytes that
+/// nothing ever reclaimed — `is_preview_temp_name` existed with zero callers
+/// (P4b restanse #1 in docs/APP-SHELL.md). Same discipline as
+/// [`cleanup_temp_files`]: the pure predicate decides, this layer does the
+/// readdir/unlink, best-effort, never panics. Returns how many were removed.
+pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
+    use sundayrec_core::mastering::is_preview_temp_name;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if is_preview_temp_name(&name) && std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
     }
     removed
 }
@@ -3847,6 +3875,40 @@ mod tests {
         assert!(d.join("service.mp3").exists());
         assert!(!d.join("service.mp3.__editor_tmp").exists());
         assert!(!d.join("clip.__editor_tmp.mp4").exists());
+    }
+
+    /// The preview sweep removes ONLY `sundayrec-master-preview-*.mp3` and
+    /// leaves every neighbour in the temp dir untouched — including near
+    /// misses: the right prefix with the wrong extension, and the right
+    /// extension without the prefix. Mutation check: neutering
+    /// `is_preview_temp_name` to `true` deletes the neighbours and fails the
+    /// keep-assertions; to `false`, the count assertion.
+    #[test]
+    fn preview_sweep_removes_only_master_preview_leftovers() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let d = dir.path();
+        std::fs::write(d.join("sundayrec-master-preview-abc123.mp3"), b"x").unwrap();
+        std::fs::write(d.join("sundayrec-master-preview-def456.mp3"), b"x").unwrap();
+        // Near misses and innocent bystanders that must survive:
+        std::fs::write(d.join("sundayrec-master-preview-half.wav"), b"keep").unwrap();
+        std::fs::write(d.join("unrelated-preview.mp3"), b"keep").unwrap();
+        std::fs::write(d.join("service.mp3"), b"keep").unwrap();
+        std::fs::create_dir(d.join("sundayrec-master-preview-imadir.mp3")).unwrap();
+
+        let removed = cleanup_preview_temp_files(d);
+        assert_eq!(removed, 2);
+        assert!(!d.join("sundayrec-master-preview-abc123.mp3").exists());
+        assert!(!d.join("sundayrec-master-preview-def456.mp3").exists());
+        assert!(d.join("sundayrec-master-preview-half.wav").exists());
+        assert!(d.join("unrelated-preview.mp3").exists());
+        assert!(d.join("service.mp3").exists());
+        // remove_file on a directory fails; the sweep must shrug, not panic.
+        assert!(d.join("sundayrec-master-preview-imadir.mp3").exists());
+
+        // Idempotent: a second pass finds nothing.
+        assert_eq!(cleanup_preview_temp_files(d), 0);
+        // A nonexistent dir is a no-op, not a panic.
+        assert_eq!(cleanup_preview_temp_files(&d.join("no-such-dir")), 0);
     }
 
     /// E6.5: the startup sweep really does reach the folders the editor writes
