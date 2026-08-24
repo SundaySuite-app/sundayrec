@@ -403,6 +403,8 @@ export const PAUSED_KEYS = new Set([
   'app.setup.advanced.wakeArm',
   'app.setup.advanced.wakeArmWord.idle',
   'app.setup.advanced.wakeArmWord.ok',
+  'app.setup.advanced.wakeArmWord.autoRecordOff',
+  'app.setup.advanced.wakeArmWord.nothingUpcoming',
   'app.setup.advanced.wakeArmWord.needsAdmin',
   'app.setup.advanced.wakeArmWord.disabled',
   'app.setup.advanced.wakeArmWord.unsupported',
