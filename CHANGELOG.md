@@ -3,7 +3,10 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Upublisert
+## v0.16.0-beta.1 — det nye SundayRec, til beta-ringen først
+
+Hele skallet er tegnet på nytt for en frivillig som aldri har sett appen.
+Beta-ringen får den første runden; si fra om alt som skurrer før den går bredt.
 
 ### SundayRec har fått nytt utseende — tre steder: Opptak · Bibliotek · Oppsett
 
