@@ -58,7 +58,12 @@ import {
   pendingAction,
 } from "../../router/router";
 import { showTelemetryPreview } from "../setup/advanced/TelemetryRow";
-import { banners, dismissBanner } from "../../state/banners";
+import {
+  banners,
+  dismissBanner,
+  type BackendWarningBanner,
+  type BannerData,
+} from "../../state/banners";
 import { interpolate, WARNING_SUFFIXES } from "../../state/backend-warning";
 import {
   audioDevices,
@@ -708,9 +713,7 @@ function RecordBanners() {
   // `state/backend-warning.ts`, som eier både kanalen og dedupliseringen mot
   // stripene under. De rendres HER og ikke i skallet fordi alle fire handler om
   // opptaket: forhåndsbufferen, gjenopprettingen, lydenheten, disken.
-  const warnings = banners.value.filter((entry) =>
-    entry.key.startsWith("backend-"),
-  );
+  const warnings = banners.value.filter(isBackendWarning);
   const state = nextRecording.value;
   const room = currentRoomMinutes();
   const lowDisk = room !== null && room < LOW_DISK_MINUTES;
@@ -762,22 +765,18 @@ function RecordBanners() {
         ),
       )}
 
-      {warnings.map((entry) =>
-        entry.key === "recording-error" ||
-        entry.key === "recording-quality" ||
-        entry.key === "update" ? null : (
-          <Banner
-            key={entry.key}
-            // Bakendens egen alvorlighetsgrad, ikke vår gjetning. `error` er
-            // `role="alert"`: en mikser som ikke er i huset en halvtime før et
-            // planlagt opptak SKAL avbryte det skjermleseren holder på med.
-            tone={entry.severity === "error" ? "bad" : "warn"}
-            testId={`banner-${entry.key}`}
-            title={warningText(entry.code, entry.msg, entry.params)}
-            onDismiss={() => dismissBanner(entry.key)}
-          />
-        ),
-      )}
+      {warnings.map((entry) => (
+        <Banner
+          key={entry.key}
+          // Bakendens egen alvorlighetsgrad, ikke vår gjetning. `error` er
+          // `role="alert"`: en mikser som ikke er i huset en halvtime før et
+          // planlagt opptak SKAL avbryte det skjermleseren holder på med.
+          tone={entry.severity === "error" ? "bad" : "warn"}
+          testId={`banner-${entry.key}`}
+          title={warningText(entry.code, entry.msg, entry.params)}
+          onDismiss={() => dismissBanner(entry.key)}
+        />
+      ))}
 
       {lowDisk ? (
         <Banner
@@ -856,6 +855,19 @@ function preflightHeadline(findings: readonly PreflightFinding[]): string {
   return errors > 0
     ? tn("status.preflightErrors", errors)
     : tn("status.preflightWarns", findings.length);
+}
+
+/**
+ * Er dette en bakende-advarsel?
+ *
+ * En typevakt og ikke et `startsWith` i filteret: `BannerData` er en union, og
+ * et filter som ikke SIER at det smalner den lar `entry.severity` være et
+ * felt TypeScript ikke vet finnes. Vakten er det ene stedet «hvilke nøkler er
+ * bakendens» står skrevet, og `BackendWarningKey` i `state/banners.ts` er
+ * listen den holdes mot.
+ */
+function isBackendWarning(entry: BannerData): entry is BackendWarningBanner {
+  return entry.key.startsWith("backend-");
 }
 
 /**
