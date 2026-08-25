@@ -1,9 +1,13 @@
 /*
- * OPPTAK — siden med én jobb.
+ * OPPTAK — kontrollrommet.
  *
- * Rekkefølgen på skjermen er rekkefølgen i hodet: hvor kommer lyden fra, hører
- * vi den, og så den store knappen. Alt annet på siden er tillegg som bare er
- * der hvis noen har slått dem på.
+ * To kolonner over 1100 px: venstre er det LEVENDE (kilde, måler, Start) og
+ * står sticky; høyre er klargjøringen (kamerabildet og de fem kortene) og
+ * vokser når et kort folder seg ut. Under 1100 px blir det én kolonne i den
+ * samme rekkefølgen — venstrekolonnen først, fordi den er jobben.
+ *
+ * Bannerne, undertittelen, samtykkekortet og kvitteringen står i FULL bredde
+ * over og under: ingen av dem hører til én av de to halvdelene.
  */
 
 .page {
@@ -25,6 +29,48 @@
   margin: 0;
   color: var(--ink-2);
   font-size: var(--fs-body);
+}
+
+/*
+ * Selve rommet. `minmax(0, …)` på begge spor: uten det får en kolonne med en
+ * lang filsti i seg `min-content`-bredde av stien og sprenger rutenettet —
+ * altså horisontal scroll på nøyaktig den maskinen som har den lengste
+ * mappebanen.
+ */
+.room {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .room {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 9fr);
+    gap: var(--sp-5);
+  }
+
+  /*
+   * Sticky: Start skal stå der man så den sist, også når et kort til høyre
+   * folder ut en hel skjerm. `top` er luften over `<main>`s innhold.
+   */
+  .live {
+    position: sticky;
+    top: var(--sp-2);
+  }
+}
+
+.live,
+.prep {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+}
+
+/* Kortstabelen: fem rader som skal leses som én liste. */
+.stack {
+  display: grid;
+  gap: var(--sp-2);
 }
 
 .row {
@@ -56,47 +102,61 @@
   font-size: var(--fs-sm);
 }
 
-/* Start til venstre og bred, kamera-tillegget ved siden av. */
-.startRow {
-  display: flex;
-  align-items: stretch;
-  gap: var(--sp-4);
-}
-
-.start {
-  flex: 1;
-}
-
-.camera {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--line);
+/*
+ * Kilde-kortet. Det er ikke en `ControlCard` — de to gule tilstandene er
+ * advarsler med nødutganger, ikke kompaktrader — så pulsen bor her i tillegg
+ * til i `ui/ControlCard/ControlCard.module.css`. To definisjoner er prisen for
+ * at kortet får være den formen tilstanden krever; holdes de i takt, gjør de
+ * det ved å si det samme.
+ */
+.sound {
+  display: block;
   border-radius: var(--r);
-  background: var(--surface);
+}
+
+/* Kroppen kortet folder ut — skillelinjen sier at den hører til raden over og
+   ikke er et nytt kort. Attributtselektoren er trygg her: den er bundet til
+   `.sound`, som CSS-modulen har hashet. */
+.sound [data-testid="control-sound-body"] {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-3);
+}
+
+.pulse {
+  animation: sound-pulse 2s ease-out 1;
+}
+
+@keyframes sound-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--gold-soft);
+  }
+  40% {
+    box-shadow: 0 0 0 6px var(--gold-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--gold-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
 }
 
 /*
- * Kamerabildet. Bredde nok til at man ser hva som er i bildet, smalt nok til at
- * det ikke tar over siden — den store knappen er fortsatt hovedsaken. Se
- * `CameraPreviewBlock` i RecordPage.tsx for hvorfor det står for seg selv.
+ * Kamerabildet. Full bredde i høyrekolonnen: det er der man ser om linsen
+ * peker på menigheten, og et frimerke svarer ikke på det spørsmålet.
  */
 .preview {
   width: 100%;
-  max-width: 520px;
 }
 
 .why {
   margin: 0;
   color: var(--ink-3);
   font-size: var(--fs-sm);
-}
-
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--sp-4);
 }
 
 .banners {

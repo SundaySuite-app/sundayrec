@@ -1,10 +1,43 @@
 /**
- * OPPTAK — jobb nr. 1 av fire, og siden alt annet i appen finnes for.
+ * OPPTAK — kontrollrommet. Jobb nr. 1 av fire, og siden alt annet i appen
+ * finnes for.
  *
- * Rekkefølgen på skjermen er rekkefølgen i hodet til en frivillig som kom inn
- * fem minutter før gudstjenesten: HVOR kommer lyden fra, HØRER vi den, og så
- * den store knappen. Kamera og automatisk opptak er tillegg som bare står der
- * hvis noen har slått dem på i Oppsett.
+ * ## D2: alt som betyr noe redigeres HER
+ *
+ * Fram til D2 sa denne siden hva som var galt og sendte deg til Oppsett for å
+ * rette det. Eieren så på det og sa det som var sant: de fem minuttene før
+ * gudstjenesten er den ene anledningen noen har til å gjøre appen klar, og en
+ * app som da sender deg til en annen skjerm — og tilbake, og til en tredje —
+ * er en app som bruker de fem minuttene på navigasjon.
+ *
+ * Så skjermen er to kolonner:
+ *
+ *   **Venstre, sticky, LEVENDE.** Hvor kommer lyden fra, hører vi den, og den
+ *   store knappen. Den halvdelen skal aldri flytte på seg fordi noe til høyre
+ *   ble foldet ut — Start er det ene elementet på siden som må stå der man så
+ *   det sist.
+ *
+ *   **Høyre, KLARGJØRING.** Kamerabildet øverst (når kamera er på), så de fem
+ *   kortene: mappe, kvalitet, kamera, automatisk opptak, varsling. Hvert kort
+ *   viser svaret som gjelder nå og folder ut HELE skjermen som eier spørsmålet
+ *   — den samme skjermen første gang bruker, ikke en kopi av den.
+ *
+ * Under 1100 px blir det én kolonne, i den samme rekkefølgen.
+ *
+ * ## Kortene er `SubPage`-skjermer, innbygget
+ *
+ * `useEmbedded()` sier fra til `SubPage` at rammen (leden) er unødvendig her:
+ * kortraden over har allerede sagt hva skjermen er for. Effekten er symmetrisk
+ * — forsvinner oppryddingen, mister INNSTILLINGER leden sin etter et besøk på
+ * OPPTAK, og det er vakten `e2e/control-room.spec.ts` står for.
+ *
+ * ## Ankeret folder ut
+ *
+ * `?goto=settings:audio` → `record#sound`. `route.anchor` er ikke bare et
+ * rullemål: kortet med det navnet foldes ut, rulles til, og pulserer når man
+ * KOM dit (ikke ved en ren skjermbilde-lenke, som setter `highlight: false`).
+ * Lista over gyldige ankre er `control-core.ts`, og `router.test.ts` krysser
+ * den mot aliastabellen.
  *
  * ## Den ene adferdsendringen
  *
@@ -16,7 +49,7 @@
  * ## Måleren, og hvem som eier mikrofonen
  *
  * `VuMeter` holder den delte bakenden-strømmen (`acquireVuFeed`) mens siden
- * står åpen. Den slippes to steder, og begge er viktige:
+ * står åpen. Den slippes tre steder, og alle tre er viktige:
  *
  *   - `off` når ingen kilde er valgt: å måle «systemets standardinngang» der
  *     ville vært å åpne nøyaktig den mikrofonen sett 2 finnes for å slutte å
@@ -26,6 +59,13 @@
  *     `window.__isRecording`, og `app/` gjenskaper ikke den globalen med
  *     vilje. Her er det derfor MONTERINGEN som er vakten: ingen måler i treet,
  *     ingen `start_vu`. Overlegget leser motorens egen `recording://levels`.
+ *   - **kilde-kortet KOLLAPSER når opptaket starter.** D2 la en ANDRE måler på
+ *     skjermen: «Hvilken lyd?» har sin egen (`sound-vu`), og et utfoldet
+ *     kilde-kort viser den ved siden av sidens (`record-vu`). Strømmen er
+ *     refcountet, så de to er én økt på enheten — men bare så lenge BEGGE
+ *     forsvinner ved opptaksstart. En måler som ble stående ville holdt
+ *     refcounten over null og bedt om enheten opptaket nettopp tok. Kortet
+ *     foldes derfor sammen, som river hele `SoundPage` ut av treet.
  *
  * ## «Rediger» finnes ikke ennå
  *
@@ -40,6 +80,7 @@
  * merke som gjettes er verre enn ingen merke.
  */
 
+import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
 import type { TelemetryConsent } from "@legacy/bindings/TelemetryConsent";
@@ -56,8 +97,20 @@ import {
   consumePendingAction,
   navigate,
   pendingAction,
+  route,
 } from "../../router/router";
 import { showTelemetryPreview } from "../setup/advanced/TelemetryRow";
+import { AutoRecordCard } from "../setup/AutoRecordCard";
+import { CameraCard } from "../setup/CameraCard";
+import { answerText, detailText } from "../setup/decision-text";
+import { decisionsFor } from "../setup/decisions-core";
+import { FolderPage } from "../setup/FolderPage";
+import { NotifyPage } from "../setup/NotifyPage";
+import { QualityPage } from "../setup/QualityPage";
+import { SoundPage } from "../setup/SoundPage";
+import { useEmbedded } from "../setup/SubPage";
+import { autoExpandable, decisionRows, isControlId } from "./control-core";
+import type { ControlId } from "./control-core";
 import {
   banners,
   dismissBanner,
@@ -65,14 +118,13 @@ import {
   type BannerData,
 } from "../../state/banners";
 import { interpolate, WARNING_SUFFIXES } from "../../state/backend-warning";
+import { audioDevices, loadAudioDevices } from "../../state/devices";
 import {
-  audioDevices,
-  loadAudioDevices,
-  loadVideoDevices,
-  videoDevices,
-  videoDevicesFailed,
-} from "../../state/devices";
-import { currentRoomMinutes, refreshDiskSpace } from "../../state/disk";
+  currentRoomMinutes,
+  diskFreeBytes,
+  refreshDiskSpace,
+} from "../../state/disk";
+import { emailTransport, refreshEmailFacts } from "../../state/email";
 import { prerollActive } from "../../state/preroll";
 import {
   dismissMissed,
@@ -98,7 +150,7 @@ import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { Chip } from "../../ui/Chip/Chip";
 import { ConsentCard } from "../../ui/ConsentCard/ConsentCard";
-import { Toggle } from "../../ui/Toggle/Toggle";
+import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { LiveCameraPreview } from "../../ui/CameraPreview/LiveCameraPreview";
 import {
@@ -107,7 +159,6 @@ import {
 } from "../../ui/CameraPreview/ownership";
 import { alertDialog } from "../../ui/dialog";
 import { toast } from "../../ui/toast";
-import { useSetting } from "../../settings/use-setting";
 import { spanText } from "./span-text";
 import { confirmAndStop } from "./stop";
 import {
@@ -133,15 +184,46 @@ export function RecordPage() {
   const source = sourceState(s, devices);
   const live = isRecording.value;
   const [starting, setStarting] = useState(false);
+  const { open, toggle, setOpen } = useControlCards(live || starting);
 
-  // Enhetslisten og ledig plass leses når SIDEN åpnes, ikke ved oppstart: en
-  // liste hentet ved boot er gammel når noen faktisk står foran mikseren.
+  // Kortene bygger inn de samme skjermene Oppsett hadde. Rammen (leden) er
+  // unødvendig når kortraden allerede har sagt hva skjermen er for — og
+  // oppryddingen er hele poenget, se toppen av fila.
+  useEmbedded();
+
+  // Enhetslisten, ledig plass og e-postveien leses når SIDEN åpnes, ikke ved
+  // oppstart: fakta hentet ved boot er gamle når noen faktisk står foran
+  // mikseren. Alle tre er inndata kortene sier noe SANT med.
   useEffect(() => {
     void loadAudioDevices();
     void refreshDiskSpace();
+    void refreshEmailFacts();
     // Én gang per oppstart, ikke per besøk — se `state/preflight.ts`.
     void runSilentPreflightOnce();
   }, []);
+
+  // Ankeret: fold ut kortet, rull dit, og puls når man KOM hit. Rekkefølgen er
+  // ikke likegyldig — utfoldingen må ha skjedd før vi ruller, ellers ruller vi
+  // til en rad som er i ferd med å bli dobbelt så høy.
+  //
+  // ⚠️ Effekten henger på HELE ruten og ikke på ankerstrengen. To trykk på den
+  // samme lenken («Frigjør plass», menylinjens «Sjekk oppsettet») gir det samme
+  // ankeret, og med strengen som avhengighet ville det andre trykket vært en
+  // knapp som stille ikke gjorde noe — for kortet kan være lukket igjen i
+  // mellomtiden. `navigate` lager et nytt ruteobjekt hver gang, som er nøyaktig
+  // «noen ba om dette på nytt».
+  const current = route.value;
+  const anchor = current.anchor;
+  const highlight = current.highlight === true;
+  useEffect(() => {
+    if (!isControlId(anchor)) return;
+    setOpen((prev) => withCard(prev, anchor, true));
+    // Neste frame: kortet er malt, og elementet har den høyden det skal ha.
+    const id = requestAnimationFrame(() => {
+      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [current, setOpen]);
 
   /**
    * Start.
@@ -233,9 +315,15 @@ export function RecordPage() {
     }
     if (armed === "run-preflight") {
       consumePendingAction();
-      navigate("setup", { tab: "sound" });
+      // Menylinjens «Sjekk oppsettet» er et spørsmål om LYDEN. Den folder ut
+      // kilde-kortet der man står, i stedet for å bytte skjerm — flaten som
+      // svarer er allerede her. LOKALT og ikke gjennom ruteren: handlingen
+      // kommer fra menylinjen mens siden allerede står åpen, og en navigering
+      // til stedet man er ville vært et rutebytte for å gjøre ingenting.
+      setOpen((prev) => withCard(prev, "sound", true));
+      document.getElementById("sound")?.scrollIntoView({ block: "start" });
     }
-  }, [armed, source.canStart, live]);
+  }, [armed, source.canStart, live, setOpen]);
 
   return (
     <div class={styles.page}>
@@ -250,21 +338,36 @@ export function RecordPage() {
 
       <Consent />
 
-      <SourceCard source={source} />
+      <div class={styles.room}>
+        {/*
+          VENSTRE: det levende. Sticky, så Start står der man så den sist selv
+          om et kort til høyre folder seg ut.
+        */}
+        <div class={styles.live}>
+          <SoundControl
+            source={source}
+            expanded={open.includes("sound")}
+            onExpand={() => toggle("sound")}
+            highlight={highlight && anchor === "sound"}
+          />
 
-      <Card testId="record-meter">
-        <VuMeter
-          testId="record-vu"
-          deviceName={s.deviceName}
-          // Tre grunner til at ingen enhet åpnes herfra: ingen kilde er valgt,
-          // motoren eier den allerede, eller den er i ferd med å overta. Se
-          // toppen av fila.
-          off={source.kind === "no-source" || live || starting}
-        />
-      </Card>
+          {/*
+            Måleren er MONTERINGEN som er vakten: ingen måler i treet, ingen
+            `start_vu`. Se toppen av fila.
+          */}
+          {live || starting ? null : (
+            <Card testId="record-meter">
+              <VuMeter
+                testId="record-vu"
+                deviceName={s.deviceName}
+                // Ingen kilde er valgt ⇒ ingen enhet åpnes: å måle «systemets
+                // standardinngang» ville vært å åpne nøyaktig den mikrofonen
+                // sett 2 finnes for å slutte å ta opp fra uten å spørre.
+                off={source.kind === "no-source"}
+              />
+            </Card>
+          )}
 
-      <div class={styles.startRow}>
-        <div class={styles.start}>
           <Button
             variant="record"
             size="lg"
@@ -277,28 +380,188 @@ export function RecordPage() {
           >
             {t("app.record.start")}
           </Button>
+
+          {source.kind === "no-source" ? (
+            <p data-testid="record-why-blocked" class={styles.why}>
+              {t("app.record.whyBlocked")}
+            </p>
+          ) : source.kind === "source-missing" ? (
+            <p data-testid="record-can-start" class={styles.why}>
+              {t("app.record.canStart")}
+            </p>
+          ) : null}
         </div>
-        <CameraCard />
-      </div>
 
-      {source.kind === "no-source" ? (
-        <p data-testid="record-why-blocked" class={styles.why}>
-          {t("app.record.whyBlocked")}
-        </p>
-      ) : source.kind === "source-missing" ? (
-        <p data-testid="record-can-start" class={styles.why}>
-          {t("app.record.canStart")}
-        </p>
-      ) : null}
-
-      <CameraPreviewBlock />
-
-      <div class={styles.cards}>
-        <NextAutoCard />
-        <LastRecordingCard />
+        {/* HØYRE: klargjøringen — bildet, og de fem kortene. */}
+        <div class={styles.prep}>
+          <CameraPreviewBlock />
+          <ControlStack open={open} toggle={toggle} anchor={anchor} />
+          <NextAutoCard />
+          <LastRecordingCard />
+        </div>
       </div>
 
       <Done />
+    </div>
+  );
+}
+
+// ── Kortene, og hvilke som står åpne ────────────────────────────────────────
+
+/**
+ * Hvilke kort som er foldet ut.
+ *
+ * En LISTE og ikke ett navn: mappe og kvalitet er to spørsmål man gjerne har
+ * åpne samtidig når man setter opp en ny maskin, og en trekkspill-regel som
+ * lukket det ene fordi man åpnet det andre ville vært appen som bestemmer
+ * hvilken rekkefølge man tenker i.
+ *
+ * De to tilleggene er derimot STYRT av bryteren sin: å slå på «Ta med kamera»
+ * folder ut kameravalget, og å slå det av lukker det. Det er canvasens sett 5
+ * («to tillegg som utvider siden når de slås på»), og det er det eneste stedet
+ * en effekt skriver til lista uten at noen trykket på en kortrad.
+ *
+ * ⚠️ Den tredje effekten er VU-REGELEN: et utfoldet kilde-kort har sin egen
+ * måler, og begge må ut av treet når opptaket starter. Se toppen av fila.
+ */
+function useControlCards(recording: boolean): {
+  open: readonly ControlId[];
+  toggle: (id: ControlId) => void;
+  setOpen: (next: (prev: ControlId[]) => ControlId[]) => void;
+} {
+  const s = settings.value;
+  const [open, setOpen] = useState<ControlId[]>([]);
+  const cameraOn = s.videoEnabled === true;
+  const autoOn = autoExpandable(s);
+
+  useEffect(() => {
+    setOpen((prev) => withCard(prev, "camera", cameraOn));
+  }, [cameraOn]);
+
+  useEffect(() => {
+    setOpen((prev) => withCard(prev, "auto", autoOn));
+  }, [autoOn]);
+
+  useEffect(() => {
+    if (!recording) return;
+    setOpen((prev) => withCard(prev, "sound", false));
+  }, [recording]);
+
+  return {
+    open,
+    toggle: (id) => setOpen((prev) => withCard(prev, id, !prev.includes(id))),
+    setOpen,
+  };
+}
+
+/** Lista med `id` lagt til eller tatt ut. Ny array bare når noe faktisk
+ *  endret seg — ellers ville hver effekt-kjøring vært en ny render. */
+function withCard(
+  open: ControlId[],
+  id: ControlId,
+  wanted: boolean,
+): ControlId[] {
+  const has = open.includes(id);
+  if (has === wanted) return open;
+  return wanted ? [...open, id] : open.filter((entry) => entry !== id);
+}
+
+/**
+ * Kortstabelen i høyrekolonnen: mappe, kvalitet, kamera, automatisk opptak,
+ * varsling — rekkefølgen `STACK_IDS` navngir.
+ *
+ * Skrevet ut og ikke løkket: de fem har hver sin kropp og hvert sitt sett med
+ * props (to av dem har en bryter i topplinja), så en løkke måtte hatt en
+ * `switch` inni seg for å skille dem — altså den samme lista, bare gjemt.
+ *
+ * De tre som er ett av de fem spørsmålene henter svaret sitt fra
+ * `decisions-core` gjennom `decisionRows`, og oversetter det med
+ * `decision-text` — det ene stedet den oversettelsen bor, delt med
+ * sjekklisten i første-gangs-sekvensen. To kopier ville før eller siden sagt
+ * to forskjellige ting om nøyaktig samme tilstand.
+ */
+function ControlStack({
+  open,
+  toggle,
+  anchor,
+}: {
+  open: readonly ControlId[];
+  toggle: (id: ControlId) => void;
+  anchor: string | undefined;
+}) {
+  const s = settings.value;
+  const rows = decisionRows(
+    decisionsFor({
+      settings: s,
+      devices: audioDevices.value,
+      diskFreeBytes: diskFreeBytes.value,
+      roomMinutes: currentRoomMinutes(),
+      emailTransport: emailTransport(),
+      locale: locale.value,
+      // Ingen måler i en kompaktrad: kortet sier hva som er VALGT, og
+      // hørselstesten står i venstrekolonnen.
+      vuWord: null,
+    }),
+  );
+  const highlight = route.value.highlight === true;
+  const row = (id: string) => rows.find((entry) => entry.id === id)!;
+  const props = (id: ControlId) => ({
+    expanded: open.includes(id),
+    onExpand: () => toggle(id),
+    highlight: highlight && anchor === id,
+  });
+
+  return (
+    <div class={styles.stack}>
+      <ControlCard
+        id="folder"
+        title={t("app.setup.q2")}
+        value={answerText(row("folder").answer)}
+        detail={detailText(row("folder").detail)}
+        tone={row("folder").tone}
+        expandLabel={
+          row("folder").needsSetUp
+            ? t("app.setup.setUp")
+            : t("app.setup.change")
+        }
+        collapseLabel={t("app.record.close")}
+        {...props("folder")}
+      >
+        <FolderPage />
+      </ControlCard>
+
+      <ControlCard
+        id="quality"
+        title={t("app.setup.q3")}
+        value={answerText(row("quality").answer)}
+        detail={detailText(row("quality").detail)}
+        tone={row("quality").tone}
+        expandLabel={t("app.setup.change")}
+        collapseLabel={t("app.record.close")}
+        {...props("quality")}
+      >
+        <QualityPage />
+      </ControlCard>
+
+      <CameraCard {...props("camera")} />
+      <AutoRecordCard {...props("auto")} />
+
+      <ControlCard
+        id="notify"
+        title={t("app.setup.q5")}
+        value={answerText(row("notify").answer)}
+        detail={detailText(row("notify").detail)}
+        tone={row("notify").tone}
+        expandLabel={
+          row("notify").needsSetUp
+            ? t("app.setup.setUp")
+            : t("app.setup.change")
+        }
+        collapseLabel={t("app.record.close")}
+        {...props("notify")}
+      >
+        <NotifyPage />
+      </ControlCard>
     </div>
   );
 }
@@ -357,7 +620,30 @@ function Consent() {
 
 // ── Kilde-kortet (2.1 / 2.2 / 2.3) ──────────────────────────────────────────
 
-function SourceCard({ source }: { source: ReturnType<typeof sourceState> }) {
+/**
+ * Hvor lyden kommer fra — og hele «Hvilken lyd?»-skjermen bak den.
+ *
+ * Tre tilstander, som før (`record-core.ts` avgjør hvilken), og de to gule
+ * beholder sine egne kort: en advarsel med to nødutganger er ikke en kompakt
+ * rad, og `record-no-source` / `record-source-missing` er kontrakten resten av
+ * appen kjenner dem på.
+ *
+ * Det som er nytt er at ALLE tre folder ut den samme skjermen på stedet, i
+ * stedet for å navigere til den. Knappen som gjorde det heter fortsatt det den
+ * gjorde — «Velg lyd» når ingenting er valgt, «Endre» når noe er det — for det
+ * er fortsatt det den gjør.
+ */
+function SoundControl({
+  source,
+  expanded,
+  onExpand,
+  highlight,
+}: {
+  source: ReturnType<typeof sourceState>;
+  expanded: boolean;
+  onExpand: () => void;
+  highlight: boolean;
+}) {
   const [searching, setSearching] = useState(false);
   const [switching, setSwitching] = useState(false);
   const fallback = defaultDeviceOf(audioDevices.value);
@@ -391,8 +677,27 @@ function SourceCard({ source }: { source: ReturnType<typeof sourceState> }) {
     }
   }
 
+  const body = expanded ? (
+    <div id="sound-body" data-testid="control-sound-body">
+      <SoundPage />
+    </div>
+  ) : null;
+
+  const frame = (children: ComponentChildren) => (
+    <section
+      id="sound"
+      data-anchor="sound"
+      data-testid="control-sound"
+      data-expanded={expanded ? "true" : "false"}
+      data-highlight={highlight ? "true" : undefined}
+      class={`${styles.sound} ${highlight ? styles.pulse : ""}`}
+    >
+      {children}
+    </section>
+  );
+
   if (source.kind === "no-source") {
-    return (
+    return frame(
       <Card
         tone="warn"
         testId="record-no-source"
@@ -402,17 +707,21 @@ function SourceCard({ source }: { source: ReturnType<typeof sourceState> }) {
           <Button
             variant="primary"
             testId="record-choose-sound"
-            onClick={() => navigate("setup", { tab: "sound" })}
+            expanded={expanded}
+            controls="sound-body"
+            onClick={onExpand}
           >
-            {t("app.record.chooseSound")}
+            {expanded ? t("app.record.close") : t("app.record.chooseSound")}
           </Button>
         }
-      />
+      >
+        {body}
+      </Card>,
     );
   }
 
   if (source.kind === "source-missing") {
-    return (
+    return frame(
       <Card
         tone="warn"
         testId="record-source-missing"
@@ -438,13 +747,24 @@ function SourceCard({ source }: { source: ReturnType<typeof sourceState> }) {
             >
               {t("app.setup.sound.retry")}
             </Button>
+            <Button
+              variant="ghost"
+              testId="record-change-source"
+              expanded={expanded}
+              controls="sound-body"
+              onClick={onExpand}
+            >
+              {expanded ? t("app.record.close") : t("app.setup.change")}
+            </Button>
           </>
         }
-      />
+      >
+        {body}
+      </Card>,
     );
   }
 
-  return (
+  return frame(
     <Card testId="record-source">
       <div class={styles.row}>
         <div class={styles.grow}>
@@ -462,87 +782,40 @@ function SourceCard({ source }: { source: ReturnType<typeof sourceState> }) {
         <Button
           variant="ghost"
           testId="record-change-source"
-          onClick={() => navigate("setup", { tab: "sound" })}
+          expanded={expanded}
+          controls="sound-body"
+          onClick={onExpand}
         >
-          {t("app.setup.change")}
+          {expanded ? t("app.record.close") : t("app.setup.change")}
         </Button>
       </div>
-    </Card>
+      {body}
+    </Card>,
   );
 }
 
-// ── Kamera-tillegget ────────────────────────────────────────────────────────
+// ── Kamerabildet ────────────────────────────────────────────────────────────
 
 /**
- * Kamera av og på for DENNE gudstjenesten.
+ * Kamerabildet, ØVERST i høyrekolonnen.
  *
- * Kortet står bare der kamera er en del av oppsettet — enten fordi tillegget
- * er på, eller fordi et kamera er valgt. Den andre halvdelen er ikke pynt:
- * uten den ville bryteren gjemt sitt eget kort i det øyeblikket noen slo den
- * av, og veien tilbake gikk gjennom Oppsett.
+ * ## Hvorfor det står der og ikke i kamera-kortet
  *
- * Hvilket kamera, oppløsning og resten er Oppsett-beslutninger; her er det ett
- * spørsmål, og det er «blir kamera med i dag?».
- */
-function CameraCard() {
-  const s = settings.value;
-  const on = s.videoEnabled === true;
-  const chosen = (s.videoDeviceName ?? "").trim();
-  const enabled = useSetting("videoEnabled", { kind: "toggle" });
-  const cameras = videoDevices.value;
-  const failed = videoDevicesFailed.value;
-
-  useEffect(() => {
-    if (on && videoDevices.peek() === null) void loadVideoDevices();
-  }, [on]);
-
-  if (!on && !chosen) return null;
-
-  const none = on && !failed && cameras !== null && cameras.length === 0;
-
-  return (
-    <div data-testid="record-camera" class={styles.camera}>
-      <Toggle
-        checked={enabled.draft === true}
-        onChange={(next) => enabled.set(next)}
-        disabled={enabled.busy}
-        labelId="record-camera-label"
-        testId="record-camera-toggle"
-      />
-      <div class={styles.grow}>
-        <div id="record-camera-label">{t("app.setup.camera.title")}</div>
-        <div data-testid="record-camera-summary" class={styles.muted}>
-          {/* En FEILET lesning er ikke «ingen kameraer»: den korte formen står
-              her, den lange (og hva man gjør med den) i selve rammen under.
-              Se `state/devices.ts` → `videoDevicesFailed`. */}
-          {on && failed
-            ? t("app.record.camera.listError")
-            : none
-              ? t("app.setup.camera.none")
-              : chosen || t("app.setup.camera.noneChosen")}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Kamerabildet, i egen bredde under knappen.
+ * Bildet er ikke en innstilling — det er et FAKTUM om rommet, og det skal
+ * kunne leses uten å folde ut noe. Kamera-kortet er der man velger enhet;
+ * bildet er der man ser at valget var riktig, og de to trenger ikke å være
+ * åpne samtidig for at bildet skal gjøre jobben sin.
  *
- * ## Hvorfor det ikke står inne i kortet over
- *
- * Kortet er en bryter på én linje ved siden av Start («blir kamera med i
- * dag?»). Et 16:9-bilde inne i den raden ville dratt Start-knappen like høy —
- * og Start er den ene tingen på siden som ikke skal endre form fordi et
- * tillegg er på. (Fase D2s PR3 flytter begge inn i høyrekolonnen; til da er
- * dette den ærlige plasseringen.)
+ * Og det står i HØYRE kolonne, ikke ved siden av Start: Start er det ene
+ * elementet på siden som ikke skal endre form eller plass fordi et tillegg er
+ * på.
  *
  * ## Hvorfor bildet i det hele tatt
  *
- * Å velge kamera i Oppsett forteller deg hvilken enhet appen vil bruke. Det
- * forteller deg ikke om linsen peker på menigheten, om lokket er på, eller om
- * kabelen ble dratt ut i går. Det er det bare et bilde som gjør — og de fem
- * minuttene før gudstjenesten er den ene anledningen noen har til å se det.
+ * Å velge kamera forteller deg hvilken enhet appen vil bruke. Det forteller deg
+ * ikke om linsen peker på menigheten, om lokket er på, eller om kabelen ble
+ * dratt ut i går. Det er det bare et bilde som gjør — og de fem minuttene før
+ * gudstjenesten er den ene anledningen noen har til å se det.
  */
 function CameraPreviewBlock() {
   if (settings.value.videoEnabled !== true) return null;
@@ -555,30 +828,24 @@ function CameraPreviewBlock() {
 
 // ── «Neste automatiske opptak» ──────────────────────────────────────────────
 
+/**
+ * «Neste automatiske opptak» — når det finnes ett.
+ *
+ * ⚠️ Kortet hadde en ANDRE tilstand: «Skal SundayRec ta opp hver søndag av seg
+ * selv?» med en «Sett opp»-knapp, for de gangene ingen tid var kjent. Den er
+ * borte i D2, og grunnen sto rett over den i kontrollrommet: auto-kortet stiller
+ * allerede det spørsmålet, med den samme setningen under seg («Sett en tid én
+ * gang. Maskinen vekkes og starter selv.») og en bryter som svarer på det.
+ * WKWebView-proben viste de to under hverandre, ord for ord like — to kort som
+ * spør om det samme er hvordan en frivillig lærer at appen ikke vet hva den
+ * mener.
+ */
 function NextAutoCard() {
   const state = nextRecording.value;
   const next = state.next;
-
-  if (!next) {
-    // Ingen tid er kjent ⇒ ingenting kommer til å skje av seg selv, og DET er
-    // det kortet skal si — ikke «neste opptak: —».
-    return (
-      <Card
-        testId="record-auto-question"
-        title={t("app.record.autoQuestion")}
-        description={t("app.setup.auto.desc")}
-        actions={
-          <Button
-            variant="secondary"
-            testId="record-auto-setup"
-            onClick={() => navigate("setup", { anchor: "auto" })}
-          >
-            {t("app.setup.setUp")}
-          </Button>
-        }
-      />
-    );
-  }
+  // Ingenting kommer til å skje av seg selv ⇒ ingen påstand. Auto-kortet over
+  // sier hva som mangler, og har knappen som fikser det.
+  if (!next) return null;
 
   const parts = intlParts(locale.value)(next.atMs);
   const wake = formatWakeHint(state, {
@@ -845,7 +1112,7 @@ function RecordBanners() {
             <Button
               variant="secondary"
               testId="banner-low-disk-free"
-              onClick={() => navigate("setup", { tab: "folder" })}
+              onClick={() => navigate("record", { anchor: "folder" })}
             >
               {t("app.banner.diskFree")}
             </Button>

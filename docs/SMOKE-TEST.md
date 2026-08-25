@@ -17,11 +17,30 @@ a screen a recording opens into. Every step below has been re-walked against the
 shell that actually ships; this table is the translation for anybody holding an
 older report.
 
-> **D2 renamed one thing.** Settings used to be the third destination, labelled
-> **Oppsett**. It is now the **gear at the FOOT of the rail**, labelled
-> **Innstillinger** — same route, same screens, same order. Wherever the table
-> and the steps below say «Oppsett ›», read «the gear ›»; the wording is swept
-> in D2's docs pass.
+> **D2 moved settings twice, and the second move is the big one.**
+>
+> 1. The destination was renamed: **Oppsett** is now the **gear at the FOOT of
+>    the rail**, labelled **Innstillinger**.
+> 2. **The five questions moved out of it.** «Hvilken lyd?», «Hvor skal
+>    opptakene?», «Hvilken kvalitet?», «Ta med kamera», «Ta opp automatisk» and
+>    «Hvem får beskjed hvis noe går galt?» are **cards in the control room on
+>    Opptak** now. A card shows the answer that stands and folds the SAME screen
+>    out in place — no navigation, and Start stays visible while you change
+>    something. The gear opens what does not belong to a Sunday: the church
+>    profile and Avansert.
+>
+> So wherever the table and the steps below say «Oppsett › ‹question›», read
+> «Opptak › the card»; where they say «Oppsett › Avansert», read «the gear ›
+> Avansert». Every old deep link still lands right — `?goto=settings:audio`
+> opens the sound card. The prose sweep is D2's docs pass (PR4).
+
+The four claims that note makes are covered, and each is a mutation-proof for a
+guard that would otherwise fail in silence:
+
+- VERIFIED-BY: e2e/control-room.spec.ts::hvert kort åpner, lagrer, oppdaterer verdien sin og lukker igjen
+- VERIFIED-BY: e2e/control-room.spec.ts::?goto=settings:audio lander i kontrollrommet med kilde-kortet åpent
+- VERIFIED-BY: e2e/control-room.spec.ts::Innstillinger beholder leden sin etter et besøk i kontrollrommet
+- VERIFIED-BY: e2e/control-room.spec.ts::opptaksstart river BEGGE målerne ut av treet
 
 | where it used to be                              | where it is now                                                   |
 | ------------------------------------------------ | ----------------------------------------------------------------- |

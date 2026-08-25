@@ -136,7 +136,6 @@ export const PAUSED_KEYS = new Set([
   'app.record.noSource',
   'app.record.noSourceDesc',
   'app.record.chooseSound',
-  'app.setup.lede',
   'app.setup.q1',
   'app.setup.q2',
   'app.setup.q3',
@@ -147,13 +146,12 @@ export const PAUSED_KEYS = new Set([
   'app.setup.quality.mp3',
   'app.setup.quality.flac',
   'app.setup.quality.wav',
-  // P1a: OPPSETT nivå 1, de fem undersidene og de to tilleggene.
+  // P1a: de fem undersidene og de to tilleggene. (D2 fjernet `lede`, `back`
+  // og `addons` sammen med nivå 1 og «Tilbake»-knappen.)
   'app.setup.change',
   'app.setup.setUp',
-  'app.setup.back',
   'app.setup.save',
   'app.setup.cancel',
-  'app.setup.addons',
   'app.language.no',
   'app.language.en',
   // De fem PAUSETE språkene har navn i valgboksen selv om katalogene deres
@@ -438,8 +436,9 @@ export const PAUSED_KEYS = new Set([
   'app.record.canStart',
   'app.record.useBuiltIn',
   'app.record.nextAuto',
-  'app.record.autoQuestion',
   'app.record.last',
+  // D2/PR3: kortene i kontrollrommet lukkes igjen der de ble foldet ut.
+  'app.record.close',
   // D2/PR2: kamera-previewens ni tilstandstekster. Sju er portert ORDRETT fra
   // det utsendte skallet (`d982012`s `home.camera*`) — tekst en frivillig har
   // lest i produksjon skal ikke finnes opp på nytt. To er skrevet om fordi

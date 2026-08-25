@@ -15,11 +15,14 @@ import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
 //
 // Det som er annerledes her, og hvorfor:
 //
-//   - Skinnen har TRE destinasjoner og ingen liste å mangle et punkt i, så
-//     påstanden er sterkere: det finnes ikke flere enn de tre.
-//   - Den gamle Deling-fanen er spørsmål 5 nå (`settings:sharing` → `notify`),
-//     og der er det ett varsel og én adresse. Et stream-kort ville vært synlig
-//     med det blotte øye.
+//   - Skinnen har TRE `nav-*`-punkter og ingen liste å mangle et punkt i, så
+//     påstanden er sterkere: det finnes ikke flere enn de tre. (D2 flyttet det
+//     ene av dem — Innstillinger — ned på et tannhjul. Testid-en og tellingen
+//     er de samme; det er plasseringen som er ny.)
+//   - Den gamle Deling-fanen er spørsmål 5 nå, og etter D2 er den et KORT i
+//     kontrollrommet: `?goto=settings:sharing` lander på OPPTAK og folder
+//     varslings-kortet ut. Der er det ett varsel og én adresse, og et
+//     stream-kort ville vært synlig med det blotte øye.
 //   - Legacy sjekket at `#recording-overlay` og `#editor-drop-overlay` FANTES
 //     i DOM-en — de var skjulte flater som ikke skulle rives med. I det nye
 //     skallet finnes opptaksoverlegget bare mens det tas opp (det er ikke et
@@ -49,8 +52,9 @@ test.describe("appen uten Direkte", () => {
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
     await expect(page.getByTestId("nav-live")).toHaveCount(0);
 
-    // 2. Spørsmål 5 rendrer, med e-postvarslene — men UTEN
-    //    stream-destinasjons-kortet og kvalitetsvelgeren.
+    // 2. Spørsmål 5 rendrer — utfoldet i kortet dyplenken navnga — med
+    //    e-postvarslene, men UTEN stream-destinasjons-kortet og
+    //    kvalitetsvelgeren.
     await expect(page.getByTestId("setup-notify")).toBeVisible();
     await expect(page.getByTestId("notify-card")).toBeVisible();
     await expect(page.getByTestId("notify-os")).toBeVisible();
@@ -62,7 +66,6 @@ test.describe("appen uten Direkte", () => {
     // 3. Opptaksoverlegget er en montering og ikke et skjult element: det
     //    finnes ikke når ingenting tas opp.
     await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
-    await page.getByTestId("nav-record").click();
     await expect(page.getByTestId("record-start")).toBeVisible();
 
     // 4. Ren konsoll: ingen modul står igjen og roper etter et fjernet API.

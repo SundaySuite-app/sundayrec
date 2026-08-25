@@ -439,10 +439,14 @@ test.describe("bannerne på opptakssiden", () => {
     await expect(banner).toHaveAttribute("data-tone", "warn");
     await expect(banner).toContainText("Plass til 1 t 44 min");
 
+    // D2: «Frigjør plass» folder ut mappe-kortet der man står. Skjermen bak er
+    // den samme; det er reisen dit som er blitt null skjermbytter.
     await page.getByTestId("banner-low-disk-free").click();
-    await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvor skal opptakene?",
+    await expect(page.getByTestId("control-folder")).toHaveAttribute(
+      "data-expanded",
+      "true",
     );
+    await expect(page.getByTestId("setup-folder")).toBeVisible();
   });
 });
 
@@ -964,7 +968,7 @@ test.describe("kamera-preview på Opptak", () => {
     await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
       "Kunne ikke hente kameraliste — sjekk tillatelser",
     );
-    await expect(page.getByTestId("record-camera-summary")).toHaveText(
+    await expect(page.getByTestId("setup-camera-summary")).toHaveText(
       "Feil ved lasting",
     );
 

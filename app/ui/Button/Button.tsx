@@ -57,6 +57,17 @@ export interface ButtonProps {
   block?: boolean;
   type?: "button" | "submit";
   testId?: string;
+  /**
+   * Knappen folder ut noe: `aria-expanded` + `aria-controls`.
+   *
+   * D2s kontrollrom folder skjermer ut på stedet, og kilde-kortets «Endre» er
+   * en slik knapp uten å være en `ControlCard`-rad. Uten de to attributtene
+   * ville en skjermleserbruker fått en knapp som «gjør noe» og en ny landmasse
+   * som dukket opp uten forklaring.
+   */
+  expanded?: boolean;
+  /** Id-en `expanded` styrer. Utelates når knappen ikke folder noe ut. */
+  controls?: string;
   /** Videreført på roten — DialogHost hviler på `data-dialog-button`. */
   "data-dialog-button"?: string;
 }
@@ -81,6 +92,8 @@ export function Button({
   block = false,
   type = "button",
   testId,
+  expanded,
+  controls,
   "data-dialog-button": dialogButton,
 }: ButtonProps) {
   const reasonId = useId();
@@ -97,6 +110,8 @@ export function Button({
       data-dialog-button={dialogButton}
       aria-disabled={off ? "true" : undefined}
       aria-busy={busy ? "true" : undefined}
+      aria-expanded={expanded}
+      aria-controls={expanded ? controls : undefined}
       aria-describedby={reason ? reasonId : undefined}
       title={reason}
       class={[

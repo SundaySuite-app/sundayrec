@@ -1,51 +1,57 @@
 /**
- * OPPSETT — fem spørsmål, og de fem skjermene de åpner.
+ * INNSTILLINGER — det tannhjulet åpner, og ingenting mer.
  *
- * ## Hvorfor sidene er faner og ikke egne ruter
+ * ## Hvorfor destinasjonen er blitt ÉN flate (D2)
  *
- * `route.tab` er allerede navnerommet ruteren oversetter alt det gamle inn i
- * (`?goto=settings:audio` → `setup/sound`), og hver av de fem har en gammel
- * dyplenke som peker på seg. En egen rute-akse ville betydd to tabeller å
- * holde i takt for én informasjonsarkitektur.
+ * Fram til D2 var dette OPPSETT: nivå 1 med de fem spørsmålene, og fem
+ * undersider bak «Endre». Eieren så på det og sa det som var sant — de fem
+ * spørsmålene er ting man endrer mens man står og gjør seg klar, og da skal de
+ * redigeres DER man gjør seg klar. De bor derfor i kontrollrommet på OPPTAK nå
+ * (`app/pages/record/RecordPage.tsx`), og nivå 1 er borte sammen med `Level1`.
  *
- * ## Overskriften bytter, destinasjonen gjør det ikke
+ * Igjen står de to tingene som IKKE hører til en søndag:
  *
- * Skinnen står på OPPSETT hele veien, men `<h1>` blir spørsmålet: siden
- * HANDLER om «Hvilken lyd?», og en overskrift som sa «Oppsett» på alle seks
- * skjermene ville vært det ene ordet som aldri hjelper. `PageShell` tar derfor
- * imot en overskrift, og `setupHeading` er det ene stedet som vet hvilken.
+ *   • **kirkeprofilen** — navnet og språket, spørsmål 4. Det er ikke noe man
+ *     tar stilling til fem minutter før gudstjenesten; det settes én gang.
+ *   • **Avansert** — opptaksmotor, forhåndsbuffer, oppdateringer, logg, SMTP,
+ *     flere tider. Alt som har en trygg standard.
  *
- * ## «Avansert» finnes ikke her ennå
+ * Én flate, ikke to faner: `?goto=settings:general` (den gamle System-fanen) og
+ * tannhjulet lander på det samme, og det er hele skjermen.
  *
- * Canvasen har en «Avansert»-lenke nederst på nivå 1. Den er IKKE med: skjermen
- * den skulle åpne bygges i P1b, og en lenke til en tom side (eller til en tekst
- * som sier «kommer senere») lærer en frivillig at lenkene i denne appen ikke er
- * til å stole på. Den legges til sammen med siden den åpner.
+ * ## De fire gamle fanene lever, som en omdirigering
  *
- * Av samme grunn lander `?goto=settings:general` — som fortsatt er den gamle
- * System-fanen — på nivå 1 og ikke på en tom Avansert-side. `data-tab` står
- * likevel på `<main>`, så dyplenken er ikke tapt: P1b rendrer den.
+ * `?goto=settings:audio` og de tre andre pekes på `record#<anker>` i
+ * `TAB_ALIASES`, så de kommer normalt aldri hit. Men en `navigate("setup", {
+ * tab: "sound" })` fra en kallsted vi ikke har funnet — eller fra en eldre
+ * tray/dyplenke — ville ellers landet på en flate som ikke har spørsmålet, og
+ * det ville sett ut som at lenken virket. Effekten under sender den videre til
+ * kortet i stedet. Høylytt vil den ikke være: en dyplenke som lander riktig er
+ * ikke en feil, den er en id vi ikke rakk å rydde.
+ *
+ * ⚠️ `firstRun` kommer ALDRI hit — `Shell` bytter ut hele innholdet med
+ * `FirstRun` for den ruten — så omdirigeringen kan ikke rive en frivillig ut av
+ * sekvensen.
  */
 
 import { useEffect } from "preact/hooks";
 
 import { t } from "../../i18n";
-import { route } from "../../router/router";
+import { navigate, route } from "../../router/router";
 import { loadAudioDevices } from "../../state/devices";
 import { refreshDiskSpace } from "../../state/disk";
 import { refreshEmailFacts } from "../../state/email";
 import { AdvancedPage } from "./AdvancedPage";
 import { ChurchPage } from "./ChurchPage";
-import { FolderPage } from "./FolderPage";
-import { Level1 } from "./Level1";
-import { NotifyPage } from "./NotifyPage";
-import { QualityPage } from "./QualityPage";
-import { SoundPage } from "./SoundPage";
+import { isControlId } from "../record/control-core";
+import styles from "./setup.module.css";
 
-/** De fem undersidene. Navnene er `route.tab`-verdier. */
+/** De fem spørsmålene, som `route.tab`-verdier. Fortsatt navnerommet
+ *  første-gangs-sekvensen og `decisions-core` bruker. */
 export type SetupTab = "sound" | "folder" | "quality" | "church" | "notify";
 
-/** Den sjette skjermen — ikke et spørsmål, og derfor ikke en `SetupTab`. */
+/** Den gamle System-fanen. Rendrer nøyaktig det samme som ingen fane gjør —
+ *  flaten er én — men id-en består, fordi dyplenken gjør det. */
 export const ADVANCED_TAB = "advanced";
 
 export function isSetupTab(tab: string | undefined): tab is SetupTab {
@@ -58,65 +64,38 @@ export function isSetupTab(tab: string | undefined): tab is SetupTab {
   );
 }
 
-/**
- * Overskriften OPPSETT skal ha for denne fanen.
- *
- * Nøklene slås opp med en literal hver — ikke `tDyn('app.setup', key)` — fordi
- * `q1`…`q5` bor side om side med `lede`, `notSetUp` og resten i katalogen, og
- * et dynamisk oppslag der ville pekt på et subtre som er mye større enn de fem
- * det gjelder. Fem literaler er fem ting gaten kan sjekke hver for seg.
- */
-export function setupHeading(tab: string | undefined): string | undefined {
-  const advanced = advancedHeading(tab);
-  if (advanced) return advanced;
-  if (!isSetupTab(tab)) return undefined;
-  switch (tab) {
-    case "sound":
-      return t("app.setup.q1");
-    case "folder":
-      return t("app.setup.q2");
-    case "quality":
-      return t("app.setup.q3");
-    case "church":
-      return t("app.setup.q4");
-    case "notify":
-      return t("app.setup.q5");
-  }
-}
-
-/** Overskriften for Avansert. Egen literal, ikke en sjette gren i tabellen
- *  over: den er ikke et spørsmål, og et `tDyn` over de seks ville pekt på et
- *  subtre som er mye større enn dem. */
-export function advancedHeading(tab: string | undefined): string | undefined {
-  return tab === ADVANCED_TAB ? t("app.setup.advanced.title") : undefined;
-}
-
 export function SetupPage() {
   const tab = route.value.tab;
 
-  // Fakta nivå 1 trenger for å kunne si sant om spørsmål 1, 2 og 5. Leses når
-  // OPPSETT åpnes, ikke ved oppstart: enhetslisten er den ferskvaren den er,
-  // og en liste hentet ved boot ville vært gammel når noen faktisk ser på den.
+  // Fakta flaten og kortene den lenker til trenger. Leses når INNSTILLINGER
+  // åpnes, ikke ved oppstart: enhetslisten er den ferskvaren den er, og en
+  // liste hentet ved boot ville vært gammel når noen faktisk ser på den.
   useEffect(() => {
     void loadAudioDevices();
     void refreshDiskSpace();
     void refreshEmailFacts();
   }, []);
 
-  switch (tab) {
-    case "sound":
-      return <SoundPage />;
-    case "folder":
-      return <FolderPage />;
-    case "quality":
-      return <QualityPage />;
-    case "church":
-      return <ChurchPage />;
-    case "notify":
-      return <NotifyPage />;
-    case ADVANCED_TAB:
-      return <AdvancedPage />;
-    default:
-      return <Level1 />;
-  }
+  // En gammel fane-id som slapp gjennom: send den til kortet som eier
+  // spørsmålet. `church` er unntaket — kirkeprofilen bor HER.
+  useEffect(() => {
+    if (isSetupTab(tab) && tab !== "church" && isControlId(tab)) {
+      navigate("record", { anchor: tab });
+    }
+  }, [tab]);
+
+  return (
+    <div class={styles.page}>
+      <ChurchPage />
+      {/*
+        Seksjonsnavnet, ikke en fane: «Avansert» er halve denne skjermen, og
+        uten navnet ville lista under sett ut som en fortsettelse av
+        kirkeprofilen. `?goto=settings:general` lander her, på begge.
+      */}
+      <div data-testid="setup-advanced-label" class={styles.sectionLabel}>
+        {t("app.setup.advanced.title")}
+      </div>
+      <AdvancedPage />
+    </div>
+  );
 }

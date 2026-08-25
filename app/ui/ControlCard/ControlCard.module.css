@@ -1,0 +1,123 @@
+/*
+ * Kontrollrommets rad. Samme flate, kant og radius som `Card` — den er ETT kort
+ * blant kort — men med en tettere padding, fordi fem av dem står i en stabel og
+ * skal kunne leses som én liste.
+ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+/* Gult betyr «du må gjøre noe før søndag». Samme lag-over-flaten som `Card`:
+   en full fargeflate leses som et annet slags element. */
+.warn {
+  border-color: var(--warn-line);
+  background:
+    linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.lead {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Spørsmålet er ETIKETTEN, svaret er verdien — motsatt av dagens app, der
+   korttittelen er innstillingens navn og verdien står med liten grå skrift. */
+.title {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.value {
+  margin-top: 2px;
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+/* Hvorfor svaret holder, eller hva som mangler. Dempet: den er begrunnelsen,
+   ikke svaret. */
+.detail {
+  margin-top: 2px;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+/*
+ * Utfoldingsknappen. En egen, liten knapp og ikke `Button`: den står i en rad
+ * som er 44 px høy, og husets `secondary` ville dratt raden opp i høyden til
+ * kortet ikke lenger leses som en linje.
+ */
+.expand {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  padding: 5px var(--sp-3);
+  cursor: pointer;
+}
+
+.expand:hover {
+  border-color: var(--gold-line);
+  color: var(--ink);
+}
+
+.expand:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Kroppen: skjermen kortet handler om, på stedet. Skillelinjen er det som
+   sier at den hører til raden over og ikke er et nytt kort. */
+.body {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-3);
+}
+
+/*
+ * Pulsen: man KOM hit fra en lenke. To sekunder, én gang — ikke en løkke.
+ * `prefers-reduced-motion` slår den av; kanten blir stående gull i stedet, så
+ * påstanden «det er DETTE kortet» ikke går tapt sammen med bevegelsen.
+ */
+.pulse {
+  border-color: var(--gold-line);
+  animation: control-pulse 2s ease-out 1;
+}
+
+@keyframes control-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--gold-soft);
+  }
+  40% {
+    box-shadow: 0 0 0 6px var(--gold-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--gold-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}

@@ -74,7 +74,7 @@ import { TrashPage } from "./pages/library/TrashPage";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
-import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
+import { SetupPage } from "./pages/setup/SetupPage";
 import { consumePendingAction, pendingAction, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { banners, dismissBanner } from "./state/banners";
@@ -98,6 +98,12 @@ export function Shell({ probe }: ShellProps) {
   const firstRun = current.firstRun === true;
 
   return (
+    /*
+      OPPTAK og INNSTILLINGER heter det destinasjonen heter — begge er ÉN skjerm
+      etter D2, og et eget navn på en av dem ville vært en overskrift som lover
+      en underside. BIBLIOTEK har fortsatt to (Papirkurv, Rediger), og første
+      gang er fem spørsmål med hvert sitt.
+    */
     <PageShell
       heading={
         firstRunHeading(firstRun) ??
@@ -105,7 +111,7 @@ export function Shell({ probe }: ShellProps) {
           ? current.tab === EDIT_TAB
             ? editorHeading()
             : libraryHeading(current.tab)
-          : setupHeading(current.tab))
+          : undefined)
       }
     >
       {/*

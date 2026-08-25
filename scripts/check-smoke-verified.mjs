@@ -85,7 +85,13 @@ const DOC = "docs/SMOKE-TEST.md";
 // states, the hand-over to the recorder, the overlay's polled frames). A
 // ratchet that is not raised when pointers are added leaves the new ones
 // unprotected — which is the deletion-by-deletion hole rule 2 exists to close.
-const MIN_POINTERS = 47;
+//
+// 47 → 51 in D2/PR3: the control room. The runbook's navigation note now claims
+// four things about it — a card edits in place, an old deep link folds the right
+// card out, the frame comes back on Innstillinger, and a recording start pulls
+// BOTH meters out of the tree — and each of the four is a mutation-proof for a
+// guard that would otherwise fail silently.
+const MIN_POINTERS = 51;
 
 // ── 1. Claim lines, and which of them parse ─────────────────────────────────
 

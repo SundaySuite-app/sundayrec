@@ -1,4 +1,13 @@
-/* Fellesflatene for OPPSETT — nivå 1 og de fem undersidene. */
+/*
+ * Fellesflatene for de fem spørsmålsskjermene, Innstillinger-flaten og
+ * første-gangs-sekvensen.
+ *
+ * D2 tok bort tilleggenes egne klasser (`.addons`, `.addonHead`, `.addonTitle`,
+ * `.addonSummary`, `.addonBody`) og undersidens `.subHead`: kamera- og
+ * auto-kortet er `ControlCard`-rader i kontrollrommet nå, og de tegner
+ * topplinja si der. En CSS-modul som beholder klasser ingen bruker ser ut som
+ * om den fortsatt eier flaten.
+ */
 
 .page,
 .sub {
@@ -11,13 +20,6 @@
   margin: 0;
   font-size: var(--fs-body);
   color: var(--ink-2);
-}
-
-.subHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-4);
 }
 
 .list {
@@ -33,44 +35,6 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
-}
-
-/* Tilleggene: to like brede kort ved siden av hverandre når det er plass. */
-.addons {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--sp-2);
-  align-items: start;
-}
-
-/* Toppen av et tilleggskort: bryteren, navnet og sammendraget. */
-.addonHead {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-}
-
-.addonTitle {
-  font-size: var(--fs-md);
-  font-weight: 600;
-}
-
-.addonSummary {
-  margin-top: 2px;
-  font-size: var(--fs-base);
-  color: var(--ink-2);
-}
-
-.grow {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Radene et påslått tillegg folder ut. */
-.addonBody {
-  margin-top: var(--sp-3);
-  border-top: 1px solid var(--line);
-  padding-top: var(--sp-2);
 }
 
 /* En rad med knapper nederst på en underside. */

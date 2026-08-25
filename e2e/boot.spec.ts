@@ -101,16 +101,25 @@ test.describe("app shell foundation", () => {
       settings: SETTLED_SETTINGS,
       goto: "settings:audio",
     });
-    // P1a: destinasjonen er fortsatt OPPSETT (skinnen sier det), men SKJERMEN
-    // er spørsmålet — og `<h1>` er det fokus lander på ved hvert rutebytte.
-    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
-    await expect(page.getByTestId("nav-setup")).toHaveAttribute(
+    // D2: «sound» er ikke en fane lenger, det er et KORT i kontrollrommet — og
+    // dyplenken folder det ut i stedet for å bytte skjerm. Destinasjonen er
+    // derfor OPPTAK, og skjermen bak kortet er den samme «Hvilken lyd?».
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("nav-record")).toHaveAttribute(
       "aria-current",
       "page",
     );
     // Ruten som ATTRIBUTT: S1a viste den som synlig tekst fordi det ikke fantes
     // noe annet å se. Nå står den der bare e2e ser den.
-    await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "sound");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-anchor",
+      "sound",
+    );
+    await expect(page.getByTestId("control-sound")).toHaveAttribute(
+      "data-expanded",
+      "true",
+    );
+    await expect(page.getByTestId("setup-sound")).toBeVisible();
   });
 
   test("a retired tab id still lands somewhere real", async ({ page }) => {
@@ -126,13 +135,15 @@ test.describe("app shell foundation", () => {
       settings: SETTLED_SETTINGS,
       goto: "settings:notifications",
     });
-    await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvem får beskjed hvis noe går galt?",
-    );
     await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-tab",
+      "data-anchor",
       "notify",
     );
+    await expect(page.getByTestId("control-notify")).toHaveAttribute(
+      "data-expanded",
+      "true",
+    );
+    await expect(page.getByTestId("setup-notify")).toBeVisible();
   });
 
   test("the seeded language decides what the volunteer reads", async ({

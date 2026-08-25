@@ -31,8 +31,8 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
       goto: "settings:general",
     });
     // Give the module-load path room to misbehave before asserting silence.
-    // (`settings:general` lands on Avansert since P1b; before that it fell
-    // through to level 1 and this waited on `setup-lede`.)
+    // (`settings:general` lands on the Innstillinger surface — church profile
+    // plus Avansert — since D2; before that it was a tab of its own.)
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
@@ -68,7 +68,9 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
         autoRecordEnabled: false,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
       },
-      goto: "settings",
+      // D2: kamera-kortet bor i kontrollrommet på OPPTAK. Ren re-pek —
+      // kontrollen, kvitteringen og hver eneste assertion er de samme.
+      goto: "home",
     });
 
     // The one change: slå på «Ta med kamera» (seeded av).

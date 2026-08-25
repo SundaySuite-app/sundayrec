@@ -99,7 +99,9 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     expect(stored.churchName).toBe("Domkirken");
     expect(stored.autoDeleteDays).toBe(90);
     expect(stored.updateChannel).toBe("beta");
-    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
+    // D2: kirkeprofilen er en FLATE under Innstillinger, ikke en rad med et
+    // svar. Feltet er den samme påstanden, ett hakk nærmere sannheten.
+    await expect(page.getByTestId("church-name-control-input")).toHaveValue(
       "Domkirken",
     );
 
@@ -112,7 +114,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     );
     expect(await settingsImportPayloads(page)).toHaveLength(0); // fresh page = fresh spy
     expect(await legacyState(page)).toEqual({ blob: null, flag: "1" });
-    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
+    await expect(page.getByTestId("church-name-control-input")).toHaveValue(
       "Domkirken",
     );
   });
@@ -139,7 +141,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     // forever; the app is on defaults and fully alive.
     expect(await settingsImportPayloads(page)).toHaveLength(0);
     expect(await legacyState(page)).toEqual({ blob: null, flag: "1" });
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    await expect(page.getByTestId("setup-advanced-lede")).toBeVisible();
     expect((await storedSettings(page)).updateChannel).toBe("stable");
   });
 
@@ -153,9 +155,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     const stored = await storedSettings(page);
     expect(stored.updateChannel).toBe("stable");
     expect(stored.autoUpdate).toBe(true);
-    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
-      "Ikke satt opp",
-    );
+    await expect(page.getByTestId("church-name-control-input")).toHaveValue("");
   });
 
   test("a partial blob migrates what it has — the rest is defaults", async ({

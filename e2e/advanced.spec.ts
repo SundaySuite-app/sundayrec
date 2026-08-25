@@ -31,7 +31,8 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
         autoRecordEnabled: true,
         slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
       },
-      goto: "settings",
+      // D2: tidsplanen er et kort i kontrollrommet på OPPTAK.
+      goto: "home",
     });
 
     const toggle = page.getByTestId("setup-auto-toggle");
@@ -83,7 +84,7 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
           { days: [2], start: "19:00", stop: "20:00", max: null },
         ],
       },
-      goto: "settings",
+      goto: "home",
     });
 
     await page.getByTestId("setup-auto-toggle").click();
@@ -231,8 +232,10 @@ test.describe("opptaksradene", () => {
       },
       goto: "settings:audio",
     });
+    // D2: `?goto=settings:audio` folder ut kilde-kortet i kontrollrommet, og
+    // lenken nederst på den skjermen går til raden under Innstillinger.
     await page.getByTestId("sound-advanced").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Avansert");
+    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-anchor",
       "engine",
@@ -240,19 +243,22 @@ test.describe("opptaksradene", () => {
     await expect(page.getByTestId("adv-engine")).toBeVisible();
   });
 
-  test("«Avansert» nederst på nivå 1 finnes nå, og åpner noe", async ({
+  test("Avansert er halve Innstillinger, ikke en lenke til et sjuende sted", async ({
     page,
   }) => {
-    // P1a left the link out on purpose: a link to an empty page teaches a
-    // volunteer that the links here cannot be trusted. It arrives with the
-    // page it opens — that was the whole rule.
+    // P1a lot lenken være ute med vilje, fordi siden ikke fantes. D2 gikk et
+    // hakk lenger: Avansert ER Innstillinger-flaten, sammen med kirkeprofilen,
+    // og tannhjulet er hele veien dit. Ingen lenke å ikke stole på.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings",
     });
-    await page.getByTestId("setup-advanced-link").click();
+    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
+    await expect(page.getByTestId("setup-church")).toBeVisible();
+    await expect(page.getByTestId("setup-advanced-label")).toHaveText(
+      "Avansert",
+    );
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
-    await expect(page.getByTestId("app-heading")).toHaveText("Avansert");
   });
 });

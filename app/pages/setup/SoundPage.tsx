@@ -153,7 +153,13 @@ export function SoundPage() {
         // Forhåndsbufferen adresserer enheten ved NAVN — pek den på den nye før
         // noe annet åpner enheten (legacy gjør det i samme rekkefølge).
         await reconcilePreroll(true);
-        navigate("setup", { anchor: "sound" });
+        // ⚠️ INGEN navigering her lenger (D2). Skjermen sto på sin egen rute
+        // før, og et `navigate` tilbake til nivå 1 var veien ut. Nå er den
+        // innbygget i kilde-kortet på OPPTAK, og et rutebytte herfra ville
+        // revet kortet igjen i det øyeblikket lagringen landet — altså rykket
+        // skjermen bort under den som nettopp trykket «Bruk denne».
+        // Kortraden er den eksplisitte kollapsen; den som vil se resultatet
+        // ser det i kvitteringen, på stedet.
       },
     });
   }
@@ -244,9 +250,7 @@ export function SoundPage() {
         <Button
           variant="ghost"
           testId="sound-advanced"
-          onClick={() =>
-            navigate("setup", { tab: "advanced", anchor: "engine" })
-          }
+          onClick={() => navigate("setup", { anchor: "engine" })}
         >
           {t("app.setup.advanced.soundLink")}
         </Button>
