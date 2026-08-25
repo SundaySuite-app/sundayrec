@@ -202,30 +202,54 @@ question a volunteer actually has — _do we hear it?_
 
 ---
 
-## 4. Camera — the file, not a picture [HW]
+## 4. Camera — the picture, and then the file [HW]
 
-⚠️ **There is no live camera picture anywhere in the shell.** The old renderer
-polled `recording_preview_frame` during a recording and painted the frames into
-a video strip; fase B shipped the overlay without it, so the only thing on
-screen while a camera recording runs is the chip that names the camera. The
-backend command is still registered, still working and unreached — see «Flater
-som ikke finnes lenger». What a rig verifies is therefore the FILE, not the
-preview.
+Since **D2/PR2** there IS a live camera picture, in two places and from two
+different sources — because the camera can only have one owner at a time:
+
+- **Before the recording**, on **Opptak**: the webview's own `getUserMedia`
+  stream (`ui/CameraPreview/LiveCameraPreview.tsx`).
+- **During the recording**, in the overlay: the engine owns the device, so the
+  overlay polls the preview JPEG the recorder writes
+  (`recording_preview_frame`, 12 Hz).
+
+The handover is the part a rig has to see: pressing **Start** must make the
+Opptak preview let go BEFORE `start_recording` runs, or the recorder never gets
+the device.
 
 1. Turn the camera on under **Oppsett → Tillegg → «Ta med kamera»** and pick the
    camera.
    - **Expected:** the card states what that camera can deliver («Kameraet
      leverer maks 1080p · 30 bilder i sekundet»), or says plainly that it could
      not read that rather than promising a resolution it has not checked.
-2. Start a recording (§5 with video) and let it run ~30 s.
-   - **Expected:** the overlay carries a **«Kamera <name>»** chip — that is the
-     app's whole claim about video while recording, and it is a claim about the
-     SETTING, not about frames arriving.
-3. Stop, and open the file.
-   - **Expected:** the mp4 has a video stream with picture in it. This is the
-     only place a broken camera is now caught, which is why it is a step and
-     not a footnote.
-4. App still alive but no video in the file = check camera permission (§0). App
+2. Go to **Opptak**.
+   - **Expected:** a 16:9 frame under the Start button showing what the camera
+     sees, with a badge in the corner naming the size and frame rate it is
+     ACTUALLY delivering («1920×1080 · 30 fps») — not what the profile asked
+     for. A 720p webcam under a 1080p profile is supposed to be visible here.
+   - **Expected on a denied permission:** «Kameratilgang nektet — sjekk
+     Systeminnstillinger», never a blank box and never «Ingen kameraer funnet»
+     (§0).
+   - VERIFIED-BY: e2e/record.spec.ts::kamera på og valgt: rammen blir «live», og merket sier hva som kom
+   - VERIFIED-BY: e2e/record.spec.ts::nektet tilgang og «svarte ikke» er TO svar, ikke ett
+3. Start a recording (§5 with video) and let it run ~30 s.
+   - **Expected:** the Opptak preview goes away as the overlay comes up, and
+     the overlay shows a MOVING picture next to the meter (plus the «Kamera
+     <name>» chip, which is still only a claim about the setting).
+   - **Expected if the picture never arrives:** the frame keeps saying «Starter
+     kamera…». That is the honest state — the engine has written no frame — and
+     it is now the first place a dead camera shows up.
+   - VERIFIED-BY: e2e/record.spec.ts::⚠️ previewen slipper kameraet FØR start_recording
+   - VERIFIED-BY: e2e/record.spec.ts::poller motorens frames og måler seg på headeren
+4. Stop, and open the file.
+   - **Expected:** the mp4 has a video stream with picture in it. The preview is
+     evidence that frames reached the ENGINE; only the file proves they were
+     written.
+5. Stop, wait ~3 s on **Opptak**.
+   - **Expected:** the live preview comes back by itself. The delay is
+     deliberate (`PREVIEW_RESTART_MS`) — the engine releases the camera after it
+     finishes writing, not when the overlay disappears.
+6. App still alive but no video in the file = check camera permission (§0). App
    vanishes = permission string missing/denied and the OS killed it.
 
 ---
@@ -1253,7 +1277,7 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 | **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                   |
 | **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                         |
 | **`healStoredDeviceId`**                                    | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                          |
-| **The live camera picture** (`recording_preview_frame`)     | a chip naming the camera. Nothing shows frames arriving, so a dead camera is only caught by opening the file (§4).                                                                                                                                                                          |
+| ~~**The live camera picture** (`recording_preview_frame`)~~ | **BACK** in D2/PR2 — a live `getUserMedia` frame on Opptak and the engine's polled JPEG in the overlay (§4). The chip stays; it names the setting, the picture proves the frames.                                                                                                           |
 | **«+30 min» / «Avbryt auto-stopp»** on the overlay          | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                      |
 | **The stereo / mono / «Miks L+R» channel-mode picker**      | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so. |
 | **The editor's keyboard-shortcut legend**                   | the shortcuts the legend described are not all rebuilt; the sermon handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                    |

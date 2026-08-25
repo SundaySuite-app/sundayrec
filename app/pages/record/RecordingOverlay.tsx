@@ -30,6 +30,16 @@
  * `recordingLevelsSource` — motorens egen `recording://levels`. Se den fila
  * for hvorfor en andre enhetsåpning er utelukket.
  *
+ * ## Kamerabildet er ikke det samme som kamera-BRIKKA
+ *
+ * Brikka «Kamera Logitech BRIO» er en påstand om INNSTILLINGEN, og den ser
+ * nøyaktig lik ut med lokk på linsen (`docs/SMOKE-TEST.md` §4 sto lenge på at
+ * et dødt kamera først ble oppdaget når fila ble åpnet). Bildet er den eneste
+ * påstanden som ikke kan være usann. Det er en POLL mot motorens preview-JPEG
+ * og ikke en strøm — webviewet kan ikke åpne kameraet mens opptakeren eier det
+ * (`ui/CameraPreview/PolledCameraPreview.tsx`). Begge står: navnet svarer på
+ * «hvilket kamera», bildet på «kommer det noe fra det».
+ *
  * ## Ett ordforråd for nivå
  *
  * Canvasen skriver «Alt ser bra ut» / «Lyden er borte!» i akkurat den slissen
@@ -49,6 +59,7 @@ import { Banner } from "../../ui/Banner/Banner";
 import { Button } from "../../ui/Button/Button";
 import { Chip } from "../../ui/Chip/Chip";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
+import { PolledCameraPreview } from "../../ui/CameraPreview/PolledCameraPreview";
 import { currentRoomMinutes } from "../../state/disk";
 import {
   clearSilence,
@@ -164,6 +175,15 @@ function Overlay() {
           showNumbers
         />
       </div>
+
+      {/* Kamerabildet, når kamera er en del av dette opptaket. Brikka under
+          navngir enheten; bare BILDET kan si at det faktisk kommer noe fra
+          den. Se PolledCameraPreview.tsx. */}
+      {camera ? (
+        <div class={styles.camera}>
+          <PolledCameraPreview />
+        </div>
+      ) : null}
 
       <div data-testid="overlay-facts" class={styles.facts}>
         {device ? <span data-testid="overlay-device">{device}</span> : null}

@@ -70,6 +70,7 @@ import {
   loadAudioDevices,
   loadVideoDevices,
   videoDevices,
+  videoDevicesFailed,
 } from "../../state/devices";
 import { currentRoomMinutes, refreshDiskSpace } from "../../state/disk";
 import { prerollActive } from "../../state/preroll";
@@ -99,6 +100,11 @@ import { Chip } from "../../ui/Chip/Chip";
 import { ConsentCard } from "../../ui/ConsentCard/ConsentCard";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
+import { LiveCameraPreview } from "../../ui/CameraPreview/LiveCameraPreview";
+import {
+  releaseCameraPreview,
+  resumeCameraPreview,
+} from "../../ui/CameraPreview/ownership";
 import { alertDialog } from "../../ui/dialog";
 import { toast } from "../../ui/toast";
 import { useSetting } from "../../settings/use-setting";
@@ -154,6 +160,16 @@ export function RecordPage() {
     if (starting || live || !source.canStart) return;
     setStarting(true);
     try {
+      // ⚠️ KAMERAET FØRST, og eksplisitt.
+      //
+      // macOS gir ÉN klient om gangen tilgang til en kameraenhet. Previewen
+      // slipper også når `isRecording` blir sann — men det signalet settes
+      // ETTER at motoren har svart ja (`markSessionStarted`), altså etter at
+      // ffmpeg allerede har prøvd å åpne enheten mens webviewet holdt den.
+      // Rekkefølgen er hele forskjellen mellom et videoopptak og en tom fil, og
+      // den er pinnet i `e2e/record.spec.ts` («slipper kameraet FØR
+      // start_recording»). Se `ui/CameraPreview/ownership.ts`.
+      releaseCameraPreview();
       // Gi Preact rammen den trenger til å faktisk avmontere måleren, så
       // VU-strømmen er sluppet FØR opptaksmotoren ber om enheten. Den harde
       // garantien er Rust-sidens eget `vu.stop()` inne i `start_recording`;
@@ -187,6 +203,10 @@ export function RecordPage() {
       );
     } finally {
       setStarting(false);
+      // Ble det ikke noe opptak likevel — motoren sa nei, eller kallet feilet —
+      // skal kamerabildet tilbake. En svart rute etter et trykk som ikke førte
+      // fram er en app som ser ødelagt ut av å ha sagt fra.
+      if (!isRecording.peek()) resumeCameraPreview();
     }
   }
 
@@ -270,6 +290,8 @@ export function RecordPage() {
           {t("app.record.canStart")}
         </p>
       ) : null}
+
+      <CameraPreviewBlock />
 
       <div class={styles.cards}>
         <NextAutoCard />
@@ -468,6 +490,7 @@ function CameraCard() {
   const chosen = (s.videoDeviceName ?? "").trim();
   const enabled = useSetting("videoEnabled", { kind: "toggle" });
   const cameras = videoDevices.value;
+  const failed = videoDevicesFailed.value;
 
   useEffect(() => {
     if (on && videoDevices.peek() === null) void loadVideoDevices();
@@ -475,7 +498,7 @@ function CameraCard() {
 
   if (!on && !chosen) return null;
 
-  const none = on && cameras !== null && cameras.length === 0;
+  const none = on && !failed && cameras !== null && cameras.length === 0;
 
   return (
     <div data-testid="record-camera" class={styles.camera}>
@@ -489,11 +512,43 @@ function CameraCard() {
       <div class={styles.grow}>
         <div id="record-camera-label">{t("app.setup.camera.title")}</div>
         <div data-testid="record-camera-summary" class={styles.muted}>
-          {none
-            ? t("app.setup.camera.none")
-            : chosen || t("app.setup.camera.noneChosen")}
+          {/* En FEILET lesning er ikke «ingen kameraer»: den korte formen står
+              her, den lange (og hva man gjør med den) i selve rammen under.
+              Se `state/devices.ts` → `videoDevicesFailed`. */}
+          {on && failed
+            ? t("app.record.camera.listError")
+            : none
+              ? t("app.setup.camera.none")
+              : chosen || t("app.setup.camera.noneChosen")}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Kamerabildet, i egen bredde under knappen.
+ *
+ * ## Hvorfor det ikke står inne i kortet over
+ *
+ * Kortet er en bryter på én linje ved siden av Start («blir kamera med i
+ * dag?»). Et 16:9-bilde inne i den raden ville dratt Start-knappen like høy —
+ * og Start er den ene tingen på siden som ikke skal endre form fordi et
+ * tillegg er på. (Fase D2s PR3 flytter begge inn i høyrekolonnen; til da er
+ * dette den ærlige plasseringen.)
+ *
+ * ## Hvorfor bildet i det hele tatt
+ *
+ * Å velge kamera i Oppsett forteller deg hvilken enhet appen vil bruke. Det
+ * forteller deg ikke om linsen peker på menigheten, om lokket er på, eller om
+ * kabelen ble dratt ut i går. Det er det bare et bilde som gjør — og de fem
+ * minuttene før gudstjenesten er den ene anledningen noen har til å se det.
+ */
+function CameraPreviewBlock() {
+  if (settings.value.videoEnabled !== true) return null;
+  return (
+    <div class={styles.preview}>
+      <LiveCameraPreview />
     </div>
   );
 }

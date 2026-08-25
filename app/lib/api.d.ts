@@ -80,6 +80,10 @@ declare global {
       /** Drop the auto-stop entirely: record until someone presses stop.
        *  Rejects on failure, same reason. */
       recordingCancelAutostop: () => Promise<void>
+      /** One base64 JPEG from the engine's preview sink, or `null` when it has
+       *  not written a frame yet. Only meaningful DURING a recording — the
+       *  recorder owns the camera then, so this is the only way to see it. */
+      recordingPreviewFrame: () => Promise<string | null>
       /** Start the rolling pre-roll buffer. Resolves false when the backend
        *  declined (pre-roll off in its settings copy, or no device matched). */
       prerollStart?:       () => Promise<boolean>
@@ -178,6 +182,8 @@ declare global {
       registerTrustedPath: (filePath: string) => Promise<boolean>
       /** Native "save as" picker — returns the chosen path, or null on cancel. */
       pickSavePath:            (opts: { defaultPath?: string; name?: string; extensions?: string[] }) => Promise<string | null>
+      /** The cameras ffmpeg can see. REJECTS when the read failed — an empty
+       *  list means "no cameras", and the two must not look alike. */
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
       editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null; sampleRate: number | null } | null>

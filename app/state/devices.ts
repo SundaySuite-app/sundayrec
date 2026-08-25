@@ -230,6 +230,22 @@ export const videoDevices = signal<Array<{
 }> | null>(null);
 
 /**
+ * Kameralesningen FEILET — som er noe annet enn «ingen kameraer».
+ *
+ * `loadVideoDevices` lander på tom liste når kommandoen svikter, og det er
+ * riktig for listen (tomt er det ærlige svaret på «hva kan velges»). Men det
+ * gjør de to tilstandene umulige å skille FRA HVERANDRE, og de har hvert sitt
+ * neste steg: «ingen kameraer funnet» ber en frivillig sjekke en kabel, mens en
+ * feilet lesning som oftest er en kameratillatelse som ikke er gitt. Å sende
+ * halvparten til kabelen er den samme formen for skjøtefeil som
+ * `soundChosen` finnes for.
+ *
+ * Bare kamera-previewen leser den i dag (`ui/CameraPreview/`); lydsiden har
+ * ingen tilsvarende flate ennå.
+ */
+export const videoDevicesFailed = signal(false);
+
+/**
  * Les lydinngangene.
  *
  * En feilet lesning lander på tom liste og ikke på `null`: shimmen svarer
@@ -253,8 +269,12 @@ export async function loadAudioDevices(): Promise<void> {
 export async function loadVideoDevices(): Promise<void> {
   try {
     videoDevices.value = await window.api.listVideoDevices();
+    videoDevicesFailed.value = false;
   } catch (err) {
     console.warn("[devices] kunne ikke lese kameraene:", err);
+    // Listen blir tom (det er det ærlige svaret på «hva kan velges»), men
+    // flagget husker HVORFOR — se `videoDevicesFailed`.
     videoDevices.value = [];
+    videoDevicesFailed.value = true;
   }
 }

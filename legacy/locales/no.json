@@ -73,7 +73,18 @@
       "useBuiltIn": "Bruk maskinens mikrofon",
       "nextAuto": "Neste automatiske opptak",
       "autoQuestion": "Skal SundayRec ta opp hver søndag av seg selv?",
-      "last": "Siste opptak"
+      "last": "Siste opptak",
+      "camera": {
+        "searching": "Leter etter kameraer…",
+        "noneFound": "Ingen kameraer funnet — sjekk tilkobling",
+        "listError": "Feil ved lasting",
+        "listFailed": "Kunne ikke hente kameraliste — sjekk tillatelser",
+        "pickFirst": "Velg et kamera for å se bildet",
+        "savedMissing": "Kamera \"{name}\" ikke funnet — velg et annet",
+        "starting": "Starter kamera…",
+        "denied": "Kameratilgang nektet — sjekk Systeminnstillinger",
+        "noResponse": "Kamera svarte ikke — er det i bruk av et annet program?"
+      }
     },
     "setup": {
       "lede": "Fem spørsmål. Svar én gang, så er dere klare hver søndag.",

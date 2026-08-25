@@ -776,6 +776,38 @@ const api: Record<string, unknown> = {
     invoke<void>("recording_extend_autostop", { minutes }),
   recordingCancelAutostop: async () =>
     invoke<void>("recording_cancel_autostop", undefined),
+  // ── The camera picture DURING a recording ──────────────────────────────
+  //
+  // The engine has written this file since v0.11 (`recorder/engine.rs` —
+  // ONE fixed path, overwritten ~12×/s) and the command to read it back has
+  // been registered all along. Nothing called it: the door was missing on this
+  // side, so `recording_preview_frame` sat in the reachability baseline's
+  // `unreachable` list and the overlay showed a CHIP naming the camera instead
+  // of the camera. A chip looks identical whether the lens cap is on
+  // (docs/SMOKE-TEST.md §"The live camera picture").
+  //
+  // `null` is a normal answer, not a failure: it means the engine has not
+  // written a frame yet (the first one lands a moment after the recording
+  // starts). The caller's placeholder stays up — see
+  // ui/CameraPreview/PolledCameraPreview.tsx.
+  //
+  // ⚠️ NOT through `call()`, and this is the one place that is right.
+  //
+  // The poll runs at 12 Hz for the whole service. `call()` appends every
+  // failure to the 50-entry ring unconditionally (the rate limit is only on
+  // the TOAST), so a backend that stopped answering would overwrite the entire
+  // diagnostic history in four seconds — erasing the record of the very
+  // recording that is going wrong, plus a `console.warn` twelve times a
+  // second. A lost preview frame is cosmetic; the honest surface for "the
+  // camera is dead" is the frame itself never leaving «Starter kamera…»,
+  // which is what the person at the machine actually looks at.
+  recordingPreviewFrame: async () => {
+    try {
+      return (await invoke<string | null>("recording_preview_frame")) ?? null;
+    } catch {
+      return null;
+    }
+  },
   // ── Pre-roll rolling buffer ────────────────────────────────────────────
   // `start_recording` has always harvested a pre-roll clip, but nothing ever
   // started the loop that produces one — so `preRollSeconds` captured nothing.
@@ -1108,12 +1140,23 @@ const api: Record<string, unknown> = {
     ),
   // list_devices → { video_inputs: FfmpegDevice[] }; old renderer wants
   // { name, index }[]. FfmpegDevice already carries both fields.
+  //
+  // ⚠️ REJECTS on a failed read instead of answering with an empty list.
+  //
+  // The fallback used to be `{}`, so a command that never answered came back as
+  // "no cameras" — and the screen then told a volunteer to check a cable that
+  // was fine, when the real answer was a camera permission nobody had granted.
+  // Two different problems with two different next steps, rendered identically.
+  // `null` is the sentinel (the Rust command returns a struct, never null), so
+  // the failure still goes through `call()` — E2.4's ring and its rate-limited
+  // toast are unchanged — and the CALLER gets to know. `state/devices.ts` is
+  // the one caller: it still lands on an empty list, but it also raises
+  // `videoDevicesFailed`, which is what the camera preview reads.
   listVideoDevices: async () => {
-    const inv = await call<{ video_inputs?: { name: string; index: number }[] }>(
-      "list_devices",
-      undefined,
-      {},
-    );
+    const inv = await call<{
+      video_inputs?: { name: string; index: number }[];
+    } | null>("list_devices", undefined, null);
+    if (inv === null) throw new Error("list_devices did not answer");
     return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
   },
   // Probe what the selected camera can actually capture, to gate the
