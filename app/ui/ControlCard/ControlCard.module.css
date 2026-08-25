@@ -51,6 +51,14 @@
   overflow-wrap: anywhere;
 }
 
+/* Hvorfor svaret holder, eller hva som mangler. Dempet: den er begrunnelsen,
+   ikke svaret. */
+.detail {
+  margin-top: 2px;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
 /*
  * Utfoldingsknappen. En egen, liten knapp og ikke `Button`: den står i en rad
  * som er 44 px høy, og husets `secondary` ville dratt raden opp i høyden til

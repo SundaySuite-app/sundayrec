@@ -8,13 +8,18 @@ import {
   storedSettings,
 } from "./harness";
 
-// OPPSETT, drevet gjennom den ekte kjeden.
+// De fem beslutningene, drevet gjennom den ekte kjeden.
 //
 // Alt her er påstander som bare kan bevises i en nettleser: at reglene i
 // `decisions-core.ts` faktisk mates med det de skal, at en `Gate` gjør noe
 // inert, og at en feilet lagring rulles tilbake HELE veien ut til det en
 // frivillig ser. Reglene selv er node-testet (`decisions-core.test.ts`) — det
 // disse legger til er skjøten, som er den ene formen dekning ikke fanger.
+//
+// ⚠️ D2 flyttet FLATEN, ikke påstandene: de fem kortene bor i kontrollrommet på
+// OPPTAK nå, så `goto` er «home» og selektorene er kortenes. Hvordan selve
+// utfoldingen oppfører seg står i `e2e/control-room.spec.ts`; her er det
+// fortsatt reglene bak svarene.
 
 /** Én lydenhet, i den formen `list_audio_devices` svarer med. */
 function device(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -40,16 +45,15 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, list_audio_devices: [device()] },
       settings: { ...SETTLED_SETTINGS, deviceId: null, deviceName: null },
-      goto: "settings",
+      goto: "home",
     });
 
-    const row = page.getByTestId("setup-row-sound");
-    await expect(row).toHaveAttribute("data-status", "todo");
-    await expect(page.getByTestId("setup-row-sound-answer")).toHaveText(
-      "Ikke satt opp",
+    await expect(page.getByTestId("record-no-source")).toBeVisible();
+    await expect(page.getByTestId("record-no-source-title")).toHaveText(
+      "Du har ikke valgt hvor lyden kommer fra",
     );
-    await expect(page.getByTestId("setup-row-sound-action")).toHaveText(
-      "Sett opp",
+    await expect(page.getByTestId("record-choose-sound")).toHaveText(
+      "Velg lyd",
     );
     // …og statuslinjen sier det samme, av den samme grunnen.
     await expect(page.getByTestId("status-text")).toHaveText(
@@ -67,13 +71,13 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
         deviceId: "x32",
         deviceName: "Behringer X32",
       },
-      goto: "settings",
+      goto: "home",
     });
-    await expect(page.getByTestId("setup-row-sound")).toHaveAttribute(
-      "data-status",
-      "todo",
+    await expect(page.getByTestId("record-source-missing")).toHaveAttribute(
+      "data-tone",
+      "warn",
     );
-    await expect(page.getByTestId("setup-row-sound-answer")).toHaveText(
+    await expect(page.getByTestId("record-source-missing-title")).toHaveText(
       "Finner ikke Behringer X32",
     );
   });
@@ -89,19 +93,14 @@ test.describe("spørsmål 1 er ubesvart til noen HAR valgt en kilde", () => {
         deviceName: "Behringer X32",
         deviceChannels: { x32: { channelL: 14, channelR: 15 } },
       },
-      goto: "settings",
+      goto: "home",
     });
-    await expect(page.getByTestId("setup-row-sound")).toHaveAttribute(
-      "data-status",
-      "done",
-    );
+    await expect(page.getByTestId("record-source")).toBeVisible();
     // 1-indeksert: brukeren teller fra 1, og det gjør miksebordet også.
-    await expect(page.getByTestId("setup-row-sound-answer")).toHaveText(
+    await expect(page.getByTestId("record-source-value")).toHaveText(
       "Behringer X32 · kanal 15–16",
     );
-    await expect(page.getByTestId("setup-row-sound-action")).toHaveText(
-      "Endre",
-    );
+    await expect(page.getByTestId("record-change-source")).toHaveText("Endre");
   });
 });
 
@@ -115,15 +114,15 @@ test.describe("kvalitet", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, format: "mp3", bitrate: "320" },
-      goto: "settings",
+      goto: "home",
     });
-    await expect(page.getByTestId("setup-row-quality-answer")).toHaveText(
+    await expect(page.getByTestId("control-quality-summary")).toHaveText(
       "Egendefinert · MP3 320",
     );
 
     // Og kortet står øverst på skjermen som eier valget — valgt, men ikke
     // valgBART: det beskriver det lagrede, det er ikke et valg noen kan ta.
-    await page.getByTestId("setup-row-quality-action").click();
+    await page.getByTestId("control-quality-expand").click();
     const custom = page.getByTestId("quality-choices-row-custom");
     await expect(custom).toHaveAttribute("data-selected", "true");
     await expect(custom.locator("input")).toBeDisabled();
@@ -137,10 +136,12 @@ test.describe("kvalitet", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, format: "flac", bitrate: "128" },
+      // Dyplenken folder ut mappe-kortet; kvaliteten er et annet kort, og de
+      // to kan stå åpne samtidig.
       goto: "settings:files",
     });
-    await page.getByTestId("setup-back").click();
-    await page.getByTestId("setup-row-quality-action").click();
+    await expect(page.getByTestId("setup-folder")).toBeVisible();
+    await page.getByTestId("control-quality-expand").click();
 
     await page.getByTestId("quality-choices-row-mp3").click();
     await expect(page.getByTestId("quality-receipt")).toHaveText("Lagret ✓");
@@ -225,13 +226,17 @@ test.describe("e-post uten en sendevei", () => {
         emailAddress: "lyd@brynmenighet.no",
         emailSmtp: "",
       },
-      goto: "settings",
+      goto: "home",
     });
-    await expect(page.getByTestId("setup-row-notify")).toHaveAttribute(
-      "data-status",
-      "todo",
+    await expect(page.getByTestId("control-notify")).toHaveAttribute(
+      "data-tone",
+      "warn",
     );
-    await expect(page.getByTestId("setup-row-notify-detail")).toHaveText(
+    await expect(page.getByTestId("control-notify-summary")).toHaveText(
+      "Ingen ennå",
+    );
+    // Den gule raden sier hva den KOSTER, ikke bare at noe mangler.
+    await expect(page.getByTestId("control-notify-detail")).toHaveText(
       "Ingen får e-post — maskinen varsler bare den som sitter ved den.",
     );
   });
@@ -261,7 +266,7 @@ test.describe("en innstilling som ikke kunne lagres", () => {
         videoEnabled: true,
         keepSeparateAudio: true,
       },
-      goto: "settings",
+      goto: "home",
     });
 
     const toggle = page.getByTestId("camera-keep-audio-control-input");
@@ -290,7 +295,7 @@ test.describe("«Ta opp automatisk»", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, slots: [] },
-      goto: "settings",
+      goto: "home",
     });
 
     await expect(page.getByTestId("setup-auto-summary")).toHaveText(
@@ -329,7 +334,7 @@ test.describe("«Ta opp automatisk»", () => {
           { days: [2], start: "19:00", stop: "20:30", max: null },
         ],
       },
-      goto: "settings",
+      goto: "home",
     });
 
     await page.getByTestId("setup-auto-toggle").click();

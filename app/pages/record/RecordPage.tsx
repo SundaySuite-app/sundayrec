@@ -102,7 +102,7 @@ import {
 import { showTelemetryPreview } from "../setup/advanced/TelemetryRow";
 import { AutoRecordCard } from "../setup/AutoRecordCard";
 import { CameraCard } from "../setup/CameraCard";
-import { answerText } from "../setup/decision-text";
+import { answerText, detailText } from "../setup/decision-text";
 import { decisionsFor } from "../setup/decisions-core";
 import { FolderPage } from "../setup/FolderPage";
 import { NotifyPage } from "../setup/NotifyPage";
@@ -205,17 +205,25 @@ export function RecordPage() {
   // Ankeret: fold ut kortet, rull dit, og puls når man KOM hit. Rekkefølgen er
   // ikke likegyldig — utfoldingen må ha skjedd før vi ruller, ellers ruller vi
   // til en rad som er i ferd med å bli dobbelt så høy.
-  const anchor = route.value.anchor;
-  const highlight = route.value.highlight === true;
+  //
+  // ⚠️ Effekten henger på HELE ruten og ikke på ankerstrengen. To trykk på den
+  // samme lenken («Frigjør plass», menylinjens «Sjekk oppsettet») gir det samme
+  // ankeret, og med strengen som avhengighet ville det andre trykket vært en
+  // knapp som stille ikke gjorde noe — for kortet kan være lukket igjen i
+  // mellomtiden. `navigate` lager et nytt ruteobjekt hver gang, som er nøyaktig
+  // «noen ba om dette på nytt».
+  const current = route.value;
+  const anchor = current.anchor;
+  const highlight = current.highlight === true;
   useEffect(() => {
     if (!isControlId(anchor)) return;
-    setOpen((prev) => (prev.includes(anchor) ? prev : [...prev, anchor]));
+    setOpen((prev) => withCard(prev, anchor, true));
     // Neste frame: kortet er malt, og elementet har den høyden det skal ha.
     const id = requestAnimationFrame(() => {
       document.getElementById(anchor)?.scrollIntoView({ block: "start" });
     });
     return () => cancelAnimationFrame(id);
-  }, [anchor, setOpen]);
+  }, [current, setOpen]);
 
   /**
    * Start.
@@ -309,10 +317,13 @@ export function RecordPage() {
       consumePendingAction();
       // Menylinjens «Sjekk oppsettet» er et spørsmål om LYDEN. Den folder ut
       // kilde-kortet der man står, i stedet for å bytte skjerm — flaten som
-      // svarer er allerede her.
-      navigate("record", { anchor: "sound" });
+      // svarer er allerede her. LOKALT og ikke gjennom ruteren: handlingen
+      // kommer fra menylinjen mens siden allerede står åpen, og en navigering
+      // til stedet man er ville vært et rutebytte for å gjøre ingenting.
+      setOpen((prev) => withCard(prev, "sound", true));
+      document.getElementById("sound")?.scrollIntoView({ block: "start" });
     }
-  }, [armed, source.canStart, live]);
+  }, [armed, source.canStart, live, setOpen]);
 
   return (
     <div class={styles.page}>
@@ -502,6 +513,7 @@ function ControlStack({
         id="folder"
         title={t("app.setup.q2")}
         value={answerText(row("folder").answer)}
+        detail={detailText(row("folder").detail)}
         tone={row("folder").tone}
         expandLabel={
           row("folder").needsSetUp
@@ -518,6 +530,7 @@ function ControlStack({
         id="quality"
         title={t("app.setup.q3")}
         value={answerText(row("quality").answer)}
+        detail={detailText(row("quality").detail)}
         tone={row("quality").tone}
         expandLabel={t("app.setup.change")}
         collapseLabel={t("app.record.close")}
@@ -533,6 +546,7 @@ function ControlStack({
         id="notify"
         title={t("app.setup.q5")}
         value={answerText(row("notify").answer)}
+        detail={detailText(row("notify").detail)}
         tone={row("notify").tone}
         expandLabel={
           row("notify").needsSetUp
@@ -810,30 +824,24 @@ function CameraPreviewBlock() {
 
 // ── «Neste automatiske opptak» ──────────────────────────────────────────────
 
+/**
+ * «Neste automatiske opptak» — når det finnes ett.
+ *
+ * ⚠️ Kortet hadde en ANDRE tilstand: «Skal SundayRec ta opp hver søndag av seg
+ * selv?» med en «Sett opp»-knapp, for de gangene ingen tid var kjent. Den er
+ * borte i D2, og grunnen sto rett over den i kontrollrommet: auto-kortet stiller
+ * allerede det spørsmålet, med den samme setningen under seg («Sett en tid én
+ * gang. Maskinen vekkes og starter selv.») og en bryter som svarer på det.
+ * WKWebView-proben viste de to under hverandre, ord for ord like — to kort som
+ * spør om det samme er hvordan en frivillig lærer at appen ikke vet hva den
+ * mener.
+ */
 function NextAutoCard() {
   const state = nextRecording.value;
   const next = state.next;
-
-  if (!next) {
-    // Ingen tid er kjent ⇒ ingenting kommer til å skje av seg selv, og DET er
-    // det kortet skal si — ikke «neste opptak: —».
-    return (
-      <Card
-        testId="record-auto-question"
-        title={t("app.record.autoQuestion")}
-        description={t("app.setup.auto.desc")}
-        actions={
-          <Button
-            variant="secondary"
-            testId="record-auto-setup"
-            onClick={() => navigate("record", { anchor: "auto" })}
-          >
-            {t("app.setup.setUp")}
-          </Button>
-        }
-      />
-    );
-  }
+  // Ingenting kommer til å skje av seg selv ⇒ ingen påstand. Auto-kortet over
+  // sier hva som mangler, og har knappen som fikser det.
+  if (!next) return null;
 
   const parts = intlParts(locale.value)(next.atMs);
   const wake = formatWakeHint(state, {

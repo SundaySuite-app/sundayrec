@@ -34,7 +34,9 @@ test.describe("settings", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, videoEnabled: false },
-      goto: "settings",
+      // D2: kamera-kortet bor i kontrollrommet på OPPTAK. Ren re-pek —
+      // kontrollen og hver assertion er de samme.
+      goto: "home",
     });
 
     const toggle = page.getByTestId("setup-camera-toggle");
@@ -57,13 +59,13 @@ test.describe("settings", () => {
 
     // 3. Navigate away and back — destinasjonen forlates og kommer tilbake,
     //    og kontrollen kobles på nytt fra innstillingene.
-    await page.getByTestId("nav-record").click();
+    await page.getByTestId("nav-library").click();
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
-      "record",
+      "library",
     );
-    await page.getByTestId("nav-setup").click();
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    await page.getByTestId("nav-record").click();
+    await expect(page.getByTestId("record-start")).toBeVisible();
 
     await expect(page.getByTestId("setup-camera-toggle")).toHaveAttribute(
       "aria-checked",
@@ -78,16 +80,14 @@ test.describe("settings", () => {
     // gjennom den samme etterslepende lagringen som alt annet og komme tilbake
     // etter en full nedrivning, ikke bare bli stående i feltet.
     //
-    // Reisen går gjennom kirkekortets egen «Sett opp» på nivå 1 — akkurat den
-    // veien en frivillig faktisk tar. (`?goto=settings:general` lander på
-    // Avansert siden P1b, så den kan ikke lenger brukes som inngang hit.)
+    // D2: kirkeprofilen ER Innstillinger, øverst, sammen med Avansert — og
+    // tannhjulet er hele veien dit. Ingen rad å klikke seg gjennom først.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings",
     });
 
-    await page.getByTestId("setup-row-church-action").click();
     const field = page.getByTestId("church-name-control-input");
     await expect(field).toBeVisible();
     await field.fill("Betel Trondheim");
@@ -105,9 +105,9 @@ test.describe("settings", () => {
     await page.waitForFunction(
       () => typeof (window as any).showPage === "function",
     );
-    // Etter en reload står `?goto=settings:general` fortsatt i URL-en, så vi
-    // er tilbake på nivå 1 — og kortet svarer med det som faktisk ble lagret.
-    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
+    // Etter en reload står `?goto=settings` fortsatt i URL-en, så vi er tilbake
+    // på flaten — og feltet bærer det som faktisk ble lagret.
+    await expect(page.getByTestId("church-name-control-input")).toHaveValue(
       "Betel Trondheim",
     );
     // Og skinnen, som leser den samme verdien fra det samme signalet.
@@ -122,7 +122,7 @@ test.describe("settings", () => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, videoEnabled: false },
-      goto: "settings",
+      goto: "home",
     });
     await page.getByTestId("setup-camera-toggle").click();
     await expect(page.getByTestId("setup-camera-receipt")).toHaveText(
@@ -145,37 +145,42 @@ test.describe("settings", () => {
     // `?goto=settings:<tab>` er det hvert skjermbilde-pass og et titalls andre
     // spec hviler på, så den får sin egen spiker — inkludert aliasveien, der en
     // pensjonert fane-id fra 7→5-foldingen fortsatt må lande et sted som finnes.
-    for (const [param, testId] of [
-      ["settings:audio", "setup-sound"],
+    //
+    // D2: «panelet» er et KORT i kontrollrommet nå. Dyplenken folder det ut, så
+    // skjermen bak er den samme — og destinasjonen er OPPTAK, ikke Oppsett.
+    for (const [param, anchor, testId] of [
+      ["settings:audio", "sound", "setup-sound"],
       // Etter #139 inneholder Deling-fanen BARE «Varsler» — spørsmål 5.
-      ["settings:sharing", "setup-notify"],
-      ["settings:files", "setup-folder"],
+      ["settings:sharing", "notify", "setup-notify"],
+      ["settings:files", "folder", "setup-folder"],
       // Pensjonert id fra før 7→5-foldingen; TAB_ALIASES sender den videre.
-      ["settings:notifications", "setup-notify"],
+      ["settings:notifications", "notify", "setup-notify"],
     ] as const) {
       await boot(page, {
         fixtures: BOOT_FIXTURES,
         settings: SETTLED_SETTINGS,
         goto: param,
       });
-      await expect(page.getByTestId("nav-setup")).toHaveAttribute(
+      await expect(page.getByTestId("nav-record")).toHaveAttribute(
         "aria-current",
         "page",
+      );
+      await expect(page.getByTestId("main")).toHaveAttribute(
+        "data-anchor",
+        anchor,
       );
       await expect(page.getByTestId(testId)).toBeVisible();
     }
 
-    // `settings:general` er den gamle System-fanen, og den peker på Avansert —
-    // som P1b bygget. Den siste raden i tabellen, nå med en ekte skjerm bak seg.
+    // `settings:general` er den gamle System-fanen, og den er hele
+    // Innstillinger-flaten nå: kirkeprofilen og Avansert, uten en fane-akse.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings:general",
     });
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-tab",
-      "advanced",
-    );
+    await expect(page.getByTestId("setup-church")).toBeVisible();
+    await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
   });
 });

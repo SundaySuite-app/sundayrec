@@ -24,9 +24,12 @@ import {
 //
 //   • sidefeltets statuslinje  (samme flate, samme påstand)
 //   • en live-malt feiltilstand med et ENHETSNAVN i seg — «Finner ikke
-//     Behringer X32», som er nivå 1 sin utgave av hero-warn-detaljen
+//     Behringer X32», kilde-kortets utgave av hero-warn-detaljen
 //   • en innstillings-malt linje — kvalitetskortets svar (oppdateringskanalen,
-//     legacy-versjonens tredje flate, er Avansert og altså P1b sin)
+//     legacy-versjonens tredje flate, er Avansert)
+//
+// D2: alle tre står i kontrollrommet på OPPTAK. Språket byttes der det bor —
+// under Innstillinger — og det er nettopp derfor byttet krysser en skjerm.
 
 test.describe("language switch keeps live-painted state", () => {
   test("sidebar status, hero warn detail and update-channel line survive no → en", async ({
@@ -41,29 +44,27 @@ test.describe("language switch keeps live-painted state", () => {
         deviceName: "Behringer X32",
         churchName: "Bryn menighet",
       },
-      goto: "settings",
+      goto: "home",
     });
 
     // Den LEVENDE tilstanden står på skjermen på norsk: kortet navngir enheten
     // som er borte, og sidefeltet sier at lyden ikke er koblet til.
-    await expect(page.getByTestId("setup-row-sound-answer")).toHaveText(
+    await expect(page.getByTestId("record-source-missing-title")).toHaveText(
       "Finner ikke Behringer X32",
     );
     await expect(page.getByTestId("status-text")).toHaveText(
       "Lyden er ikke koblet til",
     );
-    await expect(page.getByTestId("setup-row-quality-answer")).toHaveText(
-      "God",
-    );
+    await expect(page.getByTestId("control-quality-summary")).toHaveText("God");
 
-    // Bytt språk fra kirkekortet — den ene flaten som eier språkvalget.
-    await page.getByTestId("setup-row-church-action").click();
+    // Bytt språk under Innstillinger — den ene flaten som eier språkvalget.
+    await page.getByTestId("nav-setup").click();
     await page.getByTestId("church-language-control-input").selectOption("en");
 
     // 1. En innstillings-malt flate er malt om PÅ ENGELSK — ikke stående på
     //    norsk, og ikke nullstilt til noe generisk.
-    await page.getByTestId("setup-back").click();
-    await expect(page.getByTestId("setup-row-quality-answer")).toHaveText(
+    await page.getByTestId("nav-record").click();
+    await expect(page.getByTestId("control-quality-summary")).toHaveText(
       "Good",
     );
 
@@ -74,7 +75,7 @@ test.describe("language switch keeps live-painted state", () => {
 
     // 3. Feiltilstanden beholdt ENHETSNAVNET sitt gjennom byttet. Det er den
     //    delen legacy mistet: teksten oversettes, navnet er data.
-    await expect(page.getByTestId("setup-row-sound-answer")).toHaveText(
+    await expect(page.getByTestId("record-source-missing-title")).toHaveText(
       "Can’t find Behringer X32",
     );
 
@@ -122,11 +123,11 @@ test.describe("notify toggles persist", () => {
       })
       .toEqual([false, false]);
 
-    // Forlat skjermen og kom tilbake — kontrollen kobles på nytt fra
-    // innstillingene.
-    await page.getByTestId("setup-back").click();
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
-    await page.getByTestId("setup-row-notify-action").click();
+    // Fold kortet sammen og ut igjen — kontrollen rives ut av treet og kobles
+    // på nytt fra innstillingene, som er den samme påstanden et skjermbytte var.
+    await page.getByTestId("control-notify-expand").click();
+    await expect(page.getByTestId("setup-notify")).toHaveCount(0);
+    await page.getByTestId("control-notify-expand").click();
 
     await expect(page.getByTestId("notify-os-control-input")).toHaveAttribute(
       "aria-checked",

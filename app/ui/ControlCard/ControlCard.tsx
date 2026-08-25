@@ -48,6 +48,14 @@ export interface ControlCardProps {
   title: string;
   /** Svaret som gjelder nå, stort. Det er dette man kommer for å lese. */
   value: string;
+  /**
+   * Linja under svaret: hvorfor det holder, eller hva som mangler.
+   *
+   * Ikke pynt. Et gult kort som bare sier «Ingen ennå» kritiserer uten å si hva
+   * det koster; «Ingen får e-post — maskinen varsler bare den som sitter ved
+   * den» er den setningen som gjør at noen faktisk gjør noe med det.
+   */
+  detail?: string | null;
   tone?: ControlCardTone;
   /** Er kroppen åpen? */
   expanded: boolean;
@@ -73,6 +81,7 @@ export function ControlCard({
   id,
   title,
   value,
+  detail,
   tone = "neutral",
   expanded,
   onExpand,
@@ -107,6 +116,11 @@ export function ControlCard({
           <div data-testid={`${test}-summary`} class={styles.value}>
             {value}
           </div>
+          {detail ? (
+            <div data-testid={`${test}-detail`} class={styles.detail}>
+              {detail}
+            </div>
+          ) : null}
         </div>
         {trail}
         {onExpand ? (

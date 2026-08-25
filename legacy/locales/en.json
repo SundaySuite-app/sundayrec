@@ -72,7 +72,6 @@
       "canStart": "You can start anyway — the recording stays silent until the mixer is back.",
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
-      "autoQuestion": "Should SundayRec record every Sunday by itself?",
       "last": "Last recording",
       "close": "Close",
       "camera": {

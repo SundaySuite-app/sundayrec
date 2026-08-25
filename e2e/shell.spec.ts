@@ -215,7 +215,7 @@ test.describe("skinnen", () => {
 });
 
 test.describe("de tre destinasjonene viser det som er sant", () => {
-  test("OPPTAK uten lydkilde peker på OPPSETT — og knappen virker", async ({
+  test("OPPTAK uten lydkilde åpner spørsmålet på stedet — og knappen virker", async ({
     page,
   }) => {
     await boot(page, {
@@ -224,10 +224,16 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     });
     await expect(page.getByTestId("record-no-source")).toBeVisible();
     await page.getByTestId("record-choose-sound").click();
-    // P2: knappen lander på SPØRSMÅLET, ikke på toppen av Oppsett. «Velg lyd»
-    // som åpner en liste med fem spørsmål er ett klikk til for den som allerede
-    // har sagt hva hun vil gjøre.
-    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
+    // D2: knappen folder ut «Hvilken lyd?» der man står. Ingen skjermbytte —
+    // Start blir stående synlig mens man velger, som er hele poenget med
+    // kontrollrommet.
+    await expect(page.getByTestId("setup-sound")).toBeVisible();
+    await expect(page.getByTestId("record-start")).toBeVisible();
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("record-choose-sound")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   test("BIBLIOTEK viser tomtilstanden når det FAKTISK er tomt", async ({
@@ -244,7 +250,7 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
   });
 
-  test("OPPSETT viser de fem spørsmålene, og markerer det ubesvarte", async ({
+  test("KONTROLLROMMET viser de fem kortene, og markerer det ubesvarte", async ({
     page,
   }) => {
     await boot(page, {
@@ -269,32 +275,39 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
         emailOnError: false,
         emailAddress: "",
       },
-      goto: "settings",
+      goto: "home",
     });
-    for (const id of ["sound", "folder", "quality", "church", "notify"]) {
-      await expect(page.getByTestId(`setup-row-${id}`)).toBeVisible();
+    for (const id of [
+      "control-sound",
+      "control-folder",
+      "control-quality",
+      "setup-camera",
+      "setup-auto",
+      "control-notify",
+    ]) {
+      await expect(page.getByTestId(id)).toBeVisible();
     }
-    await expect(page.getByTestId("setup-row-sound")).toHaveAttribute(
+    await expect(page.getByTestId("control-folder")).toHaveAttribute(
       "data-tone",
       "neutral",
     );
     // Ingen får beskjed hvis noe går galt ⇒ gul. Det er hele grunnen til at
     // noen oppdager den tomme innstillingen før en søndag i stedet for etter.
-    await expect(page.getByTestId("setup-row-notify")).toHaveAttribute(
+    await expect(page.getByTestId("control-notify")).toHaveAttribute(
       "data-tone",
       "warn",
     );
-    // P1a: knappen finnes NÅ, og den gjør noe. Den sier «Sett opp» fordi det
-    // ikke står et svar — og den åpner skjermen som lar deg gi ett.
-    await expect(page.getByTestId("setup-row-notify-action")).toHaveText(
+    // Knappen sier «Sett opp» fordi det ikke står et svar — og den folder ut
+    // skjermen som lar deg gi ett, uten å forlate kontrollrommet.
+    await expect(page.getByTestId("control-notify-expand")).toHaveText(
       "Sett opp",
     );
-    await page.getByTestId("setup-row-notify-action").click();
-    await expect(page.getByTestId("app-heading")).toHaveText(
-      "Hvem får beskjed hvis noe går galt?",
-    );
-    // …og veien tilbake er en ekte knapp, ikke bare skinnen.
-    await page.getByTestId("setup-back").click();
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    await page.getByTestId("control-notify-expand").click();
+    await expect(page.getByTestId("setup-notify")).toBeVisible();
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    // …og veien tilbake er den samme raden: «Lukk».
+    await expect(page.getByTestId("control-notify-expand")).toHaveText("Lukk");
+    await page.getByTestId("control-notify-expand").click();
+    await expect(page.getByTestId("setup-notify")).toHaveCount(0);
   });
 });

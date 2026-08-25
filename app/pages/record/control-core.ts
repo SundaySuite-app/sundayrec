@@ -26,7 +26,12 @@
  * nøyaktig det som lærer folk å ignorere gult. Se toppen av `decisions-core`.
  */
 
-import type { Answer, Decision, DecisionId } from "../setup/decisions-core";
+import type {
+  Answer,
+  Decision,
+  DecisionId,
+  Detail,
+} from "../setup/decisions-core";
 import {
   autoRecordOn,
   planFromSlots,
@@ -97,6 +102,8 @@ export function toneOf(decision: Decision): ControlTone {
 export interface ControlRow {
   id: DecisionId;
   answer: Answer;
+  /** Linja under svaret. `null` når det ikke er noe mer å si. */
+  detail: Detail | null;
   tone: ControlTone;
   /** «Sett opp» (ikke noe svar står) eller «Endre». */
   needsSetUp: boolean;
@@ -111,6 +118,9 @@ export function decisionRows(decisions: readonly Decision[]): ControlRow[] {
     rows.push({
       id,
       answer: decision.answer,
+      // Detaljen er med og ikke droppet fordi raden er «kompakt»: et gult kort
+      // som bare sier «Ingen ennå» kritiserer uten å si hva det koster.
+      detail: decision.detail,
       tone: toneOf(decision),
       // Samme regel som nivå 1 hadde: «Sett opp» bare når det bokstavelig talt
       // ikke står et svar. En mappe som er valgt, men der disken ikke har

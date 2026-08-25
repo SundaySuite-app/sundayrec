@@ -114,6 +114,13 @@ describe("stabelens beslutningsrader", () => {
     });
     expect(rows[0].tone).toBe("neutral");
     expect(rows[0].needsSetUp).toBe(false);
+    // Detaljen følger med: den gule raden skal si hva den koster, ikke bare at
+    // noe mangler.
+    expect(rows[0].detail).toEqual({
+      key: "space",
+      freeBytes: 250_000_000_000,
+      roomMinutes: null,
+    });
   });
 
   it("sier «Sett opp» bare når det bokstavelig talt ikke står et svar", () => {

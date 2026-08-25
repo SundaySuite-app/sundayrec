@@ -436,7 +436,6 @@ export const PAUSED_KEYS = new Set([
   'app.record.canStart',
   'app.record.useBuiltIn',
   'app.record.nextAuto',
-  'app.record.autoQuestion',
   'app.record.last',
   // D2/PR3: kortene i kontrollrommet lukkes igjen der de ble foldet ut.
   'app.record.close',
