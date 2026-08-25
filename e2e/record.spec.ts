@@ -760,3 +760,362 @@ test.describe("auto-stoppen kan skyves", () => {
     );
   });
 });
+
+// ── Kamerabildet (D2/PR2) ───────────────────────────────────────────────────
+//
+// Det som bare kan bevises i en ekte nettleser: at rammen SIER hvilken av de
+// åtte tilstandene den står i, at kravene som sendes til `getUserMedia` er de
+// som ikke kollapser i WKWebView, at previewen SLIPPER kameraet FØR motoren
+// ber om det — og at overlegget faktisk maler bakendens frames.
+//
+// ⚠️ INGEN assertion på levende video noe sted. En journeytest som venter på
+// piksler venter på maskinvare som ikke finnes i CI; `data-phase` er appens
+// egen påstand om hva som skjer, og det er den som kan være feil.
+// Fase-TABELLEN er node-testet (`app/ui/CameraPreview/live-preview-core.ts`).
+
+/**
+ * Et kamera i webviewet, uten maskinvare.
+ *
+ * `navigator.mediaDevices` byttes ut med en dubletter som svarer med en
+ * canvas-strøm — en EKTE `MediaStream`, så `<video>.srcObject` og `play()` går
+ * den vanlige veien. Sporenes `stop()` er wrappet, og det er hele grunnen til
+ * at rekkefølge-testen under kan finnes: den er det observerbare øyeblikket
+ * previewen gir slipp på enheten.
+ *
+ * Ikke `--use-fake-device-for-media-stream`: et nettleserflagg ville gitt en
+ * ekte kameramotor med ekte oppstartstid, altså nøyaktig den timingen som gjør
+ * medietester flakete. Dette er determinstisk.
+ */
+async function stubCamera(
+  page: Page,
+  fail?: "NotAllowedError" | "NotFoundError",
+): Promise<void> {
+  await page.addInitScript((mode: string) => {
+    const w = window as unknown as Record<string, unknown>;
+    w.__E2E_ORDER__ = [];
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        enumerateDevices: async () => [
+          {
+            kind: "videoinput",
+            label: "Logitech BRIO (046d:085e)",
+            deviceId: "brio-id",
+            groupId: "g1",
+          },
+        ],
+        getUserMedia: async (constraints: unknown) => {
+          w.__E2E_CONSTRAINTS__ = JSON.parse(JSON.stringify(constraints));
+          if (mode) {
+            const err = new Error("stub");
+            err.name = mode;
+            throw err;
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = 320;
+          canvas.height = 180;
+          canvas.getContext("2d")?.fillRect(0, 0, 320, 180);
+          const stream = (
+            canvas as HTMLCanvasElement & {
+              captureStream: (fps?: number) => MediaStream;
+            }
+          ).captureStream(5);
+          for (const track of stream.getTracks()) {
+            const original = track.stop.bind(track);
+            track.stop = () => {
+              (w.__E2E_ORDER__ as string[]).push("preview-stop");
+              original();
+            };
+          }
+          return stream;
+        },
+      },
+    });
+  }, fail ?? "");
+}
+
+/** Ett kamera, slik bakendens `list_devices` svarer. */
+const CAMERA_FIXTURES: Fixtures = {
+  ...FIXTURES,
+  list_devices: { video_inputs: [{ name: "Logitech BRIO", index: 0 }] },
+};
+
+const WITH_CAMERA = {
+  ...CHOSEN,
+  videoEnabled: true,
+  videoDeviceName: "Logitech BRIO",
+  videoDeviceIndex: 0,
+};
+
+/**
+ * En minimal, GYLDIG JPEG-header: SOI + SOF0 som sier 1920×1080.
+ *
+ * Overlegget leser sideforholdet ut av headeren og aldri ut av bildet, så
+ * dette er alt en frame trenger å være for at rammen skal måle seg riktig.
+ * (Parseren selv er testet mot en ekte ffmpeg-JPEG i `jpeg-dims.test.ts`.)
+ */
+const FRAME_1080P = Buffer.from([
+  0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x04, 0x38, 0x07, 0x80, 0x01, 0x01,
+  0x11, 0x00,
+]).toString("base64");
+
+test.describe("kamera-preview på Opptak", () => {
+  test("ingen ramme når tillegget er av", async ({ page }) => {
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: CAMERA_FIXTURES,
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-start")).toBeVisible();
+    await expect(page.getByTestId("record-camera-preview")).toHaveCount(0);
+  });
+
+  test("kamera på og valgt: rammen blir «live», og merket sier hva som kom", async ({
+    page,
+  }) => {
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: CAMERA_FIXTURES,
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+
+    const frame = page.getByTestId("record-camera-preview");
+    await expect(frame).toHaveAttribute("data-phase", "live");
+
+    // Kravene som ble sendt: bredde + sideforhold, og ALDRI høyde — tre
+    // uoppfyllbare idealer er det som kollapset previewen til et beskåret
+    // kvadrat i WKWebView. Enheten er et ØNSKE, slått opp på etiketten.
+    const constraints = await page.evaluate(
+      () =>
+        (window as unknown as Record<string, unknown>)
+          .__E2E_CONSTRAINTS__ as Record<string, unknown>,
+    );
+    expect(constraints).toEqual({
+      audio: false,
+      video: {
+        width: { ideal: 1920 },
+        aspectRatio: { ideal: 16 / 9 },
+        deviceId: { ideal: "brio-id" },
+      },
+    });
+  });
+
+  test("nektet tilgang og «svarte ikke» er TO svar, ikke ett", async ({
+    page,
+  }) => {
+    await stubCamera(page, "NotAllowedError");
+    await boot(page, {
+      fixtures: CAMERA_FIXTURES,
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    const frame = page.getByTestId("record-camera-preview");
+    await expect(frame).toHaveAttribute("data-phase", "denied");
+    await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
+      "Kameratilgang nektet — sjekk Systeminnstillinger",
+    );
+
+    await stubCamera(page, "NotFoundError");
+    await boot(page, {
+      fixtures: CAMERA_FIXTURES,
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+      "data-phase",
+      "noResponse",
+    );
+  });
+
+  test("et lagret kamera som ikke er i listen får sitt eget svar", async ({
+    page,
+  }) => {
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: CAMERA_FIXTURES,
+      settings: { ...WITH_CAMERA, videoDeviceName: "Blackmagic ATEM" },
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+      "data-phase",
+      "savedMissing",
+    );
+    await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
+      'Kamera "Blackmagic ATEM" ikke funnet — velg et annet',
+    );
+  });
+
+  test("en FEILET kameralesning sier ikke «ingen kameraer funnet»", async ({
+    page,
+  }) => {
+    // De to har hvert sitt neste steg: en kabel å sjekke, eller en tillatelse å
+    // gi. Shimmen svarte før med tom liste på begge (se `listVideoDevices`).
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: {
+        ...CAMERA_FIXTURES,
+        list_devices: fn("() => { throw new Error('ffmpeg svarte ikke') }"),
+      },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
+      "Kunne ikke hente kameraliste — sjekk tillatelser",
+    );
+    await expect(page.getByTestId("record-camera-summary")).toHaveText(
+      "Feil ved lasting",
+    );
+
+    // Og den ekte tomme listen sier fortsatt det den skal.
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, list_devices: { video_inputs: [] } },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
+      "Ingen kameraer funnet — sjekk tilkobling",
+    );
+  });
+
+  test("⚠️ previewen slipper kameraet FØR start_recording", async ({
+    page,
+  }) => {
+    // macOS gir ÉN klient om gangen tilgang til kameraet. Slipper ikke
+    // webviewet enheten før motoren ber om den, får opptaket den ikke — og
+    // fila blir uten bilde. `isRecording` settes FØRST etter at motoren har
+    // svart ja, så den alene er for sent.
+    //
+    // Fjernes `releaseCameraPreview()` fra `handleStart`, snur denne
+    // rekkefølgen (stoppen kommer da fra `isRecording`-effekten, ETTER
+    // start_recording) og testen blir rød.
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: {
+        ...CAMERA_FIXTURES,
+        plan_recording_opts: fn(`() => {
+          (window.__E2E_ORDER__ ||= []).push("plan_recording_opts");
+          return { planned: true };
+        }`),
+        start_recording: fn(`() => {
+          (window.__E2E_ORDER__ ||= []).push("start_recording");
+          return null;
+        }`),
+      },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+
+    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+      "data-phase",
+      "live",
+    );
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            ((window as unknown as Record<string, unknown>).__E2E_ORDER__ ??
+              []) as string[],
+        ),
+      )
+      .toEqual(["preview-stop", "plan_recording_opts", "start_recording"]);
+  });
+
+  test("motoren sa nei: kamerabildet kommer tilbake", async ({ page }) => {
+    // En svart rute etter et trykk som ikke førte fram er en app som ser
+    // ødelagt ut av å ha sagt fra.
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: {
+        ...CAMERA_FIXTURES,
+        start_recording: fn("() => { throw { code: 'no_save_folder' } }"),
+      },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    const frame = page.getByTestId("record-camera-preview");
+    await expect(frame).toHaveAttribute("data-phase", "live");
+
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
+    await expect(frame).toHaveAttribute("data-phase", "live");
+  });
+});
+
+test.describe("kamerabildet i opptaksoverlegget", () => {
+  test("poller motorens frames og måler seg på headeren", async ({ page }) => {
+    // Overlegget hadde en BRIKKE som navnga kameraet. Den ser helt lik ut med
+    // lokk på linsen (docs/SMOKE-TEST.md §«The live camera picture»).
+    await spyEvents(page);
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: {
+        ...CAMERA_FIXTURES,
+        recording_preview_frame: FRAME_1080P,
+      },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      reconnect_count: 0,
+      scheduled_stop_ms: null,
+    });
+
+    const frame = page.getByTestId("overlay-camera-preview");
+    await expect(frame).toHaveAttribute("data-phase", "live");
+    // Sideforholdet kommer fra JPEG-headeren, ikke fra et lastet bilde: rammen
+    // har riktig høyde FØR den første framen er dekodet.
+    await expect(frame).toHaveAttribute(
+      "style",
+      /--rec-video-ar:\s*1920 \/ 1080/,
+    );
+    // Brikka står fortsatt der og navngir enheten — bildet erstatter den ikke.
+    await expect(page.getByTestId("overlay-camera")).toContainText(
+      "Logitech BRIO",
+    );
+  });
+
+  test("ingen frame ennå: rammen sier det, i stedet for å stå tom", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, recording_preview_frame: null },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      reconnect_count: 0,
+      scheduled_stop_ms: null,
+    });
+
+    const frame = page.getByTestId("overlay-camera-preview");
+    await expect(frame).toHaveAttribute("data-phase", "starting");
+    await expect(page.getByTestId("overlay-camera-preview-message")).toHaveText(
+      "Starter kamera…",
+    );
+  });
+
+  test("uten kamera i dette opptaket er det ingen ramme", async ({ page }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: CAMERA_FIXTURES,
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      reconnect_count: 0,
+      scheduled_stop_ms: null,
+    });
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("overlay-camera-preview")).toHaveCount(0);
+  });
+});

@@ -80,7 +80,12 @@ const DOC = "docs/SMOKE-TEST.md";
  * act this constant exists to force, because every step down means a claim in
  * the runbook stopped being covered by anything.
  */
-const MIN_POINTERS = 43;
+// 43 → 47 in D2/PR2: §4 «Camera» went from «there is no live picture anywhere»
+// to four covered claims (the live frame and its badge, the two named failure
+// states, the hand-over to the recorder, the overlay's polled frames). A
+// ratchet that is not raised when pointers are added leaves the new ones
+// unprotected — which is the deletion-by-deletion hole rule 2 exists to close.
+const MIN_POINTERS = 47;
 
 // ── 1. Claim lines, and which of them parse ─────────────────────────────────
 

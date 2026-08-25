@@ -440,6 +440,20 @@ export const PAUSED_KEYS = new Set([
   'app.record.nextAuto',
   'app.record.autoQuestion',
   'app.record.last',
+  // D2/PR2: kamera-previewens ni tilstandstekster. Sju er portert ORDRETT fra
+  // det utsendte skallet (`d982012`s `home.camera*`) — tekst en frivillig har
+  // lest i produksjon skal ikke finnes opp på nytt. To er skrevet om fordi
+  // legacys ordlyd ba om «trykk oppdater», og den knappen finnes ikke i dette
+  // skallet: `pickFirst` og `noResponse`.
+  'app.record.camera.searching',
+  'app.record.camera.noneFound',
+  'app.record.camera.listError',
+  'app.record.camera.listFailed',
+  'app.record.camera.pickFirst',
+  'app.record.camera.savedMissing',
+  'app.record.camera.starting',
+  'app.record.camera.denied',
+  'app.record.camera.noResponse',
   'app.overlay.stop',
   'app.overlay.stopQuestion',
   'app.overlay.stopQuestionDesc',

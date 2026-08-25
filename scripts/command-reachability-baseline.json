@@ -134,7 +134,6 @@
     "list_video_devices",
     "liturgical_month",
     "probe_device_channels",
-    "recording_preview_frame",
     "recording_scheduled_stop_ms",
     "recording_status",
     "recording_update_note",

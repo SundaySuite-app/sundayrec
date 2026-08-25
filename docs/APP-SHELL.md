@@ -2388,9 +2388,17 @@ som ikke finnes lenger». De som er mer enn opprydding:
   virker fortsatt og er Rust-testet; ingenting åpner dem. Opptakstallene ligger
   i `<app-data>/last-recording.json`, og §5b i røykboken leses derfra nå.
   Tray-menyens «Diagnostikk» navigerer til OPPSETT og stopper der.
-- **Kamerabildet.** `recording_preview_frame` er unåbar. Overlegget har en
-  brikke som NAVNGIR kameraet; ingenting viser at det kommer bilder, så et dødt
-  kamera oppdages først når fila åpnes.
+- ~~**Kamerabildet.**~~ **LUKKET** i D2/PR2 (`feat/d2-camera-preview`).
+  Overlegget hadde en brikke som NAVNGIR kameraet, og en brikke ser helt lik ut
+  med lokk på linsen — et dødt kamera ble først oppdaget når fila ble åpnet.
+  Nå er det to bilder: `ui/CameraPreview/LiveCameraPreview` viser webviewets
+  egen `getUserMedia`-strøm på Opptak FØR opptaket, og
+  `PolledCameraPreview` poller `recording_preview_frame` (12 Hz) inn i
+  overlegget MENS det går. `recording_preview_frame` er dermed nåbar, og ute av
+  `scripts/command-reachability-baseline.json`s `unreachable` (−1).
+  Eierskapsregelen — macOS gir én klient om gangen — bor i
+  `ui/CameraPreview/ownership.ts`: Start slipper previewen FØR
+  `start_recording`, og tar den igjen hvis motoren sa nei.
 - ~~**«+30 min» / «Avbryt auto-stopp».**~~ **LUKKET** i granskningsrunden
   (`fix/review-events`). Overlegget sa «Stopper av seg selv om …» og kunne ikke
   flytte fristen; `manualMaxMinutes` er 0 som standard, så det rammet bare en

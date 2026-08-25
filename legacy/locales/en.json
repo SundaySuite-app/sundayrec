@@ -73,7 +73,18 @@
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
       "autoQuestion": "Should SundayRec record every Sunday by itself?",
-      "last": "Last recording"
+      "last": "Last recording",
+      "camera": {
+        "searching": "Looking for cameras…",
+        "noneFound": "No cameras found — check the connection",
+        "listError": "Error loading",
+        "listFailed": "Could not get the camera list — check permissions",
+        "pickFirst": "Choose a camera to see the picture",
+        "savedMissing": "Camera \"{name}\" not found — choose another",
+        "starting": "Starting camera…",
+        "denied": "Camera access denied — check System Settings",
+        "noResponse": "Camera not responding — is another app using it?"
+      }
     },
     "setup": {
       "lede": "Five questions. Answer once, and you're ready every Sunday.",

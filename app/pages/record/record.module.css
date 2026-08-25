@@ -77,6 +77,16 @@
   background: var(--surface);
 }
 
+/*
+ * Kamerabildet. Bredde nok til at man ser hva som er i bildet, smalt nok til at
+ * det ikke tar over siden — den store knappen er fortsatt hovedsaken. Se
+ * `CameraPreviewBlock` i RecordPage.tsx for hvorfor det står for seg selv.
+ */
+.preview {
+  width: 100%;
+  max-width: 520px;
+}
+
 .why {
   margin: 0;
   color: var(--ink-3);
