@@ -29,10 +29,15 @@ older report.
 >    something. The gear opens what does not belong to a Sunday: the church
 >    profile and Avansert.
 >
-> So wherever the table and the steps below say «Oppsett › ‹question›», read
-> «Opptak › the card»; where they say «Oppsett › Avansert», read «the gear ›
-> Avansert». Every old deep link still lands right — `?goto=settings:audio`
-> opens the sound card. The prose sweep is D2's docs pass (PR4).
+> The table and every step below are **written against that shell** — D2/PR4
+> swept the prose, so «Opptak › ‹card›» and «the gear › Avansert» are the walk,
+> not a translation you have to do in your head. Every old deep link still lands
+> right: `?goto=settings:audio` opens the sound card, folded out.
+>
+> ⚠️ There is **no «Tillegg» heading** any more. Camera and «Ta opp
+> automatisk» are two cards in the same stack as the other three, each with its
+> toggle in the top row — the toggle IS the affordance, and the body only folds
+> out when the add-on is on.
 
 The four claims that note makes are covered, and each is a mutation-proof for a
 guard that would otherwise fail in silence:
@@ -42,22 +47,22 @@ guard that would otherwise fail in silence:
 - VERIFIED-BY: e2e/control-room.spec.ts::Innstillinger beholder leden sin etter et besøk i kontrollrommet
 - VERIFIED-BY: e2e/control-room.spec.ts::opptaksstart river BEGGE målerne ut av treet
 
-| where it used to be                              | where it is now                                                   |
-| ------------------------------------------------ | ----------------------------------------------------------------- |
-| Hjem                                             | **Opptak**                                                        |
-| Historikk (+ the search box, the chips)          | **Bibliotek** (search kept; the chips are gone)                   |
-| Innstillinger → Lyd (the 32-tile channel grid)   | **Oppsett › «Hvilken lyd?»** — device, channel pair, hearing test |
-| Innstillinger → Filer                            | **Oppsett › «Hvor skal opptakene?»** + «Hvilken kvalitet?»        |
-| Innstillinger → Generelt (Menighet)              | **Oppsett › «Hvilken kirke?»**                                    |
-| Innstillinger → Deling / Varsler                 | **Oppsett › «Hvem får beskjed hvis noe går galt?»**               |
-| Innstillinger → Video                            | **Oppsett › Tillegg › «Ta med kamera»**                           |
-| Tidsplan (month calendar + day detail)           | **Oppsett › «Ta opp automatisk»**, and Avansert for the rest      |
-| Innstillinger → System (log, profile, telemetry) | **Oppsett › Avansert**                                            |
-| Oppdateringer / Oppdateringskanal                | **Oppsett › Avansert › Oppdateringer**                            |
-| E-postserver (SMTP), inside the alerts card      | **Oppsett › Avansert › «E-postserver (SMTP)»**                    |
-| Rediger, three tabs (Klipp / Lyd / Innhold)      | **Rediger**, three STEPS (Klipp → Lyd → Eksporter)                |
-| The export MODAL                                 | the **Eksporter** step — there is no modal                        |
-| «Nåværende versjon» in Generelt                  | the version line at the foot of the rail                          |
+| where it used to be                              | where it is now                                                                           |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Hjem                                             | **Opptak**                                                                                |
+| Historikk (+ the search box, the chips)          | **Bibliotek** (search kept; the chips are gone)                                           |
+| Innstillinger → Lyd (the 32-tile channel grid)   | **Opptak › «Hvilken lyd?»** — device, channel pair, hearing test, folded out beside Start |
+| Innstillinger → Filer                            | **Opptak › «Hvor skal opptakene?»** + «Hvilken kvalitet?»                                 |
+| Innstillinger → Generelt (Menighet)              | **the gear › «Hvilken kirke?»** — the one question that is not a Sunday decision          |
+| Innstillinger → Deling / Varsler                 | **Opptak › «Hvem får beskjed hvis noe går galt?»**                                        |
+| Innstillinger → Video                            | **Opptak › «Ta med kamera»** — a card in the stack, no «Tillegg» heading                  |
+| Tidsplan (month calendar + day detail)           | **Opptak › «Ta opp automatisk»**, and the gear › Avansert for the rest                    |
+| Innstillinger → System (log, profile, telemetry) | **the gear › Avansert**                                                                   |
+| Oppdateringer / Oppdateringskanal                | **the gear › Avansert › Oppdateringer**                                                   |
+| E-postserver (SMTP), inside the alerts card      | **the gear › Avansert › «E-postserver (SMTP)»**                                           |
+| Rediger, three tabs (Klipp / Lyd / Innhold)      | **Rediger**, three STEPS (Klipp → Lyd → Eksporter)                                        |
+| The export MODAL                                 | the **Eksporter** step — there is no modal                                                |
+| «Nåværende versjon» in Generelt                  | the version line at the foot of the rail                                                  |
 
 Surfaces that were removed rather than moved are listed at the bottom of this
 file under **«Flater som ikke finnes lenger»** — read that before reporting a
@@ -173,9 +178,11 @@ repeated background-task log spam.
 
 **First run:** a fresh install (no `onboardingDone`) boots into the first-run
 sequence; a settled install goes straight to **Opptak**. First run is no longer
-a wizard with screens of its own — it is the five real Oppsett screens shown in
+a wizard with screens of its own — it is the five real question screens shown in
 order, with a progress line and «Fortsett uten lyd» as the emergency exit, so
-nothing a volunteer learns there has to be unlearned afterwards. The consent
+nothing a volunteer learns there has to be unlearned afterwards. Those are the
+SAME five screens the control-room cards fold out afterwards (D2), so the
+sequence teaches the app a volunteer will actually use. The consent
 question (E3.6) asks with the «Aldri»-list on display, records the answer —
 yes _or_ no — through `telemetry_consent_set`, treats a decline as fully equal,
 and cannot trap the operator if the backend rejects the answer. The renderer half of all of that is pinned in the browser
@@ -195,7 +202,9 @@ Fase B folded the 32-tile channel grid into ONE screen with three things on it:
 which device, which channel pair, and a hearing test that answers the only
 question a volunteer actually has — _do we hear it?_
 
-1. Open **Oppsett → «Hvilken lyd?»**.
+1. On **Opptak**, press **«Endre»** on the source card in the left column (or
+   **«Velg lyd»** if nothing is chosen) — the whole «Hvilken lyd?» screen folds
+   out in place, under the card, with Start still visible.
    - **Expected:** the devices are listed as cards — «Maskinens egen mikrofon»
      (marked "Kun for test, eller hvis dere ikke har mikser"), «USB / Ekstern»,
      and any mixer as «Miksebord · N kanaler». A device the machine no longer
@@ -218,6 +227,14 @@ question a volunteer actually has — _do we hear it?_
      closed — if you ever see the two disagree, that is a bug worth the report.
 4. With no device at all: **«Finner ingen lydenheter»** and a **«Søk igjen»**
    button — not an empty list that looks like a still-loading one.
+5. **D2, and it is a hardware rule, not cosmetics:** with the card folded out
+   there are **two meters** on screen — the card's own and the page's. They are
+   one refcounted session on the device. Press **«Start opptak»** with the card
+   still open.
+   - **Expected:** the card collapses and BOTH meters leave the tree before the
+     engine is asked for the device. A meter left standing would hold the
+     refcount above zero and ask for exactly the device the recorder just took,
+     in the middle of a service.
 
 ---
 
@@ -236,13 +253,21 @@ The handover is the part a rig has to see: pressing **Start** must make the
 Opptak preview let go BEFORE `start_recording` runs, or the recorder never gets
 the device.
 
-1. Turn the camera on under **Oppsett → Tillegg → «Ta med kamera»** and pick the
-   camera.
+1. On **Opptak**, turn on the **«Ta med kamera»** card's toggle and pick the
+   camera in the body that folds out under it.
+   - **Expected:** the toggle opens the body by itself — there is no separate
+     «Endre» button on the two add-on cards, because a second affordance beside
+     a toggle that already opens the body is two ways to do one thing.
    - **Expected:** the card states what that camera can deliver («Kameraet
      leverer maks 1080p · 30 bilder i sekundet»), or says plainly that it could
      not read that rather than promising a resolution it has not checked.
-2. Go to **Opptak**.
-   - **Expected:** a 16:9 frame under the Start button showing what the camera
+   - **Expected:** turn the add-on OFF again and the card's value line changes
+     to what the add-on _does_ («Ta opp video sammen med lyden.») — never the
+     name of a camera that is not going to be used. A camera name on a switched-
+     off add-on reads as «this is what will happen».
+2. Look at the top of the right-hand column (you are already on **Opptak** —
+   nothing to navigate to).
+   - **Expected:** a 16:9 frame above the card stack showing what the camera
      sees, with a badge in the corner naming the size and frame rate it is
      ACTUALLY delivering («1920×1080 · 30 fps») — not what the profile asked
      for. A 720p webcam under a 1080p profile is supposed to be visible here.
@@ -281,8 +306,8 @@ still captures **video** sessions and serves the `classic_ffmpeg_audio` escape
 hatch.
 
 1. On **Opptak**, press **«Start opptak»** (there is no modal any more — the
-   source, the camera and the filename were all decided in Oppsett, so start is
-   one button).
+   source, the camera and the filename are answered by the cards on this very
+   screen, so start is one button).
    - **Expected:** the overlay comes up and the status line turns red («Tar
      opp» — red never means anything else in this app); with `RUST_LOG=debug`
      the progress you see comes from the **native writer's byte counter** (not
@@ -473,11 +498,13 @@ npm run tauri dev   # drive the "E-postvarsler" disclosure
 # SMTP needs a host/port/credentials.
 ```
 
-Two screens drive this since fase B, and the split is deliberate. **Oppsett →
-«Hvem får beskjed hvis noe går galt?»** is the volunteer's half: one toggle, one
-address, one **«Send en test»**. **Oppsett → Avansert → «E-postserver (SMTP)»**
-is the technical half: host · port · user · from, and the password (which goes
-to the OS keychain, never into the settings bag).
+Two screens drive this since fase B, and the split is deliberate — D2 only moved
+where each one is reached from. **Opptak → the «Hvem får beskjed hvis noe går
+galt?» card** («Sett opp» when nobody is set, «Endre» otherwise) is the
+volunteer's half: one toggle, one address, one **«Send en test»**. **The gear →
+Avansert → «E-postserver (SMTP)»** is the technical half: host · port · user ·
+from, and the password (which goes to the OS keychain, never into the settings
+bag).
 
 The toggle on the volunteer screen sits behind a **Gate** that says «Krever en
 e-postserver (SMTP). Sett opp under Avansert.» when no transport is configured —
@@ -546,8 +573,14 @@ exist, on a page that had to be showing, in a DOM that had to be finished —
 three assumptions that have each failed separately.
 
 1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
-   - **Expected:** the menu shows status → open → start/stop → folder → check
-     system → diagnostics → quit, in the UI language.
+   - **Expected:** the menu shows status → [next recording] → open → start/stop
+     → folder → diagnostics → quit, in the UI language.
+   - ⚠️ **There is NO «Sjekk systemet» row**, and this runbook used to say there
+     was. The tray carries ONE system action on purpose: the status row already
+     answers «is the system OK?» at a glance, and a quick preflight next to
+     «Diagnoser system…» read as a confusing near-duplicate. Report a missing
+     preflight item as expected, not as a bug.
+   - VERIFIED-BY: crates/sundayrec-core/src/tray.rs::tray_exposes_one_system_action_diagnostics_not_preflight
 2. Click **Stopp opptak** while recording.
    - **Expected:** the recording stops (the `RecorderEngine::stop()` path), the
      overlay comes down and a new row appears in **Bibliotek**, even with the
@@ -560,13 +593,19 @@ three assumptions that have each failed separately.
 5. Click **Åpne opptaksmappen**.
    - **Expected:** the folder opens AND the app lands on **Bibliotek**, so you
      also see the recordings you just asked to see.
-6. Click **Sjekk systemet**.
-   - **Expected:** it opens **Oppsett → «Hvilken lyd?»**, which is where every
-     answer a preflight would give you now lives.
+6. There is no preflight row to click (step 1). If you want the answers a
+   preflight would give you, open the **«Hvilken lyd?»** card on Opptak — that
+   is where they live now.
+   - ⚠️ The renderer still ARMS `run-preflight`: the router routes it to Opptak
+     and `RecordPage` folds the sound card open in place, without a screen
+     change. Nothing emits it, so the handler has no caller today. It is written
+     down here rather than deleted because a handler nobody calls is exactly the
+     kind of thing that gets re-wired by accident — see `docs/APP-SHELL.md`
+     §D2 «Rutekontrakten».
 
-⚠️ **Diagnostikk** in the tray navigates to **Oppsett** and stops there: the
-screen it used to open does not exist. Not a regression introduced by the tray —
-see «Flater som ikke finnes lenger».
+⚠️ **Diagnostikk** in the tray navigates to **Innstillinger** (the gear) and
+stops there: the screen it used to open does not exist. Not a regression
+introduced by the tray — see «Flater som ikke finnes lenger».
 
 > [GUI] The `tauri::tray` item install and the menu paint need a real desktop
 > session — se markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
@@ -633,9 +672,11 @@ shell and fake timers:
 
 What is left for the rig:
 
-The weekly time lives on **Oppsett → «Ta opp automatisk»** (one day, one start,
-one duration). **Oppsett → Avansert → «Flere tider og spesialopptak»** holds the
-rest: extra fixed times, and single-date specials (a concert, a Christmas Eve).
+The weekly time lives on the **«Ta opp automatisk»** card on **Opptak** (one
+day, one start, one duration) — its toggle opens the body, and `?goto=schedule`
+lands on exactly that card, folded out. **The gear → Avansert → «Flere tider og
+spesialopptak»** holds the rest: extra fixed times, and single-date specials (a
+concert, a Christmas Eve).
 
 ⚠️ **The month calendar, the day detail and the wake-diagnostics card are gone**
 — the same information is two lists and one sentence now. The wake sentence is
@@ -652,9 +693,9 @@ gated by it — they are dates somebody entered for one concert.
 1. Add a slot a couple of minutes ahead; leave the app running.
    - **Expected:** at the slot time the recorder starts unattended; the tray and
      the status line's «Neste opptak …» update; a reminder notification fires
-     `reminder_minutes` before (that reminder is configured on **Oppsett →
-     «Hvem får beskjed…» → «Påminnelse før automatisk opptak»**, and it is gated
-     off with a stated reason until «Ta opp automatisk» is on).
+     `reminder_minutes` before (that reminder is configured in the **«Hvem får
+     beskjed…»** card on Opptak, under «Påminnelse før automatisk opptak», and
+     it is gated off with a stated reason until «Ta opp automatisk» is on).
 2. **Also verify the flag round-trips:** turn «Ta opp automatisk» off, relaunch,
    turn it back on.
    - **Expected:** the time is still there. A profile written before the flag
@@ -854,7 +895,7 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - (The `trimAdjustments` signal was only ever written by the review queue's
      publish step — gone in R1 — so nothing writes it; existing sidecars keep
      theirs. `docs/LEARNING.md` §Status says what is live, dormant and gone.)
-   - With diagnostics ON, **Oppsett → Avansert → «Del anonym diagnostikk» →
+   - With diagnostics ON, **the gear → Avansert → «Del anonym diagnostikk» →
      «Hva sendes»** should list `corrections` (a signal, a direction and a
      coarse band) with a count after step 7 — and the caption must NOT say
      «Ingenting å sende akkurat nå.» while it is on screen. With diagnostics OFF, do the same edit and
@@ -966,11 +1007,11 @@ npm run tauri dev
 `<app-data>` is the platform app-data dir Tauri resolves (macOS:
 `~/Library/Application Support/…`; Windows: `%APPDATA%\…`).
 
-### «Vis» / «Kopier» (Oppsett → Avansert → «Logg»)
+### «Vis» / «Kopier» (the gear → Avansert → «Logg»)
 
 ### Steinberg ASIO attribution [Windows only]
 
-- [ ] In a **Windows** build, **Oppsett → Avansert**, at the bottom: a
+- [ ] In a **Windows** build, **the gear → Avansert**, at the bottom: a
       «Lyd-teknologi» card carrying the ASIO trademark notice verbatim.
 - **Why it is a checklist item and not a detail:** the ASIO SDK is free to use
   and licensed against attribution, and `release.yml` builds Windows with
@@ -1039,7 +1080,7 @@ present in every release build and in a plain `npm run tauri dev`.
 npm run tauri dev   # drive the Oppdateringer disclosure — updater is on by default
 ```
 
-**«Oppdater automatisk»** (Oppsett → Avansert → «Oppdateringer») is the privacy
+**«Oppdater automatisk»** (the gear → Avansert → «Oppdateringer») is the privacy
 gate PRIVACY.md promises:
 off = the app never contacts the update server on its own (no startup check,
 no hourly repeat — not even in the window where the settings blob is still
@@ -1066,7 +1107,7 @@ store:
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the store, not just the select
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
 
-1. Open **Oppsett → Avansert → «Oppdateringer»** and click **«Se etter
+1. Open **the gear → Avansert → «Oppdateringer»** and click **«Se etter
    oppdateringer nå»**.
    - **Expected in a default build:** a real check, not an error. Under
      `--no-default-features` the `update_check` command rejects with
@@ -1107,9 +1148,11 @@ OS keychain via the `email` seam, never in the settings bag) plus the editor
 intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
 1..=65535) in `sundayrec-core::settings`.
 
-1. Walk **Oppsett → «Hvilken kirke?»** (name + language), **«Hvem får beskjed
-   hvis noe går galt?»** (the OS toggle, the address) and **Avansert →
-   «E-postserver (SMTP)»** (host · port · user · from).
+1. Walk **the gear → «Hvilken kirke?»** (name + language), the **«Hvem får
+   beskjed hvis noe går galt?»** card on Opptak (the OS toggle, the address) and
+   **the gear → Avansert → «E-postserver (SMTP)»** (host · port · user · from).
+   The church profile is deliberately the ONE question that did not move into
+   the control room: it is set once, not five minutes before a service.
    - **Expected:** every field round-trips through `settings_save` (debounced)
      into SQLite and survives a relaunch; the port clamps to 1..=65535.
    - **Expected:** a save that FAILS rolls the control back to what is actually
@@ -1140,11 +1183,12 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
    `videoResolution`/`videoFramerate`/`videoContainer`/`videoCodec`/
    `videoEncoder`, `editorHwEncode`).
    - **Expected:** the import succeeds, every neighbour keeps its value, and a
-     fresh export no longer carries any of them. **Oppsett → Tillegg → «Ta med
-     kamera»** shows the on/off, the camera pick and «Behold separat lydfil» —
+     fresh export no longer carries any of them. The **«Ta med kamera»** card
+     on Opptak shows the on/off, the camera pick and «Behold separat lydfil» —
      nothing else — and Avansert has no «Hva appen har lagt merke til» / «Hva
      appen har justert» cards.
-   - Import/export themselves are on **Avansert → «Innstillingsprofil»**, and
+   - Import/export themselves are on **the gear → Avansert →
+     «Innstillingsprofil»**, and
      the import asks first («Dette erstatter innstillingene på denne maskinen
      …») because it is the one settings action that is not undoable.
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
@@ -1236,7 +1280,8 @@ Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing
 `ffmpeg -list_devices` enumeration; the diagnostics shaping
 (`build_audio_diagnostics`) is pure + tested.
 
-1. Open **Oppsett → Tillegg → «Ta med kamera»** → the camera picker.
+1. On **Opptak**, turn on the **«Ta med kamera»** card → the camera picker in
+   its body.
    - **Expected:** `list_video_devices` returns the connected cameras, and the
      card states what the chosen one can actually deliver («Kameraet leverer
      maks 1080p · 30 bilder i sekundet»), or says plainly that it could not read
@@ -1292,7 +1337,7 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 | **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                                                                          |
 | **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                                                                         |
 | **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».                                                                                                                              |
-| **`#modal-manual`** (source/camera/filename)                | those are Oppsett's answers now; start is one button (§5).                                                                                                                                                                                                                                  |
+| **`#modal-manual`** (source/camera/filename)                | those are the control-room cards' answers now, on the same screen as Start; start is one button (§5).                                                                                                                                                                                       |
 | **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                   |
 | **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                         |
 | **`healStoredDeviceId`**                                    | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                          |

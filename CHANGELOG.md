@@ -3,6 +3,94 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Upublisert
+
+Beta-ringen prøvde det nye skallet og sa fra. Dette er svaret: logoen er
+tilbake, innstillingene har flyttet dit de hører hjemme, kameraet viser et
+bilde — og alt du trenger før gudstjenesten står på én skjerm.
+
+(Dette erstatter to setninger under v0.16.0-beta.1: at appen har tre steder —
+den har to og et tannhjul — og at det levende kamerabildet under opptak er
+borte. Det er tilbake.)
+
+### Logoen er tilbake
+
+Det nye skallet malte en gul boks med en «S» i. Det var en plassholder som ble
+med lenger enn den skulle, og resultatet var at man ikke kjente igjen sin egen
+app. Merket du har brukt i to år står øverst til venstre igjen — den samme
+tegningen, ikke en ny som ligner.
+
+### Innstillinger har flyttet ned på et tannhjul
+
+Før sto Oppsett som et av tre steder i venstrekanten, ved siden av Opptak og
+Bibliotek. Det ga inntrykk av at innstillinger er noe man går til like ofte som
+man tar opp, og det stemmer ikke: dere setter opp appen én gang og tar opp hver
+søndag.
+
+Nå er det **to steder** — Opptak og Bibliotek — og et **tannhjul nederst**, over
+statuslinjen, akkurat der det sto i den gamle appen. Bak tannhjulet ligger det
+som ikke hører til en søndag: hvilken kirke dere er, og Avansert.
+
+### Alt du trenger før gudstjenesten står på Opptak-skjermen
+
+Dette er den største endringen i denne runden. Før sa Opptak-siden hva som var
+galt og sendte deg til Oppsett for å rette det — og tilbake, og til en tredje
+skjerm. De fem minuttene før gudstjenesten gikk med på å lete.
+
+Nå redigeres alt viktig **der det brukes**:
+
+- **Venstre side er det levende:** hvor lyden kommer fra, om vi hører den, og
+  den store Start-knappen. Den halvdelen flytter seg aldri.
+- **Høyre side er klargjøringen:** kamerabildet øverst, og under det fem kort —
+  _Hvor skal opptakene? · Hvilken kvalitet? · Ta med kamera · Ta opp
+  automatisk · Hvem får beskjed hvis noe går galt?_
+
+Hvert kort viser svaret som gjelder nå. Trykker du «Endre», folder **hele
+skjermen** for det spørsmålet seg ut på stedet — den samme skjermen du fikk
+første gang du satte opp appen, ikke en forenklet kopi. Start-knappen blir
+stående synlig mens du gjør det, og du lukker kortet igjen når du er ferdig.
+De to tilleggene — kamera og automatisk opptak — har ingen «Endre»: bryteren
+deres åpner kortet, og slår du dem av, lukkes det igjen.
+
+Er vinduet smalt, legger de to kolonnene seg under hverandre i samme rekkefølge.
+
+### Kameraet viser et bilde — før opptaket, og mens det går
+
+Før sto det bare navnet på kameraet. Et navn ser nøyaktig likt ut med lokk på
+linsen, så et dødt kamera ble først oppdaget når fila ble åpnet dagen etter.
+
+- **På Opptak**, når «Ta med kamera» er på: et bilde av det kameraet faktisk
+  ser, med et merke i hjørnet som sier hvilken størrelse og bildefrekvens det
+  **leverer** — ikke hva innstillingen ba om. Et 720p-kamera under en
+  1080p-profil skal være synlig her.
+- **Mens opptaket går:** det samme bildet i opptaksvinduet, under målerne,
+  hentet fra opptaket selv.
+
+Går noe galt, sier bildet hva: «Kameratilgang nektet — sjekk
+Systeminnstillinger» er noe annet enn «Kamera svarte ikke — er det i bruk av et
+annet program?», og de to har hvert sitt neste steg. Etter at et opptak er
+stoppet, kommer bildet tilbake av seg selv etter et par sekunder — opptaket må
+bli ferdig med kameraet først.
+
+### Mindre ting du kanskje merker
+
+- **Ett spørsmål ble stilt to ganger.** «Skal SundayRec ta opp hver søndag av
+  seg selv?» sto rett over kortet «Ta opp automatisk», med den samme setningen
+  under seg. Det ene er borte.
+- **Kamerakortet navngir ikke et kamera som ikke skal brukes.** Er «Ta med
+  kamera» slått av, står det hva tillegget gjør — ikke hvilken enhet som er
+  valgt. Et kameranavn på et avslått tillegg leses som «dette skjer».
+- **Klarte ikke appen å lese kameralista**, sier den det nå — før sa den «ingen
+  kameraer funnet», og sendte deg for å sjekke en kabel som var i orden når
+  svaret lå i en tillatelse.
+- **Skjermlesere får vite at et kort folder seg ut**, i stedet for å møte en
+  knapp som «gjør noe» og en ny skjerm som dukker opp uten forklaring.
+- **Gamle lenker lander fortsatt riktig.** Alt som pekte til en
+  innstillingsfane åpner nå kortet som eier spørsmålet, ferdig utfoldet, i
+  stedet for en fane som ikke finnes lenger.
+- **På Mac ligger ikke merket lenger under de tre vindusknappene** øverst til
+  venstre.
+
 ## v0.16.0-beta.1 — det nye SundayRec, til beta-ringen først
 
 Hele skallet er tegnet på nytt for en frivillig som aldri har sett appen.

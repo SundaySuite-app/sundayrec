@@ -492,7 +492,7 @@ slip through, because nobody wrote its file.
 | `Banner`      | `bad` (`role=alert`) / `warn` (`role=status`). No `info` tone.                                                                                                          |
 | `DialogHost`  | See below.                                                                                                                                                              |
 | `ToastHost`   | Bottom-right stack, `aria-live="polite"`, house durations (an **error toast never auto-dismisses**).                                                                    |
-| `PageShell`   | Rail + three destinations + status line + version, `<main id="main">`.                                                                                                  |
+| `PageShell`   | Rail + destinations + status line + version, `<main id="main">`. ⚠️ **Two** destinations plus a gear since D2 — see §D2.                                                |
 | `VuMeter`     | See below.                                                                                                                                                              |
 | `Bound*`      | `BoundToggle` / `BoundSelect` / `BoundRadioCards` / `BoundTextField` / `BoundNumberField` = `useSetting` + `SettingRow` + control.                                      |
 
@@ -616,6 +616,11 @@ in `legacy/renderer/pages/home.ts`, because the original sits inside a
 tested; fase P folds the two back into one when the home page is ported.
 
 ## What each destination shows today
+
+> ⚠️ **Superseded twice.** «Today» here is S1b's day. P1a built the real Oppsett
+> screens, and **D2 dissolved the third destination**: there are two on the rail
+> and a gear at its foot, and the five questions are cards on OPPTAK. Read §D2
+> for what the rail and OPPTAK show now.
 
 There are no screens yet, so each destination shows **the part of itself that
 is already true** — and only that part. Nothing says «coming later», and no
@@ -788,6 +793,9 @@ skjermleserbruker hører. Fokuseffekten ser nå på `route.tab` i tillegg til
 `route.page`, fordi de fem spørsmålene er egne skjermer.
 
 ## `TAB_ALIASES` har ekte navn nå
+
+> ⚠️ **Superseded av D2.** Tabellen under er P1as. Hver gammel fane-id er et
+> ANKER på OPPTAK nå, ikke en fane under Oppsett — se §D2 «Rutekontrakten».
 
 S1a satte plassholdere fordi informasjonsarkitekturen ikke fantes. Hver rad
 peker på en skjerm som er bygget:
@@ -1456,9 +1464,10 @@ duration_ms, byte_size, created_at, note` og ikke noe mer. Et merke som gjettes
 - **Bølgeformen** i overlegget (legacy `RecordingWaveform`). Canvasens 2.4 har
   stolper og en klokke; en rullende bølgeform er en andre canvas med sin egen
   rAF-løkke over et opptak som går.
-- **`run-diagnostics` fra menylinjen.** Ruteren armer den mot OPPSETT, og ingen
-  skjerm plukker den opp ennå — diagnose-modalen er fortsatt legacy-skallets
-  (samme forbehold som P1b skrev ned).
+- **`run-diagnostics` fra menylinjen.** Ruteren armer den mot INNSTILLINGER
+  (`setup`, tannhjulet siden D2), og ingen skjerm plukker den opp ennå —
+  diagnose-modalen er fortsatt legacy-skallets (samme forbehold som P1b skrev
+  ned).
 
 ## Menylinjen
 
@@ -2332,6 +2341,411 @@ Fiksturene ligger i `e2e/editor-fixtures.ts` (`EXPORT_OK`, `EXPORT_HELD`,
 
 ---
 
+# D2 — kontrollrommet, logoen og tannhjulet
+
+v0.16.0-beta.1 gikk ut på beta-ringen, og eieren så på sin egen app og sa fire
+ting: den gamle logoen skal tilbake, det skal være et kamerabilde når kameraet
+er på, alt viktig skal kunne redigeres på ÉN skjerm, og Innstillinger skal ut av
+nav-fanene og ned på et tannhjul. D2 er de fire, i tre PR-er (#165 · #166 ·
+#167), og denne seksjonen er hva de gjorde med skallet.
+
+Ett prinsipp bærer alle fire: **det som brukes sammen, skal redigeres sammen.**
+De fem minuttene før gudstjenesten er den ene anledningen noen har til å gjøre
+appen klar, og en app som da sender deg til en annen skjerm — og tilbake, og til
+en tredje — bruker de fem minuttene på navigasjon.
+
+## Skinnen: to destinasjoner og et tannhjul
+
+`PAGES` i `app/ui/PageShell/PageShell.tsx` er `["record", "library"]`. Oppsett
+var destinasjon nummer tre, og det gjorde innstillinger til et LIKEVERDIG sted —
+noe man går til like ofte som man tar opp. Det er ikke sant: en frivillig setter
+opp appen én gang og tar opp hver søndag.
+
+Tannhjulet står **nederst, over statuslinjen**, der den gamle appen hadde det.
+Det er `.navItem` som alle andre (samme høyde, samme hover, samme `.on`); det er
+PLASSERINGEN som sier at det ikke er en destinasjon.
+
+**RUTEN er uendret.** `data-testid="nav-setup"` og `aria-current` står på
+tannhjulet, så `[data-testid^="nav-"]` teller fortsatt tre og alt som spør
+skinnen «hvor er jeg?» får samme svar som før (`e2e/no-live-surface.spec.ts`
+består uendret). `app.page.setup` byttet **verdi**, ikke nøkkel:
+«Oppsett»→«Innstillinger», «Setup»→«Settings».
+
+⚠️ `margin-top: auto` måtte **FLYTTE** fra `.status` til tannhjulet, ikke bare
+legges til. To `auto`-marger i samme flex-kolonne DELER den ledige plassen, så
+tannhjulet ville blitt stående og svevet midt i skinnen. Stum feilmodus, og den
+måles nå (plasseringstesten i `Shell.test.tsx`).
+
+### Logoen, og hvorfor den står i TSX
+
+`app/ui/AppLogo/AppLogo.tsx` bærer tegningen **ordrett** fra den utsendte appen
+(`git show d982012:legacy/renderer/index.html`, linje 20–38) — verifisert node
+for node, ikke tegnet på nytt etter hukommelsen. En logo som er «nesten» den
+samme er den ene formen for feil ingen melder fra om, men alle ser.
+
+To ting er verdt å lese før noen rører den:
+
+- **`srlogo-`-prefikset er en kollisjonsvakt.** `<defs>`-id-er er globale i
+  dokumentet, ikke lokale for sitt `<svg>`. `src-tauri/app-icon.svg` tegner det
+  samme merket med `bg`/`glow`/`gold`/`clip`, så uprefikset ville `url(#gold)`
+  pekt på hvem som helst — og merket blitt en svart firkant, bare noen ganger.
+- **De fire merkevarefargene i TSX er et dokumentert unntak** fra
+  `check-app-css-tokens.mjs`. Gaten leser `.css` under `app/`; literalene står i
+  TSX og passerer den uten å bli sett. Begrunnelsen står i filhodet: `--gold` er
+  appens aksentfarge og skal kunne justeres, mens marineblå og gull ER logoen.
+
+Merket er `aria-hidden` — produktnavnet står som ekte tekst ved siden av, og en
+etikett her ville fått en skjermleser til å si «SundayRec, SundayRec».
+
+Favikon: `app/public/icon.svg` (kopi av `src-tauri/app-icon.svg`, byte for byte)
+
+- `<link rel="icon">` i `app/index.html`. `public/sundayrec-logo.jpg` (786 kB) er
+  slettet — Vites rot er `app/`, så fila kunne ikke nås av noen.
+
+### Trafikklysene
+
+`titleBarStyle: "Overlay"` betyr at macOS maler lukk/minimer/maksimer **oppå**
+innholdet, nøyaktig der skinnen begynner. `app/main.tsx` setter
+`platform-darwin` på `documentElement` **før** `render` (ellers males første
+frame med feil marg og skinnen hopper), og skinnen får 28 px topp der — høyden
+på macOS' standard tittellinje, ikke et smakstall. `platform-core.ts` flyttet
+fra `pages/setup/advanced/` til `state/`; klassenavnene er en tabell med en
+test, fordi `Os` sier «mac» og CSS sier «darwin».
+
+## Kontrollrommet: OPPTAK er to kolonner
+
+`app/pages/record/RecordPage.tsx`:
+
+```
+┌───────────────────────────┬──────────────────────────────────┐
+│ VENSTRE (sticky, LEVENDE) │ HØYRE (klargjøring)              │
+│                           │                                  │
+│  Lyd fra  · Behringer X32 │  [ kamerabildet, 16:9 ]          │
+│  ▸ folder ut «Hvilken     │  HVOR SKAL OPPTAKENE?   [Endre]  │
+│    lyd?» på stedet        │  HVILKEN KVALITET?      [Endre]  │
+│                           │  ⬤ TA MED KAMERA                 │
+│  ● Vi hører lyd  ▁▃▅▂     │  ⬤ TA OPP AUTOMATISK             │
+│                           │  HVEM FÅR BESKJED?     [Sett opp]│
+│  [   START OPPTAK    ]    │  Neste automatiske · Siste opptak│
+└───────────────────────────┴──────────────────────────────────┘
+```
+
+To kolonner over **1100 px** (`7fr | 9fr`), én under, i samme rekkefølge.
+Venstre er `position: sticky`: Start er det ene elementet på siden som ikke skal
+flytte på seg fordi noe til høyre ble foldet ut.
+
+Full bredde over begge: bannerne, `head`/«Lytter», samtykkekortet. Under: «Opptaket
+er lagret».
+
+### Kortlista, og hvor hvert svar kommer fra
+
+`app/pages/record/control-core.ts` er kontrollrommet som DATA. Seks kort:
+`sound` i venstrekolonnen, `STACK_IDS` = `folder · quality · camera · auto ·
+notify` i høyre, i den rekkefølgen.
+
+| kort      | tittel                                | verdien kommer fra                 | folder ut når        |
+| --------- | ------------------------------------- | ---------------------------------- | -------------------- |
+| `sound`   | «Lyd fra» / de to gule tilstandene    | `record-core.ts`s tre tilstander   | «Endre» / «Velg lyd» |
+| `folder`  | «Hvor skal opptakene?»                | `decisions-core` → `decision-text` | «Endre» / «Sett opp» |
+| `quality` | «Hvilken kvalitet?»                   | `decisions-core` → `decision-text` | «Endre»              |
+| `camera`  | «Ta med kamera»                       | `cameraValue()` — egne fakta       | bryteren sin         |
+| `auto`    | «Ta opp automatisk»                   | `autoValue()` — egne fakta         | bryteren sin         |
+| `notify`  | «Hvem får beskjed hvis noe går galt?» | `decisions-core` → `decision-text` | «Endre» / «Sett opp» |
+
+De to tilleggene har **ingen utfoldingsknapp**: en knapp ved siden av en bryter
+som allerede åpner kroppen er to affordanser for det ene. `cameraExpandable` /
+`autoExpandable` er regelen, og den bor i kjernen, ikke i en JSX-linje.
+
+⚠️ **`unknown` er IKKE gult.** Enhetslisten og ledig diskplass leses asynkront
+etter at siden er malt, og et gult kort som blir nøytralt etter 100 ms er
+nøyaktig det som lærer folk å ignorere gult. Samme regel som `decisions-core`.
+
+### Kortet folder ut den EKTE skjermen, ikke en kopi
+
+`SoundPage`, `FolderPage`, `QualityPage`, `NotifyPage`, `CameraCard` og
+`AutoRecordCard` er de samme komponentene første-gangs-sekvensen bruker. Et nytt
+modulsignal **`embedded`** i `app/pages/setup/SubPage.tsx` tar bort rammen
+(leden) når kortraden allerede har sagt hva skjermen er for — samme mønster som
+`inSequence`, som `FirstRun` beviser.
+
+To kopier av en skjerm er hvordan de to begynner å si forskjellige ting om
+nøyaktig samme tilstand.
+
+⚠️ Effekten er **symmetrisk**: `return () => { embedded.value = false }`.
+Forsvinner oppryddingen, mister INNSTILLINGER leden sin etter et besøk i
+kontrollrommet — og det er lekkasjen `e2e/control-room.spec.ts::Innstillinger
+beholder leden sin etter et besøk i kontrollrommet` står for (mutasjonsbevist).
+
+`SoundPage` navigerte etter lagring (:156 / :248). Det er vaktet: kortet blir
+stående, og kollapsen er eksplisitt.
+
+### `ControlCard`, og hvorfor ikke `DecisionCard`
+
+`DecisionCard` er en NUMMERERT rad i en liste man går ovenfra og ned én gang —
+sjekklisten, som lever videre i `FirstRun`. Kontrollrommet er skjermen man står
+på hver søndag; et nummer der ville lovet en rekkefølge som ikke finnes.
+
+Semantikken er ikke pynt: knappen bærer `aria-expanded` + `aria-controls`, og
+kroppen har id-en den peker på. `Button` fikk de to som props i D2 nettopp fordi
+kilde-kortets «Endre» er en slik knapp uten å være en `ControlCard`-rad. Uten
+dem er «kort folder seg ut på stedet» en knapp som «gjør noe» og en ny landmasse
+som dukker opp uten forklaring.
+
+### VU-regelen fikk en andre måler å passe på
+
+Et utfoldet kilde-kort viser `sound-vu` ved siden av sidens `record-vu`.
+`acquireVuFeed` er refcountet, så de to er ÉN økt på enheten — men bare så lenge
+**begge** forsvinner ved opptaksstart. En måler som ble stående ville holdt
+refcounten over null og bedt om nøyaktig den enheten motoren nettopp tok, midt i
+en gudstjeneste. Kortet kollapser derfor ved `isRecording || starting`, som river
+hele `SoundPage` ut av treet.
+
+Mutasjonsbevist: fjern kollapsen → `e2e/control-room.spec.ts::opptaksstart river
+BEGGE målerne ut av treet` blir rød.
+
+## Rutekontrakten: hver gammel fane-id er et ANKER
+
+`TAB_ALIASES` i `app/router/router.ts` peker på OPPTAK nå. Tabellen er ikke
+teknisk gjeld: `?goto=settings:audio` står i et titalls e2e-spec, i
+skjermbilde-passene, i tray-menyen og i lenker vi ikke har funnet.
+
+| gammel id                                                          | før                  | nå                    |
+| ------------------------------------------------------------------ | -------------------- | --------------------- |
+| `settings-audio`                                                   | `setup?tab=sound`    | `record#sound`        |
+| `settings-files`                                                   | `setup?tab=folder`   | `record#folder`       |
+| `settings-sharing` · `settings-publish` · `settings-notifications` | `setup?tab=notify`   | `record#notify`       |
+| `settings-video`                                                   | `setup#camera`       | `record#camera`       |
+| `schedule`                                                         | `setup#auto`         | `record#auto`         |
+| `settings-general`                                                 | `setup?tab=advanced` | `setup` (hele flaten) |
+| `editor`                                                           | `library?tab=edit`   | uendret               |
+
+**Ankeret er en KONTRAKT, ikke bare et rullemål.** `RecordPage` folder ut kortet
+ankeret navngir, ruller dit, og pulserer når man KOM dit fra en lenke inne i
+appen (`?goto=` setter `highlight: false`, fordi den veien finnes for
+skjermbilder). Rekkefølgen er ikke likegyldig: utfoldingen må ha skjedd før vi
+ruller, ellers ruller vi til en rad som er i ferd med å bli dobbelt så høy —
+derfor `requestAnimationFrame` mellom de to.
+
+⚠️ Effekten henger på **HELE ruten**, ikke på ankerstrengen. To trykk på den
+samme lenken gir det samme ankeret, og med strengen som avhengighet ville det
+andre trykket vært en knapp som stille ikke gjorde noe (kortet kan være lukket
+igjen i mellomtiden). `navigate` lager et nytt ruteobjekt hver gang, som er
+nøyaktig «noen ba om dette på nytt».
+
+`router.test.ts` har en rad per id **og** en vakt som krysser aliastabellen mot
+`control-core`s kortliste: et anker som ikke er et kort ville rullet til
+ingenting og latt kortet stå lukket — en dyplenke som ser ut som om den virket.
+
+`run-preflight` folder ut kilde-kortet **LOKALT** i stedet for å gå gjennom
+ruteren: handlingen kan komme mens siden allerede står åpen, og en navigering
+til stedet man er ville vært et rutebytte for å gjøre ingenting.
+
+⚠️ **Ingen emitterer den.** Menylinjen har ÉN systemhandling, og det er
+«Diagnoser system…»; kjernens tray-modell dropper preflight-raden med vilje
+(status-raden svarer allerede «er systemet i orden?», og de to ved siden av
+hverandre leses som nesten-duplikater). Regelen er en navngitt Rust-test —
+`crates/sundayrec-core/src/tray.rs::tray_exposes_one_system_action_diagnostics_not_preflight`
+— så `runPreflight`-handleren i `router.ts` er armet uten kallsted i dag.
+Skrevet ned og ikke slettet, fordi en handler ingen kaller er nøyaktig formen
+som blir koblet opp igjen ved et uhell. ⚠️ `docs/SMOKE-TEST.md` §9 sto til og
+med D2 på at menylinjen HADDE en «Sjekk systemet»-rad; den er rettet i samme
+runde, med testen over som peker.
+
+## Innstillinger-flaten
+
+`app/pages/setup/SetupPage.tsx` er én flate, ikke to faner: **kirkeprofilen**
+(`ChurchPage`, spørsmål 4) + seksjonsnavnet «Avansert» + `AdvancedPage`.
+`?goto=settings:general` og tannhjulet lander på det samme, og det er hele
+skjermen. `Level1.tsx` er slettet; `decisions-core.ts` og `decision-text.ts`
+BEHOLDES — de er sjekklisten i `FirstRun` og verdien i kortene.
+
+Kirkeprofilen er den ene av de fem som IKKE flyttet, og grunnen er den samme som
+bar hele D2: navnet og språket er ikke noe man tar stilling til fem minutter før
+gudstjenesten.
+
+De fire gamle fanene lever som en **omdirigering**: en `navigate("setup", { tab:
+"sound" })` fra et kallsted vi ikke har funnet — eller fra en eldre tray/dyplenke
+— ville ellers landet på en flate som ikke har spørsmålet, og det ville sett ut
+som at lenken virket. Høylytt vil den ikke være: en dyplenke som lander riktig er
+ikke en feil, den er en id vi ikke rakk å rydde. ⚠️ `firstRun` kommer aldri hit
+(`Shell` bytter ut hele innholdet med `FirstRun`), så omdirigeringen kan ikke rive
+en frivillig ut av sekvensen.
+
+## Kamera-previewen: én ramme, to kilder
+
+Overlegget hadde en **brikke** som navnga kameraet. En brikke ser nøyaktig lik ut
+med lokk på linsen — `docs/SMOKE-TEST.md` §4 sto helt eksplisitt på at et dødt
+kamera først ble oppdaget når fila ble åpnet etterpå.
+
+Nå er det to bilder, fra to kilder, fordi kameraet bare kan ha **én eier** om
+gangen på macOS:
+
+| når                             | kilde                                       | komponent                       |
+| ------------------------------- | ------------------------------------------- | ------------------------------- |
+| FØR opptaket, på OPPTAK         | webviewets egen `getUserMedia`-strøm        | `LiveCameraPreview` (`<video>`) |
+| MENS opptaket går, i overlegget | motorens preview-JPEG, pollet 83 ms (12 Hz) | `PolledCameraPreview` (`<img>`) |
+
+`CameraFrame` er delt: samme sideforhold, samme plassholder, samme merke. En
+frivillig som har sett bildet på Opptak skal kjenne igjen bildet i overlegget.
+Kilden er ulik; flaten skal ikke være det.
+
+Bildet står **øverst i høyrekolonnen**, ikke i kamera-kortet og ikke ved siden av
+Start. Det er ikke en innstilling — det er et faktum om rommet, og det skal
+kunne leses uten å folde ut noe. Start er det ene elementet som ikke skal endre
+form eller plass fordi et tillegg er på.
+
+### Fase-tabellen
+
+`live-preview-core.ts` er ren og tabelltestet. `data-phase` er GROVSVARET — det
+e2e leser, aldri ordlyden. En journeytest som venter på «Starter kamera…» tester
+katalogen, ikke appen.
+
+| fase           | når                                                        | tekst                                                     |
+| -------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| `off`          | tillegget er av                                            | —                                                         |
+| `paused`       | opptakeren eier kameraet (fra SLIPPET, ikke `isRecording`) | —                                                         |
+| `denied`       | `NotAllowedError`                                          | «Kameratilgang nektet — sjekk Systeminnstillinger»        |
+| `noResponse`   | enhver annen gUM-feil                                      | «Kamera svarte ikke — er det i bruk av et annet program?» |
+| `pickFirst`    | ingenting å vise ennå                                      | `searching` · `noneFound` · `listFailed` · `pickFirst`    |
+| `savedMissing` | lagret navn er ikke i listen                               | «Kamera "{name}" ikke funnet — velg et annet»             |
+| `starting`     | strømmen er bedt om                                        | «Starter kamera…»                                         |
+| `live`         | strømmen er festet                                         | — (merket sier størrelse + fps)                           |
+
+Rekkefølgen er en beslutning: feilen fra `getUserMedia` går **FØR** enhetslisten.
+En nektet tilgang gjør «Ingen kameraer funnet» til en oppfordring om å sjekke en
+kabel som er i orden.
+
+Sju av de ni tekstene er portert ordrett fra `d982012`s
+`legacy/locales/no.json` (`home.camera*`). To er skrevet om: `pickFirst` og
+`noResponse` sa «trykk oppdater» / «prøv å oppdatere», og den knappen finnes ikke
+i dette skallet.
+
+### ⚠️ Constraints-regelen: ALDRI `height`
+
+```ts
+{ width: { ideal: 1920 }, aspectRatio: { ideal: 16 / 9 } }   // + deviceId: { ideal } når navnet traff
+```
+
+Legacy ba om bredde OG høyde OG sideforhold, og WKWebView kollapset de tre
+uoppfyllbare idealene til et **beskåret kvadrat** på et 1080p-kamera. Testen
+nekter nøkkelen `height` i utdata uansett inndata — både som egenskap og i
+`JSON.stringify`. Og `audio: false` alltid: dette er det eneste
+`getUserMedia`-kallet i hele skallet, og det skal aldri kunne kappes om
+mikrofonen (en gUM som forhandlet stereo låste en 32-kanals mikser til to
+kanaler, 2026-07-31).
+
+### Eierskapet: SLIPP, og så start
+
+`app/ui/CameraPreview/ownership.ts` er registeret. `handleStart` kaller
+`releaseCameraPreview()` **før** `startRecordingNow` — previewen slipper også når
+`isRecording` blir sann, men det signalet settes ETTER at motoren har svart ja,
+altså etter at ffmpeg allerede har prøvd å åpne enheten mens webviewet holdt den.
+Rekkefølgen er hele forskjellen mellom et videoopptak og en tom fil.
+
+Et PAR og ikke bare en stopp: `start_recording` kan svare nei, og en preview som
+ble stående svart etter et mislykket trykk er en app som virker ødelagt av å ha
+sagt fra. `resumeCameraPreview()` kalles i `finally` når ingen økt ble startet.
+
+Mutasjonsbevist: fjern `releaseCameraPreview()` fra `handleStart` →
+`e2e/record.spec.ts::⚠️ previewen slipper kameraet FØR start_recording` blir rød,
+og rekkefølgen snur fra `["preview-stop", "plan_recording_opts",
+"start_recording"]` til `["plan_recording_opts", "start_recording",
+"preview-stop"]`.
+
+Restarten venter `PREVIEW_RESTART_MS` (legacys 3 s): motoren slipper kameraet
+ETTER at den er ferdig med å skrive, ikke når overlegget forsvinner.
+
+### Pollen går bevisst UTENOM `call()`
+
+`recordingPreviewFrame()` er i api-shim + `api.d.ts`, og
+`recording_preview_frame` er dermed ute av `unreachable` i
+`scripts/command-reachability-baseline.json` (−1, 45 → 44).
+
+⚠️ Den går **ikke** gjennom `call()`, og det er det ene stedet det er riktig:
+pollen kjører 12 Hz i en hel gudstjeneste, og `call()` legger hver feil i
+50-plassers-ringen betingelsesløst. En bakende som sluttet å svare ville
+overskrevet hele diagnostikk-historikken på fire sekunder — altså slettet sporene
+etter nettopp det opptaket som går galt — pluss en `console.warn` tolv ganger i
+sekundet. En tapt preview-frame er kosmetisk; den ærlige flaten for «kameraet er
+dødt» er at rammen aldri forlater «Starter kamera…».
+
+In-flight-vakten i `frame-poll-core.ts` er mutasjonsbevist: fjern `if (busy)
+return` → samtidige kall går fra 1 til 10.
+
+### `listVideoDevices` avviser en feilet lesning
+
+Fallbacken var `{}`, så en kommando som aldri svarte kom tilbake som «ingen
+kameraer» — og skjermen ba en frivillig sjekke en kabel som var i orden, når
+svaret lå i en kameratillatelse. Sentinelen er `null` nå (Rust-kommandoen
+returnerer en struct, aldri null), så feilen går fortsatt gjennom `call()`, og
+`state/devices.ts` reiser `videoDevicesFailed` ved siden av den tomme listen.
+Uten dette ville `listError` / `listFailed` vært død kode.
+
+## Det D2 fjernet, og hvorfor
+
+- **`Level1.tsx`** — nivå 1 er kontrollrommet nå.
+- **`app.record.autoQuestion`** («Skal SundayRec ta opp hver søndag av seg
+  selv?»). WKWebView-proben viste den rett under auto-kortet med den SAMME
+  setningen under seg. To kort som spør om det samme er hvordan en frivillig
+  lærer at appen ikke vet hva den mener.
+- **`app.setup.lede`, `app.setup.back`, `app.setup.addons`** — leden er borte i
+  innbygget modus, «Tilbake» hører til en navigasjon som ikke skjer, og
+  «Tillegg» var en overskrift over to kort som nå står i samme stabel som de
+  tre andre.
+- **`public/sundayrec-logo.jpg`** (786 kB) — utenfor Vites rot, altså uåpnelig.
+
+## Bevist i en ekte WKWebView
+
+Alle tre PR-ene ble målt i den ekte motoren før merge, med P4a-metoden (en
+Swift-vert som laster `npm run dev`; aldri innsjekket). Eierens app, database og
+opptaksmappe ble aldri rørt, og **ingen TCC-dialog ble utløst** —
+`AVCaptureDevice.authorizationStatus` leses uten å be om noe.
+
+| målt                                  | verdi                                                         |
+| ------------------------------------- | ------------------------------------------------------------- |
+| trafikklys, bunn / logo               | `y = 23` / `x = 22, y = 28, 28×28` → 5 px klaring             |
+| `documentElement.className`           | `platform-darwin`, skinnens `padding-top` `28px`              |
+| `nav-*`-antall                        | `3` — `nav-record`, `nav-library`, `nav-setup`                |
+| tannhjulet                            | `y = 664…707`, statuslinjen `y = 724` → nederst               |
+| horisontal scroll @1180×760           | **ingen** (`scrollWidth 1180 = clientWidth`)                  |
+| venstre / høyre kolonne               | x 244 b 385 (`sticky`) / x 649 b 495                          |
+| kilde-kortet utfoldet                 | h 386, Start fortsatt synlig (y 616 + 64 < 760)               |
+| mappe-kortet utfoldet                 | h 101 → 351, fortsatt ingen scroll                            |
+| @1000×760                             | ÉN kolonne (begge x 244, b 720), sticky av                    |
+| live-preview                          | `phase live`, merke `1280×720` — det kameraet FAKTISK leverte |
+| overleveringen                        | `["preview-stop", "plan_recording_opts", "start_recording"]`  |
+| under opptak                          | `previewDuringRecording: "paused"`, overlegget `live`         |
+| overleggets sideforhold               | `--rec-video-ar: 1920 / 1080` — fra JPEG-HEADEREN             |
+| restarten                             | `phase1sAfterStop: "starting"`, `restartedWithin6s: true`     |
+| nektet tilgang (WKUIDelegate `.deny`) | `phase denied`, tekst «Kameratilgang nektet …»                |
+| CSP / errors / rejections             | tomme — `data:`-URL-en er `img-src … data:`-lovlig            |
+
+⚠️ **`onloadedmetadata` alene var ikke nok.** Proben målte `videoWidth === 0`
+etter at strømmen var festet og spilte. `onresize` er lagt til ved siden av, og
+merket dukket opp. Et merke som mangler er en frivillig som ikke får vite at
+kameraet leverer 720p under en 1080p-profil.
+
+## D2-restanser
+
+1. **Riggtest hos eieren.** Alt over er e2e + WKWebView-probe. Det som gjenstår
+   er den ekte maskinen med det ekte kameraet og den ekte mikseren:
+   `docs/SMOKE-TEST.md` §3 (nå med to-måler-steget), §4 (seks steg) og §9
+   (tray → utfoldet kort). ⚠️ Selve vindus-DRAGET kan ikke prøves uten Tauri —
+   `data-tauri-drag-region` er Tauris attributt, ikke nettleserens.
+2. **⚠️ «Starter kamera…» i 3-sekundersvinduet.** Etter et opptak står rammen på
+   `starting` mens restart-timeren løper, uten at noe faktisk starter ennå.
+   Teksten er ikke usann, men den er heller ikke presis: den samme setningen
+   betyr «motoren har ikke skrevet en frame» i overlegget. En egen fase for
+   ventingen er billig; den er ikke bygget.
+3. **Atlaset fotograferer det gamle skallet.** Se `docs/design/atlas/INDEX.md` —
+   D2 endret skinnen, OPPTAK og Innstillinger, og en re-fotografering er en ny
+   scenetabell, ikke en re-peking (samme vurdering som «Etter byttet» §4).
+4. **Canvas-dokumentet er en tegning, ikke et skjermbildepass.**
+   `docs/design/canvas/FASE-D2-KONTROLLROM.html` er tegnet mot koden som fasit,
+   men den er fortsatt en tegning. Skjermbildepasset hører til riggtesten.
+
+---
+
 # Etter byttet
 
 Fase B, PR A gjorde `app/` til skallet og slettet `legacy/renderer/`s skall;
@@ -2387,7 +2801,8 @@ som ikke finnes lenger». De som er mer enn opprydding:
 - **Diagnose-skjermen.** `run_diagnostics` + `diagnose_audio` + capture-proben
   virker fortsatt og er Rust-testet; ingenting åpner dem. Opptakstallene ligger
   i `<app-data>/last-recording.json`, og §5b i røykboken leses derfra nå.
-  Tray-menyens «Diagnostikk» navigerer til OPPSETT og stopper der.
+  Tray-menyens «Diagnostikk» navigerer til INNSTILLINGER (tannhjulet) og
+  stopper der.
 - ~~**Kamerabildet.**~~ **LUKKET** i D2/PR2 (`feat/d2-camera-preview`).
   Overlegget hadde en brikke som NAVNGIR kameraet, og en brikke ser helt lik ut
   med lokk på linsen — et dødt kamera ble først oppdaget når fila ble åpnet.
@@ -2441,7 +2856,10 @@ legacy-skallet med legacy-selektorer. Etter flippen ville kommandoen startet det
 NYE skallet og feilet hver eneste scene, så den er slettet. Bildene består:
 `docs/design/atlas/` (183 filer) og `docs/design/ATLAS.md` er Fase A-fasiten.
 Å fotografere det nye skallet er en ny scenetabell — verdt å gjøre, ikke en
-re-peking.
+re-peking. ⚠️ **D2 flyttet målskiven igjen** (skinnen, OPPTAK, Innstillinger),
+så scenetabellen skal skrives mot kontrollrommet, ikke mot v0.16.0-beta.1.
+Notisen står også øverst i `docs/design/atlas/INDEX.md`, der en leser møter
+bildene.
 
 ## 5. Fem språk venter
 
