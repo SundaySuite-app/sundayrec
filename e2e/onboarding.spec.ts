@@ -266,6 +266,6 @@ test.describe("onboarding", () => {
     await expect(page.getByTestId("consent-card")).toBeVisible();
     // The rest of the app is untouched — the rail still navigates.
     await page.getByTestId("nav-setup").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
   });
 });

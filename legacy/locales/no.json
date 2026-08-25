@@ -3,7 +3,7 @@
     "page": {
       "record": "Opptak",
       "library": "Bibliotek",
-      "setup": "Oppsett"
+      "setup": "Innstillinger"
     },
     "rail": {
       "label": "Steder i appen",

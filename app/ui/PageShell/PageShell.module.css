@@ -20,6 +20,29 @@
   top: 0;
 }
 
+/*
+ * ⚠️ macOS: trafikklysene ligger OPPÅ innholdet.
+ *
+ * `tauri.conf.json` setter `titleBarStyle: "Overlay"` + `hiddenTitle`, altså
+ * ingen tittellinje — men lukk/minimer/maksimer males fortsatt i sin vanlige
+ * posisjon, øverst til venstre, nøyaktig der skinnen begynner. Med 22 px topp
+ * lå merket UNDER dem: en logo delvis skjult bak tre knapper, på den ene
+ * plattformen eieren faktisk kjører.
+ *
+ * 28 px er ikke et smakstall — det er høyden på macOS' standard tittellinje,
+ * altså båndet knappene er sentrert i. Padding lik den høyden er det samme som
+ * å si «begynn under knappene», og den holder selv om Apple flytter dem noen
+ * piksler.
+ *
+ * Klassen settes på `documentElement` i `app/main.tsx` fra `currentOs()`
+ * (`platform-core.ts`), og `:global()` er det som gjør at CSS-moduler ikke
+ * hasher bort navnet main.tsx skriver. Windows og Linux får INGEN slik regel:
+ * der er tittellinjen ekte og skinnen begynner der den skal.
+ */
+:global(.platform-darwin) .rail {
+  padding-top: 28px;
+}
+
 .logo {
   display: flex;
   align-items: center;
@@ -29,17 +52,15 @@
   font-weight: 700;
 }
 
-.mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--gold);
-  display: grid;
-  place-items: center;
-  color: var(--on-gold);
-  font-weight: 800;
+/*
+ * Produktnavnet ved siden av merket, med den gamle appens mål: 15 px, 700, og
+ * en anelse negativ sporing. `--fs-lg` (16 px) på `.logo` er for stort her —
+ * navnet skal stå SAMMEN med et 28 px merke, ikke rope over det.
+ */
+.logoText {
   font-size: 15px;
-  flex: none;
+  font-weight: 700;
+  letter-spacing: -0.4px;
 }
 
 .church {
@@ -94,8 +115,21 @@
   height: 18px;
 }
 
-.status {
+/*
+ * Tannhjulet, nederst — over statuslinjen, som i den gamle appen.
+ *
+ * `margin-top: auto` sto på `.status` før D2. Det MÅTTE flytte hit og ikke bare
+ * legges til: to `auto`-marger i samme flex-kolonne DELER den ledige plassen
+ * mellom seg, så tannhjulet ville blitt stående og svevet midt i skinnen mens
+ * statuslinjen fortsatt satt i bunnen. Én `auto`, øverst i den nederste
+ * blokken, er det som limer begge to fast.
+ */
+.settingsItem {
   margin-top: auto;
+  padding-bottom: var(--sp-1);
+}
+
+.status {
   display: grid;
   gap: 6px;
   padding: var(--sp-3) 10px 0;

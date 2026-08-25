@@ -11,11 +11,17 @@ the bridge from "compiles + unit-tests pass" to "validated on a real rig".
 ## The navigation this runbook walks
 
 Fase B of «Frivilligen først» replaced the shipped shell. The old five pages
-with their eight tabs are gone; there are **three destinations** on the rail —
-**Opptak · Bibliotek · Oppsett** — plus **Rediger**, which is not a destination
-at all but a screen a recording opens into. Every step below has been re-walked
-against the shell that actually ships; this table is the translation for
-anybody holding an older report.
+with their eight tabs are gone; there are **two destinations** on the rail —
+**Opptak · Bibliotek** — plus **Rediger**, which is not a destination at all but
+a screen a recording opens into. Every step below has been re-walked against the
+shell that actually ships; this table is the translation for anybody holding an
+older report.
+
+> **D2 renamed one thing.** Settings used to be the third destination, labelled
+> **Oppsett**. It is now the **gear at the FOOT of the rail**, labelled
+> **Innstillinger** — same route, same screens, same order. Wherever the table
+> and the steps below say «Oppsett ›», read «the gear ›»; the wording is swept
+> in D2's docs pass.
 
 | where it used to be                              | where it is now                                                   |
 | ------------------------------------------------ | ----------------------------------------------------------------- |
@@ -123,8 +129,9 @@ npm run tauri dev
 `predev` fetches ffmpeg if needed; vite serves on the fixed port **1420**
 (`strictPort`); Tauri opens the window titled "SundayRec".
 
-**What proves the bridge is up.** The rail paints **Opptak · Bibliotek ·
-Oppsett** with the church name at the top and the version at the foot, and the
+**What proves the bridge is up.** The rail paints the SundayRec mark and
+**Opptak · Bibliotek** with the church name at the top, the **Innstillinger**
+gear and the version at the foot, and the
 status line under it says one of five things — «Alt er klart» (green), «Lyden er
 ikke koblet til» / «Lite plass igjen» (amber), «Neste opptak …» (grey) or «Tar
 opp» (red). A status line at all means `settings_get` answered and the database

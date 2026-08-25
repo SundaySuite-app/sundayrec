@@ -1,12 +1,26 @@
 /**
- * PageShell — skinnen, de tre destinasjonene og setningen nederst.
+ * PageShell — skinnen, de to destinasjonene, tannhjulet og setningen nederst.
  *
- * ## Tre steder, ikke fem sider og åtte faner
+ * ## To steder og et tannhjul, ikke fem sider og åtte faner
  *
  * Legacy har `home`, `schedule`, `search`, `settings` og `editor`, pluss fem
  * faner inne i innstillinger. En frivillig som aldri har sett appen skal ikke
- * måtte vite hvilken av dem «filnavn» bor på. Skinnen har tre knapper, og
+ * måtte vite hvilken av dem «filnavn» bor på. Skinnen har to knapper, og
  * ruteren (`app/router/router.ts`) oversetter alt det gamle til dem.
+ *
+ * ## Hvorfor Innstillinger IKKE er en av dem lenger (D2)
+ *
+ * Fram til D2 sto Oppsett som destinasjon nummer tre, ved siden av Opptak og
+ * Bibliotek. Det gjorde innstillinger til et LIKEVERDIG sted — noe man går til
+ * like ofte som man tar opp — og det er ikke sant: en frivillig setter opp
+ * appen én gang og tar opp hver søndag. Tannhjulet står derfor nederst, over
+ * statuslinjen, der den gamle appen hadde det, og der et tannhjul står i alt
+ * annet en frivillig bruker.
+ *
+ * RUTEN `setup` lever videre uendret. Det er bare plasseringen i skinnen som
+ * flyttet: `data-testid="nav-setup"` og `aria-current` står på tannhjulet, så
+ * alt som spør skinnen «hvor er jeg?» får samme svar som før, og
+ * `[data-testid^="nav-"]` teller fortsatt tre.
  *
  * ## `data-tauri-drag-region`
  *
@@ -45,10 +59,16 @@ import { nextRecording } from "../../state/next-recording";
 import { isRecording } from "../../state/recording";
 import { settings } from "../../state/settings";
 import { formatNextWhen, statusLine } from "../../state/status-line";
+import { AppLogo } from "../AppLogo/AppLogo";
 import { StatusDot } from "../StatusDot/StatusDot";
 import styles from "./PageShell.module.css";
 
-const PAGES: readonly Page[] = ["record", "library", "setup"];
+/**
+ * Destinasjonene i navigasjonen. `setup` er IKKE med — den har tannhjulet
+ * nederst, se toppen av fila. Ruten finnes fortsatt; det er bare knappen som
+ * har flyttet.
+ */
+const PAGES: readonly Page[] = ["record", "library"];
 
 /**
  * Produktnavnet. En KONSTANT og ikke tekst i treet: navnet oversettes ikke —
@@ -73,11 +93,27 @@ const ICONS: Record<Page, ComponentChildren> = {
       <path d="M6 20h12" />
     </svg>
   ),
+  /*
+   * Et EKTE tannhjul, ikke skyvekontrollene fra før D2. Skyvekontroller er et
+   * mikserbord for den som allerede vet hva de gjør; tannhjulet er tegnet
+   * ingen trenger å lære — og det er det som står i den gamle appen, i
+   * menylinjen og i alt annet en frivillig bruker.
+   *
+   * Geometrien er regnet ut, ikke lånt: senter (12,12), nav r 2,6, ring r 6,4
+   * og åtte tenner fra r 6,4 til r 9,2 for hver 45°. Diagonalene er
+   * 6,4·cos45° ≈ 4,5 og 9,2·cos45° ≈ 6,5 — derav 7,5/16,5 og 5,5/18,5.
+   */
   setup: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-      <circle cx="16" cy="7" r="2.5" />
-      <circle cx="10" cy="17" r="2.5" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+    >
+      <circle cx="12" cy="12" r="6.4" />
+      <circle cx="12" cy="12" r="2.6" />
+      <path d="M12 5.6V2.8M12 18.4V21.2M5.6 12H2.8M18.4 12H21.2M16.5 7.5L18.5 5.5M7.5 7.5L5.5 5.5M7.5 16.5L5.5 18.5M16.5 16.5L18.5 18.5" />
     </svg>
   ),
 };
@@ -87,9 +123,10 @@ export interface PageShellProps {
   /**
    * Overskriften, når siden handler om noe smalere enn destinasjonen.
    *
-   * OPPSETT er tre skjermer dypt: destinasjonen heter «Oppsett», men den
-   * skjermen man står PÅ heter «Hvilken lyd?». En `<h1>` som sa «Oppsett» på
-   * alle seks ville vært det ene ordet som aldri hjelper — og siden fokus
+   * OPPSETT er tre skjermer dypt: ruten heter «Innstillinger» (D2 — den het
+   * «Oppsett» til og med v0.16.0-beta.1), men den skjermen man står PÅ heter
+   * «Hvilken lyd?». En `<h1>` som sa det samme på alle seks ville vært det ene
+   * ordet som aldri hjelper — og siden fokus
    * flyttes hit ved hvert rutebytte, er det også det første en
    * skjermleserbruker hører. Utelatt = destinasjonens eget navn.
    */
@@ -135,10 +172,8 @@ export function PageShell({ children, heading }: PageShellProps) {
         class={styles.rail}
       >
         <div class={styles.logo}>
-          <span aria-hidden="true" class={styles.mark}>
-            S
-          </span>
-          <b>{PRODUCT}</b>
+          <AppLogo size={28} />
+          <b class={styles.logoText}>{PRODUCT}</b>
         </div>
 
         <div
@@ -165,6 +200,27 @@ export function PageShell({ children, heading }: PageShellProps) {
               <span>{tDyn("app.page", page)}</span>
             </button>
           ))}
+        </div>
+
+        {/*
+          Tannhjulet. Nederst, over statuslinjen — se toppen av fila. Det er
+          `.navItem` som alle andre (samme høyde, samme hover, samme `.on`);
+          det er PLASSERINGEN som sier at det ikke er en destinasjon.
+        */}
+        <div class={styles.settingsItem}>
+          <button
+            type="button"
+            data-tauri-drag-region="false"
+            data-testid="nav-setup"
+            aria-current={current.page === "setup" ? "page" : undefined}
+            class={`${styles.navItem} ${current.page === "setup" ? styles.on : ""}`}
+            onClick={() => navigate("setup")}
+          >
+            <span aria-hidden="true" class={styles.navIcon}>
+              {ICONS.setup}
+            </span>
+            <span>{t("app.page.setup")}</span>
+          </button>
         </div>
 
         <div class={styles.status}>
