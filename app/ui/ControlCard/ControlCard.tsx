@@ -110,7 +110,17 @@ export function ControlCard({
       <div class={styles.head}>
         {lead ? <div class={styles.lead}>{lead}</div> : null}
         <div class={styles.grow}>
-          <div data-testid={`${test}-title`} class={styles.title}>
+          {/*
+            En ekte `id` og ikke bare en testid: bryteren i `lead` peker på den
+            med `aria-labelledby`, og en referanse til et element som ikke har
+            id-en er en bryter uten navn — usynlig for alle som ser på skjermen,
+            og alt en skjermleser har.
+          */}
+          <div
+            id={`${test}-title`}
+            data-testid={`${test}-title`}
+            class={styles.title}
+          >
             {title}
           </div>
           <div data-testid={`${test}-summary`} class={styles.value}>
@@ -127,7 +137,10 @@ export function ControlCard({
           <button
             type="button"
             aria-expanded={expanded}
-            aria-controls={bodyId}
+            // Bare når kroppen FINNES: den rives ut av treet ved kollaps (det
+            // er hele VU-regelen), og en `aria-controls` som peker på ingenting
+            // er en referanse en skjermleser ikke kan følge.
+            aria-controls={expanded ? bodyId : undefined}
             data-testid={`${test}-expand`}
             class={styles.expand}
             onClick={onExpand}

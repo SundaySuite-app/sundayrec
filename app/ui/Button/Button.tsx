@@ -111,7 +111,7 @@ export function Button({
       aria-disabled={off ? "true" : undefined}
       aria-busy={busy ? "true" : undefined}
       aria-expanded={expanded}
-      aria-controls={expanded === undefined ? undefined : controls}
+      aria-controls={expanded ? controls : undefined}
       aria-describedby={reason ? reasonId : undefined}
       title={reason}
       class={[
