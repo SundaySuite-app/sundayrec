@@ -21,10 +21,11 @@
  * ## Den siste skjermen påstår ingenting
  *
  * Sjekklisten er `decisions-core.ts` — de samme fem radene, med de samme tre
- * tilstandene, som nivå 1. Det er derfor den kan være gul: «Alt er klart!» over
- * en app uten lagringsmappe er atlasets funn (§3e), og den setningen finnes
- * ikke her. Overskriften sier «Klar til søndag», og raden som ikke er det står
- * gul med en «Sett opp»-knapp som følger med inn i Oppsett.
+ * tilstandene, som kortene i kontrollrommet. Det er derfor den kan være gul:
+ * «Alt er klart!» over en app uten lagringsmappe er atlasets funn (§3e), og den
+ * setningen finnes ikke her. Overskriften sier «Klar til søndag», og raden som
+ * ikke er det står gul med en «Sett opp»-knapp som følger med til kortet på
+ * OPPTAK.
  */
 
 import { signal } from "@preact/signals";
@@ -62,7 +63,6 @@ import { FolderPage } from "./FolderPage";
 import { NotifyPage } from "./NotifyPage";
 import { QualityPage } from "./QualityPage";
 import { SoundPage } from "./SoundPage";
-import { inSequence } from "./SubPage";
 import styles from "./firstrun.module.css";
 import setup from "./setup.module.css";
 import { useVuWord } from "./use-vu-word";
@@ -97,16 +97,8 @@ export function FirstRun() {
   const [finishing, setFinishing] = useState(false);
   const screen = screenAt(index);
 
-  // Sekvensen eier navigasjonen: undersidene skal ikke ha sin egen «Tilbake».
-  useEffect(() => {
-    inSequence.value = true;
-    return () => {
-      inSequence.value = false;
-    };
-  }, []);
-
-  // De samme fakta nivå 1 leser. Sjekklisten er nivå 1 sine regler, så den
-  // trenger nivå 1 sine inndata.
+  // De samme fakta kontrollrommet leser. Sjekklisten er de samme reglene, så
+  // den trenger de samme inndataene.
   useEffect(() => {
     void loadAudioDevices();
     void refreshDiskSpace();
@@ -282,7 +274,15 @@ function Checklist() {
           actionLabel={
             needsSetUp(decision) ? t("app.setup.setUp") : t("app.setup.change")
           }
-          onAction={() => navigate("setup", { tab: decision.id })}
+          // Til kortet som eier spørsmålet: fire av dem står i kontrollrommet
+          // på OPPTAK, og kirkeprofilen under Innstillinger. Knappen forlater
+          // sekvensen — det gjorde den før også, og en «Sett opp» som bare
+          // rullet ville vært en knapp uten en skjerm.
+          onAction={() =>
+            decision.id === "church"
+              ? navigate("setup")
+              : navigate("record", { anchor: decision.id })
+          }
           anchor={decision.id}
           testId={`first-run-row-${decision.id}`}
         />

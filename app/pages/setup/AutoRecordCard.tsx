@@ -1,9 +1,17 @@
 /**
- * Tillegg — «Ta opp automatisk».
+ * Tillegg — «Ta opp automatisk». Ett av de fem kortene i kontrollrommet.
  *
  * ÉN ukentlig tid: dag, klokkeslett, varighet. Flere tider, spesialopptak og
  * vekkingen er Avansert — de hører til den som allerede har svart ja på dette
- * spørsmålet. Lenken nederst på nivå 1 går dit.
+ * spørsmålet. Lenken nederst i kortet går dit.
+ *
+ * ## Bryteren er i topplinja, tiden i kroppen
+ *
+ * Samme form som kamera-kortet: en `ControlCard` med bryteren til venstre,
+ * tiden som gjelder som kompaktverdi, og redigeringen i en kropp som folder seg
+ * ut på stedet. Kortet kan bare foldes ut når det FINNES en tid å redigere
+ * (`autoExpandable`) — en tom slot-redigerer bak en avslått bryter er en
+ * kontroll uten virkning.
  *
  * ## Av/på sletter INGENTING lenger
  *
@@ -55,12 +63,17 @@ import {
 } from "../../state/settings";
 import { BoundToggle } from "../../ui/Bound/Bound";
 import { Button } from "../../ui/Button/Button";
-import { Card } from "../../ui/Card/Card";
+import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { Select } from "../../ui/Select/Select";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
+import {
+  autoExpandable,
+  autoValue,
+  type AutoValue,
+} from "../record/control-core";
 import {
   autoRecordOn,
   DEFAULT_PLAN,
@@ -72,11 +85,22 @@ import {
 } from "./schedule-core";
 import styles from "./setup.module.css";
 
-export function AutoRecordCard() {
+export interface AutoRecordCardProps {
+  expanded: boolean;
+  onExpand: () => void;
+  highlight?: boolean;
+}
+
+export function AutoRecordCard({
+  expanded,
+  onExpand,
+  highlight,
+}: AutoRecordCardProps) {
   const s = settings.value;
   const slots = s.slots ?? [];
   const plan = planFromSlots(slots);
   const on = autoRecordOn(s);
+  const canExpand = autoExpandable(s);
   // Den delte lagringsmodellen: bryteren skriver TO nøkler (flagget og — når
   // profilen ikke har en tid — den første slotten), så den kan ikke gå gjennom
   // `useSetting`. `usePatch` gir den samme sekvensen, den samme
@@ -108,61 +132,60 @@ export function AutoRecordCard() {
   }
 
   return (
-    <Card testId="setup-auto" anchor="auto">
-      <div class={styles.addonHead}>
+    <ControlCard
+      id="auto"
+      testId="setup-auto"
+      title={t("app.setup.auto.title")}
+      value={autoText(autoValue(s))}
+      expanded={expanded && canExpand}
+      onExpand={canExpand ? onExpand : undefined}
+      expandLabel={t("app.setup.change")}
+      collapseLabel={t("app.record.close")}
+      highlight={highlight}
+      lead={
         <Toggle
           checked={on}
           onChange={toggle}
           disabled={save.busy}
-          labelId="setup-auto-label"
+          labelId="setup-auto-title"
           testId="setup-auto-toggle"
         />
-        <div class={styles.grow}>
-          <div id="setup-auto-label" class={styles.addonTitle}>
-            {t("app.setup.auto.title")}
-          </div>
-          <div data-testid="setup-auto-summary" class={styles.addonSummary}>
-            {on && plan
-              ? tf("app.setup.auto.summary", {
-                  day: tDyn("app.setup.days", String(plan.day)),
-                  start: plan.start,
-                  n: plan.minutes,
-                })
-              : t("app.setup.auto.desc")}
-          </div>
-        </div>
-        <Receipt state={save.receipt} testId="setup-auto-receipt" />
-      </div>
-
-      {on && plan ? (
-        <div class={styles.addonBody}>
-          <PlanEditor plan={plan} slots={slots} />
-          {slots.length > 1 ? (
-            <p data-testid="setup-auto-more" class={styles.hint}>
-              {tf("app.setup.auto.more", { n: slots.length })}
-            </p>
-          ) : null}
-          <BoundToggle
-            setting="launchAtLogin"
-            label={t("app.setup.auto.launch")}
-            description={t("app.setup.auto.launchDesc")}
-            testId="auto-launch"
-          />
-          <div class={styles.footer}>
-            <Button
-              variant="ghost"
-              testId="setup-auto-advanced"
-              onClick={() =>
-                navigate("setup", { tab: "advanced", anchor: "schedule" })
-              }
-            >
-              {t("app.setup.advanced.schedTitle")}
-            </Button>
-          </div>
-        </div>
+      }
+      trail={<Receipt state={save.receipt} testId="setup-auto-receipt" />}
+    >
+      {plan ? <PlanEditor plan={plan} slots={slots} /> : null}
+      {slots.length > 1 ? (
+        <p data-testid="setup-auto-more" class={styles.hint}>
+          {tf("app.setup.auto.more", { n: slots.length })}
+        </p>
       ) : null}
-    </Card>
+      <BoundToggle
+        setting="launchAtLogin"
+        label={t("app.setup.auto.launch")}
+        description={t("app.setup.auto.launchDesc")}
+        testId="auto-launch"
+      />
+      <div class={styles.footer}>
+        <Button
+          variant="ghost"
+          testId="setup-auto-advanced"
+          onClick={() => navigate("setup", { anchor: "schedule" })}
+        >
+          {t("app.setup.advanced.schedTitle")}
+        </Button>
+      </div>
+    </ControlCard>
   );
+}
+
+/** Kompaktverdien som SETNING — kjernen svarer med tallene, ikke med teksten. */
+function autoText(value: AutoValue): string {
+  if (value.key === "off") return t("app.setup.auto.desc");
+  return tf("app.setup.auto.summary", {
+    day: tDyn("app.setup.days", String(value.day)),
+    start: value.start,
+    n: value.minutes,
+  });
 }
 
 /**

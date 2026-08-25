@@ -74,6 +74,7 @@
       "nextAuto": "Neste automatiske opptak",
       "autoQuestion": "Skal SundayRec ta opp hver søndag av seg selv?",
       "last": "Siste opptak",
+      "close": "Lukk",
       "camera": {
         "searching": "Leter etter kameraer…",
         "noneFound": "Ingen kameraer funnet — sjekk tilkobling",
@@ -87,7 +88,6 @@
       }
     },
     "setup": {
-      "lede": "Fem spørsmål. Svar én gang, så er dere klare hver søndag.",
       "q1": "Hvilken lyd?",
       "q2": "Hvor skal opptakene?",
       "q3": "Hvilken kvalitet?",
@@ -102,10 +102,8 @@
       },
       "change": "Endre",
       "setUp": "Sett opp",
-      "back": "Tilbake",
       "save": "Lagre",
       "cancel": "Avbryt",
-      "addons": "Tillegg",
       "sound": {
         "lede": "Velg det dere tar opp fra, og sjekk at vi hører det.",
         "deviceWithPair": "{name} · kanal {l}–{r}",

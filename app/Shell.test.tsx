@@ -85,17 +85,27 @@ describe("Shell", () => {
   });
 
   it("bærer ruten som attributter, ikke som synlig feilsøkingstekst", () => {
-    // P1a: kameraet er et TILLEGG på nivå 1, ikke en egen fane. Lenken bærer
-    // derfor bare ankeret — og ankeret er kortet den skal lande på.
+    // D2: hver gammel innstillingsfane er et KORT i kontrollrommet, ikke en
+    // fane. Lenken bærer derfor bare ankeret — og ankeret er kortet den skal
+    // folde ut.
     navigate("settings", { tab: "settings-video" });
     const html = render(<Shell />);
     expect(html).toContain('data-anchor="camera"');
     expect(html).not.toContain("data-tab=");
-    expect(route.value.page).toBe("setup");
+    expect(route.value.page).toBe("record");
 
-    // En fane som FINNES bærer den som et attributt og ingenting annet.
     navigate("settings", { tab: "settings-audio" });
-    expect(render(<Shell />)).toContain('data-tab="sound"');
+    expect(route.value).toEqual({
+      page: "record",
+      anchor: "sound",
+      highlight: true,
+    });
+
+    // Den ene fanen som FINNES igjen bærer den som et attributt og ingenting
+    // annet.
+    navigate("editor");
+    expect(render(<Shell />)).toContain('data-tab="edit"');
+    navigate("record");
   });
 
   it("OPPTAK sier fra når ingen lydkilde er valgt — og peker på OPPSETT", () => {
@@ -180,8 +190,8 @@ describe("Shell", () => {
     navigate("library");
   });
 
-  it("OPPSETT viser de fem spørsmålene, med svaret som gjelder nå", () => {
-    navigate("setup");
+  it("OPPTAK er kontrollrommet: seks kort, med svaret som gjelder nå", () => {
+    navigate("record");
     patchSettings({
       deviceId: "x32",
       deviceName: "Behringer X32",
@@ -192,33 +202,43 @@ describe("Shell", () => {
       emailAddress: "",
     });
     const html = render(<Shell />);
-    for (const id of ["sound", "folder", "quality", "church", "notify"]) {
-      expect(html).toContain(`data-testid="setup-row-${id}"`);
+    // Kilden i venstrekolonnen, og de fem i stabelen til høyre. De to
+    // tilleggene beholder sine egne id-er — kortene er de samme, flyttet.
+    for (const id of [
+      "control-sound",
+      "control-folder",
+      "control-quality",
+      "setup-camera",
+      "setup-auto",
+      "control-notify",
+    ]) {
+      expect(html).toContain(`data-testid="${id}"`);
     }
-    // Enhetslisten er ikke lest i en node-render, så spørsmål 1 påstår
-    // INGENTING — verken at enheten finnes eller at den er borte. Det er hele
-    // poenget med den tredje tilstanden.
-    expect(html).toMatch(
-      /data-testid="setup-row-sound"[^>]*data-status="unknown"/,
-    );
-    // Besvart ⇒ nøytral; ubesvart ⇒ gul. Den gule raden er hele grunnen til at
-    // noen oppdager den tomme innstillingen før en søndag.
-    expect(html).toMatch(/data-testid="setup-row-church"[^>]*data-tone="warn"/);
+    // Svaret som gjelder nå, ikke innstillingens navn.
+    expect(html).toContain("/Users/x/SundayRec");
+    // Ubesvart ⇒ gul. Den gule raden er hele grunnen til at noen oppdager den
+    // tomme innstillingen før en søndag.
+    expect(html).toMatch(/data-testid="control-notify"[^>]*data-tone="warn"/);
     expect(html).toContain("Ingen ennå");
-    // Og de to tilleggene, som utvider seg når de slås på.
-    expect(html).toContain('data-testid="setup-camera"');
-    expect(html).toContain('data-testid="setup-auto"');
+    // …og hvert kort er lukket til noen ber om noe annet.
+    expect(html).toMatch(
+      /data-testid="control-folder"[^>]*data-expanded="false"/,
+    );
     patchSettings({ deviceId: null, deviceName: null, saveFolder: null });
   });
 
-  it("OPPSETT/lyd er en EGEN skjerm, med spørsmålet som overskrift", () => {
-    // Skinnen står fortsatt på OPPSETT, men `<h1>` er spørsmålet: siden
-    // handler om «Hvilken lyd?», og fokus flyttes hit ved hvert rutebytte.
-    navigate("settings", { tab: "settings-audio" });
-    const html = render(<Shell />);
-    expect(html).toMatch(/data-testid="app-heading"[^>]*>Hvilken lyd\?</);
-    expect(html).toContain('data-testid="setup-back"');
+  it("INNSTILLINGER er kirkeprofilen og Avansert — ikke de fem spørsmålene", () => {
+    // D2: de fem beslutningene redigeres der de brukes. Tannhjulet åpner det
+    // som IKKE hører til en søndag, og det er hele skjermen.
     navigate("setup");
+    const html = render(<Shell />);
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Innstillinger</);
+    expect(html).toContain('data-testid="setup-church"');
+    expect(html).toContain('data-testid="setup-advanced"');
+    // Rammen står: leden sier hva lista er, fordi ingen kortrad har sagt det.
+    expect(html).toContain('data-testid="setup-advanced-lede"');
+    expect(html).not.toContain('data-testid="setup-row-sound"');
+    navigate("record");
   });
 
   it("sier fra når innstillingene ikke kunne leses", () => {

@@ -74,6 +74,7 @@
       "nextAuto": "Next automatic recording",
       "autoQuestion": "Should SundayRec record every Sunday by itself?",
       "last": "Last recording",
+      "close": "Close",
       "camera": {
         "searching": "Looking for cameras…",
         "noneFound": "No cameras found — check the connection",
@@ -87,7 +88,6 @@
       }
     },
     "setup": {
-      "lede": "Five questions. Answer once, and you're ready every Sunday.",
       "q1": "Which sound?",
       "q2": "Where do recordings go?",
       "q3": "Which quality?",
@@ -102,10 +102,8 @@
       },
       "change": "Change",
       "setUp": "Set up",
-      "back": "Back",
       "save": "Save",
       "cancel": "Cancel",
-      "addons": "Add-ons",
       "sound": {
         "lede": "Choose what you record from, and check that we hear it.",
         "deviceWithPair": "{name} · channel {l}–{r}",
