@@ -421,8 +421,8 @@ export function RecordPage() {
  * («to tillegg som utvider siden når de slås på»), og det er det eneste stedet
  * en effekt skriver til lista uten at noen trykket på en kortrad.
  *
- * ⚠️ `closeSound` er VU-regelen: et utfoldet kilde-kort har sin egen måler, og
- * begge må ut av treet når opptaket starter. Se toppen av fila.
+ * ⚠️ Den tredje effekten er VU-REGELEN: et utfoldet kilde-kort har sin egen
+ * måler, og begge må ut av treet når opptaket starter. Se toppen av fila.
  */
 function useControlCards(recording: boolean): {
   open: readonly ControlId[];
@@ -468,7 +468,11 @@ function withCard(
 
 /**
  * Kortstabelen i høyrekolonnen: mappe, kvalitet, kamera, automatisk opptak,
- * varsling — i den rekkefølgen (`STACK_IDS`).
+ * varsling — rekkefølgen `STACK_IDS` navngir.
+ *
+ * Skrevet ut og ikke løkket: de fem har hver sin kropp og hvert sitt sett med
+ * props (to av dem har en bryter i topplinja), så en løkke måtte hatt en
+ * `switch` inni seg for å skille dem — altså den samme lista, bare gjemt.
  *
  * De tre som er ett av de fem spørsmålene henter svaret sitt fra
  * `decisions-core` gjennom `decisionRows`, og oversetter det med
