@@ -39,6 +39,7 @@ import { Button } from "./Button/Button";
 import { Card } from "./Card/Card";
 import { Chip } from "./Chip/Chip";
 import { ConsentCard } from "./ConsentCard/ConsentCard";
+import { ControlCard } from "./ControlCard/ControlCard";
 import { DecisionCard } from "./DecisionCard/DecisionCard";
 import { DialogHost } from "./DialogHost/DialogHost";
 import { EmptyState } from "./EmptyState/EmptyState";
@@ -112,6 +113,26 @@ const LIBRARY: Array<{
       "probe-detail",
       "probe-action",
     ],
+  },
+  {
+    name: "ControlCard",
+    markup: () =>
+      render(
+        <ControlCard
+          testId="probe"
+          id="folder"
+          title="Hvor skal opptakene?"
+          value="/Users/x/SundayRec"
+          tone="warn"
+          expanded
+          onExpand={() => {}}
+          expandLabel="Endre"
+          collapseLabel="Lukk"
+        >
+          x
+        </ControlCard>,
+      ),
+    derived: ["probe-title", "probe-summary", "probe-expand", "probe-body"],
   },
   {
     name: "StatusDot",
@@ -323,7 +344,7 @@ describe("komponentbiblioteket", () => {
   it("dekker hele biblioteket — en komponent uten rad ville sluppet unna", () => {
     // Et tall å måtte oppdatere BEVISST. Legger noen til en komponent uten en
     // rad her, feiler denne i stedet for at dekningen stille blir mindre.
-    expect(LIBRARY.length).toBe(25);
+    expect(LIBRARY.length).toBe(26);
   });
 });
 

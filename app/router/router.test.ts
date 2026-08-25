@@ -1,6 +1,7 @@
 import { parseGoto } from "@lib/goto-core";
 import { describe, expect, it } from "vitest";
 
+import { isControlId } from "../pages/record/control-core";
 import {
   handleTrayAction,
   navigate,
@@ -28,29 +29,47 @@ describe("every ?goto= form that exists in this repo", () => {
     ["?goto=home", { page: "record" }],
     ["?goto=search", { page: "library" }],
     ["?goto=editor", { page: "library", tab: "edit" }],
-    // Tidsplanen er tillegget «Ta opp automatisk» på NIVÅ 1 nå — et anker, ikke
-    // en fane. Kalenderen og spesialopptakene er Avansert (P1b).
-    ["?goto=schedule", { page: "setup", anchor: "auto", highlight: false }],
+    // D2: hver gammel fane-id er et ANKER i kontrollrommet på OPPTAK. Kortet
+    // ankeret navngir foldes ut der; kalenderen og spesialopptakene er fortsatt
+    // Avansert, som nå er Innstillinger-flaten.
+    ["?goto=schedule", { page: "record", anchor: "auto", highlight: false }],
     ["?goto=settings", { page: "setup" }],
-    ["?goto=settings:audio", { page: "setup", tab: "sound" }],
-    // Kameraet er også et tillegg på nivå 1.
+    [
+      "?goto=settings:audio",
+      { page: "record", anchor: "sound", highlight: false },
+    ],
     [
       "?goto=settings:video",
-      { page: "setup", anchor: "camera", highlight: false },
+      { page: "record", anchor: "camera", highlight: false },
     ],
-    ["?goto=settings:files", { page: "setup", tab: "folder" }],
+    [
+      "?goto=settings:files",
+      { page: "record", anchor: "folder", highlight: false },
+    ],
     // Etter #139 inneholder Deling-fanen BARE «Varsler» — altså spørsmål 5.
-    ["?goto=settings:sharing", { page: "setup", tab: "notify" }],
-    // ⚠️ `advanced` bygges i P1b. Fram til da rendrer SetupPage nivå 1 for den;
-    // `data-tab` står likevel på <main>, så lenken er ikke tapt.
-    ["?goto=settings:general", { page: "setup", tab: "advanced" }],
+    [
+      "?goto=settings:sharing",
+      { page: "record", anchor: "notify", highlight: false },
+    ],
+    // Den gamle System-fanen er Innstillinger-flaten: kirkeprofil + Avansert,
+    // og ingen fane — flaten er én.
+    ["?goto=settings:general", { page: "setup" }],
     // The already-qualified spelling means the same thing as the bare one.
-    ["?goto=settings:settings-general", { page: "setup", tab: "advanced" }],
+    ["?goto=settings:settings-general", { page: "setup" }],
     // Retired before the 7→5 tab fold; legacy maps them onward, so do we.
-    ["?goto=settings:notifications", { page: "setup", tab: "notify" }],
-    ["?goto=settings:publish", { page: "setup", tab: "notify" }],
+    [
+      "?goto=settings:notifications",
+      { page: "record", anchor: "notify", highlight: false },
+    ],
+    [
+      "?goto=settings:publish",
+      { page: "record", anchor: "notify", highlight: false },
+    ],
     // Percent-encoded, which is how e2e/harness.ts actually writes it.
-    ["?goto=settings%3Aaudio", { page: "setup", tab: "sound" }],
+    [
+      "?goto=settings%3Aaudio",
+      { page: "record", anchor: "sound", highlight: false },
+    ],
   ] as Array<[string, Route]>)("%s", (search, expected) => {
     expect(fromGoto(search)).toEqual(expected);
   });
@@ -87,7 +106,7 @@ describe("resolveRoute", () => {
     expect(
       resolveRoute("settings", { tab: "settings-video", anchor: "flip" }),
     ).toEqual({
-      page: "setup",
+      page: "record",
       anchor: "flip",
       highlight: true,
     });
@@ -124,17 +143,31 @@ describe("resolveRoute", () => {
   });
 
   it("peker bare på faner som FINNES i det nye skallet", () => {
-    // Vakten på tabellen etter P1a: de fem spørsmålene er bygget, `advanced`
-    // er P1b sin og er den ENESTE som får peke på noe som ikke finnes ennå.
-    // En sjette plassholder skal ikke kunne sige inn ubemerket.
-    const built = new Set(["sound", "folder", "quality", "church", "notify"]);
-    const notBuiltYet = new Set(["advanced", "edit"]);
+    // Vakten på tabellen. Etter D2 har bare ÉN rad en fane igjen (`edit`, som
+    // BIBLIOTEK rendrer); resten er ankre på OPPTAK. En plassholderfane skal
+    // ikke kunne sige inn ubemerket.
+    const built = new Set(["edit"]);
     for (const [id, target] of Object.entries(TAB_ALIASES)) {
       if (!target.tab) continue;
       expect(
-        built.has(target.tab) || notBuiltYet.has(target.tab),
+        built.has(target.tab),
         `«${id}» peker på fanen «${target.tab}», som ingen side rendrer`,
       ).toBe(true);
+    }
+  });
+
+  it("hvert anker er et kort kontrollrommet faktisk folder ut", () => {
+    // Skjøten mellom de to tabellene: ruteren lover et anker, `RecordPage`
+    // folder ut kortet med det navnet. Et anker som ikke er en kort-id ville
+    // rullet til ingenting og latt kortet stå lukket — en dyplenke som ser ut
+    // som om den virket.
+    for (const [id, target] of Object.entries(TAB_ALIASES)) {
+      if (!target.anchor) continue;
+      expect(
+        isControlId(target.anchor),
+        `«${id}» peker på ankeret «${target.anchor}», som ikke er et kort`,
+      ).toBe(true);
+      expect(target.page).toBe("record");
     }
   });
 });
@@ -144,7 +177,11 @@ describe("navigate", () => {
     navigate("home");
     expect(route.value).toEqual({ page: "record" });
     navigate("settings", { tab: "settings-audio" });
-    expect(route.value).toEqual({ page: "setup", tab: "sound" });
+    expect(route.value).toEqual({
+      page: "record",
+      anchor: "sound",
+      highlight: true,
+    });
   });
 });
 

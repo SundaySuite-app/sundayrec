@@ -57,15 +57,19 @@ const PAGES: readonly Page[] = ["record", "library", "setup"];
  * Gamle SIDE-id-er → nye sider.
  *
  * `search` er Historikk (det er ingen `history`-side — se e2e/history.spec.ts),
- * og den hører hjemme sammen med opptakene. `schedule` og `settings` er begge
- * oppsett nå.
+ * og den hører hjemme sammen med opptakene. `settings` er Innstillinger.
+ *
+ * `schedule` er OPPTAK etter D2: tidsplanen er et kort i kontrollrommet, ikke
+ * et sted under innstillinger. Raden er redundant så lenge `TAB_ALIASES` har
+ * `schedule` (den vinner), men en tabell som sier noe annet enn den som
+ * gjelder er en felle for den neste som leser dem side om side.
  */
 export const PAGE_ALIASES: Record<string, Page> = {
   home: "record",
   search: "library",
   editor: "library",
   settings: "setup",
-  schedule: "setup",
+  schedule: "record",
 };
 
 /** Hvor en gammel FANE (eller en gammel side med en naturlig fane) lander. */
@@ -84,40 +88,42 @@ export interface TabTarget {
  * uten fane og ville ellers landet på siden sin standardfane og mistet
  * poenget med lenken.
  *
- * ## Navnene er ekte nå (P1a)
+ * ## Navnene er ekte nå (P1a) — og etter D2 peker de på OPPTAK
  *
  * S1a satte plassholdere her fordi informasjonsarkitekturen ennå ikke fantes.
- * Nå gjør den det, og hver rad peker på en skjerm som er bygget:
+ * P1a pekte dem på Oppsett-undersidene. D2 flyttet de fem beslutningene inn i
+ * kontrollrommet på OPPTAK — de redigeres der de brukes — så hver gammel
+ * fane-id er nå et ANKER på opptakssiden i stedet for en fane under Oppsett:
  *
- *   `settings-audio`         → spørsmål 1, «Hvilken lyd?»
- *   `settings-files`         → spørsmål 2, «Hvor skal opptakene?» (`folder`,
- *                              ikke `files`: fanen het etter datatypen, siden
- *                              heter etter spørsmålet)
- *   `settings-sharing`       → spørsmål 5. Etter #139 inneholder den gamle
+ *   `settings-audio`         → `record#sound`, kilde-kortet (folder seg ut til
+ *                              hele «Hvilken lyd?»-skjermen)
+ *   `settings-files`         → `record#folder` («Hvor skal opptakene?»)
+ *   `settings-sharing`       → `record#notify`. Etter #139 inneholder den gamle
  *   `settings-publish`         Deling-fanen BARE seksjonen «Varsler» — fanenavnet
  *   `settings-notifications`   og innholdet henger ikke lenger sammen, og de
  *                              tre gamle id-ene beskriver alle det samme nå.
- *   `settings-video`         → tillegget «Ta med kamera», som bor på NIVÅ 1.
- *                              Ingen fane, men et anker: lenken skal lande på
- *                              kortet, ikke bare på siden.
- *   `schedule`               → tillegget «Ta opp automatisk», samme sted.
+ *   `settings-video`         → `record#camera`, tillegget «Ta med kamera»
+ *   `schedule`               → `record#auto`, tillegget «Ta opp automatisk»
  *
- * ⚠️ `settings-general` peker på `advanced`, en fane P1b bygger. Fram til da
- * rendrer `SetupPage` nivå 1 for den — den gamle System-fanens innhold (språk
- * og kirkeprofil er spørsmål 4 nå; oppdateringer, logg og telemetri er
- * Avansert) er ikke borte, det er delt. `data-tab` står på `<main>` uansett,
- * så dyplenken er intakt den dagen siden finnes.
+ * `settings-general` er den ENESTE som fortsatt lander på `setup`: den gamle
+ * System-fanen er Innstillinger-flaten (kirkeprofil + Avansert), og den er alt
+ * tannhjulet åpner. Ingen fane — flaten er én, og en `tab` her ville vært et
+ * navn på en akse som ikke finnes lenger.
+ *
+ * ⚠️ Ankeret er en KONTRAKT, ikke bare et rullemål: `RecordPage` folder ut
+ * kortet ankeret navngir. Se `app/pages/record/control-core.ts`
+ * (`isControlId`) — tabellen her og kortlista der må navngi de samme seks.
  */
 export const TAB_ALIASES: Record<string, TabTarget> = {
-  "settings-audio": { page: "setup", tab: "sound" },
-  "settings-video": { page: "setup", anchor: "camera" },
-  "settings-files": { page: "setup", tab: "folder" },
-  "settings-sharing": { page: "setup", tab: "notify" },
-  "settings-general": { page: "setup", tab: "advanced" },
-  "settings-publish": { page: "setup", tab: "notify" },
-  "settings-notifications": { page: "setup", tab: "notify" },
+  "settings-audio": { page: "record", anchor: "sound" },
+  "settings-video": { page: "record", anchor: "camera" },
+  "settings-files": { page: "record", anchor: "folder" },
+  "settings-sharing": { page: "record", anchor: "notify" },
+  "settings-general": { page: "setup" },
+  "settings-publish": { page: "record", anchor: "notify" },
+  "settings-notifications": { page: "record", anchor: "notify" },
   editor: { page: "library", tab: "edit" },
-  schedule: { page: "setup", anchor: "auto" },
+  schedule: { page: "record", anchor: "auto" },
 };
 
 /** Samme form som legacy `navigateTo`s opsjoner, så et kallsted kan flyttes
