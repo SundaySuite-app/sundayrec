@@ -44,13 +44,44 @@ describe("Shell", () => {
   });
 
   it("følger ruten, og språket", async () => {
+    // D2: destinasjonen heter «Innstillinger» og bor på tannhjulet nederst i
+    // skinnen. Ruten er den samme (`setup`); det er navnet og plasseringen som
+    // flyttet, og teksten kommer fortsatt fra katalogen.
     navigate("settings", { tab: "settings-audio" });
-    expect(render(<Shell />)).toContain("Oppsett");
+    expect(render(<Shell />)).toContain("Innstillinger");
     await setLocale("en");
     // Sluttet `@lib` å resolve, ville `t()` gitt tom tekst og dette vært en
     // tom `<h1>` — som er nøyaktig hvordan en stille ødelagt alias ser ut.
-    expect(render(<Shell />)).toContain("Setup");
+    expect(render(<Shell />)).toContain("Settings");
     await setLocale("no");
+  });
+
+  it("bærer den gamle logoen, og Innstillinger på et tannhjul framfor som destinasjon", () => {
+    navigate("record");
+    const html = render(<Shell />);
+
+    // D2, eierens første ønske: merket fra den utsendte appen, ikke den gule
+    // «S»-boksen skallet malte mens tegningen manglet.
+    expect(html).toContain('data-testid="app-logo"');
+    // ⚠️ `<defs>`-id-er er GLOBALE i dokumentet. Prefikset er kollisjonsvakten
+    // mot `src-tauri/app-icon.svg`s generiske `bg`/`glow`/`gold`/`clip` — se
+    // filhodet i `ui/AppLogo/AppLogo.tsx`. Faller det bort, peker
+    // `url(#gold)` på hvem som helst.
+    expect(html).toContain('id="srlogo-clip"');
+    expect(html).toContain('id="srlogo-gold"');
+    expect(html).not.toContain('id="clip"');
+    expect(html).not.toContain('id="gold"');
+
+    // Kontrakten som IKKE flyttet: knappen heter fortsatt `nav-setup`, og den
+    // sier fortsatt fra når man står der. Alt som spør skinnen «hvor er jeg?»
+    // — e2e, `no-live-surface`s telling, skjermleseren — får samme svar.
+    expect(html).toContain('data-testid="nav-setup"');
+    expect(html).not.toMatch(/data-testid="nav-setup"[^>]*aria-current/);
+    navigate("setup");
+    expect(render(<Shell />)).toMatch(
+      /data-testid="nav-setup"[^>]*aria-current="page"/,
+    );
+    navigate("record");
   });
 
   it("bærer ruten som attributter, ikke som synlig feilsøkingstekst", () => {

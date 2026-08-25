@@ -45,7 +45,7 @@ const CHOSEN_FIXTURES = {
 };
 
 test.describe("skinnen", () => {
-  test("de tre destinasjonene bytter rute, og fokus følger med", async ({
+  test("de to destinasjonene og tannhjulet bytter rute, og fokus følger med", async ({
     page,
   }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
@@ -61,9 +61,15 @@ test.describe("skinnen", () => {
     // skinnen og må tabbe gjennom hele navigasjonen på nytt for hver side.
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
+    // D2: tannhjulet nederst, ikke en tredje destinasjon. Ruten, testid-en og
+    // `aria-current` er de samme — det er navnet og plasseringen som flyttet.
     await page.getByTestId("nav-setup").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
     await expect(page.getByTestId("app-heading")).toBeFocused();
+    await expect(page.getByTestId("nav-setup")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
 
     await page.getByTestId("nav-record").click();
     await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
@@ -90,6 +96,37 @@ test.describe("skinnen", () => {
       "data-tauri-drag-region",
       "false",
     );
+  });
+
+  test("logoen står øverst og tannhjulet NEDERST, ikke blant destinasjonene", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
+
+    // 1. Merket er der, og det er tegningen fra den utsendte appen — kjent på
+    //    de prefiksede `<defs>`-id-ene, som er kollisjonsvakten mot
+    //    `src-tauri/app-icon.svg`s generiske navn.
+    await expect(page.getByTestId("app-logo")).toBeVisible();
+    await expect(page.locator("#srlogo-clip")).toHaveCount(1);
+    await expect(page.locator("#srlogo-gold")).toHaveCount(1);
+
+    // 2. To destinasjoner. Tannhjulet teller som `nav-*` (kontrakten
+    //    `no-live-surface.spec.ts` hviler på), men det ligger utenfor gruppen.
+    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
+
+    // 3. …og NEDERST. Dette er den ene påstanden DOM-rekkefølgen ikke kan
+    //    bevise: `margin-top: auto` er det som limer tannhjulet til bunnen, og
+    //    feilmodusen er stum — to `auto`-marger i samme kolonne DELER den
+    //    ledige plassen, så tannhjulet blir stående og sveve midt i skinnen
+    //    mens statuslinjen fortsatt sitter der den skal. Målt, ikke antatt.
+    const library = (await page.getByTestId("nav-library").boundingBox())!;
+    const gear = (await page.getByTestId("nav-setup").boundingBox())!;
+    const status = (await page.getByTestId("status-line").boundingBox())!;
+
+    // Under destinasjonene, med LUFT mellom seg — ikke neste rad i listen.
+    expect(gear.y).toBeGreaterThan(library.y + library.height + 40);
+    // …og tett på statuslinjen: alt over ~40 px betyr at den svever.
+    expect(status.y - (gear.y + gear.height)).toBeLessThan(40);
   });
 
   test("statuslinjen sier «Lyden er ikke koblet til» når ingen kilde er valgt", async ({
@@ -172,7 +209,7 @@ test.describe("skinnen", () => {
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
     await expect(page.getByTestId("nav-library")).toContainText("Library");
-    await expect(page.getByTestId("nav-setup")).toContainText("Setup");
+    await expect(page.getByTestId("nav-setup")).toContainText("Settings");
     await expect(page.getByTestId("status-text")).toHaveText("All set");
   });
 });

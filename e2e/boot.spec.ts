@@ -57,7 +57,8 @@ test.describe("app shell boot", () => {
     // `onboardingDone` is false, so the first-run gate sends a
     // never-configured app into the sequence — and the sequence's first screen
     // is question 1, whose heading is the question (P1b). Before P1b it stopped
-    // at level 1 and read «Oppsett».
+    // at level 1 and read «Oppsett» (the destination D2 renamed to
+    // «Innstillinger» and moved onto the gear).
     await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
 
     const violations = await page.evaluate(

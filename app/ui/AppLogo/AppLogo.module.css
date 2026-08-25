@@ -1,0 +1,26 @@
+/*
+ * Ingen farger her — hele tegningen, med merkevarens fire heksadesimaler, bor i
+ * `AppLogo.tsx` og er begrunnet i filhodet der. Denne fila er bare rammen.
+ */
+
+.logo {
+  display: inline-flex;
+  flex: none;
+  /*
+   * Tegningen har allerede runde hjørner (`clipPath` med rx 228 av 1024 ≈ 6,2 px
+   * ved 28 px). Radien HER er beltet under selen: `overflow: hidden` er det som
+   * gjør at et merke uten sin egen clipPath — eller et som blir byttet ut senere
+   * — ikke plutselig maler firkantet inn i skinnen.
+   */
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.logo svg {
+  /* Arver rammen, som igjen arver `size`. Én størrelse å endre. */
+  width: 100%;
+  height: 100%;
+  /* `display: block` fjerner linjeboksens etterslep under en inline-SVG — uten
+     den blir rammen noen piksler høyere enn merket og radien sitter skjevt. */
+  display: block;
+}

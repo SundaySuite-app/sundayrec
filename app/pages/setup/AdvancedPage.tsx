@@ -58,7 +58,7 @@ import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
-import { currentOs } from "./advanced/platform-core";
+import { currentOs } from "../../state/platform-core";
 import { ScheduleCard } from "./advanced/ScheduleCard";
 import { SmtpCard } from "./advanced/SmtpCard";
 import { TelemetryRow } from "./advanced/TelemetryRow";

@@ -31,7 +31,7 @@
 
 import { t } from "../../../i18n";
 import { Card } from "../../../ui/Card/Card";
-import { currentOs, type Os } from "./platform-core";
+import { currentOs, type Os } from "../../../state/platform-core";
 
 /** Lisensteksten, ordrett. Se `docs/BUILD_ASIO.md`. */
 const ASIO_NOTICE =

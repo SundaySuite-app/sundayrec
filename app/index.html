@@ -22,6 +22,18 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; media-src 'self' blob: asset: http://asset.localhost https://asset.localhost; connect-src 'self' ipc: http://ipc.localhost"
     />
     <title>SundayRec</title>
+    <!--
+      Fanikonet. `app/public/` er Vites statiske rot (`root: "app"` i
+      vite.config.ts), så `/icon.svg` serveres både av `npm run dev` og fra
+      `dist/`. Fila er en kopi av `src-tauri/app-icon.svg` — samme tegning som
+      `app/ui/AppLogo/AppLogo.tsx`, men med sine egne generiske `id`-er, og
+      derfor trygg som eget dokument.
+
+      Uten den ba WKWebView om `/favicon.ico`, fikk index.html tilbake, og
+      viste standardikonet — ikke synlig i det utsendte vinduet, men det ER det
+      man ser i en nettleserfane under `npm run dev` og i hvert skjermbildepass.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   </head>
   <body>
     <div id="app"></div>

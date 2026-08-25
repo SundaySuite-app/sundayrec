@@ -26,6 +26,14 @@
  * ikke: en Windows-bryter som stille dukker opp på macOS skriver en
  * innstilling ingen leser der, og en som stille forsvinner på Windows tar bort
  * den ene nødutgangen en hakkete rigg har.
+ *
+ * ## Hvorfor den bor i `app/state/` og ikke under Avansert lenger (D2)
+ *
+ * Den ble skrevet for ASIO-bryteren og lå derfor i `pages/setup/advanced/`. Fra
+ * D2 leser OPPSTARTEN den også: `app/main.tsx` setter `platformClass()` på
+ * `documentElement`, som er det skinnen henger macOS-toppmargen for
+ * trafikklysene på. En modul to sider inne i Oppsett som `main.tsx` importerer
+ * er en avhengighet som peker feil vei. Her er den der begge kan lese den.
  */
 
 /** Det UI-et trenger å skille mellom. */
@@ -84,6 +92,35 @@ export function detectOs(facts: PlatformFacts): Os {
     classifyUa(facts.userAgent) ??
     "other"
   );
+}
+
+/**
+ * Klassen skallet setter på `documentElement`, så CSS kan spørre om
+ * plattformen.
+ *
+ * ## Hvorfor et OPPSLAG og ikke `"platform-" + os`
+ *
+ * Fordi navnene ikke er de samme på begge sider, og det skal stå skrevet i
+ * stedet for å oppdages. `Os` er UI-ets ord («mac»), mens klassenavnene er
+ * plattformenes egne — `darwin`, `win32`, `linux` — som er det en som feilsøker
+ * i DevTools eller leser en CSS-regel forventer å se. En sammensatt streng
+ * ville gitt `.platform-mac`, og da ville CSS-regelen og denne fila vært to
+ * halvdeler som bare TILFELDIGVIS stemte; her er de én tabell med en test.
+ *
+ * ⚠️ Endres en verdi her, må selektoren i `app/ui/PageShell/PageShell.module.css`
+ * endres i samme commit. Skjøten er stum: en regel som ikke treffer noe ser
+ * nøyaktig ut som en regel som ikke gjelder.
+ */
+const PLATFORM_CLASS: Record<Os, string> = {
+  mac: "platform-darwin",
+  win: "platform-win32",
+  linux: "platform-linux",
+  other: "platform-other",
+};
+
+/** Klassenavnet for et operativsystem. Se `PLATFORM_CLASS` over. */
+export function platformClass(os: Os): string {
+  return PLATFORM_CLASS[os];
 }
 
 /** Det ekte vinduet, lest når noen spør. Ingen `window`-oppslag under

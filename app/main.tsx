@@ -58,6 +58,7 @@ import {
 } from "./router/router";
 import { Shell, Overlays } from "./Shell";
 import { loadAppVersion } from "./state/app-info";
+import { currentOs, platformClass } from "./state/platform-core";
 import { initAutoUpdate } from "./state/auto-update";
 import { initBackendWarnings } from "./state/backend-warning";
 import { initDisk } from "./state/disk";
@@ -120,6 +121,19 @@ if (!overlayHost) {
     'app/index.html mangler sitt <div id="overlays">-monteringspunkt',
   );
 }
+
+/*
+ * Plattformen som en KLASSE på rota, og den må stå FØR `render` — ikke fordi
+ * noe er avhengig av den, men fordi den er en målregel: på macOS gir
+ * `.platform-darwin` skinnen toppmargen som holder logoen klar av
+ * trafikklysene (`PageShell.module.css`). Settes den etterpå, males første
+ * frame med feil marg og skinnen hopper noen piksler idet appen åpner — en
+ * feil som ser ut som at appen ikke er ferdig lastet.
+ *
+ * Én klasse, ikke `platform-darwin platform-not-win`: CSS spør «er dette
+ * macOS?», og et negativt navn er en påstand til som kan bli feil alene.
+ */
+document.documentElement.classList.add(platformClass(currentOs()));
 
 // TODO(S1b): `?probe=` forsvinner sammen med `app/dev/`.
 const probe = new URLSearchParams(location.search).get("probe");
