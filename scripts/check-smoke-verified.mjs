@@ -91,7 +91,12 @@ const DOC = "docs/SMOKE-TEST.md";
 // card out, the frame comes back on Innstillinger, and a recording start pulls
 // BOTH meters out of the tree — and each of the four is a mutation-proof for a
 // guard that would otherwise fail silently.
-const MIN_POINTERS = 51;
+//
+// 51 → 52 in D2/PR4: the prose sweep found §9 telling a rig tester to click a
+// tray row — «Sjekk systemet» — that the core deliberately does not build. The
+// correction is only worth as much as the thing that keeps it true, so the
+// runbook now points at the named Rust test that forbids the row.
+const MIN_POINTERS = 52;
 
 // ── 1. Claim lines, and which of them parse ─────────────────────────────────
 
