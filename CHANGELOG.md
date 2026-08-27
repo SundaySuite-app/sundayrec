@@ -3,7 +3,7 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Upublisert
+## v0.16.0-beta.2 — kontrollrommet
 
 Beta-ringen prøvde det nye skallet og sa fra. Dette er svaret: logoen er
 tilbake, innstillingene har flyttet dit de hører hjemme, kameraet viser et
