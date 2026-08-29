@@ -14,7 +14,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--gap-page);
   min-height: 0;
   flex: 1;
 }
@@ -35,7 +35,7 @@
 .step {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--gap-page);
   flex: 1;
   min-height: 0;
 }
@@ -102,7 +102,7 @@
 .idle {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: var(--gap-page);
   flex: 1;
 }
 
@@ -115,14 +115,14 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--gap-stack);
 }
 
 .recentRow {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-3);
+  padding: var(--pad-card-tight);
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: var(--surface);

@@ -90,10 +90,10 @@
 /* ── Siden ───────────────────────────────────────────────────────────────── */
 
 .main {
-  padding: 30px 36px 28px;
+  padding: var(--pad-page-y) var(--pad-page-x) var(--pad-page-b);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--gap-page);
   min-width: 0;
   /* Rullingen skjer HER, ikke i dokumentet — det er det som holder de to
      linjene stående mens en lang side ruller under dem. */

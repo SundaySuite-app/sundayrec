@@ -10,7 +10,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--gap-page);
   min-height: 0;
   flex: 1;
 }
@@ -236,7 +236,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  padding: var(--sp-7) 0;
+  padding: var(--sp-6) 0;
 }
 
 .loadingText {
@@ -253,18 +253,6 @@
   gap: var(--sp-2);
 }
 
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* ── Stegene 2 og 3 ────────────────────────────────────────────────────── */
 
 /*
@@ -275,7 +263,7 @@
 .step {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--gap-page);
   flex: 1;
   min-height: 0;
 }

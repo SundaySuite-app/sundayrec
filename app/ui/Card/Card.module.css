@@ -2,7 +2,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r);
-  padding: 18px var(--sp-5);
+  padding: var(--pad-card);
 }
 
 .head {

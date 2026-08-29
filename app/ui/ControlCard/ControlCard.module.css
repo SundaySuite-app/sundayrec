@@ -8,7 +8,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r);
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--pad-card-tight);
 }
 
 /* Gult betyr «du må gjøre noe før søndag». Samme lag-over-flaten som `Card`:
@@ -86,12 +86,19 @@
   outline-offset: 2px;
 }
 
-/* Kroppen: skjermen kortet handler om, på stedet. Skillelinjen er det som
-   sier at den hører til raden over og ikke er et nytt kort. */
+/*
+ * Kroppen: skjermen kortet handler om, på stedet. Skillelinjen er det som
+ * sier at den hører til raden over og ikke er et nytt kort.
+ *
+ * `--sp-2` og ikke `--sp-3` rundt streken: et utfoldet kort er den ene
+ * tilstanden der siden faktisk er lengre enn ruten, så de 8 pikslene her er
+ * de dyreste på skjermen. Streken skiller like tydelig med 8 px rundt seg —
+ * det er kontrasten som skiller, ikke avstanden.
+ */
 .body {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
   border-top: 1px solid var(--line);
-  padding-top: var(--sp-3);
+  padding-top: var(--sp-2);
 }
 
 /*
