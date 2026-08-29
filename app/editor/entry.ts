@@ -10,24 +10,23 @@
  * Skallet installerer ellers bare `window.showPage` (S1a) — ingen
  * `window.loadSettings`, ingen `window.__isRecording`. Denne er unntaket av
  * samme grunn som den: noe UTENFOR treet hviler på den.
+ *
+ * ## D3: ingen fane lenger
+ *
+ * Fram til D3 var Rediger en FANE inne i BIBLIOTEK, og begge kallene her
+ * navigerte til `library` med `tab: "edit"`. Nå er REDIGERING destinasjonen,
+ * og hvilken av dens to visninger som står avgjøres av om det er en fil åpen
+ * (`loadState`), ikke av ruten — se `app/Shell.tsx`. Så: naviger dit, og åpne
+ * fila. Rekkefølgen er den samme, og den betyr det samme: `openFile` setter
+ * `loadState` SYNKRONT, så biblioteket rekker aldri å blinke innom.
  */
 
 import { navigate } from "../router/router";
 import { openFile } from "./loader";
 
-/**
- * Fanen Rediger bor i.
- *
- * BIBLIOTEK er destinasjonen — å finne opptaket igjen og å redigere det er
- * samme sted i den nye arkitekturen (canvasens sett 3 og 4). `TAB_ALIASES`
- * oversetter allerede den gamle `editor`-siden hit, og navnet her er den
- * andre halvdelen av den samme raden.
- */
-export const EDIT_TAB = "edit";
-
 export function installEditorEntry(): void {
   window.openEditorWithFile = (path: string, seekToSec?: number): void => {
-    navigate("library", { tab: EDIT_TAB });
+    navigate("edit");
     void openFile(path, {
       seekToSec: typeof seekToSec === "number" ? seekToSec : null,
     });
@@ -37,6 +36,6 @@ export function installEditorEntry(): void {
 /** Gå til Rediger med et opptak åpent. Radens egen dato følger med, fordi
  *  editoren ikke kan lese den ut av fila — den er overskriften. */
 export function openInEditor(path: string, startedAtMs: number | null): void {
-  navigate("library", { tab: EDIT_TAB });
+  navigate("edit");
   void openFile(path, { startedAtMs });
 }

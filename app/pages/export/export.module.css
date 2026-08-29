@@ -1,0 +1,142 @@
+/*
+ * EKSPORTERING — canvasens artboards 4.3 og 4.4, nå som egen destinasjon.
+ *
+ * Ingen fargeliteraler: `app/styles/tokens.css` er ordboka, og
+ * `scripts/check-app-css-tokens.mjs` avviser alt annet.
+ *
+ * ⚠️ Formene her er de samme som REDIGERING bruker, og de er GJENTATT og ikke
+ * delt. Grunnen er at de betyr forskjellige ting: `.step` er «ett steg i en
+ * rekke» der, og «hele siden» her, og et delt navn ville bundet to flater som
+ * skal kunne bevege seg fra hverandre. D3 PR3 strammer tettheten på begge, og
+ * da er dette to justeringer og ikke én med en overraskelse i.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+  flex: 1;
+}
+
+/* ── Topplinja ─────────────────────────────────────────────────────────── */
+
+.sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  margin: 0;
+}
+
+/* ── Valgene, kjøringen og kvitteringen ────────────────────────────────── */
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  flex: 1;
+  min-height: 0;
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+}
+
+.value {
+  font-size: var(--fs-val);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+/* Tittel + forklaring til venstre, kontrollen til høyre. Formen SettingRow
+   har, uten lagringsmodellen: her lagres ingenting før eksporten. */
+.autoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.autoGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.autoTitle {
+  display: block;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Forutsigelsen til venstre, den store knappen til høyre — nederst, fordi det
+   er der man er ferdig med å lese. */
+.exportBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-top: auto;
+  padding-top: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+/* ── Uten en åpen fil ──────────────────────────────────────────────────── */
+
+.idle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  flex: 1;
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.recentGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.recentName {
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

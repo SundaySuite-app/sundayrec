@@ -27,8 +27,14 @@ describe("every ?goto= form that exists in this repo", () => {
   // the wrong screen is worse than one that fails loudly, so each one is a row.
   it.each([
     ["?goto=home", { page: "record" }],
-    ["?goto=search", { page: "library" }],
-    ["?goto=editor", { page: "library", tab: "edit" }],
+    ["?goto=search", { page: "edit" }],
+    // D3: Rediger er en DESTINASJON nå, ikke en fane inne i Bibliotek. Lenken
+    // lander samme sted som før; den bærer bare ingen fane lenger.
+    ["?goto=editor", { page: "edit" }],
+    // Skallets egen sideid fram til D3. Den sto i `navigate("library")`-kall og
+    // i skjermbildepassene, så den er et alias nå — tabellen utvides, aldri
+    // krympes.
+    ["?goto=library", { page: "edit" }],
     // D2: hver gammel fane-id er et ANKER i kontrollrommet på OPPTAK. Kortet
     // ankeret navngir foldes ut der; kalenderen og spesialopptakene er fortsatt
     // Avansert, som nå er Innstillinger-flaten.
@@ -119,7 +125,7 @@ describe("resolveRoute", () => {
   it("has no alias that points at a page that does not exist", () => {
     // A guard on the tables themselves: a typo here is a deep link that lands
     // on the fallback and looks like the user mis-clicked.
-    const pages = new Set(["record", "library", "setup"]);
+    const pages = new Set(["record", "edit", "export", "setup"]);
     for (const page of Object.values(PAGE_ALIASES))
       expect(pages).toContain(page);
     for (const target of Object.values(TAB_ALIASES)) {
@@ -143,10 +149,13 @@ describe("resolveRoute", () => {
   });
 
   it("peker bare på faner som FINNES i det nye skallet", () => {
-    // Vakten på tabellen. Etter D2 har bare ÉN rad en fane igjen (`edit`, som
-    // BIBLIOTEK rendrer); resten er ankre på OPPTAK. En plassholderfane skal
-    // ikke kunne sige inn ubemerket.
-    const built = new Set(["edit"]);
+    // Vakten på tabellen. Etter D3 har INGEN rad en fane: de gamle
+    // innstillingsfanene er ankre i kontrollrommet på OPPTAK, og `editor` er
+    // en destinasjon. Settet er TOMT med vilje — en plassholderfane skal ikke
+    // kunne sige inn ubemerket, og den eneste måten et tomt sett kan bli
+    // grønt på feil grunnlag er at tabellen selv er tom, som raden over
+    // beviser at den ikke er.
+    const built = new Set<string>();
     for (const [id, target] of Object.entries(TAB_ALIASES)) {
       if (!target.tab) continue;
       expect(
@@ -176,6 +185,8 @@ describe("navigate", () => {
   it("writes the route signal", () => {
     navigate("home");
     expect(route.value).toEqual({ page: "record" });
+    navigate("library");
+    expect(route.value).toEqual({ page: "edit" });
     navigate("settings", { tab: "settings-audio" });
     expect(route.value).toEqual({
       page: "record",
@@ -190,7 +201,7 @@ describe("tray actions", () => {
     for (const [action, page] of [
       ["start-recording", "record"],
       ["stop-recording", "record"],
-      ["open-recordings-folder", "library"],
+      ["open-recordings-folder", "edit"],
       ["run-preflight", "record"],
       ["run-diagnostics", "setup"],
     ] as const) {

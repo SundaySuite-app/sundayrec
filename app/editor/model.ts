@@ -57,8 +57,16 @@ export interface Range {
 /** Hvor langt åpningen av en fil er kommet. */
 export type LoadState = "idle" | "loading" | "ready" | "error";
 
-/** De tre stegene i Rediger, i rekkefølge. Canvasens sett 4. */
-export type Step = "cut" | "sound" | "export";
+/**
+ * De to stegene i Rediger, i rekkefølge. Canvasens sett 4, minus det tredje.
+ *
+ * D3 flyttet EKSPORTER ut av stegstripa og gjorde den til en destinasjon
+ * (`app/pages/export/ExportPage.tsx`). Grunnen er eierens: mastering og miksing
+ * skal kunne bo der på sikt, og et steg inne i et annet steg er ikke et sted
+ * noe kan vokse. «Neste: Eksporter» på steg 2 navigerer dit i stedet for å
+ * bytte fane.
+ */
+export type Step = "cut" | "sound";
 
 /**
  * Det `editor_load_recording` vet om fila, utover varigheten.
@@ -209,6 +217,36 @@ export const dragWindow = signal<Range | null>(null);
 
 /** Er det noe åpent i det hele tatt? */
 export const hasFile = computed(() => filePath.value !== "");
+
+// ── Det sist redigerte, som overlever at fila lukkes ────────────────────────
+
+/** Nok om et opptak til å kunne åpne det igjen, og til å kunne navngi det. */
+export interface LastEdited {
+  path: string;
+  fileName: string;
+  /** Millisekundet gudstjenesten begynte, når den som åpnet fila visste det. */
+  startedAtMs: number | null;
+}
+
+/**
+ * Opptaket som SIST ble åpnet ferdig i denne økta.
+ *
+ * EKSPORTERING uten en åpen fil er ikke en tom side: eierens tredje D3-valg er
+ * at det alltid skal være ett klikk fra en eksport. Kortet der leser dette.
+ *
+ * To regler, og de er hele kontrakten:
+ *
+ *   1. Skrives av lasteren når en åpning når `ready` — ikke ved `loading`. En
+ *      fil som ikke lot seg lese er ikke noe man har redigert.
+ *   2. Nullstilles ALDRI av `closeFile`/`resetFileState`. Å lukke fila er
+ *      nettopp situasjonen kortet finnes for; en «sist redigert» som forsvant i
+ *      det man lukket ville vært en huskelapp som glemmer.
+ *
+ * Øktvarig med vilje: ingenting skrives til disk. `recordings_list` bærer INGEN
+ * redigert-status (se `app/state/recordings.ts`), og et merke som gjettes ut av
+ * sidevogner er verre enn ingen merke.
+ */
+export const lastEdited = signal<LastEdited | null>(null);
 
 // ── Synkroniseringen: ett par, ett sted ─────────────────────────────────────
 

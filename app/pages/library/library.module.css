@@ -31,8 +31,37 @@
   font-size: var(--fs-body);
 }
 
+/* Søkefeltet og «Åpne fil…» på samme rad, ytterst til høyre. */
+.headActs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
 .search {
   flex: 0 1 280px;
+}
+
+/*
+ * Slippsonen rundt hele REDIGERING-visningen.
+ *
+ * Ingen ramme i hviletilstand: sonen dekker siden, og en stiplet kant rundt
+ * hele skjermen ville vært en kontroll som alltid roper. Den viser seg først
+ * når det faktisk henger noe over den.
+ */
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border: 2px dashed transparent;
+  border-radius: var(--r-lg);
+  transition: border-color 120ms ease;
+}
+
+.dropzoneOver {
+  border-color: var(--gold);
+  background: var(--gold-soft);
 }
 
 /* Skjult for øyet, lest av skjermleseren — søkefeltet har ingen synlig

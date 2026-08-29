@@ -144,7 +144,7 @@ export function TrashPage() {
         <Button
           variant="ghost"
           testId="trash-back"
-          onClick={() => navigate("library")}
+          onClick={() => navigate("edit")}
         >
           {t("app.library.back")}
         </Button>

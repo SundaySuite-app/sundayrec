@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { RecordingEntry } from "@legacy/types";
 
 import { Overlays, Shell } from "./Shell";
+import { lastEdited, loadState } from "./editor/model";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
 import { recordings } from "./state/recordings";
@@ -101,10 +102,12 @@ describe("Shell", () => {
       highlight: true,
     });
 
-    // Den ene fanen som FINNES igjen bærer den som et attributt og ingenting
-    // annet.
+    // D3: `editor` er en DESTINASJON nå, ikke en fane. Den lander på REDIGERING
+    // uten fane i det hele tatt — attributtet skal derfor ikke finnes.
     navigate("editor");
-    expect(render(<Shell />)).toContain('data-tab="edit"');
+    const edit = render(<Shell />);
+    expect(edit).toContain('data-page="edit"');
+    expect(edit).not.toContain("data-tab=");
     navigate("record");
   });
 
@@ -138,8 +141,8 @@ describe("Shell", () => {
     expect(html).toContain("Start er sperret til lyden er valgt");
   });
 
-  it("BIBLIOTEK påstår ingenting før opptakene er talt", () => {
-    navigate("library");
+  it("REDIGERING påstår ingenting før opptakene er talt", () => {
+    navigate("edit");
     recordings.value = null;
     const html = render(<Shell />);
     // Verken «ingen opptak» eller en liste: vi vet ikke ennå. Papirkurv-lenken
@@ -149,8 +152,8 @@ describe("Shell", () => {
     expect(html).toContain('data-testid="library-trash-open"');
   });
 
-  it("BIBLIOTEK viser tomtilstanden bare når det FAKTISK er tomt", () => {
-    navigate("library");
+  it("REDIGERING viser tomtilstanden bare når det FAKTISK er tomt", () => {
+    navigate("edit");
     recordings.value = [];
     expect(render(<Shell />)).toContain('data-testid="library-empty"');
 
@@ -166,11 +169,11 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
-  it("BIBLIOTEK har en papirkurv-inngang også når kurven er tom", () => {
+  it("REDIGERING har en papirkurv-inngang også når kurven er tom", () => {
     // Atlaset §5, funn 9: legacy skjuler «Papirkurv»-lenken når `trash_list`
     // er tom, så en frivillig som slettet noe i går og leter etter det i dag
     // finner ingen dør hvis sveipen har vært innom i mellomtiden.
-    navigate("library");
+    navigate("edit");
     recordings.value = [];
     trashEntries.value = [];
     const html = render(<Shell />);
@@ -180,14 +183,65 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
-  it("PAPIRKURVEN er en fane inne i BIBLIOTEK, ikke et fjerde sted", () => {
-    navigate("library", { tab: "trash" });
+  it("PAPIRKURVEN er en fane inne i REDIGERING, ikke et femte sted", () => {
+    navigate("edit", { tab: "trash" });
     const html = render(<Shell />);
-    // Skinnen står på BIBLIOTEK hele veien; det er overskriften som bytter.
-    expect(html).toMatch(/data-testid="nav-library"[^>]*aria-current="page"/);
+    // Skinnen står på REDIGERING hele veien; det er overskriften som bytter.
+    expect(html).toMatch(/data-testid="nav-edit"[^>]*aria-current="page"/);
     expect(html).toContain('data-testid="trash-back"');
     expect(html).toMatch(/data-testid="app-heading"[^>]*>Papirkurv</);
-    navigate("library");
+    // …og papirkurven er UTENFOR slippsonen: et opptak sluppet på den ville
+    // sett ut som en handling, og den ene handlingen det ligner på er den vi
+    // ikke gjør.
+    expect(html).not.toContain('data-testid="edit-dropzone"');
+    navigate("edit");
+  });
+
+  it("REDIGERING viser biblioteket til en fil er på gang — og bytter da", () => {
+    // Bryteren er `loadState`, ikke `hasFile`: se `app/Shell.tsx`. Grenen er
+    // hele grunnen til at biblioteket aldri blinker innom under en åpning, og
+    // e2e ser det samme utenfra (`e2e/editor.spec.ts`).
+    navigate("edit");
+    recordings.value = [row({ path: "/a.mp3", filename: "a.mp3" })];
+    loadState.value = "idle";
+    const list = render(<Shell />);
+    expect(list).toContain('data-testid="library-row"');
+    expect(list).not.toContain('data-testid="editor"');
+    // Slippsonen omslutter begge visningene — en fil fra en annen opptaker
+    // skal kunne slippes mens LISTA står, som er mesteparten av tiden.
+    expect(list).toContain('data-testid="edit-dropzone"');
+    // Overskriften er destinasjonens eget navn så lenge ingen fil er åpen.
+    expect(list).toMatch(/data-testid="app-heading"[^>]*>Redigering</);
+
+    loadState.value = "loading";
+    const editing = render(<Shell />);
+    expect(editing).toContain('data-testid="editor"');
+    expect(editing).not.toContain('data-testid="library-row"');
+    expect(editing).toContain('data-testid="edit-dropzone"');
+
+    loadState.value = "idle";
+    recordings.value = null;
+  });
+
+  it("EKSPORTERING uten en åpen fil tilbyr det sist redigerte, ikke en tom side", () => {
+    // Eiervalg 3 i D3: en eksport skal alltid være ett klikk unna.
+    navigate("export");
+    loadState.value = "idle";
+    lastEdited.value = {
+      path: "/Users/x/SundayRec/2026-08-23.mp3",
+      fileName: "2026-08-23.mp3",
+      startedAtMs: null,
+    };
+    const html = render(<Shell />);
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Eksportering</);
+    expect(html).toContain('data-testid="export-last"');
+    expect(html).toContain("Sist redigert");
+    expect(html).toContain("2026-08-23.mp3");
+    // Ingen valg-skjema uten en fil: knappene ville ikke kunnet gjøre noe.
+    expect(html).not.toContain('data-testid="editor-export-go"');
+
+    lastEdited.value = null;
+    navigate("record");
   });
 
   it("OPPTAK er kontrollrommet: seks kort, med svaret som gjelder nå", () => {

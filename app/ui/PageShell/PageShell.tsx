@@ -1,11 +1,19 @@
 /**
- * PageShell — skinnen, de to destinasjonene, tannhjulet og setningen nederst.
+ * PageShell — skinnen, de tre destinasjonene, tannhjulet og setningen nederst.
  *
- * ## To steder og et tannhjul, ikke fem sider og åtte faner
+ * ⚠️ MIDLERTIDIG FORM. D3 PR2 river skinnen og setter destinasjonene som ikoner
+ * NEDERST à la DaVinci Resolve, med logoen i en slank topplinje. Denne fila er
+ * derfor den gamle skinnen med en destinasjon til i den — ikke fordi formen er
+ * riktig, men fordi rekkefølgen på PR-ene er sidene først og skallet etterpå,
+ * og et halvt skall i mellomtiden ville betydd at ingen av dem kunne merges
+ * alene.
+ *
+ * ## Tre steder og et tannhjul, ikke fem sider og åtte faner
  *
  * Legacy har `home`, `schedule`, `search`, `settings` og `editor`, pluss fem
  * faner inne i innstillinger. En frivillig som aldri har sett appen skal ikke
- * måtte vite hvilken av dem «filnavn» bor på. Skinnen har to knapper, og
+ * måtte vite hvilken av dem «filnavn» bor på. Skinnen har tre knapper —
+ * Opptak · Redigering · Eksportering, i den rekkefølgen man gjør dem — og
  * ruteren (`app/router/router.ts`) oversetter alt det gamle til dem.
  *
  * ## Hvorfor Innstillinger IKKE er en av dem lenger (D2)
@@ -68,7 +76,7 @@ import styles from "./PageShell.module.css";
  * nederst, se toppen av fila. Ruten finnes fortsatt; det er bare knappen som
  * har flyttet.
  */
-const PAGES: readonly Page[] = ["record", "library"];
+const PAGES: readonly Page[] = ["record", "edit", "export"];
 
 /**
  * Produktnavnet. En KONSTANT og ikke tekst i treet: navnet oversettes ikke —
@@ -86,11 +94,35 @@ const ICONS: Record<Page, ComponentChildren> = {
       <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
     </svg>
   ),
-  library: (
+  /*
+   * REDIGERING: to spor over en linje — tidslinja man klipper i, og ikke en
+   * saks. En saks tegner HANDLINGEN å fjerne noe; sporene tegner STEDET, og
+   * det er stedet destinasjonen er.
+   */
+  edit: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="3" y="4" width="18" height="5" rx="1.5" />
       <rect x="3" y="11" width="18" height="5" rx="1.5" />
       <path d="M6 20h12" />
+    </svg>
+  ),
+  /*
+   * EKSPORTERING: en pil UT av en boks. Ikke en diskett og ikke en sky —
+   * eksporten skriver en ny fil ved siden av opptaket, og pilen ut er det ene
+   * tegnet som betyr det samme i alle programmene en frivillig ellers bruker.
+   */
+  export: (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M12 3v11" />
+      <path d="M8.5 6.5 12 3l3.5 3.5" />
+      <path d="M4 14v5a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-5" />
     </svg>
   ),
   /*

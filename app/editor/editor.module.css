@@ -214,54 +214,13 @@
   margin-right: auto;
 }
 
-/* ── Tomtilstanden ─────────────────────────────────────────────────────── */
-
-.drop {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  flex: 1;
-}
-
-.dropzone {
-  border: 2px dashed var(--line-2);
-  border-radius: var(--r-lg);
-  transition: border-color 120ms ease;
-}
-
-.dropzoneOver {
-  border-color: var(--gold);
-  background: var(--gold-soft);
-}
-
-.recent {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.recentRow {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--surface);
-}
-
-.recentGrow {
-  flex: 1;
-  min-width: 0;
-}
-
-.recentName {
-  color: var(--ink-2);
-  font-size: var(--fs-base);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/*
+ * ⚠️ Tomtilstandens former er BORTE herfra, ikke glemt. D3 flyttet slippsonen
+ * til `app/pages/library/library.module.css` (den omslutter hele REDIGERING nå)
+ * og «siste opptak»-kortet til `app/pages/export/export.module.css`, der det
+ * har blitt til «Sist redigert». Å la dem stå her ville vært tre klassenavn
+ * ingen selektor treffer — og en stilfil ingen tør røre neste gang.
+ */
 
 .label {
   font-size: var(--fs-sm);
@@ -269,12 +228,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-3);
-}
-
-.value {
-  font-size: var(--fs-val);
-  font-weight: 600;
-  color: var(--ink);
 }
 
 /* ── Lastingen ─────────────────────────────────────────────────────────── */
@@ -424,16 +377,4 @@
 
 .sliderRow > span:first-child {
   min-width: 110px;
-}
-
-/* ── Eksportlinja ──────────────────────────────────────────────────────── */
-
-.exportBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  margin-top: auto;
-  padding-top: var(--sp-2);
-  flex-wrap: wrap;
 }
