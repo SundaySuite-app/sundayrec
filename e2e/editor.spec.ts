@@ -377,6 +377,96 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-sub")).toContainText("Gudstjeneste");
   });
 
+  test("biblioteket blinker ALDRI innom mens opptaket åpnes", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN for Shell-grenen (`app/Shell.tsx`).
+    //
+    // REDIGERING viser lista eller arbeidsflaten, og bryteren er `loadState` —
+    // som `openFile` setter SYNKRONT, før første `await`. Bytter noen den til
+    // et signal som først blir sant ETTER en `await` (varigheten, `mediaInfo`,
+    // toppene), blir lista stående mens fila leses. Feilen ser ikke ut som en
+    // feil: skjermen viser bare det man nettopp forlot, litt for lenge.
+    //
+    // To ting gjør prøven ekte:
+    //
+    //   1. Lastingen er BREMSET (250 ms). Uten det er hele åpningen ferdig
+    //      innenfor det samme mikrotask-vinduet, og et blaff som aldri blir et
+    //      bilde kan ikke observeres — prøven ville vært grønn for feil grunn.
+    //   2. Vi teller BILDER, ikke DOM-mutasjoner. En MutationObserver ser DOM-en
+    //      først etter at den har flyttet seg videre, og under den ene mutasjonen
+    //      som betyr noe her ville den sett riktig svar på feil tidspunkt.
+    //      `requestAnimationFrame` svarer på spørsmålet brukeren stiller: sto
+    //      lista i et bilde jeg fikk se?
+    const SLOW_LOAD = fn(`() => new Promise((r) => setTimeout(() => r({
+      durationSec: ${DURATION},
+      hasVideo: false,
+      hasAudio: true,
+      channels: 2,
+      sampleFmt: "s16",
+      sampleRate: 48000,
+    }), 250))`);
+
+    await boot(page, {
+      fixtures: editorFixtures({
+        recordings_list: [recordingRow({ file_path: FILE })],
+        editor_load_recording: SLOW_LOAD,
+      }),
+      settings: SETTLED_SETTINGS,
+      goto: "search",
+    });
+    await expect(page.getByTestId("library-row")).toHaveCount(1);
+
+    // Løkka startes og klikket gjøres i den SAMME synkrone blokka, så ingen
+    // ramme fra før klikket kan telles med.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __FRAMES__: number;
+        __WITH_LIB__: number;
+      };
+      w.__FRAMES__ = 0;
+      w.__WITH_LIB__ = 0;
+      const tick = (): void => {
+        w.__FRAMES__ += 1;
+        if (document.querySelector('[data-testid="library-row"]')) {
+          w.__WITH_LIB__ += 1;
+        }
+        const editor = document.querySelector('[data-testid="editor"]');
+        if (editor?.getAttribute("data-state") === "ready") return;
+        requestAnimationFrame(tick);
+      };
+      document
+        .querySelector<HTMLElement>('[data-testid="library-row-edit"]')
+        ?.click();
+      requestAnimationFrame(tick);
+    });
+
+    // Lastingen er SYNLIG mens den pågår — det er hele forskjellen på en bryter
+    // som vet at noe er på gang og en som bare vet at noe er ferdig.
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "loading",
+    );
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+
+    const seen = await page.evaluate(() => {
+      const w = window as unknown as {
+        __FRAMES__: number;
+        __WITH_LIB__: number;
+      };
+      return { frames: w.__FRAMES__, withLibrary: w.__WITH_LIB__ };
+    });
+    // Løkka LEVDE gjennom hele lastingen: en teller som bare kan være null
+    // fordi ingen så etter er den grønne-for-feil-grunn-formen prøven finnes
+    // for. 250 ms er et titalls bilder på 60 Hz.
+    expect(seen.frames).toBeGreaterThan(5);
+    // …og ingen av dem hadde en biblioteksrad i seg.
+    expect(seen.withLibrary).toBe(0);
+  });
+
   test("kvitteringens «Åpne i Rediger» åpner opptaket som nettopp ble tatt opp", async ({
     page,
   }) => {
