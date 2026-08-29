@@ -125,9 +125,9 @@ if (!overlayHost) {
 /*
  * Plattformen som en KLASSE på rota, og den må stå FØR `render` — ikke fordi
  * noe er avhengig av den, men fordi den er en målregel: på macOS gir
- * `.platform-darwin` skinnen toppmargen som holder logoen klar av
+ * `.platform-darwin` topplinja venstremargen som holder logoen klar av
  * trafikklysene (`PageShell.module.css`). Settes den etterpå, males første
- * frame med feil marg og skinnen hopper noen piksler idet appen åpner — en
+ * frame med feil marg og logoen hopper 84 piksler idet appen åpner — en
  * feil som ser ut som at appen ikke er ferdig lastet.
  *
  * Én klasse, ikke `platform-darwin platform-not-win`: CSS spør «er dette
@@ -177,8 +177,8 @@ async function boot(): Promise<void> {
   // `undefined !== false` kontaktet serveren på hver oppstart uansett hva
   // eieren hadde valgt. PRIVACY.md er kontrakten; se `state/auto-update.ts`.
   initAutoUpdate();
-  // Begge er engangslesninger skinnen og Bibliotek viser: versjonen nederst i
-  // skinnen, og om biblioteket faktisk er tomt. Ingen `await` — en side som
+  // Begge er engangslesninger skallet og Bibliotek viser: versjonen i
+  // bunnlinja, og om biblioteket faktisk er tomt. Ingen `await` — en side som
   // venter på et tall den kan vise «ikke lest ennå» for, venter uten grunn.
   void loadAppVersion();
   void loadRecordingCount();

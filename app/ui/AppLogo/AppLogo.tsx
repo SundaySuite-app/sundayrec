@@ -1,5 +1,6 @@
 /**
- * AppLogo — merket øverst i skinnen. Den gamle appens logo, tilbake.
+ * AppLogo — merket øverst til venstre i topplinja. Den gamle appens logo,
+ * tilbake.
  *
  * ## Hvorfor tegningen står her, ordrett
  *
@@ -11,7 +12,7 @@
  * på nytt etter hukommelsen. En logo som er «nesten» den samme er den ene
  * formen for feil ingen melder fra om, men alle ser.
  *
- * Inline SVG og ikke `<img src="…">`: merket skal arve størrelsen fra skinnen,
+ * Inline SVG og ikke `<img src="…">`: merket skal arve størrelsen fra skallet,
  * males i første frame (ingen ekstra forespørsel som kan komme etter at
  * vinduet er tegnet), og det gjør at det ikke finnes en binærfil til som må
  * holdes i takt med `src-tauri/app-icon.svg`.
@@ -44,7 +45,7 @@
  * ## Ingen `aria-label`
  *
  * Merket er `aria-hidden`. Produktnavnet står som ekte tekst rett ved siden av
- * det i skinnen, så en etikett her ville fått en skjermleser til å si
+ * det i topplinja, så en etikett her ville fått en skjermleser til å si
  * «SundayRec, SundayRec». (Legacy hadde `aria-label="SundayRec logo"` fordi
  * den ikke hadde noe annet valg — teksten der var et `data-i18n`-span.)
  */
@@ -52,7 +53,8 @@
 import styles from "./AppLogo.module.css";
 
 export interface AppLogoProps {
-  /** Kantlengden i piksler. 28 er skinnens mål; ingen andre bruker den ennå. */
+  /** Kantlengden i piksler. Topplinja ber om 22 (D3 — skinnen ba om 28, og
+   *  standardverdien er fortsatt den, fordi den er tegningens eget mål). */
   size?: number;
 }
 

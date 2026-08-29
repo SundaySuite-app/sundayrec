@@ -53,7 +53,8 @@ test.describe("appen uten Direkte", () => {
     });
 
     // 1. Ingen Direkte i navigasjonen — og ikke noe femte punkt i det hele tatt.
-    await expect(page.getByTestId("rail")).toBeVisible();
+    //    Navigasjonen er bunnlinja etter D3; tellingen er den samme.
+    await expect(page.getByTestId("bottombar")).toBeVisible();
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
     await expect(page.getByTestId("nav-live")).toHaveCount(0);
 

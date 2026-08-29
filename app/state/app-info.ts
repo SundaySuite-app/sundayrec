@@ -1,11 +1,11 @@
 /**
  * Appversjonen, som et signal.
  *
- * Én linje nederst i skinnen, og likevel verdt en modul: den er det eneste
- * stedet en frivillig kan lese hvilken versjon maskinen faktisk kjører, og det
- * er det første spørsmålet i enhver feilsøking. `null` betyr «ikke lest ennå»
- * — ikke «ukjent versjon», og skinnen viser da ingenting i stedet for en
- * strek som ser ut som et svar.
+ * Én linje nederst til høyre i bunnlinja, og likevel verdt en modul: den er
+ * det eneste stedet en frivillig kan lese hvilken versjon maskinen faktisk
+ * kjører, og det er det første spørsmålet i enhver feilsøking. `null` betyr
+ * «ikke lest ennå» — ikke «ukjent versjon», og skallet viser da ingenting i
+ * stedet for en strek som ser ut som et svar.
  */
 
 import { signal } from "@preact/signals";

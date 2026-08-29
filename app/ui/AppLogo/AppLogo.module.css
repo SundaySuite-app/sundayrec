@@ -10,7 +10,7 @@
    * Tegningen har allerede runde hjørner (`clipPath` med rx 228 av 1024 ≈ 6,2 px
    * ved 28 px). Radien HER er beltet under selen: `overflow: hidden` er det som
    * gjør at et merke uten sin egen clipPath — eller et som blir byttet ut senere
-   * — ikke plutselig maler firkantet inn i skinnen.
+   * — ikke plutselig maler firkantet inn i topplinja.
    */
   border-radius: 6px;
   overflow: hidden;

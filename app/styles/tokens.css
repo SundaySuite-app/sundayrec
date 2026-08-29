@@ -148,6 +148,17 @@
   --z-toast: 400;
   --z-critical: 500;
 
-  /* ── Skinnen ──────────────────────────────────────────────────────────── */
-  --rail-w: 208px;
+  /* ── Skallets to bånd ─────────────────────────────────────────────────── */
+
+  /*
+   * D3 rev venstreskinnen (`--rail-w: 208px`) og satte navigasjonen NEDERST,
+   * som i DaVinci Resolve. De to tallene her er det som ble igjen av den: til
+   * sammen hundre piksler høye i stedet for to hundre piksler brede.
+   *
+   * 44 px er høyden på macOS' standard tittellinje — båndet trafikklysene er
+   * sentrert i — så topplinja er nøyaktig så høy som den ene tingen den må
+   * dele plass med. 56 px er et 44 px treffmål med 6 px luft over og under.
+   */
+  --topbar-h: 44px;
+  --bottombar-h: 56px;
 }
