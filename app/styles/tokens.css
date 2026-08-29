@@ -161,4 +161,41 @@
    */
   --topbar-h: 44px;
   --bottombar-h: 56px;
+
+  /*
+   * ── Tetthet ───────────────────────────────────────────────────────────
+   *
+   * D3 la hundre piksler bånd oppå og under siden (`--topbar-h` +
+   * `--bottombar-h`), og de kom fra `<main>`. Proben målte hva det kostet:
+   * med et utfoldet kilde-kort på en 2-kanals lydenhet havnet Start-knappen
+   * 52 px UNDER bunnlinja — synlig i vinduet, men bak et bånd. Denne aksen
+   * er de 52 pikslene tilbake.
+   *
+   * ⚠️ Hvorfor SEMANTISKE navn og ikke flere `--sp-*`: `--sp-4` svarer på
+   * «hvor langt er fire hakk», ikke på «hvor tett står et kort». Da D3 skulle
+   * stramme opp, var `var(--sp-4)` brukt til seks forskjellige ting i de ni
+   * filene under, og å endre hakket ville flyttet alle seks. Navnene her sier
+   * hva avstanden GJØR, så neste tetthetsrunde er én verdi og ikke et søk.
+   *
+   * ⚠️ Det som IKKE bor her, med vilje: treffmål (knapper, brytere,
+   * nav-feltene — de er ≥ 40 px fordi en frivillig treffer dem mens hun ser
+   * på noe annet), dialogenes padding (en modal har luft fordi den er en
+   * avbrytelse), fontskalaen og VU-måleren. En tetthetsakse som også kunne
+   * krympe dem ville vært en knott som gjør appen vanskeligere å bruke.
+   */
+
+  /* Sidens egen luft: `<main>`s padding og avstanden mellom blokkene i den. */
+  --pad-page-y: 20px;
+  --pad-page-x: 24px;
+  --pad-page-b: 20px;
+  --gap-page: 14px;
+
+  /* Et kort. `-tight` er raden som står i en stabel med andre rader og skal
+     leses som én liste — ControlCard, bibliotekets rader, velgerens rader. */
+  --pad-card: 14px 18px;
+  --pad-card-tight: 10px 14px;
+
+  /* Mellom rader i en slik stabel, og mellom kolonnene i et rutenett. */
+  --gap-stack: 6px;
+  --gap-grid: 16px;
 }

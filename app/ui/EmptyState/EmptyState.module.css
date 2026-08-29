@@ -1,24 +1,22 @@
+/*
+ * `--sp-6` (24 px) og ikke `--sp-8` (48 px) i topp/bunn: tomtilstanden er en
+ * setning og en knapp, og 48 px luft rundt den gjorde et lite budskap til en
+ * halv skjerm. Den står som regel INNI et kort eller en kolonne som allerede
+ * har sin egen padding, så den ytre luften var dobbel.
+ *
+ * Den stiplede kanten er det som gjør flaten til en tomtilstand — ikke
+ * størrelsen — så den overlever strammingen uendret.
+ */
 .empty {
   display: grid;
   place-items: center;
   align-content: center;
   text-align: center;
   gap: 10px;
-  padding: var(--sp-8) var(--sp-5);
+  padding: var(--sp-6) var(--sp-5);
   border: 1px dashed var(--line-2);
   border-radius: var(--r);
   color: var(--ink-2);
-}
-
-.icon {
-  display: grid;
-  place-items: center;
-  color: var(--ink-3);
-}
-
-.icon svg {
-  width: 40px;
-  height: 40px;
 }
 
 .title {

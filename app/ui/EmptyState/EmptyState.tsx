@@ -25,8 +25,6 @@ export interface EmptyStateProps {
   description?: string;
   /** Den ene handlingen. En `<Button>`, ikke to. */
   action?: ComponentChildren;
-  /** Dekorativt ikon over tittelen. */
-  icon?: ComponentChildren;
   testId?: string;
 }
 
@@ -34,16 +32,10 @@ export function EmptyState({
   title,
   description,
   action,
-  icon,
   testId,
 }: EmptyStateProps) {
   return (
     <div data-testid={testId} class={styles.empty}>
-      {icon ? (
-        <span aria-hidden="true" class={styles.icon}>
-          {icon}
-        </span>
-      ) : null}
       <b
         data-testid={testId ? `${testId}-title` : undefined}
         class={styles.title}

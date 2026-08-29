@@ -90,10 +90,8 @@ import {
   totalSeconds,
   type LibraryRow,
 } from "./library-core";
+import { DOT } from "@lib/ui/dot";
 import styles from "./library.module.css";
-
-/** Skilletegn mellom fakta på én linje. Et tegn, ikke prosa. */
-const DOT = " · ";
 
 /** Varighet vi ikke kjenner. Ikke «0 min» — se `library-core`. */
 const UNKNOWN = "—";

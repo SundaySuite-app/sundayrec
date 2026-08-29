@@ -1,10 +1,15 @@
 /*
  * OPPTAK — kontrollrommet.
  *
- * To kolonner over 1100 px: venstre er det LEVENDE (kilde, måler, Start) og
- * står sticky; høyre er klargjøringen (kamerabildet og de fem kortene) og
- * vokser når et kort folder seg ut. Under 1100 px blir det én kolonne i den
- * samme rekkefølgen — venstrekolonnen først, fordi den er jobben.
+ * To kolonner over 1100 px: venstre er det LEVENDE (kilde, måler, Start, og
+ * under den de to opptakskortene) og står sticky; høyre er klargjøringen
+ * (kamerabildet og de fem kortene) og vokser når et kort folder seg ut. Under
+ * 1100 px blir det én kolonne i den samme rekkefølgen — venstrekolonnen først,
+ * fordi den er jobben.
+ *
+ * D3 PR3 flyttet «Neste opptak» og «Siste opptak» hit fra høyre: uten dem
+ * sluttet venstrekolonnen rett under Start, og resten av den var tom luft
+ * ved siden av en høyrekolonne som fortsatte. Se `RecordPage.tsx`.
  *
  * Bannerne, undertittelen, samtykkekortet og kvitteringen står i FULL bredde
  * over og under: ingen av dem hører til én av de to halvdelene.
@@ -12,7 +17,7 @@
 
 .page {
   display: grid;
-  gap: var(--sp-4);
+  gap: var(--gap-page);
   align-content: start;
 }
 
@@ -40,14 +45,14 @@
 .room {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--sp-4);
+  gap: var(--gap-grid);
   align-items: start;
 }
 
 @media (min-width: 1100px) {
   .room {
     grid-template-columns: minmax(0, 7fr) minmax(0, 9fr);
-    gap: var(--sp-5);
+    gap: var(--gap-grid);
   }
 
   /*
@@ -63,14 +68,14 @@
 .live,
 .prep {
   display: grid;
-  gap: var(--sp-4);
+  gap: var(--gap-page);
   align-content: start;
 }
 
 /* Kortstabelen: fem rader som skal leses som én liste. */
 .stack {
   display: grid;
-  gap: var(--sp-2);
+  gap: var(--gap-stack);
 }
 
 .row {
@@ -118,9 +123,9 @@
    ikke er et nytt kort. Attributtselektoren er trygg her: den er bundet til
    `.sound`, som CSS-modulen har hashet. */
 .sound [data-testid="control-sound-body"] {
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
   border-top: 1px solid var(--line);
-  padding-top: var(--sp-3);
+  padding-top: var(--sp-2);
 }
 
 .pulse {
@@ -161,5 +166,5 @@
 
 .banners {
   display: grid;
-  gap: var(--sp-2);
+  gap: var(--gap-stack);
 }

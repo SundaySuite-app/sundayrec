@@ -49,10 +49,8 @@ import { confirmDialog } from "../../ui/dialog";
 import { toast } from "../../ui/toast";
 import { formatBytes } from "../record/record-core";
 import { dueLine } from "./library-core";
+import { DOT } from "@lib/ui/dot";
 import styles from "./library.module.css";
-
-/** Skilletegn mellom fakta på én linje. Et tegn, ikke prosa. */
-const DOT = " · ";
 
 export function TrashPage() {
   const entries = trashEntries.value;

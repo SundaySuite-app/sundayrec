@@ -88,13 +88,21 @@
   color: var(--bad);
 }
 
-/* Rødt fyll finnes ÉN gang i appen: knappen som starter opptaket. */
+/*
+ * Rødt fyll finnes ÉN gang i appen: knappen som starter opptaket.
+ *
+ * 14 px og ikke 18 px topp/bunn: D3s tetthetspass hentet tilbake de 52
+ * pikslene båndene kostet, og 8 av dem satt her. Knappen blir 56 px høy —
+ * fortsatt den største flaten på siden, og med god margin over 40 px-
+ * treffmålet. Under 14 px begynner den å ligne en vanlig knapp, og DET er
+ * gulvet her, ikke treffmålet.
+ */
 .record {
   background: var(--rec);
   border: 1px solid var(--rec);
   color: var(--on-rec);
   font-size: 18px;
-  padding: 18px var(--sp-7);
+  padding: 14px var(--sp-7);
   border-radius: 14px;
   box-shadow: var(--shadow-rec);
 }
