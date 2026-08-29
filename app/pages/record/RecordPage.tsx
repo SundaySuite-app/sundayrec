@@ -173,10 +173,8 @@ import {
   spanOfMinutes,
   spanOfSeconds,
 } from "./record-core";
+import { DOT } from "@lib/ui/dot";
 import styles from "./record.module.css";
-
-/** Skilletegn mellom fakta på én linje. Et tegn, ikke prosa. */
-const DOT = " · ";
 
 export function RecordPage() {
   const s = settings.value;
@@ -390,14 +388,28 @@ export function RecordPage() {
               {t("app.record.canStart")}
             </p>
           ) : null}
+
+          {/*
+            «Neste opptak» og «Siste opptak» står her og ikke i høyrekolonnen.
+
+            De hører sammen med Start: det ene er når knappen trykker seg selv,
+            det andre er hva den lagde sist. Men grunnen de FLYTTET er målt —
+            venstrekolonnen sluttet under Start, og med en kort side var det en
+            halv skjerm tom luft under den mens høyrekolonnen fortsatte. Nå
+            fyller de to kortene den luften, og de to kolonnene ender omtrent
+            samtidig.
+
+            De står UNDER Start og påvirker derfor ikke hvor Start havner —
+            det tallet er tetthetsaksens jobb, ikke denne flyttingens.
+          */}
+          <NextAutoCard />
+          <LastRecordingCard />
         </div>
 
         {/* HØYRE: klargjøringen — bildet, og de fem kortene. */}
         <div class={styles.prep}>
           <CameraPreviewBlock />
           <ControlStack open={open} toggle={toggle} anchor={anchor} />
-          <NextAutoCard />
-          <LastRecordingCard />
         </div>
       </div>
 
