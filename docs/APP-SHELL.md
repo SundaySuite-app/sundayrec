@@ -349,6 +349,11 @@ into `useSetting` rather than hard-wired.
 
 ## Router: three pages, and one table for everything old
 
+> ⚠️ **Superseded by D3.** There are **four** pages now —
+> `record | edit | export | setup` — and `library` is an alias rather than a
+> page. The table below is S1a's; the mechanism it describes is unchanged, and
+> the table has only ever grown. Read §D3 for what the ids resolve to today.
+
 `route` is a signal of `{ page, tab?, anchor?, highlight?, firstRun? }` over
 `"record" | "library" | "setup"`. `PAGE_ALIASES` and `TAB_ALIASES` translate
 every old id — `?goto=settings:audio` appears in a dozen e2e specs, in the
@@ -388,6 +393,12 @@ route.
 ---
 
 # S1b — the component library and the shell
+
+> ⚠️ **The rail described in this section no longer exists.** D3 deleted it: a
+> 44 px top bar and a 56 px bottom bar hold what the 208 px rail held, and the
+> destinations are four, at the foot. Everything else here — the component
+> contract, the colour gate, the status line's five sentences — still stands.
+> Read §D3 for the shell that ships.
 
 S1a built the foundation; S1b builds the only pieces the new UI is allowed to
 be assembled from, and the shell that holds them. There are still **no
@@ -617,10 +628,13 @@ tested; fase P folds the two back into one when the home page is ported.
 
 ## What each destination shows today
 
-> ⚠️ **Superseded twice.** «Today» here is S1b's day. P1a built the real Oppsett
-> screens, and **D2 dissolved the third destination**: there are two on the rail
-> and a gear at its foot, and the five questions are cards on OPPTAK. Read §D2
-> for what the rail and OPPTAK show now.
+> ⚠️ **Superseded three times.** «Today» here is S1b's day. P1a built the real
+> Oppsett screens; **D2 dissolved the third destination** and made the five
+> questions cards on OPPTAK; **D3 deleted the rail itself** and made the
+> destinations four, as icons in a bottom bar — Opptak · Redigering ·
+> Eksportering, with the gear at the right-hand end. BIBLIOTEK is not a
+> destination any more: it is REDIGERING's default view. Read §D2 for OPPTAK
+> and §D3 for the shell.
 
 There are no screens yet, so each destination shows **the part of itself that
 is already true** — and only that part. Nothing says «coming later», and no
@@ -2356,6 +2370,12 @@ en tredje — bruker de fem minuttene på navigasjon.
 
 ## Skinnen: to destinasjoner og et tannhjul
 
+> ⚠️ **Skinnen selv døde i D3.** Denne underseksjonen er D2s dag, og den står
+> fordi RESONNEMENTET om tannhjulet lever videre uendret: det er fortsatt ikke
+> en destinasjon, det er bare plasseringen som har flyttet — fra skinnens fot
+> til bunnlinjas høyre ende. Tallene og mekanikken under (tre `nav-*`,
+> `margin-top: auto`, `padding-top: 28px`) gjelder ikke lenger; se §D3.
+
 `PAGES` i `app/ui/PageShell/PageShell.tsx` er `["record", "library"]`. Oppsett
 var destinasjon nummer tre, og det gjorde innstillinger til et LIKEVERDIG sted —
 noe man går til like ofte som man tar opp. Det er ikke sant: en frivillig setter
@@ -2366,15 +2386,19 @@ Det er `.navItem` som alle andre (samme høyde, samme hover, samme `.on`); det e
 PLASSERINGEN som sier at det ikke er en destinasjon.
 
 **RUTEN er uendret.** `data-testid="nav-setup"` og `aria-current` står på
-tannhjulet, så `[data-testid^="nav-"]` teller fortsatt tre og alt som spør
-skinnen «hvor er jeg?» får samme svar som før (`e2e/no-live-surface.spec.ts`
-består uendret). `app.page.setup` byttet **verdi**, ikke nøkkel:
-«Oppsett»→«Innstillinger», «Setup»→«Settings».
+tannhjulet, så `[data-testid^="nav-"]` telte fortsatt tre den dagen og alt som
+spør skallet «hvor er jeg?» fikk samme svar som før
+(`e2e/no-live-surface.spec.ts` besto uendret). `app.page.setup` byttet
+**verdi**, ikke nøkkel: «Oppsett»→«Innstillinger», «Setup»→«Settings».
+_(D3: tellingen er **fire** — `nav-record`, `nav-edit`, `nav-export`,
+`nav-setup` — og speccen ble skrevet om til det tallet med begrunnelse.)_
 
 ⚠️ `margin-top: auto` måtte **FLYTTE** fra `.status` til tannhjulet, ikke bare
 legges til. To `auto`-marger i samme flex-kolonne DELER den ledige plassen, så
 tannhjulet ville blitt stående og svevet midt i skinnen. Stum feilmodus, og den
-måles nå (plasseringstesten i `Shell.test.tsx`).
+ble målt (plasseringstesten i `Shell.test.tsx`). _(D3: regelen er borte med
+skinnen. Bunnlinja er et `1fr auto 1fr`-rutenett, og plasseringen måles nå som
+REKKEFØLGE i båndet i stedet — se §D3.)_
 
 ### Logoen, og hvorfor den står i TSX
 
@@ -2405,12 +2429,18 @@ Favikon: `app/public/icon.svg` (kopi av `src-tauri/app-icon.svg`, byte for byte)
 ### Trafikklysene
 
 `titleBarStyle: "Overlay"` betyr at macOS maler lukk/minimer/maksimer **oppå**
-innholdet, nøyaktig der skinnen begynner. `app/main.tsx` setter
+innholdet, nøyaktig der skallet begynner. `app/main.tsx` setter
 `platform-darwin` på `documentElement` **før** `render` (ellers males første
-frame med feil marg og skinnen hopper), og skinnen får 28 px topp der — høyden
-på macOS' standard tittellinje, ikke et smakstall. `platform-core.ts` flyttet
-fra `pages/setup/advanced/` til `state/`; klassenavnene er en tabell med en
-test, fordi `Os` sier «mac» og CSS sier «darwin».
+frame med feil marg og skallet hopper). `platform-core.ts` flyttet fra
+`pages/setup/advanced/` til `state/`; klassenavnene er en tabell med en test,
+fordi `Os` sier «mac» og CSS sier «darwin».
+
+⚠️ **Selve offsetet snudde retning i D3.** D2 ga skinnen `padding-top: 28px` —
+høyden på macOS' standard tittellinje — fordi en 208 px bred skinne hadde plass
+til å begynne UNDER knappene. Regelen er slettet: en 44 px høy topplinje har
+ikke den plassen (28 px topp ville latt 16 px stå igjen til et 22 px merke), så
+topplinja bruker `padding-left: 84px` i stedet og begynner til HØYRE for
+knappene. Se §D3.
 
 ## Kontrollrommet: OPPTAK er to kolonner
 
@@ -2701,6 +2731,11 @@ Swift-vert som laster `npm run dev`; aldri innsjekket). Eierens app, database og
 opptaksmappe ble aldri rørt, og **ingen TCC-dialog ble utløst** —
 `AVCaptureDevice.authorizationStatus` leses uten å be om noe.
 
+> ⚠️ **Tabellen under er et HISTORISK ØYEBLIKKSBILDE — v0.16.0-beta.2s dag.**
+> De fire første radene er om en skinne som ikke finnes lenger, og
+> `nav-*`-antallet er **fire** nå, ikke tre. Kameraradene gjelder fortsatt.
+> D3s egen måltabell står i §D3 «Målt i en ekte WKWebView», rett under denne.
+
 | målt                                  | verdi                                                         |
 | ------------------------------------- | ------------------------------------------------------------- |
 | trafikklys, bunn / logo               | `y = 23` / `x = 22, y = 28, 28×28` → 5 px klaring             |
@@ -2743,6 +2778,309 @@ kameraet leverer 720p under en 1080p-profil.
 4. **Canvas-dokumentet er en tegning, ikke et skjermbildepass.**
    `docs/design/canvas/FASE-D2-KONTROLLROM.html` er tegnet mot koden som fasit,
    men den er fortsatt en tegning. Skjermbildepasset hører til riggtesten.
+
+---
+
+# D3 — DaVinci-skallet: fire sider, to bånd og en tetthetsakse
+
+v0.16.0-beta.2 kjørte hos eieren, og han så på sin egen app og sa fire ting:
+det er for mye luft, redigering må ha sin EGEN fane fordi klipp også hentes fra
+andre opptakere, fanene skal være ikoner NEDERST à la DaVinci Resolve — Opptak ·
+Redigering · Eksportering, venstre→høyre — og gjenbruk den koden som finnes.
+D3 er de fire, i tre PR-er (#171 · #172 · #173), og denne seksjonen er hva de
+gjorde med skallet.
+
+Tre eiervalg ble låst før en linje ble skrevet: **skinnen fjernes** (merket og
+kirken opp i en slank topplinje, status og tannhjul ned i en bunnlinje),
+**venstre→høyre som i DaVinci**, og **eksportering uten en åpen fil = sist
+redigerte + en velger**, slik at en eksport alltid er ett klikk unna.
+
+Tegningen av alle seks flatene står i
+`docs/design/canvas/FASE-D3-DAVINCI.html`.
+
+## Fire sider, og hva `library` ble
+
+`Page = "record" | "edit" | "export" | "setup"` (`app/router/router.ts`).
+BIBLIOTEK er ikke en destinasjon lenger — det er REDIGERINGs standardvisning.
+Grunnen er ikke smak: eieren henter klipp fra ANDRE opptakere, og en ekstern fil
+man drar inn har aldri vært i et bibliotek. Et navn som utelukker den ene
+inngangen han ba om, er feil navn.
+
+Sideid-en `library` døde derfor ikke, den ble et **alias**. Den var skallets
+egen sideid fram til D3 og står i `navigate("library")`-kall som er borte nå, i
+skjermbildepassene og i lenker vi ikke har funnet. Tabellen utvides, den
+krympes aldri:
+
+| gammel id                     | lander på                        |
+| ----------------------------- | -------------------------------- |
+| `?goto=home`                  | `record`                         |
+| `?goto=search`                | `edit`                           |
+| `?goto=editor`                | `edit` — **ingen fane lenger**   |
+| `?goto=library`               | `edit` (ny aliasrad)             |
+| `?goto=settings`              | `setup`                          |
+| `?goto=settings:audio` m.fl.  | uendret — ankre på `record` (D2) |
+| `?goto=settings:general`      | `setup`, uten fane               |
+| `?goto=schedule`              | `record#auto`                    |
+| tray `open-recordings-folder` | `edit`                           |
+
+`editor` mistet fanen sin med vilje. Fram til D3 var Rediger en FANE inne i
+BIBLIOTEK (`{ page: "library", tab: "edit" }`); nå er Redigering selve
+destinasjonen, og hvilken av dens to visninger som står avgjøres av om det er en
+fil åpen — ikke av ruten. `TAB_ALIASES`-vakta i `router.test.ts` er derfor et
+TOMT sett: ingen rad har en fane igjen.
+
+To **kompileringsgater** gjør at en ny destinasjon ikke kan snike seg inn halvt
+bygget: `PAGES` og `ICONS` i `PageShell.tsx` er typet `Record<Page, …>`, så en
+ny side må både navngis og TEGNES før prosjektet kompilerer.
+
+## REDIGERING: to visninger, og bryteren er `loadState`
+
+```
+tab === TRASH_TAB      → TrashPage
+loadState !== "idle"   → EditorPage
+ellers                 → LibraryPage
+```
+
+`loadState` og ikke `hasFile`: `openFile` setter den SYNKRONT før første
+`await`, så biblioteket blinker aldri innom mens en fil åpnes — og lastingen har
+to tilstander biblioteket ikke KAN vise («laster», «kunne ikke åpnes»). En
+bryter som bare visste om det fantes en sti ville sendt en feilet åpning tilbake
+til lista uten å si hvorfor. `hasFile` var ubrukt og er slettet.
+
+Det følger tre ting av grenen:
+
+- **Editorens tomtilstand er død.** Biblioteket ER tomtilstanden. «Åpne fil…»
+  flyttet til bibliotekets topplinje og står ALLTID der — en frivillig med et
+  opptak fra en annen opptaker skal ikke måtte tømme biblioteket for å finne
+  døra.
+- **Slippsonen er en wrapper** rundt begge visningene (`DropZone` i
+  `LibraryPage.tsx`, montert i `Shell.tsx`). Papirkurven holdes UTENFOR: å
+  slippe et opptak på papirkurven ville sett ut som en handling, og den ene
+  handlingen det ligner på er den vi ikke gjør.
+- **«Til biblioteket» i editoren navigerer ikke.** Den lukker fila, og lista
+  står der igjen på den samme siden. En `navigate` ville vært et rutebytte til
+  stedet man allerede står, med fokusflytting og rulling som følge.
+
+## EKSPORTERING: egen destinasjon, tre tilstander, og `lastEdited`-kontrakten
+
+`git mv app/editor/ExportStep.tsx → app/pages/export/ExportPage.tsx` (+ egen
+`export.module.css`). **Signalene ble stående** i `app/editor/export.ts`: de er
+prop-frie og på modulnivå, så en kjøring overlever at flaten avmonteres. Det er
+også den ene tingen som må være sann for at den nye plasseringen skal være
+riktig, og `e2e/export-page.spec.ts` beviser det utenfra.
+
+Siden leser `loadState` og har fire grener: `ready` → `Ready`, `loading` →
+`Loading`, `error` → `LoadFailed`, ellers `Idle`. `Loading`/`LoadFailed` er
+trukket ut av `EditorPage` til en delt `app/editor/LoadStates.tsx` — to flater
+som viser den samme lastingen skal ikke ha hver sin setning om den.
+
+Inne i `ready` er det TRE tilstander — **valgene**, **kjøringen** og
+**kvitteringen** — og rekkefølgen de prøves i er **kvittering > kjøring >
+valg**, fordi det er den rekkefølgen de OPPSTÅR i: et sidebytte midt i en
+eksport kommer tilbake til det som gjelder, ikke til skjemaet man fylte ut for
+to minutter siden.
+
+**`lastEdited`-kontrakten** (`app/editor/model.ts`), som er hele grunnen til at
+`idle` ikke er en tom side:
+
+- **Skrives** av lasteren i det en åpning når `ready` — ikke når noen trykker,
+  og ikke når en fil velges, men når den faktisk ER åpen.
+- **Nullstilles ALDRI av `closeFile`.** Den er øktvarig med vilje: å lukke fila
+  er nettopp øyeblikket man går hit for å eksportere den.
+- **Faller tilbake** på `lastRecording` — men med en ANNEN etikett («Siste
+  opptak», ikke «Sist redigert»). `recordings_list` bærer ingen redigert-status,
+  og et «sist redigert» som egentlig var «sist tatt opp» ville vært appen som
+  gjetter og later som den vet. **Ingen sidevogn-gjetting**: et kutt-utkast
+  betyr at noen begynte, ikke at noe ble gjort.
+
+Kvitteringens «Til biblioteket» er derimot en EKTE navigering herfra
+(`closeFile(); navigate("edit")`): eksporteringen er en annen destinasjon enn
+redigeringen, så å lukke fila uten å flytte seg ville latt brukeren stå igjen på
+en side som nettopp mistet det den handlet om.
+
+## Skallet: en topplinje, en bunnlinje, og ingen skinne
+
+Venstreskinnen kostet 208 px bredde — en sjettedel av en 1180 px skjerm — for å
+holde tre knapper, et navn og én setning. Det samme innholdet er nå to bånd på
+til sammen hundre piksler HØYDE.
+
+```
+.page  grid-template-rows: auto minmax(0, 1fr) auto;  height: 100vh;
+```
+
+Nullen i `minmax` er ikke pynt. En grid-rad har `min-height: auto`, altså «minst
+så høy som innholdet» — uten nullen vokser HELE rutenettet forbi 100vh så snart
+en side er lang, og bunnlinja ruller ut av skjermen sammen med innholdet.
+`height` og ikke `min-height` av samme grunn: en bunnlinje som kan skyves ned av
+innhold er ikke en bunnlinje.
+
+**TOPPLINJEN (44 px)** bærer `AppLogo size={22}`, produktnavnet, og kirkenavnet
+bak en tynn strek (`shell-church`; gult «Ikke satt opp ennå» når det mangler).
+Streken er CSS og ikke et tegn i treet — en «·» i JSX er tekst en oversetter
+aldri får se.
+
+`data-tauri-drag-region` står på **topplinjas rot**. Attributtet har byttet
+VERT, ikke kontrakt: det er den eneste måten vinduet kan dras på når
+tittellinjen er skjult, og uten det blir appen et vindu man ikke kan flytte — en
+feil ingen tester finner, fordi alle tester klikker og ingen drar. Topplinja har
+med vilje INGEN interaktive barn, og derfor døde
+`data-tauri-drag-region="false"`-unntaket: det fantes fordi destinasjonene lå
+INNE i dra-sonen. Kommer det en knapp opp hit en dag, er det DEN som må bære
+`"false"`.
+
+**BUNNLINJEN (56 px)** er `grid-template-columns: 1fr auto 1fr`:
+
+| felt    | innhold                                                          |
+| ------- | ---------------------------------------------------------------- |
+| VENSTRE | statuslinjen — `status-line`/`status-dot`/`status-text`, uendret |
+| MIDT    | `nav-record` · `nav-edit` · `nav-export`, sentrert i VINDUET     |
+| HØYRE   | `app-version` og tannhjulet (`nav-setup` + `aria-current`)       |
+
+`1fr auto 1fr` og ikke `auto 1fr auto` er hele grunnen til at destinasjonene
+står sentrert i vinduet og ikke i det som er igjen etter statuslinjen: de to
+ytterfeltene deler den ledige plassen likt, så midten flytter seg ikke når
+statusen bytter fra «Alt er klart» til «Neste opptak søndag 10:00». Målt avvik:
+**0,0 px**, i begge tilstander og på begge bredder.
+
+Hver destinasjon er et 20 px ikon over en 11 px etikett (`--fs-xs` er
+typeskalaens gulv — etiketten under et ikon er det ene stedet i appen som får
+stå der, fordi ikonet bærer betydningen og ordet bekrefter den).
+`min-height: 44px` er **treffmålet**, ikke innholdets høyde: 20 + 2 + 11 er
+33–35 px innhold, og en knapp man skal treffe mens man ser på noe annet skal
+være større enn innholdet sitt. Bunnlinja er IKKE en dra-sone — hele båndet er
+ting man skal kunne treffe.
+
+⚠️ **macOS-offsetet snudde retning.** `padding-top: 28px` virket på en bred
+skinne som hadde plass til å begynne UNDER trafikklysene; en 44 px høy linje har
+det ikke — 28 px topp ville latt 16 px stå igjen til et 22 px merke.
+Trafikklysene har en fast BREDDE, så topplinja begynner til høyre for dem:
+`:global(.platform-darwin) .topbar { padding-left: 84px }`. Det ytterste lyset
+slutter ved x ≈ 69 (målt), og 84 er det pluss 15 px luft — nok til at merket
+ikke rører knappene selv om Apple flytter dem noen piksler.
+
+Ett navn flyttet: `rail-church` → **`shell-church`**. Katalognøkkelen er den
+samme (`app.rail.churchUnset`) — nøkler er identiteter, ikke beskrivelser, og en
+omdøping ville kostet sju språkfiler for å endre et ord ingen bruker ser.
+`--rail-w` er slettet; `--topbar-h: 44px` og `--bottombar-h: 56px` er nye.
+
+Kontraktene som BESTÅR uendret gjennom omskrivingen: `nav-*`-testid-ene (nå
+fire) · `aria-current` på tannhjulet · `status-*` + `data-status` ·
+`app-version` · `app-heading` og fokusflyttingen ved rutebytte · `<main>`s
+id/testid/`data-page`/`data-tab`/`data-anchor`/`data-first-run` ·
+`srlogo-clip`/`srlogo-gold`.
+
+## Tetthetsaksen: åtte semantiske tokens
+
+De to båndene tok 100 px høyde der skinnen tok 208 px bredde, og proben målte
+kostnaden ærlig: med kilde-kortet utfoldet på en 2-kanals enhet lå Start-knappen
+**52 px under folden**. PR3 henter dem inn.
+
+Åtte navn inn i `app/styles/tokens.css` (ingen farger ⇒ `css-tokens`-gaten er
+upåvirket), og elleve stilfiler peker på dem i stedet for `--sp-*`-hakkene:
+
+| token              | verdi       | hva den svarer på                        |
+| ------------------ | ----------- | ---------------------------------------- |
+| `--pad-page-y`     | `20px`      | luft over sidens innhold                 |
+| `--pad-page-x`     | `24px`      | luft ved sidekanten                      |
+| `--pad-page-b`     | `20px`      | luft under, over bunnlinja               |
+| `--gap-page`       | `14px`      | mellom blokkene på en side               |
+| `--pad-card`       | `14px 18px` | inni et kort                             |
+| `--pad-card-tight` | `10px 14px` | inni en kompaktrad                       |
+| `--gap-stack`      | `6px`       | mellom rader som skal leses som én liste |
+| `--gap-grid`       | `16px`      | mellom kolonner                          |
+
+⚠️ **Hvorfor semantiske navn og ikke bare et strammere `--sp-*`.** `--sp-4`
+svarer på «hvor stort er hakk 4», ikke på «hvor mye luft skal det være her», og
+det var brukt til seks forskjellige ting i de samme filene. Å stramme hakket
+ville flyttet alle seks.
+
+Utenom tokenene: `Button.record` 18 → 14 px padding (64 → **56 px** høy) og
+`EmptyState` 48 → 24/32. **IKKE strammet, på liste:** treffmål, dialoger,
+fontskalaen og VU-måleren.
+
+Kolonne-balansen fulgte med: «Neste opptak» og «Siste opptak» flyttet fra
+`.prep` til `.live`, under Start. De hører sammen med knappen — det ene er når
+den trykker seg selv, det andre er hva den lagde sist — og venstrekolonnen
+sluttet før under Start med en halv skjerm tom luft under seg. De står UNDER
+Start og påvirker derfor ikke hvor Start havner.
+
+### ⚠️ Skjøten tetthetspasset feide fram: `flex: 1` uten `0 auto`
+
+Tetthetspasset gjorde `e2e/editor.spec.ts` rød på avspillingsknappen i
+lyd-steget. Verken speccens px-antakelse eller tokenverdien var feilen — det var
+en skjøt: `.page`/`.step` sto som `flex: 1` + `min-height: 0`, altså «krymp så
+mye som helst». Boksen ble kortere enn innholdet, resten rant ut under den, og
+`.nextRow` er festet til bunnen av den SAMME boksen med `margin-top: auto` — så
+raden la seg oppå det som hadde rent ut.
+
+På `main` kolliderte de ikke, men bare med 15 px klaring, og tilfeldig:
+
+|            | `.nextRow`  | avspillingsknapp | kolliderer  |
+| ---------- | ----------- | ---------------- | ----------- |
+| main       | 574,8–634   | 649,1–689,1      | nei (15 px) |
+| før fiks   | 582,8–642   | 613,1–653,1      | **ja**      |
+| etter fiks | 736,4–795,6 | 613,1–653,1      | nei         |
+
+`flex: 1 0 auto` er fiksen: boksen blir aldri kortere enn innholdet, så
+`<main>` ruller i stedet — som er det den er satt opp til å gjøre. Rettet i
+BÅDE editoren og eksporteringen; `.exportBar` har samme bunn-feste, altså samme
+felle.
+
+## Målt i en ekte WKWebView
+
+Samme metode som D2 og P4a: en Swift-vert som laster `npm run dev` og injiserer
+fikstursømmen som `WKUserScript` ved `documentStart` (aldri innsjekket). Eierens
+app, database og opptaksmappe ble aldri rørt.
+
+| målt                         | verdi                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| trafikklys                   | `x 9–69`, `y 9–23` — tre knapper 14×14                                                   |
+| merket i topplinja           | `x 84, y 10,5, 22×22` → **15 px klaring**, ingen overlapp                                |
+| `documentElement.className`  | `platform-darwin`, topplinjas `padding-left` `84px`                                      |
+| topplinje / bunnlinje        | `h 44` / `h 56`, `--surface` `rgb(21,27,43)`, `--line` `rgb(40,50,74)`                   |
+| `nav-*`-antall               | **`4`** — `nav-record`, `nav-edit`, `nav-export`, `nav-setup`                            |
+| etiketter                    | Opptak · Redigering · Eksportering · Innstillinger                                       |
+| bunnlinjas rekkefølge (x)    | status `16` < record `461` < edit `537` < export `625` < versjon `915` < tannhjul `1075` |
+| alle seks i båndet           | `true` for alle (bånd `y 704–760`)                                                       |
+| destinasjonene sentrert      | avvik fra vindusmidten **0,0 px** @1180 OG @1000                                         |
+| treffmål, de fire knappene   | `44 px`                                                                                  |
+| vannrett rulling             | **ingen** @1180×760 OG @1000×760 (`scrollWidth − innerWidth = 0`)                        |
+| linjene under rulling        | `<main>` ruller 312 px, `topbarY 0` og `bottombarY 704` **uendret**                      |
+| kirken usatt                 | «Ikke satt opp ennå», `rgb(240,180,41)` = `--warn`                                       |
+| Start-knappens bunn          | `756 px` → **`694 px`** (klaring til bunnlinja `−52 px` → **`+10 px`**)                  |
+| kilde-kortet utfoldet        | `387 px` → `363 px`                                                                      |
+| Start-knappen                | `64 px` → `56 px`                                                                        |
+| `record-meter` / `control-*` | `107 / 83` → `99 / 79`                                                                   |
+| `<main>`-padding             | `30/36/28`, gap `18` → `20/24/20`, gap `14`                                              |
+| kolonner @1180 / @1000       | to (`x 24 b 488` / `x 528 b 628`) / ÉN (`x 24 b 952`)                                    |
+| CSP / errors / rejections    | tomme                                                                                    |
+
+**Treffmål — ingen krympet.** Lista over elementer under 40 px er
+BYTE-IDENTISK før og etter tetthetspasset: `control-folder-expand`,
+`control-quality-expand`, `control-notify-expand` (30 px) og
+`setup-camera-toggle`, `setup-auto-toggle` (22 px). Alle fem fantes på `main`
+før D3.
+
+## D3-restanser
+
+1. **👤 Riggtest: selve vindus-DRAGET.** Alt over er e2e + WKWebView-probe.
+   `data-tauri-drag-region` er Tauris attributt, ikke nettleserens — proben kan
+   bevise at det STÅR der, ikke at vinduet flytter seg. Samme presedens som D2,
+   og punktet står i `docs/SMOKE-TEST.md`.
+2. **👤 To treffmål under 40 px — et EIERVALG, ikke en regresjon.**
+   `control-*-expand` er 30 px og `setup-*-toggle` er 22 px. Ingen av dem
+   krympet i D3 (lista er byte-identisk før og etter), men de ligger under
+   gulvet resten av appen holder — og de er begge kontroller man treffer med
+   musa mens man ser på noe annet. Å heve dem er en layoutendring i
+   `ControlCard` og `Toggle`, ikke en tokenjustering, og derfor eierens valg.
+3. **Atlaset fotograferer et skall som ikke finnes.** `docs/design/atlas/`
+   viser v0.15-skallet. Fotografen ble slettet med skallet den fotograferte, og
+   en ny scenetabell er en egen jobb (samme vurdering som «Etter byttet» §4).
+4. **Canvas-dokumentet er en tegning.** `FASE-D3-DAVINCI.html` er tegnet mot
+   koden som fasit, men den er fortsatt en tegning. Skjermbildepasset hører til
+   riggtesten.
+5. **👤 Beta-ringen blir stående på 0.16.0-beta.2** når v0.17.0 går rett til
+   stable. Å friske opp ringen er et eget, eksplisitt eiervalg.
 
 ---
 

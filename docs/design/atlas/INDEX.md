@@ -1,18 +1,21 @@
 # Atlas — SundayRec slik appen ER (Fase A)
 
 > ⚠️ **Atlaset fotograferer v0.15-skallet — appen ser ikke slik ut lenger.**
-> Fase B byttet ut hele skallet, og **D2** (v0.16.0-beta.2) flyttet det igjen:
-> skinnen har to destinasjoner og et tannhjul nederst (ikke tre faner), OPPTAK
-> er et kontrollrom der de fem spørsmålene folder seg ut på stedet, og
-> Innstillinger er kirkeprofilen + Avansert. Scenene under (`home--*`,
+> Fase B byttet ut hele skallet; **D2** (v0.16.0-beta.2) gjorde OPPTAK til et
+> kontrollrom der de fem spørsmålene folder seg ut på stedet; og **D3**
+> (v0.17.0) slettet skinnen helt: navigasjonen er tre ikoner NEDERST — Opptak ·
+> Redigering · Eksportering — med et tannhjul til høyre, og biblioteket er
+> Redigering-sidens standardvisning. Scenene under (`home--*`,
 > `settings-audio--*`, `schedule--*`) er sidene som ble erstattet.
 >
 > Bildene består likevel: de er Fase A-fasiten — «slik var det» — og de er
 > begrunnelsen bak halvparten av beslutningene i redesignet. **Re-fotografering
 > er en restanse**, og den er en NY scenetabell, ikke en re-peking av denne
 > (fotografen `e2e/atlas/**` er slettet; se `../../APP-SHELL.md` §«Etter byttet»
-> punkt 4). Hvordan D2-skallet ser ut i dag er tegnet i
-> [../canvas/FASE-D2-KONTROLLROM.html](../canvas/FASE-D2-KONTROLLROM.html).
+> punkt 4). Hvordan skallet ser ut i dag er tegnet i
+> [../canvas/FASE-D3-DAVINCI.html](../canvas/FASE-D3-DAVINCI.html) (D2s
+> kontrollrom står i
+> [../canvas/FASE-D2-KONTROLLROM.html](../canvas/FASE-D2-KONTROLLROM.html)).
 
 Hvert bilde er ett skjermbilde av appen som den står på `main` etter Fase R
 (PR #139 + #141). Ingenting her er et forslag; dette er dokumentasjon av

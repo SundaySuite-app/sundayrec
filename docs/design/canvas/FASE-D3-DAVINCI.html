@@ -1,0 +1,2987 @@
+<meta charset="utf-8" />
+<title>DaVinci-skallet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
+/>
+<style>
+  /* ───────────── Page chrome tokens — identiske med FASE-D-UTKAST-1 ───────── */
+  :root {
+    --bg: #f7f5f0;
+    --bg-2: #ffffff;
+    --ink: #1b1f2a;
+    --ink-2: #5b6272;
+    --ink-3: #8e95a6;
+    --line: #e2dfd6;
+    --gold: #c9951f;
+    --gold-soft: rgba(201, 149, 31, 0.12);
+    --ok: #1e9e5e;
+    --warn: #c47a00;
+    --bad: #c93b3f;
+    --sans:
+      "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      system-ui, sans-serif;
+    --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --rail: 248px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171f;
+      --bg-2: #1b1f2a;
+      --ink: #eef0f5;
+      --ink-2: #a7aebd;
+      --ink-3: #6e7689;
+      --line: #2b3140;
+      --gold: #ebb84b;
+      --gold-soft: rgba(235, 184, 75, 0.14);
+      --ok: #3ccb7f;
+      --warn: #f0b429;
+      --bad: #f2555a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171f;
+    --bg-2: #1b1f2a;
+    --ink: #eef0f5;
+    --ink-2: #a7aebd;
+    --ink-3: #6e7689;
+    --line: #2b3140;
+    --gold: #ebb84b;
+    --gold-soft: rgba(235, 184, 75, 0.14);
+    --ok: #3ccb7f;
+    --warn: #f0b429;
+    --bad: #f2555a;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--gold);
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  .page {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  @media (max-width: 960px) {
+    .page {
+      grid-template-columns: 1fr;
+    }
+    .rail {
+      position: static;
+      height: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+  }
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+    border-right: 1px solid var(--line);
+    padding: 28px 22px;
+    background: var(--bg);
+  }
+  .rail .brand {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin: 0 0 4px;
+  }
+  .rail .sub {
+    color: var(--ink-2);
+    font-size: 13px;
+    margin: 0 0 22px;
+  }
+  .rail nav a {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 7px 8px;
+    border-radius: 8px;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .rail nav a:hover {
+    background: var(--gold-soft);
+  }
+  .rail nav a .n {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    min-width: 18px;
+  }
+  .rail .tools {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 10px;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    background: var(--bg-2);
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--gold);
+    color: #1b1f2a;
+  }
+  .rail .hint {
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 1.45;
+  }
+
+  main {
+    padding: 40px clamp(20px, 4vw, 56px) 96px;
+    max-width: 1180px;
+  }
+  .intro h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(34px, 4.5vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .intro .lede {
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 26px;
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 10px;
+  }
+  .principles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+  }
+  .principles li {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .principles b {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .principles span {
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  section.set {
+    margin-top: 72px;
+    scroll-margin-top: 24px;
+  }
+  section.set > h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(26px, 3vw, 36px);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  section.set > .why {
+    color: var(--ink-2);
+    max-width: 66ch;
+    margin: 0 0 26px;
+    font-size: 16px;
+  }
+  section.set > .why code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--gold-soft);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .board-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1180/760;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+    background: #0e1321;
+    margin: 0 0 10px;
+  }
+  .board {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1180px;
+    height: 760px;
+    transform-origin: 0 0;
+  }
+  figure {
+    margin: 0 0 42px;
+  }
+  figcaption {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 14px;
+    color: var(--ink-2);
+    padding: 4px 2px;
+  }
+  figcaption b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  figcaption .id {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .decide {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--gold);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 8px 0 0;
+  }
+  .decide h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+  }
+  .decide ol,
+  .decide ul {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 8px;
+    font-size: 15px;
+  }
+  .decide li b {
+    font-weight: 600;
+  }
+  .decide .q {
+    color: var(--ink-2);
+  }
+
+  table.keys {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+  table.keys th,
+  table.keys td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.keys th {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  table.keys code {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+
+  /* ───────────── APP tokens (committed dark — the app's own world) ───────── */
+  .board {
+    --a-bg: #0e1321;
+    --a-surface: #151b2b;
+    --a-raised: #1c2435;
+    --a-line: #28324a;
+    --a-line-2: #344060;
+    --a-ink: #edf0f7;
+    --a-ink-2: #a2adc2;
+    --a-ink-3: #5e6b85;
+    --a-gold: #ebb84b;
+    --a-gold-soft: rgba(235, 184, 75, 0.14);
+    --a-gold-line: rgba(235, 184, 75, 0.42);
+    --a-rec: #e5484d;
+    --a-rec-soft: rgba(229, 72, 77, 0.16);
+    --a-good: #3ccb7f;
+    --a-good-soft: rgba(60, 203, 127, 0.14);
+    --a-warn: #f0b429;
+    --a-warn-soft: rgba(240, 180, 41, 0.14);
+    --a-bad: #f2555a;
+    --a-bad-soft: rgba(242, 85, 90, 0.14);
+    --a-r: 12px;
+    --a-r-sm: 8px;
+    background: var(--a-bg);
+    color: var(--a-ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+    display: grid;
+    grid-template-columns: 208px 1fr;
+    font-variant-numeric: tabular-nums;
+  }
+  .board * {
+    box-sizing: border-box;
+  }
+  .board p,
+  .board h1,
+  .board h2,
+  .board h3 {
+    margin: 0;
+  }
+  .board button {
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  /* Rail — D2: to destinasjoner, et tannhjul nederst, statuslinjen under */
+  .a-rail {
+    background: var(--a-surface);
+    border-right: 1px solid var(--a-line);
+    display: flex;
+    flex-direction: column;
+    /* 28 px topp = macOS' tittellinje. `.platform-darwin .rail` i appen. */
+    padding: 28px 14px 18px;
+  }
+  .a-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px 6px;
+  }
+  .a-logo i {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: block;
+    flex: none;
+  }
+  .a-logo i svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .a-logo b {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+  }
+  .a-church {
+    padding: 0 8px 22px;
+    font-size: 12.5px;
+    color: var(--a-ink-2);
+  }
+  .a-church.unset {
+    color: var(--a-warn);
+  }
+  .a-nav {
+    display: grid;
+    gap: 4px;
+  }
+  .a-nav button,
+  .a-gear button {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--a-ink-2);
+  }
+  .a-nav button.on,
+  .a-gear button.on {
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .a-nav svg,
+  .a-gear svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+  /* ⚠️ `margin-top:auto` bor HER, ikke på `.a-status`. To auto-marger i samme
+     flex-kolonne deler den ledige plassen, og tannhjulet ville svevet midt i
+     skinnen. Se APP-SHELL §D2. */
+  .a-gear {
+    margin-top: auto;
+    padding-bottom: 8px;
+  }
+  .a-status {
+    display: grid;
+    gap: 6px;
+    padding: 12px 10px 0;
+    border-top: 1px solid var(--a-line);
+  }
+  .a-status .line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .a-status .sub {
+    font-size: 12px;
+    color: var(--a-ink-3);
+    padding-left: 16px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--a-ink-3);
+    flex: none;
+  }
+  .dot.good {
+    background: var(--a-good);
+    box-shadow: 0 0 0 3px var(--a-good-soft);
+  }
+  .dot.warn {
+    background: var(--a-warn);
+    box-shadow: 0 0 0 3px var(--a-warn-soft);
+  }
+  .dot.rec {
+    background: var(--a-rec);
+    box-shadow: 0 0 0 3px var(--a-rec-soft);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .dot.listen {
+    background: var(--a-gold);
+    box-shadow: 0 0 0 3px var(--a-gold-soft);
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 3px var(--a-rec-soft);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgba(229, 72, 77, 0.08);
+    }
+  }
+
+  /* Main column */
+  .a-main {
+    padding: 24px 30px 18px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .a-h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .a-sub {
+    color: var(--a-ink-2);
+    font-size: 14.5px;
+  }
+  .a-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .a-card {
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    padding: 14px 16px;
+  }
+  .a-card.warn {
+    border-color: rgba(240, 180, 41, 0.5);
+    background:
+      linear-gradient(0deg, var(--a-warn-soft), var(--a-warn-soft)),
+      var(--a-surface);
+  }
+  .a-card.good {
+    border-color: rgba(60, 203, 127, 0.45);
+  }
+  .a-card.sel {
+    border-color: var(--a-gold-line);
+    background:
+      linear-gradient(0deg, var(--a-gold-soft), var(--a-gold-soft)),
+      var(--a-surface);
+  }
+  .a-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .a-grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .a-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .a-val {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .a-muted {
+    color: var(--a-ink-2);
+    font-size: 13px;
+  }
+  .a-small {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--a-line-2);
+    background: var(--a-raised);
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn.primary {
+    background: var(--a-gold);
+    border-color: var(--a-gold);
+    color: #1b1f2a;
+  }
+  .btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--a-gold);
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .btn.rec {
+    background: var(--a-rec);
+    border-color: var(--a-rec);
+    color: #fff;
+    font-size: 18px;
+    padding: 18px 28px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(229, 72, 77, 0.28);
+  }
+  .btn.rec i {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    display: inline-block;
+  }
+  .btn.lg {
+    font-size: 16px;
+    padding: 13px 22px;
+  }
+  .btn[disabled] {
+    opacity: 0.45;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink-2);
+    background: var(--a-raised);
+  }
+  .chip.good {
+    color: var(--a-good);
+    border-color: rgba(60, 203, 127, 0.4);
+    background: var(--a-good-soft);
+  }
+  .chip.warn {
+    color: var(--a-warn);
+    border-color: rgba(240, 180, 41, 0.4);
+    background: var(--a-warn-soft);
+  }
+  .chip.gold {
+    color: var(--a-gold);
+    border-color: var(--a-gold-line);
+    background: var(--a-gold-soft);
+  }
+  .chip.rec {
+    color: #fff;
+    background: var(--a-rec);
+    border-color: var(--a-rec);
+  }
+  .toggle {
+    width: 40px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--a-line-2);
+    position: relative;
+    flex: none;
+    border: 0;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+  }
+  .toggle.on {
+    background: var(--a-gold);
+  }
+  .toggle.on::after {
+    left: 21px;
+  }
+  .receipt {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--a-good);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* VU */
+  .vu {
+    display: grid;
+    gap: 8px;
+  }
+  .vu .bar {
+    height: 14px;
+    border-radius: 7px;
+    background: var(--a-raised);
+    overflow: hidden;
+    position: relative;
+  }
+  .vu .bar i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 7px;
+    background: linear-gradient(
+      90deg,
+      var(--a-good) 0 72%,
+      var(--a-warn) 72% 90%,
+      var(--a-rec) 90%
+    );
+  }
+  .vu .bar i::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: var(--w, 0%);
+    background: var(--a-raised);
+  }
+  .vu .bar b {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #fff;
+    opacity: 0.9;
+  }
+  .vu .scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--a-ink-3);
+    padding: 0 2px;
+  }
+  .vu.big .bar {
+    height: 22px;
+    border-radius: 11px;
+  }
+
+  /* ───────────── D2: kontrollrommet ───────────── */
+
+  /* To kolonner over 1100 px (7fr | 9fr), én under. `record.module.css`. */
+  .room {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 9fr);
+    gap: 14px;
+    align-items: start;
+    min-height: 0;
+  }
+  .live,
+  .prep {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+  .why {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+
+  /* Kompaktraden: tittel · verdi · [Endre] */
+  .cc {
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    padding: 9px 13px;
+  }
+  .cc[data-tone="warn"] {
+    border-color: rgba(240, 180, 41, 0.5);
+    background:
+      linear-gradient(0deg, var(--a-warn-soft), var(--a-warn-soft)),
+      var(--a-surface);
+  }
+  .cc .head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .cc .title {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .cc .value {
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 1px;
+  }
+  .cc .detail {
+    font-size: 12.5px;
+    color: var(--a-ink-2);
+    margin-top: 2px;
+  }
+  .cc .body {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--a-line);
+    display: grid;
+    gap: 10px;
+  }
+  .cc.pulse {
+    box-shadow: 0 0 0 2px var(--a-gold-line);
+  }
+
+  /* Kamerarammen — den ENE, for begge kildene */
+  .cam {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    border-radius: var(--a-r);
+    border: 1px solid var(--a-line);
+    background: #05070d;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+  }
+  .cam .ph {
+    font-size: 13px;
+    color: var(--a-ink-2);
+    text-align: center;
+    padding: 0 24px;
+  }
+  .cam .badge {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(5, 7, 13, 0.72);
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink);
+  }
+  .cam .phase {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(5, 7, 13, 0.72);
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink-3);
+  }
+  /* En «kamerastrøm»: deterministisk, ingen ekstern ressurs. */
+  .cam .feed {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        120% 90% at 62% 26%,
+        rgba(235, 184, 75, 0.28),
+        rgba(235, 184, 75, 0) 58%
+      ),
+      radial-gradient(
+        70% 60% at 26% 78%,
+        rgba(60, 120, 220, 0.34),
+        rgba(60, 120, 220, 0) 62%
+      ),
+      linear-gradient(170deg, #1a2740 0%, #0b1220 62%, #070b14 100%);
+  }
+  .cam .feed::after {
+    /* silhuetten: en talerstol og en menighet, i det store og hele */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(
+        to top,
+        rgba(3, 5, 10, 0.86) 0 22%,
+        rgba(3, 5, 10, 0) 46%
+      ),
+      radial-gradient(
+        14% 26% at 50% 56%,
+        rgba(3, 5, 10, 0.9),
+        rgba(3, 5, 10, 0) 70%
+      );
+  }
+  .cam.dead .feed {
+    display: none;
+  }
+
+  /* Opptaksoverlegget */
+  .ov {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 26px 32px;
+    background: var(--a-bg);
+  }
+  .ov .timer {
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .ov .meter {
+    width: 520px;
+  }
+  .ov .camera {
+    width: 380px;
+  }
+  .ov .facts {
+    font-size: 13px;
+    color: var(--a-ink-2);
+  }
+  .ov .hint {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+
+  /* Innstillinger-flaten */
+  .sectionLabel {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+    padding-top: 6px;
+  }
+  .setrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--a-line);
+  }
+  .setrow:last-child {
+    border-bottom: 0;
+  }
+  .field {
+    border: 1px solid var(--a-line-2);
+    border-radius: var(--a-r-sm);
+    background: var(--a-raised);
+    padding: 7px 11px;
+    font-size: 13.5px;
+    min-width: 190px;
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+  }
+  .tiles span {
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid var(--a-line);
+    background: var(--a-raised);
+    font-size: 10px;
+    display: grid;
+    place-items: center;
+    color: var(--a-ink-3);
+  }
+  .tiles span.hot {
+    border-color: var(--a-good);
+    color: var(--a-good);
+  }
+  .tiles span.sel {
+    border-color: var(--a-gold);
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .fold {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 26px;
+    background: linear-gradient(
+      to top,
+      rgba(14, 19, 33, 0.96),
+      rgba(14, 19, 33, 0)
+    );
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 5px;
+    font-size: 11px;
+    color: var(--a-ink-3);
+    pointer-events: none;
+  }
+
+  /* ═════════ D3: skallet er to bånd, ikke en skinne ═════════
+     Alt over er D2-canvasens stilark, ordrett. Under står bare det D3 flyttet:
+     tavlerammen er den samme 1180×760, men rutenettet er `PageShell.module.css`
+     sitt — `auto minmax(0, 1fr) auto` med en 44 px topplinje og en 56 px
+     bunnlinje. `.a-rail`-reglene over er historikk og brukes ikke her. */
+  .board {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr) 56px;
+    position: absolute;
+  }
+
+  /* ── Topplinja (44 px) ─────────────────────────────────────────────────── */
+  .a-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--a-surface);
+    border-bottom: 1px solid var(--a-line);
+    /* 84 px venstre = `.platform-darwin .topbar`. Det ytterste trafikklyset
+       slutter ved x ≈ 69 (målt); 84 er det pluss 15 px luft. */
+    padding: 0 16px 0 84px;
+  }
+  .a-topbar .a-logo {
+    padding: 0;
+  }
+  .a-topbar .a-logo i {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+  }
+  .a-topbar .a-church {
+    padding: 0 0 0 10px;
+    border-left: 1px solid var(--a-line-2);
+  }
+
+  /* macOS' trafikklys, tegnet der proben fant dem: x 9–69, y 9–23, 14×14. */
+  .lights {
+    position: absolute;
+    left: 9px;
+    top: 9px;
+    display: flex;
+    gap: 9px;
+    z-index: 3;
+  }
+  .lights i {
+    display: block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+  }
+  .lights i:nth-child(1) {
+    background: #ff5f57;
+  }
+  .lights i:nth-child(2) {
+    background: #febc2e;
+  }
+  .lights i:nth-child(3) {
+    background: #28c840;
+  }
+
+  /* ── Bunnlinja (56 px) ─────────────────────────────────────────────────── */
+  /* `1fr auto 1fr`: ytterfeltene deler den ledige plassen likt, så midten
+     står sentrert i VINDUET og ikke i det som er igjen etter statuslinjen. */
+  .a-bottombar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    background: var(--a-surface);
+    border-top: 1px solid var(--a-line);
+  }
+  .b-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .b-nav {
+    display: flex;
+    gap: 4px;
+    justify-self: center;
+  }
+  .b-tail {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    min-width: 0;
+  }
+  /* Ikon over etikett, som i Resolve. 11 px er typeskalaens gulv, og
+     `min-height: 44px` er TREFFMÅLET — ikke innholdets høyde (35 px). */
+  .b-nav button,
+  .b-tail button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 72px;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    padding: 4px 12px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--a-ink-2);
+  }
+  .b-nav button.on,
+  .b-tail button.on {
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .b-nav svg,
+  .b-tail svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+  }
+  .b-version {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+    white-space: nowrap;
+  }
+
+  /* ── Siden, etter tetthetspasset ───────────────────────────────────────── */
+  /* `--pad-page-y/-x/-b` 20/24/20 og `--gap-page` 14 — PR3s tall, ikke D2s
+     30/36/28 med gap 18. */
+  .a-main {
+    padding: 20px 24px 20px;
+    gap: 14px;
+  }
+
+  /* ── Nye former D3 trengte ─────────────────────────────────────────────── */
+
+  /* Slippsonen rundt REDIGERING — biblioteket OG arbeidsflaten, aldri kurven */
+  .drop {
+    border: 1px dashed var(--a-line-2);
+    border-radius: var(--a-r);
+    padding: 12px;
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    min-height: 0;
+  }
+  .drop.over {
+    border-color: var(--a-gold);
+    background: var(--a-gold-soft);
+  }
+  .droplabel {
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+    font-weight: 700;
+  }
+
+  /* Bibliotekets rader */
+  .rows {
+    display: grid;
+    gap: 8px;
+  }
+  .rows .r {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    padding: 10px 14px;
+  }
+
+  /* Stegstripa — to steg etter D3, ikke tre */
+  .steps {
+    display: flex;
+    gap: 8px;
+  }
+  .steps button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--a-line);
+    background: var(--a-surface);
+    color: var(--a-ink-2);
+    border-radius: 999px;
+    padding: 7px 16px 7px 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+  .steps button.on {
+    border-color: var(--a-gold-line);
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .steps .n {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--a-raised);
+    color: var(--a-ink-3);
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+  }
+  .steps button.on .n {
+    background: var(--a-gold);
+    color: #1b1f2a;
+  }
+  .steps .n.done {
+    background: var(--a-good);
+    color: #0b1220;
+  }
+
+  /* Bølgeformen — deterministisk, ingen ekstern ressurs */
+  .wave {
+    position: relative;
+    height: 118px;
+    border-radius: var(--a-r);
+    border: 1px solid var(--a-line);
+    background: var(--a-raised);
+    overflow: hidden;
+  }
+  .wave .bars {
+    position: absolute;
+    inset: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .wave .bars i {
+    flex: 1;
+    background: var(--a-ink-3);
+    border-radius: 1px;
+    opacity: 0.55;
+  }
+  .wave .keep {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--a-gold-soft);
+    border-left: 2px solid var(--a-gold);
+    border-right: 2px solid var(--a-gold);
+  }
+  .wave .keep span {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--a-gold);
+  }
+  .wave .play {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #fff;
+  }
+
+  /* RadioCards — format og destinasjon */
+  .radios {
+    display: grid;
+    gap: 10px;
+  }
+  .radios.c3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .radios.c2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .radios .o {
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    background: var(--a-surface);
+    padding: 10px 14px;
+  }
+  .radios .o.sel {
+    border-color: var(--a-gold-line);
+    background:
+      linear-gradient(0deg, var(--a-gold-soft), var(--a-gold-soft)),
+      var(--a-surface);
+  }
+  .radios .o b {
+    display: block;
+    font-size: 14px;
+  }
+  .radios .o span {
+    font-size: 12.5px;
+    color: var(--a-ink-2);
+  }
+  .radios.off {
+    opacity: 0.45;
+  }
+
+  /* Eksportlinja: forutsigelsen til venstre, knappen til høyre */
+  .exportbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 2px;
+  }
+
+  /* «Samme flate, et øyeblikk senere» — skillet på tavle 6 */
+  .moment {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .moment::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--a-line);
+  }
+
+  /* Måltabellen under en tavle, i dokumentets egen verden */
+  table.meas {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+  table.meas th,
+  table.meas td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.meas th {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  table.meas code {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  table.meas .win {
+    color: var(--ok);
+    font-weight: 600;
+  }
+  table.meas .lose {
+    color: var(--bad);
+    font-weight: 600;
+  }
+</style>
+
+<div class="page">
+  <aside class="rail">
+    <p class="brand">DaVinci-skallet</p>
+    <p class="sub">D3 · fasit mot koden, ikke ønsker</p>
+    <nav>
+      <a href="#s1"><span class="n">1</span><span>Skallet</span></a>
+      <a href="#s2"><span class="n">2</span><span>Opptak</span></a>
+      <a href="#s3"><span class="n">3</span><span>Redigering · lista</span></a>
+      <a href="#s4"><span class="n">4</span><span>Redigering · fila</span></a>
+      <a href="#s5"><span class="n">5</span><span>Eksportering · tom</span></a>
+      <a href="#s6"><span class="n">6</span><span>Eksportering · valg</span></a>
+      <a href="#impl"><span class="n">✓</span><span>Implementert</span></a>
+      <a href="#krav"><span class="n">§</span><span>Eiers fire krav</span></a>
+    </nav>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Språk">
+        <button data-lang="no" aria-pressed="true">Norsk</button>
+        <button data-lang="en" aria-pressed="false">English</button>
+      </div>
+      <p class="hint">
+        Hver tavle er 1180×760 — Tauri-vinduets standardstørrelse. Alt du ser er
+        tegnet mot koden på <code>main</code> etter #171 · #172 · #173, og
+        tallene er WKWebView-probens.
+      </p>
+    </div>
+  </aside>
+
+  <main>
+    <section class="intro">
+      <p class="eyebrow">Fase D3 · dokumentasjon</p>
+      <h1>Tre steder, nederst, i den rekkefølgen man gjør dem</h1>
+      <p class="lede">
+        v0.16.0-beta.2 kjørte hos eieren, og han så på sin egen app og sa fire
+        ting: det er for mye luft, redigering må ha sin egen fane fordi klipp
+        også kommer fra andre opptakere, fanene skal være ikoner nederst som i
+        DaVinci Resolve — og gjenbruk den koden som finnes. Dette dokumentet
+        tegner hva de fire ble. Ikke som forslag: som det som står i appen nå.
+      </p>
+      <ul class="principles">
+        <li>
+          <b>Rekkefølgen nederst er arbeidsrekkefølgen</b>
+          <span
+            >Opptak · Redigering · Eksportering, venstre→høyre. Et bånd som
+            ligger i den rekkefølgen man gjør ting i, trenger ingen
+            forklaring.</span
+          >
+        </li>
+        <li>
+          <b>Biblioteket ER Redigering</b>
+          <span
+            >Å finne opptaket igjen og å redigere det er samme ærend. Og en fil
+            man drar inn fra en annen opptaker har aldri vært i et
+            bibliotek.</span
+          >
+        </li>
+        <li>
+          <b>Eksport er alltid ett klikk unna</b>
+          <span
+            >Uten en åpen fil er siden ikke tom: det sist redigerte opptaket
+            står der med én knapp, og en velger under.</span
+          >
+        </li>
+      </ul>
+    </section>
+
+    <!-- ═══════════════════════ 1 · SKALLET ═══════════════════════ -->
+    <section class="set" id="s1">
+      <h2>1 · Skallet: to bånd der det var en skinne</h2>
+      <p class="why">
+        Venstreskinnen kostet 208 px bredde — en sjettedel av en 1180 px skjerm
+        — for å holde tre knapper, et navn og én setning. Nå er det samme
+        innholdet to bånd på til sammen hundre piksler HØYDE.
+        <code>.page</code> er
+        <code>grid-template-rows: auto minmax(0, 1fr) auto</code> ved
+        <code>100vh</code>: nullen i <code>minmax</code> er det som lar
+        <code>&lt;main&gt;</code> rulle inni seg selv i stedet for at bunnlinja
+        ruller ut av skjermen.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <header class="a-topbar" data-top="set"></header>
+            <div
+              class="a-main"
+              style="justify-content: center; align-items: center; gap: 18px"
+            >
+              <div class="a-card" style="width: 720px">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 10px"
+                  data-t="sh.top"
+                ></div>
+                <div class="a-muted" style="display: grid; gap: 6px">
+                  <div data-t="sh.top1"></div>
+                  <div data-t="sh.top2"></div>
+                  <div data-t="sh.top3"></div>
+                </div>
+              </div>
+              <div class="a-card" style="width: 720px">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 10px"
+                  data-t="sh.bot"
+                ></div>
+                <div class="a-muted" style="display: grid; gap: 6px">
+                  <div data-t="sh.bot1"></div>
+                  <div data-t="sh.bot2"></div>
+                  <div data-t="sh.bot3"></div>
+                  <div data-t="sh.bot4"></div>
+                </div>
+              </div>
+              <div class="a-card" style="width: 720px">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 10px"
+                  data-t="sh.meas"
+                ></div>
+                <div class="a-muted" style="display: grid; gap: 5px">
+                  <div>
+                    <span data-t="sh.m1"></span> — <code>x 9–69, y 9–23</code>
+                  </div>
+                  <div>
+                    <span data-t="sh.m2"></span> —
+                    <code>x 84, y 10,5, 22×22</code>
+                  </div>
+                  <div><span data-t="sh.m3"></span> — <code>0,0 px</code></div>
+                  <div><span data-t="sh.m4"></span> — <code>44 px</code></div>
+                </div>
+              </div>
+            </div>
+            <footer
+              class="a-bottombar"
+              data-bottom="record"
+              data-status="ready"
+            ></footer>
+          </div>
+        </div>
+        <figcaption>
+          <span class="id">1.1</span>
+          <b data-t="cap.s1"></b>
+          <span data-t="cap.s1d"></span>
+        </figcaption>
+      </figure>
+
+      <div class="scroll">
+        <table class="meas">
+          <thead>
+            <tr>
+              <th data-t="th.meas"></th>
+              <th data-t="th.val"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-t="mr.lights"></td>
+              <td><code>x 9–69</code>, <code>y 9–23</code> — 3 × 14×14</td>
+            </tr>
+            <tr>
+              <td data-t="mr.logo"></td>
+              <td>
+                <code>x 84, y 10,5, 22×22</code> →
+                <span class="win" data-t="mr.logo15"></span>
+              </td>
+            </tr>
+            <tr>
+              <td data-t="mr.bands"></td>
+              <td><code>44 px</code> / <code>56 px</code></td>
+            </tr>
+            <tr>
+              <td data-t="mr.order"></td>
+              <td>
+                status <code>16</code> · record <code>461</code> · edit
+                <code>537</code> · export <code>625</code> · versjon
+                <code>915</code> · tannhjul <code>1075</code>
+              </td>
+            </tr>
+            <tr>
+              <td data-t="mr.centre"></td>
+              <td>
+                <span class="win"><code>0,0 px</code></span> @1180
+                <span data-t="c.and"></span> @1000
+              </td>
+            </tr>
+            <tr>
+              <td data-t="mr.hit"></td>
+              <td><code>44 px</code> — <span data-t="mr.hit4"></span></td>
+            </tr>
+            <tr>
+              <td data-t="mr.hscroll"></td>
+              <td>
+                <span class="win" data-t="c.none"></span> @1180×760
+                <span data-t="c.and"></span> @1000×760
+              </td>
+            </tr>
+            <tr>
+              <td data-t="mr.still"></td>
+              <td data-t="mr.stillv"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="decide">
+        <h3 data-t="d1.title"></h3>
+        <ul>
+          <li><b data-t="d1.a"></b> <span class="q" data-t="d1.ad"></span></li>
+          <li><b data-t="d1.b"></b> <span class="q" data-t="d1.bd"></span></li>
+          <li><b data-t="d1.c"></b> <span class="q" data-t="d1.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ 2 · OPPTAK ═══════════════════════ -->
+    <section class="set" id="s2">
+      <h2>2 · Opptak, etter tetthetspasset</h2>
+      <p class="why">
+        Kontrollrommet er D2s; det tetthetspasset gjorde er å hente inn de 52
+        pikslene båndene kostet. Åtte semantiske tokens
+        (<code>--pad-page-y</code>, <code>--gap-page</code>,
+        <code>--pad-card</code> …) erstattet <code>--sp-*</code>-hakkene i
+        elleve stilfiler, og Start-knappen gikk fra 64 til 56 px. Ingen treffmål
+        krympet. «Neste opptak» og «Siste opptak» flyttet til VENSTRE kolonne,
+        under Start — de hører sammen med knappen, og de fyller luften
+        venstrekolonnen hadde under seg.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <header class="a-topbar" data-top="set"></header>
+            <div class="a-main" style="position: relative">
+              <div class="a-h1" data-t="nav.record"></div>
+              <div class="a-sub" data-t="rec.sub"></div>
+              <div class="room">
+                <!-- VENSTRE: det levende. Sticky i appen. -->
+                <div class="live">
+                  <div class="cc">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="q1"></div>
+                        <div class="value">Behringer X32</div>
+                        <div class="detail">
+                          <span data-t="rec.ch"></span> 1–2 · 48 kHz
+                        </div>
+                      </div>
+                      <span class="btn" data-t="c.change"></span>
+                    </div>
+                  </div>
+
+                  <div class="a-card">
+                    <div class="vu">
+                      <div class="scale">
+                        <span data-t="rec.hear"></span><span>−6 dB</span>
+                      </div>
+                      <div class="bar">
+                        <i style="--w: 62%"></i><b style="left: 74%"></b>
+                      </div>
+                      <div class="bar">
+                        <i style="--w: 57%"></i><b style="left: 71%"></b>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    class="btn rec"
+                    style="justify-content: center; width: 100%"
+                  >
+                    <i></i><span data-t="rec.start"></span>
+                  </div>
+
+                  <div class="a-card">
+                    <div class="a-label" data-t="rec.next"></div>
+                    <div class="a-val">søndag 10:00</div>
+                    <div class="a-small" data-t="rec.wake"></div>
+                  </div>
+
+                  <div class="a-card">
+                    <div class="a-label" data-t="rec.last"></div>
+                    <div class="a-val">Søndag 23. august · 11:00</div>
+                    <div class="a-row" style="margin-top: 4px">
+                      <span class="a-small"
+                        >2026-08-23_1100.flac · 1 t 12 min</span
+                      >
+                    </div>
+                  </div>
+                </div>
+
+                <!-- HØYRE: klargjøringen — bildet, og de fem kortene. -->
+                <div class="prep">
+                  <div class="cam">
+                    <div class="feed"></div>
+                    <span class="phase">live</span>
+                    <span class="badge">1280 × 720 · 30 fps</span>
+                  </div>
+                  <div style="display: grid; gap: 6px">
+                    <div class="cc">
+                      <div class="head">
+                        <div class="a-grow">
+                          <div class="title" data-t="q2"></div>
+                          <div class="value">Filmer/SundayRec</div>
+                        </div>
+                        <span class="btn" data-t="c.change"></span>
+                      </div>
+                    </div>
+                    <div class="cc">
+                      <div class="head">
+                        <div class="a-grow">
+                          <div class="title" data-t="q3"></div>
+                          <div class="value" data-t="qual.mp3"></div>
+                        </div>
+                        <span class="btn" data-t="c.change"></span>
+                      </div>
+                    </div>
+                    <div class="cc">
+                      <div class="head">
+                        <div class="a-grow">
+                          <div class="title" data-t="qcam"></div>
+                          <div class="value">Logitech BRIO</div>
+                        </div>
+                        <span class="toggle on"></span>
+                      </div>
+                    </div>
+                    <div class="cc">
+                      <div class="head">
+                        <div class="a-grow">
+                          <div class="title" data-t="qauto"></div>
+                          <div class="value">søndag 10:00–12:00</div>
+                        </div>
+                        <span class="toggle on"></span>
+                      </div>
+                    </div>
+                    <div class="cc" data-tone="warn">
+                      <div class="head">
+                        <div class="a-grow">
+                          <div class="title" data-t="q5"></div>
+                          <div class="value" data-t="c.unset"></div>
+                        </div>
+                        <span class="btn" data-t="c.change"></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fold" data-t="fold2"></div>
+            </div>
+            <footer
+              class="a-bottombar"
+              data-bottom="record"
+              data-status="next"
+            ></footer>
+          </div>
+        </div>
+        <figcaption>
+          <span class="id">2.1</span>
+          <b data-t="cap.s2"></b>
+          <span data-t="cap.s2d"></span>
+        </figcaption>
+      </figure>
+
+      <div class="scroll">
+        <table class="meas">
+          <thead>
+            <tr>
+              <th data-t="th.meas"></th>
+              <th data-t="th.before"></th>
+              <th data-t="th.after"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-t="t2.start"></td>
+              <td><code>756 px</code></td>
+              <td><code>694 px</code></td>
+            </tr>
+            <tr>
+              <td data-t="t2.clear"></td>
+              <td>
+                <span class="lose"><code>−52 px</code></span>
+              </td>
+              <td>
+                <span class="win"><code>+10 px</code></span>
+              </td>
+            </tr>
+            <tr>
+              <td data-t="t2.card"></td>
+              <td><code>387 px</code></td>
+              <td><code>363 px</code></td>
+            </tr>
+            <tr>
+              <td data-t="t2.btn"></td>
+              <td><code>64 px</code></td>
+              <td><code>56 px</code></td>
+            </tr>
+            <tr>
+              <td data-t="t2.rows"></td>
+              <td><code>107 / 83</code></td>
+              <td><code>99 / 79</code></td>
+            </tr>
+            <tr>
+              <td data-t="t2.pad"></td>
+              <td><code>30/36/28</code>, gap <code>18</code></td>
+              <td><code>20/24/20</code>, gap <code>14</code></td>
+            </tr>
+            <tr>
+              <td data-t="t2.hit"></td>
+              <td colspan="2" data-t="t2.hitv"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═════════════ 3 · REDIGERING = BIBLIOTEKET ═════════════ -->
+    <section class="set" id="s3">
+      <h2>3 · Redigering, uten en åpen fil: lista</h2>
+      <p class="why">
+        Destinasjonen heter Redigering, men standardvisningen er biblioteket.
+        Det er ikke to ting: å finne opptaket igjen og å redigere det er samme
+        ærend, og navnet «Bibliotek» ville løyet om den ene inngangen eieren ba
+        om — klipp fra ANDRE opptakere. «Åpne fil…» sto i editorens tomtilstand
+        fram til D3; den står nå i bibliotekets topplinje, alltid, og slippsonen
+        er en wrapper rundt HELE visningen (papirkurven holdt utenfor med
+        vilje).
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <header class="a-topbar" data-top="set"></header>
+            <div class="a-main">
+              <div class="a-h1" data-t="nav.edit"></div>
+              <div class="drop">
+                <div class="a-head">
+                  <span class="a-sub" data-t="lib.count"></span>
+                  <div class="a-row">
+                    <span class="field" data-t="lib.search"></span>
+                    <span class="btn" data-t="c.openfile"></span>
+                  </div>
+                </div>
+                <div class="rows">
+                  <div class="r">
+                    <div class="a-grow">
+                      <div class="a-val">Søndag 23. august 2026 · 11:00</div>
+                      <div class="a-small">2026-08-23_1100.flac</div>
+                    </div>
+                    <span class="chip">1 t 12 min</span>
+                    <span class="chip gold" data-t="lib.video"></span>
+                    <span class="btn" data-t="lib.edit"></span>
+                    <span class="btn ghost" data-t="c.delete"></span>
+                  </div>
+                  <div class="r">
+                    <div class="a-grow">
+                      <div class="a-val">Søndag 16. august 2026 · 11:00</div>
+                      <div class="a-small">2026-08-16_1100.flac</div>
+                    </div>
+                    <span class="chip">1 t 04 min</span>
+                    <span class="btn" data-t="lib.edit"></span>
+                    <span class="btn ghost" data-t="c.delete"></span>
+                  </div>
+                  <div class="r">
+                    <div class="a-grow">
+                      <div class="a-val">Onsdag 12. august 2026 · 19:30</div>
+                      <div class="a-small">2026-08-12_1930.flac</div>
+                    </div>
+                    <span class="chip" data-t="lib.under"></span>
+                    <span class="btn" data-t="lib.edit"></span>
+                    <span class="btn ghost" data-t="c.delete"></span>
+                  </div>
+                </div>
+                <div class="a-head">
+                  <span class="a-small" data-t="lib.autodel"></span>
+                  <span class="btn ghost" data-t="lib.trash"></span>
+                </div>
+                <div class="droplabel" data-t="drop.label"></div>
+              </div>
+            </div>
+            <footer
+              class="a-bottombar"
+              data-bottom="edit"
+              data-status="ready"
+            ></footer>
+          </div>
+        </div>
+        <figcaption>
+          <span class="id">3.1</span>
+          <b data-t="cap.s3"></b>
+          <span data-t="cap.s3d"></span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3 data-t="d3.title"></h3>
+        <ul>
+          <li><b data-t="d3.a"></b> <span class="q" data-t="d3.ad"></span></li>
+          <li><b data-t="d3.b"></b> <span class="q" data-t="d3.bd"></span></li>
+          <li><b data-t="d3.c"></b> <span class="q" data-t="d3.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═════════════ 4 · REDIGERING = ARBEIDSFLATEN ═════════════ -->
+    <section class="set" id="s4">
+      <h2>4 · Redigering, med en fil åpen: to steg</h2>
+      <p class="why">
+        Bryteren mellom lista og arbeidsflaten er <code>loadState</code> og ikke
+        <code>hasFile</code>: <code>openFile</code> setter den SYNKRONT før
+        første <code>await</code>, og lastingen har to tilstander biblioteket
+        ikke kan vise («laster», «kunne ikke åpnes»). Editorens tomtilstand er
+        borte — biblioteket ER tomtilstanden. Stegstripa har to steg, ikke tre:
+        eksporten er en destinasjon nå, og «Neste: Eksporter» er en
+        <em>navigasjon</em>, ikke en overlevering — signalene bak eksporten bor
+        på modulnivå og overlever at flaten avmonteres.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <header class="a-topbar" data-top="set"></header>
+            <div class="a-main">
+              <div class="a-h1">Søndag 23. august 2026</div>
+              <div class="drop">
+                <div class="a-head">
+                  <span class="a-sub"
+                    >2026-08-23_1100.flac · 1 t 12 min ·
+                    <span data-t="ed.result"></span
+                  ></span>
+                  <span class="btn ghost" data-t="ed.tolib"></span>
+                </div>
+                <div class="steps">
+                  <button class="on">
+                    <span class="n done">✓</span><span data-t="ed.step1"></span>
+                  </button>
+                  <button>
+                    <span class="n">2</span><span data-t="ed.step2"></span>
+                  </button>
+                </div>
+                <div class="a-card good">
+                  <div class="a-row">
+                    <div class="a-grow">
+                      <div class="a-val" data-t="ed.found"></div>
+                      <div class="a-muted" data-t="ed.foundd"></div>
+                    </div>
+                    <span class="btn primary" data-t="ed.keep"></span>
+                    <span class="btn" data-t="ed.keepall"></span>
+                  </div>
+                </div>
+                <div class="wave">
+                  <div class="bars" data-bars="96"></div>
+                  <div class="keep" style="left: 22%; right: 14%">
+                    <span data-t="ed.sermon"></span>
+                  </div>
+                  <div class="play" style="left: 31%"></div>
+                </div>
+                <div class="a-head">
+                  <div class="a-row">
+                    <span class="btn">▶</span>
+                    <span class="a-val">18:42</span>
+                    <span class="a-small">/ 1:12:07</span>
+                    <span class="chip gold" data-t="ed.result"></span>
+                  </div>
+                  <span class="btn ghost" data-t="ed.manual"></span>
+                </div>
+                <div class="a-head">
+                  <span class="a-small" data-t="ed.stepnote"></span>
+                  <span class="btn primary" data-t="ed.next"></span>
+                </div>
+              </div>
+            </div>
+            <footer
+              class="a-bottombar"
+              data-bottom="edit"
+              data-status="ready"
+            ></footer>
+          </div>
+        </div>
+        <figcaption>
+          <span class="id">4.1</span>
+          <b data-t="cap.s4"></b>
+          <span data-t="cap.s4d"></span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3 data-t="d4.title"></h3>
+        <ul>
+          <li><b data-t="d4.a"></b> <span class="q" data-t="d4.ad"></span></li>
+          <li><b data-t="d4.b"></b> <span class="q" data-t="d4.bd"></span></li>
+          <li><b data-t="d4.c"></b> <span class="q" data-t="d4.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═════════════ 5 · EKSPORTERING, TOMTILSTANDEN ═════════════ -->
+    <section class="set" id="s5">
+      <h2>5 · Eksportering, uten en åpen fil</h2>
+      <p class="why">
+        Eiervalg 3, ordrett: fra denne siden skal en eksport ALLTID være ett
+        klikk unna. Så <code>idle</code> er ikke en tom side. Øverst står det
+        sist redigerte opptaket — <code>lastEdited</code>, et øktvarig signal
+        lasteren skriver når en åpning når <code>ready</code>, og som
+        <code>closeFile</code> ALDRI nullstiller. Er ingenting redigert i denne
+        økta, faller kortet tilbake på SISTE OPPTAK og sier at det er dét det
+        er: <code>recordings_list</code> bærer ingen redigert-status, og et
+        «sist redigert» som egentlig var «sist tatt opp» ville vært appen som
+        gjetter.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <header class="a-topbar" data-top="set"></header>
+            <div class="a-main">
+              <div class="a-h1" data-t="nav.export"></div>
+              <div style="display: grid; gap: 6px">
+                <div class="a-label" data-t="ex.lastedited"></div>
+                <div class="a-card">
+                  <div class="a-row">
+                    <div class="a-grow">
+                      <div class="a-val">Søndag 23. august 2026 · 11:00</div>
+                      <div class="a-small">2026-08-23_1100.flac</div>
+                    </div>
+                    <span class="btn primary" data-t="ex.prepare"></span>
+                  </div>
+                </div>
+              </div>
+              <div style="display: grid; gap: 6px">
+                <div class="a-label" data-t="ex.pick"></div>
+                <div class="rows">
+                  <div class="r">
+                    <div class="a-grow">
+                      <div class="a-val">Søndag 16. august 2026 · 11:00</div>
+                      <div class="a-small">2026-08-16_1100.flac</div>
+                    </div>
+                    <span class="btn" data-t="ex.use"></span>
+                  </div>
+                  <div class="r">
+                    <div class="a-grow">
+                      <div class="a-val">Onsdag 12. august 2026 · 19:30</div>
+                      <div class="a-small">2026-08-12_1930.flac</div>
+                    </div>
+                    <span class="btn" data-t="ex.use"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="a-row">
+                <span class="btn" data-t="c.openfile"></span>
+              </div>
+              <div class="a-card" style="margin-top: auto">
+                <div class="a-muted" data-t="ex.note"></div>
+              </div>
+            </div>
+            <footer
+              class="a-bottombar"
+              data-bottom="export"
+              data-status="next"
+            ></footer>
+          </div>
+        </div>
+        <figcaption>
+          <span class="id">5.1</span>
+          <b data-t="cap.s5"></b>
+          <span data-t="cap.s5d"></span>
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ═════════════ 6 · EKSPORTERING, VALG OG KVITTERING ═════════════ -->
+    <section class="set" id="s6">
+      <h2>6 · Eksportering, med en fil: to spørsmål og en kvittering</h2>
+      <p class="why">
+        Atlasets §3d er de ti radene dette erstatter — eksporttype, videoformat,
+        videokodek, format, bitrate, «Bithybde», destinasjon, behandling, intro
+        &amp; outro, lydforbedring. Her er det to spørsmål:
+        <b>hvilket format</b> og <b>hvor</b>. Bitraten følger kvalitetsvalget i
+        Innstillinger, behandlingen står i steg 2 og gjentas ikke, og «Ta med
+        video» finnes bare når opptaket FAKTISK har et videospor. Rekkefølgen
+        innad er kvittering &gt; kjøring &gt; valg, fordi det er den rekkefølgen
+        de oppstår i — et sidebytte midt i en eksport kommer tilbake til det som
+        gjelder.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <header class="a-topbar" data-top="set"></header>
+            <div class="a-main">
+              <div class="a-h1" data-t="nav.export"></div>
+              <div class="a-sub">
+                2026-08-23_1100.flac · <span data-t="ed.result"></span> ·
+                <span data-t="ex.profile"></span>
+              </div>
+
+              <div class="a-label" data-t="ex.format"></div>
+              <div class="radios c3 off">
+                <div class="o sel"><b>MP3</b><span data-t="ex.f1"></span></div>
+                <div class="o"><b>M4A</b><span data-t="ex.f2"></span></div>
+                <div class="o"><b>WAV</b><span data-t="ex.f3"></span></div>
+              </div>
+              <div class="a-small" data-t="ex.locked"></div>
+
+              <div class="a-label" data-t="ex.where"></div>
+              <div class="radios c2">
+                <div class="o sel">
+                  <b data-t="ex.same"></b><span>Filmer/SundayRec</span>
+                </div>
+                <div class="o">
+                  <b data-t="ex.pickfolder"></b
+                  ><span data-t="ex.pickfolderd"></span>
+                </div>
+              </div>
+
+              <div class="a-card">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <div class="a-val" data-t="ex.video"></div>
+                    <div class="a-muted" data-t="ex.videod"></div>
+                  </div>
+                  <span class="toggle on"></span>
+                </div>
+              </div>
+
+              <div class="exportbar">
+                <span class="a-small"
+                  >2026-08-23_1100_redigert.mp4 ·
+                  <span data-t="ex.about"></span> · Filmer/SundayRec</span
+                >
+                <span class="btn primary lg" data-t="ex.go"></span>
+              </div>
+
+              <div class="moment" data-t="ex.moment"></div>
+
+              <div class="a-card good">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <div class="a-val" data-t="ex.done"></div>
+                    <div class="a-muted">
+                      2026-08-23_1100_redigert.mp4 ·
+                      <span data-t="ex.about"></span> · Filmer/SundayRec
+                    </div>
+                  </div>
+                  <span class="btn primary" data-t="ex.reveal"></span>
+                  <span class="btn" data-t="ex.again"></span>
+                  <span class="btn ghost" data-t="ed.tolib"></span>
+                </div>
+              </div>
+            </div>
+            <footer
+              class="a-bottombar"
+              data-bottom="export"
+              data-status="ready"
+            ></footer>
+          </div>
+        </div>
+        <figcaption>
+          <span class="id">6.1</span>
+          <b data-t="cap.s6"></b>
+          <span data-t="cap.s6d"></span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3 data-t="d6.title"></h3>
+        <ul>
+          <li><b data-t="d6.a"></b> <span class="q" data-t="d6.ad"></span></li>
+          <li><b data-t="d6.b"></b> <span class="q" data-t="d6.bd"></span></li>
+          <li><b data-t="d6.c"></b> <span class="q" data-t="d6.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ DETTE ER IMPLEMENTERT ═══════════════════ -->
+    <section class="set" id="impl">
+      <h2>Dette er implementert</h2>
+      <p class="why">
+        Tavlene over er tegnet mot koden, men en tegning kan ikke bevise noe.
+        Denne lista er hva som faktisk står i <code>main</code> etter #171 ·
+        #172 · #173, og hva som holder hver av dem sann. Alt som IKKE er gjort
+        står under lista — les tavlene med det i bakhodet.
+      </p>
+      <div class="scroll">
+        <table class="keys">
+          <thead>
+            <tr>
+              <th data-t="th.what"></th>
+              <th data-t="th.guard"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-t="im.pages"></td>
+              <td data-t="im.pagesg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.alias"></td>
+              <td data-t="im.aliasg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.switch"></td>
+              <td data-t="im.switchg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.drop"></td>
+              <td data-t="im.dropg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.idle"></td>
+              <td data-t="im.idleg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.survive"></td>
+              <td data-t="im.surviveg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.bands"></td>
+              <td data-t="im.bandsg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.drag"></td>
+              <td data-t="im.dragg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.centre"></td>
+              <td data-t="im.centreg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.lights"></td>
+              <td data-t="im.lightsg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.density"></td>
+              <td data-t="im.densityg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.seam"></td>
+              <td data-t="im.seamg"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="decide">
+        <h3 data-t="rest.title"></h3>
+        <ol>
+          <li>
+            <b data-t="rest.a"></b> <span class="q" data-t="rest.ad"></span>
+          </li>
+          <li>
+            <b data-t="rest.b"></b> <span class="q" data-t="rest.bd"></span>
+          </li>
+          <li>
+            <b data-t="rest.c"></b> <span class="q" data-t="rest.cd"></span>
+          </li>
+          <li>
+            <b data-t="rest.d"></b> <span class="q" data-t="rest.dd"></span>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════ EIERS FIRE KRAV ═══════════════════ -->
+    <section class="set" id="krav">
+      <h2>Eiers fire krav — og hvor de bor</h2>
+      <p class="why">
+        Bestillingen var fire setninger. Dette er hvor hver av dem endte, og
+        hvilken tavle som viser den.
+      </p>
+      <div class="scroll">
+        <table class="keys">
+          <thead>
+            <tr>
+              <th data-t="th.want"></th>
+              <th data-t="th.lives"></th>
+              <th data-t="th.board"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-t="k1"></td>
+              <td data-t="k1w"></td>
+              <td><a href="#s2">2</a></td>
+            </tr>
+            <tr>
+              <td data-t="k2"></td>
+              <td data-t="k2w"></td>
+              <td><a href="#s3">3</a> · <a href="#s4">4</a></td>
+            </tr>
+            <tr>
+              <td data-t="k3"></td>
+              <td data-t="k3w"></td>
+              <td><a href="#s1">1</a></td>
+            </tr>
+            <tr>
+              <td data-t="k4"></td>
+              <td data-t="k4w"></td>
+              <td><a href="#s5">5</a> · <a href="#s6">6</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="decide">
+        <h3 data-t="lock.title"></h3>
+        <ol>
+          <li>
+            <b data-t="lock.a"></b> <span class="q" data-t="lock.ad"></span>
+          </li>
+          <li>
+            <b data-t="lock.b"></b> <span class="q" data-t="lock.bd"></span>
+          </li>
+          <li>
+            <b data-t="lock.c"></b> <span class="q" data-t="lock.cd"></span>
+          </li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  /* Ordboken — [no, en]. Verdiene er appens EGNE der de finnes
+     (`legacy/locales/{no,en}.json`); resten er tavletekst. */
+  const T = {
+    "c.change": ["Endre", "Change"],
+    "c.openfile": ["Åpne fil…", "Open file…"],
+    "c.delete": ["Slett", "Delete"],
+    "c.unset": ["Ikke satt opp", "Not set up"],
+    "c.and": ["og", "and"],
+    "c.none": ["ingen", "none"],
+
+    "nav.record": ["Opptak", "Record"],
+    "nav.edit": ["Redigering", "Edit"],
+    "nav.export": ["Eksportering", "Export"],
+    "nav.setup": ["Innstillinger", "Settings"],
+    "st.ready": ["Alt er klart", "All set"],
+    "st.next": ["Neste opptak søndag 10:00", "Next recording Sunday 10:00"],
+
+    /* 1 · skallet */
+    "sh.top": ["Topplinjen — 44 px", "The top bar — 44 px"],
+    "sh.top1": [
+      "Merket (22 px), produktnavnet, og kirken bak en tynn strek",
+      "The mark (22 px), the product name, and the church behind a thin rule",
+    ],
+    "sh.top2": [
+      "data-tauri-drag-region står HER, på roten — det er slik vinduet dras",
+      "data-tauri-drag-region sits HERE, on the root — that is how the window is dragged",
+    ],
+    "sh.top3": [
+      "Ingen interaktive barn: en knapp her måtte båret data-tauri-drag-region=«false»",
+      "No interactive children: a button here would have to carry data-tauri-drag-region=«false»",
+    ],
+    "sh.bot": ["Bunnlinjen — 56 px", "The bottom bar — 56 px"],
+    "sh.bot1": [
+      "VENSTRE: statuslinjen — én av fem setninger, aldri fritekst",
+      "LEFT: the status line — one of five sentences, never free text",
+    ],
+    "sh.bot2": [
+      "MIDTEN: Opptak · Redigering · Eksportering, ikon over etikett, sentrert i VINDUET",
+      "CENTRE: Record · Edit · Export, icon above label, centred in the WINDOW",
+    ],
+    "sh.bot3": [
+      "HØYRE: versjonen og tannhjulet — tannhjulet er ikke en destinasjon",
+      "RIGHT: the version and the gear — the gear is not a destination",
+    ],
+    "sh.bot4": [
+      "Ingen dra-sone: hele båndet er ting man skal kunne treffe",
+      "No drag region: the whole band is things you are meant to hit",
+    ],
+    "sh.meas": ["Målt i en ekte WKWebView", "Measured in a real WKWebView"],
+    "sh.m1": ["Trafikklysene", "The traffic lights"],
+    "sh.m2": ["Merket", "The mark"],
+    "sh.m3": [
+      "Destinasjonenes avvik fra vindusmidten",
+      "The destinations’ offset from the window centre",
+    ],
+    "sh.m4": ["Treffmål, alle fire", "Hit target, all four"],
+
+    "th.meas": ["Målt", "Measured"],
+    "th.val": ["Verdi", "Value"],
+    "th.before": ["Før (PR2)", "Before (PR2)"],
+    "th.after": ["Etter (PR3)", "After (PR3)"],
+    "th.what": ["Dette står i appen", "This is in the app"],
+    "th.guard": ["Og dette holder det sant", "And this keeps it true"],
+    "th.want": ["Eieren ville ha", "The owner wanted"],
+    "th.lives": ["Bor i", "Lives in"],
+    "th.board": ["Tavle", "Board"],
+
+    "mr.lights": ["Trafikklysene", "The traffic lights"],
+    "mr.logo": ["Merket i topplinja", "The mark in the top bar"],
+    "mr.logo15": ["15 px klaring", "15 px of clearance"],
+    "mr.bands": ["Topplinje / bunnlinje", "Top bar / bottom bar"],
+    "mr.order": ["Bunnlinjas rekkefølge (x)", "The bottom bar’s order (x)"],
+    "mr.centre": ["Destinasjonene sentrert", "The destinations centred"],
+    "mr.hit": ["Treffmål", "Hit target"],
+    "mr.hit4": [
+      "alle fire knappene, 20 px ikon + 11 px etikett i en 44 px flate",
+      "all four buttons, a 20 px icon + an 11 px label in a 44 px surface",
+    ],
+    "mr.hscroll": ["Vannrett rulling", "Horizontal scrolling"],
+    "mr.still": ["Linjene under rulling", "The bands while the page scrolls"],
+    "mr.stillv": [
+      "«main» ruller 312 px, topbarY 0 og bottombarY 704 uendret",
+      "“main” scrolls 312 px, topbarY 0 and bottombarY 704 unchanged",
+    ],
+
+    "d1.title": [
+      "Tre valg i skallet, og hvorfor de er slik",
+      "Three choices in the shell, and why they are what they are",
+    ],
+    "d1.a": ["84 px, ikke 28 px topp.", "84 px, not 28 px of top padding."],
+    "d1.ad": [
+      "Offsetet snudde retning. En 208 px bred skinne hadde plass til å begynne UNDER trafikklysene; en 44 px høy linje har ikke det — 28 px topp ville latt 16 px stå igjen til et 22 px merke. Knappene har en fast BREDDE, så linja begynner til høyre for dem.",
+      "The offset changed direction. A 208 px rail had room to begin BELOW the traffic lights; a 44 px band does not — 28 px of top padding would leave 16 px for a 22 px mark. The buttons have a fixed WIDTH, so the band begins to the right of them.",
+    ],
+    "d1.b": [
+      "«1fr auto 1fr», ikke «auto 1fr auto».",
+      "“1fr auto 1fr”, not “auto 1fr auto”.",
+    ],
+    "d1.bd": [
+      "De to ytterfeltene deler den ledige plassen likt, så midten står sentrert i VINDUET og ikke i det som er igjen etter statuslinjen. Målt avvik: 0,0 px, både når statusen sier «Alt er klart» og når den sier «Neste opptak søndag 10:00».",
+      "The two outer cells split the free space evenly, so the centre is centred in the WINDOW and not in what is left after the status line. Measured offset: 0.0 px, both when the status says “All set” and when it says “Next recording Sunday 10:00”.",
+    ],
+    "d1.c": [
+      "«minmax(0, 1fr)» på midtraden.",
+      "“minmax(0, 1fr)” on the middle row.",
+    ],
+    "d1.cd": [
+      "En grid-rad har «min-height: auto». Uten nullen vokser hele rutenettet forbi 100vh så snart siden er lang, og bunnlinja ruller ut av skjermen sammen med innholdet.",
+      "A grid row has “min-height: auto”. Without the zero the whole grid grows past 100vh as soon as the page is long, and the bottom bar scrolls off the screen with the content.",
+    ],
+
+    "cap.s1": ["Skallet", "The shell"],
+    "cap.s1d": [
+      "Topplinja 44 px, bunnlinja 56 px, siden imellom. Statuslinjen sier «Alt er klart» — én av fem, valgt av en ren, tabelltestet funksjon.",
+      "Top bar 44 px, bottom bar 56 px, the page in between. The status line says “All set” — one of five, chosen by a pure, table-tested function.",
+    ],
+
+    /* 2 · opptak */
+    "rec.sub": [
+      "Trykk Start når gudstjenesten begynner.",
+      "Press Start when the service begins.",
+    ],
+    "rec.ch": ["Kanal", "Channel"],
+    "rec.hear": ["Hører vi det?", "Do we hear it?"],
+    "rec.start": ["Start opptak", "Start recording"],
+    "rec.next": ["Neste automatiske opptak", "Next automatic recording"],
+    "rec.wake": ["Maskinen vekkes 10:50", "The machine wakes at 10:50"],
+    "rec.last": ["Siste opptak", "Last recording"],
+    q1: ["Hvilken lyd?", "Which sound?"],
+    q2: ["Hvor skal opptakene?", "Where do recordings go?"],
+    q3: ["Hvilken kvalitet?", "Which quality?"],
+    q5: [
+      "Hvem får beskjed hvis noe går galt?",
+      "Who gets told if something goes wrong?",
+    ],
+    qcam: ["Ta med kamera", "Include camera"],
+    qauto: ["Ta opp automatisk", "Record automatically"],
+    "qual.mp3": ["God", "Good"],
+    fold2: [
+      "Med kamerabildet på fortsetter kortstabelen under folden — siden ruller inni «main», og de to linjene står stille",
+      "With the camera picture on, the card stack continues below the fold — the page scrolls inside “main”, and the two bands stay still",
+    ],
+    "cap.s2": ["Opptak, kontrollrommet", "Record, the control room"],
+    "cap.s2d": [
+      "Venstre er det levende og står sticky; høyre er klargjøringen. «Neste opptak» og «Siste opptak» står under Start etter D3 — de påvirker derfor ikke hvor Start havner.",
+      "The left is the living half and is sticky; the right is the preparation. “Next recording” and “Last recording” sit below Start after D3 — so they do not affect where Start lands.",
+    ],
+    "t2.start": ["Start-knappens bunn", "The bottom of the Start button"],
+    "t2.clear": ["Klaring til bunnlinja", "Clearance to the bottom bar"],
+    "t2.card": ["Kilde-kortet utfoldet", "The source card, unfolded"],
+    "t2.btn": ["Start-knappen", "The Start button"],
+    "t2.rows": ["record-meter / control-*", "record-meter / control-*"],
+    "t2.pad": ["«main»-padding", "“main” padding"],
+    "t2.hit": ["Treffmål", "Hit targets"],
+    "t2.hitv": [
+      "Ingen krympet. Lista over elementer under 40 px er BYTE-IDENTISK før og etter: control-*-expand 30 px og setup-*-toggle 22 px — begge fantes på main før D3, begge er flagget til eier.",
+      "None shrank. The list of elements under 40 px is BYTE-IDENTICAL before and after: control-*-expand 30 px and setup-*-toggle 22 px — both existed on main before D3, both are flagged to the owner.",
+    ],
+
+    /* 3 · redigering, lista */
+    "lib.count": ["Opptak: 12", "Recordings: 12"],
+    "lib.search": ["Søk etter dato eller navn", "Search by date or name"],
+    "lib.video": ["Video", "Video"],
+    "lib.edit": ["Rediger", "Edit"],
+    "lib.under": ["Under 1 min", "Under 1 min"],
+    "lib.autodel": [
+      "Opptak slettes ikke automatisk",
+      "Recordings are never deleted automatically",
+    ],
+    "lib.trash": ["Papirkurv (2)", "Trash (2)"],
+    "drop.label": [
+      "Slippsonen ligger rundt HELE denne visningen — og rundt arbeidsflaten, men aldri rundt papirkurven",
+      "The drop zone wraps THIS whole view — and the workspace, but never the trash",
+    ],
+    "cap.s3": ["Redigering, standardvisningen", "Edit, the default view"],
+    "cap.s3d": [
+      "Biblioteket, med «Åpne fil…» i topplinja. Den sto i editorens tomtilstand fram til D3; tomtilstanden er borte, for biblioteket ER den.",
+      "The library, with “Open file…” in its head. That button lived in the editor’s empty state until D3; the empty state is gone, because the library IS it.",
+    ],
+    "d3.title": [
+      "Tre valg på Redigering-siden",
+      "Three choices on the Edit page",
+    ],
+    "d3.a": [
+      "Destinasjonen heter Redigering, ikke Bibliotek.",
+      "The destination is called Edit, not Library.",
+    ],
+    "d3.ad": [
+      "Eieren henter klipp fra ANDRE opptakere. En ekstern fil man drar inn har aldri vært i et bibliotek, og et navn som utelukker den ene inngangen han ba om ville vært feil navn.",
+      "The owner pulls clips from OTHER recorders. An external file you drag in has never been in a library, and a name that excludes the one entrance he asked for would be the wrong name.",
+    ],
+    "d3.b": [
+      "Sideid-en «library» døde ikke — den ble et alias.",
+      "The page id “library” did not die — it became an alias.",
+    ],
+    "d3.bd": [
+      "Den var skallets egen sideid fram til D3 og står i skjermbildepass og i lenker vi ikke har funnet. Tabellen utvides, den krympes aldri: «search», «editor» og «library» lander alle på «edit».",
+      "It was the shell’s own page id until D3 and appears in screenshot passes and in links we have not found. The table only ever grows: “search”, “editor” and “library” all land on “edit”.",
+    ],
+    "d3.c": [
+      "Papirkurven er utenfor slippsonen.",
+      "The trash is outside the drop zone.",
+    ],
+    "d3.cd": [
+      "Å slippe et opptak på papirkurven ville sett ut som en handling, og den ene handlingen det ligner på er den vi ikke gjør.",
+      "Dropping a recording on the trash would look like an action, and the one action it resembles is the one we do not perform.",
+    ],
+
+    /* 4 · redigering, arbeidsflaten */
+    "ed.result": [
+      "Resultat: 41 min (av 1 t 12 min)",
+      "Result: 41 min (of 1 h 12 min)",
+    ],
+    "ed.tolib": ["Til biblioteket", "To the library"],
+    "ed.step1": ["Klipp", "Cut"],
+    "ed.step2": ["Lyd", "Sound"],
+    "ed.found": ["Vi tror prekenen er her", "We think the sermon is here"],
+    "ed.foundd": [
+      "Fra 18:42 til 59:51 — 41 min. Dra i håndtakene for å justere.",
+      "From 18:42 to 59:51 — 41 min. Drag the handles to adjust.",
+    ],
+    "ed.keep": ["Behold bare prekenen", "Keep only the sermon"],
+    "ed.keepall": ["Behold alt", "Keep everything"],
+    "ed.sermon": ["Preken", "Sermon"],
+    "ed.manual": ["Klipp manuelt", "Cut manually"],
+    "ed.stepnote": [
+      "Steg 2 «Lyd» er profilen (Tale · Tale og musikk · Ingen), før/etter-lyttingen og den avanserte mikseren",
+      "Step 2 “Sound” is the profile (Speech · Speech and music · None), the before/after listening and the advanced mixer",
+    ],
+    "ed.next": ["Neste: Lyd", "Next: Sound"],
+    "cap.s4": ["Redigering, med en fil åpen", "Edit, with a file open"],
+    "cap.s4d": [
+      "To steg, ikke tre. «Til biblioteket» navigerer ikke — den lukker fila, og lista står der igjen på den SAMME siden.",
+      "Two steps, not three. “To the library” does not navigate — it closes the file, and the list is back on the SAME page.",
+    ],
+    "d4.title": ["Tre valg i arbeidsflaten", "Three choices in the workspace"],
+    "d4.a": [
+      "Bryteren er «loadState», ikke «hasFile».",
+      "The switch is “loadState”, not “hasFile”.",
+    ],
+    "d4.ad": [
+      "«openFile» setter den synkront før første «await», så biblioteket blinker aldri innom mens en fil åpnes. Og lastingen har to tilstander biblioteket ikke kan vise: «laster» og «kunne ikke åpnes».",
+      "“openFile” sets it synchronously before the first “await”, so the library never flashes past while a file opens. And loading has two states the library cannot show: “loading” and “could not open”.",
+    ],
+    "d4.b": ["Stegstripa mistet steg 3.", "The step strip lost step 3."],
+    "d4.bd": [
+      "Eksporten er en destinasjon nå. «Neste: Eksporter» navigerer dit, og fila blir stående åpen — signalene bak eksporten bor på modulnivå og er prop-frie, så en kjøring overlever at flaten avmonteres.",
+      "The export is a destination now. “Next: Export” navigates there, and the file stays open — the signals behind the export live at module scope and are prop-free, so a run survives the surface being unmounted.",
+    ],
+    "d4.c": [
+      "«Til biblioteket» navigerer IKKE herfra.",
+      "“To the library” does NOT navigate from here.",
+    ],
+    "d4.cd": [
+      "Etter D3 ER dette biblioteket: å lukke fila viser lista igjen på samme side. En «navigate» hit ville vært et rutebytte til stedet man allerede står, med fokusflytting og rulling som følge. Fra EKSPORTERING er den derimot en ekte navigering.",
+      "After D3 this IS the library: closing the file shows the list again on the same page. A “navigate” here would be a route change to where you already are, with focus moves and scrolling as a consequence. From EXPORT it is a real navigation.",
+    ],
+
+    /* 5 · eksportering, tomtilstanden */
+    "ex.lastedited": ["Sist redigert", "Last edited"],
+    "ex.prepare": ["Gjør klar", "Get it ready"],
+    "ex.pick": ["Eller velg et annet opptak", "Or choose another recording"],
+    "ex.use": ["Velg", "Choose"],
+    "ex.note": [
+      "Ingen av kortene påstår at noe ER redigert. «recordings_list» bærer ingen slik status, og en sidevogn ved siden av opptaket ville vært en gjetning: et kutt-utkast betyr at noen begynte, ikke at noe ble gjort.",
+      "Neither card claims anything HAS been edited. “recordings_list” carries no such status, and a sidecar next to the recording would be a guess: a draft cut means someone started, not that anything was finished.",
+    ],
+    "cap.s5": ["Eksportering, uten en åpen fil", "Export, with no file open"],
+    "cap.s5d": [
+      "«Sist redigert» er øktvarig og nullstilles aldri av «closeFile». Uten noe redigert står SISTE OPPTAK der i stedet, med sin egen etikett.",
+      "“Last edited” lasts for the session and is never cleared by “closeFile”. With nothing edited, LAST RECORDING stands there instead, under its own label.",
+    ],
+
+    /* 6 · eksportering, valgene */
+    "ex.profile": ["Tale", "Speech"],
+    "ex.format": ["Format", "Format"],
+    "ex.f1": ["Passer for nett og deling", "Good for the web and sharing"],
+    "ex.f2": ["Apple-verdenens format", "The Apple world’s format"],
+    "ex.f3": ["Ukomprimert", "Uncompressed"],
+    "ex.locked": [
+      "Formatet er MP4 så lenge videoen er med.",
+      "The format is MP4 as long as the video is included.",
+    ],
+    "ex.where": ["Hvor", "Where"],
+    "ex.same": ["Samme mappe som opptaket", "Same folder as the recording"],
+    "ex.pickfolder": ["Velg mappe …", "Choose folder …"],
+    "ex.pickfolderd": [
+      "Minnepinne, Dropbox-mappe, hvor som helst.",
+      "USB stick, Dropbox folder, anywhere.",
+    ],
+    "ex.video": ["Ta med video (MP4)", "Include video (MP4)"],
+    "ex.videod": [
+      "Opptaket har et videospor. Uten dette blir eksporten bare lyd.",
+      "The recording has a video track. Without this the export is audio only.",
+    ],
+    "ex.about": ["ca. 380 MB", "about 380 MB"],
+    "ex.go": ["Eksporter", "Export"],
+    "ex.moment": [
+      "Samme flate, tre minutter senere",
+      "The same surface, three minutes later",
+    ],
+    "ex.done": ["Eksportert", "Exported"],
+    "ex.reveal": ["Vis i Finder", "Show in Finder"],
+    "ex.again": ["Eksporter i annet format", "Export in another format"],
+    "cap.s6": [
+      "Eksportering: valgene, og kvitteringen",
+      "Export: the choices, and the receipt",
+    ],
+    "cap.s6d": [
+      "To spørsmål, ikke ti rader. Kvitteringen er den samme flaten et øyeblikk senere — den vinner over kjøringen, som vinner over valgene.",
+      "Two questions, not ten rows. The receipt is the same surface a moment later — it wins over the run, which wins over the choices.",
+    ],
+    "d6.title": [
+      "Tre valg på eksportsiden",
+      "Three choices on the export page",
+    ],
+    "d6.a": [
+      "Signalene flyttet IKKE med fila.",
+      "The signals did NOT move with the file.",
+    ],
+    "d6.ad": [
+      "«git mv ExportStep.tsx → pages/export/ExportPage.tsx», men «app/editor/export.ts» ble stående. Signalene er prop-frie og på modulnivå, og det er hele grunnen til at en kjøring overlever et sidebytte.",
+      "“git mv ExportStep.tsx → pages/export/ExportPage.tsx”, but “app/editor/export.ts” stayed where it was. The signals are prop-free and at module scope, and that is the whole reason a run survives a page change.",
+    ],
+    "d6.b": [
+      "«Til biblioteket» er en ekte navigering herfra.",
+      "“To the library” is a real navigation from here.",
+    ],
+    "d6.bd": [
+      "Eksporteringen er en annen destinasjon enn redigeringen etter D3, så å lukke fila uten å flytte seg ville latt brukeren stå igjen på en side som nettopp mistet det den handlet om.",
+      "Export is a different destination from Edit after D3, so closing the file without moving would leave the user on a page that just lost what it was about.",
+    ],
+    "d6.c": [
+      "Det som følger av noe annet, spør vi ikke om.",
+      "What follows from something else, we do not ask about.",
+    ],
+    "d6.cd": [
+      "Bitraten følger kvalitetsvalget i Innstillinger. Bitdybden finnes ikke — WAV eksporteres i 16 bit. Videokodeken er H.264. Behandlingen står i steg 2 og gjentas ikke.",
+      "The bit rate follows the quality choice in Settings. Bit depth does not exist — WAV is exported at 16 bit. The video codec is H.264. The processing is in step 2 and is not repeated.",
+    ],
+
+    /* implementert */
+    "im.pages": [
+      "Fire sider: record · edit · export · setup",
+      "Four pages: record · edit · export · setup",
+    ],
+    "im.pagesg": [
+      "PAGES og ICONS er typet «Record<Page, …>» — en ny destinasjon kan ikke legges til uten å tegne den",
+      "PAGES and ICONS are typed “Record<Page, …>” — a new destination cannot be added without drawing it",
+    ],
+    "im.alias": [
+      "Hver gammel «?goto=»-id lander riktig",
+      "Every old “?goto=” id still lands right",
+    ],
+    "im.aliasg": [
+      "Én rad per alias i router.test.ts · e2e/export-page.spec.ts::«?goto=editor — den gamle dyplenken — lander på REDIGERING»",
+      "One row per alias in router.test.ts · e2e/export-page.spec.ts::“?goto=editor — the old deep link — lands on EDIT”",
+    ],
+    "im.switch": [
+      "Biblioteket blinker aldri innom mens en fil åpnes",
+      "The library never flashes past while a file opens",
+    ],
+    "im.switchg": [
+      "e2e/editor.spec.ts::«biblioteket blinker ALDRI innom mens opptaket åpnes» — mutasjonsbevist på begge halvdeler",
+      "e2e/editor.spec.ts::“the library NEVER flashes past while the recording opens” — mutation-proved on both halves",
+    ],
+    "im.drop": [
+      "«Åpne fil…» og slippsonen, uten en tomtilstand",
+      "“Open file…” and the drop zone, without an empty state",
+    ],
+    "im.dropg": [
+      "e2e/shell.spec.ts::«REDIGERING viser bibliotekets tomtilstand når det FAKTISK er tomt»",
+      "e2e/shell.spec.ts::“EDIT shows the library’s empty state when it is ACTUALLY empty”",
+    ],
+    "im.idle": [
+      "Eksportering uten fil: «Sist redigert» + velger",
+      "Export with no file: “Last edited” + a picker",
+    ],
+    "im.idleg": [
+      "e2e/export-page.spec.ts::«uten en åpen fil tilbyr siden det sist redigerte, en velger og «Åpne fil…»» + «uten noe redigert står SISTE OPPTAK der»",
+      "e2e/export-page.spec.ts::“with no file open the page offers the last edited one, a picker and “Open file…”” + “with nothing edited, LAST RECORDING stands there”",
+    ],
+    "im.survive": [
+      "En kjøring og en kvittering overlever et sidebytte",
+      "A run and a receipt survive a page change",
+    ],
+    "im.surviveg": [
+      "e2e/export-page.spec.ts::«en kjøring og en kvittering overlever et sidebytte bort og tilbake»",
+      "e2e/export-page.spec.ts::“a run and a receipt survive going away and back”",
+    ],
+    "im.bands": [
+      "Bunnlinja: status venstre, tre sentrert, versjon og tannhjul høyre",
+      "The bottom bar: status left, three centred, version and gear right",
+    ],
+    "im.bandsg": [
+      "e2e/shell.spec.ts::«bunnlinja: status til venstre, de tre sentrert, versjon og tannhjul til høyre» — mutasjonsbevist",
+      "e2e/shell.spec.ts::“the bottom bar: status left, the three centred, version and gear right” — mutation-proved",
+    ],
+    "im.drag": [
+      "Dra-attributtet står på topplinjas rot",
+      "The drag attribute sits on the top bar’s root",
+    ],
+    "im.dragg": [
+      "e2e/shell.spec.ts::«vinduet kan dras: attributtet Tauri leser står på topplinjas rot» — mutasjonsbevist. ⚠️ Selve DRAGET er et riggtestpunkt.",
+      "e2e/shell.spec.ts::“the window can be dragged: the attribute Tauri reads sits on the top bar’s root” — mutation-proved. ⚠️ The DRAG itself is a rig-test item.",
+    ],
+    "im.centre": [
+      "Linjene står stille mens siden ruller",
+      "The bands stay still while the page scrolls",
+    ],
+    "im.centreg": [
+      "e2e/shell.spec.ts::«linjene står stille mens siden ruller, og vinduet ruller aldri sidelengs»",
+      "e2e/shell.spec.ts::“the bands stay still while the page scrolls, and the window never scrolls sideways”",
+    ],
+    "im.lights": [
+      "Topplinja starter til høyre for trafikklysene",
+      "The top bar begins to the right of the traffic lights",
+    ],
+    "im.lightsg": [
+      "e2e/shell.spec.ts::«topplinja bærer merket og kirken, og starter til høyre for trafikklysene» + WKWebView-proben (x 84 mot x ≤ 69)",
+      "e2e/shell.spec.ts::“the top bar carries the mark and the church, and begins to the right of the traffic lights” + the WKWebView probe (x 84 against x ≤ 69)",
+    ],
+    "im.density": [
+      "Åtte tetthetstokens, elleve stilfiler re-pekt",
+      "Eight density tokens, eleven style files re-pointed",
+    ],
+    "im.densityg": [
+      "check-app-css-tokens.mjs (ingen farger rørt) + WKWebView-proben: Start-klaring −52 px → +10 px, treffmål-lista byte-identisk",
+      "check-app-css-tokens.mjs (no colours touched) + the WKWebView probe: Start clearance −52 px → +10 px, the hit-target list byte-identical",
+    ],
+    "im.seam": [
+      "«flex: 1 0 auto» på editor- og eksportflaten",
+      "“flex: 1 0 auto” on the editor and export surfaces",
+    ],
+    "im.seamg": [
+      "e2e/editor.spec.ts::«Etter» ber om en ekte gjengivelse … — feilen tetthetspasset feide fram: boksen krympet under innholdet, og «nextRow» la seg oppå avspillingsknappen. På main klarte de hverandre med 15 px, tilfeldig.",
+      "e2e/editor.spec.ts::“After” asks for a real render … — the bug the density pass swept up: the box shrank below its content, and “nextRow” landed on top of the play button. On main they cleared each other by 15 px, by accident.",
+    ],
+
+    "rest.title": [
+      "Dette er IKKE gjort — les tavlene med det i bakhodet",
+      "This is NOT done — read the boards with that in mind",
+    ],
+    "rest.a": ["Riggtest hos eieren.", "Rig test on the owner’s machine."],
+    "rest.ad": [
+      "Alt over er e2e + WKWebView-probe. ⚠️ Selve vindus-DRAGET kan ikke prøves uten Tauri: «data-tauri-drag-region» er Tauris attributt, ikke nettleserens, så proben kan bevise at det STÅR der — ikke at vinduet flytter seg.",
+      "Everything above is e2e + a WKWebView probe. ⚠️ The window DRAG itself cannot be tried without Tauri: “data-tauri-drag-region” is Tauri’s attribute, not the browser’s, so the probe can prove it IS there — not that the window moves.",
+    ],
+    "rest.b": [
+      "To treffmål under 40 px, begge fra før D3.",
+      "Two hit targets under 40 px, both from before D3.",
+    ],
+    "rest.bd": [
+      "«control-*-expand» er 30 px og «setup-*-toggle» er 22 px. Ingen av dem krympet i tetthetspasset — lista er byte-identisk før og etter — men de er under den grensen resten av appen holder. Et eiervalg, ikke en regresjon.",
+      "“control-*-expand” is 30 px and “setup-*-toggle” is 22 px. Neither shrank in the density pass — the list is byte-identical before and after — but they are under the floor the rest of the app keeps. An owner’s call, not a regression.",
+    ],
+    "rest.c": [
+      "Atlaset er ikke re-fotografert.",
+      "The atlas has not been re-photographed.",
+    ],
+    "rest.cd": [
+      "docs/design/atlas/ viser v0.15-skallet. Fotografen ble slettet med skallet den fotograferte, og en ny scenetabell er en egen jobb.",
+      "docs/design/atlas/ shows the v0.15 shell. The photographer was deleted with the shell it photographed, and a new scene table is its own job.",
+    ],
+    "rest.d": ["Dette er en tegning.", "This is a drawing."],
+    "rest.dd": [
+      "Tegnet mot koden som fasit, men fortsatt en tegning. Skjermbildepasset hører til riggtesten.",
+      "Drawn against the code as the source of truth, but still a drawing. The screenshot pass belongs to the rig test.",
+    ],
+
+    /* eiers fire krav */
+    k1: [
+      "Tettere design, bedre skjermutnyttelse — mye luft i dag",
+      "A denser design, better use of the screen — a lot of air today",
+    ],
+    k1w: [
+      "Åtte semantiske tetthetstokens i tokens.css + skinnens 208 px som ble 100 px høyde. Start-knappen 64 → 56 px; «main»-padding 30/36/28 → 20/24/20.",
+      "Eight semantic density tokens in tokens.css + the rail’s 208 px turned into 100 px of height. The Start button 64 → 56 px; “main” padding 30/36/28 → 20/24/20.",
+    ],
+    k2: [
+      "Egen Redigering-fane — klipp hentes også fra andre opptakere",
+      "Its own Edit tab — clips also come from other recorders",
+    ],
+    k2w: [
+      "«library» → «edit» som destinasjon, med biblioteket som standardvisning, «Åpne fil…» i topplinja og en slippsone rundt hele visningen.",
+      "“library” → “edit” as a destination, with the library as its default view, “Open file…” in the head and a drop zone around the whole view.",
+    ],
+    k3: [
+      "Faner som ikoner NEDERST à la DaVinci Resolve, venstre→høyre",
+      "Tabs as icons at the BOTTOM, DaVinci Resolve style, left→right",
+    ],
+    k3w: [
+      "Bunnlinja: 56 px, «1fr auto 1fr», ikon 20 px over en 11 px etikett, i et 44 px treffmål. Skinnen er slettet og «--rail-w» med den.",
+      "The bottom bar: 56 px, “1fr auto 1fr”, a 20 px icon above an 11 px label, in a 44 px hit target. The rail is deleted, and “--rail-w” with it.",
+    ],
+    k4: ["Gjenbruk gammel kode", "Reuse the old code"],
+    k4w: [
+      "«git mv» av eksportsteget til sin egen side (signalene ble stående), «LoadStates» trukket ut av EditorPage og delt med den, og DOT samlet i «app/lib/ui/dot.ts». Ingen ny abstraksjon der to flater ikke deler noe.",
+      "A “git mv” of the export step to its own page (the signals stayed), “LoadStates” pulled out of EditorPage and shared with it, and DOT gathered in “app/lib/ui/dot.ts”. No new abstraction where two surfaces share nothing.",
+    ],
+
+    "lock.title": [
+      "Eiervalgene som ble låst før koden ble skrevet",
+      "The owner’s choices, locked before any code was written",
+    ],
+    "lock.a": ["Venstre skinne FJERNES.", "The left rail is REMOVED."],
+    "lock.ad": [
+      "Logo og kirkenavn i en slank topplinje (som også er dra-sonen), status og tannhjul i bunnlinja.",
+      "Logo and church name in a slim top bar (which is also the drag region), status and gear in the bottom bar.",
+    ],
+    "lock.b": ["Venstre→høyre som i DaVinci.", "Left→right, as in DaVinci."],
+    "lock.bd": [
+      "Opptak til venstre, Eksportering til høyre — arbeidsrekkefølgen, ikke alfabetet.",
+      "Record on the left, Export on the right — the order of the work, not the alphabet.",
+    ],
+    "lock.c": [
+      "Eksportering uten åpen fil = sist redigerte + velger.",
+      "Export with no file open = the last edited one + a picker.",
+    ],
+    "lock.cd": [
+      "Alltid ett klikk fra en eksport. Ingen tom side, og ingen gjetting av hva som er redigert.",
+      "Always one click from an export. No empty page, and no guessing at what has been edited.",
+    ],
+  };
+
+  /* Merket, ordrett fra `app/ui/AppLogo/AppLogo.tsx` (som igjen er ordrett fra
+     den utsendte appen). `srlogo-`-prefikset er kollisjonsvakten. */
+  const LOGO = `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="srlogo-bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#2A4E92"/><stop offset="1" stop-color="#172F5E"/>
+      </linearGradient>
+      <radialGradient id="srlogo-glow" cx="0.26" cy="0.2" r="0.95">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+        <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="srlogo-gold" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#F2D58A"/><stop offset="1" stop-color="#EBB84B"/>
+      </linearGradient>
+      <clipPath id="srlogo-clip"><rect width="1024" height="1024" rx="228"/></clipPath>
+    </defs>
+    <g clip-path="url(#srlogo-clip)">
+      <rect width="1024" height="1024" fill="url(#srlogo-bg)"/>
+      <rect width="1024" height="1024" fill="url(#srlogo-glow)"/>
+      <path d="M 701.3 375.6 A 161.3 161.3 0 0 1 701.3 583.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <path d="M 322.7 375.6 A 161.3 161.3 0 0 0 322.7 583.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <path d="M 766.5 301.6 A 270.8 270.8 0 0 1 766.5 657.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <path d="M 257.4 301.6 A 270.8 270.8 0 0 0 257.4 657.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <rect x="479.5" y="320.0" width="65.0" height="425.8" rx="6.2" fill="url(#srlogo-gold)"/>
+      <rect x="376.8" y="437.6" width="270.4" height="65.0" rx="6.2" fill="url(#srlogo-gold)"/>
+    </g>
+  </svg>`;
+
+  /* Ikonene, ordrett fra `PageShell.tsx`s ICONS-tabell. */
+  const ICONS = {
+    record:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg>',
+    /* To spor over en linje — tidslinja man klipper i, ikke en saks: sporene
+       tegner STEDET, og det er stedet destinasjonen er. */
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M6 20h12"/></svg>',
+    /* En pil UT av en boks — ikke en diskett og ikke en sky. */
+    export:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8.5 6.5 12 3l3.5 3.5"/><path d="M4 14v5a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-5"/></svg>',
+    /* Et ekte tannhjul; geometrien er regnet ut i PageShell.tsx. */
+    setup:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="2.6"/><path d="M12 5.6V2.8M12 18.4V21.2M5.6 12H2.8M18.4 12H21.2M16.5 7.5L18.5 5.5M7.5 7.5L5.5 5.5M7.5 16.5L5.5 18.5M16.5 16.5L18.5 18.5"/></svg>',
+  };
+  const NAV = { record: "nav.record", edit: "nav.edit", export: "nav.export" };
+  const STATUS = {
+    ready: ["good", "st.ready"],
+    next: ["", "st.next"],
+  };
+  const VERSION = "SundayRec 0.17.0";
+
+  let LANG = 0;
+
+  /* Topplinja og bunnlinja males av koden, ikke skrevet ut i hver tavle: seks
+     kopier av det samme skallet ville drevet fra hverandre nøyaktig slik to
+     kopier av en skjerm gjør det i appen. */
+  function renderChrome() {
+    document.querySelectorAll(".a-topbar[data-top]").forEach((el) => {
+      const set = el.dataset.top === "set";
+      el.innerHTML =
+        `<div class="a-logo"><i>${LOGO}</i><b>SundayRec</b></div>` +
+        `<div class="a-church ${set ? "" : "unset"}">${
+          set ? "Bryn menighet" : LANG ? "Not set up yet" : "Ikke satt opp ennå"
+        }</div>`;
+    });
+    document.querySelectorAll(".a-bottombar[data-bottom]").forEach((el) => {
+      const on = el.dataset.bottom;
+      const st = STATUS[el.dataset.status] || STATUS.ready;
+      const dest = ["record", "edit", "export"]
+        .map(
+          (k) =>
+            `<button class="${k === on ? "on" : ""}">${ICONS[k]}<span>${
+              T[NAV[k]][LANG]
+            }</span></button>`,
+        )
+        .join("");
+      el.innerHTML =
+        `<div class="b-status"><i class="dot ${st[0]}"></i><span>${
+          T[st[1]][LANG]
+        }</span></div>` +
+        `<nav class="b-nav">${dest}</nav>` +
+        `<div class="b-tail"><span class="b-version">${VERSION}</span>` +
+        `<button class="${on === "setup" ? "on" : ""}">${ICONS.setup}<span>${
+          T["nav.setup"][LANG]
+        }</span></button></div>`;
+    });
+  }
+
+  /* Bølgeformen: deterministisk støy, så tavla ser lik ut hver gang. */
+  function renderWaves() {
+    document.querySelectorAll("[data-bars]").forEach((el) => {
+      if (el.childElementCount) return;
+      const n = Number(el.dataset.bars);
+      let html = "";
+      for (let i = 0; i < n; i++) {
+        const h =
+          18 +
+          58 *
+            Math.abs(
+              Math.sin(i * 0.41) * Math.cos(i * 0.17) + 0.2 * Math.sin(i),
+            );
+        html += `<i style="height:${Math.min(96, h).toFixed(1)}%"></i>`;
+      }
+      el.innerHTML = html;
+    });
+  }
+
+  function applyLang() {
+    const missing = [];
+    document.querySelectorAll("[data-t]").forEach((el) => {
+      const k = el.dataset.t;
+      if (!T[k]) {
+        missing.push(k);
+        el.textContent = "⟨" + k + "⟩";
+        el.style.outline = "2px solid red";
+        return;
+      }
+      el.textContent = T[k][LANG];
+    });
+    renderChrome();
+    document
+      .querySelectorAll(".seg [data-lang]")
+      .forEach((b) =>
+        b.setAttribute(
+          "aria-pressed",
+          String((b.dataset.lang === "en") === (LANG === 1)),
+        ),
+      );
+    if (missing.length) console.warn("missing keys", missing);
+  }
+  document.querySelectorAll(".seg [data-lang]").forEach((b) =>
+    b.addEventListener("click", () => {
+      LANG = b.dataset.lang === "en" ? 1 : 0;
+      applyLang();
+    }),
+  );
+
+  /* Skalér tavlene ned i rammene sine — 1180×760 er alltid tegnestørrelsen. */
+  function scale() {
+    document.querySelectorAll(".board-wrap").forEach((w) => {
+      const b = w.querySelector(".board");
+      b.style.transform = "scale(" + w.clientWidth / 1180 + ")";
+    });
+  }
+  new ResizeObserver(scale).observe(document.body);
+  renderWaves();
+  scale();
+  applyLang();
+</script>
