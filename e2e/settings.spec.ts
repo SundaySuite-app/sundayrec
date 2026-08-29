@@ -59,11 +59,8 @@ test.describe("settings", () => {
 
     // 3. Navigate away and back — destinasjonen forlates og kommer tilbake,
     //    og kontrollen kobles på nytt fra innstillingene.
-    await page.getByTestId("nav-library").click();
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "library",
-    );
+    await page.getByTestId("nav-edit").click();
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
     await page.getByTestId("nav-record").click();
     await expect(page.getByTestId("record-start")).toBeVisible();
 

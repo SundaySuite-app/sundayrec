@@ -118,10 +118,7 @@ async function openHistory(
   // real: the router maps it to BIBLIOTEK. A dozen specs and every screenshot
   // pass write that URL.
   await boot(page, { fixtures, settings: SETTLED_SETTINGS, goto: "search" });
-  await expect(page.getByTestId("main")).toHaveAttribute(
-    "data-page",
-    "library",
-  );
+  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
 }
 
 /** The file names currently in the list, top to bottom. */

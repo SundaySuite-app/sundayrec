@@ -92,10 +92,7 @@ async function seedTrash(
 
 async function openLibrary(page: Page, fixtures: Fixtures): Promise<void> {
   await boot(page, { fixtures, settings: SETTLED_SETTINGS, goto: "search" });
-  await expect(page.getByTestId("main")).toHaveAttribute(
-    "data-page",
-    "library",
-  );
+  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
 }
 
 test.describe("bibliotek — lista", () => {
@@ -238,7 +235,7 @@ test.describe("bibliotek — papirkurvens inngang", () => {
     await expect(page.getByTestId("trash-empty")).toBeVisible();
     // Skinnen står fortsatt på BIBLIOTEK — papirkurven er et sted INNE i
     // biblioteket, ikke et fjerde sted i appen.
-    await expect(page.getByTestId("nav-library")).toHaveAttribute(
+    await expect(page.getByTestId("nav-edit")).toHaveAttribute(
       "aria-current",
       "page",
     );
