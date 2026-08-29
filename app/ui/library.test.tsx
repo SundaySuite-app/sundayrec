@@ -494,7 +494,7 @@ describe("ToastHost", () => {
 });
 
 describe("PageShell", () => {
-  it("har skinnens dra-attributt, de tre destinasjonene og statuslinjen", () => {
+  it("har skinnens dra-attributt, de fire knappene og statuslinjen", () => {
     const html = render(
       <PageShell>
         <span />
@@ -502,7 +502,9 @@ describe("PageShell", () => {
     );
     // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes.
     expect(html).toContain("data-tauri-drag-region");
-    for (const page of ["record", "library", "setup"]) {
+    // Tre destinasjoner (D3: Opptak · Redigering · Eksportering) pluss
+    // tannhjulet, som teller som `nav-*` men ikke er en destinasjon.
+    for (const page of ["record", "edit", "export", "setup"]) {
       expect(html).toContain(`data-testid="nav-${page}"`);
     }
     expect(html).toContain('data-testid="status-line"');

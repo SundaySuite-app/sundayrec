@@ -1,12 +1,25 @@
 /**
- * Ruteren — tre sider, og én tabell som oversetter alt det gamle til dem.
+ * Ruteren — fire sider, og én tabell som oversetter alt det gamle til dem.
  *
- * ## Fire jobber, tre sider
+ * ## Fire jobber, fire sider
  *
  * Legacy-skallet har fem sider (`home`, `schedule`, `search`, `settings`,
- * `editor`) og fem faner inne i innstillinger. «Frivilligen først» folder det
+ * `editor`) og fem faner inne i innstillinger. «Frivilligen først» foldet det
  * til tre: TA OPP, OPPTAKENE og OPPSETT. En frivillig som aldri har sett appen
  * skal ikke måtte vite hvilken av fem sider «filnavn» bor på.
+ *
+ * ## D3: BIBLIOTEK heter REDIGERING, og EKSPORTERING er sin egen side
+ *
+ * Eieren ba om tre destinasjoner i DaVinci-rekkefølge: Opptak · Redigering ·
+ * Eksportering. Biblioteket forsvant ikke — det ER Redigering-sidens
+ * standardvisning, fordi å finne opptaket igjen og å redigere det er det samme
+ * ærendet. Klipp hentes også fra ANDRE opptakere, så destinasjonen kan ikke
+ * hete «Bibliotek»: en ekstern fil man drar inn har aldri vært i biblioteket.
+ *
+ * Sideid-en `library` er derfor et ALIAS nå, ikke en side. Den var aldri en
+ * `?goto=`-id ute i verden (legacy sa `search`), men den har stått i
+ * `navigate("library")`-kall og i skjermbildepassene, og en id som stille
+ * lander på TA OPP er verre enn en som lander riktig.
  *
  * ## Hvorfor aliastabellene ikke bare er teknisk gjeld
  *
@@ -29,8 +42,8 @@ import {
   type TrayActionId,
 } from "@lib/tray-actions";
 
-/** De tre sidene. */
-export type Page = "record" | "library" | "setup";
+/** De fire sidene. */
+export type Page = "record" | "edit" | "export" | "setup";
 
 export interface Route {
   page: Page;
@@ -51,13 +64,18 @@ export interface Route {
 export const route = signal<Route>({ page: "record" });
 
 /** Sidene, som et sett, så en ukjent id kan kjennes igjen som ukjent. */
-const PAGES: readonly Page[] = ["record", "library", "setup"];
+const PAGES: readonly Page[] = ["record", "edit", "export", "setup"];
 
 /**
  * Gamle SIDE-id-er → nye sider.
  *
  * `search` er Historikk (det er ingen `history`-side — se e2e/history.spec.ts),
- * og den hører hjemme sammen med opptakene. `settings` er Innstillinger.
+ * og den hører hjemme sammen med opptakene — som etter D3 er REDIGERING.
+ * `settings` er Innstillinger.
+ *
+ * `library` står her av samme grunn som de andre: den var skallets egen sideid
+ * fram til D3, og den lever videre i skjermbildepass og i lenker vi ikke har
+ * funnet. Tabellen utvides, den krympes aldri.
  *
  * `schedule` er OPPTAK etter D2: tidsplanen er et kort i kontrollrommet, ikke
  * et sted under innstillinger. Raden er redundant så lenge `TAB_ALIASES` har
@@ -66,8 +84,9 @@ const PAGES: readonly Page[] = ["record", "library", "setup"];
  */
 export const PAGE_ALIASES: Record<string, Page> = {
   home: "record",
-  search: "library",
-  editor: "library",
+  search: "edit",
+  editor: "edit",
+  library: "edit",
   settings: "setup",
   schedule: "record",
 };
@@ -87,6 +106,11 @@ export interface TabTarget {
  * selvsagt plass i den nye arkitekturen (`editor`, `schedule`) — de kommer inn
  * uten fane og ville ellers landet på siden sin standardfane og mistet
  * poenget med lenken.
+ *
+ * ⚠️ `editor` har ingen `tab` lenger. Fram til D3 var Rediger en FANE inne i
+ * BIBLIOTEK (`{ page: "library", tab: "edit" }`); nå er Redigering selve
+ * destinasjonen, og hvilken av dens to visninger som står avgjøres av om det
+ * er en fil åpen — ikke av ruten. Se `app/Shell.tsx`.
  *
  * ## Navnene er ekte nå (P1a) — og etter D2 peker de på OPPTAK
  *
@@ -122,7 +146,7 @@ export const TAB_ALIASES: Record<string, TabTarget> = {
   "settings-general": { page: "setup" },
   "settings-publish": { page: "record", anchor: "notify" },
   "settings-notifications": { page: "record", anchor: "notify" },
-  editor: { page: "library", tab: "edit" },
+  editor: { page: "edit" },
   schedule: { page: "record", anchor: "auto" },
 };
 
@@ -206,7 +230,7 @@ export const pendingAction = signal<TrayActionId | null>(null);
 const ACTION_PAGE: Record<TrayActionId, Page> = {
   "start-recording": "record",
   "stop-recording": "record",
-  "open-recordings-folder": "library",
+  "open-recordings-folder": "edit",
   "run-preflight": "record",
   "run-diagnostics": "setup",
 };

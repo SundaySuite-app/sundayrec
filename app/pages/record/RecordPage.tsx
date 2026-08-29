@@ -1057,7 +1057,7 @@ function RecordBanners() {
               <Button
                 variant="secondary"
                 testId="banner-recording-error-open"
-                onClick={() => navigate("library")}
+                onClick={() => navigate("edit")}
               >
                 {t("app.banner.errorShow")}
               </Button>
@@ -1078,7 +1078,7 @@ function RecordBanners() {
               <Button
                 variant="secondary"
                 testId="banner-recording-quality-open"
-                onClick={() => navigate("library")}
+                onClick={() => navigate("edit")}
               >
                 {t("recording.qualityAction")}
               </Button>

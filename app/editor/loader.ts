@@ -38,6 +38,7 @@ import {
   E,
   fileName,
   filePath,
+  lastEdited,
   loadError,
   loadPhase,
   loadProgress,
@@ -266,6 +267,16 @@ export async function openFile(
   loadPhase.value = null;
   loadProgress.value = null;
   loadState.value = "ready";
+  // HER, og ingen andre steder: en fil er «sist redigert» når den faktisk ble
+  // åpnet ferdig. En åpning som feilet er ikke noe man har redigert, og
+  // EKSPORTERING ville tilbudt et ett-klikks «Gjør klar» på en fil som ikke
+  // lot seg lese. Se `lastEdited` i `model.ts` for hvorfor den overlever
+  // lukkingen.
+  lastEdited.value = {
+    path: E.filePath,
+    fileName: E.fileName,
+    startedAtMs: E.startedAtMs,
+  };
   if (typeof context.seekToSec === "number") seekTo(context.seekToSec);
   scheduleDraw();
 

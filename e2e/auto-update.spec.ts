@@ -279,7 +279,7 @@ test.describe("oppdateringsbanneret", () => {
 
     // Den følger med til de andre destinasjonene: en oppdatering hører ikke
     // til noen side.
-    await page.getByTestId("nav-library").click();
+    await page.getByTestId("nav-edit").click();
     await expect(page.getByTestId("banner-update")).toBeVisible();
   });
 

@@ -107,8 +107,10 @@ export const PAUSED_LOCALES = ['sv', 'da', 'de', 'fr', 'pl']
 /** Nøkler `app/` har lagt til under redesignet. Tømmes i fase B. */
 export const PAUSED_KEYS = new Set([
   // S1a: skallets sidenavn — også `tDyn('app.page', route.page)`-subtreet.
+  // D3 gjorde BIBLIOTEK til REDIGERING og la EKSPORTERING til som destinasjon.
   'app.page.record',
-  'app.page.library',
+  'app.page.edit',
+  'app.page.export',
   'app.page.setup',
   // S1b: komponentbiblioteket, skinnen og de tre tomtilstandene. Alt som
   // faktisk RENDRES i det nye skallet i dag; ingenting på forskudd.
@@ -510,10 +512,11 @@ export const PAUSED_KEYS = new Set([
   'app.setup.advanced.autoUpdate',
   'app.setup.advanced.autoUpdateDesc',
   // P4a: Rediger, steg 1 «Klipp» — forslaget, prekenvinduet og kuttlista.
-  'app.editor.close',
+  //
+  // D3 tok `close`, `emptyTitle` og `emptyDesc` ut: tomtilstanden er BIBLIOTEKET
+  // nå, og lukkeknappen sier «Til biblioteket» (`app.editor.toLibrary`, som
+  // kvitteringen allerede brukte) i stedet for «Lukk».
   'app.editor.stepCut',
-  'app.editor.emptyTitle',
-  'app.editor.emptyDesc',
   'app.editor.loadFailed',
   'app.editor.loadFailedDesc',
   'app.editor.searching',
@@ -539,7 +542,6 @@ export const PAUSED_KEYS = new Set([
   // P4b: Rediger, stegene «Lyd» og «Eksporter» — profilene, mikserens
   // tjuetre etiketter (som ikke hadde i18n i det hele tatt før) og kvitteringen.
   'app.editor.stepSound',
-  'app.editor.stepExport',
   'app.editor.nextSound',
   'app.editor.nextExport',
   'app.editor.autoSound',
@@ -601,6 +603,13 @@ export const PAUSED_KEYS = new Set([
   'app.editor.exportAgain',
   'app.editor.toLibrary',
   'app.editor.exportFailed',
+  // D3: EKSPORTERING er en egen destinasjon, og uten en åpen fil tilbyr den
+  // det sist redigerte opptaket + en velger.
+  'app.export.lastEdited',
+  'app.export.prepare',
+  'app.export.pickTitle',
+  'app.export.emptyDesc',
+  'app.export.use',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

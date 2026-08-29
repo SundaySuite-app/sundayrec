@@ -81,8 +81,13 @@ export const exportErrorText = signal<string | null>(null);
 /** Var «feilen» at brukeren trykte Avbryt? Da er den ikke rød. */
 export const exportWasCancelled = signal(false);
 
-/** Har denne fila blitt eksportert i denne økta? Stegstripas hake. */
-export const exportDone = signal(false);
+/*
+ * ⚠️ `exportDone` sto her fram til D3. Den var stegstripas hake på steg 3, og
+ * da eksporten ble en egen destinasjon var den ENESTE leseren borte. Et signal
+ * som fortsatt skrives og aldri leses er verre enn ingen: det ser ut som en
+ * tilstand noen bryr seg om. Kvitteringen (`exportedPath`) er svaret på det
+ * samme spørsmålet, og den har en leser.
+ */
 
 /** Er kilden en videofil? Fra `editor_load_recording`, uten et ekstra kall. */
 export function sourceHasVideo(): boolean {
@@ -120,7 +125,6 @@ export function resetExport(): void {
   exportedFolder.value = "";
   exportErrorText.value = null;
   exportWasCancelled.value = false;
-  exportDone.value = false;
 }
 
 /** «Velg mappe …». Et avbrutt valg lar det forrige stå. */
@@ -247,7 +251,6 @@ export async function runExport(
       exportFolder.value || result.outputPath.replace(/[/\\][^/\\]*$/, "");
     exportedSeconds.value = keptSeconds;
     exportedBytes.value = video ? null : estimate;
-    exportDone.value = true;
     // Eksporten lyktes — utkastet har gjort jobben sin.
     clearDraft();
     clearDirty();

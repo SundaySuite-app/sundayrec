@@ -15,10 +15,15 @@ import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
 //
 // Det som er annerledes her, og hvorfor:
 //
-//   - Skinnen har TRE `nav-*`-punkter og ingen liste å mangle et punkt i, så
-//     påstanden er sterkere: det finnes ikke flere enn de tre. (D2 flyttet det
-//     ene av dem — Innstillinger — ned på et tannhjul. Testid-en og tellingen
-//     er de samme; det er plasseringen som er ny.)
+//   - Skinnen har FIRE `nav-*`-punkter og ingen liste å mangle et punkt i, så
+//     påstanden er sterkere: det finnes ikke flere enn de fire. (D2 flyttet det
+//     ene av dem — Innstillinger — ned på et tannhjul; testid-en og tellingen
+//     var de samme, det var plasseringen som var ny. D3 la EKSPORTERING til som
+//     en ekte destinasjon, og DET er en ny knapp: tre destinasjoner pluss
+//     tannhjulet. Tallet er en vakt mot at en flate siger INN, så det følger
+//     destinasjonene og ikke omvendt — hver gang det endres skal grunnen stå
+//     her, slik at «vi økte tallet til testen ble grønn» ikke er en mulig
+//     historie.)
 //   - Den gamle Deling-fanen er spørsmål 5 nå, og etter D2 er den et KORT i
 //     kontrollrommet: `?goto=settings:sharing` lander på OPPTAK og folder
 //     varslings-kortet ut. Der er det ett varsel og én adresse, og et
@@ -47,9 +52,9 @@ test.describe("appen uten Direkte", () => {
       goto: "settings:sharing",
     });
 
-    // 1. Ingen Direkte i navigasjonen — og ikke noe fjerde sted i det hele tatt.
+    // 1. Ingen Direkte i navigasjonen — og ikke noe femte punkt i det hele tatt.
     await expect(page.getByTestId("rail")).toBeVisible();
-    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
+    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
     await expect(page.getByTestId("nav-live")).toHaveCount(0);
 
     // 2. Spørsmål 5 rendrer — utfoldet i kortet dyplenken navnga — med

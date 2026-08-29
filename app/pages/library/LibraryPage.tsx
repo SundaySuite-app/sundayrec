@@ -1,5 +1,19 @@
 /**
- * BIBLIOTEK — jobb nr. 2 av fire: finn opptaket igjen.
+ * BIBLIOTEKET — REDIGERING-destinasjonens standardvisning: finn opptaket igjen.
+ *
+ * ## D3: siden heter Redigering, lista heter fortsatt biblioteket
+ *
+ * Eieren ba om tre destinasjoner i DaVinci-rekkefølge, og den midterste heter
+ * REDIGERING fordi klipp også hentes fra ANDRE opptakere — en ekstern fil man
+ * drar inn har aldri vært i biblioteket, og «Bibliotek» ville vært et navn som
+ * utelukket halvparten av det man gjør der.
+ *
+ * Lista er derfor ikke en side lenger, den er den ene av destinasjonens to
+ * visninger: `Shell` viser den til `loadState` forlater `idle`, og
+ * arbeidsflaten når en fil er på gang. Det er også hele grunnen til at
+ * editorens gamle tomtilstand er borte: en skjerm som sa «dra et opptak hit»
+ * ved siden av en liste over alle opptakene var to svar på det samme
+ * spørsmålet.
  *
  * Historikk og Rediger-inngangen er ett sted nå (eiervalg, canvas sett 3). Det
  * som forsvant på veien er ikke gjemt, det er borte med vilje:
@@ -48,11 +62,14 @@
  * besøk. Datoen er fortsatt det man leser først.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import type { TrashEntry } from "@lib/pages/trash-core";
 
+import { confirmDiscard } from "../../editor/discard";
 import { openInEditor } from "../../editor/entry";
+import { openFile, pickAndOpen } from "../../editor/loader";
 import { locale, t, tf } from "../../i18n";
 import { navigate } from "../../router/router";
 import { loadRecordingCount, recordings } from "../../state/recordings";
@@ -122,6 +139,93 @@ export function libraryHeading(tab: string | undefined): string | undefined {
   return tab === TRASH_TAB ? t("trash.title") : undefined;
 }
 
+/**
+ * Slippsonen rundt REDIGERING-destinasjonens innhold.
+ *
+ * Tauri fanger OS-drag selv, og api-shimmen sender dem tilbake inn i DOM-en som
+ * syntetiske `dragover`/`drop` mot `document.elementFromPoint(…)`, med
+ * `File.path` satt. Sonen er derfor et element som ALLTID står — ikke en
+ * overlay som dukker opp ved `dragenter`, for den finnes ikke å treffe når
+ * hendelsen kommer.
+ *
+ * Den bodde i editoren til og med v0.16. Den måtte flytte hit i D3 av samme
+ * grunn som destinasjonen skiftet navn: mesteparten av tiden står LISTA, og en
+ * slippsone som bare fantes når en fil allerede var åpen tok ikke imot den ene
+ * filen den var laget for — den fra en annen opptaker.
+ *
+ * ⚠️ Papirkurven wrappes IKKE. Å slippe et opptak på papirkurven ville sett ut
+ * som en handling, og den ene handlingen det ligner på er den vi ikke gjør.
+ *
+ * Filtypen sjekkes ikke. Lasteren PRØVER fila og sier ærlig fra når den ikke
+ * kunne leses — en fjerde kopi av lista over lydformater (api-shimmen har én,
+ * legacys editor to) ville vært en fjerde ting å drifte fra hverandre.
+ */
+export function DropZone({ children }: { children: ComponentChildren }) {
+  const [over, setOver] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  // Lytterne settes imperativt fordi shimmens syntetiske hendelser er ekte
+  // `DragEvent`-er som bobler — Preacts `onDrop` ville også fungert, men
+  // `dragover` MÅ ha `preventDefault()` for at slippet i det hele tatt skal
+  // skje, og det er lettere å se her.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onOver = (event: DragEvent): void => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setOver(true);
+    };
+    const onLeave = (): void => setOver(false);
+    const onDrop = (event: DragEvent): void => {
+      event.preventDefault();
+      setOver(false);
+      const file = event.dataTransfer?.files?.[0] as
+        (File & { path?: string }) | undefined;
+      const path = file?.path;
+      if (!path) return;
+      void openDropped(path);
+    };
+    el.addEventListener("dragover", onOver);
+    el.addEventListener("dragleave", onLeave);
+    el.addEventListener("drop", onDrop);
+    return () => {
+      el.removeEventListener("dragover", onOver);
+      el.removeEventListener("dragleave", onLeave);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      data-testid="edit-dropzone"
+      data-over={over ? "true" : undefined}
+      class={`${styles.dropzone} ${over ? styles.dropzoneOver : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Åpne en sluppet fil.
+ *
+ * Et slipp er en eksplisitt handling fra brukeren, så mappen får tillit for
+ * denne økta — uten det avviser sti-forsvaret et opptak som ligger på en
+ * ekstern disk eller et sted som ikke ligner på lagringsmappen. Legacy gjør
+ * det samme, i sin egen slipp-håndterer.
+ */
+async function openDropped(path: string): Promise<void> {
+  if (!(await confirmDiscard())) return;
+  try {
+    await window.api.registerTrustedPath(path);
+  } catch {
+    /* forsvaret svarer nei — lasteren sier ærlig fra hvis det var grunnen */
+  }
+  void openFile(path);
+}
+
 export function LibraryPage() {
   const entries = recordings.value;
   const [query, setQuery] = useState("");
@@ -173,20 +277,36 @@ export function LibraryPage() {
           liste er en kontroll som ikke kan gjøre noe, og den formen lærer folk
           at kontrollene her ikke henger sammen med det de ser.
         */}
-        {anyRecordings ? (
-          <div class={styles.search}>
-            <span id="library-search-label" class={styles.srOnly}>
-              {t("app.library.search")}
-            </span>
-            <TextField
-              value={query}
-              onInput={setQuery}
-              placeholder={t("app.library.search")}
-              labelId="library-search-label"
-              testId="library-search"
-            />
-          </div>
-        ) : null}
+        <div class={styles.headActs}>
+          {anyRecordings ? (
+            <div class={styles.search}>
+              <span id="library-search-label" class={styles.srOnly}>
+                {t("app.library.search")}
+              </span>
+              <TextField
+                value={query}
+                onInput={setQuery}
+                placeholder={t("app.library.search")}
+                labelId="library-search-label"
+                testId="library-search"
+              />
+            </div>
+          ) : null}
+          {/*
+            «Åpne fil…» — den ene veien inn som IKKE går gjennom lista. Den
+            sto i editorens tomtilstand fram til D3; den hører hjemme her, der
+            det faktisk er noe å velge mellom, og den står ALLTID: en frivillig
+            som har et opptak fra en annen opptaker skal ikke måtte tømme
+            biblioteket for å finne døra.
+          */}
+          <Button
+            variant="secondary"
+            testId="library-open-file"
+            onClick={() => void pickAndOpen()}
+          >
+            {t("editor.openFile")}
+          </Button>
+        </div>
       </div>
 
       {/* Ikke lest ennå ⇒ ingen påstand i noen retning. */}
@@ -404,7 +524,7 @@ function Foot() {
       <Button
         variant="ghost"
         testId="library-trash-open"
-        onClick={() => navigate("library", { tab: "trash" })}
+        onClick={() => navigate("edit", { tab: "trash" })}
       >
         {inTrash === null
           ? // Ikke lest ennå: si «Papirkurv», ikke «(0)». Et tall vi ikke har

@@ -52,6 +52,12 @@ const RECORD_PICKS: Fixtures = {
 //   mastring») fantes fordi normaliseringen og mastringen kunne love hver sin
 //   ting, og normaliseringen er borte. DESTINASJONS-halvdelen lever videre i
 //   «eksportsteget er ærlig om hvor filen havner».
+//   «the three tabs switch, and switching does not redo the work» — den ble
+//   båret over i P4b og RETIRERT i D3, fordi det ikke er tre faner lenger:
+//   eksporten er en DESTINASJON. Det tittelen beskyttet er viktigere nå enn før
+//   (arbeidet skal ikke gjøres om når man går ut av siden og inn igjen), så
+//   påstanden lever videre under sitt sanne navn — «stegene og eksportsiden
+//   bytter uten å gjøre arbeidet på nytt».
 //
 // Resten er nye: P4as fire (ett-klikks-anvendelsen, de to inngangene,
 // lukkingen) og P4bs egne — mappingen fra de tre ordene til nyttelasten,
@@ -81,6 +87,23 @@ async function openEditor(page: Page, over: Fixtures = {}) {
 /** Vent til analysen er ferdig — forslagskortet er beviset på at den er det. */
 async function waitForSuggestion(page: Page) {
   await expect(page.getByTestId("editor-suggestion")).toBeVisible();
+}
+
+/**
+ * Gå til EKSPORTERING med fila åpen.
+ *
+ * Etter D3 er det en DESTINASJON og ikke et steg: veien dit er skinnen (eller
+ * «Neste: Eksporter» nederst på steg 2, som `stegene har en vei videre …`
+ * dekker). Fila følger med av seg selv — signalene bak eksporten bor på
+ * modulnivå, og det er hele grunnen til at flyttingen var mulig.
+ */
+async function goToExport(page: Page) {
+  await page.getByTestId("nav-export").click();
+  await expect(page.getByTestId("main")).toHaveAttribute("data-page", "export");
+  await expect(page.getByTestId("export-page")).toHaveAttribute(
+    "data-state",
+    "ready",
+  );
 }
 
 test.describe("editor", () => {
@@ -343,12 +366,105 @@ test.describe("editor", () => {
     });
 
     await page.getByTestId("library-row-edit").first().click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "edit");
+    // D3: REDIGERING er destinasjonen, og at fila er åpen er ikke en fane —
+    // det er `loadState`. Ruten bærer derfor ingen `data-tab`.
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",
       "ready",
     );
     await expect(page.getByTestId("editor-sub")).toContainText("Gudstjeneste");
+  });
+
+  test("biblioteket blinker ALDRI innom mens opptaket åpnes", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN for Shell-grenen (`app/Shell.tsx`).
+    //
+    // REDIGERING viser lista eller arbeidsflaten, og bryteren er `loadState` —
+    // som `openFile` setter SYNKRONT, før første `await`. Bytter noen den til
+    // et signal som først blir sant ETTER en `await` (varigheten, `mediaInfo`,
+    // toppene), blir lista stående mens fila leses. Feilen ser ikke ut som en
+    // feil: skjermen viser bare det man nettopp forlot, litt for lenge.
+    //
+    // To ting gjør prøven ekte:
+    //
+    //   1. Lastingen er BREMSET (250 ms). Uten det er hele åpningen ferdig
+    //      innenfor det samme mikrotask-vinduet, og et blaff som aldri blir et
+    //      bilde kan ikke observeres — prøven ville vært grønn for feil grunn.
+    //   2. Vi teller BILDER, ikke DOM-mutasjoner. En MutationObserver ser DOM-en
+    //      først etter at den har flyttet seg videre, og under den ene mutasjonen
+    //      som betyr noe her ville den sett riktig svar på feil tidspunkt.
+    //      `requestAnimationFrame` svarer på spørsmålet brukeren stiller: sto
+    //      lista i et bilde jeg fikk se?
+    const SLOW_LOAD = fn(`() => new Promise((r) => setTimeout(() => r({
+      durationSec: ${DURATION},
+      hasVideo: false,
+      hasAudio: true,
+      channels: 2,
+      sampleFmt: "s16",
+      sampleRate: 48000,
+    }), 250))`);
+
+    await boot(page, {
+      fixtures: editorFixtures({
+        recordings_list: [recordingRow({ file_path: FILE })],
+        editor_load_recording: SLOW_LOAD,
+      }),
+      settings: SETTLED_SETTINGS,
+      goto: "search",
+    });
+    await expect(page.getByTestId("library-row")).toHaveCount(1);
+
+    // Løkka startes og klikket gjøres i den SAMME synkrone blokka, så ingen
+    // ramme fra før klikket kan telles med.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __FRAMES__: number;
+        __WITH_LIB__: number;
+      };
+      w.__FRAMES__ = 0;
+      w.__WITH_LIB__ = 0;
+      const tick = (): void => {
+        w.__FRAMES__ += 1;
+        if (document.querySelector('[data-testid="library-row"]')) {
+          w.__WITH_LIB__ += 1;
+        }
+        const editor = document.querySelector('[data-testid="editor"]');
+        if (editor?.getAttribute("data-state") === "ready") return;
+        requestAnimationFrame(tick);
+      };
+      document
+        .querySelector<HTMLElement>('[data-testid="library-row-edit"]')
+        ?.click();
+      requestAnimationFrame(tick);
+    });
+
+    // Lastingen er SYNLIG mens den pågår — det er hele forskjellen på en bryter
+    // som vet at noe er på gang og en som bare vet at noe er ferdig.
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "loading",
+    );
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+
+    const seen = await page.evaluate(() => {
+      const w = window as unknown as {
+        __FRAMES__: number;
+        __WITH_LIB__: number;
+      };
+      return { frames: w.__FRAMES__, withLibrary: w.__WITH_LIB__ };
+    });
+    // Løkka LEVDE gjennom hele lastingen: en teller som bare kan være null
+    // fordi ingen så etter er den grønne-for-feil-grunn-formen prøven finnes
+    // for. 250 ms er et titalls bilder på 60 Hz.
+    expect(seen.frames).toBeGreaterThan(5);
+    // …og ingen av dem hadde en biblioteksrad i seg.
+    expect(seen.withLibrary).toBe(0);
   });
 
   test("kvitteringens «Åpne i Rediger» åpner opptaket som nettopp ble tatt opp", async ({
@@ -374,7 +490,10 @@ test.describe("editor", () => {
     await expect(page.getByTestId("record-done")).toBeVisible();
 
     await page.getByTestId("record-done-edit").click();
-    await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "edit");
+    // D3: REDIGERING er destinasjonen, og at fila er åpen er ikke en fane —
+    // det er `loadState`. Ruten bærer derfor ingen `data-tab`.
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).not.toHaveAttribute("data-tab", /./);
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",
       "ready",
@@ -398,13 +517,16 @@ test.describe("editor", () => {
       "ready",
     );
 
-    // Bekreft: fila lukkes, og vi står i Bibliotek.
+    // Bekreft: fila lukkes, og biblioteket står der arbeidsflaten sto — på
+    // den SAMME siden. D3 tok bort navigeringen fordi den var et rutebytte til
+    // stedet man allerede var, med fokusflytting og rulling som følge.
     await page.getByTestId("editor-close").click();
     await page.locator('[data-dialog-button="ok"]').click();
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "library",
-    );
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("editor")).toHaveCount(0);
+    // Fiksturens bibliotek er tomt, så det er tomtilstanden som står — men den
+    // står, og det er poenget: siden byttet visning uten å bytte rute.
+    await expect(page.getByTestId("library-empty")).toBeVisible();
   });
 
   test("avspilling som ikke kan gå sier det ærlig", async ({ page }) => {
@@ -433,14 +555,15 @@ test.describe("editor", () => {
 
   // ── P4b: stegene «Lyd» og «Eksporter» ──────────────────────────────────────
 
-  test("the three tabs switch, and switching does not redo the work", async ({
+  test("stegene og eksportsiden bytter uten å gjøre arbeidet på nytt", async ({
     page,
   }) => {
-    // ORDRETT legacys tittel. Den ble usann da stegstripa hadde ett steg, og
-    // sann igjen nå — og det den beskytter er det samme: dekodingen og
-    // analysen er de dyre tingene på denne skjermen, og et steg som kjørte en
-    // av dem på nytt gjør et blikk om til en venting. På en 90-minutters FLAC
-    // er det forskjellen på brukbar og ikke.
+    // Legacys «the three tabs switch, and switching does not redo the work»
+    // under sitt sanne navn: etter D3 er det to steg og en DESTINASJON. Det
+    // tittelen beskyttet er viktigere nå enn før — dekodingen og analysen er
+    // de dyre tingene her, og siden eksporten er en egen side blir editoren
+    // AVMONTERT på veien. Kom arbeidet tilbake som en ny dekoding, ville et
+    // blikk på eksportvalgene kostet en 90-minutters FLAC om igjen.
     await openEditor(page);
     await waitForSuggestion(page);
 
@@ -456,12 +579,15 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-sound")).toBeVisible();
     await expect(page.getByTestId("editor-canvas")).toHaveCount(0);
 
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await expect(page.getByTestId("editor-export")).toBeVisible();
 
+    // Tilbake til REDIGERING: fila står fortsatt åpen (biblioteket vises
+    // ikke), og steg 1 tegner bølgeformen fra toppene som allerede lå i
+    // modellen.
+    await page.getByTestId("nav-edit").click();
+    await expect(page.getByTestId("library-row")).toHaveCount(0);
     await page.getByTestId("editor-steps-row-cut").click();
-    // Bølgeformen kommer tilbake — og den tegnes fra toppene som allerede lå i
-    // modellen, ikke fra en ny dekoding.
     await expect(page.getByTestId("editor-canvas")).toBeVisible();
     expect(
       await page.evaluate(
@@ -489,7 +615,7 @@ test.describe("editor", () => {
       "speech",
     );
 
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
 
@@ -515,15 +641,18 @@ test.describe("editor", () => {
     await page.getByTestId("editor-steps-row-sound").click();
 
     await page.getByTestId("editor-profile-row-mixed").click();
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
     expect((await exportPayloads(page))[0]).toMatchObject({
       masterPreset: "music-speech",
     });
 
-    // Tilbake til valgene, bytt til «Ingen», eksporter igjen.
+    // Tilbake til valgene, og til steg 2 for å bytte til «Ingen». Steget bor
+    // på REDIGERING nå, så veien går innom skinnen — og fila står åpen hele
+    // veien, som er det som gjør at valgene fortsatt er der.
     await page.getByTestId("editor-exported-again").click();
+    await page.getByTestId("nav-edit").click();
     await page.getByTestId("editor-steps-row-sound").click();
     await page.getByTestId("editor-auto-toggle").click();
     await expect(page.getByTestId("editor-sound")).toHaveAttribute(
@@ -533,7 +662,7 @@ test.describe("editor", () => {
     // Bryteren AV er det samme som «Ingen» — ett felt, to måter å si det på.
     await expect(page.getByTestId("editor-listen")).toHaveCount(0);
 
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
     const last = (await exportPayloads(page))[1];
@@ -574,7 +703,7 @@ test.describe("editor", () => {
     // Alle tjue kontrollene er der, og de er ekte — en slår av høypasset.
     await page.getByTestId("editor-mx-hpf-on").click();
 
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
 
@@ -599,7 +728,7 @@ test.describe("editor", () => {
       "Venstre kanal er stille",
     );
 
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
     expect((await exportPayloads(page))[0].channelRepair).toMatchObject({
@@ -648,7 +777,7 @@ test.describe("editor", () => {
     // nivå-halvdelen: normaliseringen som kunne love noe annet enn mastringen
     // finnes ikke lenger, så det er ingen to løfter å holde fra hverandre.
     await openEditor(page);
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
 
     const same = page.getByTestId("editor-dest-row-same");
     await expect(same).toHaveAttribute("data-selected", "true");
@@ -673,7 +802,7 @@ test.describe("editor", () => {
     page,
   }) => {
     await openEditor(page);
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await expect(page.getByTestId("editor-video-card")).toHaveCount(0);
     await expect(page.getByTestId("editor-format")).toBeVisible();
 
@@ -688,7 +817,7 @@ test.describe("editor", () => {
         sampleRate: 48_000,
       },
     });
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await expect(page.getByTestId("editor-video-card")).toBeVisible();
 
     // Uten bryteren er eksporten fortsatt lyd — det er hva de fleste vil ha
@@ -716,7 +845,7 @@ test.describe("editor", () => {
     await openEditor(page, { editor_export: EXPORT_HELD });
     await waitForSuggestion(page);
     await page.getByTestId("editor-keep-sermon").click();
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
 
     // Fremdriften står, og den er UBESTEMT til bakenden har et ekte tall:
@@ -771,7 +900,7 @@ test.describe("editor", () => {
     await openEditor(page);
     await waitForSuggestion(page);
     await page.getByTestId("editor-keep-sermon").click();
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
 
     const receipt = page.getByTestId("editor-exported");
@@ -784,10 +913,10 @@ test.describe("editor", () => {
     // Varighet · størrelse · mappe — samme kvitteringsform som etter et opptak.
     await expect(receipt).toContainText("3 min 30 s");
     await expect(receipt).toContainText("Opptak");
-    // Stegstripa har haken sin nå.
-    await expect(page.getByTestId("editor-steps-row-export")).toHaveClass(
-      /done/,
-    );
+    // Kvitteringen ER siden nå: valgene står ikke under den. Et skjema som ble
+    // stående ville invitert til å eksportere den samme fila en gang til uten
+    // å si at det er dét man gjør.
+    await expect(page.getByTestId("editor-export")).toHaveCount(0);
     // Utkastet er ryddet: redigeringen er ute av huset.
     expect(
       await page.evaluate(
@@ -810,21 +939,21 @@ test.describe("editor", () => {
   test("«Til biblioteket» lukker opptaket uten å spørre", async ({ page }) => {
     // Etter en vellykket eksport er det ingenting ulagret igjen å spørre om —
     // og en bekreftelsesdialog der ville vært appen som ikke stoler på sin egen
-    // kvittering.
+    // kvittering. Herfra er det en EKTE navigering (D3): eksporteringen er en
+    // annen destinasjon enn redigeringen, så å bare lukke ville latt brukeren
+    // stå igjen på en side som nettopp mistet det den handlet om.
     await openEditor(page);
     await waitForSuggestion(page);
     await page.getByTestId("editor-keep-sermon").click();
     await expect(page.getByTestId("editor-dirty")).toBeVisible();
 
-    await page.getByTestId("editor-steps-row-export").click();
+    await goToExport(page);
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exported")).toBeVisible();
     await page.getByTestId("editor-exported-library").click();
 
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "library",
-    );
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("library-empty")).toBeVisible();
     await expect(page.locator("[data-dialog-button]")).toHaveCount(0);
   });
 
@@ -832,10 +961,14 @@ test.describe("editor", () => {
     await openEditor(page);
     await page.getByTestId("editor-next").click();
     await expect(page.getByTestId("editor-sound")).toBeVisible();
+    // Den siste «Neste» forlater SIDEN: eksporteringen er en destinasjon etter
+    // D3, og knappen navigerer dit med fila åpen.
     await page.getByTestId("editor-next").click();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "export",
+    );
     await expect(page.getByTestId("editor-export")).toBeVisible();
-    // Siste steget har ingen: kvitteringen har sine egne tre veier ut.
-    await expect(page.getByTestId("editor-next")).toHaveCount(0);
   });
 });
 

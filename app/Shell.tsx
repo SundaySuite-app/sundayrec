@@ -1,5 +1,5 @@
 /**
- * Skallets rot — skinnen, og det de tre destinasjonene faktisk kan si i dag.
+ * Skallets rot — skinnen, og det destinasjonene faktisk kan si i dag.
  *
  * ## Hva som er ekte her, og hva som ikke er det
  *
@@ -14,16 +14,30 @@
  *
  * Derfor leser hver plassholder ekte tilstand i stedet for å påstå noe:
  *
- *   OPPTAK    ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
- *             stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
- *   BIBLIOTEK ER bygget (P3): lista, søket, slett-med-angre og papirkurven.
- *             Se `app/pages/library/`. Fanen `edit` er REDIGER (P4a): steg 1,
- *             «Klipp». Den bor under BIBLIOTEK fordi å finne opptaket igjen og
- *             å redigere det er samme sted i den nye arkitekturen — se
- *             `app/editor/entry.ts`.
- *   OPPSETT   ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
- *             nå, de fem skjermene «Endre» åpner, de to tilleggene og
- *             Avansert. Se `app/pages/setup/`.
+ *   OPPTAK      ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
+ *               stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
+ *   REDIGERING  ER bygget (P3 + P4a): lista, søket, slett-med-angre og
+ *               papirkurven (`app/pages/library/`), og arbeidsflaten når en fil
+ *               er åpen (`app/editor/`).
+ *   EKSPORTERING ER bygget (P4b, egen destinasjon fra D3): valgene, kjøringen
+ *               og kvitteringen — og, uten en åpen fil, det sist redigerte
+ *               opptaket med én knapp. Se `app/pages/export/`.
+ *   OPPSETT     ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
+ *               nå, de fem skjermene «Endre» åpner, de to tilleggene og
+ *               Avansert. Se `app/pages/setup/`.
+ *
+ * ## REDIGERING har to visninger, og BRYTEREN er `loadState`
+ *
+ * Papirkurven er en fane (`route.tab`); ellers avgjør lastetilstanden: `idle`
+ * ⇒ biblioteket, alt annet ⇒ arbeidsflaten. `loadState` og ikke `hasFile`,
+ * fordi `openFile` setter den SYNKRONT før første `await` — `filePath` fylles
+ * også synkront, men lastingen har tre tilstander biblioteket ikke kan vise
+ * («laster», «kunne ikke åpnes»), og en bryter som bare visste om det var en
+ * sti ville sendt en feilet åpning tilbake til lista uten å si hvorfor.
+ *
+ * Grenen er derfor også der bibliotek-blaffet ville bodd hvis den ble snudd:
+ * `e2e/editor.spec.ts` har en spec som ser DOM-en under klikket og krever at
+ * lista aldri står der mens fila åpnes.
  *
  * ## Første gang, og samtykkekortet
  *
@@ -63,14 +77,16 @@
 import { useEffect } from "preact/hooks";
 
 import { EditorPage, editorHeading } from "./editor/EditorPage";
-import { EDIT_TAB } from "./editor/entry";
+import { loadState } from "./editor/model";
 import { locale, t, tDyn, tf } from "./i18n";
 import {
+  DropZone,
   libraryHeading,
   LibraryPage,
   TRASH_TAB,
 } from "./pages/library/LibraryPage";
 import { TrashPage } from "./pages/library/TrashPage";
+import { ExportPage } from "./pages/export/ExportPage";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
@@ -99,19 +115,16 @@ export function Shell({ probe }: ShellProps) {
 
   return (
     /*
-      OPPTAK og INNSTILLINGER heter det destinasjonen heter — begge er ÉN skjerm
-      etter D2, og et eget navn på en av dem ville vært en overskrift som lover
-      en underside. BIBLIOTEK har fortsatt to (Papirkurv, Rediger), og første
-      gang er fem spørsmål med hvert sitt.
+      OPPTAK, EKSPORTERING og INNSTILLINGER heter det destinasjonen heter — alle
+      er ÉN skjerm, og et eget navn på en av dem ville vært en overskrift som
+      lover en underside. REDIGERING har fortsatt to andre ting å hete
+      (Papirkurv, og datoen på opptaket som er åpent), og første gang er fem
+      spørsmål med hvert sitt.
     */
     <PageShell
       heading={
         firstRunHeading(firstRun) ??
-        (current.page === "library"
-          ? current.tab === EDIT_TAB
-            ? editorHeading()
-            : libraryHeading(current.tab)
-          : undefined)
+        (current.page === "edit" ? editHeading(current.tab) : undefined)
       }
     >
       {/*
@@ -135,19 +148,38 @@ export function Shell({ probe }: ShellProps) {
         <FirstRun />
       ) : current.page === "record" ? (
         <RecordPage />
-      ) : current.page === "library" ? (
-        current.tab === TRASH_TAB ? (
-          <TrashPage />
-        ) : current.tab === EDIT_TAB ? (
-          <EditorPage />
-        ) : (
-          <LibraryPage />
-        )
+      ) : current.page === "edit" ? (
+        <EditSurface tab={current.tab} />
+      ) : current.page === "export" ? (
+        <ExportPage />
       ) : (
         <SetupPage />
       )}
     </PageShell>
   );
+}
+
+/**
+ * REDIGERING: papirkurven, arbeidsflaten eller biblioteket — i den rekkefølgen.
+ *
+ * Slippsonen ligger rundt de to SISTE. Papirkurven er utenfor med vilje: å
+ * slippe et opptak på papirkurven ville sett ut som en handling, og den ene
+ * handlingen det ligner på er den vi ikke gjør.
+ */
+function EditSurface({ tab }: { tab: string | undefined }) {
+  if (tab === TRASH_TAB) return <TrashPage />;
+  return (
+    <DropZone>
+      {loadState.value === "idle" ? <LibraryPage /> : <EditorPage />}
+    </DropZone>
+  );
+}
+
+/** Overskriften REDIGERING skal ha: papirkurvens, opptakets dato, eller
+ *  destinasjonens eget navn (utelatt ⇒ «Redigering» fra katalogen). */
+function editHeading(tab: string | undefined): string | undefined {
+  if (tab === TRASH_TAB) return libraryHeading(tab);
+  return loadState.value === "idle" ? undefined : editorHeading();
 }
 
 /** Dialog-, toast- og opptaksverten. Montert i `#overlays` — se toppen av fila. */
@@ -166,7 +198,7 @@ export function Overlays() {
  *
  * Handlingen trenger ingen side — den åpner en mappe og er ferdig — så den
  * plukkes opp i skallet, som alltid er montert. Ruteren har allerede navigert
- * til BIBLIOTEK, slik at man også SER opptakene man nettopp ba om å få se.
+ * til REDIGERING, slik at man også SER opptakene man nettopp ba om å få se.
  *
  * Bare denne ene id-en tas imot her; de andre blir stående til flaten sin, og
  * derfor `peek` på signalet før det tømmes.

@@ -2,7 +2,8 @@
   "app": {
     "page": {
       "record": "Opptak",
-      "library": "Bibliotek",
+      "edit": "Redigering",
+      "export": "Eksportering",
       "setup": "Innstillinger"
     },
     "rail": {
@@ -430,10 +431,7 @@
       "revealFailed": "Fant ikke fila på disken."
     },
     "editor": {
-      "close": "Lukk",
       "stepCut": "Klipp",
-      "emptyTitle": "Dra et opptak hit",
-      "emptyDesc": "… eller åpne en fil fra maskinen. Alt du har tatt opp ligger i Bibliotek.",
       "loadFailed": "Kunne ikke åpne opptaket",
       "loadFailedDesc": "Formatet støttes kanskje ikke, eller fila er skadet.",
       "searching": "Leter etter prekenen …",
@@ -457,7 +455,6 @@
       "notSermonDesc": "Velg riktig blokk. Vi husker det til neste gang.",
       "blockOption": "{n}. blokk — {at} · {span}",
       "stepSound": "Lyd",
-      "stepExport": "Eksporter",
       "nextSound": "Neste: Lyd",
       "nextExport": "Neste: Eksporter",
       "autoSound": "Automatisk lydforbedring",
@@ -527,6 +524,13 @@
       "exportAgain": "Eksporter i annet format",
       "toLibrary": "Til biblioteket",
       "exportFailed": "Eksporten stoppet. Prøv igjen."
+    },
+    "export": {
+      "lastEdited": "Sist redigert",
+      "prepare": "Gjør klar",
+      "pickTitle": "Eller velg et annet opptak",
+      "emptyDesc": "Ta opp noe først, eller åpne en fil fra maskinen.",
+      "use": "Velg"
     },
     "span": {
       "hours": "{h} t",

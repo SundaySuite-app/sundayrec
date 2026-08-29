@@ -2,7 +2,8 @@
   "app": {
     "page": {
       "record": "Record",
-      "library": "Library",
+      "edit": "Edit",
+      "export": "Export",
       "setup": "Settings"
     },
     "rail": {
@@ -430,10 +431,7 @@
       "revealFailed": "Couldn’t find the file on disk."
     },
     "editor": {
-      "close": "Close",
       "stepCut": "Cut",
-      "emptyTitle": "Drag a recording here",
-      "emptyDesc": "… or open a file from this machine. Everything you have recorded is in Library.",
       "loadFailed": "Could not open the recording",
       "loadFailedDesc": "The format may not be supported, or the file is damaged.",
       "searching": "Looking for the sermon …",
@@ -457,7 +455,6 @@
       "notSermonDesc": "Pick the right block. We remember it next time.",
       "blockOption": "Block {n} — {at} · {span}",
       "stepSound": "Sound",
-      "stepExport": "Export",
       "nextSound": "Next: Sound",
       "nextExport": "Next: Export",
       "autoSound": "Automatic sound improvement",
@@ -527,6 +524,13 @@
       "exportAgain": "Export in another format",
       "toLibrary": "To the library",
       "exportFailed": "The export stopped. Try again."
+    },
+    "export": {
+      "lastEdited": "Last edited",
+      "prepare": "Get it ready",
+      "pickTitle": "Or choose another recording",
+      "emptyDesc": "Record something first, or open a file from this machine.",
+      "use": "Choose"
     },
     "span": {
       "hours": "{h} h",

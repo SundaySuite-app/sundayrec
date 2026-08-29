@@ -45,20 +45,28 @@ const CHOSEN_FIXTURES = {
 };
 
 test.describe("skinnen", () => {
-  test("de to destinasjonene og tannhjulet bytter rute, og fokus følger med", async ({
+  test("de tre destinasjonene og tannhjulet bytter rute, og fokus følger med", async ({
     page,
   }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
     await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
 
-    await page.getByTestId("nav-library").click();
-    await expect(page.getByTestId("app-heading")).toHaveText("Bibliotek");
-    await expect(page.getByTestId("main")).toHaveAttribute(
-      "data-page",
-      "library",
-    );
+    await page.getByTestId("nav-edit").click();
+    // D3: destinasjonen heter REDIGERING. Biblioteket er dens standardvisning
+    // — klipp hentes også fra andre opptakere, så «Bibliotek» ville vært et
+    // navn som utelukket halvparten av det man gjør der.
+    await expect(page.getByTestId("app-heading")).toHaveText("Redigering");
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
     // Fokus på overskriften. Uten det blir en tastaturbruker stående i
     // skinnen og må tabbe gjennom hele navigasjonen på nytt for hver side.
+    await expect(page.getByTestId("app-heading")).toBeFocused();
+
+    await page.getByTestId("nav-export").click();
+    await expect(page.getByTestId("app-heading")).toHaveText("Eksportering");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "export",
+    );
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
     // D2: tannhjulet nederst, ikke en tredje destinasjon. Ruten, testid-en og
@@ -110,21 +118,22 @@ test.describe("skinnen", () => {
     await expect(page.locator("#srlogo-clip")).toHaveCount(1);
     await expect(page.locator("#srlogo-gold")).toHaveCount(1);
 
-    // 2. To destinasjoner. Tannhjulet teller som `nav-*` (kontrakten
-    //    `no-live-surface.spec.ts` hviler på), men det ligger utenfor gruppen.
-    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(3);
+    // 2. TRE destinasjoner etter D3 (Opptak · Redigering · Eksportering).
+    //    Tannhjulet teller som `nav-*` (kontrakten `no-live-surface.spec.ts`
+    //    hviler på), men det ligger utenfor gruppen — derfor fire, ikke tre.
+    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
 
     // 3. …og NEDERST. Dette er den ene påstanden DOM-rekkefølgen ikke kan
     //    bevise: `margin-top: auto` er det som limer tannhjulet til bunnen, og
     //    feilmodusen er stum — to `auto`-marger i samme kolonne DELER den
     //    ledige plassen, så tannhjulet blir stående og sveve midt i skinnen
     //    mens statuslinjen fortsatt sitter der den skal. Målt, ikke antatt.
-    const library = (await page.getByTestId("nav-library").boundingBox())!;
+    const lastDest = (await page.getByTestId("nav-export").boundingBox())!;
     const gear = (await page.getByTestId("nav-setup").boundingBox())!;
     const status = (await page.getByTestId("status-line").boundingBox())!;
 
     // Under destinasjonene, med LUFT mellom seg — ikke neste rad i listen.
-    expect(gear.y).toBeGreaterThan(library.y + library.height + 40);
+    expect(gear.y).toBeGreaterThan(lastDest.y + lastDest.height + 40);
     // …og tett på statuslinjen: alt over ~40 px betyr at den svever.
     expect(status.y - (gear.y + gear.height)).toBeLessThan(40);
   });
@@ -208,7 +217,8 @@ test.describe("skinnen", () => {
       settings: { ...SOUND_CHOSEN, language: "en" },
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Record");
-    await expect(page.getByTestId("nav-library")).toContainText("Library");
+    await expect(page.getByTestId("nav-edit")).toContainText("Edit");
+    await expect(page.getByTestId("nav-export")).toContainText("Export");
     await expect(page.getByTestId("nav-setup")).toContainText("Settings");
     await expect(page.getByTestId("status-text")).toHaveText("All set");
   });
@@ -236,14 +246,14 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     );
   });
 
-  test("BIBLIOTEK viser tomtilstanden når det FAKTISK er tomt", async ({
+  test("REDIGERING viser bibliotekets tomtilstand når det FAKTISK er tomt", async ({
     page,
   }) => {
     await boot(page, {
       fixtures: { ...BOOT_FIXTURES, recordings_list: [] },
       settings: SOUND_CHOSEN,
     });
-    await page.getByTestId("nav-library").click();
+    await page.getByTestId("nav-edit").click();
     await expect(page.getByTestId("library-empty")).toBeVisible();
     // Den ene handlingen, og den gjør noe.
     await page.getByTestId("library-go-record").click();

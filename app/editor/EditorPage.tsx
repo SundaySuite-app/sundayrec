@@ -1,21 +1,27 @@
 /**
- * REDIGER — jobb nr. 3 av fire, steg 1: KLIPP.
+ * REDIGER — arbeidsflaten når en fil er åpen, steg 1: KLIPP.
  *
  * Canvasens sett 4, artboard 4.1. Legacys editor har 47 kontroller i tre faner
  * pluss en eksportmodal med 25 til; her er det ÉN skjerm med ett spørsmål:
  * *er dette prekenen?* Svaret er ett klikk, og alt annet er tilgjengelig for
  * den som vil ha det.
  *
- * ## Stegstripa har alle tre nå
+ * ## Hvem monterer denne, og når
  *
- * P4a bygde den med ett steg i, fordi husregelen fra S1b er at ingenting sier
- * «kommer senere» og at ingen knapp finnes uten å gjøre noe — en dempet
- * «2 Lyd» ville vært begge deler på én gang. P4b bygger de to andre, og da er
- * det en tabellrad hver og ingenting annet.
+ * `Shell` gjør det, og bare når det er en fil på gang: REDIGERING-destinasjonen
+ * viser BIBLIOTEKET til `loadState` forlater `idle`. Denne fila har derfor
+ * ingen tomtilstand lenger — biblioteket ER tomtilstanden, og en tom skjerm med
+ * «dra et opptak hit» ved siden av en liste over alle opptakene var to svar på
+ * det samme spørsmålet.
  *
- * Navigasjonen er FRI: alle tre er klikkbare hele tiden. Et opptak man bare
- * vil ha ut i mp3 skal ikke måtte gjennom to skjermer for å komme dit, og en
- * som har eksportert skal kunne gå tilbake og klippe litt til.
+ * ## Stegstripa har to
+ *
+ * D3 flyttet EKSPORTER ut til sin egen destinasjon: mastering og miksing skal
+ * kunne bo der på sikt, og et steg inne i et annet steg er ikke et sted noe kan
+ * vokse. «Neste: Eksporter» på steg 2 navigerer dit.
+ *
+ * Navigasjonen mellom de to er FRI: begge er klikkbare hele tiden. En som har
+ * vært innom lyden skal kunne gå tilbake og klippe litt til.
  *
  * ## Haken betyr «du har svart», ikke «det er en verdi her»
  *
@@ -24,7 +30,6 @@
  *   **Lyd** ✓ når brukeren har VÆRT der. «Tale» er standarden, og en hake fra
  *   første sekund ville påstått at noen bestemte seg — det er nettopp forskjellen
  *   mellom en standardverdi og et valg.
- *   **Eksporter** ✓ når en eksport har lyktes i denne økta.
  *
  * ## Bare steg 1 har bølgeform og transport
  *
@@ -53,21 +58,17 @@
  * én, legacys editor to) ville vært en fjerde ting å drifte fra hverandre.
  */
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 
-import { locale, t, tDyn, tf } from "../i18n";
+import { locale, t, tf } from "../i18n";
 import { spanOfSeconds } from "../pages/record/record-core";
 import { spanText } from "../pages/record/span-text";
 import { navigate } from "../router/router";
-import { lastRecording, loadRecordingCount } from "../state/recordings";
 import { Banner } from "../ui/Banner/Banner";
 import { Button } from "../ui/Button/Button";
 import { Card } from "../ui/Card/Card";
-import { EmptyState } from "../ui/EmptyState/EmptyState";
-import { ProgressBar } from "../ui/ProgressBar/ProgressBar";
 import { Select } from "../ui/Select/Select";
 import { Tabs } from "../ui/Tabs/Tabs";
-import { confirmDialog } from "../ui/dialog";
 import {
   applySermon,
   canRedo,
@@ -78,15 +79,15 @@ import {
   redoCut,
   undoCut,
 } from "./cuts";
+import { confirmDiscard } from "./discard";
 import {
   exactSpan,
   keptSeconds,
   suggestionIsWorthOffering,
   timecode,
 } from "./editor-core";
-import { exportDone } from "./export";
-import { ExportStep } from "./ExportStep";
-import { closeFile, openFile, pickAndOpen } from "./loader";
+import { Loading, LoadFailed } from "./LoadStates";
+import { closeFile } from "./loader";
 import {
   activeStep,
   analyzing,
@@ -95,11 +96,8 @@ import {
   dirty,
   dismissed,
   duration,
-  E,
   fileName,
   loadError,
-  loadPhase,
-  loadProgress,
   loadState,
   manualMode,
   playbackSource,
@@ -112,9 +110,10 @@ import {
 } from "./model";
 import { stopPlay, togglePlay } from "./playback";
 import { candidatesFor, chooseSermon } from "./sermon";
-import { soundProfile, soundVisited } from "./sound";
+import { soundVisited } from "./sound";
 import { SoundStep } from "./SoundStep";
 import { spanLabel } from "./span";
+import { resultLine } from "./summary";
 import { WaveformHost } from "./WaveformHost";
 import styles from "./editor.module.css";
 
@@ -147,218 +146,36 @@ export function editorHeading(): string {
 
 export function EditorPage() {
   const state = loadState.value;
-  const [over, setOver] = useState(false);
-  const dropRef = useRef<HTMLDivElement | null>(null);
 
-  // Slippsonen: ETT element, alltid montert. Lytterne settes imperativt fordi
-  // shimmens syntetiske hendelser er ekte `DragEvent`-er som bobler — Preacts
-  // `onDrop` ville også fungert, men `dragover` MÅ ha `preventDefault()` for
-  // at slippet i det hele tatt skal skje, og det er lettere å se her.
-  useEffect(() => {
-    const el = dropRef.current;
-    if (!el) return;
-    const onOver = (event: DragEvent): void => {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-      setOver(true);
-    };
-    const onLeave = (): void => setOver(false);
-    const onDrop = (event: DragEvent): void => {
-      event.preventDefault();
-      setOver(false);
-      const file = event.dataTransfer?.files?.[0] as
-        (File & { path?: string }) | undefined;
-      const path = file?.path;
-      if (!path) return;
-      void openDropped(path);
-    };
-    el.addEventListener("dragover", onOver);
-    el.addEventListener("dragleave", onLeave);
-    el.addEventListener("drop", onDrop);
-    return () => {
-      el.removeEventListener("dragover", onOver);
-      el.removeEventListener("dragleave", onLeave);
-      el.removeEventListener("drop", onDrop);
-      // Å gå et annet sted STOPPER avspillingen, men lukker ikke fila. Legacys
-      // `deactivateEditor` gjør nøyaktig det, og kommentaren over den sier
-      // hvorfor den andre halvdelen ikke skjer: å slippe topper, kutt og
-      // forslag ved et fanebytte ga en tom bølgeform når man kom tilbake, og
-      // brukeren måtte lukke og åpne fila på nytt for å se noe (rapportert
-      // feil, mai 2026). Uten den FØRSTE halvdelen ville lyden gått videre i
-      // bakgrunnen på en side ingen ser.
-      stopPlay();
-    };
-  }, []);
+  // Å gå et annet sted STOPPER avspillingen, men lukker ikke fila. Legacys
+  // `deactivateEditor` gjør nøyaktig det, og kommentaren over den sier hvorfor
+  // den andre halvdelen ikke skjer: å slippe topper, kutt og forslag ved et
+  // sidebytte ga en tom bølgeform når man kom tilbake, og brukeren måtte lukke
+  // og åpne fila på nytt for å se noe (rapportert feil, mai 2026). Uten den
+  // FØRSTE halvdelen ville lyden gått videre i bakgrunnen på en side ingen ser.
+  useEffect(() => stopPlay, []);
 
   return (
     <div
-      ref={dropRef}
       data-testid="editor"
       data-state={state}
       // Grunnen til at åpningen feilet, som et attributt: den er en NØKKEL og
       // ikke en setning, så den hører ikke hjemme i treet der en skjermleser
       // ville lest den opp. Banneret sier det samme på norsk.
       data-reason={loadError.value ?? undefined}
-      class={`${styles.page} ${over ? styles.dropzoneOver : ""}`}
+      class={styles.page}
     >
       {state === "ready" ? (
         <Workspace />
       ) : state === "loading" ? (
         <Loading />
-      ) : state === "error" ? (
-        <LoadFailed />
       ) : (
-        <Empty over={over} />
+        // `idle` kommer aldri hit: skallet viser biblioteket da. Feilen er
+        // derfor den eneste andre muligheten, og en `else` som het `idle`
+        // ville vært en gren ingen kan nå og ingen kan teste.
+        <LoadFailed />
       )}
     </div>
-  );
-}
-
-/**
- * Åpne en sluppet fil.
- *
- * Et slipp er en eksplisitt handling fra brukeren, så mappen får tillit for
- * denne økta — uten det avviser sti-forsvaret et opptak som ligger på en
- * ekstern disk eller et sted som ikke ligner på lagringsmappen. Legacy gjør
- * det samme, i sin egen slipp-håndterer.
- */
-async function openDropped(path: string): Promise<void> {
-  if (!(await confirmDiscard())) return;
-  try {
-    await window.api.registerTrustedPath(path);
-  } catch {
-    /* forsvaret svarer nei — lasteren sier ærlig fra hvis det var grunnen */
-  }
-  void openFile(path);
-}
-
-/** Spør før ulagrede kutt kastes. Sann = det er trygt å gå videre. */
-async function confirmDiscard(): Promise<boolean> {
-  if (!E.dirty) return true;
-  return confirmDialog({
-    title: t("editor.confirmClose"),
-    message: t("dialog.discardEditsBody"),
-    confirmLabel: t("dialog.discardEdits"),
-    danger: true,
-  });
-}
-
-// ── Tomtilstanden ───────────────────────────────────────────────────────────
-
-function Empty({ over }: { over: boolean }) {
-  const last = lastRecording.value;
-
-  useEffect(() => {
-    void loadRecordingCount();
-  }, []);
-
-  return (
-    <div class={styles.drop}>
-      <div class={`${styles.dropzone} ${over ? styles.dropzoneOver : ""}`}>
-        <EmptyState
-          testId="editor-empty"
-          title={over ? t("editor.dropFile") : t("app.editor.emptyTitle")}
-          description={t("app.editor.emptyDesc")}
-          action={
-            <Button
-              variant="primary"
-              testId="editor-open"
-              onClick={() => void pickAndOpen()}
-            >
-              {t("editor.openFile")}
-            </Button>
-          }
-        />
-      </div>
-
-      {/* Ikke lest ennå, eller ingenting å vise: ingen påstand i noen retning. */}
-      {last?.path ? (
-        <div class={styles.recent}>
-          <span class={styles.label}>{t("app.record.last")}</span>
-          <div data-testid="editor-recent" class={styles.recentRow}>
-            <div class={styles.recentGrow}>
-              <div class={styles.value}>{last.date || last.filename}</div>
-              <div class={styles.recentName}>{last.filename}</div>
-            </div>
-            <Button
-              variant="secondary"
-              testId="editor-recent-open"
-              onClick={() =>
-                void openFile(last.path as string, {
-                  startedAtMs: last.startedAt ?? last.timestamp ?? null,
-                })
-              }
-            >
-              {t("nav.editor")}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// ── Lastingen ───────────────────────────────────────────────────────────────
-
-function Loading() {
-  const phase = loadPhase.value;
-  const fraction = loadProgress.value;
-  // Ingen fase ennå betyr at vi står i ffprobe eller i en sidevogn — begge er
-  // millisekunder. «Analyserer …» er det ærlige ordet for «vi holder på», og
-  // det er legacys egen tekst.
-  // `tDyn` og ikke `t()` med en malstreng: prefikset er en literal gaten kan
-  // slå opp, og suffikset er halvdelen ingen gate kan kjenne — så et bom
-  // KASTER i DEV i stedet for å male en tom linje som ser ut som «denne er
-  // visst tom».
-  const text = phase ? tDyn("editor", phase) : t("editor.analyzing");
-
-  return (
-    <div data-testid="editor-loading" class={styles.loading}>
-      <p data-testid="editor-loading-text" class={styles.loadingText}>
-        {text}
-      </p>
-      {fraction === null ? null : (
-        <ProgressBar
-          fraction={fraction}
-          label={text}
-          hideReadout
-          testId="editor-loading-progress"
-        />
-      )}
-    </div>
-  );
-}
-
-function LoadFailed() {
-  return (
-    <>
-      <Banner
-        tone="bad"
-        testId="editor-load-error"
-        title={t("app.editor.loadFailed")}
-        detail={t("app.editor.loadFailedDesc")}
-        actions={
-          <Button
-            variant="secondary"
-            testId="editor-load-error-open"
-            onClick={() => void pickAndOpen()}
-          >
-            {t("editor.openFile")}
-          </Button>
-        }
-      />
-      {/* Feilen skjuler ikke veien tilbake: `loadError` bæres bare som en
-          nøkkel, og lukking setter tilstanden til `idle` igjen. */}
-      <div class={styles.toolbar}>
-        <Button
-          variant="ghost"
-          testId="editor-load-error-close"
-          onClick={closeFile}
-        >
-          {t("editor.closeFile")}
-        </Button>
-      </div>
-    </>
   );
 }
 
@@ -389,21 +206,9 @@ function Workspace() {
             step: "2",
             done: soundVisited.value,
           },
-          {
-            id: "export",
-            label: t("app.editor.stepExport"),
-            step: "3",
-            done: exportDone.value,
-          },
         ]}
       />
-      {step === "cut" ? (
-        <CutStep />
-      ) : step === "sound" ? (
-        <SoundStep />
-      ) : (
-        <ExportStep />
-      )}
+      {step === "cut" ? <CutStep /> : <SoundStep />}
       <NextStep step={step} />
     </>
   );
@@ -434,20 +239,25 @@ function CutStep() {
  * Canvasen tegner den nederst på 4.2; den står på 4.1 av samme grunn. Stripa
  * øverst er navigasjon for den som vet hvor hun skal — knappen nederst er veien
  * VIDERE for den som følger den, og den skal være der man er ferdig med å lese.
- * Siste steget har ingen: kvitteringen har sine egne tre veier ut.
+ *
+ * D3: den siste av dem forlater SIDEN. Eksporteringen er en destinasjon nå, og
+ * fila blir stående åpen — signalene bak den bor på modulnivå og overlever at
+ * flaten avmonteres, så «Neste: Eksporter» er en navigasjon og ikke en
+ * overlevering.
  */
 function NextStep({ step }: { step: Step }) {
-  if (step === "export") return null;
-  const next: Step = step === "cut" ? "sound" : "export";
   return (
     <div class={styles.nextRow}>
       <Button
         variant="primary"
         size="lg"
         testId="editor-next"
-        onClick={() => (activeStep.value = next)}
+        onClick={() => {
+          if (step === "cut") activeStep.value = "sound";
+          else navigate("export");
+        }}
       >
-        {next === "sound"
+        {step === "cut"
           ? t("app.editor.nextSound")
           : t("app.editor.nextExport")}
       </Button>
@@ -480,6 +290,12 @@ function Head() {
           />
         ) : null}
       </p>
+      {/*
+        «Til biblioteket» — og ingen navigering. Etter D3 ER dette biblioteket:
+        REDIGERING viser lista igjen i samme øyeblikk fila lukkes, på den samme
+        siden. En `navigate` her ville vært et rutebytte til stedet man
+        allerede står, med fokusflytting og rulling som følge.
+      */}
       <Button
         variant="ghost"
         testId="editor-close"
@@ -487,39 +303,30 @@ function Head() {
           void confirmDiscard().then((ok) => {
             if (!ok) return;
             closeFile();
-            navigate("library");
           });
         }}
       >
-        {t("app.editor.close")}
+        {t("app.editor.toLibrary")}
       </Button>
     </div>
   );
 }
 
 /**
- * Resultatet, på de stegene som ikke har en resultatlinje av seg selv.
+ * Resultatet, på det steget som ikke har en resultatlinje av seg selv.
  *
  * Steg 1 har den i transportlinja, ved siden av bølgeformen den beskriver.
- * Steg 2 og 3 har ingen bølgeform, og «hva er det egentlig jeg eksporterer»
- * er det eneste tallet som betyr noe der. Canvasens 4.3 legger til profilen:
- * «Resultat: 28 min 10 s · Tale».
+ * Steg 2 har ingen bølgeform, og «hva er det egentlig jeg sitter igjen med» er
+ * det eneste tallet som betyr noe der. Setningen bygges i `summary.ts`, som
+ * EKSPORTERING-siden også leser — to steder som regnet ut den samme
+ * varigheten er to steder som kan bli uenige om den.
  */
 function Summary() {
-  const step = activeStep.value;
-  if (step === "cut") return null;
-  const total = duration.value;
-  const kept = keptSeconds(cuts.value, total);
-  const result = tf("app.editor.result", {
-    kept: spanLabel(exactSpan(kept)),
-    total: spanLabel(exactSpan(total)),
-  });
+  if (activeStep.value === "cut") return null;
   return (
     <span data-testid="editor-summary">
       {DOT}
-      {step === "export"
-        ? `${result}${DOT}${tDyn("app.editor.profile", soundProfile.value)}`
-        : result}
+      {resultLine()}
     </span>
   );
 }
