@@ -3,6 +3,175 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.17.0 — Opptak · Redigering · Eksportering
+
+Dette er den største endringen SundayRec har hatt, og den har ligget på
+beta-ringen siden august. Alt appen gjorde før, gjør den fortsatt — det er
+_å finne fram_ som er nytt. Kommer du fra v0.15, får du alt som har skjedd
+siden: det nye skallet, kontrollrommet på Opptak-siden, kamerabildet, de tre
+stedene nederst, og en håndfull ting som beskytter opptaket ditt.
+
+### Tre steder, nederst, i den rekkefølgen du gjør dem
+
+Før var det fem sider, åtte faner og 65 innstillinger, tegnet for noen som
+allerede visste hvordan appen virket. Nå er det **tre steder**, som ikoner
+nederst i vinduet — venstre mot høyre, slik en gudstjeneste faktisk blir til:
+
+- **Opptak** — der du tar opp, og der du gjør alt klart.
+- **Redigering** — der opptakene ligger, og der du klipper i dem.
+- **Eksportering** — der den ferdige fila blir laget.
+
+Øverst står bare merket og navnet på menigheten. Nederst, ved siden av de tre:
+statuslinjen til venstre — én setning som alltid er sann — og versjonen og et
+**tannhjul** til høyre. Bak tannhjulet ligger det som ikke hører til en søndag:
+hvilken kirke dere er, og Avansert.
+
+Venstrekanten er borte. Den brukte en sjettedel av bredden på å holde tre
+knapper, og den plassen er nå til innholdet.
+
+### Alt du trenger før gudstjenesten står på Opptak-skjermen
+
+Før sa Opptak-siden hva som var galt og sendte deg videre for å rette det — og
+tilbake, og til en tredje skjerm. De fem minuttene før gudstjenesten gikk med
+på å lete.
+
+Nå redigeres alt viktig **der det brukes**:
+
+- **Venstre side er det levende:** hvor lyden kommer fra, om vi hører den, og
+  den store Start-knappen. Under den står når neste automatiske opptak går, og
+  hva du tok opp sist. Den halvdelen flytter seg aldri.
+- **Høyre side er klargjøringen:** kamerabildet øverst, og under det fem kort —
+  _Hvor skal opptakene? · Hvilken kvalitet? · Ta med kamera · Ta opp
+  automatisk · Hvem får beskjed hvis noe går galt?_
+
+Hvert kort viser svaret som gjelder nå. Trykker du «Endre», folder **hele
+skjermen** for det spørsmålet seg ut på stedet — den samme skjermen du fikk
+første gang du satte opp appen, ikke en forenklet kopi. Start-knappen blir
+stående synlig mens du gjør det. De to tilleggene — kamera og automatisk
+opptak — har ingen «Endre»: bryteren deres åpner kortet, og slår du dem av,
+lukkes det igjen.
+
+Er vinduet smalt, legger de to kolonnene seg under hverandre i samme rekkefølge.
+
+### Kameraet viser et bilde — før opptaket, og mens det går
+
+Før sto det bare navnet på kameraet. Et navn ser nøyaktig likt ut med lokk på
+linsen, så et dødt kamera ble først oppdaget når fila ble åpnet dagen etter.
+
+- **På Opptak**, når «Ta med kamera» er på: et bilde av det kameraet faktisk
+  ser, med et merke i hjørnet som sier hvilken størrelse og bildefrekvens det
+  **leverer** — ikke hva innstillingen ba om. Et 720p-kamera under en
+  1080p-profil skal være synlig her.
+- **Mens opptaket går:** det samme bildet i opptaksvinduet, under målerne,
+  hentet fra opptaket selv.
+
+Går noe galt, sier bildet hva: «Kameratilgang nektet — sjekk
+Systeminnstillinger» er noe annet enn «Kamera svarte ikke — er det i bruk av et
+annet program?», og de to har hvert sitt neste steg. Etter at et opptak er
+stoppet, kommer bildet tilbake av seg selv etter et par sekunder — opptaket må
+bli ferdig med kameraet først.
+
+### Redigering er et sted, ikke noe som åpner seg
+
+Opptakene ligger under **Redigering**. Hver rad heter når den ble tatt opp
+(«Søndag 16. august 2026 · 11:00»), ikke hva fila heter. Sletter du noe, får du
+«Angre», og det du sletter havner i en papirkurv som alltid er der.
+
+Åpner du et opptak, blir du **stående på samme sted** — lista bytter til
+arbeidsflaten, og «Til biblioteket» tar deg tilbake til lista uten at noe
+flytter seg under deg.
+
+Og du er ikke bundet til dine egne opptak: **«Åpne fil…»** står alltid øverst i
+lista, og du kan **dra en fil rett inn i vinduet**. Er opptaket gjort på en
+annen opptaker, hører det like fullt hjemme her.
+
+Selve redigeringen er **to steg** nå: **Klipp** og **Lyd**. Steg 1 åpner med
+det eneste spørsmålet man har — _er dette prekenen?_ Forslaget står der
+allerede, og «Behold bare prekenen» er ett klikk. Steg 2 er lydforbedringen,
+med en før/etter-lytting som er ekte, og en avansert mikser for den som vil ha
+den.
+
+### Eksportering er sitt eget sted — og alltid ett klikk unna
+
+Eksporten var før et steg inne i redigeringen. Nå er det en destinasjon, og den
+er **aldri tom**: har du redigert noe i denne økta, står det øverst med én
+knapp — «Gjør klar». Har du ikke det, står det siste opptaket der i stedet, og
+sier at det er dét det er. Under ligger en kort liste over de andre opptakene,
+og «Åpne fil…» for alt annet.
+
+To spørsmål, ikke ti: **hvilket format**, og **hvor**. Bitraten følger
+kvalitetsvalget du allerede har gjort, lydbehandlingen står i steg 2 og gjentas
+ikke, og «Ta med video» dukker bare opp når opptaket faktisk har video.
+Originalen røres aldri — det blir en ny fil ved siden av.
+
+En eksport som går, **fortsetter å gå** om du ser på noe annet i mellomtiden,
+og kvitteringen står der når du kommer tilbake.
+
+### Tettere, uten at noe ble vanskeligere å treffe
+
+Skjermen er strammet inn overalt: mindre luft rundt kortene, en lavere
+Start-knapp, kortere rader. De to båndene øverst og nederst tar til sammen
+hundre piksler der venstrekanten tok to hundre — og innstrammingen henter inn
+det de kostet: på et vanlig vindu står Start-knappen synlig selv når du har
+foldet ut lydkortet ved siden av den. Ingen knapp ble mindre å treffe.
+
+### Opptaket ditt er bedre beskyttet
+
+- **Avslutt midt i et opptak spør én gang til.** Trykker du Cmd+Q eller
+  «Avslutt» mens gudstjenesten tas opp, avsluttes ingenting med det første: et
+  varsel forteller at det tas opp, og et nytt trykk innen ti sekunder stopper
+  opptaket ryddig — og appen blir stående til fila er ferdig skrevet. På macOS
+  gikk «Avslutt» tidligere helt utenom appens egen avslutningsvei og drepte
+  prosessen midt i lagringen; det hullet er lukket.
+- **Oppdateringens «Start på nytt» venter også.** Den stopper opptaket ryddig
+  og blir stående til fila er skrevet, før den nye versjonen starter.
+- **Å lukke vinduet stopper ikke opptaket.** Vinduet skjules i stedet, opptaket
+  går videre, og SundayRec blir stående i menylinja (systemstatusfeltet på
+  Windows). Uten et opptak i gang avslutter lukkeknappen appen som før.
+- **Vekking fra dvale respekterer «Ta opp automatisk».** Slo du av bryteren men
+  beholdt søndagstidene, vekket maskinen seg likevel — og meldte de avbestilte
+  vekkingene som «mangler». Begge deler er rettet.
+- **«Ta opp automatisk» kan slås av uten å miste tidene**, og nye
+  installasjoner får 15 sekunders **forhåndsbuffer**, så lyd fra like før du
+  trykket Start blir med.
+
+### Mindre ting du kanskje merker
+
+- **Ingen knapp lyver.** En knapp som er av, sier hvorfor. «Start opptak» var
+  grå fordi ingen lydkilde var valgt, og det sto ingen steder.
+- **Ingenting sier «alt er i orden» når det ikke er det.** Enhetskortet malte
+  «Tilkoblet ✓» for en innstilling ingen hadde satt. Nå står det gult og sier
+  hva som mangler.
+- **Farlige spørsmål er snudd riktig vei.** «Stoppe opptaket?» har «Fortsett å
+  ta opp» som standardvalg — trykk-Enter-svaret skal aldri være det som
+  avslutter gudstjenesteopptaket.
+- **Tall er ærlige.** Et opptak på 20 sekunder står som «Under 1 min», ikke
+  «0 min». Er lengden ukjent, står det «—».
+- **Alt kan leses.** Håndtakene som viser hvor prekenen begynner og slutter er
+  ekte knapper som kan flyttes med piltastene. Farger, kontrast og bevegelse
+  følger det maskinen er stilt inn på.
+- **Gamle lenker og snarveier lander fortsatt riktig.** Alt som pekte til en
+  innstillingsfane åpner nå kortet som eier spørsmålet, ferdig utfoldet.
+  «Åpne opptaksmappen» i menylinja åpner mappa og lander på Redigering.
+- **På Mac ligger ikke merket lenger under de tre vindusknappene.**
+
+### Dette er borte, og det er med vilje
+
+Notatet på et opptak vises, men kan ikke lenger redigeres · filterbrikkene i
+historikken (søket gjør jobben) · månedskalenderen (faste tider og
+spesialopptak er to lister under Avansert) · eksportvinduet ·
+Diagnose-skjermen · «Normaliser»-bryteren (nivået bestemmes av profilen eller
+mikseren, aldri av to ting samtidig) · intro/outro-jingler. Det som ikke ble
+bygget på nytt, er skrevet ned — ikke glemt.
+
+**Språk:** appen er på norsk og engelsk. Svensk, dansk, tysk, fransk og polsk
+kommer tilbake i en egen oversettelsesrunde — vi ryddet først bort 653
+tekststrenger som ikke lenger vises noe sted, så oversetterne slipper å bruke
+tid på skjermer som ikke finnes.
+
+_De tre beta-postene under er historikken bak denne utgivelsen; ingenting i dem
+er nytt i forhold til det som står over._
+
 ## v0.16.0-beta.2 — kontrollrommet
 
 Beta-ringen prøvde det nye skallet og sa fra. Dette er svaret: logoen er

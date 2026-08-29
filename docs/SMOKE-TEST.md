@@ -10,17 +10,42 @@ the bridge from "compiles + unit-tests pass" to "validated on a real rig".
 
 ## The navigation this runbook walks
 
-Fase B of «Frivilligen først» replaced the shipped shell. The old five pages
-with their eight tabs are gone; there are **two destinations** on the rail —
-**Opptak · Bibliotek** — plus **Rediger**, which is not a destination at all but
-a screen a recording opens into. Every step below has been re-walked against the
-shell that actually ships; this table is the translation for anybody holding an
-older report.
+Fase B of «Frivilligen først» replaced the shipped shell, and **D3 replaced the
+navigation inside it**. There is no rail any more. Every step below has been
+re-walked against the shell that actually ships; this table is the translation
+for anybody holding an older report.
+
+> **Where everything is, in one paragraph.** A slim **top bar** (44 px) carries
+> the SundayRec mark and the church name — and nothing you can click; it is the
+> window's drag handle. A **bottom bar** (56 px) carries everything else:
+> **the status line on the LEFT**, **three destinations CENTRED** as icons over
+> labels, in the order you do them — **Opptak · Redigering · Eksportering** —
+> and **the version plus the gear on the RIGHT**. The gear is
+> **Innstillinger**; it is deliberately not one of the three.
+>
+> **Redigering and Eksportering are destinations now**, not screens something
+> opens into:
+>
+> - **Redigering** shows **the recordings list** when no file is open — that IS
+>   the library, with the search box, the trash and an **«Åpne fil…»** button in
+>   its head. Open one (or drop a file anywhere on the page) and the same
+>   destination becomes the editing workspace. Closing the file puts the list
+>   back, on the same page, without navigating.
+> - **Eksportering** is where the export lives. With no file open it is not
+>   empty: it offers **«Sist redigert»** with one button, a picker of the other
+>   recordings, and «Åpne fil…».
+>
+> Two names to unlearn: **«Bibliotek» is called Redigering**, and the editor's
+> **third step, «Eksporter», is gone** — the step strip is **Klipp → Lyd**, and
+> «Neste: Eksporter» takes you to the destination. An export that is running
+> keeps running while you look at something else.
 
 > **D2 moved settings twice, and the second move is the big one.**
 >
-> 1. The destination was renamed: **Oppsett** is now the **gear at the FOOT of
->    the rail**, labelled **Innstillinger**.
+> 1. The destination was renamed: **Oppsett** is now a **gear**, labelled
+>    **Innstillinger**. _(D2 put it at the foot of the rail; D3 deleted the rail
+>    and the gear is at the **right-hand end of the bottom bar**. The route, the
+>    testid and the `aria-current` are unchanged.)_
 > 2. **The five questions moved out of it.** «Hvilken lyd?», «Hvor skal
 >    opptakene?», «Hvilken kvalitet?», «Ta med kamera», «Ta opp automatisk» and
 >    «Hvem får beskjed hvis noe går galt?» are **cards in the control room on
@@ -50,7 +75,8 @@ guard that would otherwise fail in silence:
 | where it used to be                              | where it is now                                                                           |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | Hjem                                             | **Opptak**                                                                                |
-| Historikk (+ the search box, the chips)          | **Bibliotek** (search kept; the chips are gone)                                           |
+| Historikk (+ the search box, the chips)          | **Redigering** — the list IS the page (search kept; the chips are gone)                   |
+| Bibliotek (the destination, up to v0.16)         | **Redigering** — same list, same rows, same trash; the name is what changed               |
 | Innstillinger → Lyd (the 32-tile channel grid)   | **Opptak › «Hvilken lyd?»** — device, channel pair, hearing test, folded out beside Start |
 | Innstillinger → Filer                            | **Opptak › «Hvor skal opptakene?»** + «Hvilken kvalitet?»                                 |
 | Innstillinger → Generelt (Menighet)              | **the gear › «Hvilken kirke?»** — the one question that is not a Sunday decision          |
@@ -60,9 +86,10 @@ guard that would otherwise fail in silence:
 | Innstillinger → System (log, profile, telemetry) | **the gear › Avansert**                                                                   |
 | Oppdateringer / Oppdateringskanal                | **the gear › Avansert › Oppdateringer**                                                   |
 | E-postserver (SMTP), inside the alerts card      | **the gear › Avansert › «E-postserver (SMTP)»**                                           |
-| Rediger, three tabs (Klipp / Lyd / Innhold)      | **Rediger**, three STEPS (Klipp → Lyd → Eksporter)                                        |
-| The export MODAL                                 | the **Eksporter** step — there is no modal                                                |
-| «Nåværende versjon» in Generelt                  | the version line at the foot of the rail                                                  |
+| Rediger, three tabs (Klipp / Lyd / Innhold)      | **Redigering**, two STEPS (Klipp → Lyd) — the third became a destination                  |
+| The export MODAL                                 | **Eksportering**, the third destination — no modal, and no step 3                         |
+| «Åpne fil…» in the editor's empty state          | **Redigering**'s head, always — and dropping a file anywhere on the page does the same    |
+| «Nåværende versjon» in Generelt                  | the version, in the **bottom bar**, left of the gear                                      |
 
 Surfaces that were removed rather than moved are listed at the bottom of this
 file under **«Flater som ikke finnes lenger»** — read that before reporting a
@@ -153,12 +180,12 @@ npm run tauri dev
 `predev` fetches ffmpeg if needed; vite serves on the fixed port **1420**
 (`strictPort`); Tauri opens the window titled "SundayRec".
 
-**What proves the bridge is up.** The rail paints the SundayRec mark and
-**Opptak · Bibliotek** with the church name at the top, the **Innstillinger**
-gear and the version at the foot, and the
-status line under it says one of five things — «Alt er klart» (green), «Lyden er
-ikke koblet til» / «Lite plass igjen» (amber), «Neste opptak …» (grey) or «Tar
-opp» (red). A status line at all means `settings_get` answered and the database
+**What proves the bridge is up.** The **top bar** paints the SundayRec mark,
+«SundayRec» and the church name; the **bottom bar** carries **Opptak ·
+Redigering · Eksportering** centred, the version and the **Innstillinger** gear
+at its right end, and the status line at its LEFT end says one of five things —
+«Alt er klart» (green), «Lyden er ikke koblet til» / «Lite plass igjen»
+(amber), «Neste opptak …» (grey) or «Tar opp» (red). A status line at all means `settings_get` answered and the database
 opened without panicking; the old header's literal "backend OK" is gone, because
 a line that only ever says one thing is not a status. If `settings_get` actually
 FAILED, the shell says so out loud rather than rendering factory defaults as if
@@ -333,7 +360,7 @@ hatch.
      only appears at stop if a **delivery encode** (e.g. WAV → FLAC/AAC) runs.
      The finalizing overlay stays up and says the file is safe meanwhile; then
      a **«Opptaket er lagret»** card stays on screen (it does not fade like the
-     old toast did), and a **new row** appears in **Bibliotek** with a plausible
+     old toast did), and a **new row** appears in **Redigering** with a plausible
      **duration (~30 s)** and **file size (> 0)**.
    - The stop seam (confirm guard → `stop_recording` once → an explicit
      finalizing overlay that waits for a terminal engine event):
@@ -428,7 +455,8 @@ already in the database is still shown on its row; there is no modal to write a
 new one, and nothing calls `recording_update_note`. See «Flater som ikke finnes
 lenger».
 
-1. Open **Bibliotek**. The new recording is the top row.
+1. Open **Redigering** (the list is what it shows with no file open). The new
+   recording is the top row.
    - **Expected:** the row is titled by WHEN, not by filename — «Søndag 16.
      august 2026 · 11:00» — with the filename underneath. A camera session
      writes two files (`{stem}.mp4` and the `{stem}.wav` sidecar) and must show
@@ -460,7 +488,7 @@ gate-tested (`history-core`); what a rig confirms is that the search box
 wiring behaves on real data. (The transcript half of this section — hits
 inside sermon text — left with whisper in R2 «Frivilligen først».)
 
-1. Record two or three sessions (repeat §5) so **Bibliotek** has several rows.
+1. Record two or three sessions (repeat §5) so **Redigering** has several rows.
 2. Type into the search box («Søk etter dato eller navn»).
    - **Expected:** the list filters live by filename, date, or note text
      (case-insensitive); the count line above it describes the **filtered
@@ -583,7 +611,7 @@ three assumptions that have each failed separately.
    - VERIFIED-BY: crates/sundayrec-core/src/tray.rs::tray_exposes_one_system_action_diagnostics_not_preflight
 2. Click **Stopp opptak** while recording.
    - **Expected:** the recording stops (the `RecorderEngine::stop()` path), the
-     overlay comes down and a new row appears in **Bibliotek**, even with the
+     overlay comes down and a new row appears in **Redigering**, even with the
      window unfocused.
 3. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
 4. Click **Start opptak** from the tray with no source chosen.
@@ -591,7 +619,7 @@ three assumptions that have each failed separately.
      above the button says why. Starting from the menubar on a source nobody
      chose would be the same lie, just in a different place.
 5. Click **Åpne opptaksmappen**.
-   - **Expected:** the folder opens AND the app lands on **Bibliotek**, so you
+   - **Expected:** the folder opens AND the app lands on **Redigering**, so you
      also see the recordings you just asked to see.
 6. There is no preflight row to click (step 1). If you want the answers a
    preflight would give you, open the **«Hvilken lyd?»** card on Opptak — that
@@ -744,12 +772,14 @@ classifier, cached the same way), mastering analyze (pass-1 loudnorm measure),
 and export (core cut-plan + processing + mastering → mp3/aac/wav/flac/mp4/mov).
 NO new native dep — ffmpeg is a sidecar and the PCM is folded into peaks by hand.
 
-**The shape of the screen changed in P4.** 47 controls in three tabs plus 25 in
-an export modal became **three steps** — **Klipp → Lyd → Eksporter** — with one
-question each. There is no export modal, no «Normaliser» toggle, no mastering
-apply panel and no intro/outro jingle rows; each of those is listed under
-«Flater som ikke finnes lenger» with what replaced it. The BACKEND is unchanged:
-the same `editor_*` commands over the same ffmpeg sidecar.
+**The shape of the screen changed in P4, and again in D3.** 47 controls in
+three tabs plus 25 in an export modal became three steps with one question
+each — and D3 turned the third into its own destination, so the strip is
+**Klipp → Lyd** and **Eksportering** is where the file is written. There is no
+export modal, no «Normaliser» toggle, no mastering apply panel and no
+intro/outro jingle rows; each of those is listed under «Flater som ikke finnes
+lenger» with what replaced it. The BACKEND is unchanged: the same `editor_*`
+commands over the same ffmpeg sidecar.
 
 Three things the editor overhaul settled, and what you are checking here:
 
@@ -767,7 +797,8 @@ Three things the editor overhaul settled, and what you are checking here:
   cancellable and kill-timed.
 
 The ffmpeg runs are **HARDWARE-UNVERIFIED** (they need real media). `editor` is
-in the **`default` feature set**, so the Rediger screen is live in every release
+in the **`default` feature set**, so the Redigering workspace is live in every
+release
 and in a plain `npm run tauri dev`; the `feature_disabled` response and the calm
 "not built into this build" hint only exist under `--no-default-features`.
 
@@ -775,12 +806,13 @@ and in a plain `npm run tauri dev`; the `feature_disabled` response and the calm
 npm run tauri dev   # drive the Redigering disclosure — editor is on by default
 ```
 
-1. Record (or import) a short service so it shows in **Bibliotek**, then open
-   it in **Rediger** — from the row, from the «Opptaket er lagret» receipt's
-   «Åpne i Rediger», or by dragging a file onto the empty editor («Dra et
-   opptak hit»). The drop zone is ONE element that is ALWAYS there: Tauri
-   catches OS drags itself, so an overlay that only appears on `dragenter` is
-   not there to be hit when the event arrives.
+1. Record (or import) a short service so it shows in **Redigering**, then open
+   it — from the row, from the «Opptaket er lagret» receipt's «Åpne i Rediger»,
+   from **«Åpne fil…»** in the list's head, or by dragging a file onto the page.
+   The drop zone is ONE element that is ALWAYS there and wraps the WHOLE
+   destination (the trash excepted): Tauri catches OS drags itself, so an
+   overlay that only appears on `dragenter` is not there to be hit when the
+   event arrives.
    - **Expected:** step 1 is **«Klipp»**, and it opens on the only question a
      volunteer has — _is this the sermon?_ The suggestion card is already there
      («Vi tror prekenen er her — fra … til … »), so keeping just the sermon is
@@ -837,8 +869,11 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      erstatter «Tale». Ingen mastring legges oppå — du styrer hele kjeden.»).
      A mixer that layered on top of a preset would be two things fighting over
      the same gain.
-5. Press **«Neste: Eksporter»** — step 3. Pick a **format** and leave the
-   destination alone, then export.
+5. Press **«Neste: Eksporter»**. There is no step 3 — the button NAVIGATES to
+   the **Eksportering** destination, and the file stays open. Pick a **format**
+   and leave the destination alone, then export.
+   - **Expected:** leaving the page mid-export and coming back shows the run (or
+     its receipt) still there, not the form again.
    - **Expected:** the destination reads **«Samme mappe som opptaket»** and a
      `*_redigert.<fmt>` file lands next to the source (no "path must be
      absolute"). Each format states its trade-off («Liten fil. Passer for nett
@@ -1209,7 +1244,7 @@ decision gate, not a code test.
 **Before the service**
 
 1. Confirm the machine is actually running the **promoted** tag, not whatever
-   it happened to have installed. The **version line at the foot of the rail**
+   it happened to have installed. The **version line in the bottom bar**
    must read exactly the tag `node scripts/promote-release.mjs beta
 vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
    - **Expected:** version matches. If it's a build behind, either the update
@@ -1336,7 +1371,10 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 | **The «Normaliser» toggle**                                 | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).                                                                                                                             |
 | **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                                                                          |
 | **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                                                                         |
-| **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».                                                                                                                              |
+| **The editor's three TABS**                                 | **two** STEPS — Klipp → Lyd — since D3 turned the third into a destination. The chosen step is NOT remembered across a reopen, deliberately: every open starts at «is this the sermon?».                                                                                                    |
+| **The left RAIL** (D3)                                      | a 44 px top bar (mark, product name, church — and the window's drag region) and a 56 px bottom bar (status left, the three destinations centred, version + gear right). `--rail-w` is deleted; nothing in the app is 208 px wide any more.                                                  |
+| **The editor's EMPTY STATE** (D3)                           | the recordings list. REDIGERING with no file open IS the empty state, so «Åpne fil…» moved to the list's head and the drop zone wraps the whole page (never the trash). `app.editor.emptyTitle` / `emptyDesc` are deleted from all catalogues.                                              |
+| **Step 3 «Eksporter» in the step strip** (D3)               | the **Eksportering** destination. «Neste: Eksporter» navigates there and the file stays open — the export's signals live at module scope, so a run and its receipt survive going away and coming back. `app.editor.stepExport` is deleted.                                                  |
 | **`#modal-manual`** (source/camera/filename)                | those are the control-room cards' answers now, on the same screen as Start; start is one button (§5).                                                                                                                                                                                       |
 | **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                   |
 | **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                         |
