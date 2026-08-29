@@ -115,10 +115,9 @@ import { SoundStep } from "./SoundStep";
 import { spanLabel } from "./span";
 import { resultLine } from "./summary";
 import { WaveformHost } from "./WaveformHost";
+import { DOT } from "@lib/ui/dot";
 import styles from "./editor.module.css";
 
-/** Skilletegn mellom fakta på én linje. Et tegn, ikke prosa. */
-const DOT = " · ";
 /** Merket foran blokken som ER valgt. Et symbol, ikke tekst å oversette. */
 const STAR = "★ ";
 

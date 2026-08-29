@@ -39,7 +39,7 @@
  * jank-en canvasen ellers ville fått skylda for.
  */
 
-import { computed, signal } from "@preact/signals";
+import { signal } from "@preact/signals";
 import type { EditorSegment } from "@legacy/bindings/EditorSegment";
 import type { Cut } from "@lib/pages/editor/state";
 
@@ -214,9 +214,6 @@ export const analyzing = signal(false);
  * lever mellom `pointerdown` og `pointerup`.
  */
 export const dragWindow = signal<Range | null>(null);
-
-/** Er det noe åpent i det hele tatt? */
-export const hasFile = computed(() => filePath.value !== "");
 
 // ── Det sist redigerte, som overlever at fila lukkes ────────────────────────
 

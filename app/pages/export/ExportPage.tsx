@@ -128,10 +128,8 @@ import {
 } from "../../editor/model";
 import { settings } from "../../state/settings";
 import { spanLabel } from "../../editor/span";
+import { DOT } from "@lib/ui/dot";
 import styles from "./export.module.css";
-
-/** Ett tegn mellom to fakta på samme linje. Ikke prosa. */
-const DOT = " · ";
 
 /** Fasen bakenden melder → teksten som forklarer den. To koder, festet mot
  *  Rust-siden av `export_phase_codes_match_the_renderer_literals`. */
