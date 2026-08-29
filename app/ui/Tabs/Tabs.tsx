@@ -1,7 +1,7 @@
 /**
  * Tabs — for VALG innenfor én skjerm, aldri for navigasjon.
  *
- * De tre destinasjonene bor i skinnen; faner som skjuler halve appen er
+ * De tre destinasjonene bor i bunnlinja; faner som skjuler halve appen er
  * nøyaktig arkitekturen «Frivilligen først» river ned. Det som blir igjen er
  * små, ekte fanevalg — Klipp · Lyd · Eksporter i editoren — der alle
  * alternativene hører til samme oppgave og er synlige samtidig.

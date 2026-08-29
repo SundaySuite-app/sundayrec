@@ -174,7 +174,7 @@ test.describe("app shell foundation", () => {
     });
     // P1b: the route is still OPPSETT — `data-first-run` is what changes the
     // screen — but the heading is the first QUESTION, because that is what the
-    // sequence shows. The rail stays on OPPSETT the whole way.
+    // sequence shows. The shell stays on OPPSETT the whole way.
     await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-page",
@@ -249,9 +249,10 @@ test.describe("app shell boot without the harness", () => {
     });
 
     await page.goto("/");
-    // Skinnen er der uten en eneste fikstur: alt den trenger er innstillinger,
+    // Skallet er der uten en eneste fikstur: alt det trenger er innstillinger,
     // og api-shimmen svarer med defaults når det ikke finnes en backend.
-    await expect(page.getByTestId("rail")).toBeVisible();
+    await expect(page.getByTestId("topbar")).toBeVisible();
+    await expect(page.getByTestId("bottombar")).toBeVisible();
     await expect(page.getByTestId("status-line")).toBeVisible();
 
     const rejections = await page.evaluate(

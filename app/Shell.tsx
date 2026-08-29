@@ -1,10 +1,10 @@
 /**
- * Skallets rot — skinnen, og det destinasjonene faktisk kan si i dag.
+ * Skallets rot — de to linjene, og det destinasjonene faktisk kan si i dag.
  *
  * ## Hva som er ekte her, og hva som ikke er det
  *
- * Skinnen, statuslinjen, navigasjonen og fokusflyttingen er FERDIG: det er
- * S1b sitt. Sidene er ikke bygget ennå — de er fase P — så hver destinasjon
+ * Skallet, statuslinjen, navigasjonen og fokusflyttingen er FERDIG: det er
+ * S1b sitt (og D3 sin form: topplinje + bunnlinje, se `ui/PageShell/`). Sidene er ikke bygget ennå — de er fase P — så hver destinasjon
  * viser den delen av seg selv som allerede er sann.
  *
  * Og BARE den delen. Ingenting her sier «kommer senere», og ingen knapp
@@ -42,8 +42,8 @@
  * ## Første gang, og samtykkekortet
  *
  * `route.firstRun` bytter ut HELE innholdet med sekvensen (`FirstRun`): de
- * samme fem skjermene, ett spørsmål om gangen. Skinnen står, fordi den er
- * stedet appen er.
+ * samme fem skjermene, ett spørsmål om gangen. Topplinja og bunnlinja STÅR,
+ * fordi de er stedet appen er.
  *
  * Samtykkekortet hører til OPPTAK og ikke til sekvensen — canvasens sett 6
  * flyttet det ut med vilje. Det bor nå i `RecordPage`, der det hører hjemme.
@@ -54,7 +54,7 @@
  * Preact-tre, inn i `#overlays`. Grunnen står i DialogHost: verten setter
  * `inert` på `#app` mens en dialog er åpen, og en dialog inne i `#app` ville
  * slått av seg selv. Opptaksoverlegget er der av to grunner til: det skal
- * ligge OVER skinnen, og det skal ikke rives ned av et rutebytte — et opptak
+ * ligge OVER begge linjene, og det skal ikke rives ned av et rutebytte — et opptak
  * som går er ikke en side man er på.
  *
  * ## Oppdateringsbanneret hører til skallet

@@ -264,7 +264,7 @@ test.describe("onboarding", () => {
     await page.getByTestId("consent-card-no").click();
     await expect(page.getByTestId("consent-card-error")).toBeVisible();
     await expect(page.getByTestId("consent-card")).toBeVisible();
-    // The rest of the app is untouched — the rail still navigates.
+    // The rest of the app is untouched — the bottom bar still navigates.
     await page.getByTestId("nav-setup").click();
     await expect(page.getByTestId("app-heading")).toHaveText("Innstillinger");
   });

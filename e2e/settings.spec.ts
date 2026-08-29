@@ -107,8 +107,10 @@ test.describe("settings", () => {
     await expect(page.getByTestId("church-name-control-input")).toHaveValue(
       "Betel Trondheim",
     );
-    // Og skinnen, som leser den samme verdien fra det samme signalet.
-    await expect(page.getByTestId("rail-church")).toHaveText("Betel Trondheim");
+    // Og topplinja, som leser den samme verdien fra det samme signalet.
+    await expect(page.getByTestId("shell-church")).toHaveText(
+      "Betel Trondheim",
+    );
   });
 
   test("the value survives a full reload, not just a re-render", async ({

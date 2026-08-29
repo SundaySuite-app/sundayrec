@@ -494,13 +494,14 @@ describe("ToastHost", () => {
 });
 
 describe("PageShell", () => {
-  it("har skinnens dra-attributt, de fire knappene og statuslinjen", () => {
+  it("har topplinjas dra-attributt, de fire knappene og statuslinjen", () => {
     const html = render(
       <PageShell>
         <span />
       </PageShell>,
     );
-    // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes.
+    // EKSAKT dette attributtet — uten det kan ikke vinduet flyttes. D3 flyttet
+    // det fra skinnens rot til topplinjas; formen er den samme.
     expect(html).toContain("data-tauri-drag-region");
     // Tre destinasjoner (D3: Opptak · Redigering · Eksportering) pluss
     // tannhjulet, som teller som `nav-*` men ikke er en destinasjon.

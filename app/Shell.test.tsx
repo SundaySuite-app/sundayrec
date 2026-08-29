@@ -16,7 +16,7 @@ import { patchSettings } from "./state/settings";
 // — og (b) at `@lib/*` når fram til legacy-rendereren, så det nye skallet
 // leser de SAMME sju katalogene den utsendte appen gjør.
 //
-// S1b legger til det som er nytt: at skinnen faktisk er der, og at hver
+// S1b legger til det som er nytt: at skallet faktisk er der, og at hver
 // destinasjon viser det som er SANT i stedet for en plassholdertekst.
 /** Én historikkrad, i formen `getHistory` faktisk svarer med. */
 function row(over: Partial<RecordingEntry> = {}): RecordingEntry {
@@ -35,13 +35,79 @@ function row(over: Partial<RecordingEntry> = {}): RecordingEntry {
 }
 
 describe("Shell", () => {
-  it("rendrer skinnen med sidenavnet fra katalogen, ikke fra en literal", () => {
+  it("rendrer skallet med sidenavnet fra katalogen, ikke fra en literal", () => {
     navigate("record");
     const html = render(<Shell />);
     expect(html).toContain("Opptak");
     expect(html).toContain('data-testid="app-heading"');
     expect(html).toContain('data-testid="nav-record"');
     expect(html).toContain("data-tauri-drag-region");
+  });
+
+  it("er tre bånd i rekkefølge: topplinje, side, bunnlinje — og skinnen er borte", () => {
+    // D3: venstreskinnen er revet. Det som var i den bor nå i to linjer, og
+    // REKKEFØLGEN i treet er den samme som rekkefølgen på skjermen — det er den
+    // som bestemmer hva en skjermleser og en tabtast møter først.
+    navigate("record");
+    patchSettings({ churchName: "Bryn menighet" });
+    const html = render(<Shell />);
+
+    const top = html.indexOf('data-testid="topbar"');
+    const main = html.indexOf('data-testid="main"');
+    const bottom = html.indexOf('data-testid="bottombar"');
+    expect(top).toBeGreaterThan(-1);
+    expect(main).toBeGreaterThan(top);
+    expect(bottom).toBeGreaterThan(main);
+    // Skinnen finnes ikke lenger — verken som element eller som testid.
+    expect(html).not.toContain('data-testid="rail"');
+    expect(html).not.toContain('data-testid="rail-church"');
+
+    // ⚠️ MUTASJONSPRØVEN for dra-sonen: attributtet står på TOPPLINJENS rot og
+    // ingen andre steder. Flyttes det (eller fjernes), er vinduet ikke lenger
+    // mulig å dra — og ingen klikk-test ville merket det.
+    const headerTag = html.slice(
+      html.indexOf("<header"),
+      html.indexOf(">", html.indexOf("<header")) + 1,
+    );
+    expect(headerTag).toContain('data-testid="topbar"');
+    expect(headerTag).toContain("data-tauri-drag-region");
+    expect(html.match(/data-tauri-drag-region/g)).toHaveLength(1);
+    // …og bunnlinja er IKKE en dra-sone: den er full av knapper.
+    expect(html).not.toMatch(
+      /data-testid="bottombar"[^>]*data-tauri-drag-region/,
+    );
+
+    // Topplinja: merket, produktnavnet og kirken. Ingen knapper.
+    expect(html).toContain('data-testid="app-logo"');
+    expect(html).toContain('data-testid="shell-church"');
+    expect(html).toContain("Bryn menighet");
+
+    // Bunnlinja: statuslinjen, de tre destinasjonene, versjonen og tannhjulet.
+    const bar = html.slice(bottom);
+    for (const id of [
+      "status-line",
+      "status-dot",
+      "status-text",
+      "nav-record",
+      "nav-edit",
+      "nav-export",
+      "nav-setup",
+    ]) {
+      expect(bar).toContain(`data-testid="${id}"`);
+    }
+    patchSettings({ churchName: "" });
+  });
+
+  it("sier fra i topplinja når kirken ikke er satt opp", () => {
+    navigate("record");
+    patchSettings({ churchName: "" });
+    const html = render(<Shell />);
+    // Samme katalognøkkel som i skinnen — det er PLASSEN som flyttet, ikke
+    // setningen. Gult, fordi det er noe som må gjøres.
+    expect(html).toMatch(
+      /data-testid="shell-church"[^>]*class="[^"]*churchUnset/,
+    );
+    expect(html).toContain("Ikke satt opp ennå");
   });
 
   it("følger ruten, og språket", async () => {

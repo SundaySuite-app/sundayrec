@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
 
-// Skinnen, sett fra utsiden.
+// Skallet, sett fra utsiden.
 //
 // Alt her er ting som bare kan bevises i en ekte nettleser: at et klikk faktisk
 // bytter rute, at fokus flytter seg til overskriften, at attributtet Tauri
@@ -12,6 +12,16 @@ import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
 // Prioritetstabellen selv er node-testet (`app/state/status-line.test.ts`).
 // Det denne legger til er skjøten: at signalene faktisk mates inn, og at
 // setningen kommer fra katalogen på det språket som gjelder.
+//
+// ## D3: geometrien er en påstand her og ingen andre steder
+//
+// Venstreskinnen er revet; navigasjonen er en BUNNLINJE à la DaVinci Resolve.
+// Rekkefølgen i DOM-en beviser ingenting om den: et rutenett kan legge et felt
+// hvor som helst, og feilmodusen er stum — `1fr auto 1fr` som mister sin
+// `min-width: 0`, en `justify-self` som faller bort, et `position: sticky` som
+// ikke lenger har noe å klebe til. Så bunnlinja måles: status til VENSTRE for
+// destinasjonene, destinasjonene til venstre for tannhjulet, og alle tre
+// innenfor det samme båndet.
 
 /** Et oppsett der lyden ER valgt — det statuslinjen kaller «Alt er klart». */
 const SOUND_CHOSEN = {
@@ -44,7 +54,7 @@ const CHOSEN_FIXTURES = {
   ],
 };
 
-test.describe("skinnen", () => {
+test.describe("skallet", () => {
   test("de tre destinasjonene og tannhjulet bytter rute, og fokus følger med", async ({
     page,
   }) => {
@@ -58,7 +68,7 @@ test.describe("skinnen", () => {
     await expect(page.getByTestId("app-heading")).toHaveText("Redigering");
     await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
     // Fokus på overskriften. Uten det blir en tastaturbruker stående i
-    // skinnen og må tabbe gjennom hele navigasjonen på nytt for hver side.
+    // bunnlinja og må tabbe gjennom hele navigasjonen på nytt for hver side.
     await expect(page.getByTestId("app-heading")).toBeFocused();
 
     await page.getByTestId("nav-export").click();
@@ -88,54 +98,175 @@ test.describe("skinnen", () => {
     );
   });
 
-  test("vinduet kan dras: attributtet Tauri leser står på skinnens rot", async ({
+  test("vinduet kan dras: attributtet Tauri leser står på topplinjas rot", async ({
     page,
   }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
     // EKSAKT dette attributtet. Uten det er appen et vindu som ikke kan
     // flyttes — en feil ingen tester finner, fordi alle tester klikker og
-    // ingen drar.
-    await expect(page.getByTestId("rail")).toHaveAttribute(
+    // ingen drar. D3 flyttet verten fra skinnens rot til topplinjas; det er
+    // alt som flyttet.
+    await expect(page.getByTestId("topbar")).toHaveAttribute(
       "data-tauri-drag-region",
       /.*/,
     );
-    // Destinasjonene er unntatt, ellers ville et klikk startet et vindusdrag.
-    await expect(page.getByTestId("nav-record")).toHaveAttribute(
+    // Og bunnlinja er IKKE en dra-sone. Unntaket `data-tauri-drag-region="false"`
+    // fantes fordi destinasjonene lå INNE i sonen; nå gjør de ikke det, og et
+    // unntak som ikke lenger har noe å unnta er et unntak som lyver. Kommer det
+    // en knapp opp i topplinja en dag, må DEN bære `"false"`.
+    await expect(page.getByTestId("bottombar")).not.toHaveAttribute(
       "data-tauri-drag-region",
-      "false",
+      /.*/,
     );
+    await expect(page.getByTestId("nav-record")).not.toHaveAttribute(
+      "data-tauri-drag-region",
+      /.*/,
+    );
+    // …og skinnen finnes ikke lenger i det hele tatt.
+    await expect(page.getByTestId("rail")).toHaveCount(0);
   });
 
-  test("logoen står øverst og tannhjulet NEDERST, ikke blant destinasjonene", async ({
+  test("topplinja bærer merket og kirken, og starter til høyre for trafikklysene", async ({
     page,
   }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
 
-    // 1. Merket er der, og det er tegningen fra den utsendte appen — kjent på
-    //    de prefiksede `<defs>`-id-ene, som er kollisjonsvakten mot
-    //    `src-tauri/app-icon.svg`s generiske navn.
+    // Merket er der, og det er tegningen fra den utsendte appen — kjent på de
+    // prefiksede `<defs>`-id-ene, som er kollisjonsvakten mot
+    // `src-tauri/app-icon.svg`s generiske navn.
     await expect(page.getByTestId("app-logo")).toBeVisible();
     await expect(page.locator("#srlogo-clip")).toHaveCount(1);
     await expect(page.locator("#srlogo-gold")).toHaveCount(1);
 
-    // 2. TRE destinasjoner etter D3 (Opptak · Redigering · Eksportering).
-    //    Tannhjulet teller som `nav-*` (kontrakten `no-live-surface.spec.ts`
-    //    hviler på), men det ligger utenfor gruppen — derfor fire, ikke tre.
+    const bar = (await page.getByTestId("topbar").boundingBox())!;
+    const logo = (await page.getByTestId("app-logo").boundingBox())!;
+    const church = (await page.getByTestId("shell-church").boundingBox())!;
+
+    // Ett bånd, øverst, og alt inni det.
+    expect(bar.y).toBe(0);
+    expect(logo.y).toBeGreaterThanOrEqual(bar.y);
+    expect(logo.y + logo.height).toBeLessThanOrEqual(bar.y + bar.height);
+    // Kirken står til HØYRE for merket, ikke under det.
+    expect(church.x).toBeGreaterThan(logo.x + logo.width);
+
+    // ⚠️ Trafikklys-offsetet kan bare måles der klassen faktisk settes. I
+    // Chromium er `currentOs()` ikke `darwin`, så regelen står ikke på — men
+    // den ER en ren CSS-regel på en klasse, og klassen kan settes. Da flytter
+    // topplinjas innhold seg forbi x = 84 (ytterste trafikklys slutter ved
+    // x ≈ 69, målt i den ekte WKWebView-en). Selve trafikklysene finnes ikke i
+    // en nettleser; klaringen måles hos eieren, i WKWebView-proben.
+    await page.evaluate(() =>
+      document.documentElement.classList.add("platform-darwin"),
+    );
+    const shifted = (await page.getByTestId("app-logo").boundingBox())!;
+    expect(shifted.x).toBeGreaterThanOrEqual(84);
+    await page.evaluate(() =>
+      document.documentElement.classList.remove("platform-darwin"),
+    );
+  });
+
+  test("bunnlinja: status til venstre, de tre sentrert, versjon og tannhjul til høyre", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: CHOSEN_FIXTURES, settings: SOUND_CHOSEN });
+
+    // TRE destinasjoner etter D3 (Opptak · Redigering · Eksportering).
+    // Tannhjulet teller som `nav-*` (kontrakten `no-live-surface.spec.ts`
+    // hviler på), men det ligger utenfor gruppen — derfor fire, ikke tre.
     await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
 
-    // 3. …og NEDERST. Dette er den ene påstanden DOM-rekkefølgen ikke kan
-    //    bevise: `margin-top: auto` er det som limer tannhjulet til bunnen, og
-    //    feilmodusen er stum — to `auto`-marger i samme kolonne DELER den
-    //    ledige plassen, så tannhjulet blir stående og sveve midt i skinnen
-    //    mens statuslinjen fortsatt sitter der den skal. Målt, ikke antatt.
-    const lastDest = (await page.getByTestId("nav-export").boundingBox())!;
-    const gear = (await page.getByTestId("nav-setup").boundingBox())!;
+    const bar = (await page.getByTestId("bottombar").boundingBox())!;
     const status = (await page.getByTestId("status-line").boundingBox())!;
+    const dot = (await page.getByTestId("status-dot").boundingBox())!;
+    const rec = (await page.getByTestId("nav-record").boundingBox())!;
+    const edit = (await page.getByTestId("nav-edit").boundingBox())!;
+    const exp = (await page.getByTestId("nav-export").boundingBox())!;
+    const version = (await page.getByTestId("app-version").boundingBox())!;
+    const gear = (await page.getByTestId("nav-setup").boundingBox())!;
 
-    // Under destinasjonene, med LUFT mellom seg — ikke neste rad i listen.
-    expect(gear.y).toBeGreaterThan(lastDest.y + lastDest.height + 40);
-    // …og tett på statuslinjen: alt over ~40 px betyr at den svever.
-    expect(status.y - (gear.y + gear.height)).toBeLessThan(40);
+    // 1. Båndet står NEDERST — under `<main>`, ikke over den.
+    const main = (await page.getByTestId("main").boundingBox())!;
+    expect(bar.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
+
+    // 2. Venstre → høyre: status · de tre · versjon · tannhjul.
+    expect(dot.x).toBeLessThan(rec.x);
+    expect(status.x + status.width).toBeLessThan(rec.x);
+    expect(rec.x).toBeLessThan(edit.x);
+    expect(edit.x).toBeLessThan(exp.x);
+    expect(exp.x + exp.width).toBeLessThan(version.x);
+    expect(version.x + version.width).toBeLessThanOrEqual(gear.x);
+
+    // 3. ALT inni det samme båndet. Dette er påstanden som faller hvis et felt
+    //    forlater rutenettet — den formen for feil ser riktig ut i DOM-en.
+    for (const box of [status, rec, edit, exp, version, gear]) {
+      expect(box.y).toBeGreaterThanOrEqual(bar.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(bar.y + bar.height + 0.5);
+    }
+
+    // 4. …og de tre står SENTRERT i vinduet, ikke sentrert i det som blir igjen
+    //    etter statuslinjen. `1fr auto 1fr` er hele mekanismen.
+    const viewport = page.viewportSize()!;
+    const navMid = (rec.x + exp.x + exp.width) / 2;
+    expect(Math.abs(navMid - viewport.width / 2)).toBeLessThan(4);
+
+    // 5. Treffmålet. Et ikon over en 11 px etikett er ~35 px innhold; knappen
+    //    skal være større enn innholdet sitt.
+    for (const box of [rec, edit, exp, gear]) {
+      expect(box.height).toBeGreaterThanOrEqual(40);
+    }
+  });
+
+  test("linjene står stille mens siden ruller, og vinduet ruller aldri sidelengs", async ({
+    page,
+  }) => {
+    // Feilmodusen `minmax(0, 1fr)` finnes for: en grid-rad med `min-height:
+    // auto` vokser med innholdet, og da ruller HELE dokumentet — bunnlinja ut
+    // av skjermen sammen med det. Målt på en side som faktisk er lang nok.
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await boot(page, { fixtures: CHOSEN_FIXTURES, settings: SOUND_CHOSEN });
+
+    const before = (await page.getByTestId("bottombar").boundingBox())!;
+    await page.getByTestId("main").evaluate((el) => el.scrollBy(0, 2000));
+    const after = (await page.getByTestId("bottombar").boundingBox())!;
+    expect(after.y).toBe(before.y);
+    expect((await page.getByTestId("topbar").boundingBox())!.y).toBe(0);
+
+    // …og ingen vannrett rulling, verken på det trange eller det vide vinduet.
+    for (const width of [1000, 1180]) {
+      await page.setViewportSize({ width, height: 760 });
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      expect(overflow, `vannrett rulling ved ${width} px`).toBeLessThanOrEqual(
+        0,
+      );
+    }
+  });
+
+  test("første gang bytter bare innholdet — topplinja og bunnlinja står", async ({
+    page,
+  }) => {
+    // Sekvensen er fem skjermer inne i `<main>`, ikke en egen app. Skinnen sto
+    // gjennom hele den; de to linjene gjør det samme, og det er det som gjør at
+    // en frivillig kan se hvilken app hun setter opp mens hun setter den opp.
+    // ⚠️ Uten `?goto=`: dyplenken tvinger `onboardingDone` true.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { onboardingDone: false },
+    });
+    await expect(page.getByTestId("first-run")).toBeVisible();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-first-run",
+      "true",
+    );
+
+    await expect(page.getByTestId("topbar")).toBeVisible();
+    await expect(page.getByTestId("app-logo")).toBeVisible();
+    await expect(page.getByTestId("bottombar")).toBeVisible();
+    await expect(page.getByTestId("status-line")).toBeVisible();
+    await expect(page.locator('[data-testid^="nav-"]')).toHaveCount(4);
+    // Og ingen skinne noe sted — heller ikke her.
+    await expect(page.getByTestId("rail")).toHaveCount(0);
   });
 
   test("statuslinjen sier «Lyden er ikke koblet til» når ingen kilde er valgt", async ({
@@ -194,22 +325,22 @@ test.describe("skinnen", () => {
     );
   });
 
-  test("kirkenavnet står i skinnen — og sier fra når det mangler", async ({
+  test("kirkenavnet står i topplinja — og sier fra når det mangler", async ({
     page,
   }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SOUND_CHOSEN });
-    await expect(page.getByTestId("rail-church")).toHaveText("Bryn menighet");
+    await expect(page.getByTestId("shell-church")).toHaveText("Bryn menighet");
 
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SOUND_CHOSEN, churchName: "" },
     });
-    await expect(page.getByTestId("rail-church")).toHaveText(
+    await expect(page.getByTestId("shell-church")).toHaveText(
       "Ikke satt opp ennå",
     );
   });
 
-  test("et lagret språk gir en engelsk skinne, ikke bare en engelsk overskrift", async ({
+  test("et lagret språk gir et engelsk skall, ikke bare en engelsk overskrift", async ({
     page,
   }) => {
     await boot(page, {
