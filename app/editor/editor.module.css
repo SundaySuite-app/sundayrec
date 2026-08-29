@@ -7,12 +7,30 @@
  * eier som endrer `--gold` endrer også prekenvinduet.
  */
 
+/*
+ * ⚠️ `flex: 1 0 auto` og IKKE `flex: 1` + `min-height: 0`.
+ *
+ * Den gamle formen sa «voks for å fylle, og krymp så mye som helst». Andre
+ * halvdel var feilen: `min-height: 0` lar en flex-boks bli KORTERE enn
+ * innholdet sitt, og med `overflow: visible` blir resten stående og renne
+ * utenfor boksen. Samtidig står `.nextRow` nederst med `margin-top: auto`,
+ * altså festet til bunnen av DENNE boksen — så den havnet oppå innholdet som
+ * hadde rent ut under den.
+ *
+ * To regler som hver for seg er riktige, uenige i skjøten: «fyll høyden» og
+ * «knappen nederst». På main kolliderte de ikke, men bare fordi avspillings-
+ * knappen tilfeldigvis lå 15 px under `.nextRow`; D3s tetthetspass flyttet
+ * innholdet 36 px opp, og da lå den under. Proben fant det, ikke øyet.
+ *
+ * `0` i midten (flex-shrink) er hele fiksen: boksen er ALDRI kortere enn
+ * innholdet, så ingenting renner ut, og `<main>` ruller i stedet — som er
+ * det den er satt opp til å gjøre.
+ */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--gap-page);
-  min-height: 0;
-  flex: 1;
+  flex: 1 0 auto;
 }
 
 /* ── Topplinja ─────────────────────────────────────────────────────────── */
@@ -260,12 +278,12 @@
  * har ingen bølgeform å gi plass til, så innholdet står øverst og «neste»
  * nederst — `margin-top: auto` på siste raden, slik artboardet gjør det.
  */
+/* `flex: 1 0 auto` av samme grunn som `.page` over — se skjøt-notatet der. */
 .step {
   display: flex;
   flex-direction: column;
   gap: var(--gap-page);
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
 }
 
 .nextRow {

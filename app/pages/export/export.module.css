@@ -11,12 +11,18 @@
  * da er dette to justeringer og ikke én med en overraskelse i.
  */
 
+/*
+ * ⚠️ `flex: 1 0 auto`, samme skjøt som REDIGERING — se notatet over `.page` i
+ * `app/editor/editor.module.css`. Her er bunn-festet `.exportBar` i stedet for
+ * `.nextRow`, men formen er identisk: en boks som får krympe under innholdet
+ * sitt, med en søsken festet til bunnen av den. Rettet begge steder samtidig,
+ * fordi det er ETT mønster og ikke to.
+ */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--gap-page);
-  min-height: 0;
-  flex: 1;
+  flex: 1 0 auto;
 }
 
 /* ── Topplinja ─────────────────────────────────────────────────────────── */
@@ -32,12 +38,12 @@
 
 /* ── Valgene, kjøringen og kvitteringen ────────────────────────────────── */
 
+/* `flex: 1 0 auto` av samme grunn som `.page` over. */
 .step {
   display: flex;
   flex-direction: column;
   gap: var(--gap-page);
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
 }
 
 .label {
