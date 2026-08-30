@@ -19,10 +19,10 @@
 
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
-    EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
-    EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
-    EditorSidecar, EditorStreamInfo, ExportEngine, MasterEngine,
+    EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterApplyRequest,
+    EditorMasterApplyResult, EditorMasterPreviewRequest, EditorMasterPreviewResult,
+    EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar, ExportEngine,
+    MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -97,20 +97,6 @@ pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaI
 pub async fn editor_peaks(app: tauri::AppHandle, input_path: String) -> AppResult<EditorPeaks> {
     super::path_guard::checked_input_file(&input_path)?;
     editor::peaks(&input_path, decode_progress(app, "editor://peaks-progress")).await
-}
-
-/// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
-/// basis, since the waveform peaks are an 8 kHz mono downmix that under-reads
-/// the real peak by several dB.
-///
-/// **Path policy: `UserChosenRead`** — the same guard every sibling editor
-/// command runs. Found unguarded by the E1.3 coverage ratchet: it is the one
-/// editor command whose `input_path` reached ffmpeg without validation, and it
-/// had its own bare `Path::exists()` check standing in for one.
-#[tauri::command]
-pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
-    super::path_guard::checked_input_file(&input_path)?;
-    crate::editor::probe_true_peak_db(&input_path).await
 }
 
 /// Transcode a large/exotic recording to a seekable stereo AAC proxy for
@@ -240,6 +226,15 @@ pub fn editor_master_presets() -> AppResult<Vec<crate::editor::EditorMasterPrese
 
 /// Analyse a recording's stereo channel balance and recommend a repair
 /// (swap / duplicate the good channel / per-channel makeup). HARDWARE-UNVERIFIED.
+///
+/// ⚠️ **BLIR STÅENDE selv om den er unåbar** (V1/PR3, der de fire søsken-probene
+/// gikk). Denne er ikke en dublett — den er den halvferdige enden av en flate
+/// som ER påbegynt: `app/editor/sound-profiles.ts` mapper allerede motorens
+/// kanalkoder (`dead_left`/`dead_right`/…) til i18n-nøkler som finnes oversatt i
+/// alle sju språkfilene (`editor.chanDeadLeft` og de fem andre), og
+/// `SoundStep.tsx` er stedet de skal vises. Det som mangler er kallet. Å slette
+/// motoren nå ville gjort de oversatte nøklene til søppel og betalt for
+/// halvparten av jobben to ganger.
 #[tauri::command]
 pub async fn editor_diagnose_channels(input_path: String) -> AppResult<EditorChannelDiagnosis> {
     super::path_guard::checked_input_file(&input_path)?;
@@ -430,41 +425,30 @@ pub fn editor_sermon_pick(
     Ok(editor::sermon_pick_index(&media_path, &segments))
 }
 
-/// Probe just has_video/has_audio for the editor's audio-vs-video layout.
-#[tauri::command]
-pub async fn editor_probe_streams(input_path: String) -> AppResult<EditorStreamInfo> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::probe_streams(&input_path).await
-}
-
-/// Stat a recording and either return its bytes inline (≤100 MB) or signal
-/// `tooLarge` so the renderer streams it via the peaks-extract path. Async +
-/// spawn_blocking: a sync command runs on the main thread, and reading a
-/// hundreds-of-MB recording there froze the whole UI for the duration.
-#[tauri::command]
-pub async fn editor_read_file(media_path: String) -> AppResult<EditorFileRead> {
-    super::path_guard::checked_input_file(&media_path)?;
-    tokio::task::spawn_blocking(move || editor::read_file_guarded(&media_path))
-        .await
-        .map_err(|e| crate::error::AppError::Internal(format!("editor read join: {e}")))?
-}
-
-/// Sweep the given folders for crashed-edit temp/backup leftovers. Returns the
-/// count removed.
-///
-/// The AUTOMATIC path is `editor::startup_sweep`, wired into `lib.rs` setup
-/// (E6.5) — this doc comment used to claim "called at startup" while nothing
-/// called it at all, renderer or otherwise, so crashed exports left full-size
-/// copies of a service on disk forever. This command remains as the explicit
-/// "sweep THESE folders" entry point for a renderer that wants to clean a
-/// folder the startup sweep does not know about.
-#[tauri::command]
-pub fn editor_cleanup_temp_files(folders: Vec<String>) -> AppResult<usize> {
-    for folder in &folders {
-        super::path_guard::checked_path(folder)?;
-    }
-    Ok(editor::cleanup_temp_files(&folders))
-}
+// ── V1/PR3: fire prober som aldri fikk en dør ────────────────────────────────
+//
+// `editor_probe_peak`, `editor_probe_streams`, `editor_read_file` og
+// `editor_cleanup_temp_files` er BORTE som Tauri-kommandoer. Ingen av dem ble
+// noen gang kalt fra skallet, og hver enkelt hadde en levende erstatter:
+//
+//   - probe_peak    → `editor_mastering_analyze` svarer med true-peak som ÉN av
+//                     flere målinger; Normaliser leser den derfra.
+//   - probe_streams → `editor_load_recording` returnerer alt `hasVideo`/
+//                     `hasAudio` i `EditorMediaInfo` (loader.ts sier det rett
+//                     ut: «et eget `editor_probe_streams` ville vært en ny
+//                     ffprobe for et svar vi har»).
+//   - read_file     → avspilling går på `asset://` gjennom
+//                     `editor_allow_asset_path`; ingen leser en hel opptaksfil
+//                     inn i webviewet lenger.
+//   - cleanup_temp  → den AUTOMATISKE `editor::startup_sweep` (E6.5) kjører i
+//                     `lib.rs`-oppsettet på hver oppstart.
+//
+// ⚠️ IMPLEMENTASJONENE i `crate::editor` (`probe_true_peak_db`, `probe_streams`,
+// `read_file_guarded`, `cleanup_temp_files`) står IGJEN, med testene sine. Det
+// er ikke en forglemmelse: `editor/mod.rs` er 5407 linjer, `cleanup_temp_files`
+// har fortsatt en levende kaller i `startup_sweep`, og kirurgi der er den samme
+// risikoen som fikk mastering-kvartetten (b4) til å bli stående. Det som lukkes
+// her er IPC-flaten. Å åpne en dør igjen er én `#[tauri::command]`-innpakning.
 
 /// Render a windowed single-pass mastering preview to a temp mp3.
 #[tauri::command]

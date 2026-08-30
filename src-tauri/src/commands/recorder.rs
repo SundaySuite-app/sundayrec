@@ -1,8 +1,6 @@
 //! Recorder commands — the thin IPC layer over `crate::recorder` (Fase 3).
 //!
 //! The renderer calls:
-//!   - `list_recording_devices` to discover capture devices (real ffmpeg
-//!     enumerator),
 //!   - `start_recording(opts)` / `stop_recording` to drive a unified capture,
 //!     listening for `recording://{state,started,progress,silence,error,
 //!     reconnecting,reconnected}` events,
@@ -54,23 +52,15 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 
-use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::settings::ChannelMode;
 
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::recorder::engine::{list_recording_devices as enumerate, RecorderEngine, RecordingOpts};
+use crate::recorder::engine::{RecorderEngine, RecordingOpts};
 use crate::recorder::preroll::{preroll_settings_from, PrerollClip, PrerollEngine, PrerollStatus};
 use crate::settings;
 use crate::test_recording::{run_test_recording as run_test, TestRecordingResult};
-
-/// List capture (audio) devices the recorder can match against, via the real
-/// ffmpeg device enumerator (F2.1).
-#[tauri::command]
-pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
-    enumerate().await
-}
 
 /// The latest in-recording camera preview frame, base64-encoded, or `None` if no
 /// frame is available yet. For a VIDEO recording the recording ffmpeg writes a

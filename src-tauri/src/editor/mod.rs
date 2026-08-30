@@ -978,7 +978,8 @@ pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
 ///
 /// [`cleanup_temp_files`] was reachable only through the
 /// `editor_cleanup_temp_files` Tauri command, and that command had ZERO callers
-/// — renderer or otherwise. So an export or a mastering apply that crashed left
+/// — renderer or otherwise; V1/PR3 deleted it, so THIS sweep is now the whole
+/// cleanup. Before it, an export or a mastering apply that crashed left
 /// its `.__editor_tmp` / `.__editor_bak` beside the recording forever, and each
 /// one is the size of the recording it was editing. A 90-minute service's
 /// backup is hundreds of megabytes of invisible litter on the operator's disk.

@@ -27,12 +27,6 @@ pub async fn recordings_delete(db: State<'_, Db>, id: String) -> AppResult<()> {
     store::delete_recording(&db.pool, &id).await
 }
 
-/// Delete the entire recording history.
-#[tauri::command]
-pub async fn recordings_clear(db: State<'_, Db>) -> AppResult<()> {
-    store::clear_recordings(&db.pool).await
-}
-
 /// Set (or clear, with `null`) a recording's free-text note (capped at 4096
 /// chars in the store).
 #[tauri::command]
@@ -63,6 +57,30 @@ pub struct PruneSummary {
 /// [`decide_prune`] decision over the current history, then unlinks the chosen
 /// files and drops their rows. Returns a [`PruneSummary`]. Disabled (no-op) when
 /// `autoDeleteDays <= 0`, matching the Electron early-return.
+///
+/// # ⚠️ SKJØTEFEIL — BLIR STÅENDE, MEN VIRKER IKKE (funnet i V1/PR3)
+///
+/// Denne kommandoen var oppført til sletting som «unåbar dublett». Den er
+/// unåbar, men den er ingen dublett — den er den ENESTE implementasjonen av en
+/// funksjon appen LOVER på skjermen:
+///
+///   - `AdvancedPage.tsx` (`AutoDeleteRows`) har bryteren «Slett gamle opptak»
+///     + dagfeltet, med en egen bekreftelsesdialog under 30 dager.
+///   - `LibraryPage.tsx` (`Foot`) skriver «Slettes automatisk etter {n} dager»
+///     i bunnen av biblioteket.
+///   - `autoDeleteDays` valideres, lagres og telemetreres.
+///
+/// …og ingenting kaller dette. Innstillingen skrives, løftet vises, og ingen
+/// fil blir noen gang slettet. Å slette kommandoen ville sementert løgnen.
+///
+/// ⚠️ Og oppkoblingen er IKKE en enkel rørlegging: teksten sier «Flyttes til
+/// papirkurven, ikke slettet for godt» (`advanced.autoDeleteDesc`), mens koden
+/// under gjør `std::fs::remove_file` — en hard sletting. En kobling som
+/// stod her nå ville slettet gudstjenester for godt med en tekst som lovet det
+/// motsatte. Riktig rekkefølge er: bestem om retensjon skal flytte til
+/// `crate::trash` (som teksten sier) eller slette, RETT koden etter det svaret,
+/// og koble den så opp. Det er en egen, eierstyrt runde — ikke en
+/// opprydding.
 #[tauri::command]
 pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<PruneSummary> {
     let s = settings::load(&db.pool).await.unwrap_or_default();

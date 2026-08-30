@@ -4,16 +4,13 @@
 //! delegate to `sundayrec-core` (and, later, the `services` modules) and return
 //! `Result<T, AppError>`. Naming convention: `entity_verb` (e.g. `app_info`).
 
-pub mod account;
 pub mod app;
 pub mod audio;
-pub mod calendar;
 pub mod db;
 pub mod diagnostics;
 pub mod editor;
 pub mod email;
 pub mod haptics;
-pub mod legacy_data;
 // E2.3 — reveal the log folder / copy its tail. Neither takes a path: the only
 // directory they can touch is computed in-process (see the module docs).
 pub mod logs;

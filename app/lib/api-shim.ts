@@ -969,6 +969,16 @@ const api: Record<string, unknown> = {
     (await invoke<boolean>("email_set_smtp_password", {
       password: password && password.length > 0 ? password : null,
     })) as boolean,
+  // Wipe the stored password. `email_set_smtp_password(null)` reaches the same
+  // `secrets::delete`, and that IS what «Fjern» used to call — which left the
+  // dedicated command dark and the intent ambiguous at the seam: a clear read
+  // as "a save of nothing", so a keychain failure surfaced under the word
+  // «lagret» and the set-path's blank-means-clear branch became the only
+  // exercised way to remove a credential. Now the button says what it does.
+  // NOT wrapped in `call` — same reason as the write: a keychain delete that
+  // fails must reach the caller's error toast, never a silent `false`.
+  emailClearSmtpPassword: async () =>
+    (await invoke<boolean>("email_clear_smtp_password")) as boolean,
   // Whether a password is stored — drives the "(lagret)" state. The secret
   // itself never crosses into the webview.
   emailHasSmtpPassword: async () =>

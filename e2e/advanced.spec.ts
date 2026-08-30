@@ -180,6 +180,51 @@ test.describe("e-postserveren åpner porten på spørsmål 5", () => {
     await expect(
       page.getByTestId("adv-smtp-password-control-input"),
     ).toHaveValue("");
+
+    // …and with nothing stored, «Fjern» is not on screen at all. A remove
+    // button beside «Ingen lagret» is a door to an empty room — legacy did
+    // not render one, and neither do we (V1/PR3).
+    await expect(page.getByTestId("adv-smtp-password-clear")).toHaveCount(0);
+  });
+
+  test("«Fjern» kaller sletteKOMMANDOEN, ikke en lagring av ingenting", async ({
+    page,
+  }) => {
+    // The seam V1/PR3 closed. The button used to send `emailSetSmtpPassword
+    // (undefined)` and lean on the backend's blank-means-clear branch: the
+    // right bytes were deleted, but a REMOVAL travelled as a SAVE, so a failed
+    // keychain delete surfaced under the word «lagret» and
+    // `email_clear_smtp_password` — written for exactly this — had no caller.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        email_status: { featureBuilt: true },
+        email_has_smtp_password: true,
+        email_set_smtp_password: fn(
+          "() => { (window.__E2E_KEYCHAIN__ ||= []).push('SET'); return true; }",
+        ),
+        email_clear_smtp_password: fn(
+          "() => { (window.__E2E_KEYCHAIN__ ||= []).push('CLEAR'); return true; }",
+        ),
+      },
+      settings: {
+        ...SETTLED_SETTINGS,
+        emailSmtp: "smtp.kirke.no",
+        emailSmtpUser: "varsler@kirke.no",
+      },
+      goto: "settings:general",
+    });
+
+    // A password IS stored, so the button exists.
+    await page.getByTestId("adv-smtp-password-clear").click();
+
+    // The dedicated command — and NOT the set-path.
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_KEYCHAIN__))
+      .toEqual(["CLEAR"]);
+
+    // The receipt the volunteer reads afterwards.
+    await expect(page.getByTestId("toast-host")).toContainText("fjernet");
   });
 });
 

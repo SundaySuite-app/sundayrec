@@ -15,10 +15,6 @@
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
-// Sunday Account (SSO) — the desktop login over the shared `sunday-auth` crate.
-// The browser loopback PKCE shell + shared-session persistence; the pure
-// decisions live in `sunday_auth::{pkce,supabase,session}`. NETWORK-UNVERIFIED.
-pub mod account;
 pub mod audio;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
@@ -387,8 +383,9 @@ pub fn run() {
             //     path; a panic, a kill or a `SUNDAYREC_BENCH_KEEP` run leaves
             //     it, and a 60 s 96 kHz stereo capture is ~23 MB.
             //   - `.__editor_tmp` / `.__editor_bak` beside recordings — swept
-            //     only by `editor_cleanup_temp_files`, a Tauri command with ZERO
-            //     callers, so a crashed export left a full-size copy of the
+            //     only by an `editor_cleanup_temp_files` Tauri command with ZERO
+            //     callers (deleted in V1/PR3; THIS sweep is the whole cleanup
+            //     now), so a crashed export left a full-size copy of the
             //     service on disk forever.
             // Background + best-effort: this is hygiene, not a startup
             // dependency, and it must never delay the window appearing.
@@ -464,16 +461,7 @@ pub fn run() {
             commands::app::set_launch_at_login,
             commands::app::get_launch_at_login,
             commands::app::tray_set_language,
-            commands::account::sunday_account_configured,
-            commands::account::sunday_account_status,
-            commands::account::sunday_sign_in,
-            commands::account::sunday_sign_out,
-            commands::account::sunday_whoami_song,
-            commands::audio::list_input_devices,
             commands::audio::list_audio_devices,
-            commands::audio::probe_device_channels,
-            commands::audio::scan_device_channels,
-            commands::audio::list_audio_input_channels,
             commands::audio::list_devices,
             commands::audio::list_video_devices,
             commands::audio::get_camera_capabilities,
@@ -482,7 +470,6 @@ pub fn run() {
             commands::audio::stop_vu,
             commands::media::ffmpeg_health,
             commands::media::media_permissions,
-            commands::recorder::list_recording_devices,
             commands::recorder::recording_preview_frame,
             commands::recorder::plan_recording_opts,
             commands::recorder::start_recording,
@@ -499,7 +486,6 @@ pub fn run() {
             commands::recorder::run_capture_bench,
             commands::db::recordings_list,
             commands::db::recordings_delete,
-            commands::db::recordings_clear,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
             // Papirkurv. `trash_move` is what the delete actions in Historikk
@@ -508,21 +494,14 @@ pub fn run() {
             commands::trash::trash_list,
             commands::trash::trash_restore,
             commands::trash::trash_purge,
-            commands::calendar::liturgical_month,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
-            commands::settings::settings_export,
             commands::settings::settings_import,
             commands::settings::settings_export_to_file,
             commands::settings::settings_import_from_file,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
-            // R3-F — Electron-era app-data scan + consented cleanup. Both are
-            // argument-less (the target path is derived + re-validated inside;
-            // see commands/legacy_data.rs for why that IS the guard).
-            commands::legacy_data::legacy_data_scan,
-            commands::legacy_data::legacy_data_clean,
             // E2.3 — the log the operator can actually hand to support. Neither
             // takes a path (see commands/logs.rs for why that IS the guard).
             commands::logs::logs_reveal,
@@ -535,7 +514,6 @@ pub fn run() {
             commands::editor::editor_peaks,
             commands::editor::editor_extract_playback_proxy,
             commands::editor::editor_allow_asset_path,
-            commands::editor::editor_probe_peak,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
             commands::editor::editor_diagnose_channels,
@@ -550,9 +528,6 @@ pub fn run() {
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
-            commands::editor::editor_probe_streams,
-            commands::editor::editor_read_file,
-            commands::editor::editor_cleanup_temp_files,
             commands::editor::editor_master_preview,
             commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,

@@ -20,8 +20,9 @@ at the bottom of this file.
 > **Status 2026-08-06 (`feat/make-it-real`, v0.10.0).** `email` and `streaming`
 > joined `default` in this round, several seams listed below as "remaining glue"
 > are now wired, and the IPC surface was audited end to end — see
-> `docs/COMMAND_AUDIT_2026-08.md` for which commands the UI can and cannot
-> reach, and the morning report `SundayRec-MAKE-IT-REAL-2026-08-06.md` (one
+> `docs/archive/COMMAND_AUDIT_2026-08.md` (arkivert i V1/PR3 — the living
+> truth is `scripts/command-reachability-baseline.json`) for which commands
+> the UI can and cannot reach, and the morning report `SundayRec-MAKE-IT-REAL-2026-08-06.md` (one
 > directory above the repo) for the rig checklist and the owner decisions.
 
 ## ⭐ Release blockers — current checklist (only Richard can do these)
@@ -462,7 +463,7 @@ det hele tatt** (de lå kun i `localStorage`, så backend leste defaults). Det
 kuraterte subsettet i `syncBackendRecordingSettings` er utvidet deretter.
 **Integrasjons-stubbene er også borte:** PR #114 (2026-08-09) koblet alle ti
 `integrations_*`-kommandoene til ekte kall med ærlige kvitteringer (pinnet i
-`e2e/integrations.spec.ts`); se `docs/COMMAND_AUDIT_2026-08.md` §4.2, som nå
+`e2e/integrations.spec.ts`); se `docs/archive/COMMAND_AUDIT_2026-08.md` §4.2, som nå
 er merket løst. HTTP-sidene forblir nettverks-uverifiserte til riggtest.
 **(R1 «Frivilligen først» 2026-08-23: hele avsnittet over er historikk —
 cloud, webhook og integrasjonene er FJERNET; bare e-post-stien består.)**

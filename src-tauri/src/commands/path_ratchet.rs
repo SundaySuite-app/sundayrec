@@ -46,7 +46,6 @@ const GUARDED: &[&str] = &[
     // ── R1 editor: every ffmpeg/fs entry point ──────────────────────────────
     "editor_load_recording",
     "editor_peaks",
-    "editor_probe_peak",
     "editor_extract_playback_proxy",
     "editor_allow_asset_path",
     "editor_segments",
@@ -58,8 +57,6 @@ const GUARDED: &[&str] = &[
     "editor_delete_sidecar",
     "editor_record_sermon_pick",
     "editor_sermon_pick",
-    "editor_probe_streams",
-    "editor_read_file",
     // ── Papirkurv ────────────────────────────────────────────────────────────
     "trash_move",
     // ── E1.2 ─────────────────────────────────────────────────────────────────
@@ -236,9 +233,16 @@ fn all_commands() -> Vec<Command> {
 fn the_parser_actually_finds_commands() {
     // A parser that silently matched nothing would turn every assertion below
     // into a no-op. Pin the floor.
+    //
+    // ⚠️ The floor is a PARSER-sanity floor, not a command-count ratchet: it
+    // asks "did this thing read the sources at all", and the honest answer to
+    // "there are fewer commands than yesterday" is to lower it, not to keep a
+    // command alive so a number holds. V1/PR3 deleted 12 dark commands (see the
+    // PR), taking the real count from 111 to ~91, so the floor moved 100 → 80.
+    // The named-command assertions below are what actually pins the behaviour.
     let commands = all_commands();
     assert!(
-        commands.len() > 100,
+        commands.len() > 80,
         "only {} #[tauri::command] functions parsed — the parser is broken",
         commands.len()
     );

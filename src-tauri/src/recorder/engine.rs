@@ -11,7 +11,8 @@
 //! A single **supervisor task** ([`run_session`]) owns the [`RecordingSession`]
 //! and the current [`RecorderState`]. It:
 //!   1. resolves the device with the REAL ffmpeg enumerator
-//!      ([`enumerate_ffmpeg_devices`]) + the core fuzzy match,
+//!      ([`crate::audio::device_enum::enumerate_ffmpeg_devices`]) + the core
+//!      fuzzy match,
 //!   2. spawns ffmpeg for the current segment and a per-segment **reader task**
 //!      that streams stderr lines back over a channel,
 //!   3. drives a `select!` loop over: reader events (progress / silence / error
@@ -96,9 +97,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use ts_rs::TS;
 
-use crate::audio::device_enum::{
-    enumerate_ffmpeg_devices, enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE,
-};
+use crate::audio::device_enum::{enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE};
 use crate::audio::device_watch::BackoffOutcome;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
@@ -343,17 +342,6 @@ fn device_token(d: &FfmpegDevice) -> String {
         Some(i) => i.to_string(),
         None => d.name.clone(),
     }
-}
-
-/// Enumerate capture devices with the REAL ffmpeg enumerator (F2.1). Replaces
-/// the Spike-B cpal stub so the recorder gets true avfoundation indices /
-/// dshow names. Returns the audio inputs (the recorder mic match) and the video
-/// inputs (the camera match) separately.
-///
-/// ⚠️ HARDWARE-UNVERIFIED — spawns `ffmpeg -list_devices`.
-pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
-    let inv = enumerate_ffmpeg_devices().await?;
-    Ok(inv.audio_inputs)
 }
 
 /// What event the reader task sends the supervisor for each stderr line of
