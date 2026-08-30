@@ -96,7 +96,16 @@ const DOC = "docs/SMOKE-TEST.md";
 // tray row — «Sjekk systemet» — that the core deliberately does not build. The
 // correction is only worth as much as the thing that keeps it true, so the
 // runbook now points at the named Rust test that forbids the row.
-const MIN_POINTERS = 52;
+//
+// 52 → 59 in V1/PR2: the Diagnose screen came back, and with it seven claims
+// the runbook could not point at anything for while the surface was missing —
+// the five status rows, the code→catalogue translation AND its fallback, the
+// clipboard copy, the honest failure, the recording guard on the test capture,
+// the tray action that used to dead-end, and the probe's three-state. One of
+// those pointers (§«Claims this runbook used to point at a test for») replaces
+// a pointer that was DELETED in fase B, which is the shape a ratchet is meant
+// to make visible: the claim was uncovered for a whole phase.
+const MIN_POINTERS = 59;
 
 // ── 1. Claim lines, and which of them parse ─────────────────────────────────
 

@@ -1486,10 +1486,11 @@ duration_ms, byte_size, created_at, note` og ikke noe mer. Et merke som gjettes
 - **Bølgeformen** i overlegget (legacy `RecordingWaveform`). Canvasens 2.4 har
   stolper og en klokke; en rullende bølgeform er en andre canvas med sin egen
   rAF-løkke over et opptak som går.
-- **`run-diagnostics` fra menylinjen.** Ruteren armer den mot INNSTILLINGER
-  (`setup`, tannhjulet siden D2), og ingen skjerm plukker den opp ennå —
-  diagnose-modalen er fortsatt legacy-skallets (samme forbehold som P1b skrev
-  ned).
+- ~~**`run-diagnostics` fra menylinjen.**~~ **LUKKET** i V1/PR2. Ruteren armet
+  den mot INNSTILLINGER (`setup`, tannhjulet siden D2) og ingen skjerm plukket
+  den opp — man landet på tannhjulet og sto der. `DiagnoseRow` konsumerer den nå
+  (ruller seg inn og kjører), etter samme doktrine som `RecordPage`: flaten som
+  UTFØRER handlingen er flaten som tar imot den. Se §3.
 
 ## Menylinjen
 
@@ -3173,13 +3174,41 @@ ikke utenom.
 
 35 Rust-kommandoer gikk fra nåbar til unåbar ved byttet. Alle er bevisste, alle
 er listet med grunn i baseline-committen og i `docs/SMOKE-TEST.md` under «Flater
-som ikke finnes lenger». De som er mer enn opprydding:
+som ikke finnes lenger». Fire er hentet tilbake siden: `recording_preview_frame`
+(D2/PR2) og diagnosens tre (V1/PR2), så tallet er 31 i dag. De som er mer enn
+opprydding:
 
-- **Diagnose-skjermen.** `run_diagnostics` + `diagnose_audio` + capture-proben
-  virker fortsatt og er Rust-testet; ingenting åpner dem. Opptakstallene ligger
-  i `<app-data>/last-recording.json`, og §5b i røykboken leses derfra nå.
-  Tray-menyens «Diagnostikk» navigerer til INNSTILLINGER (tannhjulet) og
-  stopper der.
+- ~~**Diagnose-skjermen.**~~ **LUKKET** i V1/PR2 (`feat/v1-diagnose`).
+  `run_diagnostics` + `diagnose_audio` + capture-proben virket hele tiden og var
+  Rust-testet; det som manglet var setningen «hva er galt med maskinen min». Det
+  kostet: røykbokens §5b ba en riggtester ÅPNE `last-recording.json` i en
+  teksteditor for å lese tall appen selv regner ut.
+
+  Skjermen er en RAD på Avansert (`pages/setup/advanced/DiagnoseRow.tsx`), ikke
+  en modal: resultatet er en liste man leser og kopierer fra mens man snakker i
+  telefonen, og det folder seg derfor ut på stedet og blir stående. Fem
+  statusrader → funnene → enhetsliste → IPC-feilringen (E2.4s ring, ubrukt til
+  nå) → `savedTo` → «Kopier full rapport» → «Test-opptak (~10 s)» (av under
+  opptak — den åpner enheten for ekte).
+
+  **Funnene oversettes på `code`**, med motorens egen prosa som reserve for en
+  kode katalogen ikke kjenner — `banners.ts`-presedensen, og grunnen er den
+  samme: motorens tekst er hardkodet NORSK. Tabellen og radavledningen er ren
+  (`advanced/diagnose-core.ts`, 20 koder). ⚠️ `detail`-linja er fortsatt
+  motorens: den er satt sammen med `format!` av tall rapporten bare sender som
+  ferdig prosa, så den kan ikke oversettes uten en kontraktsendring i Rust.
+  Gjelden er notert til språkrunden.
+
+  Tray-menyens «Diagnostikk» var en BLINDVEI — ruteren armet `run-diagnostics`
+  og navigerte til Innstillinger, og ingen flate plukket den opp. Raden
+  konsumerer den nå, ruller seg inn og kjører.
+
+  De tre dørene er tilbake i `api-shim` + `api.d.ts`, og de tre kommandoene ute
+  av `scripts/command-reachability-baseline.json`s `unreachable` (−3).
+  ⚠️ `runTestRecording` tar INGEN `deviceName`: Tauri-kommandoen leser
+  innstillingen selv, så en parameter her hadde vært en løgn typesystemet så
+  håndhevet.
+
 - ~~**Kamerabildet.**~~ **LUKKET** i D2/PR2 (`feat/d2-camera-preview`).
   Overlegget hadde en brikke som NAVNGIR kameraet, og en brikke ser helt lik ut
   med lokk på linsen — et dødt kamera ble først oppdaget når fila ble åpnet.

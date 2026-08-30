@@ -6,13 +6,20 @@
 // shell on top of it installs back, so it belongs beside the shim.
 //
 // It is trimmed to exactly the surface that exists. 45 methods went with the
-// pages that were their only callers (`masterApply`, `runDiagnostics`,
-// `updateHistoryNote`, the `wake*` interactive set, the ASIO/ffmpeg device
-// lists, …); every one of them is named in the fase-B PR and in
-// docs/APP-SHELL.md under «Etter byttet», because a Rust command whose only
-// door closed is a decision, not a leak. Declaring a method here that the shim
-// does not install would be worse than not declaring it: the type would promise
-// a function that is `undefined` at run time.
+// pages that were their only callers (`masterApply`, `updateHistoryNote`, the
+// `wake*` interactive set, the ASIO/ffmpeg device lists, …); every one of them
+// is named in the fase-B PR and in docs/APP-SHELL.md under «Etter byttet»,
+// because a Rust command whose only door closed is a decision, not a leak.
+// Declaring a method here that the shim does not install would be worse than
+// not declaring it: the type would promise a function that is `undefined` at
+// run time.
+//
+// ⚠️ THREE of the 45 are back: `runDiagnostics`, `diagnoseAudio` and
+// `runTestRecording` (V1/PR2). Their door closed because the Diagnose modal had
+// no home in the three-destination navigation — not because the diagnosis had
+// stopped being worth having, which is what a rig tester reading §5b off disk
+// with a JSON viewer proved. The screen is a row on Avansert now
+// (`app/pages/setup/advanced/DiagnoseRow.tsx`), so the list above is 42.
 //
 // `.d.ts`, not a module: this is ambient, and every file in the program sees it
 // without importing anything.
@@ -144,6 +151,27 @@ declare global {
         version: string | null;
         path: string;
       }>;
+      // ── Diagnose (V1/PR2) ──────────────────────────────────────────────
+      // NOT optional: the shim installs all three unconditionally, and the row
+      // that calls them is mounted unconditionally. `?` here would only buy a
+      // `?.` at the call site that could never be false.
+      /** The whole-system report: markdown, the coded findings, where it was
+       *  saved, and the tri-state capture/video probe results. REJECTS on a
+       *  backend failure rather than answering with an empty report — see the
+       *  shim block for why a fabricated "no findings" is the wrong lie. */
+      runDiagnostics: () => Promise<
+        import("../../legacy/bindings/DiagnosticsReport").DiagnosticsReport
+      >;
+      /** The audio-input name list the panel's device rows are built from. */
+      diagnoseAudio: () => Promise<
+        import("../../legacy/bindings/AudioDiagnostics").AudioDiagnostics
+      >;
+      /** A ~10 s capture against THE CONFIGURED device (the command reads the
+       *  setting itself — no parameter), reporting size + measured signal.
+       *  Stops the VU engine backend-side; the caller restarts it. */
+      runTestRecording: () => Promise<
+        import("../../legacy/bindings/TestRecordingResult").TestRecordingResult
+      >;
       /** Whether the OS login item is really registered (not the stored boolean). */
       getLaunchAtLogin?: () => Promise<boolean>;
       /** Trackpad haptic tap (macOS Force Touch); a silent no-op elsewhere. */

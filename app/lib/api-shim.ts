@@ -1184,6 +1184,52 @@ const api: Record<string, unknown> = {
         path: "",
       },
     ),
+
+  // ── Diagnose (V1/PR2) ───────────────────────────────────────────────────
+  //
+  // The three doors fase B closed when the Diagnose modal went. The commands
+  // and their Rust tests never moved; only the surface did, and V1 built it
+  // back as a row on Avansert (`pages/setup/advanced/DiagnoseRow.tsx`).
+  //
+  // ⚠️ These do NOT go through `call()`. Its fallback is the right answer for a
+  // list that can be empty — an empty recordings list is a true statement about
+  // a machine with no recordings — but a FABRICATED diagnostics report is not:
+  // "no findings" is precisely the sentence a volunteer would read as "nothing
+  // is wrong". A rejected invoke has to reach the row so it can say the
+  // diagnosis did not run. Same reasoning for the test recording: inventing an
+  // `ok: false` would name a cause the backend never gave.
+  //
+  // The IPC failure ring is unaffected — it is fed by every OTHER command's
+  // `call()`, and it is that pattern the report renders.
+  runDiagnostics: async () =>
+    invoke<import("../../legacy/bindings/DiagnosticsReport").DiagnosticsReport>(
+      "run_diagnostics",
+    ),
+  // The purpose-built audio probe: one enumeration → the input names the panel
+  // actually asks about. `call()` here (unlike the two above) because an empty
+  // name list IS the answer the rows want — "0 devices found" with a cross is
+  // the truth when the enumeration fails, and it is said in the row.
+  diagnoseAudio: async () =>
+    call<import("../../legacy/bindings/AudioDiagnostics").AudioDiagnostics>(
+      "diagnose_audio",
+      undefined,
+      { dshow: [], wasapi: [], wasapiAvailable: false },
+    ),
+  // ⚠️ NO argument, deliberately. The V1 plan wrote this door as
+  // `runTestRecording(deviceName)` — that is the Electron-era shape. The Tauri
+  // command takes `db` + `vu` only and reads `settings.device_name` ITSELF
+  // (`src-tauri/src/commands/recorder.rs`), so a `deviceName` parameter here
+  // would be a lie the type system would then enforce: a caller could pass a
+  // device and the test would be run against a different one. The row therefore
+  // tests THE CONFIGURED SOURCE, and says so.
+  //
+  // The command also calls `vu.stop()` before opening the device — macOS gives
+  // one client at a time — which is why the row restarts the meter afterwards.
+  runTestRecording: async () =>
+    invoke<
+      import("../../legacy/bindings/TestRecordingResult").TestRecordingResult
+    >("run_test_recording"),
+
   // Whether the OS login item is REALLY registered. The System tab used to show
   // the stored boolean, which drifts the moment a user removes the login item
   // by hand (or a migration/reinstall drops it) — a checkbox claiming scheduled

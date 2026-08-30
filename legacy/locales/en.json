@@ -382,6 +382,143 @@
         "audioTech": "Audio technology"
       }
     },
+    "diagnose": {
+      "title": "Diagnose",
+      "desc": "Checks sound, permissions, engine and disk, and writes a report you can pass on.",
+      "run": "Run",
+      "running": "Running …",
+      "failed": "The diagnosis could not run: {err}",
+      "probeSkipped": "The sound test did not run: {why}",
+      "copy": "Copy full report",
+      "copied": "Report copied",
+      "copyFailed": "Could not copy the report",
+      "savedTo": "Saved to",
+      "devicesTitle": "Every audio device the recorder can see",
+      "noDevices": "No audio devices found",
+      "ipcTitle": "Commands that did not answer this session ({n})",
+      "test": "Test recording (~10 s)",
+      "testRunning": "Recording a test …",
+      "testBlocked": "Not while a recording is running.",
+      "testOk": "The test recording completed — {signal}.",
+      "testFail": "The test recording failed: {why}",
+      "r": {
+        "devices": "Audio devices found",
+        "selected": "Chosen device",
+        "mic": "Microphone access",
+        "engine": "Audio engine (ffmpeg)",
+        "probe": "Sound test"
+      },
+      "v": {
+        "notFound": "not found",
+        "defaultDevice": "Default device",
+        "ffmpegOk": "Available",
+        "ffmpegMissing": "Not found",
+        "unknown": "Cannot be determined",
+        "probeSkipped": "Did not run",
+        "probeOk": "Got sound",
+        "probeFail": "Got no sound",
+        "auth": {
+          "authorized": "Granted",
+          "denied": "Denied",
+          "restricted": "Blocked by a system administrator",
+          "notDetermined": "Not asked yet",
+          "unknown": "Cannot be determined on this platform"
+        }
+      },
+      "testErr": {
+        "deviceNotFound": "the audio device was not found",
+        "permissionDenied": "microphone access denied",
+        "ffmpegError": "the recording engine failed",
+        "noAudio": "no sound in the recording"
+      },
+      "testSig": {
+        "silent": "completely silent",
+        "low": "weak signal",
+        "normal": "normal level"
+      },
+      "f": {
+        "ffmpeg01": {
+          "title": "The recording engine (ffmpeg) is missing",
+          "hint": "Reinstall SundayRec — the recording engine ships with the app."
+        },
+        "audio01": {
+          "title": "No audio device found",
+          "hint": "Check that the sound card is connected and its driver installed. On a shared PC: is the audio service running?"
+        },
+        "audio02": {
+          "title": "The chosen audio device was not found",
+          "hint": "Connect the device, or pick another one under «Which sound?» on Record."
+        },
+        "audio10": {
+          "title": "Fell back to the classic audio engine",
+          "hint": "Recording still works. If you want the modern engine, check the driver and that no other program is holding the device."
+        },
+        "rate01": {
+          "title": "A fixed sample rate is selected",
+          "hint": "If the sound card runs a different rate, ffmpeg resamples and you can get stutter. Choose «Auto» again unless you have a concrete reason."
+        },
+        "video01": {
+          "title": "Video is on, but no camera was found",
+          "hint": "Connect the camera, or turn off «Include camera» on Record."
+        },
+        "video02": {
+          "title": "The camera gave no picture",
+          "hint": "Check that the camera is connected and not in use by another program, and that the app has camera access."
+        },
+        "disk01": {
+          "title": "Little free space",
+          "hint": "Free up space or choose another save folder before a long recording."
+        },
+        "disk02": {
+          "title": "Cannot write to the save folder",
+          "hint": "Choose a folder you can write to under «Where is the recording saved?» on Record."
+        },
+        "perm01": {
+          "title": "Microphone access is denied",
+          "hint": "Grant access in System Settings → Privacy & Security → Microphone, and restart the app."
+        },
+        "perm02": {
+          "title": "Camera access is denied",
+          "hint": "Grant access in System Settings → Privacy & Security → Camera, and restart the app."
+        },
+        "engine01": {
+          "title": "The last recording ended with an error",
+          "hint": "The error code is on the line above. Run a test recording to see whether it works now."
+        },
+        "capture01": {
+          "title": "The last recording showed signs of stutter",
+          "hint": "Close other heavy programs, check the cable and power to the sound card, and that the sample rate is on «Auto». Then record again and see whether the numbers drop."
+        },
+        "capture02": {
+          "title": "The sound test got no sound",
+          "hint": "Check that the right device is chosen under «Which sound?» on Record, that the cable is in, and that no other program is holding the microphone. Then run the diagnosis again."
+        },
+        "crash01": {
+          "title": "The app has crashed",
+          "hint": "Pass this report on — the crash files are what make the fault findable."
+        },
+        "task01": {
+          "title": "Background tasks had to be restarted",
+          "hint": "The app restarted them itself, so nothing stopped. If it repeats, bring this report — the names above say which part is unstable."
+        },
+        "log01": {
+          "title": "The log file is not active",
+          "hint": "That usually means the app folder could not be created. Restart the app; if it persists, check disk space and permissions."
+        },
+        "log02": {
+          "title": "Part of the log is missing",
+          "hint": "The log is incomplete because the recording was prioritised — that is the right way round. A slow disk is worth looking at before the next long recording."
+        },
+        "ok": {
+          "title": "No problems detected",
+          "hint": "You are ready to record."
+        },
+        "recLoss": {
+          "title": "The last recording is missing audio",
+          "hint": "This is serious: the recording lost audio along the way. Close other heavy programs, connect the sound card directly (not through a hub), and report it with this report — the numbers here are the evidence."
+        }
+      }
+    },
     "language": {
       "no": "Norwegian",
       "en": "English",

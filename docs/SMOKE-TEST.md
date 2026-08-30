@@ -396,19 +396,26 @@ key "recording mode lags" signal — how often the live-levels IPC channel was
 `last-recording.json` + a rolling `recording-telemetry-history.json` and
 surfaces in the diagnose report.
 
-⚠️ **There is no Diagnose screen any more.** The modal this section used to
-open (`Innstillinger → Lyd → Diagnose`) had no place in the three-destination
-navigation and was not rebuilt — see «Flater som ikke finnes lenger» at the
-bottom of this file. **The measurement is untouched**: the backend still writes
-every number below on every recording, and `build_audio_diagnostics` still
-composes the report. What is missing is a screen that shows it, so this section
-is read **off disk** until one exists.
+✅ **The Diagnose screen is back** (V1/PR2) — as a ROW, not a modal: **the gear
+→ Avansert → «Diagnose» → «Kjør»**. It answers with five status rows (devices,
+chosen device, microphone access, engine, the capture probe), the coded findings
+translated on their `code`, the audio-device list, this session's failed IPC
+calls, where the report was written, and «Kopier full rapport». There is also a
+**«Test-opptak (~10 s)»** button, which is OFF while a recording runs — it opens
+the device for real.
+
+⚠️ Findings show the engine's own `detail` line untranslated. That line carries
+the NUMBERS (free GB, «15,3 % av lyden mangler») and Rust only sends it as
+finished prose; the title and the advice are translated. Noted for the language
+round, not a bug to report.
 
 **Read the numbers after a normal recording:**
 
 1. Record a service (or ~15 s of speech) normally, then stop.
-2. Read `<app-data>/last-recording.json` (and the rolling
-   `<app-data>/recording-telemetry-history.json` for the trend) — the same JSON
+2. Run the diagnosis (above) and read the **«Siste opptak (teknisk)»** section
+   of the copied report. Off disk is still available and still authoritative:
+   `<app-data>/last-recording.json` (and the rolling
+   `<app-data>/recording-telemetry-history.json` for the trend) is the same JSON
    the report is composed from. `<app-data>` is resolved in §13's table.
    - **Expected:** the fields behind the report's **"Siste opptak (teknisk)"**
      section — `Dropp`, `xruns`, `IPC-overbelastning (tapte nivå-oppdateringer)`
@@ -631,9 +638,11 @@ three assumptions that have each failed separately.
      kind of thing that gets re-wired by accident — see `docs/APP-SHELL.md`
      §D2 «Rutekontrakten».
 
-⚠️ **Diagnostikk** in the tray navigates to **Innstillinger** (the gear) and
-stops there: the screen it used to open does not exist. Not a regression
-introduced by the tray — see «Flater som ikke finnes lenger».
+✅ **Diagnostikk** in the tray navigates to **Innstillinger** (the gear),
+scrolls the Diagnose row into view and RUNS it (V1/PR2). Until then it navigated
+and stopped: the router armed the action and no surface picked it up.
+
+- VERIFIED-BY: e2e/diagnose.spec.ts::the tray's «Diagnostikk» lands on the row and runs it
 
 > [GUI] The `tauri::tray` item install and the menu paint need a real desktop
 > session — se markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
@@ -1005,6 +1014,12 @@ when it had to (E2.2), a rotating file log (E2.3), a renderer-side ring of
 failed IPC calls (E2.4), and a real capture/video probe wired back into
 Diagnose (E2.5). None of it needs a feature flag; all of it is exercised here.
 
+The IPC ring and the probe both have a SCREEN again since V1/PR2: the Diagnose
+row renders «Kommandoer som ikke svarte denne økten» and the capture probe's
+tri-state (got sound / got no sound / did not run, with the engine's own reason).
+
+- VERIFIED-BY: e2e/diagnose.spec.ts::a probe that did not run is not a cross, and says WHY in the engine's own words
+
 ### Trigger a deliberate crash
 
 ```bash
@@ -1271,8 +1286,8 @@ vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
 
 **After the service**
 
-5. Read `<app-data>/last-recording.json` (§5b — the Diagnose screen it used to
-   be read from no longer exists).
+5. Run the Diagnose row (gear → Avansert → «Kjør») and read the «Siste opptak
+   (teknisk)» section, or `<app-data>/last-recording.json` directly (§5b).
    - **Expected:** `Dropp` / `xruns` / `IPC-overbelastning` at their healthy
      targets (≈0), clean exit, no `SR-CAPTURE-01`. Paste these numbers into
      the beta-ring report — the same numbers §6a asks for in the release
@@ -1323,9 +1338,9 @@ Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing
      that. No camera at all reads «Finner ikke noe kamera», with the advice to
      connect one or turn the option off. A missing ffmpeg / no devices yields
      empty lists, not an error. // HARDWARE-UNVERIFIED.
-   - ⚠️ `diagnose_audio` (the audio-input name list, WASAPI loopback not ported)
-     is no longer reached from any screen — see «Flater som ikke finnes
-     lenger».
+   - ✅ `diagnose_audio` (the audio-input name list, WASAPI loopback not
+     ported) is reached again since V1/PR2: it is what the Diagnose row's
+     device count, «Valgt enhet» row and device list are built from.
 
 ## What "passed" means
 
@@ -1362,8 +1377,8 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 
 | gone                                                        | what is left, and where                                                                                                                                                                                                                                                                     |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The Diagnose modal** (Innstillinger → Lyd)                | `run_diagnostics` / `diagnose_audio` still run and are Rust-tested; nothing calls them. The recording numbers are in `<app-data>/last-recording.json` (§5b).                                                                                                                                |
-| **The capture/video probe's three paths**                   | still in the backend, refusals and all — unreachable by hand until a screen exists (§13).                                                                                                                                                                                                   |
+| ~~**The Diagnose modal** (Innstillinger → Lyd)~~            | **BACK** in V1/PR2 — as a ROW on Avansert, not a modal (the result stays open beside the setting you are about to change). Findings are translated on their stable `code`, with the engine's own prose as the fallback for a code the catalogue does not know yet (§5b).                    |
+| ~~**The capture/video probe's three paths**~~               | **BACK** in V1/PR2 — the probe row states all three (got sound / got no sound / did not run) and prints the engine's skip reason verbatim rather than showing a cross for something it does not know (§5b, §13).                                                                            |
 | **Editing a recording's note**                              | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                                                                                                                                         |
 | **The Lyd / Video filter chips, sortable columns**          | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                                                                                                                                            |
 | **The month calendar + day detail + wake-diagnostics card** | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                                                                                                                                            |
@@ -1390,7 +1405,15 @@ These four VERIFIED-BY pointers were removed rather than moved. Each described a
 screen that is gone, so a pointer at the replacement would have claimed coverage
 of something nobody built.
 
-- `e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report`
+- ~~`e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report`~~
+  — **replaced** in V1/PR2. The screen exists again, so the claim is covered
+  again; the title is NOT reused, because the new surface is a row and not a
+  modal and a pointer should name what it actually opens:
+  - VERIFIED-BY: e2e/diagnose.spec.ts::a run answers with five status rows, and every one says which way it went
+  - VERIFIED-BY: e2e/diagnose.spec.ts::findings are translated on their CODE, and an unknown code keeps the engine's prose
+  - VERIFIED-BY: e2e/diagnose.spec.ts::«Kopier full rapport» puts the backend's markdown on the clipboard
+  - VERIFIED-BY: e2e/diagnose.spec.ts::a diagnosis that could not run says so instead of showing an empty report
+  - VERIFIED-BY: e2e/diagnose.spec.ts::the test recording is OFF while a recording runs, and says why
 - `e2e/history.spec.ts::a note reaches the backend and shows on the row`
 - `e2e/history.spec.ts::a filter that matches nothing says so in its own words`
 - `e2e/editor.spec.ts::the export modal is honest about destination and level`

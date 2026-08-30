@@ -382,6 +382,143 @@
         "audioTech": "Lyd-teknologi"
       }
     },
+    "diagnose": {
+      "title": "Diagnose",
+      "desc": "Sjekker lyd, tilgang, motor og disk, og lager en rapport du kan sende videre.",
+      "run": "Kjør",
+      "running": "Kjører …",
+      "failed": "Diagnosen kunne ikke kjøres: {err}",
+      "probeSkipped": "Lydprøven ble ikke kjørt: {why}",
+      "copy": "Kopier full rapport",
+      "copied": "Rapporten er kopiert",
+      "copyFailed": "Kunne ikke kopiere rapporten",
+      "savedTo": "Lagret til",
+      "devicesTitle": "Alle lydenheter opptakeren ser",
+      "noDevices": "Ingen lydenheter funnet",
+      "ipcTitle": "Kommandoer som ikke svarte denne økten ({n})",
+      "test": "Test-opptak (~10 s)",
+      "testRunning": "Tar opp prøve …",
+      "testBlocked": "Går ikke mens et opptak pågår.",
+      "testOk": "Test-opptaket ble gjennomført — {signal}.",
+      "testFail": "Test-opptaket mislyktes: {why}",
+      "r": {
+        "devices": "Lydenheter funnet",
+        "selected": "Valgt enhet",
+        "mic": "Mikrofontilgang",
+        "engine": "Lydmotor (ffmpeg)",
+        "probe": "Lydprøven"
+      },
+      "v": {
+        "notFound": "ikke funnet",
+        "defaultDevice": "Standardenhet",
+        "ffmpegOk": "Tilgjengelig",
+        "ffmpegMissing": "Ikke funnet",
+        "unknown": "Kan ikke avgjøres",
+        "probeSkipped": "Ikke kjørt",
+        "probeOk": "Fikk lyd",
+        "probeFail": "Fikk ingen lyd",
+        "auth": {
+          "authorized": "Gitt",
+          "denied": "Avslått",
+          "restricted": "Sperret av systemadministrator",
+          "notDetermined": "Ikke spurt ennå",
+          "unknown": "Kan ikke avgjøres på denne plattformen"
+        }
+      },
+      "testErr": {
+        "deviceNotFound": "fant ikke lydenheten",
+        "permissionDenied": "mikrofontilgang nektet",
+        "ffmpegError": "opptaksmotoren feilet",
+        "noAudio": "ingen lyd i opptaket"
+      },
+      "testSig": {
+        "silent": "helt stille",
+        "low": "svakt signal",
+        "normal": "normalt nivå"
+      },
+      "f": {
+        "ffmpeg01": {
+          "title": "Opptaksmotoren (ffmpeg) mangler",
+          "hint": "Installer SundayRec på nytt — opptaksmotoren følger med appen."
+        },
+        "audio01": {
+          "title": "Ingen lydenhet funnet",
+          "hint": "Sjekk at lydkortet er koblet til og at driveren er installert. På en delt PC: er lydtjenesten i gang?"
+        },
+        "audio02": {
+          "title": "Den valgte lydenheten ble ikke funnet",
+          "hint": "Koble til enheten, eller velg en annen i «Hvilken lyd?» på Opptak."
+        },
+        "audio10": {
+          "title": "Falt tilbake til klassisk lydmotor",
+          "hint": "Opptak virker fortsatt. Vil du ha den moderne motoren, sjekk driveren og at ingen andre programmer holder enheten."
+        },
+        "rate01": {
+          "title": "Fast samplingsrate er valgt",
+          "hint": "Kjører lydkortet en annen rate, regner ffmpeg om og du kan få hakking. Velg «Auto» igjen med mindre du har en konkret grunn."
+        },
+        "video01": {
+          "title": "Video er på, men ingen kamera ble funnet",
+          "hint": "Koble til kameraet, eller slå av «Ta med kamera» på Opptak."
+        },
+        "video02": {
+          "title": "Kameraet ga ikke noe bilde",
+          "hint": "Sjekk at kameraet er koblet til og ikke i bruk av et annet program, og at appen har kameratilgang."
+        },
+        "disk01": {
+          "title": "Lite ledig plass",
+          "hint": "Frigjør plass eller velg en annen lagringsmappe før et langt opptak."
+        },
+        "disk02": {
+          "title": "Kan ikke skrive til lagringsmappen",
+          "hint": "Velg en mappe du har skrivetilgang til i «Hvor lagres opptaket?» på Opptak."
+        },
+        "perm01": {
+          "title": "Mikrofontilgang er nektet",
+          "hint": "Gi tilgang i Systeminnstillinger → Personvern og sikkerhet → Mikrofon, og start appen på nytt."
+        },
+        "perm02": {
+          "title": "Kameratilgang er nektet",
+          "hint": "Gi tilgang i Systeminnstillinger → Personvern og sikkerhet → Kamera, og start appen på nytt."
+        },
+        "engine01": {
+          "title": "Forrige opptak endte med en feil",
+          "hint": "Feilkoden står i linja over. Kjør et test-opptak for å se om det virker nå."
+        },
+        "capture01": {
+          "title": "Forrige opptak viste tegn til hakking",
+          "hint": "Lukk andre tunge programmer, sjekk kabel og strøm til lydkortet, og at samplingsraten står på «Auto». Kjør så et nytt opptak og se om tallene faller."
+        },
+        "capture02": {
+          "title": "Lydprøven fikk ingen lyd",
+          "hint": "Sjekk at riktig enhet er valgt i «Hvilken lyd?» på Opptak, at kabelen sitter i, og at ingen andre programmer holder mikrofonen. Kjør diagnosen på nytt etterpå."
+        },
+        "crash01": {
+          "title": "Appen har krasjet",
+          "hint": "Send denne rapporten videre — krasjfilene er det som gjør feilen mulig å finne."
+        },
+        "task01": {
+          "title": "Bakgrunnsoppgaver måtte startes på nytt",
+          "hint": "Appen startet dem igjen selv, så ingenting stoppet. Gjentar det seg, ta med denne rapporten — navnene over sier hvilken del som er ustabil."
+        },
+        "log01": {
+          "title": "Loggfila er ikke aktiv",
+          "hint": "Som regel betyr det at app-mappen ikke kunne opprettes. Start appen på nytt; vedvarer det, sjekk diskplass og rettigheter."
+        },
+        "log02": {
+          "title": "Deler av loggen mangler",
+          "hint": "Loggen er ufullstendig fordi opptaket ble prioritert — det er riktig vei rundt. En treg disk er verdt å se på før neste lange opptak."
+        },
+        "ok": {
+          "title": "Ingen problemer oppdaget",
+          "hint": "Du er klar til å ta opp."
+        },
+        "recLoss": {
+          "title": "Forrige opptak mangler lyd",
+          "hint": "Dette er alvorlig: opptaket mistet lyd underveis. Lukk andre tunge programmer, koble lydkortet rett i maskinen (ikke via hub), og meld fra med denne rapporten — tallene her er beviset."
+        }
+      }
+    },
     "language": {
       "no": "Norsk",
       "en": "Engelsk",
