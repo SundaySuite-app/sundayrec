@@ -3059,7 +3059,40 @@ app, database og opptaksmappe ble aldri rørt.
 BYTE-IDENTISK før og etter tetthetspasset: `control-folder-expand`,
 `control-quality-expand`, `control-notify-expand` (30 px) og
 `setup-camera-toggle`, `setup-auto-toggle` (22 px). Alle fem fantes på `main`
-før D3.
+før D3. **Hevet i V1/PR5** — se §«Treffflatene» under.
+
+## Treffflatene (V1/PR5)
+
+De fem elementene over — og hver eneste `Toggle` i appen — kan nå treffes over
+40 px uten at ÉN piksel av tegningen flyttet seg. Grepet er et gjennomsiktig
+`::after` utenfor knappens egen boks (`ControlCard.module.css` `.expand::after`
+−8 px, `Toggle.module.css` `.toggle::after` ±9 px). Boksen står stille, så
+kortraden leses fortsatt som én linje og bryteren ser fortsatt ut som en
+bryter.
+
+⚠️ **`getBoundingClientRect()` ser det ikke.** Boksen er uendret; det er
+`document.elementFromPoint` som er den eneste ærlige målestokken her. Alle tall
+under er målt slik — `e2e/hit-targets.spec.ts` i Chromium, og en Swift-vert med
+WKWebView for motoren appen faktisk kjører i.
+
+| kontroll                               | boks (uendret) | treff FØR | treff ETTER |
+| -------------------------------------- | -------------- | --------- | ----------- |
+| `control-*-expand` (3 stk.)            | `30 × 60–76`   | `30,5`    | **`44,5`**  |
+| `setup-camera-toggle` / `-auto-toggle` | `22 × 40`      | `22,5`    | **`40,5`**  |
+| `adv-*-control-input` (6 brytere)      | `22 × 40`      | `22,5`    | **`40,5`**  |
+
+(WKWebView-tall; Chromium måler det samme ±0,5. Bredden er urørt: `40,5` /
+`60,5–77`.)
+
+**Sidelengs vekst er 0, med vilje.** Der knappene står tettest er de 8 px fra
+hverandre (`adv-log-show` → `adv-log-copy`, og `adv-diag-delete` → bryteren sin
+på samme linje). En flate som vokste sidelengs ville tatt naboens klikk — verre
+enn en liten knapp. Loddrett er det derimot god plass: nærmeste bryter over
+eller under er 43 px unna (`adv-split` → `adv-autodelete`) og 44 px i
+kontrollrommet (kamera → auto, der kortene bare har 6 px mellom seg men
+kortpaddingen legger 10 px på hver side); nærmeste utfoldingsknapp er 57 px
+unna. Negativtesten i spec-en spør hver eneste klikkbare ting på skjermen om
+den fortsatt eier sitt eget midtpunkt.
 
 ## D3-restanser
 
@@ -3067,12 +3100,10 @@ før D3.
    `data-tauri-drag-region` er Tauris attributt, ikke nettleserens — proben kan
    bevise at det STÅR der, ikke at vinduet flytter seg. Samme presedens som D2,
    og punktet står i `docs/SMOKE-TEST.md`.
-2. **👤 To treffmål under 40 px — et EIERVALG, ikke en regresjon.**
-   `control-*-expand` er 30 px og `setup-*-toggle` er 22 px. Ingen av dem
-   krympet i D3 (lista er byte-identisk før og etter), men de ligger under
-   gulvet resten av appen holder — og de er begge kontroller man treffer med
-   musa mens man ser på noe annet. Å heve dem er en layoutendring i
-   `ControlCard` og `Toggle`, ikke en tokenjustering, og derfor eierens valg.
+2. ~~**👤 To treffmål under 40 px — et EIERVALG, ikke en regresjon.**~~
+   **LØST i V1/PR5.** Eieren valgte å heve dem, og løsningen ble ikke den
+   layoutendringen restansen fryktet: flaten vokste, boksen ikke. Målt 44,5 px
+   og 40,5 px i WKWebView — se §«Treffflatene» over.
 3. **Atlaset fotograferer et skall som ikke finnes.** `docs/design/atlas/`
    viser v0.15-skallet. Fotografen ble slettet med skallet den fotograferte, og
    en ny scenetabell er en egen jobb (samme vurdering som «Etter byttet» §4).

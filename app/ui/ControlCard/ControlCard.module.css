@@ -65,6 +65,7 @@
  * kortet ikke lenger leses som en linje.
  */
 .expand {
+  position: relative;
   flex: none;
   font: inherit;
   font-size: var(--fs-sm);
@@ -74,6 +75,50 @@
   border-radius: var(--r-pill);
   padding: 5px var(--sp-3);
   cursor: pointer;
+}
+
+/*
+ * Treffflaten er STØRRE enn knappen — og den er usynlig.
+ *
+ * Knappen måler 30,1 px. Det er under gulvet på 44 som et fingertrykk trenger,
+ * og kommentaren over sier hvorfor den ikke bare kan vokse: den står i en rad
+ * som skal leses som ÉN linje, og en høyere knapp drar hele kortet ut av form.
+ * Så flaten vokser og tegningen står, uten at en piksel flytter seg.
+ *
+ * ## Hvorfor 8 og ikke 7
+ *
+ * 30,1 + 2 × 7 = 44,1 er regnestykket man gjør i hodet, og det er feil her.
+ * En absolutt plassert `::after` måler fra forelderens PADDING-boks, og
+ * `.expand` har 1 px kant på hver side. 7 px ga 42,1 px målt treffhøyde — under
+ * gulvet, med en grønn CSS-fil som så riktig ut. 8 px legger tilbake de to
+ * pikslene kanten spiser: 28,1 + 16 = 44,1. Målt utenfra med
+ * `elementFromPoint` (`e2e/hit-targets.spec.ts`) blir det 44–45.
+ *
+ * ## Bare loddrett
+ *
+ * `left`/`right` står på 0 med vilje. Knappene i denne appen står side om side
+ * med 8 px mellom seg der det er trangest (målt: `adv-log-show` → `adv-log-copy`
+ * på Avansert), så en flate som vokste sidelengs ville spist naboens klikk. En
+ * knapp som stjeler trykket fra knappen ved siden av er verre enn en knapp som
+ * er 30 px høy.
+ *
+ * Loddrett er det trygt: over og under knappen ligger kortets egen luft
+ * (10 px padding) og deretter 6 px til neste kort — og der er det ingenting å
+ * klikke på. Nærmeste kontroll rett over/under en utfoldingsknapp er den neste
+ * kortradens egen utfoldingsknapp, 57 px unna (målt på Opptak). Hver av dem
+ * rekker 7 px utenfor sin egen kant; 14 av 57 er ikke i nærheten av å møtes.
+ *
+ * ⚠️ Ingen `pointer-events: none` her: da ville flaten vært usynlig for
+ * treff-testen òg, og hele grepet et null-tillegg. Pseudo-elementet treffer
+ * som forelderen sin — det ER knappen, målt utenfra.
+ */
+.expand::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: 0;
+  right: 0;
 }
 
 .expand:hover {
