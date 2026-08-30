@@ -252,7 +252,8 @@ const FIXTURES_HONORED = fixturesHonored(FIXTURE_GATE);
  *  canned answers mid-journey (e.g. "now the list has one more row"). */
 function installedFixtures(): FixtureMap | undefined {
   if (!FIXTURES_HONORED) return undefined;
-  return (window as any)[FIXTURE_GLOBAL] as FixtureMap | undefined;
+  return (window as unknown as Record<string, unknown>)[FIXTURE_GLOBAL] as
+    FixtureMap | undefined;
 }
 
 /** `invoke`, with the fixture seam in front of it. Signature-compatible with
@@ -1542,7 +1543,7 @@ const api: Record<string, unknown> = {
   },
 };
 
-(window as any).api = api;
+(window as unknown as Record<string, unknown>).api = api;
 
 // Keep the OS login item in sync with the persisted launch-at-login flag on
 // boot (re-registers if the OS dropped it; idempotent otherwise). Reads the
@@ -1650,8 +1651,11 @@ if (VERIFY_GOTO) {
   // is the boot-time polling, which is DOM/timing and cannot be pure.
   const { page: gotoPage, tab: gotoTab } = VERIFY_GOTO;
   const tryGoto = (): void => {
-    const w = window as any;
-    if (typeof w.showPage !== "function") {
+    // `window.showPage` is declared as always-present in api.d.ts (it is the
+    // shell's ONE global), but it is only INSTALLED once main.tsx boots — so
+    // the runtime check below still matters even though the type says
+    // otherwise. No `any` needed: the declared type is exactly what is called.
+    if (typeof window.showPage !== "function") {
       setTimeout(tryGoto, 50);
       return;
     }
@@ -1659,7 +1663,7 @@ if (VERIFY_GOTO) {
     // 4.4 s glow on the card would be in half of them.
     if (gotoTab)
       notifier.current().navigate(gotoPage, { tab: gotoTab, highlight: false });
-    else w.showPage(gotoPage);
+    else window.showPage(gotoPage);
   };
   setTimeout(tryGoto, 150);
 }
