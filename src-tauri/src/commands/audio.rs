@@ -87,6 +87,22 @@ pub async fn list_devices() -> AppResult<DeviceInventory> {
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — needs real cameras + the ffmpeg sidecar; only the
 /// pure parse helpers in `sundayrec_core::device_enum` are unit-tested.
+///
+/// # ⚠️ Unåbar, og gaten har RETT (oppklart i V1/PR3)
+///
+/// Denne sto oppført til «la stå — CameraCard bruker den». Det gjør den ikke.
+/// `CameraCard`/`LiveCameraPreview` leser signalet `videoDevices`, som fylles
+/// av `state/devices.ts`s `loadVideoDevices()` → shimmens `listVideoDevices`
+/// → `invoke("list_devices")`, og plukker `video_inputs` ut av
+/// `DeviceInventory`. Kommandonavnet `list_video_devices` forekommer ikke som
+/// strenglitteral noe sted i skallet, så rekkeviddegaten — som måler nettopp
+/// det — svarer riktig. Det er ingen gate-bug å fikse.
+///
+/// Den er altså en ren delmengde av `list_devices`, akkurat som
+/// kommando-revisjonen sa. Den ble likevel IKKE slettet i V1/PR3: den sto ikke
+/// i slettevedtaket, og en kommando som fjernes på oppdagelsen av at premisset
+/// for å beholde den var feil, fortjener sin egen beslutning. Neste rydderunde
+/// arver den — med denne notisen som hele saksframstillingen.
 #[tauri::command]
 pub async fn list_video_devices() -> AppResult<Vec<FfmpegDevice>> {
     // Cached (1.5 s) — see `list_devices`. The recorder resolves the camera via

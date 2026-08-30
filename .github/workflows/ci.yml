@@ -177,7 +177,7 @@ jobs:
             exit 1
           fi
 
-      # Regression gate for docs/COMMAND_AUDIT_2026-08.md: fails if a command
+      # Regression gate for docs/archive/COMMAND_AUDIT_2026-08.md: fails if a command
       # that was reachable from the renderer goes dark, or a newly-registered
       # command sits unreachable without anyone classifying it as intentional.
       # See scripts/check-command-reachability.mjs for the method.

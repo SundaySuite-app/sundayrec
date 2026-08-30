@@ -1,4 +1,4 @@
-// Regression gate for docs/COMMAND_AUDIT_2026-08.md — a command that the audit
+// Regression gate for docs/archive/COMMAND_AUDIT_2026-08.md — a command that the audit
 // found reachable from the UI must not silently go dark again, and a freshly
 // registered command must not sit unclassified (nobody having said "yes, this
 // one is meant to be unreachable for now").
@@ -14,7 +14,7 @@
 // for why those are unreached on purpose — pending an owner decision, a
 // feature flag, or an SDK).
 //
-// METHOD — mirrors docs/COMMAND_AUDIT_2026-08.md §1/§7 exactly, because a
+// METHOD — mirrors docs/archive/COMMAND_AUDIT_2026-08.md §1/§7 exactly, because a
 // naive `invoke("name")` grep is provably wrong: it missed every call routed
 // through the shim's `call()`/`editorCall()` wrappers or through a generic
 // type parameter containing its own parens, and undercounted reachable
@@ -74,7 +74,7 @@ function registeredCommands() {
 }
 
 // ── 2. Frontend source: app/ + legacy/ + src/, minus generated/locale/test ──
-// (docs/COMMAND_AUDIT_2026-08.md §7, step 2 — src/ is entirely `src/lib/bindings`
+// (docs/archive/COMMAND_AUDIT_2026-08.md §7, step 2 — src/ is entirely `src/lib/bindings`
 // today, which step 3 below excludes anyway, so this reduces in practice to
 // `app/` (the shell AND `app/lib/`, where the shim now lives) plus
 // legacy/shared + legacy/types.)
@@ -139,7 +139,7 @@ function collectSourceFiles() {
 // it named `api-shim.ts` as the only importer while (the since-removed)
 // `deeplinks.ts` had been calling `deeplink_confirm_captions` directly since
 // the day both landed. The comment was copied into
-// `docs/COMMAND_AUDIT_2026-08.md`, so the audit rested on it too. Nothing
+// `docs/archive/COMMAND_AUDIT_2026-08.md`, so the audit rested on it too. Nothing
 // noticed, because nothing checked.
 //
 // So it is checked now. This is a gate, not a note: if the set changes, the
@@ -220,7 +220,7 @@ function checkInvokeImporters(files) {
   console.error(
     "  A string-literal hit counts as 'reachable' only because these are the\n" +
       "  only doors into the backend. Update KNOWN_INVOKE_IMPORTERS here AND\n" +
-      "  re-check docs/COMMAND_AUDIT_2026-08.md §1, which makes the same claim.",
+      "  re-check docs/archive/COMMAND_AUDIT_2026-08.md §1, which makes the same claim.",
   );
   return false;
 }
@@ -333,7 +333,7 @@ if (
   unreachable.length !== AUDIT.unreachable
 ) {
   console.log(
-    `  ⚠ differs from docs/COMMAND_AUDIT_2026-08.md's ${AUDIT.registered}/${AUDIT.reachable}/${AUDIT.unreachable} ` +
+    `  ⚠ differs from docs/archive/COMMAND_AUDIT_2026-08.md's ${AUDIT.registered}/${AUDIT.reachable}/${AUDIT.unreachable} ` +
       `— expected: the audit is a snapshot and the tree has moved since. Not a failure by itself.`,
   );
 }
@@ -475,7 +475,7 @@ if (!failed && premiseHolds) {
   console.log(
     `  ${stillDark.length} command(s) remain in the unreachable baseline — ` +
       "classified, not wired. See docs/APP-SHELL.md §Etter byttet for which\n" +
-      "  doors fase B closed on purpose, and docs/COMMAND_AUDIT_2026-08.md §4 " +
+      "  doors fase B closed on purpose, and docs/archive/COMMAND_AUDIT_2026-08.md §4 " +
       "for the older keep/wire/cut backlog.",
   );
 }

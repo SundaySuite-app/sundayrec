@@ -3174,9 +3174,31 @@ ikke utenom.
 
 35 Rust-kommandoer gikk fra nåbar til unåbar ved byttet. Alle er bevisste, alle
 er listet med grunn i baseline-committen og i `docs/SMOKE-TEST.md` under «Flater
-som ikke finnes lenger». Fire er hentet tilbake siden: `recording_preview_frame`
-(D2/PR2) og diagnosens tre (V1/PR2), så tallet er 31 i dag. De som er mer enn
-opprydding:
+som ikke finnes lenger». Fem er hentet tilbake siden: `recording_preview_frame`
+(D2/PR2), diagnosens tre (V1/PR2) og `email_clear_smtp_password` (V1/PR3).
+
+### ✅ V1/PR3: restansen er GJORT OPP, ikke bare telt
+
+`chore/v1-rust-prune` sluttet å bære 19 av dem: de er **slettet**, med grunn
+per kommando i PR-teksten. Registeret gikk **111 → 92** og unådde **41 → 21**.
+Borte: Sunday-kontoen (5 + `sunday-auth`-dep-en), Electron-datavaskeren (2 +
+`trash`-crate-en), `liturgical_month` (computusen i core BLIR — `filename.rs`
+bruker den), fire editor-prober som alle hadde en levende erstatter, fem
+duplikat-enhetslister (den INTERNE `list_input_devices` blir — diagnosen
+kaller den), og `recordings_clear`/`settings_export`.
+`docs/COMMAND_AUDIT_2026-08.md` er arkivert i `docs/archive/` samtidig: den
+levende sannheten er baselinen + gaten.
+
+⚠️ **To funn stoppet sin egen sletting** (premisset holdt ikke):
+`recordings_prune` er den ENESTE implementasjonen av auto-slettingen appen
+lover på to skjermer — og koden hard-sletter der teksten sier «flyttes til
+papirkurven», så oppkoblingen er en eierstyrt runde, ikke en rørlegging.
+`list_video_devices` sto oppført som «CameraCard bruker den»; det gjør den
+ikke — CameraCard går via shimmens `listVideoDevices`, som kaller
+`list_devices` og leser `video_inputs`. Gaten hadde rett hele tiden. Begge
+står med hele funnet i doc-kommentaren sin.
+
+De som er mer enn opprydding:
 
 - ~~**Diagnose-skjermen.**~~ **LUKKET** i V1/PR2 (`feat/v1-diagnose`).
   `run_diagnostics` + `diagnose_audio` + capture-proben virket hele tiden og var
@@ -3228,12 +3250,36 @@ opprydding:
   frist. Steget er **15 minutter**, ikke 30: et lite steg man kan ta to ganger
   er ærligere enn et stort man ikke kan ta tilbake. `recording_extend_autostop`
   / `recording_cancel_autostop` er ute av unreachable-baselinen.
-- **Notat-redigering** (`recording_update_note`) — eiervalg, P3.
-- **Mastringspanelet** (`editor_master_apply` m.fl.) — erstattet av tre ord og
-  mikseren.
+- **Notat-redigering** (`recording_update_note`) — eiervalg, P3. Vurdert på
+  nytt i V1/PR3 og BEHOLDT: eieren har ikke svart, og en notatkolonne som
+  finnes i basen er billigere å koble opp enn å skrive om igjen.
+- **Mastringspanelet** (`editor_master_apply`, `editor_master_cancel`,
+  `editor_master_presets`, `editor_mastering_analyze`) — erstattet av tre ord
+  og mikseren. BEHOLDT i V1/PR3: kvartetten bor i `editor/mod.rs` (5407
+  linjer), delt med eksport- og analysestien, og kirurgi der er feil risiko å
+  ta i en opprydding. Vurderes for seg når editoren neste gang åpnes.
 
-Rust-kommandoene er IKKE slettet. Det er en egen opprydding med sin egen
-vurdering per kommando.
+### Og de 21 som står igjen — hvor grunnen bor
+
+Grunnen per kommando står i V1/PR3-teksten; de fire som er mer enn en kategori
+(`editor_diagnose_channels`, `recordings_prune`, `list_video_devices` og
+lager-primitivet `store::clear_recordings`) bærer den i tillegg i
+doc-kommentaren sin, der den som leser koden faktisk møter den. Kort oversikt:
+
+- **Halvferdige flater med investering i den andre enden:**
+  `editor_diagnose_channels` (i18n-nøklene `editor.chanDead*` er oversatt i
+  alle sju katalogene og `sound-profiles.ts` mapper alt kodene),
+  `telemetry_count` / `telemetry_queue_status`, `run_capture_bench`.
+- **Gettere uten leser ennå:** `recording_status`,
+  `recording_scheduled_stop_ms`, `scheduler_check_missed`,
+  `wake_get_sleep_config`, `wake_failure_history`.
+- **Vekke-verktøyene** (`wake_test`, `wake_cancel_test`, `wake_fix_sleep`,
+  `wake_clear_failure_history`) — riggverktøy som venter på en Mac der
+  vekkingen faktisk feiler.
+- **Kirurgi utsatt:** mastring-kvartetten (over).
+- **Eiervalg:** `settings_reset`, `recording_update_note`.
+- ⚠️ **`recordings_prune`** og **`list_video_devices`** — se advarselen over
+  §3: begge stoppet sin egen sletting, og begge bærer hele funnet i koden.
 
 ### ⚠️ Baselinen ble REGENERERT i #156, og det var med vilje
 

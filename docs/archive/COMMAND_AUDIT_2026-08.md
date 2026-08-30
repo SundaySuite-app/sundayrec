@@ -1,3 +1,15 @@
+> **ARKIVERT 2026-08-30 (V1/PR3).** Revisjonens keep/wire/cut-backlog er
+> GJENNOMFØRT: 19 mørke kommandoer slettet, `email_clear_smtp_password` koblet
+> opp, og resten begrunnet enkeltvis i PR-teksten. Registeret gikk 111 → 92 og
+> unådde 41 → 21. Dokumentet står som HISTORIKK — resonnementet bak hvert
+> keep/wire/cut-valg er verdt å kunne lese igjen, men **tallene og tabellene
+> under er ikke lenger sanne**.
+>
+> **Den levende sannheten er `scripts/command-reachability-baseline.json`** +
+> `scripts/check-command-reachability.mjs` (kjøres i `npm run check`). De 21
+> som står igjen er listet med grunn der de bor: i doc-kommentaren på
+> kommandoen selv, og i `docs/APP-SHELL.md` §Etter byttet pkt. 3.
+
 # Kommando-revisjon — august 2026
 
 > **Etterskrift (v0.14):** Direkte-fjerningen tok 16 av kommandoene i denne
