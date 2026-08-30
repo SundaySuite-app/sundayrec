@@ -189,11 +189,11 @@ ts-rs = { version = "12", features = ["serde-compat"] }
 # need just to read free bytes on one volume).
 fs4 = "1.1"
 
-# R3-F: move the Electron-era app-data directory to the OS trash (Papirkurven /
-# Recycle Bin / XDG trash) with user-side recoverability — the consented cleanup
-# in `commands/legacy_data.rs` must NEVER delete bytes in place, and the app's
-# own `.sundayrec-trash` is manifest/file-shaped and cannot purge a directory.
-trash = "5"
+# NOTE (V1/PR3): the `trash = "5"` crate left with `commands/legacy_data.rs`,
+# its only consumer. ⚠️ Do NOT confuse it with `crate::trash` (src/trash/) — the
+# app's OWN Papirkurv, which is file/manifest-shaped and still very much alive.
+# The external crate existed only to move a whole Electron-era DIRECTORY to the
+# OS trash; it comes back with that flow if it is ever built.
 
 # HTTP client for the telemetry sender and the Sunday Account (SSO) token
 # exchange. rustls (no system OpenSSL). The pure decisions live in `sundayrec-core`;

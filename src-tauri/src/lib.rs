@@ -509,11 +509,6 @@ pub fn run() {
             commands::settings::settings_import_from_file,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
-            // R3-F — Electron-era app-data scan + consented cleanup. Both are
-            // argument-less (the target path is derived + re-validated inside;
-            // see commands/legacy_data.rs for why that IS the guard).
-            commands::legacy_data::legacy_data_scan,
-            commands::legacy_data::legacy_data_clean,
             // E2.3 — the log the operator can actually hand to support. Neither
             // takes a path (see commands/logs.rs for why that IS the guard).
             commands::logs::logs_reveal,
