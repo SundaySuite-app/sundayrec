@@ -9,15 +9,15 @@
  * stereo meter draws is the interesting decision, and it lives here.
  */
 
-import type { ChannelMode } from '../../../legacy/types'
+import type { ChannelMode } from "../../../legacy/types";
 
 /** The dBFS floor every meter in the app shares (audio/vu.ts, channel-grid). */
-export const VU_FLOOR_DB = -60
+export const VU_FLOOR_DB = -60;
 
 /** A picked stereo pair, in dBFS, floored at [VU_FLOOR_DB]. */
 export interface StereoPick {
-  l: number
-  r: number
+  l: number;
+  r: number;
 }
 
 /**
@@ -32,11 +32,11 @@ export function levelAt(
   levels: readonly (number | null | undefined)[] | null | undefined,
   index: number,
 ): number {
-  if (!levels || levels.length === 0) return VU_FLOOR_DB
-  const i = Math.min(Math.max(0, Math.trunc(index)), levels.length - 1)
-  const v = levels[i]
-  if (v == null || !Number.isFinite(v)) return VU_FLOOR_DB
-  return Math.max(VU_FLOOR_DB, Math.min(0, v))
+  if (!levels || levels.length === 0) return VU_FLOOR_DB;
+  const i = Math.min(Math.max(0, Math.trunc(index)), levels.length - 1);
+  const v = levels[i];
+  if (v == null || !Number.isFinite(v)) return VU_FLOOR_DB;
+  return Math.max(VU_FLOOR_DB, Math.min(0, v));
 }
 
 /**
@@ -51,9 +51,9 @@ export function levelAt(
  * average would claim −33.
  */
 export function mixDb(a: number, b: number): number {
-  const linear = 0.5 * (Math.pow(10, a / 20) + Math.pow(10, b / 20))
-  if (linear <= 0) return VU_FLOOR_DB
-  return Math.max(VU_FLOOR_DB, Math.min(0, 20 * Math.log10(linear)))
+  const linear = 0.5 * (Math.pow(10, a / 20) + Math.pow(10, b / 20));
+  if (linear <= 0) return VU_FLOOR_DB;
+  return Math.max(VU_FLOOR_DB, Math.min(0, 20 * Math.log10(linear)));
 }
 
 /**
@@ -78,26 +78,26 @@ export function pickLR(
   chL: number,
   chR: number,
 ): StereoPick {
-  const l = levelAt(levels, chL)
-  const r = levelAt(levels, chR)
+  const l = levelAt(levels, chL);
+  const r = levelAt(levels, chR);
   switch (mode) {
-    case 'monoL':
-      return { l, r: l }
-    case 'monoR':
-      return { l: r, r }
-    case 'monoMix': {
-      const m = mixDb(levelAt(levels, 0), levelAt(levels, 1))
-      return { l: m, r: m }
+    case "monoL":
+      return { l, r: l };
+    case "monoR":
+      return { l: r, r };
+    case "monoMix": {
+      const m = mixDb(levelAt(levels, 0), levelAt(levels, 1));
+      return { l: m, r: m };
     }
     default:
-      return { l, r }
+      return { l, r };
   }
 }
 
 // ── Feed bookkeeping ─────────────────────────────────────────────────────────
 
 /** What a subscriber count change means for the engine. */
-export type FeedTransition = 'start' | 'stop' | 'none'
+export type FeedTransition = "start" | "stop" | "none";
 
 /**
  * Refcount step for the shared feed. The engine is a process-wide singleton, so
@@ -112,24 +112,27 @@ export function refcountStep(
   count: number,
   delta: 1 | -1,
 ): { count: number; transition: FeedTransition } {
-  const prev = Math.max(0, count)
-  const next = Math.max(0, prev + delta)
-  if (prev === 0 && next > 0) return { count: next, transition: 'start' }
-  if (prev > 0 && next === 0) return { count: next, transition: 'stop' }
-  return { count: next, transition: 'none' }
+  const prev = Math.max(0, count);
+  const next = Math.max(0, prev + delta);
+  if (prev === 0 && next > 0) return { count: next, transition: "start" };
+  if (prev > 0 && next === 0) return { count: next, transition: "stop" };
+  return { count: next, transition: "none" };
 }
 
 /** Two device names refer to the same device. `null` = "the system default". */
-export function sameDevice(a: string | null | undefined, b: string | null | undefined): boolean {
+export function sameDevice(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
   const norm = (v: string | null | undefined): string | null => {
-    const s = (v ?? '').trim()
-    return s === '' ? null : s
-  }
-  return norm(a) === norm(b)
+    const s = (v ?? "").trim();
+    return s === "" ? null : s;
+  };
+  return norm(a) === norm(b);
 }
 
 /** What the feed must do to serve `requested`. */
-export type DeviceAction = 'start' | 'restart' | 'keep'
+export type DeviceAction = "start" | "restart" | "keep";
 
 /**
  * Restart decision on a device change.
@@ -144,8 +147,8 @@ export function deviceAction(
   requestedDevice: string | null,
   running: boolean,
 ): DeviceAction {
-  if (!running) return 'start'
-  return sameDevice(currentDevice, requestedDevice) ? 'keep' : 'restart'
+  if (!running) return "start";
+  return sameDevice(currentDevice, requestedDevice) ? "keep" : "restart";
 }
 
 /**
@@ -161,9 +164,9 @@ export function resolveDevice(
   subs: readonly { deviceName?: string | null }[],
 ): string | null {
   for (let i = subs.length - 1; i >= 0; i--) {
-    const d = subs[i].deviceName
-    if (d === undefined) continue
-    return d === null || d.trim() === '' ? null : d
+    const d = subs[i].deviceName;
+    if (d === undefined) continue;
+    return d === null || d.trim() === "" ? null : d;
   }
-  return null
+  return null;
 }

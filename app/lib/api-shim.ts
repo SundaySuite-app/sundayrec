@@ -25,7 +25,11 @@
 //      CAMERA preview is still client-side getUserMedia (pages/home.ts), which
 //      is a video device and never contends for the microphone.
 
-import { invoke as tauriInvoke, convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import {
+  invoke as tauriInvoke,
+  convertFileSrc,
+  isTauri,
+} from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   open as openDialog,
@@ -54,10 +58,7 @@ import {
   type FixtureGate,
   type FixtureMap,
 } from "./fixtures-core";
-import {
-  createNotifierSlot,
-  type ShimNotifier,
-} from "./shim-notifier-core";
+import { createNotifierSlot, type ShimNotifier } from "./shim-notifier-core";
 import { parseGoto } from "./goto-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
@@ -65,13 +66,54 @@ import { parseGoto } from "./goto-core";
 // as the original) for anything the webview can't decode directly. Keep these in
 // sync with the drag-drop sets in editor-page.ts / editor/state.ts.
 const AUDIO_EXT = [
-  "mp3", "mp1", "mp2", "wav", "flac", "aac", "m4a", "m4b", "m4r", "ogg", "oga",
-  "opus", "aiff", "aif", "wma", "mka", "ac3", "eac3", "amr", "3ga", "caf", "wv",
-  "tta", "au", "snd", "ape", "dts", "mpc", "ra", "ram", "spx", "gsm",
+  "mp3",
+  "mp1",
+  "mp2",
+  "wav",
+  "flac",
+  "aac",
+  "m4a",
+  "m4b",
+  "m4r",
+  "ogg",
+  "oga",
+  "opus",
+  "aiff",
+  "aif",
+  "wma",
+  "mka",
+  "ac3",
+  "eac3",
+  "amr",
+  "3ga",
+  "caf",
+  "wv",
+  "tta",
+  "au",
+  "snd",
+  "ape",
+  "dts",
+  "mpc",
+  "ra",
+  "ram",
+  "spx",
+  "gsm",
 ];
 const VIDEO_EXT = [
-  "mp4", "mov", "mkv", "m4v", "webm", "avi", "wmv", "ts", "mts", "m2ts", "flv",
-  "3gp", "asf", "f4v",
+  "mp4",
+  "mov",
+  "mkv",
+  "m4v",
+  "webm",
+  "avi",
+  "wmv",
+  "ts",
+  "mts",
+  "m2ts",
+  "flv",
+  "3gp",
+  "asf",
+  "f4v",
 ];
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
@@ -210,7 +252,8 @@ const FIXTURES_HONORED = fixturesHonored(FIXTURE_GATE);
  *  canned answers mid-journey (e.g. "now the list has one more row"). */
 function installedFixtures(): FixtureMap | undefined {
   if (!FIXTURES_HONORED) return undefined;
-  return (window as any)[FIXTURE_GLOBAL] as FixtureMap | undefined;
+  return (window as unknown as Record<string, unknown>)[FIXTURE_GLOBAL] as
+    FixtureMap | undefined;
 }
 
 /** `invoke`, with the fixture seam in front of it. Signature-compatible with
@@ -328,7 +371,7 @@ async function editorCall<T extends object>(
 // (pre-roll gave up, crash recovery skipped a file, the configured device is
 // missing, the disk is filling) — so the channel is mapped for real.
 const EVENT_MAP: Record<string, string> = {
-  'backend-warning': 'backend://warning',
+  "backend-warning": "backend://warning",
   "recording-overlay-start": "recording://started",
   "recording-overlay-stop": "recording://state",
   "recording-finished": "recording://finished",
@@ -581,7 +624,8 @@ function fmtDurXtYm(sec: number): string {
 function rowToEntry(r: RecordingRow): Record<string, unknown> {
   const path = r.file_path ?? "";
   const filename = basename(path);
-  const durationSec = r.duration_ms != null ? Math.round(r.duration_ms / 1000) : 0;
+  const durationSec =
+    r.duration_ms != null ? Math.round(r.duration_ms / 1000) : 0;
   const ts = r.created_at ?? r.started_at ?? 0;
   if (r.id) historyIdByTs.set(ts, r.id);
   return {
@@ -628,18 +672,21 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
  * twenty times would otherwise log twenty identical lines and bury the one
  * channel that is genuinely missing an emitter.
  */
-const listenFailedChannels = new Set<string>()
+const listenFailedChannels = new Set<string>();
 function warnListenFailedOnce(channel: string, err: unknown): void {
-  if (listenFailedChannels.has(channel)) return
-  listenFailedChannels.add(channel)
+  if (listenFailedChannels.has(channel)) return;
+  listenFailedChannels.add(channel);
   // `warn`, not `error`: without a Tauri backend this is the EXPECTED state,
   // not a failure — the same call `status/next-recording.ts` already makes.
-  console.warn(`[api-shim] listen("${channel}") feilet — ingen hendelser kommer fram`, err)
+  console.warn(
+    `[api-shim] listen("${channel}") feilet — ingen hendelser kommer fram`,
+    err,
+  );
 }
 
 /** Test-only: forget which channels have already warned. */
 export function __resetListenWarnings(): void {
-  listenFailedChannels.clear()
+  listenFailedChannels.clear();
 }
 
 const api: Record<string, unknown> = {
@@ -687,9 +734,13 @@ const api: Record<string, unknown> = {
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
   getNextRecording: async () => {
-    const s = await call<{ next: string | null }>("scheduler_status", undefined, {
-      next: null,
-    });
+    const s = await call<{ next: string | null }>(
+      "scheduler_status",
+      undefined,
+      {
+        next: null,
+      },
+    );
     return s.next ? { date: s.next } : null;
   },
 
@@ -705,7 +756,9 @@ const api: Record<string, unknown> = {
     historyIdByTs.clear();
     const rows = await call<RecordingRow[]>("recordings_list", undefined, []);
     const trashed = new Set(
-      (await call<TrashEntry[]>("trash_list", undefined, [])).map((e) => e.originalPath),
+      (await call<TrashEntry[]>("trash_list", undefined, [])).map(
+        (e) => e.originalPath,
+      ),
     );
     return rows.filter((r) => !trashed.has(r.file_path)).map(rowToEntry);
   },
@@ -717,7 +770,8 @@ const api: Record<string, unknown> = {
   trashMove: async (paths: string[]) =>
     invoke<TrashEntry[]>("trash_move", { paths }),
   trashList: async () => call<TrashEntry[]>("trash_list", undefined, []),
-  trashRestore: async (id: string) => invoke<TrashEntry>("trash_restore", { id }),
+  trashRestore: async (id: string) =>
+    invoke<TrashEntry>("trash_restore", { id }),
   trashPurge: async (ids: string[]) => invoke<number>("trash_purge", { ids }),
   deleteHistoryEntry: async (ts: number) => {
     const id = historyIdByTs.get(ts);
@@ -759,7 +813,8 @@ const api: Record<string, unknown> = {
   // `call(…, true)` turned a FAILED stop
   // into `true`: recording.ts then waited politely for a terminal event that
   // was never coming instead of running its own teardown catch.
-  stopRecordingNow: async () => invoke("stop_recording", undefined).then(() => true),
+  stopRecordingNow: async () =>
+    invoke("stop_recording", undefined).then(() => true),
   // ── Auto-stop, owned by the recorder ───────────────────────────────────
   //
   // The overlay has always SHOWN the deadline («Stopper av seg selv om 12:04»)
@@ -824,11 +879,15 @@ const api: Record<string, unknown> = {
     }
   },
   prerollStatus: async () =>
-    call<import("../../legacy/bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
-      active: false,
-      engine: "native",
-      channels: 0,
-    }),
+    call<import("../../legacy/bindings/PrerollStatus").PrerollStatus>(
+      "preroll_status",
+      undefined,
+      {
+        active: false,
+        engine: "native",
+        channels: 0,
+      },
+    ),
   // Engine-side VU metering: starts the cpal stream on the device (negotiated
   // FULL channel count — a Qu-5's 32, not getUserMedia's 2) and streams
   // `vu-levels` events (~30/s, one peak+RMS entry per native channel) until
@@ -917,7 +976,8 @@ const api: Record<string, unknown> = {
 
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
-    (await call<{ version?: string }>("app_info", undefined, {})).version ?? "—",
+    (await call<{ version?: string }>("app_info", undefined, {})).version ??
+    "—",
   // The menubar tray renders its labels in Rust. Since R4 the backend COULD
   // read `settings.language` from sqlite itself, but the tray must also follow
   // a locale change the moment it happens (and the "follow the OS" null case
@@ -1008,7 +1068,11 @@ const api: Record<string, unknown> = {
       }
       // Anything else (error / a phase we don't expect here) is a FAILED
       // install attempt — surface it instead of returning a silent success.
-      emitLocal("update-error", ("message" in st ? st.message : null) ?? `unexpected update phase: ${st.phase}`);
+      emitLocal(
+        "update-error",
+        ("message" in st ? st.message : null) ??
+          `unexpected update phase: ${st.phase}`,
+      );
       return false;
     } catch (e) {
       if (timer !== undefined) clearInterval(timer);
@@ -1046,7 +1110,14 @@ const api: Record<string, unknown> = {
       // 0 rather than a guessed real number: this fallback only fires when
       // the IPC itself is broken, and it has no business pretending to know
       // the live schema version.
-      { status: "never-asked", version: 0, decidedAt: null, currentVersion: 0, needsPrompt: true, active: false },
+      {
+        status: "never-asked",
+        version: 0,
+        decidedAt: null,
+        currentVersion: 0,
+        needsPrompt: true,
+        active: false,
+      },
     ),
   // `null` on a real IPC failure — NEVER a fabricated TelemetryConsent. The
   // whole point of "ask once" is that a lost answer has to be asked again, so
@@ -1054,10 +1125,9 @@ const api: Record<string, unknown> = {
   // user their choice was saved when it was not.
   telemetryConsentSet: async (granted: boolean) => {
     try {
-      return await invoke<import("../../legacy/bindings/TelemetryConsent").TelemetryConsent>(
-        "telemetry_consent_set",
-        { granted },
-      );
+      return await invoke<
+        import("../../legacy/bindings/TelemetryConsent").TelemetryConsent
+      >("telemetry_consent_set", { granted });
     } catch (e) {
       console.warn("[api-shim] telemetry_consent_set failed", e);
       return null;
@@ -1072,9 +1142,9 @@ const api: Record<string, unknown> = {
   // which is worse than showing nothing.
   telemetryPreviewPayload: async () => {
     try {
-      return await invoke<import("../../legacy/bindings/TelemetryPreview").TelemetryPreview>(
-        "telemetry_preview_payload",
-      );
+      return await invoke<
+        import("../../legacy/bindings/TelemetryPreview").TelemetryPreview
+      >("telemetry_preview_payload");
     } catch (e) {
       console.warn("[api-shim] telemetry_preview_payload failed", e);
       return null;
@@ -1105,16 +1175,21 @@ const api: Record<string, unknown> = {
       { camera: "unknown", microphone: "unknown" },
     ),
   ffmpegHealth: async () =>
-    call<import("../../legacy/bindings/FfmpegHealth").FfmpegHealth>("ffmpeg_health", undefined, {
-      available: true, // unknown ⇒ don't manufacture an alarm
-      version: null,
-      path: "",
-    }),
+    call<import("../../legacy/bindings/FfmpegHealth").FfmpegHealth>(
+      "ffmpeg_health",
+      undefined,
+      {
+        available: true, // unknown ⇒ don't manufacture an alarm
+        version: null,
+        path: "",
+      },
+    ),
   // Whether the OS login item is REALLY registered. The System tab used to show
   // the stored boolean, which drifts the moment a user removes the login item
   // by hand (or a migration/reinstall drops it) — a checkbox claiming scheduled
   // recordings survive a reboot when they don't.
-  getLaunchAtLogin: async () => call<boolean>("get_launch_at_login", undefined, false),
+  getLaunchAtLogin: async () =>
+    call<boolean>("get_launch_at_login", undefined, false),
   // Trackpad haptics (macOS Force Touch). Infallible by contract on the Rust
   // side; swallow anything here so a haptic can never surface as a UI error.
   hapticPerform: async (pattern: string) => {
@@ -1157,7 +1232,10 @@ const api: Record<string, unknown> = {
       video_inputs?: { name: string; index: number }[];
     } | null>("list_devices", undefined, null);
     if (inv === null) throw new Error("list_devices did not answer");
-    return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
+    return (inv.video_inputs ?? []).map((d) => ({
+      name: d.name,
+      index: d.index,
+    }));
   },
   // Probe what the selected camera can actually capture, to gate the
   // resolution/fps UI. `token` is the device index (avfoundation) or name.
@@ -1242,33 +1320,30 @@ const api: Record<string, unknown> = {
     const m = (o.metadata ?? {}) as Record<string, unknown>;
     // Title/speaker/description ride along as tags. (v0.15: chapters no
     // longer travel — the chapter UI left with the content cluster.)
-    return editorCall(
-      "editor_export",
-      {
-        request: {
-          inputPath: o.inputPath,
-          cutRegions: o.cutRegions ?? [],
-          duration: o.duration ?? 0,
-          // No `container` field: `EditorExportRequest` has never had one, so
-          // serde dropped it silently. `format` is the only container the
-          // backend reads.
-          format: fmt,
-          outputFolder: o.outputFolder ?? "",
-          bitrate: o.outputBitrate ?? null,
-          bitDepth: o.outputBitDepth ?? null,
-          masterPreset: o.masterPreset ?? null,
-          introPath: o.introPath ?? null,
-          outroPath: o.outroPath ?? null,
-          gainDb: o.gainDb ?? null,
-          title: (m.title as string) || null,
-          speaker: (m.speaker as string) || null,
-          description: (m.description as string) || null,
-          vocalChainPreset: (o.vocalChainPreset as string) || null,
-          processing: (o.processing as Record<string, unknown>) ?? null,
-          channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
-        },
+    return editorCall("editor_export", {
+      request: {
+        inputPath: o.inputPath,
+        cutRegions: o.cutRegions ?? [],
+        duration: o.duration ?? 0,
+        // No `container` field: `EditorExportRequest` has never had one, so
+        // serde dropped it silently. `format` is the only container the
+        // backend reads.
+        format: fmt,
+        outputFolder: o.outputFolder ?? "",
+        bitrate: o.outputBitrate ?? null,
+        bitDepth: o.outputBitDepth ?? null,
+        masterPreset: o.masterPreset ?? null,
+        introPath: o.introPath ?? null,
+        outroPath: o.outroPath ?? null,
+        gainDb: o.gainDb ?? null,
+        title: (m.title as string) || null,
+        speaker: (m.speaker as string) || null,
+        description: (m.description as string) || null,
+        vocalChainPreset: (o.vocalChainPreset as string) || null,
+        processing: (o.processing as Record<string, unknown>) ?? null,
+        channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
       },
-    );
+    });
   },
   // One-click "best result": diagnose + recommended preset bundle.
   editorAutoProcess: async (fp: string) =>
@@ -1277,7 +1352,8 @@ const api: Record<string, unknown> = {
   // export itself then rejects with `cancelled`, which the editor maps to a
   // calm "Eksport avbrutt." (This was a stub returning `true` — the Avbryt
   // button did nothing and a 90-minute render was unkillable.)
-  editorCancelExport: async () => call("editor_cancel_export", undefined, false),
+  editorCancelExport: async () =>
+    call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
   editorReadCutsDraft: async (fp: string) =>
     call("editor_read_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, null),
@@ -1290,9 +1366,11 @@ const api: Record<string, unknown> = {
       false,
     ).then(() => true),
   editorDeleteCutsDraft: async (fp: string) =>
-    call("editor_delete_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, false).then(
-      () => true,
-    ),
+    call(
+      "editor_delete_sidecar",
+      { mediaPath: fp, sidecar: "cutsDraft" },
+      false,
+    ).then(() => true),
   // editor_segments → EditorSegment[]. The consumer (editor/detection.ts) casts
   // the result directly to Suggestion[] and assigns E.suggestions, so return the
   // ARRAY, not a { segments } wrapper (which would make E.suggestions an object).
@@ -1310,7 +1388,11 @@ const api: Record<string, unknown> = {
   // (`null` when there is none). Matched on OFFSETS in the backend, because the
   // indices in a stored record mean nothing once detection has run again.
   editorSermonPick: async (fp: string, segments: unknown) =>
-    call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
+    call<number | null>(
+      "editor_sermon_pick",
+      { mediaPath: fp, segments },
+      null,
+    ),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
@@ -1353,7 +1435,11 @@ const api: Record<string, unknown> = {
   // when even the transcode failed (the editor then says playback is
   // unavailable — cuts and export still run on the original).
   editorExtractPlaybackProxy: async (fp: string) =>
-    call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
+    call<string | null>(
+      "editor_extract_playback_proxy",
+      { inputPath: fp },
+      null,
+    ),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
   // (h264/h265). Maps the renderer params to EditorExportRequest just like
   // editorExportFile (the old raw-passthrough shape didn't match the request).
@@ -1457,7 +1543,7 @@ const api: Record<string, unknown> = {
   },
 };
 
-(window as any).api = api;
+(window as unknown as Record<string, unknown>).api = api;
 
 // Keep the OS login item in sync with the persisted launch-at-login flag on
 // boot (re-registers if the OS dropped it; idempotent otherwise). Reads the
@@ -1565,15 +1651,19 @@ if (VERIFY_GOTO) {
   // is the boot-time polling, which is DOM/timing and cannot be pure.
   const { page: gotoPage, tab: gotoTab } = VERIFY_GOTO;
   const tryGoto = (): void => {
-    const w = window as any;
-    if (typeof w.showPage !== "function") {
+    // `window.showPage` is declared as always-present in api.d.ts (it is the
+    // shell's ONE global), but it is only INSTALLED once main.tsx boots — so
+    // the runtime check below still matters even though the type says
+    // otherwise. No `any` needed: the declared type is exactly what is called.
+    if (typeof window.showPage !== "function") {
       setTimeout(tryGoto, 50);
       return;
     }
     // No highlight pulse: this path exists to produce clean screenshots, and a
     // 4.4 s glow on the card would be in half of them.
-    if (gotoTab) notifier.current().navigate(gotoPage, { tab: gotoTab, highlight: false });
-    else w.showPage(gotoPage);
+    if (gotoTab)
+      notifier.current().navigate(gotoPage, { tab: gotoTab, highlight: false });
+    else window.showPage(gotoPage);
   };
   setTimeout(tryGoto, 150);
 }

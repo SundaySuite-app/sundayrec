@@ -1,4 +1,4 @@
-import type { Cut } from './state'
+import type { Cut } from "./state";
 
 // Pure undo/redo state machine for the editor's cut list — extracted from
 // `cuts.ts` so the invariants are UNIT-TESTABLE without a DOM (the renderer side
@@ -9,17 +9,17 @@ import type { Cut } from './state'
 // one. `idx === -1` means "no history yet" (the initial empty state).
 
 /** Cap on undo depth — older snapshots are dropped. */
-export const MAX_CUT_HISTORY = 50
+export const MAX_CUT_HISTORY = 50;
 
 /** A history stack + the pointer into it. */
 export interface CutHistoryState {
-  history: Cut[][]
-  idx: number
+  history: Cut[][];
+  idx: number;
 }
 
 /** Deep-copy a cut list so snapshots can't alias the live array. */
 function clone(cuts: Cut[]): Cut[] {
-  return cuts.map((c) => ({ start: c.start, end: c.end }))
+  return cuts.map((c) => ({ start: c.start, end: c.end }));
 }
 
 /**
@@ -27,13 +27,16 @@ function clone(cuts: Cut[]): Cut[] {
  * ahead of `idx`, appends a copy, and caps the stack at [`MAX_CUT_HISTORY`]
  * (dropping the oldest). Returns the new `{ history, idx }`.
  */
-export function pushSnapshot(state: CutHistoryState, cuts: Cut[]): CutHistoryState {
-  let history = state.history.slice(0, state.idx + 1)
-  history.push(clone(cuts))
+export function pushSnapshot(
+  state: CutHistoryState,
+  cuts: Cut[],
+): CutHistoryState {
+  let history = state.history.slice(0, state.idx + 1);
+  history.push(clone(cuts));
   if (history.length > MAX_CUT_HISTORY) {
-    history = history.slice(history.length - MAX_CUT_HISTORY)
+    history = history.slice(history.length - MAX_CUT_HISTORY);
   }
-  return { history, idx: history.length - 1 }
+  return { history, idx: history.length - 1 };
 }
 
 /**
@@ -47,19 +50,21 @@ export function undoSnapshot(
   liveCutCount: number,
 ): { idx: number; cuts: Cut[] } | null {
   if (state.idx <= 0) {
-    if (state.idx === 0 && liveCutCount > 0) return { idx: -1, cuts: [] }
-    return null
+    if (state.idx === 0 && liveCutCount > 0) return { idx: -1, cuts: [] };
+    return null;
   }
-  const idx = state.idx - 1
-  return { idx, cuts: clone(state.history[idx]) }
+  const idx = state.idx - 1;
+  return { idx, cuts: clone(state.history[idx]) };
 }
 
 /**
  * Redo: returns the new `idx` and cut list, or `null` when nothing is ahead of
  * the current pointer.
  */
-export function redoSnapshot(state: CutHistoryState): { idx: number; cuts: Cut[] } | null {
-  if (state.idx >= state.history.length - 1) return null
-  const idx = state.idx + 1
-  return { idx, cuts: clone(state.history[idx]) }
+export function redoSnapshot(
+  state: CutHistoryState,
+): { idx: number; cuts: Cut[] } | null {
+  if (state.idx >= state.history.length - 1) return null;
+  const idx = state.idx + 1;
+  return { idx, cuts: clone(state.history[idx]) };
 }

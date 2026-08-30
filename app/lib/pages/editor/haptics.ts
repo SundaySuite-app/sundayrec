@@ -22,21 +22,21 @@
 
 /** Minimum time between taps. Below ~80 ms consecutive taps stop reading as
  *  separate events and start reading as vibration. */
-const MIN_GAP_MS = 80
+const MIN_GAP_MS = 80;
 
 /** How close two snap targets must be to count as "the same one" (seconds).
  *  Prevents a re-tap while the pointer sits on a boundary and the snapped value
  *  is recomputed on every mousemove. */
-const SAME_TARGET_SEC = 0.001
+const SAME_TARGET_SEC = 0.001;
 
-let lastAt = 0
-let lastTarget = Number.NaN
+let lastAt = 0;
+let lastTarget = Number.NaN;
 
-function fire(pattern: 'alignment' | 'levelChange' | 'generic'): void {
-  const now = Date.now()
-  if (now - lastAt < MIN_GAP_MS) return
-  lastAt = now
-  void window.api.hapticPerform?.(pattern)
+function fire(pattern: "alignment" | "levelChange" | "generic"): void {
+  const now = Date.now();
+  if (now - lastAt < MIN_GAP_MS) return;
+  lastAt = now;
+  void window.api.hapticPerform?.(pattern);
 }
 
 /**
@@ -48,21 +48,21 @@ function fire(pattern: 'alignment' | 'levelChange' | 'generic'): void {
 export function snapPulse(raw: number, snapped: number): boolean {
   if (raw === snapped) {
     // Not snapped — free movement. Arm the next real snap.
-    lastTarget = Number.NaN
-    return false
+    lastTarget = Number.NaN;
+    return false;
   }
-  if (Math.abs(snapped - lastTarget) <= SAME_TARGET_SEC) return false
-  lastTarget = snapped
-  const before = lastAt
-  fire('alignment')
-  return lastAt !== before
+  if (Math.abs(snapped - lastTarget) <= SAME_TARGET_SEC) return false;
+  lastTarget = snapped;
+  const before = lastAt;
+  fire("alignment");
+  return lastAt !== before;
 }
 
 /** A hard limit was hit — a trim handle pinned against the other edge, the
  *  playhead pushed out of a cut. `levelChange` is the system's detent pattern. */
 export function limitPulse(): void {
-  lastTarget = Number.NaN
-  fire('levelChange')
+  lastTarget = Number.NaN;
+  fire("levelChange");
 }
 
 /**
@@ -74,6 +74,6 @@ export function limitPulse(): void {
  * would be the throttle working against the thing it protects.
  */
 export function resetHaptics(): void {
-  lastTarget = Number.NaN
-  lastAt = 0
+  lastTarget = Number.NaN;
+  lastAt = 0;
 }

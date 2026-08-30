@@ -71,7 +71,10 @@ function strOrNull(v: unknown): string | null | undefined {
 }
 
 /** A member of `allowed`, or `undefined` (→ backend default). */
-function oneOf<T extends string>(v: unknown, allowed: readonly T[]): T | undefined {
+function oneOf<T extends string>(
+  v: unknown,
+  allowed: readonly T[],
+): T | undefined {
   return allowed.includes(v as T) ? (v as T) : undefined;
 }
 
@@ -115,7 +118,8 @@ function sanitizeDeviceChannels(v: unknown): Dict | undefined {
     const p = (pair ?? {}) as { channelL?: unknown; channelR?: unknown };
     const l = int(p.channelL, 0, 31);
     const r = int(p.channelR, 0, 31);
-    if (l !== undefined && r !== undefined) out[id] = { channelL: l, channelR: r };
+    if (l !== undefined && r !== undefined)
+      out[id] = { channelL: l, channelR: r };
   }
   return out;
 }
@@ -136,7 +140,8 @@ export function mapLegacyBlob(raw: string): Dict | null {
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return null;
   const s = parsed as Dict;
 
   const out: Dict = {};
@@ -156,7 +161,10 @@ export function mapLegacyBlob(raw: string): Dict | null {
   // Video device
   put("videoEnabled", bool(s.videoEnabled));
   put("videoDeviceName", strOrNull(s.videoDeviceName));
-  put("videoDeviceIndex", s.videoDeviceIndex === null ? null : int(s.videoDeviceIndex, -1, 999));
+  put(
+    "videoDeviceIndex",
+    s.videoDeviceIndex === null ? null : int(s.videoDeviceIndex, -1, 999),
+  );
   // (videoResolution / videoFramerate / videoContainer / videoCodec /
   // videoEncoder: constants since v0.15 — never copied.)
   put("videoFlip", bool(s.videoFlip));
@@ -170,14 +178,20 @@ export function mapLegacyBlob(raw: string): Dict | null {
 
   // Audio processing
   put("channels", oneOf(s.channels, ["stereo", "monoL", "monoR", "monoMix"]));
-  put("sampleRateMode", oneOf(s.sampleRateMode, ["auto", "r44100", "r48000", "r96000"]));
+  put(
+    "sampleRateMode",
+    oneOf(s.sampleRateMode, ["auto", "r44100", "r48000", "r96000"]),
+  );
   // (sampleRate, inputVolume, the EQ/compressor/limiter fields: dead Electron
   // capture-chain knobs, removed in v0.15 — never copied.)
 
   // Output. (`format` used to seed `separateAudioFormat` too — see the header.)
   put("format", oneOf(s.format, FORMATS));
   put("bitrate", s.bitrate === undefined ? undefined : String(s.bitrate));
-  put("filenamePattern", oneOf(s.filenamePattern, ["date", "church", "plain", "datetime"]));
+  put(
+    "filenamePattern",
+    oneOf(s.filenamePattern, ["date", "church", "plain", "datetime"]),
+  );
   put("saveFolder", strOrNull(s.saveFolder));
   put("autoDeleteDays", int(s.autoDeleteDays, 0, 3650));
 
@@ -185,7 +199,9 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("slots", Array.isArray(s.slots) ? sanitizeSlots(s.slots) : undefined);
   put(
     "specialRecordings",
-    Array.isArray(s.specialRecordings) ? sanitizeSpecials(s.specialRecordings) : undefined,
+    Array.isArray(s.specialRecordings)
+      ? sanitizeSpecials(s.specialRecordings)
+      : undefined,
   );
   put("stopOnSilence", bool(s.stopOnSilence));
   put("silenceThreshold", int(s.silenceThreshold, -90, 0));

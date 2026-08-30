@@ -56,7 +56,11 @@ beforeAll(async () => {
   vi.stubGlobal("navigator", { userAgent: "node" });
   vi.stubGlobal("location", { search: "", href: "http://localhost/" });
   vi.stubGlobal("document", {
-    createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, appendChild() {} }),
+    createElement: () => ({
+      style: {},
+      classList: { add() {}, remove() {} },
+      appendChild() {},
+    }),
     body: { appendChild() {} },
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -99,7 +103,9 @@ describe("window.api.on uten Tauri-runtime", () => {
     await settle();
     await settle();
 
-    expect(unhandled, "en uhåndtert avvisning slapp ut av api-shim").toEqual([]);
+    expect(unhandled, "en uhåndtert avvisning slapp ut av api-shim").toEqual(
+      [],
+    );
     // Og avmeldingen er trygg å kalle selv om det aldri ble noe å melde av.
     expect(() => off()).not.toThrow();
   });

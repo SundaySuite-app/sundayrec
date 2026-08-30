@@ -14,23 +14,17 @@
 
 /** The control shapes the settings pages actually use. */
 export type ControlKind =
-  | 'toggle'
-  | 'radio'
-  | 'select'
-  | 'slider'
-  | 'number'
-  | 'text'
-  | 'textarea'
+  "toggle" | "radio" | "select" | "slider" | "number" | "text" | "textarea";
 
 /** Everything a settings control can hold once coerced. */
-export type SettingValue = string | number | boolean | null
+export type SettingValue = string | number | boolean | null;
 
 /**
  * Trailing debounce for free typing. Long enough that a name typed at speed is
  * one write rather than fifteen, short enough that the «Lagret ✓» chip still
  * feels like a response to what you just did.
  */
-export const TEXT_DEBOUNCE_MS = 500
+export const TEXT_DEBOUNCE_MS = 500;
 
 /**
  * Window handed to `saveSettingsDebounced` once a change has been committed.
@@ -38,17 +32,17 @@ export const TEXT_DEBOUNCE_MS = 500
  * several controls changed in the same breath (a toggle that reveals a select
  * the user immediately sets) into one IPC round-trip.
  */
-export const SAVE_COALESCE_MS = 120
+export const SAVE_COALESCE_MS = 120;
 
 /** How long the inline «Lagret ✓» chip stays up — matches the channel grid. */
-export const SAVED_CHIP_MS = 1600
+export const SAVED_CHIP_MS = 1600;
 
 /** The minimal description of a control needed to classify it. */
 export interface ControlShape {
   /** Lower- or upper-case tag name; case is not significant. */
-  tag: string
+  tag: string;
   /** `input.type`, when the tag is an input. */
-  type?: string | null
+  type?: string | null;
 }
 
 /**
@@ -57,29 +51,29 @@ export interface ControlShape {
  * same kind through, so the commit plan is identical either way.
  */
 export function controlKindOf(shape: ControlShape): ControlKind {
-  const tag = (shape.tag || '').toLowerCase()
-  if (tag === 'select') return 'select'
-  if (tag === 'textarea') return 'textarea'
-  const type = (shape.type || 'text').toLowerCase()
-  if (type === 'checkbox') return 'toggle'
-  if (type === 'radio') return 'radio'
-  if (type === 'range') return 'slider'
-  if (type === 'number') return 'number'
-  return 'text'
+  const tag = (shape.tag || "").toLowerCase();
+  if (tag === "select") return "select";
+  if (tag === "textarea") return "textarea";
+  const type = (shape.type || "text").toLowerCase();
+  if (type === "checkbox") return "toggle";
+  if (type === "radio") return "radio";
+  if (type === "range") return "slider";
+  if (type === "number") return "number";
+  return "text";
 }
 
 /** When a change commits, and which DOM events can trigger it. */
 export interface CommitPlan {
   /** 0 = commit on the event itself. */
-  debounceMs: number
-  events: string[]
+  debounceMs: number;
+  events: string[];
 }
 
 export interface CommitOverride {
   /** Force an immediate commit even for a text field. */
-  immediate?: boolean
+  immediate?: boolean;
   /** Explicit debounce, wins over the kind's default. */
-  debounceMs?: number
+  debounceMs?: number;
 }
 
 /**
@@ -90,24 +84,31 @@ export interface CommitOverride {
  * release only — dragging fires `input` — so a slider commits on release and
  * never writes 40 times across one gesture. Free text debounces.
  */
-export function planCommit(kind: ControlKind, override: CommitOverride = {}): CommitPlan {
-  const discrete = kind === 'toggle' || kind === 'radio' || kind === 'select' || kind === 'slider'
-  const defaultMs = discrete ? 0 : TEXT_DEBOUNCE_MS
+export function planCommit(
+  kind: ControlKind,
+  override: CommitOverride = {},
+): CommitPlan {
+  const discrete =
+    kind === "toggle" ||
+    kind === "radio" ||
+    kind === "select" ||
+    kind === "slider";
+  const defaultMs = discrete ? 0 : TEXT_DEBOUNCE_MS;
   const debounceMs = override.immediate
     ? 0
     : override.debounceMs !== undefined
       ? Math.max(0, override.debounceMs)
-      : defaultMs
+      : defaultMs;
   // A debounced control must listen on `input` too, or a value typed and left
   // alone (no blur, no Enter) would never commit at all.
-  const events = discrete ? ['change'] : ['input', 'change']
-  return { debounceMs, events }
+  const events = discrete ? ["change"] : ["input", "change"];
+  return { debounceMs, events };
 }
 
 /** The raw DOM state a control exposes, without importing the DOM. */
 export interface RawControlValue {
-  value: string
-  checked?: boolean
+  value: string;
+  checked?: boolean;
 }
 
 /**
@@ -117,36 +118,39 @@ export interface RawControlValue {
  * caller can tell "the user cleared the field" from "the user typed 0" — the
  * distinction the old `parseInt(x) || 0` idiom threw away.
  */
-export function coerceValue(kind: ControlKind, raw: RawControlValue): SettingValue {
-  if (kind === 'toggle') return !!raw.checked
-  if (kind === 'number' || kind === 'slider') {
-    const trimmed = (raw.value ?? '').trim()
-    if (trimmed === '') return null
-    const n = Number(trimmed)
-    return Number.isFinite(n) ? n : null
+export function coerceValue(
+  kind: ControlKind,
+  raw: RawControlValue,
+): SettingValue {
+  if (kind === "toggle") return !!raw.checked;
+  if (kind === "number" || kind === "slider") {
+    const trimmed = (raw.value ?? "").trim();
+    if (trimmed === "") return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : null;
   }
-  return raw.value ?? ''
+  return raw.value ?? "";
 }
 
 /** Why a numeric value was rejected — translated by the DOM layer. */
-export type NumberIssue = 'nan' | 'below' | 'above' | 'notInteger'
+export type NumberIssue = "nan" | "below" | "above" | "notInteger";
 
 export interface NumberRule {
-  min?: number
-  max?: number
+  min?: number;
+  max?: number;
   /** Reject non-integers instead of rounding them. */
-  integer?: boolean
+  integer?: boolean;
   /** Clamp instead of rejecting — used where a hard bound is safe to apply. */
-  clamp?: boolean
+  clamp?: boolean;
 }
 
 export interface NumberCheck {
-  ok: boolean
+  ok: boolean;
   /** The value to use when `ok` — clamped when the rule asks for clamping. */
-  value: number | null
-  issue?: NumberIssue
+  value: number | null;
+  issue?: NumberIssue;
   /** The bound that was hit, for a message like "minimum er 500". */
-  bound?: number
+  bound?: number;
 }
 
 /**
@@ -157,24 +161,27 @@ export interface NumberCheck {
  * just aren't), while «slett etter N dager» must reject rather than quietly
  * pick a number that deletes recordings on a schedule nobody asked for.
  */
-export function validateNumber(value: SettingValue, rule: NumberRule = {}): NumberCheck {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return { ok: false, value: null, issue: 'nan' }
+export function validateNumber(
+  value: SettingValue,
+  rule: NumberRule = {},
+): NumberCheck {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return { ok: false, value: null, issue: "nan" };
   }
   if (rule.integer && !Number.isInteger(value)) {
-    return { ok: false, value: null, issue: 'notInteger' }
+    return { ok: false, value: null, issue: "notInteger" };
   }
   if (rule.min !== undefined && value < rule.min) {
     return rule.clamp
       ? { ok: true, value: rule.min, bound: rule.min }
-      : { ok: false, value: null, issue: 'below', bound: rule.min }
+      : { ok: false, value: null, issue: "below", bound: rule.min };
   }
   if (rule.max !== undefined && value > rule.max) {
     return rule.clamp
       ? { ok: true, value: rule.max, bound: rule.max }
-      : { ok: false, value: null, issue: 'above', bound: rule.max }
+      : { ok: false, value: null, issue: "above", bound: rule.max };
   }
-  return { ok: true, value }
+  return { ok: true, value };
 }
 
 /**
@@ -183,12 +190,15 @@ export function validateNumber(value: SettingValue, rule: NumberRule = {}): Numb
  * field re-fires `change` on blur with no edit — writing settings and flashing
  * «Lagret ✓» for a non-change is noise that teaches the user to ignore the chip.
  */
-export function isRealChange(previous: SettingValue, next: SettingValue): boolean {
-  return previous !== next
+export function isRealChange(
+  previous: SettingValue,
+  next: SettingValue,
+): boolean {
+  return previous !== next;
 }
 
 /** How urgently the app should ask before applying a change. */
-export type GuardReason = 'recording' | 'imminent' | null
+export type GuardReason = "recording" | "imminent" | null;
 
 /**
  * Decide whether a settings change needs a confirmation first, given how close
@@ -204,14 +214,14 @@ export function guardReasonFor(
   nowMs: number,
   leadMinutes = 10,
 ): GuardReason {
-  if (input.isRecording) return 'recording'
-  if (input.nextAtMs === null) return null
-  const deltaMs = input.nextAtMs - nowMs
-  if (deltaMs < 0) return null
-  return deltaMs <= leadMinutes * 60_000 ? 'imminent' : null
+  if (input.isRecording) return "recording";
+  if (input.nextAtMs === null) return null;
+  const deltaMs = input.nextAtMs - nowMs;
+  if (deltaMs < 0) return null;
+  return deltaMs <= leadMinutes * 60_000 ? "imminent" : null;
 }
 
 /** Whole minutes until the next start, floored, for the guard's wording. */
 export function minutesUntil(nextAtMs: number, nowMs: number): number {
-  return Math.max(0, Math.floor((nextAtMs - nowMs) / 60_000))
+  return Math.max(0, Math.floor((nextAtMs - nowMs) / 60_000));
 }

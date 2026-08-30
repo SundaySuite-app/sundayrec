@@ -1,6 +1,6 @@
-import type { Suggestion } from './state'
-import { sermonCandidates } from './sermon-candidates'
-import type { EditorSermonPickRequest } from '../../../../legacy/bindings/EditorSermonPickRequest'
+import type { Suggestion } from "./state";
+import { sermonCandidates } from "./sermon-candidates";
+import type { EditorSermonPickRequest } from "../../../../legacy/bindings/EditorSermonPickRequest";
 
 // The renderer's half of E8: turn "the human just corrected the sermon pick"
 // into the record the backend stores. Pure — no DOM, no shared state — because
@@ -36,22 +36,24 @@ export function buildSermonPickRequest(
     // leaves after that mutation — so a request holding the originals describes
     // the world as it is a microsecond too late, with the human's block already
     // labelled `sermon`. The one lie this record must never tell.
-    segments: segments.map(s => ({ ...s })),
+    segments: segments.map((s) => ({ ...s })),
     // What the picker OFFERED — the alternatives the choice was made among.
     // Derived from the same function the dropdown builds its options from, so
     // the record cannot describe a menu the user never saw.
-    candidateIndices: sermonCandidates(segments).map(c => c.index),
+    candidateIndices: sermonCandidates(segments).map((c) => c.index),
     autoIndex: autoIndex !== null && autoIndex >= 0 ? autoIndex : null,
     chosenIndex,
     durationSec,
-  }
+  };
 }
 
 /** Index of the block the detector itself promoted, or `null` when it found no
  *  sermon. Read off a FRESH detection result, before any stored correction is
  *  applied on top — that is the only moment the detector's own answer is
  *  visible. */
-export function autoSermonIndex(segments: readonly Suggestion[]): number | null {
-  const i = segments.findIndex(s => s.type === 'sermon')
-  return i >= 0 ? i : null
+export function autoSermonIndex(
+  segments: readonly Suggestion[],
+): number | null {
+  const i = segments.findIndex((s) => s.type === "sermon");
+  return i >= 0 ? i : null;
 }

@@ -1,4 +1,4 @@
-import type { Suggestion } from './state'
+import type { Suggestion } from "./state";
 
 // Which analysed blocks the sermon picker may offer, and — the part that
 // matters — WHICH SEGMENT each offer refers to.
@@ -15,14 +15,14 @@ import type { Suggestion } from './state'
 
 /** Shortest block worth offering as the sermon. Below this it is an
  *  announcement or a reading, not the message — offering it is noise. */
-export const MIN_SERMON_CANDIDATE_SEC = 60
+export const MIN_SERMON_CANDIDATE_SEC = 60;
 
 /** One offerable block, paired with its index in the array it came from. */
 export interface SermonCandidate {
   /** Index into the SOURCE array — the stable identity a picked option must
    *  carry, as opposed to its position in this filtered list. */
-  index: number
-  segment: Suggestion
+  index: number;
+  segment: Suggestion;
 }
 
 /**
@@ -38,8 +38,8 @@ export function sermonCandidates(
     .map((segment, index) => ({ index, segment }))
     .filter(
       ({ segment }) =>
-        (segment.type === 'speech' || segment.type === 'sermon') &&
+        (segment.type === "speech" || segment.type === "sermon") &&
         segment.duration >= MIN_SERMON_CANDIDATE_SEC,
     )
-    .sort((a, b) => a.segment.start - b.segment.start)
+    .sort((a, b) => a.segment.start - b.segment.start);
 }

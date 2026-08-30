@@ -17,32 +17,32 @@
  * weighted in the copy exactly as they are in the CSS.
  */
 
-import type { ConsentStatus } from '../../legacy/bindings/ConsentStatus'
+import type { ConsentStatus } from "../../legacy/bindings/ConsentStatus";
 
 export interface PromptCopy {
-  titleKey: string
-  titleFallback: string
-  descKey: string
-  descFallback: string
+  titleKey: string;
+  titleFallback: string;
+  descKey: string;
+  descFallback: string;
 }
 
 /** The first-ask wording, matching index.html's static fallbacks. */
 export const FIRST_ASK: PromptCopy = {
-  titleKey: 'onboarding.promptTitle',
-  titleFallback: 'Del anonym diagnostikk?',
-  descKey: 'onboarding.promptDesc',
+  titleKey: "onboarding.promptTitle",
+  titleFallback: "Del anonym diagnostikk?",
+  descKey: "onboarding.promptDesc",
   descFallback:
-    'SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Avansert.',
-}
+    "SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Avansert.",
+};
 
 /** The wording for someone whose recorded answer predates a scope widening. */
 export const RE_ASK: PromptCopy = {
-  titleKey: 'onboarding.rePromptTitle',
-  titleFallback: 'Vi spør deg om igjen',
-  descKey: 'onboarding.rePromptDesc',
+  titleKey: "onboarding.rePromptTitle",
+  titleFallback: "Vi spør deg om igjen",
+  descKey: "onboarding.rePromptDesc",
   descFallback:
-    'Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.',
-}
+    "Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.",
+};
 
 /** Pick the copy for a card that has already been decided to show.
  *
@@ -51,5 +51,5 @@ export const RE_ASK: PromptCopy = {
  *  doing its own version arithmetic would be a second copy of the state
  *  machine that consent.rs owns. */
 export function promptCopyFor(status: ConsentStatus): PromptCopy {
-  return status === 'never-asked' ? FIRST_ASK : RE_ASK
+  return status === "never-asked" ? FIRST_ASK : RE_ASK;
 }

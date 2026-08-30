@@ -51,5 +51,7 @@
  * would have quietly stopped appearing on exactly the machines that need it.
  */
 export function isBuiltInDevice(label: string): boolean {
-  return /built-?in|innebygd|internal|default|standard|macbook|imac|mac ?(mini|studio|pro)|microphone array|mikrofonrekke/i.test(label)
+  return /built-?in|innebygd|internal|default|standard|macbook|imac|mac ?(mini|studio|pro)|microphone array|mikrofonrekke/i.test(
+    label,
+  );
 }

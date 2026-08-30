@@ -26,17 +26,17 @@
 /** Everything the run/stop decision depends on. */
 export interface PrerollConditions {
   /** The advanced opt-in. Off ⇒ the buffer never runs, whatever else is true. */
-  enabled: boolean
+  enabled: boolean;
   /** `settings.preRollSeconds` — 0 means the feature is off. */
-  seconds: number
+  seconds: number;
   /** An input device is configured (the buffer has nothing to address without one). */
-  deviceKnown: boolean
+  deviceKnown: boolean;
   /** A recording is in progress — the capture engine owns the mic, full stop. */
-  isRecording: boolean
+  isRecording: boolean;
 }
 
 /** What the shell should do about the buffer. */
-export type PrerollDecision = 'run' | 'stop'
+export type PrerollDecision = "run" | "stop";
 
 /**
  * Should the rolling buffer be running right now?
@@ -46,11 +46,11 @@ export type PrerollDecision = 'run' | 'stop'
  * a wrong `run` is a second owner on the microphone during a service.
  */
 export function decidePreroll(c: PrerollConditions): PrerollDecision {
-  if (!c.enabled) return 'stop'
-  if (!(c.seconds > 0)) return 'stop'
-  if (!c.deviceKnown) return 'stop'
-  if (c.isRecording) return 'stop'
-  return 'run'
+  if (!c.enabled) return "stop";
+  if (!(c.seconds > 0)) return "stop";
+  if (!c.deviceKnown) return "stop";
+  if (c.isRecording) return "stop";
+  return "run";
 }
 
 /**
@@ -59,35 +59,35 @@ export function decidePreroll(c: PrerollConditions): PrerollDecision {
  * takes a moment; the overlay's own meter restart uses 3 s for exactly this
  * reason. Stopping is never delayed.
  */
-export const RESTART_SETTLE_MS = 3000
+export const RESTART_SETTLE_MS = 3000;
 
 /** What `reconcilePreroll` should actually do. */
 export type PrerollAction =
   /** The decision has not changed and nothing was forced — no IPC. */
-  | 'none'
+  | "none"
   /** Issue the command now. */
-  | 'apply'
+  | "apply"
   /** Coming back up after a stop: wait `RESTART_SETTLE_MS`, then re-decide. */
-  | 'defer-restart'
+  | "defer-restart";
 
 export interface ReconcilePlan {
-  action: PrerollAction
+  action: PrerollAction;
   /** What the shell should record as the decision it has ACTED on. For
    *  `defer-restart` that is already `run`, so a second reconcile arriving
    *  during the wait does not queue a second timer. */
-  applied: PrerollDecision | null
+  applied: PrerollDecision | null;
 }
 
 export interface ReconcileInput {
   /** The last decision the shell acted on; `null` at app start and after a
    *  failed apply (unknown backend state ⇒ decide from scratch). */
-  previous: PrerollDecision | null
+  previous: PrerollDecision | null;
   /** What `decidePreroll` says right now. */
-  decision: PrerollDecision
+  decision: PrerollDecision;
   /** Re-issue even when the decision has not changed — used at app start (a
    *  previous run may have left a loop behind) and after a device change,
    *  where "run" means "run on a DIFFERENT device". */
-  force: boolean
+  force: boolean;
 }
 
 /**
@@ -99,12 +99,13 @@ export interface ReconcileInput {
  * because nothing changed", never "grab the microphone immediately".
  */
 export function planReconcile(input: ReconcileInput): ReconcilePlan {
-  const { previous, decision, force } = input
-  if (decision === previous && !force) return { action: 'none', applied: previous }
-  if (decision === 'run' && previous === 'stop') {
-    return { action: 'defer-restart', applied: 'run' }
+  const { previous, decision, force } = input;
+  if (decision === previous && !force)
+    return { action: "none", applied: previous };
+  if (decision === "run" && previous === "stop") {
+    return { action: "defer-restart", applied: "run" };
   }
-  return { action: 'apply', applied: decision }
+  return { action: "apply", applied: decision };
 }
 
 /**
@@ -115,18 +116,20 @@ export function planReconcile(input: ReconcileInput): ReconcilePlan {
  * restraint mid-service; guessing "recording" would strand the buffer down
  * forever.
  */
-export function liveFromRecordingState(state: string | undefined): boolean | null {
+export function liveFromRecordingState(
+  state: string | undefined,
+): boolean | null {
   switch (state) {
-    case 'preparing':
-    case 'recording':
-    case 'reconnecting':
-    case 'stopping':
-      return true
-    case 'stopped':
-    case 'failed':
-    case 'idle':
-      return false
+    case "preparing":
+    case "recording":
+    case "reconnecting":
+    case "stopping":
+      return true;
+    case "stopped":
+    case "failed":
+    case "idle":
+      return false;
     default:
-      return null
+      return null;
   }
 }

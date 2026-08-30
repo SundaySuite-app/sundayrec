@@ -1,4 +1,4 @@
-import { PLAYER_EXTS } from './state'
+import { PLAYER_EXTS } from "./state";
 
 // ── Extended-timeline region math (PURE — no DOM, no state) ─────────────────
 //
@@ -15,38 +15,38 @@ import { PLAYER_EXTS } from './state'
 // drift apart, so the mapping lives here as pure functions with tests instead
 // of being re-derived inline in the play/seek/stop paths.
 
-export type PlaybackRegion = 'intro' | 'main' | 'outro'
+export type PlaybackRegion = "intro" | "main" | "outro";
 
 export interface RegionTimeline {
   /** Length of the main recording, in seconds. */
-  duration: number
+  duration: number;
   /** Intro jingle length — 0 when there is none, or it is excluded from export. */
-  introDur: number
+  introDur: number;
   /** Outro jingle length — 0 when there is none, or it is excluded from export. */
-  outroDur: number
+  outroDur: number;
 }
 
 export interface RegionPos {
-  region: PlaybackRegion
+  region: PlaybackRegion;
   /** Offset into that region's OWN media, from its start. Always ≥ 0. */
-  offset: number
+  offset: number;
 }
 
 /** Earliest playable extended second (start of the intro, or 0). */
 export function timelineStart(tl: RegionTimeline): number {
-  const introDur = Math.max(0, tl.introDur)
+  const introDur = Math.max(0, tl.introDur);
   // `-0` would compare equal to 0 but survives into `Object.is` checks and
   // formatted timecodes as "-0:00". Keep the no-intro case a plain zero.
-  return introDur > 0 ? -introDur : 0
+  return introDur > 0 ? -introDur : 0;
 }
 
 /** Last playable extended second (end of the outro, or the recording's end). */
 export function timelineEnd(tl: RegionTimeline): number {
-  return tl.duration + Math.max(0, tl.outroDur)
+  return tl.duration + Math.max(0, tl.outroDur);
 }
 
 export function clampToTimeline(sec: number, tl: RegionTimeline): number {
-  return Math.max(timelineStart(tl), Math.min(timelineEnd(tl), sec))
+  return Math.max(timelineStart(tl), Math.min(timelineEnd(tl), sec));
 }
 
 /**
@@ -56,25 +56,35 @@ export function clampToTimeline(sec: number, tl: RegionTimeline): number {
  * a region that has nothing to play.
  */
 export function resolvePosition(sec: number, tl: RegionTimeline): RegionPos {
-  const introDur = Math.max(0, tl.introDur)
-  const outroDur = Math.max(0, tl.outroDur)
-  const duration = Math.max(0, tl.duration)
+  const introDur = Math.max(0, tl.introDur);
+  const outroDur = Math.max(0, tl.outroDur);
+  const duration = Math.max(0, tl.duration);
 
   if (introDur > 0 && sec < 0) {
     // -introDur → offset 0 (jingle start); just-below-0 → nearly its end.
-    return { region: 'intro', offset: Math.max(0, Math.min(introDur, introDur + sec)) }
+    return {
+      region: "intro",
+      offset: Math.max(0, Math.min(introDur, introDur + sec)),
+    };
   }
   if (outroDur > 0 && sec > duration) {
-    return { region: 'outro', offset: Math.max(0, Math.min(outroDur, sec - duration)) }
+    return {
+      region: "outro",
+      offset: Math.max(0, Math.min(outroDur, sec - duration)),
+    };
   }
-  return { region: 'main', offset: Math.max(0, Math.min(duration, sec)) }
+  return { region: "main", offset: Math.max(0, Math.min(duration, sec)) };
 }
 
 /** Inverse of [`resolvePosition`]: a region-local offset back to extended seconds. */
-export function regionPosToTimeline(region: PlaybackRegion, offset: number, tl: RegionTimeline): number {
-  if (region === 'intro') return timelineStart(tl) + offset
-  if (region === 'outro') return Math.max(0, tl.duration) + offset
-  return offset
+export function regionPosToTimeline(
+  region: PlaybackRegion,
+  offset: number,
+  tl: RegionTimeline,
+): number {
+  if (region === "intro") return timelineStart(tl) + offset;
+  if (region === "outro") return Math.max(0, tl.duration) + offset;
+  return offset;
 }
 
 /**
@@ -83,10 +93,13 @@ export function regionPosToTimeline(region: PlaybackRegion, offset: number, tl: 
  * recording is not a thing the editor can open); the recording hands over to the
  * outro only when there is one.
  */
-export function nextRegion(region: PlaybackRegion, tl: RegionTimeline): PlaybackRegion | null {
-  if (region === 'intro') return 'main'
-  if (region === 'main') return Math.max(0, tl.outroDur) > 0 ? 'outro' : null
-  return null
+export function nextRegion(
+  region: PlaybackRegion,
+  tl: RegionTimeline,
+): PlaybackRegion | null {
+  if (region === "intro") return "main";
+  if (region === "main") return Math.max(0, tl.outroDur) > 0 ? "outro" : null;
+  return null;
 }
 
 /**
@@ -98,8 +111,8 @@ export function nextRegion(region: PlaybackRegion, tl: RegionTimeline): Playback
  * Accepts `flac`, `.flac`, `.FLAC` alike: extensions reach us from filenames,
  * drag-and-drop payloads and settings, and the casing is not ours to trust.
  */
-export function routePlayback(ext: string): 'element' | 'proxy' {
-  const norm = ext.trim().toLowerCase()
-  const dotted = norm.startsWith('.') ? norm : `.${norm}`
-  return PLAYER_EXTS.has(dotted) ? 'element' : 'proxy'
+export function routePlayback(ext: string): "element" | "proxy" {
+  const norm = ext.trim().toLowerCase();
+  const dotted = norm.startsWith(".") ? norm : `.${norm}`;
+  return PLAYER_EXTS.has(dotted) ? "element" : "proxy";
 }
