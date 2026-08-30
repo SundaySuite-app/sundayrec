@@ -383,8 +383,9 @@ pub fn run() {
             //     path; a panic, a kill or a `SUNDAYREC_BENCH_KEEP` run leaves
             //     it, and a 60 s 96 kHz stereo capture is ~23 MB.
             //   - `.__editor_tmp` / `.__editor_bak` beside recordings — swept
-            //     only by `editor_cleanup_temp_files`, a Tauri command with ZERO
-            //     callers, so a crashed export left a full-size copy of the
+            //     only by an `editor_cleanup_temp_files` Tauri command with ZERO
+            //     callers (deleted in V1/PR3; THIS sweep is the whole cleanup
+            //     now), so a crashed export left a full-size copy of the
             //     service on disk forever.
             // Background + best-effort: this is hygiene, not a startup
             // dependency, and it must never delay the window appearing.
@@ -520,7 +521,6 @@ pub fn run() {
             commands::editor::editor_peaks,
             commands::editor::editor_extract_playback_proxy,
             commands::editor::editor_allow_asset_path,
-            commands::editor::editor_probe_peak,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
             commands::editor::editor_diagnose_channels,
@@ -535,9 +535,6 @@ pub fn run() {
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
-            commands::editor::editor_probe_streams,
-            commands::editor::editor_read_file,
-            commands::editor::editor_cleanup_temp_files,
             commands::editor::editor_master_preview,
             commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
