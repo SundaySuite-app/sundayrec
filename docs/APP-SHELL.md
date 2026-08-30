@@ -43,22 +43,30 @@ The dependency still runs **one way**, and now says so from inside `app/`:
 directory depth, since inside `app/` there is no longer an `app/` segment for a
 glob to match on.
 
-`app/lib/` is a **verbatim port**, and PR B kept it one rather than promoting it
-by moving it:
+`app/lib/` was a **verbatim port** at the move, and PR B kept it one rather than
+promoting it by moving it: its own loosened ESLint block, still outside
+`prettier`, outside the two i18n AST gates. The plan was to undo that **file by
+file, on touch**. **V1 PR1 («app/lib-sveipen») did it as one sweep instead** —
+the owner chose the full sweep over the recommended touched-files-only scope —
+so as of that PR:
 
-- its own ESLint block (`any` and `no-unused-vars` loosened, exactly the rules
-  the `legacy/**` block gave it), so nobody reads a file under `app/` and assumes
-  it has been through the review the shell has;
-- still outside `prettier` (`.prettierignore` carries `app/lib`), because a
-  reformat is a whole-file diff on 76 files and would have buried the proof that
-  the move changed nothing;
-- and outside the two i18n AST gates, which forbid the fallback argument
-  (`t(key, 'norsk')`) that IS the port's signature — a gate that doubled its
-  reach because a directory moved would be a rule change dressed as a rename.
+- `app/lib/**` is formatted (`.prettierignore`'s `app/lib` line is gone;
+  `api-shim.ts` landed in its own commit so its 1579-line diff could be read
+  in isolation from the other 67 files);
+- the strict `app/**` ESLint block covers `app/lib/**` directly — no more
+  `ignores` exclusion, no more standalone loosened block. An actual
+  `npx eslint app/lib` run under the strict rules, done before deleting
+  anything, found only 3 real `any`s (fixed in the same PR) — the file/catch
+  counts the V1 plan estimated didn't hold up against a real run;
+- the fallback-argument ban (`t(key, 'norsk')`) still doesn't reach `i18n.ts`
+  and the five files that call it directly with a fallback — a small, named
+  exception block carries that carve-out now, because the port's `t`/`tf`/`tn`
+  use the fallback as a real parameter and stripping it is a translation-round
+  decision, not a lint one.
 
-Each is undone **file by file, on touch**: when one of these is opened for a real
-reason, it leaves the ignore and the block in the same PR as the change that made
-you open it.
+Two small, named exceptions remain (search `eslint.config.js` for "Tauri doors"
+and "the i18n fallback surface") — see «Etter byttet» §6 for what each one
+actually loosens and why.
 
 ## Why **not** `@preact/preset-vite`
 
@@ -3262,16 +3270,37 @@ tsconfig.
 
 De tre restansene denne flyttingen bar med seg, og hva de ble:
 
-- **`.prettierignore`.** Inventaret formateres **fortsatt ikke** — `legacy`-linja
-  er byttet mot `app/lib`. Grunnen er den samme og står i fila: en reformat er
-  en helfil-diff på 76 filer, og under flyttingen ville den skjult nettopp det
-  flyttingen skal kunne bevises på. Det gjøres **fil for fil ved berøring**.
-- **ESLints legacy-blokk.** `app/lib/**` fikk sin **egen navngitte blokk** med
-  de samme løsnede reglene, og den strenge `app/**`-blokken utelukker
-  `app/lib/**` ved navn (ikke ved regel-overstyring — utelukkelsen er poenget og
-  skal være synlig). Samme fil-for-fil-opptrapping. Énveisregelen er beholdt og
-  skrevet om: `app/lib/` importerer aldri skallet rundt seg, håndhevet per
-  mappedybde fordi det ikke lenger finnes et `app/`-ledd å matche på.
+- **`.prettierignore`.** ✅ **Formatert i V1 PR1** («app/lib-sveipen»,
+  `chore/v1-applib-sweep`). Planen var fil-for-fil-ved-berøring; eier valgte i
+  stedet **full sveip på én gang** (V1-eiervalg E5: «full over anbefalt kun
+  rørte filer»). Hele treet (77 filer; 9 var alt rene) kjørt gjennom prettier i
+  to commits — `api-shim.ts` (1579 linjer) alene først, så resten — nettopp så
+  den ene store diffen kan leses isolert fra de 67 små. `git diff
+--ignore-all-space` er ikke tomt (portens single-quote/no-semicolon-stil blir
+  double-quote/semicolon; det ER innholdet i en ren reformat), men `tsc
+--noEmit` og hele vitest-suiten var grønn før og etter hver commit, og
+  stikkprøver på regex-/malstreng-bærende filer fant ingen logikkendring.
+  `app/lib`-linja (og forklaringen rundt den) er ute av `.prettierignore`.
+- **ESLints legacy-blokk.** ✅ **Fjernet i samme PR.** Den strenge
+  `app/**`-blokken dekker nå `app/lib/**` uten unntak — ingen egen løsnet
+  blokk, ingen `ignores`-liste. Før slettingen ble `npx eslint app/lib` kjørt
+  med de strenge reglene aktive som en reell dry run (ikke en antagelse): den
+  fant 3 ekte `any` i `api-shim.ts` (fikset i samme PR, typet
+  `window`-cast) og **0** treff på `prefer-const`/`no-empty`/
+  `no-useless-assignment`/`no-unused-vars` — V1-planens anslag («~15 filer
+  prefer-const, ~78 `catch{}`») holdt ikke mot en ekte kjøring. Dry-runen
+  avdekket derimot noe planen ikke hadde forutsett: 20 treff på
+  `no-restricted-syntax`s `t`/`tf`/`tn`-fallback-forbud fordelt på 6 filer,
+  fordi portens egne `t`/`tf`/`tn` (i `i18n.ts`) tar fallback som et EKTE
+  parameter (Rust-kildens norske reservetekst), ikke en glipp. To små,
+  navngitte unntaksblokker består: **«Tauri doors»** (`api-shim.ts`,
+  `tray-actions.ts`, `api-shim-listen.test.ts` — kun
+  `@tauri-apps/*`-importforbudet løsnet; énveisregelen under holdes) og
+  **«The i18n fallback surface»** (de 6 filene over — kun
+  `t`/`tf`/`tn`-selektorene droppet). Fallback-stripping er språkrundens jobb,
+  ikke denne sveipens. Énveisregelen er beholdt og skrevet om: `app/lib/`
+  importerer aldri skallet rundt seg, håndhevet per mappedybde fordi det ikke
+  lenger finnes et `app/`-ledd å matche på.
 - **`window.__isRecording`** — IKKE lukket, se punkt 7. Den er en
   adferdsendring, og PR B var en flytting.
 
