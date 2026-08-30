@@ -15,10 +15,6 @@
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
-// Sunday Account (SSO) — the desktop login over the shared `sunday-auth` crate.
-// The browser loopback PKCE shell + shared-session persistence; the pure
-// decisions live in `sunday_auth::{pkce,supabase,session}`. NETWORK-UNVERIFIED.
-pub mod account;
 pub mod audio;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
@@ -464,11 +460,6 @@ pub fn run() {
             commands::app::set_launch_at_login,
             commands::app::get_launch_at_login,
             commands::app::tray_set_language,
-            commands::account::sunday_account_configured,
-            commands::account::sunday_account_status,
-            commands::account::sunday_sign_in,
-            commands::account::sunday_sign_out,
-            commands::account::sunday_whoami_song,
             commands::audio::list_input_devices,
             commands::audio::list_audio_devices,
             commands::audio::probe_device_channels,

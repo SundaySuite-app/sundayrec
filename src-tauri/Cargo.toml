@@ -99,14 +99,11 @@ sha2 = "0.11"
 [dependencies]
 # Pure, GUI-free domain core — the recorder behaviour distilled from Electron.
 sundayrec-core = { path = "../crates/sundayrec-core" }
-# Shared Sunday Account (SSO) primitives — PKCE, Supabase GoTrue request/response
-# shaping, the cross-app shared session file, OAuth-callback parsing. The pure,
-# unit-tested half of "one Sunday login for the whole suite"; this crate only
-# adds the impure loopback/reqwest shell over it (src/account.rs). Distributed by
-# git tag (see sunday-platform README) so each app builds standalone in CI — a
-# path dep would break the single-repo checkout. For local sunday-auth co-dev,
-# override with a `[patch]` in .cargo/config.toml.
-sunday-auth = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.4.1" }
+# NOTE (V1/PR3): `sunday-auth` (the shared SSO primitives, by git tag) left with
+# `src/account.rs`. It had exactly one consumer — the loopback-PKCE shell behind
+# the five `sunday_*` commands — so an unused git dependency would have kept CI
+# cloning sunday-platform on every build for a feature no screen reaches. Put it
+# back together with the login when the suite grows a desktop account surface.
 
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
