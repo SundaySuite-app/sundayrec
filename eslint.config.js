@@ -78,23 +78,24 @@ export default tseslint.config(
     },
   },
 
-  // ── The Preact shell (app/, minus the inventory) ───────────────────────────
+  // ── The Preact shell (app/, including the ported inventory) ────────────────
   //
-  // The opposite policy to the two port blocks. The port is a verbatim copy of
-  // a shipped app and is linted loosely on purpose; the shell is being written
-  // now, by us, for volunteers who have never seen the app — so every rule the
-  // port had to be excused from is an ERROR here, and the two i18n mistakes
-  // that made the old renderer hard to translate are lint failures rather than
-  // review comments.
+  // The opposite policy to the `legacy/**` block above. The port is a verbatim
+  // copy of a shipped app and used to be linted loosely on purpose; the shell
+  // is written now, by us, for volunteers who have never seen the app — so
+  // every rule the port was once excused from is an ERROR here, and the two
+  // i18n mistakes that made the old renderer hard to translate are lint
+  // failures rather than review comments.
   //
-  // `app/lib/**` is EXCLUDED by name rather than by rule-override, because the
-  // exclusion is the whole point and must be visible: PR B moved the port
-  // INSIDE `app/`, and a glob that says `app/**` while a later block quietly
-  // takes half of it back is how a reader ends up believing the strict rules
-  // cover files they do not.
+  // `app/lib/**` (the inventory PR B moved inside `app/`) used to be EXCLUDED
+  // here by name, with its own loosened block further down — the V1 app/lib
+  // sweep deleted both: an actual `eslint app/lib` run under these exact rules
+  // found only 3 real `any`s (fixed in the same PR) and no prefer-const/
+  // no-empty/no-unused-vars hits at all. Two narrow, named exceptions below
+  // (search "Tauri doors" and "fallback surface") carve out what genuinely
+  // can't tighten yet without doing other rounds' work.
   {
     files: ["app/**/*.{ts,tsx}"],
-    ignores: ["app/lib/**"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
@@ -207,46 +208,6 @@ export default tseslint.config(
     },
   },
 
-  // ── The ported inventory, now inside the shell (app/lib/) ──────────────────
-  //
-  // ARVET INVENTAR. These 76 files are the old Electron renderer's IPC shim,
-  // locale loader and pure `*-core` modules, moved here VERBATIM by fase B's
-  // PR B. They carry the loosened rules the `legacy/**` block gave them, under
-  // their own name, because the alternative reads as a promotion that never
-  // happened: a file that sits under `app/` while `any` is still an error
-  // everywhere else in `app/` invites the reader to assume it has been through
-  // the same review the shell has. It has not.
-  //
-  // STRAMMES FIL FOR FIL VED BERØRING. When one of these is opened for a real
-  // reason, it leaves this block and `.prettierignore`'s `app/lib` line in the
-  // same PR as the change that made you open it: format it, kill the `any`s,
-  // move it under the strict block. That is a diff a reviewer can read. All 76
-  // at once is not, which is why it is not being done here.
-  //
-  // Two rules are NOT loosened, because they are about the shape of the tree
-  // rather than the style of a port: the one-way dependency (below), and the
-  // `app/**` CSP/i18n gates, which do not apply to files that render nothing.
-  {
-    files: ["app/lib/**/*.{ts,tsx}"],
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: "module",
-      globals: globals.browser,
-    },
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
-      ],
-      // Stylistic rules we don't enforce on the verbatim port.
-      "no-empty": "off",
-      "no-useless-assignment": "off",
-      "prefer-const": "off",
-    },
-  },
-
   // ── The one-way rule: `app/lib/` never imports the shell ───────────────────
   //
   // The inventory is what the shell BUILDS ON. The moment a `*-core` module
@@ -286,6 +247,87 @@ export default tseslint.config(
       },
     };
   }),
+
+  // ── Tauri doors ──────────────────────────────────────────────────────────
+  //
+  // The strict block above bans `@tauri-apps/api/core` (and its `core*`
+  // siblings) everywhere under `app/`, on the theory that `window.api`
+  // (installed by api-shim.ts) is the ONE door into Tauri. These three files
+  // ARE that door — api-shim.ts installs it, tray-actions.ts is the one other
+  // accepted direct listener (documented at its own `@tauri-apps/api/event`
+  // import), and api-shim-listen.test.ts exercises the `listen()` path the
+  // shim depends on. Loosening the rule here is not a leak in the seam; it is
+  // the seam.
+  //
+  // Only `@tauri-apps/*` is loosened: `no-restricted-imports` is REDEFINED
+  // rather than turned off, so the one-way-dependency ban two blocks up
+  // (`app/lib/` must not import the shell — these files sit at depth 1) keeps
+  // applying. `any`, `no-unused-vars` and everything else in the strict block
+  // are untouched for these files too.
+  {
+    files: [
+      "app/lib/api-shim.ts",
+      "app/lib/tray-actions.ts",
+      "app/lib/api-shim-listen.test.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["../[A-Za-z]*", "../[A-Za-z]*/**"],
+              message:
+                "The ported inventory (app/lib/) must not import from the shell around it. The shell depends on the inventory, never the other way round — otherwise the pure modules stop being pure and the file-by-file tightening stops being possible. Reach `legacy/` with one more `../` (it is outside `app/`), and take a value the shell owns as an ARGUMENT instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ── The i18n fallback surface ────────────────────────────────────────────
+  //
+  // `no-restricted-syntax` bans a fallback argument on `t`/`tf`/`tn` — a
+  // fallback hides a missing catalogue key behind correct-looking Norwegian.
+  // The port's OWN `t`/`tf`/`tn` (declared in i18n.ts) take that fallback as
+  // a real, load-bearing parameter: it is the Rust-sourced Norwegian prose
+  // these keys fall back to when a translation is missing, not a mistake
+  // waiting to be deleted. An actual `eslint app/lib` run under the strict
+  // block found 20 such calls across these 6 files — stripping the fallback
+  // argument is a translation-content decision (what replaces it, and
+  // whether the ~35–40 new keys it would require are ready), which belongs to
+  // the language round, not this formatting/lint sweep. See the V1 plan.
+  //
+  // Only the three fallback selectors are dropped; `className`/hardcoded-JSX
+  // are re-declared rather than silently lost (they never match in a `.ts`
+  // file with no JSX, but the rule value shouldn't quietly say less than it
+  // means).
+  {
+    files: [
+      "app/lib/i18n.ts",
+      "app/lib/i18n.test.ts",
+      "app/lib/status/health-findings.ts",
+      "app/lib/status/next-recording-core.ts",
+      "app/lib/status/next-recording-core.test.ts",
+      "app/lib/ui/progress-core.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='className']",
+          message:
+            "Bruk `class`, ikke `className`. Preact tar imot begge, og to stavemåter i samme kodebase betyr at et søk etter en klasse alltid bommer på halvparten.",
+        },
+        {
+          selector: "JSXText[value=/[A-Za-zÆØÅæøå]{3,}/]",
+          message:
+            "Hardcoded text in JSX. Every string a volunteer reads comes from the catalogue: {t('some.key')}.",
+        },
+      ],
+    },
+  },
 
   // The Playwright browser tier (E5.2). Node runtime for the spec bodies, but
   // `page.evaluate`/`addInitScript` callbacks run IN the page, so both globals
