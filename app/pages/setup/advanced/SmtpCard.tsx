@@ -207,26 +207,40 @@ export function SmtpCard() {
  * Feltet står alltid tomt. Å fylle det med prikker som representerer en verdi
  * vi ikke har ville vært en løgn om hva som ligger i nøkkelringen, og en som
  * bare avsløres den dagen «Lagre» skriver prikkene tilbake.
+ *
+ * ## «Fjern» er sin egen handling (V1/PR3)
+ *
+ * Knappen kalte `emailSetSmtpPassword(undefined)` og lente seg på at
+ * bakendens «tomt betyr fjern»-gren gjorde riktig ting. Den GJORDE riktig
+ * ting — samme `secrets::delete` — men skjøten løy om intensjonen: en
+ * fjerning ble sendt som en lagring, så en feilet nøkkelring-sletting fikk en
+ * feilmelding om lagring, og `email_clear_smtp_password` — kommandoen som ble
+ * skrevet for nettopp dette — sto uten kaller. Nå går knappen sin egen vei.
+ * Bakendens tomt-betyr-fjern-gren står urørt som gulv (den er enhetstestet og
+ * dekker et tømt felt), men den er ikke lenger den eneste veien ut.
+ *
+ * Og knappen RENDRES bare når det faktisk ligger et passord der — legacys
+ * oppførsel, og den ærlige: en «Fjern»-knapp ved siden av «Ingen lagret» er en
+ * dør til et rom som er tomt.
  */
 function PasswordRow({ stored }: { stored: boolean }) {
   const [value, setValue] = useState("");
   const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
   const [busy, setBusy] = useState(false);
 
-  async function write(password: string | undefined): Promise<void> {
+  /** Felles kvittering/feilhåndtering for begge nøkkelring-skrivningene. */
+  async function keychain(
+    run: () => Promise<unknown>,
+    okMessage: string,
+  ): Promise<void> {
     if (busy) return;
     setBusy(true);
     showReceipt("saving");
     try {
-      await window.api.emailSetSmtpPassword(password);
+      await run();
       setValue("");
       showReceipt("saved");
-      toast(
-        "success",
-        password
-          ? t("app.setup.advanced.smtpPasswordSaved")
-          : t("app.setup.advanced.smtpPasswordCleared"),
-      );
+      toast("success", okMessage);
       await refreshEmailFacts();
     } catch (err) {
       // IKKE svelget: en feilet nøkkelring-skrivning som ser ut som en
@@ -242,6 +256,18 @@ function PasswordRow({ stored }: { stored: boolean }) {
       setBusy(false);
     }
   }
+
+  const write = (password: string) =>
+    keychain(
+      () => window.api.emailSetSmtpPassword(password),
+      t("app.setup.advanced.smtpPasswordSaved"),
+    );
+
+  const clear = () =>
+    keychain(
+      () => window.api.emailClearSmtpPassword(),
+      t("app.setup.advanced.smtpPasswordCleared"),
+    );
 
   return (
     <SettingRow
@@ -281,15 +307,16 @@ function PasswordRow({ stored }: { stored: boolean }) {
           >
             {t("app.setup.advanced.smtpPasswordSave")}
           </Button>
-          <Button
-            variant="ghost"
-            disabled={!stored || busy}
-            disabledReason={t("app.setup.advanced.smtpPasswordNone")}
-            testId="adv-smtp-password-clear"
-            onClick={() => void write(undefined)}
-          >
-            {t("app.setup.advanced.smtpPasswordClear")}
-          </Button>
+          {stored ? (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              testId="adv-smtp-password-clear"
+              onClick={() => void clear()}
+            >
+              {t("app.setup.advanced.smtpPasswordClear")}
+            </Button>
+          ) : null}
         </>
       )}
     </SettingRow>

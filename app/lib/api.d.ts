@@ -119,6 +119,9 @@ declare global {
        *  Resolves true when a password is now stored. Rejects on a keychain
        *  failure — the caller must show it, not swallow it. */
       emailSetSmtpPassword: (password?: string) => Promise<boolean>;
+      /** Remove the stored SMTP password from the OS keychain. A missing entry
+       *  is success. Rejects on a keychain failure, like the write. */
+      emailClearSmtpPassword: () => Promise<boolean>;
       /** Whether an SMTP password is stored. The secret never crosses back. */
       emailHasSmtpPassword: () => Promise<boolean>;
       /** Whether this build can send e-mail at all — read BEFORE offering a
