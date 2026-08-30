@@ -486,7 +486,6 @@ pub fn run() {
             commands::recorder::run_capture_bench,
             commands::db::recordings_list,
             commands::db::recordings_delete,
-            commands::db::recordings_clear,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
             // Papirkurv. `trash_move` is what the delete actions in Historikk
@@ -498,7 +497,6 @@ pub fn run() {
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
-            commands::settings::settings_export,
             commands::settings::settings_import,
             commands::settings::settings_export_to_file,
             commands::settings::settings_import_from_file,

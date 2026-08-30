@@ -34,12 +34,6 @@ pub async fn settings_reset(db: State<'_, Db>) -> AppResult<Settings> {
     settings::reset(&db.pool).await
 }
 
-/// Export the current settings as pretty-printed JSON (for the F1.3 file dialog).
-#[tauri::command]
-pub async fn settings_export(db: State<'_, Db>) -> AppResult<String> {
-    settings::export(&db.pool).await
-}
-
 /// Import a (possibly partial/older) settings JSON: merge over defaults,
 /// validate, persist, and return the stored value.
 #[tauri::command]

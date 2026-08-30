@@ -205,6 +205,11 @@ pub async fn delete_recordings_for_paths(pool: &SqlitePool, paths: &[String]) ->
 }
 
 /// Delete every recording-history row. Used by the "clear history" action.
+/// ⚠️ Uten kaller siden V1/PR3, der `recordings_clear`-kommandoen gikk (ingen
+/// flate, ingen i18n-nøkkel, ingen shim-metode — en «tøm hele historikken» uten
+/// bekreftelsesdialog er ikke en funksjon, det er en IPC-dør). Beholdt som
+/// lager-primitiv med sin egen test; går den runden der `store` slankes, går
+/// denne med.
 pub async fn clear_recordings(pool: &SqlitePool) -> AppResult<()> {
     sqlx::query("DELETE FROM recording").execute(pool).await?;
     Ok(())
