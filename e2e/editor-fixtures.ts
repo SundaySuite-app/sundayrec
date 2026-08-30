@@ -33,7 +33,6 @@ export const SEGMENTS: EditorSegment[] = [
 export function editorFixtures(over: Fixtures = {}): Fixtures {
   return {
     ...BOOT_FIXTURES,
-    editor_probe_streams: { hasVideo: false, hasAudio: true },
     editor_load_recording: {
       durationSec: DURATION,
       hasVideo: false,
@@ -60,9 +59,12 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
       return true;
     }`),
     editor_master_presets: [],
-    editor_probe_peak: -3,
+    // (V1/PR3 tok `editor_probe_streams`, `editor_probe_peak` og
+    // `editor_cleanup_temp_files` ut herfra: kommandoene finnes ikke lenger,
+    // og en fixture for en kommando ingen kaller er en stubb som later som
+    // den styrer noe. `editor_detect_chapters` under er den samme sorten fra
+    // R2 — den er latt stå, siden den ikke er denne PR-ens sletting.)
     editor_detect_chapters: [],
-    editor_cleanup_temp_files: 0,
     // The channel analysis behind the sound step's profiles. Balanced by
     // default — a fixture that "found" a dead channel in every spec would put a
     // repair into every export payload and hide the ones that mean something.

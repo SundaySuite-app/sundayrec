@@ -27,8 +27,10 @@
  * `sundayrec-master-preview-*.mp3`), men ingen sveip i `src-tauri` kaller det —
  * en gjeld fra mastring-panelet, ikke en P4b innfører. Hver fil er ~800 kB
  * (20 s, 320 kbps), én per profil per opptak. Det ryddes ikke herfra: å kalle
- * `editor_cleanup_temp_files` ville sett riktig ut og gjort noe helt annet —
- * den sveipen sletter `.__editor_tmp`/`.__editor_bak` ved siden av OPPTAKET.
+ * en editor-oppryddingskommando ville sett riktig ut og gjort noe helt annet —
+ * den sveipen (`editor::startup_sweep`, det som er igjen etter at V1/PR3 tok
+ * `editor_cleanup_temp_files`) sletter `.__editor_tmp`/`.__editor_bak` ved
+ * siden av OPPTAKET, ikke forhåndsvisninger i OS-ens temp-mappe.
  */
 
 import { signal } from "@preact/signals";
