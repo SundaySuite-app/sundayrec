@@ -126,10 +126,13 @@ So a future auditor doesn't have to re-derive these from scratch:
   Windows Steinberg ASIO SDK download is SHA-256-pinned as a hard-fail
   (E1.5) — the SDK is a fixed 2019 artifact, so an unexpected hash means the
   download was tampered with or moved.
-- **PKCE + loopback for OAuth.** The Sunday Account (SSO) login uses the
-  PKCE flow with a loopback redirect, avoiding a stored client secret in the
-  desktop binary. (The Google Drive/YouTube/Gmail OAuth client that followed
-  the same pattern left with cloud backup in R1 of «Frivilligen først».)
+- ~~**PKCE + loopback for OAuth.**~~ **No OAuth in this app any more.** The
+  Sunday Account (SSO) login used PKCE with a loopback redirect, avoiding a
+  stored client secret in the desktop binary; V1/PR3 deleted the whole login
+  (five commands with no caller and no screen) together with the `sunday-auth`
+  dependency. The Google Drive/YouTube/Gmail OAuth client that followed the
+  same pattern left with cloud backup in R1 of «Frivilligen først». SundayRec
+  now holds no OAuth client and mints no token.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.
@@ -139,10 +142,13 @@ So a future auditor doesn't have to re-derive these from scratch:
 
 ## Known gaps / accepted risks
 
-- **The shared Sunday session file has no Windows ACL.** `sunday-auth`
-  (from the upstream `sunday-platform` repo) writes the cross-app session
-  file atomically but does not yet restrict its permissions on Windows.
-  Tracked upstream, not in this repo.
+- ~~**The shared Sunday session file has no Windows ACL.**~~ **No longer this
+  app's risk.** `sunday-auth` (upstream `sunday-platform`) writes the cross-app
+  session file atomically without restricting its Windows permissions — but
+  V1/PR3 removed the dependency along with the login that used it, so SundayRec
+  neither writes nor reads that file. The gap is still real for whichever
+  Sunday app does; it is tracked upstream, and it is not in this repo's threat
+  model any more.
 - **macOS builds are signed but not notarized.** Apple's notary service
   currently returns 403 pending re-acceptance of the Program License
   Agreement (see `docs/DISTRIBUTION.md`); Gatekeeper will warn on first
