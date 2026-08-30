@@ -11,6 +11,44 @@
   transition: background 0.15s ease;
 }
 
+/*
+ * Treffflaten, ikke bryteren.
+ *
+ * Sporet er 40 × 22 fordi det er slik en bryter SER ut; 22 px er ikke noe man
+ * treffer med en finger. 9 px over og under gir 40 × 40 å treffe, og tegningen
+ * er den samme til pikselen — flaten er gjennomsiktig og ligger utenfor
+ * boksen, så ingenting flytter seg og ingenting blir større å se på.
+ *
+ * ## Hvorfor ikke sidelengs
+ *
+ * Bredden ER 40 alt. Og sidelengs er det trangt: på Avansert står
+ * `adv-diag-delete` 8 px fra bryteren sin på samme linje. En flate som vokste
+ * mot venstre der ville tatt trykket fra en slett-knapp — en tyveriflate er
+ * dyrere enn en liten bryter.
+ *
+ * ## Hvorfor 9 og ikke mer
+ *
+ * Luften over og under en bryter er målt, ikke gjettet. Der bryterne står
+ * tettest er avstanden mellom to av dem 43 px (`adv-split` → `adv-autodelete`
+ * på Avansert) og 44 px (kamera → auto-opptak i kontrollrommet, der kortene
+ * bare har 6 px mellom seg men kortpaddingen legger 10 px på hver side). To
+ * flater à 9 px legger beslag på 18 av dem. Nærmeste NABO av et annet slag er
+ * 37 px unna (`adv-silence` → nedtrekket under). 9 px stjeler ingenting; 20
+ * ville gjort det.
+ *
+ * ⚠️ Ingen `pointer-events: none`: pseudo-elementet skal treffe SOM knappen.
+ * Slår man det av, er tillegget null — og testen som måler med
+ * `elementFromPoint` er nettopp derfor skrevet utenfra.
+ */
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: -9px;
+  bottom: -9px;
+  left: 0;
+  right: 0;
+}
+
 .knob {
   position: absolute;
   top: 3px;
