@@ -314,7 +314,7 @@
         "export": "Eksporter",
         "import": "Importer",
         "importTitle": "Importere innstillinger?",
-        "importBody": "Dette erstatter innstillingene på denne maskinen med innholdet i filen. Opptak, historikk og passord berøres ikke.",
+        "importBody": "Dette erstatter innstillingene på denne maskinen med innholdet i filen. Opptak, biblioteket og passord berøres ikke.",
         "importConfirm": "Ja, importer",
         "exported": "Innstillingene ble eksportert.",
         "exportFailed": "Kunne ikke eksportere innstillingene: {err}",
@@ -339,13 +339,13 @@
         "smtpNothingToSave": "Ingenting er endret.",
         "smtpInvalidFrom": "Skriv en gyldig e-postadresse, for eksempel navn@kirke.no",
         "schedTitle": "Flere tider og spesialopptak",
-        "schedDesc": "Den ukentlige tiden settes under Oppsett. Her legger du til flere.",
+        "schedDesc": "Den ukentlige tiden settes på Opptak-siden, i kortet «Ta opp automatisk». Her legger du til flere.",
         "schedTimes": "Faste tider",
         "schedNone": "Ingen faste tider ennå.",
         "schedRow": "{day} {start}–{stop}",
         "schedAdd": "Legg til en fast tid",
         "schedRemove": "Fjern",
-        "schedFirstIsSetup": "Den første tiden er den du ser under Oppsett.",
+        "schedFirstIsSetup": "Den første tiden er den du ser i kortet «Ta opp automatisk» på Opptak-siden.",
         "specialsTitle": "Spesialopptak",
         "specialsDesc": "En enkelt dato — en konsert, en julaften.",
         "specialsNone": "Ingen spesialopptak planlagt.",
@@ -399,7 +399,7 @@
       "gate": "«Neste» åpnes når vi hører lyd.",
       "gateReason": "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på mikseren.",
       "readyTitle": "Klar til søndag",
-      "readyDesc": "Dette er det samme du finner under Oppsett senere.",
+      "readyDesc": "Dette er det samme du finner under Innstillinger (tannhjulet) og på Opptak-skjermen senere.",
       "notifyTodo": "Ikke satt opp — ingen får beskjed hvis et opptak feiler.",
       "open": "Åpne SundayRec",
       "progress": "Framdrift"
@@ -546,7 +546,7 @@
       "missedTitle": "{when} ble ikke tatt opp",
       "missedDesc": "Maskinen var av. Automatisk opptak krever at den står på eller i dvale.",
       "missedWhy": "Hva kan jeg gjøre?",
-      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på under Oppsett, så appen er i gang igjen etter en omstart."
+      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart."
     }
   },
   "nav": {
@@ -735,7 +735,7 @@
     "diagnoseFail": "Kunne ikke analysere kanaler.",
     "diagnosing": "Analyserer…",
     "enhanceTitle": "Lydforbedring",
-    "errInvalidFormat": "Formatet støttes ikke for eksport. Velg et annet format i eksportvinduet.",
+    "errInvalidFormat": "Formatet støttes ikke for eksport. Velg et annet format på Eksportering-siden.",
     "errPathNotAbsolute": "Ugyldig mappe eller filbane. Velg destinasjonsmappen på nytt.",
     "metaDesc": "BESKRIVELSE",
     "metaSave": "Lagre metadata",
@@ -793,7 +793,7 @@
     "qualityReasons": "Årsak: {r}",
     "qualityAction": "Vis opptak",
     "errorInvalidOpts": "Ugyldige opptaksinnstillinger — start på nytt og prøv igjen",
-    "errorNoSaveFolder": "Lagringsmappen er ikke valgt — gå til Innstillinger → Opptak",
+    "errorNoSaveFolder": "Lagringsmappen er ikke valgt — gå til Opptak-siden og velg i kortet «Hvor skal opptakene?»",
     "errorUnknown": "Noe gikk galt under opptak — sjekk at lydenhet og lagringsmappe er klare",
     "reconnectSecs": "s",
     "reconnecting": "Lydkilde frakoblet — kobler til på nytt",
@@ -819,7 +819,7 @@
   },
   "onboarding": {
     "promptTitle": "Del anonym diagnostikk?",
-    "promptDesc": "SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → System.",
+    "promptDesc": "SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Avansert.",
     "rePromptTitle": "Vi spør deg om igjen",
     "rePromptDesc": "Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her."
   },

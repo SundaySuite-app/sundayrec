@@ -3207,6 +3207,20 @@ ryddet 653 DØDE nøkler ut av alle sju katalogene først, nettopp så
 oversettelsesrunden ikke går på tekst ingen ser: sv/da/de/fr/pl gikk fra 895 til
 244 nøkler, no/en fra 1339 til 686. PR B er ute; oversettelsesrunden er neste.
 
+**V1 PR4 (stale tekster)** rettet ni no/en-verdier som pekte på flater D2/D3
+fjernet («Oppsett» som stedsnavn, «eksportvinduet», «Innstillinger → System»,
+en foreldet «historikk»-påstand i `importBody`). Fem av nøklene
+(`app.setup.advanced.schedDesc`, `schedFirstIsSetup`, `importBody`,
+`app.first.readyDesc`, `app.banner.missedHelp`) står allerede i `PAUSED_KEYS`,
+så oversettelsesrunden får den RETTEDE ordlyden rett fra start — ingen
+dobbeltoversettelse. De tre resterende (`editor.errInvalidFormat`,
+`recording.errorNoSaveFolder`, `onboarding.promptDesc`) fantes FØR redesignet
+og er IKKE pauset — sv/da/de/fr/pl har dem fortsatt, men med den GAMLE
+ordlyden (peker på «eksportvinduet» / «Settings → Recording» /
+«Settings → System»). Paritetstesten sammenligner bare NØKKELSETT, ikke
+verdi, så dette er stille — de tre trenger en liten resynk når
+oversettelsesrunden tar sv/da/de/fr/pl.
+
 ## 6. ✅ PR B: inventaret er flyttet
 
 `legacy/renderer/**` → `app/lib/**`, 76 filer, `git mv` og ingenting annet i

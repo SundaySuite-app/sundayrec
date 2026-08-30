@@ -314,7 +314,7 @@
         "export": "Export",
         "import": "Import",
         "importTitle": "Import settings?",
-        "importBody": "This replaces the settings on this computer with the contents of the file. Recordings, history and passwords are untouched.",
+        "importBody": "This replaces the settings on this computer with the contents of the file. Recordings, the library and passwords are untouched.",
         "importConfirm": "Yes, import",
         "exported": "The settings were exported.",
         "exportFailed": "Could not export the settings: {err}",
@@ -339,13 +339,13 @@
         "smtpNothingToSave": "Nothing has changed.",
         "smtpInvalidFrom": "Enter a valid e-mail address, for example name@church.org",
         "schedTitle": "More times and one-off recordings",
-        "schedDesc": "The weekly time is set under Setup. Here you add more.",
+        "schedDesc": "The weekly time is set on the Record page, in the “Record automatically” card. Here you add more.",
         "schedTimes": "Weekly times",
         "schedNone": "No weekly times yet.",
         "schedRow": "{day} {start}–{stop}",
         "schedAdd": "Add a weekly time",
         "schedRemove": "Remove",
-        "schedFirstIsSetup": "The first time is the one you see under Setup.",
+        "schedFirstIsSetup": "The first time is the one you see in the “Record automatically” card on the Record page.",
         "specialsTitle": "One-off recordings",
         "specialsDesc": "A single date — a concert, a Christmas Eve.",
         "specialsNone": "No one-off recordings planned.",
@@ -399,7 +399,7 @@
       "gate": "“Next” opens once we hear sound.",
       "gateReason": "We hear no sound yet. Speak into the microphone, or turn on the mixer.",
       "readyTitle": "Ready for Sunday",
-      "readyDesc": "This is the same you will find under Setup later.",
+      "readyDesc": "This is the same you will find under Settings (the gear) and on the Record screen later.",
       "notifyTodo": "Not set up — nobody is told if a recording fails.",
       "open": "Open SundayRec",
       "progress": "Progress"
@@ -546,7 +546,7 @@
       "missedTitle": "{when} was not recorded",
       "missedDesc": "The computer was off. Automatic recording needs it on or asleep.",
       "missedWhy": "What can I do?",
-      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on under Setup, so the app is running again after a restart."
+      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart."
     }
   },
   "nav": {
@@ -735,7 +735,7 @@
     "diagnoseFail": "Could not analyze channels.",
     "diagnosing": "Analyzing…",
     "enhanceTitle": "Audio enhancement",
-    "errInvalidFormat": "This format is not supported for export. Choose a different format in the export window.",
+    "errInvalidFormat": "This format is not supported for export. Choose a different format on the Export page.",
     "errPathNotAbsolute": "Invalid folder or file path. Choose the destination folder again.",
     "metaDesc": "DESCRIPTION",
     "metaSave": "Save metadata",
@@ -793,7 +793,7 @@
     "qualityReasons": "Cause: {r}",
     "qualityAction": "Show recording",
     "errorInvalidOpts": "Invalid recording settings — restart and try again",
-    "errorNoSaveFolder": "No save folder selected — go to Settings → Recording",
+    "errorNoSaveFolder": "No save folder selected — go to the Record page and pick one in the “Where do recordings go?” card",
     "errorUnknown": "Something went wrong during recording — check that the audio device and save folder are ready",
     "reconnectSecs": "s",
     "reconnecting": "Audio source disconnected — reconnecting",
@@ -819,7 +819,7 @@
   },
   "onboarding": {
     "promptTitle": "Share anonymous diagnostics?",
-    "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → System.",
+    "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → Advanced.",
     "rePromptTitle": "We are asking you again",
     "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
   },
