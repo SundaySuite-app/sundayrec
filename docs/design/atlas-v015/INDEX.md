@@ -1,6 +1,11 @@
-# Atlas — SundayRec slik appen ER (Fase A)
+# ARKIV — Atlas v0.15 (Fase A)
 
-> ⚠️ **Atlaset fotograferer v0.15-skallet — appen ser ikke slik ut lenger.**
+> 📦 **Dette er arkivet.** Det GJELDENDE atlaset — appen slik den ser ut nå —
+> ligger i [`../atlas/INDEX.md`](../atlas/INDEX.md) og fotograferes på nytt med
+> `npm run atlas`. Mappen her heter `atlas-v015/` og skal ikke regenereres: den
+> er frosset.
+>
+> ⚠️ **Bildene under viser v0.15-skallet — appen ser ikke slik ut lenger.**
 > Fase B byttet ut hele skallet; **D2** (v0.16.0-beta.2) gjorde OPPTAK til et
 > kontrollrom der de fem spørsmålene folder seg ut på stedet; og **D3**
 > (v0.17.0) slettet skinnen helt: navigasjonen er tre ikoner NEDERST — Opptak ·
@@ -9,10 +14,10 @@
 > `settings-audio--*`, `schedule--*`) er sidene som ble erstattet.
 >
 > Bildene består likevel: de er Fase A-fasiten — «slik var det» — og de er
-> begrunnelsen bak halvparten av beslutningene i redesignet. **Re-fotografering
-> er en restanse**, og den er en NY scenetabell, ikke en re-peking av denne
-> (fotografen `e2e/atlas/**` er slettet; se `../../APP-SHELL.md` §«Etter byttet»
-> punkt 4). Hvordan skallet ser ut i dag er tegnet i
+> begrunnelsen bak halvparten av beslutningene i redesignet. Fotografen som tok
+> dem (`e2e/atlas/**` slik den så ut i fase A) er slettet, så tabellen under er
+> et historisk referat: oppskriftene peker på legacy-selektorer som ikke finnes
+> mer. Hvordan skallet ser ut i dag er tegnet i
 > [../canvas/FASE-D3-DAVINCI.html](../canvas/FASE-D3-DAVINCI.html) (D2s
 > kontrollrom står i
 > [../canvas/FASE-D2-KONTROLLROM.html](../canvas/FASE-D2-KONTROLLROM.html)).
@@ -34,15 +39,12 @@ pause og er ikke fotografert.
 
 **Total størrelse:** 8.8 MB i 181 PNG-er. Komprimert med `magick mogrify -colors 256`: 18.5 MB → 8.8 MB.
 
-## Kjøre på nytt
+## Kan ikke kjøres på nytt
 
-```bash
-npm run atlas                 # hele atlaset (starter Vite selv, port 1420)
-npm run atlas -- -g "editor"  # bare scener som matcher
-```
-
-Atlaset er bevisst utenfor `npm run check` og utenfor CI: det er et
-fotoapparat, ikke en port. `playwright.config.ts` ignorerer `e2e/atlas/`.
+`npm run atlas` finnes igjen, men den fotograferer **dagens** skall inn i
+[`../atlas/`](../atlas/INDEX.md). Fotografen som tok bildene i denne mappen ble
+slettet i fase B sammen med skallet den fotograferte, og oppskriftene i tabellen
+under peker på legacy-selektorer som ikke finnes lenger. Mappen er frosset.
 
 ## Scener
 
@@ -114,7 +116,8 @@ fotoapparat, ikke en port. `playwright.config.ts` ignorerer `e2e/atlas/`.
 
 ## Hvordan scenene lages
 
-Scenetabellen ligger i `e2e/atlas/scenes.ts`. Hver scene er
+Scenetabellen lå i `e2e/atlas/scenes.ts` slik den så ut i fase A
+(`git show fc81919:e2e/atlas/scenes.ts`). Hver scene var
 `{ fixtures, settings, goto }` gjennom `e2e/harness.ts` (api-shim-sømmen),
 pluss eventuelle klikk. `e2e/atlas/harness.ts` legger til to ting den vanlige
 nettleser-tieren ikke har:

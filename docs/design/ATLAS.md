@@ -1,4 +1,19 @@
-# ATLAS — SundayRec slik appen ER
+# ATLAS — SundayRec slik appen VAR (v0.15, Fase A)
+
+> 📦 **Dette dokumentet er historisk — v2-notis.** IA-uttrekket under beskriver
+> **legacy-skallet** slik det sto i v0.15.0, og det skallet finnes ikke lenger.
+> Bildene som hørte til flyttet 2026-08-30 til
+> [`atlas-v015/`](atlas-v015/INDEX.md) (arkivet, frosset).
+>
+> **Det gjeldende atlaset er [`atlas/`](atlas/INDEX.md)** — appen slik den er
+> etter D2, D3 og V1 — og det fotograferes på nytt med `npm run atlas`
+> (`e2e/atlas/**` + `playwright.atlas.config.ts` er tilbake, mot dagens
+> `getByTestId`-scener). Scenetabellen står i `atlas/INDEX.md`.
+>
+> Analysen under BESTÅR, uendret, av samme grunn som bildene: den er
+> begrunnelsen bak halvparten av beslutningene i redesignet. Les den som «slik
+> var det», ikke som «slik er det». Hver `atlas/`-lenke i teksten er derfor
+> pekt om til `atlas-v015/`.
 
 **Fase A i «Frivilligen først».** Dette dokumentet beskriver informasjonsarkitekturen
 i SundayRec slik den står på `main` etter Fase R (PR #139 fjernet delings-klyngen,
@@ -12,19 +27,21 @@ ingenting å fotografere ennå.
 Ingenting her er et forslag. Det er en beskrivelse — inndata til Fase D, der hele
 UI-et tegnes på nytt for en frivillig som aldri har sett appen.
 
-Bildene ligger i [`atlas/`](atlas/INDEX.md); scene-id-er i teksten under viser dit.
+Bildene ligger i [`atlas-v015/`](atlas-v015/INDEX.md); scene-id-er i teksten under viser dit.
 **63 scener × 2 språk = 181 PNG-er, 8,8 MB**, tatt av `npm run atlas`.
 Konsollvakten under fotograferingen står i
-[`atlas/CONSOLE-FINDINGS.md`](atlas/CONSOLE-FINDINGS.md).
+[`atlas-v015/CONSOLE-FINDINGS.md`](atlas-v015/CONSOLE-FINDINGS.md).
 
-> ⚠️ **Fotografen finnes ikke lenger, og bildene er derfor ikke regenererbare.**
-> `e2e/atlas/**`, `playwright.atlas.config.ts` og `npm run atlas` ble slettet i
-> fase B sammen med skallet de fotograferte: de drev Vite-serveren fra
-> `playwright.config.ts` og klikket seg gjennom legacy-selektorer, så etter
-> byttet ville kommandoen startet det NYE skallet og feilet hver eneste scene.
-> Denne fila og PNG-ene består som Fase A-fasit — en beskrivelse av appen slik
-> den VAR, som er nøyaktig det de ble laget for å være. Å fotografere det nye
-> skallet er en ny scenetabell, ikke en re-peking av denne.
+> ⚠️ **Fotografen som tok DISSE bildene finnes ikke lenger.** `e2e/atlas/**`,
+> `playwright.atlas.config.ts` og `npm run atlas` ble slettet i fase B sammen
+> med skallet de fotograferte: de drev Vite-serveren fra `playwright.config.ts`
+> og klikket seg gjennom legacy-selektorer, så etter byttet ville kommandoen
+> startet det NYE skallet og feilet hver eneste scene. Bildene i
+> `atlas-v015/` er derfor ikke regenererbare — de er frosset som Fase A-fasit.
+>
+> V1/PR6 skrev fotografen på nytt, mot dagens skall og dagens `data-testid`-er.
+> `npm run atlas` fotograferer nå inn i [`atlas/`](atlas/INDEX.md); den rører
+> ikke arkivet.
 
 ---
 
@@ -714,6 +731,7 @@ tom.
 
 ## Kildehenvisning
 
-- Bilder og scenetabell: [`atlas/INDEX.md`](atlas/INDEX.md)
-- Konsollfunn under fotograferingen: [`atlas/CONSOLE-FINDINGS.md`](atlas/CONSOLE-FINDINGS.md)
-- Scenene som kode: `e2e/atlas/scenes.ts` · kjør på nytt med `npm run atlas`
+- Bilder og scenetabell (arkiv): [`atlas-v015/INDEX.md`](atlas-v015/INDEX.md)
+- Konsollfunn under fotograferingen: [`atlas-v015/CONSOLE-FINDINGS.md`](atlas-v015/CONSOLE-FINDINGS.md)
+- Scenene som kode, slik de var: `git show fc81919:e2e/atlas/scenes.ts`
+- **Dagens atlas:** [`atlas/INDEX.md`](atlas/INDEX.md) · `npm run atlas`
