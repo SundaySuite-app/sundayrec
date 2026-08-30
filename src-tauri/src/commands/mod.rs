@@ -6,7 +6,6 @@
 
 pub mod app;
 pub mod audio;
-pub mod calendar;
 pub mod db;
 pub mod diagnostics;
 pub mod editor;

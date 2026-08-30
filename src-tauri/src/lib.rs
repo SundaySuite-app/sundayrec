@@ -499,7 +499,6 @@ pub fn run() {
             commands::trash::trash_list,
             commands::trash::trash_restore,
             commands::trash::trash_purge,
-            commands::calendar::liturgical_month,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
