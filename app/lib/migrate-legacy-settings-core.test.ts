@@ -47,7 +47,13 @@ const REALISTIC_BLOB = {
   autoDeleteDays: 90,
   slots: [{ days: [6], start: "10:30", stop: "12:30", max: 150 }],
   specialRecordings: [
-    { id: "s1", date: "2099-12-24", name: "Julaften", start: "16:00", stop: "17:00" },
+    {
+      id: "s1",
+      date: "2099-12-24",
+      name: "Julaften",
+      start: "16:00",
+      stop: "17:00",
+    },
   ],
   stopOnSilence: true,
   silenceThreshold: -50,
@@ -98,14 +104,23 @@ const REALISTIC_BLOB = {
   trimSilence: false,
   showLiveLevels: true,
   streamDestinations: [
-    { id: "yt", name: "YouTube", rtmpUrl: "rtmp://a/live2", enabled: true, hasKey: true },
+    {
+      id: "yt",
+      name: "YouTube",
+      rtmpUrl: "rtmp://a/live2",
+      enabled: true,
+      hasKey: true,
+    },
   ],
   streamResolution: "1080p",
   streamFramerate: 25,
   streamVideoBitrate: 4500,
-  streamOverlays: [{ id: "o1", type: "image", source: "/logo.png", position: "br" }],
+  streamOverlays: [
+    { id: "o1", type: "image", source: "/logo.png", position: "br" },
+  ],
   cloudGoogleDrive: { enabled: true, autoUpload: false, folderName: "Opptak" }, // cloud removed — dropped
-  podcast: { // podcast removed — dropped
+  podcast: {
+    // podcast removed — dropped
     enabled: true,
     service: "google-drive",
     title: "Domkirken taler",
@@ -151,8 +166,12 @@ describe("mapLegacyBlob", () => {
     expect(out.notifyStart).toBe(false);
     expect(out.prerollEnabled).toBe(true);
     expect(out.preRollSeconds).toBe(30);
-    expect(out.deviceChannels).toEqual({ "qu5-usb": { channelL: 16, channelR: 17 } });
-    expect(out.slots).toEqual([{ days: [6], start: "10:30", stop: "12:30", max: 150 }]);
+    expect(out.deviceChannels).toEqual({
+      "qu5-usb": { channelL: 16, channelR: 17 },
+    });
+    expect(out.slots).toEqual([
+      { days: [6], start: "10:30", stop: "12:30", max: 150 },
+    ]);
 
     // Floats are rounded, not forwarded (a raw 15.4 fails the WHOLE Rust merge).
     expect(out.reminderMinutes).toBe(15);
@@ -256,7 +275,9 @@ describe("mapLegacyBlob", () => {
   });
 
   it("a partial blob maps only what it has (merge-over-defaults is Rust's job)", () => {
-    const out = mapLegacyBlob(JSON.stringify({ churchName: "Betel", autoDeleteDays: 30 }))!;
+    const out = mapLegacyBlob(
+      JSON.stringify({ churchName: "Betel", autoDeleteDays: 30 }),
+    )!;
     expect(out).toEqual({ churchName: "Betel", autoDeleteDays: 30 });
   });
 

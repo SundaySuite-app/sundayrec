@@ -12,161 +12,161 @@
  * resting position.
  */
 
-export type DialogKind = 'confirm' | 'alert' | 'prompt' | 'select'
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+export type DialogKind = "confirm" | "alert" | "prompt" | "select";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 export interface DialogButton {
   /** Stable id resolved back to the caller. 'ok' | 'cancel' for the built-ins. */
-  id: string
-  label: string
-  variant: ButtonVariant
+  id: string;
+  label: string;
+  variant: ButtonVariant;
   /** Enter activates this button. Exactly one per dialog. */
-  isDefault: boolean
+  isDefault: boolean;
   /** Escape (and backdrop click) activate this button. At most one per dialog. */
-  isCancel: boolean
+  isCancel: boolean;
 }
 
 /** One row in a `selectDialog` list. */
 export interface DialogOption {
-  id: string
-  label: string
+  id: string;
+  label: string;
   /** Second line under the label — a path, a resolution, an NDI address. */
-  detail?: string
+  detail?: string;
 }
 
 export interface DialogSpec {
-  kind: DialogKind
-  title: string
+  kind: DialogKind;
+  title: string;
   /** Optional body copy. Rendered as plain text, never as HTML. */
-  message?: string
-  buttons: DialogButton[]
+  message?: string;
+  buttons: DialogButton[];
   /** prompt only. */
-  input?: { value: string; placeholder: string; multiline: boolean }
+  input?: { value: string; placeholder: string; multiline: boolean };
   /** select only. */
-  options?: DialogOption[]
+  options?: DialogOption[];
   /** Destructive framing: red confirm button, red title accent. */
-  danger: boolean
+  danger: boolean;
 }
 
 interface CommonOpts {
-  title: string
-  message?: string
+  title: string;
+  message?: string;
 }
 
 export interface ConfirmOpts extends CommonOpts {
-  confirmLabel?: string
-  cancelLabel?: string
+  confirmLabel?: string;
+  cancelLabel?: string;
   /** Red confirm button. Also makes CANCEL the Enter default — a destructive
    *  action must never be one stray keypress away. */
-  danger?: boolean
+  danger?: boolean;
 }
 
 export interface AlertOpts extends CommonOpts {
-  okLabel?: string
+  okLabel?: string;
   /** Alerts that report a failure get the red accent but no danger button. */
-  tone?: 'info' | 'error'
+  tone?: "info" | "error";
 }
 
 export interface PromptOpts extends CommonOpts {
-  defaultValue?: string
-  placeholder?: string
-  multiline?: boolean
-  confirmLabel?: string
-  cancelLabel?: string
+  defaultValue?: string;
+  placeholder?: string;
+  multiline?: boolean;
+  confirmLabel?: string;
+  cancelLabel?: string;
 }
 
 export interface SelectOpts extends CommonOpts {
-  options: DialogOption[]
-  cancelLabel?: string
+  options: DialogOption[];
+  cancelLabel?: string;
 }
 
 /** Fallback labels. Callers pass translated strings; these keep the builders
  *  usable (and testable) without an i18n bundle loaded. */
 const FALLBACK = {
-  ok: 'OK',
-  cancel: 'Avbryt',
-  confirm: 'Fortsett',
-} as const
+  ok: "OK",
+  cancel: "Avbryt",
+  confirm: "Fortsett",
+} as const;
 
 export function buildConfirm(o: ConfirmOpts): DialogSpec {
-  const danger = o.danger === true
+  const danger = o.danger === true;
   return {
-    kind: 'confirm',
+    kind: "confirm",
     title: o.title,
     message: o.message,
     danger,
     buttons: [
       {
-        id: 'cancel',
+        id: "cancel",
         label: o.cancelLabel ?? FALLBACK.cancel,
-        variant: danger ? 'secondary' : 'ghost',
+        variant: danger ? "secondary" : "ghost",
         // On a destructive confirm the SAFE button is what Enter hits.
         isDefault: danger,
         isCancel: true,
       },
       {
-        id: 'ok',
+        id: "ok",
         label: o.confirmLabel ?? FALLBACK.confirm,
-        variant: danger ? 'danger' : 'primary',
+        variant: danger ? "danger" : "primary",
         isDefault: !danger,
         isCancel: false,
       },
     ],
-  }
+  };
 }
 
 export function buildAlert(o: AlertOpts): DialogSpec {
   return {
-    kind: 'alert',
+    kind: "alert",
     title: o.title,
     message: o.message,
-    danger: o.tone === 'error',
+    danger: o.tone === "error",
     buttons: [
       {
-        id: 'ok',
+        id: "ok",
         label: o.okLabel ?? FALLBACK.ok,
-        variant: 'primary',
+        variant: "primary",
         isDefault: true,
         // An alert has one button, so Escape must resolve through it.
         isCancel: true,
       },
     ],
-  }
+  };
 }
 
 export function buildPrompt(o: PromptOpts): DialogSpec {
   return {
-    kind: 'prompt',
+    kind: "prompt",
     title: o.title,
     message: o.message,
     danger: false,
     input: {
-      value: o.defaultValue ?? '',
-      placeholder: o.placeholder ?? '',
+      value: o.defaultValue ?? "",
+      placeholder: o.placeholder ?? "",
       multiline: o.multiline === true,
     },
     buttons: [
       {
-        id: 'cancel',
+        id: "cancel",
         label: o.cancelLabel ?? FALLBACK.cancel,
-        variant: 'ghost',
+        variant: "ghost",
         isDefault: false,
         isCancel: true,
       },
       {
-        id: 'ok',
+        id: "ok",
         label: o.confirmLabel ?? FALLBACK.ok,
-        variant: 'primary',
+        variant: "primary",
         isDefault: true,
         isCancel: false,
       },
     ],
-  }
+  };
 }
 
 export function buildSelect(o: SelectOpts): DialogSpec {
   return {
-    kind: 'select',
+    kind: "select",
     title: o.title,
     message: o.message,
     danger: false,
@@ -175,24 +175,24 @@ export function buildSelect(o: SelectOpts): DialogSpec {
     // the old prompt()'s "read the list, type the number, press OK".
     buttons: [
       {
-        id: 'cancel',
+        id: "cancel",
         label: o.cancelLabel ?? FALLBACK.cancel,
-        variant: 'ghost',
+        variant: "ghost",
         isDefault: false,
         isCancel: true,
       },
     ],
-  }
+  };
 }
 
 /** The button Enter activates, or null when the spec has none. */
 export function defaultButton(spec: DialogSpec): DialogButton | null {
-  return spec.buttons.find(b => b.isDefault) ?? null
+  return spec.buttons.find((b) => b.isDefault) ?? null;
 }
 
 /** The button Escape and backdrop-click activate, or null. */
 export function cancelButton(spec: DialogSpec): DialogButton | null {
-  return spec.buttons.find(b => b.isCancel) ?? null
+  return spec.buttons.find((b) => b.isCancel) ?? null;
 }
 
 /**
@@ -202,10 +202,14 @@ export function cancelButton(spec: DialogSpec): DialogButton | null {
  * actually breaks — is testable: given N items, the current index and a
  * direction, which index gets focus next.
  */
-export function nextFocusIndex(count: number, current: number, backwards: boolean): number {
-  if (count <= 0) return -1
+export function nextFocusIndex(
+  count: number,
+  current: number,
+  backwards: boolean,
+): number {
+  if (count <= 0) return -1;
   // A focus that has escaped the dialog (current === -1) re-enters at the edge
   // the user is travelling towards.
-  if (current < 0 || current >= count) return backwards ? count - 1 : 0
-  return backwards ? (current - 1 + count) % count : (current + 1) % count
+  if (current < 0 || current >= count) return backwards ? count - 1 : 0;
+  return backwards ? (current - 1 + count) % count : (current + 1) % count;
 }

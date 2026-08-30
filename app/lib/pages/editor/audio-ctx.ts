@@ -15,7 +15,7 @@
 // NEVER closed: every decoded AudioBuffer belongs to the context that decoded
 // it, so closing would invalidate the jingle buffers still referenced by E.
 
-let ctx: AudioContext | null = null
+let ctx: AudioContext | null = null;
 
 /**
  * The shared context, created on first use. Also resumes it — WKWebView starts
@@ -23,13 +23,13 @@ let ctx: AudioContext | null = null
  * nothing (the jingle would simply not sound).
  */
 export function sharedAudioCtx(): AudioContext {
-  if (!ctx) ctx = new AudioContext()
-  if (ctx.state === 'suspended') void ctx.resume().catch(() => {})
-  return ctx
+  if (!ctx) ctx = new AudioContext();
+  if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+  return ctx;
 }
 
 /** The shared context ONLY if one already exists — never creates one. Position
  *  readers run on every animation frame and must not conjure hardware. */
 export function peekSharedAudioCtx(): AudioContext | null {
-  return ctx
+  return ctx;
 }

@@ -19,19 +19,19 @@
 
 /** The category prefixes `AppError`'s `Display` impl produces (error.rs). */
 const CATEGORY_PREFIX =
-  /^(?:not found|validation|recording error|audio error|io error|invalid json|database error|migration error|internal): /
+  /^(?:not found|validation|recording error|audio error|io error|invalid json|database error|migration error|internal): /;
 
 /** Message text from anything a rejected invoke (or an `{error}` field) holds. */
 function messageOf(e: unknown): string {
-  if (typeof e === 'string') return e
-  if (e instanceof Error) return e.message
-  if (e && typeof e === 'object') {
-    const o = e as Record<string, unknown>
-    if (typeof o.message === 'string' && o.message) return o.message
-    if (typeof o.error === 'string' && o.error) return o.error
-    if (typeof o.code === 'string' && o.code) return o.code
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object") {
+    const o = e as Record<string, unknown>;
+    if (typeof o.message === "string" && o.message) return o.message;
+    if (typeof o.error === "string" && o.error) return o.error;
+    if (typeof o.code === "string" && o.code) return o.code;
   }
-  return ''
+  return "";
 }
 
 /**
@@ -40,9 +40,9 @@ function messageOf(e: unknown): string {
  * already-extracted message/error string.
  */
 export function errorCode(e: unknown): string {
-  const stripped = messageOf(e).replace(CATEGORY_PREFIX, '')
+  const stripped = messageOf(e).replace(CATEGORY_PREFIX, "");
   // The trailing lookahead includes `_`, so a partial backtrack can never
   // "find" a shorter code inside a longer word (`no_configX` is NOT `no`).
-  const m = /^([a-z][a-z0-9_]*)(?![a-zA-Z0-9_])/.exec(stripped)
-  return m ? m[1] : ''
+  const m = /^([a-z][a-z0-9_]*)(?![a-zA-Z0-9_])/.exec(stripped);
+  return m ? m[1] : "";
 }

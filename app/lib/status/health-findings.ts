@@ -18,19 +18,19 @@
  * IPC and no DOM.
  */
 
-import type { AuthStatus } from '../../../legacy/bindings/AuthStatus'
-import type { PreflightFinding } from '../../../legacy/bindings/PreflightFinding'
+import type { AuthStatus } from "../../../legacy/bindings/AuthStatus";
+import type { PreflightFinding } from "../../../legacy/bindings/PreflightFinding";
 
 /** What the two commands answer with (the fields we care about). */
 export interface HealthInputs {
-  permissions?: { microphone?: AuthStatus; camera?: AuthStatus } | null
-  ffmpeg?: { available?: boolean; path?: string } | null
+  permissions?: { microphone?: AuthStatus; camera?: AuthStatus } | null;
+  ffmpeg?: { available?: boolean; path?: string } | null;
   /** Whether the user has video recording enabled — a blocked camera is only a
    *  finding for someone who intends to record video. */
-  videoEnabled?: boolean
+  videoEnabled?: boolean;
   /** Localizer, so the copy stays in the app's language without this module
    *  importing the i18n singleton (which would make it untestable in isolation). */
-  t: (key: string, fallback: string) => string
+  t: (key: string, fallback: string) => string;
 }
 
 /** Whether the OS is positively blocking the device. Mirrors Rust's
@@ -38,7 +38,7 @@ export interface HealthInputs {
  *  is what triggers the prompt), and `unknown` means we could not tell, which
  *  must never be reported as a problem. */
 export function isBlocked(status: AuthStatus | undefined): boolean {
-  return status === 'denied' || status === 'restricted'
+  return status === "denied" || status === "restricted";
 }
 
 /**
@@ -47,45 +47,55 @@ export function isBlocked(status: AuthStatus | undefined): boolean {
  * about things they never worried about.
  */
 export function buildHealthFindings(input: HealthInputs): PreflightFinding[] {
-  const { t } = input
-  const out: PreflightFinding[] = []
+  const { t } = input;
+  const out: PreflightFinding[] = [];
 
-  const mic = input.permissions?.microphone
+  const mic = input.permissions?.microphone;
   if (isBlocked(mic)) {
     out.push({
-      severity: 'error',
-      category: 'device',
+      severity: "error",
+      category: "device",
       message:
-        mic === 'restricted'
-          ? t('health.micRestricted',
-              'Mikrofontilgang er sperret av systemadministrator eller foreldrekontroll. Opptak vil ikke virke før sperren oppheves.')
-          : t('health.micDenied',
-              'Mikrofontilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Mikrofon og slå på SundayRec.'),
-    })
+        mic === "restricted"
+          ? t(
+              "health.micRestricted",
+              "Mikrofontilgang er sperret av systemadministrator eller foreldrekontroll. Opptak vil ikke virke før sperren oppheves.",
+            )
+          : t(
+              "health.micDenied",
+              "Mikrofontilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Mikrofon og slå på SundayRec.",
+            ),
+    });
   }
 
-  const cam = input.permissions?.camera
+  const cam = input.permissions?.camera;
   if (input.videoEnabled && isBlocked(cam)) {
     out.push({
-      severity: 'error',
-      category: 'device',
+      severity: "error",
+      category: "device",
       message:
-        cam === 'restricted'
-          ? t('health.cameraRestricted',
-              'Kameratilgang er sperret av systemadministrator eller foreldrekontroll. Videoopptak vil ikke virke før sperren oppheves.')
-          : t('health.cameraDenied',
-              'Kameratilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Kamera og slå på SundayRec.'),
-    })
+        cam === "restricted"
+          ? t(
+              "health.cameraRestricted",
+              "Kameratilgang er sperret av systemadministrator eller foreldrekontroll. Videoopptak vil ikke virke før sperren oppheves.",
+            )
+          : t(
+              "health.cameraDenied",
+              "Kameratilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Kamera og slå på SundayRec.",
+            ),
+    });
   }
 
   if (input.ffmpeg && input.ffmpeg.available === false) {
     out.push({
-      severity: 'error',
-      category: 'device',
-      message: t('health.ffmpegMissing',
-        'Den innebygde lydmotoren (ffmpeg) ble ikke funnet. Video, eksport og redigering vil ikke virke — installer appen på nytt.'),
-    })
+      severity: "error",
+      category: "device",
+      message: t(
+        "health.ffmpegMissing",
+        "Den innebygde lydmotoren (ffmpeg) ble ikke funnet. Video, eksport og redigering vil ikke virke — installer appen på nytt.",
+      ),
+    });
   }
 
-  return out
+  return out;
 }

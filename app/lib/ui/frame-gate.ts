@@ -16,7 +16,7 @@
  */
 
 /** Draw-gate interval — every other 60 Hz frame. */
-export const DRAW_INTERVAL_MS = 33.4
+export const DRAW_INTERVAL_MS = 33.4;
 
 /**
  * Returns the NEW gate timestamp when a draw is due (advanced by exactly one
@@ -27,7 +27,7 @@ export const DRAW_INTERVAL_MS = 33.4
  * missed draw: after a long task, catching up costs more than it buys.
  */
 export function nextDrawGate(gate: number, now: number): number {
-  if (now - gate < DRAW_INTERVAL_MS) return gate
-  if (now - gate > DRAW_INTERVAL_MS * 2) return now
-  return gate + DRAW_INTERVAL_MS
+  if (now - gate < DRAW_INTERVAL_MS) return gate;
+  if (now - gate > DRAW_INTERVAL_MS * 2) return now;
+  return gate + DRAW_INTERVAL_MS;
 }

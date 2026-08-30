@@ -20,27 +20,27 @@
 
 /** Whatever the host's timer API hands back. Never inspected — only handed back
  *  to `clearTimeout`, so this stays portable across DOM/node typings. */
-export type TimerHandle = unknown
+export type TimerHandle = unknown;
 
 /** The timer API, injectable so tests can drive time instead of waiting for it. */
 export interface SchedulerClock {
-  setTimeout(fn: () => void, ms: number): TimerHandle
-  clearTimeout(handle: TimerHandle): void
+  setTimeout(fn: () => void, ms: number): TimerHandle;
+  clearTimeout(handle: TimerHandle): void;
 }
 
 const hostClock: SchedulerClock = {
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (h) => clearTimeout(h as Parameters<typeof clearTimeout>[0]),
-}
+};
 
 export interface DraftScheduler<T> {
   /** Arm (or re-arm) the debounce for `filePath`, capturing `payload` now. */
-  schedule(filePath: string, payload: T): void
+  schedule(filePath: string, payload: T): void;
   /** Drop any pending write. Called on file switch, teardown, and after a
    *  successful export — anything that makes the pending write a lie. */
-  cancel(): void
+  cancel(): void;
   /** Whether a write is currently armed (test/diagnostic affordance). */
-  isPending(): boolean
+  isPending(): boolean;
 }
 
 /**
@@ -51,31 +51,31 @@ export interface DraftScheduler<T> {
  * reads back from application state, which is the whole point.
  */
 export function createDraftScheduler<T>(opts: {
-  delayMs: number
-  save: (filePath: string, payload: T) => void
-  clock?: SchedulerClock
+  delayMs: number;
+  save: (filePath: string, payload: T) => void;
+  clock?: SchedulerClock;
 }): DraftScheduler<T> {
-  const clock = opts.clock ?? hostClock
-  let handle: TimerHandle | null = null
+  const clock = opts.clock ?? hostClock;
+  let handle: TimerHandle | null = null;
 
   const cancel = (): void => {
     if (handle !== null) {
-      clock.clearTimeout(handle)
-      handle = null
+      clock.clearTimeout(handle);
+      handle = null;
     }
-  }
+  };
 
   return {
     schedule(filePath, payload) {
-      cancel()
+      cancel();
       handle = clock.setTimeout(() => {
-        handle = null
+        handle = null;
         // `filePath`/`payload` are the ones captured HERE, at schedule time —
         // never whatever the editor happens to be showing 2 s later.
-        opts.save(filePath, payload)
-      }, opts.delayMs)
+        opts.save(filePath, payload);
+      }, opts.delayMs);
     },
     cancel,
     isPending: () => handle !== null,
-  }
+  };
 }

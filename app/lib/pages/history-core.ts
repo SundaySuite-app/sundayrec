@@ -24,16 +24,16 @@
 /** A recording as the renderer consumes it (adapted from the Rust RecordingRow
  *  in the api-shim). */
 export interface RecordingEntry {
-  date?: string
-  startTime?: string
-  duration?: string
-  filename?: string
-  path?: string
-  status: string
-  timestamp?: number
-  note?: string
-  fileSizeBytes?: number
-  durationSec?: number
+  date?: string;
+  startTime?: string;
+  duration?: string;
+  filename?: string;
+  path?: string;
+  status: string;
+  timestamp?: number;
+  note?: string;
+  fileSizeBytes?: number;
+  durationSec?: number;
 }
 
 /** One rendered row: the primary recording plus the video file of the same
@@ -44,32 +44,44 @@ export interface RecordingEntry {
  *  this module's structural minimum). Type-only; the default keeps every
  *  existing call site reading exactly as before. */
 export interface PairedRecording<T extends RecordingEntry = RecordingEntry> {
-  r: T
-  videoEntry: T | null
+  r: T;
+  videoEntry: T | null;
 }
 
-export type HistorySortKey = 'time' | 'duration'
-export type SortDir = 'asc' | 'desc'
-export type HistoryFilter = 'all' | 'audio' | 'video'
+export type HistorySortKey = "time" | "duration";
+export type SortDir = "asc" | "desc";
+export type HistoryFilter = "all" | "audio" | "video";
 
 /** Container extensions that mean "this row is the video half of a session".
  *  Mirrors the api-shim's VIDEO_EXT list. */
 const VIDEO_EXTS = new Set([
-  'mp4', 'mov', 'mkv', 'm4v', 'webm', 'avi', 'wmv', 'ts', 'mts', 'm2ts', 'flv',
-  '3gp', 'asf', 'f4v',
-])
+  "mp4",
+  "mov",
+  "mkv",
+  "m4v",
+  "webm",
+  "avi",
+  "wmv",
+  "ts",
+  "mts",
+  "m2ts",
+  "flv",
+  "3gp",
+  "asf",
+  "f4v",
+]);
 
 /** A recording's base path without its extension — the join key for the
  *  audio/video pair. */
 export function baseNoExt(p: string | undefined): string {
-  if (!p) return ''
-  return p.replace(/\.[^./\\]+$/, '')
+  if (!p) return "";
+  return p.replace(/\.[^./\\]+$/, "");
 }
 
 function extOf(p: string | undefined): string {
-  if (!p) return ''
-  const m = /\.([^./\\]+)$/.exec(p)
-  return m ? m[1].toLowerCase() : ''
+  if (!p) return "";
+  const m = /\.([^./\\]+)$/.exec(p);
+  return m ? m[1].toLowerCase() : "";
 }
 
 /** Is this row the video file of a session? Decided by container extension —
@@ -77,21 +89,24 @@ function extOf(p: string | undefined): string {
  *  for rows imported from that history (a user-typed note never reaches here
  *  as an exact match by accident, and if it did the row is still shown). */
 export function isVideoRow(r: RecordingEntry): boolean {
-  const ext = extOf(r.path)
-  if (ext) return VIDEO_EXTS.has(ext)
-  return r.note === 'Video'
+  const ext = extOf(r.path);
+  if (ext) return VIDEO_EXTS.has(ext);
+  return r.note === "Video";
 }
 
 /** Sort value for a row: the numeric timestamp, falling back to a parsed date
  *  string, falling back to 0 (unknown sorts oldest). */
 function timeOf(r: RecordingEntry): number {
-  if (typeof r.timestamp === 'number' && isFinite(r.timestamp)) return r.timestamp
-  const parsed = r.date ? Date.parse(r.date) : NaN
-  return isFinite(parsed) ? parsed : 0
+  if (typeof r.timestamp === "number" && isFinite(r.timestamp))
+    return r.timestamp;
+  const parsed = r.date ? Date.parse(r.date) : NaN;
+  return isFinite(parsed) ? parsed : 0;
 }
 
 function durationOf(r: RecordingEntry): number {
-  return typeof r.durationSec === 'number' && isFinite(r.durationSec) ? r.durationSec : 0
+  return typeof r.durationSec === "number" && isFinite(r.durationSec)
+    ? r.durationSec
+    : 0;
 }
 
 /**
@@ -108,35 +123,41 @@ function durationOf(r: RecordingEntry): number {
  * nothing to match them on, and guessing from a shared minute would merge two
  * genuinely different recordings.
  */
-export function pairRecordings<T extends RecordingEntry>(rows: T[]): PairedRecording<T>[] {
-  const groups = new Map<string, number[]>()
+export function pairRecordings<T extends RecordingEntry>(
+  rows: T[],
+): PairedRecording<T>[] {
+  const groups = new Map<string, number[]>();
   rows.forEach((r, i) => {
-    const key = r.path ? `p:${baseNoExt(r.path)}` : `i:${i}`
-    const g = groups.get(key)
-    if (g) g.push(i)
-    else groups.set(key, [i])
-  })
+    const key = r.path ? `p:${baseNoExt(r.path)}` : `i:${i}`;
+    const g = groups.get(key);
+    if (g) g.push(i);
+    else groups.set(key, [i]);
+  });
 
   /** anchor row index → the pair rendered there. */
-  const pairAt = new Map<number, { audio: number; video: number }>()
+  const pairAt = new Map<number, { audio: number; video: number }>();
   /** rows folded into a pair rendered elsewhere. */
-  const folded = new Set<number>()
+  const folded = new Set<number>();
   for (const idxs of groups.values()) {
-    if (idxs.length < 2) continue
-    const audio = idxs.find(i => !isVideoRow(rows[i]))
-    const video = idxs.find(i => isVideoRow(rows[i]))
-    if (audio === undefined || video === undefined) continue
-    pairAt.set(Math.min(audio, video), { audio, video })
-    folded.add(Math.max(audio, video))
+    if (idxs.length < 2) continue;
+    const audio = idxs.find((i) => !isVideoRow(rows[i]));
+    const video = idxs.find((i) => isVideoRow(rows[i]));
+    if (audio === undefined || video === undefined) continue;
+    pairAt.set(Math.min(audio, video), { audio, video });
+    folded.add(Math.max(audio, video));
   }
 
-  const out: PairedRecording<T>[] = []
+  const out: PairedRecording<T>[] = [];
   rows.forEach((r, i) => {
-    if (folded.has(i)) return
-    const p = pairAt.get(i)
-    out.push(p ? { r: rows[p.audio], videoEntry: rows[p.video] } : { r, videoEntry: null })
-  })
-  return out
+    if (folded.has(i)) return;
+    const p = pairAt.get(i);
+    out.push(
+      p
+        ? { r: rows[p.audio], videoEntry: rows[p.video] }
+        : { r, videoEntry: null },
+    );
+  });
+  return out;
 }
 
 /** Rows matching the chip filter. Runs BEFORE pairing, so «Video» shows the
@@ -147,9 +168,12 @@ export function filterRecordings(
   filter: HistoryFilter,
 ): RecordingEntry[] {
   switch (filter) {
-    case 'audio': return rows.filter(r => !isVideoRow(r))
-    case 'video': return rows.filter(r => isVideoRow(r))
-    default:      return rows.slice()
+    case "audio":
+      return rows.filter((r) => !isVideoRow(r));
+    case "video":
+      return rows.filter((r) => isVideoRow(r));
+    default:
+      return rows.slice();
   }
 }
 
@@ -159,37 +183,40 @@ export function sortRecordings(
   key: HistorySortKey,
   dir: SortDir,
 ): RecordingEntry[] {
-  const value = key === 'duration' ? durationOf : timeOf
-  const sign = dir === 'asc' ? 1 : -1
+  const value = key === "duration" ? durationOf : timeOf;
+  const sign = dir === "asc" ? 1 : -1;
   return rows
     .map((r, i) => ({ r, i }))
     .sort((a, b) => {
-      const d = value(a.r) - value(b.r)
-      return d !== 0 ? d * sign : a.i - b.i
+      const d = value(a.r) - value(b.r);
+      return d !== 0 ? d * sign : a.i - b.i;
     })
-    .map(x => x.r)
+    .map((x) => x.r);
 }
 
 /** Summary of the rows the table is showing. Durations come from `durationSec`,
  *  never from the formatted `duration` label. */
 export interface HistoryTotals {
-  count: number
-  totalSec: number
+  count: number;
+  totalSec: number;
   /** Newest `date` among the counted rows, or undefined when none has one. */
-  lastDate?: string
+  lastDate?: string;
 }
 
 /** Totals over the successful recordings only — a failed run has no file and
  *  no meaningful duration, so counting it would inflate both numbers. */
 export function historyTotals(rows: RecordingEntry[]): HistoryTotals {
-  const ok = rows.filter(r => r.status === 'ok' || r.status === 'complete')
-  let totalSec = 0
-  let lastTime = -Infinity
-  let lastDate: string | undefined
+  const ok = rows.filter((r) => r.status === "ok" || r.status === "complete");
+  let totalSec = 0;
+  let lastTime = -Infinity;
+  let lastDate: string | undefined;
   for (const r of ok) {
-    totalSec += durationOf(r)
-    const ts = timeOf(r)
-    if (r.date && ts > lastTime) { lastTime = ts; lastDate = r.date }
+    totalSec += durationOf(r);
+    const ts = timeOf(r);
+    if (r.date && ts > lastTime) {
+      lastTime = ts;
+      lastDate = r.date;
+    }
   }
-  return { count: ok.length, totalSec, lastDate }
+  return { count: ok.length, totalSec, lastDate };
 }

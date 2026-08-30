@@ -78,7 +78,11 @@ export function createIpcFailureState(): IpcFailureState {
  * ask without committing (and so it is trivially testable). {@link noteSurfaced}
  * is what records the decision.
  */
-export function shouldSurface(state: IpcFailureState, cmd: string, now: number): boolean {
+export function shouldSurface(
+  state: IpcFailureState,
+  cmd: string,
+  now: number,
+): boolean {
   const last = state.lastToastByCmd[cmd];
   // The dedup: the FIRST failure in a burst speaks, the rest of the burst does
   // not. A poll failing every 250 ms produces one toast a minute, not 240.
@@ -91,7 +95,11 @@ export function shouldSurface(state: IpcFailureState, cmd: string, now: number):
 }
 
 /** Record that `cmd` was toasted at `now`, and forget toasts older than the window. */
-export function noteSurfaced(state: IpcFailureState, cmd: string, now: number): void {
+export function noteSurfaced(
+  state: IpcFailureState,
+  cmd: string,
+  now: number,
+): void {
   state.lastToastByCmd[cmd] = now;
   state.recentToasts = state.recentToasts.filter((t) => now - t < WINDOW_MS);
   state.recentToasts.push(now);
@@ -111,7 +119,8 @@ export function recordFailure(
   now: number,
 ): boolean {
   state.ring.push({ cmd, error, at: now });
-  if (state.ring.length > RING_MAX) state.ring.splice(0, state.ring.length - RING_MAX);
+  if (state.ring.length > RING_MAX)
+    state.ring.splice(0, state.ring.length - RING_MAX);
   const surface = shouldSurface(state, cmd, now);
   if (surface) noteSurfaced(state, cmd, now);
   return surface;

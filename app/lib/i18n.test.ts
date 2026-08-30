@@ -16,17 +16,24 @@
 //
 // The per-language expectations below are written out in full rather than
 // derived, so changing a Polish form to the wrong one turns a test red.
-import { describe, expect, it } from 'vitest'
-import { interpolate, pluralCategory, selectPluralForm, t, tf, tn } from './i18n'
-import no from '../../legacy/locales/no.json'
-import en from '../../legacy/locales/en.json'
-import sv from '../../legacy/locales/sv.json'
-import da from '../../legacy/locales/da.json'
-import de from '../../legacy/locales/de.json'
-import fr from '../../legacy/locales/fr.json'
-import pl from '../../legacy/locales/pl.json'
+import { describe, expect, it } from "vitest";
+import {
+  interpolate,
+  pluralCategory,
+  selectPluralForm,
+  t,
+  tf,
+  tn,
+} from "./i18n";
+import no from "../../legacy/locales/no.json";
+import en from "../../legacy/locales/en.json";
+import sv from "../../legacy/locales/sv.json";
+import da from "../../legacy/locales/da.json";
+import de from "../../legacy/locales/de.json";
+import fr from "../../legacy/locales/fr.json";
+import pl from "../../legacy/locales/pl.json";
 
-type Tree = Record<string, unknown>
+type Tree = Record<string, unknown>;
 
 const TREES: Record<string, Tree> = {
   no: no as Tree,
@@ -36,96 +43,112 @@ const TREES: Record<string, Tree> = {
   de: de as Tree,
   fr: fr as Tree,
   pl: pl as Tree,
-}
+};
 
 const lookup = (tree: Tree, key: string): unknown =>
-  key.split('.').reduce<unknown>((o, k) => (o as Tree)?.[k], tree)
+  key.split(".").reduce<unknown>((o, k) => (o as Tree)?.[k], tree);
 
 /** What the operator would actually see: form picked for `count`, then filled. */
-function render(lang: string, key: string, count: number, params: Record<string, number | string> = {}): string {
-  const form = selectPluralForm(lookup(TREES[lang], key), count, lang)
-  expect(form, `${lang}: ${key} has no form for ${count}`).toBeTypeOf('string')
-  return interpolate(form!, { n: count, ...params })
+function render(
+  lang: string,
+  key: string,
+  count: number,
+  params: Record<string, number | string> = {},
+): string {
+  const form = selectPluralForm(lookup(TREES[lang], key), count, lang);
+  expect(form, `${lang}: ${key} has no form for ${count}`).toBeTypeOf("string");
+  return interpolate(form!, { n: count, ...params });
 }
 
-describe('interpolate', () => {
-  it('replaces EVERY occurrence, not just the first', () => {
+describe("interpolate", () => {
+  it("replaces EVERY occurrence, not just the first", () => {
     // The whole reason `tf` exists. `.replace('{n}', …)` returned "3 av {n}".
-    expect(interpolate('{n} av {n}', { n: 3 })).toBe('3 av 3')
-  })
+    expect(interpolate("{n} av {n}", { n: 3 })).toBe("3 av 3");
+  });
 
-  it('substitutes several distinct placeholders', () => {
-    expect(interpolate('{h} t {m} min', { h: 1, m: 30 })).toBe('1 t 30 min')
-  })
+  it("substitutes several distinct placeholders", () => {
+    expect(interpolate("{h} t {m} min", { h: 1, m: 30 })).toBe("1 t 30 min");
+  });
 
-  it('leaves a placeholder with no param VISIBLE', () => {
+  it("leaves a placeholder with no param VISIBLE", () => {
     // Policy, deliberately chosen and pinned here: an unsupplied placeholder
     // stays as `{n}`. Substituting '' would read as finished copy — «opptak
     // ligger i papirkurven» — and hide the bug from everyone including the
     // person reading a screenshot. A visible `{n}` is ugly on purpose.
-    expect(interpolate('{n} opptak ligger i {where}', { n: 4 })).toBe('4 opptak ligger i {where}')
-  })
+    expect(interpolate("{n} opptak ligger i {where}", { n: 4 })).toBe(
+      "4 opptak ligger i {where}",
+    );
+  });
 
-  it('is a no-op without params, and never touches non-placeholder braces', () => {
-    expect(interpolate('ingen plassholdere', {})).toBe('ingen plassholdere')
-    expect(interpolate('{n} {}', { n: 1 })).toBe('1 {}')
-  })
-})
+  it("is a no-op without params, and never touches non-placeholder braces", () => {
+    expect(interpolate("ingen plassholdere", {})).toBe("ingen plassholdere");
+    expect(interpolate("{n} {}", { n: 1 })).toBe("1 {}");
+  });
+});
 
-describe('pluralCategory', () => {
+describe("pluralCategory", () => {
   it('maps "no" to nb-NO, so the tag is the one helpers.localeTag uses', () => {
-    expect(pluralCategory(1, 'no')).toBe('one')
-    expect(pluralCategory(2, 'no')).toBe('other')
-  })
+    expect(pluralCategory(1, "no")).toBe("one");
+    expect(pluralCategory(2, "no")).toBe("other");
+  });
 
   const cases: Array<[string, number, string]> = [
-    ['pl', 0, 'many'],
-    ['pl', 1, 'one'],
-    ['pl', 2, 'few'],
-    ['pl', 4, 'few'],
-    ['pl', 5, 'many'],
-    ['pl', 21, 'many'],
-    ['pl', 22, 'few'],
-    ['pl', 24, 'few'],
-    ['pl', 25, 'many'],
-    ['fr', 0, 'one'],
-    ['fr', 1, 'one'],
-    ['fr', 2, 'other'],
-    ['de', 0, 'other'],
-    ['de', 1, 'one'],
-    ['en', 0, 'other'],
-  ]
+    ["pl", 0, "many"],
+    ["pl", 1, "one"],
+    ["pl", 2, "few"],
+    ["pl", 4, "few"],
+    ["pl", 5, "many"],
+    ["pl", 21, "many"],
+    ["pl", 22, "few"],
+    ["pl", 24, "few"],
+    ["pl", 25, "many"],
+    ["fr", 0, "one"],
+    ["fr", 1, "one"],
+    ["fr", 2, "other"],
+    ["de", 0, "other"],
+    ["de", 1, "one"],
+    ["en", 0, "other"],
+  ];
   for (const [lang, n, want] of cases) {
-    it(`${lang}: ${n} → ${want}`, () => expect(pluralCategory(n, lang)).toBe(want))
+    it(`${lang}: ${n} → ${want}`, () =>
+      expect(pluralCategory(n, lang)).toBe(want));
   }
-})
+});
 
-describe('selectPluralForm — fallback chain', () => {
-  const group = { one: 'ett', other: 'flere' }
+describe("selectPluralForm — fallback chain", () => {
+  const group = { one: "ett", other: "flere" };
 
-  it('picks the exact category', () => {
-    expect(selectPluralForm(group, 1, 'no')).toBe('ett')
-    expect(selectPluralForm(group, 7, 'no')).toBe('flere')
-  })
+  it("picks the exact category", () => {
+    expect(selectPluralForm(group, 1, "no")).toBe("ett");
+    expect(selectPluralForm(group, 7, "no")).toBe("flere");
+  });
 
-  it('falls back to `other` for a category the catalogue omits', () => {
+  it("falls back to `other` for a category the catalogue omits", () => {
     // French `many` needs n ≥ 1e6 and Polish `other` needs a fraction; neither
     // is worth a hand-written string, so `other` covers them.
-    expect(selectPluralForm({ one: 'un', other: 'des' }, 1_000_000, 'fr')).toBe('des')
-    expect(selectPluralForm({ one: 'a', few: 'b', many: 'c', other: 'd' }, 1.5, 'pl')).toBe('d')
-  })
+    expect(selectPluralForm({ one: "un", other: "des" }, 1_000_000, "fr")).toBe(
+      "des",
+    );
+    expect(
+      selectPluralForm(
+        { one: "a", few: "b", many: "c", other: "d" },
+        1.5,
+        "pl",
+      ),
+    ).toBe("d");
+  });
 
-  it('accepts a flat string — a key that was never pluralized still works', () => {
-    expect(selectPluralForm('flat', 5, 'pl')).toBe('flat')
-  })
+  it("accepts a flat string — a key that was never pluralized still works", () => {
+    expect(selectPluralForm("flat", 5, "pl")).toBe("flat");
+  });
 
-  it('returns undefined for anything unusable, so the caller can fall back', () => {
-    expect(selectPluralForm(undefined, 1, 'no')).toBeUndefined()
-    expect(selectPluralForm({}, 1, 'no')).toBeUndefined()
-    expect(selectPluralForm(['a'], 1, 'no')).toBeUndefined()
-    expect(selectPluralForm({ one: 'ett' }, 3, 'no')).toBeUndefined()
-  })
-})
+  it("returns undefined for anything unusable, so the caller can fall back", () => {
+    expect(selectPluralForm(undefined, 1, "no")).toBeUndefined();
+    expect(selectPluralForm({}, 1, "no")).toBeUndefined();
+    expect(selectPluralForm(["a"], 1, "no")).toBeUndefined();
+    expect(selectPluralForm({ one: "ett" }, 3, "no")).toBeUndefined();
+  });
+});
 
 // The repair this pins is the same one it always pinned: before it, ONE Polish
 // string served every count, so 1 and 2–4 and 22–24 all read the wrong noun
@@ -133,120 +156,128 @@ describe('selectPluralForm — fallback chain', () => {
 // any more and the catalogue prune took it — so the demonstration now runs on
 // a group the shell actually renders (`missed.banner`, the missed-recording
 // banner on OPPTAK). Same four Polish categories, same boundaries.
-describe('the Polish repair — missed.banner across the category boundaries', () => {
+describe("the Polish repair — missed.banner across the category boundaries", () => {
   const cases: Array<[number, string]> = [
-    [0, '0 zaplanowanych nagrań nie zostało wykonanych'],
-    [1, '1 zaplanowane nagranie nie zostało wykonane'],
-    [2, '2 zaplanowane nagrania nie zostały wykonane'],
-    [3, '3 zaplanowane nagrania nie zostały wykonane'],
-    [4, '4 zaplanowane nagrania nie zostały wykonane'],
-    [5, '5 zaplanowanych nagrań nie zostało wykonanych'],
-    [21, '21 zaplanowanych nagrań nie zostało wykonanych'],
-    [22, '22 zaplanowane nagrania nie zostały wykonane'],
-    [24, '24 zaplanowane nagrania nie zostały wykonane'],
-    [25, '25 zaplanowanych nagrań nie zostało wykonanych'],
-  ]
+    [0, "0 zaplanowanych nagrań nie zostało wykonanych"],
+    [1, "1 zaplanowane nagranie nie zostało wykonane"],
+    [2, "2 zaplanowane nagrania nie zostały wykonane"],
+    [3, "3 zaplanowane nagrania nie zostały wykonane"],
+    [4, "4 zaplanowane nagrania nie zostały wykonane"],
+    [5, "5 zaplanowanych nagrań nie zostało wykonanych"],
+    [21, "21 zaplanowanych nagrań nie zostało wykonanych"],
+    [22, "22 zaplanowane nagrania nie zostały wykonane"],
+    [24, "24 zaplanowane nagrania nie zostały wykonane"],
+    [25, "25 zaplanowanych nagrań nie zostało wykonanych"],
+  ];
   for (const [n, want] of cases) {
-    it(`n=${n}`, () => expect(render('pl', 'missed.banner', n)).toBe(want))
+    it(`n=${n}`, () => expect(render("pl", "missed.banner", n)).toBe(want));
   }
-})
+});
 
-describe('every language gets its own singular', () => {
+describe("every language gets its own singular", () => {
   const expected: Record<string, [string, string]> = {
-    no: ['1 dag siden', '5 dager siden'],
-    en: ['1 day ago', '5 days ago'],
-    sv: ['1 dag sedan', '5 dagar sedan'],
-    da: ['1 dag siden', '5 dage siden'],
-    de: ['vor 1 Tag', 'vor 5 Tagen'],
-    fr: ['il y a 1 jour', 'il y a 5 jours'],
-    pl: ['1 dzień temu', '5 dni temu'],
-  }
+    no: ["1 dag siden", "5 dager siden"],
+    en: ["1 day ago", "5 days ago"],
+    sv: ["1 dag sedan", "5 dagar sedan"],
+    da: ["1 dag siden", "5 dage siden"],
+    de: ["vor 1 Tag", "vor 5 Tagen"],
+    fr: ["il y a 1 jour", "il y a 5 jours"],
+    pl: ["1 dzień temu", "5 dni temu"],
+  };
   for (const [lang, [one, many]] of Object.entries(expected)) {
     it(lang, () => {
-      expect(render(lang, 'trash.daysAgo', 1)).toBe(one)
-      expect(render(lang, 'trash.daysAgo', 5)).toBe(many)
-    })
+      expect(render(lang, "trash.daysAgo", 1)).toBe(one);
+      expect(render(lang, "trash.daysAgo", 5)).toBe(many);
+    });
   }
 
-  it('French treats zero as singular, which is the whole point of not using === 1', () => {
+  it("French treats zero as singular, which is the whole point of not using === 1", () => {
     // `n === 1 ? one : other` gets «0 jours»; CLDR French wants «0 jour».
-    expect(render('fr', 'trash.daysAgo', 0)).toBe('il y a 0 jour')
+    expect(render("fr", "trash.daysAgo", 0)).toBe("il y a 0 jour");
     // …and Norwegian genuinely wants the plural at zero.
-    expect(render('no', 'trash.daysAgo', 0)).toBe('0 dager siden')
-  })
-})
+    expect(render("no", "trash.daysAgo", 0)).toBe("0 dager siden");
+  });
+});
 
-describe('every plural group renders in every language, at every boundary', () => {
+describe("every plural group renders in every language, at every boundary", () => {
   // A sweep rather than a spot check: any group whose forms were left half
   // written (a `{n}` that no longer matches, a missing category) shows up here
   // as an un-substituted placeholder or a thrown lookup.
-  function groupKeys(tree: Tree, prefix = ''): string[] {
+  function groupKeys(tree: Tree, prefix = ""): string[] {
     return Object.entries(tree).flatMap(([k, v]) => {
-      if (v && typeof v === 'object' && !Array.isArray(v)) {
-        const keys = Object.keys(v as Tree)
-        if (keys.includes('other') && keys.every(x => ['one', 'two', 'few', 'many', 'other', 'zero'].includes(x))) {
-          return [prefix + k]
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const keys = Object.keys(v as Tree);
+        if (
+          keys.includes("other") &&
+          keys.every((x) =>
+            ["one", "two", "few", "many", "other", "zero"].includes(x),
+          )
+        ) {
+          return [prefix + k];
         }
-        return groupKeys(v as Tree, prefix + k + '.')
+        return groupKeys(v as Tree, prefix + k + ".");
       }
-      return []
-    })
+      return [];
+    });
   }
-  const keys = groupKeys(no as Tree)
+  const keys = groupKeys(no as Tree);
 
   // A floor, not a count: the walker must have found the catalogue. It was 20
   // before fase B pruned the 653 keys nothing read any more; 7 groups are left,
   // so the floor moved with them. A floor still catches a walker that found
   // nothing, which is the failure this guards — a green sweep over zero keys.
-  it('finds the groups at all', () => expect(keys.length).toBeGreaterThan(5))
+  it("finds the groups at all", () => expect(keys.length).toBeGreaterThan(5));
 
   for (const lang of Object.keys(TREES)) {
     it(lang, () => {
       for (const key of keys) {
         for (const n of [0, 1, 2, 5, 22, 101]) {
-          const form = selectPluralForm(lookup(TREES[lang], key), n, lang)
-          expect(form, `${lang}: ${key} @ ${n}`).toBeTypeOf('string')
+          const form = selectPluralForm(lookup(TREES[lang], key), n, lang);
+          expect(form, `${lang}: ${key} @ ${n}`).toBeTypeOf("string");
           // `n` is the count placeholder in all but four groups (which name
           // theirs `d`, `days`, `when`/`n`, `list`); those keep their own
           // placeholder, so only assert that `{n}` itself is consumed.
-          expect(interpolate(form!, { n }), `${lang}: ${key} @ ${n}`).not.toContain('{n}')
+          expect(
+            interpolate(form!, { n }),
+            `${lang}: ${key} @ ${n}`,
+          ).not.toContain("{n}");
         }
       }
-    })
+    });
   }
-})
+});
 
-describe('tf / tn against the live catalogue (default locale: no)', () => {
-  it('tf fills a real key', () => {
-    expect(tf('trash.confirmPurgeOne', { name: 'Gudstjeneste' })).toBe(
-      'Slett «Gudstjeneste» for godt?',
-    )
-  })
+describe("tf / tn against the live catalogue (default locale: no)", () => {
+  it("tf fills a real key", () => {
+    expect(tf("trash.confirmPurgeOne", { name: "Gudstjeneste" })).toBe(
+      "Slett «Gudstjeneste» for godt?",
+    );
+  });
 
-  it('tf falls back to the literal when the key is unknown', () => {
-    expect(tf('nope.not.here', { n: 2 }, '{n} ting')).toBe('2 ting')
-  })
+  it("tf falls back to the literal when the key is unknown", () => {
+    expect(tf("nope.not.here", { n: 2 }, "{n} ting")).toBe("2 ting");
+  });
 
-  it('tn binds {n} to the count without being asked', () => {
-    expect(tn('trash.daysAgo', 1)).toBe('1 dag siden')
-    expect(tn('trash.daysAgo', 9)).toBe('9 dager siden')
-  })
+  it("tn binds {n} to the count without being asked", () => {
+    expect(tn("trash.daysAgo", 1)).toBe("1 dag siden");
+    expect(tn("trash.daysAgo", 9)).toBe("9 dager siden");
+  });
 
-  it('tn takes extra params, and lets them override n', () => {
+  it("tn takes extra params, and lets them override n", () => {
     // A param the form does not name is merged and simply unused — it must not
     // throw, and it must not leak into the text.
-    expect(tn('trash.related', 3, { name: 'x' })).toBe('+ 3 tilhørende filer')
+    expect(tn("trash.related", 3, { name: "x" })).toBe("+ 3 tilhørende filer");
     // The FORM follows `count` (singular here); an explicit `n` still wins the
     // slot. That split is the whole point of taking both.
-    expect(tn('trash.daysAgo', 1, { n: 4 })).toBe('4 dag siden')
-  })
+    expect(tn("trash.daysAgo", 1, { n: 4 })).toBe("4 dag siden");
+  });
 
-  it('tn falls back to the literal for an unknown key', () => {
-    expect(tn('nope.not.here', 3, {}, '{n} ting')).toBe('3 ting')
-  })
+  it("tn falls back to the literal for an unknown key", () => {
+    expect(tn("nope.not.here", 3, {}, "{n} ting")).toBe("3 ting");
+  });
 
-  it('t refuses to stringify a plural group', () => {
+  it("t refuses to stringify a plural group", () => {
     // Before the guard, `t()` on a group rendered "[object Object]" in the UI.
-    expect(t('trash.daysAgo', 'reserve')).toBe('reserve')
-  })
-})
+    expect(t("trash.daysAgo", "reserve")).toBe("reserve");
+  });
+});

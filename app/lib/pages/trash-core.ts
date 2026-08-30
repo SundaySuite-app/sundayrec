@@ -9,13 +9,13 @@
  * field the history row and the trash entry share.
  */
 
-import type { TrashEntry } from '../../../legacy/bindings/TrashEntry'
+import type { TrashEntry } from "../../../legacy/bindings/TrashEntry";
 
-export type { TrashEntry }
+export type { TrashEntry };
 
 /** Paths currently in the trash, for filtering the history. */
 export function trashedPaths(entries: TrashEntry[]): Set<string> {
-  return new Set(entries.map(e => e.originalPath))
+  return new Set(entries.map((e) => e.originalPath));
 }
 
 /**
@@ -29,32 +29,32 @@ export function withoutTrashed<T extends { path?: string }>(
   rows: T[],
   trashed: Set<string>,
 ): T[] {
-  if (trashed.size === 0) return rows
-  return rows.filter(r => !r.path || !trashed.has(r.path))
+  if (trashed.size === 0) return rows;
+  return rows.filter((r) => !r.path || !trashed.has(r.path));
 }
 
 /** How a trashed entry is described in the list. */
 export interface TrashRow {
-  id: string
-  name: string
+  id: string;
+  name: string;
   /** Absolute path it will be restored to. */
-  originalPath: string
+  originalPath: string;
   /** Epoch ms. */
-  deletedAt: number
+  deletedAt: number;
   /** Whole days since deletion (0 = today). */
-  ageDays: number
+  ageDays: number;
   /** Days left before the automatic sweep takes it. Never below 0. */
-  daysLeft: number
+  daysLeft: number;
   /** Companion files that went with it (sidecars, cover art). */
-  relatedCount: number
-  byteSize: number | null
+  relatedCount: number;
+  byteSize: number | null;
 }
 
 /** Mirrors `trash::AUTO_PURGE_DAYS` — the backend is the authority, this is
  *  what the list uses to say how long you have left to change your mind. */
-export const TRASH_KEEP_DAYS = 30
+export const TRASH_KEEP_DAYS = 30;
 
-const DAY_MS = 24 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Build the view rows, newest first.
@@ -65,8 +65,8 @@ const DAY_MS = 24 * 60 * 60 * 1000
  */
 export function toTrashRows(entries: TrashEntry[], now: number): TrashRow[] {
   return entries
-    .map(e => {
-      const ageDays = Math.max(0, Math.floor((now - e.deletedAt) / DAY_MS))
+    .map((e) => {
+      const ageDays = Math.max(0, Math.floor((now - e.deletedAt) / DAY_MS));
       return {
         id: e.id,
         name: e.name,
@@ -76,9 +76,9 @@ export function toTrashRows(entries: TrashEntry[], now: number): TrashRow[] {
         daysLeft: Math.max(0, TRASH_KEEP_DAYS - ageDays),
         relatedCount: e.related?.length ?? 0,
         byteSize: e.byteSize,
-      }
+      };
     })
-    .sort((a, b) => b.deletedAt - a.deletedAt)
+    .sort((a, b) => b.deletedAt - a.deletedAt);
 }
 
 /**
@@ -93,7 +93,7 @@ export function ageText(
   ageDays: number,
   words: { today: string; yesterday: string; daysAgo: (n: number) => string },
 ): string {
-  if (ageDays <= 0) return words.today
-  if (ageDays === 1) return words.yesterday
-  return words.daysAgo(ageDays)
+  if (ageDays <= 0) return words.today;
+  if (ageDays === 1) return words.yesterday;
+  return words.daysAgo(ageDays);
 }

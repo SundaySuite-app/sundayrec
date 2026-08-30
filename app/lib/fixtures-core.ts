@@ -142,7 +142,10 @@ export function resolveSource(input: PrecedenceInput): CallSource {
  * failure ring. A short-circuited one must not, or a fixtured browser boot would
  * fill the diagnostics panel with failures that never happened.
  */
-export function attemptsInvoke(gate: FixtureGate, hasFixture: boolean): boolean {
+export function attemptsInvoke(
+  gate: FixtureGate,
+  hasFixture: boolean,
+): boolean {
   return !fixtureWins(gate, hasFixture);
 }
 
@@ -161,9 +164,13 @@ export interface FixtureLookup {
  * `constructor`/`toString` from `Object.prototype` — without the own check,
  * a command called `toString` would "have a fixture".
  */
-export function lookupFixture(map: FixtureMap | undefined, cmd: string): FixtureLookup {
+export function lookupFixture(
+  map: FixtureMap | undefined,
+  cmd: string,
+): FixtureLookup {
   if (!map || typeof map !== "object") return { hit: false, value: undefined };
-  if (!Object.prototype.hasOwnProperty.call(map, cmd)) return { hit: false, value: undefined };
+  if (!Object.prototype.hasOwnProperty.call(map, cmd))
+    return { hit: false, value: undefined };
   return { hit: true, value: map[cmd] };
 }
 
@@ -175,6 +182,9 @@ export function lookupFixture(map: FixtureMap | undefined, cmd: string): Fixture
  * function that throws simulates a rejected command, which is the only way to
  * drive the E2.4 failure path from a test.
  */
-export function readFixture(value: FixtureValue, args?: Record<string, unknown>): unknown {
+export function readFixture(
+  value: FixtureValue,
+  args?: Record<string, unknown>,
+): unknown {
   return typeof value === "function" ? (value as FixtureFn)(args) : value;
 }

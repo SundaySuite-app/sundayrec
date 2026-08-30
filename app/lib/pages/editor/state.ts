@@ -1,8 +1,14 @@
-import type { EditorSegment, RecordingMetadata } from '../../../../legacy/types'
-import { peekSharedAudioCtx } from './audio-ctx'
+import type {
+  EditorSegment,
+  RecordingMetadata,
+} from "../../../../legacy/types";
+import { peekSharedAudioCtx } from "./audio-ctx";
 
 // ── Shared types ────────────────────────────────────────────────────────────
-export interface Cut { start: number; end: number }
+export interface Cut {
+  start: number;
+  end: number;
+}
 /** One analysed segment, exactly as `editor_segments` serialises it.
  *
  *  This is an ALIAS of the generated `EditorSegment` binding, not a re-typing of
@@ -13,12 +19,28 @@ export interface Cut { start: number; end: number }
  *  timeline layers) was silently dead in every shipped build. Aliasing the
  *  binding turns the next such rename into a typecheck failure at each `.type`
  *  read instead of a feature that quietly stops existing. */
-export type Suggestion = EditorSegment
-export interface HandleDrag { cutIdx: number; side: 'start' | 'end' }
+export type Suggestion = EditorSegment;
+export interface HandleDrag {
+  cutIdx: number;
+  side: "start" | "end";
+}
 
 // ── Immutable format sets ─────────────────────────────────────────────────────
 // Formats always routed to the video editor path (HTML video element + ffmpeg peaks)
-export const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.wmv', '.ts', '.mts', '.m2ts', '.flv', '.3gp', '.asf', '.f4v'])
+export const VIDEO_EXTS = new Set([
+  ".mp4",
+  ".mov",
+  ".m4v",
+  ".avi",
+  ".wmv",
+  ".ts",
+  ".mts",
+  ".m2ts",
+  ".flv",
+  ".3gp",
+  ".asf",
+  ".f4v",
+]);
 // Audio formats the WEBVIEW itself streams from disk via `asset://` — the
 // editor's playback transport. WKWebView (CoreAudio) and WebView2 (Media
 // Foundation) both decode these natively, so the <audio> element plays the
@@ -26,14 +48,27 @@ export const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.wmv', '.ts'
 // Deliberately NARROWER than "what a browser can decode": ogg/oga/opus/webm are
 // left out because WKWebView does not ship those decoders — they go through the
 // on-demand AAC proxy instead (see routePlayback in play-regions.ts).
-export const PLAYER_EXTS = new Set(['.flac', '.wav', '.mp3', '.m4a', '.m4b', '.m4r', '.aac', '.aiff', '.aif', '.caf'])
+export const PLAYER_EXTS = new Set([
+  ".flac",
+  ".wav",
+  ".mp3",
+  ".m4a",
+  ".m4b",
+  ".m4r",
+  ".aac",
+  ".aiff",
+  ".aif",
+  ".caf",
+]);
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
-export const $ = (id: string) => document.getElementById(id)
+export const $ = (id: string) => document.getElementById(id);
 
 // Colours / sizes read from CSS variables
 export function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
 }
 
 // ── Shared mutable editor state ───────────────────────────────────────────────
@@ -42,12 +77,12 @@ export function cssVar(name: string): string {
 // `import { E } from './state'` and read/write `E.cuts`, `E.duration`, … —
 // ESM live bindings forbid reassigning imported `let`, hence the object.
 export const E = {
-  filePath: '',
+  filePath: "",
   duration: 0,
   peaks: null as Float32Array | null,
   cuts: [] as Cut[],
-  cutHistory: [] as Cut[][],   // undo/redo stack
-  cutHistoryIdx: -1,           // pointer into cutHistory (-1 = no history yet)
+  cutHistory: [] as Cut[][], // undo/redo stack
+  cutHistoryIdx: -1, // pointer into cutHistory (-1 = no history yet)
   suggestions: [] as Suggestion[],
   // Index into `suggestions` of the block DETECTION picked as the sermon, null
   // when it found none. Kept separately because a restored correction promotes
@@ -69,7 +104,7 @@ export const E = {
   showSpeechSegments: true,
   showMusicSegments: true,
   showSilenceSegments: false,
-  lastAnalyzedAt: 0,  // epoch ms; 0 = never analyzed for current file
+  lastAnalyzedAt: 0, // epoch ms; 0 = never analyzed for current file
 
   // Dirty state — tracks whether the editor has unsaved changes (cuts,
   // normalize, intro/outro swap, mastering preset, metadata edits, …).
@@ -78,11 +113,11 @@ export const E = {
   // Video routing
   isVideoFile: false,
   videoEl: null as HTMLVideoElement | null,
-  videoIntroPath: '',
-  videoOutroPath: '',
+  videoIntroPath: "",
+  videoOutroPath: "",
 
   // Metadata
-  meta: { title: '', speaker: '', description: '' } as RecordingMetadata,
+  meta: { title: "", speaker: "", description: "" } as RecordingMetadata,
   metaDirty: false,
 
   // Viewport (seconds visible in main canvas)
@@ -99,10 +134,10 @@ export const E = {
   playerEl: null as HTMLAudioElement | null,
   /** Which file `playerEl` is streaming: the untouched recording, or the
    *  transcoded fallback proxy. Drives the quality notice only. */
-  playbackSource: 'original' as 'original' | 'proxy',
+  playbackSource: "original" as "original" | "proxy",
   /** The jingle region currently sounding through Web Audio (`null` = none).
    *  While set, the playhead clock is the shared AudioContext, not the element. */
-  jingleRegion: null as 'intro' | 'outro' | null,
+  jingleRegion: null as "intro" | "outro" | null,
   jingleSource: null as AudioBufferSourceNode | null,
   /** Play was requested but the element has not started yet (still buffering).
    *  Guards the position readers from reporting a not-yet-seeked `currentTime`
@@ -114,17 +149,17 @@ export const E = {
   isPreview: false,
   rafId: 0,
   loadSeq: 0,
-  pendingSeekSec: null as number | null,  // seek target applied once the file finishes loading
+  pendingSeekSec: null as number | null, // seek target applied once the file finishes loading
 
   // Interaction state
   dragStartSec: -1,
   dragEndSec: -1,
   isDragging: false,
-  hoverSec: -99999,    // ghost cursor position (extended timeline coords; -99999 = no hover)
+  hoverSec: -99999, // ghost cursor position (extended timeline coords; -99999 = no hover)
   minimapDragging: false,
 
   // Export state
-  exportOutputFolder: '',
+  exportOutputFolder: "",
 
   // Clipping detection
   clipTimes: [] as number[],
@@ -134,15 +169,15 @@ export const E = {
   audioGainDb: 0,
 
   // Audio enhancement (sent to editor_export). Empty strings = off.
-  vocalChainPreset: '',          // '' | voice-light | voice-podcast | voice-noisy-room
-  masterPreset: '',              // '' | speech-natural | speech-clear | speech-punchy | music-speech
-  channelRepairMode: '',         // '' | swapLr | duplicateLeft | duplicateRight | monoMix | gainDb
-  channelRepairLeftDb: 0,        // only for gainDb (auto-balance)
-  channelRepairRightDb: 0,       // only for gainDb (auto-balance)
+  vocalChainPreset: "", // '' | voice-light | voice-podcast | voice-noisy-room
+  masterPreset: "", // '' | speech-natural | speech-clear | speech-punchy | music-speech
+  channelRepairMode: "", // '' | swapLr | duplicateLeft | duplicateRight | monoMix | gainDb
+  channelRepairLeftDb: 0, // only for gainDb (auto-balance)
+  channelRepairRightDb: 0, // only for gainDb (auto-balance)
 
   // Video export container + codec (for video files).
-  videoFormat: 'mp4',            // mp4 | mov | mkv
-  videoCodec: 'h264',            // h264 | h265
+  videoFormat: "mp4", // mp4 | mov | mkv
+  videoCodec: "h264", // h264 | h265
   // When a video file is loaded, export its audio track only (drops video) to a
   // normal audio format instead of re-encoding the video.
   videoExportAudioOnly: false,
@@ -152,15 +187,27 @@ export const E = {
   // vocalChainPreset). Mirrors EditorProcessing / VocalChain::default().
   useMixer: false,
   mixer: {
-    highpassEnabled: true, highpassHz: 80,
-    denoiseEnabled: false, denoiseDb: 12, denoiseFloorDb: -25,
-    dereverbEnabled: false, dereverbStrength: 0.4,
-    gateEnabled: false, gateThresholdDb: -40, gateRatio: 2,
+    highpassEnabled: true,
+    highpassHz: 80,
+    denoiseEnabled: false,
+    denoiseDb: 12,
+    denoiseFloorDb: -25,
+    dereverbEnabled: false,
+    dereverbStrength: 0.4,
+    gateEnabled: false,
+    gateThresholdDb: -40,
+    gateRatio: 2,
     eq: [] as Array<{ freqHz: number; gainDb: number; q: number }>,
-    compEnabled: true, compThresholdDb: -18, compRatio: 3,
-    compAttackMs: 5, compReleaseMs: 80, compMakeupDb: 2,
-    deesserEnabled: false, deesserIntensity: 0.4,
-    limiterEnabled: false, limiterDb: -1,
+    compEnabled: true,
+    compThresholdDb: -18,
+    compRatio: 3,
+    compAttackMs: 5,
+    compReleaseMs: 80,
+    compMakeupDb: 2,
+    deesserEnabled: false,
+    deesserIntensity: 0.4,
+    limiterEnabled: false,
+    limiterDb: -1,
     gainDb: 0,
   },
 
@@ -178,7 +225,7 @@ export const E = {
   canvas: null as unknown as HTMLCanvasElement,
   minimap: null as unknown as HTMLCanvasElement,
   minimapVp: null as unknown as HTMLElement,
-}
+};
 
 /**
  * The media element driving playback of the MAIN recording: the streamed
@@ -189,8 +236,8 @@ export const E = {
  * `isVideoFile && videoEl`.
  */
 export function playbackMediaEl(): HTMLMediaElement | null {
-  if (E.playerEl) return E.playerEl
-  return E.isVideoFile ? E.videoEl : null
+  if (E.playerEl) return E.playerEl;
+  return E.isVideoFile ? E.videoEl : null;
 }
 
 /**
@@ -203,14 +250,16 @@ export function playbackMediaEl(): HTMLMediaElement | null {
  *   • otherwise → the element's own `currentTime`.
  */
 export function currentPlaybackSec(): number {
-  if (!E.isPlaying) return E.playStartSec
+  if (!E.isPlaying) return E.playStartSec;
   if (E.jingleRegion) {
-    const ctx = peekSharedAudioCtx()
-    return ctx ? E.playStartSec + (ctx.currentTime - E.playStartCtxTime) : E.playStartSec
+    const ctx = peekSharedAudioCtx();
+    return ctx
+      ? E.playStartSec + (ctx.currentTime - E.playStartCtxTime)
+      : E.playStartSec;
   }
-  if (E.mainPlayPending) return E.playStartSec
-  const el = playbackMediaEl()
-  return el ? el.currentTime : E.playStartSec
+  if (E.mainPlayPending) return E.playStartSec;
+  const el = playbackMediaEl();
+  return el ? el.currentTime : E.playStartSec;
 }
 
 // ── Dirty-state helpers ───────────────────────────────────────────────────
@@ -218,15 +267,17 @@ export function currentPlaybackSec(): number {
 // mastering, detection, loader). They live here so no sub-module needs to
 // import editor-page. editor-page registers the header-refresh callback in
 // setup, keeping state.ts free of DOM/UI imports.
-let _onDirtyChange: (() => void) | null = null
-export function setOnDirtyChange(cb: () => void): void { _onDirtyChange = cb }
+let _onDirtyChange: (() => void) | null = null;
+export function setOnDirtyChange(cb: () => void): void {
+  _onDirtyChange = cb;
+}
 
 export function markDirty(): void {
-  if (E.editorDirty) return
-  E.editorDirty = true
-  _onDirtyChange?.()
+  if (E.editorDirty) return;
+  E.editorDirty = true;
+  _onDirtyChange?.();
 }
 export function clearDirty(): void {
-  E.editorDirty = false
-  _onDirtyChange?.()
+  E.editorDirty = false;
+  _onDirtyChange?.();
 }

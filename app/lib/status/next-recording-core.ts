@@ -24,18 +24,18 @@
  * and assert on structure instead of on Norwegian.
  */
 
-import type { MissedRecordingInfo } from '../../../legacy/bindings/MissedRecordingInfo'
-import type { PreflightFinding } from '../../../legacy/bindings/PreflightFinding'
+import type { MissedRecordingInfo } from "../../../legacy/bindings/MissedRecordingInfo";
+import type { PreflightFinding } from "../../../legacy/bindings/PreflightFinding";
 
 /** i18n lookup, injected so the formatters stay pure. */
-export type Translate = (key: string, fallback?: string) => string
+export type Translate = (key: string, fallback?: string) => string;
 
 /** Interpolating lookup (`i18n.tf`), injected for the same reason. */
 export type TranslateF = (
   key: string,
   params: Record<string, string | number>,
   fallback?: string,
-) => string
+) => string;
 
 /** Count-aware lookup (`i18n.tn`), injected for the same reason. Picks the
  *  CLDR plural form for `count` in the active language — the thing `=== 1`
@@ -45,7 +45,7 @@ export type TranslateN = (
   count: number,
   params?: Record<string, string | number>,
   fallback?: string,
-) => string
+) => string;
 
 /**
  * The little of a one-off special this module needs. Structural on purpose: the
@@ -54,9 +54,9 @@ export type TranslateN = (
  * neither.
  */
 export interface SpecialLike {
-  date: string
-  name: string
-  start: string
+  date: string;
+  name: string;
+  start: string;
 }
 
 /**
@@ -67,24 +67,24 @@ export interface SpecialLike {
  * OS wake point. The Tidsplan copy used to promise "~2 min", the
  * home badge assumed 10 — the machine has always woken at 10.
  */
-export const WAKE_LEAD_MINUTES = 10
+export const WAKE_LEAD_MINUTES = 10;
 
 /** The next scheduled start, as the scheduler sees it. */
 export interface NextRecording {
   /** Zone-less local ISO exactly as the backend emits it: `YYYY-MM-DDTHH:MM:SS`. */
-  at: string
+  at: string;
   /** `at` parsed once, in epoch ms. */
-  atMs: number
+  atMs: number;
   /** The special recording's name, when this start comes from one. */
-  label?: string
+  label?: string;
   /** True when a one-off special — not a weekly slot — produced this start. */
-  isSpecial?: boolean
+  isSpecial?: boolean;
 }
 
 /** When (and whether) the machine wakes itself for `next`. */
 export interface WakeInfo {
   /** The user's "vekk maskin automatisk" setting. An INTENTION. */
-  enabled: boolean
+  enabled: boolean;
   /**
    * Whether `wake_verify` has confirmed the OS really holds a wake timer.
    * `null` = not asked yet / the command did not answer.
@@ -95,26 +95,26 @@ export interface WakeInfo {
    * scheduler's silent pass cannot show; Windows needs wake timers switched on
    * in the power plan. Both fail with the toggle still reading «på».
    */
-  armed: boolean | null
+  armed: boolean | null;
   /** Lead time actually used by the backend. */
-  leadMinutes: number
+  leadMinutes: number;
   /** Epoch ms of the wake point (`next.atMs − leadMinutes`). */
-  atMs: number
+  atMs: number;
 }
 
 /** The single truth every "next recording" surface renders. */
 export interface NextRecordingState {
-  next: NextRecording | null
+  next: NextRecording | null;
   /** A take is running right now (from the recorder's own state events). */
-  isRecording: boolean
+  isRecording: boolean;
   /** Any weekly slot or one-off special exists at all — distinguishes "nothing
    *  scheduled ahead" from "this app has never been set up". */
-  hasAnySchedule: boolean
-  wake: WakeInfo | null
+  hasAnySchedule: boolean;
+  wake: WakeInfo | null;
   /** Scheduled recordings that never ran (`scheduler://missed`). */
-  missed: MissedRecordingInfo[]
+  missed: MissedRecordingInfo[];
   /** Findings from the pre-start check (`scheduler://preflight`). */
-  preflight: PreflightFinding[]
+  preflight: PreflightFinding[];
 }
 
 export function emptyState(): NextRecordingState {
@@ -125,7 +125,7 @@ export function emptyState(): NextRecordingState {
     wake: null,
     missed: [],
     preflight: [],
-  }
+  };
 }
 
 // ── Parsing / deriving ───────────────────────────────────────────────────────
@@ -136,12 +136,12 @@ export function emptyState(): NextRecordingState {
  * produced it in (`scheduler::fmt_dt`).
  */
 export function parseLocalIso(at: string): number {
-  return new Date(at).getTime()
+  return new Date(at).getTime();
 }
 
 /** `YYYY-MM-DDTHH:MM` prefix — enough to match a special's date + start. */
 function minutePrefix(at: string): string {
-  return at.slice(0, 16)
+  return at.slice(0, 16);
 }
 
 /**
@@ -155,14 +155,14 @@ export function buildNext(
   at: string | null | undefined,
   specials: SpecialLike[] = [],
 ): NextRecording | null {
-  if (!at) return null
-  const atMs = parseLocalIso(at)
-  if (!Number.isFinite(atMs)) return null
-  const key = minutePrefix(at)
-  const special = specials.find(s => s && `${s.date}T${s.start}` === key)
+  if (!at) return null;
+  const atMs = parseLocalIso(at);
+  if (!Number.isFinite(atMs)) return null;
+  const key = minutePrefix(at);
+  const special = specials.find((s) => s && `${s.date}T${s.start}` === key);
   return special
     ? { at, atMs, label: special.name, isSpecial: true }
-    : { at, atMs }
+    : { at, atMs };
 }
 
 /** The wake point for `next`, or null when nothing is scheduled. */
@@ -172,8 +172,13 @@ export function computeWake(
   armed: boolean | null = null,
   leadMinutes: number = WAKE_LEAD_MINUTES,
 ): WakeInfo | null {
-  if (!next) return null
-  return { enabled, armed, leadMinutes, atMs: next.atMs - leadMinutes * 60_000 }
+  if (!next) return null;
+  return {
+    enabled,
+    armed,
+    leadMinutes,
+    atMs: next.atMs - leadMinutes * 60_000,
+  };
 }
 
 // ── Date rendering seam ──────────────────────────────────────────────────────
@@ -181,68 +186,84 @@ export function computeWake(
 /** The four shapes of a start time the UI needs. */
 export interface DateParts {
   /** "torsdag" */
-  weekdayLong: string
+  weekdayLong: string;
   /** "tor." */
-  weekdayShort: string
+  weekdayShort: string;
   /** "11:00" */
-  time: string
+  time: string;
   /** "torsdag 7. juni" */
-  dateLong: string
+  dateLong: string;
 }
 
 /** Injected so the formatters are deterministic under test. */
-export type DatePartsFn = (ms: number) => DateParts
+export type DatePartsFn = (ms: number) => DateParts;
 
 /** The real, locale-aware implementation used by the app. */
 export function intlParts(locale: string): DatePartsFn {
   return (ms: number): DateParts => {
-    const d = new Date(ms)
+    const d = new Date(ms);
     return {
-      weekdayLong: d.toLocaleDateString(locale, { weekday: 'long' }),
-      weekdayShort: d.toLocaleDateString(locale, { weekday: 'short' }),
-      time: d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
-      dateLong: d.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' }),
-    }
-  }
+      weekdayLong: d.toLocaleDateString(locale, { weekday: "long" }),
+      weekdayShort: d.toLocaleDateString(locale, { weekday: "short" }),
+      time: d.toLocaleTimeString(locale, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      dateLong: d.toLocaleDateString(locale, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      }),
+    };
+  };
 }
 
 /** Everything a formatter needs beyond the state itself. */
 export interface FormatCtx {
-  t: Translate
-  tf: TranslateF
-  tn: TranslateN
-  parts: DatePartsFn
+  t: Translate;
+  tf: TranslateF;
+  tn: TranslateN;
+  parts: DatePartsFn;
   /** `Date.now()` at render time — passed in so a tick is testable. */
-  nowMs: number
+  nowMs: number;
 }
 
 /** How the countdown's duration ("2 d 3t") is rendered. Injected because the
  *  app's `fmtCountdown` reaches for `t()` internally. */
-export type DurationFn = (ms: number) => string
+export type DurationFn = (ms: number) => string;
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 
 /** Hero title: "Alt er klart til torsdag 11:00". */
-export function formatNextTitle(state: NextRecordingState, ctx: FormatCtx): string {
-  const { t } = ctx
+export function formatNextTitle(
+  state: NextRecordingState,
+  ctx: FormatCtx,
+): string {
+  const { t } = ctx;
   if (!state.next) {
     return state.hasAnySchedule
-      ? t('home.readyTitle', 'Alt er klart')
-      : t('home.readyNoSchedule', 'Klar — sett opp en tidsplan for å starte automatisk')
+      ? t("home.readyTitle", "Alt er klart")
+      : t(
+          "home.readyNoSchedule",
+          "Klar — sett opp en tidsplan for å starte automatisk",
+        );
   }
-  const p = ctx.parts(state.next.atMs)
+  const p = ctx.parts(state.next.atMs);
   return ctx.tf(
-    'home.readyTitleDay',
+    "home.readyTitleDay",
     { day: p.weekdayLong, time: p.time },
-    'Alt er klart til {day} {time}',
-  )
+    "Alt er klart til {day} {time}",
+  );
 }
 
 /** Hero date line: "torsdag 7. juni" — with the special's name when it has one. */
-export function formatNextDate(state: NextRecordingState, ctx: FormatCtx): string {
-  if (!state.next) return '—'
-  const p = ctx.parts(state.next.atMs)
-  return state.next.label ? `${p.dateLong} · ${state.next.label}` : p.dateLong
+export function formatNextDate(
+  state: NextRecordingState,
+  ctx: FormatCtx,
+): string {
+  if (!state.next) return "—";
+  const p = ctx.parts(state.next.atMs);
+  return state.next.label ? `${p.dateLong} · ${state.next.label}` : p.dateLong;
 }
 
 /**
@@ -258,25 +279,25 @@ export function formatCountdown(
   ctx: FormatCtx,
   duration: DurationFn,
 ): string {
-  if (!state.next) return ''
-  const diff = state.next.atMs - ctx.nowMs
-  if (diff <= 0) return ''
-  const base = `${duration(diff)} ${ctx.t('home.untilStart', 'til oppstart')}`
-  if (!state.isRecording) return base
-  return `${ctx.t('status.recording', 'Tar opp nå')} · ${ctx.t('home.nextShort', 'neste')}: ${base}`
+  if (!state.next) return "";
+  const diff = state.next.atMs - ctx.nowMs;
+  if (diff <= 0) return "";
+  const base = `${duration(diff)} ${ctx.t("home.untilStart", "til oppstart")}`;
+  if (!state.isRecording) return base;
+  return `${ctx.t("status.recording", "Tar opp nå")} · ${ctx.t("home.nextShort", "neste")}: ${base}`;
 }
 
 /** What the sidebar dot should look like. */
-export type StatusDot = '' | 'recording' | 'warn'
+export type StatusDot = "" | "recording" | "warn";
 
 export interface SidebarStatus {
-  text: string
-  dot: StatusDot
+  text: string;
+  dot: StatusDot;
 }
 
 export interface DeviceStatus {
-  connected: boolean
-  name?: string | null
+  connected: boolean;
+  name?: string | null;
 }
 
 /**
@@ -290,17 +311,23 @@ export function formatSidebarStatus(
   device: DeviceStatus = { connected: true },
 ): SidebarStatus {
   if (state.isRecording) {
-    return { text: ctx.t('status.recording', 'Tar opp nå'), dot: 'recording' }
+    return { text: ctx.t("status.recording", "Tar opp nå"), dot: "recording" };
   }
   if (!device.connected) {
-    const name = device.name ? `: ${device.name}` : ''
-    return { text: ctx.t('status.warning', 'Trenger oppmerksomhet') + name, dot: 'warn' }
+    const name = device.name ? `: ${device.name}` : "";
+    return {
+      text: ctx.t("status.warning", "Trenger oppmerksomhet") + name,
+      dot: "warn",
+    };
   }
   if (!state.next) {
-    return { text: ctx.t('status.noSchedule', 'Ingen opptak planlagt'), dot: '' }
+    return {
+      text: ctx.t("status.noSchedule", "Ingen opptak planlagt"),
+      dot: "",
+    };
   }
-  const p = ctx.parts(state.next.atMs)
-  return { text: `${p.weekdayShort} ${p.time}`, dot: '' }
+  const p = ctx.parts(state.next.atMs);
+  return { text: `${p.weekdayShort} ${p.time}`, dot: "" };
 }
 
 /**
@@ -325,19 +352,28 @@ export function formatSidebarStatus(
  * silence: "we cannot confirm a wake-up" is exactly the thing an operator
  * needs to read on a Saturday, and an empty space says nothing on any day.
  */
-export function formatWakeHint(state: NextRecordingState, ctx: FormatCtx): string | null {
-  const wake = state.wake
-  if (!wake || !wake.enabled || !state.next) return null
+export function formatWakeHint(
+  state: NextRecordingState,
+  ctx: FormatCtx,
+): string | null {
+  const wake = state.wake;
+  if (!wake || !wake.enabled || !state.next) return null;
   if (wake.armed !== true) {
     return ctx.t(
-      'home.wakesNotArmed',
-      'Maskinen må være på eller i dvale når opptaket starter — vi har ikke fått bekreftet noen vekking.',
-    )
+      "home.wakesNotArmed",
+      "Maskinen må være på eller i dvale når opptaket starter — vi har ikke fått bekreftet noen vekking.",
+    );
   }
-  const time = ctx.parts(wake.atMs).time
-  return ctx.tf('home.wakesBefore', { time }, 'Maskinen vekkes automatisk kl. {time}')
-    + ' '
-    + ctx.tf('home.wakesLead', { min: wake.leadMinutes }, '({min} min før)')
+  const time = ctx.parts(wake.atMs).time;
+  return (
+    ctx.tf(
+      "home.wakesBefore",
+      { time },
+      "Maskinen vekkes automatisk kl. {time}",
+    ) +
+    " " +
+    ctx.tf("home.wakesLead", { min: wake.leadMinutes }, "({min} min før)")
+  );
 }
 
 /**
@@ -346,45 +382,69 @@ export function formatWakeHint(state: NextRecordingState, ctx: FormatCtx): strin
  * Same source as the hero, so a special recording now shows up here too — the
  * old hand-rolled weekday loop only ever looked at weekly slots.
  */
-export function formatSchedulePreview(state: NextRecordingState, ctx: FormatCtx): string {
-  if (!state.next) return ''
-  const p = ctx.parts(state.next.atMs)
-  const when = `${p.dateLong} ${ctx.t('schedule.atTime', 'kl.')} ${p.time}`
-  const line = `${ctx.t('schedule.nextPreviewPrefix', 'Neste opptak')}: ${when}`
-  return state.next.label ? `${line} — ${state.next.label}` : line
+export function formatSchedulePreview(
+  state: NextRecordingState,
+  ctx: FormatCtx,
+): string {
+  if (!state.next) return "";
+  const p = ctx.parts(state.next.atMs);
+  const when = `${p.dateLong} ${ctx.t("schedule.atTime", "kl.")} ${p.time}`;
+  const line = `${ctx.t("schedule.nextPreviewPrefix", "Neste opptak")}: ${when}`;
+  return state.next.label ? `${line} — ${state.next.label}` : line;
 }
 
 /** Missed-recording summary line: "Søndag 11:00 ble ikke tatt opp". */
-export function formatMissed(missed: MissedRecordingInfo, ctx: FormatCtx): string {
-  const ms = parseLocalIso(missed.at)
-  if (!Number.isFinite(ms)) return missed.label
-  const p = ctx.parts(ms)
-  return `${p.dateLong} ${ctx.t('schedule.atTime', 'kl.')} ${p.time} — ${missed.label}`
+export function formatMissed(
+  missed: MissedRecordingInfo,
+  ctx: FormatCtx,
+): string {
+  const ms = parseLocalIso(missed.at);
+  if (!Number.isFinite(ms)) return missed.label;
+  const p = ctx.parts(ms);
+  return `${p.dateLong} ${ctx.t("schedule.atTime", "kl.")} ${p.time} — ${missed.label}`;
 }
 
 /** Banner headline for one or more missed recordings. */
-export function formatMissedBanner(state: NextRecordingState, ctx: FormatCtx): string | null {
-  const n = state.missed.length
-  if (n === 0) return null
-  return ctx.tn('missed.banner', n, {}, '{n} planlagte opptak ble ikke tatt opp')
+export function formatMissedBanner(
+  state: NextRecordingState,
+  ctx: FormatCtx,
+): string | null {
+  const n = state.missed.length;
+  if (n === 0) return null;
+  return ctx.tn(
+    "missed.banner",
+    n,
+    {},
+    "{n} planlagte opptak ble ikke tatt opp",
+  );
 }
 
 /** Preflight headline: errors dominate warnings. */
 export function formatPreflightHeadline(
   findings: PreflightFinding[],
   ctx: FormatCtx,
-): { text: string; severity: 'warn' | 'error' } | null {
-  if (findings.length === 0) return null
-  const errors = findings.filter(f => f.severity === 'error').length
-  const warns = findings.length - errors
+): { text: string; severity: "warn" | "error" } | null {
+  if (findings.length === 0) return null;
+  const errors = findings.filter((f) => f.severity === "error").length;
+  const warns = findings.length - errors;
   if (errors > 0) {
     return {
-      severity: 'error',
-      text: ctx.tn('status.preflightErrors', errors, {}, '{n} feil må rettes før opptaket'),
-    }
+      severity: "error",
+      text: ctx.tn(
+        "status.preflightErrors",
+        errors,
+        {},
+        "{n} feil må rettes før opptaket",
+      ),
+    };
   }
   return {
-    severity: 'warn',
-    text: ctx.tn('status.preflightWarns', warns, {}, '{n} ting å se på før opptaket'),
-  }
+    severity: "warn",
+    text: ctx.tn(
+      "status.preflightWarns",
+      warns,
+      {},
+      "{n} ting å se på før opptaket",
+    ),
+  };
 }

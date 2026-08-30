@@ -24,16 +24,32 @@ describe("fixturesHonored — when an override is allowed at all", () => {
     // anyway. This is the Playwright tier's whole foundation.
     for (const devBuild of [true, false]) {
       for (const requested of [true, false]) {
-        expect(fixturesHonored(gate({ inTauri: false, devBuild, requested }))).toBe(true);
+        expect(
+          fixturesHonored(gate({ inTauri: false, devBuild, requested })),
+        ).toBe(true);
       }
     }
   });
 
   it("inside Tauri requires BOTH a dev build and ?fixtures=1", () => {
-    expect(fixturesHonored(gate({ inTauri: true, devBuild: true, requested: true }))).toBe(true);
-    expect(fixturesHonored(gate({ inTauri: true, devBuild: true, requested: false }))).toBe(false);
-    expect(fixturesHonored(gate({ inTauri: true, devBuild: false, requested: true }))).toBe(false);
-    expect(fixturesHonored(gate({ inTauri: true, devBuild: false, requested: false }))).toBe(false);
+    expect(
+      fixturesHonored(gate({ inTauri: true, devBuild: true, requested: true })),
+    ).toBe(true);
+    expect(
+      fixturesHonored(
+        gate({ inTauri: true, devBuild: true, requested: false }),
+      ),
+    ).toBe(false);
+    expect(
+      fixturesHonored(
+        gate({ inTauri: true, devBuild: false, requested: true }),
+      ),
+    ).toBe(false);
+    expect(
+      fixturesHonored(
+        gate({ inTauri: true, devBuild: false, requested: false }),
+      ),
+    ).toBe(false);
   });
 
   it("a shipped in-Tauri build cannot be driven by a page, whatever it asks for", () => {
@@ -63,28 +79,50 @@ describe("resolveSource — the full precedence table", () => {
     // The load-bearing property of the whole seam: it is inert until used.
     for (const inTauri of [true, false]) {
       for (const requested of [true, false]) {
-        expect(resolveSource(at({ inTauri, requested, hasFixture: false, invokeSucceeds: true })))
-          .toBe("invoke");
-        expect(resolveSource(at({ inTauri, requested, hasFixture: false, invokeSucceeds: false })))
-          .toBe("fallback");
+        expect(
+          resolveSource(
+            at({ inTauri, requested, hasFixture: false, invokeSucceeds: true }),
+          ),
+        ).toBe("invoke");
+        expect(
+          resolveSource(
+            at({
+              inTauri,
+              requested,
+              hasFixture: false,
+              invokeSucceeds: false,
+            }),
+          ),
+        ).toBe("fallback");
       }
     }
   });
 
   it("outside Tauri a fixture beats the (always-rejecting) invoke", () => {
-    expect(resolveSource(at({ inTauri: false, hasFixture: true, invokeSucceeds: false })))
-      .toBe("fixture");
+    expect(
+      resolveSource(
+        at({ inTauri: false, hasFixture: true, invokeSucceeds: false }),
+      ),
+    ).toBe("fixture");
   });
 
   it("outside Tauri, no fixture still means the empty-state fallback", () => {
-    expect(resolveSource(at({ inTauri: false, hasFixture: false, invokeSucceeds: false })))
-      .toBe("fallback");
+    expect(
+      resolveSource(
+        at({ inTauri: false, hasFixture: false, invokeSucceeds: false }),
+      ),
+    ).toBe("fallback");
   });
 
   it("inside Tauri the REAL backend wins over an un-opted-in fixture", () => {
     expect(
       resolveSource(
-        at({ inTauri: true, requested: false, hasFixture: true, invokeSucceeds: true }),
+        at({
+          inTauri: true,
+          requested: false,
+          hasFixture: true,
+          invokeSucceeds: true,
+        }),
       ),
     ).toBe("invoke");
   });
@@ -94,7 +132,12 @@ describe("resolveSource — the full precedence table", () => {
     // command degrades to the caller's fallback exactly as E2.4 describes.
     expect(
       resolveSource(
-        at({ inTauri: true, requested: false, hasFixture: true, invokeSucceeds: false }),
+        at({
+          inTauri: true,
+          requested: false,
+          hasFixture: true,
+          invokeSucceeds: false,
+        }),
       ),
     ).toBe("fallback");
   });
@@ -103,7 +146,13 @@ describe("resolveSource — the full precedence table", () => {
     // This is the manual-QA case: drive the real app into a rare state.
     expect(
       resolveSource(
-        at({ inTauri: true, devBuild: true, requested: true, hasFixture: true, invokeSucceeds: true }),
+        at({
+          inTauri: true,
+          devBuild: true,
+          requested: true,
+          hasFixture: true,
+          invokeSucceeds: true,
+        }),
       ),
     ).toBe("fixture");
   });
@@ -113,13 +162,18 @@ describe("attemptsInvoke — a fixture hit is not an IPC failure", () => {
   it("short-circuits the invoke when the fixture wins", () => {
     expect(attemptsInvoke(gate({ inTauri: false }), true)).toBe(false);
     expect(
-      attemptsInvoke(gate({ inTauri: true, devBuild: true, requested: true }), true),
+      attemptsInvoke(
+        gate({ inTauri: true, devBuild: true, requested: true }),
+        true,
+      ),
     ).toBe(false);
   });
 
   it("still invokes when there is no fixture, or the gate is closed", () => {
     expect(attemptsInvoke(gate({ inTauri: false }), false)).toBe(true);
-    expect(attemptsInvoke(gate({ inTauri: true, requested: false }), true)).toBe(true);
+    expect(
+      attemptsInvoke(gate({ inTauri: true, requested: false }), true),
+    ).toBe(true);
   });
 });
 
@@ -134,7 +188,10 @@ describe("lookupFixture", () => {
   it("treats an explicit `undefined` as a real fixture (void commands)", () => {
     // `settings_save`-shaped commands return nothing; `map[cmd] !== undefined`
     // would have silently fallen through to a live invoke.
-    expect(lookupFixture({ stop_vu: undefined }, "stop_vu")).toEqual({ hit: true, value: undefined });
+    expect(lookupFixture({ stop_vu: undefined }, "stop_vu")).toEqual({
+      hit: true,
+      value: undefined,
+    });
   });
 
   it("misses on an absent key", () => {
@@ -163,17 +220,22 @@ describe("readFixture", () => {
   });
 
   it("calls a function fixture with the invoke args", () => {
-    const fx = (args?: Record<string, unknown>) => `saw:${String(args?.deviceName)}`;
+    const fx = (args?: Record<string, unknown>) =>
+      `saw:${String(args?.deviceName)}`;
     expect(readFixture(fx, { deviceName: "Qu-5" })).toBe("saw:Qu-5");
   });
 
   it("passes undefined args through to an arg-less invoke", () => {
-    expect(readFixture((args?: Record<string, unknown>) => args === undefined)).toBe(true);
+    expect(
+      readFixture((args?: Record<string, unknown>) => args === undefined),
+    ).toBe(true);
   });
 
   it("propagates a throwing fixture — that is how a test simulates a rejection", () => {
-    expect(() => readFixture(() => {
-      throw new Error("device busy");
-    })).toThrow("device busy");
+    expect(() =>
+      readFixture(() => {
+        throw new Error("device busy");
+      }),
+    ).toThrow("device busy");
   });
 });

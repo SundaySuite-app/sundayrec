@@ -12,7 +12,7 @@
 //      dropped by the shim and never implemented in Rust, so "Erstatt original"
 //      silently behaved like "ny fil". The pill is gone; so is the field.
 
-import { VIDEO_EXTS } from './state'
+import { VIDEO_EXTS } from "./state";
 
 // ── Export progress phases (wire constants) ─────────────────────────────────
 //
@@ -28,13 +28,16 @@ import { VIDEO_EXTS } from './state'
 // (that one, and `export_phases_are_the_wire_codes` here) are what break loudly.
 
 /** Mastering pass 1 — a full-length loudness read with no percentage of its own. */
-export const EXPORT_PHASE_MEASURING = 'measuring'
+export const EXPORT_PHASE_MEASURING = "measuring";
 /** The render itself — percentage against the kept duration. */
-export const EXPORT_PHASE_ENCODING = 'encoding'
+export const EXPORT_PHASE_ENCODING = "encoding";
 
 /** Every phase code the backend can send, for exhaustiveness checks + the test. */
-export const EXPORT_PHASES = [EXPORT_PHASE_MEASURING, EXPORT_PHASE_ENCODING] as const
-export type ExportPhase = (typeof EXPORT_PHASES)[number]
+export const EXPORT_PHASES = [
+  EXPORT_PHASE_MEASURING,
+  EXPORT_PHASE_ENCODING,
+] as const;
+export type ExportPhase = (typeof EXPORT_PHASES)[number];
 
 /**
  * Can intro/outro jingles be applied when exporting `filePath`?
@@ -51,77 +54,82 @@ export type ExportPhase = (typeof EXPORT_PHASES)[number]
  * so the loader passes the RESOLVED `E.isVideoFile` once it knows, and the
  * extension answers before it does.
  */
-export function jinglesSupportedForFile(filePath: string, resolvedIsVideo = false): boolean {
-  if (resolvedIsVideo) return false
-  const name = filePath.split(/[/\\]/).pop() ?? ''
-  const dot = name.lastIndexOf('.')
+export function jinglesSupportedForFile(
+  filePath: string,
+  resolvedIsVideo = false,
+): boolean {
+  if (resolvedIsVideo) return false;
+  const name = filePath.split(/[/\\]/).pop() ?? "";
+  const dot = name.lastIndexOf(".");
   // No extension → nothing says "video"; treat it as audio (the loader probes
   // the streams for real, and a jingle-less audio export is harmless anyway).
-  if (dot <= 0) return true
-  return !VIDEO_EXTS.has(name.slice(dot).toLowerCase())
+  if (dot <= 0) return true;
+  return !VIDEO_EXTS.has(name.slice(dot).toLowerCase());
 }
 
 /** One cut region on the recording timeline (seconds). */
 export interface ExportCutRegion {
-  start: number
-  end: number
+  start: number;
+  end: number;
 }
 
 /** Channel-repair settings as the backend's `EditorChannelRepair` expects them. */
 export interface ExportChannelRepair {
-  mode: string
-  leftDb: number
-  rightDb: number
+  mode: string;
+  leftDb: number;
+  rightDb: number;
 }
 
 /** Everything `buildExportRequest` needs, read out of the editor state + DOM by
  *  the caller. `kind` picks the audio-format fields or the video-codec ones. */
 export interface ExportRequestInput {
-  kind: 'audio' | 'video'
-  inputPath: string
-  cutRegions: readonly ExportCutRegion[]
-  duration: number
+  kind: "audio" | "video";
+  inputPath: string;
+  cutRegions: readonly ExportCutRegion[];
+  duration: number;
   /** '' = "Samme mappe" (the default). A picked folder is an absolute path. */
-  outputFolder: string
+  outputFolder: string;
   /** Audio container (`mp3|wav|flac|aac`) — audio exports only. */
-  format?: string
+  format?: string;
   /** Audio bitrate in kbps — lossy audio formats only. */
-  bitrate?: number
+  bitrate?: number;
   /** WAV bit depth — WAV only. */
-  bitDepth?: 16 | 24
+  bitDepth?: 16 | 24;
   /** Video container (`mp4|mov|mkv`) — video exports only. */
-  videoFormat?: string
+  videoFormat?: string;
   /** Video codec (`h264|h265`) — video exports only. */
-  videoCodec?: string
+  videoCodec?: string;
   /** Peak-normalization gain in dB; 0 means "not normalized" → omitted. */
-  gainDb?: number
-  introPath?: string
-  outroPath?: string
-  metadata?: unknown
-  masterPreset?: string
-  vocalChainPreset?: string
-  processing?: unknown
-  channelRepair?: ExportChannelRepair
+  gainDb?: number;
+  introPath?: string;
+  outroPath?: string;
+  metadata?: unknown;
+  masterPreset?: string;
+  vocalChainPreset?: string;
+  processing?: unknown;
+  channelRepair?: ExportChannelRepair;
 }
 
 /** Drop an empty string / 0 so the backend sees `undefined` (→ `null`) rather
  *  than a falsy value it would have to special-case. */
-function orUndefined<T>(value: T | undefined | ''): T | undefined {
-  return value === '' || value === undefined ? undefined : value
+function orUndefined<T>(value: T | undefined | ""): T | undefined {
+  return value === "" || value === undefined ? undefined : value;
 }
 
 /**
  * Build the params object handed to `window.api.editorExportFile` /
  * `editorExportVideo`. Pure — same input, same output, no DOM reads.
  */
-export function buildExportRequest(input: ExportRequestInput): Record<string, unknown> {
+export function buildExportRequest(
+  input: ExportRequestInput,
+): Record<string, unknown> {
   const shared: Record<string, unknown> = {
     inputPath: input.inputPath,
     cutRegions: input.cutRegions,
     duration: input.duration,
     // Always a string: '' means "same folder as the source", which the backend
     // resolves. Never `undefined`, never a `mode`.
-    outputFolder: input.outputFolder ?? '',
+    outputFolder: input.outputFolder ?? "",
     gainDb: input.gainDb ? input.gainDb : undefined,
     introPath: orUndefined(input.introPath),
     outroPath: orUndefined(input.outroPath),
@@ -130,21 +138,21 @@ export function buildExportRequest(input: ExportRequestInput): Record<string, un
     vocalChainPreset: orUndefined(input.vocalChainPreset),
     processing: input.processing,
     channelRepair: input.channelRepair,
-  }
+  };
 
-  if (input.kind === 'video') {
+  if (input.kind === "video") {
     return {
       ...shared,
-      videoFormat: input.videoFormat || 'mp4',
-      videoCodec: input.videoCodec || 'h264',
-    }
+      videoFormat: input.videoFormat || "mp4",
+      videoCodec: input.videoCodec || "h264",
+    };
   }
   return {
     ...shared,
-    outputFormat: input.format || 'mp3',
+    outputFormat: input.format || "mp3",
     outputBitrate: input.bitrate,
     outputBitDepth: input.bitDepth,
-  }
+  };
 }
 
 // ── Export modal: what the "level" row says ─────────────────────────────────
@@ -162,15 +170,16 @@ export function buildExportRequest(input: ExportRequestInput): Record<string, un
  * DOM or the i18n table; the caller localises it.
  */
 export type ExportLevelSummary =
-  | { kind: 'hidden' }
-  | { kind: 'masterOwnsLevel' }
-  | { kind: 'normalized'; gainDb: number }
+  | { kind: "hidden" }
+  | { kind: "masterOwnsLevel" }
+  | { kind: "normalized"; gainDb: number };
 
 export function exportLevelSummary(
   masterPreset: string | undefined,
   gainDb: number,
 ): ExportLevelSummary {
-  if (masterPreset) return { kind: 'masterOwnsLevel' }
-  if (Number.isFinite(gainDb) && gainDb !== 0) return { kind: 'normalized', gainDb }
-  return { kind: 'hidden' }
+  if (masterPreset) return { kind: "masterOwnsLevel" };
+  if (Number.isFinite(gainDb) && gainDb !== 0)
+    return { kind: "normalized", gainDb };
+  return { kind: "hidden" };
 }

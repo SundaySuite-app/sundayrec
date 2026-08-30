@@ -21,7 +21,7 @@
  * (startup + every 60 min); it is also the number PRIVACY.md quotes to the
  * operator («den vanlige sjekken hver time»), so changing it changes a promise.
  */
-export const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000
+export const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * The default-on rule, in one place.
@@ -30,8 +30,10 @@ export const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000
  * filled in when the persisted blob arrives, so `undefined` means "not answered
  * yet", which must not read as "the operator switched it off".
  */
-export function autoUpdateEnabled(setting: boolean | undefined | null): boolean {
-  return setting !== false
+export function autoUpdateEnabled(
+  setting: boolean | undefined | null,
+): boolean {
+  return setting !== false;
 }
 
 /** What the DOM layer must do to make the world match the setting. */
@@ -41,9 +43,9 @@ export interface AutoUpdateScheduleAction {
    * The immediate check is part of arming so that startup and a mid-session
    * switch-on are the same path rather than two behaviours to keep in step.
    */
-  start: boolean
+  start: boolean;
   /** Cancel the running interval. */
-  stop: boolean
+  stop: boolean;
 }
 
 /**
@@ -59,5 +61,5 @@ export function planAutoUpdateSchedule(
   running: boolean,
   enabled: boolean,
 ): AutoUpdateScheduleAction {
-  return { start: enabled && !running, stop: !enabled && running }
+  return { start: enabled && !running, stop: !enabled && running };
 }

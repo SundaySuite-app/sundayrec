@@ -31,27 +31,32 @@
  *   (`start_vu` is stop-first-then-start on the Rust side).
  */
 
-import type { VuLevels } from '../../../legacy/bindings/VuLevels'
-import type { ChannelMode } from '../../../legacy/types'
-import { pickLR, deviceAction, refcountStep, resolveDevice } from './vu-feed-core'
+import type { VuLevels } from "../../../legacy/bindings/VuLevels";
+import type { ChannelMode } from "../../../legacy/types";
+import {
+  pickLR,
+  deviceAction,
+  refcountStep,
+  resolveDevice,
+} from "./vu-feed-core";
 
 /** What the feed is doing right now, for the subscriber's status line. */
 export type VuFeedState =
   /** No engine session (nobody is subscribed, or we're mid-teardown). */
-  | 'idle'
+  | "idle"
   /** `start_vu` is in flight — the device is being opened. */
-  | 'connecting'
+  | "connecting"
   /** Packets are flowing. */
-  | 'live'
+  | "live"
   /** `start_vu` failed twice; the device would not open. */
-  | 'failed'
+  | "failed";
 
 /** Which channels a subscriber's two bars should show. Read per packet, so a
  *  mode radio or a channel tap takes effect on the next frame. */
 export interface VuPick {
-  mode: ChannelMode
-  chL: number
-  chR: number
+  mode: ChannelMode;
+  chL: number;
+  chR: number;
 }
 
 export interface VuFeedSubscriber {
@@ -59,79 +64,79 @@ export interface VuFeedSubscriber {
    * The device this subscriber wants metered. `undefined` = no opinion (meter
    * whatever is running); `null` = the system default.
    */
-  deviceName?: string | null
+  deviceName?: string | null;
   /** The channel pick for THIS subscriber's bars. Omitted = plain stereo 0/1. */
-  pick?: () => VuPick
+  pick?: () => VuPick;
   /**
    * One packet. `l`/`r` are the subscriber's picked RMS levels in dBFS (floored
    * at −60) — the number the bars draw. `raw` is the whole per-native-channel
    * payload, for meters that draw every channel (the grid) or need the PEAK
    * pair (`pickLR(raw.peak_dbfs, …)` — peak-hold markers, clip lights).
    */
-  onLevels?: (l: number, r: number, raw: VuLevels) => void
+  onLevels?: (l: number, r: number, raw: VuLevels) => void;
   /** State changes, plus the negotiated native channel count (0 until known). */
-  onState?: (state: VuFeedState, channels: number) => void
+  onState?: (state: VuFeedState, channels: number) => void;
 }
 
-const DEFAULT_PICK: VuPick = { mode: 'stereo', chL: 0, chR: 1 }
+const DEFAULT_PICK: VuPick = { mode: "stereo", chL: 0, chR: 1 };
 
 interface Entry {
-  sub: VuFeedSubscriber
-  alive: boolean
+  sub: VuFeedSubscriber;
+  alive: boolean;
 }
 
-const subs: Entry[] = []
-let unlisten: (() => void) | null = null
+const subs: Entry[] = [];
+let unlisten: (() => void) | null = null;
 /** The device the current session was started for. */
-let device: string | null = null
+let device: string | null = null;
 /** We have asked the engine to run (and haven't seen it fail). */
-let running = false
+let running = false;
 /** Bumped on every (re)start + teardown so a stale `start_vu` completion from a
  *  previous device can't publish its channel count over the current one. */
-let gen = 0
-let feedState: VuFeedState = 'idle'
-let channels = 0
+let gen = 0;
+let feedState: VuFeedState = "idle";
+let channels = 0;
 /** What subscribers were last told, so `publish()` stays a no-op in the steady
  *  state (a 30 Hz packet stream must not fan out an unchanged status). */
-let notifiedState: VuFeedState | null = null
-let notifiedChannels = -1
+let notifiedState: VuFeedState | null = null;
+let notifiedChannels = -1;
 
 /**
  * Subscribe to the backend VU feed. Returns a release function; call it exactly
  * once (extra calls are harmless no-ops).
  */
 export function acquireVuFeed(sub: VuFeedSubscriber): () => void {
-  const entry: Entry = { sub, alive: true }
-  const { transition } = refcountStep(subs.length, 1)
-  subs.push(entry)
-  if (transition === 'start') attachListener()
-  reconcile()
+  const entry: Entry = { sub, alive: true };
+  const { transition } = refcountStep(subs.length, 1);
+  subs.push(entry);
+  if (transition === "start") attachListener();
+  reconcile();
   // Tell the newcomer where things stand without waiting for a transition.
   try {
-    sub.onState?.(feedState, channels)
+    sub.onState?.(feedState, channels);
   } catch {
     /* a subscriber's own render error must not break the feed */
   }
-  return () => release(entry)
+  return () => release(entry);
 }
 
 function release(entry: Entry): void {
-  if (!entry.alive) return
-  entry.alive = false
-  const i = subs.indexOf(entry)
-  if (i >= 0) subs.splice(i, 1)
-  const { transition } = refcountStep(subs.length + 1, -1)
-  if (transition === 'stop') {
-    teardown()
-    return
+  if (!entry.alive) return;
+  entry.alive = false;
+  const i = subs.indexOf(entry);
+  if (i >= 0) subs.splice(i, 1);
+  const { transition } = refcountStep(subs.length + 1, -1);
+  if (transition === "stop") {
+    teardown();
+    return;
   }
   // A remaining subscriber may want a different device than the one that left.
-  reconcile()
+  reconcile();
 }
 
 /** How many meters currently hold the feed. Exported for diagnostics/tests. */
 export function vuFeedSubscriberCount(): number {
-  return subs.length
+  return subs.length;
 }
 
 // ── Engine lifecycle ─────────────────────────────────────────────────────────
@@ -147,25 +152,25 @@ export function vuFeedSubscriberCount(): number {
  * start that does open a session is always followed by the operation that
  * supersedes it (the next start's stop-first, or the teardown's stop).
  */
-let queue: Promise<unknown> = Promise.resolve()
+let queue: Promise<unknown> = Promise.resolve();
 function enqueue(op: () => Promise<void>): void {
-  queue = queue.then(op, op).catch(() => {})
+  queue = queue.then(op, op).catch(() => {});
 }
 
 function reconcile(): void {
-  const wanted = resolveDevice(subs.map(e => e.sub))
-  if (deviceAction(device, wanted, running) === 'keep') return
-  device = wanted
-  requestStart(wanted)
+  const wanted = resolveDevice(subs.map((e) => e.sub));
+  if (deviceAction(device, wanted, running) === "keep") return;
+  device = wanted;
+  requestStart(wanted);
 }
 
 function requestStart(dev: string | null): void {
-  const my = ++gen
-  running = true
-  setState('connecting')
+  const my = ++gen;
+  running = true;
+  setState("connecting");
   enqueue(async () => {
     // Superseded while we waited our turn — the newer request owns the state.
-    if (my !== gen) return
+    if (my !== gen) return;
     // A recording owns the device outright (`start_recording` calls `vu.stop()`
     // itself). Racing it with a start_vu would only be a stop-first-then-start
     // fight over the same hardware — the meter that matters during a take reads
@@ -184,85 +189,85 @@ function requestStart(dev: string | null): void {
     // of a global it reads — is the standing restanse; see «Etter byttet» in
     // `docs/APP-SHELL.md`. It is a behaviour change, so it is not PR B's.
     if (window.__isRecording) {
-      running = false
-      setState('idle')
-      return
+      running = false;
+      setState("idle");
+      return;
     }
     try {
-      let count: number
+      let count: number;
       try {
-        count = await window.api.startVu(dev)
+        count = await window.api.startVu(dev);
       } catch {
         // One retry after 400 ms: the device may still be settling out of a
         // just-released format hold (the same grace the channel grid has always
         // taken, now shared by every meter).
-        await new Promise<void>(r => setTimeout(r, 400))
+        await new Promise<void>((r) => setTimeout(r, 400));
         // Nothing is open at this point, so bailing here leaks nothing.
-        if (my !== gen) return
-        count = await window.api.startVu(dev)
+        if (my !== gen) return;
+        count = await window.api.startVu(dev);
       }
       // A session IS open now. If we were superseded mid-call, leave it: the
       // operation that superseded us is already queued behind this one and will
       // either restart (stop-first) or stop it.
-      if (my !== gen) return
-      channels = count
-      setState('live')
+      if (my !== gen) return;
+      channels = count;
+      setState("live");
     } catch {
-      if (my !== gen) return
-      running = false
-      setState('failed')
+      if (my !== gen) return;
+      running = false;
+      setState("failed");
     }
-  })
+  });
 }
 
 function teardown(): void {
-  gen++
-  running = false
-  device = null
-  channels = 0
+  gen++;
+  running = false;
+  device = null;
+  channels = 0;
   if (unlisten) {
     try {
-      unlisten()
+      unlisten();
     } catch {
       /* already gone */
     }
-    unlisten = null
+    unlisten = null;
   }
-  setState('idle')
+  setState("idle");
   enqueue(async () => {
-    await window.api.stopVu().catch(() => {})
-  })
+    await window.api.stopVu().catch(() => {});
+  });
 }
 
 // ── Packet fan-out ───────────────────────────────────────────────────────────
 
 function attachListener(): void {
-  if (unlisten) return
-  const un = window.api.on('vu-levels', onPacket)
-  unlisten = typeof un === 'function' ? un : null
+  if (unlisten) return;
+  const un = window.api.on("vu-levels", onPacket);
+  unlisten = typeof un === "function" ? un : null;
 }
 
 function onPacket(payload: unknown): void {
-  const raw = payload as VuLevels | null
-  const peak = raw?.peak_dbfs
-  if (!raw || !Array.isArray(peak)) return
+  const raw = payload as VuLevels | null;
+  const peak = raw?.peak_dbfs;
+  if (!raw || !Array.isArray(peak)) return;
   // Packets are the liveness signal, not our own `start_vu` resolution: the
   // native pre-roll buffer emits on this same channel, so levels can arrive
   // for a session this module never started. Deliver them regardless.
-  if (feedState !== 'live') {
-    if (channels === 0) channels = peak.length
-    setState('live')
+  if (feedState !== "live") {
+    if (channels === 0) channels = peak.length;
+    setState("live");
   }
   // `rms_dbfs` is what the bars draw (the old getDbFS was an RMS over the time
   // domain); fall back to peak if a future emitter ships peaks only.
-  const rms = Array.isArray(raw.rms_dbfs) ? raw.rms_dbfs : peak
+  const rms = Array.isArray(raw.rms_dbfs) ? raw.rms_dbfs : peak;
   // Snapshot: a subscriber is allowed to release itself from its own callback.
   for (const e of subs.slice()) {
-    if (!e.alive || !e.sub.onLevels) continue
-    const p = e.sub.pick?.() ?? DEFAULT_PICK
-    const { l, r } = pickLR(rms, p.mode, p.chL, p.chR)
+    if (!e.alive || !e.sub.onLevels) continue;
+    const p = e.sub.pick?.() ?? DEFAULT_PICK;
+    const { l, r } = pickLR(rms, p.mode, p.chL, p.chR);
     try {
-      e.sub.onLevels(l, r, raw)
+      e.sub.onLevels(l, r, raw);
     } catch {
       /* one meter's render error must not starve the others */
     }
@@ -276,14 +281,14 @@ function onPacket(payload: unknown): void {
  * state is already `live` and only the count moves.
  */
 function setState(next: VuFeedState): void {
-  feedState = next
-  if (notifiedState === feedState && notifiedChannels === channels) return
-  notifiedState = feedState
-  notifiedChannels = channels
+  feedState = next;
+  if (notifiedState === feedState && notifiedChannels === channels) return;
+  notifiedState = feedState;
+  notifiedChannels = channels;
   for (const e of subs.slice()) {
-    if (!e.alive || !e.sub.onState) continue
+    if (!e.alive || !e.sub.onState) continue;
     try {
-      e.sub.onState(feedState, channels)
+      e.sub.onState(feedState, channels);
     } catch {
       /* see onPacket */
     }

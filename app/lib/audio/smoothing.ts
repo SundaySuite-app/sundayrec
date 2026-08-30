@@ -23,13 +23,13 @@
  */
 
 /** Rise instantly by default — a level meter that lags upward under-reports. */
-export const ATTACK_TAU_MS = 0
+export const ATTACK_TAU_MS = 0;
 /** τ ≈ 80 ms release: ~184 ms to cover 90 % of a fall. Hardware-tuned on the
  *  recording overlay; every other meter now inherits the same feel. */
-export const RELEASE_TAU_MS = 80
+export const RELEASE_TAU_MS = 80;
 /** Longest dt a single step may act on. A tab that was backgrounded for two
  *  seconds must not teleport the meter — it resumes, it doesn't replay. */
-export const MAX_STEP_MS = 200
+export const MAX_STEP_MS = 200;
 
 /**
  * Fraction of the remaining distance covered in `dtMs` for an exponential
@@ -43,27 +43,27 @@ export const MAX_STEP_MS = 200
  * τ ≤ 0 means no smoothing at all (snap); dt ≤ 0 means no time passed.
  */
 export function alphaFor(dtMs: number, tauMs: number): number {
-  if (tauMs <= 0) return 1
-  if (dtMs <= 0) return 0
-  return 1 - Math.exp(-dtMs / tauMs)
+  if (tauMs <= 0) return 1;
+  if (dtMs <= 0) return 0;
+  return 1 - Math.exp(-dtMs / tauMs);
 }
 
 export interface LevelSmootherOpts {
   /** τ for upward movement, ms. 0 = instant (default). */
-  attackTau?: number
+  attackTau?: number;
   /** τ for downward movement, ms. Default 80. */
-  releaseTau?: number
+  releaseTau?: number;
   /** Starting (and `reset()`) value. Default −60, the dBFS floor. */
-  initial?: number
+  initial?: number;
 }
 
 export interface LevelSmoother {
   /** Advance toward `target` by `dtMs` of real time; returns the new value. */
-  step(target: number, dtMs: number): number
+  step(target: number, dtMs: number): number;
   /** The current smoothed value, without advancing. */
-  readonly value: number
+  readonly value: number;
   /** Jump back to `to` (default: the configured initial value). */
-  reset(to?: number): void
+  reset(to?: number): void;
 }
 
 /**
@@ -72,26 +72,30 @@ export interface LevelSmoother {
  * Units are the caller's — dBFS for the VU meters, 0..1 fractions for the
  * channel grid. Only `dtMs` has a fixed meaning.
  */
-export function createLevelSmoother(opts: LevelSmootherOpts = {}): LevelSmoother {
-  const attackTau = opts.attackTau ?? ATTACK_TAU_MS
-  const releaseTau = opts.releaseTau ?? RELEASE_TAU_MS
-  const initial = opts.initial ?? -60
-  let value = initial
+export function createLevelSmoother(
+  opts: LevelSmootherOpts = {},
+): LevelSmoother {
+  const attackTau = opts.attackTau ?? ATTACK_TAU_MS;
+  const releaseTau = opts.releaseTau ?? RELEASE_TAU_MS;
+  const initial = opts.initial ?? -60;
+  let value = initial;
 
   return {
     get value(): number {
-      return value
+      return value;
     },
     reset(to: number = initial): void {
-      value = to
+      value = to;
     },
     step(target: number, dtMs: number): number {
       // A NaN target (a dropped telemetry field, a divide-by-zero upstream)
       // would poison the state forever — one bad packet, a dead meter.
-      if (!Number.isFinite(target)) return value
-      const dt = Math.min(MAX_STEP_MS, Math.max(0, dtMs))
-      value += (target - value) * alphaFor(dt, target > value ? attackTau : releaseTau)
-      return value
+      if (!Number.isFinite(target)) return value;
+      const dt = Math.min(MAX_STEP_MS, Math.max(0, dtMs));
+      value +=
+        (target - value) *
+        alphaFor(dt, target > value ? attackTau : releaseTau);
+      return value;
     },
-  }
+  };
 }
