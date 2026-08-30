@@ -32,7 +32,7 @@ export const FIRST_ASK: PromptCopy = {
   titleFallback: 'Del anonym diagnostikk?',
   descKey: 'onboarding.promptDesc',
   descFallback:
-    'SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → System.',
+    'SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → Avansert.',
 }
 
 /** The wording for someone whose recorded answer predates a scope widening. */
