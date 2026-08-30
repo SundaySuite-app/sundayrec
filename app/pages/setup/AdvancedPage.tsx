@@ -57,6 +57,7 @@ import { Select } from "../../ui/Select/Select";
 import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
+import { DiagnoseRow } from "./advanced/DiagnoseRow";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
 import { currentOs } from "../../state/platform-core";
 import { ScheduleCard } from "./advanced/ScheduleCard";
@@ -149,6 +150,13 @@ export function AdvancedPage() {
         <UpdateRow />
         <LogRow />
         <ProfileRow />
+        {/*
+          Diagnosen sist i systemkortet, og det er rekkefølgen som mener noe:
+          loggen og profilen er filer man HENTER, diagnosen er et spørsmål man
+          STILLER. Den er også den eneste raden her som folder ut et svar under
+          seg, så alt annet i kortet blir stående der det var når den gjør det.
+        */}
+        <DiagnoseRow />
       </Card>
 
       <SmtpCard />
