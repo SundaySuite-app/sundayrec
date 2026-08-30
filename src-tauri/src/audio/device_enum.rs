@@ -1,7 +1,8 @@
 //! Real ffmpeg device enumeration (F2.1) — the plumbing that drives the pure
 //! core parsers with a live `ffmpeg -list_devices` run.
 //!
-//! This replaces the Spike-B stub in `recorder::engine::list_recording_devices`
+//! This replaced the Spike-B stub `recorder::engine::list_recording_devices`
+//! (deleted in V1/PR3 once it had no callers left)
 //! (which reused the cpal input list as `FfmpegDevice`s with no avfoundation
 //! index). Here we ask ffmpeg to ENUMERATE devices and parse its stderr with the
 //! fixtures-tested [`sundayrec_core::device_enum`] parsers, so the recorder gets
