@@ -27,12 +27,8 @@
 //! enhetslista i diagnoserapporten. Det som ble slettet var innpakningen rundt
 //! den, ikke den.
 //!
-//! ⚠️ **`crate::audio::channel_probe` (163 LOC) står nå UTEN kaller.** Den er
-//! ikke en dublett — den er den eneste ffmpeg-baserte kanaltopp-skanneren
-//! («hvilke av mikserens kanaler bærer faktisk miksen?»), og hører hjemme i en
-//! kanalvelger-flate som kan komme tilbake. Den er derfor bevart, ikke slettet.
-//! Et Rust-`pub`-modul uten kaller gir ingen advarsel, så dette AVSNITTET er
-//! sporet: kommer flaten ikke, er modulen neste rydderunde.
+//! ⚠️ ffmpeg-kanalskanneren (`channel_probe`) ble slettet i V1-halen (PR-NR);
+//! gjenopprett fra git hvis en kanalvelger-flate designes.
 
 use tauri::{AppHandle, State};
 
