@@ -1331,10 +1331,11 @@ Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing
 (`build_audio_diagnostics`) is pure + tested.
 
 ⚠️ The camera list comes from **`list_devices`** (the shim's `listVideoDevices`
-picks `video_inputs` out of the inventory), NOT from the `list_video_devices`
+picks `video_inputs` out of the inventory), NOT from a `list_video_devices`
 command — this heading said the latter until V1/PR3 checked it. The Rust
-`list_video_devices` exists and is a pure subset of `list_devices`, but nothing
-in the shell calls it.
+`list_video_devices` was a pure subset of `list_devices` that nothing in the
+shell called, and it was deleted in the V1-tail round; `list_devices` is now
+the only camera enumeration there is.
 
 1. On **Opptak**, turn on the **«Ta med kamera»** card → the camera picker in
    its body.

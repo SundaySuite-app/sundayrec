@@ -463,7 +463,6 @@ pub fn run() {
             commands::app::tray_set_language,
             commands::audio::list_audio_devices,
             commands::audio::list_devices,
-            commands::audio::list_video_devices,
             commands::audio::get_camera_capabilities,
             commands::audio::diagnose_audio,
             commands::audio::start_vu,
