@@ -17,7 +17,6 @@
 //! HARDWARE-UNVERIFIED until smoke-tested on a real device.
 
 pub mod asio;
-pub mod channel_probe;
 pub mod device_enum;
 pub mod device_watch;
 pub mod devices;

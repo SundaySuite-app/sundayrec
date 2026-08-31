@@ -3183,6 +3183,8 @@ som ikke finnes lenger». Fem er hentet tilbake siden: `recording_preview_frame`
 
 `chore/v1-rust-prune` sluttet å bære 19 av dem: de er **slettet**, med grunn
 per kommando i PR-teksten. Registeret gikk **111 → 92** og unådde **41 → 21**.
+(V1-halen tok én til — se etterspillet under — så tallene står i dag på
+**91 / 20**. Tallene over er PR3s, og blir stående som det de var.)
 Borte: Sunday-kontoen (5 + `sunday-auth`-dep-en), Electron-datavaskeren (2 +
 `trash`-crate-en), `liturgical_month` (computusen i core BLIR — `filename.rs`
 bruker den), fire editor-prober som alle hadde en levende erstatter, fem
@@ -3197,8 +3199,12 @@ lover på to skjermer — og koden hard-sletter der teksten sier «flyttes til
 papirkurven», så oppkoblingen er en eierstyrt runde, ikke en rørlegging.
 `list_video_devices` sto oppført som «CameraCard bruker den»; det gjør den
 ikke — CameraCard går via shimmens `listVideoDevices`, som kaller
-`list_devices` og leser `video_inputs`. Gaten hadde rett hele tiden. Begge
-står med hele funnet i doc-kommentaren sin.
+`list_devices` og leser `video_inputs`. Gaten hadde rett hele tiden.
+
+**Etterspill (V1-halen):** `list_video_devices` ble slettet i rydderunden etter
+PR3. Fredningen hvilte på premisset «CameraCard bruker den», og PR3s egen
+doc-kommentar slo fast at premisset var feil — da var det ingenting igjen å
+frede. `recordings_prune` står fortsatt, av grunnen over.
 
 De som er mer enn opprydding:
 
@@ -3261,12 +3267,12 @@ De som er mer enn opprydding:
   linjer), delt med eksport- og analysestien, og kirurgi der er feil risiko å
   ta i en opprydding. Vurderes for seg når editoren neste gang åpnes.
 
-### Og de 21 som står igjen — hvor grunnen bor
+### Og de 20 som står igjen — hvor grunnen bor
 
-Grunnen per kommando står i V1/PR3-teksten; de fire som er mer enn en kategori
-(`editor_diagnose_channels`, `recordings_prune`, `list_video_devices` og
-lager-primitivet `store::clear_recordings`) bærer den i tillegg i
-doc-kommentaren sin, der den som leser koden faktisk møter den. Kort oversikt:
+Grunnen per kommando står i V1/PR3-teksten; de tre som er mer enn en kategori
+(`editor_diagnose_channels`, `recordings_prune` og lager-primitivet
+`store::clear_recordings`) bærer den i tillegg i doc-kommentaren sin, der den
+som leser koden faktisk møter den. Kort oversikt:
 
 - **Halvferdige flater med investering i den andre enden:**
   `editor_diagnose_channels` (i18n-nøklene `editor.chanDead*` er oversatt i
@@ -3280,8 +3286,9 @@ doc-kommentaren sin, der den som leser koden faktisk møter den. Kort oversikt:
   vekkingen faktisk feiler.
 - **Kirurgi utsatt:** mastring-kvartetten (over).
 - **Eiervalg:** `settings_reset`, `recording_update_note`.
-- ⚠️ **`recordings_prune`** og **`list_video_devices`** — se advarselen over
-  §3: begge stoppet sin egen sletting, og begge bærer hele funnet i koden.
+- ⚠️ **`recordings_prune`** — se advarselen over §3: den stoppet sin egen
+  sletting, og bærer hele funnet i koden. (`list_video_devices` sto her til
+  V1-halen; den er nå slettet — se etterspillet i §3.)
 
 ### ⚠️ Baselinen ble REGENERERT i #156, og det var med vilje
 

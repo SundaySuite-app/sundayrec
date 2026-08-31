@@ -5,14 +5,22 @@
 //!   - `start_vu` / `stop_vu` to drive the live VU, listening for the
 //!     `vu://levels` event for the per-channel dB snapshots.
 //!
-//! ## V1/PR3 — hva som forsvant herfra, og hvorfor
+//! ## V1/PR3 + V1-halen — hva som forsvant herfra, og hvorfor
 //!
-//! Fire kommandoer gikk: `list_input_devices` (den rå cpal-lista) fordi
+//! Fem kommandoer gikk — fire i PR3, den femte i halen etter den.
+//! `list_input_devices` (den rå cpal-lista) fordi
 //! `list_audio_devices` er DEN samme lista, bare tagget med backend og flettet
 //! med ASIO — skallet har alltid kalt den; `list_audio_input_channels`,
 //! `probe_device_channels` og `scan_device_channels` fordi kanalvalget nå leser
 //! kanalantallet fra `start_vu`s FORHANDLEDE svar, som er det tallet VU-rutenettet
 //! faktisk måler på, i stedet for å blink-åpne enheten en ekstra gang for å spørre.
+//! Og `list_video_devices`, som var en ren delmengde av [`list_devices`]:
+//! kameralista går via shimmens `listVideoDevices` → `invoke("list_devices")` →
+//! `video_inputs`, og kommandonavnet fantes ikke som strenglitteral noe sted i
+//! skallet. Den ble FREDET i PR3 fordi den ikke sto i slettevedtaket — men
+//! fredningen hvilte på premisset «CameraCard bruker den», og PR3s egen
+//! doc-kommentar slo fast at det premisset var feil. Med premisset borte var
+//! det ingenting igjen å frede, så den gikk i denne runden.
 //!
 //! ⚠️ **Den INTERNE `crate::audio::devices::list_input_devices` lever videre** og
 //! er selve enumereringen: `list_audio_devices` (over) bruker den som
@@ -20,18 +28,13 @@
 //! enhetslista i diagnoserapporten. Det som ble slettet var innpakningen rundt
 //! den, ikke den.
 //!
-//! ⚠️ **`crate::audio::channel_probe` (163 LOC) står nå UTEN kaller.** Den er
-//! ikke en dublett — den er den eneste ffmpeg-baserte kanaltopp-skanneren
-//! («hvilke av mikserens kanaler bærer faktisk miksen?»), og hører hjemme i en
-//! kanalvelger-flate som kan komme tilbake. Den er derfor bevart, ikke slettet.
-//! Et Rust-`pub`-modul uten kaller gir ingen advarsel, så dette AVSNITTET er
-//! sporet: kommer flaten ikke, er modulen neste rydderunde.
+//! ⚠️ ffmpeg-kanalskanneren (`channel_probe`) ble slettet i V1-halen (#183);
+//! gjenopprett fra git hvis en kanalvelger-flate designes.
 
 use tauri::{AppHandle, State};
 
 use sundayrec_core::audio::{mic_owner, vu_start_action, VuStartAction};
 use sundayrec_core::device_enum::{build_audio_diagnostics, AudioDiagnostics};
-use sundayrec_core::device_match::FfmpegDevice;
 
 use crate::audio::asio::{list_asio_devices, merge_audio_inputs, TaggedAudioInput};
 use crate::audio::device_enum::{
@@ -78,36 +81,6 @@ pub async fn list_devices() -> AppResult<DeviceInventory> {
     // Cached (1.5 s): the picker often asks for audio + video back-to-back; this
     // folds those into one spawn. Record/diagnose use the uncached path.
     enumerate_ffmpeg_devices_cached().await
-}
-
-/// List ONLY the camera (video) devices ffmpeg can see, for the settings camera
-/// dropdown. Mirrors the Electron `list-video-devices` / the video half of the
-/// device picker. Reuses the same `ffmpeg -list_devices` enumeration as
-/// [`list_devices`] and returns its `video_inputs`.
-///
-/// ⚠️ HARDWARE-UNVERIFIED — needs real cameras + the ffmpeg sidecar; only the
-/// pure parse helpers in `sundayrec_core::device_enum` are unit-tested.
-///
-/// # ⚠️ Unåbar, og gaten har RETT (oppklart i V1/PR3)
-///
-/// Denne sto oppført til «la stå — CameraCard bruker den». Det gjør den ikke.
-/// `CameraCard`/`LiveCameraPreview` leser signalet `videoDevices`, som fylles
-/// av `state/devices.ts`s `loadVideoDevices()` → shimmens `listVideoDevices`
-/// → `invoke("list_devices")`, og plukker `video_inputs` ut av
-/// `DeviceInventory`. Kommandonavnet `list_video_devices` forekommer ikke som
-/// strenglitteral noe sted i skallet, så rekkeviddegaten — som måler nettopp
-/// det — svarer riktig. Det er ingen gate-bug å fikse.
-///
-/// Den er altså en ren delmengde av `list_devices`, akkurat som
-/// kommando-revisjonen sa. Den ble likevel IKKE slettet i V1/PR3: den sto ikke
-/// i slettevedtaket, og en kommando som fjernes på oppdagelsen av at premisset
-/// for å beholde den var feil, fortjener sin egen beslutning. Neste rydderunde
-/// arver den — med denne notisen som hele saksframstillingen.
-#[tauri::command]
-pub async fn list_video_devices() -> AppResult<Vec<FfmpegDevice>> {
-    // Cached (1.5 s) — see `list_devices`. The recorder resolves the camera via
-    // the uncached path at start, so a stale picker list never affects a capture.
-    Ok(enumerate_ffmpeg_devices_cached().await?.video_inputs)
 }
 
 /// What a camera can actually capture, for gating the resolution/fps UI to modes
