@@ -9,11 +9,14 @@ macOS-signed and auto-updating; the one remaining gap is **notarization**
 
 1. You bump the version (in `package.json`, `src-tauri/tauri.conf.json`, and
    `src-tauri/Cargo.toml` — keep them in sync) and push a tag `vX.Y.Z`.
-2. `release.yml` builds on macOS (Apple Silicon) and Windows, fetches the
+2. You write `docs/release-notes/vX.Y.Z.md` — the text the operator reads in
+   the update banner. CI refuses the PR without it, and `release.yml` refuses
+   the tag. See [release-notes/README.md](release-notes/README.md).
+3. `release.yml` builds on macOS (Apple Silicon) and Windows, fetches the
    ffmpeg/ffprobe sidecars, signs macOS (notarization is deliberately disabled
    pending the Apple agreement — see below), and creates a **draft** GitHub
    Release with the installers attached.
-3. You review the draft and publish it as **Latest**.
+4. You review the draft and publish it as **Latest**.
 
 > **Deploy gotcha (same as the Electron SundayRec):** the build uploads as a
 > **draft** (with `prerelease: false`). "Publishing" is a separate manual step —
