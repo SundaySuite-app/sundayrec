@@ -5,9 +5,10 @@
 //!   - `start_vu` / `stop_vu` to drive the live VU, listening for the
 //!     `vu://levels` event for the per-channel dB snapshots.
 //!
-//! ## V1/PR3 — hva som forsvant herfra, og hvorfor
+//! ## V1/PR3 + V1-halen — hva som forsvant herfra, og hvorfor
 //!
-//! Fem kommandoer gikk. `list_input_devices` (den rå cpal-lista) fordi
+//! Fem kommandoer gikk — fire i PR3, den femte i halen etter den.
+//! `list_input_devices` (den rå cpal-lista) fordi
 //! `list_audio_devices` er DEN samme lista, bare tagget med backend og flettet
 //! med ASIO — skallet har alltid kalt den; `list_audio_input_channels`,
 //! `probe_device_channels` og `scan_device_channels` fordi kanalvalget nå leser
