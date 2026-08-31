@@ -2781,9 +2781,10 @@ kameraet leverer 720p under en 1080p-profil.
    Teksten er ikke usann, men den er heller ikke presis: den samme setningen
    betyr «motoren har ikke skrevet en frame» i overlegget. En egen fase for
    ventingen er billig; den er ikke bygget.
-3. **Atlaset fotograferer det gamle skallet.** Se `docs/design/atlas/INDEX.md` —
-   D2 endret skinnen, OPPTAK og Innstillinger, og en re-fotografering er en ny
-   scenetabell, ikke en re-peking (samme vurdering som «Etter byttet» §4).
+3. ~~**Atlaset fotograferer det gamle skallet.**~~ **LØST i V1/PR6** — se
+   D3-restanse 3 og «Etter byttet» §4. Kontrollrommet har nå egne scener for
+   hvert av de seks kortene utfoldet, for kamera-previewens faser og for
+   Innstillinger-flaten.
 4. **Canvas-dokumentet er en tegning, ikke et skjermbildepass.**
    `docs/design/canvas/FASE-D2-KONTROLLROM.html` er tegnet mot koden som fasit,
    men den er fortsatt en tegning. Skjermbildepasset hører til riggtesten.
@@ -3113,9 +3114,10 @@ den fortsatt eier sitt eget midtpunkt.
    **LØST i V1/PR5.** Eieren valgte å heve dem, og løsningen ble ikke den
    layoutendringen restansen fryktet: flaten vokste, boksen ikke. Målt 44,5 px
    og 40,5 px i WKWebView — se §«Treffflatene» over.
-3. **Atlaset fotograferer et skall som ikke finnes.** `docs/design/atlas/`
-   viser v0.15-skallet. Fotografen ble slettet med skallet den fotograferte, og
-   en ny scenetabell er en egen jobb (samme vurdering som «Etter byttet» §4).
+3. ~~**Atlaset fotograferer et skall som ikke finnes.**~~ **LØST i V1/PR6.**
+   `docs/design/atlas/` er fotografert på nytt mot D3-skallet (69 scener ×
+   no+en); v0.15-bildene er arkivert i `docs/design/atlas-v015/`. Se
+   «Etter byttet» §4.
 4. **Canvas-dokumentet er en tegning.** `FASE-D3-DAVINCI.html` er tegnet mot
    koden som fasit, men den er fortsatt en tegning. Skjermbildepasset hører til
    riggtesten.
@@ -3301,17 +3303,53 @@ en fribillett. To ting følger av den:
    baselinen fordi den ble koblet opp igjen (som «+ 15 min» /
    «Avbryt auto-stopp» ble) skal strykes her samtidig.
 
-## 4. Atlas-fotografen er borte
+## 4. ~~Atlas-fotografen er borte~~ — **LØST i V1/PR6: atlas v2**
 
-`e2e/atlas/**`, `playwright.atlas.config.ts` og `npm run atlas` fotograferte
-legacy-skallet med legacy-selektorer. Etter flippen ville kommandoen startet det
-NYE skallet og feilet hver eneste scene, så den er slettet. Bildene består:
-`docs/design/atlas/` (183 filer) og `docs/design/ATLAS.md` er Fase A-fasiten.
-Å fotografere det nye skallet er en ny scenetabell — verdt å gjøre, ikke en
-re-peking. ⚠️ **D2 flyttet målskiven igjen** (skinnen, OPPTAK, Innstillinger),
-så scenetabellen skal skrives mot kontrollrommet, ikke mot v0.16.0-beta.1.
-Notisen står også øverst i `docs/design/atlas/INDEX.md`, der en leser møter
-bildene.
+Fase B slettet `e2e/atlas/**`, `playwright.atlas.config.ts` og `npm run atlas`
+sammen med skallet de fotograferte: de klikket seg gjennom legacy-selektorer, så
+etter flippen ville kommandoen startet det NYE skallet og feilet hver eneste
+scene. Restansen sto åpen gjennom D2 og D3, som begge flyttet målskiven igjen.
+
+**V1/PR6 skrev fotografen på nytt** — ny scenetabell mot `data-testid`, ikke en
+re-peking av den gamle:
+
+- `npm run atlas` → `playwright.atlas.config.ts` → `e2e/atlas/` (scenes ·
+  harness · report · atlas.spec). **69 scener × no+en**, pluss `--full` der
+  siden ruller og `--1000x760` på hovedscenen per destinasjon: **198 PNG-er,
+  7,5 MB** i `docs/design/atlas/`, med generert `INDEX.md` (scenetabell m/
+  oppskrift per scene) og `CONSOLE-FINDINGS.md`.
+- **Egen port.** `SUNDAYREC_ATLAS_PORT` (1421) + `--strictPort`, ved siden av
+  nettleser-tierens `SUNDAYREC_E2E_PORT` (1420). Uten det ville en
+  fotografering startet mens `npm run e2e` går festet seg til DEN serveren
+  gjennom `reuseExistingServer` — og i en worktree fotografert et annet utsjekk.
+- **Utenfor gaten, med en vakt.** `playwright.config.ts` har igjen
+  `testIgnore: [/e2e[\\/]atlas[\\/]/]`; `npx playwright test --list | grep -c atlas`
+  skal gi 0. Regex og ikke glob: Playwright matcher mot den ABSOLUTTE stien, så
+  `**/atlas/**` ville slått ut hele suiten i en worktree som tilfeldigvis heter
+  noe med atlas.
+- **Determinisme er en egenskap, ikke et håp.** Fast klokke
+  (`page.clock.setFixedTime`, søndag 23.08.2026 10:55 som ABSOLUTT instant),
+  pinnet `timezoneId`/`locale` i konfigen, konvergerte VU-pakker, og
+  `settle()` som venter på ferdige animasjoner + `document.fonts.ready` + to
+  rAF. To fulle kjøringer gir byte-identiske filer.
+  ⚠️ **Det siste steget var ikke i siden i det hele tatt:** ~10 % av skuddene
+  varierte med ±1 i siste kanalbit langs en antialiasert hjørnekurve, fordi
+  Chromium rasteriserer i fliser og gjenbruker forrige frame (partial raster /
+  checker-imaging). Rasteriseringsflaggene i `playwright.atlas.config.ts`
+  (`--disable-partial-raster`, `--disable-checker-imaging`, …) er fiksen. Hele
+  `--deterministic-mode` er med vilje IKKE brukt — den skrur også på
+  `--enable-begin-frame-control`, og da slutter siden å male.
+- **Arkivet:** `docs/design/atlas/` → `docs/design/atlas-v015/` (Fase A-fasiten,
+  frosset). `docs/design/ATLAS.md` er IA-uttrekket for v0.15 og har en v2-notis
+  øverst.
+
+⚠️ **De to canvas-dokumentene er IKKE oppdatert, med vilje.**
+`FASE-D2-KONTROLLROM.html` og `FASE-D3-DAVINCI.html` har hver sin restanse-linje
+som sier «fotografen er slettet, en ny scenetabell er en egen jobb», og de peker
+på `docs/design/atlas/` — som nå er den NYE mappa. De er daterte øyeblikksbilder
+av hver sin runde, og en halvrettet tegning er verre enn en tydelig datert. Skal
+de rettes, hører det sammen med en republisering av artefakten. Denne seksjonen
+er den àjour kilden.
 
 ## 5. Fem språk venter
 

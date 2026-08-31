@@ -1,10 +1,7 @@
-# Konsollfunn under fotograferingen (Fase A)
+# Konsollfunn under fotograferingen
 
-En streng ny vakt over en gammel app. Hver scene i atlaset kjøres med en lytter
-på `console.error` og `pageerror`; alt som falt ut står her.
-
-**Ingenting er fikset.** Dette er en observasjon, ikke en oppgave — Fase A rører
-ikke appen.
+Hver scene i atlaset kjøres med en lytter på `console.error` og
+`pageerror`; alt som falt ut står her.
 
 ## Slik er funnene klassifisert
 
@@ -15,7 +12,9 @@ en feil. Meldinger som matcher `no Tauri backend in the browser tier` (og
 **harness-støy**. Alt annet er ekte konsollgjeld appen bærer i dag.
 
 Grensetilfeller er ført opp som **ekte funn**, ikke som støy: en melding som
-ikke kan klassifiseres med sikkerhet skal være synlig.
+ikke kan klassifiseres med sikkerhet skal være synlig. Lista over støymønstre er
+med vilje kort og spesifikk — et bredt mønster her er den stilleste måten å
+miste et ekte funn på.
 
 Merk også at appens egne `console.warn` for hvert fallback IKKE fanges her —
 vakten ser bare `console.error` og ufangede unntak. Warn-strømmen er stor og
@@ -24,21 +23,17 @@ forventet uten backend.
 ## Ekte funn
 
 Les hver rad sammen med scenens oppskrift i [INDEX.md](INDEX.md): noen scener
-**fyrer en feil med vilje** (`home--backend-feil`, `home--kvalitetsalarm`,
-`editor--feil`, `toast--lagring-feilet`). En `console.error` derfra er
-riktig oppførsel, ikke gjeld.
+**fyrer en feil med vilje** (feilbannere, feilede lastinger, feilede lagringer).
+En `console.error` derfra er riktig oppførsel, ikke gjeld.
 
-| Scene | Språk | Type | Melding |
-| --- | --- | --- | --- |
-| `home--kvalitetsalarm` | no | console.error | [recording] QUALITY ALARM: [input_overflow, device_reopened] 3120/5400s |
-| `home--kvalitetsalarm` | en | console.error | [recording] QUALITY ALARM: [input_overflow, device_reopened] 3120/5400s |
+_Ingen. Ingen scene ga `console.error` eller `pageerror` utover harness-støyen._
 
 ## Harness-støy (forventet, ikke gjeld)
 
 | Antall | Melding |
 | --- | --- |
-| 17 | Failed to load resource: net::ERR_UNKNOWN_URL_SCHEME |
+| 19 | Failed to load resource: net::ERR_UNKNOWN_URL_SCHEME |
 
 ---
 
-Scener fotografert: 137. Ekte funn: 2. Støy-treff: 17.
+Scener fotografert: 146. Ekte funn: 0. Støy-treff: 19.
