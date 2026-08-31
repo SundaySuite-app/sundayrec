@@ -3,6 +3,34 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.17.1-beta.1 — vedlikeholdsrunden, til beta-ringen først
+
+Runden etter det store redesignet: verktøy og ærlighet, ingen nye flater å lære.
+
+### «Slett gamle opptak» holder endelig ord
+
+Bryteren fantes, tallet ble lagret — men ingenting ryddet. Nå flyttes opptak
+eldre enn grensen til papirkurven (som teksten alltid har lovet), og papirkurven
+sletter for godt etter sine 30 dager. To sjanser til å angre, som resten av appen.
+
+### Diagnose er tilbake
+
+Under Innstillinger → Avansert: én «Kjør»-knapp som sjekker lydenheter, valgt
+enhet, mikrofontilgang, opptaksmotoren og en ekte lydprøve — med funnene
+forklart på norsk og «Kopier full rapport» til support. «Diagnostikk» i
+menylinja åpner den direkte. Pluss et test-opptak på ti sekunder.
+
+### Lettere å treffe
+
+Utvid-pilene på kortene og bryterne i Innstillinger har fått større
+trykkflater — samme utseende, lettere å treffe med musa (og fingre).
+
+### Småting
+
+Tekster som pekte på skjermer fra før ombyggingen er rettet, «Fjern passord»
+for e-postserveren virker (og vises bare når et passord faktisk er lagret),
+og en god del død motorkode er fjernet.
+
 ## v0.17.0 — Opptak · Redigering · Eksportering
 
 Dette er den største endringen SundayRec har hatt, og den har ligget på
