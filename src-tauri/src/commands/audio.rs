@@ -27,7 +27,7 @@
 //! enhetslista i diagnoserapporten. Det som ble slettet var innpakningen rundt
 //! den, ikke den.
 //!
-//! ⚠️ ffmpeg-kanalskanneren (`channel_probe`) ble slettet i V1-halen (PR-NR);
+//! ⚠️ ffmpeg-kanalskanneren (`channel_probe`) ble slettet i V1-halen (#183);
 //! gjenopprett fra git hvis en kanalvelger-flate designes.
 
 use tauri::{AppHandle, State};
