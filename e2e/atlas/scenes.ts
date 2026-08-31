@@ -123,7 +123,9 @@ const ATLAS_ONLY: Fixtures = {
   // package.json rather than written down, so it can never go stale.
   app_info: { version: PKG_VERSION },
   update_check: { phase: "upToDate" },
-  list_video_devices: [],
+  // `list_devices` er den ekte kameralista (shimmens `listVideoDevices` leser
+  // `video_inputs` ut av den). En `list_video_devices`-nøkkel sto ved siden av
+  // og styrte ingenting — kommandoen er slettet i V1-halen.
   list_devices: { video_inputs: [] },
 };
 
