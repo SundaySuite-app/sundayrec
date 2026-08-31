@@ -43,6 +43,24 @@ const PORT = Number(process.env.SUNDAYREC_E2E_PORT ?? 1420);
 export default defineConfig({
   testDir: "./e2e",
 
+  // `e2e/atlas/` is the ATLAS tier — a photographer, run by `npm run atlas`
+  // through `playwright.atlas.config.ts`. It takes ~120 screenshots and asserts
+  // almost nothing, so it must never run as part of this gate (nor on CI). Keep
+  // this in step with that config's `testDir`.
+  //
+  // A REGEX, not the glob `**/atlas/**`: Playwright matches these against the
+  // ABSOLUTE path, so the glob also excludes the whole suite whenever any
+  // ancestor directory happens to be called `atlas` (a git worktree named after
+  // this branch does exactly that, and the symptom is «No tests found» for the
+  // browser tier). Anchoring on `e2e/atlas/` can only match the real thing.
+  //
+  // ⚠️ If this config ever grows a second project again, the exclusion has to
+  // be REPEATED inside every project that sets its own `testIgnore`: a
+  // project-level `testIgnore` REPLACES the top-level one rather than adding to
+  // it. That is exactly how the atlas silently got back into the gate the first
+  // time round (fase A → fase B), so it is written down rather than remembered.
+  testIgnore: [/e2e[\\/]atlas[\\/]/],
+
   // A journey is boot + navigate + a few interactions. 45 s is roomy for that
   // and still short enough that a hang fails rather than stalls the run. It was
   // 30 s until the night audit measured the editor cut-row journey at 24.9 s
