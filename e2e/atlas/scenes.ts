@@ -116,8 +116,7 @@ const PKG_VERSION: string = JSON.parse(
  * than one that shows a healthy machine, so the healthy machine is the baseline
  * and the failure gets a scene of its own.
  */
-const BASE: Fixtures = {
-  ...BOOT_FIXTURES,
+const ATLAS_ONLY: Fixtures = {
   // The version in the bottom bar is in every single photograph, so it must not
   // be the browser tier's `0.10.0-e2e` placeholder — an atlas of v0.17.0 that
   // says 0.10.0 in the corner is a document that argues with itself. Read from
@@ -127,6 +126,8 @@ const BASE: Fixtures = {
   list_video_devices: [],
   list_devices: { video_inputs: [] },
 };
+
+const BASE: Fixtures = { ...BOOT_FIXTURES, ...ATLAS_ONLY };
 
 /** One audio device, in `list_audio_devices`' shape. */
 function device(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -246,9 +247,19 @@ function trashEntry(
 // editor spec. The atlas uses it unchanged — a second copy that drifted would
 // photograph an editor nothing else tests.
 
-/** The editor's own fixtures, on top of the atlas base. */
+/**
+ * The editor's own fixtures, with the atlas's on top.
+ *
+ * ⚠️ The order is the whole point, and getting it wrong is silent.
+ * `editorFixtures()` spreads `BOOT_FIXTURES` ITSELF and then the caller's
+ * overrides, so `{ ...BASE, ...editorFixtures() }` puts the browser tier's
+ * defaults back on top of the atlas's: every editor and export photograph came
+ * out with an empty device list («Lyden er ikke koblet til» in the status line)
+ * and `0.10.0-e2e` in the corner. Feeding them THROUGH `editorFixtures` is what
+ * makes them win.
+ */
 function editorScene(over: Fixtures = {}): Fixtures {
-  return { ...BASE, ...DEVICES, ...editorFixtures(over) };
+  return editorFixtures({ ...DEVICES, ...ATLAS_ONLY, ...over });
 }
 
 /** Open a file through the same global the editor specs use. */
