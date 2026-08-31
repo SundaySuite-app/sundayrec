@@ -263,6 +263,9 @@ export const BOOT_FIXTURES: Fixtures = {
   app_info: { version: "0.10.0-e2e" },
   scheduler_status: { next: null },
   scheduler_reschedule: VOID,
+  // The retention pass runs unasked on every boot; `disabled` keeps it silent
+  // (no toast) so it cannot photobomb an unrelated spec's assertions.
+  recordings_prune: { moved: 0, disabled: true },
   get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500_000_000_000 },
   recordings_list: [],
   trash_list: [],

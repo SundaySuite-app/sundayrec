@@ -28,6 +28,11 @@
     "deleteFailed": "Kunde inte radera"
   },
   "trash": {
+    "retentionMoved": {
+      "one": "1 gammal inspelning flyttades till papperskorgen",
+      "other": "{n} gamla inspelningar flyttades till papperskorgen"
+    },
+    "retentionShowTrash": "Visa papperskorgen",
     "title": "Papperskorg",
     "emptyAll": "Töm papperskorgen",
     "alreadyEmpty": "Papperskorgen är tom",

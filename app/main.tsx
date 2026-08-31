@@ -67,6 +67,7 @@ import { initNextRecording } from "./state/next-recording";
 import { initPreroll } from "./state/preroll";
 import { initRecording } from "./state/recording";
 import { loadRecordingCount } from "./state/recordings";
+import { initRetention } from "./state/retention";
 import { hydrateSettings, settings } from "./state/settings";
 import { toast } from "./ui/toast";
 
@@ -177,6 +178,10 @@ async function boot(): Promise<void> {
   // `undefined !== false` kontaktet serveren på hver oppstart uansett hva
   // eieren hadde valgt. PRIVACY.md er kontrakten; se `state/auto-update.ts`.
   initAutoUpdate();
+  // ETTER innstillingene av samme grunn som oppdateringssjekken: passet skal
+  // avgjøres av det som faktisk står lagret (backenden leser `autoDeleteDays`
+  // selv, per pass). Flytter det noe, sier toasten fra — se `state/retention`.
+  initRetention();
   // Begge er engangslesninger skallet og Bibliotek viser: versjonen i
   // bunnlinja, og om biblioteket faktisk er tomt. Ingen `await` — en side som
   // venter på et tall den kan vise «ikke lest ennå» for, venter uten grunn.

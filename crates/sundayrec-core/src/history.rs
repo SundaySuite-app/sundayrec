@@ -11,8 +11,11 @@
 //! The Electron code interleaved the *decision* (which rows are due, the
 //! save-dir-prefix guard) with the I/O (`fs.unlink`, `store.set`). Here we keep
 //! ONLY the deterministic decision: given a snapshot of candidate rows + the
-//! current config, return the ids to delete. The `src-tauri` shell does the
-//! actual file unlink + DB delete and feeds the facts back in.
+//! current config, return the ids to prune. What pruning DOES is the shell's
+//! contract, not this decision's — and since the owner decision of 2026-08-31
+//! it is a MOVE into the Papirkurv (`recordings_prune` → `crate::trash`), not
+//! the Electron unlink: the UI text promises «Flyttes til papirkurven, ikke
+//! slettet for godt», and the trash's own 30-day purge is the delete.
 
 use std::path::{Path, MAIN_SEPARATOR};
 
@@ -34,7 +37,8 @@ pub struct PruneCandidate {
 /// `remaining`/`changed` bookkeeping.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PruneDecision {
-    /// Ids whose file should be unlinked and history row dropped.
+    /// Ids due for pruning. The shell decides what that means — today: move
+    /// the file into the Papirkurv, leave the history row (it dies at purge).
     pub delete_ids: Vec<String>,
 }
 

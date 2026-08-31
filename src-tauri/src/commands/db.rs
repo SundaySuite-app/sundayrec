@@ -38,49 +38,56 @@ pub async fn recording_update_note(
     store::update_recording_note(&db.pool, &id, note).await
 }
 
-/// The outcome of one auto-delete prune pass. Mirrors the Electron
-/// `cleanupOldRecordings` bookkeeping (`deleted`).
+/// The outcome of one retention pass: how many recordings were MOVED into the
+/// Papirkurv. (Until the owner decision below, the field was `deleted` and the
+/// pass hard-deleted — see the history on `recordings_prune`.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "PruneSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PruneSummary {
-    /// Recordings whose file was deleted and history row dropped.
-    pub deleted: usize,
+    /// Recordings whose file was moved into the trash this pass. Their history
+    /// rows stay — the trash's own purge is the one moment a row dies.
+    pub moved: usize,
     /// Whether retention is disabled (`autoDeleteDays <= 0`) — the UI shows a
-    /// hint rather than "0 deleted".
+    /// hint rather than "0 moved".
     pub disabled: bool,
 }
 
-/// Auto-delete recordings past the `autoDeleteDays` retention window.
+/// One retention pass: move recordings past the `autoDeleteDays` window into
+/// the Papirkurv.
 ///
 /// Reads `autoDeleteDays` + `saveFolder` from settings, runs the pure
-/// [`decide_prune`] decision over the current history, then unlinks the chosen
-/// files and drops their rows. Returns a [`PruneSummary`]. Disabled (no-op) when
+/// [`decide_prune`] decision over the current history, then moves the chosen
+/// files into [`crate::trash`] — sidecars ride along, exactly as a manual
+/// delete in Bibliotek. Returns a [`PruneSummary`]. Disabled (no-op) when
 /// `autoDeleteDays <= 0`, matching the Electron early-return.
 ///
-/// # ⚠️ SKJØTEFEIL — BLIR STÅENDE, MEN VIRKER IKKE (funnet i V1/PR3)
+/// ## Papirkurv, ikke hard sletting — eierbeslutning 2026-08-31
 ///
-/// Denne kommandoen var oppført til sletting som «unåbar dublett». Den er
-/// unåbar, men den er ingen dublett — den er den ENESTE implementasjonen av en
-/// funksjon appen LOVER på skjermen:
+/// V1/PR3 fant denne som en skjøtefeil: kommandoen var appens ENESTE
+/// implementasjon av auto-slettingen som loves på to skjermer (bryteren «Slett
+/// gamle opptak» på Avansert, «Slettes automatisk etter {n} dager» i
+/// bibliotekfoten) — og den hadde ingen kallere, så ingenting ble noen gang
+/// slettet. Verre: koden slettet filene for godt der BEGGE UI-tekstene
+/// («Flyttes til papirkurven, ikke slettet for godt», `autoDeleteDesc` +
+/// `autoDeleteConfirmBody`) lover papirkurven. Eieren avgjorde: papirkurven,
+/// som teksten sier. Retensjonen er dermed totrinns — `autoDeleteDays` →
+/// papirkurv → 30 dager til ([`crate::trash::AUTO_PURGE_DAYS`], sweepens
+/// jobb) → borte for godt.
 ///
-///   - `AdvancedPage.tsx` (`AutoDeleteRows`) har bryteren «Slett gamle opptak»
-///     + dagfeltet, med en egen bekreftelsesdialog under 30 dager.
-///   - `LibraryPage.tsx` (`Foot`) skriver «Slettes automatisk etter {n} dager»
-///     i bunnen av biblioteket.
-///   - `autoDeleteDays` valideres, lagres og telemetreres.
+/// ## Radene består, og passet er idempotent
 ///
-/// …og ingenting kaller dette. Innstillingen skrives, løftet vises, og ingen
-/// fil blir noen gang slettet. Å slette kommandoen ville sementert løgnen.
+/// Flyttingen rører IKKE `recording`-tabellen (se modulhodet i `crate::trash`:
+/// raden er appens minne om at gudstjenesten fantes, og purge er det ene
+/// øyeblikket den dør). En rad hvis fil alt ligger i kurven — eller er ryddet
+/// vekk for hånd — peker på en sti uten fil; `move_into_trash` hopper over det
+/// som ikke er en fil, så neste pass teller den ikke om igjen.
 ///
-/// ⚠️ Og oppkoblingen er IKKE en enkel rørlegging: teksten sier «Flyttes til
-/// papirkurven, ikke slettet for godt» (`advanced.autoDeleteDesc`), mens koden
-/// under gjør `std::fs::remove_file` — en hard sletting. En kobling som
-/// stod her nå ville slettet gudstjenester for godt med en tekst som lovet det
-/// motsatte. Riktig rekkefølge er: bestem om retensjon skal flytte til
-/// `crate::trash` (som teksten sier) eller slette, RETT koden etter det svaret,
-/// og koble den så opp. Det er en egen, eierstyrt runde — ikke en
-/// opprydding.
+/// Flyttingen skjer én oppføring om gangen, med vilje: `move_into_trash`
+/// skriver manifestet først ETTER hele lista si, så ett kall for alle
+/// kandidatene ville mistet manifest-oppføringene for alt som rakk å flytte før
+/// en feilende fil. Per-fil er hver flytting journalført idet den skjer, og en
+/// fil som nekter koster bare seg selv.
 #[tauri::command]
 pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<PruneSummary> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
@@ -88,18 +95,17 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
 
     if days <= 0 {
         return Ok(PruneSummary {
-            deleted: 0,
+            moved: 0,
             disabled: true,
         });
     }
 
     // The canonical resolver (R3). The pre-R3 fallback was the BARE Documents
     // directory, so `decide_prune`'s "lives under the save dir" guard accepted
-    // ANY file under Documents — pruning could unlink recordings (or rows)
-    // outside `<Documents>/SundayRec`, the folder the recorder writes into.
-    let save_dir = crate::save_folder::resolve(&app, s.save_folder.as_deref())?
-        .to_string_lossy()
-        .into_owned();
+    // ANY file under Documents — pruning could move recordings outside
+    // `<Documents>/SundayRec`, the folder the recorder writes into.
+    let save_dir = crate::save_folder::resolve(&app, s.save_folder.as_deref())?;
+    let save_dir_str = save_dir.to_string_lossy().into_owned();
 
     let rows = store::list_recordings(&db.pool).await?;
     let cutoff_ms = (store::now_ms() as i64) - days * 86_400_000;
@@ -112,25 +118,43 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
         })
         .collect();
 
-    let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir);
+    let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir_str);
+    let paths: Vec<String> = rows
+        .iter()
+        .filter(|r| decision.delete_ids.contains(&r.id))
+        .map(|r| r.file_path.clone())
+        .collect();
 
-    let mut deleted = 0usize;
-    for id in &decision.delete_ids {
-        if let Some(row) = rows.iter().find(|r| &r.id == id) {
-            // Best-effort unlink: a missing file (already gone) still counts as
-            // pruned; a failed unlink keeps the history row so the user can see it.
-            match std::fs::remove_file(&row.file_path) {
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => continue,
+    if paths.is_empty() {
+        return Ok(PruneSummary {
+            moved: 0,
+            disabled: false,
+        });
+    }
+
+    let moved = tokio::task::spawn_blocking(move || {
+        let mut moved = 0usize;
+        for path in paths {
+            match crate::trash::move_into_trash(&save_dir, &[path]) {
+                Ok(entries) => moved += entries.len(),
+                // Best-effort per recording: a file that will not move stays in
+                // the library (its row is untouched), and the pass goes on.
+                Err(e) => tracing::warn!("retention: could not move into trash: {e}"),
             }
         }
-        store::delete_recording(&db.pool, id).await?;
-        deleted += 1;
+        moved
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Internal(format!("retention join: {e}")))?;
+
+    if moved > 0 {
+        tracing::info!(
+            "retention: moved {moved} recording(s) older than {days} day(s) into the trash"
+        );
     }
 
     Ok(PruneSummary {
-        deleted,
+        moved,
         disabled: false,
     })
 }
@@ -149,6 +173,26 @@ mod tests {
             crate::save_folder::resolve_with_documents(None, Some(Path::new("/Users/x/Documents")))
                 .unwrap();
         assert_eq!(dir, PathBuf::from("/Users/x/Documents/SundayRec"));
+    }
+
+    #[test]
+    fn prune_moves_into_the_trash_and_never_hard_deletes() {
+        // Source ratchet for the owner decision (2026-08-31): retention MOVES
+        // recordings into the Papirkurv — both UI texts promise exactly that
+        // («Flyttes til papirkurven, ikke slettet for godt»). A hard delete
+        // reappearing here would delete services for good under a text that
+        // promises the opposite, which is the seam V1/PR3 refused to wire.
+        let src = include_str!("db.rs");
+        assert!(
+            src.contains("move_into_trash"),
+            "recordings_prune must route through crate::trash::move_into_trash"
+        );
+        // Split so this test's own source doesn't match itself.
+        let needle = concat!("remove", "_file");
+        assert!(
+            !src.contains(needle),
+            "db commands must never unlink recordings — the trash is the only delete"
+        );
     }
 
     #[test]
