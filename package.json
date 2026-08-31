@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "notes:check": "node scripts/release-notes.mjs --check",
     "test:watch": "vitest",
     "e2e": "playwright test",
     "atlas": "playwright test -c playwright.atlas.config.ts",
