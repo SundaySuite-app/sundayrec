@@ -3183,6 +3183,8 @@ som ikke finnes lenger». Fem er hentet tilbake siden: `recording_preview_frame`
 
 `chore/v1-rust-prune` sluttet å bære 19 av dem: de er **slettet**, med grunn
 per kommando i PR-teksten. Registeret gikk **111 → 92** og unådde **41 → 21**.
+(V1-halen tok én til — se etterspillet under — så tallene står i dag på
+**91 / 20**. Tallene over er PR3s, og blir stående som det de var.)
 Borte: Sunday-kontoen (5 + `sunday-auth`-dep-en), Electron-datavaskeren (2 +
 `trash`-crate-en), `liturgical_month` (computusen i core BLIR — `filename.rs`
 bruker den), fire editor-prober som alle hadde en levende erstatter, fem
