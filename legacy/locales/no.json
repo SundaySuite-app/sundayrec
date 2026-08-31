@@ -716,6 +716,11 @@
     "deleteFailed": "Kunne ikke slette"
   },
   "trash": {
+    "retentionMoved": {
+      "one": "1 gammelt opptak ble flyttet til papirkurven",
+      "other": "{n} gamle opptak ble flyttet til papirkurven"
+    },
+    "retentionShowTrash": "Vis papirkurven",
     "title": "Papirkurv",
     "emptyAll": "Tøm papirkurven",
     "alreadyEmpty": "Papirkurven er tom",

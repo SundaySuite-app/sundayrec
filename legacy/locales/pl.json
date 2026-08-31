@@ -32,6 +32,13 @@
     "deleteFailed": "Nie udało się usunąć"
   },
   "trash": {
+    "retentionMoved": {
+      "one": "1 stare nagranie zostało przeniesione do kosza",
+      "few": "{n} stare nagrania zostały przeniesione do kosza",
+      "many": "{n} starych nagrań zostało przeniesionych do kosza",
+      "other": "{n} starego nagrania zostało przeniesione do kosza"
+    },
+    "retentionShowTrash": "Pokaż kosz",
     "title": "Kosz",
     "emptyAll": "Opróżnij kosz",
     "alreadyEmpty": "Kosz jest pusty",

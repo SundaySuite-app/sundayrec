@@ -28,6 +28,11 @@
     "deleteFailed": "Suppression impossible"
   },
   "trash": {
+    "retentionMoved": {
+      "one": "1 ancien enregistrement a été déplacé vers la corbeille",
+      "other": "{n} anciens enregistrements ont été déplacés vers la corbeille"
+    },
+    "retentionShowTrash": "Afficher la corbeille",
     "title": "Corbeille",
     "emptyAll": "Vider la corbeille",
     "alreadyEmpty": "La corbeille est vide",

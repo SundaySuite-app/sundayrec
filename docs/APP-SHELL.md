@@ -3176,8 +3176,9 @@ ikke utenom.
 
 35 Rust-kommandoer gikk fra nåbar til unåbar ved byttet. Alle er bevisste, alle
 er listet med grunn i baseline-committen og i `docs/SMOKE-TEST.md` under «Flater
-som ikke finnes lenger». Fem er hentet tilbake siden: `recording_preview_frame`
-(D2/PR2), diagnosens tre (V1/PR2) og `email_clear_smtp_password` (V1/PR3).
+som ikke finnes lenger». Seks er hentet tilbake siden: `recording_preview_frame`
+(D2/PR2), diagnosens tre (V1/PR2), `email_clear_smtp_password` (V1/PR3) og
+`recordings_prune` (retensjonsrunden, eierbeslutning 2026-08-31).
 
 ### ✅ V1/PR3: restansen er GJORT OPP, ikke bare telt
 
@@ -3194,9 +3195,14 @@ kaller den), og `recordings_clear`/`settings_export`.
 levende sannheten er baselinen + gaten.
 
 ⚠️ **To funn stoppet sin egen sletting** (premisset holdt ikke):
-`recordings_prune` er den ENESTE implementasjonen av auto-slettingen appen
-lover på to skjermer — og koden hard-sletter der teksten sier «flyttes til
-papirkurven», så oppkoblingen er en eierstyrt runde, ikke en rørlegging.
+`recordings_prune` var den ENESTE implementasjonen av auto-slettingen appen
+lover på to skjermer — og koden hard-slettet der teksten sier «flyttes til
+papirkurven», så oppkoblingen var en eierstyrt runde, ikke en rørlegging.
+**✅ LUKKET 2026-08-31:** eieren valgte papirkurven; kommandoen ruter gjennom
+`crate::trash` (radene består til purge, en kilde-skralle forbyr hard
+sletting), passet kjører ved oppstart + hver 12. time (`initRetention` i
+`app/main.tsx`) og sier fra med en toast når det flyttet noe. Se
+`docs/SMOKE-TEST.md` §6 punkt 4.
 `list_video_devices` sto oppført som «CameraCard bruker den»; det gjør den
 ikke — CameraCard går via shimmens `listVideoDevices`, som kaller
 `list_devices` og leser `video_inputs`. Gaten hadde rett hele tiden.
@@ -3204,7 +3210,8 @@ ikke — CameraCard går via shimmens `listVideoDevices`, som kaller
 **Etterspill (V1-halen):** `list_video_devices` ble slettet i rydderunden etter
 PR3. Fredningen hvilte på premisset «CameraCard bruker den», og PR3s egen
 doc-kommentar slo fast at premisset var feil — da var det ingenting igjen å
-frede. `recordings_prune` står fortsatt, av grunnen over.
+frede. (`recordings_prune` sto her til
+retensjonsrunden koblet den opp — se retensjonsavsnittet.)
 
 De som er mer enn opprydding:
 
@@ -3270,9 +3277,10 @@ De som er mer enn opprydding:
 ### Og de 20 som står igjen — hvor grunnen bor
 
 Grunnen per kommando står i V1/PR3-teksten; de tre som er mer enn en kategori
-(`editor_diagnose_channels`, `recordings_prune` og lager-primitivet
-`store::clear_recordings`) bærer den i tillegg i doc-kommentaren sin, der den
-som leser koden faktisk møter den. Kort oversikt:
+(`editor_diagnose_channels` og lager-primitivet `store::clear_recordings`)
+bærer den i tillegg i doc-kommentaren sin, der den som leser koden faktisk
+møter den. (`recordings_prune` sto her til retensjonsrunden koblet den opp;
+`list_video_devices` til V1-halen slettet den.) Kort oversikt:
 
 - **Halvferdige flater med investering i den andre enden:**
   `editor_diagnose_channels` (i18n-nøklene `editor.chanDead*` er oversatt i
@@ -3286,9 +3294,9 @@ som leser koden faktisk møter den. Kort oversikt:
   vekkingen faktisk feiler.
 - **Kirurgi utsatt:** mastring-kvartetten (over).
 - **Eiervalg:** `settings_reset`, `recording_update_note`.
-- ⚠️ **`recordings_prune`** — se advarselen over §3: den stoppet sin egen
-  sletting, og bærer hele funnet i koden. (`list_video_devices` sto her til
-  V1-halen; den er nå slettet — se etterspillet i §3.)
+- (Historisk: `recordings_prune` stoppet sin egen sletting i V1/PR3 og er siden
+  koblet opp — retensjonsrunden 2026-08-31. `list_video_devices` sto her til
+  V1-halen slettet den.)
 
 ### ⚠️ Baselinen ble REGENERERT i #156, og det var med vilje
 

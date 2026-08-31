@@ -68,6 +68,13 @@ declare global {
       getNextRecording: () => Promise<{ date: string } | null>;
       getHistory: () => Promise<unknown[]>;
       deleteHistoryEntry: (ts: number) => Promise<void>;
+      /** One retention pass: move recordings older than `autoDeleteDays` into
+       *  the papirkurv (owner decision 2026-08-31 — the trash, never a hard
+       *  delete). Never rejects: a failed pass answers `disabled` with 0
+       *  moved, because it runs unasked at boot and on a timer. */
+      recordingsPrune: () => Promise<
+        import("../../legacy/bindings/PruneSummary").PruneSummary
+      >;
       /** Move recordings (with sidecars + video sibling) into the papirkurv.
        *  Rejects rather than reporting a delete that did not happen. */
       trashMove: (paths: string[]) => Promise<TrashEntry[]>;

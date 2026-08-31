@@ -37,6 +37,7 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
+import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { Settings } from "../../legacy/bindings/Settings";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
@@ -767,6 +768,17 @@ const api: Record<string, unknown> = {
   // These deliberately do NOT swallow their errors into a fallback: a delete
   // that reports success while the file is still there, or an «Angre» that
   // quietly does nothing, is worse than an error message.
+  // Retensjonspasset (owner decision 2026-08-31): move recordings older than
+  // `autoDeleteDays` into the papirkurv. `call`, not `invoke`: the pass runs
+  // unasked at boot and on a timer, so a failure must degrade to "nothing
+  // moved" (the next tick tries again) rather than toast an error at a
+  // volunteer who did nothing. `disabled: true` is the honest fallback — a
+  // pass that did not run must not read as "retention ran, nothing was due".
+  recordingsPrune: async () =>
+    call<PruneSummary>("recordings_prune", undefined, {
+      moved: 0,
+      disabled: true,
+    }),
   trashMove: async (paths: string[]) =>
     invoke<TrashEntry[]>("trash_move", { paths }),
   trashList: async () => call<TrashEntry[]>("trash_list", undefined, []),

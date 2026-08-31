@@ -28,6 +28,11 @@
     "deleteFailed": "Löschen fehlgeschlagen"
   },
   "trash": {
+    "retentionMoved": {
+      "one": "1 alte Aufnahme wurde in den Papierkorb verschoben",
+      "other": "{n} alte Aufnahmen wurden in den Papierkorb verschoben"
+    },
+    "retentionShowTrash": "Papierkorb anzeigen",
     "title": "Papierkorb",
     "emptyAll": "Papierkorb leeren",
     "alreadyEmpty": "Der Papierkorb ist leer",

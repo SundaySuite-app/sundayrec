@@ -716,6 +716,11 @@
     "deleteFailed": "Could not delete"
   },
   "trash": {
+    "retentionMoved": {
+      "one": "1 old recording was moved to the trash",
+      "other": "{n} old recordings were moved to the trash"
+    },
+    "retentionShowTrash": "Show the trash",
     "title": "Trash",
     "emptyAll": "Empty the trash",
     "alreadyEmpty": "The trash is empty",
