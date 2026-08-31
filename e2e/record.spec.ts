@@ -59,10 +59,21 @@ const CALL_SPIES: Fixtures = {
   }`),
 };
 
+// ⚠️ INGEN kamera-fixtur her, og det er målt: `list_video_devices: []` sto på
+// denne linja og styrte ingenting. Skallet kaller aldri den kommandoen —
+// kameralista går via shimmens `listVideoDevices` → `invoke("list_devices")` —
+// så nøkkelen var en stubb som lot som den sa «ingen kameraer».
+//
+// Den ble heller ikke byttet mot `list_devices`, for på disse testene ville
+// DEN også vært inert: `loadVideoDevices()` har én kaller (`CameraCard`), og
+// den er gated på `videoEnabled === true`. Ingen test her setter det flagget,
+// så ingenting enumererer kameraer i det hele tatt. Målt med en engangs-probe:
+// med `videoEnabled` usatt ble `list_devices` ALDRI kalt; med den satt ble den
+// kalt én gang. Kamera-blokken lenger nede setter flagget, og DEN har sin
+// `list_devices` i `CAMERA_FIXTURES`.
 const FIXTURES: Fixtures = {
   ...BOOT_FIXTURES,
   ...CALL_SPIES,
-  list_video_devices: [],
   list_audio_devices: [device(), BUILT_IN],
 };
 

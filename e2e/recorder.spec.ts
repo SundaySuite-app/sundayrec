@@ -28,10 +28,15 @@ import {
 //     That is the behaviour change the whole set is about; `record.spec.ts`
 //     owns proving it.
 
-/** Spies wired at the invoke boundary, same pattern as auto-update.spec.ts. */
+/** Spies wired at the invoke boundary, same pattern as auto-update.spec.ts.
+ *
+ * ⚠️ Ingen kamera-fixtur: `list_video_devices: []` sto her og styrte ingenting
+ * (skallet kaller ikke den kommandoen), og en `list_devices` i stedet ville
+ * vært like inert — denne spec-en setter aldri `videoEnabled`, og
+ * kamera-enumereringen er gated på det flagget. Ingen test her ser på kamera.
+ * Se `record.spec.ts` for hele saksframstillingen og for kamera-dekningen. */
 const RECORDER_FIXTURES: Fixtures = {
   ...BOOT_FIXTURES,
-  list_video_devices: [],
   list_audio_devices: [
     {
       id: "x32",
