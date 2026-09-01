@@ -28,6 +28,7 @@ function facts(over: Partial<DecisionFacts> = {}): DecisionFacts {
     diskFreeBytes: null,
     roomMinutes: null,
     emailTransport: null,
+    relayConfirmed: false,
     locale: "no",
     vuWord: null,
     ...over,
