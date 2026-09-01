@@ -5,9 +5,19 @@
  *
  * `feature-gate-core` skriver ned regelen: en gate som slår av sine egne
  * oppsettsfelter kan aldri konfigureres. Spørsmål 5 har en `Gate` foran
- * e-postbryteren som sier «Krever en e-postserver (SMTP). Sett opp under
- * Avansert» — og det er trygt nettopp fordi feltene er på en ANNEN skjerm.
- * Denne. Når de tre feltene og passordet er på plass, åpner gaten seg der.
+ * e-postbryteren som peker hit — og det er trygt nettopp fordi feltene er på en
+ * ANNEN skjerm. Denne. Når de tre feltene og passordet er på plass, åpner gaten
+ * seg der.
+ *
+ * ## En server her VINNER over reléet
+ *
+ * Kortteksten sier det i én setning, og det er ikke en advarsel — det er
+ * garantien: `plan_failure`s utledede regel sender gjennom SMTP så lenge en
+ * full transport finnes, ellers gjennom SundaySuite-reléet. En menighet som
+ * allerede har satt opp en server merker derfor ingenting til at reléet kom,
+ * og trenger ikke å gjøre noe for at det skal fortsette sånn. Det står i
+ * teksten fordi den motsatte antakelsen — «nå går alt gjennom skyen» — er den
+ * en frivillig ellers ville gjort.
  *
  * ## Eksplisitt Lagre
  *
