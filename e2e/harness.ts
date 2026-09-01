@@ -252,6 +252,28 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
 export const SETTLED_SETTINGS = { onboardingDone: true };
 
 /**
+ * One `relay_status` answer: nothing enrolled, on a build that HAS an endpoint.
+ *
+ * `endpointBuilt: true` is the default and not an accident — it is what a
+ * shipped build is (`SUNDAYREC_NOTIFY_URL` is baked in by release.yml), so a
+ * spec that says nothing gets the screen a volunteer actually meets. A spec
+ * about a build WITHOUT the endpoint says so explicitly.
+ */
+export function relayEmpty(
+  over: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    endpointBuilt: true,
+    state: null,
+    address: null,
+    enrolledAt: null,
+    confirmedAt: null,
+    queued: 0,
+    ...over,
+  };
+}
+
+/**
  * The commands the app touches on EVERY boot, answered with something harmless.
  *
  * Without these each one rejects, lands in E2.4's failure ring and renders its
@@ -272,6 +294,12 @@ export const BOOT_FIXTURES: Fixtures = {
   list_audio_devices: [],
   email_status: { featureBuilt: false },
   email_has_smtp_password: false,
+  // The relay's empty state, answered on every boot for the same reason
+  // `email_status` is: three screens read it (question 5 on Oppsett, the
+  // control room's card 5, the first-run checklist), and a machine that has
+  // never enrolled is the state every spec that is not ABOUT the relay wants.
+  // `relayEmpty()` builds the same shape a spec can then vary.
+  relay_status: relayEmpty(),
   get_launch_at_login: false,
   // `needsPrompt: false` matters: a `true` here floats the one-time consent card
   // over every other screen and every other spec's assertions.
