@@ -45,7 +45,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 
-use chrono::{Local, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager};
@@ -98,6 +98,101 @@ static QUIET_WAKE_REPORTS: AtomicU32 = AtomicU32::new(0);
 pub const NEXT_EVENT: &str = "scheduler://next";
 /// Emitted when [`check_missed`] finds scheduled recordings that never ran.
 pub const MISSED_EVENT: &str = "scheduler://missed";
+
+// ─────────────────────────────────────────────────────────────────────────────
+//   The scheduled-run marker
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// What a scheduled recording leaves behind when it STARTS, so the receipt can
+/// describe it after it finishes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduledRun {
+    /// The schedule's own name for the occurrence — the weekly slot's times, or
+    /// a special's name. Same wording [`missed_recordings`] puts on a missed
+    /// one, so the two mails call the same slot the same thing.
+    pub slot: String,
+    /// When the engine actually accepted the start (local wall clock). The
+    /// receipt's "Start", and with the finish time its duration.
+    pub started_at: DateTime<Local>,
+}
+
+/// Managed state: the ONE scheduled run that is currently in flight, if any.
+///
+/// ## Why a marker and not a look at the recording
+///
+/// The receipt exists for the person who was NOT in the building: a scheduled
+/// recording ran unattended and they would like to know it worked. A manual one
+/// needs no mail — whoever pressed Start watched the app finish. But
+/// `recording://finished` says only where the file landed; nothing on that event,
+/// and nothing in the recorder at all, remembers which button began the take.
+/// Rather than teach the hardware-verified capture path to carry a reporting
+/// flag, the scheduler stamps this on its way past and the dispatcher consumes
+/// it.
+///
+/// ## Set once, taken once
+///
+/// Stamped after a SUCCESSFUL `engine.start` in both branches that have one (the
+/// ordinary timer and `check_missed`'s late start), consumed by the finish
+/// dispatch, and dropped by a recorder failure — a run that died did not finish.
+/// Taking rather than reading is what stops a marker from outliving its run and
+/// being claimed by the next manual recording.
+#[derive(Debug, Default)]
+pub struct ScheduledRunMarker(Mutex<Option<ScheduledRun>>);
+
+impl ScheduledRunMarker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Remember that THIS run was scheduled. Overwrites any stale marker: a new
+    /// start means the previous run is over one way or another, and the fresher
+    /// fact is the true one.
+    pub fn set(&self, run: ScheduledRun) {
+        *lock_recover(&self.0) = Some(run);
+    }
+
+    /// Consume the marker, if there is one.
+    pub fn take(&self) -> Option<ScheduledRun> {
+        lock_recover(&self.0).take()
+    }
+}
+
+/// The schedule's own name for a trigger, in the wording
+/// [`sundayrec_core::schedule::missed_recordings`] uses for a missed one.
+///
+/// Stated once here so the receipt and the missed alert cannot name the same
+/// Sunday two different ways — which is exactly the confusion a volunteer
+/// comparing two mails would have to resolve on their own.
+fn trigger_label(settings: &Settings, kind: TriggerKind) -> String {
+    match kind {
+        TriggerKind::Slot(i) => settings
+            .active_slots()
+            .get(i)
+            .map(|s| format!("Ukentlig opptak ({}–{})", s.start, s.stop))
+            .unwrap_or_else(|| "Ukentlig opptak".to_string()),
+        TriggerKind::Special(i) => settings
+            .special_recordings
+            .get(i)
+            .map(|s| s.name.trim())
+            .filter(|n| !n.is_empty())
+            .unwrap_or("Spesialopptak")
+            .to_string(),
+    }
+}
+
+/// Stamp the marker after a scheduled start the engine accepted.
+///
+/// A missing marker state is not an error worth a log line per start: the only
+/// way here without one is a build that forgot to manage it, which the receipt
+/// test would have caught long before a church saw it.
+fn mark_scheduled_run(app: &AppHandle, settings: &Settings, kind: TriggerKind) {
+    if let Some(marker) = app.try_state::<ScheduledRunMarker>() {
+        marker.set(ScheduledRun {
+            slot: trigger_label(settings, kind),
+            started_at: Local::now(),
+        });
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //   Engine (Tauri-managed state)
@@ -409,6 +504,11 @@ async fn fire(
                             crate::telemetry::counters::count(
                                 sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
                             );
+                            // …and the marker the receipt is gated on. Only after
+                            // a start the engine ACCEPTED: a receipt for a
+                            // recording that never began would be the worst kind
+                            // of mail this app could send.
+                            mark_scheduled_run(app, settings, ev.source);
                             tracing::info!("scheduler: started scheduled recording");
                             // R3-H: «Varsel på PC når opptak starter» — the
                             // unattended case is exactly when this is useful (a
@@ -588,6 +688,10 @@ pub async fn check_missed(
                     crate::telemetry::counters::count(
                         sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
                     );
+                    // The SECOND branch that starts a scheduled recording, and
+                    // the one that is easy to forget: a late start is still a
+                    // start nobody watched, so it earns the same receipt.
+                    mark_scheduled_run(app, &settings, t.kind);
                 }
                 if let Err(e) = late {
                     tracing::error!("scheduler: late-start of missed recording failed: {e}");
@@ -623,8 +727,157 @@ pub async fn check_missed(
         .collect();
     if !out.is_empty() {
         let _ = app.emit(MISSED_EVENT, &out);
+        report_missed(app, pool, &out).await;
     }
     Ok(out)
+}
+
+/// Tell somebody about the Sundays that were not recorded.
+///
+/// ## The hole this closes
+///
+/// `settings.rs` has promised an e-mail "when a recording fails / a scheduled
+/// one is missed" since the Electron port. The first half was wired in P; the
+/// second half sent NOTHING — [`check_missed`] emitted an event to a renderer
+/// that may not be running and stopped there. A church whose machine slept
+/// through Sunday morning learned about it when somebody asked for the
+/// recording.
+///
+/// ## Once per occurrence, durably
+///
+/// [`check_missed`] runs at startup AND after every wake, so the same Sunday is
+/// rediscovered every time the app launches for as long as it stays inside the
+/// 24-hour window. The `notify_seen` ledger is what makes that one alert instead
+/// of five, and it is a TABLE rather than the in-memory `AlertGate` for exactly
+/// that reason: the repeats are separated by restarts, which is precisely what
+/// RAM does not survive.
+///
+/// The ledger is stamped AFTER the dispatch, not before: the relay leg reads the
+/// same rows to decide whether it has already sent this, and a row written first
+/// would suppress the very mail this call is making. Both writes are in one
+/// task, so there is no window between them for a second observer to slip
+/// through — and the outbox's unique dedup key holds even if there were.
+///
+/// ⚠️ **The native notification now fires too, and so does SMTP where it is
+/// configured.** That is a behaviour change for existing users, not just for
+/// relay subscribers: a missed service used to be silent on every channel. It is
+/// deliberate — an unrecorded service is exactly the news an operator standing
+/// at the machine can still act on (the next slot is in the schedule too) — and
+/// it is the one part of this feature that needed the owner's word before it
+/// merged.
+async fn report_missed(app: &AppHandle, pool: &SqlitePool, missed: &[MissedRecordingInfo]) {
+    use sundayrec_core::relay::SeenScope;
+
+    let settings = settings::load(pool).await.unwrap_or_default();
+    let lang = sundayrec_core::email::MailLang::from_code(settings.language.as_deref());
+    let fmt = sundayrec_core::notify::alert_date_format(lang);
+    let now = crate::util::now_ms();
+
+    let fresh = unreported_missed(pool, missed, fmt, now).await;
+    if fresh.is_empty() {
+        tracing::debug!("scheduler: every missed occurrence had already been reported");
+        return;
+    }
+
+    let message = missed_summary(&fresh);
+    tracing::warn!(
+        count = fresh.len(),
+        "scheduler: reporting missed scheduled recording(s)"
+    );
+    crate::notify::dispatch_failure(
+        app,
+        crate::notify::FailureCtx::now(
+            crate::notify::CODE_SCHEDULED_MISSED,
+            message,
+            sundayrec_core::notify::FailureSource::Missed,
+        )
+        .with_missed(fresh.clone()),
+    )
+    .await;
+
+    for slot in &fresh {
+        if let Err(e) =
+            crate::notify::relay::store::seen_mark(pool, SeenScope::Missed, &slot.seen_key(), now)
+                .await
+        {
+            // The alert HAS gone out; failing to record that means one possible
+            // repeat on the next launch, which is a great deal better than
+            // refusing to send it in the first place.
+            tracing::warn!("scheduler: could not stamp the missed ledger: {e}");
+        }
+    }
+}
+
+/// The occurrences that have NOT been reported yet, oldest first, each carrying
+/// the human date the mail will print.
+///
+/// Separate from [`report_missed`] because this half is the whole once-guarantee
+/// and the other half needs an `AppHandle` — the filter can be run twice against
+/// one ledger in a test, which is exactly the sequence a machine that restarts
+/// twice on a Sunday afternoon performs.
+async fn unreported_missed(
+    pool: &SqlitePool,
+    missed: &[MissedRecordingInfo],
+    date_format: &str,
+    now_ms: i64,
+) -> Vec<crate::notify::MissedSlot> {
+    use sundayrec_core::relay::{seen_decision, SeenScope};
+
+    let mut fresh = Vec::new();
+    for m in missed {
+        let slot = crate::notify::MissedSlot {
+            at: m.at.clone(),
+            label: m.label.clone(),
+            // The human date, in the mail's language. `at` is the ISO-like local
+            // string [`fmt_dt`] produced, so parsing it back cannot fail unless
+            // that format changed — in which case the raw string is still true.
+            date: NaiveDateTime::parse_from_str(&m.at, "%Y-%m-%dT%H:%M:%S")
+                .map(|dt| dt.format(date_format).to_string())
+                .unwrap_or_else(|_| m.at.clone()),
+        };
+        let last = crate::notify::relay::store::seen_get(pool, SeenScope::Missed, &slot.seen_key())
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("scheduler: could not read the missed ledger: {e}");
+                None
+            });
+        if seen_decision(SeenScope::Missed, last, now_ms) {
+            continue;
+        }
+        fresh.push(slot);
+    }
+    // OLDEST FIRST, and this sort is load-bearing twice over.
+    // `missed_recordings` walks the weekly slots and THEN the dated specials, so
+    // its output is in settings order, not clock order — and the mail's subject
+    // headlines `missed[0]` as the oldest ("…og 2 til"), which would then name
+    // whichever slot happened to be typed in first. The outbox's dedup key is
+    // built from the same first element, so without this a slot dragged up the
+    // settings list would look like a different sweep of the same Sundays.
+    //
+    // The `at` strings sort lexicographically because `fmt_dt` is
+    // `%Y-%m-%dT%H:%M:%S` — fixed-width, most significant first. That is a
+    // property of the format, not a coincidence, and the test above pins it.
+    fresh.sort_by(|a, b| a.at.cmp(&b.at).then_with(|| a.label.cmp(&b.label)));
+    fresh
+}
+
+/// The one Norwegian sentence the native notification shows and the SMTP alert
+/// carries. The relay's mail is [`sundayrec_core::email::render_missed`]'s
+/// instead — seven languages, one line per occurrence — because it has a
+/// subject and a body to fill and this has a toast to fit in.
+fn missed_summary(missed: &[crate::notify::MissedSlot]) -> String {
+    match missed {
+        [one] => format!(
+            "Planlagt opptak ble ikke gjort: {} ({}).",
+            one.label, one.at
+        ),
+        many => format!(
+            "{} planlagte opptak ble ikke gjort. Det eldste: {} ({}).",
+            many.len(),
+            many[0].label,
+            many[0].at
+        ),
+    }
 }
 
 /// Recording start times converted to the local-wall `NaiveDateTime` frame the
@@ -1074,5 +1327,248 @@ mod tests {
         let now = dt("2026-06-14 10:00");
         let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &HashSet::new());
         assert!(missed.is_empty(), "older than 24h → not logged");
+    }
+
+    // ── A3: the missed hole, and the receipt marker ──────────────────────────
+
+    use sundayrec_core::relay::SeenScope;
+
+    async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = crate::db::store::open_pool(&dir.path().join("test.sqlite"))
+            .await
+            .expect("open_pool");
+        (pool, dir)
+    }
+
+    fn info(at: &str, label: &str) -> MissedRecordingInfo {
+        MissedRecordingInfo {
+            at: at.into(),
+            label: label.into(),
+        }
+    }
+
+    /// THE test the missed hole is worth: two sweeps over the same history
+    /// report the Sunday ONCE.
+    ///
+    /// `check_missed` runs at startup and after every wake. A machine restarted
+    /// three times on a Sunday afternoon rediscovers the same missed slot three
+    /// times, and before the ledger existed each rediscovery would have been a
+    /// mail. The second sweep here is that second launch.
+    #[tokio::test]
+    async fn a_missed_sunday_is_reported_once_and_never_twice() {
+        let (pool, _d) = temp_pool().await;
+        let history = [
+            info("2026-09-06T11:00:00", "Ukentlig opptak (11:00–13:00)"),
+            info("2026-09-06T19:00:00", "Kveldsmesse"),
+        ];
+        let now = crate::util::now_ms();
+
+        let first = unreported_missed(&pool, &history, "%d.%m.%Y %H:%M", now).await;
+        assert_eq!(first.len(), 2, "nothing has been said yet");
+        assert_eq!(first[0].date, "06.09.2026 11:00", "localized for the mail");
+
+        // What `report_missed` does after the dispatch returns.
+        for slot in &first {
+            crate::notify::relay::store::seen_mark(&pool, SeenScope::Missed, &slot.seen_key(), now)
+                .await
+                .unwrap();
+        }
+
+        // The next launch, minutes later — and a year later, because "once" for
+        // an occurrence is a full stop, not a window.
+        for later in [now + 60_000, now + 365 * 24 * 60 * 60 * 1_000] {
+            assert!(
+                unreported_missed(&pool, &history, "%d.%m.%Y %H:%M", later)
+                    .await
+                    .is_empty(),
+                "the same Sunday must not be reported again at {later}"
+            );
+        }
+    }
+
+    /// A sweep that finds a NEW occurrence beside a reported one reports only
+    /// the new one. The filter is per occurrence, not per sweep — otherwise one
+    /// remembered Sunday would silence the next.
+    #[tokio::test]
+    async fn a_second_missed_occurrence_is_still_news() {
+        let (pool, _d) = temp_pool().await;
+        let now = crate::util::now_ms();
+        let first = [info("2026-09-06T11:00:00", "Ukentlig opptak (11:00–13:00)")];
+        for slot in unreported_missed(&pool, &first, "%d.%m.%Y %H:%M", now).await {
+            crate::notify::relay::store::seen_mark(&pool, SeenScope::Missed, &slot.seen_key(), now)
+                .await
+                .unwrap();
+        }
+
+        let both = [
+            info("2026-09-06T11:00:00", "Ukentlig opptak (11:00–13:00)"),
+            info("2026-09-13T11:00:00", "Ukentlig opptak (11:00–13:00)"),
+        ];
+        let fresh = unreported_missed(&pool, &both, "%d.%m.%Y %H:%M", now).await;
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].at, "2026-09-13T11:00:00");
+    }
+
+    /// The sweep is handed back OLDEST FIRST, whatever order the settings put
+    /// the slots in.
+    ///
+    /// `missed_recordings` walks the weekly slots and then the dated specials,
+    /// so a special that happened on Saturday evening arrives after a slot that
+    /// was missed on Sunday morning. The mail's subject headlines the first
+    /// element as the oldest, and the outbox's dedup key is built from it — so
+    /// an unsorted list would both mis-name the mail and make a re-ordered
+    /// settings page look like a different sweep.
+    #[tokio::test]
+    async fn the_sweep_is_handed_over_oldest_first() {
+        let (pool, _d) = temp_pool().await;
+        let settings_order = [
+            info("2026-09-06T11:00:00", "Ukentlig opptak (11:00–13:00)"),
+            info("2026-09-05T19:00:00", "Konsert"),
+        ];
+        let fresh = unreported_missed(
+            &pool,
+            &settings_order,
+            "%d.%m.%Y %H:%M",
+            crate::util::now_ms(),
+        )
+        .await;
+        assert_eq!(
+            fresh.iter().map(|s| s.at.as_str()).collect::<Vec<_>>(),
+            vec!["2026-09-05T19:00:00", "2026-09-06T11:00:00"],
+            "the mail headlines the first element as the oldest"
+        );
+    }
+
+    /// The ledger key survives a language change. A volunteer who switches the
+    /// app to English must not be told about the same missed Sunday again just
+    /// because the printed date now reads `06/09/2026`.
+    #[tokio::test]
+    async fn switching_language_does_not_re_report_a_missed_sunday() {
+        let (pool, _d) = temp_pool().await;
+        let now = crate::util::now_ms();
+        let history = [info("2026-09-06T11:00:00", "Ukentlig opptak (11:00–13:00)")];
+
+        let no = unreported_missed(&pool, &history, "%d.%m.%Y %H:%M", now).await;
+        assert_eq!(no[0].date, "06.09.2026 11:00");
+        crate::notify::relay::store::seen_mark(&pool, SeenScope::Missed, &no[0].seen_key(), now)
+            .await
+            .unwrap();
+
+        // Same occurrence, English date format — the key is keyed on `at`.
+        let en = unreported_missed(&pool, &history, "%d/%m/%Y %H:%M", now).await;
+        assert!(en.is_empty(), "the ledger keys on the machine's timestamp");
+    }
+
+    /// The sentence the native notification shows, singular and plural. It is
+    /// the summary; the mail's seven-language body is `render_missed`'s.
+    #[test]
+    fn the_missed_summary_counts_what_it_names() {
+        let one = crate::notify::MissedSlot {
+            at: "2026-09-06T11:00:00".into(),
+            label: "Ukentlig opptak (11:00–13:00)".into(),
+            date: "06.09.2026 11:00".into(),
+        };
+        let many = vec![one.clone(), one.clone(), one.clone()];
+        let s1 = missed_summary(std::slice::from_ref(&one));
+        assert!(s1.contains("Ukentlig opptak") && s1.contains("2026-09-06T11:00:00"));
+        assert!(
+            !s1.starts_with('1') && !s1.contains("eldste"),
+            "a single occurrence is named, not counted and not ranked: {s1}"
+        );
+        let s3 = missed_summary(&many);
+        assert!(s3.starts_with('3'), "{s3}");
+        assert!(s3.contains("eldste"), "the headline names the oldest: {s3}");
+    }
+
+    /// The receipt's marker: taken once, and gone.
+    ///
+    /// This is what makes "a manual recording gets no receipt" true. The next
+    /// `recording://finished` after a scheduled run is a DIFFERENT recording —
+    /// whoever pressed Start is standing there — and a marker that survived
+    /// being read would hand them a mail about it.
+    #[test]
+    fn a_manual_recording_finds_no_marker_to_claim() {
+        let marker = ScheduledRunMarker::new();
+        assert!(
+            marker.take().is_none(),
+            "a manual recording on a fresh process: no receipt"
+        );
+
+        let run = ScheduledRun {
+            slot: "Ukentlig opptak (11:00–13:00)".into(),
+            started_at: Local::now(),
+        };
+        marker.set(run.clone());
+        assert_eq!(marker.take(), Some(run));
+        assert!(
+            marker.take().is_none(),
+            "and the manual recording that follows finds nothing"
+        );
+    }
+
+    /// A fresh start overwrites a stale marker rather than being refused by it.
+    /// A marker that outlived its run (a crash between start and finish) must
+    /// not stop the NEXT scheduled recording from earning its receipt.
+    #[test]
+    fn a_new_scheduled_run_replaces_a_stale_marker() {
+        let marker = ScheduledRunMarker::new();
+        marker.set(ScheduledRun {
+            slot: "gammelt".into(),
+            started_at: Local::now(),
+        });
+        marker.set(ScheduledRun {
+            slot: "nytt".into(),
+            started_at: Local::now(),
+        });
+        assert_eq!(marker.take().map(|r| r.slot), Some("nytt".to_string()));
+    }
+
+    /// The receipt and the missed alert must call the same slot the same thing
+    /// — the wording is `missed_recordings`', mirrored.
+    #[test]
+    fn a_slot_is_named_the_same_way_in_both_mails() {
+        let settings = Settings {
+            slots: vec![sunday_slot()],
+            special_recordings: vec![special("2026-09-06", "19:00", "21:00", "Konsert")],
+            ..Settings::default()
+        };
+        assert_eq!(
+            trigger_label(&settings, TriggerKind::Slot(0)),
+            "Ukentlig opptak (11:00–12:00)"
+        );
+        // …the exact string the core puts on a MISSED occurrence of that slot.
+        let missed = missed_recordings(
+            settings.active_slots(),
+            &[],
+            dt("2026-09-06 13:00"),
+            &[],
+            &HashSet::new(),
+        );
+        assert_eq!(
+            missed.first().map(|m| m.label.clone()),
+            Some(trigger_label(&settings, TriggerKind::Slot(0)))
+        );
+
+        assert_eq!(
+            trigger_label(&settings, TriggerKind::Special(0)),
+            "Konsert",
+            "a special is called what somebody named it"
+        );
+        let unnamed = Settings {
+            special_recordings: vec![special("2026-09-06", "19:00", "21:00", "  ")],
+            ..Settings::default()
+        };
+        assert_eq!(
+            trigger_label(&unnamed, TriggerKind::Special(0)),
+            "Spesialopptak",
+            "and an unnamed one is not an empty line in a mail"
+        );
+        // An index the settings no longer hold (a slot deleted mid-run) names
+        // something rather than panicking.
+        assert_eq!(
+            trigger_label(&Settings::default(), TriggerKind::Slot(9)),
+            "Ukentlig opptak"
+        );
     }
 }
