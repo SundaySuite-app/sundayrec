@@ -16,7 +16,8 @@
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
 //!   - [`device_enum`]  — pure ffmpeg `-list_devices` stderr parsers (audio + video)
-//!   - [`email`]         — error/test alert templates (7-lang) + throttle/dedup gate (PU-1)
+//!   - [`email`]         — error/test/missed/receipt/confirm mail templates (7-lang) + throttle/dedup gate (PU-1)
+//!   - [`relay`]         — the e-mail relay's outbox decisions: which queued row may leave an unconfirmed subscription, when a row is too old to send, and what "we already said this" means per event kind (A1)
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
 //!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
@@ -70,6 +71,7 @@ pub mod reconnect;
 pub mod recorder;
 pub mod recovery;
 pub mod redact;
+pub mod relay;
 pub mod schedule;
 pub mod selftest;
 pub mod settings;
