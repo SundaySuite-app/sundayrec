@@ -455,7 +455,12 @@ pub fn spawn_periodic_drain(app: AppHandle) {
 
 /// The user's home directory, for the free-text scrubbers. Same lookup the
 /// crash ring uses.
-fn home_dir() -> Option<String> {
+///
+/// `pub(crate)` since A3: the relay's mail bodies are scrubbed by the same
+/// `sanitize_free_text` this feeds, and the endpoint's path validator rejects a
+/// body that still names an operator's folder — with a 400, which the outbox
+/// drops. One lookup, so the two scrubs cannot be told different homes.
+pub(crate) fn home_dir() -> Option<String> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(|v| v.to_string_lossy().into_owned())
