@@ -885,13 +885,37 @@ forsvinner. Å løse det ordentlig krever en ny nøkkel i Rust, og det er eieren
 valg — ikke noe en skjerm legger til fordi en bryter gjerne vil oppføre seg
 penere.
 
-## To usanne setninger fra canvasen som ikke ble med
+## Én usann setning fra canvasen som ikke ble med, og én som ble sann i A5
 
-- **«E-posten sendes via SundaySuite.»** Det finnes ikke noe slikt relé.
-  Sendingen går gjennom menighetens EGEN SMTP-server, og uten en slik server
-  kommer ingenting fram uansett hva som står i adressefeltet. Bryteren står
-  derfor bak en `Gate` som sier det, og gaten er trygg her fordi SMTP-feltene
-  bor under Avansert — `feature-gate-core` advarer mot det motsatte.
+- **«E-posten sendes via SundaySuite.»** Var usann da dette dokumentet først ble
+  skrevet: sendingen gikk kun gjennom menighetens EGEN SMTP-server, og uten en
+  slik server kom ingenting fram uansett hva som stod i adressefeltet. A1–A5
+  bygde reléet canvasen forutsatte, og setningen er nå sann — men ikke
+  ubetinget. Kontrakten (`crate::notify::plan_failure`, urørt siden A1):
+  - **Én e-postbryter, to sendeveier.** `email_on_error` betyr fortsatt «si fra
+    på e-post», og hvilken RØR meldingen går gjennom er en UTLEDET regel, ikke
+    et tredje valg brukeren tar stilling til: **en konfigurert SMTP-server
+    vinner, reléet tar resten.** En menighet som allerede har satt opp en
+    server er uendret av konstruksjon.
+  - **Reléet krever dobbel opt-in** før det sender noe som helst: brukeren
+    trykker «Bekreft e-postadressen», får en engangslenke i innboksen
+    (GET viser en knapp, POST bekrefter — lenkeskannere kan ikke bekrefte ved
+    et uhell), og først da åpner `relay_pump_decision` porten. Uten en
+    bekreftet adresse — eller om adressen siden svarer at den ikke tar imot
+    post (`suppressed`) — sender reléet ingenting, og gaten sier hvorfor.
+  - **Kvitteringsbryteren** (`email_receipt_enabled`, default AV) er en EGEN
+    innstilling, gated på bekreftet relé og aldri på SMTP: «opptaket er
+    ferdig» er en tjeneste reléet tilbyr, ikke et løfte appen noensinne har
+    gitt over menighetens egen server. Den går KUN for planlagte opptak, og
+    e-posten bærer kun filens basename — aldri mappen.
+
+  Bryteren for «Hvem får beskjed hvis noe går galt?» står derfor ikke bak en
+  gate som krever SMTP, men bak `relayGateStatus`: grønn når ÉN av de to
+  veiene er åpen. Gaten er fortsatt trygg her — den slår ikke av sine egne
+  oppsettsfelter, for SMTP-feltene bor under Avansert, og «Bekreft
+  e-postadressen» står i adressekortet UNDER gaten, ikke i den
+  (`feature-gate-core` advarer mot det motsatte).
+
 - **«Varsel på maskinen … Alltid på.»** Ved siden av en bryter som kan slås av.
   Teksten sier nå hva bryteren gjør.
 
