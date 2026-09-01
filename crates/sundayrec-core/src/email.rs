@@ -68,6 +68,37 @@ impl MailLang {
         }
     }
 
+    /// All seven, in declaration order.
+    pub const ALL: &'static [MailLang] = &[
+        MailLang::No,
+        MailLang::En,
+        MailLang::De,
+        MailLang::Sv,
+        MailLang::Da,
+        MailLang::Pl,
+        MailLang::Fr,
+    ];
+
+    /// The settings code this language was resolved FROM — the exact inverse of
+    /// [`Self::from_code`].
+    ///
+    /// The relay needs it: `settings.language` may be `None` ("follow the OS"),
+    /// but the mail has already been rendered in ONE language by then, and the
+    /// endpoint stores which. Sending the raw setting would record `null` — or
+    /// a code the mail was not actually written in — for a subscription whose
+    /// later mails must match. The round-trip is pinned in this module's tests.
+    pub fn as_code(self) -> &'static str {
+        match self {
+            MailLang::No => "no",
+            MailLang::En => "en",
+            MailLang::De => "de",
+            MailLang::Sv => "sv",
+            MailLang::Da => "da",
+            MailLang::Pl => "pl",
+            MailLang::Fr => "fr",
+        }
+    }
+
     /// The BCP-47 locale used to format the human date (mirrors `LOCALE_MAP`).
     pub fn locale(self) -> &'static str {
         match self {
@@ -1261,6 +1292,26 @@ mod tests {
         assert_eq!(MailLang::from_code(Some("xx")), MailLang::No);
         assert_eq!(MailLang::from_code(None), MailLang::No);
         assert_eq!(MailLang::De.locale(), "de-DE");
+    }
+
+    #[test]
+    fn the_code_a_mail_was_rendered_in_round_trips() {
+        // The relay records WHICH language a subscription's mail was written
+        // in, and every later mail has to match. `as_code` is only safe as the
+        // answer to that if it is the exact inverse of the resolution — a
+        // language that resolved one way and reported another would tell the
+        // endpoint the wrong thing about a mail it never sees.
+        assert_eq!(MailLang::ALL.len(), 7);
+        for lang in MailLang::ALL {
+            assert_eq!(
+                MailLang::from_code(Some(lang.as_code())),
+                *lang,
+                "{lang:?} must round-trip through its own code"
+            );
+        }
+        // …and the codes are the settings vocabulary, not the BCP-47 one.
+        assert_eq!(MailLang::No.as_code(), "no");
+        assert_ne!(MailLang::No.as_code(), MailLang::No.locale());
     }
 
     #[test]

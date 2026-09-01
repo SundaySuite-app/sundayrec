@@ -349,6 +349,92 @@ pub fn overflow_victims(entries: &[RelayEntry], cap: usize) -> Vec<String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//   The transitions
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Four functions, and every one of them is [`crate::telemetry::queue`]'s with
+// [`RelayEntry`] substituted for `TelemetryEntry`. They are re-stated rather
+// than shared because Rust has no way to write them once over two structs
+// without a trait whose only implementors are these two — and the ladder they
+// step through, which is the part with a judgement in it, IS shared (see the
+// module header). Their tests below assert against the imported
+// [`BACKOFF_STEPS_MS`], so a change to the ladder shows up here rather than
+// producing two queues that retry differently.
+
+/// Reset any row left in `Sending` back to `Pending`, returning how many.
+///
+/// Call ONCE at startup: a row only reaches `Sending` while a request is in
+/// flight, so at boot every one of them was stranded by a force-quit. Without
+/// this, a machine killed mid-send never sends that row again — and for an
+/// `unsubscribe` row that means the endpoint goes on mailing somebody who asked
+/// it to stop.
+pub fn reset_stale_sending(entries: &mut [RelayEntry]) -> usize {
+    let mut reset = 0;
+    for e in entries.iter_mut() {
+        if e.status == RelayStatus::Sending {
+            e.status = RelayStatus::Pending;
+            reset += 1;
+        }
+    }
+    reset
+}
+
+/// Transition a row to `Sending` and count the attempt, just BEFORE the request.
+///
+/// Counting first is what makes a crash mid-request cost an attempt rather than
+/// being free: a row that could be tried, killed, and tried again without the
+/// count moving would retry forever.
+pub fn mark_sending(entries: &mut [RelayEntry], id: &str) {
+    if let Some(e) = entries.iter_mut().find(|e| e.id == id) {
+        e.status = RelayStatus::Sending;
+        e.attempts += 1;
+    }
+}
+
+/// A delivered row leaves the queue. Returns `true` if one was removed.
+pub fn on_success(entries: &mut Vec<RelayEntry>, id: &str) -> bool {
+    let before = entries.len();
+    entries.retain(|e| e.id != id);
+    entries.len() != before
+}
+
+/// Apply a failed attempt: back off, or give up at [`MAX_ATTEMPTS`].
+///
+/// `error` is stored so the panel can say why nothing has arrived. Attempts are
+/// incremented by [`mark_sending`] before the attempt, so by the time this runs
+/// `attempts` already counts this try.
+pub fn on_failure(entries: &mut [RelayEntry], id: &str, error: impl Into<String>, now_ms: i64) {
+    if let Some(e) = entries.iter_mut().find(|e| e.id == id) {
+        e.last_error = Some(error.into());
+        if e.attempts >= MAX_ATTEMPTS {
+            e.status = RelayStatus::Failed;
+        } else {
+            e.status = RelayStatus::Pending;
+            let idx = (e.attempts.saturating_sub(1) as usize).min(BACKOFF_STEPS_MS.len() - 1);
+            e.next_attempt = now_ms + BACKOFF_STEPS_MS[idx];
+        }
+    }
+}
+
+/// Drop a row the endpoint will never accept. Returns `true` if one went.
+///
+/// The counterpart to [`on_failure`]. The ladder answers "the church wifi is
+/// down"; it is exactly wrong for "this request is malformed", which is
+/// malformed the same way all six times. The endpoint's half of the contract is
+/// `sunday-telemetry/src/notify.ts`: a 400 names the offending field and is not
+/// retryable, and 429 is the one transient 4xx.
+///
+/// Nothing is kept for the panel, unlike an exhausted ladder. A row that ran out
+/// of attempts describes something the user might recognise — a network that has
+/// been down all day. A schema rejection describes a disagreement between this
+/// build and the endpoint, which they can neither cause nor fix.
+pub fn on_permanent_failure(entries: &mut Vec<RelayEntry>, id: &str) -> bool {
+    let before = entries.len();
+    entries.retain(|e| e.id != id);
+    entries.len() != before
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //   "Have we already said this?"
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -712,6 +798,79 @@ mod tests {
         const {
             assert!(RELAY_QUEUE_MAX < crate::telemetry::queue::QUEUE_MAX);
         }
+    }
+
+    // ── The transitions ──────────────────────────────────────────────────────
+
+    #[test]
+    fn an_attempt_is_counted_before_it_is_made() {
+        // A crash mid-request must cost an attempt. If the count moved only
+        // AFTER a verdict, a row that hangs the process would be retried
+        // forever with `attempts` stuck at zero.
+        let mut q = vec![entry("a", RelayKind::Send, 0)];
+        mark_sending(&mut q, "a");
+        assert_eq!(q[0].attempts, 1);
+        assert_eq!(q[0].status, RelayStatus::Sending);
+        mark_sending(&mut q, "missing"); // a stale id is a no-op, not a panic
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn a_delivered_row_and_a_refused_one_both_leave() {
+        let mut q = vec![
+            entry("a", RelayKind::Send, 0),
+            entry("b", RelayKind::Send, 1),
+        ];
+        assert!(on_success(&mut q, "a"));
+        assert!(!on_success(&mut q, "a"), "already gone");
+        assert!(on_permanent_failure(&mut q, "b"));
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn a_transient_failure_walks_the_shared_ladder_and_then_gives_up() {
+        let mut q = vec![entry("a", RelayKind::Send, 0)];
+        for step in 0..MAX_ATTEMPTS {
+            mark_sending(&mut q, "a");
+            on_failure(&mut q, "a", "no route to host", 100_000);
+            if step + 1 < MAX_ATTEMPTS {
+                assert_eq!(q[0].status, RelayStatus::Pending);
+                assert_eq!(
+                    q[0].next_attempt,
+                    100_000 + BACKOFF_STEPS_MS[step as usize],
+                    "rung {step} must come from the imported ladder"
+                );
+            }
+        }
+        assert_eq!(
+            q[0].status,
+            RelayStatus::Failed,
+            "the ladder ends after MAX_ATTEMPTS"
+        );
+        assert_eq!(q[0].last_error.as_deref(), Some("no route to host"));
+        // …and a Failed row is never selected again.
+        assert_eq!(
+            relay_pump_decision(confirmed(), &q, i64::MAX / 2),
+            RelayPumpDecision::Idle
+        );
+    }
+
+    #[test]
+    fn a_force_quit_mid_send_is_recoverable() {
+        // Not a nicety for the relay: a stranded `unsubscribe` row means the
+        // endpoint keeps sending to somebody who asked it to stop.
+        let mut q = vec![
+            entry("a", RelayKind::Unsubscribe, 0),
+            entry("b", RelayKind::Send, 1),
+        ];
+        q[0].status = RelayStatus::Sending;
+        assert_eq!(reset_stale_sending(&mut q), 1);
+        assert!(q.iter().all(|e| e.status == RelayStatus::Pending));
+        assert_eq!(reset_stale_sending(&mut q), 0);
+        assert_eq!(
+            relay_pump_decision(confirmed(), &q, 1_000),
+            RelayPumpDecision::Send("a".into())
+        );
     }
 
     // ── Once-semantics ───────────────────────────────────────────────────────
