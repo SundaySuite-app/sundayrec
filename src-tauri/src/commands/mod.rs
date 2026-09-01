@@ -15,6 +15,9 @@ pub mod haptics;
 // directory they can touch is computed in-process (see the module docs).
 pub mod logs;
 pub mod media;
+// The e-mail relay (A2) — enrol, resend, unsubscribe, test, report. Featureless
+// (it is HTTP, not SMTP) and takes no path: see the module docs.
+pub mod notify_relay;
 pub mod path_guard;
 // E1.3 — a TEST-only module: the coverage ratchet that makes it impossible to
 // land a new path-taking command without classifying it as guarded or exempt.
