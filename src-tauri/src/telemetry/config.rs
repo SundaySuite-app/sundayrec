@@ -50,6 +50,21 @@ pub const BASE_URL_VAR: &str = "SUNDAYREC_TELEMETRY_URL";
 /// The env/build var carrying the write key.
 pub const WRITE_KEY_VAR: &str = "SUNDAYREC_TELEMETRY_KEY";
 
+/// The write key for this build — ONE resolution, used by both pipes.
+///
+/// The e-mail relay posts to the same Worker with the same key (its routes are
+/// app-scoped and read it from `x-write-key`; see
+/// `crate::notify::relay::config`), so this is a function rather than a constant
+/// the relay could re-derive: `option_env!` takes a string LITERAL, so a second
+/// resolver would have to re-type `"SUNDAYREC_TELEMETRY_KEY"` — and two literals
+/// spelling one build variable is exactly the kind of agreement that holds until
+/// somebody renames one of them.
+pub fn resolve_write_key() -> Option<String> {
+    std::env::var(WRITE_KEY_VAR)
+        .ok()
+        .or_else(|| option_env!("SUNDAYREC_TELEMETRY_KEY").map(str::to_string))
+}
+
 impl TelemetryEndpoint {
     /// Resolve from the runtime env, falling back to the values baked in at
     /// build time under the same names. `None` when either is missing or blank.
@@ -57,10 +72,7 @@ impl TelemetryEndpoint {
         let base = std::env::var(BASE_URL_VAR)
             .ok()
             .or_else(|| option_env!("SUNDAYREC_TELEMETRY_URL").map(str::to_string));
-        let key = std::env::var(WRITE_KEY_VAR)
-            .ok()
-            .or_else(|| option_env!("SUNDAYREC_TELEMETRY_KEY").map(str::to_string));
-        Self::normalize(base, key)
+        Self::normalize(base, resolve_write_key())
     }
 
     /// Pure construction, so the rules are testable without touching the

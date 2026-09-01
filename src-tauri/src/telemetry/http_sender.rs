@@ -160,7 +160,12 @@ pub fn classify(status: StatusCode) -> Result<(), SendFailure> {
 /// `reqwest`'s `Display` includes the full URL, which is fine here (the URL is a
 /// build constant, not user data) but is noisy in a settings panel. This keeps
 /// the CATEGORY, which is the part that helps.
-fn transport_error(e: &reqwest::Error) -> String {
+///
+/// Shared with the e-mail relay's sender (`crate::notify::relay::sender`), which
+/// posts to the same Worker over the same client: a second copy of these four
+/// sentences would be two vocabularies for one set of network conditions,
+/// visible to the user as two pipes describing the same dead wifi differently.
+pub(crate) fn transport_error(e: &reqwest::Error) -> String {
     if e.is_timeout() {
         "the endpoint did not answer in time".to_string()
     } else if e.is_connect() {

@@ -48,6 +48,11 @@ use sundayrec_core::settings::Settings;
 use crate::db::Db;
 
 pub mod disk;
+/// The e-mail relay (A2): outbox, pump, endpoint and the local subscription
+/// record. The dispatch legs that FEED it arrive in A3 — until then nothing
+/// queues an event row, which is why every relay fact in [`dispatch_failure`]
+/// below is still `FailureRouting::default()`.
+pub mod relay;
 
 pub use sundayrec_core::notify::code;
 
