@@ -79,6 +79,24 @@ Trust boundaries the app has to defend at:
   is the highest-value secret in the release path. The Worker itself lives in
   the separate `sunday-telemetry` repo and its server-side controls are
   documented there, not here.
+- **The e-mail relay** — the same Worker's THIRD custom domain,
+  `https://notify.sundaysuite.app`, for a volunteer who has no SMTP server of
+  their own and opts in to alerts through SundaySuite (`SUNDAYREC_NOTIFY_URL`,
+  `crate::notify::relay`). Its own name, distinct from `telemetry.`, is
+  deliberate and not a routing decision — the Worker still branches on the
+  PATH, not the host — but a confirmation link in a volunteer's inbox that
+  read "telemetry" would look like tracking mail to the one person who has to
+  trust it. Anti-abuse without an IP address: the CLIENT mints the
+  confirmation/unsubscribe tokens (32 random bytes) and the Worker stores only
+  their SHA-256, so a database dump cannot itself confirm a subscription;
+  confirmation is double opt-in (GET renders a button, only POST consumes the
+  one-time token, closing off automated link-scanners); and a per-address cap
+  (3 confirmations/24 h) is enforced BEFORE a row is created, ahead of the
+  Worker's existing global rate limit and its own `NOTIFY_ENABLED` kill
+  switch. The e-mail body (subject/text/html) is rendered by the CLIENT, not
+  the Worker — the Worker validates shape and size (including the same
+  absolute-path regex the diagnostics ingest route rejects paths with) and
+  forwards it; it is never stored.
 - **OS-level device access** — audio/video capture devices and the
   filesystem locations the app is granted.
 

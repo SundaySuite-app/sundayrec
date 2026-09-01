@@ -530,47 +530,70 @@ resolve.
 
 ---
 
-## 8. Email alerts [NET] — `email` (IN DEFAULT)
+## 8. Email + relay alerts [NET] — `email` (IN DEFAULT); the relay needs no feature
 
-The error/test mailer is in the **`default` feature set**, so the shipping build
-and a plain `npm run tauri dev` both have it and pull the SMTP dep (`lettre`).
-The localized templates (7 langs) and the throttle/dedup gate are unit-tested
-in `sundayrec-core::email`; the **send** is NETWORK-UNVERIFIED. SMTP is the ONE
-transport (the Gmail-API path left with cloud backup in R1 «Frivilligen
-først»). Nothing extra to build — just run the app:
+The error/test mailer's SMTP half is in the **`default` feature set**, so the
+shipping build and a plain `npm run tauri dev` both have it and pull the SMTP
+dep (`lettre`). The relay half (`crate::relay`, `crate::notify::relay`) is
+plain HTTP and carries no cargo feature at all — it is present in EVERY build,
+gated only on whether `SUNDAYREC_NOTIFY_URL` was baked in at release-build time
+(`release.yml`) or set at runtime. The localized templates (7 langs,
+`sundayrec-core::email`), the two throttle/dedup gates (`AlertGate` in RAM for
+SMTP, the durable `notify_seen` table for the relay) and the
+`plan_failure`/`plan_receipt` routing matrices are all unit-tested; the
+**actual sends over either pipe** are NETWORK-UNVERIFIED. Nothing extra to
+build — just run the app:
 
 ```bash
 npm run tauri dev   # drive the "E-postvarsler" disclosure
-# SMTP needs a host/port/credentials.
+# no SMTP host needed to get an alert out any more — confirm the relay instead (below)
 ```
 
 Two screens drive this since fase B, and the split is deliberate — D2 only moved
 where each one is reached from. **Opptak → the «Hvem får beskjed hvis noe går
 galt?» card** («Sett opp» when nobody is set, «Endre» otherwise) is the
-volunteer's half: one toggle, one address, one **«Send en test»**. **The gear →
-Avansert → «E-postserver (SMTP)»** is the technical half: host · port · user ·
+volunteer's half: one toggle, one address, and — depending on which path is
+open — **«Bekreft e-postadressen»** (the relay's double opt-in) or **«Send en
+test»**. **The gear → Avansert → «E-postserver (SMTP)»** is the technical
+half, for a church that already runs its own mail server: host · port · user ·
 from, and the password (which goes to the OS keychain, never into the settings
 bag).
 
-The toggle on the volunteer screen sits behind a **Gate** that says «Krever en
-e-postserver (SMTP). Sett opp under Avansert.» when no transport is configured —
-because the canvas's «E-posten sendes via SundaySuite» is not true: there is no
-such relay, and without the congregation's own SMTP server nothing arrives no
-matter what is in the address field. `email_status` is read up-front (works in
-every build) to show whether this binary has the `email` feature at all, and
-`email_send_test` carries the recipient and the chosen language.
-In the **default build** `email_status` reports the feature present and
-`email_send_test` really sends — a `feature_disabled` here means something is
-wrong, not that the build is normal. (The "ikke bygd inn" hint only appears in a
-`--no-default-features` build.) The SMTP password is never persisted — it travels
-with the request and is dropped.
+**A configured SMTP server wins; the relay carries the rest.** That is a
+derived fact (`crate::notify::plan_failure`), not a third setting — a church
+that already has a server keeps using it unchanged, and everybody else
+confirms an address once (SundayRec e-mails a link to `notify.sundaysuite.app`,
+the volunteer clicks it) and never types a host, a port or a password.
 
-The card's gate + block-reason logic and the send dispatch (recipient +
+The toggle on the volunteer screen sits behind a **Gate** that reads «Bekreft
+e-postadressen, eller sett opp en e-postserver (SMTP) under Avansert.» when
+NEITHER path is open yet — the relay comes first in the sentence because it is
+the one a volunteer can finish alone. `email_status` is read up-front (works in
+every build) to show whether this binary has the SMTP `email` feature;
+`relay_status` (also read up-front) carries the subscription's own state —
+none, pending, confirmed, suppressed — independent of that feature flag, since
+the relay needs none of it. A build with neither the feature nor a relay
+endpoint compiled in is the one true `unavailable` state; a build with an
+endpoint but no confirmed address (or no SMTP password) is `unconfigured`.
+In the **default build** `email_status` reports the feature present and
+`email_send_test` really sends over SMTP — a `feature_disabled` here means
+something is wrong, not that the build is normal. (The "ikke bygd inn" hint
+only appears in a `--no-default-features` build with no relay endpoint
+either.) `relay_send_test` sends over the relay instead, to whichever address
+is confirmed. The SMTP password is never persisted — it travels with the
+request and is dropped; the relay never sees a password at all.
+
+The card's gate + block-reason logic and the SMTP send dispatch (recipient +
 language on the request):
 
 - VERIFIED-BY: e2e/system-support.spec.ts::a build without the email feature gates the card and says so
 - VERIFIED-BY: e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated
 - VERIFIED-BY: e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport
+
+The relay's own state machine (unconfirmed → pending → confirmed → suppressed
+→ unsubscribed) is exercised against a STUBBED backend in
+`e2e/notify-relay.spec.ts`. Routing to the real `notify.sundaysuite.app` still
+needs a rig — that is what steps 3–5 below are for.
 
 1. **SMTP test message.** Under **Avansert → «E-postserver (SMTP)»** configure a
    host (587 STARTTLS or 465 implicit TLS) and save the password to the
@@ -585,10 +608,32 @@ language on the request):
    10 minutes.
    - **Expected:** only the first mails; the second is suppressed by the core
      `AlertGate` (10-min window per `(recipient, message)`).
+3. **Relay confirm flow, with a real inbox.** With no SMTP server configured,
+   enter an address you can actually check, save it, and press **«Bekreft
+   e-postadressen»** (`notify-relay-confirm`).
+   - **Expected:** the chip goes to «Venter — sjekk innboksen»; a mail arrives
+     from **«SundayRec <varsel@sundaysuite.app>»** with a link into
+     `notify.sundaysuite.app/v1/notify/confirm/…`. Opening the link shows a
+     confirm BUTTON rather than confirming on the GET itself (a mail scanner
+     that pre-fetches links must not burn the one-time token); pressing that
+     button — the POST — is what flips the chip to «Bekreftet». Opening the
+     same link again afterwards does nothing: the token is already spent.
+4. **Test button through the relay.** With the address confirmed, press
+   **«Send en test»** (`notify-test`) again.
+   - **Expected:** the send now goes out over the relay, not SMTP — the same
+     button routes on whichever path is actually open (`view.transport` in
+     `NotifyPage.tsx`), so this is the proof that the volunteer's ONE button
+     reaches a real inbox with no server configured at all.
+5. **Unsubscribe.** Press **«Meld meg av»** (`notify-relay-unsubscribe`).
+   - **Expected:** the chip drops back to unconfirmed and further failures
+     stop relaying. The unsubscribe footer link in the mail just received does
+     the same thing from the recipient's side (RFC 8058 one-click, no login) —
+     worth trying at least once so it is not only the in-app button that has
+     ever been proven.
 
-> [NET] The SMTP handshake is compiled into every default build but never run
-> against a real server in the gate — se markøren i §8-innledningen («the
-> **send** is …»).
+> [NET] Both mail pipes are compiled into every default build but neither is
+> run against a real server/endpoint in the gate — se markøren i
+> §8-innledningen («the **actual sends** … are NETWORK-UNVERIFIED»).
 
 ---
 
