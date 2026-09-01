@@ -334,6 +334,40 @@ declare global {
       /** "Slett mine data", the local half: retires the install id. Resolves
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>;
+      // ── The e-mail relay (A2) — the light way to the same alerts ─────────
+      // No page calls these yet; A5 builds the panel on top of them. They are
+      // declared now so the five commands have a real door from the day they
+      // are registered — see the api-shim block for why.
+      /** The local subscription record plus whether this build has an
+       *  endpoint at all. Never carries a token or a sub id. */
+      relayStatus: () => Promise<
+        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+      >;
+      /** Enrol an address: queues the confirmation mail and records the
+       *  subscription as `pending`. Nothing is SENT from this call — the
+       *  outbox delivers it. Rejects with `relay_invalid_address` /
+       *  `relay_no_endpoint`, which the caller renders via `errorCode()`. */
+      relaySubscribe: (
+        address: string,
+      ) => Promise<
+        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+      >;
+      /** "Send it again" — a NEW confirmation token and a new queued mail.
+       *  The endpoint has a ten-minute cooldown of its own; hitting it costs a
+       *  wait, never the sign-up. */
+      relayResend: () => Promise<
+        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+      >;
+      /** Ask the endpoint to forget the address. The returned status still
+       *  shows a subscription: it IS still subscribed until the queued
+       *  request has actually left. */
+      relayUnsubscribe: () => Promise<
+        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+      >;
+      /** Queue the localized "e-post virker" message. Requires a CONFIRMED
+       *  subscription — rejects with `relay_not_confirmed` otherwise, rather
+       *  than queueing something the gate would silently refuse. */
+      relaySendTest: () => Promise<{ ok: boolean; error?: string }>;
     };
     appVersion?: string;
   }
