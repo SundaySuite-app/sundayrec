@@ -47,9 +47,11 @@ til er alltid **den du selv har valgt**. Har menigheten sin egen e-postserver
 satt opp under Avansert, går meldingen dit, rett til mottakeren, og aldri
 innom oss. Har den ikke det — det vanlige for en frivillig uten en
 IT-avdeling i ryggen — kan du i stedet melde adressen på Sunday Suites egen
-varselsending, og da går meldingen **gjennom vår server**: videresendes til
-deg, lagres ikke, leses ikke. «E-postvarsling»-kapitlet sier nøyaktig hva det
-innebærer. Resten av denne erklæringen handler ikke om det.
+varselsending. Da går meldingen **gjennom vår server**, og videre gjennom
+**Resend** — leverandøren som gjør selve utsendelsen — før den når deg. Vår
+egen server lagrer den ikke; Resend gjør, en periode. «E-postvarsling»-kapitlet
+sier nøyaktig hva det innebærer og hvorfor. Resten av denne erklæringen
+handler ikke om det.
 
 ---
 
@@ -104,6 +106,12 @@ bare hvis du selv har slått på den egne bryteren for det — en kvittering nå
 et planlagt opptak er ferdig. Meldingen sendes fra `varsel@sundaysuite.app`,
 gjennom vår tjener `notify.sundaysuite.app`.
 
+Selve utsendelsen gjør ikke tjeneren vår alene. Den bruker **Resend**, en
+navngitt e-postleverandør, til å faktisk levere meldingen til innboksen din.
+Det er ikke noe vi har gjemt bort — det er verdt å si tydelig, for det er
+Resend som til slutt sitter med meldingen en periode. Se hva det betyr rett
+under.
+
 Dette skjer uansett hva du har svart på diagnostikk-spørsmålet, av samme grunn
 som oppdateringssjekken over: en varslingstjeneste du selv har bedt om, med et
 eget dobbelt samtykke (du trykker «Bekreft», vi sender en lenke, du klikker
@@ -124,11 +132,31 @@ den), er ikke diagnostikk.
   fremmed innboks med bekreftelsesmail. Raden bærer et avtrykk (en hash) av
   adressen — ikke adressen selv — og forsvinner når vinduet går ut.
 
-**Det vi ALDRI lagrer:** selve varselteksten. Meldingen — emne, tekst og
-HTML — settes sammen på din egen maskin, på ditt eget språk, og går videre
-gjennom vår tjener uten å bli skrevet til noen database der. Ingen
-IP-adresse lagres, på samme måte og av samme grunn som resten av denne
-erklæringen sier om diagnostikken.
+**Det vi selv aldri lagrer:** selve varselteksten. Meldingen — emne, tekst
+og HTML — settes sammen på din egen maskin, på ditt eget språk, og skrives
+aldri til noen database på vår egen tjener. Den går videre til Resend for
+selve utsendelsen.
+
+**Det Resend lagrer, en periode.** Resend er ikke bare et rør — det er
+tjenesten som faktisk sender meldingen. De ser mottakeradressen, emnet,
+begge kroppsdelene (tekst og HTML) og avmeldingslenkene i headerne, fordi det
+er det som skal til for å levere en e-post. De ser **aldri** noe av
+diagnostikken: ikke installasjons-ID-en, ikke telemetrien, og ikke koblingen
+mellom et abonnement og en (eventuelt anonym) installasjon — den koblingen
+finnes ikke utenfor selve adressen.
+
+Resend holder meldingen i sine driftslogger i **inntil 30 dager**, og
+lagringen skjer i **USA**. Overføringen dit er dekket av en
+databehandleravtale (Article 28-DPA), EUs standardklausuler (SCC) og EU-U.S.
+Data Privacy Framework — de samme rammene de fleste EU-selskaper bruker når
+de sender data til amerikanske underleverandører. Avslutter vi kontoen hos
+Resend, sletter de resten innen 90 dager; sikkerhetskopier lever i inntil 7
+dager til. Se
+[Resends grenser for lagring](https://resend.com/docs/knowledge-base/account-quotas-and-limits)
+og [Resends personvernside](https://resend.com/security/gdpr).
+
+Ingen IP-adresse lagres hos oss, på samme måte og av samme grunn som resten
+av denne erklæringen sier om diagnostikken.
 
 **Hvor lenge:** til du melder deg av — eller, om du aldri bekrefter, i inntil
 7 dager. En ubekreftet adresse slettes automatisk etter det, uten at du
@@ -357,8 +385,10 @@ Fire presiseringer hører med:
 - **Kirke- eller menighetsnavn, navnet på den ansvarlige, og filnavnet i en
   kvittering kan stå i selve varsel-e-posten.** Ingen av dem er noensinne en
   del av diagnostikken, men en e-post er fritekst av natur: innholdet
-  passerer serveren vår kryptert, videresendes til deg, og lagres aldri der.
-  Se «E-postvarsling».
+  passerer vår egen server kryptert og skrives aldri til noen database der.
+  Det passerer også Resend, tjenesten som faktisk sender den videre til deg,
+  og som holder den i sine driftslogger i inntil 30 dager. Se
+  «E-postvarsling» for hva det innebærer.
 
 ---
 
@@ -463,4 +493,4 @@ ikke. Har du sagt ja før, gjelder svaret ditt fortsatt — for det som er igjen
 
 ---
 
-_Sist oppdatert: 2026-09-01._
+_Sist oppdatert: 2026-09-02._
