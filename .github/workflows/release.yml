@@ -97,7 +97,7 @@ jobs:
 
       - name: Set up Rust
         # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
-        uses: dtolnay/rust-toolchain@1.98.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       # ── Windows ASIO build prerequisites (see docs/BUILD_ASIO.md) ──────────
       # cpal's `asio` feature compiles C++ glue + bindgen against the Steinberg

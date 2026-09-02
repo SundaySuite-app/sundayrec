@@ -54,7 +54,7 @@ jobs:
           cache: npm
 
       # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: dtolnay/rust-toolchain@1.100.0
 
       - uses: Swatinem/rust-cache@v2
         with:
