@@ -97,6 +97,11 @@ test.describe("diagnose", () => {
     await expect(page.getByTestId("adv-diagnose-devices")).toContainText(
       "Qu-5",
     );
+    // F1-DOCS-2: where the copied report is supposed to go — always shown,
+    // not gated on savedTo.
+    await expect(page.getByTestId("adv-diagnose-report-where")).toContainText(
+      "dev@sundaysuite.app",
+    );
   });
 
   test("a device that is gone keeps its NAME on the row and still fails it", async ({

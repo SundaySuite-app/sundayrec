@@ -379,7 +379,8 @@
           "cancelled": "Du avbrøt — ingenting er registrert.",
           "failed": "Vekkingen ble ikke registrert."
         },
-        "audioTech": "Lyd-teknologi"
+        "audioTech": "Lyd-teknologi",
+        "diagnoseReportWhere": "Lim rapporten inn i et GitHub-issue, eller send den til dev@sundaysuite.app."
       }
     },
     "diagnose": {

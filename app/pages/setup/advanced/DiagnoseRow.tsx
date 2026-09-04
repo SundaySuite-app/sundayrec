@@ -334,6 +334,20 @@ function Result({
           {t("app.diagnose.savedTo")} <code>{report.savedTo}</code>
         </p>
       ) : null}
+
+      {/*
+        F1-DOCS-2: «Kopier full rapport» kopierer — men til HVA? Uten denne
+        setningen er kopien en handling uten et sted å lande. Ikke gated på
+        noe: den gjelder uansett om kjøringen fant noe galt eller ikke, for
+        support ber om rapporten selv når alt ser fint ut.
+
+        Egen kanal fra SECURITY.md med vilje: en diagnoserapport (enheter,
+        stier, motorversjon) er ikke en sårbarhet, og dev@ leses av en person
+        — ikke GitHubs private sikkerhetsrådgivning.
+      */}
+      <p class={styles.saved} data-testid="adv-diagnose-report-where">
+        {t("app.setup.advanced.diagnoseReportWhere")}
+      </p>
     </div>
   );
 }

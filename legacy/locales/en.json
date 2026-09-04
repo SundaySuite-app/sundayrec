@@ -379,7 +379,8 @@
           "cancelled": "You cancelled — nothing was registered.",
           "failed": "The wake-up was not registered."
         },
-        "audioTech": "Audio technology"
+        "audioTech": "Audio technology",
+        "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app."
       }
     },
     "diagnose": {

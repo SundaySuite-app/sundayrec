@@ -21,6 +21,13 @@ Please include what you found, the affected version, and reproduction steps.
 This is a small, single-maintainer project — expect an initial response
 within a few days, not an SLA.
 
+This channel is for **vulnerabilities only**. An ordinary bug (a crash, a
+wrong setting, a confusing screen) is not a security report — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for where those go (a public issue, or
+dev@sundaysuite.app). Two channels, two purposes: that address is read by a
+person and is not private, so a real vulnerability described there instead
+of through advisories would sit in the open until someone notices.
+
 ## Supported versions
 
 Only the **latest release on your channel** is supported. There is no LTS

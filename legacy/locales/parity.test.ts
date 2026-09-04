@@ -710,6 +710,11 @@ export const PAUSED_KEYS = new Set([
   'recording.errorEngineExited',
   'recording.errorVideoCapture',
   'recording.errorMux',
+
+  // F1-DOCS-2: linjen under «Kopier full rapport» som sier HVOR rapporten skal
+  // sendes videre (GitHub-issue eller dev@sundaysuite.app) — atskilt fra
+  // SECURITY.md sin kanal, som er for sårbarheter. Ny tekst, derfor pauset.
+  'app.setup.advanced.diagnoseReportWhere',
 ])
 
 const reference = flattenKeys(no as Tree).sort()
