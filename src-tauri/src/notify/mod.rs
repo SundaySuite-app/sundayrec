@@ -176,12 +176,17 @@ pub async fn dispatch_failure(app: &AppHandle, ctx: FailureCtx) {
     let throttled = email_throttled(app, &recipient, &ctx.message);
     let transport_ready = email_transport_ready(&settings, &recipient);
 
+    // The relay facts default to "not enrolled", which shuts that leg — the
+    // whole relay is dark until A3 gathers them here beside the two above. That
+    // is the deliberate order: no client row may be queued before the endpoint
+    // that would answer it is deployed, because its 400 is a permanent drop.
     let plan = plan_failure(&FailureRouting {
         email_on_error: settings.email_on_error,
         email_recipient: &recipient,
         email_feature_built: cfg!(feature = "email"),
         email_transport_ready: transport_ready,
         email_throttled: throttled,
+        ..FailureRouting::default()
     });
 
     tracing::info!(
@@ -415,8 +420,10 @@ mod tests {
             email_feature_built: cfg!(feature = "email"),
             email_transport_ready: email_transport_ready(&settings, "vakt@kirka.no"),
             email_throttled: false,
+            ..FailureRouting::default()
         });
         assert!(!plan.email);
+        assert!(!plan.relay, "and no relay subscription to fall back on");
         assert!(plan.native, "the native leg survives every degradation");
     }
 }

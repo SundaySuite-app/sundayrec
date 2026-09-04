@@ -2183,10 +2183,12 @@ mod tests {
     /// The endpoint's own rejection rule, MIRRORED.
     ///
     /// Copied verbatim (modulo Rust escaping) from `ABSOLUTE_PATH_RE` in
-    /// `sunday-telemetry/src/schema.ts`, where a string field that matches it is
-    /// rejected with `unscrubbed_path` — a 400, which this client drops without
-    /// retrying. **The two must be changed together.** If you loosen this
-    /// mirror, loosen the Worker; if you tighten the Worker, tighten this.
+    /// `sunday-telemetry/src/validate.ts`, where a string field that matches it
+    /// is rejected with `unscrubbed_path` — a 400, which this client drops
+    /// without retrying. **The two must be changed together.** If you loosen
+    /// this mirror, loosen the Worker; if you tighten the Worker, tighten this.
+    /// (The relay's copy of the same mirror lives in
+    /// `email::tests::WORKER_ABSOLUTE_PATH_RE`, over the rendered mail bodies.)
     ///
     /// This is the seam that had no test, which is why the bug survived: both
     /// repos were internally consistent and disagreed at the boundary, so every
