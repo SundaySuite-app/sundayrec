@@ -1,0 +1,19 @@
+# Normaliser linjeskift i git: LF i repoet uansett plattform.
+# Grunn: release.yml bygger på macOS OG Windows, og uten dette leser
+# runnerne ulikt antall byte per linje (CRLF-fella i releasenotat-vakten,
+# se scripts/release-notes.test.mjs sin normalize()). Windows-bidragsytere
+# får riktig oppførsel uten å måtte sette core.autocrlf selv.
+* text=auto eol=lf
+
+# Binærer skal aldri normaliseres.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.woff binary
+*.woff2 binary
+*.onnx binary
