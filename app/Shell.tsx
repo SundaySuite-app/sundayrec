@@ -55,7 +55,9 @@
  * `inert` på `#app` mens en dialog er åpen, og en dialog inne i `#app` ville
  * slått av seg selv. Opptaksoverlegget er der av to grunner til: det skal
  * ligge OVER begge linjene, og det skal ikke rives ned av et rutebytte — et opptak
- * som går er ikke en side man er på.
+ * som går er ikke en side man er på. `GlobalErrorBanner` (R5) er der av EN
+ * fjerde grunn: et render-unntak i `#app` river grenen det skjedde i, og
+ * banneret skal stå ETTERPÅ også — se filhodet i `ui/GlobalErrorBanner/`.
  *
  * ## Oppdateringsbanneret hører til skallet
  *
@@ -98,6 +100,7 @@ import { hydrateError, settings } from "./state/settings";
 import { Banner } from "./ui/Banner/Banner";
 import { Button } from "./ui/Button/Button";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
+import { GlobalErrorBanner } from "./ui/GlobalErrorBanner/GlobalErrorBanner";
 import { PageShell } from "./ui/PageShell/PageShell";
 import { ToastHost } from "./ui/ToastHost/ToastHost";
 
@@ -182,10 +185,19 @@ function editHeading(tab: string | undefined): string | undefined {
   return loadState.value === "idle" ? undefined : editorHeading();
 }
 
-/** Dialog-, toast- og opptaksverten. Montert i `#overlays` — se toppen av fila. */
+/**
+ * Dialog-, toast- og opptaksverten — og, siden R5, det globale feilbanneret.
+ * Montert i `#overlays` — se toppen av fila.
+ *
+ * `GlobalErrorBanner` hører hjemme akkurat HER og ikke i `Shell`: et uventet
+ * unntak i `#app`-treet river grenen det skjedde i, og `Overlays` er et EGET
+ * Preact-tre som ikke rører. Se filhodet i `ui/GlobalErrorBanner/
+ * GlobalErrorBanner.tsx`.
+ */
 export function Overlays() {
   return (
     <>
+      <GlobalErrorBanner />
       <RecordingOverlay />
       <DialogHost />
       <ToastHost />

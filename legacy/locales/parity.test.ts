@@ -710,6 +710,9 @@ export const PAUSED_KEYS = new Set([
   'recording.errorEngineExited',
   'recording.errorVideoCapture',
   'recording.errorMux',
+  // F1-R1: det globale feilbanneret (`ui/GlobalErrorBanner/`) — rammen rundt
+  // en rå, uoversatt feiltekst fanget av `installErrorHandlers()`.
+  'app.banner.globalErrorTitle',
 ])
 
 const reference = flattenKeys(no as Tree).sort()
