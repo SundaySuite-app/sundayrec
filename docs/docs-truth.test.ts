@@ -8,15 +8,23 @@
  * er sann, og lar vaktsomheten falle. En løgn ingen forventer å bli løyet
  * til, er den som overlever lengst.
  *
- * Denne testen fanger ikke alt som kan bli usant — bare de tre setningene som
- * FAKTISK rakk å bli usanne én gang (F1-DOCS-1, 2026-09): PRIVACY.md fortsatte
+ * Denne testen fanger ikke alt som kan bli usant — bare setningene som
+ * FAKTISK rakk å bli usanne (F1-DOCS-1, 2026-09): PRIVACY.md fortsatte
  * å love innlogging med Sunday-konto etter at funksjonen var slettet;
  * CONTRIBUTING.md beskrev SundayRec som en app som transkriberer og strømmer
  * lenge etter at begge deler var fjernet; DISTRIBUTION.md pekte på harde
  * linjenumre inn i `release.yml` (som drifter for hver redigering) og på en
- * tagg som «nyeste» (som slutter å stemme ved neste utgivelse). Oppdag du en
- * ny stale setning et annet sted i docs/, legg til et nytt assert her — ikke
- * bare rett teksten og gå videre.
+ * tagg som «nyeste» (som slutter å stemme ved neste utgivelse).
+ *
+ * F1-DOCS-2, 2026-09: samme råteklasse dukket opp i to filer til som
+ * DOKGATEN ikke dekket ennå — NEEDS-RICHARD.md og RELEASE-CHECKLIST.md pekte
+ * begge på harde `release.yml:NNN`-linjer for notariseringsoppsettet, og
+ * D1s omskriving av selve mekanismen (repo-variabelen `NOTARIZE_MAC` i stedet
+ * for tre utkommenterte linjer) gjorde referansene FEIL, ikke bare skjøre.
+ * Begge peker nå på navngitte markører (`[notarization]`,
+ * `[notarize-switch]`) i `release.yml` i stedet. Oppdag du en ny stale
+ * setning et annet sted i docs/, legg til et nytt assert her — ikke bare
+ * rett teksten og gå videre.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -40,5 +48,15 @@ describe("docs-truth", () => {
     const text = readDoc("docs/DISTRIBUTION.md");
     expect(text).not.toMatch(/release\.yml:\d+/);
     expect(text).not.toContain("is the newest tag");
+  });
+
+  it("NEEDS-RICHARD.md peker ikke på harde release.yml-linjenumre (F1-DOCS-2)", () => {
+    expect(readDoc("docs/NEEDS-RICHARD.md")).not.toMatch(/release\.yml:\d+/);
+  });
+
+  it("RELEASE-CHECKLIST.md peker ikke på harde release.yml-linjenumre (F1-DOCS-2)", () => {
+    expect(readDoc("docs/RELEASE-CHECKLIST.md")).not.toMatch(
+      /release\.yml:\d+/,
+    );
   });
 });

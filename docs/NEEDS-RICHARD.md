@@ -42,19 +42,25 @@ only remaining release blocker is **notarization** (item 3).
 2. **Apple Developer ID signing — ✅ RESOLVED (~2026-07-31).** The cert was
    re-exported and the secrets are set: `MAC_CERTS` (base64 of the `.p12`) +
    `MAC_CERTS_PASSWORD`, mapped to tauri-action's `APPLE_CERTIFICATE` /
-   `APPLE_CERTIFICATE_PASSWORD` in `release.yml` env (lines 143–145;
-   `APPLE_SIGNING_IDENTITY` — `Developer ID Application: … (784GN847G4)` — is
-   hardcoded there). Published releases are **signed** since ~07-31. See
-   DISTRIBUTION.md "macOS code signing".
+   `APPLE_CERTIFICATE_PASSWORD` at the `[notarization]` marker in
+   `release.yml`'s env (`APPLE_SIGNING_IDENTITY` —
+   `Developer ID Application: … (784GN847G4)` — is hardcoded there). Published
+   releases are **signed** since ~07-31. See DISTRIBUTION.md "macOS code
+   signing".
 
 3. **Notarization — the real remaining blocker: the Apple Program License
    Agreement.** Apple's notary service returns **403 "A required agreement is
    missing or has expired"** until the updated PLA is accepted on
    developer.apple.com (team `784GN847G4`). Notarization is therefore
-   **deliberately disabled**: the `notarytool` env lines (`APPLE_ID`,
-   `APPLE_PASSWORD` ← `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are
-   commented out in `release.yml` (lines 146–155) — the comment block there
-   documents how to re-enable them once the agreement is signed.
+   **deliberately disabled** — since F1-D1 this is a repo **variable**,
+   `NOTARIZE_MAC` (Settings → Secrets and variables → Actions → Variables),
+   not three commented-out lines someone has to remember to uncomment. Off by
+   default, it skips the `[notarize-switch]`-marked step in `release.yml` that
+   would otherwise export `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`, so every
+   build is Developer ID-signed but not notarized. Re-enable by accepting the
+   PLA and setting the variable to `true` — no commit required. See
+   RELEASE-CHECKLIST.md §2a for the full mechanism and why it has to be a
+   separate step rather than a line in the build step's env.
 
 4. **Tauri updater — ✅ DONE, proven in prod.** The `plugins.updater` block
    (pubkey + endpoints) is in `tauri.conf.json`, `uploadUpdaterJson: true` is
@@ -359,6 +365,13 @@ None of it blocks the default build or the gate.
 
 ### A real recording/streaming rig (HARDWARE-UNVERIFIED)
 
+This list is WHAT is still unverified. [`docs/RIG-DAY.md`](RIG-DAY.md) is HOW
+to verify it in one sitting — a checklist that walks the mixer-pull, the
+Windows camera/video restart, the `kill -9` mid-slot recovery, the WAL check
+against a real database, the wake test, an ASIO subset, and the #111
+gain-listening pass in a deliberate order, so the day doesn't turn into
+re-discovering these bullets one at a time.
+
 - **Record** (smoke §3–§6): a Mac/Windows box with a real mic + camera; prove
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
@@ -392,12 +405,14 @@ None of it blocks the default build or the gate.
 ### Signing, notarization & auto-update
 
 - **Apple Developer ID signing — ✅ DONE** (macOS release): the Developer ID
-  Application cert is set as `MAC_CERTS` / `MAC_CERTS_PASSWORD` (mapped in
-  `release.yml:143-145`); releases are signed since ~2026-07-31.
+  Application cert is set as `MAC_CERTS` / `MAC_CERTS_PASSWORD` (mapped at the
+  `[notarization]` marker in `release.yml`); releases are signed since
+  ~2026-07-31.
 - **Notarization — ⏸ the remaining blocker:** accept the updated Apple Program
   License Agreement on developer.apple.com (notary returns 403 until then),
-  then uncomment the `notarytool` env lines in `release.yml:146-155` (see
-  item 3 above).
+  then set the repo variable `NOTARIZE_MAC` to `true` (see item 3 above and
+  the `[notarize-switch]` marker in `release.yml` — no commit required, unlike
+  before F1-D1).
 - **Windows code-signing cert** (Windows release): for a non-SmartScreen-warned
   installer.
 - **Updater keypair — ✅ DONE, live since v0.4.x** (`--features updater`, R7):

@@ -43,7 +43,7 @@ Settings → Secrets and variables → Actions. Team ID **784GN847G4** is on fil
 > secrets called `APPLE_CERTIFICATE`/`APPLE_PASSWORD` produces four secrets
 > nothing reads and a build that is still unsigned.
 
-For signing (active today — `release.yml` lines 153–155):
+For signing (active today — the `[notarization]` marker in `release.yml`):
 
 - [ ] `MAC_CERTS` — base64 of the "Developer ID Application" `.p12`.
       ⚠️ The `.p12` on the Desktop reportedly has the **wrong password** —
@@ -79,8 +79,9 @@ developer.apple.com for team 784GN847G4 — still true today.
       and first launch needs right-click ▸ Open.
 
 `release.yml` reads the variable in a step gated
-`if: matrix.platform == 'macos-latest' && vars.NOTARIZE_MAC == 'true'` —
-grep the file for `NOTARIZE_MAC` to find it. That step, and only that step,
+`if: matrix.platform == 'macos-latest' && vars.NOTARIZE_MAC == 'true'` — grep
+the file for `NOTARIZE_MAC`, or for the literal string `[notarize-switch]`,
+to find it. That step, and only that step,
 exports `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` into the build
 step's environment via `$GITHUB_ENV`; the build step's own `env:` block
 never names those three keys, on purpose — a present-but-empty
