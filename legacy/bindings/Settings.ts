@@ -312,6 +312,19 @@ emailSmtpUser: string,
  */
 emailSmtpFrom: string, 
 /**
+ * Send a receipt e-mail via the relay when a PLANNED (scheduled)
+ * recording finishes? Default off. Independent of `email_on_error` and
+ * the SMTP fields above: the receipt travels through
+ * `sunday-telemetry`'s relay (`notify.sundaysuite.app`), never through
+ * SMTP, and is gated in the UI on a CONFIRMED relay subscription (A5) —
+ * this field only remembers whether the toggle is on. Deliberately kept
+ * out of `WireSettings`, matching the `updateChannel` precedent
+ * (`telemetry.rs:975-978`): the relay subscription record
+ * (`notify.relay` in the `app_setting` bag) is per-machine state, not a
+ * diagnostic fact worth reporting.
+ */
+emailReceiptEnabled: boolean, 
+/**
  * Path to an intro clip prepended on export, or `None`. Electron used
  * `undefined`; we keep it `Option` so an unset value stays absent.
  */

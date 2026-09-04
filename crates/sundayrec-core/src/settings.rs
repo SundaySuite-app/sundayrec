@@ -497,6 +497,20 @@ pub struct Settings {
     #[serde(default)]
     pub email_smtp_from: String,
 
+    // ── E-mail relay receipt (A4) ───────────────────────────────────────────
+    /// Send a receipt e-mail via the relay when a PLANNED (scheduled)
+    /// recording finishes? Default off. Independent of `email_on_error` and
+    /// the SMTP fields above: the receipt travels through
+    /// `sunday-telemetry`'s relay (`notify.sundaysuite.app`), never through
+    /// SMTP, and is gated in the UI on a CONFIRMED relay subscription (A5) —
+    /// this field only remembers whether the toggle is on. Deliberately kept
+    /// out of `WireSettings`, matching the `updateChannel` precedent
+    /// (`telemetry.rs:975-978`): the relay subscription record
+    /// (`notify.relay` in the `app_setting` bag) is per-machine state, not a
+    /// diagnostic fact worth reporting.
+    #[serde(default)]
+    pub email_receipt_enabled: bool,
+
     // ── Editor intro/outro (R7 — Electron `editorIntroPath`/`editorOutroPath`) ─
     /// Path to an intro clip prepended on export, or `None`. Electron used
     /// `undefined`; we keep it `Option` so an unset value stays absent.
@@ -641,6 +655,8 @@ impl Default for Settings {
             email_smtp_port: default_smtp_port(),
             email_smtp_user: String::new(),
             email_smtp_from: String::new(),
+
+            email_receipt_enabled: false,
 
             editor_intro_path: None,
             editor_outro_path: None,
@@ -886,6 +902,8 @@ mod tests {
         assert_eq!(s.email_smtp, "");
         assert_eq!(s.email_smtp_port, 587);
         assert_eq!(s.email_smtp_user, "");
+        // E-mail relay receipt (A4)
+        assert!(!s.email_receipt_enabled);
         // Editor intro/outro (R7)
         assert_eq!(s.editor_intro_path, None);
         assert_eq!(s.editor_outro_path, None);
@@ -924,6 +942,17 @@ mod tests {
         // Untouched field keeps its default.
         assert_eq!(s.email_smtp_port, 587);
         assert!(s.notify_start);
+    }
+
+    #[test]
+    fn email_receipt_enabled_defaults_false_and_round_trips_camel_case() {
+        // No legacy source for this one (A4 — it is new, not ported), so
+        // absence must fall back to the default rather than error.
+        let absent = Settings::from_json_merged(r#"{}"#);
+        assert!(!absent.email_receipt_enabled);
+
+        let on = Settings::from_json_merged(r#"{"emailReceiptEnabled":true}"#);
+        assert!(on.email_receipt_enabled);
     }
 
     #[test]

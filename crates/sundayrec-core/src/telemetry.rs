@@ -2600,4 +2600,37 @@ mod tests {
             assert!(obj.contains_key(needed), "WireSettings must carry {needed}");
         }
     }
+
+    /// A4 (the e-mail relay): `email_receipt_enabled` and the rest of the relay
+    /// state (`notify.relay` in the `app_setting` bag — address, tokens,
+    /// confirmation timestamps) must NEVER reach `WireSettings`. Same
+    /// reasoning as `update_channel` — see the doc comment on `auto_update`
+    /// above (telemetry.rs:975-978): a subscription is per-machine identity
+    /// state, not a diagnostic fact worth reporting, and `from_settings`'s
+    /// allow-list already excludes it BY CONSTRUCTION (nobody wrote a line for
+    /// it) — this test is what keeps that true on purpose rather than by
+    /// accident.
+    ///
+    /// The field count is the sharper half of the pin: a relay field renamed
+    /// to dodge the substring check below would still trip this, because
+    /// `WireSettings` has carried exactly 22 keys since before the relay
+    /// existed and `from_settings` is a fixed, explicit projection — nothing
+    /// grows it silently.
+    #[test]
+    fn wire_settings_carries_no_relay_field_and_the_key_count_stays_22() {
+        let json = serde_json::to_value(WireSettings::default()).expect("serialise");
+        let obj = json.as_object().expect("object");
+        assert_eq!(
+            obj.len(),
+            22,
+            "WireSettings's key count moved — if a field was deliberately \
+             added, update this pin; if not, something leaked onto the wire"
+        );
+        for key in obj.keys() {
+            assert!(
+                !key.to_lowercase().contains("relay") && key != "emailReceiptEnabled",
+                "WireSettings must not carry relay/receipt state, found {key}"
+            );
+        }
+    }
 }
