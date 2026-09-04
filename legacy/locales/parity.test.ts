@@ -710,6 +710,11 @@ export const PAUSED_KEYS = new Set([
   'recording.errorEngineExited',
   'recording.errorVideoCapture',
   'recording.errorMux',
+
+  // F1-R2: linja under en deaktivert, pauset språk-option (`ChurchPage`,
+  // `church-core.ts`s `isPausedLanguage`) — ny tekst, derfor pauset som alt
+  // annet redesignet har lagt til.
+  'app.setup.church.languagePaused',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

@@ -158,12 +158,12 @@ import {
   resumeCameraPreview,
 } from "../../ui/CameraPreview/ownership";
 import { alertDialog } from "../../ui/dialog";
+import { reveal } from "../../ui/reveal";
 import { toast } from "../../ui/toast";
 import { spanText } from "./span-text";
 import { confirmAndStop } from "./stop";
 import {
   basename,
-  capitalizeFirst,
   defaultDeviceOf,
   formatBytes,
   nativeErrorDetail,
@@ -174,6 +174,7 @@ import {
   spanOfMinutes,
   spanOfSeconds,
 } from "./record-core";
+import { capitalizeFirst } from "@lib/ui/capitalize";
 import { DOT } from "@lib/ui/dot";
 import styles from "./record.module.css";
 
@@ -931,14 +932,6 @@ function LastRecordingCard() {
       </div>
     </Card>
   );
-}
-
-/** «Vis i Finder». Sier fra når det ikke gikk — en knapp som stille ikke gjør
- *  noe er verre enn ingen knapp. */
-async function reveal(path: string | null): Promise<void> {
-  if (!path) return;
-  const ok = await window.api.revealFile(path);
-  if (!ok) toast("error", t("app.done.revealFailed"));
 }
 
 // ── Kvitteringen (2.6) ──────────────────────────────────────────────────────

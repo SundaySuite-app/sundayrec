@@ -149,7 +149,8 @@
         "placeholder": "For eksempel Bryn menighet",
         "languageLabel": "Språk i appen",
         "languageDesc": "Bytter med én gang.",
-        "language": "Språk: {language}"
+        "language": "Språk: {language}",
+        "languagePaused": "Dette språket er midlertidig utilgjengelig i det nye oppsettet — appen viser {language} inntil videre."
       },
       "notify": {
         "lede": "Maskinen sier alltid fra. E-post er for den som ikke sitter ved den.",
