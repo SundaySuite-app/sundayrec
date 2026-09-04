@@ -158,7 +158,7 @@
         "mail": "E-post hvis noe går galt",
         "mailDesc": "Én adresse. Sendes bare ved feil, aldri ellers.",
         "nobodyDesc": "Ingen får e-post — maskinen varsler bare den som sitter ved den.",
-        "emailDesc": "Sendes bare ved feil, aldri ellers.",
+        "emailDesc": "Sendes ved feil — og ved kvittering, hvis den er slått på.",
         "gateChip": "Ikke satt opp",
         "gateSmtp": "Bekreft e-postadressen, eller sett opp en e-postserver (SMTP) under Avansert.",
         "gateChipUnavailable": "Ikke tilgjengelig",

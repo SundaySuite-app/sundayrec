@@ -158,7 +158,7 @@
         "mail": "Email if something goes wrong",
         "mailDesc": "One address. Sent only on failure, never otherwise.",
         "nobodyDesc": "Nobody gets an email — the computer only tells whoever is sitting at it.",
-        "emailDesc": "Sent only on failure, never otherwise.",
+        "emailDesc": "Sent on failure — and on the receipt, if that's turned on.",
         "gateChip": "Not set up",
         "gateSmtp": "Confirm the email address, or set up a mail server (SMTP) under Advanced.",
         "gateChipUnavailable": "Not available",

@@ -27,7 +27,7 @@ Den gjelder **kun** den valgfrie diagnostikk- og bruksstatistikk-funksjonen,
 som du finner under **Oppsett → Avansert → «Del anonym diagnostikk»**.
 
 Resten av SundayRec sender aldri noe **til Sunday Suite** av seg selv, uansett
-hva du svarer her. Det finnes to unntak, og ingen av dem styres av dette
+hva du svarer her. Det finnes tre unntak, og ingen av dem styres av dette
 samtykket:
 
 - **Oppdateringssjekken**, som er beskrevet i sitt eget avsnitt rett under.
@@ -37,10 +37,21 @@ samtykket:
   ber om det, og en installasjon som aldri logger inn tar aldri kontakt.
   Innloggingen er ikke koblet til diagnostikken: installasjons-ID-en under er
   ikke utledet fra kontoen din, og de to møtes aldri.
+- **Varsling om opptak**, hvis du melder deg på den under **Oppsett → «Hvem
+  får beskjed hvis noe går galt?»**. Beskrevet i sitt eget kapittel,
+  «E-postvarsling», rett etter oppdateringssjekken.
 
-At appen ellers sender ting over nett, gjør den selvsagt: du kan få e-post
-når et opptak feiler. Det går dit **du** har bestemt, når du har bedt om det,
-og aldri innom oss. Denne erklæringen handler ikke om det.
+At appen sender e-post når et opptak feiler, gjør den selvsagt — det er hele
+poenget med spørsmålet «Hvem får beskjed hvis noe går galt?». Adressen den går
+til er alltid **den du selv har valgt**. Har menigheten sin egen e-postserver
+satt opp under Avansert, går meldingen dit, rett til mottakeren, og aldri
+innom oss. Har den ikke det — det vanlige for en frivillig uten en
+IT-avdeling i ryggen — kan du i stedet melde adressen på Sunday Suites egen
+varselsending. Da går meldingen **gjennom vår server**, og videre gjennom
+**Resend** — leverandøren som gjør selve utsendelsen — før den når deg. Vår
+egen server lagrer den ikke; Resend gjør, en periode. «E-postvarsling»-kapitlet
+sier nøyaktig hva det innebærer og hvorfor. Resten av denne erklæringen
+handler ikke om det.
 
 ---
 
@@ -83,6 +94,82 @@ IP-adresse har ingen plass å havne i.
 «Oppdater automatisk». Slår du den av, tar appen ikke kontakt med serveren — verken ved
 oppstart eller den vanlige sjekken hver time. Det ene unntaket er om du selv
 trykker «Se etter oppdateringer nå», for da er det du som har bedt om det.
+
+---
+
+## E-postvarsling — heller ikke en del av diagnostikken
+
+Trykker du **«Bekreft e-postadressen»** under **Oppsett → «Hvem får beskjed
+hvis noe går galt?»**, melder SundayRec adressen din på en tjeneste som sender
+deg e-post når et opptak feiler, når et planlagt opptak ikke ble noe av, og —
+bare hvis du selv har slått på den egne bryteren for det — en kvittering når
+et planlagt opptak er ferdig. Meldingen sendes fra `varsel@sundaysuite.app`,
+gjennom vår tjener `notify.sundaysuite.app`.
+
+Selve utsendelsen gjør ikke tjeneren vår alene. Den bruker **Resend**, en
+navngitt e-postleverandør, til å faktisk levere meldingen til innboksen din.
+Det er ikke noe vi har gjemt bort — det er verdt å si tydelig, for det er
+Resend som til slutt sitter med meldingen en periode. Se hva det betyr rett
+under.
+
+Dette skjer uansett hva du har svart på diagnostikk-spørsmålet, av samme grunn
+som oppdateringssjekken over: en varslingstjeneste du selv har bedt om, med et
+eget dobbelt samtykke (du trykker «Bekreft», vi sender en lenke, du klikker
+den), er ikke diagnostikk.
+
+**Det vi lagrer, fra det øyeblikket du bekrefter:**
+
+- **Adressen din**, i klartekst — uten den kan vi ikke sende deg noe.
+- **En tilfeldig abonnements-ID**, mintet på din egen maskin i det øyeblikket
+  du trykker «Bekreft». Den er **ikke** installasjons-ID-en diagnostikken
+  bruker (se «Uten at vi vet hvem du er» lenger ned): de to mintes hver for
+  seg, ingen kode kobler dem sammen, og de møtes aldri — et abonnement
+  forteller oss ikke hvilken (eventuelt anonym) installasjon det tilhører.
+- **Tidspunktene** rundt abonnementet: da det ble opprettet, da du bekreftet
+  det, og sist gang det ble brukt.
+- **En kortlevd tellerad** som holder styr på hvor mange bekreftelser én
+  adresse har bedt om det siste døgnet, til vern mot at noen bomberer en
+  fremmed innboks med bekreftelsesmail. Raden bærer et avtrykk (en hash) av
+  adressen — ikke adressen selv — og forsvinner når vinduet går ut.
+
+**Det vi selv aldri lagrer:** selve varselteksten. Meldingen — emne, tekst
+og HTML — settes sammen på din egen maskin, på ditt eget språk, og skrives
+aldri til noen database på vår egen tjener. Den går videre til Resend for
+selve utsendelsen.
+
+**Det Resend lagrer, en periode.** Resend er ikke bare et rør — det er
+tjenesten som faktisk sender meldingen. De ser mottakeradressen, emnet,
+begge kroppsdelene (tekst og HTML) og avmeldingslenkene i headerne, fordi det
+er det som skal til for å levere en e-post. De ser **aldri** noe av
+diagnostikken: ikke installasjons-ID-en, ikke telemetrien, og ikke koblingen
+mellom et abonnement og en (eventuelt anonym) installasjon — den koblingen
+finnes ikke utenfor selve adressen.
+
+Resend holder meldingen i sine driftslogger i **inntil 30 dager**, og
+lagringen skjer i **USA**. Overføringen dit er dekket av en
+databehandleravtale (Article 28-DPA), EUs standardklausuler (SCC) og EU-U.S.
+Data Privacy Framework — de samme rammene de fleste EU-selskaper bruker når
+de sender data til amerikanske underleverandører. Avslutter vi kontoen hos
+Resend, sletter de resten innen 90 dager; sikkerhetskopier lever i inntil 7
+dager til. Se
+[Resends grenser for lagring](https://resend.com/docs/knowledge-base/account-quotas-and-limits)
+og [Resends personvernside](https://resend.com/security/gdpr).
+
+Ingen IP-adresse lagres hos oss, på samme måte og av samme grunn som resten
+av denne erklæringen sier om diagnostikken.
+
+**Hvor lenge:** til du melder deg av — eller, om du aldri bekrefter, i inntil
+7 dager. En ubekreftet adresse slettes automatisk etter det, uten at du
+trenger å gjøre noe.
+
+**Sletting:** **«Meld meg av»** i appen, eller lenken nederst i hver eneste
+varsel-e-post du får fra oss. Begge gjør nøyaktig det samme, og ingen av dem
+krever at du logger inn noe sted.
+
+Abonnements-ID-en har med andre ord ingenting med diagnostikk-ID-en å gjøre.
+Den ene identifiserer en e-postadresse som ba om å bli varslet; den andre
+identifiserer en installasjon som sa ja til å hjelpe oss finne feil. Vi kan
+ikke, og har ingen grunn til å, koble dem.
 
 ---
 
@@ -267,27 +354,41 @@ og etter det står bare dagstall igjen.
 
 ---
 
-## Hva samles ALDRI inn
+## Hva samles ALDRI inn i diagnostikken
 
 Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Kirke- eller
 menighetsnavn. Navnet du har gitt et opptak. Navnet på mikseren eller lydkortet
 ditt. Mappen du lagrer i. E-postoppsett. Navnene på de planlagte opptakene
 dine, og klokkeslettene de er satt opp til.
 
-For alt dette er det ikke bare filtrert bort i etterkant — dataformatet har rett
-og slett ingen plass å legge det i. Hvert felt som forlater maskinen er enten et
-tall, et valg fra en liste vi har skrevet på forhånd, eller en tekst som må
-gjennom én bestemt vask først. Det finnes ingen fjerde mulighet, og en utvikler
-som legger til et felt uten å plassere det i en av de tre, får en feilende test i
-stedet for et smutthull.
+For alt dette **i diagnostikk-pakken** er det ikke bare filtrert bort i
+etterkant — dataformatet har rett og slett ingen plass å legge det i. Hvert
+felt som forlater maskinen i en diagnostikkrapport er enten et tall, et valg
+fra en liste vi har skrevet på forhånd, eller en tekst som må gjennom én
+bestemt vask først. Det finnes ingen fjerde mulighet, og en utvikler som
+legger til et felt uten å plassere det i en av de tre, får en feilende test i
+stedet for et smutthull. Denne strukturgarantien gjelder **diagnostikkformatet
+spesifikt** — den sier ikke noe om andre ting SundayRec sender, som en
+varsel-e-post. Se «E-postvarsling».
 
-To presiseringer hører med, og de står utdypet lenger oppe:
+Fire presiseringer hører med:
 
 - **Feilmeldingen i en krasjrapport er fritekst.** Den er den ene teksten som
-  sendes, og for den er «ingen plass å legge det i» ikke argumentet — vasken er.
-  Se «Krasjrapporter».
+  sendes i diagnostikken, og for den er «ingen plass å legge det i» ikke
+  argumentet — vasken er. Se «Krasjrapporter».
 - **Tidspunkter sendes.** Ikke som lokale klokkeslett, men som punkter i UTC. Se
   «Om tidspunktene».
+- **E-postadressen din lagres — men først når DU melder deg på varsling.**
+  Diagnostikken over samler den aldri inn. Melder du deg på Sunday Suites
+  varselsending, lagrer vi adressen for å kunne sende deg noe, og den
+  slettes igjen når du melder deg av. Se «E-postvarsling».
+- **Kirke- eller menighetsnavn, navnet på den ansvarlige, og filnavnet i en
+  kvittering kan stå i selve varsel-e-posten.** Ingen av dem er noensinne en
+  del av diagnostikken, men en e-post er fritekst av natur: innholdet
+  passerer vår egen server kryptert og skrives aldri til noen database der.
+  Det passerer også Resend, tjenesten som faktisk sender den videre til deg,
+  og som holder den i sine driftslogger i inntil 30 dager. Se
+  «E-postvarsling» for hva det innebærer.
 
 ---
 
@@ -320,6 +421,10 @@ Hos Sunday Suites egen infrastruktur (Cloudflare, med databehandling i EU).
 **Rådata — altså enkeltrapporter — slettes automatisk etter 90 dager.** Etter
 det finnes kun irreversibelt aggregerte statistikker igjen: tall som ikke lenger
 kan kobles til én bestemt installasjon.
+
+Dette 90-dagersløftet gjelder **diagnostikk-rådataene** beskrevet over.
+E-postvarslingens abonnement — adressen din, om den er bekreftet — har sin
+egen, kortere regel: den lever til du melder deg av, se «E-postvarsling».
 
 IP-adresser lagres aldri, verken midlertidig eller permanent.
 
@@ -388,4 +493,4 @@ ikke. Har du sagt ja før, gjelder svaret ditt fortsatt — for det som er igjen
 
 ---
 
-_Sist oppdatert: 2026-08-23._
+_Sist oppdatert: 2026-09-02._
