@@ -181,6 +181,11 @@ jobs:
           # secrets (Developer ID, team 784GN847G4) under tauri-action's names,
           # so nothing has to be re-entered. MAC_CERTS = base64 .p12,
           # APPLE_APP_SPECIFIC_PASSWORD = the notarization app password.
+          #
+          # [notarization] — docs/DISTRIBUTION.md points here instead of at a
+          # line number: line numbers in this file drift every time it's
+          # edited, and a stale reference is worse than none. Grep this repo
+          # for the literal string `[notarization]` to find this block again.
           APPLE_CERTIFICATE: ${{ secrets.MAC_CERTS }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Richard Fossland (784GN847G4)"

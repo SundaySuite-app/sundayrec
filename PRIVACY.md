@@ -27,16 +27,10 @@ Den gjelder **kun** den valgfrie diagnostikk- og bruksstatistikk-funksjonen,
 som du finner under **Oppsett → Avansert → «Del anonym diagnostikk»**.
 
 Resten av SundayRec sender aldri noe **til Sunday Suite** av seg selv, uansett
-hva du svarer her. Det finnes to unntak, og ingen av dem styres av dette
+hva du svarer her. Det finnes ett unntak, og det styres ikke av dette
 samtykket:
 
 - **Oppdateringssjekken**, som er beskrevet i sitt eget avsnitt rett under.
-- **Innlogging med Sunday-konto**, hvis du velger å logge inn. Da går
-  innloggingen til vår egen innloggingstjeneste, og den får naturlig nok vite
-  hvem du er — det er hele poenget med å logge inn. Det skjer bare når du selv
-  ber om det, og en installasjon som aldri logger inn tar aldri kontakt.
-  Innloggingen er ikke koblet til diagnostikken: installasjons-ID-en under er
-  ikke utledet fra kontoen din, og de to møtes aldri.
 
 At appen ellers sender ting over nett, gjør den selvsagt: du kan få e-post
 når et opptak feiler. Det går dit **du** har bestemt, når du har bedt om det,
@@ -100,9 +94,9 @@ Spørsmål om personvern, innsyn eller sletting kan rettes til
 ## Uten at vi vet hvem du er
 
 SundayRec lager en tilfeldig installasjons-ID (en UUID) på din maskin. Den er
-**ikke** utledet fra e-post, navn, kirke eller en Sunday-konto, og den knyttes
-aldri til noen av delene. Vi kan altså ikke se hvem du er, hvilken menighet du
-tilhører, eller koble to installasjoner til samme person.
+**ikke** utledet fra e-post, navn eller kirke, og den knyttes aldri til noen
+av delene. Vi kan altså ikke se hvem du er, hvilken menighet du tilhører,
+eller koble to installasjoner til samme person.
 
 Vi kaller funksjonen «anonym diagnostikk» fordi det er slik den oppleves: vi
 vet ikke hvem du er. Men for å være helt presis er ID-en teknisk sett et
