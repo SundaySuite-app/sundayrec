@@ -166,6 +166,7 @@ import {
   capitalizeFirst,
   defaultDeviceOf,
   formatBytes,
+  nativeErrorDetail,
   nativeErrorSuffix,
   nativeErrorSuffixFromText,
   qualityReasonSuffix,
@@ -1063,7 +1064,11 @@ function RecordBanners() {
             title={tf("app.banner.errorTitle", {
               time: clockOf(entry.atMs),
             })}
-            detail={tDyn("recording", nativeErrorSuffix(entry.code))}
+            detail={nativeErrorDetail(
+              tDyn("recording", nativeErrorSuffix(entry.code)),
+              entry.code,
+              entry.message,
+            )}
             onDismiss={() => dismissBanner("recording-error")}
             actions={
               <Button

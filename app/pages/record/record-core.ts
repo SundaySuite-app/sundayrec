@@ -46,6 +46,7 @@
  */
 
 import type { QualityReason } from "@legacy/bindings/QualityReason";
+import { DOT } from "@lib/ui/dot";
 
 import type { ChannelPair } from "../setup/decisions-core";
 import { channelPairFor } from "../setup/decisions-core";
@@ -262,6 +263,17 @@ export function capitalizeFirst(text: string, locale: string): string {
  *
  * En ukjent kode lander på `errorUnknown` og logges. Å vise rå-koden ville
  * vært å be en frivillig om å oversette `device_not_found` selv.
+ *
+ * ## Tabellen er nå en GATE, ikke en huskeliste
+ *
+ * `scripts/check-error-codes.mjs` leser hver kodeliteral motoren gir til
+ * `emit_error`/`sink.error` under `src-tauri/src/recorder/**` (pluss armene i
+ * `error_code_str`) og krever at den står HER. Fire koder manglet da gaten ble
+ * skrevet — `start_timeout`, `ffmpeg_exited`, `video_capture_failed`,
+ * `mux_failed` — og alle fire er ekte søndagsfeil: kameraet som ikke åpnet,
+ * motoren som døde midt i, sammenslåingen som feilet. Hver av dem ble til
+ * «Noe gikk galt under opptak», som er nøyaktig den setningen en frivillig
+ * ikke kan gjøre noe med.
  */
 const NATIVE_ERRORS: Record<string, string> = {
   no_device: "errorDeviceNotFound",
@@ -279,6 +291,10 @@ const NATIVE_ERRORS: Record<string, string> = {
   stuck_recording: "errorStuck",
   invalid_opts: "errorInvalidOpts",
   no_save_folder: "errorNoSaveFolder",
+  start_timeout: "errorStartTimeout",
+  ffmpeg_exited: "errorEngineExited",
+  video_capture_failed: "errorVideoCapture",
+  mux_failed: "errorMux",
 };
 
 export function nativeErrorSuffix(code: string | null | undefined): string {
@@ -287,6 +303,36 @@ export function nativeErrorSuffix(code: string | null | undefined): string {
   if (hit) return hit;
   console.warn("[record] ukjent feilkode fra motoren:", code);
   return "errorUnknown";
+}
+
+/**
+ * Detaljlinja i feilbanneret — og hva som skjer når koden er UKJENT.
+ *
+ * `errorUnknown` er en ærlig setning, men den sier ingenting om HVA som
+ * skjedde: «Noe gikk galt under opptak — sjekk at lydenhet og lagringsmappe er
+ * klare». Motoren sendte samtidig sin EGEN setning i `message`
+ * (`state/banners.ts`s `recording-error`), og på en ukjent kode er den det
+ * eneste som finnes av fakta. Da føyes den til.
+ *
+ * Regelen er `state/backend-warning.ts` sin, med den ene forskjellen at
+ * katalogteksten blir STÅENDE: der har en ukjent kode ingen setning i det hele
+ * tatt, så motorens `msg` er alternativet til stillhet. Her er alternativet en
+ * generisk setning, og en frivillig er best tjent med begge — rådet hun kan
+ * handle på, og faktaet som lar noen andre finne ut hva som gikk galt.
+ *
+ * En KJENT kode får aldri påheng: prosaen er allerede sagt bedre, på brukerens
+ * eget språk, og motorens linje er diagnostikk (norsk, ofte ffmpeg-engelsk) og
+ * ikke UI-tekst.
+ */
+export function nativeErrorDetail(
+  catalogue: string,
+  code: string | null | undefined,
+  message: string | null | undefined,
+): string {
+  const extra = message?.trim();
+  if (!extra) return catalogue;
+  if (code && NATIVE_ERRORS[code]) return catalogue;
+  return catalogue + DOT + extra;
 }
 
 /**

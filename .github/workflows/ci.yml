@@ -142,6 +142,17 @@ jobs:
       - name: app colours only via tokens
         run: npm run css-tokens
 
+      # Feilkode-skrallen: hver kode motoren sender på recording://error —
+      # `emit_error(…, "kode", …)`, `<sink>.error("kode", …)` og armene i
+      # `error_code_str` under src-tauri/src/recorder/** — må finnes i
+      # NATIVE_ERRORS i app/pages/record/record-core.ts. En kode som mangler
+      # blir ikke en feil og ikke en tom skjerm: den blir «errorUnknown», en
+      # sann setning som ikke sier noe, vist til en frivillig hvis kamera
+      # aldri åpnet. Fire koder lå slik. Selvtest innebygd som mutasjonsvern.
+      # I `npm run check` og ci-local.sh også — gate-paritet er lov.
+      - name: recorder error codes are translatable in the shell
+        run: npm run error-codes
+
       # docs/SMOKE-TEST.md's VERIFIED-BY pointers must resolve to tests that
       # still exist — a pointer at nothing claims coverage that does not exist.
       # In `npm run check` since E11; mirrored here so a PR can't skip it.
