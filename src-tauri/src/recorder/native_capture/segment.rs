@@ -779,7 +779,14 @@ where
             // Byte-progress watchdog.
             _ = wd_tick.tick() => {
                 if wd.observe(seg.bytes(), (env.now_ms)()) == WatchdogVerdict::Stuck {
-                    sink.error(
+                    // WARNING, not error — the ffmpeg twin's reason verbatim
+                    // (`engine.rs`, the same watchdog arm): this breaks to
+                    // `UnexpectedExit`, the recovery policy reconnects, and the
+                    // session lives. `ERROR_EVENT` is TERMINAL, and firing it
+                    // here tore the overlay down and sent a "the recording
+                    // failed" e-mail through `notify::wire_failure_sources`
+                    // while the capture was coming back.
+                    sink.warning(
                         "stuck_recording",
                         &format!(
                             "Ingen framgang på {} s — kobler til på nytt",
@@ -1414,7 +1421,16 @@ mod tests {
         ticker.abort();
 
         assert_eq!(out, SegmentOutcome::UnexpectedExit { last_error: None });
-        assert!(r.sink.has(&Ev::Error("stuck_recording".into())));
+        // The CHANNEL is the assertion, not just the code. A stall the recovery
+        // policy answers with `Reconnect` must never reach `recording://error`:
+        // that channel is terminal (the overlay comes down) and it is the one
+        // `notify::wire_failure_sources` turns into a native alert and an
+        // e-mail. Both said "the recording failed" while it was reconnecting.
+        assert!(r.sink.has(&Ev::Warning("stuck_recording".into())));
+        assert!(
+            !r.sink.has(&Ev::Error("stuck_recording".into())),
+            "a stall that reconnects must not appear on the terminal channel"
+        );
     }
 
     /// The writer dying WITHOUT an error event — its channel simply closes.

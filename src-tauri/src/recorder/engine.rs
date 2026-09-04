@@ -2419,7 +2419,18 @@ async fn run_segment(
             // Watchdog poll.
             _ = wd_tick.tick() => {
                 if wd.observe(segment_bytes.load(Ordering::Relaxed), now_ms()) == WatchdogVerdict::Stuck {
-                    emit_error(
+                    // WARNING, not error: this arm kills the encoder and breaks
+                    // to `UnexpectedExit`, which the recovery policy answers with
+                    // `Reconnect`. The session is NOT over, so the rule at
+                    // `ERROR_EVENT` applies — transient + retry goes out on
+                    // `WARNING_EVENT`. It used to be an error, and two things
+                    // rode on that channel: the UI tore the overlay down mid
+                    // service, and `notify::wire_failure_sources` (which listens
+                    // ONLY to `ERROR_EVENT`) fired a native alert AND an e-mail
+                    // saying the recording had failed — while the engine was
+                    // already reconnecting. If the reconnect really does give up,
+                    // the `GiveUp` arm emits the terminal error itself.
+                    emit_warning(
                         app,
                         "stuck_recording",
                         &format!(

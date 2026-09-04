@@ -211,6 +211,34 @@ test.describe("«Lytter»-brikka", () => {
 });
 
 test.describe("opptaksoverlegget", () => {
+  test("F1-M1: en stall som gjenkobler river IKKE overlegget ned", async ({
+    page,
+  }) => {
+    // `stuck_recording` gikk på `recording://error` — den TERMINALE kanalen —
+    // mens motoren i samme åndedrag drepte enkoderen og lot
+    // gjenkoblingspolicyen respawne den. Skjermen trodde økta var over midt i
+    // gudstjenesten, og `notify::wire_failure_sources` (som lytter KUN på det
+    // eventet) sendte native-varsel og e-post om at opptaket hadde feilet —
+    // mens det gikk videre. Nå er den en advarsel, og dette er flatebeviset:
+    // overlegget står, og stripa sier hva som skjer.
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    await emit(page, "recording-warning", {
+      code: "stuck_recording",
+      message: "Ingen framgang på 60 s — kobler til på nytt",
+    });
+
+    // ÉN, ikke null: `toHaveCount(1)` og ikke `toBeVisible()`, fordi det som
+    // gikk galt var at overlegget FORSVANT.
+    await expect(page.getByTestId("recording-overlay")).toHaveCount(1);
+    await expect(page.getByTestId("overlay-reconnect")).toBeVisible();
+    // …og ingen feilstripe på opptakssiden bak overlegget.
+    await expect(page.getByTestId("banner-recording-error")).toHaveCount(0);
+  });
+
   test("gjenkobling og stillhet er TO varsler, ikke ett som sletter det andre", async ({
     page,
   }) => {
@@ -374,6 +402,32 @@ test.describe("bannerne på opptakssiden", () => {
 
     await page.getByTestId("banner-recording-error-dismiss").click();
     await expect(banner).toHaveCount(0);
+  });
+
+  test("F1-M1: en UKJENT kode viser motorens egen setning i stedet for ingenting", async ({
+    page,
+  }) => {
+    // Katalogen kan ikke kjenne en kode som ble skrevet i går. `errorUnknown`
+    // er sann og sier ingenting — så motorens egen linje føyes til, samme
+    // regel som `state/backend-warning.ts` bruker for `msg`. En sann setning
+    // på feil språk er bedre enn en generisk på riktig.
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-error", {
+      code: "codec_from_the_future",
+      error: "codec_from_the_future",
+      message: "avfoundation: kunne ikke åpne kameraet (-11800)",
+    });
+
+    const banner = page.getByTestId("banner-recording-error");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("Noe gikk galt under opptak");
+    await expect(banner).toContainText(
+      "avfoundation: kunne ikke åpne kameraet (-11800)",
+    );
+    // Koden selv er fortsatt ikke UI-tekst — det er MELDINGEN som vises.
+    await expect(banner).not.toContainText("codec_from_the_future");
   });
 
   test("et opptak som aldri ble tatt sier hvilken dag — og hva man kan gjøre", async ({

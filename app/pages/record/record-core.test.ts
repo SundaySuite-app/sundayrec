@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
+import { DOT } from "@lib/ui/dot";
 
 import type { Settings } from "../../state/settings";
 import {
@@ -19,6 +20,7 @@ import {
   defaultDeviceOf,
   formatBytes,
   formatClock,
+  nativeErrorDetail,
   nativeErrorSuffix,
   nativeErrorSuffixFromText,
   qualityReasonSuffix,
@@ -277,6 +279,88 @@ describe("nativeErrorSuffix", () => {
       "errorDiskFull",
     );
     expect(nativeErrorSuffixFromText("")).toBe("errorUnknown");
+  });
+
+  it("F1-M1: de fire kodene som falt på «ukjent» har hver sin setning", () => {
+    // Alle fire kom fra ekte søndagsfeil og alle fire ble til «Noe gikk galt
+    // under opptak»: startvakten som ga opp, ffmpeg som døde midt i,
+    // kameraet som aldri åpnet, og sammenslåingen som feilet.
+    // `scripts/check-error-codes.mjs` er skrallen som holder dem her — dette
+    // er raden som sier hvilken setning hver av dem peker på.
+    expect(nativeErrorSuffix("start_timeout")).toBe("errorStartTimeout");
+    expect(nativeErrorSuffix("ffmpeg_exited")).toBe("errorEngineExited");
+    expect(nativeErrorSuffix("video_capture_failed")).toBe("errorVideoCapture");
+    expect(nativeErrorSuffix("mux_failed")).toBe("errorMux");
+  });
+
+  it("hver kode i tabellen peker på en nøkkel som FINNES i både no og en", () => {
+    // Samme forbehold som `qualityReasonSuffix` under: tabellen er navnene,
+    // katalogene er sannheten. En rad som pekte på en nøkkel ingen hadde
+    // skrevet ville gitt et TOMT banner der det sto en feilmelding — og et
+    // tomt banner er nøyaktig den stillheten gaten finnes for å avslutte.
+    // Kodene leses ut av KILDEN og ikke skrevet av: en rad som legges til i
+    // `record-core.ts` uten oversettelse felles her, ikke av en oppdaget
+    // søndag. (Samme metode som `check-error-codes.mjs` bruker på den andre
+    // siden av skjøten — den spør om Rust og tabellen er enige, denne om
+    // tabellen og katalogene er det.)
+    const src = readFileSync(
+      join(import.meta.dirname, "./record-core.ts"),
+      "utf8",
+    );
+    const table = src.slice(
+      src.indexOf("const NATIVE_ERRORS"),
+      src.indexOf("export function nativeErrorSuffix"),
+    );
+    const codes = [...table.matchAll(/\n\s{2}(\w+):\s*"/g)].map((m) => m[1]);
+    expect(codes.length).toBeGreaterThan(15);
+    for (const lang of ["no", "en"]) {
+      const cat = JSON.parse(
+        readFileSync(
+          join(import.meta.dirname, `../../../legacy/locales/${lang}.json`),
+          "utf8",
+        ),
+      ) as { recording: Record<string, string> };
+      for (const code of codes) {
+        const suffix = nativeErrorSuffix(code);
+        expect(suffix, `${code} mangler i tabellen`).not.toBe("errorUnknown");
+        expect(
+          typeof cat.recording[suffix] === "string" &&
+            cat.recording[suffix].length > 0,
+          `${lang}.json mangler recording.${suffix} (kode ${code})`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+describe("nativeErrorDetail", () => {
+  it("kjent kode: bare katalogteksten — motorens linje er diagnostikk", () => {
+    expect(
+      nativeErrorDetail("Disken er full", "disk_full", "no space left"),
+    ).toBe("Disken er full");
+  });
+
+  it("ukjent kode: motorens egen setning føyes til", () => {
+    // Regelen `state/backend-warning.ts` bruker for `msg`. Uten den er
+    // «errorUnknown» alt som står igjen — sant, og uten et eneste faktum.
+    expect(
+      nativeErrorDetail("Noe gikk galt", "cosmic_rays", "avfoundation: -50"),
+    ).toBe(`Noe gikk galt${DOT}avfoundation: -50`);
+  });
+
+  it("ingen kode i det hele tatt: fortsatt motorens setning", () => {
+    expect(nativeErrorDetail("Noe gikk galt", null, "ffmpeg died")).toBe(
+      `Noe gikk galt${DOT}ffmpeg died`,
+    );
+  });
+
+  it("tom eller manglende melding gir ingen hengende separator", () => {
+    expect(nativeErrorDetail("Noe gikk galt", "cosmic_rays", null)).toBe(
+      "Noe gikk galt",
+    );
+    expect(nativeErrorDetail("Noe gikk galt", "cosmic_rays", "   ")).toBe(
+      "Noe gikk galt",
+    );
   });
 });
 
