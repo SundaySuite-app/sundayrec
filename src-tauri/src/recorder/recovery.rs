@@ -35,17 +35,23 @@ fn manifest_path(app: &AppHandle, session_id: &str) -> Option<PathBuf> {
     Some(manifest_dir(app)?.join(format!("{session_id}.json")))
 }
 
-/// Write / overwrite the session manifest atomically (temp + rename). Best-effort:
-/// a persistence failure is logged at debug and never propagated — recovery state
-/// is a safety net, not a recording dependency.
+/// Write / overwrite the session manifest atomically (temp + rename), through
+/// the shared [`crate::util::write_atomic_async`]. Best-effort: a persistence
+/// failure is logged at debug and never propagated — recovery state is a safety
+/// net, not a recording dependency.
+///
+/// The shared helper adds the `fsync` this file's own version lacked. That
+/// matters here more than anywhere: the manifest's whole job is to survive the
+/// machine losing power mid-service, and a rename whose data blocks never
+/// reached the disk hands the startup scan a file of zeros instead of a
+/// recording to salvage.
 pub async fn write_manifest(app: &AppHandle, manifest: &SessionManifest) {
     let (Some(path), Ok(body)) = (manifest_path(app, &manifest.session_id), manifest.to_json())
     else {
         return;
     };
-    let tmp = path.with_extension("json.tmp");
-    if tokio::fs::write(&tmp, body.as_bytes()).await.is_ok() {
-        let _ = tokio::fs::rename(&tmp, &path).await;
+    if let Err(e) = crate::util::write_atomic_async(&path, body.as_bytes()).await {
+        tracing::debug!("recovery: could not persist session manifest: {e}");
     }
 }
 

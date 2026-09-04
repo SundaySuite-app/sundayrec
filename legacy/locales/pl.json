@@ -336,6 +336,7 @@
     "prerollDead": "Bufor wstępny nie działa — dźwięk sprzed naciśnięcia nagrywania nie jest zachowywany.",
     "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
-    "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni."
+    "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
+    "trashManifestUnreadable": "Nie udało się odczytać zawartości kosza. Pliki nadal tam są, ale aplikacja nie wie już, skąd pochodzą."
   }
 }

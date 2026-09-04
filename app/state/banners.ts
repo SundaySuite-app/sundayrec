@@ -31,11 +31,11 @@
 import { signal } from "@preact/signals";
 
 /**
- * Bakendens fire advarsler, én nøkkel hver — og én oppsamler.
+ * Bakendens fem advarsler, én nøkkel hver — og én oppsamler.
  *
  * Én nøkkel PER KODE, ikke én felles: «gjenopprettingen hoppet over en fil» og
  * «disken fylles» er to fakta, og et nøklet banner som erstattet det andre med
- * det første ville stilltiende kastet en av dem. Fem stykker fordi
+ * det første ville stilltiende kastet en av dem. Seks stykker fordi
  * `backend-warning` fanger en kode denne katalogen ikke kjenner — se
  * `state/backend-warning.ts` for hvorfor motorens egen setning er bedre enn
  * ingen setning.
@@ -45,6 +45,7 @@ export type BackendWarningKey =
   | "backend-recovery-skipped"
   | "backend-device-missing"
   | "backend-disk-low"
+  | "backend-trash-manifest"
   | "backend-warning";
 
 /** Nøklene. Lukket liste: et nytt banner er en beslutning, ikke noe som siger

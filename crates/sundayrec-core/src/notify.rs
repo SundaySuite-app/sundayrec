@@ -55,10 +55,22 @@ pub mod code {
     /// — well above the engine's terminal stop threshold, so this is a nudge
     /// while there is still time to act, not the emergency stop.
     pub const DISK_LOW: &str = "disk_low";
+    /// The Papirkurv's `manifest.json` was there but could not be read, so it
+    /// was renamed aside and the list rebuilt from empty. The FILES are
+    /// untouched — they are still in the trash directory — but the app can no
+    /// longer say where each one came from, which is exactly the thing a
+    /// volunteer needs to hear before they conclude a recording is gone.
+    pub const TRASH_MANIFEST_UNREADABLE: &str = "trash_manifest_unreadable";
 
     /// Every code above, in declaration order. The renderer's key table is
     /// checked against this list.
-    pub const ALL: &[&str] = &[PREROLL_DEAD, RECOVERY_SKIPPED, DEVICE_MISSING, DISK_LOW];
+    pub const ALL: &[&str] = &[
+        PREROLL_DEAD,
+        RECOVERY_SKIPPED,
+        DEVICE_MISSING,
+        DISK_LOW,
+        TRASH_MANIFEST_UNREADABLE,
+    ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -995,7 +1007,7 @@ mod tests {
                 "{c} is not snake_case"
             );
         }
-        assert_eq!(code::ALL.len(), 4);
+        assert_eq!(code::ALL.len(), 5);
     }
 
     #[test]

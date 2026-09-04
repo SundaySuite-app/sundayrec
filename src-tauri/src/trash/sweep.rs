@@ -117,6 +117,26 @@ mod tests {
     }
 
     #[test]
+    fn the_sweep_touches_the_manifest_only_through_the_locked_seam() {
+        // F1-M2, invariant 2: `purge_older_than` takes `MANIFEST_LOCK` for the
+        // whole read-modify-write, which is the ONLY reason this twelve-hourly
+        // tick needs no lock of its own. A read or a write inlined here would
+        // run outside it — and a sweep landing between a delete's journal write
+        // and its file move is exactly the interleaving the lock exists for.
+        let src = include_str!("sweep.rs");
+        assert!(
+            src.contains("purge_older_than"),
+            "the sweep must purge through the locked seam"
+        );
+        for needle in [concat!("read", "_manifest"), concat!("write", "_manifest")] {
+            assert!(
+                !src.contains(needle),
+                "the sweep must not touch the manifest directly ({needle})"
+            );
+        }
+    }
+
+    #[test]
     fn tick_resolves_only_through_the_canonical_resolver() {
         // Source ratchet: fails if someone re-inlines a Documents lookup here.
         let src = include_str!("sweep.rs");
