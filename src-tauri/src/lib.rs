@@ -372,6 +372,12 @@ pub fn run() {
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
+            // Give the handle-less seams somewhere to raise a warning. The
+            // Papirkurv is plain filesystem code called from six places; when
+            // it finds a manifest it cannot read, this is how the volunteer
+            // hears about it instead of just the log file.
+            notify::arm_detached(app.handle().clone());
+
             // …and the e-mail relay's pump, beside it. `maybe_spawn` starts
             // NOTHING unless this machine has a subscription record: an install
             // that never enrolled an address has no task, no connection pool and

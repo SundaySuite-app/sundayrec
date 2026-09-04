@@ -349,6 +349,37 @@ pub fn warn(app: &AppHandle, w: BackendWarning) {
     }
 }
 
+/// The handle [`warn_detached`] emits through. Armed once from `setup`.
+static DETACHED: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// Arm [`warn_detached`]. Called once from `setup`; a second call is ignored.
+pub fn arm_detached(app: AppHandle) {
+    let _ = DETACHED.set(app);
+}
+
+/// Raise a warning from a seam that has no [`AppHandle`] to raise it with.
+///
+/// Every other warning source in the app is a background task that was HANDED
+/// a handle when it was spawned. The Papirkurv seam is not: it is plain
+/// filesystem code, called from four commands, the sweep and the retention
+/// pass, and threading a handle through all six to reach one `if` deep inside a
+/// manifest read would make the seam's signature about notifications rather
+/// than about the trash.
+///
+/// Before `setup` — and in every unit test, which is the point — this logs and
+/// returns. A warning nobody is listening for is not an error; a seam that
+/// cannot be unit-tested because it insists on a GUI is.
+pub fn warn_detached(w: BackendWarning) {
+    match DETACHED.get() {
+        Some(app) => warn(app, w),
+        None => tracing::warn!(
+            code = %w.code,
+            msg = ?w.msg,
+            "notify: backend warning raised before the app was armed"
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

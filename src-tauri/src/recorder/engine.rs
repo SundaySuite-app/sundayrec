@@ -2846,11 +2846,10 @@ fn finalize_session_telemetry(
     tauri::async_runtime::spawn_blocking(move || {
         let _ = std::fs::create_dir_all(&dir);
 
-        // Most-recent snapshot.
+        // Most-recent snapshot. Atomic temp+rename through the shared helper:
+        // the trend view reads these files while this task writes them.
         if let Ok(json) = serde_json::to_string(&t) {
-            let path = dir.join("last-recording.json");
-            let tmp = dir.join("last-recording.json.tmp");
-            let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &path));
+            let _ = crate::util::write_atomic(&dir.join("last-recording.json"), json.as_bytes());
         }
 
         // Rolling history (cap 20, newest last) for the trend view.
@@ -2861,8 +2860,7 @@ fn finalize_session_telemetry(
             .unwrap_or_default();
         push_capped(&mut hist, t, 20);
         if let Ok(json) = serde_json::to_string(&hist) {
-            let tmp = dir.join("recording-telemetry-history.json.tmp");
-            let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &hist_path));
+            let _ = crate::util::write_atomic(&hist_path, json.as_bytes());
         }
     });
 }
