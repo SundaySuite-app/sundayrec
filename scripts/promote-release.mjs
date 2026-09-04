@@ -27,10 +27,15 @@
 //   a plain     `vX.Y.Z` tag can only be promoted to the "stable" channel
 //
 // ── THE ADMIN KEY ────────────────────────────────────────────────────────────
-// Never an argument, an env var, or a line in this file — it is read from the
-// owner's macOS Keychain at run time and used only as the `x-admin-key`
-// request header. It is never printed, never logged, and never appears in an
-// error message.
+// Two sources, tried in order (see readAdminKey() below):
+//   1. SUNDAYREC_ADMIN_KEY, an env var — the emergency path for a machine
+//      that isn't the owner's Mac (or isn't a Mac at all), documented in
+//      docs/ROLLBACK.md "Nødprosedyre uten Mac". Never a CLI argument, never
+//      a line in this file.
+//   2. The owner's macOS Keychain, at run time — the original, normal path.
+// Whichever source wins, the key is used ONLY as the `x-admin-key` request
+// header. It is never printed, never logged, and never appears in an error
+// message, on either path.
 //
 //   security add-generic-password -s 'SundayRec telemetry admin key' \
 //     -a sundayrec -w '<the admin key>'
@@ -208,12 +213,27 @@ function fail(msg) {
   process.exit(1);
 }
 
-// ── Keychain ─────────────────────────────────────────────────────────────
-// `spawnSync` runs no shell, so the key never round-trips through anything
-// that could echo or log a command line. The key is returned to the caller
-// for immediate use as a header value — it is never written to stdout/stderr
-// anywhere in this file.
-function readAdminKey() {
+// ── Admin key: env override, then Keychain ─────────────────────────────────
+// SUNDAYREC_ADMIN_KEY wins if set, and the Keychain is never touched in that
+// case — `security` isn't even spawned, which is the whole point: this is
+// the path for a machine (or a person) that has no Keychain item to read,
+// documented in docs/ROLLBACK.md "Nødprosedyre uten Mac (10 min)".
+//
+// Otherwise: `security find-generic-password` via `spawnSync`, which runs no
+// shell, so the key never round-trips through anything that could echo or
+// log a command line.
+//
+// Either path returns the key to the caller for immediate use as a header
+// value — it is never written to stdout/stderr anywhere in this file.
+export function readAdminKey() {
+  const envKey = process.env.SUNDAYREC_ADMIN_KEY;
+  if (envKey && envKey.trim() !== "") {
+    console.log(
+      "Using SUNDAYREC_ADMIN_KEY from the environment (emergency path — see docs/ROLLBACK.md).",
+    );
+    return envKey.trim();
+  }
+
   const r = spawnSync(
     "security",
     ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
@@ -222,13 +242,15 @@ function readAdminKey() {
   if (r.error) {
     fail(
       `could not run \`security\` (${r.error.message}) — this script only works on macOS, ` +
-        `reading from Keychain Access.`,
+        `reading from Keychain Access. Not on a Mac? Set SUNDAYREC_ADMIN_KEY instead — see ` +
+        `docs/ROLLBACK.md "Nødprosedyre uten Mac".`,
     );
   }
   if (r.status !== 0) {
     fail(
       `no Keychain item named "${KEYCHAIN_SERVICE}" — add it once with:\n` +
-        `    security add-generic-password -s '${KEYCHAIN_SERVICE}' -a sundayrec -w '<the admin key>'`,
+        `    security add-generic-password -s '${KEYCHAIN_SERVICE}' -a sundayrec -w '<the admin key>'\n` +
+        `  or set SUNDAYREC_ADMIN_KEY instead — see docs/ROLLBACK.md "Nødprosedyre uten Mac".`,
     );
   }
   const key = r.stdout.trim();

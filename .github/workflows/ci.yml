@@ -417,10 +417,75 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.98.0
 
-      - name: npm audit (high+)
-        run: npm audit --audit-level=high
+      # npm audit blocked EVERY push twice on 2026-09-04 when npmjs.org's own
+      # audit endpoint itself returned 503 (real log line: `npm warn audit
+      # 503 Service Unavailable … npm error audit endpoint returned an
+      # error`) — registry drift, not an advisory in this repo's dependency
+      # tree. The job went red exactly the same way a real finding would,
+      # and nothing said which one it was short of opening the raw log. This
+      # step tells the two apart:
+      #   - a REAL finding (npm audit ran and reported an advisory at or
+      #     above `high`) still fails the job, unchanged policy, with the
+      #     advisory output right here in the log.
+      #   - the endpoint being unreachable after 3 tries ALSO still fails the
+      #     job — this gate stays fail-closed, "could not check" must not
+      #     read as "checked and fine" — but says so with `::warning::` and a
+      #     plain sentence, so triage takes seconds instead of a re-run and a
+      #     guess.
+      # Backoff (30/60/120s) is only BETWEEN attempts: a single `npm audit`
+      # call took ~7 min end-to-end the day this was written (npm's own
+      # internal retries before it gives up and reports the 503), so a full
+      # 3-attempt run can take a while in the worst case — that is the actual
+      # cost of the registry being down, not a bug in this step.
+      #
+      # Deliberately UNCHANGED here: npm audit still scans the full tree
+      # (dev + runtime deps), still blocking at `high`. Splitting that into
+      # "--omit=dev blocking, full non-blocking" is a real option but a
+      # policy call, not a CI-hygiene one — see this PR's description.
+      - name: npm audit (high+), tolerant of registry 503s
+        run: |
+          set -uo pipefail  # no -e: this loop handles npm audit's exit code itself
+
+          max_attempts=3
+          backoffs=(30 60 120)
+          log="$(mktemp)"
+
+          for attempt in 1 2 3; do
+            echo "── npm audit attempt ${attempt}/${max_attempts} ──"
+            npm audit --audit-level=high >"$log" 2>&1
+            status=$?
+            cat "$log"
+
+            if [ "$status" -eq 0 ]; then
+              echo "✓ npm audit clean."
+              exit 0
+            fi
+
+            if grep -qiE "audit endpoint returned an error|registry\.npmjs\.org.*(Unavailable|Too Many Requests)|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN" "$log"; then
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                wait_s="${backoffs[$((attempt - 1))]}"
+                echo "::warning::npm audit attempt ${attempt}/${max_attempts} — the npmjs.org audit endpoint itself errored (registry drift, not necessarily a finding in this repo). Retrying in ${wait_s}s."
+                sleep "$wait_s"
+                continue
+              fi
+              echo "::warning::npm audit failed all ${max_attempts} attempts because the npmjs.org audit endpoint is unavailable — this is REGISTRY DRIFT, not a dependency finding. The job still fails on purpose (an unauditable tree does not pass silently); re-run once the registry recovers, and do not read this as a new advisory."
+              exit "$status"
+            fi
+
+            echo "::error::npm audit reported a real finding at or above 'high' (see the advisory output above) — not registry drift, no point retrying it."
+            exit "$status"
+          done
+
+      - name: Install cargo-audit (prebuilt binary — `cargo install --locked` took ~2 min here)
+        uses: taiki-e/install-action@v2
+        with:
+          # Version pinned (not the bare `@cargo-audit` shorthand ref, which
+          # floats to whatever install-action's latest release considers
+          # current) so a new cargo-audit release can't change this job's
+          # behaviour without a deliberate bump — same reasoning as the
+          # pinned Rust toolchain above. Check crates.io/crates/cargo-audit
+          # for newer versions when bumping.
+          tool: cargo-audit@0.22.2
 
       - name: cargo audit
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit
+        run: cargo audit
