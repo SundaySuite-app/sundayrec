@@ -24,3 +24,7 @@ updates:
     groups:
       actions-all:
         patterns: ["*"]
+    ignore:
+      # dtolnay/rust-toolchain: toolchainen er bevisst pinnet til 1.98.0 i hele
+      # suiten (universal-bygg-fella), og 1.100.0 fantes ikke engang som tag — se #193.
+      - dependency-name: "dtolnay/rust-toolchain"
