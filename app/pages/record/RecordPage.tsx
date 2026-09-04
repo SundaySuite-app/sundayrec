@@ -872,7 +872,10 @@ function NextAutoCard() {
     <Card testId="record-next-auto">
       <div class={styles.label}>{t("app.record.nextAuto")}</div>
       <div data-testid="record-next-auto-when" class={styles.value}>
-        {`${capitalizeFirst(parts.weekdayLong, locale.value)} ${parts.time}`}
+        {tf("app.record.nextAutoWhen", {
+          day: capitalizeFirst(parts.weekdayLong, locale.value),
+          time: parts.time,
+        })}
       </div>
       {next.label ? (
         <div data-testid="record-next-auto-label" class={styles.muted}>

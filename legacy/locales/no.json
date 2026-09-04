@@ -29,7 +29,14 @@
     "dialog": {
       "confirm": "Fortsett",
       "cancel": "Avbryt",
-      "close": "Lukk"
+      "close": "Lukk",
+      "filter": {
+        "settingsProfile": "Innstillingsprofil (JSON)",
+        "allFiles": "Alle filer",
+        "allMedia": "Alle støttede medier",
+        "audio": "Lyd",
+        "video": "Video"
+      }
     },
     "vu": {
       "hear": "Vi hører lyd",
@@ -73,6 +80,7 @@
       "canStart": "Du kan starte likevel — opptaket blir stille til mikseren er tilbake.",
       "useBuiltIn": "Bruk maskinens mikrofon",
       "nextAuto": "Neste automatiske opptak",
+      "nextAutoWhen": "{day} {time}",
       "last": "Siste opptak",
       "close": "Lukk",
       "camera": {
@@ -554,8 +562,8 @@
       "stopQuestionDesc": "{elapsed} er tatt opp. Stopper du nå, lagres det du har.",
       "keep": "Fortsett å ta opp",
       "stopYes": "Stopp",
-      "room": "Plass til",
-      "camera": "Kamera",
+      "room": "Plass til {span}",
+      "camera": "Kamera {name}",
       "reconnect": "Lyden fra {name} forsvant — prøver å koble til igjen",
       "reconnectAnon": "Lyden forsvant — prøver å koble til igjen",
       "autoStop": "Stopper av seg selv om {left}",
@@ -691,6 +699,7 @@
   },
   "status": {
     "warning": "Trenger oppmerksomhet",
+    "warningDevice": "{warning}: {name}",
     "recording": "Tar opp nå",
     "noSchedule": "Ingen opptak planlagt",
     "preflightErrors": {
@@ -709,6 +718,7 @@
     "readyNoSchedule": "Klar — sett opp en tidsplan for å starte automatisk",
     "wakesBefore": "Maskinen vekkes automatisk kl. {time}",
     "nextShort": "neste",
+    "recordingCountdown": "{recording} · {next}: {base}",
     "wakesLead": "({min} min før)",
     "wakesNotArmed": "Maskinen må være på eller i dvale når opptaket starter — vi har ikke fått bekreftet noen vekking."
   },
@@ -735,6 +745,7 @@
     },
     "confirmEmptyBody": "Filene slettes fra disken. Dette kan ikke angres.",
     "deletedAt": "Slettet",
+    "deletedAtLine": "{deletedAt} {when}",
     "today": "i dag",
     "yesterday": "i går",
     "daysAgo": {

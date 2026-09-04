@@ -29,7 +29,14 @@
     "dialog": {
       "confirm": "Continue",
       "cancel": "Cancel",
-      "close": "Close"
+      "close": "Close",
+      "filter": {
+        "settingsProfile": "Settings profile (JSON)",
+        "allFiles": "All files",
+        "allMedia": "All supported media",
+        "audio": "Audio",
+        "video": "Video"
+      }
     },
     "vu": {
       "hear": "We hear sound",
@@ -73,6 +80,7 @@
       "canStart": "You can start anyway — the recording stays silent until the mixer is back.",
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
+      "nextAutoWhen": "{day} {time}",
       "last": "Last recording",
       "close": "Close",
       "camera": {
@@ -554,8 +562,8 @@
       "stopQuestionDesc": "{elapsed} recorded so far. If you stop now, what you have is saved.",
       "keep": "Keep recording",
       "stopYes": "Stop",
-      "room": "Room for",
-      "camera": "Camera",
+      "room": "Room for {span}",
+      "camera": "Camera {name}",
       "reconnect": "Sound from {name} disappeared — trying to reconnect",
       "reconnectAnon": "The sound disappeared — trying to reconnect",
       "autoStop": "Stops by itself in {left}",
@@ -691,6 +699,7 @@
   },
   "status": {
     "warning": "Needs attention",
+    "warningDevice": "{warning}: {name}",
     "recording": "Recording now",
     "noSchedule": "No recording scheduled",
     "preflightErrors": {
@@ -709,6 +718,7 @@
     "readyNoSchedule": "Ready — set up a schedule to start recordings automatically",
     "wakesBefore": "The computer wakes automatically at {time}",
     "nextShort": "next",
+    "recordingCountdown": "{recording} · {next}: {base}",
     "wakesLead": "({min} min before)",
     "wakesNotArmed": "The machine must be on or asleep when the recording starts — no wake-up has been confirmed."
   },
@@ -735,6 +745,7 @@
     },
     "confirmEmptyBody": "The files are deleted from disk. This cannot be undone.",
     "deletedAt": "Deleted",
+    "deletedAtLine": "{deletedAt} {when}",
     "today": "today",
     "yesterday": "yesterday",
     "daysAgo": {
