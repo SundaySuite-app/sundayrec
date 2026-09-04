@@ -12,6 +12,12 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 > chosen save folder); app **settings must be re-entered** (the new version
 > stores them separately).
 
+> **Running this on a Sunday without a developer in the room?** This README is
+> for people working on the code. If you're the volunteer operating the app
+> instead, [`docs/FRIVILLIG.md`](docs/FRIVILLIG.md) (Norwegian) is the two-page
+> version: install, permissions, record, what the banners mean, and who to
+> call.
+
 ## What it does
 
 Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
@@ -71,10 +77,11 @@ export.
   through the `@legacy/*` alias. Generated code and data, in other words — the
   Electron vanilla-TS renderer that used to live here is gone entirely.
 - **`docs/`** — living docs: migration plan (`MIGRATION-TAURI2.md`), hardware
-  smoke tests (`SMOKE-TEST.md`), the account/key checklist
-  (`NEEDS-RICHARD.md`), and an improvement-backlog snapshot from 2026-07-07
-  (`BACKLOG-AUDIT-2026-07-07.md`). Superseded snapshots live in
-  `docs/archive/`.
+  smoke tests (`SMOKE-TEST.md`), a one-day hands-on rig checklist
+  (`RIG-DAY.md`), the volunteer-facing operating guide (`FRIVILLIG.md`,
+  Norwegian), the account/key checklist (`NEEDS-RICHARD.md`), and an
+  improvement-backlog snapshot from 2026-07-07 (`BACKLOG-AUDIT-2026-07-07.md`).
+  Superseded snapshots live in `docs/archive/`.
 
 The original Electron app remains the **behavioural specification**, not a
 template. See [`docs/MIGRATION-TAURI2.md`](docs/MIGRATION-TAURI2.md) for the
