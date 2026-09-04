@@ -29,20 +29,62 @@
 //!
 //! ## Degrading
 //!
-//! A manifest we cannot read is treated as an empty one, and an entry we cannot
-//! parse is skipped rather than poisoning the list — the alternative is a trash
-//! that refuses to open because of one bad record, which is the worst possible
-//! failure mode for the feature whose entire job is "don't lose things". An
-//! entry whose file has vanished underneath us (a user tidying by hand) drops
-//! out of the listing.
+//! An entry we cannot parse is skipped rather than poisoning the list — the
+//! alternative is a trash that refuses to open because of one bad record, which
+//! is the worst possible failure mode for the feature whose entire job is
+//! "don't lose things". An entry whose file has vanished underneath us (a user
+//! tidying by hand) drops out of the listing.
+//!
+//! ## The four invariants of the manifest (F1-M2)
+//!
+//! The manifest is the app's ONLY record of where a trashed file came from. If
+//! it is wrong, the bytes are still on disk but nothing can find them: not the
+//! Papirkurv view, not «Angre», not the 30-day sweep. It is therefore held to
+//! four rules, each of which was violated by the first implementation.
+//!
+//! 1. **Written atomically.** [`crate::util::write_atomic`] — scratch file,
+//!    `fsync`, rename. The old `fs::write` truncated the manifest and then
+//!    filled it: a power cut in that window (a church losing power mid-service
+//!    is not a hypothetical) left an empty or half-written manifest, and with
+//!    it a Papirkurv holding a disk's worth of recordings it could no longer
+//!    name — while the disk stayed full.
+//!
+//! 2. **One writer at a time.** `MANIFEST_LOCK` is held across every
+//!    read-modify-write. The six entry points ([`move_into_trash`], [`list`],
+//!    [`restore`], [`purge`], [`purge_older_than`] and, through the last of
+//!    those, `sweep::tick`) run on `spawn_blocking` threads and on the sweep's
+//!    own task, so two of them could — and eventually would — read the same
+//!    manifest, each add their own change, and write it back: last writer wins,
+//!    the other change silently gone. A delete that says "done" and isn't is
+//!    the one outcome this module may not produce.
+//!
+//! 3. **Journal BEFORE moving.** [`move_into_trash`] writes the entry, then
+//!    moves the file. Crash in between and the manifest names a file that is
+//!    not in the trash yet — [`list`] drops that entry and rewrites, and the
+//!    recording is still sitting safely in the library. The other order (the
+//!    original) crashed the other way: the file was in the trash directory and
+//!    NOTHING pointed at it — invisible in Historikk, invisible in the
+//!    Papirkurv, and never purged. Gone forever, quietly, while taking up
+//!    space.
+//!
+//! 4. **Never overwritten when unreadable.** A `manifest.json` that exists but
+//!    will not parse is renamed to `manifest.json.corrupt-<ms>` and the user is
+//!    told ([`sundayrec_core::notify::code::TRASH_MANIFEST_UNREADABLE`]).
+//!    Reading it as "empty" and writing a fresh one on top — what the module
+//!    used to do — destroys the only clue about what was in the trash. A
+//!    missing manifest still reads as an empty trash; a broken one is a
+//!    different fact and now says so.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
+use sundayrec_core::notify::{code, BackendWarning};
 use ts_rs::TS;
 
 use crate::db::store;
 use crate::error::{AppError, AppResult};
+use crate::util::lock_recover;
 
 pub mod sweep;
 
@@ -141,14 +183,59 @@ fn manifest_path(save_dir: &Path) -> PathBuf {
     trash_dir(save_dir).join(MANIFEST)
 }
 
-/// Read the manifest. A missing, unreadable or malformed file reads as empty,
-/// and an entry that will not parse is dropped — see the module header.
-pub fn read_manifest(save_dir: &Path) -> Vec<TrashEntry> {
+/// Serialises every read-modify-write of the manifest — invariant 2 in the
+/// module header.
+///
+/// One lock for every save folder, not one per folder: a machine has exactly
+/// one save folder at a time, the operations are milliseconds of small-file
+/// I/O, and a map keyed by path would be a cache to invalidate in exchange for
+/// contention that does not exist.
+static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Take `MANIFEST_LOCK`, recovering from a poisoned holder. It guards a FILE,
+/// not an in-memory invariant a panic could half-break; refusing to serve the
+/// Papirkurv for the rest of the session because one earlier call panicked
+/// would be strictly worse than continuing.
+fn manifest_guard() -> MutexGuard<'static, ()> {
+    lock_recover(&MANIFEST_LOCK)
+}
+
+/// Why a manifest that EXISTS could not be turned into entries.
+///
+/// Kept apart from "there is no manifest" on purpose: the two used to be the
+/// same answer (an empty `Vec`), and that is what made it possible to write a
+/// fresh manifest straight over a broken one.
+#[derive(Debug)]
+enum Unreadable {
+    /// The file is there but would not come off the disk.
+    Io(std::io::Error),
+    /// The bytes are there but are not a manifest.
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for Unreadable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "{e}"),
+            Self::Json(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+/// Parse the manifest, distinguishing "there is none" from "there is one and it
+/// is broken".
+///
+/// `Ok(vec![])` — no manifest file: an empty trash, the normal state of a fresh
+/// install. `Err` — the file is there and is not usable. An individual ENTRY
+/// that will not parse is still skipped rather than failing the whole read;
+/// that is the degrading rule in the module header and it is unchanged.
+fn parse_manifest(save_dir: &Path) -> Result<Vec<TrashEntry>, Unreadable> {
     let raw = match std::fs::read_to_string(manifest_path(save_dir)) {
         Ok(s) => s,
-        Err(_) => return Vec::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(Unreadable::Io(e)),
     };
-    let file: ManifestFile = serde_json::from_str(&raw).unwrap_or_default();
+    let file: ManifestFile = serde_json::from_str(&raw).map_err(Unreadable::Json)?;
     let total = file.entries.len();
     let parsed: Vec<TrashEntry> = file
         .entries
@@ -161,11 +248,78 @@ pub fn read_manifest(save_dir: &Path) -> Vec<TrashEntry> {
             total - parsed.len()
         );
     }
-    parsed
+    Ok(parsed)
 }
 
-/// Write the manifest, creating the trash directory if needed.
+/// Move an unreadable manifest aside and describe what happened.
+///
+/// The rename is the whole point (invariant 4): those bytes are the only record
+/// of what was in the trash, they are readable by a human in a text editor, and
+/// the next write would otherwise land on top of them. `make_unique_path` so a
+/// second failure in the same millisecond does not overwrite the first one's
+/// evidence either.
+///
+/// Best-effort by design — a manifest we cannot even rename is still worth
+/// telling the user about, and the returned warning says so either way.
+fn quarantine_unreadable(save_dir: &Path, now_ms: i64, why: &str) -> BackendWarning {
+    let from = manifest_path(save_dir);
+    let want = trash_dir(save_dir).join(format!("{MANIFEST}.corrupt-{now_ms}"));
+    let to = PathBuf::from(sundayrec_core::filename::make_unique_path(
+        &want.to_string_lossy(),
+        |p| Path::new(p).exists(),
+    ));
+    let moved = std::fs::rename(&from, &to).is_ok();
+    let name = to
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| MANIFEST.to_string());
+
+    if moved {
+        tracing::warn!("trash: manifest unreadable ({why}); moved aside as {name}");
+    } else {
+        tracing::warn!("trash: manifest unreadable ({why}) and could not be moved aside");
+    }
+
+    BackendWarning::warn(code::TRASH_MANIFEST_UNREADABLE)
+        .msg(
+            "Papirkurvens innhold kunne ikke leses. Filene ligger der fortsatt, \
+             men appen vet ikke lenger hvor de kom fra.",
+        )
+        .param("file", name)
+        .param("reason", why.to_string())
+}
+
+/// Read the manifest. A missing file reads as an empty trash; a file that is
+/// there but broken is moved aside and the user is told — see the module
+/// header. An entry that will not parse is dropped.
+pub fn read_manifest(save_dir: &Path) -> Vec<TrashEntry> {
+    let _guard = manifest_guard();
+    read_manifest_locked(save_dir)
+}
+
+/// [`read_manifest`] for a caller that already holds `MANIFEST_LOCK`.
+/// `std::sync::Mutex` is not reentrant, so an operation takes the guard once at
+/// the top and uses these `_locked` halves throughout.
+fn read_manifest_locked(save_dir: &Path) -> Vec<TrashEntry> {
+    match parse_manifest(save_dir) {
+        Ok(entries) => entries,
+        Err(why) => {
+            let w = quarantine_unreadable(save_dir, store::now_ms() as i64, &why.to_string());
+            crate::notify::warn_detached(w);
+            Vec::new()
+        }
+    }
+}
+
+/// Write the manifest, creating the trash directory if needed. Atomic — see
+/// invariant 1 in the module header.
 pub fn write_manifest(save_dir: &Path, entries: &[TrashEntry]) -> AppResult<()> {
+    let _guard = manifest_guard();
+    write_manifest_locked(save_dir, entries)
+}
+
+/// [`write_manifest`] for a caller that already holds `MANIFEST_LOCK`.
+fn write_manifest_locked(save_dir: &Path, entries: &[TrashEntry]) -> AppResult<()> {
     let dir = trash_dir(save_dir);
     std::fs::create_dir_all(&dir)?;
     let file = ManifestFile {
@@ -174,10 +328,8 @@ pub fn write_manifest(save_dir: &Path, entries: &[TrashEntry]) -> AppResult<()> 
             .map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null))
             .collect(),
     };
-    std::fs::write(
-        manifest_path(save_dir),
-        serde_json::to_string_pretty(&file)?,
-    )?;
+    let body = serde_json::to_string_pretty(&file)?;
+    crate::util::write_atomic(&manifest_path(save_dir), body.as_bytes())?;
     Ok(())
 }
 
@@ -244,7 +396,28 @@ fn trash_target(dir: &Path, stamp: i64, name: &str) -> PathBuf {
 /// Paths that do not exist are skipped rather than failing the call: Historikk
 /// can hold a row whose file a user already removed by hand, and refusing to
 /// tidy that row would leave them no way to get rid of it.
+///
+/// ## The order (invariant 3)
+///
+/// Per recording: build the entry, WRITE THE MANIFEST, then move the file. The
+/// window between the two is now the harmless one — a manifest entry whose
+/// `trashed_path` does not exist is dropped by [`list`] on the next open, and
+/// the recording never left the library. Reversed (the original order), the
+/// same crash left a file sitting in the trash directory that nothing pointed
+/// at: gone from Historikk, absent from the Papirkurv, and skipped by the
+/// 30-day sweep, which only ever looks at manifest entries.
+///
+/// A move that FAILS is left in the manifest on purpose rather than rolled
+/// back. [`move_file`]'s cross-volume fallback can copy the bytes and then fail
+/// to unlink the source, and in that case the entry is TRUE — the file really
+/// is in the trash. Letting [`list`] decide from what is on disk is the one
+/// rule that is right in both cases.
+///
+/// The whole loop runs under `MANIFEST_LOCK`: the manifest is read once and
+/// carried in memory, so a call with N recordings costs one read and N writes,
+/// not N reads of a file that is growing under it.
 pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<TrashEntry>> {
+    let _guard = manifest_guard();
     let dir = trash_dir(save_dir);
     std::fs::create_dir_all(&dir)?;
 
@@ -252,6 +425,7 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
     let stamp = stamp_ms as i64;
     let mut claimed: Vec<PathBuf> = Vec::new();
     let mut created: Vec<TrashEntry> = Vec::new();
+    let mut manifest = read_manifest_locked(save_dir);
 
     for raw in paths {
         let media = PathBuf::from(raw);
@@ -298,9 +472,7 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
 
         let byte_size = std::fs::metadata(&media).ok().map(|m| m.len() as i64);
         let target = trash_target(&dir, stamp, &name);
-        move_file(&media, &target).map_err(AppError::Io)?;
-        claimed.push(media.clone());
-        created.push(TrashEntry {
+        let entry = TrashEntry {
             id: store::new_id(),
             original_path: media.to_string_lossy().into_owned(),
             trashed_path: target.to_string_lossy().into_owned(),
@@ -308,29 +480,41 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
             deleted_at: stamp_ms,
             related,
             byte_size,
-        });
+        };
+
+        // Journal FIRST, move SECOND — see the doc comment above.
+        manifest.push(entry.clone());
+        write_manifest_locked(save_dir, &manifest)?;
+
+        move_file(&media, &target).map_err(AppError::Io)?;
+        claimed.push(media.clone());
+        created.push(entry);
     }
 
-    if !created.is_empty() {
-        let mut entries = read_manifest(save_dir);
-        entries.extend(created.iter().cloned());
-        write_manifest(save_dir, &entries)?;
-    }
     Ok(created)
 }
 
 /// Everything currently in the trash, newest first. Entries whose file is gone
 /// (removed by hand) are dropped from the listing AND from the manifest — the
 /// list must describe what is actually recoverable.
+///
+/// This is also where invariant 3 heals itself: an entry [`move_into_trash`]
+/// journalled for a move that never completed names a `trashed_path` that does
+/// not exist, so it leaves here, exactly like a file someone deleted by hand.
+///
+/// It WRITES, so it takes the lock like every other read-modify-write — a prune
+/// racing a delete is how a just-trashed recording disappears from the manifest
+/// a moment after it arrived.
 pub fn list(save_dir: &Path) -> Vec<TrashEntry> {
-    let entries = read_manifest(save_dir);
+    let _guard = manifest_guard();
+    let entries = read_manifest_locked(save_dir);
     let live: Vec<TrashEntry> = entries
         .iter()
         .filter(|e| Path::new(&e.trashed_path).exists())
         .cloned()
         .collect();
     if live.len() != entries.len() {
-        let _ = write_manifest(save_dir, &live);
+        let _ = write_manifest_locked(save_dir, &live);
     }
     let mut out = live;
     out.sort_by(|a, b| b.deleted_at.total_cmp(&a.deleted_at));
@@ -342,8 +526,13 @@ pub fn list(save_dir: &Path) -> Vec<TrashEntry> {
 /// A path that is occupied again — the operator re-recorded over the same
 /// filename while the old take sat in the trash — gets the app's usual `_2`
 /// treatment rather than overwriting the newer file.
+///
+/// Under `MANIFEST_LOCK` for the whole restore, file moves included: a sweep
+/// tick that read the manifest between the move and the rewrite would purge an
+/// entry whose bytes had already left the trash directory.
 pub fn restore(save_dir: &Path, id: &str) -> AppResult<TrashEntry> {
-    let mut entries = read_manifest(save_dir);
+    let _guard = manifest_guard();
+    let mut entries = read_manifest_locked(save_dir);
     let idx = entries
         .iter()
         .position(|e| e.id == id)
@@ -368,7 +557,7 @@ pub fn restore(save_dir: &Path, id: &str) -> AppResult<TrashEntry> {
         }
     }
 
-    write_manifest(save_dir, &entries)?;
+    write_manifest_locked(save_dir, &entries)?;
     Ok(TrashEntry {
         original_path: landed,
         ..entry
@@ -379,7 +568,8 @@ pub fn restore(save_dir: &Path, id: &str) -> AppResult<TrashEntry> {
 /// papirkurven»). Returns the entries that were removed so the caller can drop
 /// their history rows — the one moment a recording stops existing.
 pub fn purge(save_dir: &Path, ids: &[String]) -> AppResult<Vec<TrashEntry>> {
-    let entries = read_manifest(save_dir);
+    let _guard = manifest_guard();
+    let entries = read_manifest_locked(save_dir);
     let all = ids.is_empty();
     let (doomed, kept): (Vec<TrashEntry>, Vec<TrashEntry>) = entries
         .into_iter()
@@ -387,18 +577,24 @@ pub fn purge(save_dir: &Path, ids: &[String]) -> AppResult<Vec<TrashEntry>> {
     for entry in &doomed {
         remove_files_of(entry);
     }
-    write_manifest(save_dir, &kept)?;
+    write_manifest_locked(save_dir, &kept)?;
     Ok(doomed)
 }
 
 /// Permanently delete entries older than `days`. `days <= 0` disables the sweep
 /// (nothing is ever purged by age), matching how `autoDeleteDays` behaves.
+///
+/// This is the whole manifest footprint of `sweep::tick`, which is why the
+/// twelve-hourly tick needs no lock of its own: taking `MANIFEST_LOCK` here
+/// is what keeps a sweep from landing between a delete's journal write and its
+/// file move.
 pub fn purge_older_than(save_dir: &Path, days: i64, now_ms: f64) -> AppResult<Vec<TrashEntry>> {
     if days <= 0 {
         return Ok(Vec::new());
     }
+    let _guard = manifest_guard();
     let cutoff = now_ms - (days as f64) * 24.0 * 60.0 * 60.0 * 1000.0;
-    let entries = read_manifest(save_dir);
+    let entries = read_manifest_locked(save_dir);
     let (doomed, kept): (Vec<TrashEntry>, Vec<TrashEntry>) =
         entries.into_iter().partition(|e| e.deleted_at < cutoff);
     if doomed.is_empty() {
@@ -407,7 +603,7 @@ pub fn purge_older_than(save_dir: &Path, days: i64, now_ms: f64) -> AppResult<Ve
     for entry in &doomed {
         remove_files_of(entry);
     }
-    write_manifest(save_dir, &kept)?;
+    write_manifest_locked(save_dir, &kept)?;
     Ok(doomed)
 }
 
@@ -626,6 +822,236 @@ mod tests {
         fs::create_dir_all(trash_dir(dir.path())).unwrap();
         fs::write(manifest_path(dir.path()), b"\x00\x01 not json").unwrap();
         assert!(list(dir.path()).is_empty());
+    }
+
+    // ── F1-M2: the four invariants ──────────────────────────────────────────
+
+    /// Every `manifest.json.corrupt-*` sitting in the trash directory.
+    fn quarantined(save_dir: &Path) -> Vec<PathBuf> {
+        fs::read_dir(trash_dir(save_dir))
+            .map(|rd| {
+                rd.filter_map(Result::ok)
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.file_name()
+                            .map(|n| n.to_string_lossy().starts_with("manifest.json.corrupt-"))
+                            .unwrap_or(false)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn an_unreadable_manifest_is_moved_aside_and_never_written_over() {
+        // Invariant 4. The bytes are the ONLY record of what was in the trash;
+        // the old code read them as "empty" and then wrote a fresh manifest
+        // straight on top, destroying the last clue in the act of recovering.
+        let (dir, media) = fixture();
+        fs::create_dir_all(trash_dir(dir.path())).unwrap();
+        let garbage = b"{\"entries\": [ half a manifest, truncated by a power cut";
+        fs::write(manifest_path(dir.path()), garbage).unwrap();
+
+        let created = move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        assert_eq!(created.len(), 1, "the delete still went through");
+
+        let aside = quarantined(dir.path());
+        assert_eq!(aside.len(), 1, "expected one quarantined manifest");
+        assert_eq!(
+            fs::read(&aside[0]).unwrap(),
+            garbage,
+            "the corrupt bytes were preserved verbatim"
+        );
+
+        // …and the trash works again, from a fresh manifest.
+        let listed = list(dir.path());
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "2026-08-02 Gudstjeneste.mp3");
+    }
+
+    #[test]
+    fn the_quarantine_raises_the_stable_warning_code() {
+        // The renderer localises on the CODE (`notify.trashManifestUnreadable`);
+        // `app/state/backend-warning.test.ts` reads `code::ALL` out of the core
+        // and fails if its table does not cover this one.
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(trash_dir(dir.path())).unwrap();
+        fs::write(manifest_path(dir.path()), b"not json").unwrap();
+
+        let w = quarantine_unreadable(dir.path(), 1_700_000_000_000, "expected value");
+        assert_eq!(w.code, code::TRASH_MANIFEST_UNREADABLE);
+        assert!(
+            w.msg.is_some(),
+            "the backend's own sentence is the fallback"
+        );
+        assert_eq!(
+            w.params.get("file").map(String::as_str),
+            Some("manifest.json.corrupt-1700000000000")
+        );
+        assert!(!manifest_path(dir.path()).exists(), "the bad file moved");
+        assert_eq!(quarantined(dir.path()).len(), 1);
+    }
+
+    #[test]
+    fn a_missing_manifest_is_an_empty_trash_not_a_broken_one() {
+        // The distinction invariant 4 rests on: no file at all is the normal
+        // state of a fresh install and must NOT quarantine anything.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(parse_manifest(dir.path()).unwrap().is_empty());
+        assert!(read_manifest(dir.path()).is_empty());
+        assert!(quarantined(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn eight_threads_trashing_at_once_all_land_in_the_manifest() {
+        // Invariant 2. Every entry point runs on its own `spawn_blocking`
+        // thread (`commands::trash`) or on the sweep's task. Without the lock
+        // each of these reads the same manifest, adds its own entry and writes
+        // it back — last writer wins and seven deletes report success while
+        // leaving no trace, which is the worst answer this module can give.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let paths: Vec<String> = (0..8)
+            .map(|i| {
+                let p = root.join(format!("take-{i}.mp3"));
+                fs::write(&p, format!("bytes {i}")).unwrap();
+                p.to_string_lossy().into_owned()
+            })
+            .collect();
+
+        std::thread::scope(|s| {
+            for path in &paths {
+                s.spawn(move || {
+                    move_into_trash(root, std::slice::from_ref(path)).unwrap();
+                });
+            }
+        });
+
+        let mut names: Vec<String> = list(root).into_iter().map(|e| e.name).collect();
+        names.sort();
+        let want: Vec<String> = (0..8).map(|i| format!("take-{i}.mp3")).collect();
+        assert_eq!(names, want, "a concurrent delete was lost");
+    }
+
+    #[test]
+    fn nothing_in_the_trash_directory_is_ever_a_leftover_scratch_file() {
+        // Same guard `crash.rs` carries over its own ring: an atomic write that
+        // forgets to clean up turns the trash into a directory of `.tmp`
+        // corpses that nothing lists and nothing purges.
+        let (dir, media) = fixture();
+        let entries = move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        list(dir.path());
+        restore(dir.path(), &entries[0].id).unwrap();
+        move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        purge(dir.path(), &[]).unwrap();
+
+        let scratch: Vec<String> = fs::read_dir(trash_dir(dir.path()))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(scratch.is_empty(), "trash still holds {scratch:?}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_move_that_fails_strands_nothing_the_listing_will_show() {
+        // Invariant 3, the half that is only reachable when the move refuses.
+        // The entry IS written before the move, so a failure leaves it in the
+        // manifest naming a file that is not there — and `list()` is what
+        // makes that harmless: it drops the entry and rewrites, and the
+        // recording is still in the library where the volunteer left it.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        let media = locked.join("take.mp3");
+        fs::write(&media, b"audio bytes").unwrap();
+
+        // Unreadable file (so the copy fallback cannot open it) in an
+        // unwritable directory (so `rename` cannot unlink it).
+        fs::set_permissions(&media, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Root ignores mode bits; there is nothing to prove in that case.
+        let enforced = fs::File::open(&media).is_err();
+        if enforced {
+            let err = move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]);
+            assert!(err.is_err(), "the move should have refused");
+            assert_eq!(
+                read_manifest(dir.path()).len(),
+                1,
+                "the entry was journalled before the move — that is the point"
+            );
+            assert!(list(dir.path()).is_empty(), "…and the listing drops it");
+            assert!(
+                read_manifest(dir.path()).is_empty(),
+                "…and the manifest was rewritten, not just filtered"
+            );
+        }
+
+        // Put the modes back or the temp dir cannot clean itself up.
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&media, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(media.is_file(), "the recording never left the library");
+    }
+
+    #[test]
+    fn a_two_hundred_entry_manifest_does_not_make_the_retention_pass_slow() {
+        // The retention pass (`commands::db::recordings_prune`) runs at startup
+        // and calls `move_into_trash` ONCE PER RECORDING, so every one of them
+        // re-reads and re-writes a manifest that is growing under it. This is
+        // the timing floor for that shape: a full trash must not turn a
+        // start-up into a stall.
+        //
+        // The budget is deliberately loose — CI machines are shared, and what
+        // this catches is a CLASS change (a read per path, an fsync per entry,
+        // an accidental quadratic), not a constant factor.
+        let dir = tempfile::tempdir().unwrap();
+        let trash = trash_dir(dir.path());
+        fs::create_dir_all(&trash).unwrap();
+
+        let mut seed: Vec<TrashEntry> = Vec::with_capacity(200);
+        for i in 0..200 {
+            let trashed = trash.join(format!("old-{i}.mp3"));
+            fs::write(&trashed, b"x").unwrap();
+            seed.push(TrashEntry {
+                id: format!("seed-{i}"),
+                original_path: dir
+                    .path()
+                    .join(format!("old-{i}.mp3"))
+                    .to_string_lossy()
+                    .into_owned(),
+                trashed_path: trashed.to_string_lossy().into_owned(),
+                name: format!("old-{i}.mp3"),
+                deleted_at: store::now_ms(),
+                related: Vec::new(),
+                byte_size: Some(1),
+            });
+        }
+        write_manifest(dir.path(), &seed).unwrap();
+
+        let fresh: Vec<String> = (0..20)
+            .map(|i| {
+                let p = dir.path().join(format!("new-{i}.mp3"));
+                fs::write(&p, b"audio").unwrap();
+                p.to_string_lossy().into_owned()
+            })
+            .collect();
+
+        let started = std::time::Instant::now();
+        for path in &fresh {
+            move_into_trash(dir.path(), std::slice::from_ref(path)).unwrap();
+        }
+        let elapsed = started.elapsed();
+
+        assert_eq!(list(dir.path()).len(), 220);
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "20 deletes against a 200-entry manifest took {elapsed:?}"
+        );
     }
 
     #[test]

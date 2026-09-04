@@ -320,6 +320,7 @@
     "prerollDead": "Förbufferten fungerar inte — ljud från innan du trycker på inspelning sparas inte.",
     "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
     "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
-    "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full."
+    "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
+    "trashManifestUnreadable": "Papperskorgens innehåll kunde inte läsas. Filerna finns kvar, men appen vet inte längre var de kom ifrån."
   }
 }

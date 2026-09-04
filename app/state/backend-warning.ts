@@ -1,13 +1,15 @@
 /**
- * `backend://warning` — de fire tingene motoren roper om når ingen spurte.
+ * `backend://warning` — de fem tingene motoren roper om når ingen spurte.
  *
  * ## ⚠️ Kanalen hadde INGEN lytter
  *
  * Shimmen har kartlagt `'backend-warning' → 'backend://warning'` siden fase 2,
- * og Rust emitterer på den fra fire steder (`crate::notify::warn`):
+ * og Rust emitterer på den fra fem steder (`crate::notify::warn`, og — for
+ * papirkurven, som ikke har noe `AppHandle` — `crate::notify::warn_detached`):
  * pre-roll ga opp, gjenopprettingen hoppet over en fil, den valgte lydenheten
- * er ikke tilkoblet, disken fylles. Legacy-skallet hørte på den i `pages/home.ts`
- * og reiste en toast. Byttet tok med seg shimmen og lot lytteren bli igjen.
+ * er ikke tilkoblet, disken fylles, papirkurvens manifest var ulesbart.
+ * Legacy-skallet hørte på den i `pages/home.ts` og reiste en toast. Byttet tok
+ * med seg shimmen og lot lytteren bli igjen.
  *
  * Resultatet var den stilleste feilformen som finnes: bakenden SIER fra, hele
  * veien opp til nettleseren, og så er det ingen der. «Mikseren er ikke
@@ -32,7 +34,7 @@
  *
  * ## Dedupliseringsregelen — ett faktum, ett banner
  *
- * To av de fire kodene har allerede en flate i skallet, og to bannere om det
+ * To av kodene har allerede en flate i skallet, og to bannere om det
  * samme er to setninger som kan bli uenige:
  *
  * - **`disk_low`** ⇢ opptakssidens `banner-low-disk`, avledet av
@@ -79,6 +81,8 @@ export const WARNING_BANNER_KEYS: Record<string, BackendWarningKey> = {
   recovery_skipped: "backend-recovery-skipped",
   device_missing: "backend-device-missing",
   disk_low: "backend-disk-low",
+  // F1-M2: papirkurvens manifest var ulesbart og ble flyttet til side.
+  trash_manifest_unreadable: "backend-trash-manifest",
 };
 
 /** Katalognøkkelens suffiks under `notify.*` for en kjent kode. */
@@ -87,6 +91,8 @@ export const WARNING_SUFFIXES: Record<string, string> = {
   recovery_skipped: "recoverySkipped",
   device_missing: "deviceMissing",
   disk_low: "diskLow",
+  // F1-M2.
+  trash_manifest_unreadable: "trashManifestUnreadable",
 };
 
 /** Byte per GB, 1024³ — det samme tallet forhåndssjekken og disken bruker. */
