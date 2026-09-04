@@ -53,9 +53,10 @@ use tokio::sync::Notify;
 use ts_rs::TS;
 
 use sundayrec_core::schedule::{
-    active_within, capped_supervisor_sleep_ms, missed_recordings, next_recording, prune_specials,
-    scheduled_max_minutes, supervisor_should_fire, upcoming_dates, upcoming_events, ScheduledEvent,
-    ScheduledEventKind, TriggerKind, MISSED_WINDOW_MS,
+    active_within, capped_supervisor_sleep_ms, late_start_choice, missed_recordings,
+    next_recording, prune_specials, scheduled_max_minutes, supervisor_should_fire, upcoming_dates,
+    upcoming_events, CoveredWindow, ScheduledEvent, ScheduledEventKind, TriggerKind,
+    MISSED_WINDOW_MS,
 };
 use sundayrec_core::settings::Settings;
 use sundayrec_core::wake::background_wake_log_action;
@@ -536,10 +537,17 @@ pub struct MissedRecordingInfo {
     pub label: String,
 }
 
-/// On-demand missed-recording check (call at startup / resume). Late-starts any
+/// On-demand missed-recording check (call at startup / resume). Late-starts ONE
 /// slot/special currently inside the 60-min window, then returns + emits the
 /// older occurrences that were missed. See the module header for the
 /// persistence gap.
+///
+/// The two halves pull in opposite directions after a crash, and both are right:
+/// late-starting a service already in progress is WANTED (the second half of the
+/// sermon is better than nothing), while reporting that same service as missed is
+/// the bug — the recording exists, in fragments the recovery task is still
+/// finalising. `covered_windows_local` is what tells the second half about work
+/// the first half's own subsystem has not finished writing down.
 pub async fn check_missed(
     app: &AppHandle,
     pool: &SqlitePool,
@@ -548,18 +556,27 @@ pub async fn check_missed(
     let now = Local::now().naive_local();
     let specials = &settings.special_recordings;
 
-    // Late-start anything active right now (unless a recording is already going).
-    let recording = !matches!(
-        app.state::<RecorderEngine>().current_state(),
-        sundayrec_core::recorder::RecorderState::Idle
-    );
+    // Late-start what is active right now. EVERY active trigger counts as
+    // handled by this pass (its key goes into the dedup set below, so the missed
+    // report does not also claim it), but at most ONE may reach the recorder:
+    // `RecorderEngine::start` stops whatever is running before it starts, so a
+    // second start does not add a recording — it kills the one that began
+    // 200 ms ago. `late_start_choice` makes "one pass, one start" a property of
+    // the core rather than a discipline this loop had to keep, and it is handed
+    // an engine reading taken one statement earlier. The old code read the
+    // engine ONCE, above a `for`, and every iteration after the first acted on a
+    // fact the first had already invalidated (F1 finding A4).
     let triggers = active_within(settings.active_slots(), specials, now, MISSED_WINDOW_MS);
-    let mut triggered_keys = std::collections::HashSet::new();
-    for t in &triggers {
-        triggered_keys.insert(t.key.clone());
-        if recording {
-            continue;
-        }
+    let triggered_keys: std::collections::HashSet<String> =
+        triggers.iter().map(|t| t.key.clone()).collect();
+    // `is_active()`, the same predicate `fire()` uses — not "anything but
+    // `Idle`". `Idle` is the never-yet-started engine; a machine that recorded
+    // this morning sits in `Stopped` forever after, and the old test therefore
+    // switched the late-start net OFF for the rest of the day. That included the
+    // post-oversleep pass, which is exactly when an evening service that passed
+    // while the lid was shut needs it.
+    let busy = app.state::<RecorderEngine>().current_state().is_active();
+    if let Some(t) = late_start_choice(&triggers, busy) {
         let (custom_name, max_minutes) = match t.kind {
             TriggerKind::Slot(i) => (
                 None,
@@ -607,11 +624,19 @@ pub async fn check_missed(
 
     // History start times → local naive, for the dedup window.
     let history = recording_history_local(pool).await;
+    // …and the recordings the database does not know about YET: a crash leaves a
+    // session manifest behind, and startup recovery is still concatenating it
+    // into a history row while this runs. Without these windows the sweep
+    // reports a service that is being salvaged one task over as never recorded
+    // (F1 finding A10) — which, with the missed dispatch behind it, is a desktop
+    // notification and an e-mail saying so.
+    let covered = covered_windows_local(crate::recorder::recovery::pending_windows(app));
     let missed = missed_recordings(
         settings.active_slots(),
         specials,
         now,
         &history,
+        &covered,
         &triggered_keys,
     );
     let out: Vec<MissedRecordingInfo> = missed
@@ -625,6 +650,37 @@ pub async fn check_missed(
         let _ = app.emit(MISSED_EVENT, &out);
     }
     Ok(out)
+}
+
+/// An epoch-ms instant in the local-wall frame the core compares in.
+fn local_naive(ms: u64) -> Option<NaiveDateTime> {
+    Local
+        .timestamp_millis_opt(ms as i64)
+        .single()
+        .map(|dt| dt.naive_local())
+}
+
+/// Unfinalised crash-recovery manifests → the local-wall windows
+/// [`missed_recordings`] treats as evidence that something DID record.
+///
+/// The same conversion [`recording_history_local`] performs on stored history,
+/// for the same reason: the decision core is tz-free by construction, and this
+/// is the seam where wall time is chosen.
+///
+/// A pair that cannot be represented at all (a nonsense timestamp in a manifest
+/// somebody hand-edited) is dropped rather than guessed. Dropping one costs a
+/// missed-report that may be false — exactly where the app already was — while
+/// guessing could silence a genuine one.
+pub(crate) fn covered_windows_local(pending: Vec<(u64, u64)>) -> Vec<CoveredWindow> {
+    pending
+        .into_iter()
+        .filter_map(|(start_ms, last_seen_ms)| {
+            Some(CoveredWindow {
+                start: local_naive(start_ms)?,
+                last_seen: local_naive(last_seen_ms)?,
+            })
+        })
+        .collect()
 }
 
 /// Recording start times converted to the local-wall `NaiveDateTime` frame the
@@ -899,7 +955,7 @@ mod tests {
         // 2 h past the Sunday start: outside the late-start window, recent enough
         // to matter, no history covering it, not currently triggered → missed.
         let now = dt("2026-06-07 13:00");
-        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &HashSet::new());
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &[], &HashSet::new());
         assert_eq!(missed.len(), 1);
         assert_eq!(missed[0].when, dt("2026-06-07 11:00"));
     }
@@ -909,7 +965,7 @@ mod tests {
         // A recording within ±30 min of the scheduled start means it DID run.
         let now = dt("2026-06-07 13:00");
         let history = [dt("2026-06-07 11:05")];
-        let missed = missed_recordings(&[sunday_slot()], &[], now, &history, &HashSet::new());
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &history, &[], &HashSet::new());
         assert!(missed.is_empty(), "covered by history → not missed");
     }
 
@@ -926,7 +982,7 @@ mod tests {
         );
         let keys: HashSet<String> = triggers.into_iter().map(|t| t.key).collect();
         assert!(!keys.is_empty(), "precondition: the slot was triggerable");
-        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &keys);
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &[], &keys);
         assert!(missed.is_empty(), "already triggered → not missed");
     }
 
@@ -1043,6 +1099,7 @@ mod tests {
             &[],
             dt("2026-06-07 11:30"),
             &[],
+            &[],
             &HashSet::new()
         )
         .is_empty());
@@ -1072,7 +1129,171 @@ mod tests {
         // Last Sunday's slot, checked the FOLLOWING Sunday before its start: older
         // than the 24 h log window → not reported (avoids week-old noise).
         let now = dt("2026-06-14 10:00");
-        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &HashSet::new());
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &[], &HashSet::new());
         assert!(missed.is_empty(), "older than 24h → not logged");
+    }
+
+    // ── A4: 11:20, a slot AND a special ─────────────────────────────────────
+
+    #[test]
+    fn a_slot_and_a_special_at_the_same_time_produce_exactly_one_late_start() {
+        // The composition `check_missed` performs, with the engine reading
+        // injected: `active_within` in, `late_start_choice` out.
+        let now = dt("2026-06-07 11:20");
+        let sp = special("2026-06-07", "11:00", "12:00", "Konfirmasjon");
+        let triggers = active_within(
+            &[sunday_slot()],
+            std::slice::from_ref(&sp),
+            now,
+            MISSED_WINDOW_MS,
+        );
+        assert_eq!(
+            triggers.len(),
+            2,
+            "precondition: both are inside the window"
+        );
+
+        // The engine is idle → ONE start, not two. Two would mean the second
+        // `start()` stopping a recording 200 ms old: the church keeps a fragment
+        // and a take that begins late.
+        let chosen = late_start_choice(&triggers, false);
+        assert!(chosen.is_some(), "an idle engine starts the first trigger");
+        assert_eq!(chosen.unwrap().kind, TriggerKind::Slot(0));
+
+        // …and once it is running, the pass is over — the reading the shell takes
+        // immediately before the start is the one that decides.
+        assert!(
+            late_start_choice(&triggers, true).is_none(),
+            "the second trigger must NOT reach the recorder"
+        );
+
+        // BOTH keys still count as handled, so neither occurrence is also
+        // reported missed.
+        let keys: HashSet<String> = triggers.iter().map(|t| t.key.clone()).collect();
+        assert_eq!(keys.len(), 2);
+        assert!(missed_recordings(
+            &[sunday_slot()],
+            std::slice::from_ref(&sp),
+            dt("2026-06-07 13:00"),
+            &[],
+            &[],
+            &keys
+        )
+        .is_empty());
+    }
+
+    // ── A10: 11:50, after a crash ───────────────────────────────────────────
+
+    #[test]
+    fn a_recovery_manifest_on_disk_stops_the_false_missed_report() {
+        use chrono::{Datelike, Duration as ChronoDuration};
+        use sundayrec_core::recovery::{DeliverableManifest, SessionManifest};
+
+        // A service that started five hours ago: past the 60-min late-start
+        // window, so it is a missed CANDIDATE, and well inside the 24 h log
+        // window. Real clock on purpose — this is the seam between the recovery
+        // directory's epoch-ms and the core's local-wall frame, and a fixed
+        // `dt()` would test neither side of it.
+        //
+        // Five hours rather than the 90 minutes the scenario actually describes,
+        // for one reason: on the autumn DST night a wall-clock time repeats, and
+        // `most_recent_occurrence` would resolve the later repeat — turning a
+        // 90-minute-old occurrence into a 30-minute-old one and quietly moving it
+        // back inside the late-start window. An hour of slack either way cannot
+        // change the verdict. (CI runs in UTC and never sees it; a developer's
+        // Mac would, once a year, for an hour.)
+        let now_local = Local::now();
+        let started = now_local - ChronoDuration::hours(5);
+        let now = now_local.naive_local();
+        let slot = ScheduleSlot {
+            days: vec![started.naive_local().weekday().num_days_from_monday()],
+            start: started.format("%H:%M").to_string(),
+            stop: (started + ChronoDuration::hours(2))
+                .format("%H:%M")
+                .to_string(),
+            max: None,
+        };
+
+        // Nothing in history: the crash means the row is still being concatenated.
+        assert_eq!(
+            missed_recordings(
+                std::slice::from_ref(&slot),
+                &[],
+                now,
+                &[],
+                &[],
+                &HashSet::new()
+            )
+            .len(),
+            1,
+            "precondition: with an empty database this reads as a missed service"
+        );
+
+        // The evidence the database does not have: one unfinalised manifest,
+        // written exactly as the engine writes it.
+        let dir = tempfile::tempdir().unwrap();
+        let save = tempfile::tempdir().unwrap();
+        let primary = save
+            .path()
+            .join("gudstjeneste.m4a")
+            .to_string_lossy()
+            .into_owned();
+        let manifest = SessionManifest {
+            session_id: "crashed-session".into(),
+            device_name: "Soundcraft USB".into(),
+            session_start_ms: started.timestamp_millis() as u64,
+            preroll_clip_path: None,
+            delivery_encode: None,
+            deliverables: vec![DeliverableManifest {
+                primary_path: primary.clone(),
+                fragments: vec![primary],
+                started_at_ms: started.timestamp_millis() as u64,
+            }],
+        };
+        std::fs::write(
+            dir.path().join("crashed-session.json"),
+            manifest.to_json().unwrap(),
+        )
+        .unwrap();
+
+        // The exact composition `check_missed` performs, minus the `AppHandle`
+        // that only locates the directory.
+        let covered =
+            covered_windows_local(crate::recorder::recovery::pending_windows_in(dir.path()));
+        assert_eq!(covered.len(), 1, "one interrupted session");
+        assert!(
+            covered[0].last_seen >= covered[0].start,
+            "the window spans forward in time"
+        );
+
+        assert!(
+            missed_recordings(
+                std::slice::from_ref(&slot),
+                &[],
+                now,
+                &[],
+                &covered,
+                &HashSet::new()
+            )
+            .is_empty(),
+            "a manifest on disk IS the recording — reporting it missed is what sent \
+             a volunteer an e-mail about a service that was being salvaged"
+        );
+    }
+
+    #[test]
+    fn an_empty_recovery_directory_covers_nothing() {
+        // The ordinary case — nothing has ever crashed — must not accidentally
+        // amnesty a genuinely missed service.
+        let dir = tempfile::tempdir().unwrap();
+        let covered =
+            covered_windows_local(crate::recorder::recovery::pending_windows_in(dir.path()));
+        assert!(covered.is_empty());
+        let now = dt("2026-06-07 13:00");
+        assert_eq!(
+            missed_recordings(&[sunday_slot()], &[], now, &[], &covered, &HashSet::new()).len(),
+            1,
+            "no manifest, no excuse"
+        );
     }
 }
