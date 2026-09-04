@@ -700,6 +700,16 @@ export const PAUSED_KEYS = new Set([
   'app.diagnose.f.ok.hint',
   'app.diagnose.f.recLoss.title',
   'app.diagnose.f.recLoss.hint',
+
+  // F1-M1: fire feilkoder motoren har sendt hele tiden uten at katalogen
+  // kjente dem — `start_timeout`, `ffmpeg_exited`, `video_capture_failed`,
+  // `mux_failed` falt alle på `errorUnknown`. De bor i `recording.*` fordi det
+  // er der `nativeErrorSuffix` slår opp, ikke fordi de er gammel tekst:
+  // setningene er skrevet nå, og er derfor pauset som alt annet nytt.
+  'recording.errorStartTimeout',
+  'recording.errorEngineExited',
+  'recording.errorVideoCapture',
+  'recording.errorMux',
   // F1-I18N-T: renderer-i18n-oppskriften (W3). The five keys behind six OS
   // dialog-filter names the shim reads through its own `t` hook (api-shim.ts
   // pickSettingsFile / editorPickFile — "Alle filer" is `allFiles` at both

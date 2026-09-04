@@ -36,14 +36,15 @@
     "smoke-verified": "node scripts/check-smoke-verified.mjs",
     "reachability:write-baseline": "node scripts/check-command-reachability.mjs --write-baseline",
     "bindings:check": "npm run bindings && git diff --quiet -- legacy/bindings || (echo 'ts-rs bindings are stale — run npm run bindings and commit legacy/bindings' && exit 1)",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-keys && npm run i18n-keys:unused && npm run i18n-hardcoded-tsx && npm run i18n-plurals && npm run css-tokens && npm run smoke-verified && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check && npm run reachability",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-keys && npm run i18n-keys:unused && npm run i18n-hardcoded-tsx && npm run i18n-plurals && npm run css-tokens && npm run error-codes && npm run smoke-verified && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check && npm run reachability",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky",
     "i18n-keys": "node scripts/check-i18n-keys.mjs",
     "i18n-keys:unused": "node scripts/check-i18n-keys.mjs --unused",
     "i18n-hardcoded-tsx": "node scripts/check-i18n-hardcoded-tsx.mjs",
     "css-tokens": "node scripts/check-app-css-tokens.mjs",
-    "i18n-plurals": "node scripts/check-i18n-plurals.mjs"
+    "i18n-plurals": "node scripts/check-i18n-plurals.mjs",
+    "error-codes": "node scripts/check-error-codes.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,js,css,json,md}": "prettier --write",
@@ -52,7 +53,7 @@
   "dependencies": {
     "@preact/signals": "^2.11.1",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2",
     "preact": "^10.29.8"
   },
@@ -71,7 +72,7 @@
     "preact-render-to-string": "^6.7.0",
     "prettier": "^3.9.5",
     "typescript": "~5.8.3",
-    "typescript-eslint": "^8.68.0",
+    "typescript-eslint": "^8.69.0",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   },

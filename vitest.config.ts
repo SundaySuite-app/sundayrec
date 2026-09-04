@@ -41,10 +41,15 @@ export default defineConfig({
     // there is `locales/parity.test.ts`, the seven-catalogue parity gate. A
     // root dropped the day its last test moved is a root nobody notices is
     // gone.
+    //
+    // `docs/**` holds `docs-truth.test.ts` (F1-DOCS-1): a handful of `.md`
+    // files describe the app in prose the code can't typecheck, so nothing
+    // else catches it the day a described feature is deleted or a fact drifts.
     include: [
       "legacy/**/*.test.ts",
       "app/**/*.test.{ts,tsx}",
       "scripts/**/*.test.mjs",
+      "docs/**/*.test.ts",
     ],
   },
 });

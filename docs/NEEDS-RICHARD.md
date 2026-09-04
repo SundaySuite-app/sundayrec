@@ -54,11 +54,7 @@ only remaining release blocker is **notarization** (item 3).
    **deliberately disabled**: the `notarytool` env lines (`APPLE_ID`,
    `APPLE_PASSWORD` ← `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are
    commented out in `release.yml` (lines 146–155) — the comment block there
-   documents how to re-enable them once the agreement is signed. ⚠️ The
-   **app-specific password was leaked in chat** — **revoke it** at
-   appleid.apple.com → Sign-In and Security → App-Specific Passwords, **generate
-   a new one**, and store it only as the `APPLE_APP_SPECIFIC_PASSWORD` GitHub
-   secret.
+   documents how to re-enable them once the agreement is signed.
 
 4. **Tauri updater — ✅ DONE, proven in prod.** The `plugins.updater` block
    (pubkey + endpoints) is in `tauri.conf.json`, `uploadUpdaterJson: true` is

@@ -118,6 +118,10 @@ This protects the v0.11.0+ fleet within the hour (see propagation note
 above). It does **not** protect anyone still on a pre-0.11.0 build — that is
 step 2.
 
+Not at the Mac that has this script's Keychain item, or not the owner at
+all? See "Nødprosedyre uten Mac (10 min)" near the end of this file — same
+two routes, raw `curl`.
+
 ### 2. (only while a pre-0.11.0 fleet still exists) Un-latest the bad GitHub release
 
 If the bad tag might still reach pre-0.11.0 installs: open the release on
@@ -196,3 +200,76 @@ runbook live (same Worker, second custom domain). That split is deliberate:
 an update check happens whether or not the operator ever consented to
 telemetry (see `PRIVACY.md`), so it must not be served from a host whose name
 implies it only exists for people who opted in.
+
+## Nødprosedyre uten Mac (10 min)
+
+Everything above assumes `node scripts/promote-release.mjs`, which — until
+now — only ever worked on the owner's Mac, reading the admin key from that
+one Mac's Keychain. If the person who needs to pull the kill-switch right
+now is not at that Mac (a different operator, a phone with `curl` and no
+Node, a Windows laptop, anything), the admin API itself does not care what
+called it: these are the same three routes the script calls, written out
+raw. `scripts/promote-release.mjs` also has a second way to reach them
+without a Mac at all — `SUNDAYREC_ADMIN_KEY` as an environment variable,
+checked before the Keychain — if Node happens to be available; the `curl`
+below needs neither Node nor the script.
+
+**The admin key.** Set it as an environment variable in the shell you're
+using, once, and never paste the value anywhere else — not chat, not a
+shared doc, not an issue:
+
+```bash
+export ADMIN_KEY='<the admin key>'
+```
+
+Who hands you this key, and how, if you are not the owner and not at the
+owner's Mac, is the owner's decision, made at the time — that is
+deliberately not written down in this repo. Nothing below assumes an answer
+to it.
+
+**1. Read the current state of both channels** — confirms you're talking to
+the right thing before changing anything:
+
+```bash
+curl -sS https://telemetry.sundaysuite.app/v1/admin/channels \
+  -H "x-admin-key: $ADMIN_KEY"
+```
+
+**2. Pause the bad channel** — the kill-switch, the same one-line effect as
+`--pause` in the script. `"channel"` is `"stable"` or `"beta"`, whichever is
+serving the bad release:
+
+```bash
+curl -sS -X POST https://telemetry.sundaysuite.app/v1/admin/channel \
+  -H "x-admin-key: $ADMIN_KEY" \
+  -H "content-type: application/json" \
+  -d '{"channel":"stable","paused":true}'
+```
+
+**3. Confirm it took** — re-run step 1 and look for `"paused":true` on the
+channel you just touched. Pausing does not clear or change the promoted
+tag — see "What the kill-switch does NOT do" above, it applies here too.
+
+**4. Resume it later**, once steps 3–7 of the runbook above have happened on
+a machine that has the script (same route, `"paused":false`):
+
+```bash
+curl -sS -X POST https://telemetry.sundaysuite.app/v1/admin/channel \
+  -H "x-admin-key: $ADMIN_KEY" \
+  -H "content-type: application/json" \
+  -d '{"channel":"stable","paused":false}'
+```
+
+⚠️ **Both hosts matter here too.** These routes are on
+`telemetry.sundaysuite.app` (the admin host), not `updates.sundaysuite.app`
+(the public feed clients poll) — see "Why the update feed lives on a
+different host" above. The admin key is not accepted on the public host and
+would do nothing there.
+
+This covers the kill-switch and reading channel state only — the same two
+things `--pause`/`--resume`/no-args cover in the script. Promoting a NEW tag
+(`POST /v1/admin/promote`) additionally requires validating that tag's
+`latest.json` first — `scripts/promote-release.mjs`'s `manifestProblems()` —
+which is not something to hand-reconstruct in a raw `curl` command under
+time pressure. Step 5 above ("Cut a NEW tag…") waits for a machine that has
+the script.
