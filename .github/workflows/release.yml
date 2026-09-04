@@ -168,6 +168,36 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
 
+      # ── Notarization switch: a repo VARIABLE, not a commented-out block ────
+      # Off by default — see the comment on APPLE_CERTIFICATE below for why.
+      # Flip NOTARIZE_MAC to "true" (Settings → Secrets and variables →
+      # Actions → Variables) once the Program License Agreement is accepted;
+      # no commit needed, and nothing here can be left "half on" — either
+      # this step ran and exported real credentials, or it did not run and
+      # the three names below are genuinely absent from every later step's
+      # environment.
+      #
+      # THE TRAP THIS AVOIDS: writing
+      #   APPLE_TEAM_ID: ${{ vars.NOTARIZE_MAC == 'true' && secrets.APPLE_TEAM_ID || '' }}
+      # directly in the build step's env: map would set APPLE_TEAM_ID to an
+      # EMPTY STRING when the switch is off, not omit it — and tauri-action
+      # treats a present-but-empty team ID as "notarize with this team", not
+      # "don't notarize", failing with "Team ID must be at least 3
+      # characters" instead of skipping notarization cleanly (empty ≠
+      # absent).
+      #
+      # $GITHUB_ENV persists for every LATER step in this job — the same
+      # mechanism the ASIO setup above uses for CPAL_ASIO_DIR/LIBCLANG_PATH —
+      # so this step must stay BEFORE "Build, sign, and publish". Moving it
+      # after would silently disable notarization even with the switch on.
+      - name: Enable notarization env (owner-gated, off by default)
+        if: matrix.platform == 'macos-latest' && vars.NOTARIZE_MAC == 'true'
+        shell: bash
+        run: |
+          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+
       - name: Build, sign, and publish
         uses: tauri-apps/tauri-action@v1
         env:
@@ -189,16 +219,22 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.MAC_CERTS }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Richard Fossland (784GN847G4)"
-          # Notarization DISABLED 2026-07-31 (owner decision): Apple's notary
-          # service returns 403 "A required agreement is missing or has expired"
-          # until the updated Program License Agreement is accepted on
-          # developer.apple.com (team 784GN847G4). The app is still Developer
-          # ID-SIGNED (offline, works) — first launch needs right-click ▸ Open.
-          # Re-enable by uncommenting these three lines once the agreement is
-          # signed:
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Notarization is OFF by default (owner decision, 2026-07-31 —
+          # Apple's notary service returns 403 "A required agreement is
+          # missing or has expired" until the PLA is accepted on
+          # developer.apple.com for team 784GN847G4). The app is still
+          # Developer ID-SIGNED either way (offline, always works) — first
+          # launch needs right-click ▸ Open while this is off.
+          #
+          # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are deliberately NOT
+          # set here. They are exported conditionally, in the "Enable
+          # notarization env" step above, gated on the repo variable
+          # NOTARIZE_MAC — see that step's comment for why it has to be a
+          # separate step and not a line in this map. Do not add those three
+          # keys to this block, even set to "" to "temporarily disable"
+          # them — empty is not the same as absent (see above) and would
+          # send every build down the notarization path with broken
+          # credentials instead of skipping it cleanly.
           # Opt-in telemetry (Etappe 4). `src-tauri/src/telemetry/config.rs`
           # reads BOTH through `option_env!`, i.e. at COMPILE time — so they
           # have to be in the build step's env, not the runtime's. A build
