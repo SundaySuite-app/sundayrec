@@ -380,7 +380,9 @@ struct RecorderSession {
 /// at a time; starting again stops the previous one first.
 pub struct RecorderEngine {
     session: Mutex<Option<RecorderSession>>,
-    /// The last-emitted state, so `recording_status` can report it synchronously.
+    /// The last-emitted state, so `recording_status` can report it
+    /// synchronously. Supervisors never get this handle — they write it through
+    /// a generation-scoped [`StateWriter`] (see [`RecorderEngine::state_writer`]).
     last_state: Arc<Mutex<RecorderState>>,
     /// The live auto-stop deadline (absolute epoch ms, `None` = no auto-stop), as
     /// a watch channel so the running recording loop reacts to extend/cancel
@@ -388,7 +390,8 @@ pub struct RecorderEngine {
     /// `manual_max_minutes`) and clears it at session end; the
     /// `recording_extend_autostop` / `recording_cancel_autostop` commands move /
     /// clear it. Wrapped in `Arc` so both the engine (commands) and the
-    /// supervisor task share the one sender.
+    /// supervisor task share the one sender — the supervisor side reaches it
+    /// only through its [`StateWriter`].
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
     /// Which audio engine the LAST `start()` used (`"wasapi"`/`"asio"`/
     /// `"directshow"`/`"avfoundation"`) + any fallback reason. Surfaced by the
@@ -406,8 +409,9 @@ pub struct RecorderEngine {
     /// minutes. Both write the SAME shared `last_state` / `scheduled_stop`, so the
     /// stale one's terminal emit used to clobber the live session (UI jumps to
     /// "Stopped", the countdown is cleared) while it kept recording. Each
-    /// supervisor captures its generation at launch and only touches shared state
-    /// while [`is_current_session`] still holds.
+    /// supervisor gets a [`StateWriter`] carrying the generation it claimed at
+    /// launch, and that writer refuses every shared write once
+    /// [`is_current_session`] stops holding.
     session_generation: Arc<AtomicU64>,
 }
 
@@ -418,6 +422,160 @@ pub struct RecorderEngine {
 /// Pure over the atomic so the guard itself is unit-tested.
 fn is_current_session(generation: u64, current: &AtomicU64) -> bool {
     generation == current.load(Ordering::SeqCst)
+}
+
+/// Where a `recording://state` payload goes.
+///
+/// The production sink is the Tauri [`AppHandle`]; a test substitutes a
+/// recorder, because an `AppHandle` cannot be constructed off a running app —
+/// the same reason [`crate::recorder::native_capture::segment::EventSink`]
+/// exists. Named `emit_state` rather than `emit` so it can never collide with
+/// `Emitter::emit` at a call site that has both traits in scope.
+pub trait StateSink: Send + Sync {
+    /// Deliver one `recording://state` payload to the renderer.
+    fn emit_state(&self, payload: RecorderStatePayload);
+}
+
+impl StateSink for AppHandle {
+    fn emit_state(&self, payload: RecorderStatePayload) {
+        let _ = self.emit(STATE_EVENT, payload);
+    }
+}
+
+/// The ONE door to the recorder's shared state.
+///
+/// `last_state` and the `scheduled_stop` countdown are shared by every
+/// supervisor the engine has launched, and [`RecorderEngine::start`]
+/// deliberately lets the previous one keep finalising (concat + delivery encode
+/// run for minutes on a full service) while the new recording begins. That is
+/// what bit on a Sunday: 12:05, the operator stops the service recording and
+/// immediately starts the evening meeting; the old supervisor then reaches its
+/// terminal write, and the LIVE session's screen went to "Stopped" with the
+/// countdown cleared while it kept recording invisibly.
+///
+/// So the shared handles are PRIVATE to this struct, and every write goes
+/// through [`StateWriter::set`], [`StateWriter::arm_autostop`] or
+/// [`StateWriter::restamp`] — each of which refuses a superseded generation.
+/// One guard, one place: a new call site cannot forget it, because it cannot
+/// reach `last_state` at all.
+#[derive(Clone)]
+pub struct StateWriter {
+    /// Where the payload goes (the real `AppHandle` in production).
+    app: Arc<dyn StateSink>,
+    /// The shared last-emitted state. PRIVATE — see the struct doc.
+    last_state: Arc<Mutex<RecorderState>>,
+    /// The shared auto-stop deadline. PRIVATE — writes go through the guard;
+    /// readers take a `Receiver` from [`StateWriter::subscribe`], which cannot
+    /// write.
+    scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    /// The engine's live generation counter.
+    session_generation: Arc<AtomicU64>,
+    /// The generation this writer's session claimed at launch.
+    generation: u64,
+}
+
+impl StateWriter {
+    fn new(
+        app: Arc<dyn StateSink>,
+        last_state: Arc<Mutex<RecorderState>>,
+        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        session_generation: Arc<AtomicU64>,
+        generation: u64,
+    ) -> Self {
+        Self {
+            app,
+            last_state,
+            scheduled_stop,
+            session_generation,
+            generation,
+        }
+    }
+
+    /// Is this writer's session still the engine's current one? `false` means a
+    /// newer recording has started and every write below is refused.
+    pub(crate) fn is_current(&self) -> bool {
+        is_current_session(self.generation, &self.session_generation)
+    }
+
+    /// The generation guard, in the one place every write passes through.
+    fn may_write(&self, write: &str) -> bool {
+        if self.is_current() {
+            return true;
+        }
+        tracing::debug!(
+            generation = self.generation,
+            write,
+            "recorder: suppressing shared-state write from a superseded session"
+        );
+        false
+    }
+
+    /// The live auto-stop deadline (absolute epoch ms), or `None` when none is
+    /// armed.
+    pub(crate) fn autostop_ms(&self) -> Option<u64> {
+        *self.scheduled_stop.borrow()
+    }
+
+    /// A READ-ONLY handle on the deadline, for the segment loops' `changed()`
+    /// arms. Handing out a `Receiver` (never the `Sender`) is what keeps the
+    /// countdown behind the guard.
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<Option<u64>> {
+        self.scheduled_stop.subscribe()
+    }
+
+    /// Arm (or clear) the shared auto-stop deadline for this session.
+    pub(crate) fn arm_autostop(&self, deadline: Option<u64>) {
+        if !self.may_write("autostop") {
+            return;
+        }
+        self.scheduled_stop.send_replace(deadline);
+    }
+
+    /// Emit a state change and remember it. Asserts the transition is legal via
+    /// the core table (a refused transition is a logic bug — logged, but we
+    /// still emit the requested state so the UI doesn't desync).
+    ///
+    /// A TERMINAL state (Stopped/Failed) clears the deadline first, so a
+    /// finished OR failed recording never ships a lingering countdown — the
+    /// clear lives here (one place) instead of being scattered before each
+    /// terminal write.
+    pub(crate) fn set(&self, to: RecorderState, reconnect_count: u32) {
+        if !self.may_write("state") {
+            return;
+        }
+        if to.is_terminal() {
+            self.scheduled_stop.send_replace(None);
+        }
+        {
+            let mut guard = lock_recover(&self.last_state);
+            match guard.transition(to) {
+                Some(next) => *guard = next,
+                None => {
+                    tracing::warn!("recorder: illegal state transition {:?} → {to:?}", *guard);
+                    *guard = to;
+                }
+            }
+        }
+        self.app.emit_state(RecorderStatePayload {
+            state: to,
+            reconnect_count,
+            scheduled_stop_ms: self.autostop_ms(),
+        });
+    }
+
+    /// Re-stamp the CURRENT state with a moved auto-stop deadline (no
+    /// transition): the extend/cancel commands change the countdown mid-segment
+    /// and the UI must re-sync without the state itself changing.
+    pub(crate) fn restamp(&self, reconnect_count: u32, scheduled_stop_ms: Option<u64>) {
+        if !self.may_write("restamp") {
+            return;
+        }
+        self.app.emit_state(RecorderStatePayload {
+            state: *lock_recover(&self.last_state),
+            reconnect_count,
+            scheduled_stop_ms,
+        });
+    }
 }
 
 impl Default for RecorderEngine {
@@ -443,6 +601,19 @@ impl RecorderEngine {
     /// on every transition). Used by the `recording_status` command.
     pub fn current_state(&self) -> RecorderState {
         *lock_recover(&self.last_state)
+    }
+
+    /// A [`StateWriter`] scoped to `generation` — the ONLY handle a supervisor
+    /// gets on the shared state and countdown. Everything it writes is refused
+    /// the moment a newer `start()` claims the next generation.
+    fn state_writer(&self, app: &AppHandle, generation: u64) -> StateWriter {
+        StateWriter::new(
+            Arc::new(app.clone()),
+            Arc::clone(&self.last_state),
+            Arc::clone(&self.scheduled_stop),
+            Arc::clone(&self.session_generation),
+            generation,
+        )
     }
 
     /// Record which audio engine `start()` chose (+ optional fallback reason), for
@@ -676,22 +847,16 @@ impl RecorderEngine {
             let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
             let sup_app = app.clone();
-            let last_state = Arc::clone(&self.last_state);
-            let scheduled_stop = Arc::clone(&self.scheduled_stop);
+            // The cpal supervisor gets the SAME generation-guarded door as the
+            // unified path: a stopped-but-still-finalising cpal session can no
+            // longer write "Stopped" over the recording that replaced it.
+            let state = self.state_writer(&app, generation);
             // CLONE what the cpal attempt needs so the originals survive for the
             // dshow fallback below if cpal fails to start.
             let (opts_c, video_c, pool_c) = (opts.clone(), video.clone(), pool.clone());
             let supervisor = tauri::async_runtime::spawn(async move {
                 run_cpal_session(
-                    host_kind,
-                    sup_app,
-                    pool_c,
-                    opts_c,
-                    video_c,
-                    stop_rx,
-                    ready_tx,
-                    last_state,
-                    scheduled_stop,
+                    host_kind, sup_app, pool_c, opts_c, video_c, stop_rx, ready_tx, state,
                 )
                 .await;
             });
@@ -773,11 +938,9 @@ impl RecorderEngine {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let sup_app = app.clone();
-        let last_state = Arc::clone(&self.last_state);
-        let scheduled_stop = Arc::clone(&self.scheduled_stop);
+        let state = self.state_writer(&app, generation);
         let last_telemetry = Arc::clone(&self.last_telemetry);
         let audio_engine = Arc::clone(&self.audio_engine);
-        let session_generation = Arc::clone(&self.session_generation);
         let supervisor = tauri::async_runtime::spawn(async move {
             run_session(
                 sup_app,
@@ -790,12 +953,9 @@ impl RecorderEngine {
                 preroll_clip,
                 stop_rx,
                 ready_tx,
-                last_state,
-                scheduled_stop,
+                state,
                 last_telemetry,
                 audio_engine,
-                session_generation,
-                generation,
             )
             .await;
         });
@@ -849,36 +1009,6 @@ impl RecorderEngine {
             });
         }
     }
-}
-
-/// Emit a state change and remember it. Asserts the transition is legal via the
-/// core table (a refused transition is a logic bug — logged, but we still emit
-/// the requested state so the UI doesn't desync).
-pub(crate) fn set_state(
-    app: &AppHandle,
-    last_state: &Arc<Mutex<RecorderState>>,
-    to: RecorderState,
-    reconnect_count: u32,
-    scheduled_stop_ms: Option<u64>,
-) {
-    {
-        let mut guard = lock_recover(last_state);
-        match guard.transition(to) {
-            Some(next) => *guard = next,
-            None => {
-                tracing::warn!("recorder: illegal state transition {:?} → {to:?}", *guard);
-                *guard = to;
-            }
-        }
-    }
-    let _ = app.emit(
-        STATE_EVENT,
-        RecorderStatePayload {
-            state: to,
-            reconnect_count,
-            scheduled_stop_ms,
-        },
-    );
 }
 
 /// The auto-stop deadline after the user extends by `minutes`: add to the current
@@ -1031,12 +1161,9 @@ async fn run_session(
     preroll_clip: Option<PrerollClip>,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
-    last_state: Arc<Mutex<RecorderState>>,
-    scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    state: StateWriter,
     last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
-    session_generation: Arc<AtomicU64>,
-    generation: u64,
 ) {
     // The backend can demote itself once: native start failure → ffmpeg (the
     // automatic escape hatch — a recording must start even if cpal can't).
@@ -1054,44 +1181,26 @@ async fn run_session(
     // previous recording can't leak into this one.
     let initial_stop = (opts.manual_max_minutes > 0)
         .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
-    scheduled_stop.send_replace(initial_stop);
-    let mut stop_watch = scheduled_stop.subscribe();
-    // This session's OWN state, mirrored on every transition. `last_state` is
-    // SHARED with whatever session is current, so a straggler must read its own
-    // outcome from here for the end-of-session verdict, not from the live one.
+    state.arm_autostop(initial_stop);
+    let mut stop_watch = state.subscribe();
+    // This session's OWN state, mirrored on every transition. The engine's
+    // last-state is SHARED with whatever session is current, so a straggler must
+    // read its own outcome from here for the end-of-session verdict, not from
+    // the live one.
     let own_state = Arc::new(Mutex::new(RecorderState::Idle));
-    // Emit a state transition, always stamping the CURRENT auto-stop deadline so
-    // the UI countdown stays in sync on every transition (start, reconnect, stop).
-    // A TERMINAL state (Stopped/Failed) clears the deadline first, so a finished
-    // OR failed recording never ships a lingering countdown — the clear lives
-    // here (one place) instead of being scattered before each Failed exit.
+    // Mirror the transition into this session's own state, then hand it to the
+    // ONE guarded door. [`StateWriter::set`] stamps the current auto-stop
+    // deadline (so the UI countdown stays in sync on start, reconnect and stop),
+    // clears it on a terminal state, and refuses everything once `start()` has
+    // superseded this supervisor — which it may have done minutes ago, while
+    // this one was still finalising.
+    //
+    // Telemetry persist/verdict happens at run_session's SINGLE exit point
+    // (after the last finalize_pending), so the measured media durations are
+    // included — a terminal emit only clears the deadline.
     let emit_state = |to: RecorderState, reconnect_count: u32| {
         *lock_recover(&own_state) = to;
-        // Generation guard: `start()` may already have stopped us and launched a
-        // NEW recording while this supervisor finalises (up to minutes). Its
-        // terminal emit would otherwise clear the live countdown and drop the UI
-        // to "Stopped" mid-recording. A straggler stays silent.
-        if !is_current_session(generation, &session_generation) {
-            tracing::debug!(
-                generation,
-                ?to,
-                "recorder: suppressing state emit from a superseded session"
-            );
-            return;
-        }
-        if to.is_terminal() {
-            scheduled_stop.send_replace(None);
-            // Telemetry persist/verdict happens at run_session's SINGLE exit
-            // point (after the last finalize_pending), so the measured media
-            // durations are included — a terminal emit only clears the deadline.
-        }
-        set_state(
-            &app,
-            &last_state,
-            to,
-            reconnect_count,
-            *scheduled_stop.borrow(),
-        );
+        state.set(to, reconnect_count);
     };
     // Everything below runs inside ONE labeled block with a single exit point,
     // so the session-end telemetry verdict/persist can never be skipped by an
@@ -1285,7 +1394,7 @@ async fn run_session(
                         Arc::clone(&segment_bytes),
                         deliverable_bytes,
                         &mut stop_rx,
-                        &last_state,
+                        &state,
                         &mut stop_watch,
                         Arc::clone(&telemetry),
                     )
@@ -1300,7 +1409,7 @@ async fn run_session(
                         Arc::clone(&segment_bytes),
                         deliverable_bytes,
                         &mut stop_rx,
-                        &last_state,
+                        &state,
                         &mut stop_watch,
                         Arc::clone(&telemetry),
                     )
@@ -1425,7 +1534,7 @@ async fn run_session(
                                 audio.clone(),
                                 video_dev.clone(),
                                 stop_rx,
-                                Arc::clone(&last_state),
+                                state.clone(),
                                 stop_watch.clone(),
                             )
                             .await;
@@ -2127,7 +2236,7 @@ async fn run_segment(
     // the native path.
     deliverable_bytes: u64,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    last_state: &Arc<Mutex<RecorderState>>,
+    state: &StateWriter,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
     telemetry: Arc<Mutex<RecordingTelemetry>>,
 ) -> SegmentOutcome {
@@ -2517,14 +2626,7 @@ async fn run_segment(
                                 + Duration::from_secs(60 * 60 * 24 * 365 * 100),
                         ),
                     }
-                    let _ = app.emit(
-                        STATE_EVENT,
-                        RecorderStatePayload {
-                            state: *lock_recover(last_state),
-                            reconnect_count: session.reconnect_count(),
-                            scheduled_stop_ms: auto_deadline,
-                        },
-                    );
+                    state.restamp(session.reconnect_count(), auto_deadline);
                 }
             }
             // Stop-on-silence fired.
@@ -3633,6 +3735,146 @@ mod tests {
         assert_eq!(engine.session_generation.load(Ordering::SeqCst), 0);
         let g = engine.session_generation.fetch_add(1, Ordering::SeqCst) + 1;
         assert!(is_current_session(g, &engine.session_generation));
+    }
+
+    /// A [`StateSink`] that keeps what it was handed, so the guard can be proven
+    /// end-to-end without an `AppHandle` (which cannot exist in a unit test).
+    #[derive(Default)]
+    struct RecordingSink(Mutex<Vec<RecorderStatePayload>>);
+
+    impl StateSink for RecordingSink {
+        fn emit_state(&self, payload: RecorderStatePayload) {
+            self.0.lock().expect("sink lock").push(payload);
+        }
+    }
+
+    impl RecordingSink {
+        fn payloads(&self) -> Vec<RecorderStatePayload> {
+            self.0.lock().expect("sink lock").clone()
+        }
+    }
+
+    /// The shared handles the engine owns, plus the two writers on them: one
+    /// from the superseded session, one from the live one.
+    struct TwoGenerations {
+        sink: Arc<RecordingSink>,
+        last_state: Arc<Mutex<RecorderState>>,
+        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        stale: StateWriter,
+        fresh: StateWriter,
+    }
+
+    /// Build what `start()` builds twice over: the 11:00 service claims
+    /// generation 1; at 12:05 the operator stops it and starts the evening
+    /// meeting, which claims generation 2 while the first supervisor is still
+    /// finalising.
+    fn two_generations(state: RecorderState, deadline: Option<u64>) -> TwoGenerations {
+        let sink = Arc::new(RecordingSink::default());
+        let last_state = Arc::new(Mutex::new(state));
+        let (tx, _rx) = tokio::sync::watch::channel(deadline);
+        let scheduled_stop = Arc::new(tx);
+        let current = Arc::new(AtomicU64::new(0));
+        let writer = |generation| {
+            StateWriter::new(
+                sink.clone(),
+                Arc::clone(&last_state),
+                Arc::clone(&scheduled_stop),
+                Arc::clone(&current),
+                generation,
+            )
+        };
+        let stale = writer(current.fetch_add(1, Ordering::SeqCst) + 1);
+        let fresh = writer(current.fetch_add(1, Ordering::SeqCst) + 1);
+        TwoGenerations {
+            sink,
+            last_state,
+            scheduled_stop,
+            stale,
+            fresh,
+        }
+    }
+
+    #[test]
+    fn a_superseded_state_writer_changes_nothing_and_emits_nothing() {
+        let deadline = Some(1_700_000_000_000);
+        let g = two_generations(RecorderState::Recording, deadline);
+        let stale = &g.stale;
+        assert!(!stale.is_current(), "generation 1 has been superseded");
+
+        // The straggler runs its whole terminal chain: the countdown clear, the
+        // "Stopped" transition, and a re-stamp from its still-draining segment.
+        stale.set(RecorderState::Stopped, 0);
+        stale.arm_autostop(None);
+        stale.restamp(0, None);
+
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Recording,
+            "the evening meeting is still recording — the straggler must not write Stopped"
+        );
+        assert_eq!(
+            *g.scheduled_stop.borrow(),
+            deadline,
+            "the live session's countdown must survive the straggler"
+        );
+        assert!(
+            g.sink.payloads().is_empty(),
+            "a superseded session emits no state at all"
+        );
+    }
+
+    #[test]
+    fn the_live_state_writer_writes_and_a_terminal_state_clears_the_countdown() {
+        let deadline = Some(1_700_000_000_000);
+        let g = two_generations(RecorderState::Recording, deadline);
+        let fresh = &g.fresh;
+        assert!(fresh.is_current());
+
+        // Non-terminal: the state moves, the countdown is untouched and stamped.
+        fresh.set(RecorderState::Stopping, 2);
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Stopping
+        );
+        assert_eq!(*g.scheduled_stop.borrow(), deadline);
+
+        // A moved deadline re-stamps the CURRENT state, without a transition.
+        fresh.restamp(2, Some(1_700_000_060_000));
+
+        // Terminal: the countdown is cleared BEFORE the payload is stamped, so a
+        // finished recording never ships a lingering countdown.
+        fresh.set(RecorderState::Stopped, 2);
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Stopped
+        );
+        assert_eq!(*g.scheduled_stop.borrow(), None);
+
+        let payloads = g.sink.payloads();
+        assert_eq!(payloads.len(), 3, "three writes, three emits");
+        assert_eq!(payloads[0].state, RecorderState::Stopping);
+        assert_eq!(payloads[0].reconnect_count, 2);
+        assert_eq!(payloads[0].scheduled_stop_ms, deadline);
+        assert_eq!(
+            payloads[1].state,
+            RecorderState::Stopping,
+            "a re-stamp keeps the state and only moves the deadline"
+        );
+        assert_eq!(payloads[1].scheduled_stop_ms, Some(1_700_000_060_000));
+        assert_eq!(payloads[2].state, RecorderState::Stopped);
+        assert_eq!(payloads[2].scheduled_stop_ms, None);
+    }
+
+    #[test]
+    fn arming_the_countdown_is_behind_the_same_guard() {
+        // The initial arm at the top of a session is a shared write too: a
+        // straggler that re-armed it would resurrect a countdown on the live
+        // recording. Only the current session may arm.
+        let g = two_generations(RecorderState::Idle, None);
+        g.stale.arm_autostop(Some(1_700_000_000_000));
+        assert_eq!(*g.scheduled_stop.borrow(), None);
+        g.fresh.arm_autostop(Some(1_700_000_000_000));
+        assert_eq!(*g.scheduled_stop.borrow(), Some(1_700_000_000_000));
     }
 
     #[test]

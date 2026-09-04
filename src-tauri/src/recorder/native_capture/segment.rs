@@ -28,7 +28,7 @@ use sundayrec_core::preflight::{
     finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
 };
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
-use sundayrec_core::recorder::{RecorderState, RecordingSession};
+use sundayrec_core::recorder::RecordingSession;
 use sundayrec_core::silence::{
     silence_threshold_db, SilenceAction, SilenceDetector, SilenceWatcher,
 };
@@ -39,9 +39,9 @@ use tauri::{AppHandle, Emitter};
 use crate::audio::asio::build_route_plan;
 use crate::error::{AppError, AppResult};
 use crate::recorder::engine::{
-    emit_error, emit_warning, error_code_str, now_ms, sleep_opt, wait_opt, RecorderStatePayload,
-    RecordingLevels, RecordingOpts, RecordingProgress, SegmentOutcome, LEVELS_EVENT,
-    PROGRESS_EVENT, SILENCE_EVENT, STARTED_EVENT, STATE_EVENT,
+    emit_error, emit_warning, error_code_str, now_ms, sleep_opt, wait_opt, RecordingLevels,
+    RecordingOpts, RecordingProgress, SegmentOutcome, StateWriter, LEVELS_EVENT, PROGRESS_EVENT,
+    SILENCE_EVENT, STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
     build_input_stream_any, find_device, negotiate, open_host, ring_capacity, CpalHostKind,
@@ -517,10 +517,12 @@ pub(crate) struct SegmentEnv<'a> {
 }
 
 /// The production sink: a real `AppHandle` plus the two pieces of session state
-/// the `state` payload carries.
+/// the `state` payload carries. The state half goes through the engine's ONE
+/// guarded door — this sink cannot reach the shared last-state directly, so a
+/// superseded segment cannot re-stamp the live session's countdown.
 pub(crate) struct AppEventSink<'a> {
     app: &'a AppHandle,
-    last_state: &'a Arc<Mutex<RecorderState>>,
+    writer: &'a StateWriter,
     reconnect_count: u32,
 }
 
@@ -558,14 +560,7 @@ impl EventSink for AppEventSink<'_> {
         );
     }
     fn state(&self, scheduled_stop_ms: Option<u64>) {
-        let _ = self.app.emit(
-            STATE_EVENT,
-            RecorderStatePayload {
-                state: *lock_recover(self.last_state),
-                reconnect_count: self.reconnect_count,
-                scheduled_stop_ms,
-            },
-        );
+        self.writer.restamp(self.reconnect_count, scheduled_stop_ms);
     }
 }
 
@@ -589,13 +584,13 @@ pub(crate) async fn run_native_segment(
     segment_bytes: Arc<AtomicU64>,
     deliverable_bytes: u64,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    last_state: &Arc<Mutex<RecorderState>>,
+    state: &StateWriter,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
     telemetry: Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
 ) -> SegmentOutcome {
     let sink = AppEventSink {
         app,
-        last_state,
+        writer: state,
         reconnect_count: session.reconnect_count(),
     };
     // The capture folder's volume. Probed fresh on every disk tick — the
