@@ -3,6 +3,65 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.17.2-beta.1 — søndagsfiksene til beta-ringen
+
+Fire rettelser fra en gjennomgang av hele appen, samlet i en rask runde foran
+resten som kommer i neste versjon.
+
+### Opptaksfeil snakker nå til deg, ikke bare til loggen
+
+Fryser lydenheten et øyeblikk midt i et opptak — en løs USB-kontakt, et
+vaklende kabel — og motoren kobler til igjen på egen hånd, gikk koden
+`stuck_recording` tidligere ut på den TERMINALE feilkanalen: opptaksoverlegget
+forsvant fra skjermen, menylinjeikonet viste feil, og det gikk ut både
+native-varsel og e-post om at opptaket feilet — mens opptaket i virkeligheten
+fortsatte. Denne typen forbigående glipp går nå ut som en advarsel i stedet:
+overlegget står, telleren fortsetter, og ingen falsk feilmelding sendes. Gir
+gjenkoblingen opp for godt, kommer den ekte feilen (og e-posten) da, ikke før.
+
+Fire andre feilkoder — opptaket som ikke klarer å starte i tide, ffmpeg-
+motoren som dør midt i, kameraet som ikke åpner, sammenslåingen som feiler —
+viste tidligere alle det samme runde banneret uansett årsak. Hver har nå sin
+egen setning som sier hva som faktisk skjedde og hva som ble reddet. En
+ukjent kode faller fortsatt tilbake på en generisk setning, pluss motorens
+egen linje som detalj — aldri koden selv. En ny gate
+(`scripts/check-error-codes.mjs`) holder Rust-kildene og
+oversettelsestabellen i sync fra nå av.
+
+([#198](https://github.com/SundaySuite-app/sundayrec/pull/198))
+
+### Papirkurven overlever strømbrudd og samtidig rydding
+
+Papirkurvens manifest — appens eneste kobling fra en flyttet fil tilbake til
+der den kom fra — skrives nå atomisk, med én skriver om gangen. Går strømmen
+midt i en flytting, eller rydder to prosesser samtidig, blir manifestet aldri
+stående halvferdig eller usynlig for «Angre»: et slettet opptak kan ikke
+lenger forsvinne sporløst. Et manifest som likevel blir ulesbart, døpes om i
+stedet for å bli overskrevet, og varsler deg om det i stedet for å late som
+ingenting.
+
+([#199](https://github.com/SundaySuite-app/sundayrec/pull/199))
+
+### Historikken mister ikke et opptak fordi disken var travel
+
+SQLite-databasen bak opptakshistorikken kjører nå i WAL-modus i stedet for
+standardens rollback-journal. Før kunne en skrivning som traff en treg disk
+samtidig som en annen intern skriving, låse hele databasefila til
+tidsavbruddet rant ut — og opptaket havnet aldri i Historikk, selv om selve
+lydfila lå trygt på disken. WAL lar lesere og skrivere jobbe side om side;
+diagnoserapporten viser nå hvilken journalmodus installasjonen faktisk kjører.
+
+([#207](https://github.com/SundaySuite-app/sundayrec/pull/207))
+
+### Småting
+
+Dokumentasjonstekster som ikke lenger stemte — blant annet en pålogging appen
+ikke lenger har, og versjonsnumre som gikk ut på dato i distribusjonsguiden —
+er rettet, med en ny automatisk vakt som holder dem sanne
+([#203](https://github.com/SundaySuite-app/sundayrec/pull/203)). En
+avhengighet med et sikkerhetsvarsel er oppdatert
+([#196](https://github.com/SundaySuite-app/sundayrec/pull/196)).
+
 ## v0.17.1-beta.1 — vedlikeholdsrunden, til beta-ringen først
 
 Runden etter det store redesignet: verktøy og ærlighet, ingen nye flater å lære.
