@@ -320,6 +320,7 @@
     "prerollDead": "La mémoire tampon ne fonctionne pas — le son capté avant que vous appuyiez sur enregistrer n'est pas conservé.",
     "recoverySkipped": "Un enregistrement interrompu n'a pas pu être entièrement récupéré : {file}",
     "deviceMissing": "Le périphérique audio « {device} » n'est pas connecté.",
-    "diskLow": "L'espace disque commence à manquer — {freeGb} Go libres. L'enregistrement s'arrêtera de lui-même si le disque est plein."
+    "diskLow": "L'espace disque commence à manquer — {freeGb} Go libres. L'enregistrement s'arrêtera de lui-même si le disque est plein.",
+    "trashManifestUnreadable": "Le contenu de la corbeille n'a pas pu être lu. Les fichiers sont toujours là, mais l'application ne sait plus d'où ils viennent."
   }
 }

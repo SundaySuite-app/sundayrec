@@ -83,11 +83,13 @@ pub struct PruneSummary {
 /// vekk for hånd — peker på en sti uten fil; `move_into_trash` hopper over det
 /// som ikke er en fil, så neste pass teller den ikke om igjen.
 ///
-/// Flyttingen skjer én oppføring om gangen, med vilje: `move_into_trash`
-/// skriver manifestet først ETTER hele lista si, så ett kall for alle
-/// kandidatene ville mistet manifest-oppføringene for alt som rakk å flytte før
-/// en feilende fil. Per-fil er hver flytting journalført idet den skjer, og en
-/// fil som nekter koster bare seg selv.
+/// Flyttingen skjer én oppføring om gangen, med vilje. Opprinnelig fordi
+/// `move_into_trash` skrev manifestet først ETTER hele lista si, så ett kall
+/// for alle kandidatene mistet oppføringene for alt som rakk å flytte før en
+/// feilende fil. F1-M2 fjernet den fellen — manifestet journalføres nå per
+/// opptak, FØR fila flyttes — men per-fil-løkka blir stående av den andre
+/// grunnen: en feilende fil skal koste seg selv og ikke resten av passet,
+/// og `move_into_trash` gir opp hele kallet på første flytting som nekter.
 #[tauri::command]
 pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<PruneSummary> {
     let s = settings::load(&db.pool).await.unwrap_or_default();

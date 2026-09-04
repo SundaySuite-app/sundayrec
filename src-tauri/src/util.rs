@@ -1,6 +1,6 @@
 //! Small cross-cutting helpers shared across the shell modules.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use sundayrec_core::ffmpeg::Platform;
@@ -173,6 +173,102 @@ where
     String::from_utf8_lossy(&line).into_owned()
 }
 
+// ── Atomic file writes ──────────────────────────────────────────────────────
+
+/// The scratch file [`write_atomic`] lands in before the rename.
+///
+/// The name is DERIVED from the target (`manifest.json` → `manifest.json.tmp`)
+/// rather than randomised, and that is the deliberate half: a process that dies
+/// between the write and the rename leaves at most ONE stray file per target,
+/// which the next write reuses. A unique temp name would instead accumulate one
+/// corpse per crash in a directory nothing prunes.
+///
+/// `with_extension` would REPLACE `.json`, so the suffix is appended to the raw
+/// `OsString` instead.
+fn temp_beside(path: &Path) -> PathBuf {
+    let mut tmp = path.as_os_str().to_os_string();
+    tmp.push(".tmp");
+    PathBuf::from(tmp)
+}
+
+/// Write `bytes` to `path` so that a reader — or a power cut — never sees half
+/// of them.
+///
+/// `std::fs::write` truncates first and fills afterwards: every millisecond in
+/// between, the file on disk IS the truncated one. For a file the app treats as
+/// a record of what exists (the Papirkurv manifest, a crash record, the
+/// telemetry snapshot) that window is the difference between "the previous
+/// answer" and "no answer at all". So: write a scratch file beside the target,
+/// `fsync` it, then `rename` over the target — a rename within one directory is
+/// atomic on every filesystem the app ships on, so the target is only ever the
+/// old file or the new one.
+///
+/// **The `fsync` is not decoration.** `rename` orders the DIRECTORY entry, not
+/// the data blocks behind it: without the sync a crash can leave the new name
+/// pointing at a block of zeros, which is precisely the "manifest is there but
+/// unreadable" state this helper exists to prevent. It costs one flush of a few
+/// kilobytes; every caller writes small files, none from a capture path.
+/// (On macOS this is `fsync`, not `F_FULLFSYNC` — it hands the bytes to the
+/// drive without forcing its cache, which is the trade every database on this
+/// platform makes too.)
+///
+/// The scratch file is removed when either step fails, so a failing disk does
+/// not also litter.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = temp_beside(path);
+
+    let write = || -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()
+    };
+    if let Err(e) = write() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// [`write_atomic`] for a caller already inside an async task, with the same
+/// contract (same temp name, same `fsync`, same cleanup).
+///
+/// Its own function rather than `spawn_blocking(write_atomic)`: the one caller
+/// is the crash-recovery manifest, written once per segment from the recorder's
+/// session loop, and handing that to the blocking pool would put a thread hop
+/// in the middle of the recording path to save four lines.
+pub async fn write_atomic_async(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let tmp = temp_beside(path);
+
+    let write = async {
+        let mut f = tokio::fs::File::create(&tmp).await?;
+        f.write_all(bytes).await?;
+        f.sync_all().await
+    };
+    if let Err(e) = write.await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    if let Err(e) = tokio::fs::rename(&tmp, path).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,5 +374,85 @@ mod tests {
         } else {
             assert_eq!(p, Platform::Linux);
         }
+    }
+
+    // ── write_atomic ────────────────────────────────────────────────────────
+
+    /// Every `.tmp` left in `dir`. The whole point of the helper is that this
+    /// is empty once it returns.
+    fn leftovers(dir: &Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect()
+    }
+
+    #[test]
+    fn an_atomic_write_lands_the_bytes_and_leaves_no_scratch_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("manifest.json");
+        write_atomic(&path, b"{\"entries\":[]}").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"{\"entries\":[]}");
+        assert!(
+            leftovers(dir.path()).is_empty(),
+            "atomic write left scratch"
+        );
+    }
+
+    #[test]
+    fn a_second_write_replaces_the_first_without_a_window_of_nothing() {
+        // The regression this helper exists for: `fs::write` truncates first,
+        // so a reader (or a power cut) between truncate and fill sees an EMPTY
+        // file where a whole one used to be.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("manifest.json");
+        write_atomic(&path, b"first, and long enough to be truncated").unwrap();
+        write_atomic(&path, b"second").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        assert!(leftovers(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn the_scratch_file_sits_beside_the_target_and_keeps_its_extension() {
+        // `with_extension(".tmp")` would turn `manifest.json` into
+        // `manifest.tmp` — a different file, in the same directory, that a
+        // suffix-based sweep would not recognise as scratch.
+        let tmp = temp_beside(Path::new("/a/b/manifest.json"));
+        assert_eq!(tmp, PathBuf::from("/a/b/manifest.json.tmp"));
+    }
+
+    #[test]
+    fn an_atomic_write_creates_the_directory_it_was_pointed_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/deep/last-recording.json");
+        write_atomic(&path, b"{}").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn a_write_that_cannot_land_leaves_the_previous_file_whole() {
+        // A rename onto a DIRECTORY fails on every platform. The old answer
+        // must survive a failed new one — that is the entire contract.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("occupied");
+        std::fs::create_dir(&path).unwrap();
+        assert!(write_atomic(&path, b"nope").is_err());
+        assert!(path.is_dir(), "the existing entry survived");
+        assert!(
+            leftovers(dir.path()).is_empty(),
+            "a failed write must not litter"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_async_twin_holds_the_same_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        write_atomic_async(&path, b"first").await.unwrap();
+        write_atomic_async(&path, b"2").await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"2");
+        assert!(leftovers(dir.path()).is_empty());
     }
 }
