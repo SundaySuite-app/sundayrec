@@ -223,9 +223,12 @@ same screen four times while it is still moving is how a translator learns to
 stop reading carefully.
 
 ✅ **Fase B did half of it, and the useful half first.** 653 keys nothing reads
-were deleted from all seven catalogues before any translating starts — the five
-paused languages went from 895 keys to 244. `PAUSED_KEYS` is 442 (the `app.*`
-surface). PR B is done; the translation round itself is what comes next.
+were deleted from all seven catalogues before any translating starts — the
+five paused languages dropped sharply, and `PAUSED_KEYS` (the `app.*`
+surface) grew to cover the redesign's new keys since. Both counts keep moving
+as the redesign adds screens — `legacy/locales/parity.test.ts` and `npm run
+i18n-keys -- --list` give today's numbers. PR B is done; the translation
+round itself is what comes next.
 
 A stored language outside `ACTIVE_LOCALES` picks the nearest active one
 (`resolveStartupLocale`: sv/da → no, everything else → en) instead of rendering
@@ -3369,10 +3372,11 @@ er den àjour kilden.
 ## 5. Fem språk venter
 
 `ACTIVE_LOCALES` er fortsatt `["no", "en"]`. `PAUSED_KEYS` i
-`legacy/locales/parity.test.ts` unnskylder 442 nøkler i sv/da/de/fr/pl. Fase B
+`legacy/locales/parity.test.ts` unnskylder nøkler i sv/da/de/fr/pl. Fase B
 ryddet 653 DØDE nøkler ut av alle sju katalogene først, nettopp så
-oversettelsesrunden ikke går på tekst ingen ser: sv/da/de/fr/pl gikk fra 895 til
-244 nøkler, no/en fra 1339 til 686. PR B er ute; oversettelsesrunden er neste.
+oversettelsesrunden ikke går på tekst ingen ser. Tallene endres —
+`legacy/locales/parity.test.ts` og `npm run i18n-keys -- --list` gir dagens.
+PR B er ute; oversettelsesrunden er neste.
 
 **V1 PR4 (stale tekster)** rettet ni no/en-verdier som pekte på flater D2/D3
 fjernet («Oppsett» som stedsnavn, «eksportvinduet», «Innstillinger → System»,

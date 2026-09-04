@@ -19,21 +19,23 @@ macOS-signed and auto-updating; the one remaining gap is **notarization**
 4. You review the draft and publish it as **Latest**.
 
 > **Deploy gotcha (same as the Electron SundayRec):** the build uploads as a
-> **draft** (with `prerelease: false`). "Publishing" is a separate manual step —
-> review the draft, then publish it so it becomes **Latest**. A
-> built-but-unpublished release is not served to anyone (the updater feed only
-> sees published releases). This flow is proven in prod: every release since
-> v0.4.x has been published as Latest this way (v0.11.0-beta.1 is the newest tag; v0.10.0 is the newest stable).
+> **draft** (`releaseDraft: true`, regardless of whether the tag is a beta).
+> "Publishing" is a separate manual step — review the draft, then publish it
+> so it becomes **Latest**. A built-but-unpublished release is not served to
+> anyone (the updater feed only sees published releases). This flow is proven
+> in prod: every release since v0.4.x has been published as Latest this way —
+> see [GitHub Releases](https://github.com/SundaySuite-app/sundayrec/releases)
+> for the current tags.
 
 ## Phase status
 
-| Capability                   | State                                                                                                           |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                        |
-| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                        |
-| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; env lines commented out in `release.yml:146-155` pending re-acceptance |
-| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                       |
-| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `uploadUpdaterJson` + `TAURI_SIGNING_*` secrets; feed verified in prod |
+| Capability                   | State                                                                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                                               |
+| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                                               |
+| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; env lines commented out at the `[notarization]` marker in `release.yml` pending re-acceptance |
+| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                                              |
+| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `uploadUpdaterJson` + `TAURI_SIGNING_*` secrets; feed verified in prod                        |
 
 macOS builds are **signed but not notarized**: Gatekeeper warns on first
 launch → right-click ▸ Open. Windows is unsigned → "More info" ▸ "Run anyway".
@@ -91,13 +93,16 @@ downloads per release.
    exact unpacked bytes, keyed `<name>-<rust host triple>`. A mismatch is a hard
    failure; a **missing** key logs the computed hash and proceeds.
 
-That missing-key behaviour is the pinning workflow: **macOS arm64 is pinned**
-(computed on the owner's machine). **Windows and Linux are not yet** — their
-hashes get printed by the first CI/release run that fetches them. Copy the two
-`⚠ … computed <hash>` lines out of that run's "Fetch … sidecars" step into
-`scripts/ffmpeg-checksums.json` and commit. Linux is optional (it never ships);
-Windows should be pinned before the next release is published, exactly as the
-6.0-era Windows pins were captured.
+That missing-key behaviour is the pinning workflow, and as of the 8.1.2
+upgrade it has run its course: **macOS arm64, Windows, and Linux are all
+pinned** in `scripts/ffmpeg-checksums.json` — macOS was computed on the
+owner's machine, Windows and Linux were captured from a CI/release run's
+"Fetch … sidecars" step the same way. Linux is pinned even though it's
+optional (it never ships; the ubuntu job just needs a real binary so the
+real-ffmpeg smokes actually run). If a future ffmpeg bump ever adds a new
+host or drops a key, the missing one gets printed the same way — copy its
+`⚠ … computed <hash>` line into `scripts/ffmpeg-checksums.json` and commit,
+exactly how these pins were captured.
 
 ## Required GitHub repository secrets
 
@@ -107,23 +112,25 @@ Settings → Secrets and variables → Actions → New repository secret.
 
 You already did this for the Electron SundayRec — the same Developer ID cert
 applies, and the workflow reuses the Electron-era secret names (mapped to
-tauri-action's `APPLE_*` env vars in `release.yml:143-144`).
-`APPLE_SIGNING_IDENTITY` is hardcoded in the workflow, not a secret.
+tauri-action's `APPLE_*` env vars at the `[notarization]` marker in
+`release.yml`). `APPLE_SIGNING_IDENTITY` is hardcoded in the workflow, not a
+secret.
 
-| Secret                                                       | Value                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MAC_CERTS`                                                  | ✅ set. Base64 of the "Developer ID Application" cert exported as `.p12`: `base64 -i cert.p12 \| pbcopy` (maps to `APPLE_CERTIFICATE`). Releases are signed since ~2026-07-31.                                                                                                                             |
-| `MAC_CERTS_PASSWORD`                                         | ✅ set. The password from the `.p12` export (maps to `APPLE_CERTIFICATE_PASSWORD`).                                                                                                                                                                                                                        |
-| `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` | ⏸ **Notarization — currently unused.** The env lines are commented out in `release.yml:146-155` because Apple's notary service returns 403 until the updated Program License Agreement is accepted on developer.apple.com (team 784GN847G4). Re-enable by uncommenting those lines once the PLA is signed. |
+| Secret                                                       | Value                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAC_CERTS`                                                  | ✅ set. Base64 of the "Developer ID Application" cert exported as `.p12`: `base64 -i cert.p12 \| pbcopy` (maps to `APPLE_CERTIFICATE`). Releases are signed since ~2026-07-31.                                                                                                                                                    |
+| `MAC_CERTS_PASSWORD`                                         | ✅ set. The password from the `.p12` export (maps to `APPLE_CERTIFICATE_PASSWORD`).                                                                                                                                                                                                                                               |
+| `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` | ⏸ **Notarization — currently unused.** The env lines are commented out at the `[notarization]` marker in `release.yml` because Apple's notary service returns 403 until the updated Program License Agreement is accepted on developer.apple.com (team 784GN847G4). Re-enable by uncommenting those lines once the PLA is signed. |
 
 ### Auto-update signing (✅ LIVE since v0.4.x)
 
 The updater is **live in published releases**: the plugin is installed, the
 public key + `endpoints` are in `tauri.conf.json` under `plugins.updater`,
 `uploadUpdaterJson: true` is set in `release.yml`, and the signing secrets are
-in place — the `latest.json` feed is verified in prod (v0.11.0-beta.1 is the newest tag; v0.10.0 is the newest stable).
-Nothing here remains to set up; the only outstanding release-pipeline gap is
-macOS **notarization** (previous section).
+in place — the `latest.json` feed is verified in prod (see
+[GitHub Releases](https://github.com/SundaySuite-app/sundayrec/releases) for
+the current tags). Nothing here remains to set up; the only outstanding
+release-pipeline gap is macOS **notarization** (previous section).
 
 | Secret                               | Value                                                                                                          |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |

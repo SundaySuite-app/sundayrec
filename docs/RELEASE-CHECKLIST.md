@@ -57,9 +57,8 @@ For signing (active today — `release.yml` lines 153–155):
 For notarization (**inactive** — see §2a):
 
 - [ ] `APPLE_ID` — Apple Developer account email.
-- [ ] `APPLE_APP_SPECIFIC_PASSWORD` — an **app-specific** password. ⚠️ The
-      previous one was **leaked in chat** — revoke it at appleid.apple.com →
-      Sign-In and Security → App-Specific Passwords, generate a fresh one, store
+- [ ] `APPLE_APP_SPECIFIC_PASSWORD` — an **app-specific** password, generated at
+      appleid.apple.com → Sign-In and Security → App-Specific Passwords, stored
       only as this secret.
 - [ ] `APPLE_TEAM_ID` — `784GN847G4`.
 

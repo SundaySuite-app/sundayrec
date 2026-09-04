@@ -1,6 +1,6 @@
 # Contributing to SundayRec
 
-SundayRec records the service, transcribes the sermon, streams live and publishes the podcast — by itself. It is part of [Sunday Suite](https://sundaysuite.app) — a family of
+SundayRec records the service, edits the take, mixes and masters it, and exports it — by itself. It is part of [Sunday Suite](https://sundaysuite.app) — a family of
 open-source tools for churches and classrooms, built in Norway. It is free, actively
 developed, and honestly unfinished. Contributions of every size are welcome, and you
 do not need to be a developer to make one.
