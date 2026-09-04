@@ -135,10 +135,30 @@ export function canSendTestEmail(
 export type EmailBlockReason =
   "noFeature" | "noTransport" | "noRecipient" | null;
 
+/**
+ * Why «Send en test» cannot be pressed — with the RELAY as the first branch.
+ *
+ * `relayConfirmed` is a confirmed subscription on a build that has an endpoint
+ * (`relay-core`'s `transport`). It answers the whole question on its own, and
+ * that is not a shortcut — it is the shape of the two paths:
+ *
+ *   - It is NOT behind the `email` cargo feature. The relay is HTTP, not SMTP
+ *     (`commands/notify_relay.rs` is featureless on purpose), so `featureBuilt`
+ *     false is no longer "there is no way to send an e-mail from this build".
+ *   - It needs no SMTP server, so `hasEmailTransport` says nothing about it.
+ *   - It HAS a recipient by construction: the address is the one that came back
+ *     and confirmed. Asking for `hasRecipient` on top would disable the button
+ *     on a machine whose subscription is live, over a settings field.
+ *
+ * Everything below it is the SMTP path, unchanged — which is what keeps the
+ * existing congregations exactly where they were.
+ */
 export function emailBlockReason(
   facts: EmailFacts,
   hasRecipient: boolean,
+  relayConfirmed: boolean,
 ): EmailBlockReason {
+  if (relayConfirmed) return null;
   if (!facts.featureBuilt) return "noFeature";
   if (!hasEmailTransport(facts)) return "noTransport";
   if (!hasRecipient) return "noRecipient";

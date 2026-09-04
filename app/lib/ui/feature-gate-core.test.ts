@@ -126,13 +126,32 @@ describe("emailBlockReason", () => {
   };
 
   it("names the one thing that is missing, most fundamental first", () => {
-    expect(emailBlockReason({ ...base, featureBuilt: false }, true)).toBe(
-      "noFeature",
-    );
     expect(
-      emailBlockReason({ ...base, smtpPasswordAvailable: false }, true),
+      emailBlockReason({ ...base, featureBuilt: false }, true, false),
+    ).toBe("noFeature");
+    expect(
+      emailBlockReason({ ...base, smtpPasswordAvailable: false }, true, false),
     ).toBe("noTransport");
-    expect(emailBlockReason(base, false)).toBe("noRecipient");
-    expect(emailBlockReason(base, true)).toBeNull();
+    expect(emailBlockReason(base, false, false)).toBe("noRecipient");
+    expect(emailBlockReason(base, true, false)).toBeNull();
+  });
+
+  it("a confirmed relay answers on its own — no feature, no SMTP, no field", () => {
+    // The three facts the SMTP path is made of are ALL false here, and the
+    // button is still pressable: the relay is HTTP (featureless), needs no
+    // server, and its recipient is the address that confirmed. A card that
+    // greyed «Send en test» out on a machine with a live subscription would be
+    // disabling a working thing over a settings field.
+    expect(
+      emailBlockReason(
+        {
+          featureBuilt: false,
+          smtpConfigured: false,
+          smtpPasswordAvailable: false,
+        },
+        false,
+        true,
+      ),
+    ).toBeNull();
   });
 });

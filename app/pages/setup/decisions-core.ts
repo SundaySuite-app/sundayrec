@@ -27,9 +27,15 @@
  * `answered`. Fasiten står fast: bare `done` teller som besvart.
  */
 
-import type { EmailFacts, GateStatus } from "@lib/ui/feature-gate-core";
+import {
+  hasEmailTransport,
+  type EmailFacts,
+  type GateStatus,
+} from "@lib/ui/feature-gate-core";
+import type { RelaySubscriptionStatus } from "@legacy/bindings/RelaySubscriptionStatus";
 
 import type { LevelWord } from "../../audio/level-words";
+import { relayTransport } from "./relay-core";
 import type { Settings } from "../../state/settings";
 
 /** De fem spørsmålene, i rekkefølgen de stilles. */
@@ -109,6 +115,17 @@ export interface DecisionFacts {
    * `null` = ikke lest ennå.
    */
   emailTransport: boolean | null;
+  /**
+   * Er e-postreléet BEKREFTET på denne maskinen? (`relay-core`s `transport` —
+   * en bekreftet påmelding på en build som har et endepunkt.) `null` = ikke
+   * lest ennå.
+   *
+   * Egen fakta og ikke slått sammen med `emailTransport`, fordi de to svarer på
+   * forskjellige spørsmål og kan være uenige: reléet virker i en build uten
+   * e-postfeaturen, og SMTP virker uten nett til noen tjeneste av vår. Kortet
+   * spør om det finnes MINST ÉN vei ut, og da må begge stå der hver for seg.
+   */
+  relayConfirmed: boolean | null;
   /**
    * Språket appen FAKTISK rendrer i (`app/i18n`s `locale`), ikke det som står
    * i `settings.language`.
@@ -298,6 +315,28 @@ export function decideChurch(facts: DecisionFacts): Decision {
 }
 
 /**
+ * Finnes det MINST ÉN vei ut for en e-post?
+ *
+ * To uavhengige veier siden reléet kom: en bekreftet påmelding hos
+ * SundaySuite, eller menighetens egen SMTP-server. Trestillingen er den samme
+ * som de to fakta har hver for seg, og rekkefølgen er den som ikke lyver:
+ *
+ *   `true`  — minst én av dem svarte JA. Da spiller det ingen rolle at den
+ *             andre ikke er lest ennå; det finnes en vei ut.
+ *   `null`  — ingen sa ja, og minst én er ikke lest. Ingen påstand.
+ *   `false` — begge er lest, og begge sa nei.
+ */
+function emailPathOut(facts: DecisionFacts): boolean | null {
+  if (facts.relayConfirmed === true || facts.emailTransport === true) {
+    return true;
+  }
+  if (facts.relayConfirmed === null || facts.emailTransport === null) {
+    return null;
+  }
+  return false;
+}
+
+/**
  * 5 — Hvem får beskjed hvis noe går galt?
  *
  * ## Hvorfor bryteren alene ikke er nok
@@ -307,6 +346,12 @@ export function decideChurch(facts: DecisionFacts): Decision {
  * 11:42 og ingen sitter ved maskinen, får ingen vite det. Så kortet er besvart
  * bare når en e-post faktisk kan komme fram — adresse, bryter PÅ, og en
  * sendevei som finnes.
+ *
+ * ## Sendeveien er nå to veier
+ *
+ * Reléet er hovedveien og SMTP er alternativet, men kortet bryr seg ikke om
+ * HVILKEN: spørsmålet er om noen får beskjed. `emailPathOut` slår de to
+ * sammen, og resten av regelen står nøyaktig som den gjorde.
  *
  * ## Hvorfor det ikke finnes et «bare varsel på maskinen»-svar
  *
@@ -319,13 +364,14 @@ export function decideChurch(facts: DecisionFacts): Decision {
 export function decideNotify(facts: DecisionFacts): Decision {
   const address = (facts.settings.emailAddress ?? "").trim();
   const on = facts.settings.emailOnError === true;
+  const path = emailPathOut(facts);
 
-  if (facts.emailTransport === null && on && address) {
+  if (path === null && on && address) {
     // Alt brukeren kan se er på plass; om det finnes en sendevei vet vi ikke
     // ennå. Ingen påstand i noen retning.
     return decision("notify", "unknown", { key: "email", address }, null);
   }
-  if (on && address && facts.emailTransport === true) {
+  if (on && address && path === true) {
     return decision(
       "notify",
       "done",
@@ -356,6 +402,40 @@ export function notifyGateStatus(facts: EmailFacts | null): GateStatus {
     return "unconfigured";
   }
   return "ok";
+}
+
+/**
+ * Det samme spørsmålet, nå med reléet foran.
+ *
+ * `notifyGateStatus` over er SMTP-utgaven, og den er ikke slettet: den er
+ * fortsatt sant svar på «kan denne maskinen sende gjennom menighetens egen
+ * server». Men det er ikke lenger spørsmålet bryteren på spørsmål 5 står bak.
+ * Bryteren spør om noen får e-post, og siden reléet finnes er svaret ja så
+ * snart ÉN av de to veiene er åpen.
+ *
+ * Derfor er rekkefølgen her ikke «SMTP, og så reléet som unntak» — det ville
+ * gjort hovedveien til et vedheng. Den er: er det åpent? så er det åpent. Er
+ * det stengt fordi ingenting er satt opp? da er det `unconfigured`, og teksten
+ * peker på BEGGE veiene. Er det stengt fordi denne utgaven verken har
+ * e-postfeaturen eller et endepunkt, er det `unavailable` — det ene tilfellet
+ * en frivillig ikke kan gjøre noe med, og derfor det ene som må sies rett ut.
+ *
+ * `null` (ikke lest ennå) er `ok`, samme grunn som over: en bryter som er inert
+ * i det halvsekundet det tar å spørre bakenden tar ikke imot det første
+ * klikket.
+ */
+export function relayGateStatus(
+  email: EmailFacts | null,
+  relay: RelaySubscriptionStatus | null,
+): GateStatus {
+  if (email === null || relay === null) return "ok";
+  // `relayTransport` og ikke et håndlagt `state === "confirmed"`: den skjulte
+  // halvdelen av regelen (et bygg uten endepunkt kan fortsatt huske et
+  // bekreftet abonnement) er den som blir glemt i den andre kopien.
+  if (relayTransport(relay) === true) return "ok";
+  if (hasEmailTransport(email)) return "ok";
+  if (!email.featureBuilt && !relay.endpointBuilt) return "unavailable";
+  return "unconfigured";
 }
 
 /** Alle fem, i rekkefølge. Nummeret på kortet er indeksen + 1. */

@@ -4,6 +4,7 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
+  relayEmpty,
   SETTLED_SETTINGS,
   storedSettings,
 } from "./harness";
@@ -156,12 +157,15 @@ test.describe("kvalitet", () => {
 });
 
 test.describe("e-post uten en sendevei", () => {
-  test("bryteren er sperret, og gaten sier hvorfor — uten å love et relé", async ({
+  test("bryteren er sperret, og gaten peker på BEGGE veiene", async ({
     page,
   }) => {
-    // ⚠️ Canvasens tekst her lovet at e-posten «sendes via SundaySuite». Det
-    // finnes ingen slik tjeneste. Uten menighetens egen SMTP-server går det
-    // ingen e-post, uansett hva som står i adressefeltet.
+    // ⚠️ Historikk: canvasens tekst lovet at e-posten «sendes via
+    // SundaySuite» da det ikke fantes noen slik tjeneste, og denne testen
+    // pinnet at skjermen IKKE sa det. A5 snudde premisset — reléet finnes nå,
+    // og er hovedveien — så påstanden er byttet ut med den som er sann i dag:
+    // uten en bekreftet adresse OG uten en SMTP-server kommer det ingenting
+    // fram, og gaten sier hvilke to ting som kan fikse det.
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
@@ -175,17 +179,20 @@ test.describe("e-post uten en sendevei", () => {
     const gate = page.getByTestId("notify-email-gate");
     await expect(gate).toHaveAttribute("data-gate", "unconfigured");
     await expect(page.getByTestId("notify-email-gate-banner")).toContainText(
-      "Krever en e-postserver (SMTP). Sett opp under Avansert.",
+      "Bekreft e-postadressen, eller sett opp en e-postserver (SMTP) under Avansert.",
     );
     // Innholdet er faktisk slått av — ikke bare nedtonet.
     await expect(page.getByTestId("notify-email-gate-content")).toHaveAttribute(
       "inert",
       /.*/,
     );
-    // Og ingenting på skjermen nevner et relé som ikke finnes.
-    await expect(page.getByTestId("setup-notify")).not.toContainText(
-      "SundaySuite",
+    // Reléet er nevnt, og adressen står som ubekreftet — ikke som et løfte.
+    await expect(page.getByTestId("notify-relay-state")).toHaveText(
+      "Ikke bekreftet",
     );
+    // Gaten står FORAN bryteren, aldri foran knappen som ville åpnet den: en
+    // gate som slår av sine egne oppsettsfelter kan aldri konfigureres.
+    await expect(page.getByTestId("notify-relay-confirm")).toBeVisible();
   });
 
   test("med SMTP på plass er bryteren åpen", async ({ page }) => {
@@ -238,6 +245,66 @@ test.describe("e-post uten en sendevei", () => {
     // Den gule raden sier hva den KOSTER, ikke bare at noe mangler.
     await expect(page.getByTestId("control-notify-detail")).toHaveText(
       "Ingen får e-post — maskinen varsler bare den som sitter ved den.",
+    );
+  });
+
+  test("et bekreftet relé åpner bryteren — helt uten SMTP", async ({
+    page,
+  }) => {
+    // Selve poenget med reléet, sett fra skjermen: ingen server, ingen
+    // app-passord, ingen e-postfeature i bygget — og gaten er likevel åpen.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        email_status: { featureBuilt: false },
+        relay_status: relayEmpty({
+          state: "confirmed",
+          address: "lyd@brynmenighet.no",
+        }),
+      },
+      settings: { ...SETTLED_SETTINGS, emailSmtp: "", emailSmtpUser: "" },
+      goto: "settings:sharing",
+    });
+
+    await expect(page.getByTestId("notify-email-gate")).toHaveAttribute(
+      "data-gate",
+      "ok",
+    );
+    await expect(page.getByTestId("notify-email-gate-banner")).toHaveCount(0);
+    await expect(page.getByTestId("notify-relay-state")).toHaveText(
+      "Bekreftet",
+    );
+  });
+
+  test("et bekreftet relé gjør spørsmål 5 besvart i kontrollrommet", async ({
+    page,
+  }) => {
+    // Samme regel som over, men lest av den andre flaten: kortet spør om NOEN
+    // får beskjed, ikke om hvilken kanal beskjeden går gjennom.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        email_status: { featureBuilt: false },
+        relay_status: relayEmpty({
+          state: "confirmed",
+          address: "lyd@brynmenighet.no",
+        }),
+      },
+      settings: {
+        ...SETTLED_SETTINGS,
+        emailOnError: true,
+        emailAddress: "lyd@brynmenighet.no",
+        emailSmtp: "",
+      },
+      goto: "home",
+    });
+
+    await expect(page.getByTestId("control-notify")).toHaveAttribute(
+      "data-tone",
+      "neutral",
+    );
+    await expect(page.getByTestId("control-notify-summary")).toHaveText(
+      "lyd@brynmenighet.no",
     );
   });
 });

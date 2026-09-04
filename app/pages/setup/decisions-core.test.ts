@@ -14,10 +14,12 @@ import {
   needsSetUp,
   notifyGateStatus,
   qualityIdFor,
+  relayGateStatus,
   type DecisionFacts,
   type DecisionStatus,
 } from "./decisions-core";
 import type { Settings } from "../../state/settings";
+import type { RelaySubscriptionStatus } from "@legacy/bindings/RelaySubscriptionStatus";
 
 /** Fabrikkfersk profil + det raden faktisk handler om. */
 function facts(over: Partial<DecisionFacts> = {}): DecisionFacts {
@@ -27,6 +29,9 @@ function facts(over: Partial<DecisionFacts> = {}): DecisionFacts {
     diskFreeBytes: null,
     roomMinutes: null,
     emailTransport: null,
+    // Fabrikkfersk maskin: ingen påmelding hos reléet. `null` ville betydd
+    // «ikke lest ennå», og gjort hver rad i denne fila til en `unknown`.
+    relayConfirmed: false,
     locale: "no",
     vuWord: null,
     ...over,
@@ -330,6 +335,55 @@ describe("5 — Hvem får beskjed?", () => {
     expect(d.answer).toEqual({ key: "email", address: "lyd@brynmenighet.no" });
     expect(d.detail).toEqual({ key: "emailDesc" });
   });
+
+  // ── Reléet er den andre sendeveien ────────────────────────────────────────
+
+  it("et bekreftet relé er nok — uten SMTP i det hele tatt", () => {
+    // Selve poenget med reléet: kortet blir grønt for en menighet som aldri
+    // har sett en SMTP-innstilling.
+    const d = decideNotify(
+      withSettings(READY, { emailTransport: false, relayConfirmed: true }),
+    );
+    expect(d.answered).toBe(true);
+    expect(d.answer).toEqual({ key: "email", address: "lyd@brynmenighet.no" });
+  });
+
+  it("… og den ene JA-en trumfer en sendevei som ikke er lest ennå", () => {
+    // Ingen `unknown` her: det finnes en vei ut, og at vi ikke vet noe om den
+    // andre endrer ikke det.
+    const d = decideNotify(
+      withSettings(READY, { emailTransport: null, relayConfirmed: true }),
+    );
+    expect(d.status).toBe<DecisionStatus>("done");
+  });
+
+  it("reléet ikke lest ennå ⇒ ingen påstand, selv om SMTP sa nei", () => {
+    const d = decideNotify(
+      withSettings(READY, { emailTransport: false, relayConfirmed: null }),
+    );
+    expect(d.status).toBe<DecisionStatus>("unknown");
+    expect(d.answered).toBe(false);
+  });
+
+  it("begge lest, begge nei ⇒ «ingen får e-post», og teksten sier hvorfor", () => {
+    const d = decideNotify(
+      withSettings(READY, { emailTransport: false, relayConfirmed: false }),
+    );
+    expect(d.answered).toBe(false);
+    expect(d.answer).toEqual({ key: "nobody" });
+    expect(d.detail).toEqual({ key: "nobodyDesc" });
+  });
+
+  it("bryteren AV gjør et bekreftet relé irrelevant", () => {
+    // Abonnementet er en sendevei, ikke et samtykke til å bruke den.
+    const d = decideNotify(
+      withSettings(
+        { ...READY, emailOnError: false },
+        { relayConfirmed: true, emailTransport: true },
+      ),
+    );
+    expect(d.answered).toBe(false);
+  });
 });
 
 describe("de fem sammen", () => {
@@ -427,6 +481,93 @@ describe("notifyGateStatus", () => {
 
   it("alt på plass ⇒ åpen, og uten banner", () => {
     expect(notifyGateStatus(built)).toBe("ok");
+  });
+});
+
+describe("relayGateStatus — reléet er hovedveien, SMTP alternativet", () => {
+  const smtp = {
+    featureBuilt: true,
+    smtpConfigured: true,
+    smtpPasswordAvailable: true,
+  };
+  const noSmtp = {
+    featureBuilt: true,
+    smtpConfigured: false,
+    smtpPasswordAvailable: false,
+  };
+  const relay = (over: Partial<RelaySubscriptionStatus> = {}) => ({
+    endpointBuilt: true,
+    state: null,
+    address: null,
+    enrolledAt: null,
+    confirmedAt: null,
+    queued: 0,
+    ...over,
+  });
+
+  it("et bekreftet abonnement er nok — helt uten SMTP", () => {
+    // Hele poenget med reléet: en frivillig skal ikke trenge en e-postserver.
+    expect(relayGateStatus(noSmtp, relay({ state: "confirmed" }))).toBe("ok");
+  });
+
+  it("… og til og med uten e-postfeaturen, for reléet er HTTP", () => {
+    expect(
+      relayGateStatus(
+        { ...noSmtp, featureBuilt: false },
+        relay({ state: "confirmed" }),
+      ),
+    ).toBe("ok");
+  });
+
+  it("SMTP alene er fortsatt nok — eksisterende menigheter merker ingenting", () => {
+    expect(relayGateStatus(smtp, relay())).toBe("ok");
+  });
+
+  it("påmeldt men ikke bekreftet er IKKE en sendevei", () => {
+    // Dobbel opt-in: før noen har trykket i innboksen kommer det ingenting
+    // fram, og en åpen bryter her ville lovet varsler som ikke sendes.
+    expect(relayGateStatus(noSmtp, relay({ state: "pending" }))).toBe(
+      "unconfigured",
+    );
+  });
+
+  it("en adresse som avviser e-post er heller ikke en sendevei", () => {
+    expect(relayGateStatus(noSmtp, relay({ state: "suppressed" }))).toBe(
+      "unconfigured",
+    );
+  });
+
+  it("bekreftet på en build UTEN endepunkt er ikke en sendevei", () => {
+    // Nedgradering: raden overlever, endepunktet gjør ikke. Uten SMTP er det
+    // ingenting igjen, og da er «ikke tilgjengelig» det ærlige svaret.
+    expect(
+      relayGateStatus(
+        { ...noSmtp, featureBuilt: false },
+        relay({ endpointBuilt: false, state: "confirmed" }),
+      ),
+    ).toBe("unavailable");
+  });
+
+  it("verken e-postfeature eller endepunkt ⇒ «finnes ikke i denne utgaven»", () => {
+    expect(
+      relayGateStatus(
+        { ...noSmtp, featureBuilt: false },
+        relay({ endpointBuilt: false }),
+      ),
+    ).toBe("unavailable");
+  });
+
+  it("uten endepunkt, MEN med e-postfeaturen ⇒ «ikke satt opp»", () => {
+    // Det finnes fortsatt noe å gjøre: sett opp en SMTP-server under Avansert.
+    expect(relayGateStatus(noSmtp, relay({ endpointBuilt: false }))).toBe(
+      "unconfigured",
+    );
+  });
+
+  it("ikke lest ennå ⇒ åpen, uansett hvilken av de to som mangler", () => {
+    expect(relayGateStatus(null, relay({ state: "confirmed" }))).toBe("ok");
+    expect(relayGateStatus(noSmtp, null)).toBe("ok");
+    expect(relayGateStatus(null, null)).toBe("ok");
   });
 });
 
