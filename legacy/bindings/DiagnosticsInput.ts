@@ -118,4 +118,21 @@ taskRestarts: TaskRestartSummary | null,
 /**
  * The rotating file log, if it is running.
  */
-logFile: LogFileInfo | null, };
+logFile: LogFileInfo | null, 
+/**
+ * The app database's live `journal_mode`, read back via `PRAGMA
+ * journal_mode` — should read `"wal"`. `None` when the probe failed (or a
+ * test fixture didn't set it), which the report renders as "ukjent"
+ * rather than silently claiming a mode. Lets a support report show
+ * whether an installation is ACTUALLY running WAL rather than trusting
+ * the source code — SQLite keeps a file's own journal mode until
+ * something changes it, so an install that hasn't reopened its database
+ * since before this change would otherwise look identical to one that has.
+ */
+dbJournalMode: string | null, 
+/**
+ * The app database's live `busy_timeout` in milliseconds, read back via
+ * `PRAGMA busy_timeout` — should read `30000`. Same "couldn't ask" =
+ * `None` convention as [`Self::db_journal_mode`].
+ */
+dbBusyTimeoutMs: number | null, };

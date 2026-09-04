@@ -173,6 +173,24 @@ pub struct DiagnosticsInput {
     /// The rotating file log, if it is running.
     #[serde(default)]
     pub log_file: Option<LogFileInfo>,
+
+    // ── F1-M5: WAL ────────────────────────────────────────────────────────────
+    /// The app database's live `journal_mode`, read back via `PRAGMA
+    /// journal_mode` — should read `"wal"`. `None` when the probe failed (or a
+    /// test fixture didn't set it), which the report renders as "ukjent"
+    /// rather than silently claiming a mode. Lets a support report show
+    /// whether an installation is ACTUALLY running WAL rather than trusting
+    /// the source code — SQLite keeps a file's own journal mode until
+    /// something changes it, so an install that hasn't reopened its database
+    /// since before this change would otherwise look identical to one that has.
+    #[serde(default)]
+    pub db_journal_mode: Option<String>,
+    /// The app database's live `busy_timeout` in milliseconds, read back via
+    /// `PRAGMA busy_timeout` — should read `30000`. Same "couldn't ask" =
+    /// `None` convention as [`Self::db_journal_mode`].
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub db_busy_timeout_ms: Option<u64>,
 }
 
 /// What the crash ring holds — count + newest, not the records themselves. The
@@ -643,6 +661,16 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
             if active { "aktiv" } else { "ikke aktiv" }
         ));
     }
+    // F1-M5: one line so a support report shows whether this install is
+    // actually running WAL, not just what the source code says it should do.
+    lines.push(format!(
+        "- **Database (journal_mode / busy_timeout):** {} / {}",
+        input.db_journal_mode.as_deref().unwrap_or("ukjent"),
+        input
+            .db_busy_timeout_ms
+            .map(|ms| format!("{ms} ms"))
+            .unwrap_or_else(|| "ukjent".to_string())
+    ));
     lines.push(String::new());
 
     // ── Lyd-motor ─────────────────────────────────────────────────────────────
@@ -863,6 +891,25 @@ mod tests {
         assert!(md.contains("**App-versjon:** 0.1.0"));
         assert!(md.contains("macos (aarch64)"));
         assert!(md.contains("ffmpeg version 6.0"));
+    }
+
+    #[test]
+    fn database_line_shows_journal_mode_and_busy_timeout() {
+        // F1-M5: a support report must be able to say whether an install is
+        // actually running WAL.
+        let mut input = sample_input();
+        input.db_journal_mode = Some("wal".to_string());
+        input.db_busy_timeout_ms = Some(30_000);
+        let md = build_report_markdown(input);
+        assert!(md.contains("**Database (journal_mode / busy_timeout):** wal / 30000 ms"));
+    }
+
+    #[test]
+    fn database_line_says_ukjent_when_the_probe_could_not_ask() {
+        // `sample_input()` leaves both fields at the `Default` (`None`) — the
+        // line must still appear, honestly, rather than being silently omitted.
+        let md = build_report_markdown(sample_input());
+        assert!(md.contains("**Database (journal_mode / busy_timeout):** ukjent / ukjent"));
     }
 
     #[test]

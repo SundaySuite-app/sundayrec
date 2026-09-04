@@ -608,7 +608,21 @@ pub fn run() {
                         .state::<recorder::engine::RecorderEngine>()
                         .stop();
                     app_handle.state::<audio::vu::VuEngine>().stop();
-                    tracing::info!("app exit requested — stopped recorder/vu sidecars");
+                    // F1-M5: WAL (see `db::store::open_pool`'s docs) can leave
+                    // recent commits sitting in `-wal` until checkpointed. An
+                    // orderly quit is the one moment nothing else is still
+                    // writing, so fold `-wal` into the main file now — a plain
+                    // copy of just `sundayrec.sqlite` (support, a manual
+                    // backup) is only complete once this has run.
+                    // `try_state`, not `state`: a shutdown path must never
+                    // panic, even if setup somehow never reached
+                    // `app.manage(db::Db::new(pool))`.
+                    if let Some(db) = app_handle.try_state::<db::Db>() {
+                        tauri::async_runtime::block_on(db::store::checkpoint_and_close(&db.pool));
+                    }
+                    tracing::info!(
+                        "app exit requested — stopped recorder/vu sidecars, checkpointed db"
+                    );
                 }
             }
             // macOS: clicking the Dock icon when nothing is on screen is the
