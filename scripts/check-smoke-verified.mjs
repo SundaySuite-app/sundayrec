@@ -105,7 +105,17 @@ const DOC = "docs/SMOKE-TEST.md";
 // those pointers (§«Claims this runbook used to point at a test for») replaces
 // a pointer that was DELETED in fase B, which is the shape a ratchet is meant
 // to make visible: the claim was uncovered for a whole phase.
-const MIN_POINTERS = 59;
+//
+// 59 → 65 in F1-R3/W6: «Test vekking» came back (four commands out of the
+// `unreachable` baseline, for the exact reason the reachability audit itself
+// gave for leaving them dark — a rig tool waiting for a Mac), and
+// `refreshWakeArmed()` came OUT of the 60 s reserve poll down to four named
+// triggers. Six claims: the poll touching wake_verify zero times mid-recording,
+// a scheduler-next event still fetching a fresh one outside a recording, the
+// test scheduling/cancelling, its failure sentence citing `wakeArmWord`'s own
+// catalogue, the recording guard on the test button, and the failure log
+// rendering + clearing.
+const MIN_POINTERS = 65;
 
 // ── 1. Claim lines, and which of them parse ─────────────────────────────────
 

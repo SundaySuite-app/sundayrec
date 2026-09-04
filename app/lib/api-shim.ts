@@ -40,6 +40,8 @@ import { t } from "./i18n";
 import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { Settings } from "../../legacy/bindings/Settings";
+import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
+import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
@@ -1366,6 +1368,36 @@ const api: Record<string, unknown> = {
       onBattery: null,
       standbyEnabled: null,
     }),
+  // `wake_test` / `wake_cancel_test` / `wake_failure_history` /
+  // `wake_clear_failure_history` — the four commands the fase-B door closed
+  // (see api.d.ts's file header) and W6 reopened: «Test vekking» in Avansert
+  // lets a volunteer schedule a real OS wake two minutes out — without
+  // waiting for Sunday — cancel it, and read (or clear) the log the backend
+  // has kept for it all along. HARDWARE-UNVERIFIED like the rest of `wake*`:
+  // scheduling the OS timer is proven, the machine actually resuming is not
+  // (docs/SMOKE-TEST.md §11).
+  //
+  // Fallbacks match `wakeReschedule`'s doctrine: an unanswered command must
+  // never read as a success. `wakeTest`'s `reason: "error"` mirrors
+  // `wakeReschedule`'s own fallback for the same reason — the command did not
+  // even answer, so there is no `WakeIdleReason` (or here, no OS reason) to
+  // report; inventing one would explain away a failure as a state.
+  wakeTest: async (secondsAhead: number) =>
+    call<TestWakeResult>(
+      "wake_test",
+      { secondsAhead },
+      { ok: false, jobId: null, scheduledAt: null, reason: "error" },
+    ),
+  // Best-effort by contract (src-tauri/src/wake/mod.rs::cancel_test_wake) —
+  // `false` says "we cannot confirm the cancel ran", never "it definitely
+  // did not"; the row clears its own armed state on click regardless (a
+  // stray test wake firing later is a harmless no-op, not a correctness bug).
+  wakeCancelTest: async () =>
+    call<boolean>("wake_cancel_test", undefined, false),
+  wakeFailureHistory: async () =>
+    call<WakeFailureEntry[]>("wake_failure_history", undefined, []),
+  wakeClearFailureHistory: async () =>
+    call<boolean>("wake_clear_failure_history", undefined, false),
 
   // ── Editor ──────────────────────────────────────────────────────────────
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks

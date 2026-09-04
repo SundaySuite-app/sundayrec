@@ -19,13 +19,29 @@
 // no home in the three-destination navigation — not because the diagnosis had
 // stopped being worth having, which is what a rig tester reading §5b off disk
 // with a JSON viewer proved. The screen is a row on Avansert now
-// (`app/pages/setup/advanced/DiagnoseRow.tsx`), so the list above is 42.
+// (`app/pages/setup/advanced/DiagnoseRow.tsx`).
+//
+// ⚠️ FOUR MORE are back: `wakeTest`, `wakeCancelTest`, `wakeFailureHistory`,
+// `wakeClearFailureHistory` (F1-R3/W6) — the interactive quarter of the
+// `wake*` set this file's own header used to cite as an EXAMPLE of a closed
+// door. `wakeFixSleep` and `wakeGetSleepConfig` are NOT among them and stay
+// closed: nothing in the new shell reads the sleep-config diagnostics they
+// backed. The four that came back are a row on Avansert too — «Test
+// vekking», same file as the diagnostics screen above — because the
+// reachability audit's own reason for leaving them dark (`docs/APP-SHELL.md`
+// §«Og de 20 som står igjen»: "rig tools waiting for a Mac where the wake
+// actually fails") describes a gap this row exists to close, not a feature
+// nobody wanted.
+//
+// So the list below is 38, not 42.
 //
 // `.d.ts`, not a module: this is ambient, and every file in the program sees it
 // without importing anything.
 
 import type { Settings, EditorSegment } from "../../legacy/types";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
+import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
+import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 
@@ -207,6 +223,18 @@ declare global {
        * setting is an intention, this is the fact.
        */
       wakeVerifyScheduled: () => Promise<WakeStatus>;
+      /**
+       * Schedule a real OS wake `secondsAhead` from now — a diagnostic, not a
+       * recording trigger. HARDWARE-UNVERIFIED: the scheduling is proven, the
+       * machine actually resuming is not (docs/SMOKE-TEST.md §11).
+       */
+      wakeTest: (secondsAhead: number) => Promise<TestWakeResult>;
+      /** Cancel a pending test-wake. Best-effort — see `wake_cancel_test`. */
+      wakeCancelTest: () => Promise<boolean>;
+      /** The wake-failure / test-wake log, newest-first, capped at 20. */
+      wakeFailureHistory: () => Promise<WakeFailureEntry[]>;
+      /** Clear the wake-failure log. `true` once cleared. */
+      wakeClearFailureHistory: () => Promise<boolean>;
       on: (
         channel: string,
         fn: (...args: unknown[]) => void,

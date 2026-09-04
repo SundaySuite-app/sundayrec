@@ -9,8 +9,10 @@ import {
   slotDay,
   slotRows,
   specialRows,
+  testWakeWord,
   wakeArmWord,
   wakeWord,
+  type TestWakeOutcome,
   type WakeArmResult,
   withoutIndex,
   withSlot,
@@ -202,6 +204,29 @@ describe("wakeArmWord", () => {
     "%s",
     (_name, result, word) => {
       expect(wakeArmWord(result)).toBe(word);
+    },
+  );
+});
+
+describe("testWakeWord", () => {
+  it.each([
+    ["ikke forsøkt ennå", null, "idle"],
+    // Ulikt `wakeArmWord`: en vellykket test armer alltid nøyaktig én
+    // vekking, to minutter fram — det finnes ikke et «ok, men null»-utfall
+    // her, så `count`/`idleReason` er ikke en del av `TestWakeOutcome`.
+    ["planlagt", { ok: true, reason: null }, "scheduled"],
+    // De fire feilordene er DE SAMME som `wakeArmWord` bruker for de samme
+    // `WakeErrorReason`-strengene — testen speiler den tabellen med vilje.
+    ["trenger admin", { ok: false, reason: "permission" }, "needsAdmin"],
+    ["maskinen kan ikke", { ok: false, reason: "unsupported" }, "unsupported"],
+    ["brukeren avbrøt", { ok: false, reason: "cancelled" }, "cancelled"],
+    ["generisk feil", { ok: false, reason: "error" }, "failed"],
+    ["ukjent grunn", { ok: false, reason: "noe-nytt-fra-rust" }, "failed"],
+    ["ingen grunn i det hele tatt", { ok: false, reason: null }, "failed"],
+  ] as Array<[string, TestWakeOutcome | null, string]>)(
+    "%s",
+    (_name, result, word) => {
+      expect(testWakeWord(result)).toBe(word);
     },
   );
 });

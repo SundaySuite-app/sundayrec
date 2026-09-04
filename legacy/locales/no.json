@@ -379,6 +379,23 @@
           "cancelled": "Du avbrøt — ingenting er registrert.",
           "failed": "Vekkingen ble ikke registrert."
         },
+        "wakeTest": "Test vekking om 2 min",
+        "wakeTestIdle": "Planlegg en ekte vekking to minutter fram i tid, og se om maskinen faktisk våkner.",
+        "wakeTestScheduled": "Planlagt til kl. {time} — la maskinen sove for å se om den våkner.",
+        "wakeHistoryTitle": "Vekkehistorikk",
+        "wakeHistoryDesc": "De siste testene, og eventuelle planlagte vekkinger som ikke fungerte.",
+        "wakeHistoryEmpty": "Ingen hendelser ennå.",
+        "wakeHistoryClear": "Tøm",
+        "wakeHistoryKind": {
+          "missed": "Gikk glipp av en planlagt vekking",
+          "testOk": "Testvekking lyktes",
+          "testFail": "Testvekking mislyktes"
+        },
+        "wakeHistoryReason": {
+          "noResume": "ingen gjenopptagelse observert",
+          "tooLate": "kom for sent",
+          "onBattery": "gikk på batteri"
+        },
         "audioTech": "Lyd-teknologi"
       }
     },
