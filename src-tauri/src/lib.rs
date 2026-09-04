@@ -372,6 +372,12 @@ pub fn run() {
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
+            // Give the handle-less seams somewhere to raise a warning. The
+            // Papirkurv is plain filesystem code called from six places; when
+            // it finds a manifest it cannot read, this is how the volunteer
+            // hears about it instead of just the log file.
+            notify::arm_detached(app.handle().clone());
+
             // Expire the Papirkurv. Without this the trash is a folder that
             // only ever grows — a delete that silently keeps every byte
             // forever is not a delete, it is a leak with a nice name.

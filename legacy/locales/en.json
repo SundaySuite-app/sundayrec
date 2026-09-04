@@ -1008,6 +1008,7 @@
     "prerollDead": "The pre-roll buffer is not working — sound from before you press record is not being kept.",
     "recoverySkipped": "An interrupted recording could not be fully recovered: {file}",
     "deviceMissing": "The audio device “{device}” is not connected.",
-    "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up."
+    "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
+    "trashManifestUnreadable": "The trash listing could not be read. The files are still there, but the app no longer knows where they came from."
   }
 }
