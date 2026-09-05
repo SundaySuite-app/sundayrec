@@ -454,19 +454,32 @@ jobs:
       #     read as "checked and fine" — but says so with `::warning::` and a
       #     plain sentence, so triage takes seconds instead of a re-run and a
       #     guess.
-      # Backoff (30/60/120s) is only BETWEEN attempts: a single `npm audit`
+      # Backoff (30/60/120s) is only BETWEEN attempts. A single `npm audit`
       # call took ~7 min end-to-end the day this was written (npm's own
-      # internal retries before it gives up and reports the 503), so a full
-      # 3-attempt run can take a while in the worst case — that is the actual
-      # cost of the registry being down, not a bug in this step.
+      # internal retries before it gave up on the 503); each attempt is now
+      # bounded to ~90 s by `--fetch-timeout` + `--fetch-retries=0` — THIS
+      # loop is the retry policy, npm's is not needed on top of it — so the
+      # whole loop's worst case (3 × 90 s + 210 s of backoff ≈ 8 min) fits
+      # inside the step's `timeout-minutes`.
       #
       # Deliberately UNCHANGED here: npm audit still scans the full tree
       # (dev + runtime deps), still blocking at `high`. Splitting that into
       # "--omit=dev blocking, full non-blocking" is a real option but a
       # policy call, not a CI-hygiene one — see this PR's description.
       - name: npm audit (high+), tolerant of registry 503s
+        # The overall bound; the per-attempt bound is npm's own --fetch-timeout
+        # below. Hitting this means something other than the registry hung.
+        timeout-minutes: 12
         run: |
-          set -uo pipefail  # no -e: this loop handles npm audit's exit code itself
+          # The runner's default shell is `bash -e {0}`: errexit is ON, and
+          # `set -uo pipefail` does NOT turn it off. The first version of this
+          # step assumed it did, so a failing `npm audit` aborted the step at
+          # attempt 1 — before `status=$?`, before the log was printed, before
+          # the drift-vs-finding classification and its annotation (PR #213,
+          # run 33854448949: "attempt 1/3" then "exit code 1", nothing else).
+          # The `|| status=$?` guard below is what keeps the loop alive under
+          # -e; nothing else in the loop can fail on its own.
+          set -uo pipefail
 
           max_attempts=3
           backoffs=(30 60 120)
@@ -474,8 +487,8 @@ jobs:
 
           for attempt in 1 2 3; do
             echo "── npm audit attempt ${attempt}/${max_attempts} ──"
-            npm audit --audit-level=high >"$log" 2>&1
-            status=$?
+            status=0
+            npm audit --audit-level=high --fetch-timeout=90000 --fetch-retries=0 >"$log" 2>&1 || status=$?
             cat "$log"
 
             if [ "$status" -eq 0 ]; then
@@ -483,7 +496,7 @@ jobs:
               exit 0
             fi
 
-            if grep -qiE "audit endpoint returned an error|registry\.npmjs\.org.*(Unavailable|Too Many Requests)|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN" "$log"; then
+            if grep -qiE "audit endpoint returned an error|network timeout|registry\.npmjs\.org.*(Unavailable|Too Many Requests)|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN" "$log"; then
               if [ "$attempt" -lt "$max_attempts" ]; then
                 wait_s="${backoffs[$((attempt - 1))]}"
                 echo "::warning::npm audit attempt ${attempt}/${max_attempts} — the npmjs.org audit endpoint itself errored (registry drift, not necessarily a finding in this repo). Retrying in ${wait_s}s."
