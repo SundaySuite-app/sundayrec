@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use cpal::traits::StreamTrait;
 use ringbuf::traits::Split;
+use sundayrec_core::alerts::AlertText;
 use sundayrec_core::levels::SILENCE_FLOOR_DB;
 use sundayrec_core::preflight::{
     finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
@@ -764,7 +765,7 @@ where
             _ = &mut startup_sleep, if !started_seen => {
                 sink.error(
                     "start_timeout",
-                    "Opptaket startet ikke i tide — sjekk at mikrofonen er tilkoblet og at appen har tilgang (Systeminnstillinger → Personvern).",
+                    &AlertText::RecordingStartTimeoutMic.text(crate::ui_lang::current()),
                 );
                 seg.stop().await;
                 break SegmentOutcome::UnexpectedExit {
@@ -818,7 +819,7 @@ where
                     DiskVerdict::DiskStop => {
                         sink.error(
                             "disk_full",
-                            "Lite ledig diskplass — stopper opptaket trygt før disken blir full.",
+                            &AlertText::RecordingDiskFull.text(crate::ui_lang::current()),
                         );
                         seg.stop().await;
                         break SegmentOutcome::DiskStop;

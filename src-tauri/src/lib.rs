@@ -104,6 +104,11 @@ pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
 // DTO + `UpdateEngine` compile in every build; `update_check`/
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
+// F1 A8 — the cached UI language, for the two places that cannot ask the
+// database for it: the capture loop (a settings read there is the 2026-07-31
+// back-pressure bug again) and `supervise::TaskAlert`. Everywhere else keeps
+// reading `settings.language` directly; see the module docs.
+pub mod ui_lang;
 pub mod util;
 // P3b — the macOS application menu. It exists ONLY so Cmd+Q is interceptable at
 // all: tauri's default menu wires Quit to AppKit's `terminate:`, which never

@@ -22,6 +22,15 @@ pub const SETTINGS_KEY: &str = "settings";
 /// key is absent), merge it over the defaults so older/partial blobs never
 /// crash, then validate (clamp numeric ranges). The result is always a valid
 /// [`Settings`].
+///
+/// Also warms [`crate::ui_lang`] with `settings.language`. That is a cache
+/// write, not a second source of truth: the capture loop and the task
+/// supervisors cannot do a database round-trip when they need to name a
+/// language, and this is the funnel every settings read already goes through —
+/// the scheduler's supervisor pass, every failure dispatch, every command. A
+/// caller who has the `Settings` in hand should keep using
+/// `MailLang::from_code(settings.language.as_deref())` directly; see
+/// `ui_lang`'s module docs for which two places may not.
 pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
     let raw = store::get_setting(pool, SETTINGS_KEY).await?;
     let mut settings = match raw {
@@ -29,6 +38,7 @@ pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
         None => Settings::default(),
     };
     settings.validate();
+    crate::ui_lang::note(settings.language.as_deref());
     Ok(settings)
 }
 

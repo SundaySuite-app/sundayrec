@@ -420,8 +420,8 @@ pub fn spawn_periodic_drain(app: AppHandle) {
         app.clone(),
         "telemetry::drain",
         crate::supervise::TaskAlert {
-            title: "SundayRec",
-            body: "Bakgrunnsoppgaven for kvalitetsrapporter startet på nytt.",
+            title: None,
+            body: sundayrec_core::alerts::AlertText::QualityTaskRestarted,
         },
         move || {
             let app = app.clone();

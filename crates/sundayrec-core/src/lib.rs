@@ -17,6 +17,7 @@
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
 //!   - [`device_enum`]  — pure ffmpeg `-list_devices` stderr parsers (audio + video)
 //!   - [`email`]         — error/test/missed/receipt/confirm mail templates (7-lang) + throttle/dedup gate (PU-1)
+//!   - [`alerts`]        — the sentences the NATIVE notification and the alert mail's body say, in the same 7 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
 //!   - [`relay`]         — the e-mail relay's outbox decisions: which queued row may leave an unconfirmed subscription, when a row is too old to send, and what "we already said this" means per event kind (A1)
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
@@ -45,6 +46,7 @@
 //!   - [`tuning`]       — EVERY number the sermon detector decides with, in one documented table: what each means, what moving it does, and honestly which ones nobody can justify. [`audio_analysis`] and [`detect`] re-export from here, so there is one definition of each (E10)
 
 pub mod ab_eval;
+pub mod alerts;
 pub mod audio;
 pub mod audio_analysis;
 pub mod capture;

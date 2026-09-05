@@ -42,6 +42,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use sundayrec_core::alerts::AlertText;
 use tauri::AppHandle;
 
 /// A supervisor that ran at least this long before dying was a one-off, not a
@@ -65,10 +66,21 @@ const ESCALATE_AT: u32 = 3;
 /// in fifteen seconds is a real fault the operator can act on (restart the app,
 /// run Diagnose), and deciding per task what they are told is a decision worth
 /// making deliberately rather than defaulting.
+///
+/// F1 A8: the two `&'static str` fields were Norwegian sentences, so a Polish
+/// or German church was told its scheduler had died in a language it had not
+/// chosen. They are [`AlertText`] keys now, resolved to a sentence at FIRE
+/// time — not at spawn time — through [`crate::ui_lang`]. Spawn time is
+/// process start, before the renderer has pushed a language change; fire time
+/// is the moment the person is actually being told something.
 #[derive(Debug, Clone, Copy)]
 pub struct TaskAlert {
-    pub title: &'static str,
-    pub body: &'static str,
+    /// The notification title, or `None` for the bare app name. Three of the
+    /// five call sites want exactly that (both telemetry tasks and the relay
+    /// pump): "SundayRec" is a product name, and translating it seven ways
+    /// would be inventing work.
+    pub title: Option<AlertText>,
+    pub body: AlertText,
 }
 
 /// What to do after a supervised task's handle resolved. Pure — the whole
@@ -124,7 +136,16 @@ where
 {
     tauri::async_runtime::spawn(supervise_loop(
         name,
-        move || crate::notify::native(&app, alert.title, alert.body),
+        move || {
+            // Resolved HERE, when the alert actually fires: the volunteer may
+            // have picked their language long after this task was spawned.
+            let lang = crate::ui_lang::current();
+            let title = alert
+                .title
+                .map(|t| t.text(lang))
+                .unwrap_or_else(|| crate::notify::APP_TITLE.to_string());
+            crate::notify::native(&app, &title, &alert.body.text(lang));
+        },
         factory,
     ));
 }

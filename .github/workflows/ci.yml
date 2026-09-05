@@ -153,6 +153,19 @@ jobs:
       - name: recorder error codes are translatable in the shell
         run: npm run error-codes
 
+      # Norsk-skrallen (F1 D5): antall `æøåÆØÅ` i PRODUKSJONS-strengliteraler
+      # under src-tauri/src og crates/<krate>/src, per fil, mot en fasit som
+      # bare kan gå NED. Setningene som når en frivillig utenfor skjermen —
+      # OS-varselet og linja i varsel-e-posten — bor i
+      # `sundayrec_core::alerts`, der kompilatoren krever alle sju språk; denne
+      # gaten er det som hindrer at nye norske setninger sniker seg tilbake inn
+      # i motoren. Sju-språks-katalogene og de norske DATA-tabellene står på
+      # allowlisten i scripts/rust-norwegian-baseline.json, med grunnen skrevet
+      # ut. Selvtest innebygd som mutasjonsvern. I `npm run check` og
+      # ci-local.sh også — gate-paritet er lov.
+      - name: no new Norwegian string literals in Rust
+        run: npm run rust-norwegian
+
       # docs/SMOKE-TEST.md's VERIFIED-BY pointers must resolve to tests that
       # still exist — a pointer at nothing claims coverage that does not exist.
       # In `npm run check` since E11; mirrored here so a PR can't skip it.

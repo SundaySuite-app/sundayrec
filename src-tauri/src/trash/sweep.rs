@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+use sundayrec_core::alerts::AlertText;
 use tauri::{AppHandle, Manager};
 
 use crate::db::{store, Db};
@@ -30,10 +31,8 @@ pub fn spawn(app: AppHandle) {
         app,
         "trash::sweep",
         crate::supervise::TaskAlert {
-            title: "SundayRec — opprydding stoppet",
-            body: "Den automatiske tømmingen av papirkurven har en vedvarende feil, så \
-                   slettede opptak blir liggende og bruke plass. Start appen på nytt; \
-                   vedvarer det, kjør Diagnose under Innstillinger → Lyd.",
+            title: Some(AlertText::TrashSweepTaskTitle),
+            body: AlertText::TrashSweepTaskBody,
         },
         move || {
             let app = tick_app.clone();

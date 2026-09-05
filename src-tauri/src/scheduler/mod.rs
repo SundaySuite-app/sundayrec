@@ -52,6 +52,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 use ts_rs::TS;
 
+use sundayrec_core::alerts::AlertText;
+use sundayrec_core::email::MailLang;
 use sundayrec_core::schedule::{
     active_within, capped_supervisor_sleep_ms, late_start_choice, missed_recordings,
     next_recording, prune_specials, scheduled_max_minutes, supervisor_should_fire, upcoming_dates,
@@ -63,6 +65,7 @@ use sundayrec_core::wake::background_wake_log_action;
 
 use crate::db::Db;
 use crate::error::AppResult;
+use crate::notify::APP_TITLE;
 use crate::recorder::engine::RecorderEngine;
 use crate::settings;
 use crate::util::lock_recover;
@@ -254,10 +257,8 @@ impl SchedulerEngine {
             app,
             "scheduler::supervisor",
             crate::supervise::TaskAlert {
-                title: "SundayRec — planlegger-feil",
-                body: "Planleggeren har en vedvarende feil og kan gå glipp av planlagte \
-                       opptak. Start appen på nytt; vedvarer det, kjør Diagnose under \
-                       Innstillinger → Lyd.",
+                title: Some(AlertText::SchedulerTaskTitle),
+                body: AlertText::SchedulerTaskBody,
             },
             move || supervisor(sup_app.clone(), notify.clone(), next.clone()),
         );
@@ -457,8 +458,8 @@ async fn fire(
                 if should_notify(SchedulerNotice::SkippedBusy, settings) {
                     notify_user(
                         app,
-                        "SundayRec",
-                        "Planlagt opptak hoppet over — et opptak pågår allerede.",
+                        APP_TITLE,
+                        &AlertText::ScheduledSkippedBusy.text(lang_of(settings)),
                     );
                 }
                 return;
@@ -517,7 +518,11 @@ async fn fire(
                             // just pressed the button). Gated; the FAILURE arms
                             // below are not.
                             if should_notify(SchedulerNotice::StartedScheduled, settings) {
-                                notify_user(app, "SundayRec", "Planlagt opptak startet.");
+                                notify_user(
+                                    app,
+                                    APP_TITLE,
+                                    &AlertText::ScheduledStarted.text(lang_of(settings)),
+                                );
                             }
                         }
                         // A scheduled recording that does not start is the single
@@ -531,7 +536,8 @@ async fn fire(
                             dispatch_scheduler_failure(
                                 app,
                                 "scheduled_start_failed",
-                                format!("Planlagt opptak startet ikke: {e}"),
+                                AlertText::ScheduledStartFailed
+                                    .fill(lang_of(settings), &[("detail", &e.to_string())]),
                             )
                             .await;
                         }
@@ -540,8 +546,7 @@ async fn fire(
                             dispatch_scheduler_failure(
                                 app,
                                 "scheduled_start_timeout",
-                                "Planlagt opptak startet ikke (tidsavbrudd) — sjekk kamera/mikrofon."
-                                    .to_string(),
+                                AlertText::ScheduledStartTimeout.text(lang_of(settings)),
                             )
                             .await;
                         }
@@ -552,7 +557,8 @@ async fn fire(
                     dispatch_scheduler_failure(
                         app,
                         "scheduled_prepare_failed",
-                        format!("Planlagt opptak kunne ikke forberedes: {e}"),
+                        AlertText::ScheduledPrepareFailed
+                            .fill(lang_of(settings), &[("detail", &e.to_string())]),
                     )
                     .await;
                 }
@@ -566,16 +572,23 @@ async fn fire(
             // engine); a stop that later fails to finalise reaches the operator
             // through the failure dispatch, which is never gated.
             if should_notify(SchedulerNotice::StoppedScheduled, settings) {
-                notify_user(app, "SundayRec", "Planlagt opptak avsluttet.");
+                notify_user(
+                    app,
+                    APP_TITLE,
+                    &AlertText::ScheduledStopped.text(lang_of(settings)),
+                );
             }
         }
         ScheduledEventKind::Reminder => {
-            let body = reminder_body(settings.language.as_deref(), settings.reminder_minutes);
+            let body = AlertText::Reminder.fill(
+                lang_of(settings),
+                &[("min", &settings.reminder_minutes.to_string())],
+            );
             // ALWAYS fires (should_notify pins Reminder on — not governed by
             // notify_start/notify_stop): the reminder has its own opt-in,
             // `reminder_minutes` = 0 means the event is never scheduled at all.
             if should_notify(SchedulerNotice::Reminder, settings) {
-                notify_user(app, "SundayRec", &body);
+                notify_user(app, APP_TITLE, &body);
             }
         }
         ScheduledEventKind::Preflight => {
@@ -602,7 +615,18 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool, settings: &
         // problem report: should_notify pins PreflightFinding on regardless of
         // the notify_start/notify_stop comfort toggles.
         if should_notify(SchedulerNotice::PreflightFinding, settings) {
-            notify_user(app, "SundayRec — sjekk før opptak", &first.message);
+            // The TITLE is localized; the finding's own `message` is not.
+            // `PreflightFinding` is a whole surface of its own — a `category`
+            // plus a free sentence, rendered as a card in the app as well as
+            // here — and localizing it means giving that surface a catalog, not
+            // bolting three of its sentences onto `AlertText`. The ratchet
+            // holds its current count (`preflight.rs`: 5) so it cannot grow
+            // while it waits.
+            notify_user(
+                app,
+                &AlertText::PreflightTitle.text(lang_of(settings)),
+                &first.message,
+            );
         }
     }
 
@@ -717,7 +741,8 @@ pub async fn check_missed(
                     dispatch_scheduler_failure(
                         app,
                         "scheduled_late_start_failed",
-                        format!("Forsinket oppstart av planlagt opptak feilet: {e}"),
+                        AlertText::ScheduledLateStartFailed
+                            .fill(lang_of(&settings), &[("detail", &e.to_string())]),
                     )
                     .await;
                 }
@@ -825,7 +850,7 @@ async fn report_missed(app: &AppHandle, pool: &SqlitePool, missed: &[MissedRecor
     use sundayrec_core::relay::SeenScope;
 
     let settings = settings::load(pool).await.unwrap_or_default();
-    let lang = sundayrec_core::email::MailLang::from_code(settings.language.as_deref());
+    let lang = lang_of(&settings);
     let fmt = sundayrec_core::notify::alert_date_format(lang);
     let now = crate::util::now_ms();
 
@@ -835,7 +860,7 @@ async fn report_missed(app: &AppHandle, pool: &SqlitePool, missed: &[MissedRecor
         return;
     }
 
-    let message = missed_summary(&fresh);
+    let message = missed_summary(&fresh, lang);
     tracing::warn!(
         count = fresh.len(),
         "scheduler: reporting missed scheduled recording(s)"
@@ -917,21 +942,28 @@ async fn unreported_missed(
     fresh
 }
 
-/// The one Norwegian sentence the native notification shows and the SMTP alert
-/// carries. The relay's mail is [`sundayrec_core::email::render_missed`]'s
-/// instead — seven languages, one line per occurrence — because it has a
-/// subject and a body to fill and this has a toast to fit in.
-fn missed_summary(missed: &[crate::notify::MissedSlot]) -> String {
+/// The one sentence the native notification shows and the SMTP alert carries.
+/// The relay's mail is [`sundayrec_core::email::render_missed`]'s instead —
+/// seven languages, one line per occurrence — because it has a subject and a
+/// body to fill and this has a toast to fit in.
+///
+/// F1 A8: this was the last Norwegian-only sentence on the missed path, which
+/// made it the worst one. A church whose machine slept through Sunday morning
+/// gets exactly this line, on the desktop and in the mail; a Polish volunteer
+/// got it in Norwegian. The slot LABEL inside it stays as the schedule wrote
+/// it — see [`sundayrec_core::alerts`]'s header: it is hashed into the durable
+/// `notify_seen` key, so translating it would re-alert the same Sunday every
+/// time somebody changes language.
+fn missed_summary(missed: &[crate::notify::MissedSlot], lang: MailLang) -> String {
     match missed {
-        [one] => format!(
-            "Planlagt opptak ble ikke gjort: {} ({}).",
-            one.label, one.at
-        ),
-        many => format!(
-            "{} planlagte opptak ble ikke gjort. Det eldste: {} ({}).",
-            many.len(),
-            many[0].label,
-            many[0].at
+        [one] => AlertText::MissedOne.fill(lang, &[("label", &one.label), ("at", &one.at)]),
+        many => AlertText::MissedMany.fill(
+            lang,
+            &[
+                ("count", &many.len().to_string()),
+                ("label", &many[0].label),
+                ("at", &many[0].at),
+            ],
         ),
     }
 }
@@ -1060,19 +1092,15 @@ async fn dispatch_scheduler_failure(app: &AppHandle, code: &str, message: String
     .await;
 }
 
-/// The localised "recording starts in N minutes" body. Ports the Electron
-/// `REMINDER_LABELS` map; unknown languages fall back to Norwegian.
-fn reminder_body(lang: Option<&str>, minutes: i32) -> String {
-    let tpl = match lang.unwrap_or("no") {
-        "en" => "Recording starts in {min} minutes",
-        "de" => "Aufnahme beginnt in {min} Minuten",
-        "sv" => "Inspelning börjar om {min} minuter",
-        "da" => "Optagelse starter om {min} minutter",
-        "pl" => "Nagranie rozpocznie się za {min} minut",
-        "fr" => "Enregistrement dans {min} minutes",
-        _ => "Opptak starter om {min} minutter",
-    };
-    tpl.replace("{min}", &minutes.to_string())
+/// The volunteer's language, from the settings this pass already loaded.
+///
+/// Every scheduler site that says something to a person goes through here — and
+/// through the SETTINGS, not through [`crate::ui_lang`]'s cache: this module
+/// always has a freshly-loaded `Settings` in hand, so it can use the source
+/// rather than the cache. (The recorder's capture loop cannot, which is what
+/// the cache exists for.)
+fn lang_of(settings: &Settings) -> MailLang {
+    MailLang::from_code(settings.language.as_deref())
 }
 
 #[cfg(test)]
@@ -1124,19 +1152,73 @@ mod tests {
         assert_eq!(fmt_dt(dt), "2026-06-07T11:00:00");
     }
 
+    /// The reminder moved to `sundayrec_core::alerts` (F1 A8), which pins the
+    /// seven wordings and their `{min}` placeholder. What is still THIS
+    /// module's to prove is the seam: that `settings.language` reaches the
+    /// catalog, and that the minutes reach the placeholder. A `lang_of` that
+    /// returned a constant would pass the core's tests and fail here.
     #[test]
-    fn reminder_body_localises_and_falls_back() {
+    fn the_reminder_speaks_the_settings_language() {
+        let en = Settings {
+            language: Some("en".into()),
+            reminder_minutes: 15,
+            ..Settings::default()
+        };
         assert_eq!(
-            reminder_body(Some("en"), 15),
+            AlertText::Reminder.fill(lang_of(&en), &[("min", &en.reminder_minutes.to_string())]),
             "Recording starts in 15 minutes"
         );
+
+        let no = Settings {
+            language: Some("no".into()),
+            reminder_minutes: 10,
+            ..Settings::default()
+        };
         assert_eq!(
-            reminder_body(Some("no"), 10),
+            AlertText::Reminder.fill(lang_of(&no), &[("min", &no.reminder_minutes.to_string())]),
             "Opptak starter om 10 minutter"
         );
-        // Unknown language → Norwegian.
-        assert_eq!(reminder_body(Some("xx"), 5), "Opptak starter om 5 minutter");
-        assert_eq!(reminder_body(None, 30), "Opptak starter om 30 minutter");
+
+        // Unknown language, and "follow the OS" (None) → Norwegian.
+        for code in [Some("xx".to_string()), None] {
+            let s = Settings {
+                language: code,
+                reminder_minutes: 5,
+                ..Settings::default()
+            };
+            assert_eq!(
+                AlertText::Reminder.fill(lang_of(&s), &[("min", &s.reminder_minutes.to_string())]),
+                "Opptak starter om 5 minutter"
+            );
+        }
+    }
+
+    /// Every scheduler sentence goes through `lang_of`, so a settings language
+    /// the catalog knows must produce a NON-Norwegian sentence. This is the
+    /// test that would fail if somebody re-hardcoded a literal at a call site:
+    /// the Polish church in finding A8 would be back to Norwegian alerts.
+    #[test]
+    fn a_polish_church_gets_polish_scheduler_alerts() {
+        let pl = Settings {
+            language: Some("pl".into()),
+            ..Settings::default()
+        };
+        assert_eq!(lang_of(&pl), MailLang::Pl);
+        for a in [
+            AlertText::ScheduledSkippedBusy,
+            AlertText::ScheduledStarted,
+            AlertText::ScheduledStopped,
+            AlertText::ScheduledStartTimeout,
+            AlertText::PreflightTitle,
+            AlertText::SchedulerTaskTitle,
+            AlertText::SchedulerTaskBody,
+        ] {
+            assert_ne!(
+                a.text(lang_of(&pl)),
+                a.text(MailLang::No),
+                "{a:?} came out Norwegian for a Polish church"
+            );
+        }
     }
 
     // ── Scheduler decision contract (time-injected) ─────────────────────────
@@ -1691,15 +1773,40 @@ mod tests {
             date: "06.09.2026 11:00".into(),
         };
         let many = vec![one.clone(), one.clone(), one.clone()];
-        let s1 = missed_summary(std::slice::from_ref(&one));
+        let s1 = missed_summary(std::slice::from_ref(&one), MailLang::No);
         assert!(s1.contains("Ukentlig opptak") && s1.contains("2026-09-06T11:00:00"));
         assert!(
             !s1.starts_with('1') && !s1.contains("eldste"),
             "a single occurrence is named, not counted and not ranked: {s1}"
         );
-        let s3 = missed_summary(&many);
+        let s3 = missed_summary(&many, MailLang::No);
         assert!(s3.starts_with('3'), "{s3}");
         assert!(s3.contains("eldste"), "the headline names the oldest: {s3}");
+
+        // …and the SAME two shapes in the volunteer's own language (F1 A8).
+        // The Sunday a church lost is the one sentence that must never arrive
+        // in a language nobody in the building reads.
+        let p1 = missed_summary(std::slice::from_ref(&one), MailLang::Pl);
+        assert!(
+            p1.starts_with("Zaplanowane nagranie nie zostało wykonane:"),
+            "{p1}"
+        );
+        let p3 = missed_summary(&many, MailLang::Pl);
+        assert!(p3.starts_with("Nie wykonano 3 "), "{p3}");
+        // The slot LABEL is deliberately untranslated in both: it is hashed
+        // into the durable `notify_seen` key, and a key that moves with the
+        // language re-alerts the same Sunday. See `sundayrec_core::alerts`.
+        assert!(p1.contains("Ukentlig opptak (11:00–13:00)"), "{p1}");
+        let same_slot_polish_date = crate::notify::MissedSlot {
+            date: "6.09.2026 11:00".into(),
+            ..one.clone()
+        };
+        assert_eq!(
+            same_slot_polish_date.seen_key(),
+            one.seen_key(),
+            "the ledger key must not move when the language does — otherwise \
+             switching language re-alerts every missed Sunday"
+        );
     }
 
     /// The receipt's marker: taken once, and gone.

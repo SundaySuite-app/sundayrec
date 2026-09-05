@@ -70,8 +70,14 @@ pub fn get_launch_at_login<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool 
 /// the tray cannot read it from the database — the renderer pushes it here at
 /// startup and on every language change. A no-op in a build without the `tray`
 /// feature, so the renderer can call it unconditionally.
+///
+/// F1 A8: the same push also warms [`crate::ui_lang`], so a language change
+/// reaches the native notifications and the alert bodies IMMEDIATELY rather
+/// than at the next settings read. The tray is no longer the only backend
+/// surface that has to be told.
 #[tauri::command]
 pub fn tray_set_language(app: tauri::AppHandle, code: String) {
+    crate::ui_lang::note(Some(&code));
     crate::tray_note_language(&app, &code);
 }
 

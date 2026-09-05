@@ -75,6 +75,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use sundayrec_core::alerts::AlertText;
 use sundayrec_core::capture::{build_unified_capture_args, resolve_camera_mode, CaptureOpts};
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
@@ -1575,7 +1576,11 @@ async fn run_session(
                             let code = last_error
                                 .map(error_code_str)
                                 .unwrap_or("device_disconnected");
-                            emit_error(&app, code, "Opptaket kunne ikke gjenopprettes");
+                            emit_error(
+                                &app,
+                                code,
+                                &AlertText::RecordingNotRecovered.text(crate::ui_lang::current()),
+                            );
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // Fail-stop keeps the manifest (no delete on this path).
                             let _ = finalize_pending(
@@ -2506,7 +2511,7 @@ async fn run_segment(
                 emit_error(
                     app,
                     "start_timeout",
-                    "Opptaket startet ikke i tide — sjekk at kamera/mikrofon er tilkoblet og at appen har tilgang (Systeminnstillinger → Personvern).",
+                    &AlertText::RecordingStartTimeout.text(crate::ui_lang::current()),
                 );
                 let _ = child.start_kill();
                 let _ = child.wait().await;
@@ -2583,7 +2588,7 @@ async fn run_segment(
                             emit_error(
                                 app,
                                 "disk_full",
-                                "Lite ledig diskplass — stopper opptaket trygt før disken blir full.",
+                                &AlertText::RecordingDiskFull.text(crate::ui_lang::current()),
                             );
                             // Graceful stop so the container is finalised + playable.
                             stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
@@ -3129,7 +3134,7 @@ async fn finalize_one(
         emit_error(
             app,
             "empty_output",
-            "Opptaket ble tomt eller skadet — ingen fil ble lagret.",
+            &AlertText::RecordingEmptyOutput.text(crate::ui_lang::current()),
         );
         return false;
     }
