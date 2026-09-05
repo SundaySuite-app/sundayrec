@@ -230,6 +230,17 @@ test.describe("første gang", () => {
       await page.getByTestId("first-run-next").click();
     }
     await page.getByTestId("first-run-open").click();
+    // `finish()` only calls `navigate("record")` AFTER its debounced save
+    // resolves — so waiting for THIS is what waits for the write to have
+    // actually landed. `first-run-resume` turns hidden earlier than that
+    // (patchSettings flips `onboardingDone` in memory, synchronously, before
+    // the awaited save settles), so checking it first would race the write
+    // storedSettings() reads below: the one-shot read is not itself a
+    // retrying assertion.
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "record",
+    );
     await expect(page.getByTestId("first-run-resume")).toBeHidden();
     expect((await storedSettings(page)).onboardingDone).toBe(true);
   });
