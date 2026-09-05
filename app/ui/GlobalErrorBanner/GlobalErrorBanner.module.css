@@ -1,0 +1,13 @@
+/*
+ * Fast plassert øverst, uavhengig av hvilket bånd (topplinje, opptaksoverlegg,
+ * dialog) som måtte stå under — se filhodet i GlobalErrorBanner.tsx for
+ * hvorfor `--z-critical` er riktig lag.
+ */
+.wrap {
+  position: fixed;
+  top: var(--sp-4);
+  left: var(--sp-4);
+  right: var(--sp-4);
+  z-index: var(--z-critical);
+  box-shadow: var(--shadow-toast);
+}

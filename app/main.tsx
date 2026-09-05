@@ -68,7 +68,7 @@ import { initPreroll } from "./state/preroll";
 import { initRecording } from "./state/recording";
 import { loadRecordingCount } from "./state/recordings";
 import { initRetention } from "./state/retention";
-import { hydrateSettings, settings } from "./state/settings";
+import { flushSavePending, hydrateSettings, settings } from "./state/settings";
 import { toast } from "./ui/toast";
 
 /** Dyplenken denne oppstarten kom med, eller `null`. */
@@ -152,6 +152,30 @@ installErrorHandlers();
 // siden av `showPage`, fordi den hører til samme klasse: noe UTENFOR treet
 // hviler på at den finnes.
 installEditorEntry();
+
+/*
+ * Skriv en ventende innstilling FØR vinduet faktisk forsvinner (R2).
+ *
+ * `flushSavePending` hadde null kallere: en endring gjort i koaleserings-
+ * vinduet (`SAVE_COALESCE_MS`, 120 ms — se `lib/ui/bind-setting-core.ts`)
+ * rett før ⌘W UTENFOR et opptak gikk tapt. `window.rs` skjuler vinduet og
+ * lar opptaket fortsette bare UNDER en økt; ellers går lukkingen rett til
+ * `ExitRequested`, og timeren dør sammen med prosessen — ingen flere
+ * JS-tikk kommer.
+ *
+ * `pagehide` (vinduet forsvinner) og `beforeunload` (rett før — noen
+ * WebView-er leverer bare den ene) kaller begge den samme funksjonen.
+ * Ærlig sagt: dette er fire-and-forget over IPC, ikke en garanti. Et vindu
+ * Tauri dreper midt i selve `settings_save`-rundturen kan fortsatt miste
+ * den — det er det VALGFRIE steg 2 (en vertsside i `src-tauri/src/
+ * window.rs` som venter på svaret før den lar prosessen dø) ville lukket,
+ * og som denne PR-en ikke gjør (se PR-teksten for hvorfor). Forskjellen
+ * fra i dag er likevel hele poenget: FØR dette kallet rakk skrivningen
+ * ALDRI fram i dette vinduet; ETTER rekker den så lenge prosessen selv får
+ * leve de få millisekundene en lokal IPC-rundtur tar.
+ */
+window.addEventListener("beforeunload", () => void flushSavePending());
+window.addEventListener("pagehide", () => void flushSavePending());
 
 void boot();
 

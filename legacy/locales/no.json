@@ -691,7 +691,8 @@
       "missedTitle": "{when} ble ikke tatt opp",
       "missedDesc": "Maskinen var av. Automatisk opptak krever at den står på eller i dvale.",
       "missedWhy": "Hva kan jeg gjøre?",
-      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart."
+      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart.",
+      "globalErrorTitle": "Noe gikk galt"
     }
   },
   "nav": {
