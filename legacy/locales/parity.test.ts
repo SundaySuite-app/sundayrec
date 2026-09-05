@@ -765,6 +765,12 @@ export const PAUSED_KEYS = new Set([
   // fem-spørsmålssekvensen på nytt ved neste oppstart. Ny tekst på en ny
   // knapp, derfor pauset som alt annet redesignet har lagt til.
   'app.first.resumeChip',
+  // F1-UX1: «Du kan lukke vinduet — opptaket fortsetter i bakgrunnen.»
+  // (`RecordingOverlay.tsx`'s `overlay-close-hint`) — canvasens `ov.hint`,
+  // holdt ute av skjermen til `window.rs` faktisk skjulte vinduet i stedet
+  // for å avslutte opptaket (P3). Ny nøkkel, derfor pauset som alt annet
+  // redesignet har lagt til.
+  'app.overlay.closeHint',
 ])
 
 const reference = flattenKeys(no as Tree).sort()
