@@ -157,7 +157,8 @@
         "placeholder": "For example Bryn Church",
         "languageLabel": "Language in the app",
         "languageDesc": "Changes right away.",
-        "language": "Language: {language}"
+        "language": "Language: {language}",
+        "languagePaused": "This language is temporarily unavailable in the redesigned setup — the app shows {language} for now."
       },
       "notify": {
         "lede": "The computer always tells you. Email is for whoever isn’t sitting at it.",

@@ -115,6 +115,7 @@ import { SoundStep } from "./SoundStep";
 import { spanLabel } from "./span";
 import { resultLine } from "./summary";
 import { WaveformHost } from "./WaveformHost";
+import { longDateTitle } from "@lib/ui/date-title";
 import { DOT } from "@lib/ui/dot";
 import styles from "./editor.module.css";
 
@@ -132,15 +133,7 @@ export function editorHeading(): string {
   const at = startedAtMs.value;
   const name = fileName.value;
   if (at === null) return name || t("nav.editor");
-  const loc = locale.value;
-  const when = new Date(at);
-  const date = when.toLocaleDateString(loc, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  return date ? date[0].toLocaleUpperCase(loc) + date.slice(1) : name;
+  return longDateTitle(at, locale.value);
 }
 
 export function EditorPage() {
