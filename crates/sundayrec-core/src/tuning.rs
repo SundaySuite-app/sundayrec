@@ -260,28 +260,45 @@ pub const SPEECH_CENTROID_MIN_HZ: f64 = 300.0;
 /// **Provenance:** Electron, recorded only as "vocal band". No measurement.
 pub const SPEECH_CENTROID_MAX_HZ: f64 = 3500.0;
 
-/// Spectral flux above which a frame looks like speech (unitless — the L2 norm
-/// of the bin-wise magnitude change since the previous frame, on the un-normalised
-/// [`FFT_SIZE`] spectrum).
+/// Normalised spectral flux above which a frame looks like speech (unitless —
+/// the L2 distance between consecutive UNIT-NORMALISED magnitude spectra; see
+/// [`crate::audio_analysis::spectral_flux`]). Range `[0, √2]`: 0 means the
+/// spectral shape did not move at all, √2 means it shares no energy with the
+/// previous frame's.
 ///
-/// **⚠️ Scale-dependent.** Flux is computed from raw magnitudes, so it grows
-/// with LEVEL: the same sermon recorded 10 dB hotter has ~3× the flux. This is
-/// the constant most likely to behave differently between a church running a
-/// well-gain-staged Qu-5 and one recording off a built-in mic, and the most
-/// likely to need a per-recording normalisation rather than a new number.
+/// **Level-invariant by construction.** Until 2026-08-08 flux was computed on
+/// raw magnitudes (thresholds 8.0 speech / 6.0 music), so it grew with LEVEL:
+/// the same sermon recorded ~10 dB hotter had ~3× the flux, and a tremolo
+/// organ pad — spectral shape constant, only level moving — measured as
+/// `speech` when hot and `music` 10 dB quieter
+/// (`tests/flux_level_invariance.rs` pins that defect and its fix). The
+/// normalisation removes the level axis entirely; what this constant now
+/// thresholds is how fast the spectral SHAPE moves, which is the property that
+/// actually separates syllabic speech from sustained music.
 ///
-/// **Up:** only strongly modulated, loud speech scores the feature; quiet
-/// recordings lose the speech flux point everywhere at once.
+/// **Up:** only strongly modulated speech scores the feature — but no longer
+/// only LOUD speech; gain staging cannot take the point away.
 ///
-/// **Down:** toward [`MUSIC_FLUX_MAX`] (6.0) and eventually past it, at which
-/// point frames score BOTH flux features and the two signatures stop separating
-/// at all. Keep `SPEECH_FLUX_MIN > MUSIC_FLUX_MAX` or the classifier's
+/// **Down:** toward [`MUSIC_FLUX_MAX`] and eventually past it, at which point
+/// frames score BOTH flux features and the two signatures stop separating at
+/// all. Keep `SPEECH_FLUX_MIN > MUSIC_FLUX_MAX` or the classifier's
 /// discrimination collapses.
 ///
-/// **Provenance:** the Electron source's word for it is "empirical" — no test
-/// material, level, or measurement recorded. This is the weakest-justified
-/// constant in the file.
-pub const SPEECH_FLUX_MIN: f64 = 8.0;
+/// **Provenance:** derived 2026-08-08 from measurements over the synthetic
+/// corpus in `tests/tuning_golden.rs`, taken at every gain from −20 to +10 dB
+/// (the normalised value is identical at each, which is the point):
+/// speech-like frames (syllabically modulated low-passed noise) measure
+/// 0.565–0.753; broadband noise 0.62–0.70; a sustained chord ≤ 0.011;
+/// sustained tone stacks ≤ 0.0005; a tremolo pad — the hardest sustained case,
+/// its level moving but its shape fixed — ≤ 0.112. The gap between the highest
+/// sustained-music value (0.112) and the lowest speech value (0.565) spans a
+/// factor of ~5; 0.35 and [`MUSIC_FLUX_MAX`] = 0.2 divide it in roughly equal
+/// log-thirds, leaving speech a 1.6× margin above this floor and the tremolo
+/// pad 1.8× below the music ceiling. Caveat, recorded honestly: the corpus is
+/// synthetic. These values reproduce every classification the old constants
+/// gave on that corpus at its reference levels, but no real church recording
+/// has validated them — the owner's listening test remains the real gate.
+pub const SPEECH_FLUX_MIN: f64 = 0.35;
 
 /// Low edge of the speech energy window (dBFS).
 ///
@@ -319,17 +336,26 @@ pub const SPEECH_ENERGY_MAX_DB: f64 = -5.0;
 /// 1500 and had no notion of stability. 1500 shipped.
 pub const MUSIC_ZCR_MAX_PER_SEC: f64 = 1500.0;
 
-/// Spectral flux below which a frame looks like music (same unnormalised scale
-/// as [`SPEECH_FLUX_MIN`], and the same level-dependence warning applies).
+/// Normalised spectral flux below which a frame looks like music (same
+/// unit-spectrum scale as [`SPEECH_FLUX_MIN`], and level-invariant the same
+/// way — see there for the 2026-08-08 normalisation).
 ///
 /// **Up toward [`SPEECH_FLUX_MIN`]:** the two flux features start overlapping
 /// and frames score both. **Down:** only near-static tone counts as music, so
 /// a live band with a drummer stops scoring the music flux point.
 ///
-/// **Provenance:** none recorded beyond the same "empirical" as its speech twin.
-/// The GAP between 6.0 and 8.0 is the classifier's entire flux discrimination
-/// and nothing records why it is 2 units wide.
-pub const MUSIC_FLUX_MAX: f64 = 6.0;
+/// **Provenance:** derived 2026-08-08 with its speech twin, from the same
+/// measurements (see [`SPEECH_FLUX_MIN`] for the full table). Sustained
+/// musical content on the synthetic corpus measures ≤ 0.112 (tremolo pad, the
+/// worst case) at every gain; 0.2 keeps a 1.8× margin above that, and speech's
+/// floor (0.565) sits 2.8× above this ceiling. The GAP between 0.2 and 0.35 is
+/// the classifier's entire flux discrimination, exactly as the old 6.0–8.0 gap
+/// was — but where nothing recorded why that gap was 2 units wide, this one is
+/// placed to split the measured no-man's-land between the corpus's most
+/// speech-like sustained music and its least fluctuating speech in equal
+/// log-steps. Same caveat as the twin: synthetic corpus, real church audio
+/// still owed.
+pub const MUSIC_FLUX_MAX: f64 = 0.2;
 
 /// Energy above which a frame is loud enough to be music (dBFS).
 ///
