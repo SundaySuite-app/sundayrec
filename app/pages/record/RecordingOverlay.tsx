@@ -14,16 +14,22 @@
  * overlegget det på seg selv mens en dialog står — ellers ville stopp-knappen
  * fortsatt vært klikkbar bak spørsmålet om å stoppe.
  *
- * ## «Du kan lukke vinduet» ble FJERNET
+ * ## F1-UX1: «Du kan lukke vinduet» er sant igjen
  *
  * Canvasens `ov.hint` lover at opptaket fortsetter i bakgrunnen når vinduet
- * lukkes. Det gjør det ikke. `src-tauri/src/lib.rs` har ingen
- * `on_window_event`-håndterer som hindrer lukking, ingen `prevent_exit` og
- * ingen `ActivationPolicy::Accessory` — så når siste vindu lukkes fyrer
- * `RunEvent::ExitRequested`, og HÅNDTEREN DER STOPPER OPPTAKEREN
- * (`state::<RecorderEngine>().stop()`). Setningen ville altså vært en
- * oppfordring til å avslutte gudstjenestens opptak. Den står ikke her, og
- * nøkkelen er ikke lagt i katalogen.
+ * lukkes. Det stemte ikke da denne kommentaren først ble skrevet — på den
+ * tiden fantes ingen `on_window_event`-håndterer, og siste vindu som lukket
+ * seg fyrte `RunEvent::ExitRequested` rett i `RecorderEngine::stop()`. P3
+ * («Frivilligen først») rettet nettopp det: `lib.rs:251` kobler
+ * `.on_window_event(window::on_event)` på builderen, og
+ * `src-tauri/src/window.rs:80-116` fanger `CloseRequested` under en levende
+ * ELLER fullførende økt og kaller `window.hide()` + `api.prevent_close()` i
+ * stedet for å la lukkingen gå gjennom — capture og sidecars står urørt, og
+ * appen blir i menylinja/Dock. Veien tilbake: «Åpne SundayRec» i menylinja,
+ * Dock-ikonet, eller en ny oppstart (single-instance løfter fram vinduet).
+ * Utenfor en økt er ingenting endret — lukk betyr avslutt, som før.
+ *
+ * Setningen står derfor her igjen (`app.overlay.closeHint`), i JSX-en under.
  *
  * ## Måleren leser opptaket, ikke rommet
  *
@@ -215,6 +221,15 @@ function Overlay() {
       >
         {done ? t("recording.finalizing") : t("app.overlay.stop")}
       </Button>
+
+      {/*
+        F1-UX1/W1: sant i BÅDE «Recording» og «Stopping» (`window.rs:80-116`
+        skjuler vinduet i begge, se filhodet) — derfor uavhengig av `done`, og
+        ikke inni forgreningen under som allerede skiller finalizing/autostop.
+      */}
+      <p data-testid="overlay-close-hint" class={styles.hint}>
+        {t("app.overlay.closeHint")}
+      </p>
 
       {done ? (
         <p data-testid="overlay-finalizing-hint" class={styles.hint}>

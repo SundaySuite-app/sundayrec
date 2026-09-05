@@ -577,6 +577,7 @@
     },
     "overlay": {
       "stop": "Stop recording",
+      "closeHint": "You can close the window — recording continues in the background.",
       "stopQuestion": "Stop the recording?",
       "stopQuestionDesc": "{elapsed} recorded so far. If you stop now, what you have is saved.",
       "keep": "Keep recording",

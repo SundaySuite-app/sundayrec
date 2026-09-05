@@ -760,6 +760,12 @@ export const PAUSED_KEYS = new Set([
   // sendes videre (GitHub-issue eller dev@sundaysuite.app) — atskilt fra
   // SECURITY.md sin kanal, som er for sårbarheter. Ny tekst, derfor pauset.
   'app.setup.advanced.diagnoseReportWhere',
+  // F1-UX1: «Du kan lukke vinduet — opptaket fortsetter i bakgrunnen.»
+  // (`RecordingOverlay.tsx`'s `overlay-close-hint`) — canvasens `ov.hint`,
+  // holdt ute av skjermen til `window.rs` faktisk skjulte vinduet i stedet
+  // for å avslutte opptaket (P3). Ny nøkkel, derfor pauset som alt annet
+  // redesignet har lagt til.
+  'app.overlay.closeHint',
 ])
 
 const reference = flattenKeys(no as Tree).sort()
