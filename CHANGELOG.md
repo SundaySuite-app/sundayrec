@@ -3,6 +3,172 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.18.0-beta.1 — resten av F1-gjennomgangen til beta-ringen
+
+Andre og siste runde fra gjennomgangen av hele appen: planlegger- og
+motorkorrekthet, søndagsvarsler på riktig språk, en håndfull renderer- og
+tilgjengelighetsfunn, og grunnmuren til et kommende e-postrelé som ingen bruker
+ser noe til ennå.
+
+### Et opptak som blir stoppet og startet på nytt kan ikke lenger skrives over av det gamle
+
+Stopper du et opptak og starter et nytt med én gang, mens det forrige ennå
+holder på med sin egen avslutning (sammenslåing og leveranse-enkoding av en
+gudstjeneste tar minutter), kunne den gamle økten før eller siden skrive
+`Stopped` og en tømt nedtelling over det NYE opptaket som fortsatt gikk —
+skjermen sa «Stoppet» mens kveldsmøtet ble tatt opp usynlig. Hver skrivevei til
+den delte tilstanden går nå gjennom én vakt som nekter en foreldet økt å skrive
+noe som helst.
+
+([#212](https://github.com/SundaySuite-app/sundayrec/pull/212))
+
+### Et planlagt opptak som ikke ble gjort, sier nå faktisk ifra
+
+To ting rettet sammen. To planlagte opptak på nøyaktig samme klokkeslett (en
+ukentlig luke og et spesialopptak) ga tidligere to opptaksstarter der den andre
+drepte den første etter et brøkdels sekund; nå vinner nøyaktig ett. Og har
+appen krasjet midt i en gudstjeneste, telles ikke lenger søndagen som «gikk
+glipp av» bare fordi sammenslåingen av det gjenopprettede opptaket ennå ikke er
+ferdig. Samtidig fikk løftet i innstillingene — e-post «når et opptak feiler
+eller et planlagt blir hoppet over» — endelig sin andre halvdel: en søndag som
+faktisk ikke ble tatt opp, sender nå den e-posten, uavhengig av det nye reléet
+under.
+
+([#213](https://github.com/SundaySuite-app/sundayrec/pull/213),
+[#219](https://github.com/SundaySuite-app/sundayrec/pull/219))
+
+### Norsk ut av motoren — varslene dine kommer nå på ditt eget språk
+
+Skjermvarsler og e-poster fra planleggeren og opptaksmotoren — «planlagt opptak
+startet», «ble ikke gjort», feilmeldinger fra selve opptaket — var alltid
+norske uansett hvilket av de sju språkene appen sto på, fordi denne ene flaten
+aldri ble oversatt da resten av grensesnittet ble det. Alle disse setningene
+er nå oversatt til alle sju språk, og en ny automatisk vakt stopper enhver
+fremtidig norsk streng som sniker seg inn i motoren igjen.
+
+([#224](https://github.com/SundaySuite-app/sundayrec/pull/224))
+
+### Renderer-korrekthet: en innstilling lagres når vinduet lukkes, en feil vises i stedet for en halv skjerm
+
+Endret du en innstilling og lukket vinduet innenfor det korte tidsvinduet før
+den ble skrevet til disk, kunne endringen forsvinne uten varsel — lagringen
+skjer nå også når vinduet skjules eller appen avsluttes. Et uventet
+render-unntak rev tidligere ned hele skjermbildet uten at noen fikk se hva som
+skjedde; det vises nå som et banner med en «Kopier»-knapp til support. Og en
+eksport som fullfører etter at du har åpnet en annen fil, skriver ikke lenger
+kvitteringen (eller sletter utkastet) for feil fil.
+
+([#210](https://github.com/SundaySuite-app/sundayrec/pull/210),
+[#217](https://github.com/SundaySuite-app/sundayrec/pull/217))
+
+### Kirkeprofilens språkvalg lyver ikke lenger for migrerte menigheter, og «Vis i Finder» sier ifra ved feil
+
+En menighet migrert fra det gamle skallet med et pauset språk (tysk, fransk,
+polsk …) fikk se «Norsk» i språkvelgeren uansett hva som faktisk var lagret —
+boksen viser nå riktig, deaktivert rad med en forklarende linje under. «Vis i
+Finder» i eksport-kvitteringen varslet tidligere ikke om noe når den feilet;
+den gjør det nå, som i Bibliotek og Opptak.
+
+([#215](https://github.com/SundaySuite-app/sundayrec/pull/215),
+[#217](https://github.com/SundaySuite-app/sundayrec/pull/217))
+
+### Vekking: færre bakgrunnsprosesser under et opptak, og en «Test vekking»-knapp
+
+Sjekken av om datamaskinens vekking fortsatt er armert kjørte tidligere hvert
+minutt uansett — inkludert under en hel gudstjeneste den ikke kunne endre seg
+i. Den kjører nå bare når noe som faktisk kan ha endret svaret skjer, aldri
+mens et opptak pågår. Under Innstillinger → Avansert kan du nå trykke «Test
+vekking om 2 minutter» og se med egne øyne at det virker, i stedet for å vente
+til en søndag avgjør det.
+
+([#216](https://github.com/SundaySuite-app/sundayrec/pull/216),
+[#217](https://github.com/SundaySuite-app/sundayrec/pull/217))
+
+### i18n-oppskriften også i resten av renderen, og en gammel mikser fjernet
+
+Seks native fildialoger (lagringsprofil, mediefiler …) viste norsk tekst
+uansett appens språk. Fem setninger som limte sammen en oversatt streng og en
+verdi i fast rekkefølge er nå hele katalogmaler, klare for språk med annen
+ordstilling. En hel gammel mikser-brukergrensesnitt som ingenting lenger kalte
+er fjernet.
+
+([#208](https://github.com/SundaySuite-app/sundayrec/pull/208))
+
+### Sjekklistens «Sett opp» er ikke lenger en enveis-utgang
+
+Trykket du «Sett opp» på et av punktene i førstegangs-sjekklisten («Klar til
+søndag»), endte du utenfor sekvensen — og siden fullføringen aldri ble
+stemplet, kjørte hele fem-spørsmålsrunden på nytt fra begynnelsen neste gang
+appen startet. En «Fortsett oppsettet»-chip fører deg nå rett tilbake til
+sjekklisten.
+
+([#218](https://github.com/SundaySuite-app/sundayrec/pull/218))
+
+### Kvitteringen ruller til seg selv, dempet tekst er lettere å lese, og overlegget sier igjen at du kan lukke vinduet
+
+«Opptaket er lagret»-kortet kunne stå langt under det synlige vinduet uten at
+noe fortalte deg det var der; det ruller nå til midten av skjermen og tar
+fokus. Dempet tekst (hint-linjer, forklaringer) hadde for lav kontrast mot
+bakgrunnen og er hevet til WCAG AA. Og hintet om at opptaket fortsetter i
+bakgrunnen når du lukker vinduet — sant siden vinduet fikk lov til å skjules i
+stedet for å avslutte opptaket — står igjen på skjermen. I tillegg: dialogens
+brødtekst er nå koblet til skjermlesere, og knappenes treffflater er målt og
+låst med en regresjonstest.
+
+([#220](https://github.com/SundaySuite-app/sundayrec/pull/220),
+[#222](https://github.com/SundaySuite-app/sundayrec/pull/222))
+
+### Appen viser endelig hva som er nytt når en oppdatering er klar
+
+Releasenotatet har alltid ligget i oppdateringsmanifestet, signaturverifisert
+og alt — men ble lest inn og kastet uten at noen så det. Banneret og raden
+under Avansert viser nå notatet selv, klippet med «Vis mer» når det er langt,
+og identisk med det du leser her.
+
+([#221](https://github.com/SundaySuite-app/sundayrec/pull/221),
+[#222](https://github.com/SundaySuite-app/sundayrec/pull/222))
+
+### Loggen du kopierer til support inneholder ikke lenger kontonavnet ditt
+
+`sundayrec.log` skrubbet allerede hemmeligheter, men aldri den lokale
+filstien — kopierte du loggen inn i en support-melding, sto ditt eget
+OS-kontonavn i klartekst i banen til opptaksmappen. Begge skrubberne kjører nå
+i samme omgang. I tillegg: en god del død kode er fjernet, og to hull i
+gate-dekningen (bindings-sjekken så ikke helt nye filer; en test-lane kunne
+hoppe stille over sin egen kjerneassert) er tettet.
+
+([#223](https://github.com/SundaySuite-app/sundayrec/pull/223))
+
+### Diagnose sier hvor rapporten skal sendes, og en driftsguide for frivillige
+
+«Kopier full rapport» i Diagnose har nå en linje under som sier hvor den skal
+sendes — et GitHub-issue eller support-e-posten, aldri sikkerhetsproblemer på
+e-post. Ny `docs/FRIVILLIG.md` er en norsk driftsguide for den som står ved
+skjermen uten en utvikler i rommet: installere, gi tilgang, ta opp, lese
+bannerfarger, og hvem man kontakter. Et par docs-referanser som hadde driftet
+ut av sync med koden er også rettet.
+
+([#214](https://github.com/SundaySuite-app/sundayrec/pull/214))
+
+### Grunnmuren til e-postreléet — ingenting synlig for noen ennå
+
+Rutingmatrisen, e-postmalene på alle sju språk og utboksens porter
+(rate-grense, ferskhet, «send aldri to ganger»), pluss selve utboksen, pumpa,
+de fem kommandoene og innstillingen den styres av. Alt er strukturelt inert
+til brukergrensesnittet som lar en frivillig faktisk melde seg på, kommer i en
+senere runde — pumpa spawner ikke uten et abonnement, og ingen meny eller
+knapp i appen peker hit ennå.
+
+([#187](https://github.com/SundaySuite-app/sundayrec/pull/187),
+[#202](https://github.com/SundaySuite-app/sundayrec/pull/202),
+[#219](https://github.com/SundaySuite-app/sundayrec/pull/219))
+
+### Småting
+
+En linje i `docs/APP-SHELL.md` påsto fortsatt at overleggets «du kan lukke
+vinduet»-hint ikke var lagt tilbake på skjermen; det ble det i denne runden,
+og linja er rettet.
+
 ## v0.17.2-beta.1 — søndagsfiksene til beta-ringen
 
 Fire rettelser fra en gjennomgang av hele appen, samlet i en rask runde foran
