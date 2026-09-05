@@ -214,8 +214,8 @@ mod imp {
     use crate::error::{AppError, AppResult};
     use crate::media::ffmpeg::spawn_ffmpeg;
     use crate::recorder::engine::{
-        extract_separate_audio, now_ms, RecorderStatePayload, RecordingEvent, RecordingFinished,
-        RecordingLevels, RecordingOpts, ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT, STATE_EVENT,
+        extract_separate_audio, now_ms, RecordingEvent, RecordingFinished, RecordingLevels,
+        RecordingOpts, StateWriter, ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT,
     };
     use crate::recorder::native_capture::stream::{
         build_input_stream_any, find_device, open_host, ring_capacity, StreamSink,
@@ -320,8 +320,7 @@ mod imp {
         video: Option<FfmpegDevice>,
         mut stop_rx: tokio::sync::mpsc::Receiver<()>,
         ready_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
-        last_state: Arc<Mutex<RecorderState>>,
-        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        state: StateWriter,
     ) {
         let label = host_kind.label();
 
@@ -511,8 +510,8 @@ mod imp {
         let start_ms = now_ms();
         let initial_stop = (opts.manual_max_minutes > 0)
             .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
-        scheduled_stop.send_replace(initial_stop);
-        let mut stop_watch = scheduled_stop.subscribe();
+        state.arm_autostop(initial_stop);
+        let mut stop_watch = state.subscribe();
         let mut auto_deadline: Option<u64> = *stop_watch.borrow();
         let remaining = |d: Option<u64>| -> Duration {
             d.map(|d| Duration::from_millis(d.saturating_sub(now_ms())))
@@ -522,7 +521,7 @@ mod imp {
         let auto_sleep = tokio::time::sleep(remaining(auto_deadline));
         tokio::pin!(auto_sleep);
 
-        set_state(&app, &last_state, RecorderState::Recording, auto_deadline);
+        state.set(RecorderState::Recording, 0);
         let _ = ready_tx.send(Ok(()));
 
         // ── Run until stop / auto-stop / device or ffmpeg death ──────────────
@@ -542,17 +541,7 @@ mod imp {
                         auto_sleep
                             .as_mut()
                             .reset(tokio::time::Instant::now() + remaining(auto_deadline));
-                        let _ = app.emit(
-                            STATE_EVENT,
-                            RecorderStatePayload {
-                                state: last_state
-                                    .lock()
-                                    .map(|g| *g)
-                                    .unwrap_or(RecorderState::Recording),
-                                reconnect_count: 0,
-                                scheduled_stop_ms: auto_deadline,
-                            },
-                        );
+                        state.restamp(0, auto_deadline);
                     }
                 }
                 msg = err_rx.recv() => {
@@ -571,7 +560,7 @@ mod imp {
         }
 
         // ── Tear down: stop stream → writer EOF → ffmpeg finalises ───────────
-        set_state(&app, &last_state, RecorderState::Stopping, auto_deadline);
+        state.set(RecorderState::Stopping, 0);
         stop.store(true, Ordering::Relaxed);
         levels_task.abort();
         let _ = writer.await; // closes stdin (EOF)
@@ -634,33 +623,11 @@ mod imp {
                 },
             );
         }
-        // Clear the shared auto-stop deadline so a finished recording ships no
-        // lingering countdown, then announce the terminal state.
-        scheduled_stop.send_replace(None);
-        set_state(&app, &last_state, RecorderState::Stopped, None);
+        // The terminal write clears the shared auto-stop deadline itself (inside
+        // [`StateWriter::set`]), so a finished recording ships no lingering
+        // countdown — and a SUPERSEDED cpal supervisor clears nothing at all.
+        state.set(RecorderState::Stopped, 0);
         tracing::info!(host = label, "recorder: cpal session stopped cleanly");
-    }
-
-    /// Emit a `recording://state` payload and update the shared last-state mirror,
-    /// stamping the current auto-stop deadline so the UI countdown stays in sync.
-    /// The cpal path has no reconnects (always 0).
-    fn set_state(
-        app: &AppHandle,
-        last_state: &Arc<Mutex<RecorderState>>,
-        to: RecorderState,
-        scheduled_stop_ms: Option<u64>,
-    ) {
-        if let Ok(mut g) = last_state.lock() {
-            *g = to;
-        }
-        let _ = app.emit(
-            STATE_EVENT,
-            RecorderStatePayload {
-                state: to,
-                reconnect_count: 0,
-                scheduled_stop_ms,
-            },
-        );
     }
 
     /// Emit a classified error to the renderer (mirrors `engine::emit_error`).
