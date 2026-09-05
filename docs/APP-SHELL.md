@@ -1176,11 +1176,10 @@ skjul → åpne → skjul gir to.
 Det finnes fortsatt ingen `ActivationPolicy::Accessory` — Dock-ikonet blir
 stående med vilje, så appen ikke _forsvinner_ for den frivillige.
 
-⚠️ Selve setningen er ENNÅ ikke lagt tilbake på skjermen: `ov.hint` står fortsatt
-ikke i katalogen, og topp-kommentaren i `app/pages/record/RecordingOverlay.tsx`
-påstår fortsatt at den er usann. Det er P4/B sitt bord — P3 er en ren
-`src-tauri`/`crates`-endring og rører ikke `app/`. Fra og med denne endringen er
-det trygt å legge den inn.
+✅ Setningen er lagt tilbake på skjermen (F1-UX1, #220): `app.overlay.closeHint`
+står nå i katalogen og i JSX-en i `app/pages/record/RecordingOverlay.tsx`, og
+filens eget topp-kommentar beskriver mekanismen som den faktisk er i dag, ikke
+lenger som den var før P3.
 
 ## ✅ RESTANSEN ER LUKKET — Cmd+Q under opptak spør nå én gang til (P3b)
 
