@@ -13,9 +13,30 @@
  *
  * `role="alert"` for `bad` (avbryter — noe er tapt), `role="status"` for
  * `warn` (venter på tur — det haster ikke i sekunder).
+ *
+ * ## `detail` kan bli langt (F1-P1)
+ *
+ * Hver `detail` Banner viste før var ÉN linje — en enhet, en feilkode, en
+ * disk-setning. Releasenotatet (`state/banners.ts`s `update`-oppføring) er
+ * det første som kan være et helt avsnitt, med linjeskift forfatteren la inn
+ * med vilje (se `docs/release-notes/README.md`). Derfor:
+ *
+ *   - `white-space: pre-wrap` på `.detail` — linjeskiftene i teksten bevares
+ *     i stedet for å kollapse til ett mellomrom. Trygt for alle de andre
+ *     `detail`-kallerne også: ingen av dem har `\n` i teksten sin, så
+ *     `pre-wrap` gjengir dem bit for bit likt `normal`.
+ *   - klippet til 5 linjer med en «Vis mer» når teksten faktisk er lengre —
+ *     MÅLT (skjermens `scrollHeight` mot den klipte `clientHeight`), ikke
+ *     gjettet på tegnantall: en lang setning uten et eneste linjeskift
+ *     brytes likevel over flere linjer ved en smal bredde, og en kort
+ *     flerlinjers tekst kan holde seg under fem. Klippingen er ren CSS —
+ *     HELE teksten står i DOM-en hele tiden, så «Kopier»-knappen
+ *     (`GlobalErrorBanner`) og en test som leser `textContent` ser alt,
+ *     uansett om noen har trykket «Vis mer».
  */
 
 import type { ComponentChildren } from "preact";
+import { useEffect, useId, useRef, useState } from "preact/hooks";
 
 import { t } from "../../i18n";
 import { Button } from "../Button/Button";
@@ -50,7 +71,7 @@ export function Banner({
     >
       <div class={styles.text}>
         <div class={styles.title}>{title}</div>
-        {detail ? <div class={styles.detail}>{detail}</div> : null}
+        {detail ? <BannerDetail text={detail} testId={testId} /> : null}
       </div>
       <div class={styles.actions}>
         {actions}
@@ -65,5 +86,49 @@ export function Banner({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** `detail`, klippet til 5 linjer med en «Vis mer» når det er noe å vise mer
+ *  av. Se filhodet over for hvorfor målt og ikke gjettet. */
+function BannerDetail({ text, testId }: { text: string; testId?: string }) {
+  const bodyId = useId();
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clampable, setClampable] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Målt med klippingen PÅSLÅTT (mount starter alltid kollapset): er den
+    // ekte høyden større enn den klipte, er det noe «Vis mer» faktisk viser.
+    // JSDOM (vitest) har ikke ekte layout og svarer alltid 0/0 her — denne
+    // grenen beviser seg selv bare i en ekte nettleser, altså e2e.
+    setClampable(el.scrollHeight > el.clientHeight + 1);
+  }, [text]);
+
+  return (
+    <>
+      <div
+        ref={ref}
+        id={bodyId}
+        data-testid={testId ? `${testId}-detail` : undefined}
+        class={`${styles.detail} ${!expanded ? styles.detailClamped : ""}`}
+      >
+        {text}
+      </div>
+      {clampable ? (
+        <Button
+          variant="ghost"
+          size="md"
+          testId={testId ? `${testId}-more` : undefined}
+          expanded={expanded}
+          controls={bodyId}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? t("app.common.showLess") : t("app.common.showMore")}
+        </Button>
+      ) : null}
+    </>
   );
 }

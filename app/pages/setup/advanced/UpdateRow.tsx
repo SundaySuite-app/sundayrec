@@ -38,6 +38,7 @@ import { Button } from "../../../ui/Button/Button";
 import { Chip } from "../../../ui/Chip/Chip";
 import { Select } from "../../../ui/Select/Select";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
+import styles from "./UpdateRow.module.css";
 
 export function UpdateRow() {
   const view = updateView(updatePhase.value);
@@ -62,59 +63,76 @@ export function UpdateRow() {
     message?.key === "updateFailed" || message?.key === "updateRestartFailed";
 
   return (
-    <SettingRow
-      label={t("app.setup.advanced.update")}
-      description={t("app.setup.advanced.updateDesc")}
-      receipt={channel.receipt}
-      // En feilet oppdatering er ikke en valideringsfeil på kanal-velgeren, men
-      // feillinja er der teksten hører hjemme: rett under kontrollen, i rødt,
-      // med `role="alert"`. Ingen egen feilflate for én rad.
-      error={failed && message ? messageText(message) : null}
-      testId="adv-update"
-    >
-      {(ids) => (
-        <>
-          {message && !failed ? (
-            <Chip tone={chipTone(view)} testId="adv-update-state">
-              {messageText(message)}
-            </Chip>
-          ) : null}
-          {view.action ? (
+    // F1-P1: releasenotatet folder seg ut UNDER selve raden, som DiagnoseRow's
+    // resultat gjør (samme grunn: et avsnitt hører ikke i `.control`-cellen,
+    // som er én høyrejustert linje — se `UpdateRow.module.css`).
+    <div data-testid="adv-update-wrap">
+      <SettingRow
+        label={t("app.setup.advanced.update")}
+        description={t("app.setup.advanced.updateDesc")}
+        receipt={channel.receipt}
+        // En feilet oppdatering er ikke en valideringsfeil på kanal-velgeren, men
+        // feillinja er der teksten hører hjemme: rett under kontrollen, i rødt,
+        // med `role="alert"`. Ingen egen feilflate for én rad.
+        error={failed && message ? messageText(message) : null}
+        testId="adv-update"
+      >
+        {(ids) => (
+          <>
+            {message && !failed ? (
+              <Chip tone={chipTone(view)} testId="adv-update-state">
+                {messageText(message)}
+              </Chip>
+            ) : null}
+            {view.action ? (
+              <Button
+                variant="primary"
+                busy={view.action.busy}
+                testId="adv-update-install"
+                onClick={() => void window.api.installUpdate()}
+              >
+                {view.action.key === "install"
+                  ? t("app.setup.advanced.updateRestart")
+                  : t("app.setup.advanced.updateDownload")}
+              </Button>
+            ) : null}
             <Button
-              variant="primary"
-              busy={view.action.busy}
-              testId="adv-update-install"
-              onClick={() => void window.api.installUpdate()}
+              variant="ghost"
+              disabled={!view.canCheck}
+              disabledReason={t("app.setup.advanced.updateChecking")}
+              testId="adv-update-check"
+              onClick={() => void window.api.checkForUpdates()}
             >
-              {view.action.key === "install"
-                ? t("app.setup.advanced.updateRestart")
-                : t("app.setup.advanced.updateDownload")}
+              {t("app.setup.advanced.updateCheck")}
             </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            disabled={!view.canCheck}
-            disabledReason={t("app.setup.advanced.updateChecking")}
-            testId="adv-update-check"
-            onClick={() => void window.api.checkForUpdates()}
-          >
-            {t("app.setup.advanced.updateCheck")}
-          </Button>
-          <Select
-            value={String(channel.draft ?? "stable")}
-            options={[
-              { value: "stable", label: t("app.setup.advanced.updateStable") },
-              { value: "beta", label: t("app.setup.advanced.updateBeta") },
-            ]}
-            onChange={(next) => channel.set(next)}
-            disabled={channel.busy}
-            labelId={ids.labelId}
-            describedBy={ids.describedBy}
-            testId="adv-update-channel-control-input"
-          />
-        </>
-      )}
-    </SettingRow>
+            <Select
+              value={String(channel.draft ?? "stable")}
+              options={[
+                {
+                  value: "stable",
+                  label: t("app.setup.advanced.updateStable"),
+                },
+                { value: "beta", label: t("app.setup.advanced.updateBeta") },
+              ]}
+              onChange={(next) => channel.set(next)}
+              disabled={channel.busy}
+              labelId={ids.labelId}
+              describedBy={ids.describedBy}
+              testId="adv-update-channel-control-input"
+            />
+          </>
+        )}
+      </SettingRow>
+
+      {view.notes ? (
+        <div class={styles.notes} data-testid="adv-update-notes">
+          <div class={styles.notesLabel}>
+            {t("app.setup.advanced.updateNotesLabel")}
+          </div>
+          <div class={styles.notesText}>{view.notes}</div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

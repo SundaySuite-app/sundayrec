@@ -269,6 +269,11 @@ function UpdateBanner() {
               })
             : tf("app.setup.advanced.updateReady", { v: entry.version })
       }
+      // F1-P1: releasenotatet, når feeden hadde et — `Banner` klipper det
+      // til 5 linjer med en «Vis mer» selv (se filhodet i `ui/Banner/`).
+      // `undefined` og ikke `null`: en tom `detail` skal ikke tegne den tomme
+      // `.detail`-diven.
+      detail={entry.notes ?? undefined}
       // Ingen knapp mens den laster ned: det er ingenting å be om, og en
       // knapp som bare kan trykkes forgjeves er en knapp som lærer folk at
       // knappene her ikke betyr noe.

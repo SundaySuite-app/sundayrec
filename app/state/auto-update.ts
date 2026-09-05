@@ -61,6 +61,7 @@ import {
 import { dismissBanner, raiseBanner } from "./banners";
 import { settings } from "./settings";
 import {
+  notesOf,
   phaseFromEvent,
   UPDATE_CHANNELS,
   type UpdatePhase,
@@ -121,6 +122,7 @@ function syncUpdateBanner(phase: UpdatePhase): void {
         state: "available",
         version: phase.version,
         percent: 0,
+        notes: notesOf(phase),
       });
       return;
     case "downloading":
@@ -129,6 +131,10 @@ function syncUpdateBanner(phase: UpdatePhase): void {
         state: "downloading",
         version: "",
         percent: phase.percent,
+        // Kort, forbigående fase — shimmen sender ikke notatet her (se
+        // `api-shim.ts`s `update-download-progress`). Banneret STÅR (samme
+        // nøkkel), det er bare notatlinjen som er borte til `ready`.
+        notes: null,
       });
       return;
     case "ready":
@@ -137,6 +143,7 @@ function syncUpdateBanner(phase: UpdatePhase): void {
         state: "ready",
         version: phase.version,
         percent: 100,
+        notes: notesOf(phase),
       });
       return;
     case "restarting":

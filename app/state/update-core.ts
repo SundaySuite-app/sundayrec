@@ -27,16 +27,36 @@
  * `disk.ts`, som er de andre rene avgjørelsene skallets tilstand hviler på.
  */
 
-/** Hvor i løpet vi er. `idle` er «ingen har spurt ennå». */
+/**
+ * Hvor i løpet vi er. `idle` er «ingen har spurt ennå».
+ *
+ * `notes` (F1-P1) er releasenotatet fra `docs/release-notes/<tagg>.md`, DATA
+ * hele veien fra Rust — se filhodet i `sundayrec_core::update::UpdateStatus`.
+ * `null`/utelatt betyr «feeden hadde ingen», ikke «ennå ikke lastet»; en tom
+ * streng og `null` skal begge bety «ingenting å vise», derfor `notesOf()`
+ * under i stedet for å lese feltet rått hvert sted som trenger det.
+ */
 export type UpdatePhase =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "upToDate" }
-  | { kind: "available"; version: string }
+  | { kind: "available"; version: string; notes?: string | null }
   | { kind: "downloading"; percent: number }
-  | { kind: "ready"; version: string }
+  | { kind: "ready"; version: string; notes?: string | null }
   | { kind: "restarting" }
   | { kind: "failed"; restartFailed: boolean };
+
+/** `phase.notes`, trimmet til `null` når den er tom eller utelatt — de to
+ *  formene «ingen notat» kan komme i (en utelatt feed-nøkkel, eller en som
+ *  eksplisitt er tom) skal aldri kunne skilles fra hverandre nedover. Eksportert
+ *  slik at `state/auto-update.ts` bruker den SAMME regelen inn i bannerkøen —
+ *  raden og banneret skal aldri kunne komme fra to forskjellige svar på «har
+ *  denne fasen et notat». */
+export function notesOf(phase: UpdatePhase): string | null {
+  const raw =
+    phase.kind === "available" || phase.kind === "ready" ? phase.notes : null;
+  return raw && raw.trim().length > 0 ? raw : null;
+}
 
 /** Hva raden skal si, som data. */
 export interface UpdateView {
@@ -65,6 +85,14 @@ export interface UpdateView {
   action: null | { key: "download" | "install"; busy: boolean };
   /** Kan «Se etter oppdateringer nå» trykkes? */
   canCheck: boolean;
+  /**
+   * Releasenotatet (F1-P1), eller `null` når fasen ikke har noe: `idle`,
+   * `checking`, `upToDate`, `downloading`, `restarting` og `failed` viser
+   * ALDRI et notat — bare `available`/`ready`, og bare når feeden faktisk
+   * sendte et. DATA, ikke en oversatt setning: `UpdateRow` setter selv
+   * overskriften («Hva er nytt») og formateringen rundt.
+   */
+  notes: string | null;
 }
 
 /**
@@ -74,13 +102,20 @@ export interface UpdateView {
 export function updateView(phase: UpdatePhase): UpdateView {
   switch (phase.kind) {
     case "idle":
-      return { message: null, tone: null, action: null, canCheck: true };
+      return {
+        message: null,
+        tone: null,
+        action: null,
+        canCheck: true,
+        notes: null,
+      };
     case "checking":
       return {
         message: { key: "updateChecking" },
         tone: "neutral",
         action: null,
         canCheck: false,
+        notes: null,
       };
     case "upToDate":
       return {
@@ -90,6 +125,7 @@ export function updateView(phase: UpdatePhase): UpdateView {
         // installer» etter en oppdatert sjekk.
         action: null,
         canCheck: true,
+        notes: null,
       };
     case "available":
       return {
@@ -97,6 +133,7 @@ export function updateView(phase: UpdatePhase): UpdateView {
         tone: "warn",
         action: { key: "download", busy: false },
         canCheck: true,
+        notes: notesOf(phase),
       };
     case "downloading":
       return {
@@ -104,6 +141,7 @@ export function updateView(phase: UpdatePhase): UpdateView {
         tone: "neutral",
         action: { key: "download", busy: true },
         canCheck: false,
+        notes: null,
       };
     case "ready":
       return {
@@ -111,6 +149,7 @@ export function updateView(phase: UpdatePhase): UpdateView {
         tone: "warn",
         action: { key: "install", busy: false },
         canCheck: true,
+        notes: notesOf(phase),
       };
     case "restarting":
       return {
@@ -118,6 +157,7 @@ export function updateView(phase: UpdatePhase): UpdateView {
         tone: "neutral",
         action: { key: "install", busy: true },
         canCheck: false,
+        notes: null,
       };
     case "failed":
       return {
@@ -129,6 +169,9 @@ export function updateView(phase: UpdatePhase): UpdateView {
         // kunne prøves igjen. En feilet SJEKK har ingenting å installere.
         action: phase.restartFailed ? { key: "install", busy: false } : null,
         canCheck: true,
+        // Notatet hørte til nedlastingen, ikke til feilen — en feilet omstart
+        // sier «prøv igjen», ikke «her er hva som er nytt» på nytt.
+        notes: null,
       };
   }
 }
@@ -159,6 +202,8 @@ export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
 export interface UpdateEventPayload {
   version?: string;
   percent?: number;
+  /** F1-P1: bare på `update-available`/`update-downloaded`. */
+  notes?: string | null;
 }
 
 /**
@@ -178,13 +223,21 @@ export function phaseFromEvent(
     case "update-checking":
       return { kind: "checking" };
     case "update-available":
-      return { kind: "available", version: data.version ?? "" };
+      return {
+        kind: "available",
+        version: data.version ?? "",
+        notes: data.notes ?? null,
+      };
     case "update-not-available":
       return { kind: "upToDate" };
     case "update-download-progress":
       return { kind: "downloading", percent: clampPercent(data.percent ?? 0) };
     case "update-downloaded":
-      return { kind: "ready", version: data.version ?? "" };
+      return {
+        kind: "ready",
+        version: data.version ?? "",
+        notes: data.notes ?? null,
+      };
     case "update-restarting":
       return { kind: "restarting" };
     case "update-error":

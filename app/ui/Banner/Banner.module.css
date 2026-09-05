@@ -21,6 +21,27 @@
   font-weight: 400;
   color: var(--ink-2);
   margin-top: 2px;
+  /* F1-P1: et releasenotat kan ha linjeskift forfatteren la inn med vilje —
+     bevar dem i stedet for å kollapse dem til ett mellomrom. Alle andre
+     `detail`-tekster er allerede énlinjers uten `\n`, så dette gjengir dem
+     bit for bit likt `normal`. */
+  white-space: pre-wrap;
+}
+
+/* Klippet: fem linjer, så et helt avsnitt ikke dytter resten av siden ned. Kun
+   PÅSLÅTT når JS faktisk har målt en overflyt (se Banner.tsx) — en tekst som
+   allerede holder seg innenfor fem linjer ser identisk ut med og uten klassen. */
+.detailClamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* «Vis mer»/«Vis mindre» — the only button `BannerDetail` ever places
+   directly under `.text` (title + detail's own children otherwise). */
+.text > :global(button) {
+  margin-top: var(--sp-2);
 }
 
 .actions {

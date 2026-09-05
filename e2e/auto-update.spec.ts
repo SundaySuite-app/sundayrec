@@ -268,6 +268,11 @@ test.describe("oppdateringsbanneret", () => {
     await expect(banner).toContainText("0.16.0");
     await expect(banner).toHaveAttribute("data-tone", "warn");
     await expect(page.getByTestId("banner-update-install")).toBeVisible();
+    // F1-P1, bakoverkompatibelt: fixturen har ikke `notes` (en eldre
+    // Worker/bygg som ikke sender feltet ennå) — banneret skal se ut akkurat
+    // som før, uten notatlinje og uten «Vis mer».
+    await expect(page.getByTestId("banner-update-detail")).toHaveCount(0);
+    await expect(page.getByTestId("banner-update-more")).toHaveCount(0);
     // …og INGEN toast om det samme. Verten selv står alltid (den er en
     // aria-live-region, og en region som opprettes sammen med sin første
     // melding blir aldri annonsert — se ToastHost.tsx), så påstanden er at den
@@ -291,6 +296,91 @@ test.describe("oppdateringsbanneret", () => {
     });
     await expect(page.getByTestId("record-start")).toBeVisible();
     await expect(page.getByTestId("banner-update")).toHaveCount(0);
+  });
+
+  // F1-P1: releasenotatet — hentet, signaturverifisert og kastet siden R7,
+  // usett av noen. `docs/release-notes/README.md` er sannheten om HVOR
+  // teksten kommer fra; dette er sannheten om at den nå VISES, i begge
+  // flatene som leser samme fase: banneret (`Shell.tsx`) og raden under
+  // Avansert (`UpdateRow.tsx`) — se `state/auto-update.ts`/`update-core.ts`.
+  test("et kort releasenotat vises i BÅDE banneret og raden under Avansert", async ({
+    page,
+  }) => {
+    const notes = "Papirkurven tåler strømbrudd og samtidig rydding.";
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        update_check: { phase: "available", version: "0.17.2-beta.1", notes },
+      },
+      settings: { ...SETTLED_SETTINGS, autoUpdate: true },
+      goto: "settings:general",
+    });
+
+    // Banneret, over siden — kort notat, altså INGEN «Vis mer»: hele notatet
+    // er allerede synlig.
+    const banner = page.getByTestId("banner-update");
+    await expect(banner).toBeVisible();
+    await expect(banner.getByTestId("banner-update-detail")).toHaveText(notes);
+    await expect(page.getByTestId("banner-update-more")).toHaveCount(0);
+
+    // Raden under Avansert, med overskriften — DATA fra samme fase, ikke en
+    // andre lytter som kunne sagt noe annet.
+    const row = page.getByTestId("adv-update-notes");
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("Hva er nytt");
+    await expect(row).toContainText(notes);
+  });
+
+  test("et langt releasenotat klippes i banneret, med en «Vis mer» som åpner det", async ({
+    page,
+  }) => {
+    // Det ekte v0.17.1-beta.1-notatet, ordrett (`docs/release-notes/
+    // v0.17.1-beta.1.md`) — fem avsnitt, sytten linjer forfatteren selv brøt
+    // med vilje. Lang nok til å overleve fem linjers klipp uansett
+    // vindusbredde (en enkelt lang setning viste seg for grensetilfelle-avhengig
+    // i praksis — se historien i git blame), og ekte innhold beviser
+    // `white-space: pre-wrap` samtidig som «Vis mer».
+    const notes = `Betautgave. Ingen nye flater å lære — verktøy og ærlighet.
+
+Slett gamle opptak virker endelig. Bryteren «Slettes automatisk etter N dager»
+hadde aldri noen som kalte på den. Nå flyttes gamle opptak til papirkurven, som
+selv tømmer seg etter 30 dager, så du har to sjanser til å angre. Første runde
+etter oppdateringen kan flytte mange på én gang, og du får beskjed med snarvei
+til papirkurven.
+
+Diagnose er tilbake, som en rad under Innstillinger, Avansert. Én knapp sjekker
+lydenheter, mikrofontilgang og opptaksmotoren, og kan ta et testopptak på ti
+sekunder. Kopier full rapport sender alt videre til support.
+
+Fjern passord for e-postserveren virker nå, og knappen vises bare når det
+faktisk er lagret et passord.
+
+Utvid-pilene på kortene og bryterne i Innstillinger er lettere å treffe, uten at
+noe har flyttet seg.`;
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        update_check: { phase: "available", version: "0.17.2-beta.1", notes },
+      },
+      settings: { ...SETTLED_SETTINGS, autoUpdate: true },
+      goto: "home",
+    });
+
+    const banner = page.getByTestId("banner-update");
+    const detail = banner.getByTestId("banner-update-detail");
+    await expect(detail).toBeVisible();
+    // Hele teksten står i DOM-en fra start — klippingen er CSS, ikke en
+    // avkortet streng (se filhodet i `ui/Banner/Banner.tsx`).
+    await expect(detail).toHaveText(notes);
+
+    const more = page.getByTestId("banner-update-more");
+    await expect(more).toBeVisible();
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+
+    await more.click();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    // Teksten er uforandret — «Vis mer» folder ut, det dikter ikke opp noe.
+    await expect(detail).toHaveText(notes);
   });
 });
 
