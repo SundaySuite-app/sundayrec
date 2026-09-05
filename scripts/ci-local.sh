@@ -16,6 +16,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# F1-M6 (D6): this script always fetches the real sidecars in the very next
+# step, so `recorder::longrun`'s E6.2/E6.4 tests have no excuse for their
+# `SKIP: no fetched ffmpeg/ffprobe sidecar` path here either — gate parity
+# with ci.yml's `check` job, which sets the same var for the same reason.
+export SUNDAYREC_REQUIRE_SIDECAR=1
+
 CURRENT="startup"
 trap 'printf "\n\033[1;31m✗ CI FAILED at: %s\033[0m\n" "$CURRENT" >&2' ERR
 step() { CURRENT="$1"; printf "\n\033[1;36m▶ %s\033[0m\n" "$1"; }
@@ -25,6 +31,17 @@ step "ffmpeg/ffprobe sidecars";        npm run ffmpeg
 step "frontend — eslint";              npm run lint
 step "frontend — prettier --check";    npm run format:check
 step "frontend — tsc --noEmit";        npm run typecheck
+
+# ci.yml's "The shell builds under the shipped CSP" step, identical command:
+# the shipped CSP is `script-src 'self'`, so a transform that reached for
+# dynamic eval would build fine and be a blank window in WKWebView.
+step "frontend build — dist has no dynamic eval"; npm run build
+if grep -rqE 'eval\(|new[[:space:]]+Function' dist; then
+  printf "\033[1;31m✗ dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/APP-SHELL.md.\033[0m\n"
+  grep -rnE 'eval\(|new[[:space:]]+Function' dist | head -20
+  exit 1
+fi
+
 step "frontend — vitest";              npm run test
 
 step "app version in sync";            npm run version-sync
