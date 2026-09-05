@@ -965,6 +965,23 @@ function LastRecordingCard() {
  *
  * ⚠️ `askOpenEditor` har fortsatt ingen leser i Rust (ATLAS §2.6), så kortet
  * vises uansett hva den innstillingen sier.
+ *
+ * ## F1-R4: kortet henter seg selv fram
+ *
+ * Kvitteringen rendres NEDERST i `.page` — under kilde, måler, Start, de to
+ * opptakskortene og hele høyrekolonnen. Med et utfoldet kontrollrom er den
+ * langt under det synlige vinduet, og en frivillig som ikke ruller ned aner
+ * ikke at fila ble lagret. Samme historie for en tastaturbruker: ingenting
+ * flyttet fokus, så skjermleseren sa aldri at noe nytt kom.
+ *
+ * Så når `finished` går fra `null` til et opptak, ruller siden kortet til
+ * midten og gir det fokus — akkurat som `DiagnoseRow` gjør for sin egen
+ * resultatboks. `tabIndex` settes IMPERATIVT på DOM-noden og ikke som en prop
+ * på `Card` (som ikke videresender den): kortet skal være fokuserbart bare i
+ * det øyeblikket det dukker opp, ikke stå i tabrekkefølgen for alltid.
+ * `preventScroll` på selve `focus()`-kallet fordi rullingen allerede er gjort
+ * med `block: "center"` — nettleserens egen fokus-scroll retter seg bare inn
+ * mot nærmeste kant, og ville flyttet kortet vekk fra midten igjen.
  */
 function Done() {
   const finished = finishedRecording.value;
@@ -974,6 +991,20 @@ function Done() {
   // den nyeste raden, og «Siste opptak»-kortet skal ikke vise det forrige.
   useEffect(() => {
     if (finished) void loadRecordingCount();
+  }, [finished?.path]);
+
+  // F1-R4: rull til og fokuser kvitteringen når den DUKKER OPP — ikke på hver
+  // gjengivelse mens den samme `finished` står (historikkraden som kommer inn
+  // et øyeblikk senere skal ikke rive fokus bort igjen).
+  useEffect(() => {
+    if (!finished) return;
+    const el = document.querySelector<HTMLElement>(
+      '[data-testid="record-done"]',
+    );
+    if (!el) return;
+    el.tabIndex = -1;
+    el.scrollIntoView({ block: "center" });
+    el.focus({ preventScroll: true });
   }, [finished?.path]);
 
   if (!finished) return null;

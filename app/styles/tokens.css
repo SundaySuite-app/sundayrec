@@ -43,7 +43,18 @@
   /* ── Tekst, fire nivåer ───────────────────────────────────────────────── */
   --ink: #edf0f7;
   --ink-2: #a2adc2;
-  --ink-3: #5e6b85;
+  /*
+   * F1-UX1/R7: var #5e6b85 til 2026-09 — 3,46:1 mot `--bg` og 3,20:1 mot
+   * `--surface`, begge under WCAG AA-gulvet på 4,5:1 for vanlig tekst. Brukt
+   * ~30 steder, blant annet `.hint`-linjene i opptaksoverlegget og `.why`
+   * under Start-knappen — tekst som skal LESES, ikke bare anes.
+   *
+   * #8794ad gir 6,06:1 mot `--bg` og 5,61:1 mot `--surface` (regnet med
+   * WCAG-formelen for relativ luminans; se PR-teksten for skriptet), og er
+   * fortsatt tydelig dimmere enn `--ink-2` (8,20/7,59:1) — hierarkiet
+   * ink > ink-2 > ink-3 står ved seg, bare med et gulv under seg selv.
+   */
+  --ink-3: #8794ad;
 
   /* ── Gull: aksenten, og den eneste ────────────────────────────────────── */
   --gold: #ebb84b;

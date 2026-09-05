@@ -578,6 +578,7 @@
     },
     "overlay": {
       "stop": "Stopp opptaket",
+      "closeHint": "Du kan lukke vinduet — opptaket fortsetter i bakgrunnen.",
       "stopQuestion": "Stoppe opptaket?",
       "stopQuestionDesc": "{elapsed} er tatt opp. Stopper du nå, lagres det du har.",
       "keep": "Fortsett å ta opp",
