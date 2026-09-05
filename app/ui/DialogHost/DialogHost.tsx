@@ -26,6 +26,16 @@
  *
  * `nextFocusIndex` fra samme modul er fokusfellen.
  *
+ * ## F1-UX1: `aria-describedby` på selve dialogen
+ *
+ * `aria-labelledby` alene sier hvem dialogen ER («Stoppe opptaket?»), ikke hva
+ * den forklarer under det. Uten `aria-describedby` leser en skjermleser
+ * tittelen og hopper rett til knappene — brødteksten («1 t 02 min er tatt
+ * opp. Stopper du nå, lagres det du har.») finnes i DOM-en, men er aldri
+ * KNYTTET til dialogen som en beskrivelse. Nå peker den på `dialog-message`
+ * sin id, og bare når meldingen finnes — en referanse til et element som ikke
+ * ble rendret er verre enn ingen referanse.
+ *
  * ## Fokus tilbake dit brukeren var
  *
  * Vanskeligere enn `document.activeElement` alene: på macOS får en `<button>`
@@ -143,6 +153,17 @@ export function DialogHost() {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
+        // F1-UX1/W2: peker på brødteksten når det finnes én — ingen id uten
+        // et element å peke på, ellers er referansen løs og verre enn ingen.
+        // Den preformatterte blokken (`dialog-pre`, telemetriforhåndsvisningen
+        // og diagnoserapportene) er IKKE med i referansen, selv de gangene
+        // begge står samtidig (`TelemetryRow.showTelemetryPreview` setter
+        // både `message` og `preformatted`): en skjermleser som fikk HELE en
+        // JSON-nyttelast eller markdown-rapport lest opp som dialogens
+        // «beskrivelse» før den engang når knappene ville gjort dialogen
+        // tyngre å bruke enn den lange teksten selv rettferdiggjør. Den
+        // forblir lesbar i sin egen `<pre>` — bare ikke auto-annonsert.
+        aria-describedby={spec.message ? "app-dialog-message" : undefined}
         data-testid="dialog"
         data-danger={spec.danger ? "true" : undefined}
         class={styles.dialog}
@@ -177,7 +198,11 @@ export function DialogHost() {
           {spec.title}
         </h2>
         {spec.message ? (
-          <p data-testid="dialog-message" class={styles.message}>
+          <p
+            id="app-dialog-message"
+            data-testid="dialog-message"
+            class={styles.message}
+          >
             {spec.message}
           </p>
         ) : null}
