@@ -278,6 +278,19 @@ notifyStart: boolean,
 notifyStop: boolean, 
 /**
  * Send an email when a recording fails / a scheduled one is missed?
+ *
+ * Both halves of that sentence are TRUE as of A3, and only one of them was
+ * before. The failure half has been wired since P; the missed half was a
+ * promise this field made and nothing kept — `check_missed` decided what
+ * had been missed, emitted an event to a renderer that might not be
+ * running, and sent nothing. It now routes through the same dispatch, so
+ * the mail goes out over whichever pipe the machine has: a configured SMTP
+ * server if there is one, the SundaySuite relay otherwise
+ * (`crate::notify::plan_failure`).
+ *
+ * ONE switch for both pipes, deliberately. "Send me an e-mail when a
+ * recording fails" is the question the volunteer answered; which transport
+ * carries it is not a second question they should have to answer.
  */
 emailOnError: boolean, 
 /**

@@ -206,6 +206,13 @@ pub fn run() {
         // start/stop/reminder/preflight events (Fase 5). Started in setup once
         // the db pool is managed.
         .manage(scheduler::SchedulerEngine::new())
+        // A3: the one scheduled run in flight, stamped by the scheduler after a
+        // successful start and consumed by `notify::dispatch_receipt`. It is the
+        // only thing that can tell a recording somebody pressed Start for from
+        // one that ran while the building was empty — the recorder itself has no
+        // idea which button began the take, and teaching it would mean editing
+        // the capture path for a reporting reason.
+        .manage(scheduler::ScheduledRunMarker::new())
         // The wake engine schedules OS wake-from-sleep timers (pmset on macOS,
         // an in-process SetWaitableTimer on Windows)
         // for upcoming recordings + dedups repeated reschedules (Fase 5.2).
