@@ -732,6 +732,32 @@ on Avansert next to the toggle: «Denne maskinen kan vekkes fra dvale.» /
 «… kan ikke vekkes — la den stå på.» / «… spør om administratorpassord første
 gang.» / «Vi vet ikke ennå …».
 
+**«Test vekking» (F1-R3/W6)** — a row under the toggle schedules a REAL OS
+wake two minutes out, without waiting for Sunday: `wake_test` +
+`wake_cancel_test` (the button becomes «Avbryt» while armed) + a failure/test
+log with `wake_failure_history` and «Tøm» (`wake_clear_failure_history`). Four
+commands out of the `unreachable` baseline, for exactly the reason the
+reachability audit itself gave for leaving them dark
+(`docs/APP-SHELL.md`: "rig tools waiting for a Mac where the wake actually
+fails"). Same F1-R3 pass also took `refreshWakeArmed()` OUT of the 60 s
+reserve poll — it used to ride along unconditionally, ~120 `pmset` spawns over
+a two-hour service — down to four named triggers
+(`app/lib/status/next-recording-core.ts::shouldRefreshWake`), never while a
+recording is running. The UI-visible half of both is now covered without
+hardware:
+
+- VERIFIED-BY: e2e/status-honesty.spec.ts::under et opptak rører ikke minuttpollen wake_verify i det hele tatt
+- VERIFIED-BY: e2e/status-honesty.spec.ts::et scheduler-neste-event UTENFOR opptak henter en fersk wake_verify
+- VERIFIED-BY: e2e/advanced.spec.ts::planlegger en ekte vekking, og «Avbryt» tar raden tilbake
+- VERIFIED-BY: e2e/advanced.spec.ts::en feilet test siterer DEN SAMME setningen som «Aktiver vekking»
+- VERIFIED-BY: e2e/advanced.spec.ts::«Test vekking» er sperret mens et opptak går, med en grunn
+- VERIFIED-BY: e2e/advanced.spec.ts::feilhistorikken viser hendelsene, og «Tøm» kaller SLETTEKOMMANDOEN
+
+What is NOT covered here, and stays [HW] in item 3–5 below: the machine
+ACTUALLY resuming from sleep. Scheduling the OS timer is proven (this list,
+plus the backend's own `wake/mod.rs` unit tests above); nothing short of a
+real Mac can prove the resume.
+
 ⚠️ Turning **«Ta opp automatisk»** off no longer deletes the time. `Settings`
 grew a real `auto_record_enabled` flag in P1b (read in ONE place,
 `active_slots()`, so a flag honoured in five of six readers cannot wake the

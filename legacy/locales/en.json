@@ -388,6 +388,23 @@
           "cancelled": "You cancelled — nothing was registered.",
           "failed": "The wake-up was not registered."
         },
+        "wakeTest": "Test wake-up in 2 min",
+        "wakeTestIdle": "Schedule a real wake-up two minutes from now, and see whether the machine actually wakes.",
+        "wakeTestScheduled": "Scheduled for {time} — let the machine sleep to see whether it wakes.",
+        "wakeHistoryTitle": "Wake history",
+        "wakeHistoryDesc": "The most recent tests, and any scheduled wake-ups that failed.",
+        "wakeHistoryEmpty": "No events yet.",
+        "wakeHistoryClear": "Clear",
+        "wakeHistoryKind": {
+          "missed": "Missed a scheduled wake-up",
+          "testOk": "Test wake-up succeeded",
+          "testFail": "Test wake-up failed"
+        },
+        "wakeHistoryReason": {
+          "noResume": "no resume observed",
+          "tooLate": "came too late",
+          "onBattery": "running on battery"
+        },
         "audioTech": "Audio technology"
       }
     },

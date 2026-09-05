@@ -89,6 +89,19 @@
   color: var(--ink-3);
 }
 
+/* Vekkehistorikken (W6): en logg, ikke prosa — samme grep som
+   DiagnoseRow.module.css bruker for IPC-ringen og enhetslista. */
+.wakeHistoryList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
 /* Mappevisningen: stien er data, ikke prosa — den skal kunne leses tegn for
    tegn, og den skal aldri sprenge kortet. */
 .path {
