@@ -566,7 +566,8 @@
       "readyDesc": "Dette er det samme du finner under Innstillinger (tannhjulet) og på Opptak-skjermen senere.",
       "notifyTodo": "Ikke satt opp — ingen får beskjed hvis et opptak feiler.",
       "open": "Åpne SundayRec",
-      "progress": "Framdrift"
+      "progress": "Framdrift",
+      "resumeChip": "Fortsett oppsettet"
     },
     "consent": {
       "title": "Vil du hjelpe oss å gjøre SundayRec bedre?",

@@ -566,7 +566,8 @@
       "readyDesc": "This is the same you will find under Settings (the gear) and on the Record screen later.",
       "notifyTodo": "Not set up — nobody is told if a recording fails.",
       "open": "Open SundayRec",
-      "progress": "Progress"
+      "progress": "Progress",
+      "resumeChip": "Continue setup"
     },
     "consent": {
       "title": "Want to help make SundayRec better?",

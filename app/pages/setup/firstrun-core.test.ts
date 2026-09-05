@@ -4,8 +4,10 @@ import {
   dots,
   FIRST_RUN_STEP_COUNT,
   FIRST_RUN_STEPS,
+  firstRunResumeIndex,
   isGatedStep,
   screenAt,
+  showFirstRunResumeChip,
   soundGateOpen,
 } from "./firstrun-core";
 
@@ -78,5 +80,30 @@ describe("the sound gate", () => {
   it("applies to the first step only", () => {
     expect(isGatedStep(0)).toBe(true);
     for (let i = 1; i <= 5; i += 1) expect(isGatedStep(i)).toBe(false);
+  });
+});
+
+// R6: «Sett opp» from the checklist used to be a one-way exit — leaving via
+// it never came back, and onboardingDone stayed false, so the next boot ran
+// the whole five-question sequence again even though four of the five were
+// already answered. These two functions are what the resume chip decides
+// with; `FirstRun.tsx` and `FirstRunResumeChip.tsx` are the effectful shell
+// around them (a signal, and a click that navigates).
+describe("resuming after «Sett opp»", () => {
+  it("falls back to the checklist when nothing was remembered", () => {
+    expect(firstRunResumeIndex(null)).toBe(FIRST_RUN_STEP_COUNT);
+  });
+
+  it("otherwise returns exactly the step that was remembered", () => {
+    // In practice this is always FIRST_RUN_STEP_COUNT too — «Sett opp» only
+    // exists on the checklist today — but the function honours whatever it
+    // is handed rather than hard-coding the one value that is reachable now.
+    expect(firstRunResumeIndex(2)).toBe(2);
+    expect(firstRunResumeIndex(0)).toBe(0);
+  });
+
+  it("shows the chip only while onboarding is unfinished", () => {
+    expect(showFirstRunResumeChip(false)).toBe(true);
+    expect(showFirstRunResumeChip(true)).toBe(false);
   });
 });

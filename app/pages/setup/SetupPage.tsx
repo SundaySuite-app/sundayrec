@@ -43,6 +43,7 @@ import { refreshDiskSpace } from "../../state/disk";
 import { refreshEmailFacts } from "../../state/email";
 import { AdvancedPage } from "./AdvancedPage";
 import { ChurchPage } from "./ChurchPage";
+import { FirstRunResumeChip } from "./FirstRunResumeChip";
 import { isControlId } from "../record/control-core";
 import styles from "./setup.module.css";
 
@@ -86,6 +87,10 @@ export function SetupPage() {
 
   return (
     <div class={styles.page}>
+      {/* R6: kirkeradens «Sett opp» lander nettopp HER — se `Checklist` i
+          `FirstRun.tsx` — så chippen som fører tilbake må stå her også, ikke
+          bare på OPPTAK. */}
+      <FirstRunResumeChip />
       <ChurchPage />
       {/*
         Seksjonsnavnet, ikke en fane: «Avansert» er halve denne skjermen, og

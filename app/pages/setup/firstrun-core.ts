@@ -89,3 +89,30 @@ export function soundGateOpen(
 export function isGatedStep(index: number): boolean {
   return index === 0;
 }
+
+/**
+ * R6: steget «Fortsett oppsettet»-chippen skal gå tilbake til.
+ *
+ * `remembered` er `firstRunReturn.value` i `FirstRun.tsx`: hva `firstRunIndex`
+ * stod i da «Sett opp» sist forlot sekvensen, eller `null` hvis det aldri har
+ * skjedd denne økten. Sjekklisten er i dag det ENE stedet «Sett opp» finnes —
+ * å folde det enkelte spørsmålet ut INNE i sekvensen i stedet er alternativet
+ * (kortene utfoldet) som er M/L og utsatt, se PR-teksten — så sjekklisten er
+ * også det ene fornuftige stedet å falle tilbake til når ingenting er husket.
+ */
+export function firstRunResumeIndex(remembered: number | null): number {
+  return remembered ?? FIRST_RUN_STEP_COUNT;
+}
+
+/**
+ * Skal «Fortsett oppsettet»-chippen vises?
+ *
+ * Ett vilkår: sekvensen er ikke fullført. `Shell` bytter ut HELE innholdet
+ * med `FirstRun` så lenge `route.firstRun` er sann (se `Shell.tsx`), så
+ * chippen og sekvensen selv kan aldri stå på skjermen samtidig — regelen
+ * trenger derfor ikke vite hvilken side den rendres på, bare om «Åpne
+ * SundayRec» alt er trykket.
+ */
+export function showFirstRunResumeChip(onboardingDone: boolean): boolean {
+  return !onboardingDone;
+}
