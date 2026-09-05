@@ -169,6 +169,10 @@ jobs:
           TAG: ${{ github.ref_name }}
 
       # ── Notarization switch: a repo VARIABLE, not a commented-out block ────
+      # [notarize-switch] — docs (NEEDS-RICHARD.md, RELEASE-CHECKLIST.md) point
+      # here instead of at a line number, same reason as [notarization] below:
+      # grep this repo for the literal string `[notarize-switch]` to find this
+      # step again.
       # Off by default — see the comment on APPLE_CERTIFICATE below for why.
       # Flip NOTARIZE_MAC to "true" (Settings → Secrets and variables →
       # Actions → Variables) once the Program License Agreement is accepted;

@@ -12,6 +12,10 @@ unless you opt in to anonymous telemetry, so when something fails we usually hav
 idea. A two-line bug report is a genuine contribution — open an issue here, or email
 dev@sundaysuite.app if GitHub is not your thing.
 
+Found a **security vulnerability** instead of an ordinary bug? This address and a
+public issue are both the wrong place for that — see [SECURITY.md](SECURITY.md)
+for the private channel.
+
 ## Ways in
 
 - **Test & report** — use it on an ordinary Sunday or an ordinary Monday morning, and

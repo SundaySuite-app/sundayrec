@@ -405,7 +405,8 @@
           "tooLate": "kom for sent",
           "onBattery": "gikk på batteri"
         },
-        "audioTech": "Lyd-teknologi"
+        "audioTech": "Lyd-teknologi",
+        "diagnoseReportWhere": "Lim rapporten inn i et GitHub-issue, eller send den til dev@sundaysuite.app."
       }
     },
     "diagnose": {

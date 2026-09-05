@@ -405,7 +405,8 @@
           "tooLate": "came too late",
           "onBattery": "running on battery"
         },
-        "audioTech": "Audio technology"
+        "audioTech": "Audio technology",
+        "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app."
       }
     },
     "diagnose": {
