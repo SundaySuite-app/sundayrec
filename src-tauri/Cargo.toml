@@ -86,7 +86,7 @@ asio = ["cpal/asio"]
 # no download UI, no cache directory, no "model missing" branch, and analysis
 # still works on a church PC with no internet. `sha2` re-verifies the embedded
 # bytes at load time; build.rs verifies the file on disk when this feature is on.
-vad = ["dep:tract-onnx", "dep:sha2"]
+vad = ["dep:tract-onnx"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -217,9 +217,19 @@ lettre = { version = "0.11", default-features = false, features = [
 # Launch-at-login (OS login item) so scheduled recordings actually fire after a
 # reboot. Always compiled — auto-start is core to the unattended-recorder use case.
 tauri-plugin-autostart = "2"
-# E9 VAD model integrity check (SHA-256). Already in the tree via `keyring`;
-# pulled directly only under `--features vad`.
-sha2 = { version = "0.11", optional = true }
+# SHA-256. Two callers, both of which need it in EVERY build:
+#   - the e-mail relay hashes its confirmation/unsubscribe tokens, so only the
+#     digest ever reaches the endpoint (`commands/notify_relay.rs`);
+#   - `--features vad` re-verifies the embedded model's bytes at load time.
+# It used to be `optional = true` behind `vad`; the relay is featureless (it is
+# HTTP, not SMTP), so the dependency is now unconditional. Already in the tree
+# via `keyring` either way.
+sha2 = "0.11"
+# The OS CSPRNG, for the relay's 32-byte tokens. Directly, rather than through
+# `rand`: the only thing asked of it is "fill this buffer from the system", and
+# a token minted from anything weaker would look exactly like a real one while
+# being guessable. Already in the tree via `uuid`.
+getrandom = "0.3"
 # E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
 # no system onnxruntime to ship or find. Only pulled under `--features vad`.
 tract-onnx = { version = "0.23.4", optional = true }

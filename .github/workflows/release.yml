@@ -256,6 +256,23 @@ jobs:
           # (default off) — see PRIVACY.md.
           SUNDAYREC_TELEMETRY_URL: https://telemetry.sundaysuite.app
           SUNDAYREC_TELEMETRY_KEY: ${{ secrets.SUNDAYREC_TELEMETRY_KEY }}
+          # The e-mail relay's endpoint. Read through `option_env!` by
+          # `src-tauri/src/notify/relay/config.rs`, i.e. at COMPILE time, so it
+          # belongs here beside the two above and not in the runtime env.
+          #
+          # NO new secret: the relay is a set of routes on the SAME Worker and
+          # authenticates with the SAME write key, which the line above already
+          # supplies (`resolve_write_key` is imported rather than re-derived,
+          # precisely so these cannot drift apart). A build that gets this URL
+          # without that key has no relay at all — better than one that POSTs
+          # and collects a 401, which the outbox reads as permanent and drops.
+          #
+          # A third host name, not `telemetry.`, because the confirmation link
+          # this produces lands in a volunteer's inbox: a link with "telemetry"
+          # in it reads as a tracking mail to the only person who has to judge
+          # it. Routing does not depend on the name — the Worker branches on the
+          # path — so this is about what the URL SAYS.
+          SUNDAYREC_NOTIFY_URL: https://notify.sundaysuite.app
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "SundayRec ${{ github.ref_name }}"

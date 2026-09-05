@@ -96,6 +96,10 @@ export const SETTINGS_DEFAULTS: Settings = {
   emailSmtpUser: "",
   emailSmtpFrom: "",
 
+  // E-mail relay receipt (A4) — independent of the SMTP fields above; gated
+  // in the UI on a CONFIRMED relay subscription (A5).
+  emailReceiptEnabled: false,
+
   // Editor
   editorIntroPath: null,
   editorOutroPath: null,

@@ -1202,6 +1202,59 @@ const api: Record<string, unknown> = {
     }
   },
 
+  // ── The e-mail relay (A2) ───────────────────────────────────────────────
+  //
+  // Five doors for five commands that are registered but not yet used by any
+  // page — A5 builds the panel on top of them. They are here NOW rather than
+  // with that panel because of what the alternative costs: the reachability
+  // gate would otherwise record five newly-registered commands as unreachable
+  // and want each one classified as deliberately dark, which is a claim
+  // nobody would mean. A thin, typed, honest door is the truthful version of
+  // "this is wired, the screen comes next" — and it is what A5 will call.
+  //
+  // The fallbacks are pessimistic on purpose, exactly as the telemetry block
+  // above argues: a failed read must never look like a working subscription.
+  // `relayStatus` falls back to "no endpoint, nothing enrolled", which renders
+  // as the panel's own empty state.
+  relayStatus: async () =>
+    call<
+      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+    >("relay_status", undefined, {
+      endpointBuilt: false,
+      state: null,
+      address: null,
+      enrolledAt: null,
+      confirmedAt: null,
+      queued: 0,
+    }),
+  // The three mutations are NOT wrapped in `call`: each is a button press with
+  // a granular error the panel has to show (`relay_invalid_address`,
+  // `relay_no_endpoint`, `relay_not_confirmed` — all extractable by
+  // `errorCode()`). Swallowing one into a fallback status would tell the user
+  // their address was accepted when it was refused.
+  relaySubscribe: async (address: string) =>
+    await invoke<
+      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+    >("relay_subscribe", { address }),
+  relayResend: async () =>
+    await invoke<
+      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+    >("relay_resend"),
+  relayUnsubscribe: async () =>
+    await invoke<
+      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
+    >("relay_unsubscribe"),
+  // Shaped like `testEmail` above, and for the same reason: the button reports
+  // its own outcome inline rather than throwing at the page.
+  relaySendTest: async () => {
+    try {
+      await invoke("relay_send_test");
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
+
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone

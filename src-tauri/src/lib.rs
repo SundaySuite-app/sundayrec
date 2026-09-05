@@ -378,6 +378,27 @@ pub fn run() {
             // hears about it instead of just the log file.
             notify::arm_detached(app.handle().clone());
 
+            // …and the e-mail relay's pump, beside it. `maybe_spawn` starts
+            // NOTHING unless this machine has a subscription record: an install
+            // that never enrolled an address has no task, no connection pool and
+            // nothing that could resolve a hostname. When there is one, this is
+            // what delivers the messages that were queued while the app was
+            // closed — a failure alert written on Sunday evening on a machine
+            // that then lost its network reaches the inbox on Monday morning,
+            // instead of waiting for somebody to open the settings panel.
+            {
+                let handle = app.handle().clone();
+                crash::watch_handle(
+                    "notify::relay::startup",
+                    tauri::async_runtime::spawn(async move {
+                        let Some(db) = handle.try_state::<db::Db>() else {
+                            return;
+                        };
+                        notify::relay::sender::maybe_spawn(&handle, &db.pool).await;
+                    }),
+                );
+            }
+
             // Expire the Papirkurv. Without this the trash is a folder that
             // only ever grows — a delete that silently keeps every byte
             // forever is not a delete, it is a leak with a nice name.
@@ -542,6 +563,15 @@ pub fn run() {
             commands::email::email_clear_smtp_password,
             commands::email::email_set_smtp_password,
             commands::email::email_has_smtp_password,
+            // The e-mail relay (A2) — the light way to the same alerts: an
+            // address and a confirmation click instead of an SMTP host and an
+            // app password. Featureless (HTTP, not SMTP). Nothing is sent from
+            // these calls; they queue a row and ring the pump's doorbell.
+            commands::notify_relay::relay_status,
+            commands::notify_relay::relay_subscribe,
+            commands::notify_relay::relay_resend,
+            commands::notify_relay::relay_unsubscribe,
+            commands::notify_relay::relay_send_test,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,
