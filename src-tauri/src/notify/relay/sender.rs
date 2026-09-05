@@ -675,8 +675,8 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
         app.clone(),
         "notify::relay",
         crate::supervise::TaskAlert {
-            title: "SundayRec",
-            body: "Bakgrunnsoppgaven for e-postvarsler startet på nytt.",
+            title: None,
+            body: sundayrec_core::alerts::AlertText::EmailTaskRestarted,
         },
         move || {
             let app = app_for_loop.clone();

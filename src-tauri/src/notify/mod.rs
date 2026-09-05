@@ -193,6 +193,14 @@ fn failure_seen_key(code: &str, message: &str) -> String {
     format!("{code}:{}", short_hash(message))
 }
 
+/// The title a native notification carries when it has nothing more specific
+/// to say. NOT localized, and deliberately so: it is the product's name.
+///
+/// Stated once here because five call sites spelled it as a literal, and a
+/// gate that hunts for Norwegian in string literals should not have to reason
+/// about which `"SundayRec"` is a brand and which is the start of a sentence.
+pub const APP_TITLE: &str = "SundayRec";
+
 /// Fire a native OS notification. The one channel no setting can silence: the
 /// person standing at the machine is the only one who can still save the
 /// service. Previously private to the scheduler — the recorder had no way to
@@ -284,7 +292,7 @@ pub async fn dispatch_failure(app: &AppHandle, ctx: FailureCtx) {
     // 1. The native leg first — it needs nothing but the app handle, so it still
     //    fires if the database is unreachable (which is itself a failure mode
     //    the operator would want to hear about).
-    native(app, "SundayRec", &ctx.message);
+    native(app, APP_TITLE, &ctx.message);
 
     // A recording that DIED cannot also have finished: drop the scheduler's
     // marker so the receipt leg has nothing to report. Only for the recorder's

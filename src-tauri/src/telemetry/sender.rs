@@ -286,8 +286,8 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
         app.clone(),
         "telemetry::sender",
         crate::supervise::TaskAlert {
-            title: "SundayRec",
-            body: "Bakgrunnsoppgaven for kvalitetsrapporter startet på nytt.",
+            title: None,
+            body: sundayrec_core::alerts::AlertText::QualityTaskRestarted,
         },
         move || {
             let app = app_for_loop.clone();

@@ -51,6 +51,7 @@ step "i18n hardkoding 0 (app/)";       npm run i18n-hardcoded-tsx
 step "i18n flertallsgrupper";          npm run i18n-plurals
 step "farger kun via tokens (app/)"; npm run css-tokens
 step "feilkoder er oversettbare";      npm run error-codes
+step "norsk-skralle (Rust)";           npm run rust-norwegian
 step "smoke VERIFIED-BY pointers";     npm run smoke-verified
 
 step "rust — cargo fmt --check";       npm run fmt:rust:check
