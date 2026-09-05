@@ -40,14 +40,22 @@
 //! ([`dropped_lines`], surfaced in the diagnose report) rather than waiting. A
 //! log that costs a recording is not worth having.
 //!
-//! ## Secrets
+//! ## Secrets and identity
 //!
 //! The file is the one artefact a volunteer operator will cheerfully paste into
-//! a chat channel, so every line goes through
-//! [`sundayrec_core::redact::redact_secrets`] — on the WRITER thread, so the
-//! cost does not land on whoever was logging. Stream keys (both `key=` and the
+//! a chat channel, so every line goes through both
+//! [`sundayrec_core::redact::redact_secrets`] and
+//! [`sundayrec_core::redact::scrub_paths`] — on the WRITER thread, so the cost
+//! does not land on whoever was logging. Stream keys (both `key=` and the
 //! trailing segment of an `rtmp://` URL), SMTP passwords, OAuth access/refresh
-//! tokens and `Authorization: Bearer` headers cannot reach the file.
+//! tokens and `Authorization: Bearer` headers cannot reach the file — and
+//! neither can the operator's own OS account name. A path like
+//! `/Users/anne-marie/Musikk/Sandnes frikirke/…` names the volunteer before any
+//! redaction runs (F1-A7: a support thread is exactly where a "copy the last
+//! log" paste lands), so `home` is resolved ONCE when the writer thread starts
+//! — the same `HOME`/`USERPROFILE` lookup [`crate::crash`] uses for its panic
+//! records — and threaded into every line from there, rather than re-read per
+//! line for a syscall this module exists to keep off the hot path.
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -55,7 +63,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, OnceLock};
 
-use sundayrec_core::redact::redact_secrets;
+use sundayrec_core::redact::{redact_secrets, scrub_paths};
 
 /// Base name of the live log file. Rotated siblings are `sundayrec.1.log` …
 /// `sundayrec.4.log`, so the NEWEST is always the one without a number.
@@ -100,10 +108,11 @@ pub fn init() -> Option<FileLogWriter> {
     }
     let _ = LOG_DIR.set(dir.clone());
 
+    let home = home_dir();
     let (tx, rx) = sync_channel::<Vec<u8>>(QUEUE_CAPACITY);
     std::thread::Builder::new()
         .name("sundayrec-logfile".into())
-        .spawn(move || writer_thread(dir, rx))
+        .spawn(move || writer_thread(dir, rx, home))
         .ok()?;
     Some(FileLogWriter { tx: Arc::new(tx) })
 }
@@ -181,15 +190,25 @@ impl Drop for LogSink {
 //   The writer thread
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn writer_thread(dir: PathBuf, rx: Receiver<Vec<u8>>) {
+fn writer_thread(dir: PathBuf, rx: Receiver<Vec<u8>>, home: Option<String>) {
     let mut writer = RotatingWriter::open(dir, MAX_FILE_BYTES, MAX_FILES);
     while let Ok(chunk) = rx.recv() {
         // Redaction happens HERE, not in the producer: the cost belongs to the
-        // thread whose job is writing, not to whoever happened to log.
+        // thread whose job is writing, not to whoever happened to log. `home`
+        // was resolved once by `init()` before this thread started — see the
+        // module doc's "Secrets and identity" section.
         let text = String::from_utf8_lossy(&chunk);
-        let safe = redact_secrets(&text);
+        let safe = redact_secrets(&scrub_paths(&text, home.as_deref()));
         writer.write_line(safe.as_bytes());
     }
+}
+
+/// The user's home directory, for path scrubbing. Same lookup [`crate::crash`]
+/// uses for its panic records.
+fn home_dir() -> Option<String> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(|v| v.to_string_lossy().into_owned())
 }
 
 /// A size-rotating append writer. Not `Send`-shared: exactly one thread owns it.
@@ -456,7 +475,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let (tx, rx) = sync_channel::<Vec<u8>>(8);
         let path = dir.path().to_path_buf();
-        let t = std::thread::spawn(move || writer_thread(path, rx));
+        let t = std::thread::spawn(move || writer_thread(path, rx, None));
         tx.send(b"stream_start key=SUPERSECRET url=rtmp://live/app/OTHERSECRET\n".to_vec())
             .unwrap();
         tx.send(b"smtp login password=hunter2\n".to_vec()).unwrap();
@@ -473,6 +492,46 @@ mod tests {
         // …and the non-secret context survives, or the log would be useless.
         assert!(written.contains("stream_start"), "{written}");
         assert!(written.contains("smtp login"), "{written}");
+    }
+
+    // ── F1-A7: the operator's identity is scrubbed too ──────────────────────
+
+    #[test]
+    fn the_writer_thread_also_scrubs_the_operators_home_directory() {
+        // The exact shape of a real support thread: a Norwegian volunteer's
+        // save-folder path names both her and, one level down, which church —
+        // `/Users/anne-marie/Musikk/Sandnes frikirke/…`. `home` is threaded
+        // through from `init()` (here, the test passes it directly, the same
+        // seam `writer_thread` is called through), so this line proves BOTH
+        // scrubbers run on the writer thread, in one pass: the operator's own
+        // OS account name is gone, exactly as it already is from crash.rs's
+        // panic records and telemetry's free text, and a secret sitting in
+        // the same line is still redacted.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (tx, rx) = sync_channel::<Vec<u8>>(8);
+        let path = dir.path().to_path_buf();
+        let home = Some("/Users/anne-marie".to_string());
+        let t = std::thread::spawn(move || writer_thread(path, rx, home));
+        tx.send(
+            b"recorder: writing to /Users/anne-marie/Musikk/Sandnes frikirke/gudstjeneste.wav key=SUPERSECRET\n"
+                .to_vec(),
+        )
+        .unwrap();
+        drop(tx);
+        t.join().unwrap();
+
+        let written = std::fs::read_to_string(dir.path().join("sundayrec.log")).unwrap();
+        // The volunteer's own account name is gone…
+        assert!(!written.contains("anne-marie"), "{written}");
+        // …the secret in the same line is still gone…
+        assert!(!written.contains("SUPERSECRET"), "{written}");
+        assert!(written.contains("key=***"), "{written}");
+        // …and the path is still readable for support purposes, home folded
+        // to `~` exactly as `scrub_paths`'s other callers already behave.
+        assert!(
+            written.contains("~/Musikk/Sandnes frikirke/gudstjeneste.wav"),
+            "{written}"
+        );
     }
 
     // ── the tail ─────────────────────────────────────────────────────────────
