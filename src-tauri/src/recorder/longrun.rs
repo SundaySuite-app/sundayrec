@@ -521,9 +521,33 @@ mod tests {
     }
 
     impl EnvPin {
+        /// `None` when no fetched sidecar is on disk — every call site's
+        /// `SKIP:` path.
+        ///
+        /// F1-M6 (D6): a lane that already ran `npm run ffmpeg` (ci.yml's
+        /// `check` job, `scripts/ci-local.sh`) has no excuse for that `None` —
+        /// it is exactly how this whole longrun suite went unexercised in CI
+        /// for as long as it did, with every run reporting green over a SKIP.
+        /// Setting `SUNDAYREC_REQUIRE_SIDECAR=1` turns the missing-sidecar
+        /// case into a panic here instead, so a lane that is SUPPOSED to have
+        /// the binaries fails loudly the moment it does not — one choke
+        /// point for every one of this module's `EnvPin::acquire` call sites,
+        /// rather than nine copies of the same check. A bare dev checkout
+        /// that has not run the fetch script yet is the only caller meant to
+        /// still take the `None`/SKIP path.
         fn acquire(split_bytes: Option<u64>) -> Option<Self> {
             let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let (ffmpeg, ffprobe) = (fetched_sidecar("ffmpeg")?, fetched_sidecar("ffprobe")?);
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                assert!(
+                    std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
+                    "SUNDAYREC_REQUIRE_SIDECAR=1 but no fetched ffmpeg/ffprobe \
+                     sidecar — run `npm run ffmpeg` first (the longrun suite \
+                     must not silently skip in a lane that requires it)"
+                );
+                return None;
+            };
             // SAFETY: serialised by ENV_LOCK; all three restored on Drop, which
             // runs before the guard is released.
             unsafe {

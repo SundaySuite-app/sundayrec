@@ -166,6 +166,15 @@ jobs:
       # docs/MIGRATION-TAURI2.md, Phase 0/3 hardware matrix.
       - name: Rust fmt / clippy / tests
         working-directory: src-tauri
+        # F1-M6 (D6): this job fetched the real ffmpeg/ffprobe sidecars above,
+        # so `recorder::longrun`'s E6.2/E6.4 tests have no excuse to take their
+        # `SKIP: no fetched ffmpeg/ffprobe sidecar` path here — that silent
+        # skip is exactly how the whole longrun suite went unexercised in CI
+        # without a single red run to show it. REQUIRE_SIDECAR turns that SKIP
+        # into a panic in this lane; a bare dev checkout without the sidecars
+        # still gets the tolerant skip (see EnvPin::acquire).
+        env:
+          SUNDAYREC_REQUIRE_SIDECAR: "1"
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings

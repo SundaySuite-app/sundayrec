@@ -35,7 +35,7 @@
     "reachability": "node scripts/check-command-reachability.mjs",
     "smoke-verified": "node scripts/check-smoke-verified.mjs",
     "reachability:write-baseline": "node scripts/check-command-reachability.mjs --write-baseline",
-    "bindings:check": "npm run bindings && git diff --quiet -- legacy/bindings || (echo 'ts-rs bindings are stale — run npm run bindings and commit legacy/bindings' && exit 1)",
+    "bindings:check": "npm run bindings && test -z \"$(git status --porcelain -- legacy/bindings)\" || (echo 'ts-rs bindings are stale — run npm run bindings and commit legacy/bindings' && exit 1)",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-keys && npm run i18n-keys:unused && npm run i18n-hardcoded-tsx && npm run i18n-plurals && npm run css-tokens && npm run error-codes && npm run smoke-verified && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check && npm run reachability",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky",
