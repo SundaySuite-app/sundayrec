@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
+  recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
@@ -47,11 +48,27 @@ import { editorFixtures, FILE } from "./editor-fixtures";
 //
 // Tallene her er også målt i en EKTE WKWebView (Swift-vert, samme probe): 44,5
 // og 40,5. Se `docs/APP-SHELL.md` §«Treffflatene».
+//
+// F1-UX1/W2: ghost-knappene («Slett», «Vis i Finder», «Endre», …) og
+// Bibliotekets rader lagt til med SAMME metode. De hadde ingen egen flate å
+// finne feil i — målt gjennom hele appen (Opptak, Avansert, Bibliotek,
+// editoren) er boksen alltid 40,3 px høy, husets faste knappepadding — men nå
+// STÅR gulvet, i stedet for å være noe hver skjerm bare håpet.
 
 /** Gulvene. 44 er fingergulvet; bryteren er 40 fordi bredden ER 40 og en
  *  treffflate som ikke er kvadratisk er en flate man bommer på skjevt. */
 const TOGGLE_FLOOR = 40;
 const EXPAND_FLOOR = 44;
+
+/**
+ * F1-UX1/W2: ghost-knappene («Slett», «Vis i Finder», «Ferdig», …) har INGEN
+ * egen usynlig flate — målt gjennom hele appen (Opptak, Avansert, Bibliotek,
+ * editoren, kvitteringen, overlegget) er boksen alt 40,3 px høy, husets faste
+ * `.btn`-padding pluss linjehøyden. Samme gulv som bryteren, men her er det en
+ * LÅS: neste gang noen strammer knappepaddingen for å få mer luft et sted,
+ * skal denne testen si nei før en frivillig merker det.
+ */
+const GHOST_FLOOR = 40;
 
 /**
  * Måleren har 0,5 px oppløsning, så en 40,0 px flate leses som 40,0 ± 0,5
@@ -168,20 +185,25 @@ async function nobodyStolen(page: Page): Promise<void> {
   expect(stolen).toEqual([]);
 }
 
-/** Påstanden om ÉN skjerm: bryterne, utfoldingsknappene, og ingen tyveri. */
+/** Påstanden om ÉN skjerm: bryterne, utfoldingsknappene, ghost-knappene, og
+ *  ingen tyveri. */
 async function assertHitTargets(
   page: Page,
   where: string,
-  expect_: { toggles: number; expands: number },
+  expect_: { toggles: number; expands: number; ghosts: number },
 ): Promise<void> {
   const toggles = await measure(page, 'button[role="switch"]');
   const expands = await measure(page, '[data-testid$="-expand"]');
+  const ghosts = await measure(page, 'button[data-variant="ghost"]');
 
   // At det faktisk STO noe der å måle. Uten dette ville et skjermbytte som
   // gikk galt gitt en grønn test om en tom skjerm.
   expect(toggles.length, `${where}: antall brytere målt`).toBe(expect_.toggles);
   expect(expands.length, `${where}: antall utfoldingsknapper målt`).toBe(
     expect_.expands,
+  );
+  expect(ghosts.length, `${where}: antall ghost-knapper målt`).toBe(
+    expect_.ghosts,
   );
 
   for (const t of toggles) {
@@ -210,6 +232,12 @@ async function assertHitTargets(
     // Raden er 44 px høy og skal LESES som én linje: knappen selv må bli
     // stående på ~30.
     expect(e.boxH, `${where}/${e.id}: boksen står stille`).toBeLessThan(34);
+  }
+
+  for (const g of ghosts) {
+    expect(g.hitH, `${where}/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
+      GHOST_FLOOR - PROBE_STEP,
+    );
   }
 
   await nobodyStolen(page);
@@ -244,7 +272,11 @@ test.describe("treffflater", () => {
     // Kamera og auto-opptak er de to kortene som har en bryter i lead-en, og
     // de står ved siden av hverandre i stabelen — 6 px fra hverandre. Det er
     // nettopp der en for grådig flate ville tatt naboens bryter.
-    await assertHitTargets(page, "record", { toggles: 2, expands: 3 });
+    await assertHitTargets(page, "record", {
+      toggles: 2,
+      expands: 3,
+      ghosts: 1,
+    });
   });
 
   test("kontrollrommet: med et kort foldet ut", async ({ page }) => {
@@ -257,7 +289,13 @@ test.describe("treffflater", () => {
     // Tre og ikke fire: kroppen har to brytere, men e-postbryteren står bak en
     // `Gate` som er `inert` uten `smtp`-featuren. Den skal IKKE svare på et
     // trykk, og telles derfor ikke — se `measure`.
-    await assertHitTargets(page, "record/notify", { toggles: 3, expands: 3 });
+    // To ghost-knapper: kilde-kortets «Endre» OG kroppens «Test»-knapp
+    // (`notify-test`).
+    await assertHitTargets(page, "record/notify", {
+      toggles: 3,
+      expands: 3,
+      ghosts: 2,
+    });
   });
 
   test("kontrollrommet: kvalitet og mappe foldet ut samtidig", async ({
@@ -270,6 +308,7 @@ test.describe("treffflater", () => {
     await assertHitTargets(page, "record/folder+quality", {
       toggles: 2,
       expands: 3,
+      ghosts: 1,
     });
   });
 
@@ -289,6 +328,17 @@ test.describe("treffflater", () => {
         TOGGLE_FLOOR - PROBE_STEP,
       );
       expect(t.boxH, `advanced/${t.id}: boksen står stille`).toBe(22);
+    }
+    // F1-UX1/W2: den TETTESTE siden i appen er også den med flest ghost-
+    // knapper (kopier, forhåndsvis, eksporter/importer, diagnose, …) — samme
+    // gulv, og `toBeGreaterThanOrEqual` av samme grunn som toggle-tallet over:
+    // denne siden vokser oftest.
+    const ghosts = await measure(page, 'button[data-variant="ghost"]');
+    expect(ghosts.length).toBeGreaterThanOrEqual(9);
+    for (const g of ghosts) {
+      expect(g.hitH, `advanced/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
+        GHOST_FLOOR - PROBE_STEP,
+      );
     }
     await nobodyStolen(page);
   });
@@ -320,6 +370,43 @@ test.describe("treffflater", () => {
         TOGGLE_FLOOR - PROBE_STEP,
       );
       expect(t.boxH, `editor/${t.id}: boksen står stille`).toBe(22);
+    }
+    // F1-UX1/W2: to — «Lukk» øverst og mikserens «Åpne miksepanelet».
+    const ghosts = await measure(page, 'button[data-variant="ghost"]');
+    expect(ghosts.length).toBe(2);
+    for (const g of ghosts) {
+      expect(g.hitH, `editor/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
+        GHOST_FLOOR - PROBE_STEP,
+      );
+    }
+    await nobodyStolen(page);
+  });
+
+  // F1-UX1/W2: bibliotekets rader — tre ghost-knapper per rad-nabolag
+  // («Slett» på hver rad, «Endre» ved autoslett-linja, «Papirkurv»-lenken) i
+  // en liste som er den ene skjermen en frivillig scroller MEST i, på jakt
+  // etter ett bestemt opptak.
+  test("Bibliotek: ghost-knappene på radene", async ({ page }) => {
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        recordings_list: [
+          recordingRow({ file_path: "/Users/frivillig/SundayRec/a.mp3" }),
+          recordingRow({ file_path: "/Users/frivillig/SundayRec/b.mp3" }),
+        ],
+      },
+      settings: CHOSEN,
+      goto: "search",
+    });
+    await expect(page.getByTestId("library-row")).toHaveCount(2);
+
+    const ghosts = await measure(page, 'button[data-variant="ghost"]');
+    // To rader × «Slett» + «Endre» (autoslett) + «Papirkurv».
+    expect(ghosts.length).toBe(4);
+    for (const g of ghosts) {
+      expect(g.hitH, `library/${g.id}: treffhøyde`).toBeGreaterThanOrEqual(
+        GHOST_FLOOR - PROBE_STEP,
+      );
     }
     await nobodyStolen(page);
   });
