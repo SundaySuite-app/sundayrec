@@ -177,6 +177,86 @@ test.describe("første gang", () => {
     await expect(page.getByTestId("main")).not.toContainText("Alt er klart!");
   });
 
+  // R6: «Sett opp» from the checklist used to be a one-way exit. Leaving
+  // through it never came back to the sequence, and onboardingDone stayed
+  // false — so the next boot ran the whole five-question sequence again,
+  // from question 1, even though four of the five were already answered.
+  test("«Sett opp» er ikke lenger en enveis-utgang — chippen fører tilbake til sjekklisten", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIRST_RUN_FIXTURES,
+      settings: { onboardingDone: false },
+    });
+    await page.getByTestId("first-run-skip-sound").click();
+    for (let i = 0; i < 4; i += 1) {
+      await page.getByTestId("first-run-next").click();
+    }
+    await expect(page.getByTestId("app-heading")).toHaveText("Klar til søndag");
+
+    // «Sett opp» på mappe-raden: forlater sekvensen til OPPTAK, med et anker —
+    // nøyaktig som i dag, se `FirstRun.tsx`s `Checklist`.
+    await page.getByTestId("first-run-row-folder-action").click();
+    await expect(page.getByTestId("first-run")).toBeHidden();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "record",
+    );
+
+    // Chippen er der, fordi første gang ikke er over.
+    const resume = page.getByTestId("first-run-resume");
+    await expect(resume).toBeVisible();
+    expect((await storedSettings(page)).onboardingDone).toBe(false);
+
+    // Klikket fører tilbake til NØYAKTIG sjekklisten — ikke til mappe-
+    // spørsmålet raden gjaldt. (Det er alternativet, utsatt — se PR-teksten.)
+    await resume.click();
+    await expect(page.getByTestId("first-run")).toBeVisible();
+    await expect(page.getByTestId("app-heading")).toHaveText("Klar til søndag");
+
+    // En reload er fortsatt første gang: chippen husker for ÉN økt, ikke for
+    // alltid — det lagrede `onboardingDone` er den ene sannheten om
+    // sekvensen faktisk er fullført.
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof (window as any).showPage === "function",
+    );
+    await expect(page.getByTestId("first-run")).toBeVisible();
+    expect((await storedSettings(page)).onboardingDone).toBe(false);
+
+    // Fullfør for ekte: chippen forsvinner sammen med resten av første gang.
+    await page.getByTestId("first-run-skip-sound").click();
+    for (let i = 0; i < 4; i += 1) {
+      await page.getByTestId("first-run-next").click();
+    }
+    await page.getByTestId("first-run-open").click();
+    await expect(page.getByTestId("first-run-resume")).toBeHidden();
+    expect((await storedSettings(page)).onboardingDone).toBe(true);
+  });
+
+  test("chippen finnes også på INNSTILLINGER, dit kirkeradens «Sett opp» går", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIRST_RUN_FIXTURES,
+      settings: { onboardingDone: false },
+    });
+    await page.getByTestId("first-run-skip-sound").click();
+    for (let i = 0; i < 4; i += 1) {
+      await page.getByTestId("first-run-next").click();
+    }
+
+    // Kirkeraden er unntaket: dens «Sett opp» går til INNSTILLINGER, ikke til
+    // OPPTAK (se `Checklist`s `onAction`) — chippen må stå der også.
+    await page.getByTestId("first-run-row-church-action").click();
+    await expect(page.getByTestId("first-run")).toBeHidden();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "setup",
+    );
+    await expect(page.getByTestId("first-run-resume")).toBeVisible();
+  });
+
   test("«Åpne SundayRec» avslutter første gang, og den kommer ikke tilbake", async ({
     page,
   }) => {

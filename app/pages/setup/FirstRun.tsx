@@ -26,6 +26,21 @@
  * setningen finnes ikke her. Overskriften sier «Klar til søndag», og raden som
  * ikke er det står gul med en «Sett opp»-knapp som følger med til kortet på
  * OPPTAK.
+ *
+ * ## R6: «Sett opp» er ikke en enveis-utgang
+ *
+ * Den knappen forlater sekvensen for godt — `route.firstRun` blir usann i
+ * samme kall, og `onboardingDone` er fortsatt false, siden bare `finish()`
+ * setter den. Uten mer enn det ville en frivillig som retter mappen midt i
+ * gudstjenesteforberedelsen fått hele sekvensen på nytt, fra spørsmål 1, ved
+ * neste oppstart — fire besvarte spørsmål og alt.
+ *
+ * `firstRunReturn` er derfor et lite minne fra siste avgang: sjekklistens
+ * `onAction` skriver dit RETT FØR den navigerer bort, og
+ * `FirstRunResumeChip` (rendret på OPPTAK og INNSTILLINGER, se den fila) leser
+ * det tilbake. Klikk på chippen armer `route.firstRun` igjen med samme steg —
+ * i praksis alltid sjekklisten selv, siden det er det ENE stedet «Sett opp»
+ * finnes i dag.
  */
 
 import { signal } from "@preact/signals";
@@ -55,6 +70,7 @@ import { decisionsFor, needsSetUp, type DecisionId } from "./decisions-core";
 import {
   dots,
   FIRST_RUN_STEP_COUNT,
+  firstRunResumeIndex,
   isGatedStep,
   screenAt,
   soundGateOpen,
@@ -77,6 +93,17 @@ import { useVuWord } from "./use-vu-word";
  */
 export const firstRunIndex = signal(0);
 
+/**
+ * R6: hvor «Sett opp» sist forlot sekvensen FRA. `null` til noe gjør det.
+ *
+ * Skrevet av sjekklistens `onAction`, rett før den navigerer bort — se
+ * filhodet. `resumeFirstRun` leser den og tømmer den igjen; `finish()` lar
+ * den stå, fordi den blir uinteressant i samme kall som setter
+ * `onboardingDone`, og chippen som leser den forsvinner med resten av
+ * sekvensen (`showFirstRunResumeChip`, `firstrun-core.ts`).
+ */
+export const firstRunReturn = signal<number | null>(null);
+
 /** Overskriften den gjeldende posisjonen skal ha. `undefined` når sekvensen
  *  ikke er i gang — da er det destinasjonens eget navn som gjelder. */
 export function firstRunHeading(active: boolean): string | undefined {
@@ -85,6 +112,19 @@ export function firstRunHeading(active: boolean): string | undefined {
   return screen.kind === "ready"
     ? t("app.first.readyTitle")
     : questionText(screen.tab);
+}
+
+/**
+ * «Fortsett oppsettet»-chippens klikk: tilbake til stedet man forlot fra.
+ *
+ * IKKE til spørsmålet raden gjaldt — det er alternativet (kortene foldet ut
+ * INNE i sekvensen) canvasen ikke har bedt om ennå, se filhodet. Dette er den
+ * billige utgaven: samme skjerm, samme fem svar, ett klikk.
+ */
+export function resumeFirstRun(): void {
+  firstRunIndex.value = firstRunResumeIndex(firstRunReturn.value);
+  firstRunReturn.value = null;
+  navigate("setup", { firstRun: true });
 }
 
 export function FirstRun() {
@@ -278,11 +318,19 @@ function Checklist() {
           // på OPPTAK, og kirkeprofilen under Innstillinger. Knappen forlater
           // sekvensen — det gjorde den før også, og en «Sett opp» som bare
           // rullet ville vært en knapp uten en skjerm.
-          onAction={() =>
-            decision.id === "church"
-              ? navigate("setup")
-              : navigate("record", { anchor: decision.id })
-          }
+          //
+          // R6: FØR den navigerer, husk at det er HERFRA vi går — se
+          // `firstRunReturn` over. Uten det er avgangen for godt: appen
+          // glemmer at man var midt i oppsettet, og en frivillig som retter
+          // mappen får de fem spørsmålene på nytt ved neste oppstart.
+          onAction={() => {
+            firstRunReturn.value = firstRunIndex.value;
+            if (decision.id === "church") {
+              navigate("setup");
+            } else {
+              navigate("record", { anchor: decision.id });
+            }
+          }}
           anchor={decision.id}
           testId={`first-run-row-${decision.id}`}
         />

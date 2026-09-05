@@ -760,6 +760,11 @@ export const PAUSED_KEYS = new Set([
   // sendes videre (GitHub-issue eller dev@sundaysuite.app) — atskilt fra
   // SECURITY.md sin kanal, som er for sårbarheter. Ny tekst, derfor pauset.
   'app.setup.advanced.diagnoseReportWhere',
+  // F1-UX2: «Fortsett oppsettet»-chippen (R6) — «Sett opp» fra sjekklisten var
+  // en enveis-utgang, og en frivillig som rettet mappen fikk hele
+  // fem-spørsmålssekvensen på nytt ved neste oppstart. Ny tekst på en ny
+  // knapp, derfor pauset som alt annet redesignet har lagt til.
+  'app.first.resumeChip',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

@@ -104,6 +104,7 @@ import { AutoRecordCard } from "../setup/AutoRecordCard";
 import { CameraCard } from "../setup/CameraCard";
 import { answerText, detailText } from "../setup/decision-text";
 import { decisionsFor } from "../setup/decisions-core";
+import { FirstRunResumeChip } from "../setup/FirstRunResumeChip";
 import { FolderPage } from "../setup/FolderPage";
 import { NotifyPage } from "../setup/NotifyPage";
 import { QualityPage } from "../setup/QualityPage";
@@ -328,6 +329,11 @@ export function RecordPage() {
   return (
     <div class={styles.page}>
       <RecordBanners />
+      {/* R6: synlig helt til «Åpne SundayRec» setter onboardingDone — se
+          `FirstRunResumeChip.tsx`. Under banner-raden, over «Lytter»: en
+          ekte feilbanner haster mer enn en påminnelse om å fullføre
+          oppsettet. */}
+      <FirstRunResumeChip />
 
       <div class={styles.head}>
         <p data-testid="record-sub" class={styles.sub}>
