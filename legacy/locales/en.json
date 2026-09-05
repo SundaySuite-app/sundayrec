@@ -157,7 +157,8 @@
         "placeholder": "For example Bryn Church",
         "languageLabel": "Language in the app",
         "languageDesc": "Changes right away.",
-        "language": "Language: {language}"
+        "language": "Language: {language}",
+        "languagePaused": "This language is temporarily unavailable in the redesigned setup — the app shows {language} for now."
       },
       "notify": {
         "lede": "The computer always tells you. Email is for whoever isn’t sitting at it.",
@@ -386,6 +387,23 @@
           "unsupported": "This machine cannot be woken by the app.",
           "cancelled": "You cancelled — nothing was registered.",
           "failed": "The wake-up was not registered."
+        },
+        "wakeTest": "Test wake-up in 2 min",
+        "wakeTestIdle": "Schedule a real wake-up two minutes from now, and see whether the machine actually wakes.",
+        "wakeTestScheduled": "Scheduled for {time} — let the machine sleep to see whether it wakes.",
+        "wakeHistoryTitle": "Wake history",
+        "wakeHistoryDesc": "The most recent tests, and any scheduled wake-ups that failed.",
+        "wakeHistoryEmpty": "No events yet.",
+        "wakeHistoryClear": "Clear",
+        "wakeHistoryKind": {
+          "missed": "Missed a scheduled wake-up",
+          "testOk": "Test wake-up succeeded",
+          "testFail": "Test wake-up failed"
+        },
+        "wakeHistoryReason": {
+          "noResume": "no resume observed",
+          "tooLate": "came too late",
+          "onBattery": "running on battery"
         },
         "audioTech": "Audio technology"
       }
@@ -691,7 +709,8 @@
       "missedTitle": "{when} was not recorded",
       "missedDesc": "The computer was off. Automatic recording needs it on or asleep.",
       "missedWhy": "What can I do?",
-      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart."
+      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart.",
+      "globalErrorTitle": "Something went wrong"
     }
   },
   "nav": {

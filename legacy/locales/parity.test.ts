@@ -730,6 +730,32 @@ export const PAUSED_KEYS = new Set([
   'home.recordingCountdown',
   'status.warningDevice',
   'app.record.nextAutoWhen',
+  // F1-R1: det globale feilbanneret (`ui/GlobalErrorBanner/`) — rammen rundt
+  // en rå, uoversatt feiltekst fanget av `installErrorHandlers()`.
+  'app.banner.globalErrorTitle',
+  // F1-R2: linja under en deaktivert, pauset språk-option (`ChurchPage`,
+  // `church-core.ts`s `isPausedLanguage`) — ny tekst, derfor pauset som alt
+  // annet redesignet har lagt til.
+  'app.setup.church.languagePaused',
+  // F1-R3: «Test vekking» i Avansert — fire kommandoer (`wake_test`,
+  // `wake_cancel_test`, `wake_failure_history`, `wake_clear_failure_history`)
+  // ut av unreachable-baselinen, med en rad som lar en frivillig prøve en
+  // ekte OS-vekking uten å vente på søndag. Ny tekst, derfor pauset som alt
+  // annet nytt — de fire delte `wakeArmWord.*`-ordene (`needsAdmin`,
+  // `unsupported`, `cancelled`, `failed`) var pauset fra før.
+  'app.setup.advanced.wakeTest',
+  'app.setup.advanced.wakeTestIdle',
+  'app.setup.advanced.wakeTestScheduled',
+  'app.setup.advanced.wakeHistoryTitle',
+  'app.setup.advanced.wakeHistoryDesc',
+  'app.setup.advanced.wakeHistoryEmpty',
+  'app.setup.advanced.wakeHistoryClear',
+  'app.setup.advanced.wakeHistoryKind.missed',
+  'app.setup.advanced.wakeHistoryKind.testOk',
+  'app.setup.advanced.wakeHistoryKind.testFail',
+  'app.setup.advanced.wakeHistoryReason.noResume',
+  'app.setup.advanced.wakeHistoryReason.tooLate',
+  'app.setup.advanced.wakeHistoryReason.onBattery',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

@@ -129,4 +129,42 @@ test.describe("innstillinger — commit", () => {
     // Tilbake på motoren som faktisk står lagret.
     await expect(select).toHaveValue("native");
   });
+
+  test("R2: pagehide tømmer en ventende lagring — ⌘W utenfor et opptak skal ikke miste den siste endringen", async ({
+    page,
+  }) => {
+    // GRANSKNINGENS FUNN. `flushSavePending` (`state/settings.ts:197`, «Skriv
+    // nå hvis noe venter. Før navigasjon, før avslutning.») hadde NULL
+    // kallere. En endring gjort i koaleseringsvinduet (`SAVE_COALESCE_MS`,
+    // 120 ms) rett før ⌘W UTENFOR et opptak gikk tapt: `src-tauri/src/
+    // window.rs` skjuler vinduet bare UNDER en økt — ellers går lukkingen
+    // rett til `ExitRequested`, og den armerte timeren dør sammen med
+    // prosessen. `main.tsx` lytter nå på `pagehide` (og `beforeunload`) og
+    // tømmer den ventende skrivningen med det samme.
+    await boot(page, {
+      fixtures: { ...BOOT_FIXTURES, settings_save: SLOW_SAVE(300) },
+      settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
+      goto: "settings:general",
+    });
+
+    const field = page.getByTestId("adv-autodelete-days-control-input");
+    await expect(field).toHaveValue("90");
+
+    // Skriv og committ med Enter — koaleseringstimeren armes, men får ALDRI
+    // lov til å forfalle på egen hånd i denne testen.
+    await field.fill("730");
+    await field.press("Enter");
+
+    // …og vinduet forsvinner, akkurat idet et ekte ⌘W ville gjort det.
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+
+    // Fasiten er lagringslaget: `flushSavePending` tømmer den armerte timeren
+    // og starter skrivningen MED DET SAMME — den venter ikke på at klokka
+    // rekker helt til `dueAtMs`.
+    await expect
+      .poll(async () => (await storedSettings(page)).autoDeleteDays, {
+        timeout: 2_000,
+      })
+      .toBe(730);
+  });
 });

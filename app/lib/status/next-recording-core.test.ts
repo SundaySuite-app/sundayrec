@@ -14,10 +14,13 @@ import {
   formatWakeHint,
   intlParts,
   parseLocalIso,
+  shouldRefreshWake,
   WAKE_LEAD_MINUTES,
+  WAKE_REFRESH_REASONS,
   type DateParts,
   type FormatCtx,
   type NextRecordingState,
+  type WakeRefreshReason,
 } from "./next-recording-core";
 
 // Near-identity translator: `key::fallback`. The key makes assertions
@@ -149,6 +152,37 @@ describe("computeWake", () => {
   it("carries the disabled flag rather than dropping the info", () => {
     const wake = computeWake(buildNext(AT)!, false)!;
     expect(wake.enabled).toBe(false);
+  });
+});
+
+// R3: `refreshWakeArmed()` came OUT of the 60 s reserve poll — a two-hour
+// service is ~120 ticks, each one a `pmset` spawn nobody asked for. This is
+// the table that pins WHAT replaced it: four named reasons, one absolute veto.
+describe("shouldRefreshWake", () => {
+  it.each(WAKE_REFRESH_REASONS)(
+    "asks the OS for %s when nothing is recording",
+    (reason) => {
+      expect(shouldRefreshWake(reason, false)).toBe(true);
+    },
+  );
+
+  it.each(WAKE_REFRESH_REASONS)(
+    // The veto a two-hour Sunday recording used to lose to the poll: ~120
+    // ticks, each one a `pmset -g batt` + `pmset -g sched`/`-g custom` spawn
+    // to re-answer a question that cannot have changed mid-take.
+    "NEVER asks the OS for %s while a recording is running",
+    (reason) => {
+      expect(shouldRefreshWake(reason, true)).toBe(false);
+    },
+  );
+
+  it("does not know a poll tick as a reason at all", () => {
+    // Not "poll is a reason that says no" — the type itself has no `"poll"`
+    // member, so `refreshNextRecording`'s 60 s interval cannot pass one in.
+    // This is the runtime half of that: an unlisted string is refused too.
+    expect(
+      shouldRefreshWake("poll" as unknown as WakeRefreshReason, false),
+    ).toBe(false);
   });
 });
 

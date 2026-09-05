@@ -157,7 +157,8 @@
         "placeholder": "For eksempel Bryn menighet",
         "languageLabel": "Språk i appen",
         "languageDesc": "Bytter med én gang.",
-        "language": "Språk: {language}"
+        "language": "Språk: {language}",
+        "languagePaused": "Dette språket er midlertidig utilgjengelig i det nye oppsettet — appen viser {language} inntil videre."
       },
       "notify": {
         "lede": "Maskinen sier alltid fra. E-post er for den som ikke sitter ved den.",
@@ -386,6 +387,23 @@
           "unsupported": "Denne maskinen kan ikke vekkes av appen.",
           "cancelled": "Du avbrøt — ingenting er registrert.",
           "failed": "Vekkingen ble ikke registrert."
+        },
+        "wakeTest": "Test vekking om 2 min",
+        "wakeTestIdle": "Planlegg en ekte vekking to minutter fram i tid, og se om maskinen faktisk våkner.",
+        "wakeTestScheduled": "Planlagt til kl. {time} — la maskinen sove for å se om den våkner.",
+        "wakeHistoryTitle": "Vekkehistorikk",
+        "wakeHistoryDesc": "De siste testene, og eventuelle planlagte vekkinger som ikke fungerte.",
+        "wakeHistoryEmpty": "Ingen hendelser ennå.",
+        "wakeHistoryClear": "Tøm",
+        "wakeHistoryKind": {
+          "missed": "Gikk glipp av en planlagt vekking",
+          "testOk": "Testvekking lyktes",
+          "testFail": "Testvekking mislyktes"
+        },
+        "wakeHistoryReason": {
+          "noResume": "ingen gjenopptagelse observert",
+          "tooLate": "kom for sent",
+          "onBattery": "gikk på batteri"
         },
         "audioTech": "Lyd-teknologi"
       }
@@ -691,7 +709,8 @@
       "missedTitle": "{when} ble ikke tatt opp",
       "missedDesc": "Maskinen var av. Automatisk opptak krever at den står på eller i dvale.",
       "missedWhy": "Hva kan jeg gjøre?",
-      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart."
+      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart.",
+      "globalErrorTitle": "Noe gikk galt"
     }
   },
   "nav": {

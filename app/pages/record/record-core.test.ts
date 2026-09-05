@@ -16,7 +16,6 @@ import { DOT } from "@lib/ui/dot";
 import type { Settings } from "../../state/settings";
 import {
   basename,
-  capitalizeFirst,
   defaultDeviceOf,
   formatBytes,
   formatClock,
@@ -246,18 +245,6 @@ describe("basename", () => {
     );
     expect(basename("C:\\Opptak\\gudstjeneste.wav")).toBe("gudstjeneste.wav");
     expect(basename("bare-navnet.mp3")).toBe("bare-navnet.mp3");
-  });
-});
-
-describe("capitalizeFirst", () => {
-  it("løfter første tegn, og lar resten stå", () => {
-    expect(capitalizeFirst("søndag 16. august", "no")).toBe(
-      "Søndag 16. august",
-    );
-    expect(capitalizeFirst("Sunday 16 August", "en")).toBe("Sunday 16 August");
-  });
-  it("tom tekst er tom tekst", () => {
-    expect(capitalizeFirst("", "no")).toBe("");
   });
 });
 

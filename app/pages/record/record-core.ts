@@ -238,19 +238,6 @@ export function basename(path: string): string {
 }
 
 /**
- * Stor forbokstav på første tegn.
- *
- * `Intl` gir «søndag 16. august» — riktig norsk midt i en setning, og feil
- * som det FØRSTE ordet i en overskrift. Bare første tegn røres, og bare med
- * `toLocaleUpperCase` for språket som gjelder: en generell «title case» ville
- * vært en regel som er gal i de fleste av appens språk.
- */
-export function capitalizeFirst(text: string, locale: string): string {
-  if (!text) return text;
-  return text[0].toLocaleUpperCase(locale) + text.slice(1);
-}
-
-/**
  * Motorens feilkode → SUFFIKSET i `recording.*`-katalogen.
  *
  * Tabellen er den samme som `translateNativeError` i

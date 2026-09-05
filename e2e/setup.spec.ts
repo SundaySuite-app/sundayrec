@@ -155,6 +155,61 @@ test.describe("kvalitet", () => {
   });
 });
 
+test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
+  test("et pauset språk (tysk) vises EKTE og deaktivert, ikke stille som «Norsk»", async ({
+    page,
+  }) => {
+    // Migrert fra legacy: `settings.language` kan stå på et av de fem PAUSEDE
+    // språkene. `resolveStartupLocale` (`app/i18n/index.ts`) mapper det til et
+    // aktivt språk ved oppstart — men skriver ALDRI verdien tilbake, med
+    // vilje. Før R9 fikk `<Select>` da en `value` («de») INGEN `<option>`
+    // hadde, og en `<select>` uten treff blant sine egne options viser stille
+    // den FØRSTE optionen — «Norsk»/«Norwegian», uansett hva som faktisk stod
+    // lagret.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { ...SETTLED_SETTINGS, language: "de" },
+      goto: "settings",
+    });
+
+    // Tysk er ikke aktivt, så appen selv står på engelsk — nærmeste aktive
+    // språk for alt utenom svensk/dansk (`resolveStartupLocale`).
+    await expect(page.getByTestId("setup-church")).toBeVisible();
+
+    const select = page.getByTestId("church-language-control-input");
+    await expect(select).toHaveValue("de");
+
+    // Den tredje raden bærer det EKTE navnet — ikke ekkoet av koden — og kan
+    // ikke velges på nytt.
+    const german = select.locator('option[value="de"]');
+    await expect(german).toHaveText("German");
+    await expect(german).toBeDisabled();
+    // De to aktive står der fortsatt, og ER velgbare.
+    await expect(select.locator('option[value="no"]')).toBeEnabled();
+    await expect(select.locator('option[value="en"]')).toBeEnabled();
+
+    // Og linja under boksen sier hvorfor, uten å late som ingenting er galt.
+    await expect(page.getByTestId("church-language-paused")).toHaveText(
+      "This language is temporarily unavailable in the redesigned setup — the app shows English for now.",
+    );
+  });
+
+  test("et AKTIVT språk viser ingen tredje rad og ingen pauset-linje", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { ...SETTLED_SETTINGS, language: "no" },
+      goto: "settings",
+    });
+
+    const select = page.getByTestId("church-language-control-input");
+    await expect(select).toHaveValue("no");
+    await expect(select.locator("option")).toHaveCount(2);
+    await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
+  });
+});
+
 test.describe("e-post uten en sendevei", () => {
   test("bryteren er sperret, og gaten sier hvorfor — uten å love et relé", async ({
     page,

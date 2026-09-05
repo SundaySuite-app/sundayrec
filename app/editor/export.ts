@@ -161,17 +161,36 @@ export async function cancelExport(): Promise<void> {
  * kollisjonsfritt navn. Lykkes den, slettes kutt-utkastets sidevogn — den
  * finnes for å overleve en krasj midt i en redigering, og redigeringen er nå
  * ute av huset.
+ *
+ * ## Generasjonsvakten (R8)
+ *
+ * `openFile` (`loader.ts`) bumper `E.loadSeq` SYNKRONT, før noe annet, i
+ * det øyeblikket brukeren åpner en annen fil — også midt i en eksport som
+ * fortsatt henger i en `await` her. Uten en vakt landet resultatet likevel:
+ * `exportedPath`/`exportedFolder`/`exportedSeconds` ble skrevet som om det
+ * var en kvittering for fila som nå står åpen, og — verre — `clearDraft()`
+ * leser `E.filePath` PÅ DET TIDSPUNKTET den kalles, som da alt er den NYE
+ * fila. En vellykket eksport av fil A slettet dermed kutt-utkastet til fil
+ * B, den man faktisk sitter og redigerer.
+ *
+ * `seq` er `E.loadSeq` slik den var da DENNE kjøringen startet. Sjekket
+ * etter HVER `await`, FØR noe skrives — samme mønster som `loader.ts` og
+ * `sermon.ts`.
  */
 export async function runExport(
   keptSeconds: number,
   estimate: number | null,
 ): Promise<void> {
   if (!E.filePath || exporting.value) return;
+  const seq = E.loadSeq;
 
   // Kanalanalysen først: en frivillig som gikk rett fra Klipp til Eksporter
   // skal få den samme reparasjonen som en som stoppet innom Lyd. Den er
   // memoisert, så den koster ingenting når steget har vært åpent.
   if (soundProfile.value !== "none") await ensureSoundAnalysis();
+  // Fila kan ha byttet MENS analysen ventet. Ingenting er skrevet ennå —
+  // bare gå stille ut, som om eksporten aldri ble bedt om.
+  if (seq !== E.loadSeq) return;
 
   exporting.value = true;
   cancelling.value = false;
@@ -237,13 +256,23 @@ export async function runExport(
   } catch (err) {
     result = { ok: false, error: String((err as Error)?.message ?? err) };
   } finally {
+    // `unsub` er ALLTID denne kjøringens egen — riv den uansett. De andre
+    // fire er DELTE signaler UI-et leser NÅ, for filen som er åpen NÅ; en
+    // foreldet kjøring som endelig kommer tilbake skal ikke få lov til å
+    // slukke en ekte, pågående eksport av den nye fila.
     unsub?.();
-    exporting.value = false;
-    exportFraction.value = null;
-    exportEtaMs.value = null;
-    exportPhase.value = null;
-    cancelling.value = false;
+    if (seq === E.loadSeq) {
+      exporting.value = false;
+      exportFraction.value = null;
+      exportEtaMs.value = null;
+      exportPhase.value = null;
+      cancelling.value = false;
+    }
   }
+  // Samme vakt igjen, FØR resultatet skrives noe sted: hverken som en
+  // kvittering for fila som nå er åpen, eller — det som faktisk skjedde —
+  // som en `clearDraft()` av DENS utkast. Se filhodet.
+  if (seq !== E.loadSeq) return;
 
   if (result.ok && result.outputPath) {
     exportedPath.value = result.outputPath;

@@ -10,6 +10,7 @@ import { t, tf } from "../../../i18n";
 import { hydrateSettings } from "../../../state/settings";
 import { Button } from "../../../ui/Button/Button";
 import { confirmDialog } from "../../../ui/dialog";
+import { revealResult } from "../../../ui/reveal";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
 import { toast } from "../../../ui/toast";
 
@@ -28,9 +29,16 @@ const LOG_TAIL_BYTES = 200 * 1024;
  * ikke kopiere», og den som feilsøker trenger å vite hvilken av dem det var.
  */
 export function LogRow() {
+  // `reveal(path)` (`app/ui/reveal.ts`) tar ikke logg-raden: `logs_reveal` er
+  // en annen kommando enn `revealFile`, MED VILJE uten en sti (se
+  // `src-tauri/src/commands/logs.rs`s filhode) — så bare `revealResult`, den
+  // delte toast-på-`false`-formen, passer her. Egen feiltekst: `revealFailed`
+  // handler om en FIL, denne om en MAPPE.
   async function reveal(): Promise<void> {
-    const ok = await window.api.logsReveal();
-    if (!ok) toast("error", t("app.setup.advanced.logShowFailed"));
+    await revealResult(
+      await window.api.logsReveal(),
+      t("app.setup.advanced.logShowFailed"),
+    );
   }
 
   async function copy(): Promise<void> {

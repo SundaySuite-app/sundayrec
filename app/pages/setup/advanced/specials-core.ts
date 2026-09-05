@@ -245,3 +245,38 @@ export function wakeArmWord(result: WakeArmResult | null): WakeArmWord {
       return "failed";
   }
 }
+
+/** Det `testWakeWord` trenger av `TestWakeResult` (W6). */
+export interface TestWakeOutcome {
+  ok: boolean;
+  reason?: string | null;
+}
+
+/**
+ * Hva `wake_test` betyr for setningen under «Test vekking» (W6).
+ *
+ * `"needsAdmin" | "unsupported" | "cancelled" | "failed"` er navngitt likt
+ * `WakeArmWord` med vilje — samme fire utfall av samme `WakeErrorReason`-sett
+ * (`src-tauri/src/wake/mod.rs`), så raden kan sitere `wakeArmWord`-nøklene i
+ * katalogen i stedet for å skrive de samme fire setningene på nytt. `scheduled`
+ * og `idle` er testens egne: `wake_test` har ikke `WakeArmWord`s «ok, men armet
+ * null»-utfall — en vellykket test armer alltid nøyaktig én vekking, to
+ * minutter fram, aldri null.
+ */
+export type TestWakeWord =
+  "idle" | "scheduled" | "needsAdmin" | "unsupported" | "cancelled" | "failed";
+
+export function testWakeWord(result: TestWakeOutcome | null): TestWakeWord {
+  if (result === null) return "idle";
+  if (result.ok) return "scheduled";
+  switch (result.reason) {
+    case "permission":
+      return "needsAdmin";
+    case "unsupported":
+      return "unsupported";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "failed";
+  }
+}

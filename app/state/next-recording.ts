@@ -33,7 +33,9 @@ import {
   buildNext,
   computeWake,
   emptyState,
+  shouldRefreshWake,
   type NextRecordingState,
+  type WakeRefreshReason,
 } from "@lib/status/next-recording-core";
 
 import { anythingScheduled } from "../pages/setup/schedule-core";
@@ -94,7 +96,16 @@ function derive(): void {
   };
 }
 
-/** Les planleggerstatusen nå (etter en tidsplan-endring, ved fokus, …). */
+/**
+ * Les planleggerstatusen nå (etter en tidsplan-endring, ved fokus, …).
+ *
+ * ⚠️ Kaller IKKE `refreshWakeArmed` lenger (R3). Den pleide å ri med her
+ * unntaksfritt, og denne funksjonen er nøyaktig det reservepollen kaller hvert
+ * minutt — så «unntaksfritt» betydde «også midt i en to timer lang
+ * gudstjeneste, ca. 120 ganger, hver av dem en `pmset`-spawn ingen ba om». Se
+ * `shouldRefreshWake` i `@lib/status/next-recording-core` for hvor sjekken bor
+ * nå, og `refreshWakeArmed` under for de fire stedene som faktisk kaller den.
+ */
 export async function refreshNextRecording(): Promise<void> {
   try {
     const next = await window.api.getNextRecording();
@@ -106,15 +117,14 @@ export async function refreshNextRecording(): Promise<void> {
     // å stoppe.
     console.warn("[next-recording] status poll failed:", err);
   }
-  await refreshWakeArmed();
 }
 
 /**
- * Spør OS-et om vekkingen faktisk er registrert.
- *
- * Går sammen med planleggerpollen, fordi det er den samme tidsplanen som
- * avgjør begge — og fordi en vekking som ble armet av «Aktiver vekking» i
- * Avansert skal slå gjennom på helten uten at brukeren må laste appen på nytt.
+ * Spør OS-et om vekkingen faktisk er registrert — men bare når `reason` er en
+ * av de fire `shouldRefreshWake` godkjenner akkurat nå (R3). Kalt fra:
+ * `scheduler://next`-lytteren, innstillings-effekten, `visibilitychange` →
+ * synlig, og `refreshWakeAfterReschedule` (etter «Aktiver vekking»/
+ * «Test vekking»). ALDRI fra reservepollen — se `refreshNextRecording`.
  *
  * Ingen vekking å spørre om når bryteren står av: kommandoen ville svart
  * `expectedWakes: []`, som er sant, men å kalle den for å få et svar vi
@@ -125,7 +135,8 @@ export async function refreshNextRecording(): Promise<void> {
  * ikke bevis for at ingenting er armet. Begge fører til den ærlige setningen,
  * men forskjellen er verdt å beholde — `false` er et svar, `null` er stillhet.
  */
-async function refreshWakeArmed(): Promise<void> {
+async function refreshWakeArmed(reason: WakeRefreshReason): Promise<void> {
+  if (!shouldRefreshWake(reason, isRecording.peek())) return;
   const before = wakeArmed;
   if (settings.peek().wakeFromSleep === false) {
     wakeArmed = null;
@@ -139,6 +150,16 @@ async function refreshWakeArmed(): Promise<void> {
     }
   }
   if (wakeArmed !== before) derive();
+}
+
+/**
+ * Be om en fersk vekkesjekk etter en handling som kan ha ARMET noe: «Aktiver
+ * vekking» eller «Test vekking» i Avansert. Uten denne ville helten fortsatt
+ * si «ikke bekreftet» i opptil 60 s etter en vellykket registrering — det
+ * reservepollen dekket før R3 tok `refreshWakeArmed` ut av den.
+ */
+export async function refreshWakeAfterReschedule(): Promise<void> {
+  await refreshWakeArmed("wake-reschedule");
 }
 
 /** Tøm det savnede-opptak-varselet når brukeren har sett det. */
@@ -190,6 +211,9 @@ export function initNextRecording(): () => void {
   safeListen<string | null>(EV_NEXT, (payload) => {
     lastNextIso = payload ?? null;
     derive();
+    // A new next-start is the ONE input the wake point is computed from — one
+    // of R3's four legitimate reasons to re-ask the OS.
+    void refreshWakeArmed("scheduler-next");
   });
 
   safeListen<NextRecordingState["missed"]>(EV_MISSED, (payload) => {
@@ -208,11 +232,36 @@ export function initNextRecording(): () => void {
   // opptaksstart skal slå ut her uten at noen husker å kalle noe. Begge
   // lesningene under er ABONNEMENTER, og de må skje her — `derive()` selv
   // bruker `peek()` på sin egen tilstand for ikke å gå i ring.
+  //
+  // `lastWakeSettings` skiller de to abonnementene fra hverandre: effekten
+  // fyrer på BEGGE signalene (den må, for å regne `derive()` riktig), men R3s
+  // «settings-endring»-grunn gjelder bare når `settings.value` faktisk er en
+  // NY referanse — `patchSettings`/en frisk lasting skriver alltid en ny
+  // (`state/settings.ts`), aldri en mutasjon — ikke når effekten fyrte fordi
+  // `isRecording` alene endret seg. Uten skillet ville hvert opptak som
+  // STOPPER bedt om en fersk `wake_verify` — sant nok ikke forbudt av
+  // `shouldRefreshWake` (opptaket er over da), men heller ikke en av de fire
+  // grunnene R3 faktisk ga wake-sjekken.
+  let lastWakeSettings: typeof settings.value | undefined;
   const stopEffect = effect(() => {
-    void settings.value;
+    const s = settings.value;
     void isRecording.value;
     derive();
+    if (s !== lastWakeSettings) {
+      lastWakeSettings = s;
+      void refreshWakeArmed("settings-change");
+    }
   });
+
+  // Fanen/vinduet kom tilbake i syne. Ingenting her kan skyve et ferskt svar
+  // til en skjerm ingen ser på, så en bærbar åpnet igjen etter en time er
+  // akkurat øyeblikket et forbigått svar ville blitt lest.
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") {
+      void refreshWakeArmed("visibility");
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   void refreshNextRecording();
   const poll = setInterval(() => void refreshNextRecording(), POLL_MS);
@@ -220,6 +269,7 @@ export function initNextRecording(): () => void {
   dispose = () => {
     clearInterval(poll);
     stopEffect();
+    document.removeEventListener("visibilitychange", onVisibilityChange);
     for (const u of unlisteners) u();
     unlisteners.length = 0;
     dispose = null;
