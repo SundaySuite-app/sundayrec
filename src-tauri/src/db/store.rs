@@ -695,18 +695,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migrations_create_every_table_including_the_upload_queue() {
+    async fn migrations_create_every_current_table_and_drop_the_retired_upload_queue() {
         let (pool, _d) = temp_pool().await;
-        // Every migrated table must be SELECTable on a fresh database. The queue
-        // and wake-failure tables come from later migrations, so this proves the
+        // Every migrated table must be SELECTable on a fresh database. The
+        // wake-failure table comes from a later migration, so this proves the
         // full migration set applied — not just the first one.
-        for table in ["app_setting", "recording", "upload_queue", "wake_failure"] {
+        for table in ["app_setting", "recording", "wake_failure"] {
             // AssertSqlSafe: sqlx 0.9 requires dynamic SQL to be explicitly
             // vouched for — `table` comes from the hardcoded list above.
             let q = sqlx::AssertSqlSafe(format!("SELECT COUNT(*) AS n FROM {table}"));
             let row = sqlx::query(q).fetch_one(&pool).await.expect(table);
             assert_eq!(row.get::<i64, _>("n"), 0, "{table} should start empty");
         }
+
+        // F1-A9: 0007 dropped `upload_queue` (the Fase 6 cloud-backup feature
+        // never shipped) — a FRESH database replays every migration file in
+        // order, 0003's `create table` included, so the only proof the drop
+        // actually took is that the table is gone afterwards, not merely that
+        // 0003 was never run.
+        let err = sqlx::query("SELECT COUNT(*) FROM upload_queue")
+            .fetch_one(&pool)
+            .await
+            .expect_err("upload_queue must no longer exist once migration 0007 has applied");
+        assert!(
+            err.to_string().contains("no such table"),
+            "expected a missing-table error, got: {err}"
+        );
     }
 
     #[tokio::test]

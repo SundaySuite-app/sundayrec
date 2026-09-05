@@ -398,10 +398,6 @@ pub struct RecorderEngine {
     /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
     /// fell back, and why. `(engine, fallback_reason)`.
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
-    /// Health telemetry of the LAST recording (drops/xruns/IPC-starvation),
-    /// accumulated automatically by the stderr reader and persisted at session
-    /// end. Surfaced by the diagnose tool; `None` until the first recording.
-    last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
     /// Monotonic session counter, bumped by every [`RecorderEngine::start`].
     ///
     /// `start()` stops the previous recording and immediately launches a new
@@ -592,7 +588,6 @@ impl RecorderEngine {
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
             audio_engine: Arc::new(Mutex::new((None, None))),
-            last_telemetry: Arc::new(Mutex::new(None)),
             session_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -939,7 +934,6 @@ impl RecorderEngine {
 
         let sup_app = app.clone();
         let state = self.state_writer(&app, generation);
-        let last_telemetry = Arc::clone(&self.last_telemetry);
         let audio_engine = Arc::clone(&self.audio_engine);
         let supervisor = tauri::async_runtime::spawn(async move {
             run_session(
@@ -954,7 +948,6 @@ impl RecorderEngine {
                 stop_rx,
                 ready_tx,
                 state,
-                last_telemetry,
                 audio_engine,
             )
             .await;
@@ -1162,7 +1155,6 @@ async fn run_session(
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
     state: StateWriter,
-    last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 ) {
     // The backend can demote itself once: native start failure → ffmpeg (the
@@ -1910,7 +1902,6 @@ async fn run_session(
     finalize_session_telemetry(
         &app,
         &telemetry,
-        &last_telemetry,
         start_ms,
         // THIS session's outcome, not the shared mirror — a superseded supervisor
         // must not report the live recording's state as its own exit.
@@ -2889,12 +2880,13 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
 /// from the `emit_state` terminal funnel). Writes the latest to
 /// `<app_data_dir>/last-recording.json` and appends to a capped, newest-last
 /// `recording-telemetry-history.json` ring so the diagnose tool can show a
-/// TREND. Also keeps the latest in memory for the synchronous status read.
-/// Best-effort — never fails the recorder.
+/// TREND — that ring, not an in-memory mirror, is what the diagnose tool
+/// actually reads (F1-A9: an earlier `last_telemetry` field shadowed it,
+/// written on every session end and read by nobody). Best-effort — never
+/// fails the recorder.
 fn finalize_session_telemetry(
     app: &AppHandle,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
-    last_telemetry: &Arc<Mutex<Option<RecordingTelemetry>>>,
     start_ms: u64,
     final_state: &Arc<Mutex<RecorderState>>,
     delivered_bytes: &AtomicU64,
@@ -2947,9 +2939,6 @@ fn finalize_session_telemetry(
         );
         let _ = app.emit(QUALITY_EVENT, &report);
     }
-
-    // In-memory (diagnose status reads this synchronously).
-    *lock_recover(last_telemetry) = Some(t.clone());
 
     let Ok(dir) = app.path().app_data_dir() else {
         return;
