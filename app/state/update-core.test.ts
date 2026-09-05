@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   clampPercent,
+  notesOf,
   phaseFromEvent,
   UPDATE_CHANNELS,
   updateView,
@@ -28,7 +29,59 @@ describe("updateView", () => {
       // A message with no tone (or a tone with no message) is the half-painted
       // row the legacy listeners could leave behind.
       expect(view.message === null).toBe(view.tone === null);
+      // F1-P1: the fifth question. `notes` is total too — never `undefined`,
+      // so a caller can test `view.notes` without also checking `"notes" in
+      // view` first.
+      expect(view.notes === null || typeof view.notes === "string").toBe(true);
     }
+  });
+
+  describe("notes (F1-P1)", () => {
+    it("only `available` and `ready` can carry a note — every other phase is null", () => {
+      for (const phase of ALL) {
+        const view = updateView(phase);
+        if (phase.kind === "available" || phase.kind === "ready") continue;
+        expect(view.notes).toBeNull();
+      }
+    });
+
+    it("an available/ready phase with no note is null, not an empty string", () => {
+      expect(updateView({ kind: "available", version: "1" }).notes).toBeNull();
+      expect(updateView({ kind: "ready", version: "1" }).notes).toBeNull();
+    });
+
+    it("carries the note through to the view", () => {
+      const notes = "Papirkurven tåler strømbrudd.";
+      expect(updateView({ kind: "available", version: "1", notes }).notes).toBe(
+        notes,
+      );
+      expect(updateView({ kind: "ready", version: "1", notes }).notes).toBe(
+        notes,
+      );
+    });
+
+    it("an explicit null is the same as no note at all", () => {
+      expect(
+        updateView({ kind: "available", version: "1", notes: null }).notes,
+      ).toBeNull();
+    });
+
+    it("notesOf() trims a whitespace-only note to null", () => {
+      // A feed that emits `"notes": "   "` said nothing, and a heading with
+      // nothing under it (`UpdateRow`'s «Hva er nytt») is worse than no
+      // heading at all.
+      expect(
+        notesOf({ kind: "available", version: "1", notes: "   " }),
+      ).toBeNull();
+      expect(
+        notesOf({ kind: "available", version: "1", notes: "\n\t" }),
+      ).toBeNull();
+    });
+
+    it("notesOf() is null for a phase that cannot carry one", () => {
+      expect(notesOf({ kind: "downloading", percent: 50 })).toBeNull();
+      expect(notesOf({ kind: "idle" })).toBeNull();
+    });
   });
 
   it("says nothing at all before anyone has asked", () => {
@@ -98,7 +151,9 @@ describe("phaseFromEvent", () => {
     [
       "update-available",
       { version: "0.16.0" },
-      { kind: "available", version: "0.16.0" },
+      // F1-P1: `notes` is total on this phase too — a payload with no `notes`
+      // key still comes out as `notes: null`, never an absent field.
+      { kind: "available", version: "0.16.0", notes: null },
     ],
     ["update-not-available", undefined, { kind: "upToDate" }],
     [
@@ -109,7 +164,25 @@ describe("phaseFromEvent", () => {
     [
       "update-downloaded",
       { version: "0.16.0" },
-      { kind: "ready", version: "0.16.0" },
+      { kind: "ready", version: "0.16.0", notes: null },
+    ],
+    [
+      "update-available",
+      { version: "0.16.0", notes: "Nytt: papirkurven tåler strømbrudd." },
+      {
+        kind: "available",
+        version: "0.16.0",
+        notes: "Nytt: papirkurven tåler strømbrudd.",
+      },
+    ],
+    [
+      "update-downloaded",
+      { version: "0.16.0", notes: "Nytt: papirkurven tåler strømbrudd." },
+      {
+        kind: "ready",
+        version: "0.16.0",
+        notes: "Nytt: papirkurven tåler strømbrudd.",
+      },
     ],
     ["update-restarting", undefined, { kind: "restarting" }],
     ["update-error", "boom", { kind: "failed", restartFailed: false }],
@@ -140,6 +213,7 @@ describe("phaseFromEvent", () => {
     expect(phaseFromEvent("update-available", {})).toEqual({
       kind: "available",
       version: "",
+      notes: null,
     });
   });
 

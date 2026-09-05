@@ -110,6 +110,13 @@ export type BannerData =
       version: string;
       /** 0–100. Meningsløs utenfor `downloading`. */
       percent: number;
+      /**
+       * Releasenotatet (F1-P1), DATA og ikke tekst — samme regel som resten av
+       * denne køen (se filhodet). `null` under `downloading` (kort, transient
+       * fase; shimmen sender ikke notatet der) og når feeden ikke hadde et.
+       * `Shell.tsx`s `UpdateBanner` er den ENE leseren.
+       */
+      notes: string | null;
     }
   /**
    * `backend://warning` — motoren så noe den vil ha på skjermen NÅ.

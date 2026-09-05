@@ -19,6 +19,12 @@ slippmønster, samme felle, i hele suiten.
 Når notatet ligger i repoet, finnes teksten før bygget starter, og den blir
 lest av noen i samme PR som versjonsbumpen.
 
+Fram til F1-P1 (2026-09) sto det stille etter det: appen hentet feltet,
+signaturverifiserte manifestet det stod i — og viste det aldri. `Update.body`
+ble lest inn og kastet i `src-tauri/src/update/mod.rs`, ett skritt fra skjermen.
+Den er nå den ENE veien inn til `UpdateStatus::Available`/`ReadyToInstall`s
+`notes`-felt, som banneret og raden under Avansert leser — se filhodene der.
+
 ## Slik skriver du et
 
 1. Bump versjonen i `package.json`, `src-tauri/Cargo.toml` og `src-tauri/tauri.conf.json` (`npm run version-sync` vokter at de tre er like).

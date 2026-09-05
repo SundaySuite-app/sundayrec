@@ -1,0 +1,26 @@
+/* F1-P1: releasenotatet, foldet ut under selve raden — samme mønster som
+   DiagnoseRow.module.css sine `.failure`/`.testResult`, som er den ENE andre
+   raden i systemkortet som allerede vokser utenfor `SettingRow`s faste rutenett.
+   Se filhodet i `UpdateRow.tsx` for hvorfor: `.control`-cellen er en
+   høyrejustert, énlinjes flex-rad — feil sted for et avsnitt med linjeskift. */
+
+.notes {
+  margin: 0;
+  padding: var(--sp-2) 0 0;
+}
+
+.notesLabel {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.notesText {
+  margin-top: 2px;
+  max-height: 7.5em;
+  overflow-y: auto;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -20,7 +20,7 @@ høyde; Playwrights egen `fullPage` gir ingenting her, fordi appen ruller inne i
 **Språk:** `no/` og `en/`. De fem andre språkene i språkvelgeren er satt på
 pause og er ikke fotografert.
 
-**Total størrelse:** 7.4 MB i 198 PNG-er. Komprimert med `magick mogrify -colors 256`: 21.5 MB → 7.4 MB.
+**Total størrelse:** 7.7 MB i 198 PNG-er. Komprimert med `magick mogrify -colors 256`: 22.2 MB → 7.7 MB.
 
 ## Kjøre på nytt
 

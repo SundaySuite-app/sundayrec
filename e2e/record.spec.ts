@@ -357,6 +357,13 @@ test.describe("opptaksoverlegget", () => {
     await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
     const done = page.getByTestId("record-done");
     await expect(done).toBeVisible();
+    // F1-R4: kortet render nederst i `.page`, under hele kontrollrommet —
+    // `toBeVisible()` alene sier ingenting om det faktisk ER i ruta (Playwright
+    // kaller et element «visible» selv langt under bunnen av vinduet). Kortet
+    // skal rulle til seg selv OG ta fokus, slik at både øyet og en
+    // skjermleser/tastaturbruker finner kvitteringen uten å lete.
+    await expect(done).toBeInViewport();
+    await expect(done).toBeFocused();
     await expect(page.getByTestId("record-done-file")).toHaveText(
       "2026-08-23.mp3",
     );

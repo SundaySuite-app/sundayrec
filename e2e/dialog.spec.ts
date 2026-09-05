@@ -41,6 +41,15 @@ test.describe("DialogHost", () => {
 
     const dialog = page.getByTestId("dialog");
     await expect(dialog).toBeVisible();
+    // F1-UX1/W2: `aria-describedby` peker faktisk på brødteksten — ikke bare
+    // et navn på dialogen (`aria-labelledby`), men også en KOBLING til
+    // setningen som forklarer den, for en skjermleser som skal lese begge.
+    const message = page.getByTestId("dialog-message");
+    await expect(message).toHaveAttribute("id", "app-dialog-message");
+    await expect(dialog).toHaveAttribute(
+      "aria-describedby",
+      "app-dialog-message",
+    );
     // SØSKEN av #app, ikke inni: en dialog inne i #app ville slått av seg selv
     // når verten setter `inert`.
     expect(
