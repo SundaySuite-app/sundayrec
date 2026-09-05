@@ -22,22 +22,27 @@
  * halvparten av skjermen er tom er verre enn å ikke tilby det ennå. Verdien
  * som står lagret røres ikke: en profil satt til tysk beholder «de» i basen og
  * får språket tilbake i fase B.
+ *
+ * ## Valgboksen lyver ikke lenger om det pausede valget (F1-R2 / R9)
+ *
+ * Før la `<Select>` bare fram de to aktive kodene som `<option>`. En profil
+ * migrert med `language: "de"` satte da kontrollens `value` til noe INGEN
+ * option hadde — og en `<select>` uten treff blant sine egne options viser
+ * stille den FØRSTE optionen, uansett hva som faktisk står lagret. Se
+ * `church-core.ts`s `languageOptions`: den legger til en tredje, DEAKTIVERT
+ * rad med det ekte navnet når det lagrede språket er pauset, og linja under
+ * boksen (`isPausedLanguage`) sier hvorfor den ikke kan velges på nytt.
  */
 
-import {
-  ACTIVE_LOCALES,
-  locale,
-  setLocale,
-  t,
-  tDyn,
-  type Locale,
-} from "../../i18n";
+import { locale, setLocale, t, tDyn, tf, type Locale } from "../../i18n";
 import { useSetting } from "../../settings/use-setting";
 import { Card } from "../../ui/Card/Card";
 import { BoundTextField } from "../../ui/Bound/Bound";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Select } from "../../ui/Select/Select";
+import { isPausedLanguage, languageOptions } from "./church-core";
 import { SubPage } from "./SubPage";
+import styles from "./setup.module.css";
 
 export function ChurchPage() {
   // Språket er en vanlig innstilling med vanlig kvittering — men BYTTET skjer
@@ -52,6 +57,11 @@ export function ChurchPage() {
       if (next !== locale.peek()) void setLocale(next);
     },
   });
+  // Den samme strengen går til BÅDE `<Select value>` og `languageOptions`:
+  // det er det som garanterer at boksens valgte verdi alltid finnes blant
+  // options'ene den får (se filhodet — det manglende treffet var hele feilen).
+  const selected = String(language.draft ?? locale.value);
+  const paused = isPausedLanguage(selected);
 
   return (
     <SubPage lede={t("app.setup.church.lede")} testId="setup-church">
@@ -72,11 +82,8 @@ export function ChurchPage() {
         >
           {(ids) => (
             <Select
-              value={String(language.draft ?? locale.value)}
-              options={ACTIVE_LOCALES.map((code) => ({
-                value: code,
-                label: tDyn("app.language", code),
-              }))}
+              value={selected}
+              options={languageOptions(selected)}
               onChange={(next) => language.set(next)}
               disabled={language.busy}
               labelId={ids.labelId}
@@ -85,6 +92,13 @@ export function ChurchPage() {
             />
           )}
         </SettingRow>
+        {paused ? (
+          <p data-testid="church-language-paused" class={styles.hint}>
+            {tf("app.setup.church.languagePaused", {
+              language: tDyn("app.language", locale.value),
+            })}
+          </p>
+        ) : null}
       </Card>
     </SubPage>
   );

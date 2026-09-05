@@ -7,6 +7,7 @@ import { Overlays, Shell } from "./Shell";
 import { lastEdited, loadState } from "./editor/model";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
+import { globalError } from "./state/global-error";
 import { recordings } from "./state/recordings";
 import { trashEntries } from "./state/trash";
 import { patchSettings } from "./state/settings";
@@ -377,6 +378,23 @@ describe("Shell", () => {
     // Ingen dialog, og ingen toast-rad inni den tomme regionen.
     expect(html).not.toContain('data-testid="dialog"');
     expect(html).not.toContain("data-kind");
+    // Og ingen feilbanner uten en feil (se testene under).
+    expect(html).not.toContain('data-testid="banner-global-error"');
+  });
+
+  it("globalError (R5): Overlays viser banneret med den RÅ meldingen, «Kopier» og et kryss", () => {
+    // `installErrorHandlers()` setter signalet fra en uventet `error`/
+    // `unhandledrejection` — se `state/global-error.ts`. Detaljen er meldingen
+    // SLIK DEN KOM, uoversatt: den er for oss (et GitHub-issue, en e-post til
+    // dev@), ikke for brukeren. Bare rammen rundt er oversatt.
+    globalError.value = "TypeError: cannot read properties of undefined";
+    const html = render(<Overlays />);
+    expect(html).toContain('data-tone="bad" data-testid="banner-global-error"');
+    expect(html).toContain("Noe gikk galt");
+    expect(html).toContain("TypeError: cannot read properties of undefined");
+    expect(html).toContain('data-testid="banner-global-error-copy"');
+    expect(html).toContain('data-testid="banner-global-error-dismiss"');
+    globalError.value = null;
   });
 
   it("monterer utviklingsproben bare når den blir bedt om det", () => {

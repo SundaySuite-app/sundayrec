@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { emit, spyEvents } from "./events";
 import {
   boot,
   BOOT_FIXTURES,
@@ -305,5 +306,153 @@ test.describe("opptaksradene", () => {
       "Avansert",
     );
     await expect(page.getByTestId("setup-advanced")).toBeVisible();
+  });
+});
+
+test.describe("«Test vekking» — F1-R3/W6", () => {
+  // `wake_test`/`wake_cancel_test`/`wake_failure_history`/
+  // `wake_clear_failure_history` worked in the backend all along; the door
+  // that closed in fase B was the JS-side caller (see api.d.ts's file header
+  // and `TestWakeRow`'s doc comment in ScheduleCard.tsx). These four prove
+  // the reopened door end to end, fixture-tailored per the reachability
+  // audit's own words for why it was left dark: "rig tools waiting for a Mac
+  // where the wake actually fails" (docs/APP-SHELL.md).
+
+  test("planlegger en ekte vekking, og «Avbryt» tar raden tilbake", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        wake_failure_history: [],
+        wake_test: {
+          ok: true,
+          jobId: "test-wake-1",
+          scheduledAt: "2026-09-04T10:47:00",
+          reason: null,
+        },
+        wake_cancel_test: true,
+      },
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    // Ingen historikk ennå — den ærlige tomtilstanden, ikke en tom liste som
+    // ser ut som en lastefeil.
+    await expect(page.getByTestId("adv-wake-history-empty")).toBeVisible();
+    await expect(page.getByTestId("adv-wake-history-list")).toHaveCount(0);
+
+    await expect(page.getByTestId("adv-wake-test")).toBeVisible();
+    await page.getByTestId("adv-wake-test").click();
+
+    // Knappen ER raden nå: «Avbryt» i stedet for «Test vekking om 2 min», og
+    // setningen sier NÅR — samme «armert»-idé som `wakeArmWord`s «ok»-utfall.
+    await expect(page.getByTestId("adv-wake-cancel")).toBeVisible();
+    await expect(page.getByTestId("adv-wake-test")).toHaveCount(0);
+    await expect(page.getByTestId("adv-wake-test-row")).toContainText(
+      "Planlagt til kl.",
+    );
+
+    await page.getByTestId("adv-wake-cancel").click();
+    await expect(page.getByTestId("adv-wake-test")).toBeVisible();
+    await expect(page.getByTestId("adv-wake-cancel")).toHaveCount(0);
+  });
+
+  test("en feilet test siterer DEN SAMME setningen som «Aktiver vekking»", async ({
+    page,
+  }) => {
+    // De fire feilordene er delt med `wakeArmWord` med vilje (samme
+    // `WakeErrorReason`-sett) — denne testen beviser at gjenbruket faktisk
+    // skjer, ikke bare at typene tillater det.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        wake_failure_history: [],
+        wake_test: {
+          ok: false,
+          jobId: null,
+          scheduledAt: null,
+          reason: "permission",
+        },
+      },
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    await page.getByTestId("adv-wake-test").click();
+    await expect(page.getByTestId("adv-wake-test-row")).toContainText(
+      "administratorpassord",
+    );
+    // Ingenting ble armet — raden tilbyr fortsatt «Test vekking», ikke «Avbryt».
+    await expect(page.getByTestId("adv-wake-test")).toBeVisible();
+    await expect(page.getByTestId("adv-wake-cancel")).toHaveCount(0);
+  });
+
+  test("«Test vekking» er sperret mens et opptak går, med en grunn", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...BOOT_FIXTURES, wake_failure_history: [] },
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    await expect(page.getByTestId("adv-wake-test")).toBeEnabled();
+    await emit(page, "recording-overlay-stop", { state: "recording" });
+    await expect(page.getByTestId("adv-wake-test")).toBeDisabled();
+    await expect(page.getByTestId("adv-wake-test")).toHaveAttribute(
+      "title",
+      "Går ikke mens et opptak pågår.",
+    );
+  });
+
+  test("feilhistorikken viser hendelsene, og «Tøm» kaller SLETTEKOMMANDOEN", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        wake_failure_history: [
+          {
+            timestamp: 1_799_000_000_000,
+            scheduledAt: "2026-08-09T11:00:00",
+            kind: "missed",
+            label: "Gudstjeneste Nordstrand",
+            reason: "no_resume",
+            deltaSec: null,
+          },
+          {
+            timestamp: 1_799_000_100_000,
+            scheduledAt: "2026-08-09T11:05:00",
+            kind: "test_ok",
+            label: "Test-wake",
+            reason: null,
+            deltaSec: 4,
+          },
+        ],
+        wake_clear_failure_history: fn(
+          "() => { (window.__E2E_WAKE_CLEAR__ ||= []).push('CLEAR'); return true; }",
+        ),
+      },
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    await expect(page.getByTestId("adv-wake-history-empty")).toHaveCount(0);
+    const list = page.getByTestId("adv-wake-history-list");
+    await expect(list).toContainText("Gikk glipp av en planlagt vekking");
+    await expect(list).toContainText("ingen gjenopptagelse observert");
+    await expect(list).toContainText("Testvekking lyktes");
+
+    await page.getByTestId("adv-wake-clear").click();
+
+    // Den DEDIKERTE kommandoen — ikke en optimistisk UI-tømming som aldri
+    // nådde bakenden (samme skjøte som SMTP-«Fjern» lukket i V1/PR3).
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_WAKE_CLEAR__))
+      .toEqual(["CLEAR"]);
+    await expect(page.getByTestId("adv-wake-history-empty")).toBeVisible();
+    await expect(page.getByTestId("adv-wake-clear")).toHaveCount(0);
   });
 });

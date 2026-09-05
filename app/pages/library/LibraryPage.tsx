@@ -78,6 +78,7 @@ import { loadTrash, trashCount } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
 import { Chip } from "../../ui/Chip/Chip";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
+import { reveal } from "../../ui/reveal";
 import { TextField } from "../../ui/TextField/TextField";
 import { toast } from "../../ui/toast";
 import { spanOfSeconds } from "../record/record-core";
@@ -90,6 +91,7 @@ import {
   totalSeconds,
   type LibraryRow,
 } from "./library-core";
+import { dateTimeTitle } from "@lib/ui/date-title";
 import { DOT } from "@lib/ui/dot";
 import styles from "./library.module.css";
 
@@ -463,28 +465,9 @@ function Row({
  * er en rad man ikke kan kjenne igjen.
  */
 function rowTitle(row: LibraryRow): string {
-  if (row.atMs === null) return row.filename;
-  const loc = locale.value;
-  const when = new Date(row.atMs);
-  const date = when.toLocaleDateString(loc, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  const time = when.toLocaleTimeString(loc, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${capitalize(date, loc)}${DOT}${time}`;
-}
-
-/** Stor forbokstav på første tegn — `Intl` gir «søndag», og det er riktig midt
- *  i en setning og feil som tittel. Samme funksjon og samme grunn som
- *  `capitalizeFirst` i `record-core`, som ikke kan importeres hit uten å ta
- *  med en `Settings`-avhengighet raden ikke har bruk for. */
-function capitalize(text: string, loc: string): string {
-  return text ? text[0].toLocaleUpperCase(loc) + text.slice(1) : text;
+  return row.atMs === null
+    ? row.filename
+    : dateTimeTitle(row.atMs, locale.value);
 }
 
 // ── Bunnlinja ───────────────────────────────────────────────────────────────
@@ -575,12 +558,4 @@ async function undoTrash(entries: readonly TrashEntry[]): Promise<void> {
   }
   await Promise.all([loadRecordingCount(), loadTrash()]);
   if (failed > 0) toast("warn", t("trash.undoFailed"));
-}
-
-/** «Vis i Finder». Sier fra når det ikke gikk — en knapp som stille ikke gjør
- *  noe er verre enn ingen knapp. */
-async function reveal(path: string | null): Promise<void> {
-  if (!path) return;
-  const ok = await window.api.revealFile(path);
-  if (!ok) toast("error", t("app.done.revealFailed"));
 }

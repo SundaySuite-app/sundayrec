@@ -205,7 +205,10 @@ function Row({
   const due = dueLine(row.daysLeft);
   const size = formatBytes(row.byteSize, locale.value);
   const meta = [
-    `${t("trash.deletedAt")} ${ageText(row.ageDays, ageWords())}`,
+    tf("trash.deletedAtLine", {
+      deletedAt: t("trash.deletedAt"),
+      when: ageText(row.ageDays, ageWords()),
+    }),
     size,
     // Si at følgesvennene ble med: en gjenoppretting som stille også henter ni
     // JSON-filer er greit, men det skal ikke være en overraskelse.

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { emit, emitEvent, spyEvents } from "./events";
 import { boot, BOOT_FIXTURES, fn, SETTLED_SETTINGS } from "./harness";
 
 // Det appen SIER om seg selv, målt mot det den vet.
@@ -226,5 +227,101 @@ test.describe("vekkingen: en bryter er ikke en vekketimer", () => {
       /«Ta opp automatisk» er av/,
     );
     await expect(page.getByTestId("adv-wake-arm-receipt")).toHaveText("");
+  });
+});
+
+// A counting `wake_verify` fixture: every real call increments a counter on
+// `window`, so a spec can assert "this many calls happened" instead of
+// guessing from side effects. Wrapped in `fn(...)` because a fixture value
+// has to survive the `addInitScript` boundary as SOURCE (see e2e/harness.ts).
+function countingWakeVerify(answer: typeof WAKE_ARMED): unknown {
+  return fn(
+    `() => { window.__wakeVerifyCalls = (window.__wakeVerifyCalls || 0) + 1; return ${JSON.stringify(answer)}; }`,
+  );
+}
+
+async function wakeVerifyCallCount(page: import("@playwright/test").Page) {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __wakeVerifyCalls?: number }).__wakeVerifyCalls ??
+      0,
+  );
+}
+
+test.describe("wake_verify: poll-disiplin (F1-R3)", () => {
+  // Før R3 red `refreshWakeArmed()` med på HVER reservepoll-tikk —
+  // unntaksfritt, også midt i en gudstjeneste. To timer er ~120 tikk, hver av
+  // dem en `pmset -g batt` + `pmset -g sched`/`-g custom`-spawn for å
+  // re-svare et spørsmål ingenting kan ha endret svaret på mens opptaket
+  // pågår. `shouldRefreshWake` (next-recording-core.ts) tok den ut av pollen
+  // og ned til fire navngitte grunner, aldri under opptak.
+  test("under et opptak rører ikke minuttpollen wake_verify i det hele tatt", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await page.clock.install();
+
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        scheduler_status: { next: nextSunday() },
+        wake_verify: countingWakeVerify(WAKE_NOT_ARMED),
+      },
+      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      goto: "home",
+    });
+
+    // Oppstarten selv er ÉN lovlig grunn (innstillings-effektens FØRSTE
+    // kjøring teller som «settings-endring») — tellingen starter derfor
+    // ETTER boot, ikke før.
+    const afterBoot = await wakeVerifyCallCount(page);
+    expect(afterBoot).toBeLessThanOrEqual(1);
+
+    await emit(page, "recording-overlay-stop", { state: "recording" });
+    await expect(page.getByTestId("status-line")).toHaveAttribute(
+      "data-status",
+      "rec",
+    );
+
+    // Tre reservepoll-tikk, midt i opptaket — nøyaktig scenariet PR-teksten
+    // regner ~200 `pmset`-spawn per gudstjeneste fra. `fastForward`, ikke
+    // `runFor`: en aktiv opptaksoverlegg kjører sin egen `requestAnimationFrame`
+    // -løkke (nedtellingen), og `runFor` spiller av HVER mellomliggende frame —
+    // ~10 800 av dem over tre minutter — i stedet for å bare fyre de forfalte
+    // timerne, slik en reell laptop-lokk-igjen-opp gjør. `fastForward` er den
+    // riktige simuleringen her, og den eneste som svarer på under ett sekund.
+    await page.clock.fastForward(60_000);
+    await page.clock.fastForward(60_000);
+    await page.clock.fastForward(60_000);
+
+    const afterTicks = await wakeVerifyCallCount(page);
+    expect(afterTicks).toBe(afterBoot);
+  });
+
+  test("et scheduler-neste-event UTENFOR opptak henter en fersk wake_verify", async ({
+    page,
+  }) => {
+    // Den positive halvparten av samme bevis: fjerningen fra pollen tok ikke
+    // wake-sjekken med seg — `scheduler://next` er én av de fire grunnene som
+    // fortsatt ber om den, med én gang.
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        scheduler_status: { next: null },
+        wake_verify: countingWakeVerify(WAKE_ARMED),
+      },
+      settings: { ...SETTLED_SETTINGS, wakeFromSleep: true },
+      goto: "home",
+    });
+
+    const before = await wakeVerifyCallCount(page);
+    await emitEvent(page, "scheduler://next", nextSunday());
+
+    await expect.poll(() => wakeVerifyCallCount(page)).toBeGreaterThan(before);
+    // …og svaret slår faktisk gjennom på helten, ikke bare på telleren.
+    await expect(page.getByTestId("record-next-auto-wake")).toHaveText(
+      /vekkes automatisk kl\./,
+    );
   });
 });

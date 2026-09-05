@@ -81,6 +81,7 @@ import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { ProgressBar } from "../../ui/ProgressBar/ProgressBar";
 import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
+import { reveal } from "../../ui/reveal";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import {
   cancelExport,
@@ -128,6 +129,7 @@ import {
 } from "../../editor/model";
 import { settings } from "../../state/settings";
 import { spanLabel } from "../../editor/span";
+import { dateTimeTitle } from "@lib/ui/date-title";
 import { DOT } from "@lib/ui/dot";
 import styles from "./export.module.css";
 
@@ -255,7 +257,7 @@ function Idle() {
               <div class={styles.value}>
                 {suggestion.atMs === null
                   ? suggestion.name
-                  : dateTitle(suggestion.atMs)}
+                  : dateTimeTitle(suggestion.atMs, locale.value)}
               </div>
               <div class={styles.recentName}>{suggestion.name}</div>
             </div>
@@ -342,28 +344,11 @@ function Idle() {
   );
 }
 
-/** «Søndag 2. august 2026 · 11:00» — samme tittel raden har i Bibliotek, fordi
- *  det er den frivillige kjenner opptaket sitt på. */
-function dateTitle(atMs: number): string {
-  const loc = locale.value;
-  const when = new Date(atMs);
-  const date = when.toLocaleDateString(loc, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  const time = when.toLocaleTimeString(loc, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const head = date ? date[0].toLocaleUpperCase(loc) + date.slice(1) : date;
-  return `${head}${DOT}${time}`;
-}
-
-/** Datoen for en rad, eller tom streng når raden ikke har en. */
+/** Datoen for en rad, eller tom streng når raden ikke har en. Samme tittel
+ *  («Søndag 2. august 2026 · 11:00») raden har i Bibliotek, fordi det er den
+ *  frivillige kjenner opptaket sitt på — se `@lib/ui/date-title`. */
 function rowWhen(atMs: number | null): string {
-  return atMs === null ? "" : dateTitle(atMs);
+  return atMs === null ? "" : dateTimeTitle(atMs, locale.value);
 }
 
 // ── Valgene ─────────────────────────────────────────────────────────────────
@@ -572,7 +557,7 @@ function Receipt() {
         <Button
           variant="primary"
           testId="editor-exported-reveal"
-          onClick={() => void window.api.revealFile(path)}
+          onClick={() => void reveal(path)}
         >
           {t("app.done.show")}
         </Button>

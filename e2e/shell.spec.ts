@@ -452,3 +452,57 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     await expect(page.getByTestId("setup-notify")).toHaveCount(0);
   });
 });
+
+// R5: `globalError` (`state/global-error.ts`) — den ENESTE leseren er
+// `GlobalErrorBanner`, montert i `Overlays` (`Shell.tsx`), et EGET Preact-tre
+// og søsken av `#app`. Se filhodet i `ui/GlobalErrorBanner/
+// GlobalErrorBanner.tsx` for hvorfor akkurat DER, og ikke i skallet selv.
+test.describe("globalt feilbanner", () => {
+  test("et uventet vindusunntak vises som et banner med den rå meldingen — Kopier og krysset virker", async ({
+    page,
+  }) => {
+    // Samme utklippstavle-spy som e2e/system-support.spec.ts's loggrad.
+    await page.addInitScript(() => {
+      const w = window as unknown as { __E2E_COPIED__: string[] };
+      w.__E2E_COPIED__ = [];
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: (s: string) => {
+            w.__E2E_COPIED__.push(s);
+            return Promise.resolve();
+          },
+        },
+        configurable: true,
+      });
+    });
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "home",
+    });
+
+    const banner = page.getByTestId("banner-global-error");
+    await expect(banner).toHaveCount(0);
+
+    // `installErrorHandlers()` fanger dette fra `window`s egen `error`-event —
+    // ikke noe appen selv kaster.
+    await page.evaluate(() => {
+      window.dispatchEvent(new ErrorEvent("error", { message: "boom" }));
+    });
+
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute("data-tone", "bad");
+    // Rammen er oversatt; meldingen er RÅ — ikke en norsk omskrivning av den.
+    await expect(banner).toContainText("Noe gikk galt");
+    await expect(banner).toContainText("boom");
+
+    await page.getByTestId("banner-global-error-copy").click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_COPIED__))
+      .toEqual(["boom"]);
+
+    // …og krysset nullstiller signalet — banneret er borte, ikke bare skjult.
+    await page.getByTestId("banner-global-error-dismiss").click();
+    await expect(banner).toHaveCount(0);
+  });
+});

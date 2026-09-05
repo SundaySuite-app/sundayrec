@@ -643,9 +643,13 @@ fn special_key(sp: &SpecialRecording) -> String {
 }
 
 /// Slots/specials whose start time is within the late-start `window_ms` of
-/// `now` and which should therefore be triggered. The engine starts each and
-/// feeds the returned keys into [`missed_recordings`] as `triggered`. Mirrors
-/// the trigger half of `checkMissedRecordings`.
+/// `now`. ALL of them, deliberately: every occurrence in here has been *handled*
+/// by this pass and must therefore be fed to [`missed_recordings`] as
+/// `triggered`, whether or not it is the one that got the microphone.
+///
+/// Which single one that is, is [`late_start_choice`]'s decision — see there for
+/// why "each of these is started" was never a thing the recorder could do.
+/// Mirrors the trigger half of `checkMissedRecordings`.
 pub fn active_within(
     slots: &[ScheduleSlot],
     specials: &[SpecialRecording],
@@ -672,6 +676,90 @@ pub fn active_within(
     out
 }
 
+/// The ONE trigger a late-start pass may act on — the first of `active`, or
+/// `None` when the recorder is already busy.
+///
+/// ## Why one, and why this is a decision rather than a loop
+///
+/// The recorder has a single session. `RecorderEngine::start` begins by stopping
+/// whatever is running, so "start each active trigger" does not mean two
+/// recordings — it means the second start *kills* the first, and the church is
+/// left with a 200 ms fragment plus a recording that began late by however long
+/// the first take lasted. That is exactly what happened at 11:20 on a Sunday
+/// with a weekly slot and a hand-entered special at the same time: `check_missed`
+/// read the engine state ONCE before its loop, so both triggers passed a guard
+/// that had gone stale the moment the first one started (F1 finding A4).
+///
+/// Re-reading the state inside the loop would have fixed the symptom. Returning
+/// at most one trigger fixes the shape: there is no longer a loop for a later
+/// edit to re-break, and the invariant "a pass starts at most one recording" is
+/// a property of this function that a test can hold, instead of a discipline the
+/// shell has to keep.
+///
+/// ## Which one
+///
+/// The FIRST — which, given [`active_within`]'s order, means a weekly slot beats
+/// a special at the same minute. Not because a slot deserves it, but because
+/// that is what the on-time path already does: [`upcoming_events`] sorts stably
+/// by time with slots pushed first, so `fire()` starts the slot and skips the
+/// special as "a recording is already active". A service must produce the same
+/// file whether the app was running at 11:00 or launched at 11:20.
+///
+/// (Note that the buggy behaviour produced the opposite — the special, started
+/// second, was the survivor. Aligning on the on-time path therefore changes
+/// which of two same-minute entries names the file. Two entries for one service
+/// is a schedule mistake either way; the app now makes the same mistake twice
+/// instead of two different ones, and stops destroying a take to do it.)
+///
+/// `already_recording` is the caller's FRESH reading of the engine — the whole
+/// point of the finding is that a stale one is worthless.
+pub fn late_start_choice(
+    active: &[ActiveTrigger],
+    already_recording: bool,
+) -> Option<&ActiveTrigger> {
+    if already_recording {
+        return None;
+    }
+    active.first()
+}
+
+/// A stretch of wall-clock time during which a recording is KNOWN to have been
+/// running, even though no history row says so yet.
+///
+/// Reconstructed from a crash-recovery manifest that startup recovery has not
+/// finished with: `start` is the session's own start, `last_seen` the newest
+/// evidence on disk that it was still writing (see
+/// `recorder::recovery::pending_windows`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoveredWindow {
+    /// When the interrupted session started.
+    pub start: NaiveDateTime,
+    /// The last moment it was demonstrably still recording. Never before
+    /// `start`.
+    pub last_seen: NaiveDateTime,
+}
+
+/// True if `when` falls inside any window — either close enough to a window's
+/// start to be the same occurrence, or inside a stretch that was demonstrably
+/// still recording.
+///
+/// Two clauses because a window answers two different questions. The first
+/// mirrors [`history_covers`] exactly (±[`HISTORY_COVER_MS`] of the start),
+/// because that is the row this recovery is *about to write*: a pending window
+/// is a history entry that has not landed yet. The second catches the occurrence
+/// that started while an earlier, longer recording was still running — a special
+/// at 11:30 inside an 11:00–12:30 take.
+///
+/// There is deliberately NO grace after `last_seen`: a recording that ended at
+/// 10:00 says nothing about a service at 10:20, and a tail grace here would
+/// silently suppress a genuinely missed one.
+fn windows_cover(windows: &[CoveredWindow], when: NaiveDateTime) -> bool {
+    windows.iter().any(|w| {
+        (w.start - when).num_milliseconds().abs() < HISTORY_COVER_MS
+            || (when >= w.start && when <= w.last_seen)
+    })
+}
+
 /// A scheduled recording that the missed-check determined never ran and is too
 /// stale to late-start — the engine logs it to history + the wake-failure ring.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -685,17 +773,37 @@ pub struct MissedRecording {
 /// Decide which slots/specials in the last 24 h should be logged as *missed*:
 /// their start time is older than the late-start window (can't be run now) but
 /// recent enough to matter, isn't already covered by a `triggered` late-start,
-/// and isn't already present in `history` (within ±30 min). Direct port of
-/// `scheduler.ts` `logMissedRecordings`.
+/// isn't already present in `history` (within ±30 min), and isn't inside a
+/// `covered` window. Direct port of `scheduler.ts` `logMissedRecordings`, plus
+/// the `covered` clause Electron never had.
 ///
-/// `history` and `now` are in the same local-wall `NaiveDateTime` frame — the
-/// shell converts stored epoch-ms history into local time before calling, so
+/// ## Why `covered` exists (F1 finding A10)
+///
+/// `history` is the database, and after a crash the database is *behind the
+/// truth*. The recording ran; the row that says so is written by startup
+/// recovery, which has to concat the fragments first — minutes of ffmpeg for a
+/// three-hour service. The missed-check runs at startup too, from its own task,
+/// and asked the database a question recovery had not finished answering. The
+/// answer was "nothing recorded on Sunday", and with the A3 relay behind it that
+/// answer becomes a native notification and an e-mail to a volunteer whose
+/// recording is, in fact, being salvaged in the next process over.
+///
+/// `covered` is the evidence recovery has not written down yet: one window per
+/// unfinalised manifest still on disk. Waiting for recovery to finish instead
+/// was considered and rejected — it would gate the late-start net (the thing
+/// that rescues the *second half of the sermon*) behind a concat that can take
+/// minutes, so an app relaunched at 11:20 would sit still until 11:30. The late
+/// start after a crash is WANTED; only the false "was not recorded" is the bug.
+///
+/// `history`, `covered` and `now` are in the same local-wall `NaiveDateTime`
+/// frame — the shell converts stored epoch-ms into local time before calling, so
 /// every comparison here is tz-free.
 pub fn missed_recordings(
     slots: &[ScheduleSlot],
     specials: &[SpecialRecording],
     now: NaiveDateTime,
     history: &[NaiveDateTime],
+    covered: &[CoveredWindow],
     triggered: &HashSet<String>,
 ) -> Vec<MissedRecording> {
     let mut out = Vec::new();
@@ -720,6 +828,9 @@ pub fn missed_recordings(
             if history_covers(history, candidate) {
                 continue;
             }
+            if windows_cover(covered, candidate) {
+                continue;
+            }
             out.push(MissedRecording {
                 when: candidate,
                 label: format!("Ukentlig opptak ({}–{})", slot.start, slot.stop),
@@ -742,6 +853,9 @@ pub fn missed_recordings(
             continue;
         }
         if history_covers(history, start) {
+            continue;
+        }
+        if windows_cover(covered, start) {
             continue;
         }
         let label = if sp.name.trim().is_empty() {
@@ -1174,7 +1288,7 @@ mod tests {
             device_id: None,
         }];
         let now = dt("2026-06-08 09:00");
-        let missed = missed_recordings(&slots, &specials, now, &[], &HashSet::new());
+        let missed = missed_recordings(&slots, &specials, now, &[], &[], &HashSet::new());
         let labels: Vec<_> = missed.iter().map(|m| m.label.as_str()).collect();
         assert!(labels.iter().any(|l| l.contains("Ukentlig")));
         assert!(labels.contains(&"Dåp"));
@@ -1183,7 +1297,7 @@ mod tests {
         // A history row covering the slot occurrence removes it from catch-up;
         // the un-covered special still surfaces.
         let history = vec![dt("2026-06-07 11:00")];
-        let missed2 = missed_recordings(&slots, &specials, now, &history, &HashSet::new());
+        let missed2 = missed_recordings(&slots, &specials, now, &history, &[], &HashSet::new());
         assert_eq!(missed2.len(), 1);
         assert_eq!(missed2[0].label, "Dåp");
     }
@@ -1263,7 +1377,7 @@ mod tests {
         // now = Sunday 13:00 → 11:00 start is 2 h ago: older than the 60-min
         // late-start window, within 24 h, not triggered, not in history → missed.
         let now = dt("2026-06-07 13:00");
-        let missed = missed_recordings(&slots, &[], now, &[], &HashSet::new());
+        let missed = missed_recordings(&slots, &[], now, &[], &[], &HashSet::new());
         assert_eq!(missed.len(), 1);
         assert_eq!(missed[0].when, dt("2026-06-07 11:00"));
         assert_eq!(missed[0].label, "Ukentlig opptak (11:00–12:00)");
@@ -1276,17 +1390,23 @@ mod tests {
 
         // Covered by a history entry within ±30 min of 11:00 → suppressed.
         let history = vec![dt("2026-06-07 11:10")];
-        assert!(missed_recordings(&slots, &[], now, &history, &HashSet::new()).is_empty());
+        assert!(missed_recordings(&slots, &[], now, &history, &[], &HashSet::new()).is_empty());
 
         // Triggered this pass → suppressed.
         let mut triggered = HashSet::new();
         triggered.insert("slot:6:11:00-12:00".to_string());
-        assert!(missed_recordings(&slots, &[], now, &[], &triggered).is_empty());
+        assert!(missed_recordings(&slots, &[], now, &[], &[], &triggered).is_empty());
 
         // Still inside the 60-min late-start window (11:30) → not yet "missed".
-        assert!(
-            missed_recordings(&slots, &[], dt("2026-06-07 11:30"), &[], &HashSet::new()).is_empty()
-        );
+        assert!(missed_recordings(
+            &slots,
+            &[],
+            dt("2026-06-07 11:30"),
+            &[],
+            &[],
+            &HashSet::new()
+        )
+        .is_empty());
     }
 
     #[test]
@@ -1294,7 +1414,172 @@ mod tests {
         let slots = vec![sunday_slot()];
         // now = Monday 14:00, two days after Sunday 11:00 → > 24 h old → ignored.
         let now = dt("2026-06-09 14:00");
-        assert!(missed_recordings(&slots, &[], now, &[], &HashSet::new()).is_empty());
+        assert!(missed_recordings(&slots, &[], now, &[], &[], &HashSet::new()).is_empty());
+    }
+
+    // ── A4: one pass, one start ─────────────────────────────────────────────
+
+    #[test]
+    fn late_start_choice_starts_exactly_one_of_two_simultaneous_triggers() {
+        // The Sunday this finding is named after: a weekly 11:00 slot AND a
+        // hand-entered special at the same minute, app launched at 11:20.
+        let slots = vec![sunday_slot()];
+        let specials = vec![SpecialRecording {
+            id: None,
+            date: "2026-06-07".to_string(),
+            name: "Konfirmasjon".to_string(),
+            start: "11:00".to_string(),
+            stop: "12:00".to_string(),
+            device_id: None,
+        }];
+        let active = active_within(&slots, &specials, dt("2026-06-07 11:20"), MISSED_WINDOW_MS);
+        // BOTH are active — that half is deliberate, because both keys have to
+        // reach `missed_recordings` as handled.
+        assert_eq!(active.len(), 2, "slot + special both inside the window");
+
+        // …but the recorder gets ONE, and it is the same one `fire()` would have
+        // picked on time (slots sort first in `upcoming_events`).
+        let chosen = late_start_choice(&active, false).expect("an idle engine starts one");
+        assert_eq!(chosen.kind, TriggerKind::Slot(0));
+
+        // The bug itself: the second start used to pass a guard read before the
+        // first one. A fresh reading refuses it.
+        assert_eq!(
+            late_start_choice(&active, true),
+            None,
+            "a busy recorder starts nothing — `start()` stops what is running first"
+        );
+    }
+
+    #[test]
+    fn late_start_choice_has_nothing_to_do_without_triggers() {
+        assert_eq!(late_start_choice(&[], false), None);
+        assert_eq!(late_start_choice(&[], true), None);
+    }
+
+    // ── A10: a recovery in flight is not a missed recording ─────────────────
+
+    #[test]
+    fn covered_windows_table() {
+        // One interrupted session: started 11:00, last wrote at 11:35 (the crash).
+        let w = [CoveredWindow {
+            start: dt("2026-06-07 11:00"),
+            last_seen: dt("2026-06-07 11:35"),
+        }];
+        let cases: [(&str, bool, &str); 7] = [
+            ("2026-06-07 11:00", true, "the window's own start"),
+            (
+                "2026-06-07 11:20",
+                true,
+                "inside the stretch that was recording",
+            ),
+            (
+                "2026-06-07 11:35",
+                true,
+                "the last moment it was seen alive",
+            ),
+            (
+                "2026-06-07 10:31",
+                true,
+                "29 min BEFORE the start — inside ±HISTORY_COVER_MS, same as the \
+                 history row this recovery is about to write",
+            ),
+            (
+                "2026-06-07 10:29",
+                false,
+                "31 min before → a different occurrence",
+            ),
+            (
+                "2026-06-07 11:50",
+                false,
+                "15 min after the last write: nothing was recording, and there is \
+                 deliberately no tail grace",
+            ),
+            ("2026-06-07 13:00", false, "long after"),
+        ];
+        for (when, expected, why) in cases {
+            assert_eq!(windows_cover(&w, dt(when)), expected, "{when}: {why}");
+        }
+        assert!(
+            !windows_cover(&[], dt("2026-06-07 11:20")),
+            "no windows, no cover"
+        );
+    }
+
+    #[test]
+    fn missed_recordings_suppressed_by_a_recovery_still_in_flight() {
+        // The crash Sunday: the 11:00 service recorded until 11:35, the app died,
+        // it was relaunched at 12:30. Startup recovery is still concatenating, so
+        // `history` is EMPTY — the row does not exist yet.
+        let slots = vec![sunday_slot()];
+        let now = dt("2026-06-07 12:30");
+        assert_eq!(
+            missed_recordings(&slots, &[], now, &[], &[], &HashSet::new()).len(),
+            1,
+            "precondition: without the manifest this is a (false) missed report"
+        );
+
+        let pending = [CoveredWindow {
+            start: dt("2026-06-07 11:00"),
+            last_seen: dt("2026-06-07 11:35"),
+        }];
+        assert!(
+            missed_recordings(&slots, &[], now, &[], &pending, &HashSet::new()).is_empty(),
+            "a manifest on disk says it DID record — recovery just has not written \
+             the row yet"
+        );
+
+        // And the window does not become a blanket amnesty: an evening service
+        // outside it is still missed.
+        let evening = vec![ScheduleSlot {
+            days: vec![6],
+            start: "18:00".to_string(),
+            stop: "19:00".to_string(),
+            max: None,
+        }];
+        let missed = missed_recordings(
+            &evening,
+            &[],
+            dt("2026-06-07 20:00"),
+            &[],
+            &pending,
+            &HashSet::new(),
+        );
+        assert_eq!(
+            missed.len(),
+            1,
+            "18:00 is nowhere near the 11:00–11:35 window"
+        );
+    }
+
+    #[test]
+    fn a_special_inside_a_longer_interrupted_recording_is_not_missed() {
+        // A special at 11:30 while the weekly take (11:00 →) was still running:
+        // covered by the STRETCH clause, not by the ±30 min start clause.
+        let specials = vec![SpecialRecording {
+            id: None,
+            date: "2026-06-07".to_string(),
+            name: "Dåp".to_string(),
+            start: "11:30".to_string(),
+            stop: "12:00".to_string(),
+            device_id: None,
+        }];
+        let pending = [CoveredWindow {
+            start: dt("2026-06-07 11:00"),
+            last_seen: dt("2026-06-07 12:30"),
+        }];
+        assert!(
+            missed_recordings(
+                &[],
+                &specials,
+                dt("2026-06-07 13:00"),
+                &[],
+                &pending,
+                &HashSet::new()
+            )
+            .is_empty(),
+            "something WAS recording at 11:30"
+        );
     }
 
     #[test]

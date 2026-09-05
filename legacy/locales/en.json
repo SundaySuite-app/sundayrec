@@ -29,7 +29,14 @@
     "dialog": {
       "confirm": "Continue",
       "cancel": "Cancel",
-      "close": "Close"
+      "close": "Close",
+      "filter": {
+        "settingsProfile": "Settings profile (JSON)",
+        "allFiles": "All files",
+        "allMedia": "All supported media",
+        "audio": "Audio",
+        "video": "Video"
+      }
     },
     "vu": {
       "hear": "We hear sound",
@@ -73,6 +80,7 @@
       "canStart": "You can start anyway — the recording stays silent until the mixer is back.",
       "useBuiltIn": "Use the computer’s microphone",
       "nextAuto": "Next automatic recording",
+      "nextAutoWhen": "{day} {time}",
       "last": "Last recording",
       "close": "Close",
       "camera": {
@@ -149,7 +157,8 @@
         "placeholder": "For example Bryn Church",
         "languageLabel": "Language in the app",
         "languageDesc": "Changes right away.",
-        "language": "Language: {language}"
+        "language": "Language: {language}",
+        "languagePaused": "This language is temporarily unavailable in the redesigned setup — the app shows {language} for now."
       },
       "notify": {
         "lede": "The computer always tells you. Email is for whoever isn’t sitting at it.",
@@ -379,6 +388,23 @@
           "cancelled": "You cancelled — nothing was registered.",
           "failed": "The wake-up was not registered."
         },
+        "wakeTest": "Test wake-up in 2 min",
+        "wakeTestIdle": "Schedule a real wake-up two minutes from now, and see whether the machine actually wakes.",
+        "wakeTestScheduled": "Scheduled for {time} — let the machine sleep to see whether it wakes.",
+        "wakeHistoryTitle": "Wake history",
+        "wakeHistoryDesc": "The most recent tests, and any scheduled wake-ups that failed.",
+        "wakeHistoryEmpty": "No events yet.",
+        "wakeHistoryClear": "Clear",
+        "wakeHistoryKind": {
+          "missed": "Missed a scheduled wake-up",
+          "testOk": "Test wake-up succeeded",
+          "testFail": "Test wake-up failed"
+        },
+        "wakeHistoryReason": {
+          "noResume": "no resume observed",
+          "tooLate": "came too late",
+          "onBattery": "running on battery"
+        },
         "audioTech": "Audio technology",
         "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app."
       }
@@ -555,8 +581,8 @@
       "stopQuestionDesc": "{elapsed} recorded so far. If you stop now, what you have is saved.",
       "keep": "Keep recording",
       "stopYes": "Stop",
-      "room": "Room for",
-      "camera": "Camera",
+      "room": "Room for {span}",
+      "camera": "Camera {name}",
       "reconnect": "Sound from {name} disappeared — trying to reconnect",
       "reconnectAnon": "The sound disappeared — trying to reconnect",
       "autoStop": "Stops by itself in {left}",
@@ -684,7 +710,8 @@
       "missedTitle": "{when} was not recorded",
       "missedDesc": "The computer was off. Automatic recording needs it on or asleep.",
       "missedWhy": "What can I do?",
-      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart."
+      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on in the “Record automatically” card on the Record page, so the app is running again after a restart.",
+      "globalErrorTitle": "Something went wrong"
     }
   },
   "nav": {
@@ -692,6 +719,7 @@
   },
   "status": {
     "warning": "Needs attention",
+    "warningDevice": "{warning}: {name}",
     "recording": "Recording now",
     "noSchedule": "No recording scheduled",
     "preflightErrors": {
@@ -710,6 +738,7 @@
     "readyNoSchedule": "Ready — set up a schedule to start recordings automatically",
     "wakesBefore": "The computer wakes automatically at {time}",
     "nextShort": "next",
+    "recordingCountdown": "{recording} · {next}: {base}",
     "wakesLead": "({min} min before)",
     "wakesNotArmed": "The machine must be on or asleep when the recording starts — no wake-up has been confirmed."
   },
@@ -736,6 +765,7 @@
     },
     "confirmEmptyBody": "The files are deleted from disk. This cannot be undone.",
     "deletedAt": "Deleted",
+    "deletedAtLine": "{deletedAt} {when}",
     "today": "today",
     "yesterday": "yesterday",
     "daysAgo": {

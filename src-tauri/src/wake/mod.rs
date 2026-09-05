@@ -56,6 +56,7 @@ pub mod shell;
 pub mod win_timer;
 
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use chrono::{Datelike, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -532,14 +533,62 @@ pub async fn fix_win_wake_timers() -> WakeFixResult {
 //   Verification
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// How long a `verify_scheduled_wakes` answer stays valid for an UNCHANGED
+/// `expected` set (R3, optional half).
+///
+/// The renderer already gates its OWN call sites down to four legitimate
+/// reasons (`shouldRefreshWake` in `app/lib/status/next-recording-core.ts`),
+/// each rare by construction — no more 60 s reserve-poll tick riding along
+/// unconditionally, ~120 `pmset` spawns per two-hour service. This is the
+/// floor under that on the backend side, for whatever else ends up calling
+/// this crate: a second window, a rig probe, a retry loop.
+///
+/// Keyed on `expected` (via `key_of`, the same hash `WakeEngine::reschedule`
+/// dedups on) and NOT blind: a genuine schedule change must never read back a
+/// mismatch verdict computed against the OLD schedule. That would undo
+/// exactly the freshness R3's four triggers exist to ask for — a settings
+/// change is one of them precisely because the cache below would otherwise
+/// serve a stale answer for up to five minutes after it.
+const WAKE_VERIFY_CACHE_TTL: Duration = Duration::from_secs(300);
+
+struct WakeVerifyCacheEntry {
+    key: String,
+    at: Instant,
+    status: WakeStatus,
+}
+
+static WAKE_VERIFY_CACHE: LazyLock<Mutex<Option<WakeVerifyCacheEntry>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// The cached answer for `key`, if one exists and is still inside the TTL.
+fn cached_wake_status(key: &str) -> Option<WakeStatus> {
+    let entry = lock_recover(&WAKE_VERIFY_CACHE);
+    let entry = entry.as_ref()?;
+    (entry.key == key && entry.at.elapsed() < WAKE_VERIFY_CACHE_TTL).then(|| entry.status.clone())
+}
+
 /// Compare what we expect the OS to have scheduled (from `expected`) against
 /// what it actually reports, plus power facts. Port of `verifyScheduledWakes`.
+///
+/// `pmset -g batt` + `pmset -g sched`/`-g custom` (mac) are spawned fresh only
+/// on a cache miss — see `WAKE_VERIFY_CACHE_TTL` above for why an unchanged
+/// `expected` set answers from cache instead.
 pub async fn verify_scheduled_wakes(expected: &[NaiveDateTime]) -> WakeStatus {
+    let key = key_of(expected);
+    if let Some(cached) = cached_wake_status(&key) {
+        return cached;
+    }
     let platform = current_platform();
     // The IOKit read happens here (it is synchronous and privilege-free) and is
     // handed in, so the fallback ladder below stays testable.
     let iokit = mac_read::read_scheduled_wakes(local_utc_offset_secs());
-    verify_with(real_shell().as_ref(), platform, iokit, expected).await
+    let status = verify_with(real_shell().as_ref(), platform, iokit, expected).await;
+    *lock_recover(&WAKE_VERIFY_CACHE) = Some(WakeVerifyCacheEntry {
+        key,
+        at: Instant::now(),
+        status: status.clone(),
+    });
+    status
 }
 
 async fn verify_with(
@@ -1053,5 +1102,72 @@ mod tests {
         assert!(is_admin_prompt_cancel("AppleScript error -128"));
         assert!(!is_admin_prompt_cancel("Authentication failed"));
         assert!(!is_admin_prompt_cancel("pmset: command not found"));
+    }
+
+    // ── Verify cache (R3, optional half) ────────────────────────────────────
+    //
+    // One test, not three: `WAKE_VERIFY_CACHE` is a process-wide static, and
+    // `verify_scheduled_wakes` itself is untestable here without spawning the
+    // REAL `pmset` (it calls `real_shell()`, not an injected one — every other
+    // test in this file goes through `verify_with`/`schedule_mac` precisely to
+    // avoid that). So this drives `cached_wake_status` + the same
+    // `WakeVerifyCacheEntry` the real function writes, directly — one test
+    // keeps the whole narrative on one thread, so cargo's default parallel
+    // test runner cannot interleave two mutations of the same static.
+    #[test]
+    fn wake_verify_cache_hits_the_same_schedule_misses_a_changed_one_and_expires() {
+        let expected = [dtm("2026-05-31 10:20")];
+        let key = key_of(&expected);
+        assert!(
+            cached_wake_status(&key).is_none(),
+            "an empty cache starts as a miss"
+        );
+
+        let status = WakeStatus {
+            expected_wakes: vec!["2026-05-31T10:20:00".to_string()],
+            observed_wakes: vec![],
+            has_mismatch: false,
+            on_battery: Some(false),
+            standby_enabled: Some(true),
+        };
+        *lock_recover(&WAKE_VERIFY_CACHE) = Some(WakeVerifyCacheEntry {
+            key: key.clone(),
+            at: Instant::now(),
+            status: status.clone(),
+        });
+
+        // The hit: same key, fresh entry.
+        let hit = cached_wake_status(&key).expect("a fresh entry is a hit");
+        assert_eq!(hit.expected_wakes, status.expected_wakes);
+        assert_eq!(hit.has_mismatch, status.has_mismatch);
+        assert_eq!(hit.on_battery, status.on_battery);
+
+        // The miss that matters most: a DIFFERENT schedule must NEVER read
+        // the old verdict back. This is the exact bug R3's four renderer
+        // triggers exist to prevent — a settings change is one of them
+        // precisely because a blind (un-keyed) cache would otherwise serve a
+        // stale mismatch for up to `WAKE_VERIFY_CACHE_TTL` after it.
+        let other_key = key_of(&[dtm("2026-06-07 10:20")]);
+        assert!(
+            cached_wake_status(&other_key).is_none(),
+            "a changed schedule must not read the previous schedule's cached verdict"
+        );
+
+        // The TTL: backdated well past it, without sleeping — the fast way
+        // to prove the expiry branch fires.
+        *lock_recover(&WAKE_VERIFY_CACHE) = Some(WakeVerifyCacheEntry {
+            key: key.clone(),
+            at: Instant::now() - WAKE_VERIFY_CACHE_TTL - Duration::from_secs(1),
+            status,
+        });
+        assert!(
+            cached_wake_status(&key).is_none(),
+            "an entry older than the TTL is a miss, not a stale hit"
+        );
+
+        // Leave the static as this test found it — it is process-wide, and a
+        // stray `Some` here would be a fixture only this test knows about,
+        // silently changing whatever runs next in the same process.
+        *lock_recover(&WAKE_VERIFY_CACHE) = None;
     }
 }

@@ -29,7 +29,14 @@
     "dialog": {
       "confirm": "Fortsett",
       "cancel": "Avbryt",
-      "close": "Lukk"
+      "close": "Lukk",
+      "filter": {
+        "settingsProfile": "Innstillingsprofil (JSON)",
+        "allFiles": "Alle filer",
+        "allMedia": "Alle støttede medier",
+        "audio": "Lyd",
+        "video": "Video"
+      }
     },
     "vu": {
       "hear": "Vi hører lyd",
@@ -73,6 +80,7 @@
       "canStart": "Du kan starte likevel — opptaket blir stille til mikseren er tilbake.",
       "useBuiltIn": "Bruk maskinens mikrofon",
       "nextAuto": "Neste automatiske opptak",
+      "nextAutoWhen": "{day} {time}",
       "last": "Siste opptak",
       "close": "Lukk",
       "camera": {
@@ -149,7 +157,8 @@
         "placeholder": "For eksempel Bryn menighet",
         "languageLabel": "Språk i appen",
         "languageDesc": "Bytter med én gang.",
-        "language": "Språk: {language}"
+        "language": "Språk: {language}",
+        "languagePaused": "Dette språket er midlertidig utilgjengelig i det nye oppsettet — appen viser {language} inntil videre."
       },
       "notify": {
         "lede": "Maskinen sier alltid fra. E-post er for den som ikke sitter ved den.",
@@ -379,6 +388,23 @@
           "cancelled": "Du avbrøt — ingenting er registrert.",
           "failed": "Vekkingen ble ikke registrert."
         },
+        "wakeTest": "Test vekking om 2 min",
+        "wakeTestIdle": "Planlegg en ekte vekking to minutter fram i tid, og se om maskinen faktisk våkner.",
+        "wakeTestScheduled": "Planlagt til kl. {time} — la maskinen sove for å se om den våkner.",
+        "wakeHistoryTitle": "Vekkehistorikk",
+        "wakeHistoryDesc": "De siste testene, og eventuelle planlagte vekkinger som ikke fungerte.",
+        "wakeHistoryEmpty": "Ingen hendelser ennå.",
+        "wakeHistoryClear": "Tøm",
+        "wakeHistoryKind": {
+          "missed": "Gikk glipp av en planlagt vekking",
+          "testOk": "Testvekking lyktes",
+          "testFail": "Testvekking mislyktes"
+        },
+        "wakeHistoryReason": {
+          "noResume": "ingen gjenopptagelse observert",
+          "tooLate": "kom for sent",
+          "onBattery": "gikk på batteri"
+        },
         "audioTech": "Lyd-teknologi",
         "diagnoseReportWhere": "Lim rapporten inn i et GitHub-issue, eller send den til dev@sundaysuite.app."
       }
@@ -555,8 +581,8 @@
       "stopQuestionDesc": "{elapsed} er tatt opp. Stopper du nå, lagres det du har.",
       "keep": "Fortsett å ta opp",
       "stopYes": "Stopp",
-      "room": "Plass til",
-      "camera": "Kamera",
+      "room": "Plass til {span}",
+      "camera": "Kamera {name}",
       "reconnect": "Lyden fra {name} forsvant — prøver å koble til igjen",
       "reconnectAnon": "Lyden forsvant — prøver å koble til igjen",
       "autoStop": "Stopper av seg selv om {left}",
@@ -684,7 +710,8 @@
       "missedTitle": "{when} ble ikke tatt opp",
       "missedDesc": "Maskinen var av. Automatisk opptak krever at den står på eller i dvale.",
       "missedWhy": "Hva kan jeg gjøre?",
-      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart."
+      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på i kortet «Ta opp automatisk» på Opptak-siden, så appen er i gang igjen etter en omstart.",
+      "globalErrorTitle": "Noe gikk galt"
     }
   },
   "nav": {
@@ -692,6 +719,7 @@
   },
   "status": {
     "warning": "Trenger oppmerksomhet",
+    "warningDevice": "{warning}: {name}",
     "recording": "Tar opp nå",
     "noSchedule": "Ingen opptak planlagt",
     "preflightErrors": {
@@ -710,6 +738,7 @@
     "readyNoSchedule": "Klar — sett opp en tidsplan for å starte automatisk",
     "wakesBefore": "Maskinen vekkes automatisk kl. {time}",
     "nextShort": "neste",
+    "recordingCountdown": "{recording} · {next}: {base}",
     "wakesLead": "({min} min før)",
     "wakesNotArmed": "Maskinen må være på eller i dvale når opptaket starter — vi har ikke fått bekreftet noen vekking."
   },
@@ -736,6 +765,7 @@
     },
     "confirmEmptyBody": "Filene slettes fra disken. Dette kan ikke angres.",
     "deletedAt": "Slettet",
+    "deletedAtLine": "{deletedAt} {when}",
     "today": "i dag",
     "yesterday": "i går",
     "daysAgo": {

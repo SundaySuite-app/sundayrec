@@ -40,6 +40,8 @@ import { t } from "./i18n";
 import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { Settings } from "../../legacy/bindings/Settings";
+import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
+import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
@@ -723,14 +725,30 @@ const api: Record<string, unknown> = {
   // rehydrate the UI without a second round-trip.
   settingsImportFromFile: async (path: string) =>
     invoke<Settings>("settings_import_from_file", { path }),
-  /** JSON-profile open picker for the import button. Cancel → null. */
-  pickSettingsFile: async () =>
-    pickPath({
+  /** JSON-profile open picker for the import button. Cancel → null.
+   *
+   * The filter NAMES go through the shim's own `t` hook (F1-I18N-T): they are
+   * OS-native dialog chrome, not app UI, so nothing in `app/` renders them —
+   * without the hook an English-language user would still see Norwegian
+   * labels in their file picker. */
+  pickSettingsFile: async () => {
+    const n = notifier.current();
+    return pickPath({
       filters: [
-        { name: "Innstillingsprofil (JSON)", extensions: ["json"] },
-        { name: "Alle filer", extensions: ["*"] },
+        {
+          name: n.t(
+            "app.dialog.filter.settingsProfile",
+            "Innstillingsprofil (JSON)",
+          ),
+          extensions: ["json"],
+        },
+        {
+          name: n.t("app.dialog.filter.allFiles", "Alle filer"),
+          extensions: ["*"],
+        },
       ],
-    }),
+    });
+  },
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
@@ -1366,20 +1384,63 @@ const api: Record<string, unknown> = {
       onBattery: null,
       standbyEnabled: null,
     }),
+  // `wake_test` / `wake_cancel_test` / `wake_failure_history` /
+  // `wake_clear_failure_history` — the four commands the fase-B door closed
+  // (see api.d.ts's file header) and W6 reopened: «Test vekking» in Avansert
+  // lets a volunteer schedule a real OS wake two minutes out — without
+  // waiting for Sunday — cancel it, and read (or clear) the log the backend
+  // has kept for it all along. HARDWARE-UNVERIFIED like the rest of `wake*`:
+  // scheduling the OS timer is proven, the machine actually resuming is not
+  // (docs/SMOKE-TEST.md §11).
+  //
+  // Fallbacks match `wakeReschedule`'s doctrine: an unanswered command must
+  // never read as a success. `wakeTest`'s `reason: "error"` mirrors
+  // `wakeReschedule`'s own fallback for the same reason — the command did not
+  // even answer, so there is no `WakeIdleReason` (or here, no OS reason) to
+  // report; inventing one would explain away a failure as a state.
+  wakeTest: async (secondsAhead: number) =>
+    call<TestWakeResult>(
+      "wake_test",
+      { secondsAhead },
+      { ok: false, jobId: null, scheduledAt: null, reason: "error" },
+    ),
+  // Best-effort by contract (src-tauri/src/wake/mod.rs::cancel_test_wake) —
+  // `false` says "we cannot confirm the cancel ran", never "it definitely
+  // did not"; the row clears its own armed state on click regardless (a
+  // stray test wake firing later is a harmless no-op, not a correctness bug).
+  wakeCancelTest: async () =>
+    call<boolean>("wake_cancel_test", undefined, false),
+  wakeFailureHistory: async () =>
+    call<WakeFailureEntry[]>("wake_failure_history", undefined, []),
+  wakeClearFailureHistory: async () =>
+    call<boolean>("wake_clear_failure_history", undefined, false),
 
   // ── Editor ──────────────────────────────────────────────────────────────
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks
   // file://). Sync — convertFileSrc returns a string.
   toAssetUrl: (path: string) => toAssetUrl(path),
-  editorPickFile: async () =>
-    pickPath({
+  // F1-I18N-T: filter names through the shim's `t` hook, same reasoning as
+  // `pickSettingsFile` above — an OS dialog, never rendered by `app/` itself.
+  editorPickFile: async () => {
+    const n = notifier.current();
+    return pickPath({
       filters: [
-        { name: "Alle støttede medier", extensions: MEDIA_EXT },
-        { name: "Lyd", extensions: AUDIO_EXT },
-        { name: "Video", extensions: VIDEO_EXT },
-        { name: "Alle filer", extensions: ["*"] },
+        {
+          name: n.t("app.dialog.filter.allMedia", "Alle støttede medier"),
+          extensions: MEDIA_EXT,
+        },
+        { name: n.t("app.dialog.filter.audio", "Lyd"), extensions: AUDIO_EXT },
+        {
+          name: n.t("app.dialog.filter.video", "Video"),
+          extensions: VIDEO_EXT,
+        },
+        {
+          name: n.t("app.dialog.filter.allFiles", "Alle filer"),
+          extensions: ["*"],
+        },
       ],
-    }),
+    });
+  },
   // Map the old export params to EditorExportRequest (outputFormat→format,
   // outputBitrate→bitrate, …; drops mode/processing/metadata). NEEDS LIVE VERIFY.
   editorExportFile: async (params: unknown) => {

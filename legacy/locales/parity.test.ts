@@ -710,7 +710,52 @@ export const PAUSED_KEYS = new Set([
   'recording.errorEngineExited',
   'recording.errorVideoCapture',
   'recording.errorMux',
-
+  // F1-I18N-T: renderer-i18n-oppskriften (W3). The five keys behind six OS
+  // dialog-filter names the shim reads through its own `t` hook (api-shim.ts
+  // pickSettingsFile / editorPickFile — "Alle filer" is `allFiles` at both
+  // call sites) — `app.overlay.room`/`app.overlay.camera` are NOT here: they
+  // are older PAUSED_KEYS entries above whose VALUE gained a `{…}` placeholder
+  // in this same PR, which the missing-key check does not see.
+  'app.dialog.filter.settingsProfile',
+  'app.dialog.filter.allFiles',
+  'app.dialog.filter.allMedia',
+  'app.dialog.filter.audio',
+  'app.dialog.filter.video',
+  // Former string concatenations turned into `tf()` templates so word order
+  // is a catalogue decision, not a JS template literal. Each nests any
+  // already-existing key (`trash.deletedAt`, `status.warning`, …) as a param
+  // rather than repurposing it in place, so nothing else that already reads
+  // that key changes shape.
+  'trash.deletedAtLine',
+  'home.recordingCountdown',
+  'status.warningDevice',
+  'app.record.nextAutoWhen',
+  // F1-R1: det globale feilbanneret (`ui/GlobalErrorBanner/`) — rammen rundt
+  // en rå, uoversatt feiltekst fanget av `installErrorHandlers()`.
+  'app.banner.globalErrorTitle',
+  // F1-R2: linja under en deaktivert, pauset språk-option (`ChurchPage`,
+  // `church-core.ts`s `isPausedLanguage`) — ny tekst, derfor pauset som alt
+  // annet redesignet har lagt til.
+  'app.setup.church.languagePaused',
+  // F1-R3: «Test vekking» i Avansert — fire kommandoer (`wake_test`,
+  // `wake_cancel_test`, `wake_failure_history`, `wake_clear_failure_history`)
+  // ut av unreachable-baselinen, med en rad som lar en frivillig prøve en
+  // ekte OS-vekking uten å vente på søndag. Ny tekst, derfor pauset som alt
+  // annet nytt — de fire delte `wakeArmWord.*`-ordene (`needsAdmin`,
+  // `unsupported`, `cancelled`, `failed`) var pauset fra før.
+  'app.setup.advanced.wakeTest',
+  'app.setup.advanced.wakeTestIdle',
+  'app.setup.advanced.wakeTestScheduled',
+  'app.setup.advanced.wakeHistoryTitle',
+  'app.setup.advanced.wakeHistoryDesc',
+  'app.setup.advanced.wakeHistoryEmpty',
+  'app.setup.advanced.wakeHistoryClear',
+  'app.setup.advanced.wakeHistoryKind.missed',
+  'app.setup.advanced.wakeHistoryKind.testOk',
+  'app.setup.advanced.wakeHistoryKind.testFail',
+  'app.setup.advanced.wakeHistoryReason.noResume',
+  'app.setup.advanced.wakeHistoryReason.tooLate',
+  'app.setup.advanced.wakeHistoryReason.onBattery',
   // F1-DOCS-2: linjen under «Kopier full rapport» som sier HVOR rapporten skal
   // sendes videre (GitHub-issue eller dev@sundaysuite.app) — atskilt fra
   // SECURITY.md sin kanal, som er for sårbarheter. Ny tekst, derfor pauset.

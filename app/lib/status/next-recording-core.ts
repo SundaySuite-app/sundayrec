@@ -181,6 +181,75 @@ export function computeWake(
   };
 }
 
+// ── Wake-verify poll discipline (R3) ────────────────────────────────────────
+
+/**
+ * The four moments a fresh `wake_verify` is actually worth asking the OS for.
+ *
+ * `wake_verify` is not free: on macOS it spawns `pmset -g batt` and
+ * `pmset -g sched`/`-g custom` every time (`src-tauri/src/wake/mod.rs`'s
+ * `check_power_source` + `check_standby`, plus a `pmset -g sched` fallback
+ * when IOKit answers empty). Until R3 it rode along on `refreshNextRecording`,
+ * which the reserve-poll calls every 60 s (`POLL_MS` below) for as long as the
+ * app is open — a two-hour Sunday service is ~120 poll ticks, every one of
+ * them spawning processes to answer a question ("is the wake still armed?")
+ * whose answer cannot have changed: nothing that decides it moves while the
+ * service is already running.
+ *
+ * So the check now runs only where something that could actually change the
+ * answer just happened:
+ *
+ *   - `"scheduler-next"`   — the backend told us a new next-recording time
+ *     (`scheduler://next`), which is the input the wake point is computed from.
+ *   - `"settings-change"`  — `wakeFromSleep` or the schedule itself may have
+ *     changed (the effect that carries this already reads `settings.value` for
+ *     `derive()`, so this rides along rather than adding a second subscription).
+ *   - `"visibility"`       — the tab/window came back into view. Nothing here
+ *     can push a fresh answer to a screen nobody is looking at, so a laptop
+ *     lid opened after an hour is exactly when a stale answer would be read.
+ *   - `"wake-reschedule"`  — `wake_reschedule` just (re)armed the OS timers;
+ *     the hero should not keep saying "not confirmed" for up to 60 s after.
+ *
+ * The reserve poll (`refreshNextRecording`, every `POLL_MS`) is deliberately
+ * NOT one of the four — see its own doc comment for why it still exists at
+ * all, and note that existing for ITS reason (a missed `scheduler://next`
+ * emit) is not the same as being a reason to re-ask the OS about wake timers.
+ */
+export type WakeRefreshReason =
+  "scheduler-next" | "settings-change" | "visibility" | "wake-reschedule";
+
+/** Every reason above, for a table-driven test — see `ALL_LOCALES` for the
+ *  same pattern (a type alone cannot be iterated by a test). */
+export const WAKE_REFRESH_REASONS: readonly WakeRefreshReason[] = [
+  "scheduler-next",
+  "settings-change",
+  "visibility",
+  "wake-reschedule",
+];
+
+/**
+ * Should a `wake_verify` reach the OS right now?
+ *
+ * One absolute veto, on top of the four legitimate reasons above: NEVER while
+ * a recording is running. A take in progress is exactly the ~120-tick, two-hour
+ * window the poll used to spend on `pmset` spawns nobody asked for and nothing
+ * on screen needed — the hero's wake badge is not even shown once `isRecording`
+ * is true (`formatWakeHint` in this file answers a different question then).
+ *
+ * `WAKE_REFRESH_REASONS.includes(reason)` reads as redundant against the
+ * `WakeRefreshReason` union — and today it is, every reason behaves the same —
+ * but the union only protects a call site that imports the type. A stray
+ * string surviving a refactor (or a test) is not a reason to ask the OS
+ * anything, and the table below pins that this stays true reason by reason
+ * rather than by one collapsed boolean.
+ */
+export function shouldRefreshWake(
+  reason: WakeRefreshReason,
+  isRecording: boolean,
+): boolean {
+  return WAKE_REFRESH_REASONS.includes(reason) && !isRecording;
+}
+
 // ── Date rendering seam ──────────────────────────────────────────────────────
 
 /** The four shapes of a start time the UI needs. */
@@ -284,7 +353,20 @@ export function formatCountdown(
   if (diff <= 0) return "";
   const base = `${duration(diff)} ${ctx.t("home.untilStart", "til oppstart")}`;
   if (!state.isRecording) return base;
-  return `${ctx.t("status.recording", "Tar opp nå")} · ${ctx.t("home.nextShort", "neste")}: ${base}`;
+  // F1-I18N-T: was a JS template literal gluing two independently-translated
+  // words to `base` with a fixed `·`/`:` structure — one word order for every
+  // language. `home.recordingCountdown` nests both words as params, so a
+  // catalogue can reorder or re-punctuate the whole line instead of only
+  // substituting inside a shape English decided.
+  return ctx.tf(
+    "home.recordingCountdown",
+    {
+      recording: ctx.t("status.recording", "Tar opp nå"),
+      next: ctx.t("home.nextShort", "neste"),
+      base,
+    },
+    "{recording} · {next}: {base}",
+  );
 }
 
 /** What the sidebar dot should look like. */
@@ -314,9 +396,19 @@ export function formatSidebarStatus(
     return { text: ctx.t("status.recording", "Tar opp nå"), dot: "recording" };
   }
   if (!device.connected) {
-    const name = device.name ? `: ${device.name}` : "";
+    // F1-I18N-T: was `t("status.warning") + ": " + name` — a suffix a
+    // catalogue can't move. `status.warningDevice` nests the plain warning as
+    // a param so the "name" position (and the punctuation around it) is the
+    // template's choice, only when there IS a name to show.
+    const warning = ctx.t("status.warning", "Trenger oppmerksomhet");
     return {
-      text: ctx.t("status.warning", "Trenger oppmerksomhet") + name,
+      text: device.name
+        ? ctx.tf(
+            "status.warningDevice",
+            { warning, name: device.name },
+            "{warning}: {name}",
+          )
+        : warning,
       dot: "warn",
     };
   }

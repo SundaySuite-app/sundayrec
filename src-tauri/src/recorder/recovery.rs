@@ -62,6 +62,105 @@ pub async fn delete_manifest(app: &AppHandle, session_id: &str) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   What recovery knows that the database does not yet (F1 finding A10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Epoch-ms modification time of `path`, if it can be read at all.
+fn mtime_ms(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as u64)
+}
+
+/// Every unfinalised session manifest, as `(session_start_ms, last_seen_ms)` —
+/// the stretch of wall-clock time an interrupted recording is KNOWN to have
+/// covered.
+///
+/// ## What this is for
+///
+/// The scheduler's missed-check asks the recordings table "did Sunday get
+/// recorded?". After a crash the honest answer is "yes, and the row is coming" —
+/// [`scan_and_recover`] has to concat the fragments before it can write one, and
+/// for a three-hour service that is minutes of ffmpeg. Both run from startup, in
+/// separate tasks, so the missed-check reliably wins that race and reports a
+/// service that is at that moment being salvaged one process over as never
+/// recorded. With A3 behind it that report is a desktop notification and an
+/// e-mail. This function is the missing evidence: a manifest on disk IS the
+/// recording, some minutes before the database says so.
+///
+/// The alternative — hold the missed-check until the recovery task's handle
+/// resolves — was considered and rejected. The missed-check is not only a
+/// reporter; it is also the LATE-START net, the thing that rescues the second
+/// half of a sermon when the machine is relaunched at 11:20. Gating it on a
+/// concat that can take minutes would trade a false alarm for a silent recorder
+/// during the part of Sunday that still matters.
+///
+/// No ordering is required between the two tasks, because [`scan_and_recover`]
+/// writes the history rows BEFORE it deletes the manifest. At every instant one
+/// of the two answers exists, so a missed-check that reads the directory at any
+/// moment sees either the window or the row it turned into — never neither.
+/// That ordering is load-bearing; a "tidy up the manifest first" refactor would
+/// re-open the hole this closes.
+///
+/// ## `last_seen`
+///
+/// The manifest itself only knows when the session STARTED; it is rewritten as
+/// the fragment layout grows, so its own mtime is the last split, which for an
+/// uninterrupted take is the start. The fragments' mtimes are the real signal —
+/// the newest of them is the last moment ffmpeg (or the native writer) was
+/// demonstrably alive. Take the latest of everything, floored at the start so a
+/// clock that moved backwards cannot invert the window.
+///
+/// Synchronous, and deliberately so: this is a handful of `stat` calls on a
+/// directory that holds one file per interrupted session — normally zero — and
+/// the caller ([`crate::scheduler::check_missed`]) is already awaiting database
+/// I/O around it. A `spawn_blocking` here would cost more than it saves.
+pub fn pending_windows(app: &AppHandle) -> Vec<(u64, u64)> {
+    manifest_dir(app)
+        .map(|dir| pending_windows_in(&dir))
+        .unwrap_or_default()
+}
+
+/// [`pending_windows`] against a plain directory.
+///
+/// Split out for the same reason `recover_session` takes `Option<&AppHandle>`:
+/// the logic is filesystem, not Tauri, and the tests drive it against a real
+/// temp directory with no runtime.
+pub(crate) fn pending_windows_in(dir: &Path) -> Vec<(u64, u64)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        // A manifest we cannot read is NOT evidence of anything. Silent, unlike
+        // `scan_and_recover`'s corrupt branch: that one is deleting the file and
+        // owes the operator an explanation; this one is only declining to vouch
+        // for it, and the scan is about to say the same thing out loud anyway.
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(manifest) = SessionManifest::from_json(&body) else {
+            continue;
+        };
+        let start = manifest.session_start_ms;
+        let last_seen = sundayrec_core::recovery::all_fragment_paths(&manifest)
+            .iter()
+            .filter_map(|p| mtime_ms(Path::new(p)))
+            .chain(mtime_ms(&path))
+            .fold(start, u64::max);
+        out.push((start, last_seen));
+    }
+    out
+}
+
 /// Startup scan: finalise every orphaned session, write its history rows, and
 /// delete its manifest. Returns how many recordings were recovered. Never errors
 /// — a single bad manifest is logged + cleared, the rest still process.
@@ -107,6 +206,13 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
                 }
                 recovered += recover_session(Some(&app), &pool, &manifest).await;
                 // Clean up the manifest + any leftover pre-roll clip.
+                //
+                // ⚠️ ORDER: the history rows are written FIRST (inside
+                // `recover_session`), and only then does the manifest go. That is
+                // what lets [`pending_windows`] stand in for a row that has not
+                // landed yet — at no instant do both answers disappear at once.
+                // Deleting the manifest before finalising would re-open the false
+                // "was not recorded" alert this ordering closes.
                 let _ = tokio::fs::remove_file(&path).await;
                 if let Some(clip) = &manifest.preroll_clip_path {
                     let _ = tokio::fs::remove_file(clip).await;
@@ -660,6 +766,70 @@ mod tests {
         };
         assert_eq!(recover_session(None, &pool, &m).await, 0);
         assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    // ── pending_windows (A10) ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn pending_windows_span_the_start_and_the_newest_fragment_write() {
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path());
+        // The fragments are written NOW; the manifest says the session began in
+        // 2023. That gap is the whole point: `session_start_ms` alone would give
+        // a zero-width window that covers nothing.
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        tokio::fs::write(recovery.path().join("session.json"), m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let windows = pending_windows_in(recovery.path());
+        assert_eq!(windows.len(), 1, "one unfinalised session");
+        let (start, last_seen) = windows[0];
+        assert_eq!(start, m.session_start_ms, "the session's own start");
+        let now = crate::util::now_ms() as u64;
+        assert!(
+            last_seen > start && last_seen <= now + 1_000,
+            "last_seen ({last_seen}) is the newest fragment write, not the start \
+             ({start}) — now is {now}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_windows_never_invert_when_nothing_is_on_disk() {
+        // Fragments deleted (or never written): the only timestamps left are the
+        // manifest's own, and the window must still be start ≤ last_seen.
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path());
+        tokio::fs::write(recovery.path().join("s.json"), m.to_json().unwrap())
+            .await
+            .unwrap();
+        let windows = pending_windows_in(recovery.path());
+        assert_eq!(windows.len(), 1);
+        assert!(
+            windows[0].1 >= windows[0].0,
+            "a window never runs backwards"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_windows_vouch_for_nothing_they_cannot_read() {
+        // A corrupt manifest is not evidence that anything recorded — suppressing
+        // a missed-recording alert on the strength of an unreadable file would be
+        // the failure mode this whole feature exists to avoid, inverted.
+        let recovery = tempfile::tempdir().unwrap();
+        tokio::fs::write(recovery.path().join("broken.json"), "{ not json")
+            .await
+            .unwrap();
+        tokio::fs::write(recovery.path().join("notes.txt"), "ignored")
+            .await
+            .unwrap();
+        assert!(pending_windows_in(recovery.path()).is_empty());
+        // A directory that does not exist yet (nothing has ever crashed) is the
+        // ordinary case, and must not panic.
+        assert!(pending_windows_in(&recovery.path().join("nope")).is_empty());
     }
 
     /// Mirror of `scan_and_recover`'s manifest read → parse → cleanup loop, exercised

@@ -15,11 +15,15 @@
  *     liste med en dato-velger, og datovelgeren er nettleserens egen.
  *   • **Helligdagene fra kirkeåret** — de fylte kalenderen med forslag ingen
  *     hadde bedt om. `getChurchHolidays` er urørt i `legacy/shared/`.
- *   • **Vekke-diagnostikken** — seks statuslinjer og en test som tar et minutt.
- *     Det som avgjør om det planlagte opptaket skjer er ÉN ting: kan maskinen
- *     vekkes, og koster det et administratorpassord? Det er én setning her
- *     (`wakeWord`), ikke et kort. Testen, `wake_verify` og feilhistorikken er
- *     ikke med.
+ *   • **Vekke-diagnostikken** — seks statuslinjer og et strøm-/standby-/
+ *     søvnkonfigurasjonskort. Det som avgjør om det planlagte opptaket skjer
+ *     er ÉN ting: kan maskinen vekkes, og koster det et administratorpassord?
+ *     Det er én setning her (`wakeWord`), ikke et kort — de fire statuslinjene
+ *     om strøm/standby/søvnkonfigurasjon er fortsatt ikke med. Testen OG
+ *     feilhistorikken kom tilbake i F1-R3/W6 (`TestWakeRow` under), som én
+ *     rad hver: «Test vekking om 2 min» + «Avbryt», og en logg med «Tøm» —
+ *     nøyaktig riggverktøyet reachability-revisjonen selv sa ventet på en Mac
+ *     der vekkingen faktisk feiler (`docs/APP-SHELL.md`).
  *   • **Flere DAGER per fast tid** — `ScheduleSlot.days` er en liste, og
  *     legacys dagbrikker lar deg velge flere. Her er én rad én dag; en profil
  *     som allerede har flere vises med den første, og listen røres ikke.
@@ -34,14 +38,18 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import { t, tDyn, tf } from "../../../i18n";
+import type { TestWakeResult } from "@legacy/bindings/TestWakeResult";
+import type { WakeFailureEntry } from "@legacy/bindings/WakeFailureEntry";
+
+import { locale, t, tDyn, tf } from "../../../i18n";
 import {
   patchSettings,
   saveSettingsDebounced,
   settings,
 } from "../../../state/settings";
 import { useReceipt } from "../../../settings/use-receipt";
-import { refreshNextRecording } from "../../../state/next-recording";
+import { refreshWakeAfterReschedule } from "../../../state/next-recording";
+import { isRecording } from "../../../state/recording";
 import { BoundToggle } from "../../../ui/Bound/Bound";
 import { Button } from "../../../ui/Button/Button";
 import { Card } from "../../../ui/Card/Card";
@@ -62,8 +70,10 @@ import {
   slotDay,
   slotRows,
   specialRows,
+  testWakeWord,
   wakeArmWord,
   wakeWord,
+  type TestWakeWord,
   type WakeArmResult,
   withoutIndex,
   withSlot,
@@ -83,6 +93,7 @@ export function ScheduleCard() {
       <WeeklyTimes />
       <Specials />
       <WakeRow />
+      <TestWakeRow />
     </Card>
   );
 }
@@ -432,10 +443,13 @@ function WakeRow() {
       else if (result.ok) resetReceipt();
       else showReceipt("failed");
       // Helten på TA OPP leser `wake_verify`, ikke bryteren. Etter en armering
-      // skal den lese den på nytt med én gang — ellers står den ærlige
-      // «vi har ikke fått bekreftet noen vekking» igjen på en maskin som
-      // nettopp ble armet, til neste minuttpoll.
-      if (armed) await refreshNextRecording();
+      // skal den lese den på nytt med én gang — ellers står den ærlige «vi har
+      // ikke fått bekreftet noen vekking» igjen på en maskin som nettopp ble
+      // armet. R3: dette kaller den målrettede vekkesjekken direkte i stedet
+      // for hele `refreshNextRecording()` — «etter wakeReschedule» er en av de
+      // fire grunnene `shouldRefreshWake` godkjenner, ikke en unnskyldning for
+      // å også spørre `getNextRecording()` på nytt (tiden endret seg ikke).
+      if (armed) await refreshWakeAfterReschedule();
     } catch (err) {
       // En avvist kommando er ikke «det gikk bra». Shimmen svarer med
       // `{ ok:false, reason:"error" }`, men et kast herfra må lande samme sted.
@@ -484,4 +498,229 @@ function WakeRow() {
       </SettingRow>
     </>
   );
+}
+
+/** Sekundene «Test vekking om 2 min» ber `wake_test` planlegge fram i tid —
+ *  navnet på knappen OG tallet den sender, samlet ett sted. */
+const TEST_WAKE_SECONDS_AHEAD = 120;
+
+/**
+ * «Test vekking» — planlegg en ekte OS-vekking to minutter fram, uten å vente
+ * på søndag (F1-R3/W6).
+ *
+ * ## Hvorfor raden finnes
+ *
+ * `wake_test`/`wake_cancel_test`/`wake_failure_history`/
+ * `wake_clear_failure_history` har virket i bakenden hele tiden
+ * (`src-tauri/src/wake/mod.rs`) — de sto i `unreachable`-baselinen fordi fase
+ * B rev bort siden som kalte dem, ikke fordi diagnosen sluttet å være verdt å
+ * ha. Reachability-revisjonens egen begrunnelse for å la dem stå mørke var
+ * «riggverktøy som venter på en Mac der vekkingen faktisk feiler»
+ * (`docs/APP-SHELL.md`) — denne raden ER det verktøyet: en frivillig som
+ * lurer på om «Aktiver vekking» ovenfor faktisk holder trenger ikke vente til
+ * neste søndag klokka 06:50 for å finne ut av det.
+ *
+ * ## HARDWARE-UNVERIFIED
+ *
+ * Å planlegge OS-timeren er bevist (backend-testene i `wake/mod.rs`). At
+ * maskinen FAKTISK våkner kan bare en rigg bevise — det finnes ingen
+ * strøm-gjenopptagelses-hendelse å lytte på her ennå (se doc-kommentaren over
+ * Rusts `schedule_test_wake`), så feilhistorikken under er så godt som alltid
+ * TOM i dag: ingenting skriver til den ennå. Raden viser den ærlige
+ * tomtilstanden i stedet for å late som et hull i loggen betyr «alt gikk
+ * bra» — samme regel som `formatWakeHint` bruker for `wake_verify`.
+ */
+function TestWakeRow() {
+  const [testResult, setTestResult] = useState<TestWakeResult | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
+  const [history, setHistory] = useState<WakeFailureEntry[] | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const live = isRecording.value;
+
+  useEffect(() => {
+    void window.api
+      .wakeFailureHistory()
+      .then(setHistory)
+      // En probe vi ikke fikk kjørt er ikke bevis for en tom logg — men raden
+      // har ingen tredje tilstand å tegne, og en logg som aldri slutter å
+      // laste er verre enn en som (feilaktig) sier «ingen hendelser ennå».
+      .catch(() => setHistory([]));
+  }, []);
+
+  async function runTest(): Promise<void> {
+    if (testBusy || live) return;
+    setTestBusy(true);
+    try {
+      setTestResult(await window.api.wakeTest(TEST_WAKE_SECONDS_AHEAD));
+    } catch (err) {
+      console.warn("[schedule] wake_test failed:", err);
+      setTestResult({
+        ok: false,
+        jobId: null,
+        scheduledAt: null,
+        reason: "error",
+      });
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
+  async function cancelTest(): Promise<void> {
+    if (testBusy) return;
+    setTestBusy(true);
+    try {
+      await window.api.wakeCancelTest();
+    } catch (err) {
+      console.warn("[schedule] wake_cancel_test failed:", err);
+    } finally {
+      // Best-effort ved kontrakt (se filhodet): raden går tilbake til «Test
+      // vekking» uansett hva kommandoen svarte. En vekking som IKKE ble
+      // kansellert fyrer og gjør ingenting — appen tar ikke opp av den, den
+      // står bare der som en ubrukt timer.
+      setTestResult(null);
+      setTestBusy(false);
+    }
+  }
+
+  async function clearHistory(): Promise<void> {
+    if (historyBusy || !history || history.length === 0) return;
+    setHistoryBusy(true);
+    try {
+      await window.api.wakeClearFailureHistory();
+      setHistory([]);
+    } catch (err) {
+      console.warn("[schedule] wake_clear_failure_history failed:", err);
+      toast("error", t("general.saveFailed"));
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  const word = testWakeWord(testResult);
+  const armed = word === "scheduled";
+
+  return (
+    <>
+      <SettingRow
+        label={t("app.setup.advanced.wakeTest")}
+        description={testWakeSentence(word, testResult)}
+        testId="adv-wake-test-row"
+      >
+        {armed ? (
+          <Button
+            variant="ghost"
+            busy={testBusy}
+            testId="adv-wake-cancel"
+            onClick={() => void cancelTest()}
+          >
+            {t("app.dialog.cancel")}
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            busy={testBusy}
+            disabled={live}
+            disabledReason={t("app.diagnose.testBlocked")}
+            testId="adv-wake-test"
+            onClick={() => void runTest()}
+          >
+            {t("app.setup.advanced.wakeTest")}
+          </Button>
+        )}
+      </SettingRow>
+
+      <SettingRow
+        label={t("app.setup.advanced.wakeHistoryTitle")}
+        description={t("app.setup.advanced.wakeHistoryDesc")}
+        testId="adv-wake-history"
+      >
+        {history && history.length > 0 ? (
+          <Button
+            variant="ghost"
+            busy={historyBusy}
+            testId="adv-wake-clear"
+            onClick={() => void clearHistory()}
+          >
+            {t("app.setup.advanced.wakeHistoryClear")}
+          </Button>
+        ) : null}
+      </SettingRow>
+      {history && history.length > 0 ? (
+        <ul class={styles.wakeHistoryList} data-testid="adv-wake-history-list">
+          {history.map((entry, i) => (
+            // `timestamp` alene er ikke stabil nok til en `key`: to
+            // hendelser kan i teorien dele det samme millisekundet.
+            <li key={`${entry.timestamp}-${i}`}>{wakeHistoryLine(entry)}</li>
+          ))}
+        </ul>
+      ) : (
+        <p class={styles.hint} data-testid="adv-wake-history-empty">
+          {t("app.setup.advanced.wakeHistoryEmpty")}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** «Planlagt til kl. 10:52 …», eller den ærlige setningen for et utfall som
+ *  ikke lyktes — se filhodet for hvorfor de fire feilordene siterer
+ *  `wakeArmWord`s katalog i stedet for å skrive de samme setningene på nytt. */
+function testWakeSentence(
+  word: TestWakeWord,
+  result: TestWakeResult | null,
+): string {
+  if (word === "idle") return t("app.setup.advanced.wakeTestIdle");
+  if (word === "scheduled") {
+    return tf("app.setup.advanced.wakeTestScheduled", {
+      time: result?.scheduledAt ? formatClock(result.scheduledAt) : "—",
+    });
+  }
+  return tDyn("app.setup.advanced.wakeArmWord", word);
+}
+
+/** Bakendens zone-løse lokale ISO → «10:52», i appens språk. Samme grep som
+ *  `LibraryPage.tsx`s `rowTitle`: en streng UTEN sone parses som LOKAL tid av
+ *  ethvert JS-motor, som er nøyaktig rammen Rust skrev den i. */
+function formatClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString(locale.value, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Én logglinje: «10:52 — Testvekking lyktes». */
+function wakeHistoryLine(entry: WakeFailureEntry): string {
+  const time = formatClock(entry.scheduledAt);
+  const reason = entry.reason
+    ? ` (${wakeHistoryReasonWord(entry.reason)})`
+    : "";
+  return `${time} — ${wakeHistoryKindWord(entry.kind)}${reason}`;
+}
+
+function wakeHistoryKindWord(kind: WakeFailureEntry["kind"]): string {
+  switch (kind) {
+    case "test_ok":
+      return t("app.setup.advanced.wakeHistoryKind.testOk");
+    case "test_fail":
+      return t("app.setup.advanced.wakeHistoryKind.testFail");
+    default:
+      return t("app.setup.advanced.wakeHistoryKind.missed");
+  }
+}
+
+/** De tre grunnene `test_wake_outcome` (`crates/sundayrec-core/src/wake.rs`)
+ *  faktisk skriver i dag. En grunn vi ikke har et ord for er fortsatt DATA —
+ *  samme regel `DiagnoseRow`s ukjente feilkode og `backend-warning.ts`s
+ *  ukjente kode bruker: den rå strengen sier mer enn stillhet. */
+function wakeHistoryReasonWord(reason: string): string {
+  switch (reason) {
+    case "no_resume":
+      return t("app.setup.advanced.wakeHistoryReason.noResume");
+    case "too_late":
+      return t("app.setup.advanced.wakeHistoryReason.tooLate");
+    case "on_battery":
+      return t("app.setup.advanced.wakeHistoryReason.onBattery");
+    default:
+      return reason;
+  }
 }
