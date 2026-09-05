@@ -574,9 +574,9 @@ const off = () => {}; // unsubscribe stub
 // drive them.
 type UpdateStatus =
   | { phase: "idle" | "checking" | "upToDate" }
-  | { phase: "available"; version: string }
+  | { phase: "available"; version: string; notes?: string | null }
   | { phase: "downloading"; version: string; percent: number }
-  | { phase: "readyToInstall"; version: string }
+  | { phase: "readyToInstall"; version: string; notes?: string | null }
   | { phase: "error"; message?: string };
 const LOCAL_CHANNELS = new Set([
   "update-checking",
@@ -1036,7 +1036,10 @@ const api: Record<string, unknown> = {
     try {
       const st = await invoke<UpdateStatus>("update_check");
       if (st.phase === "available") {
-        emitLocal("update-available", { version: st.version });
+        emitLocal("update-available", {
+          version: st.version,
+          notes: st.notes ?? null,
+        });
         return { available: true, version: st.version };
       }
       if (st.phase === "error") {
@@ -1092,14 +1095,20 @@ const api: Record<string, unknown> = {
             if (st.phase === "downloading")
               emitLocal("update-download-progress", { percent: st.percent });
             else if (st.phase === "readyToInstall")
-              emitLocal("update-downloaded", { version: st.version });
+              emitLocal("update-downloaded", {
+                version: st.version,
+                notes: st.notes ?? null,
+              });
           })
           .catch(() => {});
       }, 400);
       const st = await invoke<UpdateStatus>("update_download_install");
       clearInterval(timer);
       if (st.phase === "readyToInstall") {
-        emitLocal("update-downloaded", { version: st.version });
+        emitLocal("update-downloaded", {
+          version: st.version,
+          notes: st.notes ?? null,
+        });
         return await requestRelaunch();
       }
       if (st.phase === "upToDate") {

@@ -231,6 +231,15 @@ pub async fn check(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateSt
             if is_newer(&update.version, &current) {
                 UpdateStatus::Available {
                     version: update.version.clone(),
+                    // `Update.body` IS `latest.json`'s `notes` field (the
+                    // plugin's `RemoteRelease.notes` renamed on the way in —
+                    // `tauri-plugin-updater` 2.11.0 `updater.rs`), which is
+                    // itself `docs/release-notes/<tag>.md`, emitted at build
+                    // time (`release.yml` → `scripts/release-notes.mjs
+                    // --emit`). F1-P1: this used to be read and thrown away —
+                    // fetched over the network, signature-verified, and never
+                    // once looked at again.
+                    notes: update.body.clone(),
                 }
             } else {
                 UpdateStatus::UpToDate
@@ -321,7 +330,14 @@ pub async fn download_and_install(
         .await;
 
     let next = match result {
-        Ok(()) => UpdateStatus::ReadyToInstall { version },
+        // `update` is untouched by `download_and_install` (it takes `&self`),
+        // so the SAME note `Available` showed is still here to carry into
+        // `ReadyToInstall` — see the field doc on
+        // `sundayrec_core::update::UpdateStatus::ReadyToInstall`.
+        Ok(()) => UpdateStatus::ReadyToInstall {
+            version,
+            notes: update.body.clone(),
+        },
         Err(e) => UpdateStatus::Error {
             message: format!("{e}"),
         },
@@ -529,6 +545,7 @@ mod tests {
         assert_eq!(engine.status(), UpdateStatus::Checking);
         engine.set(UpdateStatus::ReadyToInstall {
             version: "1.2.3".into(),
+            notes: None,
         });
         assert!(engine.status().is_ready_to_install());
     }

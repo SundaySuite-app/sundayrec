@@ -760,6 +760,14 @@ export const PAUSED_KEYS = new Set([
   // sendes videre (GitHub-issue eller dev@sundaysuite.app) — atskilt fra
   // SECURITY.md sin kanal, som er for sårbarheter. Ny tekst, derfor pauset.
   'app.setup.advanced.diagnoseReportWhere',
+  // F1-P1: releasenotatet vises nå i stedet for å bli kastet (`update.body`
+  // ble hentet, signaturverifisert og aldri lest). Overskriften over notatet
+  // under «Oppdateringer», og «Vis mer»/«Vis mindre» — det ENE banneret
+  // (`ui/Banner/`) som kan bli lange nok til å klippes til fem linjer. Ny
+  // tekst, derfor pauset som alt annet redesignet har lagt til.
+  'app.setup.advanced.updateNotesLabel',
+  'app.common.showMore',
+  'app.common.showLess',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

@@ -24,7 +24,9 @@
     },
     "common": {
       "recommended": "Anbefalt",
-      "dismiss": "Lukk"
+      "dismiss": "Lukk",
+      "showMore": "Vis mer",
+      "showLess": "Vis mindre"
     },
     "dialog": {
       "confirm": "Fortsett",
@@ -310,6 +312,7 @@
         "updateRestarting": "Starter på nytt …",
         "updateRestartFailed": "Omstarten skjedde ikke. Avslutt appen og åpne den på nytt, så er oppdateringen aktiv.",
         "updateFailed": "Kunne ikke sjekke etter oppdateringer",
+        "updateNotesLabel": "Hva er nytt",
         "log": "Logg",
         "logDesc": "Til feilsøking sammen med oss. Ingen lyd og ingen passord.",
         "show": "Vis",

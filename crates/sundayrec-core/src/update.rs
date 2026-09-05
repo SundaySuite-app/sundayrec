@@ -75,13 +75,37 @@ pub enum UpdateStatus {
     UpToDate,
     /// A newer version exists but isn't downloaded yet (`update-available`).
     /// `version` is the target semver.
-    Available { version: String },
+    ///
+    /// `notes` is the release note from `docs/release-notes/<tag>.md` — it
+    /// travels feed → `latest.json`'s `notes` field → the updater plugin's
+    /// `Update.body` → here (see `src-tauri/src/update/mod.rs`). Before F1-P1
+    /// that text was fetched, verified, signed and shipped, and then thrown
+    /// away at the one place a human would have read it: `Update.body` was
+    /// never even accessed. `#[serde(default)]` so a status this shape was
+    /// serialised into BEFORE this field existed (or a feed that omits it)
+    /// still deserialises — this is the *renderer's* saved/replayed state,
+    /// not the network response, but the same rule applies either way: an
+    /// absent field is `None`, never a hard error.
+    Available {
+        version: String,
+        #[serde(default)]
+        notes: Option<String>,
+    },
     /// The new version is downloading (`download-progress`). `percent` is
     /// clamped 0..=100; `version` is the target.
     Downloading { version: String, percent: u8 },
     /// The new version is downloaded and will install on relaunch
     /// (`update-downloaded`). `version` is the target.
-    ReadyToInstall { version: String },
+    ///
+    /// `notes` carries the SAME text `Available` had for this release — a
+    /// volunteer who clicks straight through to "Last ned" without reading it
+    /// first should still be able to read it here, at "Start på nytt", rather
+    /// than the note having been true for exactly one screen.
+    ReadyToInstall {
+        version: String,
+        #[serde(default)]
+        notes: Option<String>,
+    },
     /// The check/download failed (`error`). `message` is the human-readable
     /// reason (already classified by the seam).
     Error { message: String },
@@ -237,7 +261,8 @@ mod tests {
         assert_eq!(UpdateStatus::UpToDate.i18n_key(), "update.upToDate");
         assert_eq!(
             UpdateStatus::Available {
-                version: "1.2.3".into()
+                version: "1.2.3".into(),
+                notes: None,
             }
             .i18n_key(),
             "update.available"
@@ -252,7 +277,8 @@ mod tests {
         );
         assert_eq!(
             UpdateStatus::ReadyToInstall {
-                version: "1.2.3".into()
+                version: "1.2.3".into(),
+                notes: None,
             }
             .i18n_key(),
             "update.readyInstall"
@@ -269,7 +295,8 @@ mod tests {
     #[test]
     fn only_ready_to_install_is_installable() {
         assert!(UpdateStatus::ReadyToInstall {
-            version: "1.0.0".into()
+            version: "1.0.0".into(),
+            notes: None,
         }
         .is_ready_to_install());
         assert!(!UpdateStatus::Downloading {
@@ -278,6 +305,86 @@ mod tests {
         }
         .is_ready_to_install());
         assert!(!UpdateStatus::Idle.is_ready_to_install());
+    }
+
+    /// F1-P1: `notes` serialises under its own camelCase-already key (it is a
+    /// single lowercase word, so `rename_all = "camelCase"` leaves it alone —
+    /// the assertion pins the FULL wire shape, not just that field in
+    /// isolation, so a future `rename_all` change would still be caught here).
+    #[test]
+    fn available_notes_serialises_camelcase_alongside_version() {
+        let status = UpdateStatus::Available {
+            version: "1.2.3".into(),
+            notes: Some("Nytt: papirkurven tåler strømbrudd.".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&status).unwrap(),
+            serde_json::json!({
+                "phase": "available",
+                "version": "1.2.3",
+                "notes": "Nytt: papirkurven tåler strømbrudd.",
+            })
+        );
+    }
+
+    /// The other half of the same wire shape, for `ReadyToInstall`.
+    #[test]
+    fn ready_to_install_notes_serialises_camelcase_alongside_version() {
+        let status = UpdateStatus::ReadyToInstall {
+            version: "1.2.3".into(),
+            notes: Some("Nytt: papirkurven tåler strømbrudd.".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&status).unwrap(),
+            serde_json::json!({
+                "phase": "readyToInstall",
+                "version": "1.2.3",
+                "notes": "Nytt: papirkurven tåler strømbrudd.",
+            })
+        );
+    }
+
+    /// The compatibility half: a `latest.json` from BEFORE this field existed
+    /// (or a Worker/build that omits it) must still deserialise, as `None` —
+    /// not a hard error that would turn a working update feed into a broken
+    /// one for every install on an older client. `#[serde(default)]` is what
+    /// makes this true; deleting it turns a missing field into a parse error.
+    #[test]
+    fn omitted_notes_deserialises_to_none_not_an_error() {
+        let available: UpdateStatus =
+            serde_json::from_str(r#"{"phase":"available","version":"1.2.3"}"#).unwrap();
+        assert_eq!(
+            available,
+            UpdateStatus::Available {
+                version: "1.2.3".into(),
+                notes: None,
+            }
+        );
+
+        let ready: UpdateStatus =
+            serde_json::from_str(r#"{"phase":"readyToInstall","version":"1.2.3"}"#).unwrap();
+        assert_eq!(
+            ready,
+            UpdateStatus::ReadyToInstall {
+                version: "1.2.3".into(),
+                notes: None,
+            }
+        );
+
+        // `null` is also accepted, and means the same as absent — the Worker
+        // and `serde_json` both treat a JSON `null` as "no value" for an
+        // `Option`, and a feed that emits the key explicitly (rather than
+        // omitting it) must not become a different, unhandled shape.
+        let explicit_null: UpdateStatus =
+            serde_json::from_str(r#"{"phase":"available","version":"1.2.3","notes":null}"#)
+                .unwrap();
+        assert_eq!(
+            explicit_null,
+            UpdateStatus::Available {
+                version: "1.2.3".into(),
+                notes: None,
+            }
+        );
     }
 
     #[test]

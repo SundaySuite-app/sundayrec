@@ -24,7 +24,9 @@
     },
     "common": {
       "recommended": "Recommended",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "showMore": "Show more",
+      "showLess": "Show less"
     },
     "dialog": {
       "confirm": "Continue",
@@ -310,6 +312,7 @@
         "updateRestarting": "Restarting …",
         "updateRestartFailed": "The restart did not happen. Quit the app and open it again, and the update is active.",
         "updateFailed": "Could not check for updates",
+        "updateNotesLabel": "What's new",
         "log": "Log",
         "logDesc": "For troubleshooting together with us. No audio and no passwords.",
         "show": "Show",
