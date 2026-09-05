@@ -710,6 +710,26 @@ export const PAUSED_KEYS = new Set([
   'recording.errorEngineExited',
   'recording.errorVideoCapture',
   'recording.errorMux',
+  // F1-I18N-T: renderer-i18n-oppskriften (W3). The five keys behind six OS
+  // dialog-filter names the shim reads through its own `t` hook (api-shim.ts
+  // pickSettingsFile / editorPickFile — "Alle filer" is `allFiles` at both
+  // call sites) — `app.overlay.room`/`app.overlay.camera` are NOT here: they
+  // are older PAUSED_KEYS entries above whose VALUE gained a `{…}` placeholder
+  // in this same PR, which the missing-key check does not see.
+  'app.dialog.filter.settingsProfile',
+  'app.dialog.filter.allFiles',
+  'app.dialog.filter.allMedia',
+  'app.dialog.filter.audio',
+  'app.dialog.filter.video',
+  // Former string concatenations turned into `tf()` templates so word order
+  // is a catalogue decision, not a JS template literal. Each nests any
+  // already-existing key (`trash.deletedAt`, `status.warning`, …) as a param
+  // rather than repurposing it in place, so nothing else that already reads
+  // that key changes shape.
+  'trash.deletedAtLine',
+  'home.recordingCountdown',
+  'status.warningDevice',
+  'app.record.nextAutoWhen',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

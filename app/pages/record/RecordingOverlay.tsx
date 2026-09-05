@@ -191,7 +191,7 @@ function Overlay() {
           <>
             <span aria-hidden="true">{DOT}</span>
             <span data-testid="overlay-room">
-              {`${t("app.overlay.room")} ${spanText(room)}`}
+              {tf("app.overlay.room", { span: spanText(room) })}
             </span>
           </>
         ) : null}
@@ -199,7 +199,7 @@ function Overlay() {
           <>
             <span aria-hidden="true">{DOT}</span>
             <span data-testid="overlay-camera">
-              {`${t("app.overlay.camera")} ${camera}`}
+              {tf("app.overlay.camera", { name: camera })}
             </span>
           </>
         ) : null}

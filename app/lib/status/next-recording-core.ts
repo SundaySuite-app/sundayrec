@@ -284,7 +284,20 @@ export function formatCountdown(
   if (diff <= 0) return "";
   const base = `${duration(diff)} ${ctx.t("home.untilStart", "til oppstart")}`;
   if (!state.isRecording) return base;
-  return `${ctx.t("status.recording", "Tar opp nå")} · ${ctx.t("home.nextShort", "neste")}: ${base}`;
+  // F1-I18N-T: was a JS template literal gluing two independently-translated
+  // words to `base` with a fixed `·`/`:` structure — one word order for every
+  // language. `home.recordingCountdown` nests both words as params, so a
+  // catalogue can reorder or re-punctuate the whole line instead of only
+  // substituting inside a shape English decided.
+  return ctx.tf(
+    "home.recordingCountdown",
+    {
+      recording: ctx.t("status.recording", "Tar opp nå"),
+      next: ctx.t("home.nextShort", "neste"),
+      base,
+    },
+    "{recording} · {next}: {base}",
+  );
 }
 
 /** What the sidebar dot should look like. */
@@ -314,9 +327,19 @@ export function formatSidebarStatus(
     return { text: ctx.t("status.recording", "Tar opp nå"), dot: "recording" };
   }
   if (!device.connected) {
-    const name = device.name ? `: ${device.name}` : "";
+    // F1-I18N-T: was `t("status.warning") + ": " + name` — a suffix a
+    // catalogue can't move. `status.warningDevice` nests the plain warning as
+    // a param so the "name" position (and the punctuation around it) is the
+    // template's choice, only when there IS a name to show.
+    const warning = ctx.t("status.warning", "Trenger oppmerksomhet");
     return {
-      text: ctx.t("status.warning", "Trenger oppmerksomhet") + name,
+      text: device.name
+        ? ctx.tf(
+            "status.warningDevice",
+            { warning, name: device.name },
+            "{warning}: {name}",
+          )
+        : warning,
       dot: "warn",
     };
   }

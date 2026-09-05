@@ -36,6 +36,19 @@
  *
  * Mutasjonsvern: innebygd selvtest med TSX-fixtur og fasit — én kjent
  * hardkoding per klasse, pluss korrekte naboer som må forbli stille. Exit 2.
+ *
+ * ## `app/lib/` er MED (F1-I18N-T, W3)
+ *
+ * Fram til nå gikk vandringen forbi `app/lib/` — det porterte inventaret fase
+ * B flyttet inn under `app/`. Det unntaket hørte hjemme i `check-i18n-keys.mjs`
+ * (den gaten håndhever fallback-forbudet, og inventaret har legacy-signaturen
+ * `t(key, fallback)` — se den gatens egen kommentar om hvorfor DEN fortsatt
+ * hopper over `app/lib/`). Denne gaten teller ikke argumenter, bare hardkodet
+ * prosa, og prosa som aldri når en frivillig er like hardkodet i `app/lib/`
+ * som i `app/` selv — kopiert unntak, ikke samme begrunnelse. Baseline gikk
+ * fra «umålt» til 0 i samme PR som slettet `mixer.ts`s døde DOM-rendering,
+ * som var den suverent største kilden til akkurat denne gjelda (et helt
+ * hardkodet mikserpanel ingen kalte lenger — se den fila).
  */
 
 import fs from "node:fs";
@@ -53,13 +66,6 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const APP_DIR = path.join(ROOT, "app");
-/**
- * Det porterte inventaret, som fase B PR B flyttet inn under `app/`. Holdt
- * utenfor vandringen med vilje — se `sourceFiles` i `lib/tsx-i18n-scan.mjs`.
- * Baselinen her er 0 fordi SKALLET ikke har gjeld; porten har det, og en
- * baseline som endrer seg fordi en mappe flyttet er ingen baseline.
- */
-const LIB_DIR = path.join(APP_DIR, "lib");
 
 /**
  * «Minst ett ord på ≥3 bokstaver med minst én liten bokstav.»
@@ -304,7 +310,10 @@ function main() {
   selfTest();
 
   const args = process.argv.slice(2);
-  const files = sourceFiles(APP_DIR, [LIB_DIR]);
+  // F1-I18N-T: used to be `sourceFiles(APP_DIR, [LIB_DIR])` — see "`app/lib/`
+  // er MED" in the file header for why the exclusion existed and why it no
+  // longer does.
+  const files = sourceFiles(APP_DIR);
   const findings = [];
 
   for (const file of files) {

@@ -723,14 +723,30 @@ const api: Record<string, unknown> = {
   // rehydrate the UI without a second round-trip.
   settingsImportFromFile: async (path: string) =>
     invoke<Settings>("settings_import_from_file", { path }),
-  /** JSON-profile open picker for the import button. Cancel → null. */
-  pickSettingsFile: async () =>
-    pickPath({
+  /** JSON-profile open picker for the import button. Cancel → null.
+   *
+   * The filter NAMES go through the shim's own `t` hook (F1-I18N-T): they are
+   * OS-native dialog chrome, not app UI, so nothing in `app/` renders them —
+   * without the hook an English-language user would still see Norwegian
+   * labels in their file picker. */
+  pickSettingsFile: async () => {
+    const n = notifier.current();
+    return pickPath({
       filters: [
-        { name: "Innstillingsprofil (JSON)", extensions: ["json"] },
-        { name: "Alle filer", extensions: ["*"] },
+        {
+          name: n.t(
+            "app.dialog.filter.settingsProfile",
+            "Innstillingsprofil (JSON)",
+          ),
+          extensions: ["json"],
+        },
+        {
+          name: n.t("app.dialog.filter.allFiles", "Alle filer"),
+          extensions: ["*"],
+        },
       ],
-    }),
+    });
+  },
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
@@ -1371,15 +1387,28 @@ const api: Record<string, unknown> = {
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks
   // file://). Sync — convertFileSrc returns a string.
   toAssetUrl: (path: string) => toAssetUrl(path),
-  editorPickFile: async () =>
-    pickPath({
+  // F1-I18N-T: filter names through the shim's `t` hook, same reasoning as
+  // `pickSettingsFile` above — an OS dialog, never rendered by `app/` itself.
+  editorPickFile: async () => {
+    const n = notifier.current();
+    return pickPath({
       filters: [
-        { name: "Alle støttede medier", extensions: MEDIA_EXT },
-        { name: "Lyd", extensions: AUDIO_EXT },
-        { name: "Video", extensions: VIDEO_EXT },
-        { name: "Alle filer", extensions: ["*"] },
+        {
+          name: n.t("app.dialog.filter.allMedia", "Alle støttede medier"),
+          extensions: MEDIA_EXT,
+        },
+        { name: n.t("app.dialog.filter.audio", "Lyd"), extensions: AUDIO_EXT },
+        {
+          name: n.t("app.dialog.filter.video", "Video"),
+          extensions: VIDEO_EXT,
+        },
+        {
+          name: n.t("app.dialog.filter.allFiles", "Alle filer"),
+          extensions: ["*"],
+        },
       ],
-    }),
+    });
+  },
   // Map the old export params to EditorExportRequest (outputFormat→format,
   // outputBitrate→bitrate, …; drops mode/processing/metadata). NEEDS LIVE VERIFY.
   editorExportFile: async (params: unknown) => {
