@@ -1793,4 +1793,144 @@ mod tests {
             "Ukentlig opptak"
         );
     }
+
+    // ── The seam: what A3 reports is what M4 already filtered ────────────────
+
+    /// A crash recovery still in flight is neither dispatched NOR stamped.
+    ///
+    /// Neither half owns this test. F1-M4 taught `missed_recordings` that an
+    /// occurrence overlapping an unfinalised manifest is not missed; A3 gave
+    /// whatever survives that filter a dispatch and a durable `notify_seen` row.
+    /// What only the two together have is the ORDER — `check_missed` filters,
+    /// and `if !out.is_empty()` is the gate the dispatch sits behind, so the
+    /// list A3 reports on is the list M4 has already thinned.
+    ///
+    /// The other order is the whole reason #204 waited for M4. A Sunday being
+    /// salvaged one task over would go out as a desktop notification and an
+    /// e-mail telling a volunteer it was never recorded — and, because the
+    /// ledger row makes "once" a full stop rather than a window, no later
+    /// correction could take it back.
+    ///
+    /// Both halves of the claim are asserted, and the counterfactual first:
+    /// without the manifest this occurrence IS fresh news, so an empty ledger at
+    /// the end is the filter's doing and not an inert test.
+    #[tokio::test]
+    async fn a_recovery_in_flight_is_neither_dispatched_nor_stamped() {
+        use chrono::{Datelike, Duration as ChronoDuration};
+        use sundayrec_core::recovery::{DeliverableManifest, SessionManifest};
+
+        let (pool, _d) = temp_pool().await;
+
+        // Five hours back, on the real clock, for the reason the A10 test states:
+        // this is the seam between the recovery directory's epoch-ms and the
+        // core's local-wall frame, and on the autumn DST night a nearer wall time
+        // would resolve to the later repeat and drift back inside the late-start
+        // window.
+        let now_local = Local::now();
+        let started = now_local - ChronoDuration::hours(5);
+        let now = now_local.naive_local();
+        let slot = ScheduleSlot {
+            days: vec![started.naive_local().weekday().num_days_from_monday()],
+            start: started.format("%H:%M").to_string(),
+            stop: (started + ChronoDuration::hours(2))
+                .format("%H:%M")
+                .to_string(),
+            max: None,
+        };
+
+        // `check_missed`'s own conversion from the core's verdict to the shape
+        // `report_missed` consumes.
+        let sweep = |covered: &[CoveredWindow]| -> Vec<MissedRecordingInfo> {
+            missed_recordings(
+                std::slice::from_ref(&slot),
+                &[],
+                now,
+                &[],
+                covered,
+                &HashSet::new(),
+            )
+            .into_iter()
+            .map(|m| MissedRecordingInfo {
+                at: fmt_dt(m.when),
+                label: m.label,
+            })
+            .collect()
+        };
+
+        // COUNTERFACTUAL — the database alone still reads this as a lost service,
+        // and A3's filter agrees it has never been reported. Without M4 this is
+        // the mail that goes out.
+        let unfiltered = sweep(&[]);
+        assert_eq!(unfiltered.len(), 1, "precondition: a missed candidate");
+        let would_send =
+            unreported_missed(&pool, &unfiltered, "%d.%m.%Y %H:%M", crate::util::now_ms()).await;
+        assert_eq!(
+            would_send.len(),
+            1,
+            "precondition: nothing has stamped this occurrence, so it IS fresh news"
+        );
+        let key = would_send[0].seen_key();
+        // `unreported_missed` only reads; the stamping is `report_missed`'s, and
+        // that is exactly what must not happen below.
+        assert!(
+            crate::notify::relay::store::seen_get(&pool, SeenScope::Missed, &key)
+                .await
+                .unwrap()
+                .is_none(),
+            "reading the ledger must not write to it"
+        );
+
+        // The evidence the database does not have yet: one unfinalised manifest,
+        // written the way the engine writes it.
+        let dir = tempfile::tempdir().unwrap();
+        let save = tempfile::tempdir().unwrap();
+        let primary = save
+            .path()
+            .join("gudstjeneste.m4a")
+            .to_string_lossy()
+            .into_owned();
+        let manifest = SessionManifest {
+            session_id: "crashed-session".into(),
+            device_name: "Soundcraft USB".into(),
+            session_start_ms: started.timestamp_millis() as u64,
+            preroll_clip_path: None,
+            delivery_encode: None,
+            deliverables: vec![DeliverableManifest {
+                primary_path: primary.clone(),
+                fragments: vec![primary],
+                started_at_ms: started.timestamp_millis() as u64,
+            }],
+        };
+        std::fs::write(
+            dir.path().join("crashed-session.json"),
+            manifest.to_json().unwrap(),
+        )
+        .unwrap();
+
+        // The composition `check_missed` performs, minus the `AppHandle` that
+        // only locates the directory and carries the dispatch.
+        let covered =
+            covered_windows_local(crate::recorder::recovery::pending_windows_in(dir.path()));
+        assert_eq!(covered.len(), 1, "one interrupted session");
+        let out = sweep(&covered);
+
+        // NO DISPATCH: `report_missed` sits behind `if !out.is_empty()`, and the
+        // gate is shut.
+        assert!(
+            out.is_empty(),
+            "the recovery covers the window, so nothing reaches the dispatch"
+        );
+
+        // NO STAMP: the ledger is written only by `report_missed`, one statement
+        // after the dispatch it never made. The occurrence stays reportable, so
+        // if the recovery later fails for real, that news can still be sent.
+        assert!(
+            crate::notify::relay::store::seen_get(&pool, SeenScope::Missed, &key)
+                .await
+                .unwrap()
+                .is_none(),
+            "a filtered occurrence must not be recorded as reported — a stamp \
+             here is permanent, and would silence a genuine bom for good"
+        );
+    }
 }
