@@ -40,8 +40,8 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
 use sundayrec_core::tray::{
-    badge_rgb, build_menu as build_model, icon_for, tooltip, with_status_badge, TrayAction,
-    TrayItem, TrayLang, TrayState,
+    badge_rgb, build_menu as build_model, format_next_label, icon_for, tooltip, with_status_badge,
+    TrayAction, TrayItem, TrayLang, TrayState,
 };
 
 /// The event the tray emits for an action the renderer/commands handle. The
@@ -278,56 +278,6 @@ pub fn set_lang<R: Runtime>(app: &AppHandle<R>, lang: TrayLang) {
     ctl.render(app, &next);
 }
 
-/// Localized weekday abbreviations, Monday-first (chrono's
-/// `Weekday::num_days_from_monday()` order). Same seven languages as the rest of
-/// the tray model; kept here because it is wall-clock FORMATTING, which the core
-/// model deliberately leaves to the shell.
-const WEEKDAYS: [[&str; 7]; 7] = [
-    // No
-    ["man.", "tir.", "ons.", "tor.", "fre.", "lør.", "søn."],
-    // En
-    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    // De
-    ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."],
-    // Sv
-    ["mån.", "tis.", "ons.", "tors.", "fre.", "lör.", "sön."],
-    // Da
-    ["man.", "tir.", "ons.", "tor.", "fre.", "lør.", "søn."],
-    // Pl
-    ["pon.", "wt.", "śr.", "czw.", "pt.", "sob.", "niedz."],
-    // Fr
-    ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
-];
-
-fn lang_row(lang: TrayLang) -> usize {
-    match lang {
-        TrayLang::No => 0,
-        TrayLang::En => 1,
-        TrayLang::De => 2,
-        TrayLang::Sv => 3,
-        TrayLang::Da => 4,
-        TrayLang::Pl => 5,
-        TrayLang::Fr => 6,
-    }
-}
-
-/// Format a `scheduler://next` payload (a zone-less local `YYYY-MM-DDTHH:MM:SS`)
-/// into the short menu label the core model places — e.g. `søn. 11:00`. Returns
-/// `None` for a null/unparseable payload so the info row simply disappears
-/// rather than showing a raw timestamp. Pure → unit-tested.
-pub fn format_next_label(iso: Option<&str>, lang: TrayLang) -> Option<String> {
-    use chrono::{Datelike, NaiveDateTime, Timelike};
-    let raw = iso?.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let dt = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S")
-        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M"))
-        .ok()?;
-    let day = WEEKDAYS[lang_row(lang)][dt.weekday().num_days_from_monday() as usize];
-    Some(format!("{day} {:02}:{:02}", dt.hour(), dt.minute()))
-}
-
 /// Whether a `recording://state` state string means a capture is live. Anything
 /// from the spawn to the graceful finalise counts — the tray must not flip back
 /// to "Start opptak nå" while ffmpeg is still closing the container. Pure.
@@ -438,37 +388,6 @@ pub fn install<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn next_label_formats_weekday_and_time_per_language() {
-        // 2026-08-09 is a Sunday.
-        assert_eq!(
-            format_next_label(Some("2026-08-09T11:00:00"), TrayLang::No).as_deref(),
-            Some("søn. 11:00")
-        );
-        assert_eq!(
-            format_next_label(Some("2026-08-09T11:00:00"), TrayLang::En).as_deref(),
-            Some("Sun 11:00")
-        );
-        // A Wednesday evening, single-digit hour padded.
-        assert_eq!(
-            format_next_label(Some("2026-08-05T09:05:00"), TrayLang::Fr).as_deref(),
-            Some("mer. 09:05")
-        );
-    }
-
-    #[test]
-    fn next_label_is_none_for_nothing_scheduled_or_garbage() {
-        assert_eq!(format_next_label(None, TrayLang::No), None);
-        assert_eq!(format_next_label(Some(""), TrayLang::No), None);
-        assert_eq!(format_next_label(Some("   "), TrayLang::No), None);
-        assert_eq!(format_next_label(Some("not-a-date"), TrayLang::No), None);
-        // A raw timestamp in the menu would be worse than no row at all.
-        assert_eq!(
-            format_next_label(Some("2026-13-45T99:99"), TrayLang::No),
-            None
-        );
-    }
 
     #[test]
     fn the_tray_stays_recording_until_the_container_is_closed() {

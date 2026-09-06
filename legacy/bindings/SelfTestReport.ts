@@ -13,16 +13,21 @@ export type SelfTestReport = {
  */
 ok: boolean, verdict: SelfTestVerdict, 
 /**
- * WHY, in Norwegian prose, rendered verbatim by whoever shows the report.
+ * WHY, in ENGLISH prose, rendered verbatim by whoever shows the report.
  *
  * ⚠️ These sentences are written HERE, in Rust, and the quality banner
  * showed them word for word in all seven UI languages — a German volunteer
  * read «Svakt signal — vurder å øke gain». Rust cannot translate them
  * (the UI language lives in the settings row, and this function is pure),
- * so the fix is to stop asking it to: [`Self::reason_codes`] carries the
- * same list as machine-readable codes for the renderer to localise. The
- * prose stays for the diagnose report and the paste-into-a-support-mail
- * path, where a stable Norwegian sentence is the point.
+ * so the fix was to stop asking it to: [`Self::reason_codes`] carries the
+ * same list as machine-readable codes for the renderer to localise
+ * (`QUALITY_REASON_KEYS` in `app/pages/record/record-core.ts`).
+ *
+ * The prose is the RESERVE, and F2-I18N-R2 made it English: it lands in
+ * the diagnose report — one long support artefact whose reader is whoever
+ * maintains the app, not the volunteer — and in a shell that meets a code
+ * its catalogue predates. A stable sentence is the point; which language
+ * it is stable in is settled by who reads it.
  */
 reasons: Array<string>, 
 /**

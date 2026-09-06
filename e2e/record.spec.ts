@@ -702,6 +702,12 @@ test.describe("kvalitetsalarmens årsaker", () => {
   // satt sammen med `format!` og sendt rett i et banner. En engelsk bruker fikk
   // norsk teknisk sjargong i det ene varselet som betyr «ikke stol på dette
   // opptaket». Motoren sender nå kodene ved siden av prosaen.
+  //
+  // Fixturene under beholder den NORSKE prosaen med vilje: siden F2-I18N-R2
+  // skriver motoren engelsk, så en norsk `reasons`-linje er nøyaktig det en
+  // ELDRE bakende sender — og det er den fallbacken den andre testen beviser.
+  // Å modernisere fixturen ville gjort den til en test av dagens motor mot
+  // dagens skall, som er den ene kombinasjonen som ikke trenger bevis.
 
   test("koder fra motoren blir katalogens setninger, ikke motorens", async ({
     page,
