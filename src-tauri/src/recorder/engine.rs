@@ -88,7 +88,7 @@ use sundayrec_core::progress::{parse_size_kb, ProgressStream, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::recovery::{
-    delivery_path_for, AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
+    AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
 };
 use sundayrec_core::selftest::{push_capped, RecordingTelemetry};
 use sundayrec_core::settings::ChannelMode;
@@ -1315,31 +1315,7 @@ async fn run_session(
         // How to turn the capture into the delivery file — persisted in the
         // crash-recovery manifest so an interrupted recording can be finished on the
         // next launch.
-        let delivery_encode = Some(AudioEncodeManifest {
-            delivery_dir: delivery_dir_of(&opts.output_path),
-            ext: delivery_ext(&opts.output_path),
-            channels: match opts.channel_mode {
-                ChannelMode::Stereo => 2,
-                _ => 1,
-            },
-            sample_rate: opts.sample_rate,
-            bitrate_kbps: opts.bitrate_kbps,
-            mode: if audio_only {
-                DeliveryMode::AudioEncode
-            } else {
-                DeliveryMode::RemuxCopy
-            },
-            // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
-            // reject hev1); the tag is NOT applied to the mkv capture itself.
-            // v0.15: the recording codec is the constant H.264, so this is never
-            // set — kept as an expression of the constant rather than a bare
-            // `false` so the day the codec changes, the remux follows.
-            hvc1_tag: !audio_only
-                && matches!(
-                    sundayrec_core::capture::RECORDING_VIDEO_CODEC,
-                    sundayrec_core::editor::VideoCodec::H265
-                ),
-        });
+        let delivery_encode = Some(delivery_encode_for(&opts, audio_only));
         let mut session = RecordingSession::new(session_output, start_ms);
         // The OS device-list-change signal. Grabbed once per session (it installs
         // the platform listener on first use and is a process-wide singleton
@@ -2007,7 +1983,11 @@ async fn run_session(
 /// the same volume (so the finalise transcode/rename never crosses filesystems) and
 /// PERSISTENT — deliberately NOT OS-temp — so a crash leaves the WAV fragments on
 /// disk for the next-launch recovery scan to finish.
-fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
+///
+/// `pub(crate)` since F2-W4: the Windows cpal VIDEO session
+/// ([`crate::recorder::cpal_capture`]) captures into the SAME folder shape, and a
+/// second copy of this decision is exactly how the two paths would drift apart.
+pub(crate) fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
     std::path::Path::new(delivery)
         .parent()
         .map(std::path::Path::to_path_buf)
@@ -2019,7 +1999,11 @@ fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
 /// delivery file so [`delivery_path_for`] maps it straight back (and splits derive
 /// `<stem>_2.<ext>` etc). `capture_ext` is `wav` (audio) or `mkv` (video).
 /// E.g. delivery `/rec/sermon.mp3` → `<cap>/sermon.wav`.
-fn capture_base_path(cap_dir: &std::path::Path, delivery: &str, capture_ext: &str) -> String {
+pub(crate) fn capture_base_path(
+    cap_dir: &std::path::Path,
+    delivery: &str,
+    capture_ext: &str,
+) -> String {
     let stem = std::path::Path::new(delivery)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -2046,6 +2030,45 @@ fn delivery_ext(delivery: &str) -> String {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default()
+}
+
+/// How a session's decoupled CAPTURE becomes the user's delivery file: the save
+/// folder, the container, the audio settings, and whether finalisation encodes
+/// (audio-only → WAV capture) or stream-copies (video → MKV capture).
+///
+/// THE one place this is decided. It is persisted verbatim in the crash-recovery
+/// manifest and read back by [`crate::recorder::recovery::recover_session`] on the
+/// next launch, and it is what [`DeliverySpec::from_manifest`] turns into the live
+/// stop's finalise arguments — so a copy of this literal in a second capture path
+/// is a silent way for a recovered recording to come back in a different format
+/// than a cleanly-stopped one. F2-W4 gave the Windows cpal video path the same
+/// decoupled shape; it calls this rather than repeating it.
+pub(crate) fn delivery_encode_for(opts: &RecordingOpts, audio_only: bool) -> AudioEncodeManifest {
+    AudioEncodeManifest {
+        delivery_dir: delivery_dir_of(&opts.output_path),
+        ext: delivery_ext(&opts.output_path),
+        channels: match opts.channel_mode {
+            ChannelMode::Stereo => 2,
+            _ => 1,
+        },
+        sample_rate: opts.sample_rate,
+        bitrate_kbps: opts.bitrate_kbps,
+        mode: if audio_only {
+            DeliveryMode::AudioEncode
+        } else {
+            DeliveryMode::RemuxCopy
+        },
+        // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
+        // reject hev1); the tag is NOT applied to the mkv capture itself.
+        // v0.15: the recording codec is the constant H.264, so this is never
+        // set — kept as an expression of the constant rather than a bare
+        // `false` so the day the codec changes, the remux follows.
+        hvc1_tag: !audio_only
+            && matches!(
+                sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+                sundayrec_core::editor::VideoCodec::H265
+            ),
+    }
 }
 
 /// Snapshot the live session into a persistable crash-recovery manifest.
@@ -2108,10 +2131,7 @@ impl LevelMeter {
 
     /// The latest L/R snapshot.
     fn snapshot(&self) -> ChannelLevels {
-        ChannelLevels {
-            peak_db_left: self.left,
-            peak_db_right: self.right,
-        }
+        ChannelLevels::peaks(self.left, self.right)
     }
 }
 
@@ -2348,10 +2368,8 @@ async fn run_segment(
     // incident). A full channel costs a counted message, never capture.
     let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
     // Live levels ride a `watch` (latest-wins by construction, never queues).
-    let (levels_tx, mut levels_rx) = tokio::sync::watch::channel(ChannelLevels {
-        peak_db_left: SILENCE_FLOOR_DB,
-        peak_db_right: None,
-    });
+    let (levels_tx, mut levels_rx) =
+        tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
     // PROGRESS reader task: drains ffmpeg's `-progress` stdout → the startup
     // latch, the watchdog byte atomic, and the coalesced UI counter. Same
     // zero-back-pressure discipline as the stderr reader: its only await is the
@@ -3166,34 +3184,13 @@ async fn finalize_one(
     // capture, so ask `finalize_deliverable` to encode/remux it to the user's
     // format. The capture stem (carrying any `_2` split suffix) maps back into the
     // save folder with the delivery extension.
+    // The SAME spec the crash-recovery manifest carries — a live stop and a
+    // next-launch recovery must deliver identically (see `delivery_encode_for`).
     let audio_only = opts.video_device_name.is_none();
-    let delivery_spec = {
-        let delivery_dir = delivery_dir_of(&opts.output_path);
-        let ext = delivery_ext(&opts.output_path);
-        DeliverySpec {
-            delivery_path: delivery_path_for(&deliverable.primary_path, &delivery_dir, &ext),
-            ext,
-            channels: match opts.channel_mode {
-                ChannelMode::Stereo => 2,
-                _ => 1,
-            },
-            sample_rate: opts.sample_rate,
-            bitrate_kbps: opts.bitrate_kbps,
-            mode: if audio_only {
-                DeliveryMode::AudioEncode
-            } else {
-                DeliveryMode::RemuxCopy
-            },
-            // v0.15: the recording codec is the constant H.264, so this is never
-            // set — kept as an expression of the constant rather than a bare
-            // `false` so the day the codec changes, the remux follows.
-            hvc1_tag: !audio_only
-                && matches!(
-                    sundayrec_core::capture::RECORDING_VIDEO_CODEC,
-                    sundayrec_core::editor::VideoCodec::H265
-                ),
-        }
-    };
+    let delivery_spec = DeliverySpec::from_manifest(
+        &delivery_encode_for(opts, audio_only),
+        &deliverable.primary_path,
+    );
 
     // `delivered` = the recording reached the user's chosen format. A fallback to
     // the raw capture keeps the audio but is NOT a delivery — the manifest must
@@ -3459,6 +3456,7 @@ pub(crate) fn error_code_str(code: RecordingErrorCode) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sundayrec_core::recovery::delivery_path_for;
 
     #[test]
     fn reconnecting_message_promises_no_denominator() {
@@ -4303,10 +4301,7 @@ mod tests {
 
     #[test]
     fn recording_levels_from_channel_levels() {
-        let lv = RecordingLevels::from(ChannelLevels {
-            peak_db_left: -6.0,
-            peak_db_right: Some(-7.0),
-        });
+        let lv = RecordingLevels::from(ChannelLevels::peaks(-6.0, Some(-7.0)));
         assert_eq!(lv.peak_db_left, -6.0);
         assert_eq!(lv.peak_db_right, Some(-7.0));
     }
@@ -4427,10 +4422,8 @@ mod tests {
     fn classify_never_blocks_when_every_consumer_stalls() {
         let (tx, _rx) = tokio::sync::mpsc::channel::<ReaderMsg>(1);
         tx.try_send(ReaderMsg::Progress(0)).unwrap(); // permanently full
-        let (levels_tx, levels_rx) = tokio::sync::watch::channel(ChannelLevels {
-            peak_db_left: SILENCE_FLOOR_DB,
-            peak_db_right: None,
-        });
+        let (levels_tx, levels_rx) =
+            tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
         drop(levels_rx); // dead levels consumer
         let bytes = AtomicU64::new(0);
         let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
@@ -4489,10 +4482,8 @@ mod tests {
         // The UI byte counter rides ~1/s messages; the watchdog's byte count is
         // written straight to the atomic on EVERY size= line.
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
-        let (levels_tx, _levels_rx_keep) = tokio::sync::watch::channel(ChannelLevels {
-            peak_db_left: SILENCE_FLOOR_DB,
-            peak_db_right: None,
-        });
+        let (levels_tx, _levels_rx_keep) =
+            tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
         let bytes = AtomicU64::new(0);
         let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
         let mut ctx = ReaderCtx::new();

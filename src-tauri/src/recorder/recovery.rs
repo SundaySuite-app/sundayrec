@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
 
-use sundayrec_core::recovery::{delivery_path_for, recoverable_deliverables, SessionManifest};
+use sundayrec_core::recovery::{recoverable_deliverables, SessionManifest};
 
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
@@ -405,15 +405,10 @@ pub(crate) async fn recover_session(
         // delivery format. `None` = legacy (the fragments already ARE the delivery
         // file → no transcode). The capture primary's stem (with any `_2` split
         // suffix) maps back into the save folder.
-        let delivery_spec = manifest.delivery_encode.as_ref().map(|enc| DeliverySpec {
-            delivery_path: delivery_path_for(&dm.primary_path, &enc.delivery_dir, &enc.ext),
-            ext: enc.ext.clone(),
-            channels: enc.channels,
-            sample_rate: enc.sample_rate,
-            bitrate_kbps: enc.bitrate_kbps,
-            mode: enc.mode,
-            hvc1_tag: enc.hvc1_tag,
-        });
+        let delivery_spec = manifest
+            .delivery_encode
+            .as_ref()
+            .map(|enc| DeliverySpec::from_manifest(enc, &dm.primary_path));
 
         let final_path = finalize_deliverable(&deliverable, preroll, delivery_spec.as_ref())
             .await
@@ -950,6 +945,114 @@ mod tests {
             mode: DeliveryMode::AudioEncode,
             hvc1_tag: false,
         }
+    }
+
+    // ── The Windows cpal VIDEO session, interrupted (F2-W4) ─────────────────
+
+    /// Exactly what a Windows cpal video session leaves on disk when it is
+    /// killed mid-service: an MKV capture in the hidden per-session folder and
+    /// the manifest that says how to finish it. Before F2-W4 there was neither —
+    /// only a moov-less mp4 nothing knew about.
+    fn interrupted_cpal_video_session(save_dir: &Path) -> (SessionManifest, PathBuf) {
+        let cap_dir = save_dir.join(".sundayrec-capture-1786179600000");
+        std::fs::create_dir_all(&cap_dir).expect("capture dir");
+        let mkv = cap_dir
+            .join("gudstjeneste.mkv")
+            .to_string_lossy()
+            .into_owned();
+        let manifest = SessionManifest {
+            session_id: "1786179600000".into(),
+            device_name: "Soundcraft USB Audio".into(),
+            session_start_ms: 1_786_179_600_000,
+            preroll_clip_path: None,
+            delivery_encode: Some(AudioEncodeManifest {
+                delivery_dir: save_dir.to_string_lossy().into_owned(),
+                ext: "mp4".into(),
+                channels: 2,
+                sample_rate: None,
+                bitrate_kbps: 192,
+                mode: DeliveryMode::RemuxCopy,
+                hvc1_tag: false,
+            }),
+            deliverables: vec![DeliverableManifest {
+                primary_path: mkv.clone(),
+                fragments: vec![mkv],
+                started_at_ms: 1_786_179_600_000,
+            }],
+        };
+        (manifest, cap_dir)
+    }
+
+    /// F2-W4 GOLDEN. A Windows video session that never reached its stop must
+    /// come back as a playable file AND a history row on the next launch —
+    /// through the ordinary scan, with nothing cpal-shaped special-cased in it.
+    ///
+    /// The row's file is either the delivered mp4 (the remux ran) or the MKV
+    /// capture it was kept as (no usable ffmpeg here, so that is what this
+    /// headless run exercises). Both are real recordings of the service; what
+    /// must never happen — and did, before this fix — is neither.
+    #[tokio::test]
+    async fn scan_loop_recovers_an_interrupted_windows_video_session() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let save_dir = tempfile::tempdir().unwrap();
+        let (m, cap_dir) = interrupted_cpal_video_session(save_dir.path());
+        let capture = m.deliverables[0].primary_path.clone();
+        write_fragment(Path::new(&capture)).await;
+        let manifest_file = recovery.path().join("1786179600000.json");
+        tokio::fs::write(&manifest_file, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 1, "the interrupted video session is recovered");
+
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert!(
+            Path::new(&row.file_path).exists(),
+            "the recovered row must point at a file that is actually there: {}",
+            row.file_path
+        );
+        assert!(row.byte_size.unwrap_or(0) > 0);
+        assert_eq!(row.started_at, 1_786_179_600_000.0, "not epoch 1970");
+        assert_eq!(
+            row.note.as_deref(),
+            Some("Gjenopprettet etter uventet avslutning")
+        );
+        assert_eq!(row.device_name.as_deref(), Some("Soundcraft USB Audio"));
+        assert!(!manifest_file.exists(), "manifest cleared after recovery");
+        // The capture is the only copy while the remux has not delivered, so the
+        // folder holding it must survive the scan's cleanup.
+        if row.file_path == capture {
+            assert!(
+                cap_dir.exists(),
+                "the folder holding the only copy must not be swept away"
+            );
+        }
+    }
+
+    /// The delivery target is computed from the PERSISTED manifest alone — no
+    /// live session is in memory on the next launch. A cpal video capture must
+    /// resolve back to exactly the mp4 the volunteer asked for, in their own save
+    /// folder, not to something inside the hidden capture folder.
+    #[test]
+    fn an_interrupted_video_capture_maps_back_to_the_users_mp4() {
+        let save_dir = tempfile::tempdir().unwrap();
+        let (m, _cap) = interrupted_cpal_video_session(save_dir.path());
+        let enc = m.delivery_encode.as_ref().unwrap();
+        let spec = DeliverySpec::from_manifest(enc, &m.deliverables[0].primary_path);
+        // Compared as a PATH, not a string: the separator is the platform's.
+        assert_eq!(
+            Path::new(&spec.delivery_path),
+            save_dir.path().join("gudstjeneste.mp4")
+        );
+        assert_eq!(
+            spec.mode,
+            DeliveryMode::RemuxCopy,
+            "a video capture is stream-copied, never re-encoded on recovery"
+        );
     }
 
     #[tokio::test]

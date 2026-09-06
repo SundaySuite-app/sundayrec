@@ -9,11 +9,12 @@
 //!
 //! Ported from the Electron `src/main/preroll.ts`:
 //!   - the 90-second per-segment cap (`-t 90`, [`PREROLL_SEGMENT_CAP_S`]),
-//!   - the 300 ms harvest safety margin ([`HARVEST_SAFETY_MARGIN_MS`]),
+//!   - the 300 ms harvest safety margin ([`HARVEST_SAFETY_MARGIN_MS`]) — for the
+//!     ffmpeg engine ONLY, see [`harvest_trim_ms`],
 //!   - the < 4096-byte "nothing captured" guard ([`MIN_VALID_SEGMENT_BYTES`]),
 //!   - the ~200 ms auto-restart gap after the natural 90 s cap
 //!     ([`RESTART_GAP_MS`]),
-//!   - the `trim = min(requested, captured - 300)` clamp and its `trim <= 0`
+//!   - the `trim = min(requested, captured - margin)` clamp and its `trim <= 0`
 //!     guard ([`harvest_trim_ms`]),
 //!   - the exponential capture-loop retry back-off ([`preroll_restart_delay`]).
 //!
@@ -27,10 +28,27 @@
 /// at this cap the host auto-restarts the loop after [`RESTART_GAP_MS`].
 pub const PREROLL_SEGMENT_CAP_S: u32 = 90;
 
-/// Safety margin (ms) left at the END of the captured segment when trimming. The
-/// capture device may not have flushed its last buffer when we stop the process,
-/// so we never trust the final 300 ms — mirrors the Electron `capturedMs - 300`.
+/// Safety margin (ms) the FFMPEG engine leaves at the END of the captured
+/// segment when trimming. Its `captured_ms` is a WALL CLOCK (`Instant::elapsed`
+/// at the moment the process is asked to stop) and the capture device may not
+/// have flushed its last buffer when the process dies, so the final 300 ms are
+/// not trustworthy — mirrors the Electron `capturedMs - 300`.
+///
+/// ⚠️ This is the ffmpeg engine's number, NOT a property of pre-roll. The native
+/// buffer counts frames it has already written to disk, so its last millisecond
+/// is as real as its first — it passes [`NATIVE_HARVEST_SAFETY_MARGIN_MS`].
 pub const HARVEST_SAFETY_MARGIN_MS: u64 = 300;
+
+/// Safety margin (ms) the NATIVE engine leaves: **none**.
+///
+/// F2-C-D: the margin used to be shared, so the native harvest threw away the
+/// 300 ms of audio CLOSEST to the button press — exactly the milliseconds
+/// pre-roll exists to save (the organ's first chord). Nothing justified it
+/// there: `captured_ms` comes from [`preroll_captured_ms`], i.e. the writer's
+/// own frame count for bytes that are already flushed to disk, so there is no
+/// un-flushed tail to distrust. The only thing the margin bought was parity with
+/// a wall clock the native buffer does not use.
+pub const NATIVE_HARVEST_SAFETY_MARGIN_MS: u64 = 0;
 
 /// Minimum byte count for a captured segment to be considered usable. Below this
 /// the file is just a WAV header (or an empty/aborted capture) with no real
@@ -76,7 +94,7 @@ pub fn preroll_segments_to_drop(have: usize, retain: usize) -> usize {
 ///
 /// Direct port of the Electron `harvest()` (`preroll.ts:116`):
 ///   - `segment_bytes < MIN_VALID_SEGMENT_BYTES` → `None` (nothing real captured),
-///   - otherwise `trim = min(requested_seconds * 1000, captured_ms - 300)`,
+///   - otherwise `trim = min(requested_seconds * 1000, captured_ms - margin)`,
 ///   - `trim <= 0` → `None` (the capture is shorter than the safety margin, e.g.
 ///     it had only just started when record was pressed).
 ///
@@ -84,19 +102,31 @@ pub fn preroll_segments_to_drop(have: usize, retain: usize) -> usize {
 /// segment (the most recent audio, ending at the record button press).
 ///
 /// `captured_ms` is `now - capture_start`, NOT the requested window — a capture
-/// that only ran 4 s can yield at most ~3.7 s no matter what the user requested.
+/// that only ran 4 s can yield at most ~4 s no matter what the user requested.
+///
+/// `safety_margin_ms` is the ENGINE's, passed in rather than assumed, because
+/// the two engines do not measure the same thing (F2-C-D):
+///   - the ffmpeg buffer times itself with a wall clock and cannot know whether
+///     the device flushed its last buffer → [`HARVEST_SAFETY_MARGIN_MS`],
+///   - the native buffer counts frames it has already written → 0
+///     ([`NATIVE_HARVEST_SAFETY_MARGIN_MS`]).
+///
+/// The margin is subtracted from the END, i.e. from the audio NEAREST the button
+/// press. Whatever it costs, it costs exactly where pre-roll is most valuable —
+/// so it must never be paid by an engine that does not need it.
 pub fn harvest_trim_ms(
     captured_ms: u64,
     requested_seconds: u32,
     segment_bytes: u64,
+    safety_margin_ms: u64,
 ) -> Option<u64> {
     if segment_bytes < MIN_VALID_SEGMENT_BYTES {
         return None;
     }
     let requested_ms = u64::from(requested_seconds) * 1_000;
-    // `captured_ms - 300`, guarded so a capture shorter than the margin yields 0
-    // (→ None below) rather than wrapping around on unsigned subtraction.
-    let usable_ms = captured_ms.saturating_sub(HARVEST_SAFETY_MARGIN_MS);
+    // `captured_ms - margin`, guarded so a capture shorter than the margin yields
+    // 0 (→ None below) rather than wrapping around on unsigned subtraction.
+    let usable_ms = captured_ms.saturating_sub(safety_margin_ms);
     let trim = requested_ms.min(usable_ms);
     if trim == 0 {
         None
@@ -108,7 +138,7 @@ pub fn harvest_trim_ms(
 /// Where (ms from the start of the captured segment) the kept window begins, for
 /// ffmpeg's `-ss`. We keep the LAST `trim_ms`, so trimming starts at
 /// `captured_ms - trim_ms`. `harvest_trim_ms` guarantees `trim_ms` never exceeds
-/// `captured_ms - 300`, so this never underflows; the `saturating_sub` is
+/// `captured_ms - margin`, so this never underflows; the `saturating_sub` is
 /// defensive against a caller passing an inconsistent pair.
 pub fn preroll_start_offset_ms(captured_ms: u64, trim_ms: u64) -> u64 {
     captured_ms.saturating_sub(trim_ms)
@@ -136,9 +166,15 @@ pub struct PrerollSlice {
 ///
 /// The ffmpeg buffer had to time itself with a wall clock (`Instant::elapsed`)
 /// because only ffmpeg knew how much audio it had actually captured. The native
-/// writer counts frames, so the buffer's length is now a fact rather than an
-/// estimate — the 300 ms safety margin in [`harvest_trim_ms`] is kept anyway,
-/// since it costs nothing and preserves parity with the tested behaviour.
+/// writer counts frames, so the buffer's length is a fact rather than an
+/// estimate — which is why the native harvest passes
+/// [`NATIVE_HARVEST_SAFETY_MARGIN_MS`] (0) to [`harvest_trim_ms`].
+///
+/// ⚠️ It used to pass the ffmpeg engine's 300 ms "since it costs nothing and
+/// preserves parity with the tested behaviour" (F2-C-D). It cost 300 ms of the
+/// NEWEST audio — the last third of a second before the button press — on every
+/// single harvest, and parity with a wall clock this path does not own was not
+/// worth it.
 pub fn preroll_captured_ms(frames: u64, sample_rate: u32) -> u64 {
     if sample_rate == 0 {
         return 0;
@@ -216,6 +252,63 @@ pub fn preroll_tail_slices(
         cum = end;
     }
     out
+}
+
+// ── The seam: how the clip is allowed to END ─────────────────────────────────
+
+/// Length (ms) of the out-fade applied to the END of a harvested pre-roll clip.
+///
+/// WHY there is a fade at all (F2-C-D): the clip's last frame and the
+/// recording's first frame are two UNCORRELATED points in the waveform — the
+/// clip ends the instant the button was pressed, the recording begins after the
+/// device settle + re-open. Joining them with `-c copy` puts a vertical step
+/// between two arbitrary sample values straight into the deliverable, and a
+/// vertical step in a PCM stream is a click.
+///
+/// 10 ms is long enough to be inaudible as a fade (a 100 Hz tone still completes
+/// a full cycle inside it) and short enough that it cannot swallow a transient:
+/// it is less than a hundredth of the audio the margin fix just gave back.
+pub const PREROLL_FADE_OUT_MS: u64 = 10;
+
+/// How many FRAMES the clip's out-fade covers at this clip's REAL sample rate.
+///
+/// Derived from the rate, never hardcoded: 48 kHz → 480 frames, 44.1 kHz → 441,
+/// 96 kHz → 960. Clamped to the clip's own length, so a clip shorter than the
+/// fade is simply ramped end to end instead of reading before its first frame.
+pub fn preroll_fade_out_frames(sample_rate: u32, total_frames: u64) -> u64 {
+    let want = u64::from(sample_rate).saturating_mul(PREROLL_FADE_OUT_MS) / 1_000;
+    want.min(total_frames)
+}
+
+/// Ramp `tail` — the LAST N frames of an interleaved **s16-LE** payload —
+/// linearly down to digital zero, in place.
+///
+/// The gain is per FRAME (`(frames - 1 - i) / frames`) and every channel of a
+/// frame is multiplied by the SAME factor: scaling interleaved samples
+/// individually would move the channels apart in time and turn a click into a
+/// swimming stereo image. The last frame lands on exactly 0, so the clip ends at
+/// silence no matter what it was doing.
+///
+/// A trailing partial frame (`tail.len()` not a whole number of frames) is left
+/// alone — it cannot exist, since every slice the harvest cuts is frame-aligned,
+/// and silently mangling one would be worse than not touching it.
+pub fn fade_out_tail_s16le(tail: &mut [u8], channels: u16) {
+    let bytes_per_frame = usize::from(channels.max(1)) * 2;
+    let frames = tail.len() / bytes_per_frame;
+    if frames == 0 {
+        return;
+    }
+    let denom = frames as f32;
+    for (i, frame) in tail.chunks_exact_mut(bytes_per_frame).enumerate() {
+        let gain = (frames - 1 - i) as f32 / denom;
+        for sample in frame.as_chunks_mut::<2>().0 {
+            let v = i16::from_le_bytes(*sample);
+            // `gain` is in [0, 1), so the product can never leave i16 range;
+            // `clamp` is belt-and-braces against a future non-linear curve.
+            let scaled = (f32::from(v) * gain).round().clamp(-32_768.0, 32_767.0);
+            *sample = (scaled as i16).to_le_bytes();
+        }
+    }
 }
 
 /// Build the ffmpeg arguments for ONE rolling pre-roll capture segment.
@@ -372,51 +465,89 @@ pub fn preroll_restart_delay(attempt: u32) -> u64 {
 mod tests {
     use super::*;
 
+    /// The ffmpeg engine's margin, so the tests below read like its call site.
+    const FF: u64 = HARVEST_SAFETY_MARGIN_MS;
+
     #[test]
     fn constants_match_electron() {
         assert_eq!(PREROLL_SEGMENT_CAP_S, 90);
         assert_eq!(HARVEST_SAFETY_MARGIN_MS, 300);
         assert_eq!(MIN_VALID_SEGMENT_BYTES, 4096);
         assert_eq!(RESTART_GAP_MS, 200);
+        // …and the native engine's margin is not the Electron one (F2-C-D).
+        assert_eq!(NATIVE_HARVEST_SAFETY_MARGIN_MS, 0);
     }
 
     #[test]
     fn trim_clamped_to_requested_when_capture_is_long() {
         // Captured a full 90 s; user wants 15 s → keep 15 s (15000 ms), well
         // under captured-300.
-        assert_eq!(harvest_trim_ms(90_000, 15, 16_000_000), Some(15_000));
+        assert_eq!(harvest_trim_ms(90_000, 15, 16_000_000, FF), Some(15_000));
     }
 
     #[test]
     fn trim_clamped_to_captured_minus_margin() {
         // User wants 30 s but the capture only ran 10 s → keep 10000-300 = 9700.
-        assert_eq!(harvest_trim_ms(10_000, 30, 2_000_000), Some(9_700));
+        assert_eq!(harvest_trim_ms(10_000, 30, 2_000_000, FF), Some(9_700));
+    }
+
+    #[test]
+    fn the_native_margin_keeps_the_audio_nearest_the_button() {
+        // F2-C-D — the whole point: the SAME 10 s buffer yields 300 ms more on
+        // the native path, and those 300 ms are the ones ending at the press.
+        assert_eq!(
+            harvest_trim_ms(10_000, 30, 2_000_000, NATIVE_HARVEST_SAFETY_MARGIN_MS),
+            Some(10_000)
+        );
+        // …and the offset therefore starts at the very first buffered frame.
+        assert_eq!(preroll_start_offset_ms(10_000, 10_000), 0);
+        // A long buffer is unaffected either way: the request is the limiter.
+        assert_eq!(
+            harvest_trim_ms(90_000, 15, 16_000_000, NATIVE_HARVEST_SAFETY_MARGIN_MS),
+            Some(15_000)
+        );
     }
 
     #[test]
     fn too_small_segment_yields_none() {
-        // Below the 4096-byte threshold: just a header / aborted capture.
-        assert_eq!(harvest_trim_ms(90_000, 15, 0), None);
-        assert_eq!(harvest_trim_ms(90_000, 15, 4_095), None);
+        // Below the 4096-byte threshold: just a header / aborted capture. The
+        // byte gate is the engines' SHARED one — it survives a zero margin.
+        assert_eq!(harvest_trim_ms(90_000, 15, 0, FF), None);
+        assert_eq!(harvest_trim_ms(90_000, 15, 4_095, FF), None);
+        assert_eq!(
+            harvest_trim_ms(90_000, 15, 4_095, NATIVE_HARVEST_SAFETY_MARGIN_MS),
+            None
+        );
         // Exactly the threshold IS valid (>= 4096).
-        assert!(harvest_trim_ms(90_000, 15, 4_096).is_some());
+        assert!(harvest_trim_ms(90_000, 15, 4_096, FF).is_some());
     }
 
     #[test]
     fn short_capture_below_margin_yields_none() {
         // Capture ran only 250 ms — less than the 300 ms safety margin → trim 0 → None.
-        assert_eq!(harvest_trim_ms(250, 15, 8_000), None);
+        assert_eq!(harvest_trim_ms(250, 15, 8_000, FF), None);
         // Exactly the margin → usable 0 → None.
-        assert_eq!(harvest_trim_ms(300, 15, 8_000), None);
+        assert_eq!(harvest_trim_ms(300, 15, 8_000, FF), None);
         // Just over the margin → tiny but valid window.
-        assert_eq!(harvest_trim_ms(301, 15, 8_000), Some(1));
+        assert_eq!(harvest_trim_ms(301, 15, 8_000, FF), Some(1));
+        // With no margin the only floor left is "did anything arrive at all":
+        // 250 ms of real, flushed frames is 250 ms of pre-roll.
+        assert_eq!(
+            harvest_trim_ms(250, 15, 8_000, NATIVE_HARVEST_SAFETY_MARGIN_MS),
+            Some(250)
+        );
+        assert_eq!(
+            harvest_trim_ms(0, 15, 8_000, NATIVE_HARVEST_SAFETY_MARGIN_MS),
+            None,
+            "an empty buffer is still nothing"
+        );
     }
 
     #[test]
     fn requested_15_vs_30_seconds() {
         // Same long capture, different requests → the request is the limiter.
-        assert_eq!(harvest_trim_ms(90_000, 15, 16_000_000), Some(15_000));
-        assert_eq!(harvest_trim_ms(90_000, 30, 16_000_000), Some(30_000));
+        assert_eq!(harvest_trim_ms(90_000, 15, 16_000_000, FF), Some(15_000));
+        assert_eq!(harvest_trim_ms(90_000, 30, 16_000_000, FF), Some(30_000));
     }
 
     #[test]
@@ -431,7 +562,7 @@ mod tests {
     fn start_offset_for_a_real_harvest_pair() {
         // The offset is always derived from the SAME captured_ms the trim used.
         let captured = 42_000;
-        let trim = harvest_trim_ms(captured, 30, 8_000_000).unwrap();
+        let trim = harvest_trim_ms(captured, 30, 8_000_000, FF).unwrap();
         assert_eq!(trim, 30_000); // 30 s requested < captured-300
         assert_eq!(preroll_start_offset_ms(captured, trim), 12_000);
     }
@@ -590,7 +721,13 @@ mod tests {
         let lens = vec![full, full, full, full, full, full, full / 3];
         let frames: u64 = lens.iter().sum::<u64>() / BPF;
         let captured = preroll_captured_ms(frames, RATE);
-        let trim = harvest_trim_ms(captured, 30, lens.iter().sum()).expect("a usable window");
+        let trim = harvest_trim_ms(
+            captured,
+            30,
+            lens.iter().sum(),
+            NATIVE_HARVEST_SAFETY_MARGIN_MS,
+        )
+        .expect("a usable window");
         assert_eq!(trim, 30_000);
         let slices = preroll_tail_slices(&lens, BPF, preroll_keep_bytes(trim, RATE, BPF));
         let kept: u64 = slices.iter().map(|s| s.len).sum();
@@ -599,6 +736,135 @@ mod tests {
         assert_eq!(slices.len(), 3);
         assert_eq!(slices[0].segment, 4);
         assert_eq!(preroll_start_offset_ms(captured, trim), captured - 30_000);
+    }
+
+    // ── The seam fade ────────────────────────────────────────────────────────
+
+    /// `frames` frames of interleaved s16-LE, every sample the same value.
+    fn flat_pcm(frames: usize, channels: u16, value: i16) -> Vec<u8> {
+        let mut v = Vec::with_capacity(frames * usize::from(channels) * 2);
+        for _ in 0..frames * usize::from(channels) {
+            v.extend_from_slice(&value.to_le_bytes());
+        }
+        v
+    }
+
+    /// Read an interleaved s16-LE payload back as samples.
+    fn samples(pcm: &[u8]) -> Vec<i16> {
+        pcm.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|s| i16::from_le_bytes(*s))
+            .collect()
+    }
+
+    #[test]
+    fn fade_length_follows_the_real_sample_rate() {
+        // 10 ms, computed from the rate — never a hardcoded 48 k.
+        assert_eq!(preroll_fade_out_frames(48_000, 1_000_000), 480);
+        assert_eq!(preroll_fade_out_frames(44_100, 1_000_000), 441);
+        assert_eq!(preroll_fade_out_frames(96_000, 1_000_000), 960);
+        // A clip shorter than the fade is ramped end to end, never past its start.
+        assert_eq!(preroll_fade_out_frames(48_000, 100), 100);
+        assert_eq!(preroll_fade_out_frames(48_000, 0), 0);
+    }
+
+    #[test]
+    fn the_fade_ramps_monotonically_to_exactly_zero() {
+        let mut pcm = flat_pcm(480, 1, 10_000);
+        fade_out_tail_s16le(&mut pcm, 1);
+        let out = samples(&pcm);
+        assert_eq!(out.len(), 480);
+        // Monotone down, ending at digital silence — the step into the
+        // recording is now a step from 0, not from wherever the organ was.
+        assert!(
+            out.windows(2).all(|w| w[1] <= w[0]),
+            "not monotone: {:?}",
+            &out[..8]
+        );
+        assert_eq!(*out.last().unwrap(), 0, "the clip must end at silence");
+        // The ramp is linear in the frame index, not a cliff at the end.
+        assert_eq!(out[0], (10_000.0f32 * (479.0 / 480.0)).round() as i16);
+        assert_eq!(out[240], (10_000.0f32 * (239.0 / 480.0)).round() as i16);
+        assert!(out[0] > 9_900, "the fade must be inaudible at its start");
+    }
+
+    #[test]
+    fn the_fade_touches_only_the_tail() {
+        // 1000 frames of clip, the last 480 handed to the ramp: the rest is the
+        // byte-exact copy the harvest promises and must come back untouched.
+        let mut pcm = flat_pcm(1_000, 1, -20_000);
+        let tail_start = (1_000 - 480) * 2;
+        fade_out_tail_s16le(&mut pcm[tail_start..], 1);
+        let out = samples(&pcm);
+        assert!(
+            out[..520].iter().all(|&s| s == -20_000),
+            "the head of the clip was modified"
+        );
+        assert_ne!(out[520], -20_000, "the tail was not faded");
+        assert_eq!(*out.last().unwrap(), 0);
+        // Negative audio rises TOWARD zero — monotone in magnitude, not in sign.
+        assert!(out[520..].windows(2).all(|w| w[1] >= w[0]));
+    }
+
+    #[test]
+    fn every_channel_of_a_frame_gets_the_same_factor() {
+        // Interleaved stereo with the channels far apart: if the ramp indexed
+        // SAMPLES instead of FRAMES the two channels would drift apart in time.
+        let frames = 240usize;
+        let mut pcm = Vec::new();
+        for _ in 0..frames {
+            pcm.extend_from_slice(&8_000i16.to_le_bytes());
+            pcm.extend_from_slice(&(-8_000i16).to_le_bytes());
+        }
+        fade_out_tail_s16le(&mut pcm, 2);
+        let out = samples(&pcm);
+        for (i, f) in out.as_chunks::<2>().0.iter().enumerate() {
+            let gain = (frames - 1 - i) as f32 / frames as f32;
+            assert_eq!(f[0], (8_000.0 * gain).round() as i16, "L at frame {i}");
+            assert_eq!(f[1], (-8_000.0 * gain).round() as i16, "R at frame {i}");
+            assert_eq!(f[0], -f[1], "channels drifted apart at frame {i}");
+        }
+    }
+
+    #[test]
+    fn the_fade_is_frame_aligned_and_never_panics_on_odd_input() {
+        // Defensive: an empty tail, and one that is not a whole number of frames
+        // (impossible from the harvest — every slice is frame-aligned — but a
+        // panic here would take a recording start down).
+        let mut empty: Vec<u8> = Vec::new();
+        fade_out_tail_s16le(&mut empty, 2);
+        assert!(empty.is_empty());
+
+        let mut ragged = flat_pcm(4, 2, 1_000);
+        ragged.push(0x7f); // half a sample past the last frame
+        fade_out_tail_s16le(&mut ragged, 2);
+        assert_eq!(
+            *ragged.last().unwrap(),
+            0x7f,
+            "the ragged byte is left alone"
+        );
+        assert_eq!(
+            samples(&ragged[..16])[6..],
+            [0, 0],
+            "last whole frame zeroed"
+        );
+
+        // A zero channel count cannot happen (the spec is negotiated) but must
+        // not divide by zero.
+        let mut mono = flat_pcm(4, 1, 1_000);
+        fade_out_tail_s16le(&mut mono, 0);
+        assert_eq!(*samples(&mono).last().unwrap(), 0);
+    }
+
+    #[test]
+    fn a_full_scale_clip_stays_inside_i16() {
+        // The loudest possible tail: no wrap, no clip, no panic.
+        let mut pcm = flat_pcm(96, 2, i16::MIN);
+        fade_out_tail_s16le(&mut pcm, 2);
+        let out = samples(&pcm);
+        assert!(out.iter().all(|&s| s <= 0), "a sample flipped sign");
+        assert_eq!(*out.last().unwrap(), 0);
     }
 
     #[test]

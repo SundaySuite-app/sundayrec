@@ -70,7 +70,7 @@ use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::notify::{should_warn_preroll_dead, BackendWarning};
 use sundayrec_core::preroll::{
     build_preroll_capture_args, build_preroll_trim_args, harvest_trim_ms, preroll_restart_delay,
-    preroll_start_offset_ms, RESTART_GAP_MS,
+    preroll_start_offset_ms, HARVEST_SAFETY_MARGIN_MS, RESTART_GAP_MS,
 };
 use tokio::io::AsyncWriteExt;
 use ts_rs::TS;
@@ -436,7 +436,16 @@ impl ClassicPrerollEngine {
             }
         };
 
-        let Some(trim_ms) = harvest_trim_ms(captured_ms, requested_seconds, segment_bytes) else {
+        // The ffmpeg engine's own margin, and only its own: `captured_ms` above
+        // is a wall clock read the instant we ASK ffmpeg to stop, so the last
+        // 300 ms of the file may be a buffer the device never flushed. The
+        // native engine counts frames on disk and passes 0 (F2-C-D).
+        let Some(trim_ms) = harvest_trim_ms(
+            captured_ms,
+            requested_seconds,
+            segment_bytes,
+            HARVEST_SAFETY_MARGIN_MS,
+        ) else {
             let _ = tokio::fs::remove_file(&temp).await;
             return None;
         };

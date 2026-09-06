@@ -136,10 +136,22 @@ describe("lytteutsnittet", () => {
 });
 
 describe("kanaldiagnosen", () => {
-  it("de seks kodene har hver sin legacy-nøkkel", () => {
+  it("hver kode bakenden kan svare med har sin egen nøkkel", () => {
     expect(channelCodeKey("dead_left")).toBe("chanDeadLeft");
     expect(channelCodeKey("mono")).toBe("chanMono");
     expect(channelCodeKey("balanced")).toBe("chanBalanced");
+    expect(channelCodeKey("imbalance")).toBe("chanImbalance");
+    expect(channelCodeKey("both_dead")).toBe("chanBothDead");
+    expect(channelCodeKey("dead_right")).toBe("chanDeadRight");
+  });
+
+  it("«for svak til å reddes» er ikke «stille» — de nye kodene har egne ord", () => {
+    // Uten dette faller `unusable_*` gjennom til `null` og linja forsvinner:
+    // reparasjonen skjer, men skjermen sier ingenting om hvorfor. Og å låne
+    // `chanDeadRight` ville sendt en frivillig for å lete etter en kabel som
+    // ikke er trukket ut — kanalen er der, den er bare 28 dB nede.
+    expect(channelCodeKey("unusable_left")).toBe("chanUnusableLeft");
+    expect(channelCodeKey("unusable_right")).toBe("chanUnusableRight");
   });
 
   it("en ukjent kode gir ingenting — ikke en råkode på skjermen", () => {

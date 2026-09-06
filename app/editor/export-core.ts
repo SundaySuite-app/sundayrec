@@ -173,6 +173,10 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["file_not_found", "errFileNotFound"],
   ["disk_full", "errDiskFull"],
   ["invalid_duration", "errCutData"],
+  // Reparasjonen leser høyre inngangskanal på en fil som ikke har en. ffmpeg
+  // avviser den IKKE — den gjengir 6 dB ned uten et ord — så sømmen stopper
+  // eksporten, og da må det stå hvorfor.
+  ["channel_repair_needs_stereo", "errChannelRepairNeedsStereo"],
   ["invalid_format", "errInvalidFormat"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],

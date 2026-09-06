@@ -20,9 +20,18 @@
 //! Windows we capture the audio ourselves with **cpal** (whose Windows host is
 //! WASAPI, plus ASIO when built with `--features asio`) and pipe the raw PCM into
 //! ffmpeg's `stdin` (`-f f32le -i pipe:0`) — ffmpeg still does ALL encoding/muxing
-//! (and, for a video session, the camera via dshow as input 0). The entire
-//! downstream pipeline (codecs, containers, history, preview) is unchanged; only
-//! the AUDIO SOURCE moves from dshow to cpal.
+//! (and, for a video session, the camera via dshow as input 0). The downstream
+//! pipeline (codecs, history, preview) is unchanged; only the AUDIO SOURCE moves
+//! from dshow to cpal.
+//!
+//! ## Video captures Matroska, then remuxes (F2-W4)
+//!
+//! A video session no longer writes the user's `.mp4` directly — an mp4 is
+//! unplayable until a clean finalise writes its `moov` atom, so any other ending
+//! destroyed the recording, and nothing on disk told the next launch it had ever
+//! existed. It now captures `.mkv` into the same per-session folder
+//! `run_session` uses, persists a crash-recovery manifest, and remuxes to the
+//! user's mp4 at stop. See the block comment above [`VideoCapture`].
 //!
 //! macOS is untouched: ffmpeg `avfoundation` → Core Audio already exposes the
 //! aggregate device as one, so the engine keeps its existing path there.
@@ -94,10 +103,17 @@
 //! Windows (below). What remains unverified is the real WASAPI/ASIO stream and
 //! the real ffmpeg pipe.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use sundayrec_core::recorder::Deliverable;
+use sundayrec_core::recovery::{AudioEncodeManifest, DeliverableManifest, SessionManifest};
+use tauri::AppHandle;
+
 use crate::db::store::RecordingRow;
+use crate::recorder::concat::{finalize_deliverable, DeliverySpec};
+use crate::recorder::engine::{capture_base_path, capture_dir, delivery_encode_for, RecordingOpts};
 
 /// Which cpal host to capture through. WASAPI is the default Windows path
 /// (replaces dshow for normal devices); ASIO is the pro-interface path.
@@ -191,6 +207,186 @@ where
     drop(sink); // EOF → ffmpeg flushes + finalises the container
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   F2-W4 — the Windows video session is crash-safe now
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// WHAT WAS TRUE: this path pointed ffmpeg straight at the user's `.mp4`. An mp4
+// carries its index (`moov`) only after a clean finalise, so ANY other ending —
+// Task Manager kill, power cut, a Windows update reboot (F-W1), the console
+// window that used to be closable (#237) — left an UNPLAYABLE file. And because
+// the session wrote no crash-recovery manifest, `scan_and_recover` on the next
+// launch did not even know the file existed. Sunday's video was simply gone.
+//
+// WHAT IS TRUE NOW: identical shape to the macOS/`run_session` path — capture
+// Matroska into `.sundayrec-capture-<session_id>/<stem>.mkv` (playable up to
+// whatever instant the machine died), persist the manifest that says how to
+// finish it, and remux (`-c copy`, seconds) into the user's mp4 at stop. A
+// session that never reaches its stop is finished by the next launch instead,
+// through the SAME `finalize_deliverable` the live stop uses, and lands in
+// history marked «Gjenopprettet etter uventet avslutning».
+//
+// (Audio-only cpal — the `classic_ffmpeg_audio` hatch — is left alone: the
+// native engine owns audio on both platforms now, and it already captures WAV
+// through this same decoupled layout.)
+
+/// The decoupled-capture layout for ONE Windows cpal VIDEO session: where ffmpeg
+/// captures, and everything needed to finish that capture — at stop, or on the
+/// next launch after a crash.
+///
+/// Pure data, built by [`plan_video_capture`] before anything touches the disk,
+/// so the whole layout decision is unit-testable off Windows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VideoCapture {
+    /// The per-session hidden folder BESIDE the user's delivery file.
+    pub cap_dir: PathBuf,
+    /// The Matroska ffmpeg writes — the session's one and only fragment.
+    pub capture_path: String,
+    /// Manifest filename stem + the recovery scan's session key.
+    pub session_id: String,
+    /// How the capture becomes the user's file (shared with `run_session`).
+    pub delivery: AudioEncodeManifest,
+    /// Epoch ms the session started; the recovered row's start time.
+    pub started_ms: u64,
+    /// Capture device name, for the recovered history row.
+    pub device_name: String,
+}
+
+impl VideoCapture {
+    /// The capture as the concat/finalize layer sees it: one fragment, which IS
+    /// the primary. This path has no split and no reconnect (the engine routes a
+    /// session that needs either to dshow), so the layout never grows.
+    pub(crate) fn deliverable(&self) -> Deliverable {
+        Deliverable {
+            primary_path: self.capture_path.clone(),
+            fragments: vec![self.capture_path.clone()],
+            started_at_ms: self.started_ms,
+        }
+    }
+
+    /// The crash-recovery manifest to persist once the capture is live.
+    pub(crate) fn manifest(&self) -> SessionManifest {
+        SessionManifest {
+            session_id: self.session_id.clone(),
+            device_name: self.device_name.clone(),
+            session_start_ms: self.started_ms,
+            // Pre-roll needs the full `run_session`; the engine sends any session
+            // that wants one to dshow (ASIO excepted, where it is logged as
+            // inactive), so this path never has a clip to prepend.
+            preroll_clip_path: None,
+            delivery_encode: Some(self.delivery.clone()),
+            deliverables: vec![DeliverableManifest {
+                primary_path: self.capture_path.clone(),
+                fragments: vec![self.capture_path.clone()],
+                started_at_ms: self.started_ms,
+            }],
+        }
+    }
+
+    /// The finalise arguments for the live stop — built from the SAME manifest
+    /// the crash recovery would read, through the same constructor, so a
+    /// recovered recording cannot come back in a different format than a
+    /// cleanly-stopped one.
+    pub(crate) fn delivery_spec(&self) -> DeliverySpec {
+        DeliverySpec::from_manifest(&self.delivery, &self.capture_path)
+    }
+}
+
+/// Decide a video session's capture layout. Pure — no directory is created and
+/// no manifest is written here.
+///
+/// `start_ms` doubles as the session id (the engine is a singleton, so a start
+/// timestamp never repeats), exactly as `run_session` does it.
+pub(crate) fn plan_video_capture(
+    opts: &RecordingOpts,
+    device_name: &str,
+    start_ms: u64,
+) -> VideoCapture {
+    let session_id = start_ms.to_string();
+    let cap_dir = capture_dir(&opts.output_path, &session_id);
+    // Matroska, carrying the delivery file's OWN stem so `delivery_path_for`
+    // maps it straight back to what the user asked for.
+    let capture_path = capture_base_path(&cap_dir, &opts.output_path, "mkv");
+    VideoCapture {
+        cap_dir,
+        capture_path,
+        session_id,
+        delivery: delivery_encode_for(opts, false),
+        started_ms: start_ms,
+        device_name: device_name.to_string(),
+    }
+}
+
+/// Finish a video session: remux the Matroska capture into the user's mp4
+/// through the SAME [`finalize_deliverable`] the macOS path and the startup
+/// recovery use, and return the file history should point at — or `None` when
+/// the session captured nothing worth a row.
+///
+/// On success the recovery manifest is deleted (its job is done) and the
+/// now-empty capture folder with it. On FAILURE the manifest deliberately
+/// STAYS: the mkv is a whole, playable recording, and the next launch must
+/// get the chance to retry the remux rather than forfeit it — the same
+/// "a stop is only clean for what actually delivered" rule `run_session`
+/// follows. The history row then points at the capture, so the service is
+/// reachable from the app either way.
+///
+/// `app` is an `Option` for the same reason `recovery::recover_session`'s is: the
+/// deleting/keeping decisions ARE the safety net, and they are driven directly by
+/// tests against a real temp directory with no Tauri runtime. `None` runs the
+/// identical logic, minus the manifest delete (there is no app-data dir to hold
+/// one).
+async fn finalize_video_capture(app: Option<&AppHandle>, capture: &VideoCapture) -> Option<String> {
+    // An EMPTY capture is not an interrupted service. ffmpeg exiting before a
+    // single block reached disk — the camera was already open in Teams, the
+    // dshow name went stale — ends this session too, and the UI has already
+    // been told why (`recording://error`). Clearing the manifest here is what
+    // stops the next launch from turning "the camera was busy" into "an
+    // interrupted recording could not be restored, the file was not playable":
+    // a warning about a rescue that was never needed. Same rule as
+    // `finalize_one` — a phantom recording that will not play is worse than
+    // no row at all.
+    let bytes = tokio::fs::metadata(&capture.capture_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if !sundayrec_core::recorder::is_plausible_output(bytes) {
+        tracing::error!(
+            capture = %capture.capture_path,
+            bytes,
+            "recorder: cpal — the capture holds nothing; no delivery and no history row"
+        );
+        if let Some(app) = app {
+            crate::recorder::recovery::delete_manifest(app, &capture.session_id).await;
+        }
+        let _ = tokio::fs::remove_file(&capture.capture_path).await;
+        let _ = tokio::fs::remove_dir(&capture.cap_dir).await;
+        return None;
+    }
+
+    let deliverable = capture.deliverable();
+    let spec = capture.delivery_spec();
+    match finalize_deliverable(&deliverable, None, Some(&spec)).await {
+        Ok(delivered) => {
+            if let Some(app) = app {
+                crate::recorder::recovery::delete_manifest(app, &capture.session_id).await;
+            }
+            // `remove_dir` only removes it if EMPTY — a delivery that somehow
+            // left the capture behind keeps its folder as a recovery source.
+            let _ = tokio::fs::remove_dir(&capture.cap_dir).await;
+            Some(delivered)
+        }
+        Err(e) => {
+            tracing::error!(
+                capture = %capture.capture_path,
+                delivery = %spec.delivery_path,
+                "recorder: cpal — remux to the delivery format failed, keeping the capture \
+                 and the recovery manifest for the next launch: {e}"
+            );
+            Some(capture.capture_path.clone())
+        }
+    }
+}
+
 pub use imp::run_cpal_session;
 
 mod imp {
@@ -208,7 +404,10 @@ mod imp {
     use sundayrec_core::recorder::RecorderState;
     use tauri::{AppHandle, Emitter};
 
-    use super::{history_row, writer_task, CpalHostKind};
+    use super::{
+        finalize_video_capture, history_row, plan_video_capture, writer_task, CpalHostKind,
+        VideoCapture,
+    };
     use crate::audio::asio::{build_route_plan, ChannelRoute};
     use crate::db::store::insert_recording;
     use crate::error::{AppError, AppResult};
@@ -323,6 +522,11 @@ mod imp {
         state: StateWriter,
     ) {
         let label = host_kind.label();
+        // The session's start AND its id (a singleton engine never repeats a
+        // start timestamp). Stamped before the device probe, like `run_session`
+        // does it, because the capture layout — and therefore the crash-recovery
+        // manifest — has to exist before the first frame can land.
+        let start_ms = now_ms();
 
         // ── Resolve device config + routing (pure once probed) ───────────────
         let device_name = opts.audio_device_name.clone();
@@ -350,15 +554,44 @@ mod imp {
         );
         let out_ch = plan.len() as u8;
 
-        // ── Build ffmpeg args (audio-only or video+pipe) ─────────────────────
+        // ── Decoupled capture layout (video only) ────────────────────────────
+        // A video session captures crash-tolerant Matroska into a hidden
+        // per-session folder beside the delivery file and is remuxed to the
+        // user's mp4 at stop (F2-W4 — see the block comment above
+        // [`VideoCapture`]). Audio-only keeps writing its delivery file directly:
+        // that is the `classic_ffmpeg_audio` hatch, and the native engine — which
+        // owns audio on both platforms — already has this layout.
         let has_video = video.is_some();
+        let capture = has_video.then(|| plan_video_capture(&opts, &device_name, start_ms));
+        if let Some(c) = &capture {
+            if let Err(e) = tokio::fs::create_dir_all(&c.cap_dir).await {
+                // Same verdict as `run_session`: without the capture folder there
+                // is no crash-safe recording to make. The engine falls back to
+                // dshow, which fails on the same folder with the same message
+                // rather than silently recording an unrecoverable mp4.
+                tracing::error!(dir = %c.cap_dir.display(), "recorder: cpal failed to create capture dir: {e}");
+                let _ = ready_tx.send(Err(AppError::Recording(format!(
+                    "kunne ikke opprette opptaksmappe {}: {e}",
+                    c.cap_dir.display()
+                ))));
+                return;
+            }
+        }
+        // What ffmpeg actually writes: the MKV capture (video) or, for audio-only,
+        // the user's file itself.
+        let ffmpeg_target = capture
+            .as_ref()
+            .map(|c| c.capture_path.clone())
+            .unwrap_or_else(|| opts.output_path.clone());
+
+        // ── Build ffmpeg args (audio-only or video+pipe) ─────────────────────
         let args: Vec<String> = match &video {
             Some(v) => build_cpal_pipe_video_args(
                 &v.name,
                 sundayrec_core::capture::RECORDING_FRAMERATE,
                 sample_rate,
                 out_ch,
-                &opts.output_path,
+                &ffmpeg_target,
                 opts.sample_rate,
                 opts.bitrate_kbps,
                 // v0.15: the recording codec is a constant (H.264).
@@ -368,7 +601,7 @@ mod imp {
             None => build_cpal_pipe_audio_args(
                 sample_rate,
                 out_ch,
-                &opts.output_path,
+                &ffmpeg_target,
                 opts.sample_rate,
                 opts.bitrate_kbps,
             ),
@@ -380,6 +613,7 @@ mod imp {
         let mut child = match spawn_ffmpeg(&arg_refs).await {
             Ok(c) => c,
             Err(e) => {
+                discard_unstarted_capture(capture.as_ref()).await;
                 let _ = ready_tx.send(Err(e));
                 return;
             }
@@ -388,6 +622,7 @@ mod imp {
             Some(s) => s,
             None => {
                 let _ = child.start_kill();
+                discard_unstarted_capture(capture.as_ref()).await;
                 let _ = ready_tx.send(Err(AppError::Recording(
                     "ffmpeg gave no stdin pipe for cpal audio".into(),
                 )));
@@ -440,6 +675,7 @@ mod imp {
             Ok(h) => h,
             Err(e) => {
                 let _ = child.start_kill();
+                discard_unstarted_capture(capture.as_ref()).await;
                 let _ = ready_tx.send(Err(AppError::Recording(format!(
                     "could not spawn cpal capture thread: {e}"
                 ))));
@@ -456,6 +692,7 @@ mod imp {
                 let _ = child.start_kill();
                 let _ = child.wait().await;
                 let _ = stream_handle.join();
+                discard_unstarted_capture(capture.as_ref()).await;
                 let _ = ready_tx.send(Err(AppError::Recording(e)));
                 return;
             }
@@ -464,11 +701,23 @@ mod imp {
                 let _ = child.wait().await;
                 stop.store(true, Ordering::Relaxed);
                 let _ = stream_handle.join();
+                discard_unstarted_capture(capture.as_ref()).await;
                 let _ = ready_tx.send(Err(AppError::Recording(
                     "cpal capture thread exited before signalling".into(),
                 )));
                 return;
             }
+        }
+
+        // The capture is LIVE → persist the crash-recovery manifest. From this
+        // instant on, an app that never reaches its stop is finished by the next
+        // launch's `scan_and_recover` instead of leaving an orphaned file nobody
+        // knows about. Written here rather than before the spawn because every
+        // failure above falls back to dshow, and a manifest for a session that
+        // never recorded is litter the startup scan would have to reason about.
+        // Best-effort, exactly like `run_session`: it never blocks the recording.
+        if let Some(c) = &capture {
+            crate::recorder::recovery::write_manifest(&app, &c.manifest()).await;
         }
 
         // Stream is live → start draining into ffmpeg and report ready.
@@ -506,8 +755,9 @@ mod imp {
 
         // Live auto-stop (H3): arm the SHARED absolute deadline so the UI countdown
         // and recording_extend_autostop/cancel work on the cpal path. Mirrors
-        // run_session — re-pin the timer whenever the watch changes.
-        let start_ms = now_ms();
+        // run_session — re-pin the timer whenever the watch changes, off the SAME
+        // `start_ms` the session id and the manifest carry (F2-W4 moved that stamp
+        // to the top of the function; `run_session` has always taken it there).
         let initial_stop = (opts.manual_max_minutes > 0)
             .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
         state.arm_autostop(initial_stop);
@@ -584,50 +834,64 @@ mod imp {
         let ended_ms = now_ms();
         let duration_ms = ended_ms.saturating_sub(start_ms) as f64;
 
-        // ── Separate-audio sidecar (H2): extract the clean audio next to a video
-        // recording, exactly like the dshow path (`engine::extract_separate_audio`). ─
-        if has_video && opts.keep_separate_audio {
-            if let Some(pool) = &pool {
-                let audio = FfmpegDevice::new(device_name.clone(), "cpal", None);
-                extract_separate_audio(
-                    pool,
-                    &opts.output_path,
-                    start_ms,
-                    duration_ms,
-                    &opts,
-                    &audio,
-                )
-                .await;
-            }
-        }
+        // ── Deliver: MKV capture → the user's mp4 ────────────────────────────
+        // For a video session `opts.output_path` does not exist yet — ffmpeg wrote
+        // Matroska into the capture folder. Everything downstream (the sidecar
+        // extract, the history row, the record→edit hand-off) works on whatever
+        // this leaves behind, which on a failed remux is the capture itself, and
+        // on a session that captured NOTHING is nothing at all.
+        let final_path = match &capture {
+            None => Some(opts.output_path.clone()),
+            Some(c) => finalize_video_capture(Some(&app), c).await,
+        };
 
-        // ── History + finished event ─────────────────────────────────────────
-        write_history(
-            &pool,
-            &opts.output_path,
-            &device_name,
-            start_ms,
-            duration_ms,
-        )
-        .await;
-        if tokio::fs::metadata(&opts.output_path)
-            .await
-            .map(|m| m.len() > 0)
-            .unwrap_or(false)
-        {
-            let _ = app.emit(
-                FINISHED_EVENT,
-                RecordingFinished {
-                    file_path: opts.output_path.clone(),
-                    has_video,
-                },
-            );
+        if let Some(final_path) = final_path {
+            // ── Separate-audio sidecar (H2): extract the clean audio next to a video
+            // recording, exactly like the dshow path (`engine::extract_separate_audio`). ─
+            if has_video && opts.keep_separate_audio {
+                if let Some(pool) = &pool {
+                    let audio = FfmpegDevice::new(device_name.clone(), "cpal", None);
+                    extract_separate_audio(pool, &final_path, start_ms, duration_ms, &opts, &audio)
+                        .await;
+                }
+            }
+
+            // ── History + finished event ─────────────────────────────────────
+            write_history(&pool, &final_path, &device_name, start_ms, duration_ms).await;
+            if tokio::fs::metadata(&final_path)
+                .await
+                .map(|m| m.len() > 0)
+                .unwrap_or(false)
+            {
+                let _ = app.emit(
+                    FINISHED_EVENT,
+                    RecordingFinished {
+                        file_path: final_path.clone(),
+                        has_video,
+                    },
+                );
+            }
         }
         // The terminal write clears the shared auto-stop deadline itself (inside
         // [`StateWriter::set`]), so a finished recording ships no lingering
         // countdown — and a SUPERSEDED cpal supervisor clears nothing at all.
         state.set(RecorderState::Stopped, 0);
         tracing::info!(host = label, "recorder: cpal session stopped cleanly");
+    }
+
+    /// Throw away a capture folder whose session never started. Every failure
+    /// between "folder created" and "stream live" hands the recording back to the
+    /// engine, which starts a FRESH dshow session with its own folder — so what
+    /// this one left (a zero-length mkv ffmpeg may have opened, and the folder)
+    /// is litter beside the user's recordings.
+    ///
+    /// Best-effort and order-dependent: `remove_dir` only removes an EMPTY
+    /// directory, so the file goes first. No manifest has been written at any of
+    /// these points, which is why nothing here has to think about recovery.
+    async fn discard_unstarted_capture(capture: Option<&VideoCapture>) {
+        let Some(c) = capture else { return };
+        let _ = tokio::fs::remove_file(&c.capture_path).await;
+        let _ = tokio::fs::remove_dir(&c.cap_dir).await;
     }
 
     /// Emit a classified error to the renderer (mirrors `engine::emit_error`).
@@ -668,6 +932,254 @@ mod tests {
     use ringbuf::traits::{Producer, Split};
     use std::time::Duration;
     use tokio::io::AsyncReadExt;
+
+    // ── The Windows video session's crash-safe layout (F2-W4) ────────────────
+
+    /// A video session's options: the user asked for `/Opptak/gudstjeneste.mp4`.
+    fn video_opts() -> RecordingOpts {
+        RecordingOpts {
+            audio_device_name: "Soundcraft USB Audio".into(),
+            video_device_name: Some("Logitech BRIO".into()),
+            output_path: "/Opptak/gudstjeneste.mp4".into(),
+            stop_on_silence: false,
+            silence_threshold_db: None,
+            silence_timeout_minutes: 5,
+            channel_mode: sundayrec_core::settings::ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            split_minutes: 0,
+            manual_max_minutes: 0,
+            live_levels: true,
+            keep_separate_audio: false,
+            separate_audio_format: "wav".into(),
+            classic_directshow: false,
+            classic_ffmpeg_audio: false,
+            video_input: None,
+        }
+    }
+
+    /// GOLDEN (F2-W4). The Windows video capture lands in the session's hidden
+    /// folder as Matroska — NOT in the user's mp4, which has no `moov` atom until
+    /// a clean finalise and is therefore unplayable after a kill.
+    #[test]
+    fn video_capture_targets_the_sessions_mkv_beside_the_delivery_file() {
+        let opts = video_opts();
+        let c = plan_video_capture(&opts, "Soundcraft USB Audio", 1_786_179_600_000);
+        let delivery = std::path::Path::new(&opts.output_path);
+        assert_eq!(c.session_id, "1786179600000");
+        // Asserted by COMPONENT, not as a literal string: the separator is the
+        // platform's, and this path is built on Windows too.
+        assert_eq!(
+            c.cap_dir.file_name().and_then(|s| s.to_str()),
+            Some(".sundayrec-capture-1786179600000"),
+            "hidden, and scoped to this one session"
+        );
+        let capture = PathBuf::from(&c.capture_path);
+        assert_eq!(
+            capture.file_name().and_then(|s| s.to_str()),
+            Some("gudstjeneste.mkv"),
+            "Matroska, keeping the delivery stem so it maps straight back"
+        );
+        assert_eq!(capture.parent(), Some(c.cap_dir.as_path()));
+        // The layout is the SAME one `run_session` builds — the folder sits
+        // beside the delivery file, on one volume, so the remux never crosses a
+        // filesystem.
+        assert_eq!(c.cap_dir.parent(), delivery.parent());
+    }
+
+    /// The seam: the argument builder must be handed the CAPTURE path. This is
+    /// the assertion that fails if someone re-points ffmpeg at `output_path`.
+    #[test]
+    fn video_capture_args_are_built_for_the_mkv_not_the_mp4() {
+        let c = plan_video_capture(&video_opts(), "Soundcraft USB Audio", 1_786_179_600_000);
+        let args = sundayrec_core::capture::build_cpal_pipe_video_args(
+            "Logitech BRIO",
+            sundayrec_core::capture::RECORDING_FRAMERATE,
+            48_000,
+            2,
+            &c.capture_path,
+            None,
+            192,
+            sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+            None,
+        );
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some(c.capture_path.as_str())
+        );
+        assert!(
+            !args.iter().any(|a| a.ends_with(".mp4")),
+            "no ffmpeg argument may still point at the delivery mp4: {args:?}"
+        );
+        assert!(
+            !args.iter().any(|a| a == "+faststart"),
+            "the mkv capture drops faststart — and with it the whole-file \
+             rewrite a stop used to pay"
+        );
+    }
+
+    /// The manifest is what makes a crash survivable: it is the ONLY way
+    /// `scan_and_recover` learns the capture exists. One deliverable, one
+    /// fragment (this path has neither split nor reconnect), stamped with the
+    /// session start, and carrying a REMUX — not an audio encode.
+    #[test]
+    fn video_capture_manifest_describes_a_remuxable_single_fragment_session() {
+        let c = plan_video_capture(&video_opts(), "Soundcraft USB Audio", 1_786_179_600_000);
+        let m = c.manifest();
+        assert_eq!(m.session_id, "1786179600000");
+        assert_eq!(m.device_name, "Soundcraft USB Audio");
+        assert_eq!(m.session_start_ms, 1_786_179_600_000);
+        assert_eq!(
+            m.preroll_clip_path, None,
+            "a session that wants a pre-roll is routed to dshow, never here"
+        );
+        assert_eq!(m.deliverables.len(), 1);
+        assert_eq!(m.deliverables[0].primary_path, c.capture_path);
+        assert_eq!(m.deliverables[0].fragments, vec![c.capture_path.clone()]);
+        assert_eq!(m.deliverables[0].started_at_ms, 1_786_179_600_000);
+
+        let enc = m
+            .delivery_encode
+            .as_ref()
+            .expect("a decoupled capture must say how to finish");
+        assert_eq!(
+            enc.mode,
+            sundayrec_core::recovery::DeliveryMode::RemuxCopy,
+            "video is stream-copied into the container, never re-encoded"
+        );
+        assert_eq!(enc.delivery_dir, "/Opptak");
+        assert_eq!(enc.ext, "mp4");
+        // The manifest is the whole contract with the next launch — it has to
+        // survive a round-trip through the JSON file on disk.
+        let json = m.to_json().expect("serialise");
+        assert_eq!(
+            sundayrec_core::recovery::SessionManifest::from_json(&json).expect("parse"),
+            c.manifest()
+        );
+    }
+
+    /// Live stop and crash recovery must deliver to the SAME place: the file the
+    /// user actually asked for. (Built through `DeliverySpec::from_manifest`, the
+    /// one constructor all three finalise paths share.)
+    #[test]
+    fn video_capture_delivers_back_to_exactly_the_users_file() {
+        let opts = video_opts();
+        let c = plan_video_capture(&opts, "Soundcraft USB Audio", 1_786_179_600_000);
+        let want = std::path::Path::new(&opts.output_path);
+        let spec = c.delivery_spec();
+        // Compared as PATHS: the delivery is assembled with `join`, so on Windows
+        // it carries that platform's separator while `output_path` carries
+        // whatever the caller wrote. Same file either way.
+        assert_eq!(std::path::Path::new(&spec.delivery_path), want);
+        assert_eq!(spec.mode, sundayrec_core::recovery::DeliveryMode::RemuxCopy);
+        // What the recovery scan would compute from the persisted manifest, with
+        // no live session in memory, is the same path.
+        let enc = c.manifest().delivery_encode.unwrap();
+        let recovered = sundayrec_core::recovery::delivery_path_for(
+            &c.manifest().deliverables[0].primary_path,
+            &enc.delivery_dir,
+            &enc.ext,
+        );
+        assert_eq!(std::path::Path::new(&recovered), want);
+    }
+
+    /// A capture that holds a real recording but cannot be remuxed (no usable
+    /// ffmpeg, a wedged sidecar, a full disk) must SURVIVE: the MKV is a whole,
+    /// playable service and the only copy there is. History points at it, and it
+    /// stays on disk for the next launch to retry the delivery from.
+    #[tokio::test]
+    async fn a_capture_that_cannot_be_delivered_is_kept_not_destroyed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = plan_video_capture(&video_opts(), "Mic", 1_786_179_600_000);
+        // Re-point the plan at a real temp folder (the golden test above pins the
+        // path shape; this one needs files).
+        c.cap_dir = dir.path().join(".sundayrec-capture-1786179600000");
+        c.capture_path = c
+            .cap_dir
+            .join("gudstjeneste.mkv")
+            .to_string_lossy()
+            .into_owned();
+        c.delivery.delivery_dir = dir.path().to_string_lossy().into_owned();
+        tokio::fs::create_dir_all(&c.cap_dir).await.unwrap();
+        // Past the size gate, but not anything ffmpeg can remux.
+        tokio::fs::write(&c.capture_path, vec![0u8; 64 * 1024])
+            .await
+            .unwrap();
+
+        let out = finalize_video_capture(None, &c).await;
+        assert_eq!(
+            out.as_deref(),
+            Some(c.capture_path.as_str()),
+            "history must point at the capture when the delivery could not run"
+        );
+        assert!(
+            std::path::Path::new(&c.capture_path).exists(),
+            "the only copy of the service must not be deleted by a failed delivery"
+        );
+        assert!(c.cap_dir.exists(), "nor the folder holding it");
+    }
+
+    /// A session that captured NOTHING — ffmpeg exited before a block reached
+    /// disk because the camera was already open in Teams, say — is not an
+    /// interrupted service. No history row, and the manifest + the empty file go,
+    /// so the next launch does not report a rescue that was never needed.
+    #[tokio::test]
+    async fn a_capture_that_holds_nothing_leaves_no_row_and_no_manifest_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = plan_video_capture(&video_opts(), "Mic", 1_786_179_600_000);
+        c.cap_dir = dir.path().join(".sundayrec-capture-1786179600000");
+        c.capture_path = c
+            .cap_dir
+            .join("gudstjeneste.mkv")
+            .to_string_lossy()
+            .into_owned();
+        tokio::fs::create_dir_all(&c.cap_dir).await.unwrap();
+        tokio::fs::write(&c.capture_path, b"").await.unwrap();
+
+        assert_eq!(
+            finalize_video_capture(None, &c).await,
+            None,
+            "a phantom recording that will not play is worse than no row at all"
+        );
+        assert!(
+            !std::path::Path::new(&c.capture_path).exists(),
+            "the empty capture is litter, not a recovery source"
+        );
+        assert!(!c.cap_dir.exists(), "and its folder goes with it");
+    }
+
+    /// The same verdict when ffmpeg never created the file at all.
+    #[tokio::test]
+    async fn a_capture_that_was_never_written_leaves_no_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = plan_video_capture(&video_opts(), "Mic", 1_786_179_600_000);
+        c.cap_dir = dir.path().join(".sundayrec-capture-1786179600000");
+        c.capture_path = c
+            .cap_dir
+            .join("gudstjeneste.mkv")
+            .to_string_lossy()
+            .into_owned();
+        tokio::fs::create_dir_all(&c.cap_dir).await.unwrap();
+        assert_eq!(finalize_video_capture(None, &c).await, None);
+        assert!(!c.cap_dir.exists());
+    }
+
+    /// The concat layer sees one fragment and no pre-roll, so `concat_needed` is
+    /// false and finalisation is a pure remux — no ffmpeg concat pass, no
+    /// second copy of a multi-hour service on disk.
+    #[test]
+    fn video_capture_deliverable_needs_no_concat_pass() {
+        let c = plan_video_capture(&video_opts(), "Mic", 1_786_179_600_000);
+        let d = c.deliverable();
+        assert_eq!(d.primary_path, c.capture_path);
+        assert_eq!(d.fragments, vec![c.capture_path.clone()]);
+        assert!(
+            !sundayrec_core::recorder::concat_needed(&d.fragments, false),
+            "a single fragment with no pre-roll is already the finished capture"
+        );
+    }
 
     // ── The history row (the 1970 bug site) ──────────────────────────────────
 
