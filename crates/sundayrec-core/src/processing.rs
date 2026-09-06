@@ -146,9 +146,35 @@ pub fn channel_repair_filter(repair: ChannelRepair) -> Option<String> {
     }
 }
 
+/// Does this repair read the RIGHT input channel — i.e. does it need a stereo
+/// source to mean anything?
+///
+/// ffmpeg does NOT refuse `c1` on a mono input. It silently drops the term, so
+/// `MonoMix` on a mono file (`c0=0.5*c0+0.5*c1`) renders at 0.5× — MEASURED:
+/// a −18.06 dBFS mono sine came out at −24.08 dBFS, a 6.02 dB loss with no
+/// warning, in a file the UI calls "repaired". A caller that knows the channel
+/// count must therefore check BEFORE building the graph; there is no error to
+/// catch afterwards.
+///
+/// [`ChannelRepair::DuplicateLeft`] is the exception: `c0=c0|c1=c0` reads only
+/// the channel a mono file has, and upmixing mono to dual-mono is exactly what
+/// it means. A repair that renders NO filter (`None`, a `0/0` `GainDb`) touches
+/// nothing and is fine on any layout.
+pub fn channel_repair_needs_stereo(repair: ChannelRepair) -> bool {
+    // Asked of the renderer, not of a second list that can drift out of step
+    // with it: no filter, no reference.
+    if channel_repair_filter(repair).is_none() {
+        return false;
+    }
+    // Everything else reads `c1` somewhere in its channel expressions. A
+    // variant added later lands on `true` — the safe side.
+    !matches!(repair, ChannelRepair::DuplicateLeft)
+}
+
 /// Measured per-channel levels (dBFS) feeding [`diagnose_channels`]. Peaks are
-/// required (from `astats`/`levels`); RMS is optional and, when present,
-/// preferred for the imbalance magnitude (peaks are spikier).
+/// required (from `astats`/`levels`); RMS is optional — but see the note above
+/// [`diagnose_channels`]: without it the diagnosis is working half-blind, and
+/// the seam that has an astats SUMMARY must fill it in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChannelLevelsDb {
     pub peak_left_db: f64,
@@ -163,82 +189,159 @@ pub struct ChannelDiagnosis {
     /// The recommended repair to apply.
     pub recommended: ChannelRepair,
     /// A stable machine code for the situation (for i18n / tests):
-    /// `balanced` | `imbalance` | `dead_left` | `dead_right` | `both_dead`.
+    /// `balanced` | `imbalance` | `dead_left` | `dead_right` | `both_dead` |
+    /// `unusable_left` | `unusable_right`. (The editor seam adds `mono` for a
+    /// single-channel source, which never reaches this function.)
     pub code: &'static str,
     /// Left − right level difference in dB (positive = left louder). Uses RMS
     /// when both RMS values are present, else peak.
     pub imbalance_db: f64,
 }
 
-/// A channel quieter than this (dBFS) while the other is healthy is treated as
-/// "dead" — a pulled/!broken cable, not a quiet mix.
+// ── the thresholds, and why each one is where it is ─────────────────────────
+//
+// PEAK ALONE CANNOT SEE THE TWO FAULTS THIS FUNCTION EXISTS FOR. A peak is one
+// sample; a bad cable still delivers samples. Two measured examples:
+//
+//   • A crackling connector leaves the right channel silent except for pops at
+//     −20 dBFS. On peaks that channel is HEALTHY, so the old rule "balanced the
+//     pair" by lifting the crackle 12 dB.
+//   • A genuine mono mix in L, with −40 dBFS bleed in R, is 28 dB apart. −40 is
+//     above the peak dead-floor, so the old rule again read "imbalance" — and
+//     28 dB of imbalance can never be fixed by a 12 dB cap. The honest answer is
+//     to copy the good channel into both.
+//
+// So the rules below are stated on RMS (the average level — what a human means
+// by "how loud is this channel") and on the CREST FACTOR (peak − RMS, how spiky
+// it is). The peak-only constants survive as the fallback for a caller that has
+// no RMS to give.
+
+/// Below this AVERAGE level a channel carries no programme material: a pulled
+/// or broken cable, not a quiet mix. Room tone in a church sits around −50 dBFS
+/// RMS with the desk up, so −60 is under the quietest thing that is still a
+/// recording of something.
+const DEAD_RMS_FLOOR_DB: f64 = -60.0;
+/// Peak − RMS. Speech sits at 10–20 dB, a percussive mix up to ~25. Above 30 dB
+/// essentially all the energy is in isolated transients with silence between —
+/// which is what a failing connector sounds like, and never what a microphone
+/// pointed at a service sounds like.
+const CRACKLE_CREST_DB: f64 = 30.0;
+/// A crest verdict only means something against a partner that IS carrying
+/// programme material — silence is spiky too, and two dead channels must not
+/// certify each other. Doubles as the RMS floor for "loud enough to be worth
+/// copying into both outputs".
+const HEALTHY_RMS_DB: f64 = -40.0;
+
+/// Peak fallback, used ONLY when the caller passed no RMS: a channel quieter
+/// than this while the other is healthy is treated as dead.
 const DEAD_FLOOR_DB: f64 = -45.0;
-/// The other channel must be at least this loud for the quiet one to count as
-/// "dead" rather than "both quiet" (a genuinely soft passage).
+/// Peak fallback for [`HEALTHY_RMS_DB`].
 const HEALTHY_DB: f64 = -30.0;
 /// Below this absolute imbalance we call the pair balanced and recommend no fix.
 const BALANCE_TOLERANCE_DB: f64 = 3.0;
 /// The largest auto-balance makeup we'll suggest, so balancing a near-dead
-/// channel can't lift its noise floor into the mix.
+/// channel can't lift its noise floor into the mix. An imbalance ABOVE it is
+/// not a smaller version of the same problem — it is a different problem, and
+/// gets a different answer (duplicate the good channel), because a capped lift
+/// would leave the pair 16+ dB apart and call it fixed.
 const MAX_AUTO_MAKEUP_DB: f64 = 12.0;
+
+/// One channel's measurements, so the rules below read as rules.
+#[derive(Debug, Clone, Copy)]
+struct Chan {
+    peak_db: f64,
+    rms_db: Option<f64>,
+}
+
+impl Chan {
+    /// Loud enough on average to be worth copying into both outputs.
+    fn healthy(&self) -> bool {
+        match self.rms_db {
+            Some(rms) => rms >= HEALTHY_RMS_DB,
+            None => self.peak_db >= HEALTHY_DB,
+        }
+    }
+
+    /// No usable programme material — either the average level is under the
+    /// floor, or the channel is nothing but transients while the OTHER channel
+    /// is carrying real material (the crackling-cable case).
+    fn dead(&self, partner: &Chan) -> bool {
+        match self.rms_db {
+            Some(rms) => {
+                rms < DEAD_RMS_FLOOR_DB
+                    || (self.peak_db - rms > CRACKLE_CREST_DB && partner.healthy())
+            }
+            None => self.peak_db < DEAD_FLOOR_DB,
+        }
+    }
+}
 
 /// Diagnose a stereo recording's channel balance and recommend a repair.
 ///
 /// The decision tree (the "intelligent channel analysis" the user wanted):
 /// - **both channels dead** → no repair (nothing usable to duplicate);
-/// - **one channel dead, the other healthy** → duplicate the healthy channel
-///   into stereo (the bad-cable fix);
-/// - **both alive but imbalanced beyond tolerance** → per-channel makeup that
-///   brings the quieter channel up toward the louder (capped), i.e. re-centre a
-///   hard-panned / gain-mismatched pair;
-/// - **within tolerance** → balanced, no repair.
+/// - **one channel dead** → duplicate the surviving channel into stereo (the
+///   bad-cable fix);
+/// - **within tolerance** → balanced, no repair;
+/// - **imbalanced beyond what the makeup cap can close** → duplicate the louder
+///   channel. A 28 dB gap does not become a 16 dB gap worth shipping;
+/// - **imbalanced within the cap** → per-channel makeup that brings the quieter
+///   channel up toward the louder, i.e. re-centre a hard-panned /
+///   gain-mismatched pair.
+///
+/// Feed it RMS whenever you have it (see the threshold note above): on peaks
+/// alone the first and fourth branches are invisible.
 pub fn diagnose_channels(levels: ChannelLevelsDb) -> ChannelDiagnosis {
-    let pl = levels.peak_left_db;
-    let pr = levels.peak_right_db;
+    let left = Chan {
+        peak_db: levels.peak_left_db,
+        rms_db: levels.rms_left_db,
+    };
+    let right = Chan {
+        peak_db: levels.peak_right_db,
+        rms_db: levels.rms_right_db,
+    };
 
     // Imbalance magnitude prefers RMS (steadier) when we have both.
     let imbalance_db = match (levels.rms_left_db, levels.rms_right_db) {
         (Some(l), Some(r)) => l - r,
-        _ => pl - pr,
+        _ => levels.peak_left_db - levels.peak_right_db,
+    };
+    let verdict = |recommended, code| ChannelDiagnosis {
+        recommended,
+        code,
+        imbalance_db,
     };
 
-    let left_dead = pl < DEAD_FLOOR_DB;
-    let right_dead = pr < DEAD_FLOOR_DB;
-    let left_healthy = pl >= HEALTHY_DB;
-    let right_healthy = pr >= HEALTHY_DB;
-
+    let left_dead = left.dead(&right);
+    let right_dead = right.dead(&left);
+    // Nothing usable anywhere: say so instead of copying noise into stereo.
     if left_dead && right_dead {
-        return ChannelDiagnosis {
-            recommended: ChannelRepair::None,
-            code: "both_dead",
-            imbalance_db,
-        };
+        return verdict(ChannelRepair::None, "both_dead");
     }
-    if left_dead && right_healthy {
-        return ChannelDiagnosis {
-            recommended: ChannelRepair::DuplicateRight,
-            code: "dead_left",
-            imbalance_db,
-        };
+    if left_dead {
+        return verdict(ChannelRepair::DuplicateRight, "dead_left");
     }
-    if right_dead && left_healthy {
-        return ChannelDiagnosis {
-            recommended: ChannelRepair::DuplicateLeft,
-            code: "dead_right",
-            imbalance_db,
-        };
+    if right_dead {
+        return verdict(ChannelRepair::DuplicateLeft, "dead_right");
     }
 
     if imbalance_db.abs() <= BALANCE_TOLERANCE_DB {
-        return ChannelDiagnosis {
-            recommended: ChannelRepair::None,
-            code: "balanced",
-            imbalance_db,
+        return verdict(ChannelRepair::None, "balanced");
+    }
+
+    // Both alive, but too far apart for the cap to close: a capped lift would
+    // leave the pair audibly lopsided AND raise the weak channel's noise with
+    // it. Copy the channel that actually has the material.
+    if imbalance_db.abs() > MAX_AUTO_MAKEUP_DB {
+        return if imbalance_db > 0.0 {
+            verdict(ChannelRepair::DuplicateLeft, "unusable_right")
+        } else {
+            verdict(ChannelRepair::DuplicateRight, "unusable_left")
         };
     }
 
-    // Imbalanced but both alive: lift the quieter leg toward the louder, capped.
-    let makeup = imbalance_db.abs().min(MAX_AUTO_MAKEUP_DB);
+    // Imbalanced within the cap: lift the quieter leg toward the louder.
+    let makeup = imbalance_db.abs();
     let recommended = if imbalance_db > 0.0 {
         // Left louder → bring right up.
         ChannelRepair::GainDb {
@@ -251,11 +354,7 @@ pub fn diagnose_channels(levels: ChannelLevelsDb) -> ChannelDiagnosis {
             right_db: 0.0,
         }
     };
-    ChannelDiagnosis {
-        recommended,
-        code: "imbalance",
-        imbalance_db,
-    }
+    verdict(recommended, "imbalance")
 }
 
 // ── vocal-chain stages ──────────────────────────────────────────────────────
@@ -782,6 +881,49 @@ mod tests {
         assert!(f.contains("c0=15.849*c0"), "got {f}");
     }
 
+    #[test]
+    fn needs_stereo_matches_what_each_filter_actually_reads() {
+        // Cross-checked against the RENDERED filter, so the predicate cannot
+        // drift away from the strings it is a claim about. An input channel is
+        // read where `c1` appears on the RIGHT of a `cN=` assignment.
+        fn reads_input_c1(filter: &str) -> bool {
+            filter
+                .split('|')
+                .filter_map(|part| part.split_once('='))
+                .any(|(_, rhs)| {
+                    rhs.split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
+                        .any(|tok| tok == "c1")
+                })
+        }
+
+        for repair in [
+            ChannelRepair::None,
+            ChannelRepair::SwapLr,
+            ChannelRepair::DuplicateLeft,
+            ChannelRepair::DuplicateRight,
+            ChannelRepair::MonoMix,
+            ChannelRepair::GainDb {
+                left_db: 0.0,
+                right_db: 6.0,
+            },
+            // A no-op renders nothing, so it needs nothing.
+            ChannelRepair::GainDb {
+                left_db: 0.0,
+                right_db: 0.0,
+            },
+        ] {
+            let expected = channel_repair_filter(repair)
+                .as_deref()
+                .is_some_and(reads_input_c1);
+            assert_eq!(
+                channel_repair_needs_stereo(repair),
+                expected,
+                "{repair:?} renders {:?}",
+                channel_repair_filter(repair)
+            );
+        }
+    }
+
     // ── diagnosis ────────────────────────────────────────────────────────────
 
     #[test]
@@ -822,42 +964,163 @@ mod tests {
     }
 
     #[test]
-    fn diagnose_dead_channel_with_marginal_partner_falls_through_to_imbalance() {
-        // One leg dead (< -45), the other alive-but-not-healthy (in [-45, -30)):
-        // all three dead-branches require a HEALTHY partner, so none fire and the
-        // code falls through to the imbalance path — lifting the dead leg by the
-        // capped 12 dB. Locks this distinct branch against a future reorder.
+    fn diagnose_dead_channel_with_quiet_partner_still_duplicates_the_partner() {
+        // One leg dead (< −45 peak), the other quiet-but-real (in [−45, −30)).
+        // This used to fall through to the imbalance path and LIFT THE DEAD LEG
+        // by the capped 12 dB — 12 dB of nothing, plus 12 dB of its noise. A
+        // quiet channel that carries material is still the channel to copy.
         let left = diagnose_channels(ChannelLevelsDb {
             peak_left_db: -50.0,  // dead
-            peak_right_db: -35.0, // alive but < HEALTHY(-30)
+            peak_right_db: -35.0, // quiet, but the only material there is
             rms_left_db: None,
             rms_right_db: None,
         });
-        assert_eq!(left.code, "imbalance");
-        assert_eq!(
-            left.recommended,
-            ChannelRepair::GainDb {
-                left_db: 12.0,
-                right_db: 0.0
-            }
-        );
+        assert_eq!(left.code, "dead_left");
+        assert_eq!(left.recommended, ChannelRepair::DuplicateRight);
         assert!((left.imbalance_db - (-15.0)).abs() < 1e-9);
 
-        // Symmetric: right dead, left marginal.
+        // Symmetric: right dead, left quiet.
         let right = diagnose_channels(ChannelLevelsDb {
             peak_left_db: -35.0,
             peak_right_db: -50.0,
             rms_left_db: None,
             rms_right_db: None,
         });
-        assert_eq!(right.code, "imbalance");
+        assert_eq!(right.code, "dead_right");
+        assert_eq!(right.recommended, ChannelRepair::DuplicateLeft);
+    }
+
+    // ── the two faults peak-only diagnosis could not see (F2-C-C) ────────────
+
+    #[test]
+    fn diagnose_crackling_cable_is_dead_not_imbalanced() {
+        // Scenario (b). The right channel is silent except for connector pops
+        // that touch −20 dBFS. On PEAKS that channel looks healthy, so the old
+        // rule read "imbalance" and lifted the crackle by 12 dB — the loudest
+        // the pops had ever been. RMS says the channel is empty.
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -10.0,
+            peak_right_db: -20.0,
+            rms_left_db: Some(-22.0),
+            rms_right_db: Some(-70.0),
+        });
+        assert_eq!(d.code, "dead_right");
         assert_eq!(
-            right.recommended,
-            ChannelRepair::GainDb {
-                left_db: 0.0,
-                right_db: 12.0
-            }
+            d.recommended,
+            ChannelRepair::DuplicateLeft,
+            "peak −20 dBFS with RMS −70 is a crackle, not a channel"
         );
+    }
+
+    #[test]
+    fn diagnose_crackle_above_the_rms_floor_is_caught_by_the_crest_factor() {
+        // The same fault, louder: pops at −18 dBFS often enough to pull the
+        // average to −52, which is ABOVE the −60 dead floor. Peak − RMS = 34 dB
+        // is not a signal any microphone in a room produces.
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -12.0,
+            peak_right_db: -18.0,
+            rms_left_db: Some(-24.0),
+            rms_right_db: Some(-52.0),
+        });
+        assert_eq!(d.code, "dead_right");
+        assert_eq!(d.recommended, ChannelRepair::DuplicateLeft);
+    }
+
+    #[test]
+    fn diagnose_gap_wider_than_the_cap_duplicates_instead_of_lifting() {
+        // Scenario (a). A real mono mix in L with −40 dBFS bleed in R is 28 dB
+        // apart. The old rule recommended +12 dB on R — which cannot close a
+        // 28 dB gap and DOES lift 28 dB of bleed by 12, leaving a noisy right
+        // channel in a file that reads as "repaired".
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -12.0,
+            peak_right_db: -40.0,
+            rms_left_db: None,
+            rms_right_db: None,
+        });
+        assert_eq!(d.code, "unusable_right");
+        assert_eq!(d.recommended, ChannelRepair::DuplicateLeft);
+        assert!((d.imbalance_db - 28.0).abs() < 1e-9);
+
+        // Symmetric.
+        let mirrored = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -40.0,
+            peak_right_db: -12.0,
+            rms_left_db: None,
+            rms_right_db: None,
+        });
+        assert_eq!(mirrored.code, "unusable_left");
+        assert_eq!(mirrored.recommended, ChannelRepair::DuplicateRight);
+    }
+
+    #[test]
+    fn diagnose_weak_but_alive_channel_still_gets_a_capped_makeup() {
+        // The boundary the two branches share: a pair that IS rescuable with
+        // gain must still be rescued with gain, not duplicated away. 8 dB apart,
+        // both carrying material.
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -12.0,
+            peak_right_db: -20.0,
+            rms_left_db: Some(-20.0),
+            rms_right_db: Some(-28.0),
+        });
+        assert_eq!(d.code, "imbalance");
+        match d.recommended {
+            ChannelRepair::GainDb { left_db, right_db } => {
+                assert_eq!(left_db, 0.0);
+                assert!((right_db - 8.0).abs() < 1e-9, "right_db={right_db}");
+                assert!(
+                    right_db <= 12.0,
+                    "the makeup must stay inside the auto cap: {right_db}"
+                );
+            }
+            other => panic!("expected GainDb, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diagnose_quiet_but_balanced_stereo_is_left_alone() {
+        // A quiet church recording is not a fault. Both channels well under
+        // HEALTHY_RMS, 1 dB apart → nothing to repair, and above all NOT
+        // "both_dead": the dead floor is about emptiness, not about level.
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -32.0,
+            peak_right_db: -33.0,
+            rms_left_db: Some(-45.0),
+            rms_right_db: Some(-46.0),
+        });
+        assert_eq!(d.code, "balanced");
+        assert_eq!(d.recommended, ChannelRepair::None);
+    }
+
+    #[test]
+    fn diagnose_both_dead_by_rms_recommends_nothing() {
+        // Two channels of room tone, 5 dB apart. Neither is worth copying, so
+        // the answer is a sentence, not a repair.
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -40.0,
+            peak_right_db: -44.0,
+            rms_left_db: Some(-72.0),
+            rms_right_db: Some(-77.0),
+        });
+        assert_eq!(d.code, "both_dead");
+        assert_eq!(d.recommended, ChannelRepair::None);
+    }
+
+    #[test]
+    fn diagnose_crest_rule_needs_a_partner_carrying_material() {
+        // Silence is spiky too. Two empty channels must not certify each other
+        // as "the good one" — the crest arm only fires against a healthy
+        // partner, so this stays `both_dead` and recommends nothing.
+        let d = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -20.0,
+            peak_right_db: -21.0,
+            rms_left_db: Some(-65.0),
+            rms_right_db: Some(-66.0),
+        });
+        assert_eq!(d.code, "both_dead");
+        assert_eq!(d.recommended, ChannelRepair::None);
     }
 
     #[test]

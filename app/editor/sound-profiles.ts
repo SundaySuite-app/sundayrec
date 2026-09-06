@@ -174,9 +174,14 @@ export function listenStartSec(
 /**
  * Kanaldiagnosens kode → SUFFIKSET under `editor.` som forklarer den.
  *
- * De seks tekstene finnes fra før i alle sju språk (`editor.chanBalanced` …
- * `editor.chanMono`), og de sier akkurat det en frivillig trenger å vite:
- * «Venstre kanal er stille (sjekk kabel)».
+ * De åtte tekstene finnes i alle sju språk (`editor.chanBalanced` …
+ * `editor.chanUnusableRight`), og de sier akkurat det en frivillig trenger å
+ * vite: «Venstre kanal er stille (sjekk kabel)».
+ *
+ * `unusable_*` er ikke det samme som `dead_*`, og har derfor sin egen setning:
+ * kanalen er ikke stille, den er for langt nede til at volum kan redde den
+ * (mer enn 12 dB), så den gode kanalen kopieres til begge. «Er stille» ville
+ * sendt en frivillig for å lete etter en kabel som ikke er trukket ut.
  *
  * Suffikset og ikke hele nøkkelen, fordi flaten slår det opp med
  * `tDyn("editor", suffix)`: prefikset må være en literal
@@ -188,6 +193,8 @@ const CHANNEL_CODE_KEYS: Record<string, string> = {
   imbalance: "chanImbalance",
   dead_left: "chanDeadLeft",
   dead_right: "chanDeadRight",
+  unusable_left: "chanUnusableLeft",
+  unusable_right: "chanUnusableRight",
   both_dead: "chanBothDead",
   mono: "chanMono",
 };
