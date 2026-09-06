@@ -44,6 +44,16 @@ import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
+import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
+import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
+import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
+
+/** `editor_export`'s wrapped result — `editorCall` (`api-shim.ts`) always adds
+ *  `ok`, and only adds `error` on failure; `outputPath` is the real
+ *  `EditorExportResult` field the backend answers with, not a hand-typed
+ *  twin, so a Rust rename fails `npm run typecheck` here. */
+type EditorExportOutcome =
+  ({ ok: true } & EditorExportResult) | { ok: false; error: string };
 
 declare global {
   interface Window {
@@ -246,9 +256,7 @@ declare global {
       ) => (() => void) | undefined;
       toAssetUrl: (path: string) => string;
       editorPickFile: () => Promise<string | null>;
-      editorExportFile: (
-        params: unknown,
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string }>;
+      editorExportFile: (params: unknown) => Promise<EditorExportOutcome>;
       /** Kill the in-flight export render; resolves to whether one was running. */
       editorCancelExport: () => Promise<boolean>;
       editorPickOutputFolder: () => Promise<string | null>;
@@ -269,15 +277,15 @@ declare global {
         filePath: string,
         segments: EditorSegment[],
       ) => Promise<number | null>;
-      editorAutoProcess: (filePath: string) => Promise<{
-        diagnosis: {
-          code: string;
-          recommended: { mode: string; leftDb: number; rightDb: number };
-        };
-        vocalChainPreset: string;
-        masterPreset: string;
-        summary: string;
-      } | null>;
+      // Typed against the GENERATED `EditorAutoProcess` binding (nesting
+      // `EditorChannelDiagnosis`) — the hand-typed twin this replaced had
+      // silently DROPPED `imbalanceDb`/`peakLeftDb`/`peakRightDb` from the
+      // declared type (the backend always sent them; nothing here could read
+      // them). A Rust rename now fails `npm run typecheck`. (Extra finding —
+      // see the PR description.)
+      editorAutoProcess: (
+        filePath: string,
+      ) => Promise<EditorAutoProcess | null>;
       editorReadCutsDraft: (filePath: string) => Promise<unknown>;
       editorSaveCutsDraft: (filePath: string, cuts: unknown) => Promise<void>;
       editorDeleteCutsDraft: (filePath: string) => Promise<void>;
@@ -305,22 +313,18 @@ declare global {
         supportedResolutions: string[];
         supportedFramerates: number[];
       } | null>;
-      editorLoadRecording: (filePath: string) => Promise<{
-        durationSec: number;
-        hasVideo: boolean;
-        hasAudio: boolean;
-        channels: number | null;
-        sampleFmt: string | null;
-        sampleRate: number | null;
-      } | null>;
+      // Typed against the GENERATED `EditorMediaInfo` binding, not a
+      // hand-typed twin — see `EditorExportOutcome`'s doc comment above for
+      // the class of bug that leaves unpinned.
+      editorLoadRecording: (
+        filePath: string,
+      ) => Promise<EditorMediaInfo | null>;
       editorAllowAssetPath: (filePath: string) => Promise<boolean>;
       editorExtractAudioPeaks: (
         filePath: string,
       ) => Promise<{ peaks: number[]; sampleRate: number } | null>;
       editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>;
-      editorExportVideo: (
-        params: unknown,
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string }>;
+      editorExportVideo: (params: unknown) => Promise<EditorExportOutcome>;
       masterPreview: (
         inputPath: string,
         presetId: string,

@@ -44,6 +44,9 @@ import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
+import type { RecordingRow } from "../../legacy/bindings/RecordingRow";
+import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
+import { toEditorExportRequest } from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
@@ -599,16 +602,10 @@ function emitLocal(channel: string, payload?: unknown): void {
 }
 
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
-type RecordingRow = {
-  id: string;
-  file_path: string;
-  device_name: string | null;
-  started_at: number;
-  duration_ms: number | null;
-  byte_size: number | null;
-  created_at: number;
-  note: string | null;
-};
+// `RecordingRow` is the GENERATED binding (imported above), not a hand-typed
+// mirror — a Rust rename of any field now fails `npm run typecheck` in
+// `rowToEntry` below instead of leaving a stale local copy looking green
+// while `recordings_list` answers a shape this file no longer reads right.
 
 // Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
 // so deleteHistoryEntry(timestamp) can call recordings_delete(id).
@@ -1520,36 +1517,13 @@ const api: Record<string, unknown> = {
     });
   },
   // Map the old export params to EditorExportRequest (outputFormat→format,
-  // outputBitrate→bitrate, …; drops mode/processing/metadata). NEEDS LIVE VERIFY.
+  // outputBitrate→bitrate, …; drops mode/metadata besides title/speaker/
+  // description) via `toEditorExportRequest` — the ONE typed place this
+  // mapping happens, shared with `editorExportVideo` below.
   editorExportFile: async (params: unknown) => {
     const o = (params ?? {}) as Record<string, unknown>;
-    const fmt = (o.outputFormat ?? o.format ?? "mp3") as string;
-    const m = (o.metadata ?? {}) as Record<string, unknown>;
-    // Title/speaker/description ride along as tags. (v0.15: chapters no
-    // longer travel — the chapter UI left with the content cluster.)
     return editorCall("editor_export", {
-      request: {
-        inputPath: o.inputPath,
-        cutRegions: o.cutRegions ?? [],
-        duration: o.duration ?? 0,
-        // No `container` field: `EditorExportRequest` has never had one, so
-        // serde dropped it silently. `format` is the only container the
-        // backend reads.
-        format: fmt,
-        outputFolder: o.outputFolder ?? "",
-        bitrate: o.outputBitrate ?? null,
-        bitDepth: o.outputBitDepth ?? null,
-        masterPreset: o.masterPreset ?? null,
-        introPath: o.introPath ?? null,
-        outroPath: o.outroPath ?? null,
-        gainDb: o.gainDb ?? null,
-        title: (m.title as string) || null,
-        speaker: (m.speaker as string) || null,
-        description: (m.description as string) || null,
-        vocalChainPreset: (o.vocalChainPreset as string) || null,
-        processing: (o.processing as Record<string, unknown>) ?? null,
-        channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
-      },
+      request: toEditorExportRequest("audio", o),
     });
   },
   // One-click "best result": diagnose + recommended preset bundle.
@@ -1604,15 +1578,17 @@ const api: Record<string, unknown> = {
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
   // timeline for a multi-GB recording instantly. `null` on any failure.
+  //
+  // Typed against the GENERATED binding (not a hand-typed twin) — a Rust
+  // rename of any field now fails `npm run typecheck` here instead of this
+  // command quietly answering `undefined` to every field the loader reads,
+  // which is exactly what a `kind`/`type` split did to `EditorSegment`.
   editorLoadRecording: async (fp: string) =>
-    call<{
-      durationSec: number;
-      hasVideo: boolean;
-      hasAudio: boolean;
-      channels: number | null;
-      sampleFmt: string | null;
-      sampleRate: number | null;
-    } | null>("editor_load_recording", { inputPath: fp }, null),
+    call<EditorMediaInfo | null>(
+      "editor_load_recording",
+      { inputPath: fp },
+      null,
+    ),
   // editor_allow_asset_path → widens the webview's `asset://` scope to ONE file.
   // The static scope globs cover the standard user folders only; recordings on
   // an external drive/share match none of them and the <audio> src fails with an
@@ -1648,36 +1624,15 @@ const api: Record<string, unknown> = {
       null,
     ),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
-  // (h264/h265). Maps the renderer params to EditorExportRequest just like
-  // editorExportFile (the old raw-passthrough shape didn't match the request).
+  // (h264/h265). Maps the renderer params to EditorExportRequest via
+  // `toEditorExportRequest`, same as `editorExportFile` — including `gainDb`,
+  // which used to be hard-coded `null` here, so "Normaliser" was silently a
+  // no-op for video; the shared mapping can no longer regress the two paths
+  // apart.
   editorExportVideo: async (params: unknown) => {
     const o = (params ?? {}) as Record<string, unknown>;
-    const m = (o.metadata ?? {}) as Record<string, unknown>;
-    const fmt = (o.videoFormat as string) || "mp4";
     return editorCall("editor_export", {
-      request: {
-        inputPath: o.inputPath,
-        cutRegions: o.cutRegions ?? [],
-        duration: o.duration ?? 0,
-        format: fmt,
-        outputFolder: o.outputFolder ?? "",
-        bitrate: null,
-        bitDepth: null,
-        masterPreset: (o.masterPreset as string) || null,
-        introPath: o.introPath ?? null,
-        outroPath: o.outroPath ?? null,
-        // The normalize gain the user set applies to a video export's AUDIO
-        // track exactly as it does to an audio export — this used to be
-        // hard-coded `null`, so "Normaliser" was silently a no-op for video.
-        gainDb: o.gainDb ?? null,
-        title: (m.title as string) || null,
-        speaker: (m.speaker as string) || null,
-        description: (m.description as string) || null,
-        vocalChainPreset: (o.vocalChainPreset as string) || null,
-        processing: (o.processing as Record<string, unknown>) ?? null,
-        channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
-        videoCodec: (o.videoCodec as string) || null,
-      },
+      request: toEditorExportRequest("video", o),
     });
   },
   // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────

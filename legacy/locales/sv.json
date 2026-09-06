@@ -1,9 +1,730 @@
 {
+  "app": {
+    "page": {
+      "record": "Inspelning",
+      "edit": "Redigering",
+      "export": "Export",
+      "setup": "Inställningar"
+    },
+    "rail": {
+      "label": "Platser i appen",
+      "churchUnset": "Inte inställt än"
+    },
+    "status": {
+      "ready": "Allt är klart",
+      "nosound": "Ljudet är inte anslutet",
+      "rec": "Spelar in",
+      "next": "Nästa inspelning {when}",
+      "lowdisk": "Lite utrymme kvar"
+    },
+    "receipt": {
+      "saving": "Sparar …",
+      "saved": "Sparat ✓",
+      "failed": "Inte sparat"
+    },
+    "common": {
+      "recommended": "Rekommenderas",
+      "dismiss": "Stäng",
+      "showMore": "Visa mer",
+      "showLess": "Visa mindre"
+    },
+    "dialog": {
+      "confirm": "Fortsätt",
+      "cancel": "Avbryt",
+      "close": "Stäng",
+      "filter": {
+        "settingsProfile": "Inställningsprofil (JSON)",
+        "allFiles": "Alla filer",
+        "allMedia": "Alla medier som stöds",
+        "audio": "Ljud",
+        "video": "Video"
+      }
+    },
+    "vu": {
+      "hear": "Vi hör ljud",
+      "nothing": "Vi hör ingenting",
+      "loud": "För högt"
+    },
+    "library": {
+      "empty": "Inga inspelningar än",
+      "emptyDesc": "Den första dyker upp här när du har spelat in.",
+      "goRecord": "Gå till Inspelning",
+      "count": "Inspelningar: {n}",
+      "search": "Sök efter datum eller namn",
+      "noHits": "Inga träffar för ”{q}”",
+      "noHitsDesc": "Sökningen tittar i datum, filnamn och anteckning.",
+      "video": "Video",
+      "underMinute": "Under 1 min",
+      "delete": "Radera",
+      "movedToTrash": "Flyttad till papperskorgen",
+      "autoDeleteOff": "Inspelningar raderas inte automatiskt",
+      "autoDeleteDay": "Raderas automatiskt efter 1 dag",
+      "autoDeleteDays": "Raderas automatiskt efter {n} dagar",
+      "trashCount": "Papperskorg ({n})",
+      "trashLede": "Inspelningar här raderas för gott efter {n} dagar.",
+      "trashEmptyDesc": "Inspelningar du raderar hamnar här först.",
+      "back": "Tillbaka till biblioteket",
+      "restore": "Lägg tillbaka",
+      "deleteNow": "Radera nu",
+      "deleteSoon": "Raderas vid nästa rensning",
+      "deleteTomorrow": "Raderas i morgon",
+      "deleteInDays": "Raderas om {n} dagar"
+    },
+    "record": {
+      "noSource": "Du har inte valt var ljudet kommer ifrån",
+      "noSourceDesc": "Välj mixerbordet — eller datorns egen mikrofon om det är den ni använder.",
+      "chooseSound": "Välj ljud",
+      "sub": "Tryck på Start när gudstjänsten börjar.",
+      "listening": "Lyssnar",
+      "soundFrom": "Ljud från",
+      "start": "Starta inspelning",
+      "whyBlocked": "Start är spärrad tills ljudet är valt. Vi spelar aldrig in från en källa som ingen har valt.",
+      "canStart": "Du kan starta ändå — inspelningen blir tyst tills mixerbordet är tillbaka.",
+      "useBuiltIn": "Använd datorns mikrofon",
+      "nextAuto": "Nästa automatiska inspelning",
+      "nextAutoWhen": "{day} {time}",
+      "last": "Senaste inspelningen",
+      "close": "Stäng",
+      "camera": {
+        "searching": "Letar efter kameror…",
+        "noneFound": "Inga kameror hittades — kontrollera anslutningen",
+        "listError": "Fel vid inläsning",
+        "listFailed": "Kunde inte hämta kameralistan — kontrollera behörigheterna",
+        "pickFirst": "Välj en kamera för att se bilden",
+        "savedMissing": "Kameran ”{name}” hittades inte — välj en annan",
+        "starting": "Startar kameran…",
+        "denied": "Kameraåtkomst nekad — kontrollera Systeminställningar",
+        "noResponse": "Kameran svarade inte — används den av ett annat program?"
+      }
+    },
+    "setup": {
+      "q1": "Vilket ljud?",
+      "q2": "Vart ska inspelningarna?",
+      "q3": "Vilken kvalitet?",
+      "q4": "Vilken kyrka?",
+      "q5": "Vem får besked om något går fel?",
+      "notSetUp": "Inte inställt",
+      "nobodyYet": "Ingen än",
+      "quality": {
+        "mp3": "Bra",
+        "flac": "Bäst",
+        "wav": "Arkiv"
+      },
+      "change": "Ändra",
+      "setUp": "Ställ in",
+      "save": "Spara",
+      "cancel": "Avbryt",
+      "sound": {
+        "lede": "Välj det ni spelar in från, och kolla att vi hör det.",
+        "deviceWithPair": "{name} · kanal {l}–{r}",
+        "gone": "Hittar inte {name}",
+        "goneDesc": "Kolla att den är på och att kabeln sitter i.",
+        "noneDesc": "Vi spelar aldrig in från en källa som ingen har valt.",
+        "builtIn": "Datorns egen mikrofon",
+        "builtInDesc": "Bara för test, eller om ni inte har något mixerbord.",
+        "external": "USB / Extern",
+        "mixer": "Mixerbord · {n} kanaler",
+        "whichChannels": "Vilka kanaler?",
+        "pairLabel": "Kanal {l} och {r}",
+        "channelHint": "De som har ljud just nu lyser.",
+        "testHint": "Prata i mikrofonen eller spela lite.",
+        "useThis": "Använd den här",
+        "noChange": "Ingenting har ändrats.",
+        "empty": "Hittar inga ljudenheter",
+        "emptyDesc": "Inte ens datorns egen mikrofon. Kolla åtkomsten under Systeminställningar → Integritet.",
+        "retry": "Sök igen"
+      },
+      "folder": {
+        "lede": "Inspelningarna läggs i den här mappen på datorn.",
+        "label": "Sparas i",
+        "pick": "Välj mapp …",
+        "free": "{gb} GB ledigt",
+        "space": "{gb} GB ledigt · plats för {hours} tim",
+        "unknownSpace": "Vi vet inte hur mycket utrymme som finns kvar här.",
+        "none": "Inspelningarna har ingenstans att ta vägen",
+        "noneDesc": "Välj en mapp på den här datorn. Utan den kan appen inte spela in."
+      },
+      "qualityLede": "Högre kvalitet ger större filer. De flesta blir kvar på Bra.",
+      "qDesc": {
+        "mp3": "MP3. Passar för webben och delning. Ca 1 GB per 10 timmar.",
+        "flac": "FLAC. Allt som kom in, utan förluster. Ca 5 GB per 10 timmar.",
+        "wav": "WAV. Okomprimerat, som ett arkiv ska vara. Ca 10 GB per 10 timmar."
+      },
+      "qualityCustom": "Anpassad · {format} {bitrate}",
+      "qualityCustomDesc": "Den här kombinationen är inte någon av de tre. Välj ett kort för att byta.",
+      "church": {
+        "lede": "Namnet och språket som appen använder.",
+        "name": "Församling eller kyrka",
+        "nameDesc": "Används i e-postaviseringar.",
+        "placeholder": "Till exempel Bryn församling",
+        "languageLabel": "Språk i appen",
+        "languageDesc": "Byter direkt.",
+        "language": "Språk: {language}",
+        "languagePaused": "Det här språket är tillfälligt otillgängligt i de nya inställningarna — appen visar {language} tills vidare."
+      },
+      "notify": {
+        "lede": "Datorn säger alltid till. E-post är för den som inte sitter vid den.",
+        "os": "Avisering på datorn",
+        "osDesc": "När inspelningen startar, stoppar eller misslyckas.",
+        "mail": "E-post om något går fel",
+        "mailDesc": "En adress. Skickas bara vid fel, aldrig annars.",
+        "nobodyDesc": "Ingen får e-post — datorn säger bara till den som sitter vid den.",
+        "emailDesc": "Skickas bara vid fel, aldrig annars.",
+        "gateChip": "Saknar e-postserver",
+        "gateSmtp": "Kräver en e-postserver (SMTP). Ställ in den under Avancerat.",
+        "gateChipUnavailable": "Inte tillgängligt",
+        "gateNoFeature": "E-postutskick är inte inbyggt i den här versionen.",
+        "to": "Skicka till",
+        "toDesc": "Adressen som felmeddelandet går till.",
+        "toPlaceholder": "namn@kyrkan.se",
+        "invalid": "Skriv en giltig e-postadress, till exempel namn@kyrkan.se",
+        "nothingToSave": "Ingenting har ändrats.",
+        "test": "Skicka ett test",
+        "testSent": "Test-e-post skickad till {to}",
+        "testFailed": "Test-e-posten gick inte fram: {err}",
+        "testNoRecipient": "Skriv in en adress och tryck på Spara först.",
+        "remind": "Påminnelse före automatisk inspelning",
+        "remindDesc": "Så att någon hinner slå på mixerbordet.",
+        "remindChip": "Ingen fast tid",
+        "remindGate": "Slå på ”Spela in automatiskt” först.",
+        "remindOff": "Av",
+        "minutes": "{n} min innan"
+      },
+      "camera": {
+        "title": "Ta med kamera",
+        "desc": "Spela in video tillsammans med ljudet.",
+        "noneChosen": "Ingen kamera vald",
+        "pick": "Kamera",
+        "keepAudio": "Behåll separat ljudfil",
+        "keepAudioDesc": "En ren ljudfil vid sidan av videon.",
+        "delivers": "Kameran levererar högst {height}p · {fps} bilder per sekund.",
+        "probeFailed": "Vi kunde inte läsa av vad kameran klarar. Inspelningen använder det kameran faktiskt levererar, upp till 1080p.",
+        "none": "Hittar ingen kamera",
+        "noneDesc": "Anslut en kamera, eller stäng av ”Ta med kamera”."
+      },
+      "auto": {
+        "title": "Spela in automatiskt",
+        "desc": "Ställ in en tid en gång. Datorn väcks och startar själv.",
+        "summary": "{day} {start} · {n} min",
+        "day": "Dag",
+        "start": "Startar",
+        "duration": "Varar",
+        "durationDesc": "Inspelningen stoppar av sig själv efter det här.",
+        "minutes": "{n} min",
+        "nothingToSave": "Ingenting har ändrats.",
+        "launch": "Starta automatiskt med datorn",
+        "launchDesc": "Utan det här startar inte inspelningen efter en omstart.",
+        "more": "Den här datorn har {n} fasta tider. Här ändrar du den första."
+      },
+      "days": {
+        "0": "Måndag",
+        "1": "Tisdag",
+        "2": "Onsdag",
+        "3": "Torsdag",
+        "4": "Fredag",
+        "5": "Lördag",
+        "6": "Söndag"
+      },
+      "advanced": {
+        "title": "Avancerat",
+        "lede": "Saker som de flesta aldrig behöver röra. Allt här har ett tryggt standardval.",
+        "soundLink": "Avancerat ljud",
+        "engine": "Inspelningsmotor",
+        "engineDesc": "Byt bara om ljudet hackar.",
+        "engineConfirm": "Byta inspelningsmotor",
+        "engineChoice": {
+          "native": "Inbyggd",
+          "ffmpeg": "Klassisk (ffmpeg)",
+          "dshow": "Klassisk (DirectShow)"
+        },
+        "preroll": "Förbuffert",
+        "prerollDesc": "Ljud som tas med från innan du tryckte på Start. Bufferten håller mikrofonen öppen i bakgrunden så länge appen är redo att spela in.",
+        "prerollChoice": {
+          "0": "Av",
+          "15": "15 sekunder",
+          "30": "30 sekunder"
+        },
+        "silence": "Stoppa vid lång tystnad",
+        "silenceDesc": "Stoppar inspelningen när det har varit helt tyst en stund.",
+        "silenceAfter": "Stoppar efter",
+        "silenceChoice": {
+          "2": "2 minuter",
+          "5": "5 minuter",
+          "10": "10 minuter",
+          "15": "15 minuter"
+        },
+        "maxLen": "Maxlängd på en inspelning",
+        "maxLenDesc": "Ett skyddsnät om någon glömmer att stoppa.",
+        "maxLenChoice": {
+          "0": "Ingen gräns",
+          "60": "1 timme",
+          "120": "2 timmar",
+          "180": "3 timmar",
+          "240": "4 timmar",
+          "360": "6 timmar"
+        },
+        "split": "Dela upp långa inspelningar",
+        "splitDesc": "Skapar en ny fil med jämna mellanrum, så att ingen fil blir enorm.",
+        "splitEvery": "Ny fil var",
+        "splitChoice": {
+          "30": "30 minuter",
+          "45": "45 minuter",
+          "60": "1 timme",
+          "90": "1 timme 30 minuter",
+          "120": "2 timmar"
+        },
+        "autoDelete": "Radera gamla inspelningar",
+        "autoDeleteDesc": "Flyttas till papperskorgen, raderas inte för gott.",
+        "autoDeleteAfter": "Radera efter (dagar)",
+        "autoDeleteConfirm": "Radera inspelningar snabbare",
+        "autoDeleteRange": "Skriv ett tal mellan 1 och 3650.",
+        "diag": "Dela anonym diagnostik",
+        "diagDesc": "Aldrig ljud, namn eller filer. Du kan se exakt vad som skickas.",
+        "diagPreviewTitle": "Vad skickas",
+        "diagPreviewNext": "Det här är exakt vad som skickas nästa gång.",
+        "diagPreviewHistory": "Diagnostiken är av. Det här visar formen på data från din egen historik lokalt — ingenting skickas.",
+        "diagPreviewEmpty": "Ingenting att skicka just nu.",
+        "diagPreviewFailed": "Kunde inte hämta förhandsvisningen.",
+        "diagDelete": "Radera mina data",
+        "diagDeleteTitle": "Radera dina data?",
+        "diagDeleteBody": "Ditt anonyma ID byts ut mot ett nytt, och rapporter som ännu inte har skickats töms. Därefter ber SundayRec servern radera allt som ligger där under det gamla ID:t.",
+        "diagDeleteConfirm": "Ja, töm och byt ID",
+        "diagDeleted": "Data är tömda lokalt, och du har fått ett nytt anonymt ID.",
+        "diagDeleteFailed": "Kunde inte radera data. Försök igen.",
+        "update": "Uppdateringar",
+        "updateDesc": "Stabil rekommenderas. Beta får nya saker först.",
+        "autoUpdate": "Uppdatera automatiskt",
+        "autoUpdateDesc": "Kontrollerar varje timme om det finns en nyare version. Ingenting laddas ner förrän du säger ja.",
+        "updateStable": "Stabil",
+        "updateBeta": "Beta",
+        "updateBetaTitle": "Byta till beta-uppdateringar?",
+        "updateBetaBody": "Beta kommer till dig innan den har varit med om en riktig gudstjänst, och kan innehålla fel som förstör en inspelning. Använd inte beta på den dator som spelar in gudstjänsten. Du kan byta tillbaka när som helst.",
+        "updateBetaConfirm": "Ja, använd beta",
+        "updateBetaCancel": "Stanna på stabil",
+        "updateCheck": "Leta efter uppdateringar nu",
+        "updateChecking": "Letar efter uppdateringar …",
+        "updateUpToDate": "Du är uppdaterad",
+        "updateAvailable": "Version {v} är redo att laddas ner",
+        "updateDownloading": "Laddar ner … {pct} %",
+        "updateReady": "Version {v} är nedladdad — starta om för att börja använda den",
+        "updateDownload": "Ladda ner och installera",
+        "updateRestart": "Starta om och installera",
+        "updateRestarting": "Startar om …",
+        "updateRestartFailed": "Omstarten blev inte av. Avsluta appen och öppna den igen, så är uppdateringen aktiv.",
+        "updateFailed": "Kunde inte leta efter uppdateringar",
+        "updateNotesLabel": "Vad är nytt",
+        "log": "Logg",
+        "logDesc": "För felsökning tillsammans med oss. Inget ljud och inga lösenord.",
+        "show": "Visa",
+        "copy": "Kopiera",
+        "logShowFailed": "Kunde inte öppna loggmappen.",
+        "logEmpty": "Loggen är fortfarande tom.",
+        "logCopied": "Loggen kopierad",
+        "logCopyFailed": "Kunde inte kopiera loggen.",
+        "profile": "Inställningsprofil",
+        "profileDesc": "Ta med inställningarna till en annan dator. Lösenord följer aldrig med.",
+        "export": "Exportera",
+        "import": "Importera",
+        "importTitle": "Importera inställningar?",
+        "importBody": "Det här ersätter inställningarna på den här datorn med innehållet i filen. Inspelningar, biblioteket och lösenord rörs inte.",
+        "importConfirm": "Ja, importera",
+        "exported": "Inställningarna exporterades.",
+        "exportFailed": "Kunde inte exportera inställningarna: {err}",
+        "imported": "Inställningarna importerades.",
+        "importFailed": "Kunde inte importera inställningarna: {err}",
+        "smtpTitle": "E-postserver (SMTP)",
+        "smtpDesc": "Felaviseringar skickas via församlingens egen e-postserver. Utan den kommer ingen e-post fram.",
+        "smtpHost": "Server",
+        "smtpHostDesc": "Till exempel smtp.gmail.com.",
+        "smtpUser": "Användarnamn",
+        "smtpFrom": "Avsändaradress",
+        "smtpFromDesc": "Lämna den tom för att använda användarnamnet.",
+        "smtpPassword": "Lösenord",
+        "smtpPasswordDesc": "Sparas i datorns nyckelring, aldrig i inställningarna.",
+        "smtpPasswordStored": "Ett lösenord är sparat",
+        "smtpPasswordNone": "Inget lösenord sparat",
+        "smtpPasswordSave": "Spara lösenord",
+        "smtpPasswordClear": "Ta bort",
+        "smtpPasswordSaved": "Lösenordet är sparat.",
+        "smtpPasswordCleared": "Lösenordet är borttaget.",
+        "smtpPasswordFailed": "Kunde inte spara lösenordet: {err}",
+        "smtpNothingToSave": "Ingenting har ändrats.",
+        "smtpInvalidFrom": "Skriv en giltig e-postadress, till exempel namn@kyrkan.se",
+        "schedTitle": "Fler tider och enstaka inspelningar",
+        "schedDesc": "Den veckovisa tiden ställs in på sidan Inspelning, i kortet ”Spela in automatiskt”. Här lägger du till fler.",
+        "schedTimes": "Fasta tider",
+        "schedNone": "Inga fasta tider än.",
+        "schedRow": "{day} {start}–{stop}",
+        "schedAdd": "Lägg till en fast tid",
+        "schedRemove": "Ta bort",
+        "schedFirstIsSetup": "Den första tiden är den du ser i kortet ”Spela in automatiskt” på sidan Inspelning.",
+        "specialsTitle": "Enstaka inspelningar",
+        "specialsDesc": "Ett enskilt datum — en konsert, en julafton.",
+        "specialsNone": "Inga enstaka inspelningar planerade.",
+        "specialDate": "Datum",
+        "specialStart": "Startar",
+        "specialAdd": "Lägg till",
+        "specialRemove": "Ta bort",
+        "specialDefaultName": "Gudstjänst",
+        "specialRow": "{date} · {start}–{stop}",
+        "specialNeedsDate": "Välj ett datum först.",
+        "specialPast": "Datumet har passerat — ingen inspelning kommer att starta.",
+        "wake": "Väck datorn ur viloläge",
+        "wakeDesc": "Utan det här måste datorn vara på när inspelningen ska starta.",
+        "autoDeleteConfirmBody": "Inspelningar som är äldre än så flyttas till papperskorgen. Under 30 dagar kan betyda att en gudstjänst är borta innan någon har hunnit ladda ner den.",
+        "autoDeleteConfirmYes": "Ja, radera så snabbt",
+        "wakeWord": {
+          "can": "Den här datorn kan väckas ur viloläge.",
+          "cannot": "Den här datorn kan inte väckas ur viloläge — låt den stå på.",
+          "needsAdmin": "Den här datorn kan väckas, men frågar efter administratörslösenord första gången.",
+          "unknown": "Vi vet inte än om den här datorn kan väckas."
+        },
+        "wakeArm": "Aktivera väckning",
+        "wakeArmWord": {
+          "idle": "Registrera väckningen i operativsystemet nu. Kan kräva administratörslösenord.",
+          "ok": "Väckningen är registrerad i operativsystemet.",
+          "autoRecordOff": "Inga väckningar att registrera — ”Spela in automatiskt” är av.",
+          "nothingUpcoming": "Inga väckningar att registrera — ingenting är planerat framåt.",
+          "needsAdmin": "Behöver ett administratörslösenord — försök igen och svara på frågan.",
+          "disabled": "Slå på ”Väck datorn ur viloläge” först.",
+          "unsupported": "Den här datorn kan inte väckas av appen.",
+          "cancelled": "Du avbröt — ingenting är registrerat.",
+          "failed": "Väckningen registrerades inte."
+        },
+        "wakeTest": "Testa väckning om 2 min",
+        "wakeTestIdle": "Schemalägg en riktig väckning två minuter fram i tiden, och se om datorn faktiskt vaknar.",
+        "wakeTestScheduled": "Schemalagd till kl. {time} — låt datorn sova för att se om den vaknar.",
+        "wakeHistoryTitle": "Väckningshistorik",
+        "wakeHistoryDesc": "De senaste testerna, och eventuella schemalagda väckningar som inte fungerade.",
+        "wakeHistoryEmpty": "Inga händelser än.",
+        "wakeHistoryClear": "Töm",
+        "wakeHistoryKind": {
+          "missed": "Missade en schemalagd väckning",
+          "testOk": "Testväckningen lyckades",
+          "testFail": "Testväckningen misslyckades"
+        },
+        "wakeHistoryReason": {
+          "noResume": "ingen återupptagning observerad",
+          "tooLate": "kom för sent",
+          "onBattery": "gick på batteri"
+        },
+        "audioTech": "Ljudteknik",
+        "diagnoseReportWhere": "Klistra in rapporten i ett GitHub-issue, eller skicka den till dev@sundaysuite.app."
+      }
+    },
+    "diagnose": {
+      "title": "Diagnos",
+      "desc": "Kontrollerar ljud, åtkomst, motor och disk, och skriver en rapport som du kan skicka vidare.",
+      "run": "Kör",
+      "running": "Körs …",
+      "failed": "Diagnosen kunde inte köras: {err}",
+      "probeSkipped": "Ljudprovet kördes inte: {why}",
+      "copy": "Kopiera hela rapporten",
+      "copied": "Rapporten är kopierad",
+      "copyFailed": "Kunde inte kopiera rapporten",
+      "savedTo": "Sparad till",
+      "devicesTitle": "Alla ljudenheter som inspelaren ser",
+      "noDevices": "Inga ljudenheter hittades",
+      "ipcTitle": "Kommandon som inte svarade under den här sessionen ({n})",
+      "test": "Testinspelning (~10 s)",
+      "testRunning": "Spelar in ett prov …",
+      "testBlocked": "Går inte medan en inspelning pågår.",
+      "testOk": "Testinspelningen genomfördes — {signal}.",
+      "testFail": "Testinspelningen misslyckades: {why}",
+      "r": {
+        "devices": "Ljudenheter hittade",
+        "selected": "Vald enhet",
+        "mic": "Mikrofonåtkomst",
+        "engine": "Ljudmotor (ffmpeg)",
+        "probe": "Ljudprovet"
+      },
+      "v": {
+        "notFound": "hittades inte",
+        "defaultDevice": "Standardenhet",
+        "ffmpegOk": "Tillgänglig",
+        "ffmpegMissing": "Hittades inte",
+        "unknown": "Kan inte avgöras",
+        "probeSkipped": "Kördes inte",
+        "probeOk": "Fick ljud",
+        "probeFail": "Fick inget ljud",
+        "auth": {
+          "authorized": "Beviljad",
+          "denied": "Nekad",
+          "restricted": "Spärrad av systemadministratör",
+          "notDetermined": "Inte efterfrågad än",
+          "unknown": "Kan inte avgöras på den här plattformen"
+        }
+      },
+      "testErr": {
+        "deviceNotFound": "hittade inte ljudenheten",
+        "permissionDenied": "mikrofonåtkomst nekad",
+        "ffmpegError": "inspelningsmotorn misslyckades",
+        "noAudio": "inget ljud i inspelningen"
+      },
+      "testSig": {
+        "silent": "helt tyst",
+        "low": "svag signal",
+        "normal": "normal nivå"
+      },
+      "f": {
+        "ffmpeg01": {
+          "title": "Inspelningsmotorn (ffmpeg) saknas",
+          "hint": "Installera om SundayRec — inspelningsmotorn följer med appen."
+        },
+        "audio01": {
+          "title": "Ingen ljudenhet hittades",
+          "hint": "Kontrollera att ljudkortet är anslutet och att drivrutinen är installerad. På en delad PC: är ljudtjänsten i gång?"
+        },
+        "audio02": {
+          "title": "Den valda ljudenheten hittades inte",
+          "hint": "Anslut enheten, eller välj en annan under ”Vilket ljud?” på Inspelning."
+        },
+        "audio10": {
+          "title": "Föll tillbaka på den klassiska ljudmotorn",
+          "hint": "Inspelning fungerar fortfarande. Vill du ha den moderna motorn, kontrollera drivrutinen och att inget annat program håller enheten."
+        },
+        "rate01": {
+          "title": "En fast samplingsfrekvens är vald",
+          "hint": "Kör ljudkortet en annan frekvens räknar ffmpeg om, och du kan få hackningar. Välj ”Auto” igen om du inte har en konkret anledning."
+        },
+        "video01": {
+          "title": "Video är på, men ingen kamera hittades",
+          "hint": "Anslut kameran, eller stäng av ”Ta med kamera” på Inspelning."
+        },
+        "video02": {
+          "title": "Kameran gav ingen bild",
+          "hint": "Kontrollera att kameran är ansluten och inte används av ett annat program, och att appen har kameraåtkomst."
+        },
+        "disk01": {
+          "title": "Lite ledigt utrymme",
+          "hint": "Frigör utrymme eller välj en annan lagringsmapp före en lång inspelning."
+        },
+        "disk02": {
+          "title": "Kan inte skriva till lagringsmappen",
+          "hint": "Välj en mapp som du har skrivåtkomst till under ”Vart ska inspelningarna?” på Inspelning."
+        },
+        "perm01": {
+          "title": "Mikrofonåtkomst är nekad",
+          "hint": "Ge åtkomst i Systeminställningar → Integritet och säkerhet → Mikrofon, och starta om appen."
+        },
+        "perm02": {
+          "title": "Kameraåtkomst är nekad",
+          "hint": "Ge åtkomst i Systeminställningar → Integritet och säkerhet → Kamera, och starta om appen."
+        },
+        "engine01": {
+          "title": "Den förra inspelningen slutade med ett fel",
+          "hint": "Felkoden står på raden ovanför. Kör en testinspelning för att se om det fungerar nu."
+        },
+        "capture01": {
+          "title": "Den förra inspelningen visade tecken på hackningar",
+          "hint": "Stäng andra tunga program, kontrollera kabel och ström till ljudkortet, och att samplingsfrekvensen står på ”Auto”. Spela sedan in igen och se om siffrorna sjunker."
+        },
+        "capture02": {
+          "title": "Ljudprovet fick inget ljud",
+          "hint": "Kontrollera att rätt enhet är vald under ”Vilket ljud?” på Inspelning, att kabeln sitter i, och att inget annat program håller mikrofonen. Kör sedan diagnosen igen."
+        },
+        "crash01": {
+          "title": "Appen har kraschat",
+          "hint": "Skicka den här rapporten vidare — kraschfilerna är det som gör felet möjligt att hitta."
+        },
+        "task01": {
+          "title": "Bakgrundsuppgifter fick startas om",
+          "hint": "Appen startade dem igen själv, så ingenting stannade. Upprepas det, ta med den här rapporten — namnen ovanför säger vilken del som är instabil."
+        },
+        "log01": {
+          "title": "Loggfilen är inte aktiv",
+          "hint": "Som regel betyder det att appmappen inte kunde skapas. Starta om appen; kvarstår det, kontrollera diskutrymme och behörigheter."
+        },
+        "log02": {
+          "title": "Delar av loggen saknas",
+          "hint": "Loggen är ofullständig för att inspelningen prioriterades — det är rätt väg runt. En långsam disk är värd att titta på före nästa långa inspelning."
+        },
+        "ok": {
+          "title": "Inga problem upptäckta",
+          "hint": "Du är redo att spela in."
+        },
+        "recLoss": {
+          "title": "Den förra inspelningen saknar ljud",
+          "hint": "Det här är allvarligt: inspelningen tappade ljud under tiden. Stäng andra tunga program, anslut ljudkortet direkt i datorn (inte via en hubb), och säg ifrån med den här rapporten — siffrorna här är beviset."
+        }
+      }
+    },
+    "language": {
+      "no": "Norska",
+      "en": "Engelska",
+      "sv": "Svenska",
+      "da": "Danska",
+      "de": "Tyska",
+      "fr": "Franska",
+      "pl": "Polska"
+    },
+    "first": {
+      "step": "Steg {n} av {total}",
+      "next": "Nästa",
+      "back": "Tillbaka",
+      "skipSound": "Fortsätt utan ljud",
+      "gate": "”Nästa” öppnas när vi hör ljud.",
+      "gateReason": "Vi hör inget ljud än. Prata i mikrofonen, eller slå på mixerbordet.",
+      "readyTitle": "Klar till söndag",
+      "readyDesc": "Det här är samma sak som du senare hittar under Inställningar (kugghjulet) och på skärmen Inspelning.",
+      "notifyTodo": "Inte inställt — ingen får besked om en inspelning misslyckas.",
+      "open": "Öppna SundayRec",
+      "progress": "Förlopp",
+      "resumeChip": "Fortsätt inställningen"
+    },
+    "consent": {
+      "title": "Vill du hjälpa oss att göra SundayRec bättre?",
+      "desc": "Anonyma siffror om vad som fungerar och vad som misslyckas. Aldrig ljud, namn eller filer.",
+      "no": "Nej tack",
+      "yes": "Ja, dela anonymt",
+      "what": "Vad skickas?"
+    },
+    "overlay": {
+      "stop": "Stoppa inspelningen",
+      "closeHint": "Du kan stänga fönstret — inspelningen fortsätter i bakgrunden.",
+      "stopQuestion": "Stoppa inspelningen?",
+      "stopQuestionDesc": "{elapsed} är inspelat. Stoppar du nu sparas det du har.",
+      "keep": "Fortsätt spela in",
+      "stopYes": "Stoppa",
+      "room": "Plats för {span}",
+      "camera": "Kamera {name}",
+      "reconnect": "Ljudet från {name} försvann — försöker återansluta",
+      "reconnectAnon": "Ljudet försvann — försöker återansluta",
+      "autoStop": "Stoppar av sig själv om {left}",
+      "finalizingHint": "Inspelningen skrivs till disk. Det tar några sekunder, och filen är trygg under tiden."
+    },
+    "done": {
+      "title": "Inspelningen är sparad",
+      "show": "Visa i Finder",
+      "ok": "Klart",
+      "revealFailed": "Hittade inte filen på disken."
+    },
+    "editor": {
+      "stepCut": "Klipp",
+      "loadFailed": "Kunde inte öppna inspelningen",
+      "loadFailedDesc": "Formatet stöds kanske inte, eller så är filen skadad.",
+      "searching": "Letar efter predikan …",
+      "found": "Vi tror att predikan är här",
+      "foundDesc": "Från {from} till {to} — {span}. Dra i handtagen för att justera.",
+      "keepSermon": "Behåll bara predikan",
+      "keepAll": "Behåll allt",
+      "sermon": "Predikan",
+      "keepLabel": "{name} · {span}",
+      "handleStart": "Där predikan börjar",
+      "handleEnd": "Där predikan slutar",
+      "result": "Resultat: {kept} (av {total})",
+      "seconds": "{n} s",
+      "minutesSeconds": "{m} min {s} s",
+      "pause": "Paus",
+      "manual": "Klipp manuellt",
+      "manualHide": "Dölj klippverktygen",
+      "redo": "Gör om",
+      "nothingToUndo": "Ingenting att ångra än.",
+      "nothingToRedo": "Ingenting att göra om.",
+      "notSermonDesc": "Välj rätt block. Vi kommer ihåg det till nästa gång.",
+      "blockOption": "Block {n} — {at} · {span}",
+      "stepSound": "Ljud",
+      "nextSound": "Nästa: Ljud",
+      "nextExport": "Nästa: Export",
+      "autoSound": "Automatisk ljudförbättring",
+      "autoSoundDesc": "Jämnar ut nivån och gör talet tydligare. Originalet rörs inte.",
+      "profile": {
+        "speech": "Tal",
+        "mixed": "Tal och musik",
+        "none": "Ingen"
+      },
+      "profileDesc": {
+        "speech": "För predikan och liturgi. Rekommenderas.",
+        "mixed": "När lovsången ska vara med.",
+        "none": "Exportera ljudet precis som det spelades in."
+      },
+      "listen": "Lyssna",
+      "listenAria": "Hör ljudet före eller efter förbättringen",
+      "before": "Före",
+      "after": "Efter",
+      "sample": "{at} — 20 sekunder från predikan",
+      "rendering": "Förbereder smakprovet …",
+      "listenFailed": "Kunde inte skapa smakprovet. Exporten går som vanligt.",
+      "advancedMixer": "Avancerat: öppna mixern",
+      "hideMixer": "Dölj mixern",
+      "mixerTitle": "Avancerad ljudmixer",
+      "mixerUse": "Använd mixern",
+      "mixerUseDesc": "Mixern ersätter ”{profile}”. Ingen mastring läggs ovanpå — du styr hela kedjan.",
+      "mxEq": "Klangbalans",
+      "mx": {
+        "hpf": "Lågavskärning",
+        "denoise": "Brusreducering",
+        "dereverb": "Rumsdämpning",
+        "gate": "Brusgrind",
+        "comp": "Kompressor",
+        "deesser": "Dämpning av s-ljud",
+        "limiter": "Toppbegränsare",
+        "gain": "Slutnivå",
+        "freq": "Frekvens",
+        "reduction": "Reducering",
+        "floor": "Brusgolv",
+        "strength": "Styrka",
+        "threshold": "Tröskel",
+        "ratio": "Förhållande",
+        "attack": "Attack",
+        "release": "Release",
+        "makeup": "Kompensation",
+        "intensity": "Styrka",
+        "ceiling": "Tak",
+        "eqMud": "250 Hz — dämpa grumset",
+        "eqPresence": "3,5 kHz — närvaro",
+        "eqAir": "10 kHz — luft"
+      },
+      "exFormat": "Format",
+      "exWhere": "Var",
+      "fmtDesc": {
+        "mp3": "Liten fil. Passar för webben och delning.",
+        "flac": "Samma kvalitet som inspelningen, mindre fil.",
+        "wav": "Okomprimerat. Störst fil."
+      },
+      "sameFolder": "Samma mapp som inspelningen",
+      "pickFolder": "Välj mapp …",
+      "pickFolderDesc": "USB-minne, Dropbox-mapp, var som helst.",
+      "includeVideo": "Ta med video (MP4)",
+      "includeVideoDesc": "Inspelningen har ett videospår. Utan det här blir exporten bara ljud.",
+      "videoLocksFormat": "Formatet är MP4 så länge videon är med.",
+      "about": "ca {mb} MB",
+      "exported": "Exporterad",
+      "exportAgain": "Exportera i ett annat format",
+      "toLibrary": "Till biblioteket",
+      "exportFailed": "Exporten stoppade. Försök igen."
+    },
+    "export": {
+      "lastEdited": "Senast redigerad",
+      "prepare": "Gör klar",
+      "pickTitle": "Eller välj en annan inspelning",
+      "emptyDesc": "Spela in något först, eller öppna en fil från datorn.",
+      "use": "Välj"
+    },
+    "span": {
+      "hours": "{h} tim",
+      "hoursMinutes": "{h} tim {m} min",
+      "minutes": "{m} min"
+    },
+    "banner": {
+      "errorTitle": "Inspelningen avbröts kl. {time}",
+      "errorShow": "Visa inspelningen",
+      "diskTitle": "Plats för {room}",
+      "diskDesc": "Inspelningen stoppar när disken är full. Frigör utrymme före söndag.",
+      "diskFree": "Frigör utrymme",
+      "missedTitle": "{when} spelades inte in",
+      "missedDesc": "Datorn var avstängd. Automatisk inspelning kräver att den är på eller i viloläge.",
+      "missedWhy": "Vad kan jag göra?",
+      "missedHelp": "Låt datorn stå på, eller låt den sova — SundayRec väcker den själv tio minuter före inspelningen. Är den helt avstängd finns det ingenting som kan starta den. Kolla också att ”Starta automatiskt med datorn” är på i kortet ”Spela in automatiskt” på sidan Inspelning, så att appen är i gång igen efter en omstart.",
+      "globalErrorTitle": "Något gick fel"
+    }
+  },
   "nav": {
     "editor": "Redigera"
   },
   "status": {
     "warning": "Behöver åtgärdas",
+    "warningDevice": "{warning}: {name}",
     "recording": "Spelar in nu",
     "noSchedule": "Ingen inspelning schemalagd",
     "preflightErrors": {
@@ -22,7 +743,9 @@
     "readyNoSchedule": "Klart — lägg upp ett schema så startar inspelningarna automatiskt",
     "wakesBefore": "Datorn väcks automatiskt kl. {time}",
     "nextShort": "nästa",
-    "wakesLead": "({min} min innan)"
+    "recordingCountdown": "{recording} · {next}: {base}",
+    "wakesLead": "({min} min innan)",
+    "wakesNotArmed": "Datorn måste vara på eller i viloläge när inspelningen startar — vi har inte fått någon väckning bekräftad."
   },
   "history": {
     "deleteFailed": "Kunde inte radera"
@@ -47,6 +770,7 @@
     },
     "confirmEmptyBody": "Filerna raderas från disken. Detta kan inte ångras.",
     "deletedAt": "Raderad",
+    "deletedAtLine": "{deletedAt} {when}",
     "today": "i dag",
     "yesterday": "i går",
     "daysAgo": {
@@ -243,6 +967,10 @@
     "errorDiskFull": "Disken är full — frigör utrymme och försök igen",
     "errorFfmpegMissing": "Internt fel: inspelningskomponent saknas — installera om appen",
     "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder",
+    "errorStartTimeout": "Inspelningen kom inte i gång i tid — kontrollera att mikrofonen (och kameran) är ansluten, och att SundayRec har åtkomst under Systeminställningar → Integritet och säkerhet",
+    "errorEngineExited": "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning, och kör Diagnos om det upprepas.",
+    "errorVideoCapture": "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen.",
+    "errorMux": "Ljud och bild kunde inte sättas ihop — båda råfilerna har behållits i lagringsmappen, så ingenting är förlorat.",
     "qualityAlarm": "VARNING: Inspelningen saknar ljud — filen innehåller {m} av {e} sekunder. Kontrollera inspelningen innan du litar på den.",
     "qualityReasons": "Orsak: {r}",
     "qualityAction": "Visa inspelning",

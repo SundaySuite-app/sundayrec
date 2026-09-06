@@ -3,11 +3,14 @@ import {
   buildExportRequest,
   exportLevelSummary,
   jinglesSupportedForFile,
+  toEditorExportRequest,
   EXPORT_PHASES,
   EXPORT_PHASE_ENCODING,
   EXPORT_PHASE_MEASURING,
   type ExportRequestInput,
 } from "./export-params";
+import { defaultProcessing } from "./mixer";
+import type { EditorExportRequest } from "@legacy/bindings/EditorExportRequest";
 
 const base: ExportRequestInput = {
   kind: "audio",
@@ -139,6 +142,127 @@ describe("buildExportRequest", () => {
     expect(params.cutRegions).toEqual([{ start: 10, end: 20 }]);
     expect(params.duration).toBe(3600);
     expect(params.metadata).toEqual({ title: "Søndag" });
+  });
+});
+
+// ── The seam to the GENERATED EditorExportRequest binding ───────────────────
+//
+// `buildExportRequest` alone only proves the OLD Electron-shaped params (this
+// file's own house style: `outputFormat`/`outputBitrate`/`videoFormat`/…) are
+// assembled correctly. It says nothing about the wire the backend actually
+// reads, because nothing here used to be typed against `EditorExportRequest`
+// at all — `api-shim.ts` rebuilt that mapping inline, twice, untyped. These
+// tests chain `buildExportRequest` into `toEditorExportRequest` (the shared
+// mapping `editorExportFile`/`editorExportVideo` both call) and check the
+// result against the REAL binding, so a Rust rename of any
+// `EditorExportRequest` field fails `npm run typecheck` on this file — not
+// just at `toEditorExportRequest`'s own definition.
+describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
+  it("maps a full audio buildExportRequest() onto every EditorExportRequest field", () => {
+    const request = toEditorExportRequest("audio", buildExportRequest(base));
+    expect(request).toEqual({
+      inputPath: base.inputPath,
+      cutRegions: [{ start: 10, end: 20 }],
+      duration: 3600,
+      format: "mp3",
+      outputFolder: "",
+      bitrate: 256,
+      bitDepth: 16,
+      masterPreset: null,
+      introPath: null,
+      outroPath: null,
+      gainDb: null,
+      title: "Søndag",
+      speaker: null,
+      description: null,
+      vocalChainPreset: null,
+      processing: null,
+      channelRepair: null,
+      videoCodec: null,
+    } satisfies EditorExportRequest);
+  });
+
+  it("maps a full video buildExportRequest() — bitrate/bitDepth null, format+videoCodec from the video fields", () => {
+    const request = toEditorExportRequest(
+      "video",
+      buildExportRequest({
+        ...base,
+        kind: "video",
+        videoFormat: "mov",
+        videoCodec: "h265",
+      }),
+    );
+    expect(request).toEqual({
+      inputPath: base.inputPath,
+      cutRegions: [{ start: 10, end: 20 }],
+      duration: 3600,
+      format: "mov",
+      outputFolder: "",
+      bitrate: null,
+      bitDepth: null,
+      masterPreset: null,
+      introPath: null,
+      outroPath: null,
+      gainDb: null,
+      title: "Søndag",
+      speaker: null,
+      description: null,
+      vocalChainPreset: null,
+      processing: null,
+      channelRepair: null,
+      videoCodec: "h265",
+    } satisfies EditorExportRequest);
+  });
+
+  it("sends videoCodec: null on the audio path — it used to be OMITTED entirely", () => {
+    // `EditorExportRequest.videoCodec` is a REQUIRED key on the binding (just
+    // a nullable one — `#[serde(default)]` on the Rust side is what actually
+    // tolerates a missing key, and the ts-rs binding does not reflect that).
+    // `editorExportFile`'s inline request literal never had this key at all
+    // before this seam existed; `"videoCodec" in request` is what that
+    // regression looked like from the outside.
+    const request = toEditorExportRequest("audio", buildExportRequest(base));
+    expect("videoCodec" in request).toBe(true);
+    expect(request.videoCodec).toBeNull();
+  });
+
+  it("nests processing.channelRepair as null — a repair always rides the TOP-LEVEL field, which EditorExportRequest's own doc comment says overrides processing's own", () => {
+    const channelRepairValue = {
+      mode: "duplicateRight",
+      leftDb: 0,
+      rightDb: 0,
+    };
+    const processingValue = defaultProcessing();
+    const request = toEditorExportRequest(
+      "audio",
+      buildExportRequest({
+        ...base,
+        processing: processingValue,
+        channelRepair: channelRepairValue,
+      }),
+    );
+    expect(request.channelRepair).toEqual(channelRepairValue);
+    expect(request.processing).toEqual({
+      ...processingValue,
+      channelRepair: null,
+    });
+  });
+
+  it("turns empty optional strings into null end-to-end, not an empty-string DTO field", () => {
+    const request = toEditorExportRequest(
+      "audio",
+      buildExportRequest({
+        ...base,
+        masterPreset: "",
+        vocalChainPreset: "",
+        introPath: "",
+        outroPath: "",
+      }),
+    );
+    expect(request.masterPreset).toBeNull();
+    expect(request.vocalChainPreset).toBeNull();
+    expect(request.introPath).toBeNull();
+    expect(request.outroPath).toBeNull();
   });
 });
 

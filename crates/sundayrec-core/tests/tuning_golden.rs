@@ -67,8 +67,8 @@
 //! every run, costs no repository space, and needs no `SUNDAYREC_FFMPEG` pin.
 //! The signals are also deliberately built FAR from every feature threshold
 //! (verified margins: ≥1.8 dB on energy, ≥40 Hz on centroid, ≥1100 /s on ZCR,
-//! ≥12 on flux), so the only thing that can move a classification is a constant
-//! moving — not a last-ULP difference in a platform's `sin`.
+//! ≥1.6× on normalised flux), so the only thing that can move a classification
+//! is a constant moving — not a last-ULP difference in a platform's `sin`.
 
 use serde::{Deserialize, Serialize};
 use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
@@ -122,7 +122,9 @@ impl Signal {
     }
 
     /// A sustained three-note chord ⇒ `music` at 0.85.
-    /// Measured: rms ≈ −16 dBFS, zcr ≈ 440–510 /s, centroid ≈ 259 Hz, flux ≤ 1.3.
+    /// Measured: rms ≈ −16 dBFS, zcr ≈ 440–510 /s, centroid ≈ 259 Hz,
+    /// normalised flux ≤ 0.011 (level-invariant since the 2026-08-08 flux
+    /// normalisation).
     /// Clear of `MUSIC_ZCR_MAX_PER_SEC` by ~1000 /s and of
     /// `SPEECH_CENTROID_MIN_HZ` by ~40 Hz.
     fn music(&mut self, secs: f64) -> &mut Self {
@@ -139,7 +141,7 @@ impl Signal {
 
     /// Low-passed noise under a 4 Hz syllabic envelope ⇒ `speech` at 0.9 (all
     /// four features fit). Measured: rms −35…−23 dBFS, zcr 3860–4900 /s,
-    /// centroid 2592–2850 Hz, flux 21–51.
+    /// centroid 2592–2850 Hz, normalised flux 0.565–0.753 at every gain.
     fn speech(&mut self, secs: f64) -> &mut Self {
         let base = self.pcm.len();
         let mut y = 0.0f32;
