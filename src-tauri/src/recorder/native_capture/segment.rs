@@ -1070,6 +1070,21 @@ mod tests {
     ///
     /// Driven through the real `spawn_native_segment` failure path: a device
     /// name no host can resolve.
+    ///
+    /// F2-W7: even though the bogus device name is meant to make `find_device`
+    /// return an error before any stream is built, `spawn_native_segment`'s
+    /// probe still calls real `host.input_devices()` enumeration (on a
+    /// `spawn_blocking` thread) to build the candidate list the fuzzy matcher
+    /// checks the name against — the same WASAPI territory as the three other
+    /// `ignore`d tests in this PR (see `audio::vu::tests::vu_stream_negotiates_max_channels_or_skips`
+    /// for the fullest evidence). This one crashed the process on
+    /// windows-latest in a run where the other three were already gated, so
+    /// gating it too rather than assuming the early-error path makes it safe.
+    /// See PR #231.
+    #[cfg_attr(
+        windows,
+        ignore = "F2-W7: spawn_native_segment's device-probe enumeration crashes the test process on windows-latest (STATUS_ACCESS_VIOLATION) — see PR #231"
+    )]
     #[tokio::test(flavor = "multi_thread")]
     async fn a_failed_spawn_leaves_no_capture_file() {
         let dir = tempfile::tempdir().expect("tempdir");
