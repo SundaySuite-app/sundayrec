@@ -49,6 +49,12 @@ pub mod media;
 // The matrix itself is the unit-tested `sundayrec_core::notify`.
 pub mod notify;
 pub mod platform;
+// F2-W5 — keep-awake blocks. `sundayrec_core::wake::should_block` has decided
+// since the Electron port that the app should hold a power blocker in the last
+// 30 minutes before a start; nothing ever acted on it, so a Windows box woken by
+// our own timer at T−10 could hit the 2-minute unattended-sleep timeout and be
+// asleep again when the recording was due. This module is the missing half.
+pub mod power;
 pub mod preflight;
 pub mod recorder;
 // R3: THE save-folder resolution seam — every "configured folder or the
