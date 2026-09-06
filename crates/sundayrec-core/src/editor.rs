@@ -325,11 +325,43 @@ pub fn is_supported_export_format(fmt: &str) -> bool {
         )
 }
 
+/// The `-c:a aac -b:a 256k [-ar <rate>]` a video export's audio track gets,
+/// shared by the software and hardware codec-arg builders so the two can never
+/// drift apart on the ONE thing F2-8 was about.
+///
+/// `source_rate` pins the encoder's rate via [`output_sample_rate`], asked as
+/// if the target were plain AAC — because it is: `min(source, 48 kHz)`, snapped
+/// to a rate the AAC encoder accepts. `None` (probe failed) emits no `-ar`,
+/// which is the pre-F2-8 behaviour.
+///
+/// Why it matters: with a mastering preset the audio pad reaching the encoder
+/// comes out of `loudnorm`, which runs its internal graph at 192 kHz. Neither
+/// video builder emitted `-ar`, so the AAC encoder was handed that pad and
+/// picked whatever rate it could stand — a silent resample of the one file the
+/// church actually publishes. The audio-only path has pinned `-ar` since
+/// Phase 4 ([`codec_args`]); the video path simply never did.
+fn video_audio_codec_args(source_rate: Option<u32>) -> Vec<String> {
+    let s = |v: &str| v.to_string();
+    let mut a = vec![s("-c:a"), s("aac"), s("-b:a"), s("256k")];
+    if let Some(rate) = output_sample_rate("aac", source_rate) {
+        a.extend([s("-ar"), rate.to_string()]);
+    }
+    a
+}
+
 /// Build the video + audio codec args for a video export, honouring the chosen
 /// container and codec. H.265 carries the `hvc1` tag for QuickTime/Apple
 /// compatibility; `+faststart` (web progressive playback) is only emitted for
 /// the ISO/QuickTime containers that support it (mp4/mov/m4v — NOT mkv).
-pub fn video_codec_args(container: &str, codec: VideoCodec, crf: Option<u8>) -> Vec<String> {
+///
+/// `source_rate` pins the AAC track's sample rate — see
+/// [`video_audio_codec_args`].
+pub fn video_codec_args(
+    container: &str,
+    codec: VideoCodec,
+    crf: Option<u8>,
+    source_rate: Option<u32>,
+) -> Vec<String> {
     let s = |v: &str| v.to_string();
     let crf = crf.unwrap_or(18);
     let mut a: Vec<String> = match codec {
@@ -337,7 +369,7 @@ pub fn video_codec_args(container: &str, codec: VideoCodec, crf: Option<u8>) -> 
         VideoCodec::H265 => vec![s("-c:v"), s("libx265"), s("-tag:v"), s("hvc1")],
     };
     a.extend([s("-preset"), s("veryfast"), s("-crf"), crf.to_string()]);
-    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("256k")]);
+    a.extend(video_audio_codec_args(source_rate));
     if matches!(container, "mp4" | "mov" | "m4v") {
         a.extend([s("-movflags"), s("+faststart")]);
     }
@@ -381,6 +413,7 @@ pub fn videotoolbox_codec_args(
     container: &str,
     codec: VideoCodec,
     bitrate_kbps: u32,
+    source_rate: Option<u32>,
 ) -> Vec<String> {
     let s = |v: &str| v.to_string();
     let mut a: Vec<String> = match codec {
@@ -393,7 +426,10 @@ pub fn videotoolbox_codec_args(
         s("-realtime"),
         s("1"),
     ]);
-    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("256k")]);
+    // The hardware path only swaps the VIDEO encoder — the audio track is the
+    // same AAC, and so is its rate pin. A software retry after a failed
+    // hardware render must land the same file.
+    a.extend(video_audio_codec_args(source_rate));
     if matches!(container, "mp4" | "mov" | "m4v") {
         a.extend([s("-movflags"), s("+faststart")]);
     }
@@ -1946,7 +1982,7 @@ mod tests {
         // (Asserted through `video_codec_args` directly — the `mp4_codec_args`
         // alias it used to go through had no callers and was removed.)
         assert_eq!(
-            video_codec_args("mp4", VideoCodec::H264, None),
+            video_codec_args("mp4", VideoCodec::H264, None, None),
             vec![
                 "-c:v",
                 "libx264",
@@ -1961,6 +1997,69 @@ mod tests {
                 "-movflags",
                 "+faststart"
             ]
+        );
+    }
+
+    // ── F2-8: the video path's AAC rate ──────────────────────────────────────
+
+    #[test]
+    fn video_export_pins_the_aac_rate_to_the_source() {
+        // 48 kHz in, 48 kHz out — the pin exists so `loudnorm`'s internal
+        // 192 kHz graph cannot decide the encoder's rate for us.
+        let a = video_codec_args("mp4", VideoCodec::H264, None, Some(48_000));
+        assert!(a.windows(2).any(|w| w == ["-ar", "48000"]), "{a:?}");
+        // The rate follows the AUDIO pad, so it sits after `-c:a aac`.
+        let ar = a.iter().position(|x| x == "-ar").expect("-ar");
+        let ca = a.iter().position(|x| x == "-c:a").expect("-c:a");
+        assert!(ca < ar, "-ar belongs to the audio codec: {a:?}");
+    }
+
+    #[test]
+    fn video_export_caps_a_high_rate_source_at_48k() {
+        // A 96 kHz master is capped, not preserved: AAC is a LOSSY target and
+        // `output_sample_rate` already says so for every other lossy format.
+        for rate in [96_000, 192_000] {
+            let a = video_codec_args("mp4", VideoCodec::H264, None, Some(rate));
+            assert!(
+                a.windows(2).any(|w| w == ["-ar", "48000"]),
+                "{rate} Hz source must cap at 48 kHz: {a:?}"
+            );
+        }
+        // …and a rate BELOW the ceiling is kept, snapped to one AAC accepts.
+        let a = video_codec_args("mp4", VideoCodec::H264, None, Some(44_100));
+        assert!(a.windows(2).any(|w| w == ["-ar", "44100"]), "{a:?}");
+    }
+
+    #[test]
+    fn video_export_with_an_unknown_rate_emits_no_ar() {
+        // A failed probe must not invent a rate — that is the pre-F2-8
+        // behaviour, and it is the right one when we do not know.
+        let a = video_codec_args("mp4", VideoCodec::H264, None, None);
+        assert!(!a.iter().any(|x| x == "-ar"), "{a:?}");
+        let hw = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, None);
+        assert!(!hw.iter().any(|x| x == "-ar"), "{hw:?}");
+    }
+
+    #[test]
+    fn the_hardware_retry_lands_the_same_audio_track() {
+        // A hardware render that fails is re-run in software. The two argv
+        // differ in the VIDEO encoder and nothing else — including the rate
+        // pin, or the retry would quietly deliver a differently-resampled
+        // audio track than the attempt it replaced.
+        let sw = video_codec_args("mp4", VideoCodec::H264, None, Some(96_000));
+        let hw = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, Some(96_000));
+        let audio_of = |a: &[String]| -> Vec<String> {
+            let at = a.iter().position(|x| x == "-c:a").expect("-c:a");
+            a[at..]
+                .iter()
+                .take_while(|x| *x != "-movflags")
+                .cloned()
+                .collect()
+        };
+        assert_eq!(audio_of(&sw), audio_of(&hw), "sw {sw:?}\nhw {hw:?}");
+        assert_eq!(
+            audio_of(&sw),
+            vec!["-c:a", "aac", "-b:a", "256k", "-ar", "48000"]
         );
     }
 
@@ -1987,18 +2086,18 @@ mod tests {
 
     #[test]
     fn h265_args_carry_hvc1_tag_and_faststart_only_on_iso() {
-        let mov = video_codec_args("mov", VideoCodec::H265, None);
+        let mov = video_codec_args("mov", VideoCodec::H265, None, None);
         assert!(mov.windows(2).any(|w| w == ["-c:v", "libx265"]), "{mov:?}");
         assert!(mov.windows(2).any(|w| w == ["-tag:v", "hvc1"]), "{mov:?}");
         assert!(mov.windows(2).any(|w| w == ["-movflags", "+faststart"]));
         // mkv does NOT support faststart.
-        let mkv = video_codec_args("mkv", VideoCodec::H265, None);
+        let mkv = video_codec_args("mkv", VideoCodec::H265, None, None);
         assert!(!mkv.iter().any(|a| a == "+faststart"), "{mkv:?}");
     }
 
     #[test]
     fn video_codec_args_crf_override() {
-        let a = video_codec_args("mp4", VideoCodec::H264, Some(23));
+        let a = video_codec_args("mp4", VideoCodec::H264, Some(23), None);
         assert!(a.windows(2).any(|w| w == ["-crf", "23"]), "{a:?}");
     }
 
@@ -2012,7 +2111,7 @@ mod tests {
 
     #[test]
     fn videotoolbox_uses_hw_encoder_bitrate_and_realtime() {
-        let a = videotoolbox_codec_args("mov", VideoCodec::H265, 40_000);
+        let a = videotoolbox_codec_args("mov", VideoCodec::H265, 40_000, None);
         assert!(
             a.windows(2).any(|w| w == ["-c:v", "hevc_videotoolbox"]),
             "{a:?}"
@@ -2024,7 +2123,7 @@ mod tests {
         assert!(!a.iter().any(|x| x == "-crf"));
         assert!(!a.iter().any(|x| x == "-preset"));
         // H.264 hardware variant.
-        let h264 = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000);
+        let h264 = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, None);
         assert!(h264.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
     }
 

@@ -2729,13 +2729,20 @@ where
     //     means "emit no -ar" and "channel count unknown", i.e. the pre-Phase-4
     //     behaviour. The video path now probes too — one ffprobe against a
     //     multi-minute render — so the repair guard covers it as well.
+    //
+    //     F2-8: this used to answer `None` for VIDEO, on the reasoning that the
+    //     video path encodes AAC through `video_codec_args` and there is no -ar
+    //     there. That was the bug, not the justification for it: with a
+    //     mastering preset the graph runs through loudnorm's internal 192 kHz,
+    //     and an AAC encoder handed a 192 kHz pad picks the nearest rate it can
+    //     stand — so the sermon a church uploads carried a resampled audio
+    //     track nobody asked for. The rate is probed for video too now, and
+    //     both video codec-arg builders pin `-ar` from it under exactly the
+    //     rule `output_sample_rate` already states for lossy targets:
+    //     min(source, 48 kHz), snapped to a rate AAC accepts.
     bail_if_cancelled(engine)?;
     let probed = load_recording(&req.input_path).await.ok();
-    let source_rate: Option<u32> = if is_video {
-        None // the video path encodes AAC via `video_codec_args` — no -ar there.
-    } else {
-        probed.as_ref().and_then(|i| i.sample_rate)
-    };
+    let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
@@ -3013,9 +3020,14 @@ where
             args.extend(["-filter_complex".into(), fc]);
             args.extend(["-map".into(), v_out, "-map".into(), a_out]);
             args.extend(if use_hw {
-                sundayrec_core::editor::videotoolbox_codec_args(fmt, video_codec, hw_bitrate_kbps)
+                sundayrec_core::editor::videotoolbox_codec_args(
+                    fmt,
+                    video_codec,
+                    hw_bitrate_kbps,
+                    source_rate,
+                )
             } else {
-                sundayrec_core::editor::video_codec_args(fmt, video_codec, None)
+                sundayrec_core::editor::video_codec_args(fmt, video_codec, None, source_rate)
             });
         } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
             // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
@@ -5938,6 +5950,74 @@ mod tests {
             );
             assert_monotonic(&ticks);
             eprintln!("editor export smoke: video landed as {dur:.2}s mp4 ({streams:?})");
+        }
+
+        /// F2-8: the video path's AAC track lands at the pinned rate.
+        ///
+        /// Until F2-8 the seam answered `None` for the video path's
+        /// `source_rate` and neither video codec-arg builder emitted `-ar`, so
+        /// the encoder took whatever the graph handed it — 192 kHz out of
+        /// `loudnorm` with a mastering preset, 96 kHz off a high-rate master
+        /// without one. Here a 96 kHz source is exported to mp4 and the audio
+        /// stream must come back at 48 kHz: the cap `output_sample_rate`
+        /// already states for every OTHER lossy target.
+        #[test]
+        fn video_export_pins_the_aac_rate_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            // A 96 kHz A/V source. mkv + flac audio, because 96 kHz is exactly
+            // the rate an mp4/AAC source container would refuse to hold.
+            let src = dir.path().join("src96.mkv");
+            let gen = std::process::Command::new(&ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=size=320x240:rate=15:duration=2",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=96000:duration=2",
+                    "-shortest",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "flac",
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the 96 kHz A/V source");
+            assert!(
+                gen.status.success(),
+                "96 kHz A/V source generation failed: {}",
+                String::from_utf8_lossy(&gen.stderr)
+            );
+
+            let req = export_request(
+                &src.to_string_lossy(),
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.75, 1.25)],
+                2.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a software video export should succeed");
+            let (codec, rate) =
+                probe_audio_stream(&ffprobe, std::path::Path::new(&out.output_path));
+            assert_eq!(codec, "aac", "the video path encodes AAC");
+            assert_eq!(
+                rate, 48_000,
+                "a video export's AAC track must be pinned at min(source, 48 kHz), \
+                 not left to the encoder's own guess"
+            );
+            eprintln!("editor export smoke: video AAC pinned at {rate} Hz from a 96 kHz source");
         }
 
         /// The mirror hazard: a 96 kHz master must NOT be quietly downsampled.
