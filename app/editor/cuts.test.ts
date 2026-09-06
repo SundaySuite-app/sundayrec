@@ -20,6 +20,7 @@ import {
   deleteCut,
   keepAll,
   redoCut,
+  restoreDraftCuts,
   undoCut,
 } from "./cuts";
 import {
@@ -184,5 +185,47 @@ describe("«Behold bare prekenen» er ikke anvendt når ingenting er kuttet", ()
     applySermon();
     expect(applied.value).toBe(true);
     expect(cuts.value.length).toBeGreaterThan(0);
+  });
+});
+
+// ── (d) F2-12: et utkast klemmes til varigheten, som et nytt kutt ──────────
+
+describe("restoreDraftCuts klemmer til E.duration", () => {
+  // ⚠️ FUNNET, og det er ekte. `loader.ts` filtrerer utkastet bare på
+  // `end > start` før det kalles hit — et kutt som slutter etter varigheten
+  // (fila ble kortet ned mellom økten som skrev utkastet og denne) kom rett
+  // inn i `E.cuts` uklemt. `kept_duration` regnet da et tall STØRRE enn den
+  // ekte varigheten, og framdriften under eksport kunne aldri nå 100 %.
+  //
+  // MUTASJONSPRØVEN: bytt `addCutToList(restored, c.start, c.end, E.duration)`
+  // ut med et rått `restored.push({ start: c.start, end: c.end })`, og den
+  // første og tredje testen blir røde.
+  it("et kutt som slutter etter varigheten klemmes til den", () => {
+    restoreDraftCuts([{ start: 100, end: E.duration + 500 }]);
+    expect(cuts.value).toEqual([{ start: 100, end: E.duration }]);
+  });
+
+  it("et kutt som BEGYNNER etter varigheten blir tomt og forkastes", () => {
+    restoreDraftCuts([{ start: E.duration + 10, end: E.duration + 90 }]);
+    expect(cuts.value).toHaveLength(0);
+    // Og kortet som ville tilbudt gjenopprettingen skal ikke late som noe ble
+    // gjenopprettet.
+    expect(applied.value).toBe(false);
+  });
+
+  it("et kutt godt innenfor varigheten kommer tilbake uendret", () => {
+    restoreDraftCuts([{ start: 600, end: 900 }]);
+    expect(cuts.value).toEqual([{ start: 600, end: 900 }]);
+  });
+
+  it("bare det kuttet som stikker ut klemmes — resten av utkastet er urørt", () => {
+    restoreDraftCuts([
+      { start: 100, end: 200 },
+      { start: E.duration - 50, end: E.duration + 500 },
+    ]);
+    expect(cuts.value).toEqual([
+      { start: 100, end: 200 },
+      { start: E.duration - 50, end: E.duration },
+    ]);
   });
 });
