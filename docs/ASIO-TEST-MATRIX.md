@@ -4,8 +4,11 @@ På Windows tar SundayRec opp lyd via **cpal** (WASAPI som standard, ASIO for pr
 i stedet for ffmpeg/DirectShow. Hele cpal-capture-stien er **HARDWARE-UVERIFISERT**
 til den kjøres på en ekte Windows-maskin. Alt pure (arg-bygging, kanal-ruting,
 generisk sample-konvertering, enhets-merge) er enhetstestet og grønt i CI + på mac;
-capture-stien (cpal-stream → ffmpeg-pipe) kan KUN verifiseres på rigg.
-Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
+capture-stien kan KUN verifiseres på rigg. **Siden 2026-08-01** er det bare
+**video**-økter (og den klassiske ffmpeg-hatchen) som fortsatt piper cpal-PCM
+inn i ffmpeg (`recorder::cpal_capture`) — et lyd-only-opptak skriver direkte
+til WAV via `recorder::native_capture` (cpal → ring → WAV-skriver), ingen
+ffmpeg i selve fangsten. Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ## Bygg (forutsetning)
 
@@ -19,7 +22,8 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 - [ ] **Vanlig USB-mikrofon / lydkort:** velg i Oppsett → «Hvilken lyd?» → ta opp →
       ren fil, ingen «dropped»-advarsel, ingen hakking. Loggen viser
-      `cpal capture starting host=WASAPI`.
+      `recorder: native capture starting host=WASAPI` (lyd-only-stien, ikke
+      `cpal capture starting` — det navnet gjelder video-økter).
 - [ ] **Stabilitet vs gammel dshow:** samme rigg som tidligere ga ustabile opptak
       → bekreft at WASAPI-veien er stabil.
 - [ ] **Lyd + video (WASAPI-lyd + dshow-kamera):** sjekk lepp-synk over et lengre

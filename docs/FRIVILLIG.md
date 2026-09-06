@@ -24,10 +24,14 @@ første gang. Slik åpner du den likevel:
 3. Dette gjør du bare ÉN gang per maskin. Etterpå åpnes appen normalt, også
    fra Dock eller Launchpad.
 
-**På Windows:** installasjonsfilen er ikke signert ennå, så Windows advarer
-med «SmartScreen beskyttet PC-en din».
+**På Windows:** en utgivelse kan ha to installasjonsfiler liggende —
+`SundayRec_x.y.z_x64-setup.exe` og en `.msi`-fil. **Velg `-setup.exe`.** Den
+spør ikke etter et administratorpassord; `.msi`-filen kan gjøre det selv om
+den som installerer ikke er administrator på maskinen — akkurat det en
+frivillig på en låst kirke-PC ikke kan svare på. Installasjonsfilen er heller
+ikke signert ennå, så Windows advarer med «SmartScreen beskyttet PC-en din».
 
-1. Kjør installasjonsfilen.
+1. Kjør `-setup.exe`-filen (ikke `.msi`).
 2. Trykk **«Mer info»**, og deretter **«Kjør likevel»**.
 3. Følg installasjonsveiviseren som vanlig.
 

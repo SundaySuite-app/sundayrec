@@ -10,15 +10,19 @@ ikke lar seg presse sammen.
 
 **Forutsetninger:** en Mac og en Windows-boks, begge med SundayRec
 installert og et ekte lydoppsett (USB-mikrofon eller mikser) tilkoblet;
-tilgang til terminal på Mac-en (for `kill -9`); en kopi-vennlig ekte
+tilgang til terminal på Mac-en (for `kill -9`) og til Oppgavebehandling +
+`%APPDATA%`-mappa på Windows-boksen; en kopi-vennlig ekte
 `sundayrec.sqlite` det er greit å teste mot; nok tid til at maskinen kan
 sovne og våkne av seg selv minst én gang.
 
 Kryss av etter hvert. Et punkt som IKKE stemmer med forventet resultat er en
 feilrapport, ikke en avkrysning — noter det og fortsett til neste; ikke la
-ett rødt punkt stoppe resten av dagen.
+ett rødt punkt stoppe resten av dagen. Der et punkt er født av en bestemt
+F2-fiks (PR-nummer i parentes), står forventet resultat **FØR** fiksen først
+(så du vet hva et regresjonsfunn ville sett ut som) og **ETTER** — det du
+faktisk skal se nå — sist.
 
-## Mac-riggen
+## Mac-boksen
 
 - [ ] **(a) Trekk mikseren midt i opptaket.** Start et opptak, la det gå et
       minutt, trekk ut USB-kabelen til mikseren/mikrofonen og **la den stå
@@ -54,10 +58,32 @@ ett rødt punkt stoppe resten av dagen.
       har ikke mistet noe som lå der fra før.
 - [ ] **(e) Vekketest.** Skru på «Vekk maskinen fra dvale» (gearikonet →
       Avansert), og bruk **«Test vekking om 2 min»** på kortet «Flere tider
-      og spesialopptak». La maskinen sovne (eller sovne den selv).
-      **Forventet:** maskinen våkner av seg selv rundt to minutter senere,
-      uten et administratorpassord-spørsmål (med mindre appen selv har
-      advart om at akkurat denne maskinen trenger et).
+      og spesialopptak». La maskinen sovne (eller sovne den selv). Rett
+      etter at testen har løst ut (eller du har trykket «Avbryt»), kjør
+      `pmset -g sched` i Terminal.
+      **Forventet FØR fiksen:** «Test vekking»/«Avbryt» gikk rett på pmset og
+      **erstattet** hele vekkeplanen under samme eier (`SundayRec`) — en
+      test lørdag kunne slette søndagens ekte vekking uten varsel, og
+      heltekortet fortsatte å vise «armert» etterpå fordi det leser appens
+      egen forventning, ikke OS-ets svar.
+      **Forventet ETTER (F2-W3, #235):** maskinen våkner av seg selv rundt to
+      minutter senere, uten et administratorpassord-spørsmål (med mindre
+      appen selv har advart om at akkurat denne maskinen trenger et) — OG
+      `pmset -g sched` lister søndagens vekking under eieren `SundayRec`
+      **både før og etter** testen. Testens egen oppføring bruker en egen
+      eier (`SundayRec-test`) og er borte etter «Avbryt»; søndagens er
+      urørt.
+- [ ] **(e, fortsettelse) Er `cancelall` trygg for eieren den ber om?** På
+      samme rigg: `pmset schedule wake "<en dato/klokke 2 min fram>" Test`,
+      deretter `pmset schedule cancelall SundayRec`, og les `pmset -g sched`
+      mellom hvert steg.
+      **Ubevist (#235s «utenfor scope»):** `man pmset` sier eieren er en
+      valgfri hale til `type date+time`, men ingen har fått bekreftet på en
+      ekte Mac om `cancelall SundayRec` faktisk filtrerer på eier (kun
+      `SundayRec`-oppføringer forsvinner), kansellerer ALT uansett eier (også
+      testens `Test`-oppføring), eller feiler stille. Svaret avgjør om den
+      gamle, delte-eier-modellen noensinne var trygg på denne maskinen.
+      Noter resultatet i `docs/NEEDS-RICHARD.md`.
 - [ ] **(g) #111 — lyttetest med ulik inngangsgain.** Ta opp 3–4 korte klipp
       av den samme typen lyd (tale er nok) med tydelig ulik inngangsgain —
       stille, normal, kraftig. Lytt gjennom dem, og se spesielt etter om tale
@@ -68,6 +94,24 @@ ett rødt punkt stoppe resten av dagen.
       10 dB varmere gir omtrent 3× flux), og bare et ekte øre på ekte
       opptak kan bekrefte at terskelen ikke er kalibrert for kun ett
       lydnivå. Noter resultatet i #111 uansett utfall.
+- [ ] **(tillegg — #252, macOS-siden av holde-våken-blokken) Holder maskinen
+      seg våken før et planlagt opptak?** Sett «Sove etter» kort
+      (Systeminnstillinger → Batteri/Strømadapter → 1 min), legg inn en slot
+      15 minutter fram, og la maskinen stå.
+      **Forventet FØR fiksen:** avgjørelsen om å holde maskinen våken var
+      portet fra Electron (`wake.rs`s `should_block`), men HANDLINGEN var
+      det aldri — ingen `IOPMAssertionCreateWithName`-kall fantes. En maskin
+      vekket av `pmset` ti minutter før gudstjenesten kunne sovne igjen på
+      den vanlige idle-timeren før opptaket i det hele tatt startet.
+      **Forventet ETTER (F2-W5, #252):** maskinen står våken forbi
+      1-minutts-grensa når klokka passerer T−30 min, og opptaket starter i
+      tide. Kjør `pmset -g assertions` i vinduet: den skal liste eieren
+      `SundayRec` med grunnen «scheduled recording is due», og under selve
+      opptaket samme eier med grunnen «recording in progress» — ingen av dem
+      igjen etterpå. Ta med i samme runde: skjermen skal FORTSATT få sove
+      (blokken ber med vilje ikke om en skjerm-holdt-våken-variant), og sjekk
+      om oppførselen er den samme på batteri som på nettstrøm (respekten for
+      `PreventSystemSleep` er ikke garantert lik på batteri).
 - [ ] **(h) Et helt ekte 90-minutters opptak.** Skru på «Del opp lange
       opptak» med en kort grense (f.eks. 30 min) og ta opp en hel ekte
       gudstjeneste eller tilsvarende lengde med tale.
@@ -95,7 +139,185 @@ ett rødt punkt stoppe resten av dagen.
       (skal finalisere pent med «device_disconnected», ikke henge).
       **Forventet:** alle fire består som beskrevet i den fulle matrisen —
       dette er ikke en erstatning for den, bare det minste utvalget som hører
-      hjemme på en dag som ellers handler om Mac-riggen.
+      hjemme på en dag som ellers handler om Mac-boksen.
+- [ ] **(w1) Windows-oppdatering installerer seg selv.** Fra en installert
+      NSIS-beta på Windows, med Oppgavebehandling åpen: gearikonet →
+      Avansert (eller banneret) → «Se etter oppdateringer» → «Last ned og
+      installer».
+      **Forventet FØR fiksen:** vinduet forsvant, ingen installer-dialog kom,
+      og appen startet ikke på nytt — neste gang appen ble åpnet, var det
+      fortsatt den gamle versjonen, uten en eneste feilmelding eller
+      logglinje (årsak: appens eget ffmpeg-jobbvern la installeren i samme
+      Job Object som SundayRec selv, og oppdateringspluginens `exit(0)` etter
+      utpakking tok installeren med seg i fallet).
+      **Forventet ETTER (F2-W1, #243):** en synlig, passiv installer kjører,
+      `SundayRec_*_x64-setup.exe` blir IKKE drept i Oppgavebehandling, og
+      appen kommer tilbake i den nye versjonen. `update-relaunch.log`
+      (i `%APPDATA%`) skal ha en linje som starter med `installing` og
+      slutter med `kill-on-close disarmed: true`.
+- [ ] **(w2) Oppdatering er sperret mens det tas opp.** Start et opptak, gå
+      til banneret / gearikonet → Avansert.
+      **Forventet FØR fiksen:** «Last ned og installer» var trykkbar midt i
+      et opptak, og ett klikk kjedet rett videre til omstart — ingen
+      advarsel om at et opptak gikk.
+      **Forventet ETTER (F2-W1, #243):** knappen er grå med forklaringen
+      «Kan ikke oppdatere mens det tas opp», både i banneret og under
+      Avansert. Stopp opptaket → knappen virker igjen med én gang.
+- [ ] **(w3) Ingen svarte konsollvinduer.** Gjennom én økt på Windows, se
+      etter et svart/konsoll-vindu ved hvert av disse seks stegene: 1) start
+      appen og enhetslisten, 2) start et lydopptak, 3) start et opptak MED
+      video, 4) stopp opptaket (leverings-transkodingen), 5) last et opptak i
+      Redigering og kjør en eksport, 6) bruk «Test vekking».
+      **Forventet FØR fiksen:** et svart konsollvindu ved hver enhetsliste og
+      hver start; ett stående i minuttvis under leverings-transkodingen; med
+      video, ett stående HELE gudstjenesten — og lukker en frivillig det ved
+      et uhell, dør opptaket (ffmpeg mottar `CTRL_CLOSE_EVENT`).
+      **Forventet ETTER (F2-W2, #237):** ingen av de seks stegene viser noe
+      konsollvindu, noen gang.
+- [ ] **(w5) Samme holde-våken-blokk, Windows-siden.** Sett «Sove etter» til
+      **1 minutt** (Innstillinger → System → Strøm), legg inn en slot
+      **15 minutter fram**, og la maskinen stå.
+      **Forventet FØR fiksen:** samme hull som på Mac-en (se Mac-boksens
+      tillegg — #252): planleggerens `SetWaitableTimer` vekker maskinen ti
+      minutter før start, men Windows' «System unattended sleep timeout»
+      (standard 2 min) tar den tilbake til dvale før noe har åpnet en power
+      request — ingen `SetThreadExecutionState`-kall fantes.
+      **Forventet ETTER (F2-W5, #252):** maskinen står våken forbi
+      1-minutts-grensa når klokka passerer T−30 min, og opptaket starter.
+      `powercfg /requests` skal vise **SundayRec** under `SYSTEM` i
+      mellomtiden — og IKKE 40 minutter før start. Skjermen skal fortsatt få
+      sove (blokken bruker `ES_SYSTEM_REQUIRED`, ikke `ES_DISPLAY_REQUIRED`).
+- [ ] **(w6) Drep appen midt i et videoopptak.** Start et videoopptak
+      (kamera + lyd), drep prosessen i Oppgavebehandling midt i økten, start
+      appen på nytt.
+      **Forventet FØR fiksen:** cpal-videostien på Windows skrev rett til
+      brukerens `.mp4` uten noe gjenopprettingsmanifest — en krasj (eller et
+      strømbrudd, en omstart fra Windows Update, eller det lukkbare
+      konsollvinduet fra (w3)) ga en UAVSPILLBAR fil, og appen visste ikke
+      ved neste oppstart at opptaket i det hele tatt hadde eksistert.
+      Gudstjenesten var borte, uten et ord.
+      **Forventet ETTER (F2-W4, #246):** en SPILLBAR fil dukker opp i
+      Redigerings historikk ved neste oppstart, merket «Gjenopprettet etter
+      uventet avslutning», og den skjulte `.sundayrec-capture-*`-mappa er
+      borte etterpå.
+- [ ] **(w6, fortsettelse) Ta med i samme runde:** (a) et helt normalt
+      videoopptak stoppet pent — filen skal ligge som vanlig mp4, og den
+      skjulte mappa skal være ryddet; (b) lepp-synk over en hel gudstjeneste
+      på denne stien er fortsatt HARDWARE-UVERIFISERT (uendret av #246 — det
+      er bare krasjsikkerheten som er ny, ikke synk-kvaliteten).
+- [ ] **(tillegg — #235, Windows-siden av vekketesten).** Sett en ekte
+      ukentlig vekketid noen minutter fram, bruk «Test vekking om 2 min», la
+      testen løse ut eller trykk «Avbryt», og vent til den EKTE planlagte
+      tiden.
+      **Forventet FØR fiksen:** testens `timers.clear()` lukket ALLE
+      `SetWaitableTimer`-håndtak samtidig — søndagens vekking kunne dø
+      sammen med testens egen.
+      **Forventet ETTER (F2-W3, #235):** testen og den ekte planen ligger i
+      hvert sitt `TimerSlot` (Schedule/Test); maskinen skal våkne på den ekte
+      tiden uansett hvor mange ganger testknappen er brukt i mellomtiden. 👤
+      Windows har ingen `pmset -g sched`-motsvarighet for å inspisere en
+      armert timer utenfra — beviset her er rent behaviorelt (våkner den,
+      eller gjør den ikke).
+- [ ] **(tillegg — #231) Fire lydtester som bare kan klassifiseres på ekte
+      Windows-maskinvare.** Kjør `cargo test --workspace` i `src-tauri` på
+      selve riggen (ikke CI), med en ekte mikrofon tilkoblet:
+      `audio::vu::tests::vu_stream_negotiates_max_channels_or_skips`,
+      `recorder::native_capture::segment::tests::native_capture_records_two_seconds_or_skips`,
+      `…preroll::tests::native_preroll_buffers_meters_and_harvests_or_skips`,
+      `…segment::tests::a_failed_spawn_leaves_no_capture_file`.
+      **Forventet i CI (uten rigg):** alle fire er
+      `#[cfg_attr(windows, ignore = "F2-W7: … — se PR #231")]` — CI-runnerens
+      image krasjer (`STATUS_ACCESS_VIOLATION`) så snart de faktisk BYGGER en
+      cpal-strøm (`IAudioClient::Initialize`), etter alt å dømme fordi
+      runner-imaget mangler en fungerende Windows-lydtjeneste.
+      **Forventet på riggen:** alle fire kjører og består — ikke bare hopper
+      over. Består de ikke her heller, er det et ekte funn, ikke et
+      rigg-artefakt; skriv det opp mot #231.
+- [ ] **(w14) Unødvendig ASIO-sveip ved vanlig opptak.** Windows-maskin med
+      **én ASIO-driver installert** (ASIO4ALL holder) og en **WASAPI-enhet
+      valgt** i SundayRec.
+      **Forventet FØR fiksen:** hver opptaksstart, hver enhetsliste-åpning og
+      kapasitetsbenken kalte `is_asio_device` ubetinget — det sveipet ALLE
+      installerte ASIO-drivere (`host.devices()` → `ASIOInit` per driver) selv
+      når en helt vanlig WASAPI-enhet var valgt. Kunne poppe et driverpanel
+      opp midt i opptaksstart, eller ta lydkortet et ASIO-opptak skulle bruke
+      to linjer senere — verst på et planlagt opptak ingen står ved.
+      **Forventet ETTER (F2-W8, #253):** fire ting, i samme økt. 1) Ta tiden
+      fra klikk til at teller/VU løper, og sammenlign med v0.18.0-beta.1 —
+      startforsinkelsen skal være borte. 2) Driverpanelet popper ikke opp ved
+      opptaksstart lenger. 3) ASIO-stien er fortsatt intakt: velg
+      ASIO-enheten i velgeren og trykk opptak innen 30 s — diagnose viser
+      `set_audio_engine: asio`, og alle kanalene er der. 4) Ferskhet: plugg
+      inn et ASIO-grensesnitt mens appen står åpen, vent over 30 s, åpne
+      velgeren igjen — det skal dukke opp; kjør diagnose og den ser det med
+      én gang (den dropper 30 s-memoet først).
+
+_(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
+runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
+logger, MSI/UAC på stable, m.fl. Fylles inn her når de respektive PR-ene er
+merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
+
+## Ørene
+
+Lydkjede-funn som verken CI eller en sidecar-måling kan avgjøre alene — de
+trenger et ekte øre på ekte opptaksmateriale (ikke bare et lavfi-testsignal).
+Kjør disse på Mac- eller Windows-boksen, med hva du har av ekte
+gudstjeneste-opptak eller -materiale for hånden.
+
+- [ ] **(i–ii) Mastringen holder løftet — lineær, ikke gain-ridd.** Eksporter
+      ÉN ekte gudstjeneste med presetet `speech-clear` fra denne grenen, og
+      lytt etter **pumping** (nivået som kryper opp i pausene og ned igjen
+      når stemmen kommer — det er gain-rideren). Sjekk deretter
+      eksport-loggens `Normalization Type`-linje, og prøv en fil med harde
+      topper (mikrofonhåndtering, en dør) for å se om kvitteringen sier
+      «(begrenset av topper)».
+      **Forventet FØR fiksen:** loudnorm-presetene lovet en «lineær»
+      forsterkning, men pass 2 sendte presetets LRA/TP-tall rått uten å
+      sjekke om lineær faktisk var oppnåelig — en preken med normalt
+      dynamisk spenn falt nesten alltid tilbake til ffmpegs 3-sekunders
+      gain-rider, stille, uten at kvitteringen sa noe om det.
+      **Forventet ETTER (F2-C-B, #245):** nivået ligger stille, ingen
+      pumping; loggens `Normalization Type` sier `Linear` for normalt
+      materiale (sier den `Dynamic`, kommer en `warn!` ved siden av — da er
+      MODELLEN feil, ikke bare uflaks); en fil med harde topper får en
+      lavere, ærlig rapportert LUFS med «(begrenset av topper)» i
+      kvitteringen i stedet for at loudnorm komprimerer den ned til målet.
+- [ ] **(iii) Mikser-default etter dB-fiksen.** Rediger → «Avansert: åpne
+      mikseren» på et ekte prekenopptak, la standardverdiene stå (kompressor
+      på, terskel −18 dB, makeup 2 dB), eksporter, og les integrert loudness + true peak mot en eksport gjort med v0.17.x. Ta med en runde på
+      gate-slideren i bunn (−70 dB).
+      **Forventet FØR fiksen:** makeup/limiter/gate ble tolket LINEÆRT i
+      stedet for i dB — 2 dB makeup ga i praksis +6 dB, en 0 dBTP-takgrense
+      slapp gjennom med +1 dB på kjøpet, og gate-slideren i bunn (−70 dB) var
+      i praksis helt åpen (stengte aldri, for noe).
+      **Forventet ETTER (F2-C-A, #238):** samme materiale gir omtrent 4 dB
+      mindre gain inn i loudnorm, true peak lander på −1,0 dBTP der den før
+      lå på 0,0, og gate-slideren i bunn stenger nå faktisk mellom
+      setningene.
+- [ ] **(iv) Knappetrykket midt i en akkord.** Trykk opptak midt i musikk —
+      prøv én gang med noe stille (lettest å høre et klikk), én gang med
+      orgel på full styrke (der marginen kostet mest).
+      **Forventet FØR fiksen:** forhåndsbufferen kastet alltid de siste
+      300 ms før knappetrykket (en ffmpeg-motor-sikkerhetsmargin arvet
+      ubetinget av den native lydstien), og skjøten mot selve opptaket var
+      et loddrett PCM-sprang — hørbart som et klikk.
+      **Forventet ETTER (F2-C-D, #247):** hullet foran knappetrykket er
+      omtrent 300 ms kortere (nesten hele forhåndsbufferen er med), og
+      skjøten klikker ikke — klippet rampes ned til digital null de siste
+      10 ms.
+
+**Ikke en egen sjekk lenger:** kanaldiagnosen (dødt/knitrende kabel,
+kanal-duplisering) var tidligere en lytte-sjekk, men er nå fullt
+mutasjonstestet mot ekte ffmpeg-sidecar-målinger på kjente L/R-nivåer
+(F2-C-C, #248) — se PR-teksten for måletabellen. Den trenger ikke et øre på
+riggdagen lenger.
+
+_(v–ix hører til resten av lydkjede-gjennomgangen (rapport C) — ingen av dem
+endte som en kodefiks. De ble eierspørsmål i stedet, og står i
+`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)»:
+`-realtime 1` for VideoToolbox-enkoderen, en egen «Kirke»-mastringsprofil, og
+automatisk monolevering ved høyt korrelerte L/R-kanaler. Ingen av dem har noe
+å rigg-teste før eieren har bestemt seg og en PR har landet.)_
 
 ## Etterpå
 
