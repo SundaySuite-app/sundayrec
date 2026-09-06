@@ -1209,6 +1209,16 @@ async fn spawn_capture(
     }
 }
 
+/// The keep-awake block a live session holds (F2-W5).
+///
+/// Its own function so the seam can be driven by a fake blocker in
+/// `crate::power`'s tests — `run_session` itself needs an `AppHandle`, a device
+/// and an ffmpeg, so the three shapes a session ends in (returns, fails early,
+/// is aborted by `stop()`'s backstop) are asserted there instead.
+pub(crate) fn session_keep_awake() -> crate::power::PowerBlock {
+    crate::power::hold("recording in progress")
+}
+
 /// The supervisor: owns the [`RecordingSession`] + [`RecorderState`] and runs
 /// the whole recording, segment by segment, across reconnects and splits, then
 /// writes one history row.
@@ -1229,6 +1239,12 @@ async fn run_session(
     state: StateWriter,
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 ) {
+    // F2-W5: hold the machine awake for the WHOLE session — this binding is
+    // dropped (and the block released) by the normal return, by every early
+    // `break 'run`, and by `stop()`'s backstop aborting this task. It is taken
+    // before the ready handshake, so it overlaps the scheduler's own block and
+    // leaves no instant where nothing is asking the OS to stay up.
+    let _keep_awake = session_keep_awake();
     // The backend can demote itself once: native start failure → ffmpeg (the
     // automatic escape hatch — a recording must start even if cpal can't).
     let mut backend = backend;

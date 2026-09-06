@@ -61,11 +61,12 @@ use sundayrec_core::schedule::{
     MISSED_WINDOW_MS,
 };
 use sundayrec_core::settings::Settings;
-use sundayrec_core::wake::background_wake_log_action;
+use sundayrec_core::wake::{background_wake_log_action, should_block};
 
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::notify::APP_TITLE;
+use crate::power::KeepAwake;
 use crate::recorder::engine::RecorderEngine;
 use crate::settings;
 use crate::util::lock_recover;
@@ -279,6 +280,22 @@ impl SchedulerEngine {
 //   Supervisor loop
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Open or close the supervisor's keep-awake window for this pass (F2-W5).
+///
+/// One line, but its own function for two reasons: the supervisor cannot be
+/// unit-tested (it needs an `AppHandle` and a db pool), and a copy of this
+/// expression written in a test would be free to drift from the one that ships.
+/// The tests below call exactly this.
+///
+/// The decision is [`should_block`] — "is any upcoming start within
+/// [`BLOCKER_SOON_MS`](sundayrec_core::wake::BLOCKER_SOON_MS)" — and it is
+/// re-asked every pass, so the window closes on its own when the start passes
+/// without one (the app was hidden, the slot was deleted, the machine came back
+/// late) rather than needing a matching release somewhere.
+fn drive_keep_awake(keep: &mut KeepAwake, upcoming: &[NaiveDateTime], now: NaiveDateTime) {
+    keep.set(should_block(upcoming, now));
+}
+
 async fn supervisor(
     app: AppHandle,
     notify: Arc<Notify>,
@@ -293,6 +310,14 @@ async fn supervisor(
     // `scheduler_check_missed` exists but nothing invoked it — the net was
     // built and never wired (found in the 2026-08-04 night sweep).
     let mut startup_missed_check_done = false;
+    // F2-W5: the supervisor's own keep-awake block, opened and closed by
+    // [`drive_keep_awake`] once per pass. It lives OUTSIDE the loop because it
+    // has to survive from one pass to the next — a block re-taken every pass
+    // would be a stack, and one dropped at the end of every pass would leave
+    // the machine free to sleep between two ticks. If this task dies, its
+    // `Drop` releases and the re-spawned supervisor re-opens the window on its
+    // first pass.
+    let mut keep_awake = KeepAwake::new(crate::power::blocker(), "scheduled recording is due");
     loop {
         let pool = match app.try_state::<Db>() {
             Some(db) => db.pool.clone(),
@@ -335,14 +360,24 @@ async fn supervisor(
         *lock_recover(&next_cache) = nxt;
         let _ = app.emit(NEXT_EVENT, nxt.map(fmt_dt));
 
+        let upcoming = upcoming_dates(settings.active_slots(), &kept, now, WAKE_HORIZON_DAYS);
+
+        // F2-W5: keep the machine awake while a start is imminent. Deliberately
+        // NOT inside the `wake_from_sleep` branch below — the two answer
+        // different questions. Waking a sleeping machine is opt-in and can need
+        // an admin prompt; *not falling asleep* in the half hour before a start
+        // the operator has scheduled is unconditional, and it is the leg the
+        // wake mechanism itself depends on: a Windows box our timer resumes at
+        // T−10 min is subject to the 2-minute unattended-sleep timeout, so
+        // without this it can be asleep again before the recording is due.
+        drive_keep_awake(&mut keep_awake, &upcoming, now);
+
         // Schedule OS wake-from-sleep timers for upcoming recordings (Fase 5.2).
         // Non-admin (no prompt) from the supervisor — the WakeEngine dedups so an
         // unchanged schedule is a cheap no-op. A user-initiated reschedule (which
         // may prompt for admin) goes through the `wake_reschedule` command.
         if settings.wake_from_sleep {
             if let Some(wake) = app.try_state::<crate::wake::WakeEngine>() {
-                let upcoming =
-                    upcoming_dates(settings.active_slots(), &kept, now, WAKE_HORIZON_DAYS);
                 let res = wake.reschedule(&upcoming, now, true, false).await;
                 // Best-effort from the supervisor (non-admin, no prompt) — but
                 // "best-effort" used to mean `permission`/`disabled`/`cancelled`
@@ -1257,6 +1292,121 @@ mod tests {
             stop: stop.into(),
             device_id: None,
         }
+    }
+
+    // ── F2-W5: the keep-awake window ────────────────────────────────────────
+    //
+    // Driven through `drive_keep_awake` — the very expression the supervisor
+    // runs — over a counting fake blocker, with `now` injected. What the OS
+    // does with the block is riggpunkt (w5); what is asserted here is that the
+    // window opens once, stays one block wide, and closes.
+
+    /// The supervisor's own `upcoming_dates(...)` call, for a Sunday-11:00
+    /// church, evaluated at `now`.
+    fn upcoming_at(now: NaiveDateTime) -> Vec<NaiveDateTime> {
+        upcoming_dates(&[sunday_slot()], &[], now, WAKE_HORIZON_DAYS)
+    }
+
+    fn keep_awake_for(fake: &Arc<crate::power::FakeBlocker>) -> KeepAwake {
+        KeepAwake::new(
+            Arc::clone(fake) as Arc<dyn crate::power::PowerBlocker>,
+            "scheduled recording is due",
+        )
+    }
+
+    #[test]
+    fn a_start_five_minutes_out_opens_the_keep_awake_window() {
+        // The gap this whole finding is about: the machine has been woken (or
+        // never slept), the recording is minutes away, and nothing is holding a
+        // power request because no ffmpeg has started yet.
+        let fake = crate::power::FakeBlocker::new();
+        let mut keep = keep_awake_for(&fake);
+        let now = dt("2026-06-07 10:55");
+        drive_keep_awake(&mut keep, &upcoming_at(now), now);
+        assert!(keep.is_held());
+        assert_eq!(fake.active(), 1);
+        assert_eq!(
+            fake.reasons(),
+            vec!["scheduled recording is due"],
+            "the log line has to say which owner is keeping the machine up"
+        );
+    }
+
+    #[test]
+    fn a_start_beyond_the_window_holds_nothing() {
+        // BLOCKER_SOON_MS is 30 minutes; 50 minutes out the machine is free to
+        // sleep — the wake timer, not this block, is what brings it back.
+        let fake = crate::power::FakeBlocker::new();
+        let mut keep = keep_awake_for(&fake);
+        let now = dt("2026-06-07 10:10");
+        drive_keep_awake(&mut keep, &upcoming_at(now), now);
+        assert!(!keep.is_held());
+        assert_eq!(fake.acquired(), 0);
+    }
+
+    #[test]
+    fn two_ticks_inside_the_window_still_hold_exactly_one_block() {
+        // The supervisor re-evaluates every MAX_SUPERVISOR_SLEEP_MS (5 min) and
+        // on every settings save, so one 30-minute window is at least six
+        // passes. Six blocks would be six OS assertions / six holder threads,
+        // released to the wrong depth.
+        let fake = crate::power::FakeBlocker::new();
+        let mut keep = keep_awake_for(&fake);
+        for t in ["2026-06-07 10:35", "2026-06-07 10:40", "2026-06-07 10:55"] {
+            let now = dt(t);
+            drive_keep_awake(&mut keep, &upcoming_at(now), now);
+        }
+        assert!(keep.is_held());
+        assert_eq!(fake.acquired(), 1, "three passes, one block");
+        assert_eq!(fake.active(), 1);
+    }
+
+    #[test]
+    fn the_window_closes_once_the_start_has_passed() {
+        // A start that came and went (fired, or missed) must not leave the
+        // machine pinned awake — the next Sunday is 7 days out, which is well
+        // outside the window.
+        let fake = crate::power::FakeBlocker::new();
+        let mut keep = keep_awake_for(&fake);
+        let before = dt("2026-06-07 10:55");
+        drive_keep_awake(&mut keep, &upcoming_at(before), before);
+        assert!(keep.is_held());
+
+        let after = dt("2026-06-07 11:05");
+        drive_keep_awake(&mut keep, &upcoming_at(after), after);
+        assert!(!keep.is_held(), "the block must not outlive its window");
+        assert_eq!(fake.active(), 0);
+        assert_eq!(fake.acquired(), 1, "closing must not have re-acquired");
+    }
+
+    #[test]
+    fn an_empty_schedule_never_opens_the_window() {
+        // «Ta opp automatisk» off ⇒ `active_slots()` is empty ⇒ nothing
+        // upcoming ⇒ a laptop the volunteer took home still sleeps.
+        let fake = crate::power::FakeBlocker::new();
+        let mut keep = keep_awake_for(&fake);
+        let now = dt("2026-06-07 10:55");
+        drive_keep_awake(&mut keep, &[], now);
+        assert!(!keep.is_held());
+        assert_eq!(fake.acquired(), 0);
+    }
+
+    #[test]
+    fn a_dated_special_opens_the_window_too() {
+        // Specials go through the same `upcoming_dates` list, so a Christmas
+        // Eve service is covered without a second code path.
+        let fake = crate::power::FakeBlocker::new();
+        let mut keep = keep_awake_for(&fake);
+        let now = dt("2026-12-24 15:40");
+        let upcoming = upcoming_dates(
+            &[],
+            &[special("2026-12-24", "16:00", "17:00", "Julaften")],
+            now,
+            WAKE_HORIZON_DAYS,
+        );
+        drive_keep_awake(&mut keep, &upcoming, now);
+        assert!(keep.is_held());
+        assert_eq!(fake.active(), 1);
     }
 
     #[test]
