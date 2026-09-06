@@ -63,3 +63,30 @@
   font-size: var(--fs-base);
   color: var(--ink-2);
 }
+
+/*
+ * F2-T4: skjermen raden eier, foldet ut PÅ STEDET.
+ *
+ * `grid-column: 1 / -1` — under nummeret også, ikke innrykket til høyre for
+ * det. Kroppen er en hel skjerm (enhetsliste, kanalbrikker, VU-måler), og en
+ * 28 px kolonne stjålet fra bredden for å holde et innrykk ville presset den
+ * i en liste som allerede står i en smal spalte.
+ *
+ * Skillelinjen er det som sier at kroppen HØRER TIL raden over og ikke er et
+ * nytt kort — samme grep, og samme grunn, som `ControlCard`s `.body`.
+ * `padding-top` og ingen `margin-top`: rutenettets egen `gap` (--sp-4) ligger
+ * allerede over streken.
+ */
+.panel {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-3);
+}
+
+/* Kroppen får fokus når den åpner seg (se DecisionCard.tsx). Ringen er den
+   samme gullringen resten av appen bruker — uten den ville fokus flyttet seg
+   til noe usynlig, som er verre enn ikke å flytte det. */
+.panel:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}

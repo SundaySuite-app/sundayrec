@@ -93,12 +93,18 @@ export function isGatedStep(index: number): boolean {
 /**
  * R6: steget «Fortsett oppsettet»-chippen skal gå tilbake til.
  *
- * `remembered` er `firstRunReturn.value` i `FirstRun.tsx`: hva `firstRunIndex`
- * stod i da «Sett opp» sist forlot sekvensen, eller `null` hvis det aldri har
- * skjedd denne økten. Sjekklisten er i dag det ENE stedet «Sett opp» finnes —
- * å folde det enkelte spørsmålet ut INNE i sekvensen i stedet er alternativet
- * (kortene utfoldet) som er M/L og utsatt, se PR-teksten — så sjekklisten er
- * også det ene fornuftige stedet å falle tilbake til når ingenting er husket.
+ * `remembered` er `firstRunReturn.value` i `FirstRun.tsx`: posisjonen sekvensen
+ * sist STO i, eller `null` hvis den aldri har vært åpen denne økten.
+ *
+ * ⚠️ F2-T4 flyttet hvem som skriver den. Fram til nå var det sjekklistens
+ * «Sett opp», som var det ene stedet man kunne forlate sekvensen fra — og som
+ * derfor alltid husket sjekklisten selv. Nå folder radene seg ut PÅ STEDET, så
+ * den knappen navigerer ikke lenger noe sted; det som fortsatt kan forlate
+ * sekvensen er bunnlinja (den står under første gang også) og en lenke inne i
+ * et utfoldet kort («Avansert lyd» i `SoundPage`). Begge kan skje fra et
+ * SPØRSMÅL og ikke bare fra sjekklisten, så `FirstRun` speiler posisjonen
+ * fortløpende — og reserven under er fortsatt sjekklisten, som er det ene
+ * fornuftige stedet å lande når ingenting er husket.
  */
 export function firstRunResumeIndex(remembered: number | null): number {
   return remembered ?? FIRST_RUN_STEP_COUNT;
@@ -115,4 +121,27 @@ export function firstRunResumeIndex(remembered: number | null): number {
  */
 export function showFirstRunResumeChip(onboardingDone: boolean): boolean {
   return !onboardingDone;
+}
+
+/**
+ * F2-T4: hvilke rader i sjekklisten som er FOLDET UT.
+ *
+ * En liste og ikke ett navn: kontrollrommet lar flere kort stå åpne samtidig
+ * (`useControlCards` i `RecordPage.tsx`), og sjekklistas rader er de samme
+ * skjermene i en annen ramme. En sjekkliste som lukket mappe-raden fordi noen
+ * åpnet kvalitet-raden ville hatt en annen adferd enn den samme raden har på
+ * OPPTAK — på to skjermer en frivillig ser rett etter hverandre.
+ *
+ * Ren, og ikke en oppdaterer inne i komponenten, av samme grunn som resten av
+ * denne fila: «ny array bare når noe faktisk endret seg» er det som hindrer at
+ * en effekt-kjøring blir en ny render, og den regelen er verdt en test.
+ */
+export function withRow(
+  open: readonly DecisionId[],
+  id: DecisionId,
+  wanted: boolean,
+): readonly DecisionId[] {
+  const has = open.includes(id);
+  if (has === wanted) return open;
+  return wanted ? [...open, id] : open.filter((entry) => entry !== id);
 }

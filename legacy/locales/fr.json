@@ -579,6 +579,7 @@
       "gateReason": "Nous n’entendons encore aucun son. Parlez dans le microphone, ou allumez la table de mixage.",
       "readyTitle": "Prêt pour dimanche",
       "readyDesc": "C’est la même chose que vous retrouverez dans Réglages (la roue dentée) et sur l’écran Enregistrement par la suite.",
+      "fixHere": "Tout ici peut être corrigé tout de suite — la ligne ouvre l’écran sur place, et vous restez dans la configuration.",
       "notifyTodo": "Pas configuré — personne n’est averti si un enregistrement échoue.",
       "open": "Ouvrir SundayRec",
       "progress": "Progression",

@@ -312,6 +312,72 @@ test.describe("treffflater", () => {
     });
   });
 
+  // F2-T4: sjekklistas rader folder ut PÅ STEDET nå, og knappen som gjør det
+  // er husets `Button` og ikke kontrollrommets lille `.expand` — den har ingen
+  // usynlig flate, og trenger ingen: boksen er husets faste 40,3 px. Det er
+  // gulvet denne testen LÅSER, sammen med det som faktisk er nytt her — at en
+  // utfoldet kropp inne i en rad ikke stjeler et eneste midtpunkt fra
+  // kontrollene rundt seg.
+  //
+  // ⚠️ Booter UTEN `?goto=`: api-shim tvinger `onboardingDone` sann når
+  // parameteren finnes, så en dyplenket oppstart kan aldri se første gang.
+  test("første gang: sjekklistas rader, med ett kort foldet ut", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...CHOSEN, onboardingDone: false },
+    });
+    await page.getByTestId("first-run-skip-sound").click();
+    for (let i = 0; i < 4; i += 1) {
+      await page.getByTestId("first-run-next").click();
+    }
+    await expect(page.getByTestId("first-run-row-folder")).toBeVisible();
+
+    const rows = await measure(
+      page,
+      '[data-testid^="first-run-row-"][data-testid$="-action"]',
+    );
+    // Fem rader = fem knapper. Uten tallet ville en sjekkliste som ikke rakk
+    // å rendre gitt en grønn test om en tom skjerm.
+    expect(rows.length, "first-run: antall radknapper målt").toBe(5);
+    for (const r of rows) {
+      expect(r.hitH, `first-run/${r.id}: treffhøyde`).toBeGreaterThanOrEqual(
+        GHOST_FLOOR - PROBE_STEP,
+      );
+    }
+    await nobodyStolen(page);
+
+    // …og med kroppen ute, som er den ene tilstanden der noe nytt kan legge
+    // seg over en nabo.
+    await page.getByTestId("first-run-row-notify-action").click();
+    await expect(page.getByTestId("setup-notify")).toBeVisible();
+    const open = await measure(
+      page,
+      '[data-testid^="first-run-row-"][data-testid$="-action"]',
+    );
+    for (const r of open) {
+      expect(
+        r.hitH,
+        `first-run/notify/${r.id}: treffhøyde`,
+      ).toBeGreaterThanOrEqual(GHOST_FLOOR - PROBE_STEP);
+    }
+    const toggles = await measure(page, 'button[role="switch"]');
+    // ÉN: varslingskortet har tre brytere, men to av dem står bak en `Gate`
+    // som er `inert` (e-post uten `smtp`-featuren, påminnelsen uten en armert
+    // tid). De skal IKKE svare på et trykk, og telles derfor ikke — se
+    // `measure`. Samme tall som kortet bidrar med i kontrollrommet.
+    expect(toggles.length, "first-run/notify: antall brytere målt").toBe(1);
+    for (const t of toggles) {
+      expect(
+        t.hitH,
+        `first-run/notify/${t.id}: treffhøyde`,
+      ).toBeGreaterThanOrEqual(TOGGLE_FLOOR - PROBE_STEP);
+      expect(t.boxH, `first-run/notify/${t.id}: boksen står stille`).toBe(22);
+    }
+    await nobodyStolen(page);
+  });
+
   test("Innstillinger/Avansert: hele bryterrekka", async ({ page }) => {
     await boot(page, {
       fixtures: FIXTURES,
