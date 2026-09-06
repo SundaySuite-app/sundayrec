@@ -77,6 +77,9 @@ pub(crate) struct DeliverySpec {
     /// Output channel count (1 mono / 2 stereo). Unused by RemuxCopy.
     pub channels: u8,
     /// Forced output sample rate, or `None` to keep the captured native rate.
+    /// `AudioEncode` runs this through [`sundayrec_core::editor::output_sample_rate`]
+    /// before it reaches `-ar`, so a lossy target (mp3/aac/…) is capped even when
+    /// this is a raw 96 kHz+ capture rate; lossless targets are unaffected.
     /// Unused by RemuxCopy.
     pub sample_rate: Option<u32>,
     /// Output bitrate (kbps) for lossy codecs; ignored by PCM/FLAC and RemuxCopy.
@@ -332,10 +335,18 @@ fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
     ];
     match spec.mode {
         DeliveryMode::AudioEncode => {
+            // `spec.sample_rate` reaches here verbatim (forced, or the captured
+            // native rate when known) and `audio_encode_args` forwards whatever
+            // `-ar` it is given with no ceiling. The editor's export path already
+            // guards this exact case (`output_sample_rate`: lossy targets snap to
+            // ≤48 kHz, lossless targets pass the rate through unchanged) — reuse
+            // that rule here so a 96 kHz mixer cannot deliver a 96 kHz AAC/m4a
+            // file (technically valid, but disliked by real players/platforms).
+            let ar = sundayrec_core::editor::output_sample_rate(&spec.ext, spec.sample_rate);
             args.extend(audio_encode_args(
                 &spec.ext,
                 spec.channels,
-                spec.sample_rate,
+                ar,
                 spec.bitrate_kbps,
             ));
         }
@@ -870,6 +881,40 @@ mod tests {
         // Never a stream copy in encode mode.
         assert!(!args.iter().any(|a| a == "copy"));
         assert_eq!(args.last().unwrap(), "/rec/out.mp3");
+    }
+
+    #[test]
+    fn audio_encode_caps_lossy_sample_rate_but_leaves_lossless_alone() {
+        // T9: a captured/forced 96 kHz rate must not reach a lossy delivery
+        // container verbatim — AAC "supports" 96 kHz, but real players and
+        // platforms dislike it. `output_sample_rate`'s existing editor-export
+        // rule caps it; lossless containers keep the exact rate unchanged.
+        let m4a = delivery_transcode_args(
+            "/cap/sermon.wav",
+            &DeliverySpec {
+                sample_rate: Some(96_000),
+                ..spec("m4a", DeliveryMode::AudioEncode, false)
+            },
+        );
+        assert!(has_pair(&m4a, "-ar", "48000"));
+
+        let wav = delivery_transcode_args(
+            "/cap/sermon.wav",
+            &DeliverySpec {
+                sample_rate: Some(96_000),
+                ..spec("wav", DeliveryMode::AudioEncode, false)
+            },
+        );
+        assert!(has_pair(&wav, "-ar", "96000"), "wav: rate unchanged");
+
+        let flac = delivery_transcode_args(
+            "/cap/sermon.wav",
+            &DeliverySpec {
+                sample_rate: Some(96_000),
+                ..spec("flac", DeliveryMode::AudioEncode, false)
+            },
+        );
+        assert!(has_pair(&flac, "-ar", "96000"), "flac: rate unchanged");
     }
 
     #[test]

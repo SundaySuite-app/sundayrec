@@ -1567,7 +1567,9 @@ where
     disabled("extractPlaybackProxy")
 }
 
-/// True-peak probe over the original file (Normalize's honest basis).
+/// Sample-peak probe over the original file (Normalize's honest basis). Named
+/// for the `probeTruePeak` disabled-feature code it still returns, not for what
+/// it measures — see the full impl's doc comment below.
 #[cfg(not(feature = "editor"))]
 pub async fn probe_true_peak_db(_input_path: &str) -> AppResult<Option<f64>> {
     disabled("probeTruePeak")
@@ -1947,11 +1949,17 @@ where
     grant(path)
 }
 
-/// True-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
+/// SAMPLE-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
 /// honest basis for Normalize when the in-memory buffer is the 8 kHz waveform
 /// extract (its peaks under-read the real peak; the EXPORT runs on the
 /// original, so normalizing from extract peaks risked clipping). `None` when
 /// the probe fails — the caller falls back to buffer peaks.
+///
+/// F2-C-E: despite the function's name (kept as-is — it is the
+/// `probeTruePeak`-keyed command the shell already calls), `volumedetect`'s
+/// `max_volume` is a raw-sample peak, not an oversampled ITU-R BS.1770
+/// true-peak reading. See [`sundayrec_core::editor::peak_probe_args`]'s doc
+/// comment for the same correction at the core.
 #[cfg(feature = "editor")]
 pub async fn probe_true_peak_db(input_path: &str) -> AppResult<Option<f64>> {
     use sundayrec_core::editor::{parse_max_volume_db, peak_probe_args};
@@ -2503,6 +2511,18 @@ pub async fn master_preview(
 /// The preset chain / loudnorm filters / codec args are the core's tested
 /// decisions; the seam spawns ffmpeg, streams `-progress`, and parses the
 /// current-second with the core. HARDWARE-UNVERIFIED.
+///
+/// ⚠️ F2-C-E T10 closed the `editor_master_apply` **Tauri command** — grep
+/// found no caller in `app/`, `e2e/`, or the tray, and it was already carried
+/// as `unreachable` (part of the "mastering-kvartetten") in
+/// `scripts/command-reachability-baseline.json`. This function itself stays,
+/// same as the sibling `probe_true_peak_db`/`probe_streams`/`read_file_guarded`
+/// precedent in `commands/editor.rs`: it still has a live Rust-level test, and
+/// `editor/mod.rs` surgery is exactly the risk that precedent named. A T10
+/// finding stands unfixed here as a result — `master_codec_args` (in
+/// `sundayrec_core::mastering`) has no `-ar`, so a two-pass loudnorm apply on a
+/// lossless target inherits `loudnorm`'s internal 192 kHz graph. Not worth
+/// fixing code no door reaches; worth knowing if this door ever reopens.
 #[cfg(feature = "editor")]
 pub async fn master_apply<F>(
     engine: &MasterEngine,
@@ -2694,6 +2714,40 @@ where
     })
 }
 
+/// Build the pre-loudnorm filter graph, in order: normalize gain, THEN the
+/// vocal chain, THEN the mastering preset's own filters.
+///
+/// T12: the gain (the editor's "Normalize" button, a `volume=…dB` filter) goes
+/// FIRST, ahead of `chain`'s filters — the vocal chain's compressor/limiter is
+/// its LAST stage, so this order leaves the limiter with final say over the
+/// rendered peak. The previous order (gain appended AFTER the chain) let a
+/// positive gain push the already-limited signal back over 0 dBFS, undoing the
+/// limiter entirely. Gain is SKIPPED when a mastering preset is active:
+/// loudnorm sets the delivery level, so a volume shift ahead of it changes
+/// nothing but the measured input (the export modal says so instead of
+/// claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
+/// without ffmpeg.
+#[cfg(feature = "editor")]
+fn build_pre_filters(
+    chain: Option<sundayrec_core::processing::VocalChain>,
+    gain_db: Option<f64>,
+    preset: Option<&sundayrec_core::mastering::MasterPreset>,
+) -> Vec<String> {
+    let mut pre_filters: Vec<String> = Vec::new();
+    if preset.is_none() {
+        if let Some(g) = gain_db {
+            if g.is_finite() && g.abs() > f64::EPSILON {
+                pre_filters.push(format!("volume={g:.2}dB"));
+            }
+        }
+    }
+    pre_filters.extend(chain.map(|c| c.build_filters()).unwrap_or_default());
+    if let Some(p) = preset {
+        pre_filters.push(p.filters.clone());
+    }
+    pre_filters
+}
+
 /// Render the cut-plan + optional mastering gain to the requested format. The
 /// keep-segments, filter graph, codec args, output directory, output path and
 /// timeout are ALL the core's tested decisions; the seam spawns ffmpeg, streams
@@ -2882,7 +2936,9 @@ where
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
-    //      vocal chain → (normalize gain, only without a preset) → preset chain.
+    //      (normalize gain, only without a preset) → vocal chain → preset chain.
+    //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
+    //    final say over the peak — see `build_pre_filters`.
     //
     //    An empty preset id is "no mastering" (the renderer sends `undefined`,
     //    but a stray '' must not read as an unknown preset).
@@ -2897,10 +2953,24 @@ where
     // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
     // loudnorm: shape the tone/dynamics first, set delivery loudness last. A full
     // `processing` object wins; otherwise resolve the one-click preset id.
+    //
+    // F2-C-E T5: `vocal_chain_preset_by_id` now takes a measured noise floor and
+    // uses it for `afftdn:nf` instead of the preset's baked-in guess. No caller
+    // reaches this branch with one today — the app shell never sends
+    // `vocalChainPreset` at all (`app/editor/sound-profiles.ts`: "vocalChainPreset
+    // sendes ALDRI", it only ever sends a mastering preset or a full `processing`
+    // chain), so this stays `None` until a future caller (`auto_process`, which
+    // already measures the floor) threads its own measurement through the
+    // request. `None` here keeps `voice-podcast`'s `nf` exactly as before (its
+    // guess already WAS −25, `resolve_noise_floor_db`'s fallback); the only
+    // behaviour change is `voice-noisy-room`'s no-measurement `nf` moving from
+    // its old −20 guess to the same −25 fallback — both sit at the noisy end of
+    // afftdn's range, and nothing today calls this branch with that preset id
+    // (see the file search noted above), so there is no live regression.
     let mut chain = req.processing.as_ref().map(|p| p.to_core()).or_else(|| {
         req.vocal_chain_preset
             .as_deref()
-            .and_then(sundayrec_core::processing::vocal_chain_preset_by_id)
+            .and_then(|id| sundayrec_core::processing::vocal_chain_preset_by_id(id, None))
             .map(|p| p.chain)
     });
     // A top-level channel repair overrides the chain's repair, and applies on its
@@ -2930,22 +3000,7 @@ where
             }
         }
     }
-    let mut pre_filters: Vec<String> = chain.map(|c| c.build_filters()).unwrap_or_default();
-    // Peak-normalization gain (the editor's "Normalize" button) → a `volume`
-    // filter. It is SKIPPED when a mastering preset is active: loudnorm sets the
-    // delivery level, so a volume shift in front of it changes nothing but the
-    // measured input. (The export modal says so instead of claiming
-    // "Normalisert" — see `editor.volumeByMastering`.)
-    if preset.is_none() {
-        if let Some(g) = req.gain_db {
-            if g.is_finite() && g.abs() > f64::EPSILON {
-                pre_filters.push(format!("volume={g:.2}dB"));
-            }
-        }
-    }
-    if let Some(p) = &preset {
-        pre_filters.push(p.filters.clone());
-    }
+    let pre_filters = build_pre_filters(chain, req.gain_db, preset.as_ref());
 
     // The kill-timer for EACH ffmpeg pass, from the media it actually renders.
     let timeout_ms = export_timeout_ms_for(kept_duration);
@@ -4464,6 +4519,80 @@ mod tests {
         );
     }
 
+    // ── T12: the "Normalize" gain must lead the chain, not trail it ──────────────
+    //
+    // `build_pre_filters` decides the one thing T12 fixed: the export-level
+    // gain's position relative to the vocal chain. Pure — no ffmpeg — asserted
+    // on the returned filter STRINGS and their order, not on rendered audio.
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_puts_gain_before_the_chains_limiter() {
+        let mut chain = sundayrec_core::processing::VocalChain::default();
+        chain.limiter.enabled = true;
+        let filters = build_pre_filters(Some(chain), Some(6.0), None);
+        let gain_at = filters
+            .iter()
+            .position(|f| f == "volume=6.00dB")
+            .expect("gain filter present");
+        let limiter_at = filters
+            .iter()
+            .position(|f| f.starts_with("alimiter="))
+            .expect("limiter filter present");
+        assert!(
+            gain_at < limiter_at,
+            "T12: gain must run BEFORE the chain's limiter, not after (filters: {filters:?})"
+        );
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_skips_gain_when_a_preset_is_active() {
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        let filters = build_pre_filters(None, Some(6.0), Some(&preset));
+        assert_eq!(
+            filters,
+            vec![preset.filters.clone()],
+            "loudnorm owns the level with a preset active — no gain filter"
+        );
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_skips_zero_and_nonfinite_gain() {
+        assert!(build_pre_filters(None, Some(0.0), None).is_empty());
+        assert!(build_pre_filters(None, Some(f64::NAN), None).is_empty());
+        assert!(build_pre_filters(None, None, None).is_empty());
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_orders_gain_then_chain_then_preset() {
+        // Default chain is highpass+compressor "on"; drop the compressor so the
+        // chain renders to exactly ONE filter and the expected list stays simple.
+        let mut chain = sundayrec_core::processing::VocalChain::default();
+        chain.compressor.enabled = false;
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        // No preset: gain leads, chain follows.
+        let no_preset = build_pre_filters(Some(chain.clone()), Some(3.0), None);
+        assert_eq!(
+            no_preset,
+            vec![
+                "volume=3.00dB".to_string(),
+                format!("highpass=f={}", chain.highpass.freq_hz)
+            ]
+        );
+        // With a preset: gain is skipped, chain still runs, preset trails.
+        let with_preset = build_pre_filters(Some(chain.clone()), Some(3.0), Some(&preset));
+        assert_eq!(
+            with_preset,
+            vec![
+                format!("highpass=f={}", chain.highpass.freq_hz),
+                preset.filters.clone()
+            ]
+        );
+    }
+
     // ── derived caches (P3): the peaks + segments sidecars ───────────────────────
     //
     // The cache KEY is (format version, file size, file mtime). These exercise
@@ -4925,7 +5054,7 @@ mod tests {
         /// measured everything: the audio bugs this file's smoke tests exist to
         /// catch are invisible to every other kind of test.
         pub(super) fn sidecar_or_skip(name: &str) -> Option<std::path::PathBuf> {
-            match crate::media::ffmpeg::tests::fetched_sidecar(name) {
+            match fetched_sidecar(name) {
                 Some(p) => Some(p),
                 None => {
                     assert!(
@@ -5031,8 +5160,10 @@ mod tests {
         /// behind, and the sidecar cache is written.
         #[test]
         fn peaks_stream_a_lavfi_source_and_cache_it_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5122,8 +5253,10 @@ mod tests {
         /// recompute would also have nowhere to find ffmpeg.
         #[test]
         fn peaks_second_open_reads_the_sidecar_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5156,8 +5289,10 @@ mod tests {
         /// Segments: compute → cache → serve from cache → `force` recomputes.
         #[test]
         fn segments_cache_round_trip_on_silence_and_tone_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5623,10 +5758,11 @@ mod tests {
 
         #[test]
         fn export_cuts_and_encodes_mp3_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
 
@@ -5735,8 +5871,10 @@ mod tests {
         /// source file.
         #[test]
         fn export_with_empty_folder_lands_next_to_the_source_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
 
@@ -5796,10 +5934,11 @@ mod tests {
         /// shift the result by another 6 LU.
         #[test]
         fn mastered_export_lands_on_the_preset_target_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6044,10 +6183,11 @@ mod tests {
         /// `-ar` pin, a mastered export inherits loudnorm's internal 192 kHz.
         #[test]
         fn wav16_export_is_s16_at_the_source_rate_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6081,10 +6221,11 @@ mod tests {
         /// (`should_retry_with_software`).
         #[test]
         fn video_export_keeps_the_video_stream_and_honours_the_cuts_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6205,10 +6346,11 @@ mod tests {
         /// This one also exercises the filter_complex path's `-ar` (two keeps).
         #[test]
         fn flac_export_of_a_96k_source_stays_96k_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6236,10 +6378,11 @@ mod tests {
         /// duration.
         #[test]
         fn multi_cut_export_with_join_fades_runs_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6275,10 +6418,11 @@ mod tests {
         /// mastering preset on it double-processed every recording.
         #[test]
         fn auto_process_recommends_no_mastering_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6322,8 +6466,10 @@ mod tests {
         /// export with the kill-timer overridden to 1 ms.
         #[test]
         fn export_timeout_kills_the_render_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
 

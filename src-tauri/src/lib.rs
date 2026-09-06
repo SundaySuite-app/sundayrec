@@ -572,14 +572,17 @@ pub fn run() {
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
             // P1 parity: sidecar persistence, stream probe, inline guard,
-            // temp-file cleanup, and the full mastering preview/apply/cancel flow.
+            // temp-file cleanup, and the mastering preview/cancel flow.
+            // (`editor_master_apply` closed F2-C-E T10 — never called from
+            // app/e2e/tray, and already `unreachable` in the reachability
+            // baseline; see the note above `editor::master_apply` in
+            // `crate::editor` for why the implementation stays.)
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,
-            commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
             // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
