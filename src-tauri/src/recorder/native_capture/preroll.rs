@@ -55,9 +55,10 @@ use cpal::traits::StreamTrait;
 use ringbuf::traits::{Consumer, Split};
 use sundayrec_core::audio::MeterBanks;
 use sundayrec_core::preroll::{
-    harvest_trim_ms, preroll_captured_ms, preroll_keep_bytes, preroll_kept_ms,
-    preroll_restart_delay, preroll_segments_to_drop, preroll_segments_to_retain,
-    preroll_start_offset_ms, preroll_tail_slices, PREROLL_NATIVE_SEGMENT_S, PREROLL_SEGMENT_CAP_S,
+    fade_out_tail_s16le, harvest_trim_ms, preroll_captured_ms, preroll_fade_out_frames,
+    preroll_keep_bytes, preroll_kept_ms, preroll_restart_delay, preroll_segments_to_drop,
+    preroll_segments_to_retain, preroll_start_offset_ms, preroll_tail_slices,
+    NATIVE_HARVEST_SAFETY_MARGIN_MS, PREROLL_NATIVE_SEGMENT_S, PREROLL_SEGMENT_CAP_S,
     RESTART_GAP_MS,
 };
 use sundayrec_core::wav::{self, WavSpec};
@@ -644,7 +645,17 @@ async fn build_clip(
         .map(|s| s.data_bytes + wav::HEADER_LEN as u64)
         .sum();
     let captured_ms = preroll_captured_ms(frames, spec.sample_rate);
-    let trim_ms = harvest_trim_ms(captured_ms, requested_seconds, bytes_on_disk)?;
+    // NO safety margin here (F2-C-D). `captured_ms` is the writer's own frame
+    // count for bytes already on disk, not a wall clock — there is no unflushed
+    // tail to distrust, and the margin was subtracted from the END, i.e. from
+    // the 300 ms of audio closest to the button press. That is the audio the
+    // whole feature exists to keep.
+    let trim_ms = harvest_trim_ms(
+        captured_ms,
+        requested_seconds,
+        bytes_on_disk,
+        NATIVE_HARVEST_SAFETY_MARGIN_MS,
+    )?;
 
     let lens: Vec<u64> = segments.iter().map(|s| s.data_bytes).collect();
     let slices = preroll_tail_slices(
@@ -703,6 +714,13 @@ async fn build_clip(
 /// each range copied straight out of its segment's data. The result is exactly
 /// the same PCM the recorder is about to write, which is what makes the concat
 /// prepend a lossless `-c copy`.
+///
+/// The ONE deliberate exception to "byte-for-byte" is the last
+/// [`PREROLL_FADE_OUT_MS`](sundayrec_core::preroll::PREROLL_FADE_OUT_MS) of the
+/// clip, which is ramped to digital zero before the file is synced — see
+/// [`fade_clip_tail`]. It is applied HERE, on our own synthesized clip, because
+/// this is the last place the seam's audio exists as plain PCM we own: the
+/// concat that joins it to the recording is `-c copy` and cannot shape anything.
 fn stitch_clip(
     paths: &[PathBuf],
     slices: &[sundayrec_core::preroll::PrerollSlice],
@@ -712,7 +730,14 @@ fn stitch_clip(
     use std::io::{Read, Seek, SeekFrom};
 
     let total: u64 = slices.iter().map(|s| s.len).sum();
-    let file = File::create(out)?;
+    // read+write (not `File::create`): the fade below reads the tail back out of
+    // the very handle that wrote it, so nothing is reopened by name.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(out)?;
     let mut w = BufWriter::with_capacity(256 * 1024, file);
     // The retained window can never approach the u32 RIFF ceiling (90 s at
     // 96 kHz stereo is ~35 MB), but saturate rather than wrap regardless.
@@ -734,7 +759,43 @@ fn stitch_clip(
         }
     }
     w.flush()?;
-    w.get_ref().sync_all()?;
+    let mut file = w.into_inner().map_err(|e| e.into_error())?;
+    fade_clip_tail(&mut file, total, spec)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// Ramp the LAST few milliseconds of a just-written clip down to digital zero,
+/// in place.
+///
+/// WHY (F2-C-D): the clip ends at the instant the button was pressed and the
+/// recording begins after the device settle + re-open, so the two sides of the
+/// `-c copy` seam are uncorrelated points in the waveform. Butting them together
+/// writes a vertical step into the deliverable, and a vertical step in PCM is a
+/// click — right at the moment the service starts. Ending the clip at silence
+/// makes that step as small as one side alone can make it.
+///
+/// The ramp is a whole number of FRAMES at the clip's real sample rate (never a
+/// hardcoded 48 k) and only ever rewrites the tail: the head of the file is the
+/// byte-exact copy the harvest promises. `total` is the payload length in bytes,
+/// so the read starts at `HEADER_LEN + total - fade_bytes`.
+fn fade_clip_tail(file: &mut File, total: u64, spec: WavSpec) -> std::io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let bpf = spec.bytes_per_frame();
+    let fade_frames = preroll_fade_out_frames(spec.sample_rate, total / bpf.max(1));
+    let fade_bytes = fade_frames.saturating_mul(bpf);
+    if fade_bytes == 0 {
+        return Ok(());
+    }
+    let at = wav::HEADER_LEN as u64 + (total - fade_bytes);
+    let mut tail = vec![0u8; fade_bytes as usize];
+    file.seek(SeekFrom::Start(at))?;
+    file.read_exact(&mut tail)?;
+    fade_out_tail_s16le(&mut tail, spec.channels);
+    file.seek(SeekFrom::Start(at))?;
+    file.write_all(&tail)?;
+    file.flush()?;
     Ok(())
 }
 
@@ -1170,7 +1231,7 @@ mod tests {
         let clip = build_clip(&segments, spec, 2, dir.path())
             .await
             .expect("a clip");
-        // 3 s captured − 300 ms margin > 2 s requested, so the request wins.
+        // 3 s captured > 2 s requested, so the request wins.
         assert_eq!(clip.trim_ms, 2_000);
         assert_eq!(clip.start_offset_ms, 1_000, "the last 2 s of a 3 s buffer");
 
@@ -1184,21 +1245,29 @@ mod tests {
         let frames = clip_frames(&path, spec);
         assert_eq!(frames.len(), 2_000, "exactly the requested window");
         // BYTE-EXACT: the clip starts at global frame 1000 and runs contiguously
-        // across the segment seam without a repeated or dropped frame.
+        // across the segment seam without a repeated or dropped frame — up to
+        // the out-fade, which is the one part of the clip we deliberately shape
+        // (see `the_clip_ends_at_digital_silence`).
+        let head = 2_000 - fade_frames(spec, 2_000);
         assert_eq!(frames[0], 1_000);
         assert_eq!(frames[999], 1_999);
         assert_eq!(frames[1_000], 2_000, "no discontinuity at the seam");
-        assert_eq!(*frames.last().unwrap(), 2_999);
+        assert_eq!(frames[head - 1], (1_000 + head - 1) as i16);
         assert!(
-            frames.windows(2).all(|w| w[1] == w[0] + 1),
+            frames[..head].windows(2).all(|w| w[1] == w[0] + 1),
             "frames must be strictly contiguous"
         );
+        assert_eq!(*frames.last().unwrap(), 0, "…and end at silence");
     }
 
     #[tokio::test]
     async fn harvest_takes_only_what_the_buffer_holds() {
-        // The buffer only ran 2 s but 30 s were asked for: keep 2 s − the 300 ms
-        // safety margin, and start the offset at the margin.
+        // The buffer only ran 2 s but 30 s were asked for: keep ALL 2 s.
+        //
+        // F2-C-D: this used to keep 1700 ms. The missing 300 were not the oldest
+        // — they were the NEWEST, the third of a second immediately before the
+        // button press, thrown away by the ffmpeg engine's safety margin on a
+        // path that counts frames off disk and has no unflushed tail to fear.
         let spec = WavSpec {
             channels: 2,
             sample_rate: 1_000,
@@ -1208,11 +1277,15 @@ mod tests {
         let clip = build_clip(&segments, spec, 30, dir.path())
             .await
             .expect("a clip");
-        assert_eq!(clip.trim_ms, 1_700);
-        assert_eq!(clip.start_offset_ms, 300);
+        assert_eq!(clip.trim_ms, 2_000, "the whole buffer, margin-free");
+        assert_eq!(clip.start_offset_ms, 0);
         let frames = clip_frames(Path::new(&clip.raw_path), spec);
-        assert_eq!(frames.len(), 1_700);
-        assert_eq!(frames[0], 300, "the oldest 300 ms are the ones dropped");
+        assert_eq!(frames.len(), 2_000);
+        assert_eq!(frames[0], 0, "nothing is dropped from either end");
+        // The LAST buffered frame really is in the clip: frame 1999 is there,
+        // scaled by the out-fade's first step rather than absent.
+        let fade = fade_frames(spec, 2_000);
+        assert_eq!(frames[2_000 - fade - 1], (2_000 - fade - 1) as i16);
     }
 
     #[tokio::test]
@@ -1225,15 +1298,16 @@ mod tests {
         let segments: Vec<PrerollSegmentFile> = (0..7)
             .map(|i| write_segment(dir.path(), i, spec, i * 500, 500))
             .collect();
-        // 3.5 s buffered, 60 s requested → everything but the 300 ms margin.
+        // 3.5 s buffered, 60 s requested → all of it (was 3200: −300 ms margin).
         let clip = build_clip(&segments, spec, 60, dir.path())
             .await
             .expect("a clip");
-        assert_eq!(clip.trim_ms, 3_200);
+        assert_eq!(clip.trim_ms, 3_500);
         let frames = clip_frames(Path::new(&clip.raw_path), spec);
-        assert_eq!(frames.len(), 3_200);
-        assert_eq!(frames[0], 300);
-        assert!(frames.windows(2).all(|w| w[1] == w[0] + 1));
+        assert_eq!(frames.len(), 3_500);
+        assert_eq!(frames[0], 0);
+        let head = 3_500 - fade_frames(spec, 3_500);
+        assert!(frames[..head].windows(2).all(|w| w[1] == w[0] + 1));
     }
 
     #[tokio::test]
@@ -1245,12 +1319,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // No segments at all.
         assert!(build_clip(&[], spec, 15, dir.path()).await.is_none());
-        // A buffer that only just opened: below MIN_VALID_SEGMENT_BYTES.
+        // A buffer that only just opened: below MIN_VALID_SEGMENT_BYTES. This
+        // byte gate is what survives the margin change — it is about whether
+        // anything was captured at all, not about trusting the tail.
         let tiny = vec![write_segment(dir.path(), 0, spec, 0, 100)]; // 400 B + header
         assert!(build_clip(&tiny, spec, 15, dir.path()).await.is_none());
-        // Big enough on disk, but shorter than the 300 ms safety margin.
-        let short = vec![write_segment(dir.path(), 1, spec, 0, 4_800)]; // 100 ms
-        assert!(build_clip(&short, spec, 15, dir.path()).await.is_none());
         // No clip file was left behind by any of those.
         let clips: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
@@ -1258,6 +1331,208 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains("preroll-clip"))
             .collect();
         assert!(clips.is_empty(), "no half-made clips: {clips:?}");
+    }
+
+    #[tokio::test]
+    async fn a_buffer_shorter_than_the_old_margin_is_still_pre_roll() {
+        // 100 ms of real, flushed frames. The old shared 300 ms margin turned
+        // this into "nothing captured"; it is a tenth of a second of the organ.
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let short = vec![write_segment(dir.path(), 1, spec, 0, 4_800)];
+        let clip = build_clip(&short, spec, 15, dir.path())
+            .await
+            .expect("100 ms is a clip");
+        assert_eq!(clip.trim_ms, 100);
+        assert_eq!(clip.start_offset_ms, 0);
+    }
+
+    /// How many frames of `total` the out-fade covers — the same rule the clip
+    /// builder uses, so a test never hardcodes 48 kHz's 480.
+    fn fade_frames(spec: WavSpec, total: usize) -> usize {
+        preroll_fade_out_frames(spec.sample_rate, total as u64) as usize
+    }
+
+    /// Every sample of the clip, in order (all channels, interleaved).
+    fn clip_samples(path: &Path) -> Vec<i16> {
+        let bytes = std::fs::read(path).expect("clip readable");
+        bytes[wav::HEADER_LEN..]
+            .chunks_exact(2)
+            .map(|s| i16::from_le_bytes([s[0], s[1]]))
+            .collect()
+    }
+
+    /// A segment whose every sample is the same loud value, so the out-fade's
+    /// envelope is visible directly in the samples.
+    fn write_flat_segment(
+        dir: &Path,
+        seq: u64,
+        spec: WavSpec,
+        frames: u64,
+        value: i16,
+    ) -> PrerollSegmentFile {
+        let mut data = Vec::with_capacity((frames * spec.bytes_per_frame()) as usize);
+        for _ in 0..frames * u64::from(spec.channels) {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        let path = dir.join(format!("flat-{seq}.wav"));
+        let mut bytes = wav::header(spec, data.len() as u32).to_vec();
+        bytes.extend_from_slice(&data);
+        std::fs::write(&path, &bytes).expect("write segment");
+        PrerollSegmentFile {
+            path,
+            data_bytes: data.len() as u64,
+            frames,
+        }
+    }
+
+    /// F2-C-D: the clip is `-c copy`-butted against the recording's first frame,
+    /// which is an UNCORRELATED point in the waveform (a device settle + re-open
+    /// happened in between). A vertical step there is a click, so the clip must
+    /// arrive at digital zero — and nothing before the ramp may be touched.
+    #[tokio::test]
+    async fn the_clip_ends_at_digital_silence() {
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments = vec![write_flat_segment(dir.path(), 0, spec, 96_000, 20_000)]; // 2 s
+        let clip = build_clip(&segments, spec, 1, dir.path())
+            .await
+            .expect("a clip");
+        assert_eq!(clip.trim_ms, 1_000);
+
+        let total = 48_000usize; // 1 s at 48 kHz
+        let fade = fade_frames(spec, total);
+        assert_eq!(fade, 480, "10 ms at 48 kHz");
+
+        let s = clip_samples(Path::new(&clip.raw_path));
+        assert_eq!(s.len(), total * 2, "stereo, interleaved");
+        // The head is the byte-exact copy: untouched, to the last sample before
+        // the ramp starts.
+        let head = (total - fade) * 2;
+        assert!(
+            s[..head].iter().all(|&v| v == 20_000),
+            "the fade reached into the body of the clip"
+        );
+        // The tail ramps monotonically down and lands on exact zero.
+        let tail = &s[head..];
+        assert_eq!(tail.len(), fade * 2);
+        assert!(tail[0] < 20_000 && tail[0] > 19_900, "an inaudible start");
+        assert!(
+            tail.windows(2).all(|w| w[1] <= w[0]),
+            "the ramp is not monotone"
+        );
+        assert_eq!(*s.last().unwrap(), 0, "the clip must END at silence");
+        // Both channels of the last real frame carry the SAME factor: an
+        // interleaved ramp indexed by sample would split L and R apart.
+        for f in tail.chunks_exact(2) {
+            assert_eq!(f[0], f[1], "L and R drifted apart inside the fade");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_fade_follows_the_rate_and_the_channel_count() {
+        // 44.1 kHz mono and 96 kHz stereo: the ramp is 10 ms of THIS clip, and
+        // the frame arithmetic holds for an odd rate and a non-stereo layout.
+        for (spec, expect_frames) in [
+            (
+                WavSpec {
+                    channels: 1,
+                    sample_rate: 44_100,
+                },
+                441usize,
+            ),
+            (
+                WavSpec {
+                    channels: 2,
+                    sample_rate: 96_000,
+                },
+                960,
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let frames = u64::from(spec.sample_rate); // 1 s buffered
+            let segments = vec![write_flat_segment(dir.path(), 0, spec, frames, -18_000)];
+            let clip = build_clip(&segments, spec, 30, dir.path())
+                .await
+                .expect("a clip");
+            assert_eq!(clip.trim_ms, 1_000);
+
+            let s = clip_samples(Path::new(&clip.raw_path));
+            let ch = usize::from(spec.channels);
+            assert_eq!(s.len(), frames as usize * ch);
+            assert_eq!(fade_frames(spec, frames as usize), expect_frames);
+
+            let head = (frames as usize - expect_frames) * ch;
+            assert!(
+                s[..head].iter().all(|&v| v == -18_000),
+                "head touched at {} Hz",
+                spec.sample_rate
+            );
+            // Negative audio rises toward zero — monotone in magnitude.
+            assert!(
+                s[head..].windows(2).all(|w| w[1] >= w[0]),
+                "ramp not monotone at {} Hz",
+                spec.sample_rate
+            );
+            assert_eq!(*s.last().unwrap(), 0, "silence at {} Hz", spec.sample_rate);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_faded_clip_is_still_a_valid_wav_of_the_declared_length() {
+        // The fade rewrites bytes IN PLACE after the header is written: the file
+        // must not grow, shrink, or disagree with its own size fields.
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments = vec![write_flat_segment(dir.path(), 0, spec, 48_000, 12_345)];
+        let clip = build_clip(&segments, spec, 1, dir.path())
+            .await
+            .expect("a clip");
+        let bytes = std::fs::read(&clip.raw_path).unwrap();
+        let info = wav::parse_header(&bytes).expect("valid wav");
+        assert_eq!(info.channels, 2);
+        assert_eq!(info.sample_rate, 48_000);
+        assert_eq!(info.bits_per_sample, 16);
+        let data_field = u32::from_le_bytes(bytes[40..44].try_into().unwrap()) as usize;
+        assert_eq!(
+            bytes.len(),
+            wav::HEADER_LEN + data_field,
+            "the fade changed the file's length"
+        );
+        assert_eq!(data_field, 48_000 * 4);
+    }
+
+    #[tokio::test]
+    async fn a_clip_shorter_than_the_fade_is_ramped_end_to_end() {
+        // 192 kHz stereo, 5 ms buffered: the clip (960 frames) is shorter than
+        // 10 ms of fade (1920), so the ramp must CLAMP to the clip instead of
+        // seeking before its first frame. (192 kHz because the byte gate keeps
+        // any clip at a normal rate comfortably longer than 10 ms.)
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 192_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments = vec![write_flat_segment(dir.path(), 0, spec, 1_100, 9_000)];
+        let clip = build_clip(&segments, spec, 15, dir.path())
+            .await
+            .expect("5 ms is still a clip");
+        assert_eq!(clip.trim_ms, 5);
+        let s = clip_samples(Path::new(&clip.raw_path));
+        assert_eq!(s.len(), 960 * 2);
+        assert_eq!(fade_frames(spec, 960), 960, "the whole clip is the ramp");
+        assert!(s[0] < 9_000, "the ramp starts at the clip's first frame");
+        assert!(s.windows(2).all(|w| w[1] <= w[0]));
+        assert_eq!(*s.last().unwrap(), 0);
     }
 
     #[tokio::test]
