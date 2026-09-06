@@ -9,7 +9,10 @@
 //! through as loose parameters: `run_session` took 12, `run_cpal_session` 8,
 //! `run_native_segment` 10, `finalize_pending`/`finalize_one` 10 each, and the
 //! repo carried ten `#[allow(clippy::too_many_arguments)]` inside
-//! `recorder/**` to say so.
+//! `recorder/**` to say so. Nine of those ten are gone now; the tenth
+//! (`cpal_capture`'s `stream_thread`) stays, because its twelve arguments are
+//! cpal stream plumbing — a ring producer, a meter bank, two reply channels —
+//! and not one of them is session context.
 //!
 //! That was not a cosmetic problem. It is exactly WHY the cpal path was
 //! forgotten when `session_generation` was added (F1-A5): threading one more
@@ -19,9 +22,9 @@
 //! when two sessions overlap.
 //!
 //! So the session's context is ONE value now. Adding a field here reaches every
-//! call site that already takes the context, and — because both supervisors
-//! account for the fields EXHAUSTIVELY (see [`SessionContext`]'s own doc) —
-//! neither path can silently skip a newcomer.
+//! call site that already takes the context, and — because all three supervisors
+//! account for the fields EXHAUSTIVELY (see [`SessionContext`]'s own doc) — no
+//! path can silently skip a newcomer.
 
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -53,9 +56,9 @@ use crate::recorder::preroll::PrerollClip;
 ///
 /// ## The exhaustiveness rule
 ///
-/// Both supervisors ACCOUNT FOR EVERY FIELD in a destructuring `let` with no
-/// `..` rest pattern. That is deliberate and load-bearing: a field added here
-/// stops both paths compiling until each one has said, in writing, what it does
+/// All three supervisors ACCOUNT FOR EVERY FIELD in a destructuring `let` with
+/// no `..` rest pattern. That is deliberate and load-bearing: a field added here
+/// stops every path compiling until each one has said, in writing, what it does
 /// with it. Reading `ctx.<field>` alone would not do that — a new field would
 /// be merely *available* to a path, which is precisely the state F1-A5 was born
 /// in.

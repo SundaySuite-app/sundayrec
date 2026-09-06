@@ -1247,9 +1247,12 @@ async fn run_session(
     // The exhaustiveness gate (see `SessionContext`'s doc): every field is named
     // here, with no `..`. A field added to the context stops THIS path compiling
     // until someone has decided what the ffmpeg supervisor does with it — the
-    // same gate `run_cpal_session` opens with. Bindings are `_` because the body
-    // reads (and writes) through `ctx` itself; only the shared-state door is
-    // pulled out below.
+    // same gate `run_cpal_session` and `run_two_process_session` open with.
+    //
+    // Unlike those two, this path ignores NOTHING: it is the full supervisor, and
+    // all ten fields are used below (`pool` and `preroll_clip` inside
+    // `finalize_pending`, which now takes the context too). So the bindings are
+    // `_` and the body reads — and writes — through `ctx` itself.
     let SessionContext {
         app: _,
         pool: _,
