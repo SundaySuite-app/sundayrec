@@ -3006,7 +3006,10 @@ where
             args.extend(["-i".into(), p.clone()]);
         }
         if is_video {
-            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters);
+            // `req.duration` (the SOURCE length) is what tells the core which
+            // segment edges are interior cuts and therefore need the de-click
+            // fade — the same argument the audio graph above already gets.
+            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters, req.duration);
             args.extend(["-filter_complex".into(), fc]);
             args.extend(["-map".into(), v_out, "-map".into(), a_out]);
             args.extend(if use_hw {

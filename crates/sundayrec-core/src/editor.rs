@@ -635,11 +635,27 @@ pub fn audio_simple_export_args(
 
 /// The video filter graph (trim + audio-processing) for a single main input.
 /// Mirrors `buildVideoFilterComplex`. Returns `(filter_complex, v_out, a_out)`.
+///
+/// `total_duration` is the SOURCE recording's length, and it is here for the
+/// same reason it is in [`audio_export_filter_complex`]: it decides which
+/// segment edges are interior cuts and therefore get a de-click [`join_fades`]
+/// envelope.
+///
+/// F2-7: until that parameter existed the video path spliced its audio with a
+/// raw `atrim…asetpts` and nothing else — the audio-only path has had
+/// [`atrim_faded`] since the de-click work, the video path never got it. Every
+/// cut in a video export therefore carried exactly the click the audio export
+/// was fixed to avoid: same recording, same cuts, two different answers, and
+/// the one a church publishes to YouTube was the clicking one. The VIDEO side
+/// of the graph is untouched — a 15 ms gain envelope belongs on the audio pad,
+/// and frames are cut on their own boundaries.
 pub fn video_filter_complex(
     main_idx: usize,
     keeps: &[KeepSegment],
     proc_filters: &[String],
+    total_duration: f64,
 ) -> (String, String, String) {
+    let a_ref = format!("[{main_idx}:a]");
     let mut parts: Vec<String> = Vec::new();
     if keeps.len() == 1 {
         let seg = &keeps[0];
@@ -648,11 +664,7 @@ pub fn video_filter_complex(
             ts(seg.start),
             ts(seg.end)
         ));
-        let mut a_chain = vec![format!(
-            "[{main_idx}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS",
-            ts(seg.start),
-            ts(seg.end)
-        )];
+        let mut a_chain = vec![atrim_faded(&a_ref, seg, total_duration)];
         a_chain.extend(proc_filters.iter().cloned());
         parts.push(format!("{}[a_main]", a_chain.join(",")));
     } else {
@@ -663,9 +675,8 @@ pub fn video_filter_complex(
                 ts(seg.end)
             ));
             parts.push(format!(
-                "[{main_idx}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS[aseg{i}]",
-                ts(seg.start),
-                ts(seg.end)
+                "{}[aseg{i}]",
+                atrim_faded(&a_ref, seg, total_duration)
             ));
         }
         let v_in: String = (0..keeps.len()).map(|i| format!("[vseg{i}]")).collect();
@@ -2278,11 +2289,88 @@ mod tests {
             start: 2.0,
             end: 8.0,
         }];
-        let (fc, v, a) = video_filter_complex(0, &keeps, &[]);
+        // A whole-file keep (start 0, end == duration) has no interior edge, so
+        // no fade — the trim string is byte-identical to the pre-F2-7 one.
+        let (fc, v, a) = video_filter_complex(0, &keeps, &[], 8.0);
         assert_eq!(v, "[v_main]");
         assert_eq!(a, "[a_main]");
         assert!(fc.contains("[0:v]trim=start=2.0000:end=8.0000,setpts=PTS-STARTPTS[v_main]"));
-        assert!(fc.contains("[0:a]atrim=start=2.0000:end=8.0000,asetpts=PTS-STARTPTS[a_main]"));
+        assert!(fc.contains("[0:a]atrim=start=2.0000:end=8.0000,asetpts=PTS-STARTPTS,afade=t=in"));
+    }
+
+    // ── F2-7: the video path's audio joins are faded too ─────────────────────
+
+    #[test]
+    fn video_filter_single_keep_untouched_file_has_no_fade() {
+        let keeps = vec![KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        }];
+        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[], 10.0);
+        assert!(
+            !fc.contains("afade"),
+            "no cut, no splice, no envelope: {fc}"
+        );
+        assert!(fc.contains("[0:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[a_main]"));
+    }
+
+    #[test]
+    fn video_filter_fades_every_interior_cut_edge() {
+        // 0–5 and 6–10 out of a 10 s source: the FIRST segment's end and the
+        // SECOND's start are the splice, and only those two get an envelope.
+        let keeps = vec![
+            KeepSegment {
+                start: 0.0,
+                end: 5.0,
+            },
+            KeepSegment {
+                start: 6.0,
+                end: 10.0,
+            },
+        ];
+        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[], 10.0);
+        assert!(
+            fc.contains("asetpts=PTS-STARTPTS,afade=t=out:st=4.9850:d=0.015[aseg0]"),
+            "the first segment fades OUT into the cut: {fc}"
+        );
+        assert!(
+            fc.contains("asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.015[aseg1]"),
+            "the second fades IN out of it: {fc}"
+        );
+        assert_eq!(
+            fc.matches("afade").count(),
+            2,
+            "the file's own start and end are NOT splices: {fc}"
+        );
+        // The video pads are byte-identical to the pre-F2-7 graph.
+        assert!(fc.contains("[0:v]trim=start=0.0000:end=5.0000,setpts=PTS-STARTPTS[vseg0]"));
+        assert!(fc.contains("[0:v]trim=start=6.0000:end=10.0000,setpts=PTS-STARTPTS[vseg1]"));
+    }
+
+    #[test]
+    fn video_and_audio_paths_agree_on_the_join_fade() {
+        // The bug F2-7 fixes was a DISAGREEMENT, not a missing feature: the two
+        // graphs answered "how do you splice a cut" differently. Pin that they
+        // now produce the same audio chain for the same segment.
+        let keeps = vec![
+            KeepSegment {
+                start: 1.0,
+                end: 4.0,
+            },
+            KeepSegment {
+                start: 7.0,
+                end: 9.0,
+            },
+        ];
+        let (video_fc, _v, _a) = video_filter_complex(0, &keeps, &[], 12.0);
+        for seg in &keeps {
+            let audio_chain = atrim_faded("[0:a]", seg, 12.0);
+            assert!(
+                video_fc.contains(&audio_chain),
+                "the video path must splice audio exactly as the audio path does\n\
+                 wanted: {audio_chain}\n   in: {video_fc}"
+            );
+        }
     }
 
     #[test]
@@ -2297,11 +2385,14 @@ mod tests {
                 end: 10.0,
             },
         ];
-        let (fc, _v, _a) = video_filter_complex(1, &keeps, &["acompressor".to_string()]);
+        let (fc, _v, _a) = video_filter_complex(1, &keeps, &["acompressor".to_string()], 10.0);
         assert!(fc.contains("[vseg0]"));
         assert!(fc.contains("[vseg0][vseg1]concat=n=2:v=1:a=0[v_main]"));
         assert!(fc.contains("[aseg0][aseg1]concat=n=2:v=0:a=1[a_concat]"));
         assert!(fc.contains("[a_concat]acompressor[a_main]"));
+        // The processing chain still runs AFTER the concat, so the fades sit on
+        // the raw segments where the splice actually is.
+        assert!(fc.contains("afade=t=out:st=4.9850:d=0.015[aseg0]"));
     }
 
     // ── ffmetadata ───────────────────────────────────────────────────────────
