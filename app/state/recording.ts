@@ -191,6 +191,25 @@ export function dismissFinishedRecording(): void {
 }
 
 /**
+ * Glem kvitteringen hvis fila den peker på er blant `paths`.
+ *
+ * Samme regel og samme grunn som `forgetMovedPath` i `editor/model.ts`
+ * (F2-9): kvitteringens «Rediger»-knapp (`record-done-edit`) åpner
+ * `finished.path` akkurat som eksportkortets «Gjør klar» åpner `lastEdited`,
+ * så den er utsatt for nøyaktig samme skjøt — papirkurven eller
+ * retensjonspasset flytter filen kortet fortsatt peker på, og kortet vet
+ * ingenting om det. Kalt av samme to steder: papirkurv-sømmen i
+ * `LibraryPage.tsx` og retensjonspasset i `state/retention.ts`, rett etter at
+ * de har flyttet noe.
+ */
+export function forgetMovedPath(paths: readonly string[]): void {
+  const current = finishedRecording.peek();
+  if (current && paths.includes(current.path)) {
+    finishedRecording.value = null;
+  }
+}
+
+/**
  * Hvor mange ganger motoren har sagt noe AUTORITATIVT om økta siden appen
  * startet — hendelsene som avgjør om et opptak går i det hele tatt.
  *

@@ -9,9 +9,11 @@
  * folk å lukke toasts uten å lese dem.
  */
 
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { PruneSummary } from "@legacy/bindings/PruneSummary";
+import { exporting } from "../editor/export";
+import { loadState } from "../editor/model";
 import { setLocale } from "../i18n";
 import { route } from "../router/router";
 import { clearToasts, toasts } from "../ui/toast";
@@ -40,6 +42,8 @@ afterEach(() => {
   trashEntries.value = null;
   recordings.value = null;
   route.value = { page: "record" };
+  loadState.value = "idle";
+  exporting.value = false;
   delete (globalThis as unknown as { window?: unknown }).window;
 });
 
@@ -90,5 +94,68 @@ describe("retensjonspasset", () => {
     withFakeApi({ moved: 0, disabled: true });
     await runRetentionPass();
     expect(toasts.value).toHaveLength(0);
+  });
+});
+
+// ── F2-6: passet flytter ikke en fil som er i bruk ──────────────────────────
+
+describe("passet venter mens redigeringen eller eksporten holder en fil", () => {
+  // ⚠️ FUNNET, og det er ekte. Uten denne vakten kaller passet
+  // `recordings_prune` uansett hva editoren eller eksporten holder på med —
+  // og flytter dermed filen UNDER FØTTENE på en åpen redigering eller en
+  // mastret eksport som spawner fase 2 etter at filen er borte.
+  //
+  // MUTASJONSPRØVEN: fjern `if`-vakten fra `runRetentionPass`, og alle tre
+  // testene i denne gruppa blir røde (den siste ved at `recordingsPrune`
+  // plutselig blir kalt inne i en `loading`/`exporting`-tilstand den ikke
+  // burde vært kalt i).
+  it("en fil under lasting, åpen eller i feiltilstand — recordingsPrune kalles aldri", async () => {
+    const prune = vi.fn(() =>
+      Promise.resolve<PruneSummary>({ moved: 3, disabled: false }),
+    );
+    (globalThis as unknown as { window: unknown }).window = {
+      api: {
+        recordingsPrune: prune,
+        trashList: () => Promise.resolve([]),
+        getHistory: () => Promise.resolve([]),
+      },
+    };
+
+    for (const state of ["loading", "ready", "error"] as const) {
+      loadState.value = state;
+      await runRetentionPass();
+    }
+
+    expect(prune).not.toHaveBeenCalled();
+    expect(toasts.value).toHaveLength(0);
+  });
+
+  it("en pågående eksport utsetter passet selv når ingen fil laster", async () => {
+    const prune = vi.fn(() =>
+      Promise.resolve<PruneSummary>({ moved: 1, disabled: false }),
+    );
+    (globalThis as unknown as { window: unknown }).window = {
+      api: {
+        recordingsPrune: prune,
+        trashList: () => Promise.resolve([]),
+        getHistory: () => Promise.resolve([]),
+      },
+    };
+    loadState.value = "idle";
+    exporting.value = true;
+
+    await runRetentionPass();
+
+    expect(prune).not.toHaveBeenCalled();
+  });
+
+  it("idle, ingen eksport — passet kjører akkurat som før", async () => {
+    withFakeApi({ moved: 1, disabled: false });
+    loadState.value = "idle";
+    exporting.value = false;
+
+    await runRetentionPass();
+
+    expect(toasts.value).toHaveLength(1);
   });
 });

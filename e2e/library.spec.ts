@@ -368,3 +368,91 @@ test.describe("papirkurven", () => {
     await expect(page.getByTestId("library-row")).toHaveCount(2);
   });
 });
+
+// ── F2-9: en fil path_guard ikke lenger kan løse opp ────────────────────────
+
+test.describe("REDIGERING på en fil som ikke lenger er der", () => {
+  test("«Fant ikke fila», med en vei til papirkurven — ikke den generiske korrupt-teksten", async ({
+    page,
+  }) => {
+    // ⚠️ FUNNET, og det er ekte. FØR F2-9 viste denne skjermen «Formatet
+    // støttes kanskje ikke, eller fila er skadet» uansett HVORFOR åpningen
+    // feilet — sant om ingen av delene når grunnen var at fila lå i
+    // papirkurven. `path_guard::checked_input_file` sin egen feilmelding
+    // («cannot resolve path …») er ORDRETT det en flyttet fil produserer;
+    // fixturen under er den meldingen, ikke en forenkling av den.
+    //
+    // MUTASJONSPRØVEN: fjern `notFound`-grenen fra `loader.ts` (la
+    // `loadError.value` alltid bli `"unreadable"`), og de tre `toContainText`
+    // -assertionene på banneret blir røde.
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: [
+        recordingRow({
+          id: "rec-gone",
+          file_path: "/Users/test/Opptak/2026-08-09 Bønnemøte.mp3",
+        }),
+      ],
+      editor_load_recording: fn(`() => {
+        throw new Error(
+          "validation: cannot resolve path /Users/test/Opptak/2026-08-09 Bønnemøte.mp3: No such file or directory (os error 2)",
+        );
+      }`),
+    });
+
+    await page.getByTestId("library-row-edit").click();
+
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "error",
+    );
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-reason",
+      "not_found",
+    );
+    const banner = page.getByTestId("editor-load-error");
+    await expect(banner).toContainText("Fant ikke fila");
+    await expect(banner).toContainText("Den kan ligge i papirkurven.");
+    // …og ikke det generiske «formatet støttes kanskje ikke, eller fila er
+    // skadet» — aktivt misvisende om en fil som bare ligger i papirkurven.
+    await expect(banner).not.toContainText("skadet");
+
+    // Den nye handlingen går til papirkurven, samme mål som retensjonens
+    // toast (`retention.spec.ts`) navigerer til.
+    await page.getByTestId("editor-load-error-trash").click();
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+    await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
+  });
+
+  test("en fil som genuint ikke lar seg lese viser fortsatt den generiske teksten", async ({
+    page,
+  }) => {
+    // Kontrasten: en feil som IKKE er «cannot resolve path»/`file_not_found`
+    // skal fortsatt lande på den gamle, generiske teksten — F2-9 la til en
+    // gren, den fjernet ikke den andre.
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: [
+        recordingRow({
+          id: "rec-corrupt",
+          file_path: "/Users/test/Opptak/2026-08-09 Bønnemøte.mp3",
+        }),
+      ],
+      editor_load_recording: fn(`() => {
+        throw new Error("recording error: ffprobe found no audio or video stream");
+      }`),
+    });
+
+    await page.getByTestId("library-row-edit").click();
+
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-reason",
+      "unreadable",
+    );
+    const banner = page.getByTestId("editor-load-error");
+    await expect(banner).toContainText(
+      "Formatet støttes kanskje ikke, eller fila er skadet.",
+    );
+    await expect(page.getByTestId("editor-load-error-trash")).toHaveCount(0);
+  });
+});
