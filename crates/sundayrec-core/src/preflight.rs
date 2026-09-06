@@ -57,7 +57,19 @@ pub enum PreflightCategory {
 pub struct PreflightFinding {
     pub severity: PreflightSeverity,
     pub category: PreflightCategory,
+    /// The backend's own wording. For every finding below this predates
+    /// [`Self::code`] and IS the text shown, unlocalized (a known gap — see
+    /// `app/state/preflight.ts`). For a finding that carries a `code`, this is
+    /// only the ENGLISH fallback for a renderer build that doesn't recognise
+    /// the code yet; the real UI text comes from the renderer's own catalogue.
     pub message: String,
+    /// Stable, machine-readable — set only on findings added since F-W9. The
+    /// renderer localises on this (a `preflight.*` key) and falls back to
+    /// [`Self::message`] for a code it does not recognise, same contract as
+    /// [`crate::notify::BackendWarning::code`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub code: Option<String>,
 }
 
 impl PreflightFinding {
@@ -66,8 +78,35 @@ impl PreflightFinding {
             severity: PreflightSeverity::Error,
             category,
             message: message.into(),
+            code: None,
         }
     }
+
+    /// A `warn`-severity finding carrying a stable [`Self::code`] — see the
+    /// field doc. `message` must be ENGLISH: it is the fallback the ratchet in
+    /// `scripts/check-rust-norwegian.mjs` exists to keep new Rust strings out
+    /// of, now that the actual wording lives in the renderer's catalogue
+    /// instead.
+    fn warn_with_code(
+        category: PreflightCategory,
+        code: &'static str,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            severity: PreflightSeverity::Warn,
+            category,
+            message: message.into(),
+            code: Some(code.to_string()),
+        }
+    }
+}
+
+/// Stable [`PreflightFinding::code`] values. Mirrors the
+/// [`crate::notify::code`] convention: a constant both the emitter and (once
+/// ported) a test against the renderer's key table can agree on.
+pub mod code {
+    /// F-W9: the resolved save folder sits inside a OneDrive-synced tree.
+    pub const SAVE_FOLDER_SYNCED: &str = "save_folder_synced";
 }
 
 /// 500 MB — comfortable headroom for a ~1.5 h MP3. Matches Electron
@@ -155,6 +194,44 @@ fn format_gb(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / BYTES_PER_GB)
 }
 
+/// Whether `path` looks like it sits inside a OneDrive-synced tree (F-W9):
+/// case-insensitive, and matching `OneDrive` as a whole PATH SEGMENT —
+/// `\OneDrive\` or `/OneDrive/` — not merely as a substring. A plain substring
+/// check would also fire on a folder someone named `MyOneDriveBackup`, which
+/// nothing syncs.
+///
+/// A save folder under Documents on Windows 10/11 commonly resolves to
+/// `…\OneDrive\Dokumenter\SundayRec` once OneDrive has taken over the
+/// Documents folder — sync locks a file that is still growing (the live
+/// capture), and Files-On-Demand can dehydrate an older recording out from
+/// under the app, out of the operator's sight until the recording that needs
+/// it.
+///
+/// Pure string matching — no filesystem access — so it is testable on macOS
+/// against a Windows-shaped path, which is exactly what the tests below do.
+pub fn looks_like_onedrive(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.contains(r"\onedrive\") || lower.contains("/onedrive/")
+}
+
+/// The F-W9 warning for a save folder [`looks_like_onedrive`] flagged.
+///
+/// `Warn`, not `Error`: the recording will very likely still work, and a
+/// preflight check that refuses to let a service start over a sync RISK would
+/// be worse than the risk itself. See [`PreflightFinding::warn_with_code`] for
+/// why `message` is English rather than the Norwegian every other finding in
+/// this file carries — the actual wording the operator sees comes from the
+/// renderer's `preflight.saveFolderSynced` key.
+pub fn save_folder_synced_finding(save_folder_onedrive: bool) -> Option<PreflightFinding> {
+    save_folder_onedrive.then(|| {
+        PreflightFinding::warn_with_code(
+            PreflightCategory::Disk,
+            code::SAVE_FOLDER_SYNCED,
+            "The save folder is synced by OneDrive, which can interfere with a recording in progress.",
+        )
+    })
+}
+
 /// Whether a recording will actually capture video, mirroring the Electron
 /// `videoActive` predicate (`preflight.ts:52`): video is enabled AND a camera is
 /// selected (by name OR by index).
@@ -193,15 +270,22 @@ pub struct PreflightFacts {
     /// Sunday morning is worse than no check at all, because it sends a
     /// volunteer hunting for a cable that is already plugged in.
     pub device_present: bool,
+    /// The RESOLVED save folder [`looks_like_onedrive`] (F-W9). A `bool`, not
+    /// the path itself, so this struct can stay `Copy` — the finding only
+    /// needs the yes/no, and the shell already has the path to compute it
+    /// from.
+    pub save_folder_onedrive: bool,
 }
 
 /// Assemble the preflight findings from the gathered facts, in the SAME order
-/// the Electron `runPreflight` produced them (`preflight.ts:33-95`):
+/// the Electron `runPreflight` produced them (`preflight.ts:33-95`), plus one
+/// F-W9 addition Electron never had:
 ///   1. ffmpeg binary missing            → error/device
 ///   2. save folder not writable         → error/disk
 ///   3. low free space                   → error/disk  (via [`disk_space_finding`])
-///   4. mic permission denied (macOS)    → error/device
-///   5. cam permission denied (macOS)    → error/device  (only when video active)
+///   4. save folder synced by OneDrive   → warn/disk   (via [`save_folder_synced_finding`])
+///   5. mic permission denied (macOS)    → error/device
+///   6. cam permission denied (macOS)    → error/device  (only when video active)
 ///
 /// The cloud-connectivity and device-name-mismatch findings the Electron build
 /// also raised need live I/O (an HTTP probe / a device resolve) that belongs to
@@ -243,6 +327,10 @@ pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
         }
     }
 
+    if let Some(finding) = save_folder_synced_finding(facts.save_folder_onedrive) {
+        findings.push(finding);
+    }
+
     if facts.mic_denied {
         findings.push(PreflightFinding::error(
             PreflightCategory::Device,
@@ -274,6 +362,7 @@ mod tests {
             mic_denied: false,
             cam_denied: false,
             device_present: true,
+            save_folder_onedrive: false,
         }
     }
 
@@ -446,8 +535,11 @@ mod tests {
 
     #[test]
     fn assemble_orders_findings_like_electron() {
-        // Trip every branch at once; assert the exact order ffmpeg → device →
-        // folder → disk → mic → cam.
+        // Trip every ELECTRON-era branch at once; assert the exact order
+        // ffmpeg → device → folder → disk → mic → cam. The F-W9 OneDrive
+        // warning (which Electron never had) is left untripped here on
+        // purpose — it has its own ordering test below — so this one keeps
+        // pinning exactly the Electron parity it was written for.
         let facts = PreflightFacts {
             ffmpeg_missing: true,
             folder_writable: false,
@@ -456,6 +548,7 @@ mod tests {
             mic_denied: true,
             cam_denied: true,
             device_present: false,
+            save_folder_onedrive: false,
         };
         let findings = assemble_findings(facts);
         assert_eq!(findings.len(), 6);
@@ -471,6 +564,81 @@ mod tests {
         assert!(findings[4].message.contains("Mikrofon"));
         assert_eq!(findings[5].category, PreflightCategory::Device); // cam
         assert!(findings[5].message.contains("Kamera"));
+    }
+
+    // ── looks_like_onedrive (F-W9) ───────────────────────────────────────────
+
+    #[test]
+    fn looks_like_onedrive_matches_the_windows_shaped_segment() {
+        // Testable on macOS against a WINDOWS path on purpose — pure string
+        // matching, no filesystem call.
+        assert!(looks_like_onedrive(
+            r"C:\Users\Anne\OneDrive\Dokumenter\SundayRec"
+        ));
+        // Case-insensitive.
+        assert!(looks_like_onedrive(r"c:\users\anne\onedrive\dokumenter"));
+        assert!(looks_like_onedrive(r"C:\Users\Anne\OneDrIvE\x"));
+        // A forward-slash-normalised path is matched too.
+        assert!(looks_like_onedrive("/home/anne/OneDrive/x"));
+    }
+
+    #[test]
+    fn looks_like_onedrive_is_false_for_an_ordinary_folder() {
+        assert!(!looks_like_onedrive(r"C:\Users\Anne\Documents\SundayRec"));
+        assert!(!looks_like_onedrive("/home/anne/Documents"));
+    }
+
+    #[test]
+    fn looks_like_onedrive_requires_the_whole_segment_not_a_substring() {
+        // A folder someone genuinely named `MyOneDriveBackup` is not synced by
+        // anything — a naive `contains("onedrive")` would still flag it.
+        assert!(!looks_like_onedrive(
+            r"C:\Users\Anne\MyOneDriveBackup\SundayRec"
+        ));
+        assert!(!looks_like_onedrive("/home/anne/NotOneDriveEither/x"));
+    }
+
+    // ── save_folder_synced_finding (F-W9) ────────────────────────────────────
+
+    #[test]
+    fn save_folder_synced_finding_is_a_warning_with_the_stable_code() {
+        let f = save_folder_synced_finding(true).expect("finding");
+        assert_eq!(f.severity, PreflightSeverity::Warn);
+        assert_eq!(f.category, PreflightCategory::Disk);
+        assert_eq!(f.code.as_deref(), Some(code::SAVE_FOLDER_SYNCED));
+        // The Rust message is the English fallback, not Norwegian — see the
+        // function doc and `scripts/check-rust-norwegian.mjs`.
+        assert!(f.message.contains("OneDrive"));
+    }
+
+    #[test]
+    fn save_folder_synced_finding_is_none_when_not_onedrive() {
+        assert!(save_folder_synced_finding(false).is_none());
+    }
+
+    #[test]
+    fn assemble_raises_the_onedrive_warning_between_disk_space_and_mic() {
+        let facts = PreflightFacts {
+            save_folder_onedrive: true,
+            ..all_clear()
+        };
+        let findings = assemble_findings(facts);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, PreflightSeverity::Warn);
+        assert_eq!(findings[0].code.as_deref(), Some(code::SAVE_FOLDER_SYNCED));
+
+        // Alongside a real error, it does not suppress or get suppressed —
+        // and it keeps its documented place, after the disk-space check.
+        let facts = PreflightFacts {
+            folder_writable: false,
+            save_folder_onedrive: true,
+            ..all_clear()
+        };
+        let findings = assemble_findings(facts);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].category, PreflightCategory::Disk); // folder_writable
+        assert_eq!(findings[0].severity, PreflightSeverity::Error);
+        assert_eq!(findings[1].code.as_deref(), Some(code::SAVE_FOLDER_SYNCED));
     }
 
     #[test]
@@ -571,5 +739,24 @@ mod tests {
         assert!(obj.contains_key("severity"));
         assert!(obj.contains_key("category"));
         assert!(obj.contains_key("message"));
+    }
+
+    #[test]
+    fn a_finding_with_no_code_omits_the_key_entirely() {
+        // Every pre-F-W9 finding has `code: None` — `skip_serializing_if` must
+        // actually drop the key, not send `"code":null`, or an OLD renderer
+        // build (which has never heard of `code`) is unaffected either way,
+        // but a wire snapshot test elsewhere would see a shape it never
+        // expected appear out of nowhere.
+        let f = PreflightFinding::error(PreflightCategory::Disk, "x");
+        let v = serde_json::to_value(&f).unwrap();
+        assert!(!v.as_object().unwrap().contains_key("code"), "{v}");
+    }
+
+    #[test]
+    fn a_coded_finding_serialises_its_code_as_a_plain_string() {
+        let f = save_folder_synced_finding(true).unwrap();
+        let v = serde_json::to_value(&f).unwrap();
+        assert_eq!(v["code"], serde_json::json!("save_folder_synced"));
     }
 }

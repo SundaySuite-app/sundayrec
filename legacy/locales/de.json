@@ -1079,5 +1079,8 @@
     "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
     "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
     "trashManifestUnreadable": "Der Inhalt des Papierkorbs konnte nicht gelesen werden. Die Dateien sind noch da, aber die App weiß nicht mehr, woher sie stammen."
+  },
+  "preflight": {
+    "saveFolderSynced": "Der Speicherordner wird von „OneDrive“ synchronisiert, was eine laufende Aufnahme beeinträchtigen kann."
   }
 }

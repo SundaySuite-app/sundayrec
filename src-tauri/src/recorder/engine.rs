@@ -1340,6 +1340,10 @@ async fn run_session(
             emit_state(RecorderState::Failed, 0);
             break 'run;
         }
+        // F2-W6: a leading `.` hides this on macOS for free; Windows needs the
+        // real attribute or a volunteer browsing the save folder mid-service
+        // finds — and can "tidy away" — the live capture fragments.
+        crate::util::hide_dir_on_windows(&cap_dir);
         let capture_ext = if audio_only { "wav" } else { "mkv" };
         let session_output = capture_base_path(&cap_dir, &ctx.opts.output_path, capture_ext);
         // How to turn the capture into the delivery file — persisted in the

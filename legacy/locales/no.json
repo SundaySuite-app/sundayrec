@@ -1079,5 +1079,8 @@
     "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
     "trashManifestUnreadable": "Papirkurvens innhold kunne ikke leses. Filene ligger der fortsatt, men appen vet ikke lenger hvor de kom fra."
+  },
+  "preflight": {
+    "saveFolderSynced": "Lagringsmappen synkroniseres av «OneDrive», som kan forstyrre et opptak som pågår."
   }
 }
