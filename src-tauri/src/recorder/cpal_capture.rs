@@ -882,6 +882,166 @@ mod tests {
     use std::time::Duration;
     use tokio::io::AsyncReadExt;
 
+    // ── The Windows video session's crash-safe layout (F2-W4) ────────────────
+
+    /// A video session's options: the user asked for `/Opptak/gudstjeneste.mp4`.
+    fn video_opts() -> RecordingOpts {
+        RecordingOpts {
+            audio_device_name: "Soundcraft USB Audio".into(),
+            video_device_name: Some("Logitech BRIO".into()),
+            output_path: "/Opptak/gudstjeneste.mp4".into(),
+            stop_on_silence: false,
+            silence_threshold_db: None,
+            silence_timeout_minutes: 5,
+            channel_mode: sundayrec_core::settings::ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            split_minutes: 0,
+            manual_max_minutes: 0,
+            live_levels: true,
+            keep_separate_audio: false,
+            separate_audio_format: "wav".into(),
+            classic_directshow: false,
+            classic_ffmpeg_audio: false,
+            video_input: None,
+        }
+    }
+
+    /// GOLDEN (F2-W4). The Windows video capture lands in the session's hidden
+    /// folder as Matroska — NOT in the user's mp4, which has no `moov` atom until
+    /// a clean finalise and is therefore unplayable after a kill.
+    #[test]
+    fn video_capture_targets_the_sessions_mkv_beside_the_delivery_file() {
+        let c = plan_video_capture(&video_opts(), "Soundcraft USB Audio", 1_786_179_600_000);
+        assert_eq!(c.session_id, "1786179600000");
+        assert_eq!(
+            c.cap_dir,
+            PathBuf::from("/Opptak/.sundayrec-capture-1786179600000")
+        );
+        assert_eq!(
+            c.capture_path, "/Opptak/.sundayrec-capture-1786179600000/gudstjeneste.mkv",
+            "the capture keeps the delivery stem so it maps straight back"
+        );
+        // The layout is the SAME one `run_session` builds — the folder sits
+        // beside the delivery file (one volume, so the remux never crosses a
+        // filesystem) and is hidden.
+        assert_eq!(
+            c.cap_dir.parent(),
+            std::path::Path::new("/Opptak/gudstjeneste.mp4").parent()
+        );
+    }
+
+    /// The seam: the argument builder must be handed the CAPTURE path. This is
+    /// the assertion that fails if someone re-points ffmpeg at `output_path`.
+    #[test]
+    fn video_capture_args_are_built_for_the_mkv_not_the_mp4() {
+        let c = plan_video_capture(&video_opts(), "Soundcraft USB Audio", 1_786_179_600_000);
+        let args = sundayrec_core::capture::build_cpal_pipe_video_args(
+            "Logitech BRIO",
+            sundayrec_core::capture::RECORDING_FRAMERATE,
+            48_000,
+            2,
+            &c.capture_path,
+            None,
+            192,
+            sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+            None,
+        );
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some(c.capture_path.as_str())
+        );
+        assert!(
+            !args.iter().any(|a| a.ends_with(".mp4")),
+            "no ffmpeg argument may still point at the delivery mp4: {args:?}"
+        );
+        assert!(
+            !args.iter().any(|a| a == "+faststart"),
+            "the mkv capture drops faststart — and with it the whole-file \
+             rewrite a stop used to pay"
+        );
+    }
+
+    /// The manifest is what makes a crash survivable: it is the ONLY way
+    /// `scan_and_recover` learns the capture exists. One deliverable, one
+    /// fragment (this path has neither split nor reconnect), stamped with the
+    /// session start, and carrying a REMUX — not an audio encode.
+    #[test]
+    fn video_capture_manifest_describes_a_remuxable_single_fragment_session() {
+        let c = plan_video_capture(&video_opts(), "Soundcraft USB Audio", 1_786_179_600_000);
+        let m = c.manifest();
+        assert_eq!(m.session_id, "1786179600000");
+        assert_eq!(m.device_name, "Soundcraft USB Audio");
+        assert_eq!(m.session_start_ms, 1_786_179_600_000);
+        assert_eq!(
+            m.preroll_clip_path, None,
+            "a session that wants a pre-roll is routed to dshow, never here"
+        );
+        assert_eq!(m.deliverables.len(), 1);
+        assert_eq!(m.deliverables[0].primary_path, c.capture_path);
+        assert_eq!(m.deliverables[0].fragments, vec![c.capture_path.clone()]);
+        assert_eq!(m.deliverables[0].started_at_ms, 1_786_179_600_000);
+
+        let enc = m
+            .delivery_encode
+            .as_ref()
+            .expect("a decoupled capture must say how to finish");
+        assert_eq!(
+            enc.mode,
+            sundayrec_core::recovery::DeliveryMode::RemuxCopy,
+            "video is stream-copied into the container, never re-encoded"
+        );
+        assert_eq!(enc.delivery_dir, "/Opptak");
+        assert_eq!(enc.ext, "mp4");
+        // The manifest is the whole contract with the next launch — it has to
+        // survive a round-trip through the JSON file on disk.
+        let json = m.to_json().expect("serialise");
+        assert_eq!(
+            sundayrec_core::recovery::SessionManifest::from_json(&json).expect("parse"),
+            c.manifest()
+        );
+    }
+
+    /// Live stop and crash recovery must deliver to the SAME place: the file the
+    /// user actually asked for. (Built through `DeliverySpec::from_manifest`, the
+    /// one constructor all three finalise paths share.)
+    #[test]
+    fn video_capture_delivers_back_to_exactly_the_users_file() {
+        let opts = video_opts();
+        let c = plan_video_capture(&opts, "Soundcraft USB Audio", 1_786_179_600_000);
+        let spec = c.delivery_spec();
+        assert_eq!(spec.delivery_path, opts.output_path);
+        assert_eq!(spec.mode, sundayrec_core::recovery::DeliveryMode::RemuxCopy);
+        // What the recovery scan would compute from the persisted manifest, with
+        // no live session in memory, is the same path.
+        let enc = c.manifest().delivery_encode.unwrap();
+        assert_eq!(
+            sundayrec_core::recovery::delivery_path_for(
+                &c.manifest().deliverables[0].primary_path,
+                &enc.delivery_dir,
+                &enc.ext,
+            ),
+            opts.output_path
+        );
+    }
+
+    /// The concat layer sees one fragment and no pre-roll, so `concat_needed` is
+    /// false and finalisation is a pure remux — no ffmpeg concat pass, no
+    /// second copy of a multi-hour service on disk.
+    #[test]
+    fn video_capture_deliverable_needs_no_concat_pass() {
+        let c = plan_video_capture(&video_opts(), "Mic", 1_786_179_600_000);
+        let d = c.deliverable();
+        assert_eq!(d.primary_path, c.capture_path);
+        assert_eq!(d.fragments, vec![c.capture_path.clone()]);
+        assert!(
+            !sundayrec_core::recorder::concat_needed(&d.fragments, false),
+            "a single fragment with no pre-roll is already the finished capture"
+        );
+    }
+
     // ── The history row (the 1970 bug site) ──────────────────────────────────
 
     /// GOLDEN. These five values are the whole row; the ones that were wrong
