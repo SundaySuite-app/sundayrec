@@ -585,6 +585,7 @@
       "gateReason": "Jeszcze nie słyszymy dźwięku. Powiedz coś do mikrofonu albo włącz mikser.",
       "readyTitle": "Gotowe na niedzielę",
       "readyDesc": "To samo znajdziesz w Ustawieniach (koło zębate) i później na ekranie Nagrywanie.",
+      "fixHere": "Wszystko tutaj można poprawić od razu — wiersz otwiera ekran na miejscu, a Ty zostajesz w konfiguracji.",
       "notifyTodo": "Nie skonfigurowano — nikt nie dostanie wiadomości, jeśli nagranie się nie uda.",
       "open": "Otwórz SundayRec",
       "progress": "Postęp",
@@ -873,6 +874,7 @@
     "exportExporting": "Eksportowanie…",
     "exportCancel": "Anuluj",
     "exportCancelling": "Anulowanie…",
+    "exportPhasePreparing": "Analizowanie dźwięku…",
     "exportPhaseMeasuring": "Pomiar głośności…",
     "exportPhaseEncoding": "Eksportowanie…",
     "remainingLabel": "Wynik",
@@ -912,6 +914,7 @@
     "jinglesVideoUnsupported": "Dżingle nie są jeszcze obsługiwane dla wideo",
     "confirmClose": "Masz niezapisane zmiany. Zamknąć mimo to?",
     "confirmOpenOther": "Masz niezapisane zmiany. Otworzyć nowy plik mimo to?",
+    "confirmExportRunning": "Eksport trwa. Anulować go?",
     "tlIntro": "Intro",
     "tlMain": "Nagranie główne",
     "tlOutro": "Outro",
@@ -953,6 +956,9 @@
     "diagnosing": "Analizowanie…",
     "enhanceTitle": "Poprawa dźwięku",
     "errInvalidFormat": "Ten format nie jest obsługiwany przy eksporcie. Wybierz inny format na stronie Eksport.",
+    "errExportAlreadyRunning": "Eksport już trwa. Poczekaj, aż się zakończy.",
+    "errDiskLowForExport": "Za mało wolnego miejsca na ten eksport. Zwolnij miejsce lub wybierz inny folder przyciskiem „Wybierz folder…”.",
+    "errRecordingInProgress": "Trwa nagrywanie. Poczekaj, aż się zakończy, zanim wyeksportujesz.",
     "errPathNotAbsolute": "Nieprawidłowy folder lub ścieżka pliku. Wybierz ponownie folder docelowy.",
     "metaDesc": "OPIS",
     "metaSave": "Zapisz metadane",
@@ -1050,7 +1056,9 @@
   },
   "dialog": {
     "discardEditsBody": "Wykonane cięcia zostaną utracone. Sam plik nagrania pozostanie nienaruszony.",
-    "discardEdits": "Odrzuć zmiany"
+    "discardEdits": "Odrzuć zmiany",
+    "abortExportBody": "Tworzony plik nie zostanie ukończony. Sam plik nagrania pozostanie nienaruszony.",
+    "abortExport": "Anuluj eksport"
   },
   "missed": {
     "banner": {

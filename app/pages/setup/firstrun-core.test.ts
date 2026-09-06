@@ -9,6 +9,7 @@ import {
   screenAt,
   showFirstRunResumeChip,
   soundGateOpen,
+  withRow,
 } from "./firstrun-core";
 
 describe("the sequence", () => {
@@ -105,5 +106,26 @@ describe("resuming after «Sett opp»", () => {
   it("shows the chip only while onboarding is unfinished", () => {
     expect(showFirstRunResumeChip(false)).toBe(true);
     expect(showFirstRunResumeChip(true)).toBe(false);
+  });
+});
+
+// F2-T4: the checklist rows fold out in place, so «which rows are open» is
+// state the checklist has to keep — and it is a LIST, because the control room
+// on OPPTAK lets several cards stand open at once and these are the same
+// screens in another frame.
+describe("withRow", () => {
+  it("opens and closes one row without touching the others", () => {
+    expect(withRow([], "sound", true)).toEqual(["sound"]);
+    expect(withRow(["sound", "folder"], "sound", false)).toEqual(["folder"]);
+    expect(withRow(["sound"], "notify", true)).toEqual(["sound", "notify"]);
+  });
+
+  it("returns the SAME array when nothing changed", () => {
+    // Not a micro-optimisation: `Checklist` closes the sound row from an
+    // effect that runs on every `isRecording` render, and a fresh array there
+    // would be a new state value — hence a new render — on every one of them.
+    const open: readonly ("sound" | "folder")[] = ["sound"];
+    expect(withRow(open, "sound", true)).toBe(open);
+    expect(withRow(open, "folder", false)).toBe(open);
   });
 });

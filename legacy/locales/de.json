@@ -579,6 +579,7 @@
       "gateReason": "Wir hören noch keinen Ton. Sprechen Sie ins Mikrofon, oder schalten Sie das Mischpult ein.",
       "readyTitle": "Bereit für Sonntag",
       "readyDesc": "Das ist dasselbe, was Sie später unter Einstellungen (das Zahnrad) und auf dem Aufnahme-Bildschirm finden.",
+      "fixHere": "Alles hier lässt sich sofort ändern — die Zeile öffnet den Bildschirm an Ort und Stelle, und Sie bleiben in der Einrichtung.",
       "notifyTodo": "Nicht eingerichtet — niemand wird benachrichtigt, wenn eine Aufnahme fehlschlägt.",
       "open": "SundayRec öffnen",
       "progress": "Fortschritt",
@@ -855,6 +856,7 @@
     "exportExporting": "Wird exportiert…",
     "exportCancel": "Abbrechen",
     "exportCancelling": "Wird abgebrochen…",
+    "exportPhasePreparing": "Ton wird analysiert…",
     "exportPhaseMeasuring": "Lautheit wird gemessen…",
     "exportPhaseEncoding": "Wird exportiert…",
     "remainingLabel": "Ergebnis",
@@ -894,6 +896,7 @@
     "jinglesVideoUnsupported": "Jingles werden für Video noch nicht unterstützt",
     "confirmClose": "Sie haben ungespeicherte Änderungen. Trotzdem schließen?",
     "confirmOpenOther": "Sie haben ungespeicherte Änderungen. Trotzdem neue Datei öffnen?",
+    "confirmExportRunning": "Der Export läuft. Möchten Sie ihn abbrechen?",
     "tlIntro": "Intro",
     "tlMain": "Hauptaufnahme",
     "tlOutro": "Outro",
@@ -935,6 +938,9 @@
     "diagnosing": "Analysiert…",
     "enhanceTitle": "Klangverbesserung",
     "errInvalidFormat": "Dieses Format wird für den Export nicht unterstützt. Wählen Sie auf der Seite „Export“ ein anderes Format.",
+    "errExportAlreadyRunning": "Ein Export läuft bereits. Warten Sie, bis er fertig ist.",
+    "errDiskLowForExport": "Für diesen Export ist nicht genügend freier Speicherplatz vorhanden. Geben Sie Speicherplatz frei, oder wählen Sie mit „Ordner wählen…“ einen anderen Ordner.",
+    "errRecordingInProgress": "Eine Aufnahme läuft gerade. Warten Sie, bis sie fertig ist, bevor Sie exportieren.",
     "errPathNotAbsolute": "Ungültiger Ordner oder Dateipfad. Wählen Sie den Zielordner erneut.",
     "metaDesc": "BESCHREIBUNG",
     "metaSave": "Metadaten speichern",
@@ -1032,7 +1038,9 @@
   },
   "dialog": {
     "discardEditsBody": "Ihre Schnitte gehen verloren. Die Aufnahmedatei selbst bleibt unberührt.",
-    "discardEdits": "Änderungen verwerfen"
+    "discardEdits": "Änderungen verwerfen",
+    "abortExportBody": "Die Datei, die gerade entsteht, wird nicht fertig. Die Aufnahmedatei selbst bleibt unberührt.",
+    "abortExport": "Export abbrechen"
   },
   "missed": {
     "banner": {

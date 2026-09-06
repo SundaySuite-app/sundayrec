@@ -579,6 +579,7 @@
       "gateReason": "Nous n’entendons encore aucun son. Parlez dans le microphone, ou allumez la table de mixage.",
       "readyTitle": "Prêt pour dimanche",
       "readyDesc": "C’est la même chose que vous retrouverez dans Réglages (la roue dentée) et sur l’écran Enregistrement par la suite.",
+      "fixHere": "Tout ici peut être corrigé tout de suite — la ligne ouvre l’écran sur place, et vous restez dans la configuration.",
       "notifyTodo": "Pas configuré — personne n’est averti si un enregistrement échoue.",
       "open": "Ouvrir SundayRec",
       "progress": "Progression",
@@ -855,6 +856,7 @@
     "exportExporting": "Exportation…",
     "exportCancel": "Annuler",
     "exportCancelling": "Annulation…",
+    "exportPhasePreparing": "Analyse du son…",
     "exportPhaseMeasuring": "Mesure du volume sonore…",
     "exportPhaseEncoding": "Exportation…",
     "remainingLabel": "Résultat",
@@ -894,6 +896,7 @@
     "jinglesVideoUnsupported": "Les jingles ne sont pas encore pris en charge pour la vidéo",
     "confirmClose": "Vous avez des modifications non enregistrées. Fermer quand même ?",
     "confirmOpenOther": "Vous avez des modifications non enregistrées. Ouvrir un nouveau fichier quand même ?",
+    "confirmExportRunning": "L’export est en cours. Voulez-vous l’annuler ?",
     "tlIntro": "Intro",
     "tlMain": "Enregistrement principal",
     "tlOutro": "Outro",
@@ -935,6 +938,9 @@
     "diagnosing": "Analyse en cours…",
     "enhanceTitle": "Amélioration audio",
     "errInvalidFormat": "Ce format n’est pas pris en charge pour l’export. Choisissez un autre format sur la page Export.",
+    "errExportAlreadyRunning": "Un export est déjà en cours. Attendez qu’il soit terminé.",
+    "errDiskLowForExport": "Il n’y a pas assez d’espace libre pour cet export. Libérez de l’espace, ou choisissez un autre dossier avec « Choisir un dossier… ».",
+    "errRecordingInProgress": "Un enregistrement est en cours. Attendez qu’il soit terminé avant d’exporter.",
     "errPathNotAbsolute": "Dossier ou chemin de fichier non valide. Sélectionnez à nouveau le dossier de destination.",
     "metaDesc": "DESCRIPTION",
     "metaSave": "Enregistrer les métadonnées",
@@ -1032,7 +1038,9 @@
   },
   "dialog": {
     "discardEditsBody": "Les coupes que vous avez faites seront perdues. Le fichier d’enregistrement lui-même n’est pas touché.",
-    "discardEdits": "Abandonner les modifications"
+    "discardEdits": "Abandonner les modifications",
+    "abortExportBody": "Le fichier en cours de création ne sera pas terminé. Le fichier d’enregistrement lui-même n’est pas touché.",
+    "abortExport": "Annuler l’export"
   },
   "missed": {
     "banner": {

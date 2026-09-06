@@ -24,23 +24,42 @@
  * tilstandene, som kortene i kontrollrommet. Det er derfor den kan være gul:
  * «Alt er klart!» over en app uten lagringsmappe er atlasets funn (§3e), og den
  * setningen finnes ikke her. Overskriften sier «Klar til søndag», og raden som
- * ikke er det står gul med en «Sett opp»-knapp som følger med til kortet på
- * OPPTAK.
+ * ikke er det står gul med en «Sett opp»-knapp.
  *
- * ## R6: «Sett opp» er ikke en enveis-utgang
+ * ## R6 → F2-T4: «Sett opp» forlater ikke sekvensen i det hele tatt
  *
- * Den knappen forlater sekvensen for godt — `route.firstRun` blir usann i
- * samme kall, og `onboardingDone` er fortsatt false, siden bare `finish()`
- * setter den. Uten mer enn det ville en frivillig som retter mappen midt i
- * gudstjenesteforberedelsen fått hele sekvensen på nytt, fra spørsmål 1, ved
- * neste oppstart — fire besvarte spørsmål og alt.
+ * R6 gjorde avgangen tilbakevendende: knappen husket hvor den gikk FRA, og en
+ * chip på OPPTAK førte tilbake. F2-T4 fjerner avgangen. Raden folder ut den
+ * samme skjermen PÅ STEDET — nøyaktig slik kontrollrommet på OPPTAK gjør det
+ * (`RecordPage`s `ControlCard`-rader over `embedded`-signalet i `SubPage.tsx`)
+ * — så en frivillig som retter mappen midt i sjekklisten blir stående i
+ * sjekklisten, med de fire andre svarene synlige rundt seg.
  *
- * `firstRunReturn` er derfor et lite minne fra siste avgang: sjekklistens
- * `onAction` skriver dit RETT FØR den navigerer bort, og
- * `FirstRunResumeChip` (rendret på OPPTAK og INNSTILLINGER, se den fila) leser
- * det tilbake. Klikk på chippen armer `route.firstRun` igjen med samme steg —
- * i praksis alltid sjekklisten selv, siden det er det ENE stedet «Sett opp»
- * finnes i dag.
+ * Alle FEM radene folder ut; ingen faller tilbake på en navigering. De fem
+ * spørsmålene ER de fem skjermene sekvensen nettopp gikk gjennom, så det
+ * finnes ingen rad uten en skjerm å vise. («Ta med kamera» og «Ta opp
+ * automatisk» er ikke rader her — de er ikke ett av de fem spørsmålene, se
+ * `firstrun-core.ts`.)
+ *
+ * ## Chippen står — det finnes fortsatt veier ut
+ *
+ * `firstRunReturn` + `FirstRunResumeChip` (rendret på OPPTAK og INNSTILLINGER,
+ * se den fila) beholdes, og de er ikke arbeidsledige: bunnlinja står under
+ * første gang også, og et utfoldet kort kan ha sin egen lenke ut («Avansert
+ * lyd» i `SoundPage` går til Innstillinger). Begge kan skje fra et SPØRSMÅL og
+ * ikke bare fra sjekklisten, så signalet speiler posisjonen fortløpende i
+ * stedet for å bli skrevet av én knapp — se `useRememberPosition` under.
+ *
+ * ## VU-regelen, arvet fra kontrollrommet
+ *
+ * Sjekklisten har fortsatt INGEN egen måler (`vuWord: null` under): den er et
+ * sammendrag, ikke en test. Måleren finnes bare inne i det utfoldede lyd-
+ * kortet (`sound-vu`), og `acquireVuFeed` er refcountet, så et kort som åpnes
+ * mens sekvensens eget steg 1 lytter ville uansett vært ÉN økt på enheten.
+ *
+ * ⚠️ Og lyd-raden KOLLAPSER når et opptak starter, akkurat som kilde-kortet på
+ * OPPTAK: monteringen er vakten som holder appen fra å be om enheten opptaket
+ * nettopp tok (`@lib/audio/vu-feed`s `window.__isRecording`-sjekk er inert).
  */
 
 import { signal } from "@preact/signals";
@@ -74,11 +93,13 @@ import {
   isGatedStep,
   screenAt,
   soundGateOpen,
+  withRow,
 } from "./firstrun-core";
 import { FolderPage } from "./FolderPage";
 import { NotifyPage } from "./NotifyPage";
 import { QualityPage } from "./QualityPage";
 import { SoundPage } from "./SoundPage";
+import { useEmbedded } from "./SubPage";
 import styles from "./firstrun.module.css";
 import setup from "./setup.module.css";
 import { useVuWord } from "./use-vu-word";
@@ -94,13 +115,21 @@ import { useVuWord } from "./use-vu-word";
 export const firstRunIndex = signal(0);
 
 /**
- * R6: hvor «Sett opp» sist forlot sekvensen FRA. `null` til noe gjør det.
+ * R6: hvor sekvensen sist STO. `null` til den har vært åpen denne økten.
  *
- * Skrevet av sjekklistens `onAction`, rett før den navigerer bort — se
- * filhodet. `resumeFirstRun` leser den og tømmer den igjen; `finish()` lar
- * den stå, fordi den blir uinteressant i samme kall som setter
- * `onboardingDone`, og chippen som leser den forsvinner med resten av
- * sekvensen (`showFirstRunResumeChip`, `firstrun-core.ts`).
+ * ⚠️ F2-T4 byttet skriveren. R6 skrev den fra sjekklistens `onAction`, rett før
+ * den navigerte bort — den ene veien ut som fantes. Nå folder radene ut på
+ * stedet, så den knappen navigerer ikke; det som fortsatt kan forlate
+ * sekvensen er bunnlinja (som står under første gang også) og en lenke inne i
+ * et utfoldet kort. Ingen av dem går gjennom kode denne fila eier, og begge
+ * kan skje fra et SPØRSMÅL — så posisjonen speiles fortløpende
+ * (`useRememberPosition`) i stedet for å bli skrevet av én knapp som ikke
+ * lenger finnes.
+ *
+ * `resumeFirstRun` leser den; `finish()` lar den stå, fordi den blir
+ * uinteressant i samme kall som setter `onboardingDone`, og chippen som leser
+ * den forsvinner med resten av sekvensen (`showFirstRunResumeChip`,
+ * `firstrun-core.ts`).
  */
 export const firstRunReturn = signal<number | null>(null);
 
@@ -117,14 +146,32 @@ export function firstRunHeading(active: boolean): string | undefined {
 /**
  * «Fortsett oppsettet»-chippens klikk: tilbake til stedet man forlot fra.
  *
- * IKKE til spørsmålet raden gjaldt — det er alternativet (kortene foldet ut
- * INNE i sekvensen) canvasen ikke har bedt om ennå, se filhodet. Dette er den
- * billige utgaven: samme skjerm, samme fem svar, ett klikk.
+ * Nøyaktig posisjonen — spørsmål 3 hvis det var der bunnlinja tok en frivillig
+ * ut, sjekklisten hvis det var der. Reserven når ingenting er husket er
+ * sjekklisten (`firstRunResumeIndex`).
+ *
+ * Tømmingen står fordi den er ærlig: signalet betyr «sist sett», og i det
+ * øyeblikket sekvensen er åpen igjen er det `useRememberPosition` som eier
+ * svaret, ikke minnet fra forrige gang.
  */
 export function resumeFirstRun(): void {
   firstRunIndex.value = firstRunResumeIndex(firstRunReturn.value);
   firstRunReturn.value = null;
   navigate("setup", { firstRun: true });
+}
+
+/**
+ * Speil posisjonen inn i `firstRunReturn` mens sekvensen står åpen.
+ *
+ * Én effekt, ingen betingelser: hooken kjører bare mens `FirstRun` er montert,
+ * og `FirstRun` er montert bare mens `route.firstRun` er sann (`Shell.tsx`).
+ * Det som forlater sekvensen — bunnlinja, en lenke inne i et utfoldet kort —
+ * river komponenten ned, og da står den siste posisjonen igjen i signalet.
+ */
+function useRememberPosition(index: number): void {
+  useEffect(() => {
+    firstRunReturn.value = index;
+  }, [index]);
 }
 
 export function FirstRun() {
@@ -136,6 +183,7 @@ export function FirstRun() {
   const [skippedSound, setSkippedSound] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const screen = screenAt(index);
+  useRememberPosition(index);
 
   // De samme fakta kontrollrommet leser. Sjekklisten er de samme reglene, så
   // den trenger de samme inndataene.
@@ -200,7 +248,11 @@ export function FirstRun() {
         </ol>
       </div>
 
-      {screen.kind === "ready" ? <Checklist /> : <Question tab={screen.tab} />}
+      {screen.kind === "ready" ? (
+        <Checklist />
+      ) : (
+        <DecisionScreen id={screen.tab} />
+      )}
 
       <div class={styles.foot}>
         {index > 0 && screen.kind === "question" ? (
@@ -259,9 +311,16 @@ export function FirstRun() {
   );
 }
 
-/** Den ene av de fem skjermene som hører til dette steget. */
-function Question({ tab }: { tab: DecisionId }) {
-  switch (tab) {
+/**
+ * Skjermen som eier ett av de fem spørsmålene.
+ *
+ * ÉN tabell, to kallsteder: sekvensens eget steg, og kroppen i en utfoldet
+ * sjekklistrad. To `switch`-er over de samme fem id-ene ville vært to steder å
+ * glemme et spørsmål — og den ene som glemte det ville rendret ingenting, uten
+ * å feile.
+ */
+function DecisionScreen({ id }: { id: DecisionId }) {
+  switch (id) {
     case "sound":
       return <SoundPage />;
     case "folder":
@@ -276,14 +335,49 @@ function Question({ tab }: { tab: DecisionId }) {
 }
 
 /**
- * «Klar til søndag» — de fem spørsmålene med svaret som står nå.
+ * «Klar til søndag» — de fem spørsmålene med svaret som står nå, og hver av dem
+ * med hele skjermen sin ett klikk unna, PÅ STEDET.
  *
- * Identisk regelverk med nivå 1, med vilje: to lister som svarte hver for seg
- * ville før eller siden vært uenige, og den uenigheten ville stått side om side
- * med seg selv på to skjermer en frivillig ser rett etter hverandre.
+ * Identisk regelverk med kontrollrommet, med vilje: to lister som svarte hver
+ * for seg ville før eller siden vært uenige, og den uenigheten ville stått side
+ * om side med seg selv på to skjermer en frivillig ser rett etter hverandre.
+ *
+ * ## Utfoldingen, og hvilke regler som er lånt
+ *
+ *   - **Flere kan stå åpne.** Samme som `useControlCards` på OPPTAK; regelen
+ *     er `withRow` i `firstrun-core.ts`.
+ *   - **Kortet blir stående til brukeren lukker det.** Ikke «kollapser når
+ *     raden blir grønn»: lagringen har en KVITTERING inne i kortet
+ *     («Lagret ✓»), og en skjerm som rev seg selv bort i det øyeblikket
+ *     kvitteringen kom ville tatt bort det ene beviset på at det virket. Det
+ *     er den samme avgjørelsen `SoundPage` er skrevet rundt («INGEN navigering
+ *     her lenger (D2)»), og raden over kortet oppdaterer seg likevel med én
+ *     gang — den leser `settings`-signalet.
+ *   - **Unntaket er lyd, under et opptak.** Se filhodet: monteringen er VU-
+ *     vakten, så raden kollapser når `isRecording` blir sann, akkurat som
+ *     kilde-kortet i kontrollrommet gjør.
+ *
+ * `useEmbedded()` står HER og ikke i `FirstRun`: spørsmålsskjermene skal
+ * beholde leden sin (den er hele forklaringen når skjermen står alene), og
+ * sjekklistas rad har allerede sagt hva kortet er for. Hooken er symmetrisk
+ * ved konstruksjon (`SubPage.tsx`), og `Checklist` monteres og avmonteres med
+ * den ene skjermen den gjelder for.
  */
 function Checklist() {
   const s = settings.value;
+  const live = isRecording.value;
+  const [open, setOpen] = useState<readonly DecisionId[]>([]);
+  useEmbedded();
+
+  // VU-regelen, som en effekt og ikke som en `&&` i JSX: kortet skal FAKTISK
+  // ut av treet, ikke bare skjules, og tilstanden må huske at det ble lukket
+  // (ellers spretter det opp igjen i det opptaket stopper — med en måler som
+  // ber om enheten på nytt uten at noen ba om det).
+  useEffect(() => {
+    if (!live) return;
+    setOpen((prev) => withRow(prev, "sound", false));
+  }, [live]);
+
   const decisions = decisionsFor({
     settings: s,
     devices: audioDevices.value,
@@ -291,12 +385,16 @@ function Checklist() {
     roomMinutes: currentRoomMinutes(),
     emailTransport: emailTransport(),
     locale: locale.value,
-    // Ingen måler på sjekklisten: den er et sammendrag, ikke en test.
+    // Fortsatt ingen måler på selve sjekklisten: den er et sammendrag, ikke en
+    // test. Hørselstesten står inne i lyd-kortet, der den alltid har stått.
     vuWord: null,
   });
 
   return (
     <div class={setup.list}>
+      <p data-testid="first-run-fix-here" class={styles.fixHere}>
+        {t("app.first.fixHere")}
+      </p>
       {decisions.map((decision, index) => (
         <DecisionCard
           key={decision.id}
@@ -314,26 +412,21 @@ function Checklist() {
           actionLabel={
             needsSetUp(decision) ? t("app.setup.setUp") : t("app.setup.change")
           }
-          // Til kortet som eier spørsmålet: fire av dem står i kontrollrommet
-          // på OPPTAK, og kirkeprofilen under Innstillinger. Knappen forlater
-          // sekvensen — det gjorde den før også, og en «Sett opp» som bare
-          // rullet ville vært en knapp uten en skjerm.
-          //
-          // R6: FØR den navigerer, husk at det er HERFRA vi går — se
-          // `firstRunReturn` over. Uten det er avgangen for godt: appen
-          // glemmer at man var midt i oppsettet, og en frivillig som retter
-          // mappen får de fem spørsmålene på nytt ved neste oppstart.
-          onAction={() => {
-            firstRunReturn.value = firstRunIndex.value;
-            if (decision.id === "church") {
-              navigate("setup");
-            } else {
-              navigate("record", { anchor: decision.id });
-            }
-          }}
+          // Samme ord som i kontrollrommet, og med vilje: «Lukk» er den samme
+          // tilstanden på begge skjermene, og to nøkler for det ene ordet er
+          // hvordan de to begynner å si forskjellige ting.
+          collapseLabel={t("app.record.close")}
+          expanded={open.includes(decision.id)}
+          onExpand={() =>
+            setOpen((prev) =>
+              withRow(prev, decision.id, !prev.includes(decision.id)),
+            )
+          }
           anchor={decision.id}
           testId={`first-run-row-${decision.id}`}
-        />
+        >
+          <DecisionScreen id={decision.id} />
+        </DecisionCard>
       ))}
     </div>
   );

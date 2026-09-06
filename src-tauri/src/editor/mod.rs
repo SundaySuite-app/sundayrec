@@ -191,7 +191,8 @@ pub struct EditorExportRequest {
     pub duration: f64,
     /// Output container: `mp3|aac|wav|flac|mp4`.
     pub format: String,
-    /// Folder to write into; the seam picks a collision-free name there.
+    /// Folder to write into; the seam renders through a temp file there and
+    /// picks the collision-free name only once the render succeeded (F2-4).
     pub output_folder: String,
     /// Output bitrate (kbps) for lossy formats; `None` uses the codec default.
     pub bitrate: Option<u32>,
@@ -533,6 +534,9 @@ pub struct EditorExportLoudness {
 #[ts(export, export_to = "EditorExportResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportResult {
+    /// Where the finished file landed — the name AFTER the atomic rename
+    /// (F2-4), never the temp it was rendered through. The receipt shows this,
+    /// and the renderer's `predictedOutputName` is only a preview of it.
     pub output_path: String,
     /// `None` for an unmastered export, and for a mastered one whose pass-2
     /// report we could not read. OPTIONAL on the TS side on purpose: every
@@ -1272,8 +1276,9 @@ pub const EXPORT_PHASE_ENCODING: &str = "encoding";
 /// service used to be unkillable — the button was a stub returning `true`).
 ///
 /// A single slot rather than the mastering engine's id-keyed map because export
-/// is single-flight in the UI: the "Eksporter" button disables for the duration
-/// and the modal is closed, so there is never a second export to disambiguate.
+/// is single-flight — and, since F2-A-B, single-flight because THIS TYPE says
+/// so rather than because a button was assumed to be disabled (see
+/// `ExportEngine::try_begin`).
 /// The mutex is recovered with `unwrap_or_else(|e| e.into_inner())` for the same
 /// reason `MasterEngine`'s are — it guards a plain `Option` with no invariant a
 /// panic could half-break, and one panicked export must not poison every later
@@ -1292,6 +1297,111 @@ pub struct ExportEngine {
     /// one of those gaps killed nothing and was then forgotten — the export
     /// simply carried on and the next pass spawned as if nothing had happened.
     cancelled: std::sync::atomic::AtomicBool,
+    /// Whether an export owns the engine right now. Held by an [`ExportSlot`]
+    /// for the whole of [`export`], handed out by `ExportEngine::try_begin`.
+    ///
+    /// The single-slot design above USED to rest on "the button disables for
+    /// the duration". It does not: a double-click on Eksporter got two calls
+    /// through the renderer's guard (both waiting on the same memoised sound
+    /// analysis), and two exports on ONE engine destroy each other. B's
+    /// `reset_cancel()` clears A's cancel; B's `hold(child_b)` DROPS
+    /// `Some(child_a)`, and `kill_on_drop(true)` SIGKILLs A's ffmpeg. A then
+    /// reads EOF, `take()`s B's child, waits for B — and reports success on a
+    /// TRUNCATED file, because `out_path.exists()` is true of a file ffmpeg
+    /// never finished. B, left with `None`, reports "cancelled" although B's
+    /// file is the whole one. Two lies from one race.
+    ///
+    /// A renderer-side guard cannot fix this: the engine is reachable from any
+    /// caller of the command, and "the UI would never do that" is exactly the
+    /// assumption that broke.
+    // Read only by `try_begin`/`ExportSlot` (feature-on or test); the field
+    // itself compiles either way so the struct has ONE shape — same reason as
+    // `child` above.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    in_flight: std::sync::atomic::AtomicBool,
+}
+
+/// The token that says "this export owns the engine". Dropping it frees the
+/// engine again.
+///
+/// RAII and not an `end()` call at the bottom of [`export`], because [`export`]
+/// has around a dozen `?` early returns (a missing input, an unsupported
+/// format, a cut plan that keeps nothing, every cancel check, every ffmpeg
+/// failure) plus the panic path. An `end()` reachable only by falling off the
+/// end would leave the engine permanently "busy" the first time an export
+/// failed — turning a one-off error into an app that refuses to export until it
+/// is restarted.
+#[cfg(any(feature = "editor", test))]
+pub struct ExportSlot<'a> {
+    engine: &'a ExportEngine,
+}
+
+#[cfg(any(feature = "editor", test))]
+impl Drop for ExportSlot<'_> {
+    fn drop(&mut self) {
+        self.engine
+            .in_flight
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// The half-written render, and the promise that it does not outlive the
+/// export that is writing it (F2-4).
+///
+/// [`export`] renders into `<stem>_redigert.__editor_tmp.<ext>` and renames it
+/// onto the delivered name only after ffmpeg exits zero. Everything between
+/// those two points is a file that must not survive: a cancel, the kill-timer,
+/// an ffmpeg failure, a failed hardware render whose software retry also
+/// failed, a rename that could not complete.
+///
+/// RAII, for the same reason [`ExportSlot`] is: the tail of `export()` returns
+/// through `?` from half a dozen places, and a `remove_file` line at the bottom
+/// would be reached by exactly none of them — which is how a truncated file
+/// wearing the finished name reached a Sunday service in the first place.
+/// [`delivered`](TempRender::delivered) disarms it on the ONE path where the
+/// temp is no longer ours: the rename has already moved it.
+///
+/// It is not the only cleanup: a hard power cut runs no `Drop` anywhere, and
+/// the leftover is then reaped by `startup_sweep` — which is why the temp name
+/// is one `sundayrec_core::editor::is_editor_temp_name` recognises.
+#[cfg(feature = "editor")]
+struct TempRender {
+    /// `None` once the file has been delivered (renamed) — nothing to reap.
+    path: Option<String>,
+}
+
+#[cfg(feature = "editor")]
+impl TempRender {
+    /// Guard `path` until it is delivered or this value drops.
+    fn armed(path: &str) -> Self {
+        Self {
+            path: Some(path.to_string()),
+        }
+    }
+
+    /// The render made it to its final name — stand down.
+    fn delivered(&mut self) {
+        self.path = None;
+    }
+}
+
+#[cfg(feature = "editor")]
+impl Drop for TempRender {
+    fn drop(&mut self) {
+        // Best-effort, and deliberately silent about "it was not there": the
+        // common case is an export that failed BEFORE ffmpeg created anything.
+        if let Some(path) = self.path.take() {
+            match std::fs::remove_file(&path) {
+                Ok(()) => tracing::info!("export: removed the unfinished render"),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "export: could not remove the unfinished render — the startup \
+                     sweep will reap it"
+                ),
+            }
+        }
+    }
 }
 
 impl Default for ExportEngine {
@@ -1306,7 +1416,27 @@ impl ExportEngine {
         Self {
             child: std::sync::Mutex::new(None),
             cancelled: std::sync::atomic::AtomicBool::new(false),
+            in_flight: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Claim the engine for one export, or `None` when another one already has
+    /// it. The claim is released when the returned [`ExportSlot`] drops.
+    ///
+    /// `compare_exchange` and not a load-then-store: the read and the write
+    /// must be ONE step, or two calls arriving together both see `false` and
+    /// both proceed — which is the very race this exists to stop.
+    #[cfg(any(feature = "editor", test))]
+    fn try_begin(&self) -> Option<ExportSlot<'_>> {
+        self.in_flight
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .ok()
+            .map(|_| ExportSlot { engine: self })
     }
 
     /// Hand the engine the live render so a cancel can reach it.
@@ -2580,6 +2710,21 @@ where
 /// render that fails is retried once in software (see
 /// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
 /// so it can never cost the user their export.
+///
+/// SINGLE-FLIGHT (F2-A-B): a second call while one is running is refused with
+/// `export_already_running` before it can touch a thing. The claim is taken
+/// HERE and not in [`editor_export`](crate::commands::editor::editor_export) so
+/// that no caller — command, test, or a future seam — can reach the engine
+/// around it; the very first line of the body it guards, `reset_cancel()`,
+/// already belongs to the export that is running.
+///
+/// ATOMIC (F2-4): ffmpeg renders into
+/// [`editor_tmp_path`](sundayrec_core::editor::editor_tmp_path) and the file is
+/// renamed onto its collision-free FINAL name only after the render exits zero.
+/// Every other way out takes the half-written file with it ([`TempRender`]), so
+/// a cancel, the kill-timer or a failed encode can no longer leave a truncated
+/// `<navn>_redigert.<ext>` that looks finished in Finder — and the delivered
+/// name is picked after the render, not twenty minutes before it.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
@@ -2593,13 +2738,20 @@ where
     use std::path::Path;
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
-        collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
-        video_filter_complex, CutRegion, RecordingMetadata,
+        collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
+        ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
+        video_export_estimated_bytes, video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
         parse_normalization_mode, plan_pass2,
     };
+
+    // One export at a time. `_slot` is BOUND, not `let _ = …`: a wildcard drops
+    // the token on the spot and the guard would be a no-op that still compiles.
+    let _slot = engine
+        .try_begin()
+        .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
 
     // A cancel of the PREVIOUS export must not abort this one — the engine is
     // long-lived managed state, the flag is per-export.
@@ -2649,13 +2801,84 @@ where
     //     means "emit no -ar" and "channel count unknown", i.e. the pre-Phase-4
     //     behaviour. The video path now probes too — one ffprobe against a
     //     multi-minute render — so the repair guard covers it as well.
+    //
+    //     F2-8: this used to answer `None` for VIDEO, on the reasoning that the
+    //     video path encodes AAC through `video_codec_args` and there is no -ar
+    //     there. That was the bug, not the justification for it: with a
+    //     mastering preset the graph runs through loudnorm's internal 192 kHz,
+    //     and an AAC encoder handed a 192 kHz pad picks the nearest rate it can
+    //     stand — so the sermon a church uploads carried a resampled audio
+    //     track nobody asked for. The rate is probed for video too now, and
+    //     both video codec-arg builders pin `-ar` from it under exactly the
+    //     rule `output_sample_rate` already states for lossy targets:
+    //     min(source, 48 kHz), snapped to a rate AAC accepts.
     bail_if_cancelled(engine)?;
     let probed = load_recording(&req.input_path).await.ok();
-    let source_rate: Option<u32> = if is_video {
-        None // the video path encodes AAC via `video_codec_args` — no -ar there.
+    let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
+
+    // 1c. WHERE it lands, and whether there is room for it.
+    //
+    //     The paths are resolved here rather than after the mastering measure
+    //     pass because the disk guard has to run BEFORE anything expensive: a
+    //     full-file loudness measure on a 90-minute service takes minutes, and
+    //     spending them to then discover the volume was full is the whole
+    //     complaint. The file inside the folder is picked twice — a temp name
+    //     now (for ffmpeg to render into) and the collision-free FINAL name only
+    //     once the render exits zero, in step 7. See `editor_tmp_path`.
+    let base = Path::new(&req.input_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "redigert".into());
+    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
+    let out_stem = format!("{base}_redigert");
+    let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
+
+    //     F2-11: the recorder has had a low-disk guard since day one; the
+    //     EXPORT had none. A volunteer whose disk was nearly full got a full
+    //     progress bar, twenty minutes of waiting, and then ffmpeg's
+    //     `disk_full` — a true sentence, arriving as late as it possibly could.
+    //     `estimated_bytes` answers the same question the export modal's
+    //     `estimatedBytes` does, but it does NOT share its arithmetic and must
+    //     not be read as a second copy of it: the modal's `exportKbps` is
+    //     rate-blind (a flat 600 kbps for flac, whatever the master's rate),
+    //     which is honest enough for a number a user eyeballs and not honest
+    //     enough to refuse an export on. This one reads the bitrate out of
+    //     `codec_args`' own argv and falls back to real sample arithmetic; video,
+    //     which the modal declines to guess at, is estimated from the source's
+    //     own size. Deliberately the more pessimistic of the two — over-
+    //     estimating costs a false "no room", under-estimating costs the twenty
+    //     minutes this guard exists to save.
+    //     Best-effort in BOTH directions: a volume that will not report its
+    //     free space is not a volume that is full, and an estimate that cannot
+    //     be made is never invented in order to refuse (see
+    //     `export_disk_is_low`).
+    let estimated_bytes = if is_video {
+        std::fs::metadata(&req.input_path)
+            .ok()
+            .and_then(|m| video_export_estimated_bytes(m.len(), kept_duration, req.duration))
     } else {
-        probed.as_ref().and_then(|i| i.sample_rate)
+        export_estimated_bytes(
+            fmt,
+            kept_duration,
+            req.bitrate,
+            req.bit_depth,
+            (source_rate, probed.as_ref().and_then(|i| i.channels)),
+        )
     };
+    if let Ok(free) = fs4::available_space(&out_dir) {
+        if export_disk_is_low(free, estimated_bytes) {
+            tracing::warn!(
+                free_bytes = free,
+                estimated_bytes = ?estimated_bytes,
+                "export refused: not enough free space on the destination volume"
+            );
+            let free_mb = free / 1_000_000;
+            let need_mb = estimated_bytes.unwrap_or(0) / 1_000_000;
+            return Err(AppError::Recording(format!(
+                "disk_low_for_export: {free_mb} MB free, ~{need_mb} MB needed"
+            )));
+        }
+    }
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
@@ -2825,16 +3048,8 @@ where
         .into_iter()
         .collect();
 
-    // 3. Core picks the output directory ('' = "Samme mappe" → next to the
-    //    source) and then the collision-free file name inside it.
-    let base = Path::new(&req.input_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "redigert".into());
-    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
-    let out_path = collision_free_path(&out_dir, &format!("{base}_redigert"), fmt, |c| {
-        Path::new(c).exists()
-    });
+    // (3. The output directory and the render's temp path were resolved back in
+    //     step 1c, so the disk guard could run before the measure pass.)
 
     // 4. Intro/outro jingles (audio formats only — they wrap the audio track,
     //    so the mp4 video path ignores them). The intro is ffmpeg input 0, the
@@ -2926,13 +3141,21 @@ where
             args.extend(["-i".into(), p.clone()]);
         }
         if is_video {
-            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters);
+            // `req.duration` (the SOURCE length) is what tells the core which
+            // segment edges are interior cuts and therefore need the de-click
+            // fade — the same argument the audio graph above already gets.
+            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters, req.duration);
             args.extend(["-filter_complex".into(), fc]);
             args.extend(["-map".into(), v_out, "-map".into(), a_out]);
             args.extend(if use_hw {
-                sundayrec_core::editor::videotoolbox_codec_args(fmt, video_codec, hw_bitrate_kbps)
+                sundayrec_core::editor::videotoolbox_codec_args(
+                    fmt,
+                    video_codec,
+                    hw_bitrate_kbps,
+                    source_rate,
+                )
             } else {
-                sundayrec_core::editor::video_codec_args(fmt, video_codec, None)
+                sundayrec_core::editor::video_codec_args(fmt, video_codec, None, source_rate)
             });
         } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
             // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
@@ -2968,7 +3191,10 @@ where
         // Machine-readable progress on stdout, and `-nostats` to silence the human
         // stats line we would otherwise have to drain from stderr for no gain.
         args.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
-        args.extend(["-y".into(), out_path.clone()]);
+        // The TEMP path, never the delivered one: a half-written export must
+        // not be able to wear the finished file's name (F2-4). `-y` overwrites
+        // a leftover temp from a render that already died.
+        args.extend(["-y".into(), tmp_path.clone()]);
         args
     };
 
@@ -2989,6 +3215,12 @@ where
     } else {
         (0.0, 99.0)
     };
+    // From HERE until the rename in step 7, the only file this export owns is
+    // the temp — and every way out of this function that is not "the rename
+    // succeeded" must take it with it. `export()` returns early through `?` a
+    // dozen times, and a cleanup line at the bottom would be reached by none of
+    // them; the same reason `ExportSlot` is RAII rather than an `end()` call.
+    let mut render = TempRender::armed(&tmp_path);
     let mut result = run_export_ffmpeg(
         engine,
         &build_args(want_hw),
@@ -3030,9 +3262,27 @@ where
     // promises, or loudnorm's gain rider (F2-C-B). Before, this was `result?;`
     // and the summary went in the bin.
     let render_stderr = result?;
-    if !Path::new(&out_path).exists() {
+    if !Path::new(&tmp_path).exists() {
         return Err(AppError::Recording("export produced no output file".into()));
     }
+
+    // 7. THE FINISHING MOVE (F2-4). ffmpeg has exited zero and closed the
+    //    container, so — and only now — the render is a file worth a name.
+    //
+    //    Picking the collision-free name HERE rather than before the spawn also
+    //    closes the TOCTOU window the old code had: it chose `_redigert`,
+    //    rendered for twenty minutes, and wrote over whatever had appeared at
+    //    that path in the meantime. The gap between "this name is free" and
+    //    "this name is taken by us" is now a single `rename`.
+    let out_path = collision_free_path(&out_dir, &out_stem, fmt, |c| Path::new(c).exists());
+    std::fs::rename(&tmp_path, &out_path).map_err(|e| {
+        // The temp is still ours to clean up — `render` is still armed, and its
+        // Drop runs on the way out of this `?`.
+        tracing::warn!(error = %e, "export: could not put the finished render in place");
+        AppError::Recording(format!("export rename: {e}"))
+    })?;
+    // Delivered. Nothing left for the guard to reap.
+    render.delivered();
     // What actually happened to the level. `None` without a preset, and `None`
     // when the report did not say — "we did not read it back" must not render as
     // "it was linear".
@@ -4520,6 +4770,113 @@ mod tests {
         assert!(!engine.is_cancelled());
     }
 
+    // ── F2-A-B: one export at a time ────────────────────────────────────────
+    //
+    // The double-click the gransking found: two `editor_export` calls on the
+    // same engine. B's `reset_cancel()` clears A's cancel, B's `hold()` DROPS
+    // A's child (and `kill_on_drop(true)` SIGKILLs its ffmpeg), A then takes
+    // B's child and reports success on a truncated file while B reports
+    // "cancelled" on a whole one. The claim below is what makes the second call
+    // never get that far.
+
+    #[test]
+    fn a_second_export_cannot_claim_a_busy_engine() {
+        let engine = ExportEngine::new();
+        let first = engine.try_begin().expect("a fresh engine is free");
+        assert!(
+            engine.try_begin().is_none(),
+            "a second export must be refused while the first holds the engine"
+        );
+        // MUTATION PROBE: swap `compare_exchange` for a load-then-store and
+        // this line still passes — but drop `try_begin`'s claim entirely and
+        // the assert above goes green on a guard that guards nothing.
+        drop(first);
+    }
+
+    #[test]
+    fn the_engine_is_free_again_once_the_slot_drops() {
+        let engine = ExportEngine::new();
+        {
+            let _slot = engine.try_begin().expect("free");
+            assert!(engine.try_begin().is_none());
+        }
+        assert!(
+            engine.try_begin().is_some(),
+            "an export that ENDED must not leave the engine busy forever"
+        );
+    }
+
+    /// The reason the claim is RAII and not an `end()` at the bottom of
+    /// `export`: that function returns early through `?` a dozen times (a
+    /// missing input, an unsupported format, an empty cut plan, every cancel
+    /// check, every ffmpeg failure). A release reachable only by falling off
+    /// the end would turn the first failed export into an app that refuses to
+    /// export at all until it is restarted.
+    #[test]
+    fn an_export_that_fails_midway_still_frees_the_engine() {
+        let engine = ExportEngine::new();
+
+        fn fails_after_claiming(engine: &ExportEngine) -> AppResult<()> {
+            let _slot = engine
+                .try_begin()
+                .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
+            Err(AppError::Validation("invalid_format: ogg".into()))
+        }
+
+        assert!(fails_after_claiming(&engine).is_err());
+        assert!(
+            fails_after_claiming(&engine).is_err(),
+            "the second attempt must reach the SAME failure, not the busy guard"
+        );
+        assert!(engine.try_begin().is_some());
+    }
+
+    /// The refusal's wire code. `AppError::Validation` serialises as
+    /// `"validation: export_already_running"`, and the renderer matches the
+    /// LEADING snake code (`errorCode`, R3-C) against `EXPORT_ERROR_KEYS` in
+    /// `app/editor/export-core.ts`, where the row maps it to
+    /// `editor.errExportAlreadyRunning`. Reword the string here and the
+    /// sentence a volunteer reads goes silent, so pin it.
+    #[test]
+    fn the_busy_refusal_uses_the_code_the_renderer_translates() {
+        let engine = ExportEngine::new();
+        let _held = engine.try_begin().expect("free");
+        let refused: AppResult<()> = engine
+            .try_begin()
+            .map(|_| ())
+            .ok_or_else(|| AppError::Validation("export_already_running".into()));
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "validation: export_already_running"
+        );
+    }
+
+    /// F2-11: the low-disk refusal crosses IPC with `disk_low_for_export` as
+    /// the LEADING code, which is the half `exportErrorKey` matches on. The
+    /// detail after it is free prose for the log — the shell never renders it,
+    /// and it must not be what decides which sentence is shown.
+    ///
+    /// The shell's side of this seam is pinned in
+    /// `app/editor/export-core.test.ts`; each side has its own test, because
+    /// neither one is wrong alone.
+    #[test]
+    fn the_low_disk_refusal_uses_the_code_the_renderer_translates() {
+        let refused =
+            AppError::Recording("disk_low_for_export: 120 MB free, ~980 MB needed".into());
+        let rendered = refused.to_string();
+        assert!(
+            rendered.starts_with("recording error: disk_low_for_export:"),
+            "the leading code is what the shell matches; got {rendered}"
+        );
+        // The guard's own decision, on the numbers that sentence reports.
+        use sundayrec_core::editor::{export_disk_is_low, EXPORT_DISK_HEADROOM_BYTES};
+        assert!(export_disk_is_low(120_000_000, Some(980_000_000)));
+        assert!(!export_disk_is_low(
+            980_000_000 + EXPORT_DISK_HEADROOM_BYTES,
+            Some(980_000_000)
+        ));
+    }
+
     /// The progress phase codes cross the IPC boundary as bare strings and are
     /// matched by LITERAL in the renderer (`legacy/renderer/pages/editor/
     /// export-params.ts` → `EXPORT_PHASE_MEASURING` / `EXPORT_PHASE_ENCODING`,
@@ -5776,6 +6133,74 @@ mod tests {
             eprintln!("editor export smoke: video landed as {dur:.2}s mp4 ({streams:?})");
         }
 
+        /// F2-8: the video path's AAC track lands at the pinned rate.
+        ///
+        /// Until F2-8 the seam answered `None` for the video path's
+        /// `source_rate` and neither video codec-arg builder emitted `-ar`, so
+        /// the encoder took whatever the graph handed it — 192 kHz out of
+        /// `loudnorm` with a mastering preset, 96 kHz off a high-rate master
+        /// without one. Here a 96 kHz source is exported to mp4 and the audio
+        /// stream must come back at 48 kHz: the cap `output_sample_rate`
+        /// already states for every OTHER lossy target.
+        #[test]
+        fn video_export_pins_the_aac_rate_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            // A 96 kHz A/V source. mkv + flac audio, because 96 kHz is exactly
+            // the rate an mp4/AAC source container would refuse to hold.
+            let src = dir.path().join("src96.mkv");
+            let gen = std::process::Command::new(&ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=size=320x240:rate=15:duration=2",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=96000:duration=2",
+                    "-shortest",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "flac",
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the 96 kHz A/V source");
+            assert!(
+                gen.status.success(),
+                "96 kHz A/V source generation failed: {}",
+                String::from_utf8_lossy(&gen.stderr)
+            );
+
+            let req = export_request(
+                &src.to_string_lossy(),
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.75, 1.25)],
+                2.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a software video export should succeed");
+            let (codec, rate) =
+                probe_audio_stream(&ffprobe, std::path::Path::new(&out.output_path));
+            assert_eq!(codec, "aac", "the video path encodes AAC");
+            assert_eq!(
+                rate, 48_000,
+                "a video export's AAC track must be pinned at min(source, 48 kHz), \
+                 not left to the encoder's own guess"
+            );
+            eprintln!("editor export smoke: video AAC pinned at {rate} Hz from a 96 kHz source");
+        }
+
         /// The mirror hazard: a 96 kHz master must NOT be quietly downsampled.
         /// This one also exercises the filter_complex path's `-ar` (two keeps).
         #[test]
@@ -5934,7 +6359,203 @@ mod tests {
                 !rt.block_on(cancel_export(&engine)).unwrap(),
                 "the timeout must leave no ffmpeg child behind"
             );
+            // F2-4: and it leaves no FILE behind either. Before, the render
+            // wrote straight to `<stem>_redigert.mp3`; a kill at 40 % left that
+            // name occupied by an mp3 that stops mid-sentence — which looks
+            // finished in Finder, and which the next attempt politely stepped
+            // around as `_redigert_2`.
+            assert_eq!(
+                leftovers(dir.path()),
+                Vec::<String>::new(),
+                "an aborted export must leave the folder as it found it"
+            );
             eprintln!("editor export smoke: kill-timer aborted the render ({msg})");
+        }
+
+        /// Every name an export could have left in `dir` — the delivered one and
+        /// the temp it renders through. The source file is not one of them.
+        fn leftovers(dir: &std::path::Path) -> Vec<String> {
+            let mut names: Vec<String> = std::fs::read_dir(dir)
+                .expect("the export folder is readable")
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.contains("_redigert") || n.contains(".__editor_tmp"))
+                .collect();
+            names.sort();
+            names
+        }
+
+        /// F2-4: a CANCELLED export leaves nothing behind — and does not poison
+        /// the good name for the retry.
+        ///
+        /// The cancel path is the one a volunteer actually takes ("Avbryt" is a
+        /// Tuesday; the kill-timer is a wedged machine), and it is where the
+        /// whole bug lived: the render wrote straight to `<stem>_redigert.flac`,
+        /// so an abort at 40 % left that name occupied by a file that plays for
+        /// a while and then stops. The retry then landed as `_redigert_2`, and
+        /// the one the pastor reaches for first is the broken one.
+        ///
+        /// It is also where the mutation proof aims: disarm `TempRender`'s Drop
+        /// and this test finds a `long_redigert.__editor_tmp.flac` in the folder.
+        #[test]
+        fn export_cancel_leaves_no_half_file_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+
+            let dir = tempfile::tempdir().unwrap();
+            // A LONG source, so the render is still running when the cancel
+            // lands — a 2 s clip would finish before the cancel could be aimed.
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "long.wav", 48_000, 600.0);
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "flac",
+                &[(100.0, 101.0)],
+                600.0,
+            );
+
+            let engine = Arc::new(ExportEngine::new());
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let err = {
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe {
+                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                }
+                // Cancel once the render has actually produced some output —
+                // cancelling an export that has not written a byte would prove
+                // nothing about cleaning up a half-written file.
+                let canceller = {
+                    let engine = Arc::clone(&engine);
+                    let dir = dir.path().to_path_buf();
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        for _ in 0..600 {
+                            let wrote_something = std::fs::read_dir(&dir)
+                                .into_iter()
+                                .flatten()
+                                .flatten()
+                                .any(|e| {
+                                    e.file_name().to_string_lossy().contains(".__editor_tmp.")
+                                        && e.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                                });
+                            if wrote_something {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(25));
+                        }
+                        rt.block_on(cancel_export(&engine))
+                    })
+                };
+                let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                let _ = canceller.join().expect("the canceller thread");
+                unsafe {
+                    std::env::remove_var("SUNDAYREC_FFMPEG");
+                }
+                result.expect_err("a cancelled export must not report success")
+            };
+            assert!(
+                err.to_string().contains("cancelled"),
+                "the renderer's `isCancelled` matches the bare code; got {err}"
+            );
+            assert_eq!(
+                leftovers(dir.path()),
+                Vec::<String>::new(),
+                "Avbryt must take the half-written render with it"
+            );
+
+            // …and the retry gets the name the volunteer expects. This is the
+            // half of F2-4 a user can SEE: before, the aborted attempt had
+            // already claimed `long_redigert.flac`, so this line would come
+            // back `long_redigert_2.flac` with a truncated file sitting in
+            // front of it. Keep 1 s out of the 600 so the retry is quick.
+            let retry_req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "flac",
+                &[(0.0, 300.0), (301.0, 600.0)],
+                600.0,
+            );
+            let retry = run_export_blocking(&ffmpeg, &ffprobe, &retry_req)
+                .0
+                .expect("the retry after a cancel should succeed");
+            assert!(
+                retry.output_path.ends_with("long_redigert.flac"),
+                "a cancelled attempt must not have taken the good name: {retry:?}"
+            );
+            assert_eq!(
+                leftovers(dir.path()),
+                vec!["long_redigert.flac".to_string()],
+                "one delivered file, no temp"
+            );
+            eprintln!("editor export smoke: cancel left the folder clean, retry got the name");
+        }
+
+        /// F2-4: the DELIVERED name is picked after the render, not before —
+        /// and two exports in a row therefore land side by side.
+        ///
+        /// The old order (name first, render into it) is what made an aborted
+        /// export poison the good name: attempt 1 died holding `_redigert`, so
+        /// attempt 2 became `_redigert_2` and the broken file stayed first in
+        /// the folder. Here BOTH exports succeed, so both names are legitimate
+        /// — the assertion is that the second did not overwrite the first, and
+        /// that no temp survives either of them.
+        #[test]
+        fn two_exports_land_side_by_side_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "service.wav", 48_000, 4.0);
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp3",
+                &[(1.0, 2.0)],
+                4.0,
+            );
+
+            let first = run_export_blocking(&ffmpeg, &ffprobe, &req)
+                .0
+                .expect("the first export should succeed");
+            let first_len = std::fs::metadata(&first.output_path)
+                .expect("the first export exists")
+                .len();
+            assert!(
+                first.output_path.ends_with("service_redigert.mp3"),
+                "{first:?}"
+            );
+
+            let second = run_export_blocking(&ffmpeg, &ffprobe, &req)
+                .0
+                .expect("the second export should succeed");
+            assert!(
+                second.output_path.ends_with("service_redigert_2.mp3"),
+                "the second export steps around the first: {second:?}"
+            );
+            assert_eq!(
+                std::fs::metadata(&first.output_path)
+                    .expect("the first export still exists")
+                    .len(),
+                first_len,
+                "the second export must not have written over the first"
+            );
+            assert_eq!(
+                leftovers(dir.path()),
+                vec![
+                    "service_redigert.mp3".to_string(),
+                    "service_redigert_2.mp3".to_string()
+                ],
+                "two delivered files and not a single temp"
+            );
+            eprintln!("editor export smoke: two exports landed side by side");
         }
 
         // ── The vocal chain, MEASURED (F2-C-A) ───────────────────────────────

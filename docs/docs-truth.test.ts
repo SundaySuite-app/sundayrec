@@ -123,4 +123,17 @@ describe("docs-truth", () => {
     expect(uleseGettere).not.toContain("recording_status");
     expect(uleseGettere).not.toContain("recording_scheduled_stop_ms");
   });
+
+  // F2-T4: runbooken beskrev «Sett opp» i sjekklista som en knapp som TAR DEG
+  // til kortet på Opptak. Etter T4 folder raden ut på stedet og navigerer
+  // ingen steder — og nettopp denne setningen er den slags som blir stående i
+  // en runbook lenge etter at skjermen sluttet å gjøre det den sier, fordi
+  // ingen leser runbooken før neste riggdag.
+  it("SMOKE-TEST.md sier at sjekklistas rader folder ut på stedet (F2-T4)", () => {
+    // Linjeskiftene er prettiers, ikke forfatterens: en påstand som brakk
+    // fordi en setning ble ombrutt ville vært en gate om tekstbredde.
+    const text = readDoc("docs/SMOKE-TEST.md").replace(/\s+/g, " ");
+    expect(text).toContain("opens the screen in place, in the row");
+    expect(text).not.toMatch(/checklist[^.]*takes you to the control room/i);
+  });
 });
