@@ -939,6 +939,7 @@
     "enhanceTitle": "Amélioration audio",
     "errInvalidFormat": "Ce format n’est pas pris en charge pour l’export. Choisissez un autre format sur la page Export.",
     "errExportAlreadyRunning": "Un export est déjà en cours. Attendez qu’il soit terminé.",
+    "errDiskLowForExport": "Il n’y a pas assez d’espace libre pour cet export. Libérez de l’espace, ou choisissez un autre dossier avec « Choisir un dossier… ».",
     "errRecordingInProgress": "Un enregistrement est en cours. Attendez qu’il soit terminé avant d’exporter.",
     "errPathNotAbsolute": "Dossier ou chemin de fichier non valide. Sélectionnez à nouveau le dossier de destination.",
     "metaDesc": "DESCRIPTION",

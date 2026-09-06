@@ -182,6 +182,12 @@ export function folderLabel(folder: string): string {
  * det» var antakelsen som brakk. En vakt uten en setning er en dialogboks med
  * råtekst fra en annen prosess.
  *
+ * `disk_low_for_export` er diskvakten FØR renderen (F2-11). Den er ikke det
+ * samme som `disk_full`: den ene sier «dette får ikke plass» før du har ventet i
+ * tjue minutter, den andre er ffmpeg som gikk tom midtveis. Begge er sanne, men
+ * bare den første kommer i tid til å være til nytte — derfor har de hver sin
+ * setning.
+ *
  * Matches på den STABILE ledende koden (`errorCode`, R3-C): `AppError`
  * serialiseres som «<kategori>: <kode>[: detalj]». Fallback-søket under bruker
  * `includes`, men KUN for kodene som har et mellomrom i seg — fraser som
@@ -204,6 +210,7 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["channel_repair_needs_stereo", "errChannelRepairNeedsStereo"],
   ["invalid_format", "errInvalidFormat"],
   ["export_already_running", "errExportAlreadyRunning"],
+  ["disk_low_for_export", "errDiskLowForExport"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],
 ];

@@ -15,7 +15,8 @@ export type EditorExportRequest = { inputPath: string, cutRegions: Array<EditorC
  */
 format: string, 
 /**
- * Folder to write into; the seam picks a collision-free name there.
+ * Folder to write into; the seam renders through a temp file there and
+ * picks the collision-free name only once the render succeeded (F2-4).
  */
 outputFolder: string, 
 /**
