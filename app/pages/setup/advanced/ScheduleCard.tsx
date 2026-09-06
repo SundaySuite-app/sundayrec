@@ -525,10 +525,19 @@ const TEST_WAKE_SECONDS_AHEAD = 120;
  * Å planlegge OS-timeren er bevist (backend-testene i `wake/mod.rs`). At
  * maskinen FAKTISK våkner kan bare en rigg bevise — det finnes ingen
  * strøm-gjenopptagelses-hendelse å lytte på her ennå (se doc-kommentaren over
- * Rusts `schedule_test_wake`), så feilhistorikken under er så godt som alltid
- * TOM i dag: ingenting skriver til den ennå. Raden viser den ærlige
+ * Rusts `WakeEngine::schedule_test`), så feilhistorikken under er så godt som
+ * alltid TOM i dag: ingenting skriver til den ennå. Raden viser den ærlige
  * tomtilstanden i stedet for å late som et hull i loggen betyr «alt gikk
  * bra» — samme regel som `formatWakeHint` bruker for `wake_verify`.
+ *
+ * ## Testen tar IKKE søndagens vekking med seg (F2-W3)
+ *
+ * Den gjorde det: knappen gikk rett på OS-et utenom `WakeEngine` og ERSTATTET
+ * vekkesettet (`pmset schedule cancelall SundayRec` på Mac, `timers.clear()` på
+ * Windows), mens planleggerens dedup-nøkkel fortsatt sa «armert» — så en test
+ * på lørdagen slettet søndagsvekkingen, og bare en omstart av appen fikset det.
+ * Nå bor testvekkingen VED SIDEN AV den ekte (egen `pmset`-eier, egen
+ * timer-slot), så raden er trygg å trykke på en lørdag.
  */
 function TestWakeRow() {
   const [testResult, setTestResult] = useState<TestWakeResult | null>(null);

@@ -38,8 +38,14 @@
 //! here and in the core, and the macOS IOKit read runs for real in the gate. What
 //! remains unproven without a real box: whether the admin prompt behaves, whether
 //! `SetWaitableTimer` truly resumes a sleeping Windows machine, and whether the
-//! Windows code even compiles here (it does not — that is the `windows-check` CI
-//! lane's job; nothing on this Mac builds it).
+//! Windows code even compiles here (the host build does not touch it — that is
+//! the `windows-check` CI lane's job). A local approximation of that lane exists
+//! and is worth using before pushing a change to the `#[cfg(windows)]` halves:
+//! `cargo check -p sundayrec --target x86_64-pc-windows-gnu --all-targets`
+//! type-checks them on this Mac (gnu, not the lane's msvc — same Win32 surface,
+//! different linker, and `cargo check` never links). Empty
+//! `src-tauri/binaries/{ffmpeg,ffprobe}-x86_64-pc-windows-gnu.exe` stubs satisfy
+//! `tauri-build`'s existence check, exactly as the CI lane's stubs do.
 //!
 //! ## Honestly deferred
 //!
@@ -72,13 +78,13 @@ use sundayrec_core::wake::{
 
 use crate::util::lock_recover;
 use plan::{
-    plan_mac_batt, plan_mac_cancel_all, plan_mac_elevated_schedule, plan_mac_fix_sleep,
-    plan_mac_sched, plan_mac_schedule_one, plan_mac_sleep_config, plan_win_battery_cim,
-    plan_win_battery_wmic, plan_win_fix_wake_timers, plan_win_wake_timers_query,
-    plan_win_waketimers, WAKE_OWNER,
+    plan_mac_batt, plan_mac_cancel_all, plan_mac_cancel_one, plan_mac_elevated_schedule,
+    plan_mac_fix_sleep, plan_mac_sched, plan_mac_schedule_one, plan_mac_sleep_config,
+    plan_win_battery_cim, plan_win_battery_wmic, plan_win_fix_wake_timers,
+    plan_win_wake_timers_query, plan_win_waketimers, WAKE_OWNER, WAKE_OWNER_TEST,
 };
 use shell::{run_text, RealShell, Shell};
-use win_timer::{plan_wake_timers, WaitableTimers};
+use win_timer::{plan_wake_timers, TimerSlot, WaitableTimers};
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -175,7 +181,9 @@ fn real_shell() -> Arc<dyn Shell> {
 
 /// The process's wake timers. Deliberately ONE instance for the whole process:
 /// a waitable timer belongs to whoever armed it, so the engine's reschedule and
-/// the manual test-wake have to operate on the same set.
+/// the manual test-wake have to work through the same handles. Same instance,
+/// separate [`TimerSlot`]s — sharing the handles is what makes a cancel possible
+/// at all; sharing the SET is what made a test-wake delete Sunday (F2-W3).
 fn global_timers() -> Arc<dyn WaitableTimers> {
     static TIMERS: LazyLock<Arc<dyn WaitableTimers>> = LazyLock::new(win_timer::real_timers);
     TIMERS.clone()
@@ -190,6 +198,13 @@ fn global_timers() -> Arc<dyn WaitableTimers> {
 /// is a cheap no-op. Mirrors the Electron `lastScheduledByPlatform` dedup.
 pub struct WakeEngine {
     last_key: Mutex<Option<String>>,
+    /// The wall clock of the manual test-wake this process filed and has not
+    /// cancelled, if any — the ONE event [`Self::cancel_test`] is allowed to
+    /// remove on macOS. In memory only: after a restart we no longer know the
+    /// minute, so an uncancelled test wake is left to fire (it wakes the machine
+    /// once and nothing else). The alternative — sweeping a `pmset` label to be
+    /// sure — is precisely the F2-W3 bug.
+    pending_test: Mutex<Option<NaiveDateTime>>,
     shell: Arc<dyn Shell>,
     timers: Arc<dyn WaitableTimers>,
     platform: WakePlatform,
@@ -205,6 +220,7 @@ impl WakeEngine {
     pub fn new() -> Self {
         Self {
             last_key: Mutex::new(None),
+            pending_test: Mutex::new(None),
             shell: real_shell(),
             timers: global_timers(),
             platform: current_platform(),
@@ -221,6 +237,7 @@ impl WakeEngine {
     ) -> Self {
         Self {
             last_key: Mutex::new(None),
+            pending_test: Mutex::new(None),
             shell,
             timers,
             platform,
@@ -271,6 +288,86 @@ impl WakeEngine {
         }
         result
     }
+
+    /// Schedule the manual test-wake `seconds_ahead` from `now` — **beside** the
+    /// real schedule, never instead of it (F2-W3).
+    ///
+    /// It runs through the engine, and not on its own copy of the OS handles, for
+    /// two reasons. The Windows timers are process-owned state, so the test has to
+    /// arm the same `WaitableTimers` the schedule uses (in its own
+    /// [`TimerSlot`]). And `last_key` must stay TRUE: the test used to cancel the
+    /// real wakes without telling the engine, so the supervisor's dedup then
+    /// answered `SkipUnchanged` forever and the real schedule was never
+    /// re-registered — the machine slept through Sunday, and the only cure was
+    /// restarting the app. Leaving the real set alone is what keeps that key
+    /// honest; there is nothing to invalidate.
+    pub async fn schedule_test(&self, seconds_ahead: i64, now: NaiveDateTime) -> TestWakeResult {
+        let secs = seconds_ahead.clamp(5, 3600);
+        let target = now + chrono::Duration::seconds(secs);
+        // Taken (not read) before the await: an earlier test event is being
+        // replaced, so it stops being pending whether or not the new one lands.
+        let previous = lock_recover(&self.pending_test).take();
+        let result = schedule_os_test_wake(
+            self.shell.as_ref(),
+            self.timers.as_ref(),
+            self.platform,
+            target,
+            previous,
+            now,
+        )
+        .await;
+        if result.ok {
+            *lock_recover(&self.pending_test) = Some(target);
+            TestWakeResult {
+                ok: true,
+                job_id: Some(format!("test-wake-{}", target.and_utc().timestamp_millis())),
+                scheduled_at: Some(fmt_local(&target)),
+                reason: None,
+            }
+        } else {
+            TestWakeResult {
+                ok: false,
+                job_id: None,
+                scheduled_at: None,
+                reason: result.reason,
+            }
+        }
+    }
+
+    /// Cancel the pending test-wake (best-effort). Touches ONLY the test wake:
+    /// macOS cancels the single event we filed, Windows closes the test slot's
+    /// handles. The real schedule is not consulted and not disturbed.
+    ///
+    /// No admin escalation: `pmset` may refuse the cancel unelevated, and a
+    /// password dialog for "never mind" is worse than a stray wake that fires and
+    /// records nothing. A failed cancel stays pending, so the next test (or
+    /// cancel) retries it instead of stacking a second event.
+    pub async fn cancel_test(&self) -> bool {
+        let pending = lock_recover(&self.pending_test).take();
+        match self.platform {
+            WakePlatform::MacArm | WakePlatform::MacIntel => {
+                // Nothing filed (or nothing we still know the minute of) is a
+                // cancel with nothing to do, not a failure.
+                let Some(at) = pending else { return true };
+                let ok = run_text(
+                    self.shell.as_ref(),
+                    &plan_mac_cancel_one(at, WAKE_OWNER_TEST),
+                )
+                .await
+                .is_ok();
+                if !ok {
+                    *lock_recover(&self.pending_test) = Some(at);
+                }
+                ok
+            }
+            WakePlatform::Win => {
+                // Closing the handles IS the cancel; there is nothing to fail.
+                self.timers.clear(TimerSlot::Test);
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,7 +386,7 @@ async fn schedule_os_wakes(
         WakePlatform::MacArm | WakePlatform::MacIntel => {
             schedule_mac(shell, points, allow_admin).await
         }
-        WakePlatform::Win => schedule_windows(timers, points, now),
+        WakePlatform::Win => schedule_windows(timers, points, now, TimerSlot::Schedule),
         _ => WakeResult::fail(WakeErrorReason::Unsupported, None),
     }
 }
@@ -301,16 +398,35 @@ async fn schedule_mac(
     points: &[NaiveDateTime],
     allow_admin: bool,
 ) -> WakeResult {
-    // Clear our previously-scheduled wakes (best-effort).
-    let _ = run_text(shell, &plan_mac_cancel_all()).await;
+    // Clear our previously-scheduled wakes (best-effort). Scoped to
+    // `WAKE_OWNER`, which the manual test-wake deliberately does NOT share: a
+    // reschedule replaces the SCHEDULE's wakes, not every wake in the app.
+    let _ = run_text(shell, &plan_mac_cancel_all(WAKE_OWNER)).await;
 
     if points.is_empty() {
         return WakeResult::ok(0, None);
     }
+    file_mac_wakes(shell, points, allow_admin, WAKE_OWNER).await
+}
 
+/// File `points` under `owner`: each `pmset` unelevated first, and only if some
+/// failed escalate to ONE admin prompt covering the whole set.
+///
+/// Clearing whatever was there before is the CALLER's job, because the two owners
+/// clear differently — the real schedule sweeps its whole label, the test-wake
+/// cancels the single event it filed — and that difference is the F2-W3 fix.
+async fn file_mac_wakes(
+    shell: &dyn Shell,
+    points: &[NaiveDateTime],
+    allow_admin: bool,
+    owner: &str,
+) -> WakeResult {
     let mut scheduled = 0u32;
     for d in points {
-        if run_text(shell, &plan_mac_schedule_one(*d)).await.is_ok() {
+        if run_text(shell, &plan_mac_schedule_one(*d, owner))
+            .await
+            .is_ok()
+        {
             scheduled += 1;
         }
     }
@@ -324,7 +440,7 @@ async fn schedule_mac(
         return WakeResult::fail(WakeErrorReason::Permission, None);
     }
 
-    match run_text(shell, &plan_mac_elevated_schedule(points, WAKE_OWNER)).await {
+    match run_text(shell, &plan_mac_elevated_schedule(points, owner)).await {
         Ok(_) => WakeResult::ok(points.len() as u32, points.first().map(fmt_local)),
         Err(msg) => {
             if is_admin_prompt_cancel(&msg) {
@@ -348,16 +464,23 @@ fn is_admin_prompt_cancel(msg: &str) -> bool {
     lower.contains("user canceled") || lower.contains("user cancelled") || lower.contains("-128")
 }
 
-/// Windows: cancel whatever we armed, then arm one `SetWaitableTimer` per point.
-/// Synchronous — there is no process to spawn any more.
+/// Windows: cancel whatever we armed IN `slot`, then arm one `SetWaitableTimer`
+/// per point in that same slot. Synchronous — there is no process to spawn any
+/// more.
+///
+/// The slot is the F2-W3 fix on this platform: the clear below is unavoidable (a
+/// reschedule replaces its set rather than adding to it), so the only way the
+/// manual test-wake can stop deleting Sunday's timers is for the two to live in
+/// different sets.
 fn schedule_windows(
     timers: &dyn WaitableTimers,
     points: &[NaiveDateTime],
     now: NaiveDateTime,
+    slot: TimerSlot,
 ) -> WakeResult {
     // Always cancel first: the timers are ours, and a reschedule replaces the
     // whole set rather than adding to it.
-    timers.clear();
+    timers.clear(slot);
 
     if points.is_empty() {
         return WakeResult::ok(0, None);
@@ -368,7 +491,7 @@ fn schedule_windows(
         return WakeResult::ok(0, None);
     }
     let next = plans.first().map(|p| fmt_local(&p.at));
-    match timers.arm(&plans) {
+    match timers.arm(slot, &plans) {
         Ok(count) => WakeResult::ok(count, next),
         Err(msg) => WakeResult::fail(WakeErrorReason::Error, Some(msg)),
     }
@@ -396,64 +519,46 @@ pub struct TestWakeResult {
     pub reason: Option<String>,
 }
 
-/// Schedule a single OS wake `seconds_ahead` from now and return a job id. Port
-/// of the Electron `testWake(secondsAhead)` scheduling half. The resume
-/// *listening* (which records a `test_ok`/`test_fail` outcome via the failure
-/// history) is OS-level and GUI-driven — the pure verdict lives in
-/// [`sundayrec_core::wake::test_wake_outcome`].
-///
-/// Note it REPLACES the currently-scheduled wakes on both platforms (macOS
-/// `cancelall`, Windows clear-then-arm), exactly as the Electron original did.
-/// The next supervisor tick re-registers the real schedule.
-///
-/// ⚠️ HARDWARE-UNVERIFIED — the actual wake can't be proven in the gate (the
-/// machine has to sleep, then wake). See SMOKE-TEST.md.
-pub async fn schedule_test_wake(seconds_ahead: i64) -> TestWakeResult {
-    let secs = seconds_ahead.clamp(5, 3600);
-    let now = chrono::Local::now().naive_local();
-    let target = now + chrono::Duration::seconds(secs);
-    let result = schedule_os_wakes(
-        real_shell().as_ref(),
-        global_timers().as_ref(),
-        current_platform(),
-        std::slice::from_ref(&target),
-        now,
-        true,
-    )
-    .await;
-    if result.ok {
-        TestWakeResult {
-            ok: true,
-            job_id: Some(format!("test-wake-{}", target.and_utc().timestamp_millis())),
-            scheduled_at: Some(fmt_local(&target)),
-            reason: None,
+/// Route a test-wake to the platform mechanism — into the TEST slot / TEST owner,
+/// beside the real schedule rather than on top of it (F2-W3).
+async fn schedule_os_test_wake(
+    shell: &dyn Shell,
+    timers: &dyn WaitableTimers,
+    platform: WakePlatform,
+    target: NaiveDateTime,
+    previous: Option<NaiveDateTime>,
+    now: NaiveDateTime,
+) -> WakeResult {
+    match platform {
+        WakePlatform::MacArm | WakePlatform::MacIntel => {
+            schedule_mac_test(shell, target, previous).await
         }
-    } else {
-        TestWakeResult {
-            ok: false,
-            job_id: None,
-            scheduled_at: None,
-            reason: result.reason,
+        WakePlatform::Win => {
+            schedule_windows(timers, std::slice::from_ref(&target), now, TimerSlot::Test)
         }
+        _ => WakeResult::fail(WakeErrorReason::Unsupported, None),
     }
 }
 
-/// Cancel any pending SundayRec test-wake (best-effort). Mirrors the Electron
-/// `cancelTestWake` — clears our scheduled wakes. ⚠️ HARDWARE-UNVERIFIED.
-pub async fn cancel_test_wake() -> bool {
-    match current_platform() {
-        WakePlatform::MacArm | WakePlatform::MacIntel => {
-            run_text(real_shell().as_ref(), &plan_mac_cancel_all())
-                .await
-                .is_ok()
-        }
-        WakePlatform::Win => {
-            // Closing the handles IS the cancel; there is nothing to fail.
-            global_timers().clear();
-            true
-        }
-        _ => false,
+/// macOS test-wake: cancel the ONE test event we know we filed (if any), then
+/// file the new one under [`WAKE_OWNER_TEST`].
+///
+/// No `cancelall` anywhere on this path — not even of the test's own label. A
+/// label sweep is what deleted Sunday's wake, and a `cancel` naming type, minute
+/// and owner cannot reach an event we did not file at that minute whichever way
+/// `pmset` reads its optional owner argument.
+///
+/// `allow_admin` is always true here: this runs because somebody pressed a
+/// button, so the one password prompt has an audience.
+async fn schedule_mac_test(
+    shell: &dyn Shell,
+    target: NaiveDateTime,
+    previous: Option<NaiveDateTime>,
+) -> WakeResult {
+    if let Some(prev) = previous {
+        let _ = run_text(shell, &plan_mac_cancel_one(prev, WAKE_OWNER_TEST)).await;
     }
+    file_mac_wakes(shell, std::slice::from_ref(&target), true, WAKE_OWNER_TEST).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -721,11 +826,17 @@ mod tests {
         NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()
     }
 
-    /// A [`WaitableTimers`] that records what it was asked to do.
+    /// A [`WaitableTimers`] that models what the real one holds: which wall clocks
+    /// are armed in which [`TimerSlot`], and how often each slot was cleared.
+    ///
+    /// It is a STATE model and not just a call log, because the F2-W3 question is
+    /// not "was a scary function called" but "is Sunday's timer still armed after
+    /// the test-wake came and went". A clear drops that slot's entries, exactly as
+    /// closing the handles does on Windows.
     #[derive(Default)]
     struct FakeTimers {
-        clears: StdMutex<u32>,
-        armed: StdMutex<Vec<String>>,
+        clears: StdMutex<Vec<TimerSlot>>,
+        armed: StdMutex<Vec<(TimerSlot, String)>>,
         fail_with: Option<String>,
     }
 
@@ -736,25 +847,33 @@ mod tests {
                 ..Default::default()
             }
         }
-        fn clears(&self) -> u32 {
-            *lock_recover(&self.clears)
+        fn clears(&self, slot: TimerSlot) -> usize {
+            lock_recover(&self.clears)
+                .iter()
+                .filter(|s| **s == slot)
+                .count()
         }
-        fn armed(&self) -> Vec<String> {
-            lock_recover(&self.armed).clone()
+        fn armed_in(&self, slot: TimerSlot) -> Vec<String> {
+            lock_recover(&self.armed)
+                .iter()
+                .filter(|(s, _)| *s == slot)
+                .map(|(_, label)| label.clone())
+                .collect()
         }
     }
 
     impl WaitableTimers for FakeTimers {
-        fn clear(&self) {
-            *lock_recover(&self.clears) += 1;
+        fn clear(&self, slot: TimerSlot) {
+            lock_recover(&self.clears).push(slot);
+            lock_recover(&self.armed).retain(|(s, _)| *s != slot);
         }
-        fn arm(&self, plans: &[win_timer::WinTimerPlan]) -> Result<u32, String> {
+        fn arm(&self, slot: TimerSlot, plans: &[win_timer::WinTimerPlan]) -> Result<u32, String> {
             if let Some(msg) = &self.fail_with {
                 return Err(msg.clone());
             }
             let mut log = lock_recover(&self.armed);
             for p in plans {
-                log.push(p.label());
+                log.push((slot, p.label()));
             }
             Ok(plans.len() as u32)
         }
@@ -762,6 +881,37 @@ mod tests {
 
     fn no_timers() -> Arc<dyn WaitableTimers> {
         Arc::new(FakeTimers::default())
+    }
+
+    /// The `pmset` schedule a command log implies: the `(wall clock, owner)` wake
+    /// events still on the machine after replaying every command the
+    /// [`FakeShell`] was asked to run.
+    ///
+    /// Modelled PESSIMISTICALLY on purpose. `cancelall` drops EVERY event
+    /// whatever owner we passed it, and `cancel` matches on the wall clock alone,
+    /// because `man pmset` documents the owner as the optional tail of
+    /// `type date+time` while we pass it alone — no test on this Mac can prove
+    /// which reading the real tool takes (⚠️ HARDWARE-UNVERIFIED). An assertion
+    /// that survives the pessimistic model survives the generous one too, and
+    /// that is the property the F2-W3 fix needs: the test-wake path must be safe
+    /// even if `pmset` ignores the owner argument entirely.
+    ///
+    /// Only the unelevated `pmset` calls are interpreted; the tests below assert
+    /// separately that the `osascript` ladder was never reached.
+    fn pmset_state(log: &[String]) -> Vec<(String, String)> {
+        let mut events: Vec<(String, String)> = Vec::new();
+        for line in log {
+            if let Some(rest) = line.strip_prefix("pmset schedule wake ") {
+                let (at, owner) = rest.rsplit_once(' ').expect("wake plan carries an owner");
+                events.push((at.to_string(), owner.to_string()));
+            } else if let Some(rest) = line.strip_prefix("pmset schedule cancel wake ") {
+                let (at, _owner) = rest.rsplit_once(' ').expect("cancel plan carries an owner");
+                events.retain(|(when, _)| when != at);
+            } else if line.starts_with("pmset schedule cancelall") {
+                events.clear();
+            }
+        }
+        events
     }
 
     // ── macOS ladder ────────────────────────────────────────────────────────
@@ -887,33 +1037,42 @@ mod tests {
             &timers,
             &[dtm("2026-05-31 10:20"), dtm("2026-06-07 10:20")],
             now,
+            TimerSlot::Schedule,
         );
         assert!(res.ok);
         assert_eq!(res.count, Some(2));
         assert_eq!(res.next_wake.as_deref(), Some("2026-05-31T10:20:00"));
-        assert_eq!(timers.clears(), 1);
+        assert_eq!(timers.clears(TimerSlot::Schedule), 1);
         assert_eq!(
-            timers.armed(),
+            timers.armed_in(TimerSlot::Schedule),
             vec!["2026-05-31T10:20:00", "2026-06-07T10:20:00"]
         );
+        // The schedule's clear-then-arm is scoped to its own slot — it must not
+        // reach into the test-wake's.
+        assert_eq!(timers.clears(TimerSlot::Test), 0);
     }
 
     #[test]
     fn windows_empty_schedule_clears_without_arming() {
         let timers = FakeTimers::default();
-        let res = schedule_windows(&timers, &[], dtm("2026-05-31 10:00"));
+        let res = schedule_windows(&timers, &[], dtm("2026-05-31 10:00"), TimerSlot::Schedule);
         assert!(res.ok);
         assert_eq!(res.count, Some(0));
         // The clear still has to happen — that is how a removed slot's wake
         // stops firing.
-        assert_eq!(timers.clears(), 1);
-        assert!(timers.armed().is_empty());
+        assert_eq!(timers.clears(TimerSlot::Schedule), 1);
+        assert!(timers.armed_in(TimerSlot::Schedule).is_empty());
     }
 
     #[test]
     fn windows_arm_failure_surfaces_an_error_not_a_silent_success() {
         let timers = FakeTimers::failing("SetWaitableTimer failed (error 5)");
-        let res = schedule_windows(&timers, &[dtm("2026-05-31 10:20")], dtm("2026-05-31 10:00"));
+        let res = schedule_windows(
+            &timers,
+            &[dtm("2026-05-31 10:20")],
+            dtm("2026-05-31 10:00"),
+            TimerSlot::Schedule,
+        );
         assert!(!res.ok);
         assert_eq!(res.reason.as_deref(), Some("error"));
         assert!(res.message.unwrap().contains("error 5"));
@@ -929,6 +1088,7 @@ mod tests {
             &timers,
             &[dtm("2026-05-31 09:00"), dtm("2026-05-31 11:00")],
             now,
+            TimerSlot::Schedule,
         );
         assert_eq!(res.count, Some(1));
         assert_eq!(res.next_wake.as_deref(), Some("2026-05-31T11:00:00"));
@@ -951,7 +1111,7 @@ mod tests {
         .await;
         assert_eq!(res.reason.as_deref(), Some("unsupported"));
         assert!(shell.log().is_empty());
-        assert_eq!(timers.clears(), 0);
+        assert_eq!(timers.clears(TimerSlot::Schedule), 0);
     }
 
     #[tokio::test]
@@ -1015,6 +1175,197 @@ mod tests {
             )
             .await;
         assert_eq!(res.reason.as_deref(), Some("disabled"));
+        assert!(shell.log().is_empty());
+    }
+
+    // ── The test-wake lives BESIDE the schedule (F2-W3) ─────────────────────
+    //
+    // The bug these pin: «Test vekking om 2 min» went to the OS on its own,
+    // outside the engine, and REPLACED the wake set — `pmset schedule cancelall
+    // SundayRec` on a Mac, `timers.clear()` on Windows. Sunday's wake was gone,
+    // `last_key` still said it was armed, so the supervisor's next tick answered
+    // `SkipUnchanged` and never re-registered it. Pressing a diagnostic button on
+    // Saturday was enough to make the machine sleep through the service, and
+    // restarting the app was the only cure.
+    //
+    // The fixture is that Saturday: a service on Sunday at 11:00 (so a wake at
+    // 10:50, `WAKE_LEAD_MINUTES` earlier) and a test-wake two minutes from now.
+
+    /// Saturday 12:00, the day before an 11:00 service.
+    fn saturday() -> NaiveDateTime {
+        dtm("2026-05-30 12:00")
+    }
+
+    /// The `pmset` wall clock of the wake for Sunday's 11:00 service.
+    const SUNDAY_WAKE: &str = "05/31/26 10:50:00";
+
+    #[tokio::test]
+    async fn mac_test_wake_files_beside_the_real_schedule_instead_of_replacing_it() {
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::MacArm);
+        let upcoming = [dtm("2026-05-31 11:00")];
+
+        assert!(
+            engine
+                .reschedule(&upcoming, saturday(), true, false)
+                .await
+                .ok
+        );
+        let after_schedule = pmset_state(&shell.log());
+        assert_eq!(
+            after_schedule,
+            vec![(SUNDAY_WAKE.to_string(), WAKE_OWNER.to_string())],
+            "the fixture itself has to file Sunday's wake"
+        );
+
+        let test = engine.schedule_test(120, saturday()).await;
+        assert!(test.ok, "{test:?}");
+        assert_eq!(test.scheduled_at.as_deref(), Some("2026-05-30T12:02:00"));
+
+        let state = pmset_state(&shell.log());
+        assert!(
+            state.contains(&(SUNDAY_WAKE.to_string(), WAKE_OWNER.to_string())),
+            "the test-wake deleted Sunday's wake: {state:?}"
+        );
+        assert!(
+            state.contains(&("05/30/26 12:02:00".to_string(), WAKE_OWNER_TEST.to_string())),
+            "the test-wake was not filed under its own owner: {state:?}"
+        );
+        // ONE `cancelall` in the whole run — the schedule's own, before the
+        // schedule's own filing. The test-wake path must never sweep a label.
+        assert_eq!(shell.count("cancelall"), 1);
+        // …and the happy path still raises no admin prompt.
+        assert_eq!(shell.count("osascript"), 0);
+    }
+
+    #[tokio::test]
+    async fn mac_cancelling_the_test_wake_keeps_sundays_wake_and_the_dedup_key_honest() {
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::MacArm);
+        let upcoming = [dtm("2026-05-31 11:00")];
+
+        assert!(
+            engine
+                .reschedule(&upcoming, saturday(), true, false)
+                .await
+                .ok
+        );
+        assert!(engine.schedule_test(120, saturday()).await.ok);
+        assert!(engine.cancel_test().await, "the cancel itself must succeed");
+
+        let state = pmset_state(&shell.log());
+        assert!(
+            state.contains(&(SUNDAY_WAKE.to_string(), WAKE_OWNER.to_string())),
+            "cancelling the test-wake deleted Sunday's wake: {state:?}"
+        );
+        // The test's own event IS gone: a cancel that leaves it behind would wake
+        // the machine for nothing.
+        assert!(
+            !state.iter().any(|(_, owner)| owner == WAKE_OWNER_TEST),
+            "the test-wake outlived its cancel: {state:?}"
+        );
+        assert_eq!(shell.count("cancelall"), 1);
+
+        // The other half of the bug: the supervisor's next (non-forced) tick
+        // dedups — and that is now HONEST, because the OS really does still hold
+        // the wake `last_key` describes. Before the fix this same skip was the
+        // reason nothing ever re-registered.
+        let filings = shell.count("schedule wake");
+        assert!(
+            engine
+                .reschedule(&upcoming, saturday(), true, false)
+                .await
+                .ok
+        );
+        assert_eq!(
+            shell.count("schedule wake"),
+            filings,
+            "an unchanged schedule must stay a no-op"
+        );
+        assert!(
+            pmset_state(&shell.log()).contains(&(SUNDAY_WAKE.to_string(), WAKE_OWNER.to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn mac_a_second_test_wake_cancels_the_first_one_by_name() {
+        // Two presses in a row must not stack two test events — and the way the
+        // first one goes away is a `cancel` naming its own minute, never a sweep.
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::MacArm);
+        assert!(engine.schedule_test(120, saturday()).await.ok);
+        assert!(engine.schedule_test(300, saturday()).await.ok);
+
+        let state = pmset_state(&shell.log());
+        assert_eq!(
+            state,
+            vec![("05/30/26 12:05:00".to_string(), WAKE_OWNER_TEST.to_string())],
+            "the first test event should have been cancelled by name: {state:?}"
+        );
+        assert!(shell
+            .log()
+            .contains(&"pmset schedule cancel wake 05/30/26 12:02:00 SundayRec-test".to_string()));
+        assert_eq!(shell.count("cancelall"), 0);
+    }
+
+    #[tokio::test]
+    async fn windows_test_wake_and_its_cancel_leave_the_schedule_slot_armed() {
+        // The same story on the platform where the clear is unavoidable: the two
+        // sets are different slots, so the test-wake's clear-then-arm cannot
+        // reach the schedule's timers.
+        let timers = Arc::new(FakeTimers::default());
+        let engine = WakeEngine::with(
+            Arc::new(FakeShell::new()),
+            timers.clone(),
+            WakePlatform::Win,
+        );
+        let upcoming = [dtm("2026-05-31 11:00")];
+
+        assert!(
+            engine
+                .reschedule(&upcoming, saturday(), true, false)
+                .await
+                .ok
+        );
+        assert_eq!(
+            timers.armed_in(TimerSlot::Schedule),
+            vec!["2026-05-31T10:50:00"]
+        );
+
+        assert!(engine.schedule_test(120, saturday()).await.ok);
+        assert_eq!(
+            timers.armed_in(TimerSlot::Schedule),
+            vec!["2026-05-31T10:50:00"],
+            "the test-wake cleared the schedule's timers"
+        );
+        assert_eq!(
+            timers.armed_in(TimerSlot::Test),
+            vec!["2026-05-30T12:02:00"]
+        );
+
+        assert!(engine.cancel_test().await);
+        assert_eq!(
+            timers.armed_in(TimerSlot::Schedule),
+            vec!["2026-05-31T10:50:00"],
+            "cancelling the test-wake cleared the schedule's timers"
+        );
+        assert!(timers.armed_in(TimerSlot::Test).is_empty());
+        // The schedule's slot was cleared exactly once — by its own reschedule.
+        assert_eq!(timers.clears(TimerSlot::Schedule), 1);
+    }
+
+    #[tokio::test]
+    async fn a_test_wake_on_an_unsupported_platform_reports_unsupported() {
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::Linux);
+        let res = engine.schedule_test(120, saturday()).await;
+        assert!(!res.ok);
+        assert_eq!(res.reason.as_deref(), Some("unsupported"));
+        assert!(res.job_id.is_none());
+        assert!(shell.log().is_empty());
+        // Nothing was filed, so there is nothing to cancel — and no OS call to
+        // make while finding that out.
+        assert!(!engine.cancel_test().await);
         assert!(shell.log().is_empty());
     }
 

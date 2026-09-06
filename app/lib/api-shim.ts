@@ -1466,7 +1466,7 @@ const api: Record<string, unknown> = {
       { secondsAhead },
       { ok: false, jobId: null, scheduledAt: null, reason: "error" },
     ),
-  // Best-effort by contract (src-tauri/src/wake/mod.rs::cancel_test_wake) —
+  // Best-effort by contract (src-tauri/src/wake/mod.rs, `WakeEngine::cancel_test`) —
   // `false` says "we cannot confirm the cancel ran", never "it definitely
   // did not"; the row clears its own armed state on click regardless (a
   // stray test wake firing later is a harmless no-op, not a correctness bug).
