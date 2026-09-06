@@ -837,8 +837,16 @@ mod tests {
         let mut ragged = flat_pcm(4, 2, 1_000);
         ragged.push(0x7f); // half a sample past the last frame
         fade_out_tail_s16le(&mut ragged, 2);
-        assert_eq!(*ragged.last().unwrap(), 0x7f, "the ragged byte is left alone");
-        assert_eq!(samples(&ragged[..16])[6..], [0, 0], "last whole frame zeroed");
+        assert_eq!(
+            *ragged.last().unwrap(),
+            0x7f,
+            "the ragged byte is left alone"
+        );
+        assert_eq!(
+            samples(&ragged[..16])[6..],
+            [0, 0],
+            "last whole frame zeroed"
+        );
 
         // A zero channel count cannot happen (the spec is negotiated) but must
         // not divide by zero.
