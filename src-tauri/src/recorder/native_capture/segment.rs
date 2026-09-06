@@ -2038,6 +2038,21 @@ mod tests {
     /// SKIPPING (same pattern as the real-ffmpeg tests in `media/ffmpeg.rs`):
     /// no input device, or a build failure (CI runners, denied mic access) →
     /// the test reports why and passes vacuously.
+    ///
+    /// F2-W7: `host.default_input_device()` (real WASAPI enumeration via
+    /// cpal) crashes the whole test PROCESS with STATUS_ACCESS_VIOLATION on
+    /// GitHub's windows-latest runner, before this test's own skip logic ever
+    /// runs — see PR #231. `flavor = "multi_thread"` is a plausible
+    /// aggravating factor (tokio's work-stealing scheduler can migrate this
+    /// async fn's execution, and any cpal/WASAPI object it touches, across OS
+    /// threads mid-await — WASAPI's STA objects are thread-affine), but even
+    /// diagnosing that with confidence needs a real Windows box, so this is
+    /// `ignore`d rather than guessed at. Real-device behaviour stays
+    /// rig-verified.
+    #[cfg_attr(
+        windows,
+        ignore = "F2-W7: WASAPI enumeration crashes the test process on windows-latest (no audio service in that runner image) — see PR #231"
+    )]
     #[tokio::test(flavor = "multi_thread")]
     async fn native_capture_records_two_seconds_or_skips() {
         use cpal::traits::HostTrait;

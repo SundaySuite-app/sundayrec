@@ -1351,6 +1351,18 @@ mod tests {
     ///
     /// Everything under test is the production path; only the Tauri emit is
     /// swapped for a counter through the same `VuSink` seam production uses.
+    ///
+    /// F2-W7: `host.default_input_device()` (real WASAPI enumeration via
+    /// cpal) crashes the whole test PROCESS with STATUS_ACCESS_VIOLATION on
+    /// GitHub's windows-latest runner, before this test's own skip logic ever
+    /// runs — see PR #231. Same finding as
+    /// `native_capture::segment::native_capture_records_two_seconds_or_skips`;
+    /// not fixable in a small, unambiguous way from here. Real-device
+    /// behaviour stays rig-verified.
+    #[cfg_attr(
+        windows,
+        ignore = "F2-W7: WASAPI enumeration crashes the test process on windows-latest (no audio service in that runner image) — see PR #231"
+    )]
     #[tokio::test(flavor = "multi_thread")]
     async fn native_preroll_buffers_meters_and_harvests_or_skips() {
         use cpal::traits::HostTrait;
