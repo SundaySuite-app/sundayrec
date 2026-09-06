@@ -323,6 +323,7 @@
         "updateRestarting": "Redémarrage…",
         "updateRestartFailed": "Le redémarrage n’a pas eu lieu. Quittez l’application et ouvrez-la à nouveau, la mise à jour sera active.",
         "updateFailed": "Impossible de rechercher les mises à jour",
+        "updateBusyRecording": "Mise à jour impossible pendant un enregistrement",
         "updateNotesLabel": "Nouveautés",
         "log": "Journal",
         "logDesc": "Pour dépanner avec nous. Aucun son et aucun mot de passe.",

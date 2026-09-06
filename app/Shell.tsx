@@ -335,6 +335,12 @@ function UpdateBanner() {
     <Button
       variant="secondary"
       testId="banner-update-install"
+      // F2-W1: ETT klikk her laster ned OG starter appen på nytt (se
+      // `installUpdate` i api-shimmen), så midt i en gudstjeneste er dette
+      // knappen som avslutter opptaket. Motoren avviser det samme kallet med
+      // en kode — knappen er høfligheten, ikke vakten.
+      disabled={isRecording.value}
+      disabledReason={t("app.setup.advanced.updateBusyRecording")}
       onClick={() => void window.api.installUpdate()}
     >
       {entry.state === "ready"

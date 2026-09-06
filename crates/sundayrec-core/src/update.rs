@@ -23,6 +23,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::recorder::RecorderState;
 use crate::settings::UpdateChannel;
 
 /// The host the update feeds live under when the build does not override it.
@@ -156,6 +157,51 @@ pub fn download_percent(downloaded: u64, total: u64) -> u8 {
 /// keeps the policy testable.
 pub fn should_check(is_dev: bool) -> bool {
     !is_dev
+}
+
+/// The stable snake code a refused download answers with, so the renderer can
+/// branch on it through `app/lib/error-code-core.ts`'s `errorCode()` instead of
+/// substring-matching prose (the same contract `feature_disabled` uses).
+pub const DOWNLOAD_BUSY_CODE: &str = "recording_in_progress";
+
+/// Whether an update download may start right now — the FOURTH rule that draws
+/// the same line as [`close_action`](crate::window::close_action),
+/// [`quit_action`](crate::window::quit_action) and
+/// [`relaunch_plan`](crate::window::relaunch_plan), and for the same reason.
+///
+/// ## Why a download is not a harmless background task
+///
+/// It looks like one: bytes off the network into a buffer. But the renderer's
+/// «Last ned» is ONE click that chains straight on into the restart
+/// (`app/lib/api-shim.ts`'s `installUpdate` calls `update_relaunch` the moment
+/// the download reports `readyToInstall`), so a volunteer who presses it
+/// mid-service has asked, in one gesture, for the process to be replaced. On
+/// Windows the consequences reached further still: before F2-W1 the plugin's
+/// `download_and_install` extracted the installer and called
+/// `std::process::exit(0)` from inside the download call, taking the recorder,
+/// the WAL checkpoint and the finalisation with it — no wait, no notification,
+/// no log line.
+///
+/// The wait now protects the restart on both platforms, but a wait is a
+/// consolation prize: it ENDS the service to apply the update. Refusing while
+/// something is at stake is the cheaper answer, and it is the one the volunteer
+/// would have chosen if the button had asked.
+///
+/// Exhaustively matched (no `_` arm), so a new [`RecorderState`] forces a
+/// decision here rather than defaulting into "sure, download during the
+/// sermon".
+pub fn download_allowed(state: RecorderState) -> Result<(), &'static str> {
+    match state {
+        // A capture is live, or the container is being finalised — `Stopping`
+        // is NOT "almost idle": the concat, the delivery transcode and the
+        // history write all happen inside it. See `crate::window`'s module
+        // docs.
+        RecorderState::Preparing
+        | RecorderState::Recording
+        | RecorderState::Reconnecting
+        | RecorderState::Stopping => Err(DOWNLOAD_BUSY_CODE),
+        RecorderState::Idle | RecorderState::Stopped | RecorderState::Failed => Ok(()),
+    }
 }
 
 /// Normalise a version string into something [`semver::Version::parse`] will
@@ -733,6 +779,129 @@ mod tests {
         // endpoint on every launch.
         assert!(!DEFAULT_UPDATE_BASE.contains("telemetry"));
         assert!(DEFAULT_UPDATE_BASE.starts_with("https://"));
+    }
+
+    // ── F2-W1: the download gate ────────────────────────────────────────────
+
+    /// Every [`RecorderState`], with a compile-time guarantee that it is every
+    /// one: [`state_name`] matches exhaustively, so a new variant breaks the
+    /// build here rather than quietly slipping past the table below.
+    const EVERY_STATE: [RecorderState; 7] = [
+        RecorderState::Idle,
+        RecorderState::Preparing,
+        RecorderState::Recording,
+        RecorderState::Reconnecting,
+        RecorderState::Stopping,
+        RecorderState::Stopped,
+        RecorderState::Failed,
+    ];
+
+    fn state_name(state: RecorderState) -> &'static str {
+        match state {
+            RecorderState::Idle => "idle",
+            RecorderState::Preparing => "preparing",
+            RecorderState::Recording => "recording",
+            RecorderState::Reconnecting => "reconnecting",
+            RecorderState::Stopping => "stopping",
+            RecorderState::Stopped => "stopped",
+            RecorderState::Failed => "failed",
+        }
+    }
+
+    #[test]
+    fn every_state_appears_in_the_table_exactly_once() {
+        // The table is only a table; this is what makes it a total one.
+        let mut names: Vec<&str> = EVERY_STATE.iter().copied().map(state_name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            EVERY_STATE.len(),
+            "EVERY_STATE repeats a state — the coverage below is smaller than it looks"
+        );
+    }
+
+    #[test]
+    fn a_download_is_refused_whenever_something_is_at_stake() {
+        for state in EVERY_STATE {
+            let at_stake = matches!(
+                state,
+                RecorderState::Preparing
+                    | RecorderState::Recording
+                    | RecorderState::Reconnecting
+                    | RecorderState::Stopping
+            );
+            assert_eq!(
+                download_allowed(state).is_err(),
+                at_stake,
+                "{}: the gate disagrees with «is a recording at stake?»",
+                state_name(state)
+            );
+        }
+    }
+
+    #[test]
+    fn a_refusal_always_leads_with_the_stable_code() {
+        // The renderer branches on the code, never on the prose. A refusal that
+        // answered with a sentence would be a refusal the shell cannot tell
+        // from any other failure.
+        for state in EVERY_STATE {
+            if let Err(code) = download_allowed(state) {
+                assert_eq!(code, DOWNLOAD_BUSY_CODE, "{}", state_name(state));
+            }
+        }
+        assert_eq!(
+            DOWNLOAD_BUSY_CODE,
+            DOWNLOAD_BUSY_CODE
+                .chars()
+                .filter(|c| c.is_ascii_lowercase() || *c == '_')
+                .collect::<String>(),
+            "the code must be a bare snake token — `errorCode()` reads exactly \
+             `[a-z][a-z0-9_]*` and would truncate anything else"
+        );
+    }
+
+    #[test]
+    fn the_download_gate_draws_the_same_line_as_the_three_doors_out() {
+        // The fourth rule joins the test in `crate::window` that holds the
+        // other three together. If the download gate and the relaunch ever
+        // disagree about what is at stake, one of them is the one that loses a
+        // service — and it is always the more permissive one.
+        use crate::window::{close_action, quit_action, relaunch_plan, CloseAction, QuitAction};
+        for state in EVERY_STATE {
+            let refused = download_allowed(state).is_err();
+            assert_eq!(
+                refused,
+                relaunch_plan(state).waits_for_the_file(),
+                "{}: the download gate and the relaunch disagree",
+                state_name(state)
+            );
+            assert_eq!(
+                refused,
+                close_action(state) != CloseAction::Exit,
+                "{}: the download gate and the close button disagree",
+                state_name(state)
+            );
+            assert_eq!(
+                refused,
+                quit_action(state, None) != QuitAction::ExitNow,
+                "{}: the download gate and the quit disagree",
+                state_name(state)
+            );
+        }
+    }
+
+    #[test]
+    fn at_rest_the_download_is_allowed_exactly_as_before() {
+        // No behaviour change outside a session — the overwhelmingly common
+        // case is a volunteer updating a machine that is not recording.
+        for state in [
+            RecorderState::Idle,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            assert!(download_allowed(state).is_ok(), "{}", state_name(state));
+        }
     }
 }
 

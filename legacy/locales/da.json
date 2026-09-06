@@ -323,6 +323,7 @@
         "updateRestarting": "Genstarter …",
         "updateRestartFailed": "Genstarten blev ikke gennemført. Luk appen, og åbn den igen, så er opdateringen aktiv.",
         "updateFailed": "Kunne ikke søge efter opdateringer",
+        "updateBusyRecording": "Kan ikke opdatere, mens der optages",
         "updateNotesLabel": "Hvad er nyt",
         "log": "Log",
         "logDesc": "Til fejlsøgning sammen med os. Ingen lyd og ingen adgangskoder.",

@@ -323,6 +323,7 @@
         "updateRestarting": "Startar om …",
         "updateRestartFailed": "Omstarten blev inte av. Avsluta appen och öppna den igen, så är uppdateringen aktiv.",
         "updateFailed": "Kunde inte leta efter uppdateringar",
+        "updateBusyRecording": "Går inte att uppdatera under en inspelning",
         "updateNotesLabel": "Vad är nytt",
         "log": "Logg",
         "logDesc": "För felsökning tillsammans med oss. Inget ljud och inga lösenord.",
