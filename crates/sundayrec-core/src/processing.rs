@@ -63,6 +63,11 @@ const LIMITER_MIN_CEILING_DB: f64 = -24.0;
 /// Highest gate threshold we hand ffmpeg. `agate:threshold` accepts `[0, 1]`
 /// linear, i.e. anything at or below 0 dBFS; the mixer slider stops at −10 dB.
 const GATE_MAX_THRESHOLD_DB: f64 = 0.0;
+/// Lowest compressor threshold we hand ffmpeg. `acompressor:threshold` accepts
+/// `[0.000976563, 1]` linear = `[−60.206, 0] dB` (rounds to −60.2); the mixer
+/// slider stops well above that, but a hand-rolled/legacy DTO is not bound by
+/// the slider — F2-C-A found this the same way it found the gate's.
+const COMP_MIN_THRESHOLD_DB: f64 = -60.2;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -507,7 +512,7 @@ impl VocalChain {
         if self.compressor.enabled {
             f.push(format!(
                 "acompressor=threshold={}dB:ratio={}:attack={}:release={}:makeup={}dB",
-                coef(self.compressor.threshold_db),
+                coef(self.compressor.threshold_db.clamp(COMP_MIN_THRESHOLD_DB, 0.0)),
                 coef(self.compressor.ratio),
                 coef(self.compressor.attack_ms),
                 coef(self.compressor.release_ms),
@@ -1200,6 +1205,43 @@ mod tests {
             }
         })[0]
             .starts_with("agate=threshold=0dB:"),);
+    }
+
+    #[test]
+    fn compressor_threshold_clamps_to_acompressors_real_floor() {
+        // C-A finding: unlike `agate:threshold` (linear [0, 1], i.e. unbounded
+        // in dB — unclamped below), `acompressor:threshold` is linear
+        // [0.000976563, 1], a REAL floor at −60.2 dB. A more negative request
+        // (a hand-rolled/legacy DTO; the mixer slider does not go this low)
+        // must be clamped, or ffmpeg rejects the filter and the export dies.
+        assert_eq!(
+            only(|c| {
+                c.compressor = CompressorStage {
+                    enabled: true,
+                    threshold_db: -70.0,
+                    ..CompressorStage::default()
+                }
+            }),
+            vec!["acompressor=threshold=-60.2dB:ratio=3:attack=5:release=80:makeup=2dB"]
+        );
+        // Above 0 dBFS there is likewise no linear threshold left to express.
+        assert!(only(|c| {
+            c.compressor = CompressorStage {
+                enabled: true,
+                threshold_db: 5.0,
+                ..CompressorStage::default()
+            }
+        })[0]
+            .starts_with("acompressor=threshold=0dB:"));
+        // Comfortably inside the range: passes through untouched.
+        assert!(only(|c| {
+            c.compressor = CompressorStage {
+                enabled: true,
+                threshold_db: -40.0,
+                ..CompressorStage::default()
+            }
+        })[0]
+            .starts_with("acompressor=threshold=-40dB:"));
     }
 
     #[test]
