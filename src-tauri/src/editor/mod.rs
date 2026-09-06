@@ -1222,7 +1222,7 @@ pub const EXPORT_PHASE_ENCODING: &str = "encoding";
 /// A single slot rather than the mastering engine's id-keyed map because export
 /// is single-flight — and, since F2-A-B, single-flight because THIS TYPE says
 /// so rather than because a button was assumed to be disabled (see
-/// [`ExportEngine::try_begin`]).
+/// `ExportEngine::try_begin`).
 /// The mutex is recovered with `unwrap_or_else(|e| e.into_inner())` for the same
 /// reason `MasterEngine`'s are — it guards a plain `Option` with no invariant a
 /// panic could half-break, and one panicked export must not poison every later
@@ -1242,7 +1242,7 @@ pub struct ExportEngine {
     /// simply carried on and the next pass spawned as if nothing had happened.
     cancelled: std::sync::atomic::AtomicBool,
     /// Whether an export owns the engine right now. Held by an [`ExportSlot`]
-    /// for the whole of [`export`], handed out by [`ExportEngine::try_begin`].
+    /// for the whole of [`export`], handed out by `ExportEngine::try_begin`.
     ///
     /// The single-slot design above USED to rest on "the button disables for
     /// the duration". It does not: a double-click on Eksporter got two calls

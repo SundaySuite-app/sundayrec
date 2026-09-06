@@ -252,7 +252,7 @@ export async function cancelExport(): Promise<void> {
  * gjør med hverandres filer står i `ExportEngine`s `in_flight`-felt; kort sagt
  * meldte den ene suksess på en trunkert fil og den andre «avbrutt» på en hel.
  *
- * Så: flagget settes først, fasen sier «Forbereder …», og Kjører-visningen
+ * Så: flagget settes først, fasen sier «Analyserer lyden…», og Kjører-visningen
  * står med en ubestemt bar og en Avbryt-knapp som faktisk avbryter (se
  * `cancelExport`). Analysen kommer etterpå.
  */
