@@ -18,7 +18,7 @@
 //!   the RIFF header and fsyncs)
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use cpal::traits::StreamTrait;
@@ -39,6 +39,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::audio::asio::build_route_plan;
 use crate::error::{AppError, AppResult};
+use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::engine::{
     emit_error, emit_warning, error_code_str, now_ms, sleep_opt, wait_opt, RecordingLevels,
     RecordingOpts, RecordingProgress, SegmentOutcome, StateWriter, LEVELS_EVENT, PROGRESS_EVENT,
@@ -576,27 +577,28 @@ impl EventSink for AppEventSink<'_> {
 /// This is the thin production wrapper: it binds the real `AppHandle`, the real
 /// segment and the real free-space probe, then hands them to
 /// [`drive_native_segment`], which holds all the logic and is unit-tested.
-#[allow(clippy::too_many_arguments)]
+///
+/// F2-T2: the session half of its inputs (the app handle, the options and the
+/// generation-guarded [`StateWriter`]) arrives in `ctx`, and the segment's three
+/// counters in [`SegmentCounters`] — the SAME two groups `engine::run_segment`
+/// takes, which is the point: the two segment loops now demonstrably read the
+/// same state door, rather than each being handed its own set of loose arguments.
 pub(crate) async fn run_native_segment(
-    app: &AppHandle,
+    ctx: &SessionContext,
     mut seg: NativeSegment,
-    opts: &RecordingOpts,
     session: &RecordingSession,
-    segment_bytes: Arc<AtomicU64>,
-    deliverable_bytes: u64,
+    counters: SegmentCounters,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    state: &StateWriter,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
-    telemetry: Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
 ) -> SegmentOutcome {
     let sink = AppEventSink {
-        app,
-        writer: state,
+        app: &ctx.app,
+        writer: &ctx.state,
         reconnect_count: session.reconnect_count(),
     };
     // The capture folder's volume. Probed fresh on every disk tick — the
     // recording folder can live on a drive that is unmounted mid-service.
-    let disk_folder = std::path::Path::new(&opts.output_path)
+    let disk_folder = std::path::Path::new(&ctx.opts.output_path)
         .parent()
         .map(|p| p.to_path_buf());
     let free_bytes = move || -> Option<u64> {
@@ -609,15 +611,7 @@ pub(crate) async fn run_native_segment(
         free_bytes: &free_bytes,
     };
     drive_native_segment(
-        &mut seg,
-        &sink,
-        &env,
-        opts,
-        segment_bytes,
-        deliverable_bytes,
-        stop_rx,
-        stop_watch,
-        telemetry,
+        &mut seg, &sink, &env, &ctx.opts, counters, stop_rx, stop_watch,
     )
     .await
 }
@@ -628,22 +622,29 @@ pub(crate) async fn run_native_segment(
 ///
 /// Everything here used to be inlined in [`run_native_segment`] behind an
 /// `AppHandle` and a real cpal stream, which is why none of it had a test.
-#[allow(clippy::too_many_arguments)]
+///
+/// It takes [`SegmentCounters`] rather than a [`SessionContext`] (F2-T2) on
+/// purpose: this function is the UNIT-TESTED core, and it is testable precisely
+/// because it is generic over its capture, its sink and its clock instead of
+/// holding a real `AppHandle`. The counters are the part a test does supply.
 pub(crate) async fn drive_native_segment<S, E>(
     seg: &mut S,
     sink: &E,
     env: &SegmentEnv<'_>,
     opts: &RecordingOpts,
-    segment_bytes: Arc<AtomicU64>,
-    deliverable_bytes: u64,
+    counters: SegmentCounters,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
-    telemetry: Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
 ) -> SegmentOutcome
 where
     S: SegmentSignals,
     E: EventSink,
 {
+    let SegmentCounters {
+        segment_bytes,
+        deliverable_bytes,
+        telemetry,
+    } = counters;
     // Silence watcher + its (host-owned) timers — identical to the ffmpeg path.
     let mut silence = SilenceWatcher::new(opts.stop_on_silence);
     let silence_stop_after =
@@ -905,6 +906,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Production code reaches the telemetry mutex through `SegmentCounters` now;
+    // the fakes below still build their own.
+    use std::sync::Mutex;
     use sundayrec_core::settings::ChannelMode;
     use sundayrec_core::silence::SilenceEvent;
 
@@ -1268,17 +1272,35 @@ mod tests {
         ))
     }
 
-    /// Drive the runner to completion under paused time.
-    #[allow(clippy::too_many_arguments)]
+    /// A throwaway set of segment counters: a fresh byte counter, nothing
+    /// carried over from a previous fragment, and a telemetry sink the test
+    /// discards. What most cases here want.
+    fn counters() -> SegmentCounters {
+        counters_with(telemetry())
+    }
+
+    /// …and the variant for a case that reads the telemetry back afterwards.
+    fn counters_with(
+        tel: Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
+    ) -> SegmentCounters {
+        SegmentCounters {
+            segment_bytes: Arc::new(AtomicU64::new(0)),
+            deliverable_bytes: 0,
+            telemetry: tel,
+        }
+    }
+
+    /// Drive the runner to completion under paused time. Takes the very same
+    /// [`SegmentCounters`] the production caller builds (F2-T2), so the shape
+    /// under test is the shape that ships.
     async fn drive(
         rig: &mut Rig,
         opts: &RecordingOpts,
-        deliverable_bytes: u64,
+        counters: SegmentCounters,
         free: Option<u64>,
         clock: Arc<AtomicU64>,
         stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
         stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
-        tel: Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
     ) -> SegmentOutcome {
         let now = move || clock.load(Ordering::Relaxed);
         let free_fn = move || free;
@@ -1291,11 +1313,9 @@ mod tests {
             &rig.sink,
             &env,
             opts,
-            Arc::new(AtomicU64::new(0)),
-            deliverable_bytes,
+            counters,
             stop_rx,
             stop_watch,
-            tel,
         )
         .await
     }
@@ -1341,12 +1361,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             clock.handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         h.await.unwrap();
@@ -1370,12 +1389,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(
@@ -1421,12 +1439,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             clock.handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         ticker.abort();
@@ -1458,12 +1475,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(out, SegmentOutcome::UnexpectedExit { last_error: None });
@@ -1485,12 +1501,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(
@@ -1524,12 +1539,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(
@@ -1558,12 +1572,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(
@@ -1599,12 +1612,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(out, SegmentOutcome::SilenceStop);
@@ -1643,12 +1655,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         ender.await.unwrap();
@@ -1691,12 +1702,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             handle.clone(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         extender.abort();
@@ -1725,12 +1735,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(out, SegmentOutcome::Split);
@@ -1751,12 +1760,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(0), // no free space at all
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(out, SegmentOutcome::DiskStop);
@@ -1776,12 +1784,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         assert_eq!(out, SegmentOutcome::Split);
@@ -1800,12 +1807,11 @@ mod tests {
         let out2 = drive(
             &mut r2,
             &off,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx2,
             &mut w_rx2,
-            telemetry(),
         )
         .await;
         ender.await.unwrap();
@@ -1836,12 +1842,11 @@ mod tests {
             let out = drive(
                 &mut r,
                 &opts,
-                0,
+                counters(),
                 Some(u64::MAX / 2),
                 FakeClock::default().handle(),
                 &mut stop_rx,
                 &mut w_rx,
-                telemetry(),
             )
             .await;
             script.await.unwrap();
@@ -1881,12 +1886,11 @@ mod tests {
         drive(
             &mut r,
             &off,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         ender.await.unwrap();
@@ -1913,12 +1917,11 @@ mod tests {
         drive(
             &mut r2,
             &on,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx2,
             &mut w_rx2,
-            telemetry(),
         )
         .await;
         ender2.await.unwrap();
@@ -1946,12 +1949,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters_with(tel.clone()),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            tel.clone(),
         )
         .await;
         assert_eq!(out, SegmentOutcome::UnexpectedExit { last_error: None });
@@ -1980,12 +1982,11 @@ mod tests {
             drive(
                 &mut r,
                 &opts,
-                0,
+                counters_with(tel.clone()),
                 Some(u64::MAX / 2),
                 FakeClock::default().handle(),
                 &mut stop_rx,
                 &mut w_rx,
-                tel.clone(),
             )
             .await;
         }
@@ -2010,12 +2011,11 @@ mod tests {
         let out = drive(
             &mut r,
             &opts,
-            0,
+            counters(),
             Some(u64::MAX / 2),
             FakeClock::default().handle(),
             &mut stop_rx,
             &mut w_rx,
-            telemetry(),
         )
         .await;
         ender.await.unwrap();
