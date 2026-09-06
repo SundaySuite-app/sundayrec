@@ -381,9 +381,12 @@ struct RecorderSession {
 /// at a time; starting again stops the previous one first.
 pub struct RecorderEngine {
     session: Mutex<Option<RecorderSession>>,
-    /// The last-emitted state, so `recording_status` can report it
-    /// synchronously. Supervisors never get this handle — they write it through
-    /// a generation-scoped [`StateWriter`] (see [`RecorderEngine::state_writer`]).
+    /// The last-emitted state, so [`RecorderEngine::current_state`] can report
+    /// it synchronously to its in-process callers (`window.rs`, the scheduler,
+    /// diagnostics — see that method's own doc comment; F2-T1 deleted the
+    /// `recording_status` COMMAND that used to be its one IPC caller).
+    /// Supervisors never get this handle — they write it through a
+    /// generation-scoped [`StateWriter`] (see [`RecorderEngine::state_writer`]).
     last_state: Arc<Mutex<RecorderState>>,
     /// The live auto-stop deadline (absolute epoch ms, `None` = no auto-stop), as
     /// a watch channel so the running recording loop reacts to extend/cancel
@@ -594,7 +597,13 @@ impl RecorderEngine {
     }
 
     /// The last state the engine emitted (best-effort; the supervisor updates it
-    /// on every transition). Used by the `recording_status` command.
+    /// on every transition). Read in-process — `window.rs`'s close-vs-hide
+    /// guard, `update/mod.rs`'s relaunch check, the scheduler's + diagnostics'
+    /// "is a recording active" probes, `commands/audio.rs` — never over IPC:
+    /// F2-T1 deleted the `recording_status` command that used to wrap this for
+    /// the renderer (nothing called it; `recording://state`, which 8 renderer
+    /// files listen on, already carries every transition — see
+    /// docs/archive/COMMAND_AUDIT_2026-08.md §4.9).
     pub fn current_state(&self) -> RecorderState {
         *lock_recover(&self.last_state)
     }
@@ -1900,7 +1909,7 @@ async fn run_session(
             );
         }
         // The auto-stop is cleared inside `emit_state` for terminal states, so the
-        // Stopped payload (and any later `recording_status`) reports no stale deadline.
+        // Stopped payload (and any later `current_state()` read) reports no stale deadline.
         emit_state(RecorderState::Stopped, session.reconnect_count());
         tracing::info!("recorder: session stopped cleanly");
     } // 'run — the ONE exit point:

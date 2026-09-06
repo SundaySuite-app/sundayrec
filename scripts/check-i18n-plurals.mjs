@@ -17,6 +17,13 @@
  *   3. En gruppe lest med `t()` i stedet for `tn()` → objektet er ikke en
  *      streng, så brukeren får reservestrengen (norsk) uansett språk.
  *
+ * F2-T1: kategori-kravet i (2) gjelder alle sju katalogene, MEN med samme
+ * unntak som `legacy/locales/parity.test.ts` allerede gir flate nøkler — en
+ * gruppe som står i `PAUSED_KEYS` slipper i de fem PAUSET språkene (se
+ * `parsePausedLists`/`isPausedException` under). Uten unntaket måtte en ny
+ * `tn()`-nøkkel oversettes til sju språk med én gang eller gaten feilet, som
+ * er nøyaktig hvorfor nye flater unngikk `tn()` i stedet.
+ *
  * Påkrevde kategorier per språk regnes ut med `Intl.PluralRules`, ikke listet
  * for hånd: hver kategori et HELTALL kan treffe, pluss `other` som `tn`s
  * universelle reserve. Fransk `many` (n ≥ 1e6) og polsk `other` (brøk) er
@@ -86,6 +93,103 @@ export function requiredCategories(lang) {
 
 const lookup = (tree, key) =>
   key.split(".").reduce((o, k) => (o == null ? undefined : o[k]), tree);
+
+// ── Pauset paritet (F2-T1) ───────────────────────────────────────────────────
+//
+// `legacy/locales/parity.test.ts` lets a flat key skip the five paused
+// languages (`PAUSED_LOCALES`) while it is on `PAUSED_KEYS` — «app/ er norsk +
+// engelsk til fase B, og de fem andre er PAUSET for nøklene redesignet legger
+// til, og BARE for dem» (that file's own words). This gate had no equivalent:
+// every plural GROUP was required, correctly shaped, in all seven catalogs
+// from the moment it existed — which meant a brand-new `tn()` key needed a
+// Polish `few`/`many` before `npm run check` would pass, so new screens simply
+// avoided `tn()` rather than pay that tax. The exemption below is the same
+// one `parity.test.ts`'s own "plural groups carry exactly the forms their
+// language needs" block already grants — this gate was just not reading it.
+//
+// `PAUSED_LOCALES` / `PAUSED_KEYS` stay canonical in ONE place: this reads
+// parity.test.ts's own SOURCE TEXT rather than duplicating the list by hand,
+// because a hand-kept copy is a copy that goes stale the day someone edits
+// the original and forgets this file exists. It cannot be an ES import —
+// parity.test.ts is a vitest suite (imports `vitest` + seven JSON catalogs as
+// modules) and this gate runs as a bare Node script outside that loader — so
+// it is a bounded-block string-literal scan instead, the same METHOD (not the
+// same target) `check-command-reachability.mjs` uses for
+// `generate_handler![…]` and `check-i18n-keys.mjs`'s `keysNamedInSharedCore`
+// use for the identical reason.
+const PARITY_TEST_PATH = path.join(ROOT, "legacy", "locales", "parity.test.ts");
+
+/** One quoted string literal, single/double/backtick — the same tri-quote
+ *  shape `QUOTED` below covers for `tn()`/`t()` call sites, kept as its own
+ *  constant here rather than a forward reference so a future house-style
+ *  change in parity.test.ts (today: single quotes throughout) does not go
+ *  blind here too. Comments are stripped by the caller BEFORE this runs —
+ *  see `stripLineComments` — so this never has to tell a real key apart from
+ *  one a comment merely mentions. */
+const PLAIN_QUOTED = /'([^'\n]+)'|"([^"\n]+)"|`([^`\n]+)`/g;
+function quotedLiterals(text) {
+  return [...text.matchAll(PLAIN_QUOTED)].map((m) => m[1] ?? m[2] ?? m[3]);
+}
+
+/**
+ * Strip a `//` line comment (and everything after it) from each line.
+ *
+ * Safe here — UNLIKE a blind strip over arbitrary source, which is exactly
+ * what `check-command-reachability.mjs` has a quote-aware state machine to
+ * avoid — because every string `PAUSED_LOCALES`/`PAUSED_KEYS` hold is a
+ * locale code or a dot-path i18n key, and neither can legally contain `//`.
+ * There is nothing here for a naive strip to corrupt.
+ */
+function stripLineComments(text) {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+}
+
+/**
+ * Pull `PAUSED_LOCALES` and `PAUSED_KEYS` out of parity.test.ts's raw text.
+ *
+ * Pure function of the text (not the filesystem), so the self-test can drive
+ * it against a small fixture instead of the real ~670-line list — a parsing
+ * regression should fail LOUDLY here, not silently return an empty set that
+ * makes every paused-language check strict again by accident.
+ */
+export function parsePausedLists(source) {
+  const localesBlock = source.match(/PAUSED_LOCALES\s*=\s*\[([^\]]*)\]/);
+  if (!localesBlock) {
+    throw new Error(
+      "PAUSED_LOCALES ble ikke funnet i parity.test.ts — er fila omformet?",
+    );
+  }
+  const keysBlock = source.match(
+    // Tåler `PAUSED_KEYS: Set<string> = …`, `new Set<string>([…])` og en
+    // TOM liste på én linje (`new Set<string>([])`) — språkrunden (F2-S)
+    // tømte lista, og en tom liste må fortsatt bli funnet, ikke feile som
+    // «omformet».
+    /PAUSED_KEYS(?::\s*Set<[^>]+>)?\s*=\s*new Set(?:<[^>]+>)?\(\[([\s\S]*?)\s*\]\)/,
+  );
+  if (!keysBlock) {
+    throw new Error(
+      "PAUSED_KEYS ble ikke funnet i parity.test.ts — er fila omformet?",
+    );
+  }
+  return {
+    pausedLocales: quotedLiterals(stripLineComments(localesBlock[1])),
+    pausedKeys: new Set(quotedLiterals(stripLineComments(keysBlock[1]))),
+  };
+}
+
+/**
+ * Is a plural group's absence/shape in `lang` excused by the redesign's
+ * pause? Mirrors `parity.test.ts`'s own
+ * `PAUSED_LOCALES.includes(lang) && PAUSED_KEYS.has(key)` check — see that
+ * file's "plural groups carry exactly the forms their language needs" tests.
+ * A NON-paused key, or a NEVER-paused language (no/en), is never excused.
+ */
+export function isPausedException(lang, key, pausedLocales, pausedKeys) {
+  return pausedLocales.includes(lang) && pausedKeys.has(key);
+}
 
 // ── Kildeskanning ───────────────────────────────────────────────────────────
 
@@ -220,6 +324,66 @@ function selfTest() {
     "file filter covers .ts AND .tsx, excludes tests",
   );
 
+  // F2-T1: the pause exemption, against FIXTURE lists — not the real ~670-key
+  // list, so this asserts the DECISION function, never today's snapshot.
+  const FIX_LOCALES = ["xx", "yy"];
+  const FIX_KEYS = new Set(["new.group"]);
+  say(
+    isPausedException("xx", "new.group", FIX_LOCALES, FIX_KEYS),
+    "a paused key missing in a paused locale is excused",
+  );
+  say(
+    !isPausedException("no", "new.group", FIX_LOCALES, FIX_KEYS),
+    "the SAME group missing in no (never paused) must still fail",
+  );
+  say(
+    !isPausedException("en", "new.group", FIX_LOCALES, FIX_KEYS),
+    "…and missing in en (never paused) must still fail",
+  );
+  say(
+    !isPausedException("xx", "old.group", FIX_LOCALES, FIX_KEYS),
+    "a NON-paused key missing in a paused locale must still fail",
+  );
+
+  // …and the extraction it runs on, against a small fixture TEXT rather than
+  // the real file — a broken regex must fail HERE, not the day someone next
+  // edits `PAUSED_KEYS` and the pattern quietly stops matching anything.
+  const FIXTURE_PARITY_SOURCE = `
+some preamble, exactly as unrelated real code would surround it
+export const PAUSED_LOCALES = ['xx', 'yy']
+
+export const PAUSED_KEYS = new Set([
+  // a comment naming 'not.a.key' must not be picked up
+  'app.a',
+  'app.b',
+])
+
+const somethingAfter = ['should', 'not', 'leak', 'in']
+`;
+  const parsed = parsePausedLists(FIXTURE_PARITY_SOURCE);
+  say(
+    parsed.pausedLocales.join(",") === "xx,yy",
+    `parsePausedLists reads PAUSED_LOCALES, got [${parsed.pausedLocales}]`,
+  );
+  say(
+    parsed.pausedKeys.size === 2 &&
+      parsed.pausedKeys.has("app.a") &&
+      parsed.pausedKeys.has("app.b") &&
+      !parsed.pausedKeys.has("not.a.key"),
+    "parsePausedLists reads PAUSED_KEYS, ignoring comments and the array after it",
+  );
+  say(
+    (() => {
+      try {
+        parsePausedLists("no PAUSED_LOCALES or PAUSED_KEYS in here at all");
+        return false;
+      } catch {
+        return true;
+      }
+    })(),
+    "parsePausedLists throws (not: silently returns empty) when the markers are gone",
+  );
+
   if (problems.length) {
     console.error("check-i18n-plurals SELVTEST FEILET:");
     for (const p of problems) console.error("  ✗ " + p);
@@ -239,6 +403,9 @@ function main() {
     ]),
   );
   const groups = pluralGroupKeys(trees.no).sort();
+  const { pausedLocales, pausedKeys } = parsePausedLists(
+    fs.readFileSync(PARITY_TEST_PATH, "utf8"),
+  );
 
   if (process.argv.includes("--list")) {
     for (const g of groups) console.log(g);
@@ -257,6 +424,11 @@ function main() {
   for (const lang of LANGS) {
     const want = [...requiredCategories(lang)].sort();
     for (const key of groups) {
+      // Same pause `parity.test.ts` grants flat keys: a group added for the
+      // redesign is not yet expected in a paused language. Checked BEFORE
+      // shape/category — a paused key may be entirely ABSENT, not merely
+      // short a category.
+      if (isPausedException(lang, key, pausedLocales, pausedKeys)) continue;
       const node = lookup(trees[lang], key);
       if (!isPluralGroup(node)) {
         errors.push(`${lang}.json: «${key}» er ikke en flertallsgruppe`);

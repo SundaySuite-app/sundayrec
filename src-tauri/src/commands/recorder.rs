@@ -4,7 +4,18 @@
 //!   - `start_recording(opts)` / `stop_recording` to drive a unified capture,
 //!     listening for `recording://{state,started,progress,silence,error,
 //!     reconnecting,reconnected}` events,
-//!   - `recording_status` to read the current [`RecorderState`] synchronously.
+//!   - `recording_scheduled_stop_ms` for the ONE case that event stream can't
+//!     cover on its own — see the command's own doc comment below.
+//!
+//! There used to be a third bullet: `recording_status`, to read the current
+//! [`RecorderState`] synchronously. F2-T1 deleted it (command + registration +
+//! reachability baseline entry) — nothing called it (`RecorderState` is now
+//! unused in this file too), and it duplicated `recording://state`, which 8
+//! files already listen on (docs/archive/COMMAND_AUDIT_2026-08.md §4.9: "Å
+//! spørre synkront om en tilstand som pushes er en kilde til uenighet mellom to
+//! sannheter"). The engine method behind it, `RecorderEngine::current_state()`,
+//! stays — `window.rs`, `update/mod.rs`, `scheduler/mod.rs`,
+//! `diagnostics/mod.rs` and `commands/audio.rs` all call it directly, in-process.
 //!
 //! ## E5.3: why the start choreography is not written inline any more
 //!
@@ -52,7 +63,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 
-use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::settings::ChannelMode;
 
 use crate::db::Db;
@@ -435,16 +445,12 @@ pub fn stop_recording(engine: State<'_, RecorderEngine>) -> AppResult<()> {
     Ok(())
 }
 
-/// The current recorder lifecycle state (best-effort snapshot).
-#[tauri::command]
-pub fn recording_status(engine: State<'_, RecorderEngine>) -> RecorderState {
-    engine.current_state()
-}
-
 /// The current auto-stop deadline (absolute epoch ms), or null when none is
 /// armed. Lets a screen that (re)mounts mid-recording rehydrate the countdown
 /// synchronously instead of waiting for the next `recording://state` event
-/// (which only fires on a lifecycle transition).
+/// (which only fires on a lifecycle transition, and may not fire at all if the
+/// mount is what missed the LAST one — see `RecordingOverlay.tsx`'s mount
+/// effect, F2-T1).
 #[tauri::command]
 pub fn recording_scheduled_stop_ms(engine: State<'_, RecorderEngine>) -> Option<u64> {
     engine.scheduled_stop_ms()

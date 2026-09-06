@@ -837,6 +837,69 @@ test.describe("auto-stoppen kan skyves", () => {
   });
 });
 
+test.describe("nedtellingen rehydreres når overlegget monteres uten den", () => {
+  // F2-T1 / F1-D7: `recording_scheduled_stop_ms` sto registrert i Rust og
+  // klassifisert unåbar i reachability-baselinen — `RecordingOverlay.tsx`
+  // hadde ingen dør til den. Gapet: `isRecording` kan bli sann UTEN at
+  // hendelsen som gjorde det bar `scheduled_stop_ms` med seg —
+  // `recording-overlay-start` (planleggeren, eller en gjenoppretting) har
+  // ingen nyttelast i det hele tatt. Uten en rehydrering ved montering viser
+  // overlegget ingen nedtelling før NESTE `recording://state`-overgang, som
+  // kan være auto-stoppen selv, en time unna.
+
+  const REHYDRATE_SPY: Fixtures = {
+    recording_scheduled_stop_ms: fn(`() => {
+      (window.__E2E_CALLS__ ||= {}).recording_scheduled_stop_ms =
+        ((window.__E2E_CALLS__.recording_scheduled_stop_ms || 0) + 1);
+      return Date.now() + 33 * 60_000;
+    }`),
+  };
+
+  test("et event uten nyttelast henter fristen fra motoren i stedet for å vise ingenting", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, ...REHYDRATE_SPY },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    // Kartlagt fra `recording://started` — INGEN nyttelast, se
+    // `state/recording.ts`s `recording-overlay-start`-håndterer.
+    await emit(page, "recording-overlay-start");
+
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect
+      .poll(async () => (await calls(page)).recording_scheduled_stop_ms)
+      .toBe(1);
+    await expect(page.getByTestId("overlay-autostop")).toContainText("32:5");
+  });
+
+  test("en tilstandsovergang som ALLEREDE bærer fristen ber ikke motoren om den på nytt", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, ...REHYDRATE_SPY },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    // `recording://state` bærer alltid `scheduled_stop_ms` i SAMME nyttelast
+    // — rehydreringen er for de payload-løse veien, ikke for denne.
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 20 * 60_000,
+    });
+
+    await expect(page.getByTestId("overlay-autostop")).toContainText("19:5");
+    // Vent til lenger enn en useEffect-runde kan ta, og bekreft at kallet
+    // ALDRI kom — en overflødig IPC-tur på den vanlige veien ville vært
+    // nøyaktig den slags stille regresjon denne testen skal fange.
+    await page.waitForTimeout(200);
+    expect((await calls(page)).recording_scheduled_stop_ms).toBeUndefined();
+  });
+});
+
 // ── Kamerabildet (D2/PR2) ───────────────────────────────────────────────────
 //
 // Det som bare kan bevises i en ekte nettleser: at rammen SIER hvilken av de

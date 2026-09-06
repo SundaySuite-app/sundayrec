@@ -122,6 +122,11 @@ declare global {
       /** Drop the auto-stop entirely: record until someone presses stop.
        *  Rejects on failure, same reason. */
       recordingCancelAutostop: () => Promise<void>;
+      /** The engine's current auto-stop deadline (absolute epoch ms), or
+       *  `null` for none armed. For rehydrating the countdown when
+       *  `isRecording` became true with no `recording://state` payload to
+       *  read one from — see `RecordingOverlay.tsx`'s mount effect. */
+      recordingScheduledStopMs: () => Promise<number | null>;
       /** One base64 JPEG from the engine's preview sink, or `null` when it has
        *  not written a frame yet. Only meaningful DURING a recording — the
        *  recorder owns the camera then, so this is the only way to see it. */

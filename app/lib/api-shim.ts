@@ -300,10 +300,10 @@ const ipcFailures = createIpcFailureState();
  *     there would turn opening the page in Chrome into an error storm and
  *     teach everyone to ignore the toast that matters.
  *  2. The dedup/rate-limit in `ipc-failures-core`: one toast per command per
- *     minute, at most three per minute overall. `recording_status` polls ~1×/s
- *     and the preview frame ~4×/s; without this a down backend would stack a
- *     hundred toasts a minute over the UI, which is not surfacing a problem,
- *     it is a second outage.
+ *     minute, at most three per minute overall. `recording_preview_frame`
+ *     alone polls ~4×/s; without this a down backend would stack a hundred
+ *     toasts a minute over the UI, which is not surfacing a problem, it is a
+ *     second outage.
  *
  *  The ring is filled unconditionally either way — the diagnose panel wants the
  *  pattern, not whichever failure happened to win the rate limit. */
@@ -858,6 +858,22 @@ const api: Record<string, unknown> = {
     invoke<void>("recording_extend_autostop", { minutes }),
   recordingCancelAutostop: async () =>
     invoke<void>("recording_cancel_autostop", undefined),
+  // A READ, so the `call()` fallback (`null`) is right where the two WRITES
+  // above must reject: nothing here can lie about a change that never
+  // happened, it can only fail to learn a number the next `recording://state`
+  // transition would have supplied anyway.
+  //
+  // F2-T1: the third command from the "no door" sentence above, and the one
+  // the Aug 23 «Frivilligen først» rewrite (#156) dropped without a
+  // replacement — the other two got their door back in the paragraph above;
+  // this one sat unreachable ever since. Its job, then and now: rehydrate the
+  // countdown at the ONE moment `isRecording` flips true with NO
+  // `recording://state` payload to read a deadline from — a manual start
+  // (before the engine's first transition arrives) and a scheduler/crash-
+  // recovery start (`recording-overlay-start`, which carries no payload at
+  // all). `RecordingOverlay.tsx`'s mount effect calls this now.
+  recordingScheduledStopMs: async () =>
+    call<number | null>("recording_scheduled_stop_ms", undefined, null),
   // ── The camera picture DURING a recording ──────────────────────────────
   //
   // The engine has written this file since v0.11 (`recorder/engine.rs` —
