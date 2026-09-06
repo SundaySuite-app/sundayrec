@@ -88,9 +88,16 @@
 //! (`live_iopm_assertions_are_callable_unprivileged`) and the Windows call is
 //! exercised for real in the `windows-check` lane
 //! (`live_set_thread_execution_state_is_callable`), so neither is a
-//! compile-only claim. What no test on either host can show is the thing the
-//! module is for: that a machine which was asleep, woken by a timer, stays up
-//! for the ten minutes until the recording starts. That is riggpunkt (w5).
+//! compile-only claim. The macOS half was additionally checked from the
+//! outside once, by hand: with a block held, `pmset -g assertions` listed both
+//! `PreventUserIdleSystemSleep` and `PreventSystemSleep` as
+//! `named: "SundayRec: recording in progress"`, and both were gone from the
+//! system-wide counts after the block was dropped — so the return codes are
+//! not the only evidence that the OS took the request.
+//!
+//! What no test on either host can show is the thing the module is for: that a
+//! machine which was asleep, woken by a timer, stays up for the ten minutes
+//! until the recording starts. That is riggpunkt (w5).
 
 use std::sync::{Arc, LazyLock, Mutex};
 
