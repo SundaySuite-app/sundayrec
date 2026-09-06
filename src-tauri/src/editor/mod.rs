@@ -2366,6 +2366,18 @@ pub async fn master_preview(
 /// The preset chain / loudnorm filters / codec args are the core's tested
 /// decisions; the seam spawns ffmpeg, streams `-progress`, and parses the
 /// current-second with the core. HARDWARE-UNVERIFIED.
+///
+/// ⚠️ F2-C-E T10 closed the `editor_master_apply` **Tauri command** — grep
+/// found no caller in `app/`, `e2e/`, or the tray, and it was already carried
+/// as `unreachable` (part of the "mastering-kvartetten") in
+/// `scripts/command-reachability-baseline.json`. This function itself stays,
+/// same as the sibling `probe_true_peak_db`/`probe_streams`/`read_file_guarded`
+/// precedent in `commands/editor.rs`: it still has a live Rust-level test, and
+/// `editor/mod.rs` surgery is exactly the risk that precedent named. A T10
+/// finding stands unfixed here as a result — `master_codec_args` (in
+/// `sundayrec_core::mastering`) has no `-ar`, so a two-pass loudnorm apply on a
+/// lossless target inherits `loudnorm`'s internal 192 kHz graph. Not worth
+/// fixing code no door reaches; worth knowing if this door ever reopens.
 #[cfg(feature = "editor")]
 pub async fn master_apply<F>(
     engine: &MasterEngine,
