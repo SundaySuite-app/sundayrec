@@ -4407,7 +4407,10 @@ mod tests {
         let no_preset = build_pre_filters(Some(chain.clone()), Some(3.0), None);
         assert_eq!(
             no_preset,
-            vec!["volume=3.00dB".to_string(), format!("highpass=f={}", chain.highpass.freq_hz)]
+            vec![
+                "volume=3.00dB".to_string(),
+                format!("highpass=f={}", chain.highpass.freq_hz)
+            ]
         );
         // With a preset: gain is skipped, chain still runs, preset trails.
         let with_preset = build_pre_filters(Some(chain.clone()), Some(3.0), Some(&preset));

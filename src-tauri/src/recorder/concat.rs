@@ -343,7 +343,12 @@ fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
             // that rule here so a 96 kHz mixer cannot deliver a 96 kHz AAC/m4a
             // file (technically valid, but disliked by real players/platforms).
             let ar = sundayrec_core::editor::output_sample_rate(&spec.ext, spec.sample_rate);
-            args.extend(audio_encode_args(&spec.ext, spec.channels, ar, spec.bitrate_kbps));
+            args.extend(audio_encode_args(
+                &spec.ext,
+                spec.channels,
+                ar,
+                spec.bitrate_kbps,
+            ));
         }
         DeliveryMode::RemuxCopy => {
             // Take every stream (video + audio) untouched.

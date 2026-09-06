@@ -611,7 +611,11 @@ impl VocalChain {
         if self.compressor.enabled {
             f.push(format!(
                 "acompressor=threshold={}dB:ratio={}:attack={}:release={}:makeup={}dB",
-                coef(self.compressor.threshold_db.clamp(COMP_MIN_THRESHOLD_DB, 0.0)),
+                coef(
+                    self.compressor
+                        .threshold_db
+                        .clamp(COMP_MIN_THRESHOLD_DB, 0.0)
+                ),
                 coef(self.compressor.ratio),
                 coef(self.compressor.attack_ms),
                 coef(self.compressor.release_ms),
@@ -1594,7 +1598,9 @@ mod tests {
         let measured = vocal_chain_preset_by_id("voice-podcast", Some(-62.0)).unwrap();
         let filters = measured.chain.build_filters();
         assert!(
-            filters.iter().any(|f| f.starts_with("afftdn=") && f.contains(":nf=-62:")),
+            filters
+                .iter()
+                .any(|f| f.starts_with("afftdn=") && f.contains(":nf=-62:")),
             "expected nf=-62 from the measurement, got {filters:?}"
         );
 
