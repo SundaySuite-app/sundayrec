@@ -895,7 +895,7 @@ test.describe("editor", () => {
   });
 
   // F2-A-A: granskningens funn. En eksport som feiler med en kode ingen av
-  // de sju radene i `EXPORT_ERROR_KEYS` kjenner (en USB-pinne trukket ut, en
+  // radene i `EXPORT_ERROR_KEYS` kjenner (en USB-pinne trukket ut, en
   // ffmpeg-klage appen ikke har en setning for …) viste FØR denne fiksen
   // INGENTING — baren forsvant, og skjemaet sto der som om ingenting hadde
   // skjedd. Ingen banner, ingen toast, ingen logglinje.

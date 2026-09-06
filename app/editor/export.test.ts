@@ -183,7 +183,7 @@ describe("runExport — generasjonsvakten", () => {
 
     expect(exporting.value).toBe(false);
     expect(exportedPath.value).toBeNull();
-    // Ingen av de sju kjente kodene matcher — flaten har ingen presis setning.
+    // Ingen av de kjente kodene matcher — flaten har ingen presis setning.
     expect(exportErrorText.value).toBeNull();
     expect(exportWasCancelled.value).toBe(false);
     // …men den VET at det gikk dårlig, og det er det `ExportProblem` leser.
