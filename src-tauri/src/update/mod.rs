@@ -16,10 +16,37 @@
 //!   - [`check`] asks the plugin for an [`Update`], double-checks it's newer, and
 //!     parks the result as `Available` (download is a separate, explicit step —
 //!     matching the Electron flow where `autoDownload` could be off);
-//!   - [`download_and_install`] streams the bytes (updating the live percent),
-//!     installs, and leaves the status at `ReadyToInstall`;
+//!   - [`download`] streams the bytes (updating the live percent), hands them
+//!     to the installer at the one moment this platform can survive, and
+//!     leaves the status at `ReadyToInstall`;
 //!   - [`relaunch`] restarts the app so the staged update takes effect (the
 //!     Electron `quitAndInstall`).
+//!
+//! ## F2-W1: why the download and the install are two steps
+//!
+//! They used to be one call — the plugin's `download_and_install` — and on
+//! Windows that call does not return. `tauri-plugin-updater` 2.11.0 extracts
+//! the installer, `ShellExecuteW`s `SundayRec_x.y.z_x64-setup.exe`, and then
+//! calls `std::process::exit(0)` from inside the download. Three consequences,
+//! all invisible from a Mac:
+//!
+//! 1. Everything below the call was macOS-only. [`UpdateStatus::ReadyToInstall`]
+//!    was never reached, [`relaunch`]'s wait for the finalisation never ran,
+//!    and `RunEvent::ExitRequested`'s cleanup never happened — on Windows the
+//!    process was simply gone, mid-recording included.
+//! 2. `exit(0)` closed our only handle to the kill-on-close Job Object
+//!    ([`crate::platform`]), so the OS killed the installer we had just
+//!    started. NSIS's `.onInstSuccess` — the `/R` restart — was never reached.
+//! 3. Nothing was written anywhere. The window vanished and the next launch
+//!    was the old version: no error, no dialog, no line in
+//!    `update-relaunch.log`.
+//!
+//! So the seam calls `Update::download` and `Update::install` itself, and
+//! [`INSTALL_IS_DEFERRED`] decides WHEN the second half runs. Off Windows that
+//! is "immediately", which is byte-for-byte what `download_and_install` did.
+//! On Windows the verified bytes are STAGED on the engine and handed over in
+//! [`relaunch_now`] — after the recorder has stopped, after the wait, after
+//! the job object has been disarmed.
 //!
 //! The live [`UpdateStatus`] is held in [`UpdateEngine`] (managed state) so the
 //! renderer can poll `update_status` between the long-running check/download
@@ -52,11 +79,38 @@ use sundayrec_core::update::UpdateStatus;
 use crate::error::{AppError, AppResult};
 use crate::util::lock_recover;
 
+/// A downloaded, signature-verified update that has NOT been handed to the
+/// installer yet — the thing [`INSTALL_IS_DEFERRED`] exists to hold.
+///
+/// The `Update` travels with the bytes because `install` is a method on it
+/// (the plugin needs the target/args/`on_before_exit` it carries), and it is
+/// `Send + Sync + 'static` — the plugin stores it in tauri's resource table
+/// for exactly this reason.
+///
+/// The bytes live in memory rather than in a temp file, deliberately: they are
+/// held for seconds, not hours (the renderer's `installUpdate` chains straight
+/// from a finished download into the restart), and a temp file would be a
+/// hundred-plus megabytes left on a church PC every time the app is closed
+/// between the two clicks.
+#[cfg(feature = "updater")]
+pub(crate) struct StagedUpdate {
+    /// The version these bytes install. Logged, so a mismatch between what the
+    /// panel promised and what the installer runs is visible after the fact.
+    pub version: String,
+    pub update: tauri_plugin_updater::Update,
+    pub bytes: Vec<u8>,
+}
+
 /// Holds the latest [`UpdateStatus`] so the renderer can poll it (`update_status`)
 /// while a check/download runs. At most one check/download is meaningful at a
 /// time; the status is the single source of truth for the panel.
 pub struct UpdateEngine {
     status: Mutex<UpdateStatus>,
+    /// The downloaded bytes waiting for a platform that can only install on
+    /// the way out (Windows). Always `None` where the install already
+    /// happened during the download — see [`INSTALL_IS_DEFERRED`].
+    #[cfg(feature = "updater")]
+    staged: Mutex<Option<StagedUpdate>>,
 }
 
 impl Default for UpdateEngine {
@@ -70,6 +124,8 @@ impl UpdateEngine {
     pub fn new() -> Self {
         Self {
             status: Mutex::new(UpdateStatus::Idle),
+            #[cfg(feature = "updater")]
+            staged: Mutex::new(None),
         }
     }
 
@@ -81,6 +137,29 @@ impl UpdateEngine {
     /// Overwrite the status (used as the check/download progresses).
     pub fn set(&self, next: UpdateStatus) {
         *lock_recover(&self.status) = next;
+    }
+
+    /// Park verified bytes for an install that cannot happen yet. Replaces any
+    /// earlier staging: a second download supersedes the first, and holding
+    /// two copies of a hundred-megabyte installer to be polite would be worse
+    /// than either.
+    #[cfg(feature = "updater")]
+    pub(crate) fn stage(&self, staged: StagedUpdate) {
+        *lock_recover(&self.staged) = Some(staged);
+    }
+
+    /// TAKE the staged bytes — the install consumes them, and a second attempt
+    /// must re-download rather than re-run an installer that already ran.
+    #[cfg(feature = "updater")]
+    pub(crate) fn take_staged(&self) -> Option<StagedUpdate> {
+        lock_recover(&self.staged).take()
+    }
+
+    /// Whether an install is waiting for the way out. Read-only — used by the
+    /// tests and by the log line, never as a substitute for taking it.
+    #[cfg(feature = "updater")]
+    pub(crate) fn has_staged(&self) -> bool {
+        lock_recover(&self.staged).is_some()
     }
 }
 
@@ -176,13 +255,11 @@ pub async fn check(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateSt
     Err(feature_disabled())
 }
 
-/// Download + install the pending update. `feature_disabled` in the default build.
+/// Download (and, off Windows, install) the pending update.
+/// `feature_disabled` in the default build.
 #[cfg(not(feature = "updater"))]
 #[cfg_attr(not(feature = "updater"), allow(unused_variables))]
-pub async fn download_and_install(
-    app: &AppHandle,
-    engine: &UpdateEngine,
-) -> AppResult<UpdateStatus> {
+pub async fn download(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateStatus> {
     let _ = (app, engine);
     Err(feature_disabled())
 }
@@ -260,14 +337,34 @@ pub async fn check(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateSt
     Ok(next)
 }
 
-/// Download + install the pending update, updating the live percent as the
-/// bytes stream in, then leave the status at [`UpdateStatus::ReadyToInstall`].
-/// NETWORK/GUI-UNVERIFIED.
+/// Whether this platform's installer must not be started until the process is
+/// ready to be replaced.
+///
+/// **Windows: `true`.** `Update::install` extracts the installer, starts it
+/// with `ShellExecuteW` and then calls `std::process::exit(0)` — from inside
+/// the call. Everything after it is unreachable, and the exit kills the
+/// installer along with us (see [`crate::platform`]). It may therefore only be
+/// called from the one place that is allowed to end the process:
+/// [`relaunch_now`].
+///
+/// **macOS/Linux: `false`.** `install` swaps the bundle on disk and RETURNS;
+/// the restart is a separate, explicit act. Installing at download time is
+/// what the app has always done there, is what the panel's «Versjon {v} er
+/// lastet ned — start på nytt for å ta den i bruk» describes, and is what
+/// keeps a staged update applying on the next launch even if the restart never
+/// happens. F2-W1 deliberately left that untouched: the bug was never there.
+///
+/// A `const bool` and not a `#[cfg]`: both branches then compile on both
+/// platforms, so a Mac reviewer reads the Windows path instead of not seeing
+/// it — which is precisely how this bug survived three releases.
 #[cfg(feature = "updater")]
-pub async fn download_and_install(
-    app: &AppHandle,
-    engine: &UpdateEngine,
-) -> AppResult<UpdateStatus> {
+const INSTALL_IS_DEFERRED: bool = cfg!(windows);
+
+/// Download the pending update, updating the live percent as the bytes stream
+/// in, install it if this platform can ([`INSTALL_IS_DEFERRED`]), and leave the
+/// status at [`UpdateStatus::ReadyToInstall`]. NETWORK/GUI-UNVERIFIED.
+#[cfg(feature = "updater")]
+pub async fn download(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateStatus> {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
 
@@ -301,20 +398,21 @@ pub async fn download_and_install(
         percent: 0,
     });
 
-    // The plugin's `download_and_install` reports `(chunk_len, content_length)`
-    // per chunk; we accumulate and feed the core's clamped percent math into
-    // the live status. The `on_download` closure is `Fn` (not `FnMut`), so we
-    // track the running total in an atomic. GUI-UNVERIFIED.
+    // The plugin reports `(chunk_len, content_length)` per chunk; we accumulate
+    // and feed the core's clamped percent math into the live status. The
+    // running total lives in an atomic so the closure stays a plain `Fn`
+    // (2.11.0 asks only for `FnMut`, but an atomic costs nothing and survives
+    // the plugin tightening it back). GUI-UNVERIFIED.
     let downloaded = Arc::new(AtomicU64::new(0));
     let ver_for_progress = version.clone();
     let result = update
-        .download_and_install(
+        .download(
             {
                 let downloaded = downloaded.clone();
                 let engine_ptr: &UpdateEngine = engine;
-                // SAFETY of `&UpdateEngine` capture: `download_and_install`
-                // awaits to completion within this scope, so the borrow lives
-                // long enough; we only read/write the Mutex behind it.
+                // SAFETY of `&UpdateEngine` capture: `download` awaits to
+                // completion within this scope, so the borrow lives long
+                // enough; we only read/write the Mutex behind it.
                 move |chunk_len, content_length| {
                     let total = content_length.unwrap_or(0);
                     let so_far =
@@ -329,19 +427,67 @@ pub async fn download_and_install(
         )
         .await;
 
-    let next = match result {
-        // `update` is untouched by `download_and_install` (it takes `&self`),
-        // so the SAME note `Available` showed is still here to carry into
-        // `ReadyToInstall` — see the field doc on
-        // `sundayrec_core::update::UpdateStatus::ReadyToInstall`.
-        Ok(()) => UpdateStatus::ReadyToInstall {
-            version,
-            notes: update.body.clone(),
-        },
-        Err(e) => UpdateStatus::Error {
-            message: format!("{e}"),
-        },
+    // `download` returns the VERIFIED bytes (it runs `verify_signature` before
+    // handing them back), so everything below is operating on a payload the
+    // updater keypair has already vouched for.
+    let bytes = match result {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let s = UpdateStatus::Error {
+                message: format!("{e}"),
+            };
+            engine.set(s.clone());
+            return Ok(s);
+        }
     };
+
+    let next = if INSTALL_IS_DEFERRED {
+        // Windows. Park the bytes; `relaunch_now` hands them over once the
+        // recording is safe and the job object has let go.
+        relaunch_log(
+            app,
+            &format!(
+                "{version} downloaded ({} bytes) — install deferred to the relaunch",
+                bytes.len()
+            ),
+        );
+        engine.stage(StagedUpdate {
+            version: version.clone(),
+            update: update.clone(),
+            bytes,
+        });
+        UpdateStatus::ReadyToInstall {
+            version,
+            // `update` is untouched by `download` (it takes `&self`), so the
+            // SAME note `Available` showed is still here to carry into
+            // `ReadyToInstall` — see the field doc on
+            // `sundayrec_core::update::UpdateStatus::ReadyToInstall`.
+            notes: update.body.clone(),
+        }
+    } else {
+        // macOS/Linux: the bundle is swapped now, exactly as before, and the
+        // restart is the volunteer's separate second click.
+        match update.install(&bytes) {
+            Ok(()) => UpdateStatus::ReadyToInstall {
+                version,
+                notes: update.body.clone(),
+            },
+            Err(e) => UpdateStatus::Error {
+                message: format!("{e}"),
+            },
+        }
+    };
+
+    // F2-W1: the counter used to fire the moment the button was CLICKED, so a
+    // download that 404'd, failed its signature check or never finished
+    // counted as an install. It now marks a download that completed and
+    // verified — the last moment that is durable, since on Windows the
+    // installer's own `exit(0)` runs no shutdown code at all (the periodic
+    // drain, not the exit flush, is what carries this to disk there).
+    if next.is_ready_to_install() {
+        crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::UpdateInstalled);
+    }
+
     engine.set(next.clone());
     Ok(next)
 }
@@ -439,13 +585,23 @@ pub fn relaunch<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
         crate::window::WaitArm::AlreadyWaiting => {
             // A confirmed quit is already waiting for this same file and ends in
             // `app.exit(0)`. Restarting on top of it would race the exit for the
-            // finalisation we are both waiting for — and it costs nothing to
-            // stand down: the update is already STAGED on disk, so the very next
-            // launch is the new version anyway.
+            // finalisation we are both waiting for, and the recording is worth
+            // more than the update: stand down.
+            //
+            // What that costs depends on the platform, so the line says which.
+            // Off Windows the bundle is already swapped and the next launch is
+            // the new version. On Windows the bytes only live in this process,
+            // so the quit throws them away and the volunteer downloads again —
+            // which is a wasted download, not a lost recording.
             relaunch_log(
                 app,
-                "a quit is already waiting for the recording — not restarting; \
-                 the staged update applies on the next launch",
+                if app.state::<UpdateEngine>().has_staged() {
+                    "a quit is already waiting for the recording — not restarting; \
+                     the staged bytes die with this process and must be downloaded again"
+                } else {
+                    "a quit is already waiting for the recording — not restarting; \
+                     the installed update applies on the next launch"
+                },
             );
             Ok(())
         }
@@ -474,6 +630,30 @@ pub fn relaunch<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
 /// The lock destroy and the engine stops live HERE and not in [`relaunch`] on
 /// purpose: during the wait the app is a normal, fully alive instance — its
 /// single-instance lock still means what it says, and its meters still run.
+///
+/// ## F2-W1: the Windows branch, which never used to be reached
+///
+/// Where the install was deferred ([`INSTALL_IS_DEFERRED`]) this is also where
+/// it happens — and it is the only place it may. The order is load-bearing:
+///
+/// 1. the single-instance lock is destroyed and the engines are stopped
+///    (above), so no ffmpeg is left running;
+/// 2. [`crate::platform::disarm_kill_on_close`] takes the teeth out of the Job
+///    Object, or the installer we are about to start dies with us;
+/// 3. a line goes into `update-relaunch.log` BEFORE the handover, because
+///    everything after it is the plugin's `std::process::exit(0)` and nothing
+///    we write later would ever be flushed;
+/// 4. `Update::install` extracts the installer, `ShellExecuteW`s it with
+///    `/P /UPDATE /R …` and exits. `/R` is what brings the app back, and NSIS
+///    only reaches that in `.onInstSuccess` — i.e. only if it lives long
+///    enough, which is what step 2 buys.
+///
+/// Because the plugin exits the process itself, `RunEvent::ExitRequested` does
+/// NOT run on that path: no second recorder stop (step 1 did it) and no WAL
+/// checkpoint. The checkpoint is a completeness nicety for a hand-copied
+/// `sundayrec.sqlite` — SQLite folds the `-wal` back in on the next open, so
+/// nothing is lost — and it cannot be run here: this function is called from
+/// inside the async runtime's wait, where `async_runtime::block_on` panics.
 #[cfg(feature = "updater")]
 pub(crate) fn relaunch_now<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
     use tauri::Manager;
@@ -484,6 +664,42 @@ pub(crate) fn relaunch_now<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppR
         .stop();
     app.state::<crate::audio::vu::VuEngine>().stop();
     relaunch_log(app, "engines stopped");
+
+    // The deferred install (Windows). `take_staged` consumes it, so a second
+    // pass through here cannot re-run an installer that already started.
+    if let Some(staged) = app.state::<UpdateEngine>().take_staged() {
+        let disarmed = crate::platform::disarm_kill_on_close();
+        relaunch_log(
+            app,
+            &format!(
+                "installing {} ({} bytes) — job-object kill-on-close disarmed: {disarmed}",
+                staged.version,
+                staged.bytes.len()
+            ),
+        );
+        if !disarmed {
+            // Starting the installer now would hand it straight to the OS to
+            // kill — the exact F2-W1 failure, with the log line to name it.
+            relaunch_log(
+                app,
+                "REFUSING to start the installer: it would be killed together with us. \
+                 Quit SundayRec and run the downloaded installer by hand.",
+            );
+            return Err(AppError::Internal(
+                "install_guard: the kill-on-close job object could not be disarmed".into(),
+            ));
+        }
+        match staged.update.install(&staged.bytes) {
+            // Unreachable on Windows (`install` ends in `std::process::exit(0)`),
+            // reachable on any platform that installs without exiting — where
+            // falling through to the restart below is exactly right.
+            Ok(()) => relaunch_log(app, "installer returned without exiting — restarting"),
+            Err(e) => {
+                relaunch_log(app, &format!("install FAILED: {e}"));
+                return Err(AppError::Internal(format!("update install: {e}")));
+            }
+        }
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -563,5 +779,61 @@ mod tests {
         // In `cargo test` (a debug build) this is true; the assertion just pins
         // that the helper reflects the compile profile rather than a constant.
         assert_eq!(is_dev_build(), cfg!(debug_assertions));
+    }
+
+    // ── F2-W1: where the install is allowed to happen ───────────────────────
+
+    /// The rule, as a rule and not as a `#[cfg]` nobody off Windows reads.
+    ///
+    /// Flipping this to `false` on Windows would put `std::process::exit(0)`
+    /// back inside the download — the whole bug — and flipping it to `true`
+    /// off Windows would leave macOS with a `ReadyToInstall` that installs
+    /// nothing until the restart, changing a path that was never broken.
+    #[cfg(feature = "updater")]
+    #[test]
+    fn only_windows_defers_the_install_to_the_relaunch() {
+        assert_eq!(INSTALL_IS_DEFERRED, cfg!(windows));
+        assert_eq!(
+            INSTALL_IS_DEFERRED,
+            !cfg!(any(target_os = "macos", target_os = "linux")),
+            "the two halves of the platform split must stay complementary"
+        );
+    }
+
+    /// A fake staging, so the engine's half of the handover can be exercised
+    /// on a Mac. The plugin's `Update` cannot be constructed outside the
+    /// crate, so this test drives the ONE thing that is ours: the slot.
+    #[cfg(feature = "updater")]
+    #[test]
+    fn a_fresh_engine_has_nothing_staged_and_takes_nothing() {
+        let engine = UpdateEngine::new();
+        assert!(!engine.has_staged(), "nothing is staged before a download");
+        assert!(
+            engine.take_staged().is_none(),
+            "taking from an empty slot must be a no-op, not a panic — \
+             `relaunch_now` runs this on every restart, update or not"
+        );
+    }
+
+    /// The `relaunch_now` contract, written where it can be checked: the
+    /// install branch is entered EXACTLY when something is staged, and the
+    /// take empties the slot so a second pass cannot re-run an installer that
+    /// already started.
+    ///
+    /// The staged value itself needs a `tauri_plugin_updater::Update`, which
+    /// has no public constructor — so the branch is modelled with the same
+    /// `Option::take` the real code uses, over a stand-in payload. What this
+    /// pins is the SEQUENCE (`take` → install once → nothing left), which is
+    /// the part a future edit could get wrong.
+    #[test]
+    fn a_staged_install_is_taken_exactly_once() {
+        let slot: Mutex<Option<&str>> = Mutex::new(Some("SundayRec_9.9.9_x64-setup.exe"));
+        let first = lock_recover(&slot).take();
+        assert_eq!(first, Some("SundayRec_9.9.9_x64-setup.exe"));
+        let second = lock_recover(&slot).take();
+        assert!(
+            second.is_none(),
+            "a second relaunch must not hand the same bytes to a second installer"
+        );
     }
 }

@@ -35,16 +35,45 @@ pub async fn update_check(
     crate::update::check(&app, &engine).await
 }
 
-/// Download + install the pending update, leaving the status at
-/// `readyToInstall`. The renderer then offers "restart & install"
-/// (`update_relaunch`). `feature_disabled` in the default build.
+/// Download the pending update, leaving the status at `readyToInstall`. The
+/// renderer then offers "restart & install" (`update_relaunch`).
+/// `feature_disabled` in the default build.
+///
+/// ## F2-W1: refused while something is being recorded
+///
+/// The renderer disables the button, but the button is not the guard — a
+/// recording can start in the second between the render and the click, and a
+/// scheduled recording starts with nobody at the machine at all. So the
+/// command asks the same pure rule the panel asks
+/// ([`sundayrec_core::update::download_allowed`]) and answers with a stable
+/// snake code the shell can branch on.
+///
+/// It matters more than a download's own cost suggests: `installUpdate` in
+/// `app/lib/api-shim.ts` chains straight from a finished download into
+/// `update_relaunch`, so this one command is the front door to replacing the
+/// process.
+///
+/// The `update.installed` counter used to be incremented HERE, before the
+/// download had even started — so a failed check, a 404 and a broken signature
+/// all counted as installs. It now fires in the seam, once the bytes are down
+/// and verified.
 #[tauri::command]
 pub async fn update_download_install(
     app: AppHandle,
     engine: State<'_, UpdateEngine>,
 ) -> AppResult<UpdateStatus> {
-    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::UpdateInstalled);
-    crate::update::download_and_install(&app, &engine).await
+    use tauri::Manager;
+
+    let state = app
+        .state::<crate::recorder::engine::RecorderEngine>()
+        .current_state();
+    if let Err(code) = sundayrec_core::update::download_allowed(state) {
+        tracing::warn!(?state, "update download refused: {code}");
+        return Err(crate::error::AppError::Validation(format!(
+            "{code}: an update cannot be downloaded while a recording is in progress"
+        )));
+    }
+    crate::update::download(&app, &engine).await
 }
 
 /// Relaunch the app to apply a staged update (the Electron `quitAndInstall`).
