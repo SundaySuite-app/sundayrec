@@ -482,12 +482,64 @@ pub fn master_presets() -> Vec<EditorMasterPreset> {
         .collect()
 }
 
-/// The outcome of an export: where the file landed.
+/// Which normalisation the mastering pass actually performed. Mirrors
+/// [`sundayrec_core::mastering::NormalizationMode`] — read out of ffmpeg's
+/// pass-2 report, never assumed.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[ts(export, export_to = "EditorLoudnessMode.ts")]
+#[serde(rename_all = "lowercase")]
+pub enum EditorLoudnessMode {
+    /// One gain over the whole file — what every preset promises.
+    Linear,
+    /// loudnorm's gain rider. Should not happen after F2-C-B; the seam warns if
+    /// it does, and this is how the renderer would find out.
+    Dynamic,
+}
+
+impl From<sundayrec_core::mastering::NormalizationMode> for EditorLoudnessMode {
+    fn from(m: sundayrec_core::mastering::NormalizationMode) -> Self {
+        match m {
+            sundayrec_core::mastering::NormalizationMode::Linear => Self::Linear,
+            sundayrec_core::mastering::NormalizationMode::Dynamic => Self::Dynamic,
+        }
+    }
+}
+
+/// What the mastering actually did to the delivery level (F2-C-B).
+///
+/// Present only when a mastering preset ran AND ffmpeg's pass-2 report said
+/// which normalisation it performed. Absent is honest: "we did not read it back"
+/// is a different answer from "it was linear", and only the receipt knows which
+/// of those it can put on screen.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "EditorExportLoudness.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct EditorExportLoudness {
+    /// What ffmpeg reported doing.
+    pub mode: EditorLoudnessMode,
+    /// The integrated loudness the export was set to land on — the preset's
+    /// target, or the quieter one the true-peak ceiling allowed.
+    pub achieved_lufs: f64,
+    /// The preset's own target, so the receipt can say what was asked for.
+    pub target_lufs: f64,
+    /// True when the ceiling capped the gain, i.e. `achieved < target` for a
+    /// reason the user can act on (a hot recording).
+    pub peak_limited: bool,
+}
+
+/// The outcome of an export: where the file landed, and — with a mastering
+/// preset — what happened to the level.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "EditorExportResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportResult {
     pub output_path: String,
+    /// `None` for an unmastered export, and for a mastered one whose pass-2
+    /// report we could not read. OPTIONAL on the TS side on purpose: every
+    /// caller that only wants the path keeps compiling.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub loudness: Option<EditorExportLoudness>,
 }
 
 /// Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
@@ -2383,7 +2435,29 @@ where
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| "mp3".into());
     // Dither the float→16-bit step for a WAV master (no-op otherwise).
-    let filters = append_dither_for_ext(build_apply_pass_filters(preset, &measured), &ext);
+    //
+    // The plan (F2-C-B) decides what pass 2 may ask for; the mastering PANEL has
+    // no receipt line to carry it, so unlike the export it only logs. That is
+    // still the difference between a master that rides the gain and one that
+    // does not — the filter string is the same one either way.
+    let (apply_filters, plan) = build_apply_pass_filters(preset, &measured);
+    if !plan.linear {
+        tracing::warn!(
+            preset = %preset.id,
+            input_lra = plan.measured.input_lra,
+            input_thresh = plan.measured.input_thresh,
+            "loudnorm cannot master this measurement linearly — it will be gain-ridden"
+        );
+    } else if plan.peak_limited {
+        tracing::info!(
+            preset = %preset.id,
+            target_lufs = plan.target_lufs,
+            preset_lufs = plan.preset_lufs,
+            "true-peak ceiling capped the mastering gain — landing quieter than \
+             the preset asks rather than compressing to reach it"
+        );
+    }
+    let filters = append_dither_for_ext(apply_filters, &ext);
     let mut args: Vec<String> = vec![
         "-nostdin".into(),
         "-hide_banner".into(),
@@ -2509,6 +2583,7 @@ where
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
+        parse_normalization_mode, plan_pass2,
     };
 
     // A cancel of the PREVIOUS export must not abort this one — the engine is
@@ -2635,6 +2710,8 @@ where
     //     sits on the main content pad, before the jingles are concatenated, so
     //     measuring them in would skew the target by the jingle's own level.
     let mut proc_filters = pre_filters.clone();
+    // The pass-2 plan, once pass 1 has measured. `None` without a preset.
+    let mut plan: Option<sundayrec_core::mastering::Pass2Plan> = None;
     if let Some(p) = &preset {
         // A full-file loudness measure on a long service takes minutes with
         // NOTHING to show for it; say so instead of leaving the bar at 0.
@@ -2679,7 +2756,36 @@ where
         .await?;
         let measured = sundayrec_core::mastering::parse_loudnorm_json(&stderr)
             .ok_or_else(|| AppError::Recording("could not parse loudnorm measurement".into()))?;
-        proc_filters.push(loudnorm_apply_filter(p, &measured));
+        // 2c. What pass 2 can HONESTLY deliver from those numbers (F2-C-B).
+        //     `linear=true` alone was only ever a wish: loudnorm falls back to
+        //     its gain rider whenever the measured range overshoots the preset's
+        //     LRA gate or the gain the target implies would break the true-peak
+        //     ceiling — which is most real sermons. The plan widens the gate
+        //     (inert in linear mode) and, when the ceiling binds, aims at the
+        //     quieter level a single gain can reach and SAYS so.
+        let p2 = plan_pass2(&measured, p);
+        if !p2.linear {
+            tracing::warn!(
+                preset = %p.id,
+                input_i = p2.measured.input_i,
+                input_lra = p2.measured.input_lra,
+                input_tp = p2.measured.input_tp,
+                input_thresh = p2.measured.input_thresh,
+                "loudnorm cannot normalise this measurement linearly — the export \
+                 will be gain-ridden, not one clean gain"
+            );
+        } else if p2.peak_limited {
+            tracing::info!(
+                preset = %p.id,
+                target_lufs = p2.target_lufs,
+                preset_lufs = p2.preset_lufs,
+                input_tp = p2.measured.input_tp,
+                "true-peak ceiling capped the mastering gain — landing quieter \
+                 than the preset asks rather than compressing to reach it"
+            );
+        }
+        plan = Some(p2);
+        proc_filters.push(loudnorm_apply_filter(&p2));
         on_progress(50.0, EXPORT_PHASE_ENCODING);
     }
     // The dither (16-bit PCM targets only) is a POST filter: it must see the
@@ -2891,15 +2997,60 @@ where
     if let Some(p) = &meta_path {
         let _ = std::fs::remove_file(p); // best-effort temp cleanup
     }
-    result?;
+    // The render's stderr is not just a place errors come from: it carries
+    // loudnorm's pass-2 summary, and therefore the ONE fact nothing else in the
+    // app knows — whether the mastering was the single clean gain the preset
+    // promises, or loudnorm's gain rider (F2-C-B). Before, this was `result?;`
+    // and the summary went in the bin.
+    let render_stderr = result?;
     if !Path::new(&out_path).exists() {
         return Err(AppError::Recording("export produced no output file".into()));
     }
+    // What actually happened to the level. `None` without a preset, and `None`
+    // when the report did not say — "we did not read it back" must not render as
+    // "it was linear".
+    let loudness = plan.and_then(|p2| {
+        let mode = parse_normalization_mode(&render_stderr).map(EditorLoudnessMode::from);
+        if mode.is_none() {
+            tracing::warn!(
+                "loudnorm printed no Normalization Type — the export's level is \
+                 unverified, so the receipt will not claim one"
+            );
+        }
+        let mode = mode?;
+        match mode {
+            EditorLoudnessMode::Linear => tracing::info!(
+                achieved_lufs = p2.target_lufs,
+                target_lufs = p2.preset_lufs,
+                peak_limited = p2.peak_limited,
+                "mastered export normalised linearly"
+            ),
+            // The plan exists to make this unreachable; if it happens, the
+            // model of ffmpeg's gates is wrong and we want to hear about it.
+            EditorLoudnessMode::Dynamic => tracing::warn!(
+                planned_linear = p2.linear,
+                target_lufs = p2.target_lufs,
+                measured_lra = p2.measured.input_lra,
+                lra_gate = p2.target_lra,
+                measured_tp = p2.measured.input_tp,
+                offset = p2.offset,
+                "loudnorm normalised DYNAMICALLY against the plan — the export was \
+                 gain-ridden, not levelled"
+            ),
+        }
+        Some(EditorExportLoudness {
+            mode,
+            achieved_lufs: p2.target_lufs,
+            target_lufs: p2.preset_lufs,
+            peak_limited: p2.peak_limited,
+        })
+    });
     // The file is only real once ffmpeg has exited and the container is closed,
     // so 100 % is reported here rather than from the -progress stream.
     on_progress(100.0, EXPORT_PHASE_ENCODING);
     Ok(EditorExportResult {
         output_path: out_path,
+        loudness,
     })
 }
 
