@@ -2569,6 +2569,40 @@ where
     })
 }
 
+/// Build the pre-loudnorm filter graph, in order: normalize gain, THEN the
+/// vocal chain, THEN the mastering preset's own filters.
+///
+/// T12: the gain (the editor's "Normalize" button, a `volume=…dB` filter) goes
+/// FIRST, ahead of `chain`'s filters — the vocal chain's compressor/limiter is
+/// its LAST stage, so this order leaves the limiter with final say over the
+/// rendered peak. The previous order (gain appended AFTER the chain) let a
+/// positive gain push the already-limited signal back over 0 dBFS, undoing the
+/// limiter entirely. Gain is SKIPPED when a mastering preset is active:
+/// loudnorm sets the delivery level, so a volume shift ahead of it changes
+/// nothing but the measured input (the export modal says so instead of
+/// claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
+/// without ffmpeg.
+#[cfg(feature = "editor")]
+fn build_pre_filters(
+    chain: Option<sundayrec_core::processing::VocalChain>,
+    gain_db: Option<f64>,
+    preset: Option<&sundayrec_core::mastering::MasterPreset>,
+) -> Vec<String> {
+    let mut pre_filters: Vec<String> = Vec::new();
+    if preset.is_none() {
+        if let Some(g) = gain_db {
+            if g.is_finite() && g.abs() > f64::EPSILON {
+                pre_filters.push(format!("volume={g:.2}dB"));
+            }
+        }
+    }
+    pre_filters.extend(chain.map(|c| c.build_filters()).unwrap_or_default());
+    if let Some(p) = preset {
+        pre_filters.push(p.filters.clone());
+    }
+    pre_filters
+}
+
 /// Render the cut-plan + optional mastering gain to the requested format. The
 /// keep-segments, filter graph, codec args, output directory, output path and
 /// timeout are ALL the core's tested decisions; the seam spawns ffmpeg, streams
@@ -2662,7 +2696,9 @@ where
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
-    //      vocal chain → (normalize gain, only without a preset) → preset chain.
+    //      (normalize gain, only without a preset) → vocal chain → preset chain.
+    //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
+    //    final say over the peak — see `build_pre_filters`.
     //
     //    An empty preset id is "no mastering" (the renderer sends `undefined`,
     //    but a stray '' must not read as an unknown preset).
@@ -2711,22 +2747,7 @@ where
             }
         }
     }
-    let mut pre_filters: Vec<String> = chain.map(|c| c.build_filters()).unwrap_or_default();
-    // Peak-normalization gain (the editor's "Normalize" button) → a `volume`
-    // filter. It is SKIPPED when a mastering preset is active: loudnorm sets the
-    // delivery level, so a volume shift in front of it changes nothing but the
-    // measured input. (The export modal says so instead of claiming
-    // "Normalisert" — see `editor.volumeByMastering`.)
-    if preset.is_none() {
-        if let Some(g) = req.gain_db {
-            if g.is_finite() && g.abs() > f64::EPSILON {
-                pre_filters.push(format!("volume={g:.2}dB"));
-            }
-        }
-    }
-    if let Some(p) = &preset {
-        pre_filters.push(p.filters.clone());
-    }
+    let pre_filters = build_pre_filters(chain, req.gain_db, preset.as_ref());
 
     // The kill-timer for EACH ffmpeg pass, from the media it actually renders.
     let timeout_ms = export_timeout_ms_for(kept_duration);
@@ -4215,6 +4236,77 @@ mod tests {
         assert!(
             untouched.path().join("service.mp3.__editor_tmp").exists(),
             "the sweep must not wander into folders it was never told about"
+        );
+    }
+
+    // ── T12: the "Normalize" gain must lead the chain, not trail it ──────────────
+    //
+    // `build_pre_filters` decides the one thing T12 fixed: the export-level
+    // gain's position relative to the vocal chain. Pure — no ffmpeg — asserted
+    // on the returned filter STRINGS and their order, not on rendered audio.
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_puts_gain_before_the_chains_limiter() {
+        let mut chain = sundayrec_core::processing::VocalChain::default();
+        chain.limiter.enabled = true;
+        let filters = build_pre_filters(Some(chain), Some(6.0), None);
+        let gain_at = filters
+            .iter()
+            .position(|f| f == "volume=6.00dB")
+            .expect("gain filter present");
+        let limiter_at = filters
+            .iter()
+            .position(|f| f.starts_with("alimiter="))
+            .expect("limiter filter present");
+        assert!(
+            gain_at < limiter_at,
+            "T12: gain must run BEFORE the chain's limiter, not after (filters: {filters:?})"
+        );
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_skips_gain_when_a_preset_is_active() {
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        let filters = build_pre_filters(None, Some(6.0), Some(&preset));
+        assert_eq!(
+            filters,
+            vec![preset.filters.clone()],
+            "loudnorm owns the level with a preset active — no gain filter"
+        );
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_skips_zero_and_nonfinite_gain() {
+        assert!(build_pre_filters(None, Some(0.0), None).is_empty());
+        assert!(build_pre_filters(None, Some(f64::NAN), None).is_empty());
+        assert!(build_pre_filters(None, None, None).is_empty());
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_orders_gain_then_chain_then_preset() {
+        // Default chain is highpass+compressor "on"; drop the compressor so the
+        // chain renders to exactly ONE filter and the expected list stays simple.
+        let mut chain = sundayrec_core::processing::VocalChain::default();
+        chain.compressor.enabled = false;
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        // No preset: gain leads, chain follows.
+        let no_preset = build_pre_filters(Some(chain.clone()), Some(3.0), None);
+        assert_eq!(
+            no_preset,
+            vec!["volume=3.00dB".to_string(), format!("highpass=f={}", chain.highpass.freq_hz)]
+        );
+        // With a preset: gain is skipped, chain still runs, preset trails.
+        let with_preset = build_pre_filters(Some(chain.clone()), Some(3.0), Some(&preset));
+        assert_eq!(
+            with_preset,
+            vec![
+                format!("highpass=f={}", chain.highpass.freq_hz),
+                preset.filters.clone()
+            ]
         );
     }
 
