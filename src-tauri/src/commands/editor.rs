@@ -300,6 +300,14 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 
 /// Apply the cut-plan (+ optional mastering) and render to the chosen format,
 /// emitting `editor://export-progress` ticks the renderer draws as a real bar.
+///
+/// ONE AT A TIME (F2-A-B): a call arriving while an export is running comes
+/// back as `validation: export_already_running` — [`editor::export`] claims the
+/// engine before it touches anything, and the renderer maps that code to
+/// `editor.errExportAlreadyRunning`. The guard lives down there rather than
+/// here so it cannot be walked around by another caller of the same seam; the
+/// `in_flight` field on `ExportEngine` documents what two exports on one engine
+/// actually do to each other's files.
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
