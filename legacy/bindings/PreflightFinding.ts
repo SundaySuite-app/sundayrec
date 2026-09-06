@@ -6,4 +6,19 @@ import type { PreflightSeverity } from "./PreflightSeverity";
  * A single thing the preflight check found. Mirrors the Electron
  * `PreflightFinding` interface field-for-field.
  */
-export type PreflightFinding = { severity: PreflightSeverity, category: PreflightCategory, message: string, };
+export type PreflightFinding = { severity: PreflightSeverity, category: PreflightCategory, 
+/**
+ * The backend's own wording. For every finding below this predates
+ * [`Self::code`] and IS the text shown, unlocalized (a known gap — see
+ * `app/state/preflight.ts`). For a finding that carries a `code`, this is
+ * only the ENGLISH fallback for a renderer build that doesn't recognise
+ * the code yet; the real UI text comes from the renderer's own catalogue.
+ */
+message: string, 
+/**
+ * Stable, machine-readable — set only on findings added since F-W9. The
+ * renderer localises on this (a `preflight.*` key) and falls back to
+ * [`Self::message`] for a code it does not recognise, same contract as
+ * [`crate::notify::BackendWarning::code`].
+ */
+code?: string, };

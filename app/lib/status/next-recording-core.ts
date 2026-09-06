@@ -511,6 +511,38 @@ export function formatMissedBanner(
   );
 }
 
+/**
+ * Substitute the app's own text for a backend [`PreflightFinding`] whose
+ * `code` this client recognises (F-W9).
+ *
+ * `PreflightFinding.message` is Norwegian, verbatim, for every finding that
+ * predates `code` — a known gap (see `app/state/preflight.ts`'s module doc).
+ * A finding added SINCE (`sundayrec_core::preflight::code`) carries a stable
+ * `code` instead, and its Rust `message` is only the ENGLISH fallback for a
+ * client build that does not recognise the code yet — see
+ * `crates/sundayrec-core/src/preflight.rs` and
+ * `scripts/check-rust-norwegian.mjs` for why that string may not be
+ * Norwegian. This is the bridge: a finding with no `code`, or a `code` this
+ * build does not recognise, comes back UNCHANGED — the backend's own wording
+ * is exactly the fallback for that case.
+ *
+ * Shared by both places a backend finding reaches the UI: the silent
+ * app-open check (`app/state/preflight.ts`) and the live
+ * `scheduler://preflight` event (`app/state/next-recording.ts`) — the same
+ * Rust `PreflightFinding[]`, so the same re-localizing must apply to both or
+ * a scheduled recording's warning would show the English fallback while the
+ * app-open one shows the translated text.
+ */
+export function localizeBackendFinding(
+  finding: PreflightFinding,
+  t: Translate,
+): PreflightFinding {
+  if (finding.code === "save_folder_synced") {
+    return { ...finding, message: t("preflight.saveFolderSynced") };
+  }
+  return finding;
+}
+
 /** Preflight headline: errors dominate warnings. */
 export function formatPreflightHeadline(
   findings: PreflightFinding[],

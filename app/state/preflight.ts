@@ -33,9 +33,23 @@
  * dem ikke. Det er arvet fra legacy, og det riktige stedet å løse det er å la
  * `buildHealthFindings` svare med data i stedet for setninger — samme grep som
  * `decisions-core`. Ikke i P2.
+ *
+ * ## Unntaket: funn med en `code` (F-W9)
+ *
+ * `PreflightFinding.message` fra bakenden er norsk for hvert funn som fantes
+ * FØR F-W9 — det er gjelden avsnittet over beskriver. Et funn lagt til SIDEN
+ * (`sundayrec_core::preflight::code`) bærer i stedet en stabil `code`, og
+ * Rust-teksten er en ENGELSK reserve for en gammel klientversjon som ikke
+ * kjenner koden — se `crates/sundayrec-core/src/preflight.rs` og
+ * `scripts/check-rust-norwegian.mjs`. `localizeBackendFinding`
+ * (`@lib/status/next-recording-core`, delt med `next-recording.ts` — SAMME
+ * bakend-funn når `scheduler://preflight` fyrer live) er broen: den erstatter
+ * meldingen med appens egen `preflight.*`-nøkkel når koden er kjent, og lar
+ * alt annet (inkludert hvert funn uten `code`) stå urørt.
  */
 
 import { buildHealthFindings } from "@lib/status/health-findings";
+import { localizeBackendFinding } from "@lib/status/next-recording-core";
 import type { PreflightFinding } from "@legacy/bindings/PreflightFinding";
 
 import { t } from "../i18n";
@@ -77,7 +91,12 @@ export async function runSilentPreflightOnce(): Promise<void> {
       // som er for løs.
       window.api.runPreflight() as Promise<{ findings?: PreflightFinding[] }>,
     ]);
-    const findings = [...health, ...(result?.findings ?? [])];
+    // Only the BACKEND half needs re-localizing — `health` was already built
+    // with the app's own `t()` by `collectHealthFindings` above.
+    const backend = (result?.findings ?? []).map((f) =>
+      localizeBackendFinding(f, t),
+    );
+    const findings = [...health, ...backend];
     // Bare når det FAKTISK er noe. Et tomt skriv ville tømt et varsel
     // planleggeren nettopp la igjen og brukeren ennå ikke har sett.
     if (findings.length > 0) setPreflightFindings(findings);

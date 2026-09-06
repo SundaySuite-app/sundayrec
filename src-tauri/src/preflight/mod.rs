@@ -29,7 +29,7 @@
 use sqlx::SqlitePool;
 use sundayrec_core::device_match::find_best_device_match;
 use sundayrec_core::preflight::{
-    assemble_findings, video_active, PreflightFacts, PreflightFinding,
+    assemble_findings, looks_like_onedrive, video_active, PreflightFacts, PreflightFinding,
 };
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
@@ -125,12 +125,20 @@ pub async fn run_preflight_detailed(
     // no Documents dir) is reported as NOT writable — that is exactly the
     // finding the operator needs — instead of probing a relative "." like the
     // pre-R3 command-side fallback did.
-    let (writable, free) = match sundayrec_core::settings::resolve_save_folder(
+    let (writable, free, onedrive) = match sundayrec_core::settings::resolve_save_folder(
         settings.save_folder.as_deref(),
         documents_dir,
     ) {
-        Ok(folder) => (folder_writable(&folder), free_bytes(&folder)),
-        Err(_) => (false, None),
+        Ok(folder) => (
+            folder_writable(&folder),
+            free_bytes(&folder),
+            // F-W9: a resolved-but-unwritable folder can still be inside
+            // OneDrive (a permissions quirk is a different problem from a
+            // sync risk) — compute this from the same resolve, not gated on
+            // `writable`.
+            looks_like_onedrive(&folder.to_string_lossy()),
+        ),
+        Err(_) => (false, None, false),
     };
 
     let device_name = settings
@@ -149,6 +157,7 @@ pub async fn run_preflight_detailed(
         mic_denied: false,
         cam_denied: false,
         device_present: device_present(device_name.as_deref()).await,
+        save_folder_onedrive: onedrive,
     };
 
     PreflightOutcome {

@@ -1093,5 +1093,8 @@
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
     "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
     "trashManifestUnreadable": "Nie udało się odczytać zawartości kosza. Pliki nadal tam są, ale aplikacja nie wie już, skąd pochodzą."
+  },
+  "preflight": {
+    "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie."
   }
 }

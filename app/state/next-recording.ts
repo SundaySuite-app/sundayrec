@@ -33,11 +33,13 @@ import {
   buildNext,
   computeWake,
   emptyState,
+  localizeBackendFinding,
   shouldRefreshWake,
   type NextRecordingState,
   type WakeRefreshReason,
 } from "@lib/status/next-recording-core";
 
+import { t } from "../i18n";
 import { anythingScheduled } from "../pages/setup/schedule-core";
 import { isRecording } from "./recording";
 import { settings } from "./settings";
@@ -225,7 +227,11 @@ export function initNextRecording(): () => void {
   });
 
   safeListen<NextRecordingState["preflight"]>(EV_PREFLIGHT, (payload) => {
-    setPreflightFindings(Array.isArray(payload) ? payload : []);
+    const findings = Array.isArray(payload) ? payload : [];
+    // Same re-localizing the silent app-open check applies (F-W9) — this is
+    // the SAME backend `PreflightFinding[]`, just delivered live 30 min
+    // before a scheduled recording instead of at app open.
+    setPreflightFindings(findings.map((f) => localizeBackendFinding(f, t)));
   });
 
   // Innstillingene og opptaks-signalet mates inn: en tidsplan-endring eller en
