@@ -576,6 +576,10 @@ mod imp {
                 ))));
                 return;
             }
+            // F2-W6: a leading `.` hides this on macOS for free; Windows needs
+            // the real attribute or a volunteer browsing the save folder
+            // mid-service finds — and can "tidy away" — the live fragments.
+            crate::util::hide_dir_on_windows(&c.cap_dir);
         }
         // What ffmpeg actually writes: the MKV capture (video) or, for audio-only,
         // the user's file itself.

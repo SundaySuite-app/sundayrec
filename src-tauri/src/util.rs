@@ -182,6 +182,55 @@ pub fn hidden_std_command(program: impl AsRef<std::ffi::OsStr>) -> std::process:
     }
 }
 
+// ── Hidden directories (Windows) ──────────────────────────────────────────────
+
+/// Mark `dir` hidden in Windows Explorer (F2-W6).
+///
+/// A leading `.` hides a folder on macOS (Finder) for free, but it is just an
+/// ordinary character to Windows — `.sundayrec-capture-<id>` (the live capture
+/// folder) and `.sundayrec-trash` (the Papirkurv) sit there in plain sight in
+/// Explorer. A volunteer poking around the save folder mid-service can find —
+/// and "tidy away" — the WAV/MKV fragments a live recording is still writing,
+/// or mistake the Papirkurv for stray junk and delete what was meant to be
+/// recoverable. Setting the real `FILE_ATTRIBUTE_HIDDEN` bit closes that gap
+/// the same way Explorer's own "Hidden items" folders behave.
+///
+/// Call this right after `create_dir_all` creates the directory — the
+/// attribute is a property of the directory ENTRY, so it must already exist.
+/// Best-effort and silent to the caller: odd ACLs or a network share that
+/// rejects the attribute only logs a warning. The directory still does its
+/// actual job either way (a live recording, a moved-to-trash file); it just
+/// stays visible, which is exactly today's behaviour — never a reason to fail
+/// a recording or a delete.
+pub fn hide_dir_on_windows(dir: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN,
+        };
+
+        let wide: Vec<u16> = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: `wide` is a NUL-terminated UTF-16 buffer, valid and unchanged
+        // for the duration of this call — everything `SetFileAttributesW`
+        // requires of its pointer argument.
+        let ok = unsafe { SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_HIDDEN) };
+        if ok == 0 {
+            let err = std::io::Error::last_os_error();
+            tracing::warn!(dir = %dir.display(), "could not mark directory hidden: {err}");
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = dir;
+    }
+}
+
 // ── Atomic file writes ──────────────────────────────────────────────────────
 
 /// The scratch file [`write_atomic`] lands in before the rename.
@@ -412,5 +461,47 @@ mod tests {
         write_atomic_async(&path, b"2").await.unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"2");
         assert!(leftovers(dir.path()).is_empty());
+    }
+
+    // ── hide_dir_on_windows (F2-W6) ──────────────────────────────────────────
+
+    /// Real Explorer visibility, not a mock: `windows-check` runs this on
+    /// `windows-latest`, so the assertion below is the actual bit a real
+    /// Explorer window reads, via the same std API that reads it.
+    #[cfg(windows)]
+    #[test]
+    fn hide_dir_on_windows_sets_the_real_hidden_attribute() {
+        use std::os::windows::fs::MetadataExt;
+
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&target).unwrap();
+        let before = std::fs::metadata(&target).unwrap().file_attributes();
+        assert_eq!(
+            before & FILE_ATTRIBUTE_HIDDEN,
+            0,
+            "precondition: a freshly created directory must not already be hidden"
+        );
+
+        hide_dir_on_windows(&target);
+
+        let after = std::fs::metadata(&target).unwrap().file_attributes();
+        assert_ne!(
+            after & FILE_ATTRIBUTE_HIDDEN,
+            0,
+            "FILE_ATTRIBUTE_HIDDEN was not set after hide_dir_on_windows"
+        );
+    }
+
+    /// Off Windows the helper is the identity function — it must not touch the
+    /// filesystem at all (there is nothing to touch: no attribute bit exists),
+    /// so calling it on a directory that does not even exist must not panic or
+    /// error.
+    #[cfg(not(windows))]
+    #[test]
+    fn hide_dir_on_windows_is_a_no_op_off_windows() {
+        hide_dir_on_windows(Path::new("/does/not/exist"));
     }
 }

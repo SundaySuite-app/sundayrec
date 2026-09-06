@@ -322,6 +322,10 @@ pub fn write_manifest(save_dir: &Path, entries: &[TrashEntry]) -> AppResult<()> 
 fn write_manifest_locked(save_dir: &Path, entries: &[TrashEntry]) -> AppResult<()> {
     let dir = trash_dir(save_dir);
     std::fs::create_dir_all(&dir)?;
+    // F2-W6: a leading `.` hides this on macOS for free; Windows needs the
+    // real attribute or the Papirkurv sits in plain sight in Explorer, ready
+    // to be mistaken for stray junk.
+    crate::util::hide_dir_on_windows(&dir);
     let file = ManifestFile {
         entries: entries
             .iter()
@@ -441,6 +445,10 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
     let _guard = manifest_guard();
     let dir = trash_dir(save_dir);
     std::fs::create_dir_all(&dir)?;
+    // F2-W6 — see the identical call in `write_manifest_locked`. Cheap and
+    // idempotent, so calling it again here (this create can run before that
+    // one does) costs nothing.
+    crate::util::hide_dir_on_windows(&dir);
 
     let stamp_ms = store::now_ms();
     let stamp = stamp_ms as i64;
