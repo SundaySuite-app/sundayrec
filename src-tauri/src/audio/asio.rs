@@ -23,6 +23,11 @@
 //! only when it can change an answer ([`resolve_is_asio_device`]) and its result
 //! is memoised for [`ASIO_CACHE_TTL`] ([`AsioCache`]).
 //!
+//! [`list_asio_devices`] is the ONE function that sweeps. Everything else reads
+//! its result: the picker's `list_audio_devices`, the recorder's
+//! [`is_asio_device`], [`list_asio_input_channels`]. Adding a second sweep
+//! anywhere re-opens the finding.
+//!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
 //! The cpal ASIO calls can only be exercised on a Windows box with an ASIO driver
@@ -318,25 +323,6 @@ mod imp {
         };
         devices.map(|d| summarise(&d)).collect()
     }
-
-    pub fn list_asio_input_channels(device_id: &str) -> Vec<AudioChannel> {
-        let Some(host) = asio_host() else {
-            return Vec::new();
-        };
-        let Ok(devices) = host.devices() else {
-            return Vec::new();
-        };
-        for d in devices {
-            if d.name().ok().as_deref() == Some(device_id) {
-                let count = d
-                    .supported_input_configs()
-                    .map(|cfgs| cfgs.map(|c| c.channels()).max().unwrap_or(0))
-                    .unwrap_or(0);
-                return input_channels_for(count);
-            }
-        }
-        Vec::new()
-    }
 }
 
 // ── Stub path (everything else) ──────────────────────────────────────────────
@@ -345,10 +331,6 @@ mod imp {
     use super::*;
 
     pub fn list_asio_devices() -> Vec<AsioDevice> {
-        Vec::new()
-    }
-
-    pub fn list_asio_input_channels(_device_id: &str) -> Vec<AudioChannel> {
         Vec::new()
     }
 }
@@ -472,13 +454,31 @@ pub fn list_asio_devices() -> Vec<AsioDevice> {
 /// List the input channels of one ASIO device. Empty if the device is gone or
 /// ASIO is unavailable.
 ///
-/// ⚠️ NOT memoised: this walks the ASIO host itself, so every call loads the
-/// installed drivers. Nothing in the shipped path calls it today (the channel
-/// count comes from `start_vu`'s negotiated reply — see
-/// [`crate::commands::audio`]); a caller that brings it back should route
-/// through [`list_asio_devices`]'s `input_channels` instead.
+/// Reads the channel count out of [`list_asio_devices`] — so it shares the ONE
+/// memo, and cannot become a second, unconditional way to load every installed
+/// driver. It used to walk the ASIO host itself with its own `host.devices()`
+/// sweep; nothing in the shipped path calls it today (the channel count comes
+/// from `start_vu`'s negotiated reply — see [`crate::commands::audio`]), so that
+/// sweep was a landmine for whichever caller brought it back, not a live cost.
+///
+/// Same answer as the old walk: `summarise` derives `input_channels` from the
+/// same `supported_input_configs().map(channels).max()` this used to compute
+/// inline. Device names are matched case-insensitively, like everywhere else in
+/// this module.
 pub fn list_asio_input_channels(device_id: &str) -> Vec<AudioChannel> {
-    imp::list_asio_input_channels(device_id)
+    input_channels_of(&list_asio_devices(), device_id)
+}
+
+/// The lookup half of [`list_asio_input_channels`], with the device list passed
+/// in so it can be exercised without an ASIO driver. Empty for a name no device
+/// answers to.
+fn input_channels_of(devices: &[AsioDevice], device_id: &str) -> Vec<AudioChannel> {
+    let needle = device_id.to_lowercase();
+    devices
+        .iter()
+        .find(|d| d.id.to_lowercase() == needle || d.name.to_lowercase() == needle)
+        .map(|d| input_channels_for(d.input_channels))
+        .unwrap_or_default()
 }
 
 /// Case-insensitive device-name membership. Windows spells the same interface
@@ -835,6 +835,46 @@ mod tests {
         assert!(contains_name(&names, "Soundcraft MADI USB"));
         assert!(contains_name(&names, "asio:madi-0"));
         assert!(!contains_name(&names, "USB Audio CODEC"));
+    }
+
+    #[test]
+    fn channel_listing_reads_the_memoised_device_list() {
+        // `list_asio_input_channels` used to run its own `host.devices()` sweep
+        // — a second, unconditional way to load every installed driver. It now
+        // looks the count up in the ONE memoised list, and gives the same
+        // answer the walk did.
+        let mut d = device("Soundcraft MADI USB");
+        d.input_channels = 32;
+        d.id = "asio:madi-0".into();
+        let devices = vec![d];
+
+        assert_eq!(
+            input_channels_of(&devices, "Soundcraft MADI USB").len(),
+            32,
+            "found by name"
+        );
+        assert_eq!(
+            input_channels_of(&devices, "asio:madi-0").len(),
+            32,
+            "and by id"
+        );
+        assert_eq!(
+            input_channels_of(&devices, "SOUNDCRAFT MADI USB").len(),
+            32,
+            "casing must not lose the device"
+        );
+        assert_eq!(
+            input_channels_of(&devices, "Mikrofon (Realtek(R) Audio)"),
+            Vec::new(),
+            "a device the ASIO host does not have has no ASIO channels"
+        );
+        assert!(input_channels_of(&[], "anything").is_empty());
+        // The labels are the shared ones, one-based.
+        assert_eq!(
+            input_channels_of(&devices, "asio:madi-0")[8].label,
+            "Input 9",
+            "channel 9/10 of the mixer is exactly what ASIO is here for"
+        );
     }
 
     #[test]
