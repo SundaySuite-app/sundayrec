@@ -1,4 +1,11 @@
 {
+  "app": {
+    "editor": {
+      "loadNotFound": "Nie znaleziono nagrania",
+      "loadNotFoundDesc": "Może znajdować się w koszu.",
+      "loadNotFoundTrash": "Zobacz w koszu"
+    }
+  },
   "nav": {
     "editor": "Edycja"
   },

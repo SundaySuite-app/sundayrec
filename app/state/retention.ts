@@ -30,13 +30,16 @@
  * uten at noen abonnerer på innstillingen her.
  */
 
+import { trashedPaths } from "@lib/pages/trash-core";
+
 import { exporting } from "../editor/export";
-import { loadState } from "../editor/model";
+import { forgetMovedPath as forgetLastEdited, loadState } from "../editor/model";
 import { t, tn } from "../i18n";
 import { navigate } from "../router/router";
 import { toast } from "../ui/toast";
 import { loadRecordingCount } from "./recordings";
-import { loadTrash } from "./trash";
+import { forgetMovedPath as forgetFinishedRecording } from "./recording";
+import { loadTrash, trashEntries } from "./trash";
 
 /** Samme rytme som `trash::sweep` i Rust: oppstart + hver 12. time. */
 const TICK_MS = 12 * 60 * 60 * 1000;
@@ -81,6 +84,16 @@ export async function runRetentionPass(): Promise<void> {
   // Butikkene FØR toasten: når meldingen kan leses skal tallene bak den
   // (papirkurv-tellinga, biblioteklista) allerede stemme med den.
   await Promise.all([loadTrash(), loadRecordingCount()]);
+
+  // F2-9: «sist redigert» og kvitteringen glemmer alt som nå ligger i
+  // papirkurven — ikke bare det DETTE passet flyttet. Selvhelende av samme
+  // grunn `list()` er det på Rust-siden: en referanse som overlevde en
+  // TIDLIGERE flytting uten å bli glemt (funnet var jo at ingen kalte denne
+  // funksjonen før nå) blir også fanget opp her, i stedet for å kreve at
+  // hvert kall til `move_into_trash` et sted i historien fikk den med seg.
+  const inTrash = [...trashedPaths([...(trashEntries.value ?? [])])];
+  forgetLastEdited(inTrash);
+  forgetFinishedRecording(inTrash);
 
   // `trash.*`, ikke `app.*`: nøklene bor hos papirkurv-søsknene sine, som er
   // oversatt i alle sju katalogene — en flertallsgruppe kan ikke bo i det

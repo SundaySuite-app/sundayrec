@@ -66,15 +66,18 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import type { TrashEntry } from "@lib/pages/trash-core";
+import { trashedPaths } from "@lib/pages/trash-core";
 
 import { confirmDiscard } from "../../editor/discard";
 import { openInEditor } from "../../editor/entry";
 import { openFile, pickAndOpen } from "../../editor/loader";
+import { forgetMovedPath as forgetLastEdited } from "../../editor/model";
 import { locale, t, tf } from "../../i18n";
 import { navigate } from "../../router/router";
+import { forgetMovedPath as forgetFinishedRecording } from "../../state/recording";
 import { loadRecordingCount, recordings } from "../../state/recordings";
 import { settings } from "../../state/settings";
-import { loadTrash, trashCount } from "../../state/trash";
+import { loadTrash, trashCount, trashEntries } from "../../state/trash";
 import { Button } from "../../ui/Button/Button";
 import { Chip } from "../../ui/Chip/Chip";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
@@ -248,6 +251,7 @@ export function LibraryPage() {
     try {
       const moved = await trashRow(row);
       await Promise.all([loadRecordingCount(), loadTrash()]);
+      forgetWhatIsNowTrashed();
       toast("info", t("app.library.movedToTrash"), {
         durationMs: UNDO_MS,
         action: moved.length
@@ -522,6 +526,24 @@ function Foot() {
 // ── Sømmen mot papirkurven ──────────────────────────────────────────────────
 
 /**
+ * F2-9: glem «sist redigert» og kvitteringen for alt som NÅ ligger i
+ * papirkurven — ikke bare denne handlingens egne stier.
+ *
+ * Kalt rett etter `loadTrash()`, av begge veiene inn i papirkurven fra denne
+ * siden (`remove` og `undoTrash`): en flytting INN gjør en referanse
+ * foreldreløs, og en flytting UT (angre) treffer ingenting siden den samme
+ * referansen allerede ble glemt da filen først ble trashet — men å kjøre
+ * samme selvhelende sveip begge steder er én regel å holde riktig i stedet
+ * for to, og fanger opp en referanse som overlevde en TIDLIGERE flytting
+ * (før denne funksjonen fantes) på kjøpet.
+ */
+function forgetWhatIsNowTrashed(): void {
+  const inTrash = [...trashedPaths([...(trashEntries.value ?? [])])];
+  forgetLastEdited(inTrash);
+  forgetFinishedRecording(inTrash);
+}
+
+/**
  * Flytt én rads filer til papirkurven, og rydd bort det som ikke fantes.
  *
  * Ordrett legacys `trashRows`, og av legacys grunn: `trash_move` hopper over
@@ -557,5 +579,6 @@ async function undoTrash(entries: readonly TrashEntry[]): Promise<void> {
     }
   }
   await Promise.all([loadRecordingCount(), loadTrash()]);
+  forgetWhatIsNowTrashed();
   if (failed > 0) toast("warn", t("trash.undoFailed"));
 }

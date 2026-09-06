@@ -12,15 +12,26 @@
  * Så: ÉN kilde, to montører. Testid-ene er uendret (`editor-loading`,
  * `editor-loading-text`, `editor-loading-progress`, `editor-load-error`,
  * `editor-load-error-open`, `editor-load-error-close`) — de er kontrakter mot
- * e2e-laget, og en flytting er ingen grunn til å brekke dem.
+ * e2e-laget, og en flytting er ingen grunn til å brekke dem. Ny for F2-9:
+ * `editor-load-error-trash`, bare til stede når `loadError` er `"not_found"`.
+ *
+ * ## F2-9: to feil, to setninger
+ *
+ * `loadError` bar alltid en nøkkel, men fram til F2-9 var det ingen her som
+ * LESTE den — `LoadFailed` malte samme setning uansett hva lasteren fant.
+ * En fil papirkurven eller retensjonen tok imens kortet pekte på den fikk
+ * dermed «formatet støttes kanskje ikke, eller fila er skadet», som ikke var
+ * sant om verken filen eller papirkurven. Nå velger `LoadFailed` teksten OG
+ * en ekstra handling («Se i papirkurven») fra `loadError.value` selv.
  */
 
 import { t, tDyn } from "../i18n";
+import { navigate } from "../router/router";
 import { Banner } from "../ui/Banner/Banner";
 import { Button } from "../ui/Button/Button";
 import { ProgressBar } from "../ui/ProgressBar/ProgressBar";
 import { closeFile, pickAndOpen } from "./loader";
-import { loadPhase, loadProgress } from "./model";
+import { loadError, loadPhase, loadProgress } from "./model";
 import styles from "./editor.module.css";
 
 export function Loading() {
@@ -53,21 +64,41 @@ export function Loading() {
 }
 
 export function LoadFailed() {
+  const notFound = loadError.value === "not_found";
   return (
     <>
       <Banner
         tone="bad"
         testId="editor-load-error"
-        title={t("app.editor.loadFailed")}
-        detail={t("app.editor.loadFailedDesc")}
+        title={
+          notFound
+            ? t("app.editor.loadNotFound")
+            : t("app.editor.loadFailed")
+        }
+        detail={
+          notFound
+            ? t("app.editor.loadNotFoundDesc")
+            : t("app.editor.loadFailedDesc")
+        }
         actions={
-          <Button
-            variant="secondary"
-            testId="editor-load-error-open"
-            onClick={() => void pickAndOpen()}
-          >
-            {t("editor.openFile")}
-          </Button>
+          <>
+            {notFound ? (
+              <Button
+                variant="secondary"
+                testId="editor-load-error-trash"
+                onClick={() => navigate("edit", { tab: "trash" })}
+              >
+                {t("app.editor.loadNotFoundTrash")}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              testId="editor-load-error-open"
+              onClick={() => void pickAndOpen()}
+            >
+              {t("editor.openFile")}
+            </Button>
+          </>
         }
       />
       {/* Feilen skjuler ikke veien tilbake: `loadError` bæres bare som en

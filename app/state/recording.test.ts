@@ -19,6 +19,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   dismissReconnecting,
+  finishedRecording,
+  forgetMovedPath,
   initRecording,
   isRecording,
   markSessionStarted,
@@ -61,6 +63,7 @@ afterEach(() => {
   silenceActive.value = false;
   isRecording.value = false;
   scheduledStopMs.value = null;
+  finishedRecording.value = null;
 });
 
 describe("gjenkoblingsstripa", () => {
@@ -199,5 +202,51 @@ describe("kvalitetsalarmen skiller «ingen koder» fra «koder finnes ikke»", (
     });
     expect(qualityBanner().reasonCodes).toEqual([]);
     h.off();
+  });
+});
+
+// ── F2-9: kvitteringen glemmer en fil papirkurven eller retensjonen tok ────
+
+describe("forgetMovedPath", () => {
+  // ⚠️ FUNNET, og det er ekte. Ingenting kalte denne funksjonen før F2-9 —
+  // `record-done-edit` (kvitteringens «Rediger»-knapp) åpnet `finished.path`
+  // uten at noe visste at papirkurven eller retensjonen kunne ha flyttet
+  // fila i mellomtiden.
+  it("kvitteringen forsvinner når dens fil er blant de flyttede stiene", () => {
+    finishedRecording.value = {
+      path: "/Opptak/2026-08-23.flac",
+      hasVideo: false,
+      atMs: 0,
+    };
+    forgetMovedPath(["/annet.flac", "/Opptak/2026-08-23.flac"]);
+    expect(finishedRecording.value).toBeNull();
+  });
+
+  it("en ANNEN fil i papirkurven rører ikke kvitteringen", () => {
+    const receipt = {
+      path: "/Opptak/2026-08-23.flac",
+      hasVideo: false,
+      atMs: 0,
+    };
+    finishedRecording.value = receipt;
+    forgetMovedPath(["/Opptak/en-helt-annen-dag.flac"]);
+    expect(finishedRecording.value).toBe(receipt);
+  });
+
+  it("ingen kvittering å glemme er ikke en feil", () => {
+    finishedRecording.value = null;
+    expect(() => forgetMovedPath(["/hva-som-helst.flac"])).not.toThrow();
+    expect(finishedRecording.value).toBeNull();
+  });
+
+  it("en tom liste med flyttede stier lar kvitteringen stå", () => {
+    const receipt = {
+      path: "/Opptak/2026-08-23.flac",
+      hasVideo: false,
+      atMs: 0,
+    };
+    finishedRecording.value = receipt;
+    forgetMovedPath([]);
+    expect(finishedRecording.value).toBe(receipt);
   });
 });

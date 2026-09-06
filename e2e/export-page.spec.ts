@@ -3,6 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
+  fn,
   recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
@@ -120,6 +121,110 @@ test.describe("eksportering", () => {
 
     // 3. Og veien inn for en fil fra en annen opptaker.
     await expect(page.getByTestId("export-open")).toBeVisible();
+  });
+
+  test("F2-9: kortet glemmer fila når den slettes fra biblioteket", async ({
+    page,
+  }) => {
+    // ⚠️ FUNNET, og det er ekte. FØR F2-9 fortsatte kortet å peke på den
+    // redigerte fila selv etter at papirkurv-sømmen hadde flyttet den —
+    // «Gjør klar» ville åpnet en sti som ikke lenger førte til opptaket, og
+    // lasteren ville landet på den generiske «kunne ikke åpne»-teksten (se
+    // `library.spec.ts` for DEN halvparten). `LibraryPage.tsx` sin
+    // `forgetWhatIsNowTrashed` er det som glemmer den, rett etter slettingen.
+    //
+    // MUTASJONSPRØVEN: fjern kallet til `forgetWhatIsNowTrashed()` fra
+    // `remove()` i `LibraryPage.tsx`, og den siste assertionen blir rød —
+    // kortet fortsetter å hete «Sist redigert» over en fil som er borte.
+    await openThenExport(page, {
+      // `recordings_list` kommer FRA BACKENDEN nyeste først («Siste
+      // opptak»-kortet leser bare `[0]`, det sorterer ikke selv) — `OTHER`
+      // står derfor FØRST og med den seneste `started_at`, slik at «Siste
+      // opptak» etter slettingen umiskjennelig blir DEN andre fila.
+      recordings_list: [
+        recordingRow({
+          id: "rec-other",
+          file_path: OTHER,
+          started_at: 1_751_700_000_000,
+          created_at: 1_751_700_000_000,
+        }),
+        recordingRow({
+          id: "rec-file",
+          file_path: FILE,
+          started_at: 1_700_000_000_000,
+          created_at: 1_700_000_000_000,
+        }),
+      ],
+      // Delt tilstand mellom `trash_move` og `trash_list`: `forgetMovedPath`
+      // leser HVA SOM ER I PAPIRKURVEN via en `loadTrash()` etter flyttingen
+      // (`app/state/retention.ts`/`LibraryPage.tsx`'s `forgetWhatIsNowTrashed`),
+      // så en statisk `trash_list` som ikke ser flyttingen ville aldri klart
+      // å bevise fiksen. Samme mønster som `TRASH_STORE` i `library.spec.ts`.
+      trash_list: fn(`() => (window.__E2E_TRASH__ ||= [])`),
+      trash_move: fn(`(args) => {
+        const list = (window.__E2E_TRASH__ ||= []);
+        const now = Date.now();
+        const moved = (args.paths || []).map((p, i) => ({
+          id: "e2e-trashed-" + now + "-" + i,
+          originalPath: p,
+          trashedPath: p + ".trashed",
+          name: p.split("/").pop(),
+          deletedAt: now,
+          related: [],
+          byteSize: 1000,
+        }));
+        list.push(...moved);
+        return moved;
+      }`),
+    });
+
+    // Lukk fila: samme steg som den FØRSTE testen i denne fila — kortet
+    // vises bare i EKSPORTERINGENS `idle`, ikke mens fila fortsatt er åpen.
+    await page.getByTestId("nav-edit").click();
+    await page.getByTestId("editor-close").click();
+    await expect(page.getByTestId("editor")).toHaveCount(0);
+
+    // Utgangspunktet: kortet er «Sist redigert» og navngir FILE.
+    await page.getByTestId("nav-export").click();
+    await expect(page.getByTestId("export-page")).toHaveAttribute(
+      "data-state",
+      "idle",
+    );
+    await expect(page.getByTestId("export-last")).toContainText(
+      "2026-08-02 Gudstjeneste.mp3",
+    );
+    await expect(page.getByTestId("export-page")).toContainText(
+      "Sist redigert",
+    );
+
+    // Slett den SAMME fila fra biblioteket — REDIGERING viser biblioteket nå
+    // at fila er lukket, uten et nytt klikk (`loadState` er `idle`).
+    await page.getByTestId("nav-edit").click();
+    await expect(page.getByTestId("library-row")).toHaveCount(2);
+    const fileRow = page
+      .getByTestId("library-row")
+      .filter({ hasText: "2026-08-02 Gudstjeneste.mp3" });
+    await fileRow.getByTestId("library-row-delete").click();
+    await expect(page.getByTestId("toast-host")).toContainText(
+      "Flyttet til papirkurven",
+    );
+
+    // Tilbake på EKSPORTERING: kortet har glemt fila — det faller tilbake på
+    // SISTE OPPTAK, som nå er den ANDRE fila, med den ærlige etiketten.
+    await page.getByTestId("nav-export").click();
+    await expect(page.getByTestId("export-page")).toHaveAttribute(
+      "data-state",
+      "idle",
+    );
+    const last = page.getByTestId("export-last");
+    await expect(last).not.toContainText("2026-08-02 Gudstjeneste.mp3");
+    await expect(last).toContainText("2026-07-05 Kveldsmøte.mp3");
+    await expect(page.getByTestId("export-page")).toContainText(
+      "Siste opptak",
+    );
+    await expect(page.getByTestId("export-page")).not.toContainText(
+      "Sist redigert",
+    );
   });
 
   test("uten noe redigert står SISTE OPPTAK der, og sier at det er dét", async ({
