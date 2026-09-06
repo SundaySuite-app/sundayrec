@@ -3,6 +3,36 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.19.0 — sju språk, Windows som virker, og ettermiddagsflyten
+
+Stor runde etter F1: språkrunden, tre nye granskinger (ettermiddagsflyten,
+Windows-brukeren, lydkjeden) og restene fra F1.
+
+- **Sju språk.** Svensk, dansk, tysk, fransk og polsk er komplette og aktive
+  (584 nøkler hver); tre tellinger ble ekte flertallsgrupper.
+- **Windows.** Auto-oppdatering drepte sin egen installer — fikset; ingen
+  svarte konsollvinduer; videoopptak fanges som MKV med gjenopprettingsmanifest;
+  maskinen holdes våken fra vekking til opptak; ASIO-drivere lastes bare ved
+  behov; capture- og papirkurvmapper skjules; OneDrive-varsel; CI kjører nå
+  testene på Windows.
+- **Søndagsfeil.** «Test vekking» slettet søndagens vekketimere; Escape i
+  «Stoppe opptaket?» stoppet opptaket; etter en reload visste ikke appen at det
+  tas opp. Alle tre fikset.
+- **Eksport.** Feil som ikke ble vist; dobbeltklikk ga to eksporter som ødela
+  hverandre; halve filer med ferdig navn; ingen diskvakt; papirkurv-skjøten
+  (retensjon vs. åpen fil, «Fant ikke fila»-banner, biblioteket skjuler
+  slettede rader etter omstart).
+- **Lyd.** Kompressorens «2 dB» var +6 dB, limiteren opphevet sitt eget tak,
+  gate-terskelen ble 0; loudnorm falt stille til dynamisk modus — nå ærlig
+  nivå i kvitteringen; kanaldiagnosen målte feil kanal; forhåndsbufferen mistet
+  300 ms og skjøtet uten fade; åtte mindre rydderier; #111 (nivåuavhengig
+  prekendeteksjon) merget.
+- **UI.** Space/R starter opptaket, ⌘F/Ctrl+F søker; førstegangsoppsettets
+  sjekkliste folder kortene ut på stedet; sømmen mellom Rust og skallet er
+  pinnet (tre reelle avvik funnet).
+- **Motor.** RecordingContext; norsk ut av motoren del 2; mørke kommandoer
+  ryddet; docs og riggdag à jour.
+
 ## v0.18.0-beta.1 — resten av F1-gjennomgangen til beta-ringen
 
 Andre og siste runde fra gjennomgangen av hele appen: planlegger- og
