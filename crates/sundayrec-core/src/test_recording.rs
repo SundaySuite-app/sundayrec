@@ -127,11 +127,17 @@ pub fn size_is_plausible(size_bytes: u64) -> bool {
     size_bytes >= MIN_TEST_SIZE_BYTES
 }
 
-/// Parse the strongest `RMS level dB:` value out of an `astats` stderr blob.
-/// Returns `None` when no value parses (caller treats that as "normal" rather
-/// than flagging a working test as silent). Mirrors the Electron regex sweep.
+/// Parse the strongest `RMS peak dB:` value out of an `astats` stderr blob.
+/// `astats=metadata=1:reset=0` only ever prints ONE `RMS level dB:` line per
+/// channel — the whole-take average — so normal speech-with-pauses drags that
+/// average down and trips a false "weak signal" warning. `RMS peak dB:` is the
+/// same summary's loudest per-window RMS (the filter's internal analysis
+/// windows, independent of `reset`), which is what "is the mic actually
+/// picking up speech" should be judged on. Returns `None` when no value parses
+/// (caller treats that as "normal" rather than flagging a working test as
+/// silent).
 pub fn parse_strongest_rms(stderr: &str) -> Option<f64> {
-    const MARKER: &str = "RMS level dB:";
+    const MARKER: &str = "RMS peak dB:";
     let mut strongest = f64::NEG_INFINITY;
     let mut found = false;
     for line in stderr.lines() {
@@ -245,15 +251,30 @@ mod tests {
     #[test]
     fn rms_picks_strongest() {
         let stderr = "\
-[Parsed_astats] RMS level dB: -40.0
-[Parsed_astats] RMS level dB: -23.4
-[Parsed_astats] RMS level dB: -60.0";
+[Parsed_astats] RMS peak dB: -40.0
+[Parsed_astats] RMS peak dB: -23.4
+[Parsed_astats] RMS peak dB: -60.0";
         assert_eq!(parse_strongest_rms(stderr), Some(-23.4));
     }
 
     #[test]
     fn rms_none_when_absent() {
         assert_eq!(parse_strongest_rms("no stats here"), None);
+    }
+
+    /// T8: a whole-take `RMS level dB:` average (dragged down by normal
+    /// pauses) must NOT be what gets parsed — only `RMS peak dB:`, the
+    /// summary's loudest analysis window, matters.
+    #[test]
+    fn rms_ignores_whole_file_level_reads_peak() {
+        let stderr = "\
+[Parsed_astats] RMS peak dB: -18.0
+[Parsed_astats] RMS level dB: -33.0";
+        assert_eq!(parse_strongest_rms(stderr), Some(-18.0));
+        assert_eq!(
+            classify_signal(parse_strongest_rms(stderr)),
+            TestRecordingSignal::Normal
+        );
     }
 
     #[test]
