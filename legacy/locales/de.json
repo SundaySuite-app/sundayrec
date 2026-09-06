@@ -174,7 +174,7 @@
         "mail": "E-Mail, wenn etwas schiefgeht",
         "mailDesc": "Eine Adresse. Wird nur bei Fehlern gesendet, sonst nie.",
         "nobodyDesc": "Niemand bekommt eine E-Mail — der Computer benachrichtigt nur, wer davorsitzt.",
-        "emailDesc": "Wird nur bei Fehlern gesendet, sonst nie.",
+        "emailDesc": "Wird bei Fehlern gesendet — und bei der Bestätigung, wenn sie eingeschaltet ist.",
         "gateChip": "Nicht eingerichtet",
         "gateSmtp": "Bestätigen Sie die E-Mail-Adresse, oder richten Sie unter Erweitert einen E-Mail-Server (SMTP) ein.",
         "gateChipUnavailable": "Nicht verfügbar",

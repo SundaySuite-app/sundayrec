@@ -176,7 +176,7 @@
         "mail": "E-mail, jeśli coś pójdzie nie tak",
         "mailDesc": "Jeden adres. Wysyłany tylko przy błędzie, nigdy poza tym.",
         "nobodyDesc": "Nikt nie dostanie e-maila — komputer powiadamia tylko tego, kto przy nim siedzi.",
-        "emailDesc": "Wysyłany tylko przy błędzie, nigdy poza tym.",
+        "emailDesc": "Wysyłany przy błędzie — i przy potwierdzeniu, jeśli jest włączone.",
         "gateChip": "Nieskonfigurowane",
         "gateSmtp": "Potwierdź adres e-mail albo skonfiguruj serwer poczty (SMTP) w Zaawansowanych.",
         "gateChipUnavailable": "Niedostępne",

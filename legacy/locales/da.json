@@ -174,7 +174,7 @@
         "mail": "E-mail, hvis noget går galt",
         "mailDesc": "Én adresse. Sendes kun ved fejl, aldrig ellers.",
         "nobodyDesc": "Ingen får en e-mail — computeren siger kun til den, der sidder ved den.",
-        "emailDesc": "Sendes kun ved fejl, aldrig ellers.",
+        "emailDesc": "Sendes ved fejl — og ved kvittering, hvis den er slået til.",
         "gateChip": "Ikke sat op",
         "gateSmtp": "Bekræft e-mailadressen, eller sæt en e-mailserver (SMTP) op under Avanceret.",
         "gateChipUnavailable": "Ikke tilgængelig",
