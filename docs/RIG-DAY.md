@@ -208,6 +208,61 @@ runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
 logger, MSI/UAC på stable, ASIO-sondering på forespørsel, m.fl. Fylles inn
 her når de respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
+## Ørene
+
+Lydkjede-funn som verken CI eller en sidecar-måling kan avgjøre alene — de
+trenger et ekte øre på ekte opptaksmateriale (ikke bare et lavfi-testsignal).
+Kjør disse på Mac- eller Windows-boksen, med hva du har av ekte
+gudstjeneste-opptak eller -materiale for hånden.
+
+- [ ] **(i–ii) Mastringen holder løftet — lineær, ikke gain-ridd.** Eksporter
+      ÉN ekte gudstjeneste med presetet `speech-clear` fra denne grenen, og
+      lytt etter **pumping** (nivået som kryper opp i pausene og ned igjen
+      når stemmen kommer — det er gain-rideren). Sjekk deretter
+      eksport-loggens `Normalization Type`-linje, og prøv en fil med harde
+      topper (mikrofonhåndtering, en dør) for å se om kvitteringen sier
+      «(begrenset av topper)».
+      **Forventet FØR fiksen:** loudnorm-presetene lovet en «lineær»
+      forsterkning, men pass 2 sendte presetets LRA/TP-tall rått uten å
+      sjekke om lineær faktisk var oppnåelig — en preken med normalt
+      dynamisk spenn falt nesten alltid tilbake til ffmpegs 3-sekunders
+      gain-rider, stille, uten at kvitteringen sa noe om det.
+      **Forventet ETTER (F2-C-B, #245):** nivået ligger stille, ingen
+      pumping; loggens `Normalization Type` sier `Linear` for normalt
+      materiale (sier den `Dynamic`, kommer en `warn!` ved siden av — da er
+      MODELLEN feil, ikke bare uflaks); en fil med harde topper får en
+      lavere, ærlig rapportert LUFS med «(begrenset av topper)» i
+      kvitteringen i stedet for at loudnorm komprimerer den ned til målet.
+- [ ] **(iii) Mikser-default etter dB-fiksen.** Rediger → «Avansert: åpne
+      mikseren» på et ekte prekenopptak, la standardverdiene stå (kompressor
+      på, terskel −18 dB, makeup 2 dB), eksporter, og les integrert loudness + true peak mot en eksport gjort med v0.17.x. Ta med en runde på
+      gate-slideren i bunn (−70 dB).
+      **Forventet FØR fiksen:** makeup/limiter/gate ble tolket LINEÆRT i
+      stedet for i dB — 2 dB makeup ga i praksis +6 dB, en 0 dBTP-takgrense
+      slapp gjennom med +1 dB på kjøpet, og gate-slideren i bunn (−70 dB) var
+      i praksis helt åpen (stengte aldri, for noe).
+      **Forventet ETTER (F2-C-A, #238):** samme materiale gir omtrent 4 dB
+      mindre gain inn i loudnorm, true peak lander på −1,0 dBTP der den før
+      lå på 0,0, og gate-slideren i bunn stenger nå faktisk mellom
+      setningene.
+- [ ] **(iv) Knappetrykket midt i en akkord.** Trykk opptak midt i musikk —
+      prøv én gang med noe stille (lettest å høre et klikk), én gang med
+      orgel på full styrke (der marginen kostet mest).
+      **Forventet FØR fiksen:** forhåndsbufferen kastet alltid de siste
+      300 ms før knappetrykket (en ffmpeg-motor-sikkerhetsmargin arvet
+      ubetinget av den native lydstien), og skjøten mot selve opptaket var
+      et loddrett PCM-sprang — hørbart som et klikk.
+      **Forventet ETTER (F2-C-D, #247):** hullet foran knappetrykket er
+      omtrent 300 ms kortere (nesten hele forhåndsbufferen er med), og
+      skjøten klikker ikke — klippet rampes ned til digital null de siste
+      10 ms.
+
+**Ikke en egen sjekk lenger:** kanaldiagnosen (dødt/knitrende kabel,
+kanal-duplisering) var tidligere en lytte-sjekk, men er nå fullt
+mutasjonstestet mot ekte ffmpeg-sidecar-målinger på kjente L/R-nivåer
+(F2-C-C, #248) — se PR-teksten for måletabellen. Den trenger ikke et øre på
+riggdagen lenger.
+
 ## Etterpå
 
 - [ ] Oppdater `docs/NEEDS-RICHARD.md`s HARDWARE-UNVERIFIED-liste: fjern det
