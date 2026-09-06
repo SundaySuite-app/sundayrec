@@ -488,9 +488,17 @@ fn contains_name(names: &[String], name: &str) -> bool {
     names.iter().any(|n| n.to_lowercase() == needle)
 }
 
-/// The names of an enumerated device list.
+/// Every string an enumerated ASIO device answers to.
+///
+/// Both `name` AND `id`, because that is what the membership test replaced here
+/// did (`d.name == name || d.id == name`). The two are the same string today —
+/// see [`AsioDevice`] — so this is a no-op that stays correct if a later backend
+/// gives `id` a stabler handle.
 fn device_names(devices: &[AsioDevice]) -> Vec<String> {
-    devices.iter().map(|d| d.name.clone()).collect()
+    devices
+        .iter()
+        .flat_map(|d| [d.name.clone(), d.id.clone()])
+        .collect()
 }
 
 /// Whether resolving `name` requires ASKING the ASIO host — the call that loads
@@ -815,6 +823,18 @@ mod tests {
         assert!(!is_asio, "a WASAPI device is not the ASIO path");
         assert_eq!(asio_calls.get(), 0, "the ASIO host must not be touched");
         assert_eq!(host_calls.get(), 1, "one cheap host enumeration");
+    }
+
+    #[test]
+    fn a_device_answers_to_both_its_name_and_its_id() {
+        // The membership test this replaced was `d.name == name || d.id == name`;
+        // the two are the same string today, but the contract is kept.
+        let mut d = device("Soundcraft MADI USB");
+        d.id = "asio:madi-0".into();
+        let names = device_names(std::slice::from_ref(&d));
+        assert!(contains_name(&names, "Soundcraft MADI USB"));
+        assert!(contains_name(&names, "asio:madi-0"));
+        assert!(!contains_name(&names, "USB Audio CODEC"));
     }
 
     #[test]
