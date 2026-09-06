@@ -892,6 +892,7 @@
     "errCancelled": "Export avbruten.",
     "errTimeout": "Exporten tog för lång tid och stoppades. Försök igen, eller dela filen i mindre inspelningar.",
     "errFileNotFound": "Originalfilen är inte tillgänglig — är disken frånkopplad?",
+    "errDiskFull": "Disken är full. Frigör utrymme och försök igen.",
     "errCutData": "Internt fel i klippdata. Försök ladda om filen.",
     "playbackViaProxy": "Uppspelningen går via en tillfällig mellanfil (full kvalitet). Exporten använder alltid originalet.",
     "analyzingWaveform": "Analyserar vågform…",

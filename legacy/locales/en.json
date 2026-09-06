@@ -892,6 +892,7 @@
     "errCancelled": "Export cancelled.",
     "errTimeout": "Export took too long and was stopped. Try again, or split the file into smaller recordings.",
     "errFileNotFound": "Original file is not available — is the disk disconnected?",
+    "errDiskFull": "The disk is full. Free up space and try again.",
     "errCutData": "Internal error in cut data. Try reloading the file.",
     "playbackViaProxy": "Playback runs through a temporary intermediate file (full quality). Export always uses the original.",
     "analyzingWaveform": "Analyzing waveform…",
