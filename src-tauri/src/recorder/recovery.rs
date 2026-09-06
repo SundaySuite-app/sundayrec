@@ -1043,13 +1043,10 @@ mod tests {
         let (m, _cap) = interrupted_cpal_video_session(save_dir.path());
         let enc = m.delivery_encode.as_ref().unwrap();
         let spec = DeliverySpec::from_manifest(enc, &m.deliverables[0].primary_path);
+        // Compared as a PATH, not a string: the separator is the platform's.
         assert_eq!(
-            spec.delivery_path,
-            save_dir
-                .path()
-                .join("gudstjeneste.mp4")
-                .to_string_lossy()
-                .into_owned()
+            Path::new(&spec.delivery_path),
+            save_dir.path().join("gudstjeneste.mp4")
         );
         assert_eq!(
             spec.mode,

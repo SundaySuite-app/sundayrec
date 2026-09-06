@@ -965,23 +965,28 @@ mod tests {
     /// a clean finalise and is therefore unplayable after a kill.
     #[test]
     fn video_capture_targets_the_sessions_mkv_beside_the_delivery_file() {
-        let c = plan_video_capture(&video_opts(), "Soundcraft USB Audio", 1_786_179_600_000);
+        let opts = video_opts();
+        let c = plan_video_capture(&opts, "Soundcraft USB Audio", 1_786_179_600_000);
+        let delivery = std::path::Path::new(&opts.output_path);
         assert_eq!(c.session_id, "1786179600000");
+        // Asserted by COMPONENT, not as a literal string: the separator is the
+        // platform's, and this path is built on Windows too.
         assert_eq!(
-            c.cap_dir,
-            PathBuf::from("/Opptak/.sundayrec-capture-1786179600000")
+            c.cap_dir.file_name().and_then(|s| s.to_str()),
+            Some(".sundayrec-capture-1786179600000"),
+            "hidden, and scoped to this one session"
         );
+        let capture = PathBuf::from(&c.capture_path);
         assert_eq!(
-            c.capture_path, "/Opptak/.sundayrec-capture-1786179600000/gudstjeneste.mkv",
-            "the capture keeps the delivery stem so it maps straight back"
+            capture.file_name().and_then(|s| s.to_str()),
+            Some("gudstjeneste.mkv"),
+            "Matroska, keeping the delivery stem so it maps straight back"
         );
+        assert_eq!(capture.parent(), Some(c.cap_dir.as_path()));
         // The layout is the SAME one `run_session` builds — the folder sits
-        // beside the delivery file (one volume, so the remux never crosses a
-        // filesystem) and is hidden.
-        assert_eq!(
-            c.cap_dir.parent(),
-            std::path::Path::new("/Opptak/gudstjeneste.mp4").parent()
-        );
+        // beside the delivery file, on one volume, so the remux never crosses a
+        // filesystem.
+        assert_eq!(c.cap_dir.parent(), delivery.parent());
     }
 
     /// The seam: the argument builder must be handed the CAPTURE path. This is
@@ -1062,20 +1067,22 @@ mod tests {
     fn video_capture_delivers_back_to_exactly_the_users_file() {
         let opts = video_opts();
         let c = plan_video_capture(&opts, "Soundcraft USB Audio", 1_786_179_600_000);
+        let want = std::path::Path::new(&opts.output_path);
         let spec = c.delivery_spec();
-        assert_eq!(spec.delivery_path, opts.output_path);
+        // Compared as PATHS: the delivery is assembled with `join`, so on Windows
+        // it carries that platform's separator while `output_path` carries
+        // whatever the caller wrote. Same file either way.
+        assert_eq!(std::path::Path::new(&spec.delivery_path), want);
         assert_eq!(spec.mode, sundayrec_core::recovery::DeliveryMode::RemuxCopy);
         // What the recovery scan would compute from the persisted manifest, with
         // no live session in memory, is the same path.
         let enc = c.manifest().delivery_encode.unwrap();
-        assert_eq!(
-            sundayrec_core::recovery::delivery_path_for(
-                &c.manifest().deliverables[0].primary_path,
-                &enc.delivery_dir,
-                &enc.ext,
-            ),
-            opts.output_path
+        let recovered = sundayrec_core::recovery::delivery_path_for(
+            &c.manifest().deliverables[0].primary_path,
+            &enc.delivery_dir,
+            &enc.ext,
         );
+        assert_eq!(std::path::Path::new(&recovered), want);
     }
 
     /// A capture that holds a real recording but cannot be remuxed (no usable
