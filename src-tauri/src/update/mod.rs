@@ -157,8 +157,13 @@ impl UpdateEngine {
         lock_recover(&self.staged).take()
     }
 
-    /// Whether an install is waiting for the way out. Read-only — used by the
-    /// tests and by the log line, never as a substitute for taking it.
+    /// Whether an install is waiting for the way out.
+    ///
+    /// Asked BEFORE [`take_staged`](Self::take_staged) in
+    /// [`relaunch_now`], and that order is the point: the job object must only
+    /// be disarmed when there is actually an installer to protect, and the
+    /// bytes must not be consumed by a handover that then turns out to be
+    /// impossible.
     #[cfg(feature = "updater")]
     pub(crate) fn has_staged(&self) -> bool {
         lock_recover(&self.staged).is_some()
@@ -648,8 +653,11 @@ pub fn relaunch<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
 ///
 /// 1. the single-instance lock is destroyed and the engines are stopped
 ///    (above), so no ffmpeg is left running;
-/// 2. [`crate::platform::disarm_kill_on_close`] takes the teeth out of the Job
-///    Object, or the installer we are about to start dies with us;
+/// 2. ONLY IF something is staged, [`crate::platform::disarm_kill_on_close`]
+///    takes the teeth out of the Job Object — or the installer we are about to
+///    start dies with us. A plain restart skips this: the guard is only ever in
+///    an installer's way, and a restart that quietly dropped it would leave the
+///    next force-quit's ffmpeg holding the audio device;
 /// 3. a line goes into `update-relaunch.log` BEFORE the handover, because
 ///    everything after it is the plugin's `std::process::exit(0)` and nothing
 ///    we write later would ever be flushed;
@@ -675,38 +683,47 @@ pub(crate) fn relaunch_now<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppR
     app.state::<crate::audio::vu::VuEngine>().stop();
     relaunch_log(app, "engines stopped");
 
-    // The deferred install (Windows). `take_staged` consumes it, so a second
-    // pass through here cannot re-run an installer that already started.
-    if let Some(staged) = app.state::<UpdateEngine>().take_staged() {
-        let disarmed = crate::platform::disarm_kill_on_close();
-        relaunch_log(
-            app,
-            &format!(
-                "installing {} ({} bytes) — job-object kill-on-close disarmed: {disarmed}",
-                staged.version,
-                staged.bytes.len()
-            ),
-        );
-        if !disarmed {
+    // The deferred install (Windows). Asked BEFORE the disarm, because a plain
+    // restart with nothing staged must not lose the ffmpeg guard on its way
+    // out — the guard is only in the way of an installer.
+    if app.state::<UpdateEngine>().has_staged() {
+        if !crate::platform::disarm_kill_on_close() {
             // Starting the installer now would hand it straight to the OS to
             // kill — the exact F2-W1 failure, with the log line to name it.
+            // The bytes stay STAGED: the download is not spent on a handover
+            // that could not happen.
             relaunch_log(
                 app,
-                "REFUSING to start the installer: it would be killed together with us. \
-                 Quit SundayRec and run the downloaded installer by hand.",
+                "REFUSING to start the installer: the job object still kills its \
+                 children, so it would die with us. Quit SundayRec and run the \
+                 installer by hand.",
             );
             return Err(AppError::Internal(
                 "install_guard: the kill-on-close job object could not be disarmed".into(),
             ));
         }
-        match staged.update.install(&staged.bytes) {
-            // Unreachable on Windows (`install` ends in `std::process::exit(0)`),
-            // reachable on any platform that installs without exiting — where
-            // falling through to the restart below is exactly right.
-            Ok(()) => relaunch_log(app, "installer returned without exiting — restarting"),
-            Err(e) => {
-                relaunch_log(app, &format!("install FAILED: {e}"));
-                return Err(AppError::Internal(format!("update install: {e}")));
+        // `take_staged` consumes it, so a second pass through here cannot hand
+        // the same bytes to a second installer.
+        if let Some(staged) = app.state::<UpdateEngine>().take_staged() {
+            relaunch_log(
+                app,
+                &format!(
+                    "installing {} ({} bytes) — this is the last line before the \
+                     installer takes over",
+                    staged.version,
+                    staged.bytes.len()
+                ),
+            );
+            match staged.update.install(&staged.bytes) {
+                // Unreachable on Windows (`install` ends in
+                // `std::process::exit(0)`), reachable on any platform that
+                // installs without exiting — where falling through to the
+                // restart below is exactly right.
+                Ok(()) => relaunch_log(app, "installer returned without exiting — restarting"),
+                Err(e) => {
+                    relaunch_log(app, &format!("install FAILED: {e}"));
+                    return Err(AppError::Internal(format!("update install: {e}")));
+                }
             }
         }
     }
