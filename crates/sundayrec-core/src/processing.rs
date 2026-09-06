@@ -1156,16 +1156,14 @@ mod tests {
             vec!["agate=threshold=-65dB:ratio=2:attack=5:release=120"]
         );
         // Above 0 dBFS there is no linear threshold left to express.
-        assert!(
-            only(|c| {
-                c.gate = GateStage {
-                    enabled: true,
-                    threshold_db: 6.0,
-                    ..GateStage::default()
-                }
-            })[0]
-                .starts_with("agate=threshold=0dB:"),
-        );
+        assert!(only(|c| {
+            c.gate = GateStage {
+                enabled: true,
+                threshold_db: 6.0,
+                ..GateStage::default()
+            }
+        })[0]
+            .starts_with("agate=threshold=0dB:"),);
     }
 
     #[test]
@@ -1183,7 +1181,6 @@ mod tests {
             vec!["agate=threshold=-39dB:ratio=2.1:attack=10:release=200:detection=rms"]
         );
     }
-
 
     // ── presets ──────────────────────────────────────────────────────────────
 
