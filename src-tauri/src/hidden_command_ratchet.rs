@@ -100,7 +100,13 @@ struct Site {
 /// hash count), byte strings (the `b` is an ordinary ident char, so the `"`
 /// branch takes over), and char literals — while leaving a LIFETIME tick alone,
 /// which is the one place a naive `'`-to-`'` scan would eat real code.
-fn strip_to_code(src: &str) -> String {
+///
+/// `pub(crate)` so the next ratchet borrows this one rather than copying it:
+/// [`crate::update::install_ratchet`] (F2-W1) reads the same sources with the
+/// same rules, and two 150-line source strippers would drift the first time
+/// somebody taught one of them about a new literal form. It has its own
+/// characterisation tests below, which is what makes it safe to share.
+pub(crate) fn strip_to_code(src: &str) -> String {
     let b = src.as_bytes();
     let mut out = vec![b' '; b.len()];
     let mut i = 0usize;
@@ -248,7 +254,7 @@ fn char_literal_end(b: &[u8], i: usize) -> Option<usize> {
 }
 
 /// Byte offset of the start of each line, for offset → line-number lookups.
-fn line_starts(code: &str) -> Vec<usize> {
+pub(crate) fn line_starts(code: &str) -> Vec<usize> {
     let mut v = vec![0usize];
     v.extend(code.bytes().enumerate().filter_map(
         |(i, c)| {
@@ -263,7 +269,7 @@ fn line_starts(code: &str) -> Vec<usize> {
 }
 
 /// 0-based line index containing byte `offset`.
-fn line_of(starts: &[usize], offset: usize) -> usize {
+pub(crate) fn line_of(starts: &[usize], offset: usize) -> usize {
     starts.partition_point(|&s| s <= offset).saturating_sub(1)
 }
 
@@ -372,7 +378,7 @@ fn spawn_offsets(code: &str) -> Vec<usize> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The workspace root — the parent of `src-tauri`.
-fn workspace_root() -> std::path::PathBuf {
+pub(crate) fn workspace_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("src-tauri always has a parent")

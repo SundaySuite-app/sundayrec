@@ -70,6 +70,8 @@
 //! configured. Only the `sundayrec_core::update` decisions are unit-tested. See
 //! docs/SMOKE-TEST.md §R7 and docs/NEEDS-RICHARD.md.
 
+mod install_ratchet;
+
 use std::sync::Mutex;
 
 use tauri::AppHandle;
