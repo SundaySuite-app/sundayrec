@@ -1437,7 +1437,9 @@ where
     disabled("extractPlaybackProxy")
 }
 
-/// True-peak probe over the original file (Normalize's honest basis).
+/// Sample-peak probe over the original file (Normalize's honest basis). Named
+/// for the `probeTruePeak` disabled-feature code it still returns, not for what
+/// it measures — see the full impl's doc comment below.
 #[cfg(not(feature = "editor"))]
 pub async fn probe_true_peak_db(_input_path: &str) -> AppResult<Option<f64>> {
     disabled("probeTruePeak")
@@ -1817,11 +1819,17 @@ where
     grant(path)
 }
 
-/// True-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
+/// SAMPLE-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
 /// honest basis for Normalize when the in-memory buffer is the 8 kHz waveform
 /// extract (its peaks under-read the real peak; the EXPORT runs on the
 /// original, so normalizing from extract peaks risked clipping). `None` when
 /// the probe fails — the caller falls back to buffer peaks.
+///
+/// F2-C-E: despite the function's name (kept as-is — it is the
+/// `probeTruePeak`-keyed command the shell already calls), `volumedetect`'s
+/// `max_volume` is a raw-sample peak, not an oversampled ITU-R BS.1770
+/// true-peak reading. See [`sundayrec_core::editor::peak_probe_args`]'s doc
+/// comment for the same correction at the core.
 #[cfg(feature = "editor")]
 pub async fn probe_true_peak_db(input_path: &str) -> AppResult<Option<f64>> {
     use sundayrec_core::editor::{parse_max_volume_db, peak_probe_args};

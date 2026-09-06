@@ -1106,11 +1106,14 @@ pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
 /// temp dir and sweeps stale ones by this prefix so they don't accumulate.
 pub const PLAYBACK_PROXY_PREFIX: &str = "sundayrec-playback-proxy-";
 
-/// One-shot true-peak probe over the ORIGINAL file: `volumedetect` into the
-/// null muxer. Used by the editor's Normalize when the loaded buffer is the
-/// 8 kHz waveform extract — peaks computed from that band-limited downmix
-/// under-read the real peak by several dB, so normalizing from them could push
-/// the EXPORT into clipping (the export always runs on the original).
+/// One-shot SAMPLE-peak probe over the ORIGINAL file: `volumedetect` into the
+/// null muxer. `volumedetect`'s `max_volume` is the highest raw PCM sample
+/// magnitude, not an oversampled ITU-R BS.1770 true-peak reading (that would be
+/// `ebur128=peak=true`) — "true-peak" here used to overstate what this measures.
+/// Used by the editor's Normalize when the loaded buffer is the 8 kHz waveform
+/// extract — peaks computed from that band-limited downmix under-read the real
+/// peak by several dB, so normalizing from them could push the EXPORT into
+/// clipping (the export always runs on the original).
 pub fn peak_probe_args(input_path: &str) -> Vec<String> {
     [
         "-nostdin",
