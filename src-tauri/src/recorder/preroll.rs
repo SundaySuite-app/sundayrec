@@ -689,7 +689,7 @@ async fn graceful_stop(stdin: &mut Option<tokio::process::ChildStdin>) {
 /// failure, which the caller treats as "no clip produced" and recovers from.
 async fn run_to_completion(args: &[String], timeout: Duration) -> bool {
     use std::process::Stdio;
-    let mut child = match tokio::process::Command::new(ffmpeg_path())
+    let mut child = match crate::util::hidden_command(ffmpeg_path())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

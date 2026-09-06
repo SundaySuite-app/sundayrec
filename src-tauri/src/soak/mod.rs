@@ -286,7 +286,7 @@ impl SoakReport {
 /// `ps`) or when the command fails — an unmeasured sample, never a zero.
 #[cfg(unix)]
 fn sample_rss_kb(pid: u32) -> Option<u64> {
-    let out = std::process::Command::new("ps")
+    let out = crate::util::hidden_std_command("ps")
         .args(["-o", "rss=", "-p", &pid.to_string()])
         .output()
         .ok()?;
@@ -311,7 +311,7 @@ fn sample_open_fds(pid: u32) -> Option<u64> {
 
 #[cfg(target_os = "macos")]
 fn sample_open_fds(pid: u32) -> Option<u64> {
-    let out = std::process::Command::new("lsof")
+    let out = crate::util::hidden_std_command("lsof")
         .args(["-p", &pid.to_string()])
         .output()
         .ok()?;

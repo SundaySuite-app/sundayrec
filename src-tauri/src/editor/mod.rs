@@ -1484,7 +1484,7 @@ pub async fn load_recording(input_path: &str) -> AppResult<EditorMediaInfo> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // ffprobe is a one-shot probe → `std::process::Command::output()` is enough
     // (no streaming). We resolve the sidecar through the shared media module.
-    let output = tokio::process::Command::new(crate::media::ffmpeg::ffprobe_path())
+    let output = crate::util::hidden_command(crate::media::ffmpeg::ffprobe_path())
         .args(&arg_refs)
         .output()
         .await
@@ -2402,7 +2402,7 @@ where
 
     // Spawn with stdout piped for -progress; store the child for cancellation.
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    let mut child = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -2964,7 +2964,7 @@ where
     bail_if_cancelled(engine)?;
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    let mut child = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -3091,7 +3091,7 @@ async fn probe_video_size(input_path: &str) -> Option<(u32, u32)> {
 
     let args = ffprobe_video_size_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = tokio::process::Command::new(crate::media::ffmpeg::ffprobe_path())
+    let output = crate::util::hidden_command(crate::media::ffmpeg::ffprobe_path())
         .args(&arg_refs)
         .output()
         .await

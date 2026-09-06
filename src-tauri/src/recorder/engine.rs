@@ -2787,7 +2787,7 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
     use std::process::Stdio;
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: spawning ffmpeg segment");
-    tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -3248,7 +3248,7 @@ pub(crate) async fn extract_separate_audio(
     let args = build_separate_audio_args(final_path, &sep_path, opts);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: extracting separate audio sidecar");
-    let mut child = match tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    let mut child = match crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

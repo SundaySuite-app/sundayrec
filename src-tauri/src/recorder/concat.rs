@@ -378,7 +378,7 @@ pub(crate) async fn output_is_valid(path: &Path) -> bool {
     if !output_exists_nonempty(path).await {
         return false;
     }
-    let probe = tokio::process::Command::new(ffprobe_path())
+    let probe = crate::util::hidden_command(ffprobe_path())
         .args([
             "-v",
             "error",
@@ -464,7 +464,7 @@ async fn atomic_replace(tmp: &Path, target: &Path) -> AppResult<()> {
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg.
 async fn run_concat(args: &[String]) -> AppResult<()> {
-    let mut child = tokio::process::Command::new(ffmpeg_path())
+    let mut child = crate::util::hidden_command(ffmpeg_path())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
