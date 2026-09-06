@@ -3309,8 +3309,7 @@ møter den. (`recordings_prune` sto her til retensjonsrunden koblet den opp;
   `editor_diagnose_channels` (i18n-nøklene `editor.chanDead*` er oversatt i
   alle sju katalogene og `sound-profiles.ts` mapper alt kodene),
   `telemetry_count` / `telemetry_queue_status`, `run_capture_bench`.
-- **Gettere uten leser ennå:** `recording_status`,
-  `recording_scheduled_stop_ms`, `scheduler_check_missed`,
+- **Gettere uten leser ennå:** `scheduler_check_missed`,
   `wake_get_sleep_config`, `wake_failure_history`.
 - **Vekke-verktøyene** (`wake_test`, `wake_cancel_test`, `wake_fix_sleep`,
   `wake_clear_failure_history`) — riggverktøy som venter på en Mac der
@@ -3319,7 +3318,14 @@ møter den. (`recordings_prune` sto her til retensjonsrunden koblet den opp;
 - **Eiervalg:** `settings_reset`, `recording_update_note`.
 - (Historisk: `recordings_prune` stoppet sin egen sletting i V1/PR3 og er siden
   koblet opp — retensjonsrunden 2026-08-31. `list_video_devices` sto her til
-  V1-halen slettet den.)
+  V1-halen slettet den. `recording_status` sto her til F2-T1 (#236) slettet
+  KOMMANDOEN — ingen leser den fordi den ikke finnes lenger, ikke fordi ingen
+  spurte. `recording_scheduled_stop_ms` sto her til samme PR koblet den opp:
+  `RecordingOverlay.tsx` henter den nå når overlegget monterer uten å ha sett
+  en `recording://state`, så et opptak som pågikk FØR en webview-reload beholder
+  fristen sin. #241 gikk videre og la til `recording_snapshot` — ETT kall ved
+  boot som gir HELE tilstanden en reload aldri fikk se, brukt fra `main.tsx`;
+  den kommandoen er reachable fra dag én og var aldri i denne lista.)
 
 ### ⚠️ Baselinen ble REGENERERT i #156, og det var med vilje
 
