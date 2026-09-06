@@ -334,9 +334,7 @@ pub fn hide_dir_on_windows(dir: &Path) {
     {
         use std::os::windows::ffi::OsStrExt;
 
-        use windows_sys::Win32::Storage::FileSystem::{
-            SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN,
-        };
+        use windows_sys::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN};
 
         let wide: Vec<u16> = dir
             .as_os_str()
