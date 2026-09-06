@@ -10,8 +10,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use tokio::process::Command;
-
 use super::plan::PlannedCommand;
 
 /// What running a [`PlannedCommand`] produced. `code` is `None` when the process
@@ -76,13 +74,28 @@ pub async fn run_text(shell: &dyn Shell, cmd: &PlannedCommand) -> Result<String,
 }
 
 /// Spawns the real process, with the plan's timeout.
+///
+/// Two things here are load-bearing beyond "run the program":
+///
+/// - [`crate::util::hidden_command`], because every Windows member of the plan
+///   (`powershell`, `powercfg`, `schtasks`) is a console program and this is a
+///   GUI process — a raw spawn flashes a black window at the operator on every
+///   wake-plan step, several of which run on a timer.
+/// - `kill_on_drop(true)`, because the timeout below DROPS the `output()`
+///   future. Dropping it stops us waiting; it does not stop the process. Without
+///   the flag a `powershell` that hangs (a wedged WMI provider is the realistic
+///   case) survives as an orphan holding our pipes, and every later timeout adds
+///   another one. With it, the drop kills the child.
 #[derive(Debug, Default)]
 pub struct RealShell;
 
 impl Shell for RealShell {
     fn run<'a>(&'a self, cmd: &'a PlannedCommand) -> RunFuture<'a> {
         Box::pin(async move {
-            let fut = Command::new(&cmd.program).args(&cmd.args).output();
+            let fut = crate::util::hidden_command(&cmd.program)
+                .args(&cmd.args)
+                .kill_on_drop(true)
+                .output();
             match tokio::time::timeout(Duration::from_millis(cmd.timeout_ms), fut).await {
                 Ok(Ok(o)) => Ok(CmdOutput {
                     code: o.status.code(),

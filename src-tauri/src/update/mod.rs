@@ -500,7 +500,7 @@ pub(crate) fn relaunch_now<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppR
             // diagnostic hook must be disarmed here or a hook-triggered test
             // would loop forever. One hook run = exactly one self-restart.
             let script = format!("unset SUNDAYREC_TEST_RELAUNCH; sleep 0.7; open -n {quoted}");
-            match std::process::Command::new("/bin/sh")
+            match crate::util::hidden_std_command("/bin/sh")
                 .args(["-c", &script])
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())

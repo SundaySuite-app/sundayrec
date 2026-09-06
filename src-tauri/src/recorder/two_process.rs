@@ -80,7 +80,7 @@ const MUX_WATCHDOG: Duration = Duration::from_secs(30 * 60);
 ///
 /// ⚠️ HARDWARE-UNVERIFIED (spawns ffprobe against a real file).
 pub async fn probe_start_time_sec(path: &str) -> Option<f64> {
-    let output = tokio::process::Command::new(ffprobe_path())
+    let output = crate::util::hidden_command(ffprobe_path())
         .args([
             "-v",
             "error",
@@ -418,7 +418,7 @@ fn device_token(d: &FfmpegDevice) -> String {
 async fn spawn_owned(args: &[String]) -> AppResult<tokio::process::Child> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: two-process — spawning ffmpeg");
-    tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
