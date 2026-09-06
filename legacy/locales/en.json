@@ -391,6 +391,24 @@
           "needsAdmin": "This machine can be woken, but asks for an administrator password the first time.",
           "unknown": "We do not know yet whether this machine can be woken."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon cannot start from a fully powered-off state — only from sleep.",
+          "macIntelManualPowerOn": "An Intel Mac can start from off, but you must enable “Start up or wake” manually in System Settings → Battery.",
+          "winTimerDiesWithApp": "The wake timer is set by SundayRec while it is running. Quit SundayRec entirely and the wake timer goes with it.",
+          "winS5NeedsBios": "Waking from fully powered off (S5) requires “Wake on RTC from S5” in the BIOS — software cannot enable it.",
+          "linuxUnsupported": "Linux is not supported for automatic wake from SundayRec.",
+          "platformUnsupported": "This platform is not supported for automatic wake."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Leave the machine asleep (do not shut it down) once it is prepared.",
+          "macDisableStandby": "Turn deep sleep (standby) off — it can stop the machine from waking.",
+          "macStayPluggedIn": "Mains power must be connected — a Mac does not wake reliably on battery.",
+          "winKeepAppRunning": "Leave SundayRec running — it starts automatically at sign-in and sits in the system tray.",
+          "winSleepNotShutdown": "Put the machine to sleep (Sleep/Hibernate) rather than shutting it down.",
+          "winStayPluggedIn": "Mains power should be connected — many laptops disable wake timers on battery.",
+          "winCheckBios": "If the test wake fails, check the BIOS for “Wake on RTC” and enable “Allow wake timers” in the power options.",
+          "useMacOrWindows": "Use a Mac or a Windows PC to enable automatic wake."
+        },
         "wakeArm": "Activate wake-up",
         "wakeArmWord": {
           "idle": "Register the wake-up with the operating system now. May ask for an administrator password.",

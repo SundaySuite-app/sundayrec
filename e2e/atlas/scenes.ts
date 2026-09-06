@@ -12,6 +12,7 @@ import {
   type BootOptions,
   type Fixtures,
 } from "../harness";
+import type { WakeCapabilities } from "@legacy/bindings/WakeCapabilities";
 import { editorFixtures, EXPORT_HELD, FILE } from "../editor-fixtures";
 import {
   advanceClock,
@@ -69,7 +70,9 @@ import {
  *    always `aria-disabled`.
  *  - **`adv-wake-caps` = «vet ikke ennå».** `wake_capabilities` goes through
  *    `call()`, which never rejects, so the component's null branch is only ever
- *    on screen for the frame before the promise resolves.
+ *    on screen for the frame before the promise resolves. The fixture answers
+ *    as an Apple Silicon Mac, so `adv-wake-notes` photographs its one limit and
+ *    three recommendations — the codes, rendered in the scene's own language.
  */
 
 /** One photograph: what to boot, how to get there, and what it is called. */
@@ -322,14 +325,18 @@ const HEALTHY: Fixtures = {
   },
   media_permissions: { camera: "authorized", microphone: "authorized" },
   ffmpeg_health: { available: true, version: "ffmpeg version 7.1", path: "/x" },
+  // F2-I18N-R2: `satisfies` er poenget. `platform` sto på `"macos"` — ikke en
+  // verdi `WakePlatform` har — og ingenting merket det, fordi `Fixtures` er
+  // `Record<string, unknown>`. Nå er fixturen bundet til bindingen, så en
+  // omdøpt kode felles av `tsc` i stedet for av et tomt punkt i atlaset.
   wake_capabilities: {
-    platform: "macos",
+    platform: "mac-arm",
     canWakeFromSleep: true,
     canWakeFromOff: false,
     needsAdmin: true,
-    knownIssues: [],
-    recommendations: [],
-  },
+    knownIssues: ["macArmNoPowerOn"],
+    recommendations: ["macKeepAsleep", "macDisableStandby", "macStayPluggedIn"],
+  } satisfies WakeCapabilities,
   email_status: { featureBuilt: true },
   email_has_smtp_password: false,
 };

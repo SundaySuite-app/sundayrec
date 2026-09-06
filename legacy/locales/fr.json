@@ -391,6 +391,24 @@
           "needsAdmin": "Cet ordinateur peut être réveillé, mais demande un mot de passe administrateur la première fois.",
           "unknown": "Nous ne savons pas encore si cet ordinateur peut être réveillé."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Un Mac Apple Silicon ne peut pas démarrer depuis l’état complètement éteint — uniquement depuis la veille.",
+          "macIntelManualPowerOn": "Un Mac Intel peut démarrer depuis l’état éteint, mais vous devez activer « Démarrer ou réveiller » manuellement dans Réglages Système → Batterie.",
+          "winTimerDiesWithApp": "Le réveil est programmé par SundayRec pendant qu’il tourne. Si vous quittez complètement SundayRec, la minuterie de réveil disparaît.",
+          "winS5NeedsBios": "Le réveil depuis l’état complètement éteint (S5) exige que « Wake on RTC from S5 » soit activé dans le BIOS — un logiciel ne peut pas l’activer.",
+          "linuxUnsupported": "Linux n’est pas pris en charge pour le réveil automatique depuis SundayRec.",
+          "platformUnsupported": "Cette plateforme n’est pas prise en charge pour le réveil automatique."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Laissez la machine en veille (ne l’éteignez pas) une fois les préparatifs terminés.",
+          "macDisableStandby": "Désactivez la veille profonde (standby) — elle peut empêcher la machine de se réveiller.",
+          "macStayPluggedIn": "L’alimentation secteur doit être branchée — un Mac ne se réveille pas de façon fiable sur batterie.",
+          "winKeepAppRunning": "Laissez SundayRec en marche — il démarre automatiquement à l’ouverture de session et reste dans la zone de notification.",
+          "winSleepNotShutdown": "Mettez la machine en veille (Sleep/Hibernate) au lieu de l’éteindre.",
+          "winStayPluggedIn": "L’alimentation secteur devrait être branchée — beaucoup de portables désactivent les minuteries de réveil sur batterie.",
+          "winCheckBios": "Si le réveil de test échoue, cherchez « Wake on RTC » dans le BIOS et activez « Autoriser les minuteries de réveil » dans les options d’alimentation.",
+          "useMacOrWindows": "Utilisez un Mac ou un PC Windows pour activer le réveil automatique."
+        },
         "wakeArm": "Activer le réveil",
         "wakeArmWord": {
           "idle": "Déclarez le réveil auprès du système d’exploitation maintenant. Un mot de passe administrateur peut être demandé.",

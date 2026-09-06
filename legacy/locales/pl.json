@@ -397,6 +397,24 @@
           "needsAdmin": "Ten komputer można wybudzić, ale za pierwszym razem zapyta o hasło administratora.",
           "unknown": "Jeszcze nie wiemy, czy ten komputer można wybudzić."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon nie może uruchomić się z całkowicie wyłączonego stanu — tylko z uśpienia.",
+          "macIntelManualPowerOn": "Mac z procesorem Intel może uruchomić się z wyłączonego stanu, ale musisz ręcznie włączyć „Uruchamianie lub wybudzanie” w Ustawieniach systemowych → Bateria.",
+          "winTimerDiesWithApp": "Wybudzanie ustawia SundayRec, dopóki program działa. Jeśli zamkniesz SundayRec całkowicie, timer wybudzania zniknie.",
+          "winS5NeedsBios": "Wybudzanie z całkowicie wyłączonego stanu (S5) wymaga włączenia „Wake on RTC from S5” w BIOS-ie — oprogramowanie nie może tego zrobić.",
+          "linuxUnsupported": "Linux nie jest obsługiwany przy automatycznym wybudzaniu z SundayRec.",
+          "platformUnsupported": "Ta platforma nie jest obsługiwana przy automatycznym wybudzaniu."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Zostaw komputer w trybie uśpienia (nie wyłączaj go) po przygotowaniach.",
+          "macDisableStandby": "Wyłącz głębokie uśpienie (standby) — może ono uniemożliwić wybudzenie komputera.",
+          "macStayPluggedIn": "Zasilanie sieciowe musi być podłączone — Mac nie wybudza się niezawodnie na baterii.",
+          "winKeepAppRunning": "Zostaw uruchomiony SundayRec — startuje automatycznie przy logowaniu i działa w zasobniku systemowym.",
+          "winSleepNotShutdown": "Uśpij komputer (Sleep/Hibernate) zamiast go wyłączać.",
+          "winStayPluggedIn": "Zasilanie sieciowe powinno być podłączone — wiele laptopów wyłącza timery wybudzania na baterii.",
+          "winCheckBios": "Jeśli testowe wybudzanie się nie powiedzie, sprawdź w BIOS-ie „Wake on RTC” i włącz „Zezwalaj na timery wybudzania” w opcjach zasilania.",
+          "useMacOrWindows": "Użyj komputera Mac lub Windows, aby włączyć automatyczne wybudzanie."
+        },
         "wakeArm": "Włącz wybudzanie",
         "wakeArmWord": {
           "idle": "Zarejestruj wybudzanie w systemie teraz. Może być potrzebne hasło administratora.",

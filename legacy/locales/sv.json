@@ -391,6 +391,24 @@
           "needsAdmin": "Den här datorn kan väckas, men frågar efter administratörslösenord första gången.",
           "unknown": "Vi vet inte än om den här datorn kan väckas."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon kan inte starta från helt avstängt läge — bara från viloläge.",
+          "macIntelManualPowerOn": "En Intel-Mac kan starta från avstängt läge, men du måste aktivera ”Starta upp eller väck” manuellt i Systeminställningar → Batteri.",
+          "winTimerDiesWithApp": "Väckningen ställs in av SundayRec medan programmet körs. Avslutar du SundayRec helt försvinner väckningstimern.",
+          "winS5NeedsBios": "Väckning från helt avstängt läge (S5) kräver att ”Wake on RTC from S5” är aktiverat i BIOS — det kan inte slås på från programvaran.",
+          "linuxUnsupported": "Linux stöds inte för automatisk väckning från SundayRec.",
+          "platformUnsupported": "Plattformen stöds inte för automatisk väckning."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Låt datorn stå i viloläge (stäng inte av den) efter förberedelserna.",
+          "macDisableStandby": "Stäng av djup vila (standby) — den kan hindra datorn från att vakna.",
+          "macStayPluggedIn": "Strömmen måste vara ansluten — en Mac väcks inte tillförlitligt på batteri.",
+          "winKeepAppRunning": "Låt SundayRec vara igång — det startar automatiskt vid inloggning och ligger i systemfältet.",
+          "winSleepNotShutdown": "Försätt datorn i viloläge (Sleep/Hibernate) i stället för att stänga av den.",
+          "winStayPluggedIn": "Strömmen bör vara ansluten — många bärbara datorer stänger av väckningstimrar på batteri.",
+          "winCheckBios": "Om testväckningen misslyckas, leta efter ”Wake on RTC” i BIOS och slå på ”Tillåt väckningstimers” i energialternativen.",
+          "useMacOrWindows": "Använd en Mac eller en Windows-dator för att aktivera automatisk väckning."
+        },
         "wakeArm": "Aktivera väckning",
         "wakeArmWord": {
           "idle": "Registrera väckningen i operativsystemet nu. Kan kräva administratörslösenord.",

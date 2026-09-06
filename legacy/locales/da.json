@@ -391,6 +391,24 @@
           "needsAdmin": "Denne computer kan vækkes, men spørger om administratoradgangskode første gang.",
           "unknown": "Vi ved ikke endnu, om denne computer kan vækkes."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon kan ikke starte fra helt slukket tilstand — kun fra dvale.",
+          "macIntelManualPowerOn": "En Intel-Mac kan starte fra slukket, men du skal aktivere »Start op eller vækning« manuelt i Systemindstillinger → Batteri.",
+          "winTimerDiesWithApp": "Vækningen sættes af SundayRec, mens programmet kører. Lukker du SundayRec helt, forsvinder vækningstimeren.",
+          "winS5NeedsBios": "Vækning fra helt slukket (S5) kræver, at »Wake on RTC from S5« er slået til i BIOS — det kan ikke aktiveres fra software.",
+          "linuxUnsupported": "Linux understøttes ikke til automatisk vækning fra SundayRec.",
+          "platformUnsupported": "Platformen understøttes ikke til automatisk vækning."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Lad maskinen stå i dvale (sluk den ikke) efter forberedelserne.",
+          "macDisableStandby": "Slå dyb dvale (standby) fra — den kan forhindre, at maskinen vågner.",
+          "macStayPluggedIn": "Strømmen skal være tilsluttet — en Mac vækkes ikke pålideligt på batteri.",
+          "winKeepAppRunning": "Lad SundayRec køre — den starter automatisk ved login og ligger i proceslinjen.",
+          "winSleepNotShutdown": "Sæt maskinen i dvale (Sleep/Hibernate) i stedet for at slukke den.",
+          "winStayPluggedIn": "Strømmen bør være tilsluttet — mange bærbare deaktiverer vækningstimere på batteri.",
+          "winCheckBios": "Hvis testvækningen fejler, så tjek BIOS for »Wake on RTC«, og slå »Tillad vækningstimere« til i strømstyringen.",
+          "useMacOrWindows": "Brug en Mac eller en Windows-pc for at aktivere automatisk vækning."
+        },
         "wakeArm": "Aktivér vækning",
         "wakeArmWord": {
           "idle": "Registrér vækningen i styresystemet nu. Kan kræve administratoradgangskode.",

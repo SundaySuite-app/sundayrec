@@ -391,6 +391,24 @@
           "needsAdmin": "Denne maskinen kan vekkes, men spør om administratorpassord første gang.",
           "unknown": "Vi vet ikke ennå om denne maskinen kan vekkes."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon kan ikke starte fra fullstendig avslått tilstand — kun fra dvale.",
+          "macIntelManualPowerOn": "Intel Mac kan starte fra avslått, men du må aktivere «Start opp eller vekk» manuelt i Systemvalg → Batteri.",
+          "winTimerDiesWithApp": "Vekkingen settes av SundayRec mens programmet kjører. Avslutter du SundayRec helt, forsvinner vekketimeren.",
+          "winS5NeedsBios": "Wake fra fullstendig avslått (S5) krever at «Wake on RTC from S5» er aktivert i BIOS — kan ikke aktiveres fra programvare.",
+          "linuxUnsupported": "Linux støttes ikke for automatisk oppvåkning fra SundayRec.",
+          "platformUnsupported": "Plattformen støttes ikke for automatisk oppvåkning."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "La maskinen stå i dvale (ikke slå den av) etter forberedelsene.",
+          "macDisableStandby": "Slå av dyp dvale (standby) — den kan hindre at maskinen våkner.",
+          "macStayPluggedIn": "Tilkoblet strøm må være på — Mac vekker ikke pålitelig på batteri.",
+          "winKeepAppRunning": "La SundayRec være i gang — den starter automatisk ved pålogging og ligger i systemkurven.",
+          "winSleepNotShutdown": "Sett maskinen i dvale (Sleep/Hibernate), ikke skru den av.",
+          "winStayPluggedIn": "Tilkoblet strøm bør være på — mange bærbare deaktiverer vekketimere på batteri.",
+          "winCheckBios": "Hvis test-wake feiler, sjekk BIOS for «Wake on RTC» og slå på «Tillat vekketimere» i strømalternativer.",
+          "useMacOrWindows": "Bruk Mac eller Windows for å aktivere automatisk wake."
+        },
         "wakeArm": "Aktiver vekking",
         "wakeArmWord": {
           "idle": "Registrer vekkingen i operativsystemet nå. Kan kreve administratorpassord.",

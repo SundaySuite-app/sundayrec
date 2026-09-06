@@ -1191,7 +1191,10 @@ mod tests {
         input.capture_probe_skipped = Some("a recording is in progress".to_string());
         let md = build_report_markdown(input);
         assert!(md.contains("**Audio:** not tested"));
-        assert!(md.contains("Not run because:** a recording is in progress"), "{md}");
+        assert!(
+            md.contains("Not run because:** a recording is in progress"),
+            "{md}"
+        );
     }
 
     #[test]
