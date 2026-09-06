@@ -137,8 +137,10 @@ mod imp {
 
     pub fn guard_child_processes() {
         // SAFETY: a self-contained sequence of Win32 calls with checked returns.
-        // We intentionally LEAK the job handle: the job must outlive this call and
-        // stay open for the whole process lifetime so it kills children at exit.
+        // The job handle is intentionally never closed — the job must outlive
+        // this call and stay open for the whole process lifetime so it kills
+        // children at exit — and it is parked in `JOB` so
+        // `disarm_kill_on_close` can still reach it (F2-W1).
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if job.is_null() {

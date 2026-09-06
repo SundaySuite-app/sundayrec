@@ -499,7 +499,15 @@ pub async fn download(app: &AppHandle, engine: &UpdateEngine) -> AppResult<Updat
 /// failures undiagnosable after the fact — this file is the flight recorder for
 /// the one code path that, by design, kills its own process.
 ///
-/// Only [`relaunch`] writes to it, so it compiles out with the feature.
+/// Only [`relaunch`]/[`relaunch_now`] and the one line [`download`] writes
+/// before staging bytes for them, so it compiles out with the feature.
+///
+/// F2-W1 made that last line matter: on Windows the whole path used to run
+/// inside a call that ended in `std::process::exit(0)`, so this file stayed
+/// EMPTY through every failed update — the symptom was a window that vanished
+/// and nothing else at all. The line before the handover in [`relaunch_now`]
+/// is the last thing that can be written; everything after it is the plugin's
+/// exit.
 #[cfg(feature = "updater")]
 fn relaunch_log<R: tauri::Runtime>(app: &tauri::AppHandle<R>, msg: &str) {
     use tauri::Manager;
