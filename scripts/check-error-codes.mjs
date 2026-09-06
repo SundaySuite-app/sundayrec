@@ -507,9 +507,10 @@ function main() {
         "NATIVE_ERRORS i app/pages/record/record-core.ts kjenner dem.\n" +
         "Brukeren får «errorUnknown» — en sann setning som ikke sier noe.\n\n" +
         "Legg til koden i NATIVE_ERRORS med et `recording.error*`-suffiks, og\n" +
-        "skriv setningen i BÅDE legacy/locales/no.json og en.json (de fem\n" +
-        "pausede språkene: legg nøkkelen i PAUSED_KEYS i\n" +
-        "legacy/locales/parity.test.ts).",
+        "skriv setningen i ALLE SJU katalogene i legacy/locales/ — det er\n" +
+        "regelen siden F2-S6, og check-i18n-keys.mjs krever den. Går ett\n" +
+        "språk ikke an å skrive med én gang, er unntaket PAUSED_KEYS i\n" +
+        "legacy/locales/parity.test.ts, med en begrunnelse.",
     );
     process.exit(1);
   }

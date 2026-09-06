@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * i18n-nøkkelgate for `app/` — hver nøkkel finnes, i riktig FORM, i både
- * no.json og en.json. Erstatter fallback-gaten for det nye skallet.
+ * i18n-nøkkelgate for `app/` — hver nøkkel finnes, i riktig FORM, i hver av
+ * de sju katalogene. Erstatter fallback-gaten for det nye skallet.
  *
  * ## Hvorfor en ny gate og ikke den gamle
  *
