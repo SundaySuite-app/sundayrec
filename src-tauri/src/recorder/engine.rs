@@ -103,7 +103,7 @@ use crate::audio::device_watch::BackoffOutcome;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
-use crate::recorder::context::SessionContext;
+use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::native_capture::stream::CpalHostKind;
 use crate::recorder::preroll::PrerollClip;
 use crate::util::lock_recover;
@@ -909,7 +909,11 @@ impl RecorderEngine {
         let name_only_audio = || {
             FfmpegDevice::new(
                 opts.audio_device_name.clone(),
-                if cfg!(windows) { "dshow" } else { "avfoundation" },
+                if cfg!(windows) {
+                    "dshow"
+                } else {
+                    "avfoundation"
+                },
                 None,
             )
         };
@@ -1463,34 +1467,26 @@ async fn run_session(
             // (after concat), so we no longer accumulate a session-wide byte total;
             // `segment_bytes` still drives this segment's live progress + watchdog.
             let segment_bytes = Arc::new(AtomicU64::new(0));
+            // The three counters THIS segment is driven against — built fresh per
+            // segment (the byte counter is per fragment, the deliverable total is
+            // recomputed at every reconnect) and handed to whichever loop runs it.
+            let counters = SegmentCounters {
+                segment_bytes: Arc::clone(&segment_bytes),
+                deliverable_bytes,
+                telemetry: Arc::clone(&telemetry),
+            };
             let outcome = match child {
                 CaptureChild::Ffmpeg(c) => {
-                    run_segment(
-                        &ctx.app,
-                        *c,
-                        &ctx.opts,
-                        &session,
-                        Arc::clone(&segment_bytes),
-                        deliverable_bytes,
-                        &mut stop_rx,
-                        &state,
-                        &mut stop_watch,
-                        Arc::clone(&telemetry),
-                    )
-                    .await
+                    run_segment(&ctx, *c, &session, counters, &mut stop_rx, &mut stop_watch).await
                 }
                 CaptureChild::Native(seg) => {
                     crate::recorder::native_capture::segment::run_native_segment(
-                        &ctx.app,
+                        &ctx,
                         *seg,
-                        &ctx.opts,
                         &session,
-                        Arc::clone(&segment_bytes),
-                        deliverable_bytes,
+                        counters,
                         &mut stop_rx,
-                        &state,
                         &mut stop_watch,
-                        Arc::clone(&telemetry),
                     )
                     .await
                 }
@@ -1508,14 +1504,10 @@ async fn run_session(
                     // its fragments + write its history row) BEFORE opening the next.
                     let close_ms = now_ms();
                     all_delivered &= finalize_pending(
-                        &ctx.app,
-                        &ctx.pool,
+                        &ctx,
                         &session,
                         &mut finalized,
                         close_ms,
-                        &ctx.preroll_clip,
-                        &ctx.audio,
-                        &ctx.opts,
                         &telemetry,
                         &delivered_bytes,
                     )
@@ -1548,14 +1540,10 @@ async fn run_session(
                             // A failing exit keeps the manifest either way (only the
                             // clean stop deletes it), so the verdict is moot here.
                             let _ = finalize_pending(
-                                &ctx.app,
-                                &ctx.pool,
+                                &ctx,
                                 &session,
                                 &mut finalized,
                                 now_ms(),
-                                &ctx.preroll_clip,
-                                &ctx.audio,
-                                &ctx.opts,
                                 &telemetry,
                                 &delivered_bytes,
                             )
@@ -1665,14 +1653,10 @@ async fn run_session(
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // Fail-stop keeps the manifest (no delete on this path).
                             let _ = finalize_pending(
-                                &ctx.app,
-                                &ctx.pool,
+                                &ctx,
                                 &session,
                                 &mut finalized,
                                 now_ms(),
-                                &ctx.preroll_clip,
-                                &ctx.audio,
-                                &ctx.opts,
                                 &telemetry,
                                 &delivered_bytes,
                             )
@@ -1801,14 +1785,10 @@ async fn run_session(
                                                 // deliverable — this one's verdict
                                                 // must reach the clean stop.
                                                 all_delivered &= finalize_pending(
-                                                    &ctx.app,
-                                                    &ctx.pool,
+                                                    &ctx,
                                                     &session,
                                                     &mut finalized,
                                                     now_ms(),
-                                                    &ctx.preroll_clip,
-                                                    &ctx.audio,
-                                                    &ctx.opts,
                                                     &telemetry,
                                                     &delivered_bytes,
                                                 )
@@ -1897,14 +1877,10 @@ async fn run_session(
                                                 );
                                                 // Fail-stop keeps the manifest.
                                                 let _ = finalize_pending(
-                                                    &ctx.app,
-                                                    &ctx.pool,
+                                                    &ctx,
                                                     &session,
                                                     &mut finalized,
                                                     now_ms(),
-                                                    &ctx.preroll_clip,
-                                                    &ctx.audio,
-                                                    &ctx.opts,
                                                     &telemetry,
                                                     &delivered_bytes,
                                                 )
@@ -1932,14 +1908,10 @@ async fn run_session(
         // deliverable — concat its fragments + write its history row.
         emit_state(RecorderState::Stopping, session.reconnect_count());
         all_delivered &= finalize_pending(
-            &ctx.app,
-            &ctx.pool,
+            &ctx,
             &session,
             &mut finalized,
             now_ms(),
-            &ctx.preroll_clip,
-            &ctx.audio,
-            &ctx.opts,
             &telemetry,
             &delivered_bytes,
         )
@@ -2345,22 +2317,33 @@ fn classify_stderr_line(
 /// and waits for it to finalise before returning.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED.
-#[allow(clippy::too_many_arguments)]
+///
+/// Its ten former parameters are now two groups plus the segment's own three
+/// (F2-T2): the session's app handle / options / state door arrive in `ctx`, and
+/// the byte + telemetry counters in [`SegmentCounters`] — the same grouping the
+/// native path's [`run_native_segment`](crate::recorder::native_capture::segment::run_native_segment)
+/// takes, so the two segment loops read alike.
 async fn run_segment(
-    app: &AppHandle,
+    ctx: &SessionContext,
     mut child: tokio::process::Child,
-    opts: &RecordingOpts,
     session: &RecordingSession,
-    segment_bytes: Arc<AtomicU64>,
-    // Bytes already captured into the current deliverable's PREVIOUS fragments
-    // (`_rN` reconnect pieces) — feeds the RIFF-cap forced split, exactly as on
-    // the native path.
-    deliverable_bytes: u64,
+    counters: SegmentCounters,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    state: &StateWriter,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
-    telemetry: Arc<Mutex<RecordingTelemetry>>,
 ) -> SegmentOutcome {
+    // Read the three session fields this loop needs out of the context once. The
+    // `StateWriter` is the context's OWN (not a second one), so the segment's
+    // countdown restamps go through the very same generation guard the
+    // supervisor's transitions do.
+    let (app, opts, state) = (&ctx.app, &ctx.opts, &ctx.state);
+    // `deliverable_bytes` = bytes already captured into the current deliverable's
+    // PREVIOUS fragments (`_rN` reconnect pieces) — feeds the RIFF-cap forced
+    // split, exactly as on the native path.
+    let SegmentCounters {
+        segment_bytes,
+        deliverable_bytes,
+        telemetry,
+    } = counters;
     let Some(stderr) = child.stderr.take() else {
         return SegmentOutcome::UnexpectedExit { last_error: None };
     };
@@ -3109,16 +3092,16 @@ fn finalize_session_telemetry(
 /// user's chosen format (see [`finalize_one`]). The caller ANDs these across the
 /// whole session and keeps the crash-recovery manifest when any failed — a clean
 /// stop with a failed delivery still has audio to salvage on the next launch.
-#[allow(clippy::too_many_arguments)]
+/// Five of this function's ten former parameters — the app handle, the pool, the
+/// pre-roll clip, the audio device and the options — were the SESSION's, threaded
+/// down one call at a time. They arrive as `ctx` now (F2-T2); `session_generation`
+/// is not among them because finalisation writes state only through the
+/// supervisor, never itself.
 async fn finalize_pending(
-    app: &AppHandle,
-    pool: &Option<SqlitePool>,
+    ctx: &SessionContext,
     session: &RecordingSession,
     finalized: &mut usize,
     end_ms: u64,
-    preroll_clip: &Option<PrerollClip>,
-    audio: &FfmpegDevice,
-    opts: &RecordingOpts,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
 ) -> bool {
@@ -3133,19 +3116,8 @@ async fn finalize_pending(
             .get(index + 1)
             .map(|next| next.started_at_ms)
             .unwrap_or(end_ms);
-        all_delivered &= finalize_one(
-            app,
-            pool,
-            d,
-            index,
-            deliverable_end,
-            preroll_clip,
-            audio,
-            opts,
-            telemetry,
-            delivered_bytes,
-        )
-        .await;
+        all_delivered &=
+            finalize_one(ctx, d, index, deliverable_end, telemetry, delivered_bytes).await;
     }
     *finalized = total;
     all_delivered
@@ -3170,16 +3142,17 @@ async fn finalize_pending(
 /// the user's format) or the finished file failed the validity gate. The caller
 /// keeps the crash-recovery manifest on `false` so the next launch retries the
 /// delivery from the surviving capture instead of forfeiting it.
-#[allow(clippy::too_many_arguments)]
+///
+/// Like [`finalize_pending`], the session-owned half of its inputs arrives as
+/// `ctx` (F2-T2): the app handle it surfaces `empty_output` through, the pool it
+/// writes the row into, the pre-roll clip it prepends to deliverable 0, the audio
+/// device the row is stamped with, and the options that decide the delivery
+/// format and the separate-audio sidecar.
 async fn finalize_one(
-    app: &AppHandle,
-    pool: &Option<SqlitePool>,
+    ctx: &SessionContext,
     deliverable: &sundayrec_core::recorder::Deliverable,
     index: usize,
     end_ms: u64,
-    preroll_clip: &Option<PrerollClip>,
-    audio: &FfmpegDevice,
-    opts: &RecordingOpts,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
 ) -> bool {
@@ -3193,7 +3166,7 @@ async fn finalize_one(
     }
     // Pre-roll is prepended ONLY to the first deliverable's first fragment.
     let preroll_path = if index == 0 {
-        preroll_clip.as_ref().map(|c| c.raw_path.as_str())
+        ctx.preroll_clip.as_ref().map(|c| c.raw_path.as_str())
     } else {
         None
     };
@@ -3204,9 +3177,9 @@ async fn finalize_one(
     // save folder with the delivery extension.
     // The SAME spec the crash-recovery manifest carries — a live stop and a
     // next-launch recovery must deliver identically (see `delivery_encode_for`).
-    let audio_only = opts.video_device_name.is_none();
+    let audio_only = ctx.opts.video_device_name.is_none();
     let delivery_spec = DeliverySpec::from_manifest(
-        &delivery_encode_for(opts, audio_only),
+        &delivery_encode_for(&ctx.opts, audio_only),
         &deliverable.primary_path,
     );
 
@@ -3234,7 +3207,7 @@ async fn finalize_one(
             "recorder: finished file is missing/empty/undecodable — not writing history row"
         );
         emit_error(
-            app,
+            &ctx.app,
             "empty_output",
             &AlertText::RecordingEmptyOutput.text(crate::ui_lang::current()),
         );
@@ -3255,13 +3228,15 @@ async fn finalize_one(
     }
     delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
-    let Some(pool) = pool else { return delivered };
+    let Some(pool) = &ctx.pool else {
+        return delivered;
+    };
     let started_at = deliverable.started_at_ms;
     let duration_ms = end_ms.saturating_sub(started_at) as f64;
     let row = RecordingRow {
         id: String::new(),
         file_path: final_path.clone(),
-        device_name: Some(audio.name.clone()),
+        device_name: Some(ctx.audio.name.clone()),
         started_at: started_at as f64,
         duration_ms: Some(duration_ms),
         byte_size,
@@ -3277,8 +3252,16 @@ async fn finalize_one(
     // standalone audio file next to it and write a SECOND history row. Guarded on
     // the recording actually having video (audio-only recordings are already the
     // audio, so there's nothing to extract).
-    if opts.keep_separate_audio && opts.video_device_name.is_some() {
-        extract_separate_audio(pool, &final_path, started_at, duration_ms, opts, audio).await;
+    if ctx.opts.keep_separate_audio && ctx.opts.video_device_name.is_some() {
+        extract_separate_audio(
+            pool,
+            &final_path,
+            started_at,
+            duration_ms,
+            &ctx.opts,
+            &ctx.audio,
+        )
+        .await;
     }
     delivered
 }
