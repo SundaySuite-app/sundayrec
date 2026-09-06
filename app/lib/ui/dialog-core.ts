@@ -59,6 +59,16 @@ export interface ConfirmOpts extends CommonOpts {
   /** Red confirm button. Also makes CANCEL the Enter default — a destructive
    *  action must never be one stray keypress away. */
   danger?: boolean;
+  /**
+   * `cancelLabel` carries the ACTIVE choice here, not the usual no-op — e.g.
+   * `pages/record/stop.ts`'s "stop" button, ghost-styled and off the Enter
+   * default without `danger`'s red paint (see that file for why `danger` is
+   * off the table there). Escape and a backdrop click must still land on the
+   * SAFE button regardless of which id holds it, so this flips which button
+   * carries `isCancel` — never combined with `danger`, whose cancel button is
+   * already the safe one.
+   */
+  escapeConfirms?: boolean;
 }
 
 export interface AlertOpts extends CommonOpts {
@@ -90,6 +100,9 @@ const FALLBACK = {
 
 export function buildConfirm(o: ConfirmOpts): DialogSpec {
   const danger = o.danger === true;
+  // Only meaningful without `danger`: a danger dialog's cancel button is
+  // already the safe one, so Escape landing there is already correct.
+  const escapeConfirms = !danger && o.escapeConfirms === true;
   return {
     kind: "confirm",
     title: o.title,
@@ -102,14 +115,14 @@ export function buildConfirm(o: ConfirmOpts): DialogSpec {
         variant: danger ? "secondary" : "ghost",
         // On a destructive confirm the SAFE button is what Enter hits.
         isDefault: danger,
-        isCancel: true,
+        isCancel: !escapeConfirms,
       },
       {
         id: "ok",
         label: o.confirmLabel ?? FALLBACK.confirm,
         variant: danger ? "danger" : "primary",
         isDefault: !danger,
-        isCancel: false,
+        isCancel: escapeConfirms,
       },
     ],
   };

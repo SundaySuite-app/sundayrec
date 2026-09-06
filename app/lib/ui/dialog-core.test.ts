@@ -30,6 +30,66 @@ describe("buildConfirm", () => {
     expect(spec.danger).toBe(true);
   });
 
+  describe("escapeConfirms — F2-T3", () => {
+    // `pages/record/stop.ts` puts the ACTIVE choice ("stop the recording")
+    // behind `cancelLabel` for styling only (ghost, non-default, no red) —
+    // reproduced here without danger's paint. Without `escapeConfirms`,
+    // Escape/backdrop resolve through whichever button holds `isCancel`,
+    // which is exactly the destructive one: proven once, live, in
+    // `e2e/record.spec.ts` (Escape called `stop_recording`).
+    it("without it, isCancel still sits on the cancel id (today's default)", () => {
+      const spec = buildConfirm({
+        title: "Stoppe opptaket?",
+        confirmLabel: "Fortsett å ta opp",
+        cancelLabel: "Stopp",
+      });
+      expect(cancelButton(spec)?.id).toBe("cancel");
+      expect(cancelButton(spec)?.label).toBe("Stopp");
+    });
+
+    it("moves isCancel to the OK button, so Escape lands on the safe choice", () => {
+      const spec = buildConfirm({
+        title: "Stoppe opptaket?",
+        confirmLabel: "Fortsett å ta opp",
+        cancelLabel: "Stopp",
+        escapeConfirms: true,
+      });
+      expect(cancelButton(spec)?.id).toBe("ok");
+      expect(cancelButton(spec)?.label).toBe("Fortsett å ta opp");
+    });
+
+    it("never touches styling or the Enter default — only which button Escape hits", () => {
+      const plain = buildConfirm({ title: "x" });
+      const flipped = buildConfirm({ title: "x", escapeConfirms: true });
+      // Labels, ids and variants are byte-identical…
+      expect(
+        flipped.buttons.map((b) => ({ ...b, isCancel: undefined })),
+      ).toEqual(plain.buttons.map((b) => ({ ...b, isCancel: undefined })));
+      // …Enter still hits "ok" either way…
+      expect(defaultButton(flipped)?.id).toBe(defaultButton(plain)?.id);
+      // …only Escape's target moved.
+      expect(cancelButton(plain)?.id).toBe("cancel");
+      expect(cancelButton(flipped)?.id).toBe("ok");
+    });
+
+    it("is a no-op combined with danger — that cancel button is already safe", () => {
+      const spec = buildConfirm({
+        title: "Slett opptak?",
+        danger: true,
+        escapeConfirms: true,
+      });
+      expect(cancelButton(spec)?.id).toBe("cancel");
+      expect(defaultButton(spec)?.id).toBe("cancel");
+    });
+
+    it("exactly one button carries isCancel, either way", () => {
+      for (const escapeConfirms of [false, true]) {
+        const spec = buildConfirm({ title: "x", escapeConfirms });
+        expect(spec.buttons.filter((b) => b.isCancel)).toHaveLength(1);
+      }
+    });
+  });
+
   it("uses caller labels verbatim", () => {
     const spec = buildConfirm({
       title: "x",

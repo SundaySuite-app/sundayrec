@@ -325,6 +325,63 @@ test.describe("opptaksoverlegget", () => {
     expect((await calls(page)).stop_recording ?? 0).toBe(0);
   });
 
+  test("F2-T3: Escape på stopp-bekreftelsen lukker den UTEN å stoppe", async ({
+    page,
+  }) => {
+    // «Stopp» bor bak `cancelLabel` — ghost-knappen, ikke Enter-standarden —
+    // og DialogHost lukker ELLERS enhver dialog med Escape via nøyaktig den
+    // knappen. Uten `escapeConfirms: true` i `stop.ts` er Escape derfor et
+    // stille stopp-klikk: bevist en gang (før denne fiksen) ved at denne
+    // testen kalte `stop_recording` og satte overlegget i «Fullfører opptak».
+    // Bekreftelsens hele poeng — at et uhell skal koste ett klikk til, ikke
+    // opptaket — holder ikke hvis tastaturets egen «lukk dette»-tast er det
+    // ene uhellet den ikke tåler.
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    await page.getByTestId("overlay-stop").click();
+    const dialog = page.getByTestId("dialog");
+    await expect(dialog).toBeVisible();
+    // Vent til fokuset FAKTISK har flyttet inn i dialogen (samme mønster som
+    // `dialog.spec.ts`) — ellers kappløper Escape mot DialogHosts egen
+    // `requestAnimationFrame`, og treffer et element utenfor dialogen som
+    // ikke har noen Escape-håndterer i det hele tatt.
+    await expect(page.getByTestId("dialog-ok")).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+
+    // Opptaket går fortsatt — ingen finalisering, ingen kall til motoren.
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("overlay-stop")).toHaveText("Stopp opptaket");
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+  });
+
+  test("F2-T3: et klikk på sløret bak stopp-bekreftelsen stopper heller ikke", async ({
+    page,
+  }) => {
+    // Samme knapp, samme feilmodus, ulik trigger: DialogHost lukker via
+    // `cancelId` også når sløret klikkes (`onMouseDown` på `event.currentTarget`
+    // alene — se DialogHost.tsx). Ett klikk like utenfor en liten dialogboks
+    // midt i et fullskjerms overlegg er lett å gjøre ved et uhell.
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    await page.getByTestId("overlay-stop").click();
+    const dialog = page.getByTestId("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Et klikk i selve sløret, ikke i dialogboksen — øverste venstre hjørne av
+    // viewporten er alltid slør så lenge dialogen ikke fyller hele skjermen.
+    await page.getByTestId("dialog-scrim").click({ position: { x: 2, y: 2 } });
+    await expect(dialog).toHaveCount(0);
+
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+  });
+
   test("kvitteringen står som et kort når motoren melder at fila er ferdig", async ({
     page,
   }) => {
