@@ -376,6 +376,31 @@ re-discovering these bullets one at a time.
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
   wired but unproven on a device.
+- **F2's Windows-only fixes** (`docs/RIG-DAY.md` (w1)/(w2)/(w3)/(w6)): four
+  fixes touched real Windows-only code paths and are unproven beyond a
+  cross-compiled `cargo check`/`clippy` and CI's `windows-check` lane (which
+  since #231 also runs `cargo test --workspace` on a real Windows runner, not
+  just check+clippy) — the auto-updater no longer killing its own installer
+  via the ffmpeg job-object (#243), the update button being refused outright
+  while a recording is live (#243), no console window opening behind any of
+  22 process-spawn sites (#237), and a Windows video recording surviving a
+  crash via an MKV capture + recovery manifest (#246). A/V sync on the
+  Windows video path remains unproven regardless (unchanged by #246). A
+  fifth, narrower gap: four cpal/WASAPI unit tests (`audio::vu`,
+  `native_capture::segment` ×2, `native_capture::preroll`) are
+  `#[cfg_attr(windows, ignore = "F2-W7: … — see PR #231")]` because the CI
+  runner's image crashes (`STATUS_ACCESS_VIOLATION`) the moment they open a
+  real audio stream — they need a Windows box with a working audio service
+  and a microphone to even run, let alone pass.
+- **The wake test no longer endangers the real schedule, unproven on
+  hardware** (`docs/RIG-DAY.md` (e)/(e, fortsettelse)/(tillegg — Windows)):
+  F2-W3 (#235) found that "Test wake in 2 min" used to erase Sunday's real
+  wake (same `pmset` owner / the same `SetWaitableTimer` clear on Windows) —
+  the fix gives the test its own owner (macOS: `SundayRec-test`) and its own
+  `TimerSlot` (Windows), but that separation itself has not been exercised on
+  a real box yet, and whether `pmset schedule cancelall SundayRec` actually
+  filters by owner (rather than deleting everything, or failing silently) is
+  still an open question only a real Mac can answer.
 - **The classic ffmpeg pre-roll hatch** (`classicFfmpegPreroll`, no UI): R2
   kept this field ON PURPOSE — it is the only fallback to the legacy rolling
   ffmpeg pre-roll engine, and the native cpal buffer is still unproven on the
@@ -423,6 +448,74 @@ re-discovering these bullets one at a time.
 - What remains here is **account work only** (the Apple PLA + optionally a
   Windows cert), NOT code — the release pipeline consumes the credentials the
   moment they're provided.
+
+## Eierbeslutninger fra F2
+
+Funn fra F2s Fable-granskinger (rigg + lydkjede + Windows) som ikke er kodet
+— hver av dem trenger et eiervalg før noen skriver en fiks. Ingen av disse
+blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
+
+- **MSI på stable trigger UAC uten admin (F-W7).** `.msi`-installereren
+  bruker Windows Installers standard `perMachine`-omfang, som ber om
+  administrator-elevering selv når brukeren ikke har administratorrettigheter
+  — en frivillig på en låst kirke-PC kan sitte fast på nettopp det spørsmålet.
+  Betaer sender allerede kun NSIS (`docs/RELEASE-CHECKLIST.md` §5a — MSI kan
+  ikke uttrykke et beta-versjonsnummer), og NSIS' standard er `currentUser`
+  (ingen UAC). Anbefaling: gjør stable NSIS-only også, og fjern `.msi` fra
+  release-matrisen. **Ingen kode er skrevet** — `src-tauri/tauri.conf.json`s
+  `bundle.windows` har ingen `nsis`/`wix`-overstyring i dag, så dette er
+  fortsatt bare et funn.
+- **Database-mappa bør flytte fra Roaming til Local AppData (F-W10).**
+  `sundayrec.sqlite` (og resten av appdataen) ligger i dag under Windows'
+  Roaming-profil, som synkroniserer over nettverket på domenepåloggede
+  maskiner — en stor, stadig voksende SQLite-fil med WAL-sidefiler er
+  nøyaktig den typen data Roaming-profiler håndterer dårlig. tmp-mappa og
+  loggeren flyttes allerede til Local AppData i en annen F2-runde (F-W6); DB-
+  flyttingen er IKKE del av den og trenger sitt eget owner-OK (dataflytting
+  på en allerede installert base er ikke en ren tilleggsendring).
+- **`webviewInstallMode: embedBootstrapper` for den frakoblede kirke-PC-en.**
+  Standard WebView2-installasjon laster en liten bootstrapper som henter
+  resten fra nettet ved førstegangsbehov — en kirke-PC uten internett (eller
+  bak en restriktiv brannmur) kan sitte uten en fungerende WebView2-runtime.
+  `embedBootstrapper` bygger hele runtimen inn i installereren (større
+  installer, ingen nettverksavhengighet ved installasjon). Ikke satt i
+  `tauri.conf.json` i dag.
+- **`-realtime 1` for VideoToolbox-enkoderen (C, mening).** Et forslag fra
+  lydkjede-gjennomgangen: tvinge VideoToolbox' `-realtime 1`-flagg på
+  H.264-video-enkodingen (`recorder/engine.rs`) for å garantere at enkoderen
+  ikke sakker akterut under en lang, CPU-presset opptak — på bekostning av
+  noe kvalitet ved lav bitrate. Ikke innført; eierens smak på
+  kvalitet-vs-robusthet-avveiningen avgjør.
+- **`_redigert`-eksporter finnes ikke i biblioteket.** En eksportert
+  `*_redigert.<format>`-fil (Redigering → Eksportering) skrives til disk, men
+  får ingen egen rad i historikken/biblioteket — den er kun synlig som en
+  fil i Utforsker/Finder. Spørsmål til eier: skal en eksport spores som en
+  egen biblioteksrad (kobling til originalopptaket, egen papirkurv-håndtering
+  osv.), eller er "bare en fil på disk" riktig modell for et redigert utsnitt?
+- **En «Kirke»-mastringsprofil (C, mening).** Lydkjede-gjennomgangen foreslo
+  et fjerde mastringspreset (ved siden av `speech-clear`/`speech-natural`/
+  `speech-punchy`/`music-speech`) tunet spesifikt for kirkerom — mer
+  forsiktig kompresjon, en høyere gate-terskel for romklang. Ikke innført;
+  trenger et navn, tallverdier og eierens ØK.
+- **Automatisk monolevering ved høyt korrelerte L/R-kanaler (C, mening).**
+  Forslag: når eksportens L/R-kanaler måler ≥ 0,98 korrelert (praktisk talt
+  samme signal på begge, typisk en enkelt mikrofon matet inn i begge kanaler),
+  lever automatisk som mono i stedet for en stereofil med to identiske
+  kanaler — halvert filstørrelse, ingen hørbar forskjell. Ikke innført;
+  krever et eiervalg om terskelen og om det skal være automatisk eller et
+  forslag brukeren bekrefter.
+- **`{when}`-limingen i `app.status.next`/`app.banner.missedTitle`.** Begge
+  nøklene limer en formatert dato/klokke rett inn i en frase
+  (`"Neste opptak {when}"`, `"{when} ble ikke tatt opp"`) — et mønster som
+  fungerer på norsk, men ikke nødvendigvis på alle sju språkene (ordstilling
+  og bøyning rundt tidsuttrykk varierer). Spørsmål til eier: er dette verdt
+  en omskriving i alle språk (egne, språkspesifikke fraser i stedet for én
+  delt mal), eller er `{when}`-formen god nok som den er?
+- **Resten av språkrundens kildefunn.** `scratchpad/i18n/source-text-findings.md`
+  punkt 4, 8–12, 14, 15, 17, 19–21 og 24 er merket eiervalg/rest av den
+  runden selv — de er IKKE gjengitt her, fordi kildefila ikke var
+  tilgjengelig i denne økten (se sluttmeldingen på PR-en som førte inn denne
+  seksjonen). Fylles inn punkt for punkt når fila er lesbar igjen.
 
 ## Settings-sync + IPC-seam audit (natt 2026-06-05)
 
