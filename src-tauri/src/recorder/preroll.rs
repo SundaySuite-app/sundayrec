@@ -329,13 +329,14 @@ pub struct ClassicPrerollEngine {
     handle: Arc<Mutex<Option<PrerollHandle>>>,
     /// The loop task, so we can abort it on stop.
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    /// Directory temp WAV/m4a files live under (app-data/tmp; tests pass a tempdir).
+    /// Directory temp WAV/m4a files live under (local-app-data/tmp, F2-W10;
+    /// tests pass a tempdir).
     tmp_dir: std::path::PathBuf,
 }
 
 impl ClassicPrerollEngine {
     /// Create an engine writing its temp captures under `tmp_dir`. The caller
-    /// (lib.rs setup) passes the app-data `tmp` directory.
+    /// (lib.rs setup) passes the local-app-data `tmp` directory.
     pub fn new(tmp_dir: std::path::PathBuf) -> Self {
         Self {
             active: Arc::new(AtomicBool::new(false)),
