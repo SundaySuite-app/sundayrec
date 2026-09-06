@@ -2677,10 +2677,24 @@ where
     // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
     // loudnorm: shape the tone/dynamics first, set delivery loudness last. A full
     // `processing` object wins; otherwise resolve the one-click preset id.
+    //
+    // F2-C-E T5: `vocal_chain_preset_by_id` now takes a measured noise floor and
+    // uses it for `afftdn:nf` instead of the preset's baked-in guess. No caller
+    // reaches this branch with one today — the app shell never sends
+    // `vocalChainPreset` at all (`app/editor/sound-profiles.ts`: "vocalChainPreset
+    // sendes ALDRI", it only ever sends a mastering preset or a full `processing`
+    // chain), so this stays `None` until a future caller (`auto_process`, which
+    // already measures the floor) threads its own measurement through the
+    // request. `None` here keeps `voice-podcast`'s `nf` exactly as before (its
+    // guess already WAS −25, `resolve_noise_floor_db`'s fallback); the only
+    // behaviour change is `voice-noisy-room`'s no-measurement `nf` moving from
+    // its old −20 guess to the same −25 fallback — both sit at the noisy end of
+    // afftdn's range, and nothing today calls this branch with that preset id
+    // (see the file search noted above), so there is no live regression.
     let mut chain = req.processing.as_ref().map(|p| p.to_core()).or_else(|| {
         req.vocal_chain_preset
             .as_deref()
-            .and_then(sundayrec_core::processing::vocal_chain_preset_by_id)
+            .and_then(|id| sundayrec_core::processing::vocal_chain_preset_by_id(id, None))
             .map(|p| p.chain)
     });
     // A top-level channel repair overrides the chain's repair, and applies on its
