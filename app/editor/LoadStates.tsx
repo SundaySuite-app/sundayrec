@@ -71,9 +71,7 @@ export function LoadFailed() {
         tone="bad"
         testId="editor-load-error"
         title={
-          notFound
-            ? t("app.editor.loadNotFound")
-            : t("app.editor.loadFailed")
+          notFound ? t("app.editor.loadNotFound") : t("app.editor.loadFailed")
         }
         detail={
           notFound

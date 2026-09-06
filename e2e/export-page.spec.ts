@@ -219,9 +219,7 @@ test.describe("eksportering", () => {
     const last = page.getByTestId("export-last");
     await expect(last).not.toContainText("2026-08-02 Gudstjeneste.mp3");
     await expect(last).toContainText("2026-07-05 Kveldsmøte.mp3");
-    await expect(page.getByTestId("export-page")).toContainText(
-      "Siste opptak",
-    );
+    await expect(page.getByTestId("export-page")).toContainText("Siste opptak");
     await expect(page.getByTestId("export-page")).not.toContainText(
       "Sist redigert",
     );

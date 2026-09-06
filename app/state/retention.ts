@@ -33,7 +33,10 @@
 import { trashedPaths } from "@lib/pages/trash-core";
 
 import { exporting } from "../editor/export";
-import { forgetMovedPath as forgetLastEdited, loadState } from "../editor/model";
+import {
+  forgetMovedPath as forgetLastEdited,
+  loadState,
+} from "../editor/model";
 import { t, tn } from "../i18n";
 import { navigate } from "../router/router";
 import { toast } from "../ui/toast";
