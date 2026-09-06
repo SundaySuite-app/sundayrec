@@ -123,7 +123,10 @@
         "builtIn": "Le microphone de l’ordinateur",
         "builtInDesc": "Pour tester seulement, ou si vous n’avez pas de table de mixage.",
         "external": "USB / Externe",
-        "mixer": "Table de mixage · {n} canaux",
+        "mixer": {
+          "one": "Table de mixage · {n} canal",
+          "other": "Table de mixage · {n} canaux"
+        },
         "whichChannels": "Quels canaux ?",
         "pairLabel": "Canaux {l} et {r}",
         "channelHint": "Ceux qui reçoivent du son s’allument.",
@@ -197,7 +200,10 @@
         "pick": "Caméra",
         "keepAudio": "Conserver un fichier audio séparé",
         "keepAudioDesc": "Un fichier audio seul à côté de la vidéo.",
-        "delivers": "La caméra fournit au maximum {height}p · {fps} images par seconde.",
+        "delivers": {
+          "one": "La caméra fournit au maximum {height}p · {n} image par seconde.",
+          "other": "La caméra fournit au maximum {height}p · {n} images par seconde."
+        },
         "probeFailed": "Nous n’avons pas pu lire les capacités de la caméra. L’enregistrement utilisera ce que la caméra fournit réellement, jusqu’à 1080p.",
         "none": "Aucune caméra trouvée",
         "noneDesc": "Branchez une caméra, ou désactivez « Inclure la caméra »."
@@ -214,7 +220,10 @@
         "nothingToSave": "Rien n’a changé.",
         "launch": "Lancer automatiquement avec l’ordinateur",
         "launchDesc": "Sans cela, l’enregistrement ne démarre pas après un redémarrage.",
-        "more": "Cet ordinateur a {n} horaires fixes. Ici, vous modifiez le premier."
+        "more": {
+          "one": "Cet ordinateur a {n} horaire fixe. Ici, vous le modifiez.",
+          "other": "Cet ordinateur a {n} horaires fixes. Ici, vous modifiez le premier."
+        }
       },
       "days": {
         "0": "Lundi",

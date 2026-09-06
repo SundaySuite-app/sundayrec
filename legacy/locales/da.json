@@ -123,7 +123,10 @@
         "builtIn": "Computerens egen mikrofon",
         "builtInDesc": "Kun til test, eller hvis I ikke har en mixerpult.",
         "external": "USB / Ekstern",
-        "mixer": "Mixerpult · {n} kanaler",
+        "mixer": {
+          "one": "Mixerpult · {n} kanal",
+          "other": "Mixerpult · {n} kanaler"
+        },
         "whichChannels": "Hvilke kanaler?",
         "pairLabel": "Kanal {l} og {r}",
         "channelHint": "De, der har lyd nu, lyser.",
@@ -197,7 +200,10 @@
         "pick": "Kamera",
         "keepAudio": "Behold separat lydfil",
         "keepAudioDesc": "En ren lydfil ved siden af videoen.",
-        "delivers": "Kameraet leverer højst {height}p · {fps} billeder i sekundet.",
+        "delivers": {
+          "one": "Kameraet leverer højst {height}p · {n} billede i sekundet.",
+          "other": "Kameraet leverer højst {height}p · {n} billeder i sekundet."
+        },
         "probeFailed": "Vi kunne ikke læse, hvad kameraet kan. Optagelsen bruger det, kameraet faktisk leverer, op til 1080p.",
         "none": "Kan ikke finde et kamera",
         "noneDesc": "Tilslut et kamera, eller slå »Tag kamera med« fra."
@@ -214,7 +220,10 @@
         "nothingToSave": "Ingenting er ændret.",
         "launch": "Start automatisk med computeren",
         "launchDesc": "Uden det starter optagelsen ikke efter en genstart.",
-        "more": "Denne computer har {n} faste tidspunkter. Her ændrer du det første."
+        "more": {
+          "one": "Denne computer har {n} fast tidspunkt. Her ændrer du det.",
+          "other": "Denne computer har {n} faste tidspunkter. Her ændrer du det første."
+        }
       },
       "days": {
         "0": "Mandag",

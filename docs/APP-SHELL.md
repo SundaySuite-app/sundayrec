@@ -931,6 +931,14 @@ flertallsformer midt i en pause som finnes for å slippe akkurat det. Så: `tf()
 med en formulering som er riktig for tallområdet den faktisk viser
 («Miksebord · {n} kanaler» vises bare for n ≥ 3).
 
+✅ **Omgjort i F2-S6.** Pausen er over, og «riktig for tallområdet» viste seg å
+være riktig for NORSK tallområde: den polske oversetteren måtte skrive om alle
+tre til agreement-fri form («Mikser · kanały: {n}») fordi 2–4 og 5+ er hver sin
+substantivform. `app.setup.sound.mixer`, `app.setup.camera.delivers` og
+`app.setup.auto.more` er nå ekte flertallsgrupper i alle sju, lest med `tn()`.
+Lærdommen er generell: et tall limt inn i en setning er ikke en formulering
+man kan velge seg unna — det er en bøyning, og den finnes bare i katalogen.
+
 ## e2e: de fire re-pekte, med byte-identiske titler
 
 `e2e/{settings,settings-seam,settings-migration,i18n-live-surfaces}.spec.ts`

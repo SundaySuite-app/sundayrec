@@ -123,7 +123,10 @@
         "builtIn": "Maskinens egen mikrofon",
         "builtInDesc": "Kun for test, eller hvis dere ikke har mikser.",
         "external": "USB / Ekstern",
-        "mixer": "Miksebord · {n} kanaler",
+        "mixer": {
+          "one": "Miksebord · {n} kanal",
+          "other": "Miksebord · {n} kanaler"
+        },
         "whichChannels": "Hvilke kanaler?",
         "pairLabel": "Kanal {l} og {r}",
         "channelHint": "De som har lyd nå, lyser.",
@@ -197,7 +200,10 @@
         "pick": "Kamera",
         "keepAudio": "Behold separat lydfil",
         "keepAudioDesc": "En ren lydfil ved siden av videoen.",
-        "delivers": "Kameraet leverer maks {height}p · {fps} bilder i sekundet.",
+        "delivers": {
+          "one": "Kameraet leverer maks {height}p · {n} bilde i sekundet.",
+          "other": "Kameraet leverer maks {height}p · {n} bilder i sekundet."
+        },
         "probeFailed": "Vi fikk ikke lest hva kameraet klarer. Opptaket bruker det kameraet faktisk leverer, opptil 1080p.",
         "none": "Finner ikke noe kamera",
         "noneDesc": "Koble til et kamera, eller slå av «Ta med kamera»."
@@ -214,7 +220,10 @@
         "nothingToSave": "Ingenting er endret.",
         "launch": "Start automatisk med maskinen",
         "launchDesc": "Uten dette starter ikke opptaket etter en omstart.",
-        "more": "Denne maskinen har {n} faste tidspunkter. Her endrer du det første."
+        "more": {
+          "one": "Denne maskinen har {n} fast tidspunkt. Her endrer du det.",
+          "other": "Denne maskinen har {n} faste tidspunkter. Her endrer du det første."
+        }
       },
       "days": {
         "0": "Mandag",

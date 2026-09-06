@@ -123,7 +123,12 @@
         "builtIn": "Wbudowany mikrofon komputera",
         "builtInDesc": "Tylko do testów albo jeśli nie masz miksera.",
         "external": "USB / Zewnętrzne",
-        "mixer": "Mikser · kanały: {n}",
+        "mixer": {
+          "one": "Mikser · {n} kanał",
+          "few": "Mikser · {n} kanały",
+          "many": "Mikser · {n} kanałów",
+          "other": "Mikser · {n} kanału"
+        },
         "whichChannels": "Które kanały?",
         "pairLabel": "Kanał {l} i {r}",
         "channelHint": "Te, które mają teraz dźwięk, świecą.",
@@ -197,7 +202,12 @@
         "pick": "Kamera",
         "keepAudio": "Zachowaj osobny plik audio",
         "keepAudioDesc": "Czysty plik audio obok wideo.",
-        "delivers": "Kamera daje maksymalnie {height}p · {fps} klatek na sekundę.",
+        "delivers": {
+          "one": "Kamera daje maksymalnie {height}p · {n} klatkę na sekundę.",
+          "few": "Kamera daje maksymalnie {height}p · {n} klatki na sekundę.",
+          "many": "Kamera daje maksymalnie {height}p · {n} klatek na sekundę.",
+          "other": "Kamera daje maksymalnie {height}p · {n} klatki na sekundę."
+        },
         "probeFailed": "Nie udało się odczytać, co potrafi kamera. Nagranie użyje tego, co kamera faktycznie daje, do 1080p.",
         "none": "Nie znaleziono kamery",
         "noneDesc": "Podłącz kamerę albo wyłącz „Dołącz kamerę”."
@@ -214,7 +224,12 @@
         "nothingToSave": "Nic się nie zmieniło.",
         "launch": "Uruchamiaj razem z komputerem",
         "launchDesc": "Bez tego nagrywanie nie wystartuje po ponownym uruchomieniu.",
-        "more": "Stałych godzin na tym komputerze: {n}. Tutaj zmieniasz pierwszą."
+        "more": {
+          "one": "Ten komputer ma {n} stałą godzinę. Tutaj ją zmieniasz.",
+          "few": "Ten komputer ma {n} stałe godziny. Tutaj zmieniasz pierwszą.",
+          "many": "Ten komputer ma {n} stałych godzin. Tutaj zmieniasz pierwszą.",
+          "other": "Ten komputer ma {n} stałej godziny. Tutaj zmieniasz pierwszą."
+        }
       },
       "days": {
         "0": "Poniedziałek",

@@ -123,7 +123,10 @@
         "builtIn": "The computer’s own microphone",
         "builtInDesc": "For testing only, or if you have no mixer.",
         "external": "USB / External",
-        "mixer": "Mixer · {n} channels",
+        "mixer": {
+          "one": "Mixer · {n} channel",
+          "other": "Mixer · {n} channels"
+        },
         "whichChannels": "Which channels?",
         "pairLabel": "Channel {l} and {r}",
         "channelHint": "The ones with sound right now light up.",
@@ -197,7 +200,10 @@
         "pick": "Camera",
         "keepAudio": "Keep a separate audio file",
         "keepAudioDesc": "A plain audio file next to the video.",
-        "delivers": "The camera delivers at most {height}p · {fps} frames per second.",
+        "delivers": {
+          "one": "The camera delivers at most {height}p · {n} frame per second.",
+          "other": "The camera delivers at most {height}p · {n} frames per second."
+        },
         "probeFailed": "We could not read what the camera can do. The recording uses what the camera actually delivers, up to 1080p.",
         "none": "Can’t find a camera",
         "noneDesc": "Connect a camera, or turn off “Include camera”."
@@ -214,7 +220,10 @@
         "nothingToSave": "Nothing has changed.",
         "launch": "Start automatically with the computer",
         "launchDesc": "Without this the recording won’t start after a restart.",
-        "more": "This computer has {n} weekly times. Here you change the first one."
+        "more": {
+          "one": "This computer has {n} weekly time. Here you change it.",
+          "other": "This computer has {n} weekly times. Here you change the first one."
+        }
       },
       "days": {
         "0": "Monday",

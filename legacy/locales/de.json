@@ -123,7 +123,10 @@
         "builtIn": "Eingebautes Mikrofon",
         "builtInDesc": "Nur zum Testen, oder wenn Sie kein Mischpult haben.",
         "external": "USB / Extern",
-        "mixer": "Mischpult · {n} Kanäle",
+        "mixer": {
+          "one": "Mischpult · {n} Kanal",
+          "other": "Mischpult · {n} Kanäle"
+        },
         "whichChannels": "Welche Kanäle?",
         "pairLabel": "Kanal {l} und {r}",
         "channelHint": "Die, auf denen jetzt Ton ist, leuchten.",
@@ -197,7 +200,10 @@
         "pick": "Kamera",
         "keepAudio": "Separate Audiodatei behalten",
         "keepAudioDesc": "Eine reine Audiodatei neben dem Video.",
-        "delivers": "Die Kamera liefert höchstens {height}p · {fps} Bilder pro Sekunde.",
+        "delivers": {
+          "one": "Die Kamera liefert höchstens {height}p · {n} Bild pro Sekunde.",
+          "other": "Die Kamera liefert höchstens {height}p · {n} Bilder pro Sekunde."
+        },
         "probeFailed": "Wir konnten nicht auslesen, was die Kamera kann. Die Aufnahme nutzt das, was die Kamera tatsächlich liefert, bis zu 1080p.",
         "none": "Wir finden keine Kamera",
         "noneDesc": "Schließen Sie eine Kamera an, oder schalten Sie „Mit Kamera aufnehmen“ aus."
@@ -214,7 +220,10 @@
         "nothingToSave": "Es hat sich nichts geändert.",
         "launch": "Automatisch mit dem Computer starten",
         "launchDesc": "Ohne dies startet die Aufnahme nach einem Neustart nicht.",
-        "more": "Dieser Computer hat {n} feste Zeiten. Hier ändern Sie die erste."
+        "more": {
+          "one": "Dieser Computer hat {n} feste Zeit. Hier ändern Sie sie.",
+          "other": "Dieser Computer hat {n} feste Zeiten. Hier ändern Sie die erste."
+        }
       },
       "days": {
         "0": "Montag",
