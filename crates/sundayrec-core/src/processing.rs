@@ -676,14 +676,14 @@ pub fn vocal_chain_presets() -> Vec<VocalChainPreset> {
     vec![
         VocalChainPreset {
             id: "voice-light",
-            label: "Stemme — lett",
-            description: "Bare lavkutt + lett kompresjon. Trygt for gode opptak.",
+            label: "Voice — light",
+            description: "Low cut + gentle compression only. Safe for good recordings.",
             chain: VocalChain::default(),
         },
         VocalChainPreset {
             id: "voice-podcast",
-            label: "Podkast-stemme (anbefalt)",
-            description: "Lavkutt, mild støyreduksjon, EQ, kompresjon, de-esser og takgrense — full vokal-kjede for tale.",
+            label: "Podcast voice (recommended)",
+            description: "Low cut, mild noise reduction, EQ, compression, de-esser and limiter — the full vocal chain for speech.",
             chain: VocalChain {
                 highpass: HighpassStage {
                     enabled: true,
@@ -732,8 +732,8 @@ pub fn vocal_chain_presets() -> Vec<VocalChainPreset> {
         },
         VocalChainPreset {
             id: "voice-noisy-room",
-            label: "Støyete rom",
-            description: "Sterkere støyreduksjon, romdemping og gate. For dårlige opptaksforhold.",
+            label: "Noisy room",
+            description: "Stronger noise reduction, dereverb and a gate. For poor recording conditions.",
             chain: VocalChain {
                 highpass: HighpassStage {
                     enabled: true,

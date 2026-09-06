@@ -446,7 +446,13 @@ pub struct EditorAutoProcess {
     /// because the renderer applies whatever it is told, and a future
     /// recommender may fill it in.
     pub master_preset: String,
-    /// A short Norwegian summary of what was decided, for a toast/hint.
+    /// A short ENGLISH summary of what was decided — a RESERVE, for the log and
+    /// for a support paste (F2-I18N-R2).
+    ///
+    /// The shell does not render it: `SoundStep`'s channel note is built from
+    /// [`Self::diagnosis`]'s `code` and the profile names the chain, both in
+    /// the volunteer's own language. Anything that wants the sentence on screen
+    /// builds it from those two fields, never from this one.
     pub summary: String,
 }
 
@@ -2376,8 +2382,7 @@ pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagn
 /// One-click "auto-improve": ONE astats pass yields both the channel diagnosis
 /// AND the noise floor, so we recommend channel repair + a NOISE-AWARE vocal
 /// chain (the heavier `voice-noisy-room` when the floor is high, else
-/// `voice-podcast`) with a Norwegian summary. The renderer applies the result in
-/// one click.
+/// `voice-podcast`). The renderer applies the result in one click.
 ///
 /// It deliberately does NOT recommend a mastering preset. Stacking one on top of
 /// the vocal chain ran the material through two highpasses, two compressors and
@@ -2391,33 +2396,39 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     let noise_floor = sundayrec_core::levels::parse_noise_floor_db(&stderr);
     let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
 
+    // F2-I18N-R2: the summary is an ENGLISH RESERVE, and the DATA is the
+    // contract. The screen never read this string — `SoundStep`'s
+    // `ChannelNote` renders `editor.chanDeadLeft`/`…chanUnusableRight` from
+    // `diagnosis.code`, and the sound profile names the chain — so a Norwegian
+    // sentence here was prose the volunteer could not see written in a language
+    // six of seven of them do not read. The shell builds its own sentence from
+    // `diagnosis.code` + `vocalChainPreset`; this one is for the log and for a
+    // support paste.
+    //
     // `unusable_*` shares an arm with `dead_*` on purpose: it is the same fault
     // seen from further away (the channel has SOMETHING, but 12 dB of makeup
-    // cannot rescue it), so the repair and the advice are identical. Reusing the
-    // sentence also keeps this block free of NEW Norwegian literals — I18N-R2
-    // moves the whole thing to catalogue keys. The screen does not read this
-    // summary at all; it renders `editor.chanUnusableLeft`/`…Right` from the
-    // diagnosis CODE, which says "too weak" rather than "silent".
+    // cannot rescue it), so the repair and the advice are identical. The
+    // catalogue keeps them apart, and says "too weak" rather than "silent".
     let repair_note = match diagnosis.code.as_str() {
         "dead_left" | "unusable_left" => {
-            "høyre kanal kopieres til begge (venstre er stille — sjekk kabel)"
+            "the right channel is copied to both (the left is silent — check the cable)"
         }
         "dead_right" | "unusable_right" => {
-            "venstre kanal kopieres til begge (høyre er stille — sjekk kabel)"
+            "the left channel is copied to both (the right is silent — check the cable)"
         }
-        "imbalance" => "kanalene balanseres (ulik styrke)",
-        "both_dead" => "begge kanaler er svært svake — sjekk tilkobling",
-        "mono" => "mono-opptak",
-        _ => "kanalbalanse OK",
+        "imbalance" => "the channels are balanced (uneven levels)",
+        "both_dead" => "both channels are very weak — check the connection",
+        "mono" => "mono recording",
+        _ => "channel balance OK",
     };
     let chain_note = if preset == "voice-noisy-room" {
-        "støyete-rom-kjede (sterkere støyreduksjon)"
+        "noisy-room chain (stronger noise reduction)"
     } else {
-        "podkast-stemme"
+        "podcast voice"
     };
     let summary = format!(
-        "Automatisk lydforbedring: {repair_note}, {chain_note}. \
-         Mastering velges separat (den setter utgivelsesnivået)."
+        "Automatic sound improvement: {repair_note}, {chain_note}. \
+         Mastering is chosen separately (it sets the release level)."
     );
     Ok(EditorAutoProcess {
         diagnosis,

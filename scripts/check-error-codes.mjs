@@ -24,9 +24,18 @@
  *   Rust (`src-tauri/src/recorder/**`):
  *     • `emit_error(<app>, "<kode>", …)`   — argument 2
  *     • `<sink>.error("<kode>", …)`        — argument 1
- *     • armene i `fn error_code_str(…)`    — `Code::X => "<kode>"`
+ *     • armene i KODETABELLENE (`CODE_TABLE_FNS`) — `Variant => "<kode>"`
  *   TypeScript:
  *     • nøklene i `const NATIVE_ERRORS = { … }` i `record-core.ts`
+ *
+ * ## Kodetabellene, flertall (F2-I18N-R2)
+ *
+ * `error_code_str` var den ene. `camera_failure_code` er den andre: fire
+ * kameraårsaker som før kom under ÉN kode med fire norske setninger skallet
+ * ignorerte, fordi en KJENT kode aldri får påheng. Begge er en `match` som
+ * svarer med literaler, og begge er usynlige for `emit_error`-lesingen —
+ * kallstedet sender en variabel. En ny tabell hører hjemme i lista under, og
+ * det er den ENE tingen å huske når en klassifisering får sine egne koder.
  *
  * TS-kilden leses som TEKST, ikke kompilert: gaten skal kunne kjøre alene, før
  * `tsc`, og en typefeil et helt annet sted i skallet skal ikke gjøre denne
@@ -65,6 +74,16 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const RUST_DIR = path.join(ROOT, "src-tauri", "src", "recorder");
+
+/**
+ * Funksjonene hvis `match`-armer ER kodetabellen.
+ *
+ * ⚠️ Navnene er den ENE tingen å vedlikeholde her. En ny klassifisering som
+ * får sine egne koder (som `camera_failure_code` gjorde i F2-I18N-R2) er
+ * usynlig for gaten til navnet står i denne lista — og en usynlig kode er
+ * `errorUnknown` hos en frivillig.
+ */
+const CODE_TABLE_FNS = ["error_code_str", "camera_failure_code"];
 const TABLE_FILE = path.join(ROOT, "app", "pages", "record", "record-core.ts");
 
 // ── Rust-lesing ─────────────────────────────────────────────────────────────
@@ -251,34 +270,34 @@ export function collectRustCodes(src, file = "?") {
     if (lit) found.push({ code: lit, file, line: lineOf(code, m.index) });
   }
 
-  // Armene i `fn error_code_str(…) -> &'static str { match … }`: den ENE
-  // tabellen som oversetter `RecordingErrorCode` til en streng. Kodene her
-  // når skallet gjennom hvert `emit_error(app, error_code_str(c), …)`.
-  const fnIdx = code.indexOf("fn error_code_str");
-  if (fnIdx !== -1) {
+  // Armene i kodetabellene: en `match` som oversetter en motor-enum til
+  // wire-koden. Kodene her når skallet gjennom `emit_error(app, <tabell>(x),
+  // …)`, der argument 2 er en VARIABEL — usynlig for lesingen over.
+  for (const fnName of CODE_TABLE_FNS) {
+    const fnIdx = code.indexOf(`fn ${fnName}`);
+    if (fnIdx === -1) continue;
     const open = code.indexOf("{", fnIdx);
-    if (open !== -1) {
-      let depth = 0;
-      let end = open;
-      for (let i = open; i < code.length; i++) {
-        if (code[i] === "{") depth++;
-        if (code[i] === "}") {
-          depth--;
-          if (depth === 0) {
-            end = i;
-            break;
-          }
+    if (open === -1) continue;
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < code.length; i++) {
+      if (code[i] === "{") depth++;
+      if (code[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
         }
       }
-      const body = code.slice(open, end);
-      for (const m of body.matchAll(/=>\s*"((?:\\.|[^\\"])*)"/g)) {
-        found.push({
-          code: m[1],
-          file,
-          line: lineOf(code, open + m.index),
-          from: "error_code_str",
-        });
-      }
+    }
+    const body = code.slice(open, end);
+    for (const m of body.matchAll(/=>\s*"((?:\\.|[^\\"])*)"/g)) {
+      found.push({
+        code: m[1],
+        file,
+        line: lineOf(code, open + m.index),
+        from: fnName,
+      });
     }
   }
 
@@ -370,6 +389,13 @@ pub(crate) fn error_code_str(code: RecordingErrorCode) -> &'static str {
         RecordingErrorCode::DiskFull => "disk_full",
     }
 }
+
+pub(crate) fn camera_failure_code(failure: CameraFailure) -> &'static str {
+    match failure {
+        CameraFailure::Busy => "camera_busy",
+        CameraFailure::OpenFailed => "video_capture_failed",
+    }
+}
 `;
 
 const SELFTEST_TS = `
@@ -378,6 +404,8 @@ const NATIVE_ERRORS: Record<string, string> = {
   start_timeout: "errorStartTimeout",
   mux_failed: "errorMux",
   device_not_found: "errorDeviceNotFound",
+  camera_busy: "errorCameraBusy",
+  video_capture_failed: "errorVideoCapture",
 };
 `;
 
@@ -390,11 +418,13 @@ function selfTest() {
   const found = collectRustCodes(SELFTEST_RUST, "fixture.rs");
   const codes = [...new Set(found.map((f) => f.code))].sort();
   const want = [
+    "camera_busy",
     "device_not_found",
     "disk_full",
     "mux_failed",
     "orphan_code",
     "start_timeout",
+    "video_capture_failed",
   ];
   say(
     JSON.stringify(codes) === JSON.stringify(want),
@@ -417,6 +447,15 @@ function selfTest() {
     ),
     "error_code_str-armene ble ikke funnet",
   );
+  // …og HVER tabell for seg. En løkke som stopper etter den første er grønn
+  // på `error_code_str` alene, og blind for kameraårsakene.
+  say(
+    found.some(
+      (f) => f.code === "camera_busy" && f.from === "camera_failure_code",
+    ),
+    "camera_failure_code-armene ble ikke funnet",
+  );
+  say(CODE_TABLE_FNS.length >= 2, "CODE_TABLE_FNS har mistet en tabell");
 
   // …og det som IKKE skal telle.
   for (const nope of ["commented_out", "blocked", "stuck_recording"]) {
@@ -437,7 +476,7 @@ function selfTest() {
   );
 
   const keys = collectTableKeys(SELFTEST_TS);
-  say(keys.size === 4, `tabell-lesingen fant ${keys.size} nøkler, fasit 4`);
+  say(keys.size === 6, `tabell-lesingen fant ${keys.size} nøkler, fasit 6`);
   say(keys.has("start_timeout"), "tabell-lesingen mistet en nøkkel");
 
   // Og det avgjørende: gaten må kunne SI NEI. `orphan_code` mangler i

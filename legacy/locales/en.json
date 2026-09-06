@@ -391,6 +391,24 @@
           "needsAdmin": "This machine can be woken, but asks for an administrator password the first time.",
           "unknown": "We do not know yet whether this machine can be woken."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon cannot start from a fully powered-off state — only from sleep.",
+          "macIntelManualPowerOn": "An Intel Mac can start from off, but you must enable “Start up or wake” manually in System Settings → Battery.",
+          "winTimerDiesWithApp": "The wake timer is set by SundayRec while it is running. Quit SundayRec entirely and the wake timer goes with it.",
+          "winS5NeedsBios": "Waking from fully powered off (S5) requires “Wake on RTC from S5” in the BIOS — software cannot enable it.",
+          "linuxUnsupported": "Linux is not supported for automatic wake from SundayRec.",
+          "platformUnsupported": "This platform is not supported for automatic wake."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Leave the machine asleep (do not shut it down) once it is prepared.",
+          "macDisableStandby": "Turn deep sleep (standby) off — it can stop the machine from waking.",
+          "macStayPluggedIn": "Mains power must be connected — a Mac does not wake reliably on battery.",
+          "winKeepAppRunning": "Leave SundayRec running — it starts automatically at sign-in and sits in the system tray.",
+          "winSleepNotShutdown": "Put the machine to sleep (Sleep/Hibernate) rather than shutting it down.",
+          "winStayPluggedIn": "Mains power should be connected — many laptops disable wake timers on battery.",
+          "winCheckBios": "If the test wake fails, check the BIOS for “Wake on RTC” and enable “Allow wake timers” in the power options.",
+          "useMacOrWindows": "Use a Mac or a Windows PC to enable automatic wake."
+        },
         "wakeArm": "Activate wake-up",
         "wakeArmWord": {
           "idle": "Register the wake-up with the operating system now. May ask for an administrator password.",
@@ -745,6 +763,15 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Recording now",
     "noSchedule": "No recording scheduled",
+    "preflightCode": {
+      "ffmpegMissing": "The ffmpeg binary is missing. SundayRec must be installed again.",
+      "deviceMissing": "The audio device selected in settings is not connected.",
+      "folderNotWritable": "The save folder cannot be written to.",
+      "diskLow": "Only {gb} GB free on the save disk — perhaps not enough for a whole recording.",
+      "micDenied": "Microphone access has not been granted. Open System Settings → Privacy → Microphone.",
+      "cameraDenied": "Camera access has not been granted.",
+      "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress."
+    },
     "preflightErrors": {
       "one": "{n} error to fix before the recording",
       "other": "{n} errors to fix before the recording"
@@ -997,6 +1024,9 @@
     "errorStartTimeout": "The recording never got going — check that the microphone (and camera) are connected, and that SundayRec has access under System Settings → Privacy & Security",
     "errorEngineExited": "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and run Diagnose if it happens again.",
     "errorVideoCapture": "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again.",
+    "errorCameraFormat": "The camera does not support the chosen frame rate or resolution — pick another video setting and try again.",
+    "errorCameraPermission": "Camera access denied — open System Settings and give the app access to the camera",
+    "errorCameraBusy": "The camera is in use by another program — close it (Teams, Zoom) and try again",
     "errorMux": "Audio and video could not be combined — both raw files were kept in the save folder, so nothing is lost.",
     "qualityAlarm": "WARNING: The recording is missing audio — the file holds {m} of {e} seconds. Check the recording before trusting it.",
     "qualityReasons": "Cause: {r}",
@@ -1079,8 +1109,5 @@
     "deviceMissing": "The audio device “{device}” is not connected.",
     "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
     "trashManifestUnreadable": "The trash listing could not be read. The files are still there, but the app no longer knows where they came from."
-  },
-  "preflight": {
-    "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress."
   }
 }

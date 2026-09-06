@@ -103,7 +103,7 @@ recordingHistory: Array<RecordingTelemetry>,
  * Why the capture probe did not run, when it did not. `None` = it ran (and
  * [`Self::capture_ok`] carries the answer). Some situations make a probe
  * unsafe — a live recording owns the microphone — and saying WHY beats a
- * bare "ikke testet" that reads like an unfinished feature.
+ * bare "not tested" that reads like an unfinished feature.
  */
 captureProbeSkipped: string | null, 
 /**

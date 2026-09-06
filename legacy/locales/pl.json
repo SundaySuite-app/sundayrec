@@ -397,6 +397,24 @@
           "needsAdmin": "Ten komputer można wybudzić, ale za pierwszym razem zapyta o hasło administratora.",
           "unknown": "Jeszcze nie wiemy, czy ten komputer można wybudzić."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon nie może uruchomić się z całkowicie wyłączonego stanu — tylko z uśpienia.",
+          "macIntelManualPowerOn": "Mac z procesorem Intel może uruchomić się z wyłączonego stanu, ale musisz ręcznie włączyć „Uruchamianie lub wybudzanie” w Ustawieniach systemowych → Bateria.",
+          "winTimerDiesWithApp": "Wybudzanie ustawia SundayRec, dopóki program działa. Jeśli zamkniesz SundayRec całkowicie, timer wybudzania zniknie.",
+          "winS5NeedsBios": "Wybudzanie z całkowicie wyłączonego stanu (S5) wymaga włączenia „Wake on RTC from S5” w BIOS-ie — oprogramowanie nie może tego zrobić.",
+          "linuxUnsupported": "Linux nie jest obsługiwany przy automatycznym wybudzaniu z SundayRec.",
+          "platformUnsupported": "Ta platforma nie jest obsługiwana przy automatycznym wybudzaniu."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Zostaw komputer w trybie uśpienia (nie wyłączaj go) po przygotowaniach.",
+          "macDisableStandby": "Wyłącz głębokie uśpienie (standby) — może ono uniemożliwić wybudzenie komputera.",
+          "macStayPluggedIn": "Zasilanie sieciowe musi być podłączone — Mac nie wybudza się niezawodnie na baterii.",
+          "winKeepAppRunning": "Zostaw uruchomiony SundayRec — startuje automatycznie przy logowaniu i działa w zasobniku systemowym.",
+          "winSleepNotShutdown": "Uśpij komputer (Sleep/Hibernate) zamiast go wyłączać.",
+          "winStayPluggedIn": "Zasilanie sieciowe powinno być podłączone — wiele laptopów wyłącza timery wybudzania na baterii.",
+          "winCheckBios": "Jeśli testowe wybudzanie się nie powiedzie, sprawdź w BIOS-ie „Wake on RTC” i włącz „Zezwalaj na timery wybudzania” w opcjach zasilania.",
+          "useMacOrWindows": "Użyj komputera Mac lub Windows, aby włączyć automatyczne wybudzanie."
+        },
         "wakeArm": "Włącz wybudzanie",
         "wakeArmWord": {
           "idle": "Zarejestruj wybudzanie w systemie teraz. Może być potrzebne hasło administratora.",
@@ -751,6 +769,15 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Trwa nagrywanie",
     "noSchedule": "Brak zaplanowanego nagrania",
+    "preflightCode": {
+      "ffmpegMissing": "Brakuje pliku ffmpeg. Trzeba ponownie zainstalować SundayRec.",
+      "deviceMissing": "Urządzenie audio wybrane w ustawieniach nie jest podłączone.",
+      "folderNotWritable": "Nie można zapisywać w folderze zapisu.",
+      "diskLow": "Tylko {gb} GB wolnego miejsca na dysku zapisu — być może za mało na całe nagranie.",
+      "micDenied": "Nie przyznano dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność → Mikrofon.",
+      "cameraDenied": "Nie przyznano dostępu do kamery.",
+      "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie."
+    },
     "preflightErrors": {
       "one": "{n} błąd do naprawienia przed nagraniem",
       "few": "{n} błędy do naprawienia przed nagraniem",
@@ -1015,6 +1042,9 @@
     "errorStartTimeout": "Nagrywanie nie ruszyło na czas — sprawdź, czy mikrofon (i kamera) są podłączone i czy SundayRec ma dostęp w Ustawieniach systemowych → Prywatność i ochrona",
     "errorEngineExited": "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i uruchom Diagnostykę, jeśli to się powtórzy.",
     "errorVideoCapture": "Kamera nie dała obrazu — dźwięk został zapisany i jest w bibliotece. Sprawdź połączenie kamery, zanim znów nagrasz z wideo.",
+    "errorCameraFormat": "Kamera nie obsługuje wybranej liczby klatek lub rozdzielczości — wybierz inne ustawienie wideo i spróbuj ponownie.",
+    "errorCameraPermission": "Odmowa dostępu do kamery — otwórz Ustawienia systemowe i przyznaj aplikacji dostęp do kamery",
+    "errorCameraBusy": "Kamera jest używana przez inny program — zamknij go (Teams, Zoom) i spróbuj ponownie",
     "errorMux": "Nie udało się złożyć dźwięku i obrazu — oba pliki źródłowe zostały zachowane w folderze zapisu, więc nic nie zginęło.",
     "qualityAlarm": "UWAGA: W nagraniu brakuje dźwięku — plik zawiera {m} z {e} sekund. Sprawdź nagranie, zanim mu zaufasz.",
     "qualityReasons": "Przyczyna: {r}",
@@ -1101,8 +1131,5 @@
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
     "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
     "trashManifestUnreadable": "Nie udało się odczytać zawartości kosza. Pliki nadal tam są, ale aplikacja nie wie już, skąd pochodzą."
-  },
-  "preflight": {
-    "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie."
   }
 }

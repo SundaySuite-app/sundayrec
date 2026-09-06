@@ -160,7 +160,7 @@ pub struct DiagnosticsInput {
     /// Why the capture probe did not run, when it did not. `None` = it ran (and
     /// [`Self::capture_ok`] carries the answer). Some situations make a probe
     /// unsafe — a live recording owns the microphone — and saying WHY beats a
-    /// bare "ikke testet" that reads like an unfinished feature.
+    /// bare "not tested" that reads like an unfinished feature.
     #[serde(default)]
     pub capture_probe_skipped: Option<String>,
     /// Persisted panics found in `<app-data>/crashes/`. `None` when the ring
@@ -315,9 +315,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-FFMPEG-01",
             Critical,
-            "Opptaksmotor (ffmpeg) mangler",
-            "ffmpeg-binæren ble ikke funnet eller svarte ikke.",
-            "Reinstaller SundayRec — opptaksmotoren følger med appen.",
+            "Recording engine (ffmpeg) missing",
+            "The ffmpeg binary was not found, or did not answer.",
+            "Reinstall SundayRec — the recording engine ships with the app.",
         ));
     }
 
@@ -326,9 +326,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-AUDIO-01",
             Critical,
-            "Ingen lydenhet funnet",
-            "Verken Windows-lyd, ASIO eller ffmpeg fant en mikrofon/lydkort.",
-            "Sjekk at lydkortet er tilkoblet og driveren installert. På delt PC: er Windows Audio-tjenesten oppe?",
+            "No audio device found",
+            "Neither Windows audio, ASIO nor ffmpeg found a microphone/sound card.",
+            "Check that the sound card is connected and its driver installed. On a shared PC: is the Windows Audio service running?",
         ));
     } else if let Some(sel) = input.settings.device_name.as_deref() {
         // A device is selected but is nowhere in the enumerated lists.
@@ -341,9 +341,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             out.push(DiagnosticFinding::new(
                 "SR-AUDIO-02",
                 Warning,
-                "Valgt lydenhet ble ikke funnet",
-                format!("Innstillingen peker på «{sel}», men den er ikke blant enhetene nå."),
-                "Koble til enheten, eller velg en annen under Innstillinger → Lyd.",
+                "Selected audio device was not found",
+                format!("Settings point at \"{sel}\", but it is not among the devices right now."),
+                "Connect the device, or pick another one under Settings → Sound.",
             ));
         }
     }
@@ -353,9 +353,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-AUDIO-10",
             Info,
-            "Falt tilbake til DirectShow",
-            format!("Moderne lyd-motor (WASAPI/ASIO) startet ikke: {reason}"),
-            "Opptak fungerer fortsatt. Vil du tvinge moderne motor, sjekk driver/ASIO og at enheten ikke er opptatt.",
+            "Fell back to DirectShow",
+            format!("The modern audio engine (WASAPI/ASIO) did not start: {reason}"),
+            "Recording still works. To force the modern engine, check the driver/ASIO and that the device is not busy.",
         ));
     }
 
@@ -366,12 +366,12 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-RATE-01",
             Info,
-            "Fast samplingsrate er valgt",
+            "A fixed sample rate is selected",
             format!(
-                "Innstillingen tvinger {} (ikke «Auto»).",
+                "Settings force {} (not \"Auto\").",
                 rate_label(&input.settings.sample_rate_mode)
             ),
-            "Hvis lydkortet kjører en annen rate, resampler ffmpeg og du kan få hakking. Velg «Auto» under Innstillinger → Lyd med mindre du har en konkret grunn.",
+            "If the sound card runs a different rate, ffmpeg resamples and you may get stutter. Pick \"Auto\" under Settings → Sound unless you have a concrete reason.",
         ));
     }
 
@@ -380,9 +380,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-VIDEO-01",
             Warning,
-            "Video er på, men ingen kamera funnet",
-            "Videoopptak er aktivert, men ingen kameraenhet ble enumerert.",
-            "Koble til kameraet, eller slå av video under Innstillinger.",
+            "Video is on, but no camera was found",
+            "Video recording is enabled, but no camera device was enumerated.",
+            "Connect the camera, or turn video off under Settings.",
         ));
     }
 
@@ -392,9 +392,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             out.push(DiagnosticFinding::new(
                 "SR-DISK-01",
                 Warning,
-                "Lite ledig diskplass",
-                format!("{} ledig på lagringsstedet.", fmt_bytes(free)),
-                "Frigjør plass eller velg en annen lagringsmappe før et langt opptak.",
+                "Low free disk space",
+                format!("{} free where recordings are saved.", fmt_bytes(free)),
+                "Free up space, or pick another save folder before a long recording.",
             ));
         }
     }
@@ -402,9 +402,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-DISK-02",
             Critical,
-            "Kan ikke skrive til lagringsmappen",
-            "Lagringsmappen er ikke skrivbar.",
-            "Velg en mappe du har skrivetilgang til under Innstillinger → Lagring.",
+            "Cannot write to the save folder",
+            "The save folder is not writable.",
+            "Pick a folder you have write access to under Settings → Storage.",
         ));
     }
 
@@ -413,18 +413,18 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-PERM-01",
             Critical,
-            "Mikrofontilgang er nektet",
-            "Operativsystemet blokkerer mikrofontilgang for SundayRec.",
-            "Gi tilgang i Systeminnstillinger → Personvern → Mikrofon, og start appen på nytt.",
+            "Microphone access is denied",
+            "The operating system is blocking microphone access for SundayRec.",
+            "Grant access in System Settings → Privacy → Microphone, then restart the app.",
         ));
     }
     if input.settings.video_enabled && input.camera_permission.as_deref() == Some("denied") {
         out.push(DiagnosticFinding::new(
             "SR-PERM-02",
             Critical,
-            "Kameratilgang er nektet",
-            "Operativsystemet blokkerer kameratilgang for SundayRec.",
-            "Gi tilgang i Systeminnstillinger → Personvern → Kamera, og start appen på nytt.",
+            "Camera access is denied",
+            "The operating system is blocking camera access for SundayRec.",
+            "Grant access in System Settings → Privacy → Camera, then restart the app.",
         ));
     }
 
@@ -433,9 +433,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-ENGINE-01",
             Warning,
-            "Forrige opptak endte med en feil",
+            "The previous recording ended with an error",
             format!("[{}] {} ({})", err.code, err.message, err.timestamp),
-            "Se feilkoden over. Kjør en test-opptak for å bekrefte at det fungerer nå.",
+            "See the error code above. Run a test recording to confirm it works now.",
         ));
     }
 
@@ -449,34 +449,34 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             out.push(DiagnosticFinding::new(
                 "REC-LOSS",
                 Critical,
-                "Forrige opptak MANGLER lyd",
+                "The previous recording is MISSING audio",
                 format!(
-                    "Forventet ~{:.0} s, fila inneholder {:.0} s — {:.1} % av lyden mangler.",
+                    "Expected ~{:.0} s, the file holds {:.0} s — {:.1} % of the audio is missing.",
                     t.expected_sec, t.measured_sec, t.loss_pct
                 ),
-                "Dette er alvorlig: opptaksprosessen mistet samples underveis. Lukk andre tunge programmer, koble lydkortet direkte (ikke via hub), og meld fra med denne rapporten — tallene her er beviset feilsøkingen trenger.",
+                "This is serious: the capture process lost samples along the way. Close other heavy programs, connect the sound card directly (not through a hub), and report this with the report attached — the numbers here are the evidence troubleshooting needs.",
             ));
         }
         if t.is_degraded() {
             let mut bits: Vec<String> = Vec::new();
             if t.drops > 0 {
-                bits.push(format!("{} dropp", t.drops));
+                bits.push(format!("{} drops", t.drops));
             }
             if t.xruns > 0 {
                 bits.push(format!("{} xruns", t.xruns));
             }
             if t.capture_drop_lines > 0 {
-                bits.push(format!("{} capture-dropp-varsler", t.capture_drop_lines));
+                bits.push(format!("{} capture-drop warnings", t.capture_drop_lines));
             }
             if t.levels_dropped > 0 {
-                bits.push(format!("{} IPC-overbelastninger", t.levels_dropped));
+                bits.push(format!("{} IPC overloads", t.levels_dropped));
             }
             out.push(DiagnosticFinding::new(
                 "SR-CAPTURE-01",
                 Warning,
-                "Forrige opptak viste tegn til hakking/treghet",
-                format!("{} (varighet {:.0} s).", bits.join(", "), t.duration_sec),
-                "Lukk andre tunge programmer, sjekk USB-kabel/strøm til lydkortet, og at samplingsrate står på «Auto». Kjør så et nytt opptak og sjekk om tallene faller.",
+                "The previous recording showed signs of stutter/lag",
+                format!("{} (duration {:.0} s).", bits.join(", "), t.duration_sec),
+                "Close other heavy programs, check the USB cable/power to the sound card, and that the sample rate is on \"Auto\". Then run a new recording and see whether the numbers drop.",
             ));
         }
     }
@@ -491,18 +491,18 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-CAPTURE-02",
             Critical,
-            "Testopptaket fikk ingen lyd",
-            "En kort prøve mot den valgte lydenheten ga ingen lyd i det hele tatt.",
-            "Sjekk at riktig enhet er valgt under Innstillinger → Lyd, at kabelen sitter i, og at ingen andre programmer holder mikrofonen. Kjør Diagnose på nytt etterpå.",
+            "The test recording got no sound",
+            "A short probe against the selected audio device produced no sound at all.",
+            "Check that the right device is selected under Settings → Sound, that the cable is in, and that no other program is holding the microphone. Then run Diagnose again.",
         ));
     }
     if input.settings.video_enabled && input.video_ok == Some(false) {
         out.push(DiagnosticFinding::new(
             "SR-VIDEO-02",
             Critical,
-            "Kameraet ga ingen bilde",
-            "Video er på, men en kort prøve mot kameraet ga ingen bilderamme.",
-            "Sjekk at kameraet er tilkoblet og ikke i bruk av et annet program (Teams, Zoom), og at appen har kameratilgang.",
+            "The camera gave no picture",
+            "Video is on, but a short probe against the camera produced no video frame.",
+            "Check that the camera is connected and not in use by another program (Teams, Zoom), and that the app has camera access.",
         ));
     }
 
@@ -510,21 +510,21 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
     // when everything is fine right now.
     if let Some(c) = &input.crashes {
         if c.count > 0 {
-            let when = c.newest.as_deref().unwrap_or("ukjent tidspunkt");
+            let when = c.newest.as_deref().unwrap_or("an unknown time");
             let what = c
                 .newest_message
                 .as_deref()
-                .map(|m| format!(" Siste: {m}"))
+                .map(|m| format!(" Latest: {m}"))
                 .unwrap_or_default();
             out.push(DiagnosticFinding::new(
                 "SR-CRASH-01",
                 Warning,
-                "Appen har krasjet",
+                "The app has crashed",
                 format!(
-                    "{} krasjrapport(er) ligger lagret; den nyeste er fra {when}.{what}",
+                    "{} crash report(s) are stored; the newest is from {when}.{what}",
                     c.count
                 ),
-                "Send denne rapporten videre — krasjfilene ligger i app-mappen og er det som gjør feilen mulig å finne.",
+                "Pass this report on — the crash files live in the app folder and are what makes the fault findable.",
             ));
         }
     }
@@ -533,21 +533,21 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
     // the NAMES are what turn "it feels flaky" into something actionable.
     if let Some(r) = &input.task_restarts {
         if r.count > 0 {
-            let when = r.newest.as_deref().unwrap_or("ukjent tidspunkt");
+            let when = r.newest.as_deref().unwrap_or("an unknown time");
             out.push(DiagnosticFinding::new(
                 "SR-TASK-01",
                 Warning,
-                "Bakgrunnsoppgaver har måttet startes på nytt",
+                "Background tasks have had to be restarted",
                 format!(
-                    "{} omstart(er), sist {when}. Berørt: {}.",
+                    "{} restart(s), most recently {when}. Affected: {}.",
                     r.count,
                     if r.tasks.is_empty() {
-                        "ukjent".to_string()
+                        "unknown".to_string()
                     } else {
                         r.tasks.join(", ")
                     }
                 ),
-                "Appen startet dem automatisk igjen, så ingenting stoppet. Men gjentar det seg, ta med denne rapporten — navnene over sier hvilken del som er ustabil.",
+                "The app restarted them automatically, so nothing stopped. But if it repeats, bring this report — the names above say which part is unstable.",
             ));
         }
     }
@@ -558,20 +558,20 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         Some(l) if l.dropped_lines > 0 => out.push(DiagnosticFinding::new(
             "SR-LOG-02",
             Info,
-            "Deler av loggen mangler",
+            "Parts of the log are missing",
             format!(
-                "{} loggmeldinger ble forkastet fordi disken ikke holdt følge.",
+                "{} log messages were discarded because the disk could not keep up.",
                 l.dropped_lines
             ),
-            "Loggen er ufullstendig, men opptaket ble prioritert — det er riktig vei rundt. En treg disk er verdt å se på før neste lange opptak.",
+            "The log is incomplete, but the recording was given priority — that is the right way round. A slow disk is worth looking at before the next long recording.",
         )),
         Some(_) => {}
         None => out.push(DiagnosticFinding::new(
             "SR-LOG-01",
             Info,
-            "Loggfil er ikke aktiv",
-            "Denne økten skriver ingen loggfil, så det finnes ingen historikk å sende inn hvis noe skjærer seg.",
-            "Vanligvis betyr det at app-mappen ikke kunne opprettes. Start appen på nytt; vedvarer det, sjekk diskplass og rettigheter.",
+            "The log file is not active",
+            "This session writes no log file, so there is no history to submit if something goes wrong.",
+            "Usually this means the app folder could not be created. Restart the app; if it persists, check disk space and permissions.",
         )),
     }
 
@@ -580,9 +580,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         out.push(DiagnosticFinding::new(
             "SR-OK",
             Ok,
-            "Ingen problemer oppdaget",
-            "Alle sjekker passerte.",
-            "Du er klar til å ta opp.",
+            "No problems detected",
+            "All checks passed.",
+            "You are ready to record.",
         ));
     }
     out
@@ -614,23 +614,29 @@ fn fmt_bytes(bytes: u64) -> String {
 fn render_test(ok: Option<bool>) -> &'static str {
     match ok {
         Some(true) => "✅ OK",
-        Some(false) => "❌ Feil",
-        None => "ikke testet",
+        Some(false) => "❌ Failed",
+        None => "not tested",
     }
 }
 
 /// Build the diagnostics markdown report from the gathered facts. Pure and
 /// deterministic — the same input always yields the same string. Sections:
-/// System, ffmpeg, Enheter (devices), Innstillinger (settings), Capture-test.
+/// System, ffmpeg, Devices, Settings, Capture test.
+///
+/// ENGLISH, on purpose (F2-I18N-R2). This is not a UI surface the app can
+/// localise: it is one long support artefact the volunteer copies into an
+/// e-mail, and the person on the other end is whoever maintains the app. A
+/// report the reader cannot read is worse than an untranslated one — see the
+/// module docs' rule that Rust prose is a reserve, never the app's own voice.
 pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     let mut lines: Vec<String> = Vec::new();
 
     lines.push("# SundayRec Diagnostics".to_string());
     lines.push(String::new());
 
-    // ── Funn (feilkoder) — the actionable summary FIRST ───────────────────────
+    // ── Findings (error codes) — the actionable summary FIRST ─────────────────
     let findings = detect_issues(&input);
-    lines.push("## Funn".to_string());
+    lines.push("## Findings".to_string());
     for f in &findings {
         let badge = match f.severity {
             DiagnosticSeverity::Ok => "✅",
@@ -650,35 +656,35 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
 
     // ── System ──────────────────────────────────────────────────────────────
     lines.push("## System".to_string());
-    lines.push(format!("- **App-versjon:** {}", input.app_version));
+    lines.push(format!("- **App version:** {}", input.app_version));
     lines.push(format!(
-        "- **Plattform:** {} ({})",
+        "- **Platform:** {} ({})",
         input.platform, input.arch
     ));
     if let Some(active) = input.orphan_guard_active {
         lines.push(format!(
-            "- **Orphan-guard (Job Object / reaper):** {}",
-            if active { "aktiv" } else { "ikke aktiv" }
+            "- **Orphan guard (Job Object / reaper):** {}",
+            if active { "active" } else { "not active" }
         ));
     }
     // F1-M5: one line so a support report shows whether this install is
     // actually running WAL, not just what the source code says it should do.
     lines.push(format!(
         "- **Database (journal_mode / busy_timeout):** {} / {}",
-        input.db_journal_mode.as_deref().unwrap_or("ukjent"),
+        input.db_journal_mode.as_deref().unwrap_or("unknown"),
         input
             .db_busy_timeout_ms
             .map(|ms| format!("{ms} ms"))
-            .unwrap_or_else(|| "ukjent".to_string())
+            .unwrap_or_else(|| "unknown".to_string())
     ));
     lines.push(String::new());
 
-    // ── Lyd-motor ─────────────────────────────────────────────────────────────
+    // ── Audio engine ──────────────────────────────────────────────────────────
     if input.audio_engine.is_some() || input.audio_engine_fallback.is_some() {
-        lines.push("## Lyd-motor".to_string());
+        lines.push("## Audio engine".to_string());
         lines.push(format!(
-            "- **Sist brukt:** {}",
-            input.audio_engine.as_deref().unwrap_or("ukjent")
+            "- **Last used:** {}",
+            input.audio_engine.as_deref().unwrap_or("unknown")
         ));
         if let Some(reason) = &input.audio_engine_fallback {
             lines.push(format!("- **Fallback:** {reason}"));
@@ -689,30 +695,30 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     // ── ffmpeg ──────────────────────────────────────────────────────────────
     lines.push("## ffmpeg".to_string());
     match &input.ffmpeg_version {
-        Some(v) => lines.push(format!("- **Versjon:** {v}")),
-        None => lines.push("- **Versjon:** ikke funnet".to_string()),
+        Some(v) => lines.push(format!("- **Version:** {v}")),
+        None => lines.push("- **Version:** not found".to_string()),
     }
     lines.push(String::new());
 
-    // ── Enheter ─────────────────────────────────────────────────────────────
-    lines.push("## Enheter".to_string());
-    lines.push(format!("### Lydenheter ({})", input.audio_devices.len()));
+    // ── Devices ─────────────────────────────────────────────────────────────
+    lines.push("## Devices".to_string());
+    lines.push(format!("### Audio devices ({})", input.audio_devices.len()));
     if input.audio_devices.is_empty() {
-        lines.push("_Ingen funnet_".to_string());
+        lines.push("_None found_".to_string());
     } else {
         for d in &input.audio_devices {
             lines.push(format!("- `{d}`"));
         }
     }
     if !input.asio_devices.is_empty() {
-        lines.push(format!("### ASIO-enheter ({})", input.asio_devices.len()));
+        lines.push(format!("### ASIO devices ({})", input.asio_devices.len()));
         for d in &input.asio_devices {
             lines.push(format!("- `{d}`"));
         }
     }
-    lines.push(format!("### Videoenheter ({})", input.video_devices.len()));
+    lines.push(format!("### Video devices ({})", input.video_devices.len()));
     if input.video_devices.is_empty() {
-        lines.push("_Ingen funnet_".to_string());
+        lines.push("_None found_".to_string());
     } else {
         for d in &input.video_devices {
             lines.push(format!("- `{d}`"));
@@ -720,65 +726,65 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     }
     lines.push(String::new());
 
-    // ── Lagring ───────────────────────────────────────────────────────────────
-    lines.push("## Lagring".to_string());
+    // ── Storage ───────────────────────────────────────────────────────────────
+    lines.push("## Storage".to_string());
     match input.free_disk_bytes {
-        Some(free) => lines.push(format!("- **Ledig plass:** {}", fmt_bytes(free))),
-        None => lines.push("- **Ledig plass:** ukjent".to_string()),
+        Some(free) => lines.push(format!("- **Free space:** {}", fmt_bytes(free))),
+        None => lines.push("- **Free space:** unknown".to_string()),
     }
     if let Some(w) = input.save_folder_writable {
         lines.push(format!(
-            "- **Skrivbar mappe:** {}",
-            if w { "ja" } else { "NEI" }
+            "- **Writable folder:** {}",
+            if w { "yes" } else { "NO" }
         ));
     }
     lines.push(String::new());
 
-    // ── Tilganger ─────────────────────────────────────────────────────────────
+    // ── Permissions ───────────────────────────────────────────────────────────
     if input.mic_permission.is_some() || input.camera_permission.is_some() {
-        lines.push("## Tilganger".to_string());
+        lines.push("## Permissions".to_string());
         if let Some(m) = &input.mic_permission {
-            lines.push(format!("- **Mikrofon:** {m}"));
+            lines.push(format!("- **Microphone:** {m}"));
         }
         if let Some(c) = &input.camera_permission {
-            lines.push(format!("- **Kamera:** {c}"));
+            lines.push(format!("- **Camera:** {c}"));
         }
         lines.push(String::new());
     }
 
-    // ── Siste feil ────────────────────────────────────────────────────────────
+    // ── Last error ────────────────────────────────────────────────────────────
     if let Some(err) = &input.last_error {
-        lines.push("## Siste opptaksfeil".to_string());
-        lines.push(format!("- **Kode:** `{}`", err.code));
-        lines.push(format!("- **Melding:** {}", err.message));
-        lines.push(format!("- **Tidspunkt:** {}", err.timestamp));
+        lines.push("## Last recording error".to_string());
+        lines.push(format!("- **Code:** `{}`", err.code));
+        lines.push(format!("- **Message:** {}", err.message));
+        lines.push(format!("- **Time:** {}", err.timestamp));
         lines.push(String::new());
     }
 
-    // ── Siste opptak (helse-telemetri, automatisk innsamlet) ────────────────
+    // ── Last recording (health telemetry, gathered automatically) ────────────
     if let Some(t) = &input.last_recording {
-        lines.push("## Siste opptak (teknisk)".to_string());
-        lines.push(format!("- **Varighet:** {:.0} s", t.duration_sec));
-        lines.push(format!("- **Dropp (frames):** {}", t.drops));
-        lines.push(format!("- **xruns/diskontinuitet:** {}", t.xruns));
+        lines.push("## Last recording (technical)".to_string());
+        lines.push(format!("- **Duration:** {:.0} s", t.duration_sec));
+        lines.push(format!("- **Drops (frames):** {}", t.drops));
+        lines.push(format!("- **xruns/discontinuities:** {}", t.xruns));
         lines.push(format!(
-            "- **IPC-overbelastning (tapte nivå-oppdateringer):** {}",
+            "- **IPC overload (lost level updates):** {}",
             t.levels_dropped
         ));
         lines.push(format!(
-            "- **Avsluttet rent:** {}",
-            if t.exit_ok { "ja" } else { "nei" }
+            "- **Exited cleanly:** {}",
+            if t.exit_ok { "yes" } else { "no" }
         ));
         if !t.timestamp.is_empty() {
-            lines.push(format!("- **Tidspunkt:** {}", t.timestamp));
+            lines.push(format!("- **Time:** {}", t.timestamp));
         }
         // Trend across recent recordings (newest first) so a pattern is visible.
         if input.recording_history.len() > 1 {
-            lines.push("### Trend (nyeste først)".to_string());
+            lines.push("### Trend (newest first)".to_string());
             for h in input.recording_history.iter().rev().take(5) {
                 let badge = if h.is_degraded() { "⚠️" } else { "✅" };
                 lines.push(format!(
-                    "- {badge} {} — dropp {}, xruns {}, ipc {} ({:.0} s)",
+                    "- {badge} {} — drops {}, xruns {}, ipc {} ({:.0} s)",
                     h.timestamp, h.drops, h.xruns, h.levels_dropped, h.duration_sec
                 ));
             }
@@ -786,62 +792,62 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
         lines.push(String::new());
     }
 
-    // ── Capture-test ────────────────────────────────────────────────────────
-    lines.push("## Capture-test".to_string());
-    lines.push(format!("- **Lyd:** {}", render_test(input.capture_ok)));
+    // ── Capture test ────────────────────────────────────────────────────────
+    lines.push("## Capture test".to_string());
+    lines.push(format!("- **Audio:** {}", render_test(input.capture_ok)));
     lines.push(format!("- **Video:** {}", render_test(input.video_ok)));
     if let Some(reason) = &input.capture_probe_skipped {
-        // "ikke testet" with no reason reads like an unfinished feature — which
+        // "not tested" with no reason reads like an unfinished feature — which
         // for four phases it was. Say WHY instead.
-        lines.push(format!("- **Ikke kjørt fordi:** {reason}"));
+        lines.push(format!("- **Not run because:** {reason}"));
     }
     lines.push(String::new());
 
-    // ── Stabilitet (E2 observability) ────────────────────────────────────────
-    lines.push("## Stabilitet".to_string());
+    // ── Stability (E2 observability) ─────────────────────────────────────────
+    lines.push("## Stability".to_string());
     match &input.crashes {
         Some(c) if c.count > 0 => {
-            lines.push(format!("- **Krasjrapporter:** {}", c.count));
+            lines.push(format!("- **Crash reports:** {}", c.count));
             if let Some(when) = &c.newest {
-                lines.push(format!("  - nyeste: {when}"));
+                lines.push(format!("  - newest: {when}"));
             }
             if let Some(msg) = &c.newest_message {
                 lines.push(format!("  - `{msg}`"));
             }
         }
-        Some(_) => lines.push("- **Krasjrapporter:** ingen".to_string()),
-        None => lines.push("- **Krasjrapporter:** ukjent (kunne ikke leses)".to_string()),
+        Some(_) => lines.push("- **Crash reports:** none".to_string()),
+        None => lines.push("- **Crash reports:** unknown (could not be read)".to_string()),
     }
     match &input.task_restarts {
         Some(r) if r.count > 0 => {
             lines.push(format!(
-                "- **Omstarter av bakgrunnsoppgaver:** {} ({})",
+                "- **Background task restarts:** {} ({})",
                 r.count,
                 r.tasks.join(", ")
             ));
             if let Some(when) = &r.newest {
-                lines.push(format!("  - nyeste: {when}"));
+                lines.push(format!("  - newest: {when}"));
             }
         }
-        Some(_) => lines.push("- **Omstarter av bakgrunnsoppgaver:** ingen".to_string()),
-        None => lines.push("- **Omstarter av bakgrunnsoppgaver:** ukjent".to_string()),
+        Some(_) => lines.push("- **Background task restarts:** none".to_string()),
+        None => lines.push("- **Background task restarts:** unknown".to_string()),
     }
     match &input.log_file {
         Some(l) => {
-            lines.push(format!("- **Loggfil:** `{}`", l.path));
+            lines.push(format!("- **Log file:** `{}`", l.path));
             if let Some(size) = l.size_bytes {
-                lines.push(format!("  - størrelse: {}", fmt_bytes(size)));
+                lines.push(format!("  - size: {}", fmt_bytes(size)));
             }
             if l.dropped_lines > 0 {
-                lines.push(format!("  - forkastede linjer: {}", l.dropped_lines));
+                lines.push(format!("  - discarded lines: {}", l.dropped_lines));
             }
         }
-        None => lines.push("- **Loggfil:** ikke aktiv".to_string()),
+        None => lines.push("- **Log file:** not active".to_string()),
     }
     lines.push(String::new());
 
-    // ── Innstillinger (non-secret) ──────────────────────────────────────────
-    lines.push("## Innstillinger (unntatt passord/e-post)".to_string());
+    // ── Settings (non-secret) ───────────────────────────────────────────────
+    lines.push("## Settings (excluding password/e-mail)".to_string());
     lines.push("```json".to_string());
     // Pretty JSON of the summary — never contains secrets (type has no field).
     let json = serde_json::to_string_pretty(&input.settings).unwrap_or_else(|_| "{}".to_string());
@@ -850,7 +856,7 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
 
     lines.push(String::new());
     lines.push("---".to_string());
-    lines.push("_Generert av SundayRec Diagnostics_".to_string());
+    lines.push("_Generated by SundayRec Diagnostics_".to_string());
 
     lines.join("\n")
 }
@@ -888,7 +894,7 @@ mod tests {
     #[test]
     fn report_includes_version_platform_and_ffmpeg_line() {
         let md = build_report_markdown(sample_input());
-        assert!(md.contains("**App-versjon:** 0.1.0"));
+        assert!(md.contains("**App version:** 0.1.0"));
         assert!(md.contains("macos (aarch64)"));
         assert!(md.contains("ffmpeg version 6.0"));
     }
@@ -909,7 +915,7 @@ mod tests {
         // `sample_input()` leaves both fields at the `Default` (`None`) — the
         // line must still appear, honestly, rather than being silently omitted.
         let md = build_report_markdown(sample_input());
-        assert!(md.contains("**Database (journal_mode / busy_timeout):** ukjent / ukjent"));
+        assert!(md.contains("**Database (journal_mode / busy_timeout):** unknown / unknown"));
     }
 
     #[test]
@@ -993,7 +999,7 @@ mod tests {
             .iter()
             .any(|x| x.code == "SR-ENGINE-01"));
         let md = build_report_markdown(input);
-        assert!(md.contains("Siste opptaksfeil"));
+        assert!(md.contains("Last recording error"));
         assert!(md.contains("device_disconnected"));
     }
 
@@ -1002,7 +1008,7 @@ mod tests {
         let mut input = sample_input();
         input.ffmpeg_version = None;
         let md = build_report_markdown(input);
-        assert!(md.contains("## Funn"));
+        assert!(md.contains("## Findings"));
         assert!(md.contains("SR-FFMPEG-01"));
     }
 
@@ -1011,8 +1017,8 @@ mod tests {
         let md = build_report_markdown(sample_input());
         assert!(md.contains("MacBook Pro-mikrofon"));
         assert!(md.contains("FaceTime HD Camera"));
-        assert!(md.contains("Lydenheter (1)"));
-        assert!(md.contains("Videoenheter (1)"));
+        assert!(md.contains("Audio devices (1)"));
+        assert!(md.contains("Video devices (1)"));
     }
 
     #[test]
@@ -1021,8 +1027,8 @@ mod tests {
         input.audio_devices.clear();
         input.video_devices.clear();
         let md = build_report_markdown(input);
-        assert!(md.contains("Lydenheter (0)"));
-        assert!(md.contains("_Ingen funnet_"));
+        assert!(md.contains("Audio devices (0)"));
+        assert!(md.contains("_None found_"));
     }
 
     #[test]
@@ -1030,24 +1036,24 @@ mod tests {
         let mut input = sample_input();
         input.ffmpeg_version = None;
         let md = build_report_markdown(input);
-        assert!(md.contains("**Versjon:** ikke funnet"));
+        assert!(md.contains("**Version:** not found"));
         assert!(!md.contains("ffmpeg version"));
     }
 
     #[test]
     fn capture_tristate_renders_correctly() {
-        // None → "ikke testet"
+        // None → "not tested"
         let md_none = build_report_markdown(sample_input());
-        assert!(md_none.contains("**Lyd:** ikke testet"));
-        assert!(md_none.contains("**Video:** ikke testet"));
+        assert!(md_none.contains("**Audio:** not tested"));
+        assert!(md_none.contains("**Video:** not tested"));
 
         // Some(true) → OK, Some(false) → Feil
         let mut ok = sample_input();
         ok.capture_ok = Some(true);
         ok.video_ok = Some(false);
         let md = build_report_markdown(ok);
-        assert!(md.contains("**Lyd:** ✅ OK"));
-        assert!(md.contains("**Video:** ❌ Feil"));
+        assert!(md.contains("**Audio:** ✅ OK"));
+        assert!(md.contains("**Video:** ❌ Failed"));
     }
 
     #[test]
@@ -1104,8 +1110,8 @@ mod tests {
             .iter()
             .any(|x| x.code == "SR-CAPTURE-01" && x.severity == DiagnosticSeverity::Warning));
         let md = build_report_markdown(input);
-        assert!(md.contains("Siste opptak (teknisk)"));
-        assert!(md.contains("IPC-overbelastning"));
+        assert!(md.contains("Last recording (technical)"));
+        assert!(md.contains("IPC overload"));
     }
 
     #[test]
@@ -1182,10 +1188,13 @@ mod tests {
     #[test]
     fn a_skipped_probe_says_why_instead_of_a_bare_not_tested() {
         let mut input = sample_input();
-        input.capture_probe_skipped = Some("et opptak pågår".to_string());
+        input.capture_probe_skipped = Some("a recording is in progress".to_string());
         let md = build_report_markdown(input);
-        assert!(md.contains("**Lyd:** ikke testet"));
-        assert!(md.contains("Ikke kjørt fordi:** et opptak pågår"), "{md}");
+        assert!(md.contains("**Audio:** not tested"));
+        assert!(
+            md.contains("Not run because:** a recording is in progress"),
+            "{md}"
+        );
     }
 
     #[test]
@@ -1210,8 +1219,8 @@ mod tests {
         assert!(e.detail.contains("Option::unwrap"), "{}", e.detail);
 
         let md = build_report_markdown(input);
-        assert!(md.contains("## Stabilitet"));
-        assert!(md.contains("**Krasjrapporter:** 3"));
+        assert!(md.contains("## Stability"));
+        assert!(md.contains("**Crash reports:** 3"));
     }
 
     #[test]
@@ -1221,13 +1230,13 @@ mod tests {
         assert!(!detect_issues(&sample_input())
             .iter()
             .any(|x| x.code == "SR-CRASH-01"));
-        assert!(build_report_markdown(sample_input()).contains("**Krasjrapporter:** ingen"));
+        assert!(build_report_markdown(sample_input()).contains("**Crash reports:** none"));
 
         // Unreadable is NOT the same as none, and the report must not pretend.
         let mut unknown = sample_input();
         unknown.crashes = None;
         let md = build_report_markdown(unknown);
-        assert!(md.contains("**Krasjrapporter:** ukjent"), "{md}");
+        assert!(md.contains("**Crash reports:** unknown"), "{md}");
     }
 
     #[test]
@@ -1248,7 +1257,7 @@ mod tests {
         assert_eq!(e.severity, DiagnosticSeverity::Warning);
         assert!(e.detail.contains("11"), "{}", e.detail);
         assert!(e.detail.contains("scheduler::supervisor"), "{}", e.detail);
-        assert!(build_report_markdown(input).contains("Omstarter av bakgrunnsoppgaver:** 11"));
+        assert!(build_report_markdown(input).contains("Background task restarts:** 11"));
     }
 
     #[test]
@@ -1260,7 +1269,7 @@ mod tests {
         assert!(f
             .iter()
             .any(|x| x.code == "SR-LOG-01" && x.severity == DiagnosticSeverity::Info));
-        assert!(build_report_markdown(none).contains("**Loggfil:** ikke aktiv"));
+        assert!(build_report_markdown(none).contains("**Log file:** not active"));
 
         // A log with dropped lines is present but INCOMPLETE — anyone reading
         // it needs to know that, and it is a different code.
@@ -1273,7 +1282,7 @@ mod tests {
         let f = detect_issues(&lossy);
         assert!(f.iter().any(|x| x.code == "SR-LOG-02"));
         assert!(!f.iter().any(|x| x.code == "SR-LOG-01"));
-        assert!(build_report_markdown(lossy).contains("forkastede linjer: 42"));
+        assert!(build_report_markdown(lossy).contains("discarded lines: 42"));
     }
 
     #[test]

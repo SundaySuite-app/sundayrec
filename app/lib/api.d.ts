@@ -224,13 +224,16 @@ declare global {
       getLaunchAtLogin?: () => Promise<boolean>;
       /** Trackpad haptic tap (macOS Force Touch); a silent no-op elsewhere. */
       hapticPerform?: (pattern: string) => Promise<void>;
+      /** F2-I18N-R2: de to listene er KODER, ikke setninger — bindingene er
+       *  fasiten, og typen her peker på dem så en ny kode i Rust ikke kan bli
+       *  en `string` skallet aldri oversetter. */
       wakeDetectCapabilities: () => Promise<{
         platform: "mac-arm" | "mac-intel" | "win" | "linux" | "other";
         canWakeFromSleep: boolean;
         canWakeFromOff: boolean;
         needsAdmin: boolean;
-        knownIssues: string[];
-        recommendations: string[];
+        knownIssues: import("../../legacy/bindings/WakeIssue").WakeIssue[];
+        recommendations: import("../../legacy/bindings/WakeRecommendation").WakeRecommendation[];
       }>;
       /**
        * (Re)register the OS wake timers for the coming schedule, NOW. User-

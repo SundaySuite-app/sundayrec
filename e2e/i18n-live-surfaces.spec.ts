@@ -135,3 +135,116 @@ test.describe("notify toggles persist", () => {
     );
   });
 });
+
+// ── Motorens KODER blir katalogens setninger (F2-I18N-R2) ────────────────────
+//
+// Runden tok norsk prosa ut av Rust og satte stabile koder i stedet. De to
+// flatene under er de eneste NYE oppslagene som ble laget, og de er begge
+// «bakenden svarer med en kode, katalogen svarer med setningen»:
+//
+//   • `wake_capabilities` → `app.setup.advanced.wakeIssue|wakeAdvice`
+//   • `run_preflight`     → `status.preflightCode` (med `{gb}` interpolert)
+//
+// Begge testes med et SPRÅKBYTTE MIDT I, og det er ikke pynt: dette er filas
+// egen påstand, og for forhåndssjekken er det dessuten fiksen fra sammen-
+// flettingen med F2-W9 — den oversatte ved MOTTAK, som fryser språket funnet
+// hadde da det kom inn.
+
+test.describe("engine codes render as catalogue sentences", () => {
+  test("wake_capabilities' codes become the platform's limits and advice, in both languages", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        wake_failure_history: [],
+        // A Windows machine: two limits, four recommendations. Codes, not
+        // sentences — a sentence here would pass this test while proving
+        // nothing about the lookup.
+        wake_capabilities: {
+          platform: "win",
+          canWakeFromSleep: true,
+          canWakeFromOff: false,
+          needsAdmin: false,
+          knownIssues: ["winTimerDiesWithApp", "winS5NeedsBios"],
+          recommendations: [
+            "winKeepAppRunning",
+            "winSleepNotShutdown",
+            "winStayPluggedIn",
+            "winCheckBios",
+          ],
+        },
+      },
+      settings: { ...SETTLED_SETTINGS, language: "no" },
+      goto: "settings:general",
+    });
+
+    const notes = page.getByTestId("adv-wake-notes");
+    await expect(notes).toBeVisible();
+    await expect(notes.locator("li")).toHaveCount(6);
+    // Katalogens norske setning — ikke motorens engelske reserve, som aldri
+    // krysser IPC-en i det hele tatt.
+    await expect(notes).toContainText("forsvinner vekketimeren");
+    await expect(notes).toContainText("«Wake on RTC from S5»");
+    await expect(notes).toContainText("ligger i systemkurven");
+    // MUTASJONSPRØVEN: bytt `tDyn(…wakeIssue, code)` mot `code`, og denne blir
+    // rød — rå-koder på skjermen er nøyaktig det oppslaget finnes for å unngå.
+    await expect(notes).not.toContainText("winS5NeedsBios");
+
+    await page.getByTestId("church-language-control-input").selectOption("en");
+
+    await expect(notes).toContainText("the wake timer goes with it");
+    await expect(notes).toContainText("“Wake on RTC from S5”");
+    await expect(notes).toContainText("sits in the system tray");
+    await expect(notes).not.toContainText("vekketimeren");
+  });
+
+  test("a coded preflight finding interpolates its number and follows a language switch", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        media_permissions: { microphone: "authorized", camera: "authorized" },
+        ffmpeg_health: { available: true, version: "7.1", path: "/x/ffmpeg" },
+        // ⚠️ `run_preflight` svarer med `Vec<PreflightFinding>` DIREKTE.
+        // `message` er motorens ENGELSKE reserve, og den skal IKKE vises for en
+        // kode katalogen kjenner — det er halve poenget med runden.
+        run_preflight: [
+          {
+            severity: "error",
+            category: "disk",
+            code: "diskLow",
+            message:
+              "Only 0.4 GB free on the save disk — perhaps not enough for a whole recording.",
+            params: { gb: "0.4" },
+          },
+        ],
+      },
+      settings: {
+        ...SETTLED_SETTINGS,
+        language: "no",
+        deviceId: "dev-1",
+        deviceName: "Behringer X32",
+      },
+      goto: "home",
+    });
+
+    const banner = page.getByTestId("banner-preflight");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("Bare 0.4 GB ledig på lagringsdisken");
+    // Reserven er ikke det som vises. MUTASJONSPRØVEN: la `preflightText`
+    // returnere `f.message` uansett, og denne linja blir rød.
+    await expect(banner).not.toContainText("Only 0.4 GB free");
+
+    // …og oppslaget skjer ved RENDER, så et språkbytte etterpå virker. F2-W9
+    // oversatte ved mottak; da hadde denne stått igjen på norsk.
+    await page.getByTestId("nav-setup").click();
+    await page.getByTestId("church-language-control-input").selectOption("de");
+    await page.getByTestId("nav-record").click();
+
+    await expect(page.getByTestId("banner-preflight")).toContainText(
+      "Nur 0.4 GB frei auf dem Speicherlaufwerk",
+    );
+  });
+});

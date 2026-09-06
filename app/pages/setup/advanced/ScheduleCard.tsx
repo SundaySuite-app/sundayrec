@@ -40,6 +40,8 @@ import { useEffect, useState } from "preact/hooks";
 
 import type { TestWakeResult } from "@legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "@legacy/bindings/WakeFailureEntry";
+import type { WakeIssue } from "@legacy/bindings/WakeIssue";
+import type { WakeRecommendation } from "@legacy/bindings/WakeRecommendation";
 
 import { locale, t, tDyn, tf } from "../../../i18n";
 import {
@@ -393,6 +395,20 @@ function Specials() {
  * diagnostikk for den som feilsøker; det som avgjør om søndagen blir tatt opp
  * er om maskinen kan vekkes i det hele tatt.
  *
+ * ## De to listene (F2-I18N-R2)
+ *
+ * `knownIssues`/`recommendations` var `Array<string>` av hardkodet NORSK fra
+ * motoren, og ingen rendret dem — payloaden gikk fra Rust til nettleseren og
+ * stoppet der. Det er den samme stillheten `state/backend-warning.ts` finnes
+ * for å avslutte, bare på en flate ingen hadde savnet ennå: «Wake fra
+ * fullstendig avslått krever en BIOS-innstilling» er nøyaktig det en frivillig
+ * trenger å vite FØR søndagen, ikke etterpå.
+ *
+ * Nå er de KODER (`WakeIssue`/`WakeRecommendation`), og setningen står i
+ * katalogen på alle sju språk. Listene er korte og plattformbestemte (én til
+ * fire punkter), så de står som en punktliste under setningen — ikke det
+ * seks-panelers diagnosekortet modulhodet over sier nei til.
+ *
  * ## Hvorfor det MÅ finnes en knapp
  *
  * Bryteren skrev en boolean, og ingenting mer. Planleggeren armer OS-vekkingen
@@ -409,6 +425,12 @@ function Specials() {
  */
 function WakeRow() {
   const [facts, setFacts] = useState<WakeFacts | null>(null);
+  // F2-I18N-R2: motoren svarer med KODER, ikke setninger. Tom liste er den
+  // ærlige starttilstanden — «vi har ikke spurt ennå» og «denne maskinen har
+  // ingen forbehold» ser like ut for øyet, men bare den første varer et
+  // øyeblikk.
+  const [issues, setIssues] = useState<readonly WakeIssue[]>([]);
+  const [advice, setAdvice] = useState<readonly WakeRecommendation[]>([]);
   const [armResult, setArmResult] = useState<WakeArmResult | null>(null);
   const [arming, setArming] = useState(false);
   const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
@@ -417,12 +439,14 @@ function WakeRow() {
   useEffect(() => {
     void window.api
       .wakeDetectCapabilities()
-      .then((caps) =>
+      .then((caps) => {
         setFacts({
           canWakeFromSleep: caps.canWakeFromSleep === true,
           needsAdmin: caps.needsAdmin === true,
-        }),
-      )
+        });
+        setIssues(caps.knownIssues ?? []);
+        setAdvice(caps.recommendations ?? []);
+      })
       // En probe vi ikke fikk kjørt er ikke bevis i noen retning — `null`
       // holder setningen på «vi vet ikke ennå» i stedet for å påstå «kan ikke».
       .catch(() => setFacts(null));
@@ -472,6 +496,20 @@ function WakeRow() {
       <p data-testid="adv-wake-caps" class={styles.hint}>
         {tDyn("app.setup.advanced.wakeWord", wakeWord(facts))}
       </p>
+      {(issues.length > 0 || advice.length > 0) && (
+        <ul class={styles.wakeNotes} data-testid="adv-wake-notes">
+          {issues.map((code) => (
+            <li key={code} data-code={code}>
+              {tDyn("app.setup.advanced.wakeIssue", code)}
+            </li>
+          ))}
+          {advice.map((code) => (
+            <li key={code} data-code={code}>
+              {tDyn("app.setup.advanced.wakeAdvice", code)}
+            </li>
+          ))}
+        </ul>
+      )}
       <SettingRow
         label={t("app.setup.advanced.wakeArm")}
         description={tDyn(

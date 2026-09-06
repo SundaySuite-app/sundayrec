@@ -391,6 +391,24 @@
           "needsAdmin": "Denne computer kan vækkes, men spørger om administratoradgangskode første gang.",
           "unknown": "Vi ved ikke endnu, om denne computer kan vækkes."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon kan ikke starte fra helt slukket tilstand — kun fra dvale.",
+          "macIntelManualPowerOn": "En Intel-Mac kan starte fra slukket, men du skal aktivere »Start op eller vækning« manuelt i Systemindstillinger → Batteri.",
+          "winTimerDiesWithApp": "Vækningen sættes af SundayRec, mens programmet kører. Lukker du SundayRec helt, forsvinder vækningstimeren.",
+          "winS5NeedsBios": "Vækning fra helt slukket (S5) kræver, at »Wake on RTC from S5« er slået til i BIOS — det kan ikke aktiveres fra software.",
+          "linuxUnsupported": "Linux understøttes ikke til automatisk vækning fra SundayRec.",
+          "platformUnsupported": "Platformen understøttes ikke til automatisk vækning."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Lad maskinen stå i dvale (sluk den ikke) efter forberedelserne.",
+          "macDisableStandby": "Slå dyb dvale (standby) fra — den kan forhindre, at maskinen vågner.",
+          "macStayPluggedIn": "Strømmen skal være tilsluttet — en Mac vækkes ikke pålideligt på batteri.",
+          "winKeepAppRunning": "Lad SundayRec køre — den starter automatisk ved login og ligger i proceslinjen.",
+          "winSleepNotShutdown": "Sæt maskinen i dvale (Sleep/Hibernate) i stedet for at slukke den.",
+          "winStayPluggedIn": "Strømmen bør være tilsluttet — mange bærbare deaktiverer vækningstimere på batteri.",
+          "winCheckBios": "Hvis testvækningen fejler, så tjek BIOS for »Wake on RTC«, og slå »Tillad vækningstimere« til i strømstyringen.",
+          "useMacOrWindows": "Brug en Mac eller en Windows-pc for at aktivere automatisk vækning."
+        },
         "wakeArm": "Aktivér vækning",
         "wakeArmWord": {
           "idle": "Registrér vækningen i styresystemet nu. Kan kræve administratoradgangskode.",
@@ -745,6 +763,15 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Optager nu",
     "noSchedule": "Ingen optagelse planlagt",
+    "preflightCode": {
+      "ffmpegMissing": "ffmpeg-filen mangler. SundayRec skal installeres igen.",
+      "deviceMissing": "Lydenheden, der er valgt i indstillingerne, er ikke tilsluttet.",
+      "folderNotWritable": "Der kan ikke skrives til lagringsmappen.",
+      "diskLow": "Kun {gb} GB ledig på lagringsdisken — måske ikke nok til en hel optagelse.",
+      "micDenied": "Der er ikke givet adgang til mikrofonen. Åbn Systemindstillinger → Anonymitet → Mikrofon.",
+      "cameraDenied": "Der er ikke givet adgang til kameraet.",
+      "saveFolderSynced": "Lagringsmappen synkroniseres af »OneDrive«, hvilket kan forstyrre en igangværende optagelse."
+    },
     "preflightErrors": {
       "one": "{n} fejl skal rettes før optagelsen",
       "other": "{n} fejl skal rettes før optagelsen"
@@ -997,6 +1024,9 @@
     "errorStartTimeout": "Optagelsen kom ikke i gang i tid — tjek, at mikrofonen (og kameraet) er tilsluttet, og at SundayRec har adgang under Systemindstillinger → Anonymitet og sikkerhed",
     "errorEngineExited": "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og kør Diagnose, hvis det gentager sig.",
     "errorVideoCapture": "Kameraet leverede ikke noget billede — lyden blev gemt og ligger i biblioteket. Tjek kameraforbindelsen, før du optager med video igen.",
+    "errorCameraFormat": "Kameraet understøtter ikke den valgte billedhastighed eller opløsning — vælg en anden videoindstilling, og prøv igen.",
+    "errorCameraPermission": "Adgang til kameraet nægtet — åbn Systemindstillinger, og giv appen adgang til kameraet",
+    "errorCameraBusy": "Kameraet bruges af et andet program — luk det (Teams, Zoom), og prøv igen",
     "errorMux": "Lyd og billede kunne ikke sættes sammen — begge råfiler er beholdt i lagringsmappen, så ingenting er tabt.",
     "qualityAlarm": "ADVARSEL: Optagelsen mangler lyd — filen indeholder {m} af {e} sekunder. Tjek optagelsen, før du stoler på den.",
     "qualityReasons": "Årsag: {r}",
@@ -1079,8 +1109,5 @@
     "deviceMissing": "Lydenheden »{device}« er ikke tilsluttet.",
     "diskLow": "Der begynder at være lidt plads tilbage på disken — {freeGb} GB ledig. Optagelsen stopper af sig selv, hvis disken bliver fuld.",
     "trashManifestUnreadable": "Papirkurvens indhold kunne ikke læses. Filerne ligger der stadig, men appen ved ikke længere, hvor de kom fra."
-  },
-  "preflight": {
-    "saveFolderSynced": "Lagringsmappen synkroniseres af »OneDrive«, hvilket kan forstyrre en igangværende optagelse."
   }
 }
