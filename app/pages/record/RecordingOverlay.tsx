@@ -120,6 +120,41 @@ function Overlay() {
     return () => clearInterval(tick);
   }, [done]);
 
+  /**
+   * F2-T1: rehydrer auto-stopp-fristen når denne monteringen ikke fikk den
+   * med seg.
+   *
+   * Overlegget mountes bare når `isRecording` blir sann (vakten i
+   * `RecordingOverlay` over), og det skjer på to måter: ett `markSessionStarted()`
+   * rett etter `res.ok` fra en manuell start (før motorens FØRSTE
+   * `recording://state`-overgang har rukket å komme), og ett event uten last
+   * (`recording-overlay-start`, kartlagt fra `recording://started` — se
+   * `state/recording.ts`), som planleggeren eller en gjenoppretting fyrer uten
+   * en frist i nyttelasten. Begge veiene lar `scheduledStopMs` stå i det den
+   * var (typisk `null`, etter forrige økts `endSessionLocally()`) helt til
+   * NESTE tilstandsovergang — som først kommer når auto-stoppen selv slår
+   * til, potensielt en time unna.
+   *
+   * Så: mangler tallet ved monteringen, spør motoren direkte. Er det allerede
+   * satt (fra en tilstandsovergang som kom FØRST, eller fra en tidligere
+   * runde av denne samme effekten), er dette en no-op — ingen ekstra IPC-tur
+   * for den vanlige veien.
+   */
+  useEffect(() => {
+    if (scheduledStopMs.value !== null) return;
+    let cancelled = false;
+    void window.api.recordingScheduledStopMs().then((ms) => {
+      if (cancelled) return;
+      // En ekte `recording://state`-overgang kan ha landet MENS dette kallet
+      // var i flukt — den er den autoritative kilden, og den vinner alltid
+      // over en rehydrering som startet før den kom.
+      if (scheduledStopMs.peek() === null) scheduledStopMs.value = ms;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const elapsed = startedAt === null ? 0 : Math.max(0, now - startedAt);
   const room = spanOfMinutes(currentRoomMinutes());
   const stopAt = scheduledStopMs.value;

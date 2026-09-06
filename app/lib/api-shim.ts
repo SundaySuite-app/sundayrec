@@ -861,6 +861,22 @@ const api: Record<string, unknown> = {
     invoke<void>("recording_extend_autostop", { minutes }),
   recordingCancelAutostop: async () =>
     invoke<void>("recording_cancel_autostop", undefined),
+  // A READ, so the `call()` fallback (`null`) is right where the two WRITES
+  // above must reject: nothing here can lie about a change that never
+  // happened, it can only fail to learn a number the next `recording://state`
+  // transition would have supplied anyway.
+  //
+  // F2-T1: the third command from the "no door" sentence above, and the one
+  // the Aug 23 «Frivilligen først» rewrite (#156) dropped without a
+  // replacement — the other two got their door back in the paragraph above;
+  // this one sat unreachable ever since. Its job, then and now: rehydrate the
+  // countdown at the ONE moment `isRecording` flips true with NO
+  // `recording://state` payload to read a deadline from — a manual start
+  // (before the engine's first transition arrives) and a scheduler/crash-
+  // recovery start (`recording-overlay-start`, which carries no payload at
+  // all). `RecordingOverlay.tsx`'s mount effect calls this now.
+  recordingScheduledStopMs: async () =>
+    call<number | null>("recording_scheduled_stop_ms", undefined, null),
   // ── The camera picture DURING a recording ──────────────────────────────
   //
   // The engine has written this file since v0.11 (`recorder/engine.rs` —

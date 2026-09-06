@@ -444,7 +444,9 @@ pub fn recording_status(engine: State<'_, RecorderEngine>) -> RecorderState {
 /// The current auto-stop deadline (absolute epoch ms), or null when none is
 /// armed. Lets a screen that (re)mounts mid-recording rehydrate the countdown
 /// synchronously instead of waiting for the next `recording://state` event
-/// (which only fires on a lifecycle transition).
+/// (which only fires on a lifecycle transition, and may not fire at all if the
+/// mount is what missed the LAST one — see `RecordingOverlay.tsx`'s mount
+/// effect, F2-T1).
 #[tauri::command]
 pub fn recording_scheduled_stop_ms(engine: State<'_, RecorderEngine>) -> Option<u64> {
     engine.scheduled_stop_ms()
