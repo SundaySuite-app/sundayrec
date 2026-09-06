@@ -59,7 +59,7 @@
 //! updater keypair in `tauri.conf.json` and both exist (see
 //! docs/NEEDS-RICHARD.md; the feature started life default-off while they
 //! didn't). The DTO + [`UpdateEngine`] + the public entry points
-//! compile either way; when the feature is OFF, [`check`]/[`download_and_install`]
+//! compile either way; when the feature is OFF, [`check`]/[`download`]
 //! return a clear `feature_disabled` error so the renderer surfaces "auto-update
 //! isn't built into this build" (mirrors the `editor`/`streaming` idiom).
 //!
