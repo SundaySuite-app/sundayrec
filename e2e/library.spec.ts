@@ -368,3 +368,74 @@ test.describe("papirkurven", () => {
     await expect(page.getByTestId("library-row")).toHaveCount(2);
   });
 });
+
+// ── F2-T3: tastatursnarveier ─────────────────────────────────────────────────
+//
+// `decideShortcut` er node-testet som en tabell. Det dette nivået beviser er
+// SKJØTEN: at ⌘F/Ctrl+F faktisk flytter fokus i en ekte nettleser, og at et
+// vanlig mellomrom fortsatt bare er et mellomrom når det skrives i feltet
+// snarveien selv peker på.
+test.describe("F2-T3: tastatursnarveier i biblioteket", () => {
+  test("⌘F og Ctrl+F fokuserer og markerer søket", async ({ page }) => {
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: ROWS,
+      trash_list: [],
+    });
+    const search = page.getByTestId("library-search");
+    await search.fill("bønn");
+    // Fjern fokus fra feltet FØRST — ellers beviser testen ingenting om at
+    // snarveien er den som FLYTTER det dit.
+    await page.getByTestId("library-open-file").focus();
+    await expect(search).not.toBeFocused();
+
+    await page.keyboard.press("Meta+f");
+    await expect(search).toBeFocused();
+    // «marker innholdet»: hele verdien er valgt, ikke bare fokusert.
+    expect(
+      await search.evaluate((el: HTMLInputElement) => [
+        el.selectionStart,
+        el.selectionEnd,
+        el.value,
+      ]),
+    ).toEqual([0, 4, "bønn"]);
+
+    // Ctrl+F gjør akkurat det samme — ingen platform-sperre i tabellen (kun i
+    // HVILKEN hint-tekst placeholderen viser).
+    await page.getByTestId("library-open-file").focus();
+    await expect(search).not.toBeFocused();
+    await page.keyboard.press("Control+f");
+    await expect(search).toBeFocused();
+  });
+
+  test("placeholderen bærer den ekte snarveien, ikke en hardkodet setning", async ({
+    page,
+  }) => {
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: ROWS,
+      trash_list: [],
+    });
+    // Chromium her rapporterer «MacIntel»/mac-UA uansett vertens OS — samme
+    // kilde `useGlobalShortcuts` selv IKKE bruker (den godtar begge
+    // modifikatorene), men som placeholderens hint-tekst gjør.
+    await expect(page.getByTestId("library-search")).toHaveAttribute(
+      "placeholder",
+      /⌘F|Ctrl\+F/,
+    );
+  });
+
+  test("Space i søkefeltet skriver et mellomrom — ingen snarvei stjeler det", async ({
+    page,
+  }) => {
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: ROWS,
+      trash_list: [],
+    });
+    const search = page.getByTestId("library-search");
+    await search.click();
+    await page.keyboard.type("a b");
+    await expect(search).toHaveValue("a b");
+  });
+});
