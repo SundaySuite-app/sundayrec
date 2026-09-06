@@ -784,8 +784,10 @@ where
                     // while the capture was coming back.
                     sink.warning(
                         "stuck_recording",
+                        // English reserve, verbatim from the ffmpeg twin —
+                        // see `engine.rs`: the code is what the shell renders.
                         &format!(
-                            "Ingen framgang på {} s — kobler til på nytt",
+                            "no progress for {} s — reconnecting",
                             RecorderTimeouts::STUCK_PROGRESS_MS / 1000
                         ),
                     );

@@ -686,7 +686,7 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool, settings: &
             sundayrec_core::notify::BackendWarning::error(
                 sundayrec_core::notify::code::DEVICE_MISSING,
             )
-            .msg(format!("Lydenheten «{name}» er ikke tilkoblet."))
+            .msg(format!("The audio device \"{name}\" is not connected."))
             .param("device", name),
         );
     }

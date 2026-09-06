@@ -294,8 +294,8 @@ async fn preroll_loop(
                     warn_preroll_dead(
                         &app,
                         "device_open_failed",
-                        "Forhåndsbufferen får ikke åpnet lydenheten — det som skjer før du trykker \
-                         opptak blir ikke tatt vare på.",
+                        "The pre-roll buffer cannot open the audio device — what happens before \
+                         you press record is not being kept.",
                     );
                 }
                 attempt = attempt.saturating_add(1);

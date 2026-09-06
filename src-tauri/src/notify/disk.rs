@@ -142,9 +142,12 @@ async fn observe(
             crate::notify::warn(
                 &app,
                 BackendWarning::warn(code::DISK_LOW)
+                    // English reserve. `disk_low` is a code the shell knows —
+                    // it renders `notify.diskLow` in the volunteer's language
+                    // and interpolates `freeBytes` itself.
                     .msg(format!(
-                        "Det begynner å bli lite plass på disken — {gb:.1} GB ledig. \
-                         Opptaket stopper av seg selv hvis den blir full."
+                        "The disk is starting to run low — {gb:.1} GB free. The recording \
+                         will stop on its own if it fills up."
                     ))
                     .param("freeBytes", free.to_string()),
             );

@@ -50,6 +50,7 @@ use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::two_process::{
     av_offset_decision, build_audio_capture_args, build_mux_args, build_video_capture_args,
+    CameraFailure,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -293,9 +294,21 @@ pub async fn run_two_process_session(
     // stop here; the audio temp is intact, so point history at it (nothing lost).
     if video_died_early {
         let tail = crate::recorder::stderr_tail::snapshot(&video_tail);
-        let reason = sundayrec_core::two_process::summarize_camera_failure(&tail);
-        tracing::error!("recorder: two-process video capture failed: {reason}");
-        emit_error(&app, "video_capture_failed", &reason);
+        // F2-I18N-R2: the classification is a CODE, not a sentence. The four
+        // causes used to arrive under one code with four Norwegian messages
+        // the shell then ignored (a KNOWN code gets no appended prose — see
+        // `nativeErrorDetail`), so "the camera is in use by another program"
+        // reached the volunteer as the generic "the camera delivered no
+        // picture". Now each cause carries its own code, and the shell has a
+        // sentence for each in all seven languages.
+        let failure = sundayrec_core::two_process::summarize_camera_failure(&tail);
+        let code = camera_failure_code(failure);
+        tracing::error!(
+            code,
+            "recorder: two-process video capture failed: {}",
+            failure.as_str()
+        );
+        emit_error(&app, code, failure.as_str());
         write_history(&pool, &audio_temp, &audio, started_ms, now_ms()).await;
         return Ok(());
     }
@@ -437,6 +450,27 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
             message: message.to_string(),
         },
     );
+}
+
+/// [`CameraFailure`] → the stable code the renderer localises on.
+///
+/// Lives HERE and not in the core crate for the same reason
+/// [`crate::recorder::engine::error_code_str`] does: this is the ONE table
+/// that turns an engine verdict into a wire code, and
+/// `scripts/check-error-codes.mjs` reads it right out of the source to prove
+/// every code has a sentence in `NATIVE_ERRORS`. A second copy in the core
+/// would be a second answer the gate cannot see.
+///
+/// `video_capture_failed` is the pre-existing generic code and stays the
+/// fallback arm, so a shell build older than the three specific codes still
+/// says something true instead of `errorUnknown`.
+pub(crate) fn camera_failure_code(failure: CameraFailure) -> &'static str {
+    match failure {
+        CameraFailure::FormatUnsupported => "camera_format_unsupported",
+        CameraFailure::PermissionDenied => "camera_permission_denied",
+        CameraFailure::Busy => "camera_busy",
+        CameraFailure::OpenFailed => "video_capture_failed",
+    }
 }
 
 #[cfg(test)]

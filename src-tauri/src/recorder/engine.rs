@@ -798,9 +798,17 @@ impl RecorderEngine {
         {
             Ok(result) => result?,
             Err(_) => {
+                // The message LEADS with the stable code, the way
+                // `settings.rs`'s `no_save_folder` does: the shim answers with
+                // `AppError`'s text, and `nativeErrorSuffixFromText` finds the
+                // code inside it. Without one the renderer fell through to
+                // `errorUnknown` and appended this Norwegian line verbatim —
+                // engine prose, shown to a volunteer, in one of seven
+                // languages. `start_timeout` already has its sentence in all
+                // seven.
                 return Err(AppError::Recording(
-                    "tidsavbrudd ved enhetssøk — prøv igjen".into(),
-                ))
+                    "start_timeout: timed out while looking for the device — try again".into(),
+                ));
             }
         };
         // Match the selected mic against ffmpeg's dshow/avfoundation list. On
@@ -2643,8 +2651,13 @@ async fn run_segment(
                     emit_warning(
                         app,
                         "stuck_recording",
+                        // ENGLISH reserve: `stuck_recording` is a code the
+                        // shell knows, and `state/recording.ts` draws its own
+                        // reconnect banner from `app.overlay.reconnect*`. This
+                        // text reaches the log and the event payload, never a
+                        // screen.
                         &format!(
-                            "Ingen framgang på {} s — kobler til på nytt",
+                            "no progress for {} s — reconnecting",
                             RecorderTimeouts::STUCK_PROGRESS_MS / 1000
                         ),
                     );
@@ -2916,13 +2929,13 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
 /// forever-loop the policy is required not to be.
 pub(crate) fn reconnecting_message(attempt: u32, degraded_for_ms: Option<u64>) -> String {
     match degraded_for_ms {
-        None => format!("Mister kontakt — forsøker å koble til igjen (forsøk {attempt})"),
+        None => format!("Losing contact — trying to reconnect (attempt {attempt})"),
         Some(gone_ms) => {
             // Whole minutes: the operator needs "a while now", not precision.
             let minutes = gone_ms / 60_000;
             format!(
-                "Lydenheten har vært borte i {minutes} min — opptaket fortsetter å prøve \
-                 (forsøk {attempt}). Sjekk kabel og strøm til lydutstyret."
+                "The audio device has been gone for {minutes} min — the recording keeps \
+                 trying (attempt {attempt}). Check the cable and power to the audio gear."
             )
         }
     }
@@ -3463,7 +3476,7 @@ mod tests {
         // The old text was "(1/20)" — a countdown to giving up. The time-budget
         // policy has no such number, and printing one would be a lie.
         let m = reconnecting_message(1, None);
-        assert!(m.contains("forsøk 1"), "{m}");
+        assert!(m.contains("attempt 1"), "{m}");
         assert!(
             !m.contains("/20"),
             "the retired attempt cap must not reappear: {m}"
@@ -3478,7 +3491,7 @@ mod tests {
         // silent forever-loop.
         let m = reconnecting_message(41, Some(23 * 60_000 + 30_000));
         assert!(m.contains("23 min"), "whole minutes of absence: {m}");
-        assert!(m.contains("forsøk 41"), "{m}");
+        assert!(m.contains("attempt 41"), "{m}");
         assert_ne!(
             m,
             reconnecting_message(41, None),

@@ -199,8 +199,8 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
                         Some(&app),
                         "still_writing",
                         &busy,
-                        "Et avbrutt opptak kunne ikke gjenopprettes ennå — en annen prosess skriver \
-                         fortsatt til filen. Prøver igjen ved neste oppstart.",
+                        "An interrupted recording could not be recovered yet — another process \
+                         is still writing to the file. Trying again at the next start.",
                     );
                     continue;
                 }
@@ -241,8 +241,8 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
                     Some(&app),
                     "corrupt_manifest",
                     &path.to_string_lossy(),
-                    "Et avbrutt opptak kunne ikke gjenopprettes — opplysningene om økten var \
-                     ødelagte.",
+                    "An interrupted recording could not be recovered — the session's own \
+                     record of itself was corrupt.",
                 );
                 let _ = tokio::fs::remove_file(&path).await;
             }
@@ -421,8 +421,8 @@ pub(crate) async fn recover_session(
                     app,
                     "finalize_failed",
                     &dm.primary_path,
-                    "Et avbrutt opptak ble berget, men kunne ikke ferdigstilles i valgt format — \
-                     råfilen er beholdt.",
+                    "An interrupted recording was salvaged, but could not be finished in the \
+                     chosen format — the raw file has been kept.",
                 );
                 dm.primary_path.clone()
             });

@@ -255,14 +255,20 @@ export function basename(path: string): string {
  *
  * `scripts/check-error-codes.mjs` leser hver kodeliteral motoren gir til
  * `emit_error`/`sink.error` under `src-tauri/src/recorder/**` (pluss armene i
- * `error_code_str`) og krever at den står HER. Fire koder manglet da gaten ble
+ * kodetabellene) og krever at den står HER. Fire koder manglet da gaten ble
  * skrevet — `start_timeout`, `ffmpeg_exited`, `video_capture_failed`,
  * `mux_failed` — og alle fire er ekte søndagsfeil: kameraet som ikke åpnet,
  * motoren som døde midt i, sammenslåingen som feilet. Hver av dem ble til
  * «Noe gikk galt under opptak», som er nøyaktig den setningen en frivillig
  * ikke kan gjøre noe med.
+ *
+ * Den andre halvdelen av skjøten er `app/i18n/backend-codes.test.ts`: at
+ * suffikset finnes HER er ikke det samme som at `recording.<suffiks>` finnes
+ * i alle sju katalogene. Gaten over ville vært grønn med en rad som peker på
+ * en nøkkel bare no.json har — og de seks andre språkene ville rendret tomt.
+ * Derfor er tabellen eksportert.
  */
-const NATIVE_ERRORS: Record<string, string> = {
+export const NATIVE_ERRORS: Record<string, string> = {
   no_device: "errorDeviceNotFound",
   device_not_found: "errorDeviceNotFound",
   device_permission_denied: "errorPermission",
@@ -282,6 +288,14 @@ const NATIVE_ERRORS: Record<string, string> = {
   ffmpeg_exited: "errorEngineExited",
   video_capture_failed: "errorVideoCapture",
   mux_failed: "errorMux",
+  // F2-I18N-R2: `summarize_camera_failure` klassifiserte fire årsaker og
+  // sendte alle fire under `video_capture_failed`, med sin egen norske
+  // setning i `message` — som en KJENT kode aldri viser (se
+  // `nativeErrorDetail`). «Kameraet er i bruk av et annet program» nådde
+  // altså aldri noen. Nå har hver årsak sin egen kode og sin egen setning.
+  camera_format_unsupported: "errorCameraFormat",
+  camera_permission_denied: "errorCameraPermission",
+  camera_busy: "errorCameraBusy",
 };
 
 export function nativeErrorSuffix(code: string | null | undefined): string {

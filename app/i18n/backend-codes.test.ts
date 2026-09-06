@@ -34,6 +34,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { NATIVE_ERRORS } from "../pages/record/record-core";
 import { ALL_LOCALES } from "./index";
 
 const ROOT = join(import.meta.dirname, "../..");
@@ -121,6 +122,35 @@ describe("plassholderparitet", () => {
           `${lang}.json / ${prefix}.${code}`,
         ).toEqual(holders(String(no[code] ?? "")));
       }
+    }
+  });
+});
+
+/**
+ * `NATIVE_ERRORS` ⇢ `recording.<suffiks>` i alle sju.
+ *
+ * `scripts/check-error-codes.mjs` beviser den ENE halvdelen: at hver kode
+ * motoren sender står i tabellen. Den kan ikke se om SUFFIKSET tabellen peker
+ * på finnes i katalogen — en rad mot en nøkkel bare no.json har er grønn der
+ * og tom hos alle andre. `tDyn("recording", …)` markerer hele undertreet som
+ * BRUKT for ryddegaten, så den ser det ikke heller. Dette er det tredje
+ * beviset, og det er det som lukker skjøten.
+ */
+describe("NATIVE_ERRORS ⇢ recording.*", () => {
+  const suffixes = [...new Set(Object.values(NATIVE_ERRORS))];
+
+  it("tabellen er ikke tom", () => {
+    expect(suffixes.length).toBeGreaterThan(10);
+  });
+
+  it.each(ALL_LOCALES)("har setningen i %s.json", (lang) => {
+    const tree = group(lang, "recording");
+    for (const suffix of [...suffixes, "errorUnknown"]) {
+      const value = tree[suffix];
+      expect(
+        typeof value === "string" && value.length > 0,
+        `${lang}.json mangler recording.${suffix}`,
+      ).toBe(true);
     }
   });
 });

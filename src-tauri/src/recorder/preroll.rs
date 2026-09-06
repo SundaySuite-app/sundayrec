@@ -538,8 +538,8 @@ async fn capture_loop(
                     warn_preroll_dead(
                         &app,
                         "no_device",
-                        "Forhåndsbufferen finner ikke lydenheten — det som skjer før du trykker \
-                         opptak blir ikke tatt vare på.",
+                        "The pre-roll buffer cannot find the audio device — what happens before \
+                         you press record is not being kept.",
                     );
                 }
                 attempt = attempt.saturating_add(1);
@@ -570,8 +570,8 @@ async fn capture_loop(
                     warn_preroll_dead(
                         &app,
                         "spawn_failed",
-                        "Forhåndsbufferen får ikke startet opptaket i bakgrunnen — det som skjer \
-                         før du trykker opptak blir ikke tatt vare på.",
+                        "The pre-roll buffer cannot start capturing in the background — what \
+                         happens before you press record is not being kept.",
                     );
                 }
                 attempt = attempt.saturating_add(1);
