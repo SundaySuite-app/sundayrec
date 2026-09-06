@@ -294,7 +294,9 @@ function Head() {
         onClick={() => {
           void confirmDiscard().then((ok) => {
             if (!ok) return;
-            closeFile();
+            // `closeFile` stiller selv eksport-spørsmålet (F2-3) og kan svare
+            // nei — den er derfor ventet på, ikke fyrt av.
+            void closeFile();
           });
         }}
       >

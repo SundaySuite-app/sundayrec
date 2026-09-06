@@ -159,6 +159,16 @@ describe("feilkodene", () => {
     ).toBe("errDiskFull");
   });
 
+  // F2-A-B: bakendens enkelt-flyt-vakt (`ExportEngine::try_begin`) avviser en
+  // andre eksport mens den første går. Rust-siden pinner den samme strengen i
+  // `the_busy_refusal_uses_the_code_the_renderer_translates` — to sider av én
+  // skjøt, hver med sin egen test på seg.
+  it("export_already_running har en setning, ikke en råstreng fra en annen prosess", () => {
+    expect(exportErrorKey("validation: export_already_running")).toBe(
+      "errExportAlreadyRunning",
+    );
+  });
+
   it("en ukjent kode gir ingenting, ikke en råstreng", () => {
     expect(exportErrorKey("internal: noe_helt_nytt")).toBeNull();
     expect(exportErrorKey(undefined)).toBeNull();

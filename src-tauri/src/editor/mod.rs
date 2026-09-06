@@ -1272,8 +1272,9 @@ pub const EXPORT_PHASE_ENCODING: &str = "encoding";
 /// service used to be unkillable — the button was a stub returning `true`).
 ///
 /// A single slot rather than the mastering engine's id-keyed map because export
-/// is single-flight in the UI: the "Eksporter" button disables for the duration
-/// and the modal is closed, so there is never a second export to disambiguate.
+/// is single-flight — and, since F2-A-B, single-flight because THIS TYPE says
+/// so rather than because a button was assumed to be disabled (see
+/// `ExportEngine::try_begin`).
 /// The mutex is recovered with `unwrap_or_else(|e| e.into_inner())` for the same
 /// reason `MasterEngine`'s are — it guards a plain `Option` with no invariant a
 /// panic could half-break, and one panicked export must not poison every later
@@ -1292,6 +1293,52 @@ pub struct ExportEngine {
     /// one of those gaps killed nothing and was then forgotten — the export
     /// simply carried on and the next pass spawned as if nothing had happened.
     cancelled: std::sync::atomic::AtomicBool,
+    /// Whether an export owns the engine right now. Held by an [`ExportSlot`]
+    /// for the whole of [`export`], handed out by `ExportEngine::try_begin`.
+    ///
+    /// The single-slot design above USED to rest on "the button disables for
+    /// the duration". It does not: a double-click on Eksporter got two calls
+    /// through the renderer's guard (both waiting on the same memoised sound
+    /// analysis), and two exports on ONE engine destroy each other. B's
+    /// `reset_cancel()` clears A's cancel; B's `hold(child_b)` DROPS
+    /// `Some(child_a)`, and `kill_on_drop(true)` SIGKILLs A's ffmpeg. A then
+    /// reads EOF, `take()`s B's child, waits for B — and reports success on a
+    /// TRUNCATED file, because `out_path.exists()` is true of a file ffmpeg
+    /// never finished. B, left with `None`, reports "cancelled" although B's
+    /// file is the whole one. Two lies from one race.
+    ///
+    /// A renderer-side guard cannot fix this: the engine is reachable from any
+    /// caller of the command, and "the UI would never do that" is exactly the
+    /// assumption that broke.
+    // Read only by `try_begin`/`ExportSlot` (feature-on or test); the field
+    // itself compiles either way so the struct has ONE shape — same reason as
+    // `child` above.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    in_flight: std::sync::atomic::AtomicBool,
+}
+
+/// The token that says "this export owns the engine". Dropping it frees the
+/// engine again.
+///
+/// RAII and not an `end()` call at the bottom of [`export`], because [`export`]
+/// has around a dozen `?` early returns (a missing input, an unsupported
+/// format, a cut plan that keeps nothing, every cancel check, every ffmpeg
+/// failure) plus the panic path. An `end()` reachable only by falling off the
+/// end would leave the engine permanently "busy" the first time an export
+/// failed — turning a one-off error into an app that refuses to export until it
+/// is restarted.
+#[cfg(any(feature = "editor", test))]
+pub struct ExportSlot<'a> {
+    engine: &'a ExportEngine,
+}
+
+#[cfg(any(feature = "editor", test))]
+impl Drop for ExportSlot<'_> {
+    fn drop(&mut self) {
+        self.engine
+            .in_flight
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl Default for ExportEngine {
@@ -1306,7 +1353,27 @@ impl ExportEngine {
         Self {
             child: std::sync::Mutex::new(None),
             cancelled: std::sync::atomic::AtomicBool::new(false),
+            in_flight: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Claim the engine for one export, or `None` when another one already has
+    /// it. The claim is released when the returned [`ExportSlot`] drops.
+    ///
+    /// `compare_exchange` and not a load-then-store: the read and the write
+    /// must be ONE step, or two calls arriving together both see `false` and
+    /// both proceed — which is the very race this exists to stop.
+    #[cfg(any(feature = "editor", test))]
+    fn try_begin(&self) -> Option<ExportSlot<'_>> {
+        self.in_flight
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .ok()
+            .map(|_| ExportSlot { engine: self })
     }
 
     /// Hand the engine the live render so a cancel can reach it.
@@ -2580,6 +2647,13 @@ where
 /// render that fails is retried once in software (see
 /// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
 /// so it can never cost the user their export.
+///
+/// SINGLE-FLIGHT (F2-A-B): a second call while one is running is refused with
+/// `export_already_running` before it can touch a thing. The claim is taken
+/// HERE and not in [`editor_export`](crate::commands::editor::editor_export) so
+/// that no caller — command, test, or a future seam — can reach the engine
+/// around it; the very first line of the body it guards, `reset_cancel()`,
+/// already belongs to the export that is running.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
@@ -2600,6 +2674,12 @@ where
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
         parse_normalization_mode, plan_pass2,
     };
+
+    // One export at a time. `_slot` is BOUND, not `let _ = …`: a wildcard drops
+    // the token on the spot and the guard would be a no-op that still compiles.
+    let _slot = engine
+        .try_begin()
+        .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
 
     // A cancel of the PREVIOUS export must not abort this one — the engine is
     // long-lived managed state, the flag is per-export.
@@ -4518,6 +4598,87 @@ mod tests {
         // state, so a sticky flag would abort every later export instantly.
         engine.reset_cancel();
         assert!(!engine.is_cancelled());
+    }
+
+    // ── F2-A-B: one export at a time ────────────────────────────────────────
+    //
+    // The double-click the gransking found: two `editor_export` calls on the
+    // same engine. B's `reset_cancel()` clears A's cancel, B's `hold()` DROPS
+    // A's child (and `kill_on_drop(true)` SIGKILLs its ffmpeg), A then takes
+    // B's child and reports success on a truncated file while B reports
+    // "cancelled" on a whole one. The claim below is what makes the second call
+    // never get that far.
+
+    #[test]
+    fn a_second_export_cannot_claim_a_busy_engine() {
+        let engine = ExportEngine::new();
+        let first = engine.try_begin().expect("a fresh engine is free");
+        assert!(
+            engine.try_begin().is_none(),
+            "a second export must be refused while the first holds the engine"
+        );
+        // MUTATION PROBE: swap `compare_exchange` for a load-then-store and
+        // this line still passes — but drop `try_begin`'s claim entirely and
+        // the assert above goes green on a guard that guards nothing.
+        drop(first);
+    }
+
+    #[test]
+    fn the_engine_is_free_again_once_the_slot_drops() {
+        let engine = ExportEngine::new();
+        {
+            let _slot = engine.try_begin().expect("free");
+            assert!(engine.try_begin().is_none());
+        }
+        assert!(
+            engine.try_begin().is_some(),
+            "an export that ENDED must not leave the engine busy forever"
+        );
+    }
+
+    /// The reason the claim is RAII and not an `end()` at the bottom of
+    /// `export`: that function returns early through `?` a dozen times (a
+    /// missing input, an unsupported format, an empty cut plan, every cancel
+    /// check, every ffmpeg failure). A release reachable only by falling off
+    /// the end would turn the first failed export into an app that refuses to
+    /// export at all until it is restarted.
+    #[test]
+    fn an_export_that_fails_midway_still_frees_the_engine() {
+        let engine = ExportEngine::new();
+
+        fn fails_after_claiming(engine: &ExportEngine) -> AppResult<()> {
+            let _slot = engine
+                .try_begin()
+                .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
+            Err(AppError::Validation("invalid_format: ogg".into()))
+        }
+
+        assert!(fails_after_claiming(&engine).is_err());
+        assert!(
+            fails_after_claiming(&engine).is_err(),
+            "the second attempt must reach the SAME failure, not the busy guard"
+        );
+        assert!(engine.try_begin().is_some());
+    }
+
+    /// The refusal's wire code. `AppError::Validation` serialises as
+    /// `"validation: export_already_running"`, and the renderer matches the
+    /// LEADING snake code (`errorCode`, R3-C) against `EXPORT_ERROR_KEYS` in
+    /// `app/editor/export-core.ts`, where the row maps it to
+    /// `editor.errExportAlreadyRunning`. Reword the string here and the
+    /// sentence a volunteer reads goes silent, so pin it.
+    #[test]
+    fn the_busy_refusal_uses_the_code_the_renderer_translates() {
+        let engine = ExportEngine::new();
+        let _held = engine.try_begin().expect("free");
+        let refused: AppResult<()> = engine
+            .try_begin()
+            .map(|_| ())
+            .ok_or_else(|| AppError::Validation("export_already_running".into()));
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "validation: export_already_running"
+        );
     }
 
     /// The progress phase codes cross the IPC boundary as bare strings and are

@@ -855,6 +855,7 @@
     "exportExporting": "Eksporterer…",
     "exportCancel": "Annuller",
     "exportCancelling": "Annullerer…",
+    "exportPhasePreparing": "Analyserer lyden…",
     "exportPhaseMeasuring": "Måler lydstyrke…",
     "exportPhaseEncoding": "Eksporterer…",
     "remainingLabel": "Resultat",
@@ -894,6 +895,7 @@
     "jinglesVideoUnsupported": "Jingler understøttes ikke til video endnu",
     "confirmClose": "Du har ikke-gemte ændringer. Luk alligevel?",
     "confirmOpenOther": "Du har ikke-gemte ændringer. Åbn ny fil alligevel?",
+    "confirmExportRunning": "Eksporten er i gang. Vil du afbryde den?",
     "tlIntro": "Intro",
     "tlMain": "Hovedoptagelse",
     "tlOutro": "Outro",
@@ -935,6 +937,8 @@
     "diagnosing": "Analyserer…",
     "enhanceTitle": "Lydforbedring",
     "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format på siden Eksport.",
+    "errExportAlreadyRunning": "En eksport er allerede i gang. Vent, til den er færdig.",
+    "errRecordingInProgress": "Der er en optagelse i gang. Vent, til den er færdig, før du eksporterer.",
     "errPathNotAbsolute": "Ugyldig mappe eller filsti. Vælg destinationsmappen igen.",
     "metaDesc": "BESKRIVELSE",
     "metaSave": "Gem metadata",
@@ -1032,7 +1036,9 @@
   },
   "dialog": {
     "discardEditsBody": "De klip, du har lavet, går tabt. Selve optagelsesfilen røres ikke.",
-    "discardEdits": "Kassér ændringerne"
+    "discardEdits": "Kassér ændringerne",
+    "abortExportBody": "Filen, der er ved at blive lavet, bliver ikke færdig. Selve optagelsesfilen røres ikke.",
+    "abortExport": "Afbryd eksporten"
   },
   "missed": {
     "banner": {

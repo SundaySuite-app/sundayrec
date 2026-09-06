@@ -975,6 +975,130 @@ test.describe("editor", () => {
     );
   });
 
+  // F2-A-B / F2-2. Vakten på toppen av `runExport` var sann og verdiløs:
+  // flagget den vernet om ble satt LANGT senere, etter `ensureSoundAnalysis()`
+  // — en full passering over opptaket, 30–60 s på en gudstjeneste. To kall gikk
+  // gjennom, ventet på den samme memoiserte analysen, og sendte hver sin
+  // `editor_export`. Hva to eksporter på én motor gjør med hverandres filer
+  // står i `ExportEngine`s `in_flight`-felt: den ene melder suksess på en
+  // trunkert fil, den andre «avbrutt» på en hel.
+  //
+  // Klikkene sendes SYNKRONT fra siden, ikke som to Playwright-klikk: et
+  // dobbeltklikk er nettopp to hendelser i det samme oppholdet, før noe rakk å
+  // tegnes om.
+  //
+  // MUTASJONSPRØVD: sett `exporting.value = true` tilbake der den sto (etter
+  // `await ensureSoundAnalysis()`) og denne feiler med «Expected: 1, Received:
+  // 2». Det er dobbelteksporten, målt utenfra.
+  test("et dobbeltklikk på Eksporter gir ÉN eksport, ikke to", async ({
+    page,
+  }) => {
+    await openEditor(page, { editor_export: EXPORT_HELD });
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await goToExport(page);
+
+    await page.evaluate(() => {
+      const go = document.querySelector<HTMLElement>(
+        '[data-testid="editor-export-go"]',
+      );
+      go?.click();
+      go?.click();
+    });
+
+    // Kjøringen står — og den står ALLEREDE mens kanalanalysen går, med sin
+    // egen tekst. Det er halve fiksen: fram til F2-A-B så skjemaet uberørt ut
+    // i hele det vinduet.
+    await expect(page.getByTestId("editor-exporting")).toBeVisible();
+    await expect(page.getByTestId("editor-export-cancel")).toBeVisible();
+
+    await expect.poll(async () => (await exportPayloads(page)).length).toBe(1);
+    // Og den blir stående på én: en andre nyttelast som kom sent skal ikke
+    // kunne snike seg inn etter at prøven var grønn.
+    await expect(page.getByTestId("editor-export-progress")).toBeVisible();
+    expect(await exportPayloads(page)).toHaveLength(1);
+  });
+
+  // F2-A-B / F2-3. En eksport pågår, brukeren trykker «Til biblioteket» —
+  // fram til nå nullet `resetExport()` bare `exporting`, ingen cancel gikk til
+  // bakenden, og ffmpeg malte videre på en fil ingen flate lenger fortalte om.
+  test("«Til biblioteket» MENS en eksport går spør først, og avbryter før den lukker", async ({
+    page,
+  }) => {
+    await openEditor(page, { editor_export: EXPORT_HELD });
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await goToExport(page);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exporting")).toBeVisible();
+
+    // Tilbake til REDIGERING med eksporten i gang — den overlever et
+    // sidebytte, og det er nettopp derfor knappen her kan nås midt i en
+    // kjøring.
+    await page.getByTestId("nav-edit").click();
+    await expect(page.getByTestId("editor")).toBeVisible();
+    await page.getByTestId("editor-close").click();
+
+    // ÉN dialog, ikke to. Kuttene er ulagrede (vi beholdt prekenen), men
+    // eksport-spørsmålet INNEHOLDER kutt-spørsmålet: den som sier ja til å
+    // avbryte en eksport har sagt ja til å forlate redigeringen.
+    await expect(page.getByTestId("dialog")).toBeVisible();
+    await expect(page.getByTestId("dialog-title")).toContainText(
+      "Eksporten pågår",
+    );
+
+    // Først: NEI. Fila står, eksporten går, og ingenting ble sendt.
+    await page.getByTestId("dialog-cancel").click();
+    await expect(page.getByTestId("dialog")).toHaveCount(0);
+    await expect(page.getByTestId("editor")).toBeVisible();
+    expect(await cancelCount(page)).toBe(0);
+
+    // Så: JA.
+    await page.getByTestId("editor-close").click();
+    await expect(page.getByTestId("dialog")).toBeVisible();
+    await page.getByTestId("dialog-ok").click();
+
+    await expect.poll(() => cancelCount(page)).toBe(1);
+    // Fila er lukket, og REDIGERING viser lista igjen.
+    await expect(page.getByTestId("library-empty")).toBeVisible();
+    await expect(page.getByTestId("editor")).toHaveCount(0);
+  });
+
+  // Samme vakt, den andre veien inn: «Åpne i Rediger» fra kvitteringen etter
+  // et opptak, en rad i biblioteket og en sluppet fil går ALLE gjennom
+  // `openFile` — og gjorde alle det samme før: nullet flaten, lot ffmpeg leve.
+  test("å åpne en ANNEN fil midt i en eksport spør, og avbryter først", async ({
+    page,
+  }) => {
+    await openEditor(page, { editor_export: EXPORT_HELD });
+    await waitForSuggestion(page);
+    await goToExport(page);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exporting")).toBeVisible();
+
+    const other = "/Users/test/Opptak/2026-07-05 Kveldsmøte.mp3";
+    await page.evaluate(
+      (f) =>
+        (
+          window as unknown as { openEditorWithFile: (p: string) => void }
+        ).openEditorWithFile(f),
+      other,
+    );
+
+    await expect(page.getByTestId("dialog-title")).toContainText(
+      "Eksporten pågår",
+    );
+    await page.getByTestId("dialog-ok").click();
+
+    await expect.poll(() => cancelCount(page)).toBe(1);
+    // …og DA først åpnes den andre fila.
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+    await expect(page.getByTestId("editor-sub")).toContainText("Kveldsmøte");
+  });
+
   test("«Til biblioteket» lukker opptaket uten å spørre", async ({ page }) => {
     // Etter en vellykket eksport er det ingenting ulagret igjen å spørre om —
     // og en bekreftelsesdialog der ville vært appen som ikke stoler på sin egen
@@ -1010,6 +1134,15 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-export")).toBeVisible();
   });
 });
+
+/** Hvor mange ganger `editor_cancel_export` ble kalt. */
+async function cancelCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __E2E_CANCELS__?: unknown[] }).__E2E_CANCELS__
+        ?.length ?? 0,
+  );
+}
 
 /** Nyttelastene `editor_export` faktisk fikk — det bakenden ville sett. */
 async function exportPayloads(
