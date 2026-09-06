@@ -134,9 +134,9 @@ faktisk skal se nå — sist.
       utpakking tok installeren med seg i fallet).
       **Forventet ETTER (F2-W1, #243):** en synlig, passiv installer kjører,
       `SundayRec_*_x64-setup.exe` blir IKKE drept i Oppgavebehandling, og
-      appen kommer tilbake i den nye versjonen. `%APPDATA%\…\update-relaunch.log`
-      skal ha linjen `installing <versjon> (<n> bytes) — job-object
-kill-on-close disarmed: true`.
+      appen kommer tilbake i den nye versjonen. `update-relaunch.log`
+      (i `%APPDATA%`) skal ha en linje som starter med `installing` og
+      slutter med `kill-on-close disarmed: true`.
 - [ ] **(w2) Oppdatering er sperret mens det tas opp.** Start et opptak, gå
       til banneret / gearikonet → Avansert.
       **Forventet FØR fiksen:** «Last ned og installer» var trykkbar midt i
