@@ -85,20 +85,42 @@ pub fn plan_wake_timers(points: &[NaiveDateTime], now: NaiveDateTime) -> Vec<Win
         .collect()
 }
 
-/// Arm and cancel the process-owned wake timers.
+/// Which set of process-owned timers a call operates on.
+///
+/// Two slots, cleared and armed independently, because a reschedule REPLACES its
+/// whole set: one shared list meant the manual test-wake's clear-then-arm took
+/// the real Sunday timers with it (F2-W3 — the app then believed the machine
+/// would wake, and it would not). The real schedule owns
+/// [`TimerSlot::Schedule`]; «Test vekking» owns [`TimerSlot::Test`] and can
+/// neither see nor cancel the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TimerSlot {
+    /// The wakes derived from the recording schedule.
+    Schedule,
+    /// The single manual diagnostic wake.
+    Test,
+}
+
+impl TimerSlot {
+    /// Both slots — what a process teardown has to close.
+    pub const ALL: [TimerSlot; 2] = [TimerSlot::Schedule, TimerSlot::Test];
+}
+
+/// Arm and cancel the process-owned wake timers, one independent set per
+/// [`TimerSlot`].
 ///
 /// Implemented for real only on Windows ([`Win32WaitableTimers`]); every other
 /// target gets [`UnsupportedTimers`], which is never reached because the platform
 /// branch in [`super`] guards it — it exists so this module compiles everywhere
 /// and the ladder above stays testable on a Mac.
 pub trait WaitableTimers: Send + Sync {
-    /// Cancel and close every timer this handle armed. Idempotent; must be safe
-    /// to call before anything was ever armed.
-    fn clear(&self);
+    /// Cancel and close every timer armed in `slot`, leaving every other slot
+    /// alone. Idempotent; must be safe to call before anything was ever armed.
+    fn clear(&self, slot: TimerSlot);
 
-    /// Arm one timer per plan. Returns how many were armed; on `Err` the caller
-    /// should assume none of them will fire.
-    fn arm(&self, plans: &[WinTimerPlan]) -> Result<u32, String>;
+    /// Arm one timer per plan in `slot`. Returns how many were armed; on `Err`
+    /// the caller should assume none of them will fire.
+    fn arm(&self, slot: TimerSlot, plans: &[WinTimerPlan]) -> Result<u32, String>;
 }
 
 /// The stand-in on platforms with no waitable timers.
@@ -106,8 +128,8 @@ pub trait WaitableTimers: Send + Sync {
 pub struct UnsupportedTimers;
 
 impl WaitableTimers for UnsupportedTimers {
-    fn clear(&self) {}
-    fn arm(&self, _plans: &[WinTimerPlan]) -> Result<u32, String> {
+    fn clear(&self, _slot: TimerSlot) {}
+    fn arm(&self, _slot: TimerSlot, _plans: &[WinTimerPlan]) -> Result<u32, String> {
         Err("waitable timers are a Windows mechanism".to_string())
     }
 }
@@ -126,22 +148,32 @@ impl WaitableTimers for UnsupportedTimers {
 #[cfg(windows)]
 #[derive(Default)]
 pub struct Win32WaitableTimers {
-    /// `HANDLE` values, kept as `isize` so the field stays `Send + Sync` without
-    /// a wrapper — a Win32 `HANDLE` is a process-wide token, not a thread one.
-    handles: std::sync::Mutex<Vec<isize>>,
+    /// `(slot, HANDLE)` pairs. The handle is kept as `isize` so the field stays
+    /// `Send + Sync` without a wrapper — a Win32 `HANDLE` is a process-wide
+    /// token, not a thread one. The slot rides along so [`Self::clear`] can close
+    /// ONE set and leave the others armed.
+    handles: std::sync::Mutex<Vec<(TimerSlot, isize)>>,
 }
 
 #[cfg(windows)]
 impl WaitableTimers for Win32WaitableTimers {
-    fn clear(&self) {
+    fn clear(&self, slot: TimerSlot) {
         use windows_sys::Win32::Foundation::CloseHandle;
         use windows_sys::Win32::System::Threading::CancelWaitableTimer;
 
         let mut handles = crate::util::lock_recover(&self.handles);
-        for h in handles.drain(..) {
+        // Take the whole list, then put back everything that belongs to ANOTHER
+        // slot: closing a handle cancels its timer, so a handle we keep must not
+        // be closed and a handle we close must not stay in the list.
+        for (s, h) in std::mem::take(&mut *handles) {
+            if s != slot {
+                handles.push((s, h));
+                continue;
+            }
             // SAFETY: every value here came from a successful
             // `CreateWaitableTimerW` in `arm` and is closed exactly once, because
-            // `drain` removes it from the list as we go.
+            // it was removed from the list by the `take` above and is not put
+            // back.
             unsafe {
                 CancelWaitableTimer(h as _);
                 CloseHandle(h as _);
@@ -149,7 +181,7 @@ impl WaitableTimers for Win32WaitableTimers {
         }
     }
 
-    fn arm(&self, plans: &[WinTimerPlan]) -> Result<u32, String> {
+    fn arm(&self, slot: TimerSlot, plans: &[WinTimerPlan]) -> Result<u32, String> {
         use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
         use windows_sys::Win32::System::Threading::{CreateWaitableTimerW, SetWaitableTimer};
 
@@ -179,7 +211,7 @@ impl WaitableTimers for Win32WaitableTimers {
                     plan.label()
                 ));
             }
-            handles.push(handle as isize);
+            handles.push((slot, handle as isize));
             armed += 1;
         }
         Ok(armed)
@@ -189,14 +221,18 @@ impl WaitableTimers for Win32WaitableTimers {
 #[cfg(windows)]
 impl Drop for Win32WaitableTimers {
     fn drop(&mut self) {
-        self.clear();
+        for slot in TimerSlot::ALL {
+            self.clear(slot);
+        }
     }
 }
 
 /// The real backend for this build. Shared (`Arc`) because the timers are
-/// process-owned state: the engine's reschedule and the manual test-wake MUST
-/// arm and clear the SAME set, or a test-wake would leave the real Sunday timers
-/// behind while believing it had cleared them.
+/// process-owned state: every wake this process arms lives in the same
+/// `Win32WaitableTimers`, so a reschedule can cancel what it armed last time.
+/// What it must NOT do is cancel what somebody else armed — hence
+/// [`TimerSlot`], which keeps the real schedule and the manual test-wake in
+/// separate, independently-clearable sets.
 pub fn real_timers() -> std::sync::Arc<dyn WaitableTimers> {
     #[cfg(windows)]
     {
