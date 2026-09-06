@@ -1,9 +1,730 @@
 {
+  "app": {
+    "page": {
+      "record": "Enregistrement",
+      "edit": "Montage",
+      "export": "Export",
+      "setup": "Réglages"
+    },
+    "rail": {
+      "label": "Sections de l’application",
+      "churchUnset": "Pas encore configuré"
+    },
+    "status": {
+      "ready": "Tout est prêt",
+      "nosound": "Le son n’est pas connecté",
+      "rec": "Enregistrement en cours",
+      "next": "Prochain enregistrement {when}",
+      "lowdisk": "Il reste peu d’espace"
+    },
+    "receipt": {
+      "saving": "Enregistrement…",
+      "saved": "Enregistré ✓",
+      "failed": "Non enregistré"
+    },
+    "common": {
+      "recommended": "Recommandé",
+      "dismiss": "Fermer",
+      "showMore": "Afficher plus",
+      "showLess": "Afficher moins"
+    },
+    "dialog": {
+      "confirm": "Continuer",
+      "cancel": "Annuler",
+      "close": "Fermer",
+      "filter": {
+        "settingsProfile": "Profil de réglages (JSON)",
+        "allFiles": "Tous les fichiers",
+        "allMedia": "Tous les médias pris en charge",
+        "audio": "Audio",
+        "video": "Vidéo"
+      }
+    },
+    "vu": {
+      "hear": "Nous entendons du son",
+      "nothing": "Nous n’entendons rien",
+      "loud": "Trop fort"
+    },
+    "library": {
+      "empty": "Pas encore d’enregistrements",
+      "emptyDesc": "Le premier apparaîtra ici dès que vous aurez enregistré.",
+      "goRecord": "Aller à Enregistrement",
+      "count": "Enregistrements : {n}",
+      "search": "Rechercher par date ou par nom",
+      "noHits": "Aucun résultat pour « {q} »",
+      "noHitsDesc": "La recherche porte sur la date, le nom du fichier et la note.",
+      "video": "Vidéo",
+      "underMinute": "Moins de 1 min",
+      "delete": "Supprimer",
+      "movedToTrash": "Déplacé vers la corbeille",
+      "autoDeleteOff": "Les enregistrements ne sont pas supprimés automatiquement",
+      "autoDeleteDay": "Supprimés automatiquement après 1 jour",
+      "autoDeleteDays": "Supprimés automatiquement après {n} jours",
+      "trashCount": "Corbeille ({n})",
+      "trashLede": "Les enregistrements ici sont supprimés définitivement après {n} jours.",
+      "trashEmptyDesc": "Les enregistrements que vous supprimez arrivent d’abord ici.",
+      "back": "Retour à la bibliothèque",
+      "restore": "Remettre en place",
+      "deleteNow": "Supprimer maintenant",
+      "deleteSoon": "Supprimé au prochain nettoyage",
+      "deleteTomorrow": "Supprimé demain",
+      "deleteInDays": "Supprimé dans {n} jours"
+    },
+    "record": {
+      "noSource": "Vous n’avez pas choisi d’où vient le son",
+      "noSourceDesc": "Choisissez la table de mixage — ou le microphone de l’ordinateur si c’est ce que vous utilisez.",
+      "chooseSound": "Choisir le son",
+      "sub": "Appuyez sur Démarrer quand le culte commence.",
+      "listening": "À l’écoute",
+      "soundFrom": "Source du son",
+      "start": "Démarrer l’enregistrement",
+      "whyBlocked": "Démarrer est bloqué jusqu’à ce que le son soit choisi. Nous n’enregistrons jamais depuis une source que personne n’a choisie.",
+      "canStart": "Vous pouvez démarrer quand même — l’enregistrement restera silencieux jusqu’au retour de la table de mixage.",
+      "useBuiltIn": "Utiliser le microphone de l’ordinateur",
+      "nextAuto": "Prochain enregistrement automatique",
+      "nextAutoWhen": "{day} à {time}",
+      "last": "Dernier enregistrement",
+      "close": "Fermer",
+      "camera": {
+        "searching": "Recherche de caméras…",
+        "noneFound": "Aucune caméra trouvée — vérifiez la connexion",
+        "listError": "Erreur de chargement",
+        "listFailed": "Impossible d’obtenir la liste des caméras — vérifiez les autorisations",
+        "pickFirst": "Choisissez une caméra pour voir l’image",
+        "savedMissing": "Caméra « {name} » introuvable — choisissez-en une autre",
+        "starting": "Démarrage de la caméra…",
+        "denied": "Accès à la caméra refusé — vérifiez les Réglages Système",
+        "noResponse": "La caméra ne répond pas — est-elle utilisée par une autre application ?"
+      }
+    },
+    "setup": {
+      "q1": "Quel son ?",
+      "q2": "Où vont les enregistrements ?",
+      "q3": "Quelle qualité ?",
+      "q4": "Quelle église ?",
+      "q5": "Qui est averti si quelque chose ne va pas ?",
+      "notSetUp": "Pas configuré",
+      "nobodyYet": "Personne pour l’instant",
+      "quality": {
+        "mp3": "Bonne",
+        "flac": "Meilleure",
+        "wav": "Archive"
+      },
+      "change": "Modifier",
+      "setUp": "Configurer",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "sound": {
+        "lede": "Choisissez la source de l’enregistrement et vérifiez que nous l’entendons.",
+        "deviceWithPair": "{name} · canaux {l}–{r}",
+        "gone": "{name} introuvable",
+        "goneDesc": "Vérifiez qu’il est allumé et que le câble est branché.",
+        "noneDesc": "Nous n’enregistrons jamais depuis une source que personne n’a choisie.",
+        "builtIn": "Le microphone de l’ordinateur",
+        "builtInDesc": "Pour tester seulement, ou si vous n’avez pas de table de mixage.",
+        "external": "USB / Externe",
+        "mixer": "Table de mixage · {n} canaux",
+        "whichChannels": "Quels canaux ?",
+        "pairLabel": "Canaux {l} et {r}",
+        "channelHint": "Ceux qui reçoivent du son s’allument.",
+        "testHint": "Parlez dans le microphone ou jouez quelques notes.",
+        "useThis": "Utiliser celui-ci",
+        "noChange": "Rien n’a changé.",
+        "empty": "Aucun périphérique audio trouvé",
+        "emptyDesc": "Pas même le microphone de l’ordinateur. Vérifiez l’accès dans Réglages Système → Confidentialité.",
+        "retry": "Rechercher à nouveau"
+      },
+      "folder": {
+        "lede": "Les enregistrements sont placés dans ce dossier sur l’ordinateur.",
+        "label": "Enregistré dans",
+        "pick": "Choisir un dossier…",
+        "free": "{gb} Go libres",
+        "space": "{gb} Go libres · place pour {hours} h",
+        "unknownSpace": "Nous ne savons pas combien d’espace il reste ici.",
+        "none": "Les enregistrements n’ont nulle part où aller",
+        "noneDesc": "Choisissez un dossier sur cet ordinateur. Sans lui, l’application ne peut pas enregistrer."
+      },
+      "qualityLede": "Une qualité plus élevée donne des fichiers plus gros. La plupart des gens restent sur Bonne.",
+      "qDesc": {
+        "mp3": "MP3. Convient au web et au partage. Environ 1 Go pour 10 heures.",
+        "flac": "FLAC. Tout ce qui est entré, sans perte. Environ 5 Go pour 10 heures.",
+        "wav": "WAV. Non compressé, comme doit l’être une archive. Environ 10 Go pour 10 heures."
+      },
+      "qualityCustom": "Personnalisé · {format} {bitrate}",
+      "qualityCustomDesc": "Cette combinaison ne fait pas partie des trois. Choisissez une carte pour changer.",
+      "church": {
+        "lede": "Le nom et la langue que l’application utilise.",
+        "name": "Paroisse ou église",
+        "nameDesc": "Utilisé dans les e-mails d’alerte.",
+        "placeholder": "Par exemple paroisse de Bryn",
+        "languageLabel": "Langue de l’application",
+        "languageDesc": "Le changement est immédiat.",
+        "language": "Langue : {language}",
+        "languagePaused": "Cette langue est temporairement indisponible dans la nouvelle configuration — l’application affiche {language} pour l’instant."
+      },
+      "notify": {
+        "lede": "L’ordinateur vous prévient toujours. L’e-mail, c’est pour ceux qui ne sont pas devant.",
+        "os": "Notification sur l’ordinateur",
+        "osDesc": "Au démarrage, à l’arrêt ou en cas d’échec de l’enregistrement.",
+        "mail": "E-mail si quelque chose ne va pas",
+        "mailDesc": "Une seule adresse. Envoyé uniquement en cas d’erreur, jamais autrement.",
+        "nobodyDesc": "Personne ne reçoit d’e-mail — l’ordinateur ne prévient que celui qui est devant.",
+        "emailDesc": "Envoyé uniquement en cas d’erreur, jamais autrement.",
+        "gateChip": "Serveur e-mail manquant",
+        "gateSmtp": "Nécessite un serveur e-mail (SMTP). À configurer sous Avancé.",
+        "gateChipUnavailable": "Non disponible",
+        "gateNoFeature": "L’envoi d’e-mails n’est pas intégré à cette version.",
+        "to": "Envoyer à",
+        "toDesc": "L’adresse à laquelle l’alerte est envoyée.",
+        "toPlaceholder": "nom@eglise.fr",
+        "invalid": "Saisissez une adresse e-mail valide, par exemple nom@eglise.fr",
+        "nothingToSave": "Rien n’a changé.",
+        "test": "Envoyer un test",
+        "testSent": "E-mail de test envoyé à {to}",
+        "testFailed": "L’e-mail de test n’est pas passé : {err}",
+        "testNoRecipient": "Saisissez d’abord une adresse et appuyez sur Enregistrer.",
+        "remind": "Rappel avant un enregistrement automatique",
+        "remindDesc": "Pour que quelqu’un ait le temps d’allumer la table de mixage.",
+        "remindChip": "Aucune heure fixée",
+        "remindGate": "Activez d’abord « Enregistrer automatiquement ».",
+        "remindOff": "Désactivé",
+        "minutes": "{n} min avant"
+      },
+      "camera": {
+        "title": "Inclure la caméra",
+        "desc": "Enregistrer la vidéo en même temps que le son.",
+        "noneChosen": "Aucune caméra choisie",
+        "pick": "Caméra",
+        "keepAudio": "Conserver un fichier audio séparé",
+        "keepAudioDesc": "Un fichier audio seul à côté de la vidéo.",
+        "delivers": "La caméra fournit au maximum {height}p · {fps} images par seconde.",
+        "probeFailed": "Nous n’avons pas pu lire les capacités de la caméra. L’enregistrement utilisera ce que la caméra fournit réellement, jusqu’à 1080p.",
+        "none": "Aucune caméra trouvée",
+        "noneDesc": "Branchez une caméra, ou désactivez « Inclure la caméra »."
+      },
+      "auto": {
+        "title": "Enregistrer automatiquement",
+        "desc": "Réglez une heure une fois pour toutes. L’ordinateur se réveille et démarre tout seul.",
+        "summary": "{day} {start} · {n} min",
+        "day": "Jour",
+        "start": "Début",
+        "duration": "Durée",
+        "durationDesc": "L’enregistrement s’arrête de lui-même au bout de ce temps.",
+        "minutes": "{n} min",
+        "nothingToSave": "Rien n’a changé.",
+        "launch": "Lancer automatiquement avec l’ordinateur",
+        "launchDesc": "Sans cela, l’enregistrement ne démarre pas après un redémarrage.",
+        "more": "Cet ordinateur a {n} horaires fixes. Ici, vous modifiez le premier."
+      },
+      "days": {
+        "0": "Lundi",
+        "1": "Mardi",
+        "2": "Mercredi",
+        "3": "Jeudi",
+        "4": "Vendredi",
+        "5": "Samedi",
+        "6": "Dimanche"
+      },
+      "advanced": {
+        "title": "Avancé",
+        "lede": "Des choses que la plupart des gens n’ont jamais besoin de toucher. Tout ici a une valeur par défaut sûre.",
+        "soundLink": "Son avancé",
+        "engine": "Moteur d’enregistrement",
+        "engineDesc": "Ne changez que si le son est saccadé.",
+        "engineConfirm": "Changer de moteur d’enregistrement",
+        "engineChoice": {
+          "native": "Intégré",
+          "ffmpeg": "Classique (ffmpeg)",
+          "dshow": "Classique (DirectShow)"
+        },
+        "preroll": "Tampon de pré-enregistrement",
+        "prerollDesc": "Le son capté avant que vous appuyiez sur Démarrer. La mémoire tampon garde le microphone ouvert en arrière-plan aussi longtemps que l’application est prête à enregistrer.",
+        "prerollChoice": {
+          "0": "Désactivé",
+          "15": "15 secondes",
+          "30": "30 secondes"
+        },
+        "silence": "Arrêter en cas de long silence",
+        "silenceDesc": "Arrête l’enregistrement après un moment de silence complet.",
+        "silenceAfter": "Arrêt après",
+        "silenceChoice": {
+          "2": "2 minutes",
+          "5": "5 minutes",
+          "10": "10 minutes",
+          "15": "15 minutes"
+        },
+        "maxLen": "Durée maximale d’un enregistrement",
+        "maxLenDesc": "Un filet de sécurité si quelqu’un oublie d’arrêter.",
+        "maxLenChoice": {
+          "0": "Aucune limite",
+          "60": "1 heure",
+          "120": "2 heures",
+          "180": "3 heures",
+          "240": "4 heures",
+          "360": "6 heures"
+        },
+        "split": "Découper les longs enregistrements",
+        "splitDesc": "Commence un nouveau fichier à intervalles réguliers, pour qu’aucun fichier ne devienne énorme.",
+        "splitEvery": "Nouveau fichier après",
+        "splitChoice": {
+          "30": "30 minutes",
+          "45": "45 minutes",
+          "60": "1 heure",
+          "90": "1 heure 30 minutes",
+          "120": "2 heures"
+        },
+        "autoDelete": "Supprimer les anciens enregistrements",
+        "autoDeleteDesc": "Déplacés vers la corbeille, pas supprimés définitivement.",
+        "autoDeleteAfter": "Supprimer après (jours)",
+        "autoDeleteConfirm": "Supprimer les enregistrements plus tôt",
+        "autoDeleteRange": "Saisissez un nombre entre 1 et 3650.",
+        "diag": "Partager des diagnostics anonymes",
+        "diagDesc": "Jamais de son, de noms ni de fichiers. Vous pouvez voir exactement ce qui est envoyé.",
+        "diagPreviewTitle": "Ce qui est envoyé",
+        "diagPreviewNext": "Voici exactement ce qui sera envoyé la prochaine fois.",
+        "diagPreviewHistory": "Les diagnostics sont désactivés. Ceci montre la forme des données d’après votre propre historique local — rien n’est envoyé.",
+        "diagPreviewEmpty": "Rien à envoyer pour le moment.",
+        "diagPreviewFailed": "Impossible de récupérer l’aperçu.",
+        "diagDelete": "Supprimer mes données",
+        "diagDeleteTitle": "Supprimer vos données ?",
+        "diagDeleteBody": "Votre identifiant anonyme est remplacé par un nouveau, et les rapports non encore envoyés sont effacés. SundayRec demande ensuite au serveur de supprimer tout ce qui s’y trouve sous l’ancien identifiant.",
+        "diagDeleteConfirm": "Oui, effacer et changer d’identifiant",
+        "diagDeleted": "Les données sont effacées localement, et vous avez un nouvel identifiant anonyme.",
+        "diagDeleteFailed": "Impossible de supprimer les données. Réessayez.",
+        "update": "Mises à jour",
+        "updateDesc": "La version stable est recommandée. La bêta reçoit les nouveautés en premier.",
+        "autoUpdate": "Mettre à jour automatiquement",
+        "autoUpdateDesc": "Vérifie chaque heure s’il existe une version plus récente. Rien n’est téléchargé avant votre accord.",
+        "updateStable": "Stable",
+        "updateBeta": "Bêta",
+        "updateBetaTitle": "Passer aux mises à jour bêta ?",
+        "updateBetaBody": "La bêta vous parvient avant d’avoir été éprouvée lors d’un vrai culte, et peut contenir des erreurs qui ruinent un enregistrement. N’utilisez pas la bêta sur l’ordinateur qui enregistre le culte. Vous pouvez revenir en arrière à tout moment.",
+        "updateBetaConfirm": "Oui, utiliser la bêta",
+        "updateBetaCancel": "Rester sur stable",
+        "updateCheck": "Rechercher des mises à jour maintenant",
+        "updateChecking": "Recherche de mises à jour…",
+        "updateUpToDate": "Vous êtes à jour",
+        "updateAvailable": "La version {v} est prête à être téléchargée",
+        "updateDownloading": "Téléchargement… {pct} %",
+        "updateReady": "La version {v} est téléchargée — redémarrez pour l’utiliser",
+        "updateDownload": "Télécharger et installer",
+        "updateRestart": "Redémarrer et installer",
+        "updateRestarting": "Redémarrage…",
+        "updateRestartFailed": "Le redémarrage n’a pas eu lieu. Quittez l’application et ouvrez-la à nouveau, la mise à jour sera active.",
+        "updateFailed": "Impossible de rechercher les mises à jour",
+        "updateNotesLabel": "Nouveautés",
+        "log": "Journal",
+        "logDesc": "Pour dépanner avec nous. Aucun son et aucun mot de passe.",
+        "show": "Afficher",
+        "copy": "Copier",
+        "logShowFailed": "Impossible d’ouvrir le dossier du journal.",
+        "logEmpty": "Le journal est encore vide.",
+        "logCopied": "Journal copié",
+        "logCopyFailed": "Impossible de copier le journal.",
+        "profile": "Profil de réglages",
+        "profileDesc": "Emportez la configuration sur un autre ordinateur. Les mots de passe ne sont jamais inclus.",
+        "export": "Exporter",
+        "import": "Importer",
+        "importTitle": "Importer les réglages ?",
+        "importBody": "Cela remplace les réglages de cet ordinateur par le contenu du fichier. Les enregistrements, la bibliothèque et les mots de passe ne sont pas touchés.",
+        "importConfirm": "Oui, importer",
+        "exported": "Les réglages ont été exportés.",
+        "exportFailed": "Impossible d’exporter les réglages : {err}",
+        "imported": "Les réglages ont été importés.",
+        "importFailed": "Impossible d’importer les réglages : {err}",
+        "smtpTitle": "Serveur e-mail (SMTP)",
+        "smtpDesc": "Les alertes d’erreur sont envoyées via le serveur e-mail de la paroisse. Sans lui, aucun e-mail n’arrive.",
+        "smtpHost": "Serveur",
+        "smtpHostDesc": "Par exemple smtp.gmail.com.",
+        "smtpUser": "Nom d’utilisateur",
+        "smtpFrom": "Adresse de l’expéditeur",
+        "smtpFromDesc": "Laissez vide pour utiliser le nom d’utilisateur.",
+        "smtpPassword": "Mot de passe",
+        "smtpPasswordDesc": "Conservé dans le trousseau de l’ordinateur, jamais dans les réglages.",
+        "smtpPasswordStored": "Un mot de passe est enregistré",
+        "smtpPasswordNone": "Aucun mot de passe enregistré",
+        "smtpPasswordSave": "Enregistrer le mot de passe",
+        "smtpPasswordClear": "Retirer",
+        "smtpPasswordSaved": "Le mot de passe est enregistré.",
+        "smtpPasswordCleared": "Le mot de passe est retiré.",
+        "smtpPasswordFailed": "Impossible d’enregistrer le mot de passe : {err}",
+        "smtpNothingToSave": "Rien n’a changé.",
+        "smtpInvalidFrom": "Saisissez une adresse e-mail valide, par exemple nom@eglise.fr",
+        "schedTitle": "Autres horaires et enregistrements ponctuels",
+        "schedDesc": "L’horaire hebdomadaire se règle sur la page Enregistrement, dans la carte « Enregistrer automatiquement ». Ici, vous en ajoutez d’autres.",
+        "schedTimes": "Horaires hebdomadaires",
+        "schedNone": "Pas encore d’horaires hebdomadaires.",
+        "schedRow": "{day} {start}–{stop}",
+        "schedAdd": "Ajouter un horaire hebdomadaire",
+        "schedRemove": "Retirer",
+        "schedFirstIsSetup": "Le premier horaire est celui que vous voyez dans la carte « Enregistrer automatiquement » sur la page Enregistrement.",
+        "specialsTitle": "Enregistrements ponctuels",
+        "specialsDesc": "Une seule date — un concert, une veillée de Noël.",
+        "specialsNone": "Aucun enregistrement ponctuel prévu.",
+        "specialDate": "Date",
+        "specialStart": "Début",
+        "specialAdd": "Ajouter",
+        "specialRemove": "Retirer",
+        "specialDefaultName": "Culte",
+        "specialRow": "{date} · {start}–{stop}",
+        "specialNeedsDate": "Choisissez d’abord une date.",
+        "specialPast": "La date est passée — aucun enregistrement ne démarrera.",
+        "wake": "Sortir l’ordinateur de veille",
+        "wakeDesc": "Sans cela, l’ordinateur doit être allumé au moment où l’enregistrement démarre.",
+        "autoDeleteConfirmBody": "Les enregistrements plus anciens que cela sont déplacés vers la corbeille. En dessous de 30 jours, un culte peut disparaître avant que quelqu’un ait eu le temps de le télécharger.",
+        "autoDeleteConfirmYes": "Oui, supprimer aussi tôt",
+        "wakeWord": {
+          "can": "Cet ordinateur peut sortir de veille.",
+          "cannot": "Cet ordinateur ne peut pas sortir de veille — laissez-le allumé.",
+          "needsAdmin": "Cet ordinateur peut être réveillé, mais demande un mot de passe administrateur la première fois.",
+          "unknown": "Nous ne savons pas encore si cet ordinateur peut être réveillé."
+        },
+        "wakeArm": "Activer le réveil",
+        "wakeArmWord": {
+          "idle": "Déclarez le réveil auprès du système d’exploitation maintenant. Un mot de passe administrateur peut être demandé.",
+          "ok": "Le réveil est déclaré auprès du système d’exploitation.",
+          "autoRecordOff": "Aucun réveil à déclarer — « Enregistrer automatiquement » est désactivé.",
+          "nothingUpcoming": "Aucun réveil à déclarer — rien n’est programmé pour la suite.",
+          "needsAdmin": "Un mot de passe administrateur est nécessaire — réessayez et répondez à la demande.",
+          "disabled": "Activez d’abord « Sortir l’ordinateur de veille ».",
+          "unsupported": "Cet ordinateur ne peut pas être réveillé par l’application.",
+          "cancelled": "Vous avez annulé — rien n’a été déclaré.",
+          "failed": "Le réveil n’a pas été déclaré."
+        },
+        "wakeTest": "Tester le réveil dans 2 min",
+        "wakeTestIdle": "Programmez un vrai réveil dans deux minutes, et voyez si l’ordinateur se réveille vraiment.",
+        "wakeTestScheduled": "Programmé à {time} — laissez l’ordinateur se mettre en veille pour voir s’il se réveille.",
+        "wakeHistoryTitle": "Historique des réveils",
+        "wakeHistoryDesc": "Les derniers tests, et les réveils programmés qui n’ont pas fonctionné.",
+        "wakeHistoryEmpty": "Aucun événement pour l’instant.",
+        "wakeHistoryClear": "Vider",
+        "wakeHistoryKind": {
+          "missed": "Un réveil programmé a été manqué",
+          "testOk": "Réveil de test réussi",
+          "testFail": "Réveil de test échoué"
+        },
+        "wakeHistoryReason": {
+          "noResume": "aucune reprise observée",
+          "tooLate": "arrivé trop tard",
+          "onBattery": "sur batterie"
+        },
+        "audioTech": "Technologie audio",
+        "diagnoseReportWhere": "Collez le rapport dans un ticket GitHub, ou envoyez-le à dev@sundaysuite.app."
+      }
+    },
+    "diagnose": {
+      "title": "Diagnostic",
+      "desc": "Vérifie le son, les autorisations, le moteur et le disque, et rédige un rapport que vous pouvez transmettre.",
+      "run": "Lancer",
+      "running": "En cours…",
+      "failed": "Le diagnostic n’a pas pu être lancé : {err}",
+      "probeSkipped": "Le test du son n’a pas été lancé : {why}",
+      "copy": "Copier le rapport complet",
+      "copied": "Le rapport est copié",
+      "copyFailed": "Impossible de copier le rapport",
+      "savedTo": "Enregistré dans",
+      "devicesTitle": "Tous les périphériques audio que l’enregistreur voit",
+      "noDevices": "Aucun périphérique audio trouvé",
+      "ipcTitle": "Commandes restées sans réponse durant cette session ({n})",
+      "test": "Enregistrement de test (~10 s)",
+      "testRunning": "Enregistrement du test…",
+      "testBlocked": "Impossible pendant un enregistrement.",
+      "testOk": "L’enregistrement de test est terminé — {signal}.",
+      "testFail": "L’enregistrement de test a échoué : {why}",
+      "r": {
+        "devices": "Périphériques audio trouvés",
+        "selected": "Périphérique choisi",
+        "mic": "Accès au microphone",
+        "engine": "Moteur audio (ffmpeg)",
+        "probe": "Test du son"
+      },
+      "v": {
+        "notFound": "introuvable",
+        "defaultDevice": "Périphérique par défaut",
+        "ffmpegOk": "Disponible",
+        "ffmpegMissing": "Introuvable",
+        "unknown": "Impossible à déterminer",
+        "probeSkipped": "Non exécuté",
+        "probeOk": "Son reçu",
+        "probeFail": "Aucun son reçu",
+        "auth": {
+          "authorized": "Accordé",
+          "denied": "Refusé",
+          "restricted": "Bloqué par un administrateur système",
+          "notDetermined": "Pas encore demandé",
+          "unknown": "Impossible à déterminer sur cette plateforme"
+        }
+      },
+      "testErr": {
+        "deviceNotFound": "périphérique audio introuvable",
+        "permissionDenied": "accès au microphone refusé",
+        "ffmpegError": "le moteur d’enregistrement a échoué",
+        "noAudio": "aucun son dans l’enregistrement"
+      },
+      "testSig": {
+        "silent": "complètement silencieux",
+        "low": "signal faible",
+        "normal": "niveau normal"
+      },
+      "f": {
+        "ffmpeg01": {
+          "title": "Le moteur d’enregistrement (ffmpeg) est absent",
+          "hint": "Réinstallez SundayRec — le moteur d’enregistrement est fourni avec l’application."
+        },
+        "audio01": {
+          "title": "Aucun périphérique audio trouvé",
+          "hint": "Vérifiez que la carte son est branchée et que le pilote est installé. Sur un PC partagé : le service audio est-il lancé ?"
+        },
+        "audio02": {
+          "title": "Le périphérique audio choisi n’a pas été trouvé",
+          "hint": "Branchez le périphérique, ou choisissez-en un autre dans « Quel son ? » sur la page Enregistrement."
+        },
+        "audio10": {
+          "title": "Repli sur le moteur audio classique",
+          "hint": "L’enregistrement fonctionne toujours. Si vous voulez le moteur moderne, vérifiez le pilote et qu’aucun autre programme ne retient le périphérique."
+        },
+        "rate01": {
+          "title": "Une fréquence d’échantillonnage fixe est sélectionnée",
+          "hint": "Si la carte son tourne à une autre fréquence, ffmpeg rééchantillonne et vous pouvez avoir des saccades. Choisissez de nouveau « Auto », sauf si vous avez une raison précise."
+        },
+        "video01": {
+          "title": "La vidéo est activée, mais aucune caméra n’a été trouvée",
+          "hint": "Branchez la caméra, ou désactivez « Inclure la caméra » sur la page Enregistrement."
+        },
+        "video02": {
+          "title": "La caméra n’a donné aucune image",
+          "hint": "Vérifiez que la caméra est branchée, qu’aucun autre programme ne l’utilise, et que l’application a accès à la caméra."
+        },
+        "disk01": {
+          "title": "Peu d’espace libre",
+          "hint": "Libérez de l’espace ou choisissez un autre dossier d’enregistrement avant un long enregistrement."
+        },
+        "disk02": {
+          "title": "Impossible d’écrire dans le dossier d’enregistrement",
+          "hint": "Choisissez un dossier où vous avez le droit d’écrire dans « Où vont les enregistrements ? » sur la page Enregistrement."
+        },
+        "perm01": {
+          "title": "L’accès au microphone est refusé",
+          "hint": "Accordez l’accès dans Réglages Système → Confidentialité et sécurité → Microphone, puis redémarrez l’application."
+        },
+        "perm02": {
+          "title": "L’accès à la caméra est refusé",
+          "hint": "Accordez l’accès dans Réglages Système → Confidentialité et sécurité → Caméra, puis redémarrez l’application."
+        },
+        "engine01": {
+          "title": "Le dernier enregistrement s’est terminé par une erreur",
+          "hint": "Le code d’erreur figure sur la ligne au-dessus. Lancez un enregistrement de test pour voir si cela fonctionne maintenant."
+        },
+        "capture01": {
+          "title": "Le dernier enregistrement montrait des signes de saccades",
+          "hint": "Fermez les autres programmes lourds, vérifiez le câble et l’alimentation de la carte son, et que la fréquence d’échantillonnage est sur « Auto ». Refaites ensuite un enregistrement et voyez si les chiffres baissent."
+        },
+        "capture02": {
+          "title": "Le test du son n’a reçu aucun son",
+          "hint": "Vérifiez que le bon périphérique est choisi dans « Quel son ? » sur la page Enregistrement, que le câble est branché, et qu’aucun autre programme ne retient le microphone. Relancez ensuite le diagnostic."
+        },
+        "crash01": {
+          "title": "L’application a planté",
+          "hint": "Transmettez ce rapport — ce sont les fichiers de plantage qui permettent de trouver l’erreur."
+        },
+        "task01": {
+          "title": "Des tâches en arrière-plan ont dû être redémarrées",
+          "hint": "L’application les a relancées d’elle-même, donc rien ne s’est arrêté. Si cela se répète, joignez ce rapport — les noms ci-dessus disent quelle partie est instable."
+        },
+        "log01": {
+          "title": "Le fichier journal n’est pas actif",
+          "hint": "En général, cela signifie que le dossier de l’application n’a pas pu être créé. Redémarrez l’application ; si cela persiste, vérifiez l’espace disque et les autorisations."
+        },
+        "log02": {
+          "title": "Une partie du journal manque",
+          "hint": "Le journal est incomplet parce que l’enregistrement a été prioritaire — c’est le bon ordre des choses. Un disque lent mérite un coup d’œil avant le prochain long enregistrement."
+        },
+        "ok": {
+          "title": "Aucun problème détecté",
+          "hint": "Vous êtes prêt à enregistrer."
+        },
+        "recLoss": {
+          "title": "Il manque du son au dernier enregistrement",
+          "hint": "C’est grave : l’enregistrement a perdu du son en route. Fermez les autres programmes lourds, branchez la carte son directement sur l’ordinateur (pas via un hub), et signalez-le avec ce rapport — les chiffres ici sont la preuve."
+        }
+      }
+    },
+    "language": {
+      "no": "Norvégien",
+      "en": "Anglais",
+      "sv": "Suédois",
+      "da": "Danois",
+      "de": "Allemand",
+      "fr": "Français",
+      "pl": "Polonais"
+    },
+    "first": {
+      "step": "Étape {n} sur {total}",
+      "next": "Suivant",
+      "back": "Retour",
+      "skipSound": "Continuer sans son",
+      "gate": "« Suivant » s’active dès que nous entendons du son.",
+      "gateReason": "Nous n’entendons encore aucun son. Parlez dans le microphone, ou allumez la table de mixage.",
+      "readyTitle": "Prêt pour dimanche",
+      "readyDesc": "C’est la même chose que vous retrouverez dans Réglages (la roue dentée) et sur l’écran Enregistrement par la suite.",
+      "notifyTodo": "Pas configuré — personne n’est averti si un enregistrement échoue.",
+      "open": "Ouvrir SundayRec",
+      "progress": "Progression",
+      "resumeChip": "Poursuivre la configuration"
+    },
+    "consent": {
+      "title": "Voulez-vous nous aider à améliorer SundayRec ?",
+      "desc": "Des chiffres anonymes sur ce qui fonctionne et ce qui échoue. Jamais de son, de noms ni de fichiers.",
+      "no": "Non merci",
+      "yes": "Oui, partager anonymement",
+      "what": "Qu’est-ce qui est envoyé ?"
+    },
+    "overlay": {
+      "stop": "Arrêter l’enregistrement",
+      "closeHint": "Vous pouvez fermer la fenêtre — l’enregistrement continue en arrière-plan.",
+      "stopQuestion": "Arrêter l’enregistrement ?",
+      "stopQuestionDesc": "{elapsed} d’enregistrement jusqu’ici. Si vous arrêtez maintenant, ce que vous avez est conservé.",
+      "keep": "Continuer l’enregistrement",
+      "stopYes": "Arrêter",
+      "room": "Place pour {span}",
+      "camera": "Caméra {name}",
+      "reconnect": "Le son de {name} a disparu — tentative de reconnexion",
+      "reconnectAnon": "Le son a disparu — tentative de reconnexion",
+      "autoStop": "S’arrête tout seul dans {left}",
+      "finalizingHint": "L’enregistrement est écrit sur le disque. Cela prend quelques secondes, et le fichier est en sécurité pendant ce temps."
+    },
+    "done": {
+      "title": "L’enregistrement est sauvegardé",
+      "show": "Afficher dans le Finder",
+      "ok": "Terminé",
+      "revealFailed": "Fichier introuvable sur le disque."
+    },
+    "editor": {
+      "stepCut": "Coupe",
+      "loadFailed": "Impossible d’ouvrir l’enregistrement",
+      "loadFailedDesc": "Le format n’est peut-être pas pris en charge, ou le fichier est endommagé.",
+      "searching": "Recherche de la prédication…",
+      "found": "Nous pensons que la prédication est ici",
+      "foundDesc": "De {from} à {to} — {span}. Faites glisser les poignées pour ajuster.",
+      "keepSermon": "Ne garder que la prédication",
+      "keepAll": "Tout garder",
+      "sermon": "Prédication",
+      "keepLabel": "{name} · {span}",
+      "handleStart": "Là où commence la prédication",
+      "handleEnd": "Là où finit la prédication",
+      "result": "Résultat : {kept} (sur {total})",
+      "seconds": "{n} s",
+      "minutesSeconds": "{m} min {s} s",
+      "pause": "Pause",
+      "manual": "Couper manuellement",
+      "manualHide": "Masquer les outils de coupe",
+      "redo": "Rétablir",
+      "nothingToUndo": "Rien à annuler pour l’instant.",
+      "nothingToRedo": "Rien à rétablir.",
+      "notSermonDesc": "Choisissez le bon bloc. Nous le retiendrons pour la prochaine fois.",
+      "blockOption": "Bloc {n} — {at} · {span}",
+      "stepSound": "Son",
+      "nextSound": "Suivant : Son",
+      "nextExport": "Suivant : Export",
+      "autoSound": "Amélioration audio automatique",
+      "autoSoundDesc": "Égalise le niveau et rend la parole plus claire. L’original n’est pas touché.",
+      "profile": {
+        "speech": "Parole",
+        "mixed": "Parole et musique",
+        "none": "Aucun"
+      },
+      "profileDesc": {
+        "speech": "Pour la prédication et la liturgie. Recommandé.",
+        "mixed": "Quand la louange doit être incluse.",
+        "none": "Exporter le son tel qu’il a été enregistré."
+      },
+      "listen": "Écouter",
+      "listenAria": "Écouter le son avant ou après l’amélioration",
+      "before": "Avant",
+      "after": "Après",
+      "sample": "{at} — 20 secondes de la prédication",
+      "rendering": "Préparation de l’extrait…",
+      "listenFailed": "Impossible de préparer l’extrait. L’export se déroule normalement.",
+      "advancedMixer": "Avancé : ouvrir le mixeur",
+      "hideMixer": "Masquer le mixeur",
+      "mixerTitle": "Mixeur audio avancé",
+      "mixerUse": "Utiliser le mixeur",
+      "mixerUseDesc": "Le mixeur remplace « {profile} ». Aucun mastering n’est ajouté par-dessus — vous pilotez toute la chaîne.",
+      "mxEq": "Équilibre tonal",
+      "mx": {
+        "hpf": "Coupe-bas",
+        "denoise": "Réduction de bruit",
+        "dereverb": "Réduction de réverbération",
+        "gate": "Porte de bruit",
+        "comp": "Compresseur",
+        "deesser": "Atténuation des sifflantes",
+        "limiter": "Limiteur",
+        "gain": "Niveau de sortie",
+        "freq": "Fréquence",
+        "reduction": "Réduction",
+        "floor": "Plancher de bruit",
+        "strength": "Intensité",
+        "threshold": "Seuil",
+        "ratio": "Taux",
+        "attack": "Attaque",
+        "release": "Relâchement",
+        "makeup": "Compensation",
+        "intensity": "Intensité",
+        "ceiling": "Plafond",
+        "eqMud": "250 Hz — atténuer la boue",
+        "eqPresence": "3,5 kHz — présence",
+        "eqAir": "10 kHz — air"
+      },
+      "exFormat": "Format",
+      "exWhere": "Où",
+      "fmtDesc": {
+        "mp3": "Petit fichier. Convient au web et au partage.",
+        "flac": "Même qualité que l’enregistrement, fichier plus petit.",
+        "wav": "Non compressé. Le plus gros fichier."
+      },
+      "sameFolder": "Même dossier que l’enregistrement",
+      "pickFolder": "Choisir un dossier…",
+      "pickFolderDesc": "Clé USB, dossier Dropbox, n’importe où.",
+      "includeVideo": "Inclure la vidéo (MP4)",
+      "includeVideoDesc": "L’enregistrement a une piste vidéo. Sans cela, l’export sera uniquement audio.",
+      "videoLocksFormat": "Le format est MP4 tant que la vidéo est incluse.",
+      "about": "env. {mb} Mo",
+      "exported": "Exporté",
+      "exportAgain": "Exporter dans un autre format",
+      "toLibrary": "Vers la bibliothèque",
+      "exportFailed": "L’export s’est arrêté. Réessayez."
+    },
+    "export": {
+      "lastEdited": "Dernière modification",
+      "prepare": "Préparer",
+      "pickTitle": "Ou choisissez un autre enregistrement",
+      "emptyDesc": "Enregistrez d’abord quelque chose, ou ouvrez un fichier de cet ordinateur.",
+      "use": "Choisir"
+    },
+    "span": {
+      "hours": "{h} h",
+      "hoursMinutes": "{h} h {m} min",
+      "minutes": "{m} min"
+    },
+    "banner": {
+      "errorTitle": "L’enregistrement a été interrompu à {time}",
+      "errorShow": "Afficher l’enregistrement",
+      "diskTitle": "Place pour {room}",
+      "diskDesc": "L’enregistrement s’arrête quand le disque est plein. Libérez de l’espace avant dimanche.",
+      "diskFree": "Libérer de l’espace",
+      "missedTitle": "{when} n’a pas été enregistré",
+      "missedDesc": "L’ordinateur était éteint. L’enregistrement automatique exige qu’il soit allumé ou en veille.",
+      "missedWhy": "Que puis-je faire ?",
+      "missedHelp": "Laissez l’ordinateur allumé, ou laissez-le en veille — SundayRec le réveille dix minutes avant l’enregistrement. S’il est complètement éteint, rien ne peut le démarrer. Vérifiez aussi que « Lancer automatiquement avec l’ordinateur » est activé dans la carte « Enregistrer automatiquement » sur la page Enregistrement, pour que l’application soit relancée après un redémarrage.",
+      "globalErrorTitle": "Quelque chose s’est mal passé"
+    }
+  },
   "nav": {
     "editor": "Éditeur"
   },
   "status": {
     "warning": "Attention requise",
+    "warningDevice": "{warning} : {name}",
     "recording": "Enregistrement en cours",
     "noSchedule": "Aucun enregistrement prévu",
     "preflightErrors": {
@@ -22,7 +743,9 @@
     "readyNoSchedule": "Prêt — configurez un planning pour que les enregistrements démarrent automatiquement",
     "wakesBefore": "L’ordinateur se réveille automatiquement à {time}",
     "nextShort": "suivant",
-    "wakesLead": "({min} min avant)"
+    "recordingCountdown": "{recording} · {next} : {base}",
+    "wakesLead": "({min} min avant)",
+    "wakesNotArmed": "L’ordinateur doit être allumé ou en veille au démarrage de l’enregistrement — aucun réveil n’a été confirmé."
   },
   "history": {
     "deleteFailed": "Suppression impossible"
@@ -47,6 +770,7 @@
     },
     "confirmEmptyBody": "Les fichiers sont supprimés du disque. Cette action est irréversible.",
     "deletedAt": "Supprimé",
+    "deletedAtLine": "{deletedAt} {when}",
     "today": "aujourd'hui",
     "yesterday": "hier",
     "daysAgo": {
@@ -243,6 +967,10 @@
     "errorDiskFull": "Le disque est plein — libérez de l’espace et réessayez",
     "errorFfmpegMissing": "Erreur interne : le composant d’enregistrement est manquant — réinstallez l’application",
     "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes",
+    "errorStartTimeout": "L’enregistrement n’a pas démarré à temps — vérifiez que le microphone (et la caméra) sont branchés, et que SundayRec est autorisé sous Réglages Système → Confidentialité et sécurité",
+    "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et lancez le Diagnostic si cela se répète.",
+    "errorVideoCapture": "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
+    "errorMux": "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu.",
     "qualityAlarm": "ATTENTION : Il manque de l'audio à l'enregistrement — le fichier contient {m} des {e} secondes. Vérifiez l'enregistrement avant de vous y fier.",
     "qualityReasons": "Cause : {r}",
     "qualityAction": "Afficher l’enregistrement",
