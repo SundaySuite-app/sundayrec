@@ -224,10 +224,12 @@ fn nothing_lets_children_break_away_from_the_orphan_guard() {
 }
 
 #[test]
-fn the_deferred_install_has_exactly_one_call_site() {
+fn install_is_called_from_exactly_the_two_moments_that_are_allowed() {
     // The rule the two above cannot state: `install(` may appear in the seam,
-    // but only where the process is allowed to end. If a second call site
-    // appears, one of them is installing at a moment nobody waited for.
+    // but only at the two moments that have been reasoned about — right after
+    // the download on a platform whose installer RETURNS, and in
+    // `relaunch_now` on one whose installer ends the process. A third site is
+    // a moment nobody waited for.
     let seam = workspace_root().join("src-tauri/src/update/mod.rs");
     let text = std::fs::read_to_string(&seam)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", seam.display()));
