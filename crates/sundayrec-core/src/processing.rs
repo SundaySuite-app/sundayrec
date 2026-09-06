@@ -146,6 +146,31 @@ pub fn channel_repair_filter(repair: ChannelRepair) -> Option<String> {
     }
 }
 
+/// Does this repair read the RIGHT input channel — i.e. does it need a stereo
+/// source to mean anything?
+///
+/// ffmpeg does NOT refuse `c1` on a mono input. It silently drops the term, so
+/// `MonoMix` on a mono file (`c0=0.5*c0+0.5*c1`) renders at 0.5× — MEASURED:
+/// a −18.06 dBFS mono sine came out at −24.08 dBFS, a 6.02 dB loss with no
+/// warning, in a file the UI calls "repaired". A caller that knows the channel
+/// count must therefore check BEFORE building the graph; there is no error to
+/// catch afterwards.
+///
+/// [`ChannelRepair::DuplicateLeft`] is the exception: `c0=c0|c1=c0` reads only
+/// the channel a mono file has, and upmixing mono to dual-mono is exactly what
+/// it means. A repair that renders NO filter (`None`, a `0/0` `GainDb`) touches
+/// nothing and is fine on any layout.
+pub fn channel_repair_needs_stereo(repair: ChannelRepair) -> bool {
+    // Asked of the renderer, not of a second list that can drift out of step
+    // with it: no filter, no reference.
+    if channel_repair_filter(repair).is_none() {
+        return false;
+    }
+    // Everything else reads `c1` somewhere in its channel expressions. A
+    // variant added later lands on `true` — the safe side.
+    !matches!(repair, ChannelRepair::DuplicateLeft)
+}
+
 /// Measured per-channel levels (dBFS) feeding [`diagnose_channels`]. Peaks are
 /// required (from `astats`/`levels`); RMS is optional — but see the note above
 /// [`diagnose_channels`]: without it the diagnosis is working half-blind, and
@@ -854,6 +879,49 @@ mod tests {
         })
         .unwrap();
         assert!(f.contains("c0=15.849*c0"), "got {f}");
+    }
+
+    #[test]
+    fn needs_stereo_matches_what_each_filter_actually_reads() {
+        // Cross-checked against the RENDERED filter, so the predicate cannot
+        // drift away from the strings it is a claim about. An input channel is
+        // read where `c1` appears on the RIGHT of a `cN=` assignment.
+        fn reads_input_c1(filter: &str) -> bool {
+            filter
+                .split('|')
+                .filter_map(|part| part.split_once('='))
+                .any(|(_, rhs)| {
+                    rhs.split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
+                        .any(|tok| tok == "c1")
+                })
+        }
+
+        for repair in [
+            ChannelRepair::None,
+            ChannelRepair::SwapLr,
+            ChannelRepair::DuplicateLeft,
+            ChannelRepair::DuplicateRight,
+            ChannelRepair::MonoMix,
+            ChannelRepair::GainDb {
+                left_db: 0.0,
+                right_db: 6.0,
+            },
+            // A no-op renders nothing, so it needs nothing.
+            ChannelRepair::GainDb {
+                left_db: 0.0,
+                right_db: 0.0,
+            },
+        ] {
+            let expected = channel_repair_filter(repair)
+                .as_deref()
+                .is_some_and(reads_input_c1);
+            assert_eq!(
+                channel_repair_needs_stereo(repair),
+                expected,
+                "{repair:?} renders {:?}",
+                channel_repair_filter(repair)
+            );
+        }
     }
 
     // ── diagnosis ────────────────────────────────────────────────────────────

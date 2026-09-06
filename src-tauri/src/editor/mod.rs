@@ -2153,11 +2153,15 @@ fn diagnosis_from_stderr(stderr: &str) -> AppResult<EditorChannelDiagnosis> {
             recommended: core_repair_to_dto(sundayrec_core::processing::ChannelRepair::None),
         },
         Some(pr) => {
+            // The RMS values come from the SAME astats summary we already have
+            // in hand. Passing `None` here (what this did) made the core decide
+            // on peaks alone, which cannot tell a crackling cable from a healthy
+            // channel — see the threshold note in `processing::diagnose_channels`.
             let d = core_diagnose(ChannelLevelsDb {
                 peak_left_db: pl,
                 peak_right_db: pr,
-                rms_left_db: None,
-                rms_right_db: None,
+                rms_left_db: levels.rms_db_left,
+                rms_right_db: levels.rms_db_right,
             });
             EditorChannelDiagnosis {
                 code: d.code.to_string(),
@@ -2197,9 +2201,20 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     let noise_floor = sundayrec_core::levels::parse_noise_floor_db(&stderr);
     let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
 
+    // `unusable_*` shares an arm with `dead_*` on purpose: it is the same fault
+    // seen from further away (the channel has SOMETHING, but 12 dB of makeup
+    // cannot rescue it), so the repair and the advice are identical. Reusing the
+    // sentence also keeps this block free of NEW Norwegian literals — I18N-R2
+    // moves the whole thing to catalogue keys. The screen does not read this
+    // summary at all; it renders `editor.chanUnusableLeft`/`…Right` from the
+    // diagnosis CODE, which says "too weak" rather than "silent".
     let repair_note = match diagnosis.code.as_str() {
-        "dead_left" => "høyre kanal kopieres til begge (venstre er stille — sjekk kabel)",
-        "dead_right" => "venstre kanal kopieres til begge (høyre er stille — sjekk kabel)",
+        "dead_left" | "unusable_left" => {
+            "høyre kanal kopieres til begge (venstre er stille — sjekk kabel)"
+        }
+        "dead_right" | "unusable_right" => {
+            "venstre kanal kopieres til begge (høyre er stille — sjekk kabel)"
+        }
         "imbalance" => "kanalene balanseres (ulik styrke)",
         "both_dead" => "begge kanaler er svært svake — sjekk tilkobling",
         "mono" => "mono-opptak",
@@ -2551,18 +2566,20 @@ where
     // KEPT part of a 3-hour recording must not be timed as if it were 3 hours).
     let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
-    // 1b. The source's sample rate, so the encoder can be pinned to it. Without
-    //     this a mastered lossless export lands at loudnorm's internal 192 kHz.
+    // 1b. One probe, two answers: the source's sample rate (so the encoder can
+    //     be pinned to it — without this a mastered lossless export lands at
+    //     loudnorm's internal 192 kHz) and its channel count (so a stereo-only
+    //     channel repair can be refused before the graph is built).
     //     Best-effort: a failed probe (no ffprobe sidecar, exotic container)
-    //     simply means "emit no -ar", i.e. the pre-Phase-4 behaviour.
+    //     means "emit no -ar" and "channel count unknown", i.e. the pre-Phase-4
+    //     behaviour. The video path now probes too — one ffprobe against a
+    //     multi-minute render — so the repair guard covers it as well.
     bail_if_cancelled(engine)?;
+    let probed = load_recording(&req.input_path).await.ok();
     let source_rate: Option<u32> = if is_video {
         None // the video path encodes AAC via `video_codec_args` — no -ar there.
     } else {
-        load_recording(&req.input_path)
-            .await
-            .ok()
-            .and_then(|i| i.sample_rate)
+        probed.as_ref().and_then(|i| i.sample_rate)
     };
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
@@ -2590,7 +2607,20 @@ where
     });
     // A top-level channel repair overrides the chain's repair, and applies on its
     // own (in an otherwise-empty chain) when no vocal processing was requested.
-    if let Some(cr) = req.channel_repair.as_ref().map(|r| r.to_core()) {
+    let requested_repair = req.channel_repair.as_ref().map(|r| r.to_core());
+    // …but a repair that reads `c1` on a MONO source is nonsense, and ffmpeg
+    // does not say so: it drops the missing term and renders 6 dB down (see
+    // `channel_repair_needs_stereo`, which carries the measurement). Refuse,
+    // rather than hand back a quietly attenuated file the UI calls "repaired".
+    // `auto_process` answers `None` for mono, so this only catches a stale or
+    // hand-rolled request — which is exactly when a silent 6 dB would be
+    // hardest to explain.
+    if let (Some(cr), Some(1)) = (requested_repair, probed.as_ref().and_then(|i| i.channels)) {
+        if sundayrec_core::processing::channel_repair_needs_stereo(cr) {
+            return Err(AppError::Validation("channel_repair_needs_stereo".into()));
+        }
+    }
+    if let Some(cr) = requested_repair {
         match &mut chain {
             Some(c) => c.channel_repair = cr,
             None => {
@@ -5491,7 +5521,7 @@ mod tests {
             /// PANIC instead: a silent skip here is precisely how three
             /// measurable audio bugs shipped, and a green run that measured
             /// nothing must not look like a green run that measured everything.
-            fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
+            pub(super) fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
                 match crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg") {
                     Some(p) => Some(p),
                     None => {
@@ -5510,7 +5540,7 @@ mod tests {
             /// Peak level (dBFS) of `source` after `filters`, measured with
             /// `astats`. `filters` reaches ffmpeg as ONE argv element, so its
             /// commas are the filter parser's, not a shell's.
-            fn peak_db(ffmpeg: &std::path::Path, source: &str, filters: &str) -> f64 {
+            pub(super) fn peak_db(ffmpeg: &std::path::Path, source: &str, filters: &str) -> f64 {
                 let out = std::process::Command::new(ffmpeg)
                     .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", source])
                     .args([
@@ -5730,6 +5760,261 @@ mod tests {
                     );
                 }
                 eprintln!("vocal chain: every mixer makeup value builds, runs and lands on its dB");
+            }
+        }
+
+        // ── The channel diagnosis, MEASURED (F2-C-C) ─────────────────────────
+        //
+        // The unit tests in `sundayrec_core::processing` say what the RULES do
+        // with a given pair of numbers. They cannot say whether the numbers the
+        // SEAM feeds them are the recording's numbers — and for a year they were
+        // not: the seam passed `rms_*: None`, and the parser folded astats'
+        // `Overall` rollup into the right channel, so a stone-dead right channel
+        // arrived at the rules as "identical to the left".
+        //
+        // These tests build stereo files whose two channels are known by
+        // construction, run the REAL one-click analysis over them, and read back
+        // the recommendation. HARDWARE-FREE — lavfi synthesises every input.
+        mod channel_diagnosis_levels {
+            use super::vocal_chain_levels::ffmpeg_or_skip;
+            use crate::editor::{auto_process, export, ExportEngine};
+            use crate::media::ffmpeg::tests::ENV_LOCK;
+
+            /// Build a stereo wav whose LEFT and RIGHT legs come from separate
+            /// lavfi sources, so "left is a −12 dBFS sine, right is −70 dBFS
+            /// noise" is a fact about the file and not a hope about it.
+            ///
+            /// `left`/`right` are `(lavfi source, filter chain)`. Each chain
+            /// reaches ffmpeg inside one argv element, so its commas belong to
+            /// the filter parser.
+            fn stereo_pair(
+                ffmpeg: &std::path::Path,
+                dir: &std::path::Path,
+                name: &str,
+                left: (&str, &str),
+                right: (&str, &str),
+            ) -> String {
+                let src = dir.join(name);
+                let fc = format!(
+                    "[0:a]{}[l];[1:a]{}[r];[l][r]join=inputs=2:channel_layout=stereo[out]",
+                    left.1, right.1
+                );
+                let gen = std::process::Command::new(ffmpeg)
+                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", left.0])
+                    .args(["-f", "lavfi", "-i", right.0])
+                    .args(["-filter_complex", &fc, "-map", "[out]", "-y"])
+                    .arg(&src)
+                    .output()
+                    .expect("ffmpeg should run to generate the stereo pair");
+                assert!(
+                    gen.status.success(),
+                    "stereo pair generation failed: {}",
+                    String::from_utf8_lossy(&gen.stderr)
+                );
+                src.to_string_lossy().into_owned()
+            }
+
+            /// lavfi's `sine` is ~−18.06 dBFS, so every leg states its level as
+            /// a `volume` on top of that.
+            fn sine(secs: f64) -> String {
+                format!("sine=frequency=1000:sample_rate=48000:duration={secs}")
+            }
+            /// Pink noise with a PINNED seed — reproducible, not merely plausible.
+            /// Raw peak is ~−2.7 dBFS, so a leg asking for −40 dBFS says −37.3.
+            fn noise(secs: f64) -> String {
+                format!("anoisesrc=r=48000:d={secs}:c=pink:a=1:s=42")
+            }
+
+            /// Run the real one-click analysis over `path` with the sidecar
+            /// wired in, and return `(diagnosis code, repair mode)`.
+            fn analyse(ffmpeg: &std::path::Path, path: &str) -> (String, String) {
+                let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe")
+                    .expect("ffprobe sidecar sits next to the ffmpeg one");
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let res = {
+                    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                    unsafe {
+                        std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
+                        std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+                    }
+                    let r = rt.block_on(auto_process(path));
+                    unsafe {
+                        std::env::remove_var("SUNDAYREC_FFMPEG");
+                        std::env::remove_var("SUNDAYREC_FFPROBE");
+                    }
+                    r.expect("auto-process should analyse the lavfi source")
+                };
+                (
+                    res.diagnosis.code.clone(),
+                    res.diagnosis.recommended.mode.clone(),
+                )
+            }
+
+            /// The bad-cable case, end to end. Right is 58 dB below left, which
+            /// the seam could not see at all: the `Overall` rollup overwrote the
+            /// right channel with the LEFT channel's peak, and the pair reached
+            /// the rules as `balanced`.
+            #[test]
+            fn dead_right_channel_recommends_duplicate_left_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "dead_right.wav",
+                    (&sine(3.0), "volume=6.06dB"),   // −12 dBFS
+                    (&noise(3.0), "volume=-67.3dB"), // −70 dBFS: nothing
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(
+                    code, "dead_right",
+                    "a −70 dBFS right channel next to a −12 dBFS left is a fault, \
+                     not a balance problem"
+                );
+                assert_eq!(mode, "duplicateLeft");
+                eprintln!("channel diagnosis: −12/−70 dBFS → {code} / {mode}");
+            }
+
+            /// The 28 dB gap. A mono mix in L with low-level bleed in R used to
+            /// come back as `gainDb` with +12 on the right — a lift that cannot
+            /// close the gap and DOES raise the bleed by 12 dB.
+            #[test]
+            fn gap_wider_than_the_cap_recommends_duplicate_not_gain_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "bleed_right.wav",
+                    (&sine(3.0), "volume=6.06dB"),   // −12 dBFS
+                    (&noise(3.0), "volume=-37.3dB"), // −40 dBFS bleed
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(code, "unusable_right");
+                assert_eq!(
+                    mode, "duplicateLeft",
+                    "28 dB apart: `gainDb` +12 would leave the pair 16 dB apart \
+                     and call the file repaired"
+                );
+                eprintln!("channel diagnosis: −12/−40 dBFS → {code} / {mode}");
+            }
+
+            /// …and the other side of the same boundary: a pair that gain CAN
+            /// rescue must still be rescued with gain. Without this the new rule
+            /// could be "always duplicate" and every test above would pass.
+            #[test]
+            fn rescuable_imbalance_still_recommends_gain_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "quiet_right.wav",
+                    (&sine(3.0), "volume=6.06dB"),  // −12 dBFS
+                    (&sine(3.0), "volume=-1.94dB"), // −20 dBFS
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(code, "imbalance");
+                assert_eq!(mode, "gainDb");
+                eprintln!("channel diagnosis: −12/−20 dBFS → {code} / {mode}");
+            }
+
+            /// A healthy stereo pair must be left alone. The cheapest way for a
+            /// diagnosis to look clever is to always find something.
+            #[test]
+            fn balanced_pair_recommends_nothing_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "balanced.wav",
+                    (&sine(3.0), "volume=6.06dB"), // −12 dBFS
+                    (&sine(3.0), "volume=5.06dB"), // −13 dBFS
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(code, "balanced");
+                assert_eq!(mode, "none");
+                eprintln!("channel diagnosis: −12/−13 dBFS → {code} / {mode}");
+            }
+
+            /// A repair that reads `c1` on a MONO file is refused, because
+            /// ffmpeg will not refuse it: `pan=stereo|c0=0.5*c0+0.5*c1` on mono
+            /// drops the missing term and renders 6.02 dB down, silently. This
+            /// test proves BOTH halves — that the export says no, and that the
+            /// thing it is saying no to really does lose 6 dB.
+            #[test]
+            fn mono_source_refuses_a_stereo_only_repair_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = dir.path().join("mono.wav");
+                let gen = std::process::Command::new(&ffmpeg)
+                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", &sine(3.0)])
+                    .args(["-ac", "1", "-y"])
+                    .arg(&src)
+                    .output()
+                    .expect("ffmpeg should generate the mono source");
+                assert!(gen.status.success());
+                let src = src.to_string_lossy().into_owned();
+
+                // Half one: the graph really is lossy on mono. −18.06 dBFS in.
+                let measured = super::vocal_chain_levels::peak_db(
+                    &ffmpeg,
+                    &sine(1.0),
+                    "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1",
+                );
+                assert!(
+                    (measured - -24.08).abs() <= 0.1,
+                    "a mono `monoMix` should lose 6.02 dB with no error; measured \
+                     {measured:.3} dBFS"
+                );
+
+                // Half two: the seam refuses to build it.
+                let mut req =
+                    super::export_request(&src, &dir.path().to_string_lossy(), "mp3", &[], 3.0);
+                req.channel_repair = Some(crate::editor::EditorChannelRepair {
+                    mode: "monoMix".into(),
+                    left_db: 0.0,
+                    right_db: 0.0,
+                });
+                let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe")
+                    .expect("ffprobe sidecar sits next to the ffmpeg one");
+                let engine = ExportEngine::new();
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let err = {
+                    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                    unsafe {
+                        std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                        std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+                    }
+                    let r = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                    unsafe {
+                        std::env::remove_var("SUNDAYREC_FFMPEG");
+                        std::env::remove_var("SUNDAYREC_FFPROBE");
+                    }
+                    r.expect_err("a stereo-only repair on a mono file must be refused")
+                };
+                assert!(
+                    err.to_string().contains("channel_repair_needs_stereo"),
+                    "the refusal must carry the code the shell has a sentence \
+                     for; got {err}"
+                );
+                eprintln!(
+                    "channel repair: mono + monoMix renders {measured:.2} dBFS \
+                     (−6.02 dB, silently) — the export refuses it"
+                );
             }
         }
     }
