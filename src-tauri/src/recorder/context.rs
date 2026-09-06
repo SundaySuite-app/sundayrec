@@ -48,7 +48,7 @@ use crate::recorder::preroll::PrerollClip;
 /// one field, of one value. Cloning the context (the cpal attempt gets a clone
 /// so the originals survive a fall-through to DirectShow) clones the writer,
 /// which shares the same `Arc`s and the same generation counter — pinned by
-/// `a_cloned_session_context_shares_the_same_generation_guard` in
+/// `a_cloned_state_writer_shares_the_same_generation_guard` in
 /// `engine`'s tests.
 ///
 /// ## The exhaustiveness rule

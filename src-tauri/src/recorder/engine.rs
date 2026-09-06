@@ -1273,7 +1273,7 @@ async fn run_session(
     // backend demotion and the reconnect device re-resolve must be able to
     // mutate). A cloned `StateWriter` shares the very same `Arc`s — including
     // the `session_generation` counter — so this is the same door, not a second
-    // one; pinned by `a_cloned_session_context_shares_the_same_generation_guard`.
+    // one; pinned by `a_cloned_state_writer_shares_the_same_generation_guard`.
     let state = ctx.state.clone();
     let start_ms = now_ms();
     // Session-wide health counters, fed per-line by each segment's stderr reader
@@ -3887,6 +3887,67 @@ mod tests {
             stale,
             fresh,
         }
+    }
+
+    /// F2-T2's load-bearing clone property. `SessionContext` derives `Clone`,
+    /// and `start()` USES that: the Windows cpal attempt is handed a clone so
+    /// the original survives a fall-through to DirectShow. If cloning the
+    /// context minted a SECOND, independently-guarded door, the two capture
+    /// paths would once again be writing state through different plumbing —
+    /// which is the exact shape of the F1-A5 bug the struct exists to prevent.
+    ///
+    /// A `StateWriter` clone shares every `Arc` — the sink, the shared state,
+    /// the countdown AND the engine's live generation counter — and keeps its
+    /// session's own claimed `generation`. So being superseded supersedes the
+    /// clone too, in the same instant, without anyone having to remember it.
+    #[test]
+    fn a_cloned_state_writer_shares_the_same_generation_guard() {
+        let deadline = Some(1_700_000_000_000);
+        let g = two_generations(RecorderState::Recording, deadline);
+        // The 11:00 service's writer, and the copy `start()` would have handed
+        // to the cpal attempt. Both were current when they were made.
+        let clone = g.stale.clone();
+
+        // …and then the evening meeting claimed generation 2 (that is what
+        // `two_generations` builds). BOTH must now be refused.
+        assert!(!g.stale.is_current());
+        assert!(
+            !clone.is_current(),
+            "the clone must see the same supersession — not its own generation counter"
+        );
+
+        clone.set(RecorderState::Stopped, 0);
+        clone.arm_autostop(None);
+        clone.restamp(0, None);
+
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Recording,
+            "a cloned door is the SAME door: the straggler's clone must not write Stopped either"
+        );
+        assert_eq!(
+            *g.scheduled_stop.borrow(),
+            deadline,
+            "nor may it clear the live session's countdown"
+        );
+        assert!(g.sink.payloads().is_empty(), "and it emits nothing");
+
+        // The other direction: a CURRENT writer's clone writes, through the very
+        // same shared handles — one door, reachable from both capture paths.
+        let live = g.fresh.clone();
+        assert!(live.is_current());
+        live.set(RecorderState::Stopping, 1);
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Stopping,
+            "the clone writes into the ORIGINAL's shared state, not a copy of it"
+        );
+        assert_eq!(
+            g.last_reconnect_count.load(Ordering::SeqCst),
+            1,
+            "…including the shared reconnect count"
+        );
+        assert_eq!(g.sink.payloads().len(), 1, "and through the same sink");
     }
 
     #[test]
