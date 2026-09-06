@@ -318,7 +318,11 @@ fn test_regions(code: &str) -> Option<Vec<(usize, usize)>> {
 
 /// Index of the `}` closing the `{` at `open`, counting braces in `code`
 /// (already stripped, so no brace inside a string or comment can confuse it).
-fn match_brace(code: &str, open: usize) -> Option<usize> {
+///
+/// `pub(crate)` for the same reason as [`strip_to_code`]:
+/// [`crate::update::install_ratchet`] needs to isolate one function body, and a
+/// second brace matcher is a second thing to get wrong.
+pub(crate) fn match_brace(code: &str, open: usize) -> Option<usize> {
     let b = code.as_bytes();
     debug_assert_eq!(b[open], b'{');
     let mut depth = 0usize;

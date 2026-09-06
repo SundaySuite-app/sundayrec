@@ -47,7 +47,9 @@
 
 #![cfg(test)]
 
-use crate::hidden_command_ratchet::{line_of, line_starts, strip_to_code, workspace_root};
+use crate::hidden_command_ratchet::{
+    line_of, line_starts, match_brace, strip_to_code, workspace_root,
+};
 
 /// The combined call the seam must never make again, and why.
 const COMBINED_CALL: &str = "download_and_install(";
@@ -119,6 +121,35 @@ fn hits(files: &[std::path::PathBuf], needle: &str) -> Vec<Site> {
         }
     }
     out
+}
+
+/// The stripped source of one workspace file.
+fn code_of(rel: &str) -> String {
+    let path = workspace_root().join(rel);
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    strip_to_code(&text)
+}
+
+/// The body of the braced item that `header` opens, from already-stripped
+/// `code`. Panics with a readable message when the header is gone — a renamed
+/// function must fail loudly here rather than make an assertion vacuous.
+fn body_after(code: &str, header: &str, what: &str) -> String {
+    let at = code
+        .find(header)
+        .unwrap_or_else(|| panic!("`{header}` is gone — {what} cannot be checked any more"));
+    let open = code[at..]
+        .find('{')
+        .map(|o| at + o)
+        .unwrap_or_else(|| panic!("`{header}` has no body"));
+    let close = match_brace(code, open).unwrap_or_else(|| panic!("`{header}`'s body never closes"));
+    code[open..=close].to_string()
+}
+
+/// The byte offset of `needle` in `body`, or a panic naming what was missing.
+fn at_of(body: &str, needle: &str, what: &str) -> usize {
+    body.find(needle)
+        .unwrap_or_else(|| panic!("`{needle}` is missing from {what}"))
 }
 
 fn listing(found: &[Site]) -> String {
@@ -251,5 +282,83 @@ fn install_is_called_from_exactly_the_two_moments_that_are_allowed() {
          one in `relaunch_now`. Found {sites:?}. A third is a moment nobody \
          has reasoned about; a first-and-only means the platform split was \
          collapsed."
+    );
+}
+
+#[test]
+fn the_finalisation_wait_ends_in_the_install_path_and_not_in_a_bare_restart() {
+    // THE Windows invariant, and the one no Mac test can otherwise reach:
+    // `AfterWait::Relaunch` — the arm that runs once the recording's file is
+    // safe — must go through `relaunch_now`, because that is the only function
+    // that consults the staged bytes. An arm that called `app.restart()` (or
+    // `app.exit`) directly would restart into the OLD version on Windows and
+    // look perfectly correct on macOS, where the install already happened
+    // during the download.
+    let window = code_of("src-tauri/src/window.rs");
+    let arm = body_after(
+        &window,
+        "AfterWait::Relaunch =>",
+        "the updater's end of the finalisation wait",
+    );
+    assert!(
+        arm.contains("relaunch_now"),
+        "the `AfterWait::Relaunch` arm no longer calls `relaunch_now` — on \
+         Windows the staged installer would never be started:\n{arm}"
+    );
+    for forbidden in [".restart()", ".exit("] {
+        assert!(
+            !arm.contains(forbidden),
+            "the `AfterWait::Relaunch` arm calls `{forbidden}` directly, \
+             stepping over the staged install:\n{arm}"
+        );
+    }
+}
+
+#[test]
+fn the_installer_is_only_started_after_the_guard_has_let_go() {
+    // The sequence inside `relaunch_now`, as a rule rather than as a comment.
+    // Every step is invisible from macOS and each one alone is the whole bug:
+    //
+    //   * asking `has_staged()` BEFORE disarming keeps the ffmpeg guard on a
+    //     plain restart, where no installer needs protecting;
+    //   * disarming BEFORE the install is what stops the OS killing the
+    //     installer along with us (F2-W1's second layer);
+    //   * the log line BEFORE the install is the only thing that will ever be
+    //     written — `install` ends in `std::process::exit(0)`.
+    let seam = code_of("src-tauri/src/update/mod.rs");
+    let body = body_after(&seam, "fn relaunch_now", "the one place that may install");
+
+    let staged_at = at_of(&body, "has_staged()", "`relaunch_now`");
+    let disarm_at = at_of(&body, "disarm_kill_on_close()", "`relaunch_now`");
+    let install_at = at_of(&body, ".install(", "`relaunch_now`");
+    let restart_at = at_of(&body, "app.restart()", "`relaunch_now`");
+    // The log line is found by its CALL, not by its text: `strip_to_code`
+    // blanks string literals (that is what keeps this file's own prose from
+    // tripping the other rules), so the sentence itself is not there to match.
+    let logs_the_handover = body[disarm_at..install_at].contains("relaunch_log(");
+
+    assert!(
+        staged_at < disarm_at,
+        "`relaunch_now` disarms the job object before it knows whether an \
+         installer is even waiting — a plain restart would then drop the \
+         ffmpeg orphan guard on its way out"
+    );
+    assert!(
+        disarm_at < install_at,
+        "`relaunch_now` starts the installer before disarming the kill-on-close \
+         job object — the OS would kill it with us, which IS F2-W1"
+    );
+    assert!(
+        logs_the_handover,
+        "nothing is written to update-relaunch.log between the disarm and the \
+         install. That line must exist and must come FIRST: everything after \
+         `install` is the plugin's own `std::process::exit(0)`, so a Windows \
+         update that fails would leave the log empty again — which is exactly \
+         why F2-W1 took three releases to find"
+    );
+    assert!(
+        install_at < restart_at,
+        "`app.restart()` comes before the staged install — the process would be \
+         replaced by the OLD binary while the new one sat in memory"
     );
 }
