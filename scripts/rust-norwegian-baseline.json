@@ -6,8 +6,7 @@
     "crates/sundayrec-core/src/email.rs": "SJU-SPRÅKS-KATALOG, samme grunn som alerts.rs: `error_strings`/`test_strings`/`render_missed`/`render_receipt`/`render_confirm` er uttømmende matcher over MailLang, og `all_seven_languages_have_complete_catalogs` er testen som holder dem komplette.",
     "crates/sundayrec-core/src/tray.rs": "SJU-SPRÅKS-KATALOG (menymodellen, `(item, TrayLang)`-matcher). Samme grunn.",
     "crates/sundayrec-core/src/window.rs": "SJU-SPRÅKS-KATALOG (skjult-vindu- og avslutt-varslene, `(reason, TrayLang)`-matcher). Samme grunn.",
-    "crates/sundayrec-core/src/church_calendar.rs": "Helligdagsnavnene er DATA, ikke setninger. «Skjærtorsdag» er navnet på en rad i den norske kirkeåret-tabellen — det er ikke noe å oversette, og modulhodet sier det rett ut: kalenderen ER norsk. Kommer det en tysk kalender, får den sin egen tabell.",
-    "crates/sundayrec-core/src/diagnostics.rs": "SR-kodenes norske reserve i diagnose-rapporten. GJELD, ikke data: rapporten er brukervendt og bør oversettes — men den er én sammenhengende tekstflate på ~20 avsnitt som hører til språkrunden, ikke hit, og å dra den halvveis inn i AlertText ville gitt to kataloger for samme flate. Tallet vises med --list; det skal ikke vokse ubemerket."
+    "crates/sundayrec-core/src/church_calendar.rs": "Helligdagsnavnene er DATA, ikke setninger. «Skjærtorsdag» er navnet på en rad i den norske kirkeåret-tabellen — det er ikke noe å oversette, og modulhodet sier det rett ut: kalenderen ER norsk. Kommer det en tysk kalender, får den sin egen tabell."
   },
   "total": 121,
   "counts": {
