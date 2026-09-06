@@ -229,14 +229,48 @@ pub fn spectrum(samples: &[f32], sample_rate: u32) -> (f64, Vec<f64>) {
     (centroid, mag)
 }
 
-/// L2 norm of bin-wise magnitude difference vs the previous frame. Ports
-/// `spectralFlux` (returns 0 when there is no previous frame).
+/// Normalised spectral flux: the L2 norm of the bin-wise difference between the
+/// current and previous magnitude spectra, each first scaled to unit L2 norm.
+///
+/// This measures how much the spectral SHAPE changed between frames, and
+/// nothing else. Because both spectra are unit-normalised before differencing,
+/// a scalar gain applied to the signal cancels exactly — the same recording
+/// 10 dB hotter produces the same flux, bit-for-bit up to float rounding. That
+/// is the standard remedy for flux's level dependence in the literature: the
+/// original speech/music discriminator this classifier descends from
+/// (Scheirer & Slaney 1997) computes its spectral features on normalised
+/// spectra, and Lerch (*An Introduction to Audio Content Analysis*, §5.3)
+/// gives normalisation of the magnitude spectrum as the way to decouple flux
+/// from level. The alternative — dividing raw flux by the current frame's
+/// magnitude — is also level-invariant but asymmetric in time; the symmetric,
+/// unit-spectrum form is used here.
+///
+/// Magnitudes are non-negative, so the value lives in `[0, √2]`: 0 for an
+/// unchanged shape, √2 for two spectra with no overlapping energy at all.
+///
+/// **This is a deliberate departure from the Electron port.** The original
+/// `spectralFlux` differenced raw magnitudes, which grow with level, so the
+/// same sermon recorded ~10 dB hotter had ~3× the flux and the classifier's
+/// flux thresholds meant a different thing in every differently-gained room.
+/// [`crate::tuning::SPEECH_FLUX_MIN`] and [`crate::tuning::MUSIC_FLUX_MAX`]
+/// are expressed on THIS scale; their provenance entries record the change and
+/// the derivation of the new values.
+///
+/// Returns 0 when there is no previous frame (the file's first frame, as the
+/// Electron port did) and when either spectrum is numerically zero — a unit
+/// vector cannot be made from true digital silence, and the frame below the
+/// silence cut never reaches the flux feature anyway.
 pub fn spectral_flux(curr: &[f64], prev: Option<&[f64]>) -> f64 {
     let Some(prev) = prev else { return 0.0 };
+    let l2 = |v: &[f64]| v.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let (curr_norm, prev_norm) = (l2(curr), l2(prev));
+    if curr_norm <= 1e-12 || prev_norm <= 1e-12 {
+        return 0.0;
+    }
     let n = curr.len().min(prev.len());
     let mut sum = 0.0;
     for i in 0..n {
-        let d = curr[i] - prev[i];
+        let d = curr[i] / curr_norm - prev[i] / prev_norm;
         sum += d * d;
     }
     sum.sqrt()
@@ -714,6 +748,56 @@ mod tests {
         assert_eq!(frames.len(), 1);
     }
 
+    // ── spectral flux ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn spectral_flux_is_invariant_under_gain() {
+        // The whole point of the normalisation: scaling both spectra by any
+        // gain must not move the flux. 20 dB here; the property holds for any.
+        let curr = vec![1.0, 3.0, 0.5, 2.0];
+        let prev = vec![0.5, 1.0, 2.0, 0.1];
+        let g = 10.0_f64; // +20 dB
+        let scaled_curr: Vec<f64> = curr.iter().map(|x| x * g).collect();
+        let scaled_prev: Vec<f64> = prev.iter().map(|x| x * g).collect();
+        let base = spectral_flux(&curr, Some(&prev));
+        let hot = spectral_flux(&scaled_curr, Some(&scaled_prev));
+        assert!(
+            (base - hot).abs() < 1e-12,
+            "flux moved with level: {base} vs {hot}"
+        );
+        assert!(base > 0.0);
+    }
+
+    #[test]
+    fn spectral_flux_of_unchanged_shape_is_zero_regardless_of_level() {
+        // A pure level change between frames — same shape, 6 dB apart — is
+        // exactly what the old raw-magnitude flux misread as spectral change.
+        let curr = vec![2.0, 6.0, 1.0, 4.0];
+        let prev: Vec<f64> = curr.iter().map(|x| x * 0.5).collect();
+        assert!(spectral_flux(&curr, Some(&prev)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn spectral_flux_is_bounded_by_sqrt_two() {
+        // Disjoint spectra are the worst case: two non-negative unit vectors
+        // can be at most √2 apart.
+        let curr = vec![1.0, 0.0, 0.0, 0.0];
+        let prev = vec![0.0, 0.0, 0.0, 1.0];
+        let flux = spectral_flux(&curr, Some(&prev));
+        assert!((flux - std::f64::consts::SQRT_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn spectral_flux_guards_degenerate_inputs() {
+        // No previous frame (the file's first) and a numerically zero spectrum
+        // both answer 0 — a unit vector cannot be made from digital silence.
+        let curr = vec![1.0, 2.0];
+        assert_eq!(spectral_flux(&curr, None), 0.0);
+        let zero = vec![0.0, 0.0];
+        assert_eq!(spectral_flux(&curr, Some(&zero)), 0.0);
+        assert_eq!(spectral_flux(&zero, Some(&curr)), 0.0);
+    }
+
     // ── classifier ──────────────────────────────────────────────────────────────
 
     #[test]
@@ -723,7 +807,7 @@ mod tests {
             rms_db: -60.0,
             zcr_per_sec: 1000.0,
             spectral_centroid: 1000.0,
-            spectral_flux: 10.0,
+            spectral_flux: 0.7,
         };
         let (t, conf) = classify_frame(&frame);
         assert_eq!(t, SegmentType::Silence);
@@ -737,7 +821,7 @@ mod tests {
             rms_db: -20.0,
             zcr_per_sec: 2000.0,
             spectral_centroid: 1500.0,
-            spectral_flux: 12.0,
+            spectral_flux: 0.6,
         };
         assert_eq!(classify_frame(&frame).0, SegmentType::Speech);
     }
@@ -749,7 +833,7 @@ mod tests {
             rms_db: -15.0,
             zcr_per_sec: 800.0,
             spectral_centroid: 4000.0,
-            spectral_flux: 2.0,
+            spectral_flux: 0.05,
         };
         assert_eq!(classify_frame(&frame).0, SegmentType::Music);
     }
