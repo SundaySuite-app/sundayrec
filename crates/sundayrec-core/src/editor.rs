@@ -851,6 +851,35 @@ where
     }
 }
 
+/// The path an export RENDERS into, before it is renamed onto the
+/// [`collision_free_path`] the user finally sees: `dir/base.__editor_tmp.ext`.
+///
+/// F2-4. The export used to hand ffmpeg the final name and `-y`, so an abort at
+/// 40 % — a cancel, the kill-timer, a failed render, a pulled drive — left a
+/// half-written `<navn>_redigert.mp3` sitting in the folder. In Finder it looks
+/// finished; opened it is an mp4 with no `moov` atom, or an mp3 that stops
+/// mid-sentence. And because the name was taken, the next attempt landed as
+/// `_redigert_2` — so the file the pastor reaches for first is the broken one.
+///
+/// Three properties this name has to carry, and each one is load-bearing:
+///
+///  1. **The extension is LAST.** ffmpeg picks the output container from it. A
+///     temp called `service_redigert.mp3.__editor_tmp` muxes as nothing at all.
+///  2. **`.__editor_tmp.` appears verbatim**, so [`is_editor_temp_name`] matches
+///     it and `startup_sweep` reaps a crashed render's leftovers for free —
+///     including a hard power cut, where no `Drop` in any process can run.
+///  3. **It is in the SAME directory as the output**, so the finishing move is
+///     a rename within one filesystem: atomic, and never a cross-device copy of
+///     a multi-gigabyte video.
+///
+/// The name is deliberately deterministic rather than uuid-tagged: two exports
+/// cannot overlap (`ExportEngine::try_begin`, F2-A-B) and the app is
+/// single-instance, so the only file this can ever collide with is a leftover
+/// from a render that already died — which `-y` should overwrite, not preserve.
+pub fn editor_tmp_path(dir: &str, base: &str, ext: &str) -> String {
+    join(dir, &format!("{base}{EDITOR_TMP_SUFFIX}.{ext}"))
+}
+
 /// Resolve the directory an export writes into, given the renderer's requested
 /// folder and the source file.
 ///
@@ -2599,6 +2628,59 @@ mod tests {
             .collect();
         let p = collision_free_path("/rec", "service", "mp3", |c| taken.contains(c));
         assert_eq!(p, "/rec/service_3.mp3");
+    }
+
+    // ── F2-4: the temp path an export renders into ───────────────────────────
+
+    #[test]
+    fn editor_tmp_path_keeps_the_extension_last() {
+        // ffmpeg picks the container from the extension: it MUST be the suffix.
+        assert_eq!(
+            editor_tmp_path("/rec", "service_redigert", "mp3"),
+            "/rec/service_redigert.__editor_tmp.mp3"
+        );
+        assert_eq!(
+            editor_tmp_path("/rec/", "service_redigert", "mp4"),
+            "/rec/service_redigert.__editor_tmp.mp4"
+        );
+    }
+
+    #[test]
+    fn the_startup_sweep_reaps_a_crashed_renders_temp() {
+        // A hard power cut runs no `Drop` in any process. The ONLY thing that
+        // cleans up then is the startup sweep, and it cleans up what
+        // `is_editor_temp_name` recognises — so the two must agree.
+        for (base, ext) in [
+            ("service_redigert", "mp3"),
+            ("2026-09-06 Gudstjeneste_redigert", "mp4"),
+            ("møte_redigert", "flac"),
+        ] {
+            let tmp = editor_tmp_path("/rec", base, ext);
+            let name = tmp.rsplit('/').next().expect("a file name");
+            assert!(
+                is_editor_temp_name(name),
+                "the sweep must recognise its own render temp: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_temp_name_is_not_a_name_the_export_could_deliver() {
+        // The final name and the temp name must never collide, or the rename
+        // would be a no-op onto itself and the sweep would delete the export.
+        let dir = "/rec";
+        let base = "service_redigert";
+        let tmp = editor_tmp_path(dir, base, "mp3");
+        let mut taken: HashSet<String> = HashSet::new();
+        taken.insert(tmp.clone());
+        let final_path = collision_free_path(dir, base, "mp3", |c| taken.contains(c));
+        assert_ne!(final_path, tmp);
+        assert_eq!(final_path, "/rec/service_redigert.mp3");
+        let final_name = final_path.rsplit('/').next().expect("a file name");
+        assert!(
+            !is_editor_temp_name(final_name),
+            "the DELIVERED file must survive the next startup sweep: {final_name}"
+        );
     }
 
     #[test]
