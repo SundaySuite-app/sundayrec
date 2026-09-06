@@ -13,8 +13,13 @@
  * `record-core.ts`), i stedet for logikk som bor inni en `onKeyDown` ingen
  * vitest-gate når.
  *
- * `app/ui/Shortcuts.tsx` er den tynne DOM-siden: én `keydown`-lytter på
- * `window`, som leser fersk tilstand fra signalene og spør denne tabellen.
+ * `app/Shell.tsx`s `useGlobalShortcuts()` er den tynne DOM-siden: én
+ * `keydown`-lytter på `window` (samme sted og samme mønster som
+ * `useTrayFolder()` — begge må virke uansett hvilken side som står), som
+ * leser fersk tilstand fra signalene og spør denne tabellen. Den bor i
+ * `Shell.tsx` og ikke i `app/ui/` fordi den trenger sidespesifikke fakta
+ * (`route`, `loadState`, biblioteksøkets `data-testid`) — nøyaktig de tingene
+ * `app/ui/` ellers aldri importerer fra `app/pages/`.
  *
  * ## `preventDefault` er IKKE denne fila sitt ansvar
  *
@@ -63,8 +68,8 @@ export type ShortcutAction = "start" | "search" | null;
  *   2. ⌘F/Ctrl+F sjekkes FØR `targetIsEditable`, med vilje: søket er en
  *      global «hopp dit»-snarvei (samme idé som nettleserens egen Ctrl+F),
  *      ikke en tegn-tast, så den skal virke uansett hvor fokus står på
- *      Redigering-siden — inkludert når den already står i søkefeltet selv
- *      (der den bare re-markerer det som allerede står).
+ *      Redigering-siden — inkludert når fokus allerede står i søkefeltet
+ *      selv (der den bare re-markerer det som allerede står).
  *   3. Space/R er tegn-taster og krever derfor at INGEN modifikator er nede
  *      (Cmd+R/Ctrl+R er nettleserens/OS-ets egne snarveier, ikke våre), at
  *      fokus ikke står i et skrivefelt, og at alt Start-knappen selv krever
