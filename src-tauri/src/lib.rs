@@ -512,7 +512,6 @@ pub fn run() {
             commands::recorder::plan_recording_opts,
             commands::recorder::start_recording,
             commands::recorder::stop_recording,
-            commands::recorder::recording_status,
             commands::recorder::recording_scheduled_stop_ms,
             commands::recorder::recording_extend_autostop,
             commands::recorder::recording_cancel_autostop,

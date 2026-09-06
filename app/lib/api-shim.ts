@@ -297,10 +297,10 @@ const ipcFailures = createIpcFailureState();
  *     there would turn opening the page in Chrome into an error storm and
  *     teach everyone to ignore the toast that matters.
  *  2. The dedup/rate-limit in `ipc-failures-core`: one toast per command per
- *     minute, at most three per minute overall. `recording_status` polls ~1×/s
- *     and the preview frame ~4×/s; without this a down backend would stack a
- *     hundred toasts a minute over the UI, which is not surfacing a problem,
- *     it is a second outage.
+ *     minute, at most three per minute overall. `recording_preview_frame`
+ *     alone polls ~4×/s; without this a down backend would stack a hundred
+ *     toasts a minute over the UI, which is not surfacing a problem, it is a
+ *     second outage.
  *
  *  The ring is filled unconditionally either way — the diagnose panel wants the
  *  pattern, not whichever failure happened to win the rate limit. */

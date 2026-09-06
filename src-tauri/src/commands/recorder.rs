@@ -4,7 +4,18 @@
 //!   - `start_recording(opts)` / `stop_recording` to drive a unified capture,
 //!     listening for `recording://{state,started,progress,silence,error,
 //!     reconnecting,reconnected}` events,
-//!   - `recording_status` to read the current [`RecorderState`] synchronously.
+//!   - `recording_scheduled_stop_ms` for the ONE case that event stream can't
+//!     cover on its own — see the command's own doc comment below.
+//!
+//! There used to be a third bullet: `recording_status`, to read the current
+//! [`RecorderState`] synchronously. F2-T1 deleted it (command + registration +
+//! reachability baseline entry) — nothing called it (`RecorderState` is now
+//! unused in this file too), and it duplicated `recording://state`, which 8
+//! files already listen on (docs/archive/COMMAND_AUDIT_2026-08.md §4.9: "Å
+//! spørre synkront om en tilstand som pushes er en kilde til uenighet mellom to
+//! sannheter"). The engine method behind it, `RecorderEngine::current_state()`,
+//! stays — `window.rs`, `update/mod.rs`, `scheduler/mod.rs`,
+//! `diagnostics/mod.rs` and `commands/audio.rs` all call it directly, in-process.
 //!
 //! ## E5.3: why the start choreography is not written inline any more
 //!
@@ -52,7 +63,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 
-use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::settings::ChannelMode;
 
 use crate::db::Db;
@@ -433,12 +443,6 @@ pub fn stop_recording(engine: State<'_, RecorderEngine>) -> AppResult<()> {
     engine.stop();
     crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingStopped);
     Ok(())
-}
-
-/// The current recorder lifecycle state (best-effort snapshot).
-#[tauri::command]
-pub fn recording_status(engine: State<'_, RecorderEngine>) -> RecorderState {
-    engine.current_state()
 }
 
 /// The current auto-stop deadline (absolute epoch ms), or null when none is

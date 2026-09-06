@@ -34,7 +34,7 @@ describe("the IPC failure ring", () => {
     // command failing every 250 ms is ~130 000 entries without it.
     const s = createIpcFailureState();
     for (let i = 0; i < RING_MAX * 3; i++)
-      recordFailure(s, "recording_status", `e${i}`, i);
+      recordFailure(s, "recording_preview_frame", `e${i}`, i);
     expect(s.ring.length).toBe(RING_MAX);
     // …and it keeps the NEWEST, not the first ones it happened to see.
     expect(s.ring[s.ring.length - 1].error).toBe(`e${RING_MAX * 3 - 1}`);
@@ -62,10 +62,10 @@ describe("the IPC failure ring", () => {
 describe("the surfacing policy", () => {
   it("surfaces the first failure of a burst and then goes quiet", () => {
     const s = createIpcFailureState();
-    expect(recordFailure(s, "recording_status", "e", 0)).toBe(true);
+    expect(recordFailure(s, "recording_preview_frame", "e", 0)).toBe(true);
     // A poll failing 4×/s for the rest of the minute says nothing more.
     for (let t = 250; t < DEDUP_MS; t += 250) {
-      expect(recordFailure(s, "recording_status", "e", t)).toBe(false);
+      expect(recordFailure(s, "recording_preview_frame", "e", t)).toBe(false);
     }
     // …but every one of them is still remembered.
     expect(s.ring.length).toBe(RING_MAX);
@@ -73,9 +73,13 @@ describe("the surfacing policy", () => {
 
   it("speaks again once the cooldown has passed", () => {
     const s = createIpcFailureState();
-    expect(recordFailure(s, "recording_status", "e", 0)).toBe(true);
-    expect(recordFailure(s, "recording_status", "e", DEDUP_MS - 1)).toBe(false);
-    expect(recordFailure(s, "recording_status", "e", DEDUP_MS)).toBe(true);
+    expect(recordFailure(s, "recording_preview_frame", "e", 0)).toBe(true);
+    expect(recordFailure(s, "recording_preview_frame", "e", DEDUP_MS - 1)).toBe(
+      false,
+    );
+    expect(recordFailure(s, "recording_preview_frame", "e", DEDUP_MS)).toBe(
+      true,
+    );
   });
 
   it("dedups per command, so a second broken command is still heard", () => {
