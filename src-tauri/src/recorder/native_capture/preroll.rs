@@ -1535,6 +1535,93 @@ mod tests {
         assert_eq!(*s.last().unwrap(), 0);
     }
 
+    // ── The seam, measured by a real decoder ─────────────────────────────────
+
+    /// The sidecar, or `None` → the caller SKIPs. In a lane that fetched the
+    /// binaries and set `SUNDAYREC_REQUIRE_SIDECAR=1` (ci.yml's `check` job,
+    /// `scripts/ci-local.sh`) a missing sidecar PANICS instead — mirrors
+    /// `editor::tests::vocal_chain_levels::ffmpeg_or_skip`.
+    fn ffmpeg_or_skip() -> Option<PathBuf> {
+        match crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg") {
+            Some(p) => Some(p),
+            None => {
+                assert!(
+                    std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
+                    "SUNDAYREC_REQUIRE_SIDECAR=1 but no runnable ffmpeg sidecar — \
+                     run `npm run ffmpeg` first (the pre-roll seam measurement \
+                     must not silently skip in a lane that requires it)"
+                );
+                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+                None
+            }
+        }
+    }
+
+    /// Overall RMS level (dBFS) of `[start, end)` seconds of `clip`, measured by
+    /// ffmpeg's `astats` — i.e. by a real decoder reading the file we wrote, not
+    /// by re-reading our own bytes.
+    fn rms_db(ffmpeg: &Path, clip: &Path, start: f64, end: f64) -> f64 {
+        let out = std::process::Command::new(ffmpeg)
+            .args(["-nostdin", "-hide_banner", "-i"])
+            .arg(clip)
+            .args([
+                "-af",
+                &format!(
+                    "atrim=start={start}:end={end},\
+                     astats=measure_perchannel=none:measure_overall=RMS_level"
+                ),
+                "-f",
+                "null",
+                "-",
+            ])
+            .output()
+            .expect("ffmpeg should run the level measurement");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "ffmpeg refused the clip: {stderr}");
+        stderr
+            .lines()
+            .rev()
+            .find_map(|l| l.split("RMS level dB:").nth(1))
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .unwrap_or_else(|| panic!("astats printed no RMS level: {stderr}"))
+    }
+
+    /// The claim the pure tests cannot make: a REAL decoder, opening the clip by
+    /// its header, hears the last milliseconds arrive at silence — and hears the
+    /// body untouched. This is the seam between our hand-written RIFF (patched
+    /// in place after the copy) and the demuxer that will read it during the
+    /// `-c copy` concat.
+    #[tokio::test]
+    async fn ffmpeg_hears_the_clip_arrive_at_silence() {
+        let Some(ffmpeg) = ffmpeg_or_skip() else {
+            return;
+        };
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        // A flat 0.61 FS block: any level change a decoder reports is the fade's.
+        let segments = vec![write_flat_segment(dir.path(), 0, spec, 96_000, 20_000)];
+        let clip = build_clip(&segments, spec, 1, dir.path())
+            .await
+            .expect("a clip");
+        let path = PathBuf::from(&clip.raw_path);
+
+        // A 2 ms window in the middle: the byte-exact body, ~−4.3 dBFS.
+        let body = rms_db(&ffmpeg, &path, 0.500, 0.502);
+        assert!(
+            (-5.0..-3.5).contains(&body),
+            "the body should be the flat level, got {body} dBFS"
+        );
+        // The LAST 2 ms — inside the 10 ms ramp, gain falling 0.2 → 0.
+        let tail = rms_db(&ffmpeg, &path, 0.998, 1.000);
+        assert!(
+            body - tail >= 12.0,
+            "the clip does not arrive at silence: body {body} dBFS, tail {tail} dBFS"
+        );
+    }
+
     #[tokio::test]
     async fn a_missing_segment_file_fails_the_stitch_cleanly() {
         // The list says a segment exists but the file is gone (a temp sweep, a
