@@ -763,6 +763,14 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Recording now",
     "noSchedule": "No recording scheduled",
+    "preflightCode": {
+      "ffmpegMissing": "The ffmpeg binary is missing. SundayRec must be installed again.",
+      "deviceMissing": "The audio device selected in settings is not connected.",
+      "folderNotWritable": "The save folder cannot be written to.",
+      "diskLow": "Only {gb} GB free on the save disk — perhaps not enough for a whole recording.",
+      "micDenied": "Microphone access has not been granted. Open System Settings → Privacy → Microphone.",
+      "cameraDenied": "Camera access has not been granted."
+    },
     "preflightErrors": {
       "one": "{n} error to fix before the recording",
       "other": "{n} errors to fix before the recording"

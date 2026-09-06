@@ -409,8 +409,20 @@ describe("missed + preflight formatting", () => {
   it("lets an error outrank warnings", () => {
     const out = formatPreflightHeadline(
       [
-        { severity: "warn", category: "disk", message: "a" },
-        { severity: "error", category: "device", message: "b" },
+        {
+          severity: "warn",
+          category: "disk",
+          message: "a",
+          code: null,
+          params: {},
+        },
+        {
+          severity: "error",
+          category: "device",
+          message: "b",
+          code: null,
+          params: {},
+        },
       ],
       ctx(),
     )!;
@@ -422,8 +434,20 @@ describe("missed + preflight formatting", () => {
   it("counts warnings when there is no error", () => {
     const out = formatPreflightHeadline(
       [
-        { severity: "warn", category: "disk", message: "a" },
-        { severity: "warn", category: "wake", message: "b" },
+        {
+          severity: "warn",
+          category: "disk",
+          message: "a",
+          code: null,
+          params: {},
+        },
+        {
+          severity: "warn",
+          category: "wake",
+          message: "b",
+          code: null,
+          params: {},
+        },
       ],
       ctx(),
     )!;

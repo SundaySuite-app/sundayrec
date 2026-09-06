@@ -14,8 +14,12 @@
 //! "device"`) so the same renderer logic / log shapes carry across the
 //! migration.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+use crate::alerts::AlertText;
 
 /// How serious a finding is. Serialised lowercase to match the Electron
 /// `'warn' | 'error'` union (`preflight.ts:21`).
@@ -49,24 +53,118 @@ pub enum PreflightCategory {
     Device,
 }
 
+/// What the preflight check found, as a STABLE CODE.
+///
+/// Was six hardcoded Norwegian sentences (F2-I18N-R2). The findings are
+/// rendered verbatim in the app's preflight card AND in the native
+/// notification the scheduler fires half an hour before a service, so the
+/// prose was the app's own voice in exactly one of its seven languages.
+///
+/// The code is the contract now, and it has TWO catalogues because it has two
+/// surfaces — which is the rule, not an exception to it:
+///
+///   • the card: `status.preflightCode.<code>` in `legacy/locales/*.json`,
+///     rendered by `app/state/preflight.ts`;
+///   • the native notification: [`AlertText`] (see [`Self::alert`]), because
+///     Rust cannot reach the renderer's catalogue and a notification is not a
+///     place to be silent.
+///
+/// [`Self::as_str`] is the ENGLISH reserve — the log line, and the text field
+/// a shell older than the code would fall back on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "PreflightCode.ts")]
+#[serde(rename_all = "camelCase")]
+pub enum PreflightCode {
+    /// The bundled ffmpeg sidecar is not there.
+    FfmpegMissing,
+    /// The configured audio device is not among the enumerated inputs.
+    DeviceMissing,
+    /// The save folder exists but cannot be written to.
+    FolderNotWritable,
+    /// Free space is below the mode's threshold. Carries `{gb}`.
+    DiskLow,
+    /// macOS is blocking microphone access.
+    MicDenied,
+    /// macOS is blocking camera access, and video is on.
+    CameraDenied,
+}
+
+impl PreflightCode {
+    /// English reserve, with `{gb}` unfilled where the code carries it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FfmpegMissing => "The ffmpeg binary is missing. SundayRec must be installed again.",
+            Self::DeviceMissing => "The audio device selected in settings is not connected.",
+            Self::FolderNotWritable => "The save folder cannot be written to.",
+            Self::DiskLow => {
+                "Only {gb} GB free on the save disk — perhaps not enough for a whole recording."
+            }
+            Self::MicDenied => {
+                "Microphone access has not been granted. Open System Settings → Privacy → Microphone."
+            }
+            Self::CameraDenied => "Camera access has not been granted.",
+        }
+    }
+
+    /// The native notification's sentence for this code — the seven-language
+    /// catalogue Rust CAN reach.
+    pub fn alert(self) -> AlertText {
+        match self {
+            Self::FfmpegMissing => AlertText::PreflightFfmpegMissing,
+            Self::DeviceMissing => AlertText::PreflightDeviceMissing,
+            Self::FolderNotWritable => AlertText::PreflightFolderNotWritable,
+            Self::DiskLow => AlertText::PreflightDiskLow,
+            Self::MicDenied => AlertText::PreflightMicDenied,
+            Self::CameraDenied => AlertText::PreflightCameraDenied,
+        }
+    }
+}
+
 /// A single thing the preflight check found. Mirrors the Electron
-/// `PreflightFinding` interface field-for-field.
+/// `PreflightFinding` interface field-for-field, plus the [`PreflightCode`] the
+/// two localised surfaces render on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "PreflightFinding.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PreflightFinding {
     pub severity: PreflightSeverity,
     pub category: PreflightCategory,
+    /// The code the app localises on. `None` for a finding the SHELL built
+    /// itself (`app/lib/status/health-findings.ts` raises two of its own from
+    /// the permission probes) — those already carry text in the user's
+    /// language, and inventing a code for them here would be a second answer
+    /// to a question that already has one.
+    #[serde(default)]
+    pub code: Option<PreflightCode>,
+    /// The engine's own wording: ENGLISH, with `params` already filled in.
+    /// Used verbatim by a reader that does not know [`Self::code`].
     pub message: String,
+    /// Interpolation values for the localised sentence (`{gb}`). Same shape and
+    /// same reason as [`crate::notify::BackendWarning::params`].
+    #[serde(default)]
+    pub params: HashMap<String, String>,
 }
 
 impl PreflightFinding {
-    fn error(category: PreflightCategory, message: impl Into<String>) -> Self {
+    /// An error finding for `code`, with the English reserve as its message.
+    fn error(category: PreflightCategory, code: PreflightCode) -> Self {
         Self {
             severity: PreflightSeverity::Error,
             category,
-            message: message.into(),
+            code: Some(code),
+            message: code.as_str().to_string(),
+            params: HashMap::new(),
         }
+    }
+
+    /// Attach one interpolation value — and fill it into `message`, so the
+    /// English reserve is a finished sentence and not a template with a hole
+    /// in it. That is the whole difference between a reserve and a bug.
+    fn param(mut self, key: &str, value: impl Into<String>) -> Self {
+        let value = value.into();
+        self.message = self.message.replace(&format!("{{{key}}}"), &value);
+        self.params.insert(key.to_string(), value);
+        self
     }
 }
 
@@ -139,11 +237,10 @@ pub fn disk_space_finding(free_bytes: u64, video_active: bool) -> Option<Preflig
         MIN_DISK_AUDIO_BYTES
     };
     if free_bytes < min {
-        let gb = format_gb(free_bytes);
-        Some(PreflightFinding::error(
-            PreflightCategory::Disk,
-            format!("Bare {gb} GB ledig på lagringsdisken — kanskje ikke nok for et helt opptak."),
-        ))
+        Some(
+            PreflightFinding::error(PreflightCategory::Disk, PreflightCode::DiskLow)
+                .param("gb", format_gb(free_bytes)),
+        )
     } else {
         None
     }
@@ -213,7 +310,7 @@ pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
     if facts.ffmpeg_missing {
         findings.push(PreflightFinding::error(
             PreflightCategory::Device,
-            "ffmpeg-binær mangler. SundayRec må installeres på nytt.",
+            PreflightCode::FfmpegMissing,
         ));
     }
 
@@ -226,14 +323,14 @@ pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
     if !facts.device_present {
         findings.push(PreflightFinding::error(
             PreflightCategory::Device,
-            "Lydenheten som er valgt i innstillingene er ikke tilkoblet.",
+            PreflightCode::DeviceMissing,
         ));
     }
 
     if !facts.folder_writable {
         findings.push(PreflightFinding::error(
             PreflightCategory::Disk,
-            "Lagringsmappen kan ikke skrives.",
+            PreflightCode::FolderNotWritable,
         ));
     }
 
@@ -246,14 +343,14 @@ pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
     if facts.mic_denied {
         findings.push(PreflightFinding::error(
             PreflightCategory::Device,
-            "Mikrofontilgang er ikke gitt. Åpne Systeminnstillinger → Personvern → Mikrofon.",
+            PreflightCode::MicDenied,
         ));
     }
 
     if facts.video_active && facts.cam_denied {
         findings.push(PreflightFinding::error(
             PreflightCategory::Device,
-            "Kameratilgang er ikke gitt.",
+            PreflightCode::CameraDenied,
         ));
     }
 
@@ -344,7 +441,7 @@ mod tests {
         let f = disk_space_finding(MIN_DISK_AUDIO_BYTES - 1, false).expect("finding");
         assert_eq!(f.severity, PreflightSeverity::Error);
         assert_eq!(f.category, PreflightCategory::Disk);
-        assert!(f.message.contains("ledig"));
+        assert_eq!(f.code, Some(PreflightCode::DiskLow));
     }
 
     #[test]
@@ -460,17 +557,17 @@ mod tests {
         let findings = assemble_findings(facts);
         assert_eq!(findings.len(), 6);
         assert_eq!(findings[0].category, PreflightCategory::Device); // ffmpeg
-        assert!(findings[0].message.contains("ffmpeg"));
+        assert_eq!(findings[0].code, Some(PreflightCode::FfmpegMissing));
         assert_eq!(findings[1].category, PreflightCategory::Device); // device gone
-        assert!(findings[1].message.contains("ikke tilkoblet"));
+        assert_eq!(findings[1].code, Some(PreflightCode::DeviceMissing));
         assert_eq!(findings[2].category, PreflightCategory::Disk); // folder
-        assert!(findings[2].message.contains("skrives"));
+        assert_eq!(findings[2].code, Some(PreflightCode::FolderNotWritable));
         assert_eq!(findings[3].category, PreflightCategory::Disk); // free space
-        assert!(findings[3].message.contains("ledig"));
+        assert_eq!(findings[3].code, Some(PreflightCode::DiskLow));
         assert_eq!(findings[4].category, PreflightCategory::Device); // mic
-        assert!(findings[4].message.contains("Mikrofon"));
+        assert_eq!(findings[4].code, Some(PreflightCode::MicDenied));
         assert_eq!(findings[5].category, PreflightCategory::Device); // cam
-        assert!(findings[5].message.contains("Kamera"));
+        assert_eq!(findings[5].code, Some(PreflightCode::CameraDenied));
     }
 
     #[test]
@@ -504,7 +601,7 @@ mod tests {
         };
         let findings = assemble_findings(facts);
         assert_eq!(findings.len(), 1);
-        assert!(findings[0].message.contains("ffmpeg"));
+        assert_eq!(findings[0].code, Some(PreflightCode::FfmpegMissing));
     }
 
     #[test]
@@ -527,7 +624,7 @@ mod tests {
         };
         let findings = assemble_findings(facts);
         assert_eq!(findings.len(), 1);
-        assert!(findings[0].message.contains("Kamera"));
+        assert_eq!(findings[0].code, Some(PreflightCode::CameraDenied));
     }
 
     #[test]
@@ -539,7 +636,7 @@ mod tests {
         };
         let findings = assemble_findings(facts);
         assert_eq!(findings.len(), 1);
-        assert!(findings[0].message.contains("ledig"));
+        assert_eq!(findings[0].code, Some(PreflightCode::DiskLow));
     }
 
     #[test]
@@ -565,11 +662,54 @@ mod tests {
             "\"wake\""
         );
         // Finding keys are camelCase, matching the Electron interface.
-        let f = PreflightFinding::error(PreflightCategory::Disk, "x");
+        let f = PreflightFinding::error(PreflightCategory::Disk, PreflightCode::DiskLow);
         let v = serde_json::to_value(&f).unwrap();
         let obj = v.as_object().unwrap();
         assert!(obj.contains_key("severity"));
         assert!(obj.contains_key("category"));
         assert!(obj.contains_key("message"));
+        assert!(obj.contains_key("code"));
+        assert!(obj.contains_key("params"));
+        assert_eq!(obj["code"], "diskLow");
+    }
+
+    // ── F2-I18N-R2: koder, ikke prosa ───────────────────────────────────────
+
+    /// Every code says something, in English, and no two say the same thing —
+    /// two findings that read alike are two findings nobody can tell apart.
+    #[test]
+    fn every_preflight_code_has_a_distinct_english_reserve() {
+        let all = [
+            PreflightCode::FfmpegMissing,
+            PreflightCode::DeviceMissing,
+            PreflightCode::FolderNotWritable,
+            PreflightCode::DiskLow,
+            PreflightCode::MicDenied,
+            PreflightCode::CameraDenied,
+        ];
+        let texts: Vec<&str> = all.iter().map(|c| c.as_str()).collect();
+        assert!(texts.iter().all(|t| !t.trim().is_empty()));
+        let uniq: std::collections::HashSet<_> = texts.iter().collect();
+        assert_eq!(uniq.len(), texts.len());
+        assert!(
+            !texts.iter().any(|t| t.contains(['æ', 'ø', 'å'])),
+            "the English reserve is not English"
+        );
+        // Each code names its own notification arm — a shared arm would make
+        // two different problems produce the same notification.
+        let alerts: std::collections::HashSet<_> = all.iter().map(|c| c.alert()).collect();
+        assert_eq!(alerts.len(), all.len());
+    }
+
+    /// `param()` fills the reserve as it records the value. A reserve that
+    /// still reads "Only {gb} GB free" is not a reserve.
+    #[test]
+    fn the_disk_reserve_is_a_finished_sentence() {
+        // 1.5 GB is over the audio bar and under the video one.
+        let f = disk_space_finding(1_610_612_736, true).unwrap();
+        assert_eq!(f.code, Some(PreflightCode::DiskLow));
+        assert_eq!(f.params.get("gb").map(String::as_str), Some("1.5"));
+        assert!(f.message.contains("1.5 GB"), "{}", f.message);
+        assert!(!f.message.contains('{'), "{}", f.message);
     }
 }

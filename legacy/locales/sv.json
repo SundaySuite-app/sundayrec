@@ -763,6 +763,14 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Spelar in nu",
     "noSchedule": "Ingen inspelning schemalagd",
+    "preflightCode": {
+      "ffmpegMissing": "ffmpeg-filen saknas. SundayRec måste installeras om.",
+      "deviceMissing": "Ljudenheten som är vald i inställningarna är inte ansluten.",
+      "folderNotWritable": "Det går inte att skriva till lagringsmappen.",
+      "diskLow": "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning.",
+      "micDenied": "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon.",
+      "cameraDenied": "Kameraåtkomst har inte getts."
+    },
     "preflightErrors": {
       "one": "{n} fel måste åtgärdas före inspelningen",
       "other": "{n} fel måste åtgärdas före inspelningen"

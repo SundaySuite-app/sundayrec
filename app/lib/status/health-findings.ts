@@ -53,6 +53,12 @@ export function buildHealthFindings(input: HealthInputs): PreflightFinding[] {
   const mic = input.permissions?.microphone;
   if (isBlocked(mic)) {
     out.push({
+      // F2-I18N-R2: these three are the SHELL's own findings — the text is
+      // already written in the user's language above, so there is no engine
+      // code to localise on. `null` says exactly that; see the Rust
+      // `PreflightFinding::code` docs.
+      code: null,
+      params: {},
       severity: "error",
       category: "device",
       message:
@@ -71,6 +77,8 @@ export function buildHealthFindings(input: HealthInputs): PreflightFinding[] {
   const cam = input.permissions?.camera;
   if (input.videoEnabled && isBlocked(cam)) {
     out.push({
+      code: null,
+      params: {},
       severity: "error",
       category: "device",
       message:
@@ -88,6 +96,8 @@ export function buildHealthFindings(input: HealthInputs): PreflightFinding[] {
 
   if (input.ffmpeg && input.ffmpeg.available === false) {
     out.push({
+      code: null,
+      params: {},
       severity: "error",
       category: "device",
       message: t(

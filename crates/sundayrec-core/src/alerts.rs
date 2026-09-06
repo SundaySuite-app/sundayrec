@@ -86,6 +86,24 @@ pub enum AlertText {
     // ── Scheduler ───────────────────────────────────────────────────────────
     /// Title of the pre-service preflight notification.
     PreflightTitle,
+    /// Preflight body: the ffmpeg sidecar is missing.
+    ///
+    /// The six `Preflight*` bodies below are the NATIVE NOTIFICATION's half of
+    /// `sundayrec_core::preflight::PreflightCode` (F2-I18N-R2). The app's card
+    /// renders the same codes from `legacy/locales/*.json`; a notification is
+    /// fired from Rust, half an hour before a service, and cannot reach that
+    /// catalogue — so the code has two catalogues because it has two surfaces.
+    PreflightFfmpegMissing,
+    /// Preflight body: the configured audio device is not connected.
+    PreflightDeviceMissing,
+    /// Preflight body: the save folder is not writable.
+    PreflightFolderNotWritable,
+    /// Preflight body: free space is below the threshold. `{gb}`
+    PreflightDiskLow,
+    /// Preflight body: the OS is blocking the microphone.
+    PreflightMicDenied,
+    /// Preflight body: the OS is blocking the camera.
+    PreflightCameraDenied,
     /// A scheduled recording started (governed by `notify_start`).
     ScheduledStarted,
     /// A scheduled recording was stopped by the schedule (governed by
@@ -135,6 +153,12 @@ impl AlertText {
         AlertText::QualityTaskRestarted,
         AlertText::EmailTaskRestarted,
         AlertText::PreflightTitle,
+        AlertText::PreflightFfmpegMissing,
+        AlertText::PreflightDeviceMissing,
+        AlertText::PreflightFolderNotWritable,
+        AlertText::PreflightDiskLow,
+        AlertText::PreflightMicDenied,
+        AlertText::PreflightCameraDenied,
         AlertText::ScheduledStarted,
         AlertText::ScheduledStopped,
         AlertText::ScheduledSkippedBusy,
@@ -164,6 +188,7 @@ impl AlertText {
             | AlertText::ScheduledPrepareFailed
             | AlertText::ScheduledLateStartFailed => &["detail"],
             AlertText::Reminder => &["min"],
+            AlertText::PreflightDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
             _ => &[],
@@ -320,6 +345,122 @@ impl AlertText {
             (A::PreflightTitle, L::Da) => "SundayRec — tjek før optagelse",
             (A::PreflightTitle, L::Pl) => "SundayRec — sprawdź przed nagraniem",
             (A::PreflightTitle, L::Fr) => "SundayRec — vérification avant l'enregistrement",
+
+            // ── PreflightFfmpegMissing ──────────────────────────────────────
+            (A::PreflightFfmpegMissing, L::No) => {
+                "ffmpeg-binær mangler. SundayRec må installeres på nytt."
+            }
+            (A::PreflightFfmpegMissing, L::En) => {
+                "The ffmpeg binary is missing. SundayRec must be installed again."
+            }
+            (A::PreflightFfmpegMissing, L::De) => {
+                "Die ffmpeg-Datei fehlt. SundayRec muss neu installiert werden."
+            }
+            (A::PreflightFfmpegMissing, L::Sv) => {
+                "ffmpeg-filen saknas. SundayRec måste installeras om."
+            }
+            (A::PreflightFfmpegMissing, L::Da) => {
+                "ffmpeg-filen mangler. SundayRec skal installeres igen."
+            }
+            (A::PreflightFfmpegMissing, L::Pl) => {
+                "Brakuje pliku ffmpeg. Trzeba ponownie zainstalować SundayRec."
+            }
+            (A::PreflightFfmpegMissing, L::Fr) => {
+                "Le binaire ffmpeg est absent. SundayRec doit être réinstallé."
+            }
+
+            // ── PreflightDeviceMissing ──────────────────────────────────────
+            (A::PreflightDeviceMissing, L::No) => {
+                "Lydenheten som er valgt i innstillingene er ikke tilkoblet."
+            }
+            (A::PreflightDeviceMissing, L::En) => {
+                "The audio device selected in settings is not connected."
+            }
+            (A::PreflightDeviceMissing, L::De) => {
+                "Das in den Einstellungen gewählte Audiogerät ist nicht angeschlossen."
+            }
+            (A::PreflightDeviceMissing, L::Sv) => {
+                "Ljudenheten som är vald i inställningarna är inte ansluten."
+            }
+            (A::PreflightDeviceMissing, L::Da) => {
+                "Lydenheden, der er valgt i indstillingerne, er ikke tilsluttet."
+            }
+            (A::PreflightDeviceMissing, L::Pl) => {
+                "Urządzenie audio wybrane w ustawieniach nie jest podłączone."
+            }
+            (A::PreflightDeviceMissing, L::Fr) => {
+                "Le périphérique audio choisi dans les réglages n'est pas connecté."
+            }
+
+            // ── PreflightFolderNotWritable ──────────────────────────────────
+            (A::PreflightFolderNotWritable, L::No) => "Lagringsmappen kan ikke skrives.",
+            (A::PreflightFolderNotWritable, L::En) => "The save folder cannot be written to.",
+            (A::PreflightFolderNotWritable, L::De) => {
+                "In den Speicherordner kann nicht geschrieben werden."
+            }
+            (A::PreflightFolderNotWritable, L::Sv) => {
+                "Det går inte att skriva till lagringsmappen."
+            }
+            (A::PreflightFolderNotWritable, L::Da) => "Der kan ikke skrives til lagringsmappen.",
+            (A::PreflightFolderNotWritable, L::Pl) => "Nie można zapisywać w folderze zapisu.",
+            (A::PreflightFolderNotWritable, L::Fr) => {
+                "Impossible d'écrire dans le dossier d'enregistrement."
+            }
+
+            // ── PreflightDiskLow ────────────────────────────────────────────
+            (A::PreflightDiskLow, L::No) => {
+                "Bare {gb} GB ledig på lagringsdisken — kanskje ikke nok for et helt opptak."
+            }
+            (A::PreflightDiskLow, L::En) => {
+                "Only {gb} GB free on the save disk — perhaps not enough for a whole recording."
+            }
+            (A::PreflightDiskLow, L::De) => {
+                "Nur {gb} GB frei auf dem Speicherlaufwerk — vielleicht nicht genug für eine ganze Aufnahme."
+            }
+            (A::PreflightDiskLow, L::Sv) => {
+                "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning."
+            }
+            (A::PreflightDiskLow, L::Da) => {
+                "Kun {gb} GB ledig på lagringsdisken — måske ikke nok til en hel optagelse."
+            }
+            (A::PreflightDiskLow, L::Pl) => {
+                "Tylko {gb} GB wolnego miejsca na dysku zapisu — być może za mało na całe nagranie."
+            }
+            (A::PreflightDiskLow, L::Fr) => {
+                "Seulement {gb} Go libres sur le disque d'enregistrement — peut-être pas assez pour un enregistrement entier."
+            }
+
+            // ── PreflightMicDenied ──────────────────────────────────────────
+            (A::PreflightMicDenied, L::No) => {
+                "Mikrofontilgang er ikke gitt. Åpne Systeminnstillinger → Personvern → Mikrofon."
+            }
+            (A::PreflightMicDenied, L::En) => {
+                "Microphone access has not been granted. Open System Settings → Privacy → Microphone."
+            }
+            (A::PreflightMicDenied, L::De) => {
+                "Der Mikrofonzugriff ist nicht erteilt. Öffnen Sie Systemeinstellungen → Datenschutz → Mikrofon."
+            }
+            (A::PreflightMicDenied, L::Sv) => {
+                "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon."
+            }
+            (A::PreflightMicDenied, L::Da) => {
+                "Der er ikke givet adgang til mikrofonen. Åbn Systemindstillinger → Anonymitet → Mikrofon."
+            }
+            (A::PreflightMicDenied, L::Pl) => {
+                "Nie przyznano dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność → Mikrofon."
+            }
+            (A::PreflightMicDenied, L::Fr) => {
+                "L'accès au microphone n'est pas accordé. Ouvrez Réglages Système → Confidentialité → Microphone."
+            }
+
+            // ── PreflightCameraDenied ───────────────────────────────────────
+            (A::PreflightCameraDenied, L::No) => "Kameratilgang er ikke gitt.",
+            (A::PreflightCameraDenied, L::En) => "Camera access has not been granted.",
+            (A::PreflightCameraDenied, L::De) => "Der Kamerazugriff ist nicht erteilt.",
+            (A::PreflightCameraDenied, L::Sv) => "Kameraåtkomst har inte getts.",
+            (A::PreflightCameraDenied, L::Da) => "Der er ikke givet adgang til kameraet.",
+            (A::PreflightCameraDenied, L::Pl) => "Nie przyznano dostępu do kamery.",
+            (A::PreflightCameraDenied, L::Fr) => "L'accès à la caméra n'est pas accordé.",
 
             // ── ScheduledStarted ────────────────────────────────────────────
             (A::ScheduledStarted, L::No) => "Planlagt opptak startet.",
@@ -678,7 +819,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            22,
+            28,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();

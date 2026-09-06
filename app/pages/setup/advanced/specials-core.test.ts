@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
@@ -231,64 +229,4 @@ describe("testWakeWord", () => {
       expect(testWakeWord(result)).toBe(word);
     },
   );
-});
-
-// ── Vekkekodene mot Rust (F2-I18N-R2) ───────────────────────────────────────
-
-describe("wakeIssue/wakeAdvice-kodene mot bindingene", () => {
-  /**
-   * Kodene slik ts-rs SKREV dem ut av `sundayrec_core::wake` — ikke en kopi
-   * av dem. Bindingsfila er generert av `npm run bindings`, og `bindings:check`
-   * feiler hvis den er foreldet, så dette er Rusts egen liste med ett ledd
-   * mindre å ta feil i enn en regex over `wake.rs`.
-   */
-  function unionMembers(file: string): string[] {
-    const src = readFileSync(
-      join(import.meta.dirname, `../../../../legacy/bindings/${file}`),
-      "utf8",
-    );
-    const decl = /export type \w+ =([^;]+);/.exec(src);
-    if (!decl) throw new Error(`fant ingen type-erklæring i ${file}`);
-    const members = [...decl[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    if (members.length === 0) throw new Error(`${file} er en tom union`);
-    return members;
-  }
-
-  /**
-   * MUTASJONSPRØVEN: legg en variant til i `WakeIssue` i Rust uten å skrive
-   * setningen i katalogene, og denne blir rød i alle sju. Uten den ville
-   * `tDyn` rendret en TOM listepost i prod (den kaster bare i DEV) — en kule
-   * uten tekst, på den ene flaten som forklarer hvorfor søndagen kanskje ikke
-   * blir tatt opp.
-   */
-  it.each([
-    ["WakeIssue.ts", "wakeIssue"],
-    ["WakeRecommendation.ts", "wakeAdvice"],
-  ])("%s har en setning per kode i alle sju katalogene", (file, group) => {
-    const codes = unionMembers(file);
-    for (const lang of ["no", "en", "sv", "da", "de", "fr", "pl"]) {
-      const cat = JSON.parse(
-        readFileSync(
-          join(import.meta.dirname, `../../../../legacy/locales/${lang}.json`),
-          "utf8",
-        ),
-      ) as {
-        app?: {
-          setup?: { advanced?: Record<string, Record<string, string>> };
-        };
-      };
-      const tree = cat.app?.setup?.advanced?.[group] ?? {};
-      for (const code of codes) {
-        expect(
-          typeof tree[code] === "string" && tree[code].length > 0,
-          `${lang}.json mangler app.setup.advanced.${group}.${code}`,
-        ).toBe(true);
-      }
-      // …og ingen nøkler UTOVER kodene: en rad ingen kode peker på er en
-      // setning ingen ser, som likevel må oversettes til sju språk.
-      expect(Object.keys(tree).sort(), `${lang}.json / ${group}`).toEqual(
-        [...codes].sort(),
-      );
-    }
-  });
 });

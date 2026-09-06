@@ -769,6 +769,14 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Trwa nagrywanie",
     "noSchedule": "Brak zaplanowanego nagrania",
+    "preflightCode": {
+      "ffmpegMissing": "Brakuje pliku ffmpeg. Trzeba ponownie zainstalować SundayRec.",
+      "deviceMissing": "Urządzenie audio wybrane w ustawieniach nie jest podłączone.",
+      "folderNotWritable": "Nie można zapisywać w folderze zapisu.",
+      "diskLow": "Tylko {gb} GB wolnego miejsca na dysku zapisu — być może za mało na całe nagranie.",
+      "micDenied": "Nie przyznano dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność → Mikrofon.",
+      "cameraDenied": "Nie przyznano dostępu do kamery."
+    },
     "preflightErrors": {
       "one": "{n} błąd do naprawienia przed nagraniem",
       "few": "{n} błędy do naprawienia przed nagraniem",

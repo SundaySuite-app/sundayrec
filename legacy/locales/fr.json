@@ -763,6 +763,14 @@
     "warningDevice": "{warning} : {name}",
     "recording": "Enregistrement en cours",
     "noSchedule": "Aucun enregistrement prévu",
+    "preflightCode": {
+      "ffmpegMissing": "Le binaire ffmpeg est absent. SundayRec doit être réinstallé.",
+      "deviceMissing": "Le périphérique audio choisi dans les réglages n’est pas connecté.",
+      "folderNotWritable": "Impossible d’écrire dans le dossier d’enregistrement.",
+      "diskLow": "Seulement {gb} Go libres sur le disque d’enregistrement — peut-être pas assez pour un enregistrement entier.",
+      "micDenied": "L’accès au microphone n’est pas accordé. Ouvrez Réglages Système → Confidentialité → Microphone.",
+      "cameraDenied": "L’accès à la caméra n’est pas accordé."
+    },
     "preflightErrors": {
       "one": "{n} erreur à corriger avant l’enregistrement",
       "other": "{n} erreurs à corriger avant l’enregistrement"

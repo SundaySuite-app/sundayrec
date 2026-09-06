@@ -763,6 +763,14 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Optager nu",
     "noSchedule": "Ingen optagelse planlagt",
+    "preflightCode": {
+      "ffmpegMissing": "ffmpeg-filen mangler. SundayRec skal installeres igen.",
+      "deviceMissing": "Lydenheden, der er valgt i indstillingerne, er ikke tilsluttet.",
+      "folderNotWritable": "Der kan ikke skrives til lagringsmappen.",
+      "diskLow": "Kun {gb} GB ledig på lagringsdisken — måske ikke nok til en hel optagelse.",
+      "micDenied": "Der er ikke givet adgang til mikrofonen. Åbn Systemindstillinger → Anonymitet → Mikrofon.",
+      "cameraDenied": "Der er ikke givet adgang til kameraet."
+    },
     "preflightErrors": {
       "one": "{n} fejl skal rettes før optagelsen",
       "other": "{n} fejl skal rettes før optagelsen"

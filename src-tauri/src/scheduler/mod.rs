@@ -650,18 +650,27 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool, settings: &
         // problem report: should_notify pins PreflightFinding on regardless of
         // the notify_start/notify_stop comfort toggles.
         if should_notify(SchedulerNotice::PreflightFinding, settings) {
-            // The TITLE is localized; the finding's own `message` is not.
-            // `PreflightFinding` is a whole surface of its own — a `category`
-            // plus a free sentence, rendered as a card in the app as well as
-            // here — and localizing it means giving that surface a catalog, not
-            // bolting three of its sentences onto `AlertText`. The ratchet
-            // holds its current count (`preflight.rs`: 5) so it cannot grow
-            // while it waits.
-            notify_user(
-                app,
-                &AlertText::PreflightTitle.text(lang_of(settings)),
-                &first.message,
-            );
+            // F2-I18N-R2: BOTH halves are localized now. The finding carries a
+            // `PreflightCode`, and the code names its own `AlertText` arm — so
+            // the notification is written in the volunteer's language rather
+            // than in the engine's. `message` (English) remains the reserve
+            // for a finding with no code, which is only ever one the SHELL
+            // built; the scheduler never sees those, so in practice this is
+            // the total-function branch and not a fallback anybody hits.
+            let lang = lang_of(settings);
+            let body = match first.code {
+                Some(code) => {
+                    let vars: Vec<(&str, &str)> = code
+                        .alert()
+                        .params()
+                        .iter()
+                        .map(|p| (*p, first.params.get(*p).map(String::as_str).unwrap_or("?")))
+                        .collect();
+                    code.alert().fill(lang, &vars)
+                }
+                None => first.message.clone(),
+            };
+            notify_user(app, &AlertText::PreflightTitle.text(lang), &body);
         }
     }
 

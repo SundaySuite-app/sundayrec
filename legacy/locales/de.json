@@ -763,6 +763,14 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Aufnahme läuft",
     "noSchedule": "Keine Aufnahme geplant",
+    "preflightCode": {
+      "ffmpegMissing": "Die ffmpeg-Datei fehlt. SundayRec muss neu installiert werden.",
+      "deviceMissing": "Das in den Einstellungen gewählte Audiogerät ist nicht angeschlossen.",
+      "folderNotWritable": "In den Speicherordner kann nicht geschrieben werden.",
+      "diskLow": "Nur {gb} GB frei auf dem Speicherlaufwerk — vielleicht nicht genug für eine ganze Aufnahme.",
+      "micDenied": "Der Mikrofonzugriff ist nicht erteilt. Öffnen Sie Systemeinstellungen → Datenschutz → Mikrofon.",
+      "cameraDenied": "Der Kamerazugriff ist nicht erteilt."
+    },
     "preflightErrors": {
       "one": "{n} Fehler muss vor der Aufnahme behoben werden",
       "other": "{n} Fehler müssen vor der Aufnahme behoben werden"
