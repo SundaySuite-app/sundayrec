@@ -28,6 +28,7 @@
 import { signal } from "@preact/signals";
 import { buildExportRequest } from "@lib/pages/editor/export-params";
 import { createEtaEstimator } from "@lib/ui/progress-core";
+import type { EditorExportProgress } from "@legacy/bindings/EditorExportProgress";
 
 import { settings } from "../state/settings";
 import {
@@ -228,10 +229,13 @@ export async function runExport(
   const unsub = window.api.on?.(
     "editor-export-progress",
     (payload: unknown) => {
-      const { pct, phase } = (payload ?? {}) as {
-        pct?: number;
-        phase?: string;
-      };
+      // `payload` crosses an untyped event channel, so this is still a cast,
+      // not a check — but casting to the GENERATED `EditorExportProgress`
+      // binding (rather than a hand-typed `{ pct?; phase? }` twin) means a
+      // Rust rename of either field fails `npm run typecheck` right here,
+      // at the destructure below, instead of leaving the progress bar
+      // silently stuck.
+      const { pct, phase } = (payload ?? {}) as Partial<EditorExportProgress>;
       if (typeof phase === "string" && phase) exportPhase.value = phase;
       if (typeof pct !== "number" || !Number.isFinite(pct)) return;
       const shown = Math.max(0, Math.min(100, pct));
