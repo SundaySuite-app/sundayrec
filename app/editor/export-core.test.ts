@@ -121,6 +121,15 @@ describe("feilkodene", () => {
     expect(exportErrorKey("validation: invalid_duration")).toBe("errCutData");
   });
 
+  it("mono-avvisningen har sin egen setning — ikke den generelle", () => {
+    // Sømmen stopper en reparasjon som leser høyre inngangskanal på en
+    // monofil. Uten raden her får den frivillige den generelle setningen om
+    // at «noe gikk galt», for den ene feilen som har et konkret svar.
+    expect(exportErrorKey("validation: channel_repair_needs_stereo")).toBe(
+      "errChannelRepairNeedsStereo",
+    );
+  });
+
   it("path_guard-meldingen matcher fortsatt på innhold — den har ingen kode", () => {
     expect(exportErrorKey("path must be absolute: ../ut")).toBe(
       "errPathNotAbsolute",
