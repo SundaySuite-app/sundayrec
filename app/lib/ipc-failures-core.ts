@@ -18,12 +18,12 @@
 //
 // ## Why the policy needs to be careful
 //
-// Several commands are polled — `recording_status` ~1×/s, the VU feed, the
-// preview frame ~4×/s. A backend that is down fails all of them, forever. A
-// toast per failure would be a hundred toasts a minute stacked over the UI,
-// which is not "surfacing a problem", it is a denial of service. Hence: one
-// toast per command per cooldown, and a global cap so a dozen DIFFERENT broken
-// commands still cannot paper over the screen.
+// Several commands are polled — the VU feed, `recording_preview_frame` ~4×/s.
+// A backend that is down fails all of them, forever. A toast per failure
+// would be a hundred toasts a minute stacked over the UI, which is not
+// "surfacing a problem", it is a denial of service. Hence: one toast per
+// command per cooldown, and a global cap so a dozen DIFFERENT broken commands
+// still cannot paper over the screen.
 //
 // The ring itself is unconditional — every failure is remembered, whether or
 // not it was shown, because "siste IPC-feil" in the diagnose panel wants the

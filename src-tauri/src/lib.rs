@@ -110,6 +110,12 @@ pub mod update;
 // reading `settings.language` directly; see the module docs.
 pub mod ui_lang;
 pub mod util;
+// F2-W2 — the hidden-console ratchet. A test and nothing else (`#![cfg(test)]`
+// inside), guarding the one invariant no macOS reviewer and no macOS/Linux CI
+// lane can see: every child process must be started through
+// `util::hidden_command` / `util::hidden_std_command`, or Windows gives the
+// console child a VISIBLE console of its own. See the module docs.
+mod hidden_command_ratchet;
 // P3b — the macOS application menu. It exists ONLY so Cmd+Q is interceptable at
 // all: tauri's default menu wires Quit to AppKit's `terminate:`, which never
 // raises `RunEvent::ExitRequested`, so a Cmd+Q mid-service killed the process
@@ -512,8 +518,8 @@ pub fn run() {
             commands::recorder::plan_recording_opts,
             commands::recorder::start_recording,
             commands::recorder::stop_recording,
-            commands::recorder::recording_status,
             commands::recorder::recording_scheduled_stop_ms,
+            commands::recorder::recording_snapshot,
             commands::recorder::recording_extend_autostop,
             commands::recorder::recording_cancel_autostop,
             commands::recorder::preroll_start,

@@ -86,7 +86,7 @@ pub fn ffprobe_path() -> String {
 pub async fn spawn_ffmpeg(args: &[&str]) -> AppResult<tokio::process::Child> {
     use std::process::Stdio;
 
-    tokio::process::Command::new(ffmpeg_path())
+    crate::util::hidden_command(ffmpeg_path())
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -101,7 +101,7 @@ pub async fn spawn_ffmpeg(args: &[&str]) -> AppResult<tokio::process::Child> {
 /// said 46.6 s, the file held 20.4 s, and nothing noticed). `None` on any
 /// failure — the caller treats an unprobeable file as unmeasured, never as 0 s.
 pub async fn probe_duration_secs(path: &str) -> Option<f64> {
-    let out = tokio::process::Command::new(ffprobe_path())
+    let out = crate::util::hidden_command(ffprobe_path())
         .args([
             "-v",
             "error",
@@ -132,7 +132,7 @@ pub async fn probe_duration_secs(path: &str) -> Option<f64> {
 /// purpose: it's a one-shot, short-lived probe with no streaming, so the async
 /// machinery would be pure overhead.
 pub fn ffmpeg_version() -> AppResult<String> {
-    let output = std::process::Command::new(ffmpeg_path())
+    let output = crate::util::hidden_std_command(ffmpeg_path())
         .arg("-version")
         .output()
         .map_err(|e| AppError::Recording(format!("failed to run ffmpeg -version: {e}")))?;

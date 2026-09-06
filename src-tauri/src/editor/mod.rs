@@ -1484,7 +1484,7 @@ pub async fn load_recording(input_path: &str) -> AppResult<EditorMediaInfo> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // ffprobe is a one-shot probe → `std::process::Command::output()` is enough
     // (no streaming). We resolve the sidecar through the shared media module.
-    let output = tokio::process::Command::new(crate::media::ffmpeg::ffprobe_path())
+    let output = crate::util::hidden_command(crate::media::ffmpeg::ffprobe_path())
         .args(&arg_refs)
         .output()
         .await
@@ -2402,7 +2402,7 @@ where
 
     // Spawn with stdout piped for -progress; store the child for cancellation.
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    let mut child = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -2868,10 +2868,7 @@ where
     // software. The user only asked for "faster"; they must not lose the export
     // over it. A user cancel or the kill-timer is NOT an encoder failure — a
     // retry would ignore the cancel, or spend the timeout budget twice.
-    let hard_abort = matches!(&result, Err(e) if {
-        let s = e.to_string();
-        s.contains("cancelled") || s.contains("timeout")
-    });
+    let hard_abort = is_hard_abort(&result);
     if !hard_abort && sundayrec_core::editor::should_retry_with_software(want_hw, result.is_ok()) {
         tracing::warn!(
             error = %result.as_ref().err().map(|e| e.to_string()).unwrap_or_default(),
@@ -2922,6 +2919,24 @@ fn bail_if_cancelled(engine: &ExportEngine) -> AppResult<()> {
     Ok(())
 }
 
+/// Whether an export failure is the user's own cancel or the kill-timer —
+/// either one MUST skip the software retry: retrying a cancelled render
+/// ignores the cancel, and retrying after a timeout spends the whole time
+/// budget twice. [`bail_if_cancelled`] (above) and `run_export_ffmpeg`'s own
+/// two arms all produce ONE bare code, always, with nothing appended —
+/// matching it EXACTLY, not a substring of the rendered `Display` string,
+/// means the OTHER failure arm (up to 500 characters of raw ffmpeg stderr)
+/// can never masquerade as a cancel/timeout just because those words happen
+/// to appear in some unrelated ffmpeg complaint (a network hiccup that says
+/// "timeout", a codec that says "operation cancelled").
+#[cfg(feature = "editor")]
+fn is_hard_abort(result: &AppResult<String>) -> bool {
+    matches!(result, Err(AppError::Recording(msg)) if {
+        let m = msg.as_str();
+        m == "cancelled" || m == "timeout"
+    })
+}
+
 #[cfg(feature = "editor")]
 fn export_timeout_ms_for(kept_duration: f64) -> u64 {
     std::env::var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE")
@@ -2964,7 +2979,7 @@ where
     bail_if_cancelled(engine)?;
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    let mut child = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -3075,6 +3090,26 @@ where
     if !status.success() {
         let short: String = tail.chars().rev().take(500).collect::<String>();
         let short: String = short.chars().rev().collect();
+        // A full disk is the one ffmpeg failure with an ACTIONABLE answer —
+        // classified from the SAME pattern list the recorder already matches
+        // ffmpeg's stderr against (`sundayrec_core::errors`), so "no space
+        // left"/"disk quota exceeded"/… map here exactly as they do
+        // mid-recording. Anything else stays the plain "ffmpeg failed" the
+        // renderer's `exportErrorKey` deliberately does not recognise — an
+        // unclassified failure gets the shell's OWN general sentence, not a
+        // guess dressed up as a diagnosis.
+        use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
+        let disk_full = classify_recording_error(&short) == RecordingErrorCode::DiskFull;
+        // Previously only the kill-timer branch above logged anything — a
+        // non-zero exit for any OTHER reason (unplugged drive, full disk,
+        // ffmpeg rejecting the args) left no trace at all, on either side of
+        // the IPC boundary. `tail` already went through the export request
+        // that produced it; nothing here adds a path beyond what
+        // `logfile.rs`'s own scrubber already redacts.
+        tracing::warn!(disk_full, tail = %short, "export: ffmpeg exited non-zero");
+        if disk_full {
+            return Err(AppError::Recording(format!("disk_full: {short}")));
+        }
         return Err(AppError::Recording(format!("ffmpeg failed: {short}")));
     }
     Ok(tail)
@@ -3091,7 +3126,7 @@ async fn probe_video_size(input_path: &str) -> Option<(u32, u32)> {
 
     let args = ffprobe_video_size_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = tokio::process::Command::new(crate::media::ffmpeg::ffprobe_path())
+    let output = crate::util::hidden_command(crate::media::ffmpeg::ffprobe_path())
         .args(&arg_refs)
         .output()
         .await
@@ -3399,6 +3434,29 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code(), "validation");
         assert!(!ran, "the grant closure must not run for a missing file");
+    }
+
+    /// F2-A-A: the hardware-retry guard must match the bare `cancelled`/
+    /// `timeout` codes EXACTLY, not a substring of the rendered message —
+    /// the OTHER failure arm (`ffmpeg failed: <stderr tail>`) can carry up to
+    /// 500 characters of raw ffmpeg text, and the old `.contains(...)` read
+    /// either word showing up there as ordinary prose as OUR own code, and
+    /// silently skipped a software retry the render was entitled to.
+    #[cfg(feature = "editor")]
+    #[test]
+    fn hard_abort_matches_the_bare_code_not_prose_that_mentions_it() {
+        assert!(is_hard_abort(&Err(AppError::Recording("cancelled".into()))));
+        assert!(is_hard_abort(&Err(AppError::Recording("timeout".into()))));
+        assert!(!is_hard_abort(&Err(AppError::Recording(
+            "ffmpeg failed: Connection timeout while probing filter graph".into()
+        ))));
+        assert!(!is_hard_abort(&Err(AppError::Recording(
+            "ffmpeg failed: operation cancelled by remote peer".into()
+        ))));
+        assert!(!is_hard_abort(&Err(AppError::Recording(
+            "disk_full: No space left on device".into()
+        ))));
+        assert!(!is_hard_abort(&Ok("stderr tail".into())));
     }
 
     #[cfg(not(feature = "editor"))]
@@ -5403,6 +5461,278 @@ mod tests {
                 "the timeout must leave no ffmpeg child behind"
             );
             eprintln!("editor export smoke: kill-timer aborted the render ({msg})");
+        }
+
+        // ── The vocal chain, MEASURED (F2-C-A) ───────────────────────────────
+        //
+        // Every stage in `sundayrec_core::processing` renders a filter string
+        // that ffmpeg accepts. That is all a string test can tell us, and it is
+        // not enough: `makeup=2` is a perfectly valid way to ask for +6.02 dB
+        // when you meant +2, `alimiter=limit=0.891` is a perfectly valid way to
+        // ask for NO ceiling, and `agate=threshold=0` is a perfectly valid way
+        // to switch a gate off. Three bugs, three green suites.
+        //
+        // So these tests do the only thing that settles it: run a signal of a
+        // KNOWN level through the real bundled ffmpeg and read the level back.
+        // They are the ears we don't have. HARDWARE-FREE — lavfi synthesises
+        // every input, nothing is written to disk, and each measurement is one
+        // sub-second ffmpeg run.
+        mod vocal_chain_levels {
+            use sundayrec_core::processing::*;
+
+            /// A 3 s 1 kHz sine. lavfi's own amplitude is 1/8 (−18.06 dBFS), so
+            /// every test sets the level it wants with a leading `volume`.
+            const SINE: &str = "sine=frequency=1000:sample_rate=48000:duration=3";
+            /// 3 s of pink noise with a PINNED seed — `s=42` is what makes the
+            /// gate measurements reproducible rather than merely plausible.
+            const NOISE: &str = "anoisesrc=r=48000:d=3:c=pink:a=1:s=42";
+
+            /// The sidecar, or `None` → the caller SKIPs. In a lane that fetched
+            /// the binaries and set `SUNDAYREC_REQUIRE_SIDECAR=1` (ci.yml's
+            /// `check` job, `scripts/ci-local.sh`) a missing sidecar is a
+            /// PANIC instead: a silent skip here is precisely how three
+            /// measurable audio bugs shipped, and a green run that measured
+            /// nothing must not look like a green run that measured everything.
+            fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
+                match crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg") {
+                    Some(p) => Some(p),
+                    None => {
+                        assert!(
+                            std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
+                            "SUNDAYREC_REQUIRE_SIDECAR=1 but no runnable ffmpeg sidecar — \
+                             run `npm run ffmpeg` first (the vocal-chain level tests must \
+                             not silently skip in a lane that requires them)"
+                        );
+                        eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+                        None
+                    }
+                }
+            }
+
+            /// Peak level (dBFS) of `source` after `filters`, measured with
+            /// `astats`. `filters` reaches ffmpeg as ONE argv element, so its
+            /// commas are the filter parser's, not a shell's.
+            fn peak_db(ffmpeg: &std::path::Path, source: &str, filters: &str) -> f64 {
+                let out = std::process::Command::new(ffmpeg)
+                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", source])
+                    .args([
+                        "-af",
+                        &format!(
+                            "{filters},astats=measure_perchannel=none:measure_overall=Peak_level"
+                        ),
+                        "-f",
+                        "null",
+                        "-",
+                    ])
+                    .output()
+                    .expect("ffmpeg should run the level measurement");
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                assert!(
+                    out.status.success(),
+                    "ffmpeg refused the chain `{filters}`: {stderr}"
+                );
+                stderr
+                    .lines()
+                    .rev()
+                    .find_map(|l| l.split("Peak level dB:").nth(1))
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+                    .unwrap_or_else(|| panic!("astats printed no peak level: {stderr}"))
+            }
+
+            /// The single filter a chain with ONE stage enabled renders. Proves
+            /// the measurement is of the string the app actually ships, not of
+            /// a string retyped in a test.
+            fn one_filter(f: impl FnOnce(&mut VocalChain)) -> String {
+                let mut chain = VocalChain {
+                    highpass: HighpassStage {
+                        enabled: false,
+                        freq_hz: 80,
+                    },
+                    compressor: CompressorStage {
+                        enabled: false,
+                        ..CompressorStage::default()
+                    },
+                    ..VocalChain::default()
+                };
+                f(&mut chain);
+                let parts = chain.build_filters();
+                assert_eq!(parts.len(), 1, "expected exactly one stage, got {parts:?}");
+                parts.into_iter().next().unwrap()
+            }
+
+            /// T2. A −30 dBFS sine sits well under the −18 dBFS threshold, so
+            /// the compressor does nothing but apply makeup — which makes the
+            /// output level the makeup value, exactly. 2 dB of makeup must move
+            /// it 2 dB. (The bare `makeup=2` this replaced moved it 6.02 dB.)
+            #[test]
+            fn compressor_makeup_of_2_db_lifts_by_2_db_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let chain = one_filter(|c| {
+                    c.compressor = CompressorStage {
+                        enabled: true,
+                        makeup_db: 2.0,
+                        ..CompressorStage::default()
+                    }
+                });
+                let level = "volume=-11.94dB"; // −18.06 dBFS sine → −30 dBFS
+                let before = peak_db(&ffmpeg, SINE, level);
+                let after = peak_db(&ffmpeg, SINE, &format!("{level},{chain}"));
+                let gain = after - before;
+                assert!(
+                    (before - -30.0).abs() < 0.1,
+                    "fixture drifted: the source should be −30 dBFS, measured {before:.3}"
+                );
+                assert!(
+                    (gain - 2.0).abs() <= 0.05,
+                    "2 dB of makeup moved the signal {gain:+.3} dB \
+                     ({before:.3} → {after:.3} dBFS) via `{chain}` — a linear \
+                     `makeup=2` would read +6.02"
+                );
+                eprintln!("vocal chain: makeup 2 dB → {gain:+.3} dB measured");
+            }
+
+            /// T3. The limiter is a CEILING. A 0 dBFS sine must come out at the
+            /// ceiling, and a signal that never reaches the ceiling must come
+            /// out untouched. `alimiter`'s auto-level default broke both: it
+            /// passed 0 dBFS through at 0 dBFS and made −6 dBFS one dB LOUDER.
+            #[test]
+            fn limiter_caps_at_the_ceiling_and_leaves_quiet_material_alone_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let chain = one_filter(|c| {
+                    c.limiter = LimiterStage {
+                        enabled: true,
+                        limit_db: -1.0,
+                    }
+                });
+
+                // −18.06 dBFS sine lifted to 0 dBFS: must land ON the ceiling.
+                let hot = peak_db(&ffmpeg, SINE, &format!("volume=18.06dB,{chain}"));
+                assert!(
+                    (hot - -1.0).abs() <= 0.05,
+                    "a 0 dBFS sine came out at {hot:.3} dBFS through `{chain}` — \
+                     the −1 dBTP ceiling did not hold"
+                );
+
+                // …and −6 dBFS, which never touches the limiter, must not move.
+                let quiet_in = peak_db(&ffmpeg, SINE, "volume=12.06dB");
+                let quiet_out = peak_db(&ffmpeg, SINE, &format!("volume=12.06dB,{chain}"));
+                let drift = quiet_out - quiet_in;
+                assert!(
+                    drift.abs() <= 0.05,
+                    "a −6 dBFS sine moved {drift:+.3} dB through the limiter \
+                     ({quiet_in:.3} → {quiet_out:.3} dBFS) — auto level is adding gain"
+                );
+                eprintln!(
+                    "vocal chain: limiter capped 0 dBFS at {hot:.3} dBFS, \
+                     left −6 dBFS at {drift:+.3} dB"
+                );
+            }
+
+            /// T6. The gate threshold is a LEVEL, and the slider goes down to
+            /// −70 dB. Pre-converted to a 3-decimal linear coefficient, −70 dB
+            /// was the string "0" — a gate that never closes at any level. The
+            /// three measurements pin the threshold between −75 and −60 dBFS,
+            /// which only a real −70 dB threshold can satisfy.
+            #[test]
+            fn gate_threshold_is_honoured_at_the_bottom_of_the_slider_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let deep = one_filter(|c| {
+                    c.gate = GateStage {
+                        enabled: true,
+                        threshold_db: -70.0,
+                        ..GateStage::default()
+                    }
+                });
+                let shallow = one_filter(|c| {
+                    c.gate = GateStage {
+                        enabled: true,
+                        threshold_db: -50.0,
+                        ..GateStage::default()
+                    }
+                });
+
+                // Noise ABOVE a −70 dB threshold passes.
+                let loud_in = peak_db(&ffmpeg, NOISE, "volume=-60dB");
+                let loud_out = peak_db(&ffmpeg, NOISE, &format!("volume=-60dB,{deep}"));
+                assert!(
+                    loud_in - loud_out < 2.0,
+                    "a −60 dBFS signal lost {:.2} dB to a −70 dB gate ({loud_in:.2} → \
+                     {loud_out:.2} dBFS) — the threshold is sitting too high",
+                    loud_in - loud_out
+                );
+
+                // Noise BELOW it is gated — the half the "0" string could never
+                // do, because a gate at 0 does not close for anything.
+                let soft_in = peak_db(&ffmpeg, NOISE, "volume=-75dB");
+                let soft_out = peak_db(&ffmpeg, NOISE, &format!("volume=-75dB,{deep}"));
+                assert!(
+                    soft_in - soft_out >= 15.0,
+                    "a −75 dBFS signal only lost {:.2} dB to a −70 dB gate \
+                     ({soft_in:.2} → {soft_out:.2} dBFS) via `{deep}` — a threshold \
+                     rounded to 0 leaves the gate permanently open",
+                    soft_in - soft_out
+                );
+
+                // And raising the threshold to −50 dB shuts the −60 dBFS noise
+                // down to `agate`'s own floor (`range` caps reduction at 24 dB).
+                let gated = peak_db(&ffmpeg, NOISE, &format!("volume=-60dB,{shallow}"));
+                assert!(
+                    loud_in - gated >= 20.0,
+                    "a −50 dB gate only took {:.2} dB off a −60 dBFS signal \
+                     ({loud_in:.2} → {gated:.2} dBFS)",
+                    loud_in - gated
+                );
+                eprintln!(
+                    "vocal chain: gate −70 dB passed −60 dBFS ({:+.2} dB) and closed on \
+                     −75 dBFS ({:+.2} dB); −50 dB gate took {:.2} dB",
+                    loud_out - loud_in,
+                    soft_out - soft_in,
+                    loud_in - gated
+                );
+            }
+
+            /// T2, the other half: `makeup` has a LINEAR range of [1, 64], so a
+            /// value the mixer can reach — 0 dB, or the slider's 0.5 dB step —
+            /// used to render as `makeup=0`/`makeup=0.5` and ffmpeg REFUSED the
+            /// filter ("out of range [1 - 64]"). That is not a wrong level; it
+            /// is a failed export. Every step of the slider must build and run.
+            #[test]
+            fn every_makeup_the_mixer_can_send_actually_runs_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let level = "volume=-11.94dB"; // −18.06 dBFS sine → −30 dBFS
+                let before = peak_db(&ffmpeg, SINE, level);
+                // The mixer slider (0 → 12 dB in 0.5 dB steps) and the clamped
+                // ends only a hand-rolled DTO can reach.
+                for makeup_db in [-3.0, 0.0, 0.5, 1.0, 2.0, 6.5, 12.0, 90.0] {
+                    let chain = one_filter(|c| {
+                        c.compressor = CompressorStage {
+                            enabled: true,
+                            makeup_db,
+                            ..CompressorStage::default()
+                        }
+                    });
+                    // `peak_db` asserts ffmpeg exited 0 — an out-of-range
+                    // makeup does not, and it names the chain in the failure.
+                    let after = peak_db(&ffmpeg, SINE, &format!("{level},{chain}"));
+                    // …and every step lands on the dB it asked for, clamped.
+                    let want = makeup_db.clamp(0.0, 36.0);
+                    let got = after - before;
+                    assert!(
+                        (got - want).abs() <= 0.05,
+                        "makeup {makeup_db} dB moved the signal {got:+.3} dB, \
+                         expected {want:+.3} via `{chain}`"
+                    );
+                }
+                eprintln!("vocal chain: every mixer makeup value builds, runs and lands on its dB");
+            }
         }
     }
 }

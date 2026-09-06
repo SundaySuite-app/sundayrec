@@ -13,6 +13,9 @@
 //      silently behaved like "ny fil". The pill is gone; so is the field.
 
 import { VIDEO_EXTS } from "./state";
+import type { EditorExportRequest } from "@legacy/bindings/EditorExportRequest";
+import type { EditorChannelRepair } from "@legacy/bindings/EditorChannelRepair";
+import type { EditorProcessing } from "@legacy/bindings/EditorProcessing";
 
 // ── Export progress phases (wire constants) ─────────────────────────────────
 //
@@ -73,12 +76,12 @@ export interface ExportCutRegion {
   end: number;
 }
 
-/** Channel-repair settings as the backend's `EditorChannelRepair` expects them. */
-export interface ExportChannelRepair {
-  mode: string;
-  leftDb: number;
-  rightDb: number;
-}
+/** Channel-repair settings as the backend's `EditorChannelRepair` expects
+ *  them — literally that GENERATED binding (not a hand-typed mirror), so a
+ *  Rust rename of `mode`/`leftDb`/`rightDb` fails `npm run typecheck` at
+ *  every one of this alias's call sites instead of leaving a stale copy
+ *  looking green. */
+export type ExportChannelRepair = EditorChannelRepair;
 
 /** Everything `buildExportRequest` needs, read out of the editor state + DOM by
  *  the caller. `kind` picks the audio-format fields or the video-codec ones. */
@@ -152,6 +155,67 @@ export function buildExportRequest(
     outputFormat: input.format || "mp3",
     outputBitrate: input.bitrate,
     outputBitDepth: input.bitDepth,
+  };
+}
+
+/**
+ * Map `buildExportRequest`'s OLD Electron-shaped params — `outputFormat` /
+ * `outputBitrate` / `outputBitDepth` for audio, `videoFormat` / `videoCodec`
+ * for video — onto the wire shape `editor_export` actually reads. Pure, and
+ * the ONLY place that does this rename: `api-shim.ts`'s `editorExportFile`/
+ * `editorExportVideo` both call it (they used to duplicate this mapping
+ * inline, one copy each, silently drifted apart — the audio copy never sent
+ * `videoCodec` at all).
+ *
+ * The return type is the GENERATED `EditorExportRequest` binding, so a Rust
+ * rename of any field fails `npm run typecheck` right here — the same class
+ * of bug a `kind`/`type` split was for `EditorSegment` (see e2e/editor-
+ * fixtures.ts): the shim would go on building a payload the backend can no
+ * longer parse, quietly, with every other gate green.
+ *
+ * `processing.channelRepair` is always sent as `null`: the app never
+ * populates a repair there — a repair always rides the TOP-LEVEL
+ * `channelRepair` field below, which `EditorExportRequest`'s own doc comment
+ * says overrides whatever `processing` carries. Sending `null` explicitly
+ * here is the true, honest wire value, rather than an omitted key riding on
+ * Rust's struct-level `#[serde(default)]` for `EditorProcessing`.
+ */
+export function toEditorExportRequest(
+  kind: "audio" | "video",
+  params: Record<string, unknown>,
+): EditorExportRequest {
+  const o = params;
+  const m = (o.metadata ?? {}) as Record<string, unknown>;
+  const processingIn = o.processing;
+  const processing: EditorProcessing | null =
+    processingIn == null
+      ? null
+      : { ...(processingIn as EditorProcessing), channelRepair: null };
+
+  return {
+    inputPath: o.inputPath as string,
+    cutRegions: (o.cutRegions ?? []) as EditorExportRequest["cutRegions"],
+    duration: (o.duration ?? 0) as number,
+    format:
+      kind === "video"
+        ? (o.videoFormat as string) || "mp4"
+        : ((o.outputFormat ?? o.format ?? "mp3") as string),
+    outputFolder: (o.outputFolder ?? "") as string,
+    bitrate:
+      kind === "video" ? null : ((o.outputBitrate ?? null) as number | null),
+    bitDepth:
+      kind === "video" ? null : ((o.outputBitDepth ?? null) as number | null),
+    masterPreset: (o.masterPreset as string) || null,
+    introPath: (o.introPath ?? null) as string | null,
+    outroPath: (o.outroPath ?? null) as string | null,
+    gainDb: (o.gainDb ?? null) as number | null,
+    title: (m.title as string) || null,
+    speaker: (m.speaker as string) || null,
+    description: (m.description as string) || null,
+    vocalChainPreset: (o.vocalChainPreset as string) || null,
+    processing,
+    channelRepair: (o.channelRepair ?? null) as EditorChannelRepair | null,
+    videoCodec: kind === "video" ? (o.videoCodec as string) || null : null,
   };
 }
 

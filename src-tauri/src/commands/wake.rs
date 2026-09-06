@@ -24,9 +24,8 @@ use crate::db::Db;
 use crate::error::AppResult;
 use crate::settings;
 use crate::wake::{
-    cancel_test_wake, current_platform, fix_mac_sleep, fix_win_wake_timers, get_sleep_config,
-    schedule_test_wake, verify_scheduled_wakes, TestWakeResult, WakeEngine, WakeFixResult,
-    WakeResult, WakeStatus,
+    current_platform, fix_mac_sleep, fix_win_wake_timers, get_sleep_config, verify_scheduled_wakes,
+    TestWakeResult, WakeEngine, WakeFixResult, WakeResult, WakeStatus,
 };
 
 /// How many days of upcoming starts wake scheduling/verification considers.
@@ -95,15 +94,26 @@ pub async fn wake_reschedule(
 /// Schedule a manual test-wake `seconds_ahead` from now (default 60 s). Returns
 /// a job id the UI can cancel. HARDWARE-UNVERIFIED — the wake itself needs the
 /// machine to sleep then wake; only the scheduling spawn is wired here.
+///
+/// Goes through the [`WakeEngine`] like every other wake write (F2-W3): the test
+/// timer belongs beside the real schedule, in the same process-owned handles and
+/// with the engine's dedup key left alone. Bypassing the engine is what let
+/// «Test vekking om 2 min» on a Saturday cancel Sunday's wake and leave the
+/// engine convinced it was still armed.
 #[tauri::command]
-pub async fn wake_test(seconds_ahead: Option<i64>) -> TestWakeResult {
-    schedule_test_wake(seconds_ahead.unwrap_or(60)).await
+pub async fn wake_test(
+    engine: State<'_, WakeEngine>,
+    seconds_ahead: Option<i64>,
+) -> AppResult<TestWakeResult> {
+    let now = Local::now().naive_local();
+    Ok(engine.schedule_test(seconds_ahead.unwrap_or(60), now).await)
 }
 
 /// Cancel a pending test-wake (best-effort). Returns whether the cancel ran.
+/// Cancels the TEST wake only — see [`WakeEngine::cancel_test`].
 #[tauri::command]
-pub async fn wake_cancel_test() -> bool {
-    cancel_test_wake().await
+pub async fn wake_cancel_test(engine: State<'_, WakeEngine>) -> AppResult<bool> {
+    Ok(engine.cancel_test().await)
 }
 
 /// The wake-failure / test-wake history, newest-first (capped at 20). DB-backed.

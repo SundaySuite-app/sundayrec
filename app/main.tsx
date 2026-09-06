@@ -23,6 +23,9 @@
  *      `initAutoUpdate` er den ene der rekkefølgen er et LØFTE og ikke bare
  *      ryddighet: en oppdateringssjekk armet før den lagrede `autoUpdate` er
  *      lest, kontakter serveren for en eier som har sagt nei.
+ *      `hydrateRecordingState()` er den andre: den MÅ ligge etter
+ *      `initRecording()`, ellers teller ingen de hendelsene som skal slå
+ *      snapshotet ut (F2-T5).
  *   7. `?goto=` etter alt det — en dyplenke skal lande på en app som er ferdig
  *      å våkne, ikke midt i det.
  *   8. Onboarding-porten sist, og BARE når det ikke var en dyplenke.
@@ -65,7 +68,7 @@ import { initDisk } from "./state/disk";
 import { installErrorHandlers } from "./state/global-error";
 import { initNextRecording } from "./state/next-recording";
 import { initPreroll } from "./state/preroll";
-import { initRecording } from "./state/recording";
+import { hydrateRecordingState, initRecording } from "./state/recording";
 import { loadRecordingCount } from "./state/recordings";
 import { initRetention } from "./state/retention";
 import { flushSavePending, hydrateSettings, settings } from "./state/settings";
@@ -187,6 +190,17 @@ async function boot(): Promise<void> {
   // 6. Idempotente — de returnerer en oppryddingsfunksjon vi ikke trenger her,
   // fordi skallet lever like lenge som vinduet.
   initRecording();
+  // ETTER `initRecording()`, og det er ikke ryddighet: snapshotet spør motoren
+  // hva den gjør akkurat nå, og kappløpsvakten teller hendelsene som lander
+  // mens spørsmålet er i flukt. Armes lytterne etterpå, telles ingenting og
+  // et utdatert svar kan male «tar opp» over en økt som er slutt.
+  //
+  // Uten `await`: dette er den ene tilstanden som ikke kan utledes av noe
+  // annet appen har (jf. `?goto=`-blokka nederst, som skal treffe en app som
+  // er ferdig å våkne — men ikke vente på en IPC-rundtur for å komme dit).
+  // Første frame er allerede malt når `boot()` kjører, så det som er i spill
+  // her er bare de få millisekundene til overlegget kommer opp.
+  void hydrateRecordingState();
   initNextRecording();
   initPreroll();
   initDisk();

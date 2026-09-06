@@ -1,5 +1,8 @@
 import type { Page } from "@playwright/test";
 import { SETTINGS_DEFAULTS } from "../app/lib/settings-defaults";
+import type { RecordingRow } from "../legacy/bindings/RecordingRow";
+import type { PruneSummary } from "../legacy/bindings/PruneSummary";
+import type { RecorderStatePayload } from "../legacy/bindings/RecorderStatePayload";
 
 // The one way a spec boots the app.
 //
@@ -264,8 +267,22 @@ export const BOOT_FIXTURES: Fixtures = {
   scheduler_status: { next: null },
   scheduler_reschedule: VOID,
   // The retention pass runs unasked on every boot; `disabled` keeps it silent
-  // (no toast) so it cannot photobomb an unrelated spec's assertions.
-  recordings_prune: { moved: 0, disabled: true },
+  // (no toast) so it cannot photobomb an unrelated spec's assertions. Typed as
+  // the GENERATED `PruneSummary` binding — a Rust rename of either field must
+  // fail `npm run typecheck` rather than leave the boot pass silently unable
+  // to parse its own fixture.
+  recordings_prune: { moved: 0, disabled: true } satisfies PruneSummary,
+  // F2-T5: the boot-time «what are you doing right now?» question. Idle is the
+  // truth for every spec that is not about a running recording, and answering
+  // it here keeps the question out of the IPC failure ring on 30-odd boots.
+  // Typed as the GENERATED binding for the same reason as `recordings_prune`
+  // above: a Rust rename must fail `npm run typecheck`, not leave the boot
+  // pass quietly unable to read its own fixture.
+  recording_snapshot: {
+    state: "idle",
+    reconnect_count: 0,
+    scheduled_stop_ms: null,
+  } satisfies RecorderStatePayload,
   get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500_000_000_000 },
   recordings_list: [],
   trash_list: [],
@@ -337,10 +354,11 @@ export async function settingsImportPayloads(page: Page): Promise<string[]> {
   );
 }
 
-/** One `recordings_list` row. NOTE: this command answers in snake_case. */
-export function recordingRow(
-  over: Partial<Record<string, unknown>> = {},
-): Record<string, unknown> {
+/** One `recordings_list` row. NOTE: this command answers in snake_case.
+ *  Typed as the GENERATED `RecordingRow` binding — a Rust rename of any
+ *  field must fail `npm run typecheck` here rather than leave the shim's own
+ *  `RecordingRow` mirror (`api-shim.ts`) looking green against a stale shape. */
+export function recordingRow(over: Partial<RecordingRow> = {}): RecordingRow {
   return {
     id: "rec-1",
     file_path: "/Users/test/Opptak/gudstjeneste.mp3",

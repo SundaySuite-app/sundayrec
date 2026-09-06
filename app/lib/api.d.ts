@@ -44,6 +44,17 @@ import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
+import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
+import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
+import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
+import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
+
+/** `editor_export`'s wrapped result — `editorCall` (`api-shim.ts`) always adds
+ *  `ok`, and only adds `error` on failure; `outputPath` is the real
+ *  `EditorExportResult` field the backend answers with, not a hand-typed
+ *  twin, so a Rust rename fails `npm run typecheck` here. */
+type EditorExportOutcome =
+  ({ ok: true } & EditorExportResult) | { ok: false; error: string };
 
 declare global {
   interface Window {
@@ -112,6 +123,17 @@ declare global {
       /** Drop the auto-stop entirely: record until someone presses stop.
        *  Rejects on failure, same reason. */
       recordingCancelAutostop: () => Promise<void>;
+      /** The engine's current auto-stop deadline (absolute epoch ms), or
+       *  `null` for none armed. For rehydrating the countdown when
+       *  `isRecording` became true with no `recording://state` payload to
+       *  read one from — see `RecordingOverlay.tsx`'s mount effect. */
+      recordingScheduledStopMs: () => Promise<number | null>;
+      /** The engine's CURRENT `recording://state` payload — asked ONCE at
+       *  startup, for the renderer that could not have been listening: a
+       *  webview reloaded mid-recording. `null` means the engine did not
+       *  answer, which is «vi vet ikke» and NOT «idle» — the caller leaves its
+       *  belief alone. See `hydrateRecordingState()` in `app/state/recording.ts`. */
+      recordingSnapshot: () => Promise<RecorderStatePayload | null>;
       /** One base64 JPEG from the engine's preview sink, or `null` when it has
        *  not written a frame yet. Only meaningful DURING a recording — the
        *  recorder owns the camera then, so this is the only way to see it. */
@@ -241,9 +263,7 @@ declare global {
       ) => (() => void) | undefined;
       toAssetUrl: (path: string) => string;
       editorPickFile: () => Promise<string | null>;
-      editorExportFile: (
-        params: unknown,
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string }>;
+      editorExportFile: (params: unknown) => Promise<EditorExportOutcome>;
       /** Kill the in-flight export render; resolves to whether one was running. */
       editorCancelExport: () => Promise<boolean>;
       editorPickOutputFolder: () => Promise<string | null>;
@@ -264,15 +284,15 @@ declare global {
         filePath: string,
         segments: EditorSegment[],
       ) => Promise<number | null>;
-      editorAutoProcess: (filePath: string) => Promise<{
-        diagnosis: {
-          code: string;
-          recommended: { mode: string; leftDb: number; rightDb: number };
-        };
-        vocalChainPreset: string;
-        masterPreset: string;
-        summary: string;
-      } | null>;
+      // Typed against the GENERATED `EditorAutoProcess` binding (nesting
+      // `EditorChannelDiagnosis`) — the hand-typed twin this replaced had
+      // silently DROPPED `imbalanceDb`/`peakLeftDb`/`peakRightDb` from the
+      // declared type (the backend always sent them; nothing here could read
+      // them). A Rust rename now fails `npm run typecheck`. (Extra finding —
+      // see the PR description.)
+      editorAutoProcess: (
+        filePath: string,
+      ) => Promise<EditorAutoProcess | null>;
       editorReadCutsDraft: (filePath: string) => Promise<unknown>;
       editorSaveCutsDraft: (filePath: string, cuts: unknown) => Promise<void>;
       editorDeleteCutsDraft: (filePath: string) => Promise<void>;
@@ -300,22 +320,18 @@ declare global {
         supportedResolutions: string[];
         supportedFramerates: number[];
       } | null>;
-      editorLoadRecording: (filePath: string) => Promise<{
-        durationSec: number;
-        hasVideo: boolean;
-        hasAudio: boolean;
-        channels: number | null;
-        sampleFmt: string | null;
-        sampleRate: number | null;
-      } | null>;
+      // Typed against the GENERATED `EditorMediaInfo` binding, not a
+      // hand-typed twin — see `EditorExportOutcome`'s doc comment above for
+      // the class of bug that leaves unpinned.
+      editorLoadRecording: (
+        filePath: string,
+      ) => Promise<EditorMediaInfo | null>;
       editorAllowAssetPath: (filePath: string) => Promise<boolean>;
       editorExtractAudioPeaks: (
         filePath: string,
       ) => Promise<{ peaks: number[]; sampleRate: number } | null>;
       editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>;
-      editorExportVideo: (
-        params: unknown,
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string }>;
+      editorExportVideo: (params: unknown) => Promise<EditorExportOutcome>;
       masterPreview: (
         inputPath: string,
         presetId: string,

@@ -69,7 +69,7 @@ pub async fn probe_camera_modes(token: &str, platform: Platform) -> Vec<CameraMo
     // and never listed the modes → the probe came back empty and the recorder
     // ignored the resolution setting. An impossible framerate (1000) is rejected
     // by every camera, reliably triggering the modes listing.
-    let spawn = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+    let spawn = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args([
             "-hide_banner",
             "-f",

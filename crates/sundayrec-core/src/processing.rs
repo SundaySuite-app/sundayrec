@@ -26,6 +26,44 @@
 //! the export seam. This module shapes the tone/dynamics; mastering sets the
 //! delivery loudness.
 
+// ── units: when a value gets a `dB` suffix, and when it must NOT ────────────
+//
+// Every number in this file that a human calls "dB" reaches ffmpeg through one
+// of two DIFFERENT doors, and picking the wrong one is silent — the filter
+// still builds, it just does something else. F2-C-A found three of them.
+//
+// 1. **Linear-amplitude options** (`acompressor:threshold/makeup`,
+//    `agate:threshold`, `alimiter:limit`, `pan` gains). The option's own unit
+//    is a multiplier, so a bare `2` means ×2 (+6.02 dB), not +2 dB. ffmpeg
+//    parses these with `av_strtod`, which understands a `dB` POSTFIX and
+//    converts it for us (`10^(x/20)`): `makeup=2dB` → 1.259 → exactly +2.00 dB
+//    on the meter. So: write the dB number and append `dB`, and ffmpeg does the
+//    conversion at full precision. Never pre-convert to linear and print it —
+//    that is how `−70 dB` became the 3-decimal string `"0"` (an OPEN gate) and
+//    how a +2 dB makeup became +6 dB.
+// 2. **Options whose unit already IS dB** (`afftdn:nr/nf`, `equalizer:g`,
+//    `volume`'s expression). Here the bare number is the dB value. Appending
+//    `dB` would run `av_strtod`'s conversion a second time and land far outside
+//    the option's range (`nf=-25dB` → 0.056, out of `[-80,-20]` → ffmpeg
+//    errors). So: no suffix, and each such site says so at the call.
+//
+// The clamps below exist for the same reason: a linear-amplitude option has a
+// documented range, and a value outside it is not "a bit off" — ffmpeg refuses
+// the whole filter ("Value 0.500000 for parameter 'makeup' out of range
+// [1 - 64]") and the EXPORT FAILS. Since the UI already limits the sliders,
+// these only ever bite a hand-rolled/legacy DTO, which is exactly when we want
+// a quiet clamp rather than a dead export.
+
+/// Largest compressor makeup we hand ffmpeg. `acompressor:makeup` accepts
+/// `[1, 64]` linear = `[0, 36.12] dB`; the mixer slider stops at 12 dB.
+const COMP_MAX_MAKEUP_DB: f64 = 36.0;
+/// Lowest limiter ceiling we hand ffmpeg. `alimiter:limit` accepts
+/// `[0.0625, 1]` linear = `[−24.08, 0] dB`; the mixer slider stops at −6 dB.
+const LIMITER_MIN_CEILING_DB: f64 = -24.0;
+/// Highest gate threshold we hand ffmpeg. `agate:threshold` accepts `[0, 1]`
+/// linear, i.e. anything at or below 0 dBFS; the mixer slider stops at −10 dB.
+const GATE_MAX_THRESHOLD_DB: f64 = 0.0;
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 /// dBFS → linear amplitude multiplier (`10^(db/20)`).
@@ -33,9 +71,14 @@ fn db_to_linear(db: f64) -> f64 {
     10f64.powf(db / 20.0)
 }
 
-/// Format a coefficient for a `pan` expression — 3 decimals, trailing zeros
-/// trimmed, so `1.0 → "1"`, `0.5 → "0.5"`, `1.4125 → "1.413"`. Keeps the filter
-/// strings stable and readable (and the unit tests exact).
+/// Format a number for a filter argument — 3 decimals, trailing zeros trimmed,
+/// so `1.0 → "1"`, `0.5 → "0.5"`, `1.4125 → "1.413"`, `-70.0 → "-70"`. Keeps
+/// the filter strings stable and readable (and the unit tests exact).
+///
+/// Three decimals is plenty for a dB number (0.001 dB) and for a millisecond
+/// time constant, but NOT for a linear amplitude: `db_to_linear(-70)` is
+/// 0.000316, which rounds to `"0"`. That is why a dB value is printed as a dB
+/// value with the suffix (see the units note above) and never pre-converted.
 fn coef(v: f64) -> String {
     let s = format!("{v:.3}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
@@ -82,6 +125,15 @@ pub fn channel_repair_filter(repair: ChannelRepair) -> Option<String> {
         ChannelRepair::DuplicateRight => Some("pan=stereo|c0=c1|c1=c1".to_string()),
         ChannelRepair::MonoMix => Some("pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1".to_string()),
         ChannelRepair::GainDb { left_db, right_db } => {
+            // LINEAR here, deliberately — the ONE surviving `coef(db_to_linear(…))`
+            // in this file (see the units note at the top). `pan`'s per-channel
+            // gains live inside a channel EXPRESSION, not in a plain option, and
+            // the suffix is not accepted there: `pan=stereo|c0=6dB*c0|c1=6dB*c1`
+            // is "Error initializing filters" on the bundled sidecar, MEASURED.
+            // The 3-decimal rounding that ruined the −70 dB gate threshold is
+            // harmless at this scale anyway: the ±24 dB clamp keeps the
+            // coefficient in `[0.063, 15.849]`, where a 0.001 step is at most
+            // 0.014 dB.
             let l = db_to_linear(left_db.clamp(-24.0, 24.0));
             let r = db_to_linear(right_db.clamp(-24.0, 24.0));
             // A no-op (both ~unity) needs no filter.
@@ -413,6 +465,9 @@ impl VocalChain {
             f.push(format!("highpass=f={}", self.highpass.freq_hz));
         }
         if self.denoise.enabled {
+            // NO `dB` suffix: `afftdn`'s `nr`/`nf` are already denominated in dB
+            // (`nr` 0.01…97, `nf` −80…−20), so the bare number IS the dB value.
+            // See the units note at the top of this file.
             f.push(format!(
                 "afftdn=nr={}:nf={}:tn=1",
                 coef(self.denoise.reduction_db),
@@ -426,21 +481,22 @@ impl VocalChain {
             let threshold_db = -45.0 + 15.0 * s; // −45 … −30 dB
             let ratio = 1.5 + 1.5 * s; // 1.5 … 3.0
             f.push(format!(
-                "agate=threshold={}:ratio={}:attack=10:release=200:detection=rms",
-                coef(db_to_linear(threshold_db)),
+                "agate=threshold={}dB:ratio={}:attack=10:release=200:detection=rms",
+                coef(threshold_db),
                 coef(ratio)
             ));
         }
         if self.gate.enabled {
             f.push(format!(
-                "agate=threshold={}:ratio={}:attack={}:release={}",
-                coef(db_to_linear(self.gate.threshold_db)),
+                "agate=threshold={}dB:ratio={}:attack={}:release={}",
+                coef(self.gate.threshold_db.min(GATE_MAX_THRESHOLD_DB)),
                 coef(self.gate.ratio),
                 coef(self.gate.attack_ms),
                 coef(self.gate.release_ms)
             ));
         }
         for band in &self.eq {
+            // NO `dB` suffix on `g`: `equalizer`'s gain is a dB number already.
             f.push(format!(
                 "equalizer=f={}:t=q:w={}:g={}",
                 band.freq_hz,
@@ -450,12 +506,12 @@ impl VocalChain {
         }
         if self.compressor.enabled {
             f.push(format!(
-                "acompressor=threshold={}dB:ratio={}:attack={}:release={}:makeup={}",
+                "acompressor=threshold={}dB:ratio={}:attack={}:release={}:makeup={}dB",
                 coef(self.compressor.threshold_db),
                 coef(self.compressor.ratio),
                 coef(self.compressor.attack_ms),
                 coef(self.compressor.release_ms),
-                coef(self.compressor.makeup_db)
+                coef(self.compressor.makeup_db.clamp(0.0, COMP_MAX_MAKEUP_DB))
             ));
         }
         if self.deesser.enabled {
@@ -466,12 +522,22 @@ impl VocalChain {
             ));
         }
         if self.limiter.enabled {
+            // `level=0` is load-bearing, not a tidy-up. `alimiter`'s `level`
+            // ("auto level") defaults to TRUE, which rescales the output by
+            // `1/limit` afterwards — so the ceiling we just asked for is
+            // multiplied straight back off: a 0 dBFS input came out at 0.0
+            // dBFS with `limit=-1dB`, and a −6 dBFS input that never touched
+            // the limiter came out 1 dB LOUDER. A ceiling that does not cap and
+            // silently adds gain is worse than no limiter. Off, it caps: 0 →
+            // −1.00 dBFS, −6 → −6.00.
             f.push(format!(
-                "alimiter=limit={}",
-                coef(db_to_linear(self.limiter.limit_db))
+                "alimiter=limit={}dB:level=0",
+                coef(self.limiter.limit_db.clamp(LIMITER_MIN_CEILING_DB, 0.0))
             ));
         }
         if self.gain_db.abs() > 1e-3 {
+            // NO conversion: `volume`'s argument is an expression, and `dB`
+            // there is the documented postfix — `volume=1.5dB` is +1.5 dB.
             f.push(format!("volume={}dB", coef(self.gain_db)));
         }
         f
@@ -929,28 +995,42 @@ mod tests {
 
     #[test]
     fn denoise_filter_shape() {
-        let chain = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            denoise: DenoiseStage {
-                enabled: true,
-                reduction_db: 12.0,
-                noise_floor_db: -25.0,
-            },
-            compressor: CompressorStage {
-                enabled: false,
-                ..CompressorStage::default()
-            },
-            ..VocalChain::default()
-        };
-        assert_eq!(chain.build_filters(), vec!["afftdn=nr=12:nf=-25:tn=1"]);
+        // BARE numbers, no `dB` — the other half of the units rule. `afftdn`'s
+        // `nr`/`nf` are already denominated in dB, so a suffix would run
+        // ffmpeg's dB→linear conversion a second time and land `nf=-25dB` on
+        // 0.056, outside the option's [-80, -20] range → hard error.
+        assert_eq!(
+            only(|c| {
+                c.denoise = DenoiseStage {
+                    enabled: true,
+                    reduction_db: 12.0,
+                    noise_floor_db: -25.0,
+                }
+            }),
+            vec!["afftdn=nr=12:nf=-25:tn=1"]
+        );
     }
 
     #[test]
     fn eq_band_renders_equalizer() {
-        let chain = VocalChain {
+        // `g` is likewise a dB number already — bare, for the same reason.
+        assert_eq!(
+            only(|c| {
+                c.eq = vec![EqBand {
+                    freq_hz: 250,
+                    gain_db: -2.0,
+                    q: 1.0,
+                }]
+            }),
+            vec!["equalizer=f=250:t=q:w=1:g=-2"]
+        );
+    }
+
+    /// Build a chain with only the stage under test enabled — the two
+    /// default-on stages (highpass, compressor) muted — so `build_filters()`
+    /// returns exactly one fragment.
+    fn only(f: impl FnOnce(&mut VocalChain)) -> Vec<String> {
+        let mut chain = VocalChain {
             highpass: HighpassStage {
                 enabled: false,
                 freq_hz: 80,
@@ -959,35 +1039,148 @@ mod tests {
                 enabled: false,
                 ..CompressorStage::default()
             },
-            eq: vec![EqBand {
-                freq_hz: 250,
-                gain_db: -2.0,
-                q: 1.0,
-            }],
             ..VocalChain::default()
         };
-        assert_eq!(chain.build_filters(), vec!["equalizer=f=250:t=q:w=1:g=-2"]);
+        f(&mut chain);
+        chain.build_filters()
     }
 
     #[test]
-    fn limiter_threshold_is_linear() {
-        let chain = VocalChain {
-            highpass: HighpassStage {
-                enabled: false,
-                freq_hz: 80,
-            },
-            compressor: CompressorStage {
-                enabled: false,
-                ..CompressorStage::default()
-            },
-            limiter: LimiterStage {
+    fn limiter_ceiling_is_db_with_auto_level_off() {
+        // F2-C-A/T3. The ceiling goes over as dB (ffmpeg converts at full
+        // precision), and `level=0` because `alimiter`'s auto-level defaults ON
+        // and multiplies the ceiling straight back off — MEASURED on the
+        // bundled sidecar: `limit=0.891` alone passed a 0 dBFS sine at 0.0 dBFS
+        // and made a −6 dBFS sine −5.0 dBFS. With this string: −1.00 / −6.00.
+        assert_eq!(
+            only(|c| {
+                c.limiter = LimiterStage {
+                    enabled: true,
+                    limit_db: -1.0,
+                }
+            }),
+            vec!["alimiter=limit=-1dB:level=0"]
+        );
+    }
+
+    #[test]
+    fn limiter_ceiling_clamps_to_what_alimiter_can_take() {
+        // `alimiter:limit` is [0.0625, 1] linear = [−24.08, 0] dB. Outside it
+        // ffmpeg refuses the filter and the whole export dies, so a legacy or
+        // hand-rolled DTO gets clamped instead.
+        assert_eq!(
+            only(|c| {
+                c.limiter = LimiterStage {
+                    enabled: true,
+                    limit_db: -40.0,
+                }
+            }),
+            vec!["alimiter=limit=-24dB:level=0"]
+        );
+        assert_eq!(
+            only(|c| {
+                c.limiter = LimiterStage {
+                    enabled: true,
+                    limit_db: 3.0,
+                }
+            }),
+            vec!["alimiter=limit=0dB:level=0"]
+        );
+    }
+
+    #[test]
+    fn compressor_makeup_is_db_not_a_linear_factor() {
+        // F2-C-A/T2. The mixer slider, the `comp_makeup_db` DTO field and the
+        // presets all mean decibels; `acompressor:makeup` is a LINEAR factor in
+        // [1, 64]. MEASURED: `makeup=2` → +6.02 dB, `makeup=2dB` → +2.00 dB.
+        let parts = only(|c| {
+            c.compressor = CompressorStage {
                 enabled: true,
-                limit_db: -1.0,
-            },
-            ..VocalChain::default()
-        };
-        // −1 dBFS ≈ 0.891 linear.
-        assert_eq!(chain.build_filters(), vec!["alimiter=limit=0.891"]);
+                makeup_db: 2.0,
+                ..CompressorStage::default()
+            }
+        });
+        assert_eq!(
+            parts,
+            vec!["acompressor=threshold=-18dB:ratio=3:attack=5:release=80:makeup=2dB"]
+        );
+    }
+
+    #[test]
+    fn compressor_makeup_clamps_below_zero_db() {
+        // A negative makeup has no linear representation at all: `makeup=0.5`
+        // is "Value 0.500000 for parameter 'makeup' out of range [1 - 64]" and
+        // ffmpeg exits — a FAILED EXPORT, not a quieter one. Unity is the floor.
+        let parts = only(|c| {
+            c.compressor = CompressorStage {
+                enabled: true,
+                makeup_db: -3.0,
+                ..CompressorStage::default()
+            }
+        });
+        assert!(parts[0].ends_with(":makeup=0dB"), "got {parts:?}");
+        // …and the ceiling, for the same reason: 64 linear is +36.12 dB.
+        let parts = only(|c| {
+            c.compressor = CompressorStage {
+                enabled: true,
+                makeup_db: 90.0,
+                ..CompressorStage::default()
+            }
+        });
+        assert!(parts[0].ends_with(":makeup=36dB"), "got {parts:?}");
+    }
+
+    #[test]
+    fn gate_threshold_is_db_so_low_settings_survive_rounding() {
+        // F2-C-A/T6. `agate:threshold` is linear [0, 1]; the mixer slider runs
+        // down to −70 dB, which is 0.000316 linear — and `coef`'s 3 decimals
+        // turned that into the string "0", i.e. a gate that lets EVERYTHING
+        // through. −65 dB fared no better: "0.001" is −60 dB.
+        assert_eq!(
+            only(|c| {
+                c.gate = GateStage {
+                    enabled: true,
+                    threshold_db: -70.0,
+                    ..GateStage::default()
+                }
+            }),
+            vec!["agate=threshold=-70dB:ratio=2:attack=5:release=120"]
+        );
+        assert_eq!(
+            only(|c| {
+                c.gate = GateStage {
+                    enabled: true,
+                    threshold_db: -65.0,
+                    ..GateStage::default()
+                }
+            }),
+            vec!["agate=threshold=-65dB:ratio=2:attack=5:release=120"]
+        );
+        // Above 0 dBFS there is no linear threshold left to express.
+        assert!(only(|c| {
+            c.gate = GateStage {
+                enabled: true,
+                threshold_db: 6.0,
+                ..GateStage::default()
+            }
+        })[0]
+            .starts_with("agate=threshold=0dB:"),);
+    }
+
+    #[test]
+    fn dereverb_expander_threshold_is_db() {
+        // Same filter, same trap: strength 0.4 maps to −39 dB, which as a
+        // linear coefficient rounded to "0.011" (−39.2 dB) — and at the low end
+        // of the range it would have kept rounding towards an open gate.
+        assert_eq!(
+            only(|c| {
+                c.dereverb = DereverbStage {
+                    enabled: true,
+                    strength: 0.4,
+                }
+            }),
+            vec!["agate=threshold=-39dB:ratio=2.1:attack=10:release=200:detection=rms"]
+        );
     }
 
     // ── presets ──────────────────────────────────────────────────────────────

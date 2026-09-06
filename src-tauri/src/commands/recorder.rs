@@ -4,7 +4,29 @@
 //!   - `start_recording(opts)` / `stop_recording` to drive a unified capture,
 //!     listening for `recording://{state,started,progress,silence,error,
 //!     reconnecting,reconnected}` events,
-//!   - `recording_status` to read the current [`RecorderState`] synchronously.
+//!   - `recording_scheduled_stop_ms` for the ONE case that event stream can't
+//!     cover on its own — see the command's own doc comment below,
+//!   - `recording_snapshot` ONCE at boot, for the one listener that could not
+//!     have been listening: a webview that reloaded mid-recording.
+//!
+//! There used to be a third bullet of a different kind: `recording_status`, a
+//! POLL for the current `RecorderState`. F2-T1 deleted it (command +
+//! registration + reachability baseline entry) — nothing called it, and it
+//! duplicated `recording://state`, which 8 files already listen on
+//! (docs/archive/COMMAND_AUDIT_2026-08.md §4.9: "Å spørre synkront om en
+//! tilstand som pushes er en kilde til uenighet mellom to sannheter").
+//!
+//! `recording_snapshot` is not that command returning. The audit's sentence
+//! holds for a renderer that HAS been listening; it says nothing about one that
+//! has not, and Tauri's `emit()` reaches only the listeners registered when it
+//! fires. A reload mid-service therefore starts from no state at all and stays
+//! there until the next transition — which, in a stable recording, is the
+//! auto-stop an hour away. One snapshot at startup is not a second truth; it is
+//! the first one, handed to a listener who missed the announcement.
+//!
+//! The engine method behind the deleted command, `RecorderEngine::current_state()`,
+//! stays — `window.rs`, `update/mod.rs`, `scheduler/mod.rs`,
+//! `diagnostics/mod.rs` and `commands/audio.rs` all call it directly, in-process.
 //!
 //! ## E5.3: why the start choreography is not written inline any more
 //!
@@ -52,12 +74,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use ts_rs::TS;
 
-use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::settings::ChannelMode;
 
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::recorder::engine::{RecorderEngine, RecordingOpts};
+use crate::recorder::engine::{RecorderEngine, RecorderStatePayload, RecordingOpts};
 use crate::recorder::preroll::{preroll_settings_from, PrerollClip, PrerollEngine, PrerollStatus};
 use crate::settings;
 use crate::test_recording::{run_test_recording as run_test, TestRecordingResult};
@@ -435,19 +456,48 @@ pub fn stop_recording(engine: State<'_, RecorderEngine>) -> AppResult<()> {
     Ok(())
 }
 
-/// The current recorder lifecycle state (best-effort snapshot).
-#[tauri::command]
-pub fn recording_status(engine: State<'_, RecorderEngine>) -> RecorderState {
-    engine.current_state()
-}
-
 /// The current auto-stop deadline (absolute epoch ms), or null when none is
 /// armed. Lets a screen that (re)mounts mid-recording rehydrate the countdown
 /// synchronously instead of waiting for the next `recording://state` event
-/// (which only fires on a lifecycle transition).
+/// (which only fires on a lifecycle transition, and may not fire at all if the
+/// mount is what missed the LAST one — see `RecordingOverlay.tsx`'s mount
+/// effect, F2-T1).
 #[tauri::command]
 pub fn recording_scheduled_stop_ms(engine: State<'_, RecorderEngine>) -> Option<u64> {
     engine.scheduled_stop_ms()
+}
+
+/// The engine's CURRENT `recording://state` payload — one snapshot, at boot.
+///
+/// ## The scenario
+///
+/// A stable recording emits nothing. `recording://state` fires on transitions,
+/// and between «recording» and the auto-stop an hour later there are none. So a
+/// webview that reloads in that hour — Tauri reloads the page when the WebKit
+/// process dies, and a developer reload does the same thing on purpose —
+/// subscribes to a channel that has already said everything it is going to say.
+/// The renderer's `isRecording` starts false and stays false: no overlay, no
+/// clock, no countdown, no stop button. The volunteer sees «klar» while the
+/// engine owns the microphone, and the only control on screen is a Start the
+/// engine answers `already recording` to.
+///
+/// ## Why a snapshot and not a poll
+///
+/// This asks ONCE, at startup, for the state the renderer would already have
+/// had if it had been listening — and the answer goes through the very same
+/// reduction as the event (`applyStatePayload`, `app/state/recording.ts`), so
+/// there is exactly one mapping from payload to screen, not two that can drift.
+/// A real `recording://state` landing while this call is in flight WINS: the
+/// renderer counts events and drops a snapshot that was overtaken
+/// (`app/state/recording-hydrate-core.ts`).
+///
+/// Same shape as `recording_scheduled_stop_ms` — a READ whose failure costs a
+/// number, never a lie about a change that did not happen — and it supersedes
+/// that command's job for the reload case: the deadline is one of its three
+/// fields.
+#[tauri::command]
+pub fn recording_snapshot(engine: State<'_, RecorderEngine>) -> RecorderStatePayload {
+    engine.snapshot()
 }
 
 /// Extend the running recording's auto-stop by `minutes` (the "+30 min" button).

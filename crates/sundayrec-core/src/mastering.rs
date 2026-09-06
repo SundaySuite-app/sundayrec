@@ -46,7 +46,7 @@ pub fn master_presets() -> Vec<MasterPreset> {
             target_lra: 7.0,
             true_peak_db: -1.0,
             filters:
-                "highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=5:release=50:makeup=2"
+                "highpass=f=80,acompressor=threshold=-18dB:ratio=3:attack=5:release=50:makeup=2dB"
                     .into(),
         },
         MasterPreset {
@@ -59,7 +59,7 @@ pub fn master_presets() -> Vec<MasterPreset> {
             true_peak_db: -1.0,
             filters: "highpass=f=80,equalizer=f=200:t=q:w=2:g=-1.5,equalizer=f=3000:t=q:w=1:g=2,\
                       equalizer=f=7000:t=q:w=1.5:g=-2,\
-                      acompressor=threshold=-18dB:ratio=2.5:attack=5:release=80:makeup=1.5"
+                      acompressor=threshold=-18dB:ratio=2.5:attack=5:release=80:makeup=1.5dB"
                 .into(),
         },
         MasterPreset {
@@ -71,8 +71,8 @@ pub fn master_presets() -> Vec<MasterPreset> {
             true_peak_db: -1.0,
             filters: "highpass=f=100,equalizer=f=200:t=q:w=2:g=-2,equalizer=f=2500:t=q:w=1:g=3,\
                       equalizer=f=7000:t=q:w=1.5:g=-3,\
-                      acompressor=threshold=-24dB:ratio=4:attack=3:release=50:makeup=2,\
-                      acompressor=threshold=-12dB:ratio=2:attack=50:release=300:makeup=1"
+                      acompressor=threshold=-24dB:ratio=4:attack=3:release=50:makeup=2dB,\
+                      acompressor=threshold=-12dB:ratio=2:attack=50:release=300:makeup=1dB"
                 .into(),
         },
         MasterPreset {
@@ -84,7 +84,7 @@ pub fn master_presets() -> Vec<MasterPreset> {
             target_lra: 11.0,
             true_peak_db: -1.0,
             filters:
-                "highpass=f=50,acompressor=threshold=-22dB:ratio=2:attack=10:release=100:makeup=1"
+                "highpass=f=50,acompressor=threshold=-22dB:ratio=2:attack=10:release=100:makeup=1dB"
                     .into(),
         },
     ]
@@ -656,6 +656,16 @@ mod tests {
             clear.filters
         );
         assert!(!clear.filters.contains("ratio=3"));
+        // …and "modest makeup" has to mean 1.5 dB. `acompressor:makeup` is a
+        // LINEAR factor, so the bare `makeup=1.5` this preset used to carry was
+        // +3.52 dB, and `makeup=2` in speech-natural/punchy was +6.02 dB — the
+        // exact over-processing the numbers were tuned down to avoid. The `dB`
+        // suffix is what makes the written number the applied number.
+        assert!(
+            clear.filters.contains("makeup=1.5dB"),
+            "makeup must carry the dB suffix or the value is a linear factor; got: {}",
+            clear.filters
+        );
         // The opt-in punchy preset stays aggressive but with less first-stage
         // makeup to curb pumping.
         let punchy = get_preset_by_id("speech-punchy").unwrap();
@@ -664,6 +674,39 @@ mod tests {
             !punchy.filters.contains("makeup=3"),
             "less makeup → less pumping"
         );
+    }
+
+    #[test]
+    fn every_preset_makeup_is_written_in_db() {
+        // F2-C-A: the whole app calls this value dB — the mixer slider says dB,
+        // the DTO field is `comp_makeup_db`, the tuning notes in
+        // docs/NATT-LYD-VU-PREKEN say "makeup 3→2" meaning decibels. ffmpeg
+        // reads a bare number as a linear factor in [1, 64], so a bare `2` is
+        // +6.02 dB and a bare `0.5` is not quiet — it is an "out of range"
+        // ERROR that kills the export. Every `makeup=` we ship must therefore
+        // end in `dB`.
+        for p in master_presets() {
+            for frag in p.filters.split(',') {
+                for arg in frag.split(':') {
+                    let Some(v) = arg.strip_prefix("makeup=") else {
+                        continue;
+                    };
+                    assert!(
+                        v.ends_with("dB"),
+                        "preset {} writes a bare linear makeup ({arg}); it must be dB-suffixed",
+                        p.id
+                    );
+                    // And the dB number must stay inside what the linear range
+                    // [1, 64] can express: 0 … 36.12 dB.
+                    let db: f64 = v.trim_end_matches("dB").parse().expect("numeric makeup");
+                    assert!(
+                        (0.0..=36.0).contains(&db),
+                        "preset {} makeup {db} dB is outside acompressor's [1, 64] linear range",
+                        p.id
+                    );
+                }
+            }
+        }
     }
 
     #[test]

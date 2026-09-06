@@ -21,6 +21,24 @@ use sundayrec_core::wake::format_pmset_date;
 /// so the schedule and the cancel MUST use the same string.
 pub const WAKE_OWNER: &str = "SundayRec";
 
+/// The label the MANUAL test-wake is filed under — a different owner from
+/// [`WAKE_OWNER`] on purpose (F2-W3).
+///
+/// The test used to file under `WAKE_OWNER` and clear with
+/// `pmset schedule cancelall SundayRec`, so «Test vekking om 2 min» on a Saturday
+/// deleted Sunday's real wake. Two owners, and a test that cancels only the ONE
+/// event it filed ([`plan_mac_cancel_one`]) rather than a whole label, means
+/// neither path can reach the other's events — whichever way `pmset` reads the
+/// optional owner argument of `cancelall`.
+///
+/// ⚠️ HARDWARE-UNVERIFIED, and that is the reason for the belt AND the braces:
+/// `man pmset` documents the owner as the optional tail of `type date+time`,
+/// while [`plan_mac_cancel_all`] passes it alone. Nothing in the gate can prove
+/// whether the real tool then filters by owner, fails, or cancels every event on
+/// the machine — so the test-wake path avoids `cancelall` entirely instead of
+/// betting on one reading.
+pub const WAKE_OWNER_TEST: &str = "SundayRec-test";
+
 /// An OS command we intend to run: program, argv, and the timeout after which we
 /// give up on it. Built by the `plan_*` functions, executed by a
 /// [`super::shell::Shell`].
@@ -107,17 +125,34 @@ pub fn applescript_literal(s: &str) -> String {
 //   macOS plans
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Cancel every wake we previously filed under [`WAKE_OWNER`].
-pub fn plan_mac_cancel_all() -> PlannedCommand {
-    PlannedCommand::new("pmset", &["schedule", "cancelall", WAKE_OWNER], 3_000)
+/// Cancel every wake previously filed under `owner`. Only the REAL schedule uses
+/// this — a whole-label cancel is exactly what the test-wake must not do.
+pub fn plan_mac_cancel_all(owner: &str) -> PlannedCommand {
+    PlannedCommand::new("pmset", &["schedule", "cancelall", owner], 3_000)
 }
 
-/// Schedule one wake, un-elevated (works when the user already has the right, or
-/// when `pmset` has been granted it; otherwise it fails and we escalate).
-pub fn plan_mac_schedule_one(d: NaiveDateTime) -> PlannedCommand {
+/// Cancel exactly ONE previously-filed wake: type, wall clock and owner all have
+/// to match, so this cannot take out an event we did not file at that minute.
+///
+/// This is how «Test vekking» un-schedules itself. `cancelall` would have been
+/// shorter and is what the Electron original did — and it is the bug: a cancel
+/// scoped to a LABEL takes every event under it, and a label-scoped cancel that
+/// happens to be read as un-scoped takes everything on the machine.
+pub fn plan_mac_cancel_one(d: NaiveDateTime, owner: &str) -> PlannedCommand {
     PlannedCommand::new(
         "pmset",
-        &["schedule", "wake", &format_pmset_date(d), WAKE_OWNER],
+        &["schedule", "cancel", "wake", &format_pmset_date(d), owner],
+        5_000,
+    )
+}
+
+/// Schedule one wake under `owner`, un-elevated (works when the user already has
+/// the right, or when `pmset` has been granted it; otherwise it fails and we
+/// escalate).
+pub fn plan_mac_schedule_one(d: NaiveDateTime, owner: &str) -> PlannedCommand {
+    PlannedCommand::new(
+        "pmset",
+        &["schedule", "wake", &format_pmset_date(d), owner],
         5_000,
     )
 }
@@ -327,14 +362,37 @@ mod tests {
     fn mac_schedule_and_cancel_agree_on_the_owner_label() {
         // `cancelall` matches by label, so a drift between these two would leave
         // every previously-scheduled wake in place and silently stack duplicates.
-        let cancel = plan_mac_cancel_all();
-        let schedule = plan_mac_schedule_one(dt("2026-05-31 10:20:00"));
+        let cancel = plan_mac_cancel_all(WAKE_OWNER);
+        let schedule = plan_mac_schedule_one(dt("2026-05-31 10:20:00"), WAKE_OWNER);
         assert_eq!(cancel.args, vec!["schedule", "cancelall", "SundayRec"]);
         assert_eq!(
             schedule.args,
             vec!["schedule", "wake", "05/31/26 10:20:00", "SundayRec"]
         );
         assert_eq!(cancel.args.last(), schedule.args.last());
+    }
+
+    #[test]
+    fn the_test_wake_owner_is_not_the_real_one_and_its_cancel_names_one_event() {
+        // F2-W3. Two properties, and the bug needed both to be false:
+        //   1. the labels differ, so no cancel of one label can reach the other;
+        //   2. the test's cancel names a TYPE, a WALL CLOCK and an owner, so it
+        //      cannot sweep a label — the Sunday wake is at another minute.
+        assert_ne!(WAKE_OWNER_TEST, WAKE_OWNER);
+        let cancel_one = plan_mac_cancel_one(dt("2026-05-30 12:00:00"), WAKE_OWNER_TEST);
+        assert_eq!(
+            cancel_one.args,
+            vec![
+                "schedule",
+                "cancel",
+                "wake",
+                "05/30/26 12:00:00",
+                "SundayRec-test"
+            ]
+        );
+        // …and it is a `cancel`, never a `cancelall`: that one word is the whole
+        // difference between "un-schedule my test" and "delete Sunday".
+        assert!(!cancel_one.rendered().contains("cancelall"));
     }
 
     #[test]

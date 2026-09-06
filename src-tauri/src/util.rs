@@ -107,6 +107,81 @@ pub fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+// ── Child processes (no console windows on Windows) ──────────────────────────
+
+/// The `CreateProcess` flag that gives a console child NO console of its own.
+///
+/// `winapi`/`windows-sys` spell it `CREATE_NO_WINDOW`; the literal is used here
+/// so no dependency is pulled in for one constant, and so the value is visible
+/// at the only place it is applied.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// A [`tokio::process::Command`] that will not open a console window.
+///
+/// **Why this exists.** `main.rs` carries `windows_subsystem = "windows"`: the
+/// app is a GUI process with NO console attached. When such a process starts a
+/// CONSOLE subsystem child — every one of ours is: `ffmpeg.exe`, `ffprobe.exe`,
+/// `powershell.exe`, `powercfg.exe` — Windows has nowhere to put the child's
+/// stdio, so it ALLOCATES A NEW, VISIBLE console for it. The operator sees a
+/// black window: one per device enumeration, one that stands for the minutes a
+/// delivery transcode takes, and — with video — one that stands for the whole
+/// service. That last one is not cosmetic: a volunteer who closes it sends
+/// ffmpeg `CTRL_CLOSE_EVENT`, ffmpeg exits, and the recording dies.
+///
+/// `CREATE_NO_WINDOW` suppresses that allocation. It is deliberately NOT
+/// `DETACHED_PROCESS`: the child must still inherit our piped stdio (the
+/// recorder reads ffmpeg's stderr line-by-line for progress and
+/// `silencedetect`, and writes `q` to its stdin for a graceful stop), and it
+/// must still belong to our Job Object so [`crate::platform`]'s kill-on-close
+/// guarantee keeps holding.
+///
+/// **Use this for EVERY child process** — including ones behind `#[cfg(unix)]`
+/// or `#[cfg(target_os = "macos")]`. Off Windows the helper is the identity
+/// function, so routing a `pgrep` through it costs nothing, and a rule with no
+/// exceptions is a rule the `hidden_command_ratchet` test can enforce. An
+/// exception list is where the next raw `Command::new` would hide.
+///
+/// The two `cfg` blocks (rather than one `let` plus a conditional call) are
+/// there so neither lane earns a warning: off Windows a `let mut` that is never
+/// mutated is an `unused_mut`, and `let x = …; x` is clippy's `let_and_return`.
+pub fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    #[cfg(windows)]
+    {
+        // `creation_flags` is an INHERENT method on tokio's `Command` under
+        // `cfg(windows)` — NOT the `std::os::windows::process::CommandExt`
+        // trait the std twin below needs. Importing that trait here would earn
+        // an unused-import warning, which `-D warnings` turns red.
+        let mut cmd = tokio::process::Command::new(program);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        tokio::process::Command::new(program)
+    }
+}
+
+/// [`hidden_command`]'s synchronous twin, for the one-shot probes and the
+/// detached helpers that have no reason to carry the async machinery.
+///
+/// Same contract, same flag, same "use it everywhere" rule; see
+/// [`hidden_command`] for why the flag is needed and why it is not
+/// `DETACHED_PROCESS`.
+pub fn hidden_std_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new(program);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(program)
+    }
+}
+
 // ── Atomic file writes ──────────────────────────────────────────────────────
 
 /// The scratch file [`write_atomic`] lands in before the rename.

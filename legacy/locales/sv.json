@@ -123,7 +123,10 @@
         "builtIn": "Datorns egen mikrofon",
         "builtInDesc": "Bara för test, eller om ni inte har något mixerbord.",
         "external": "USB / Extern",
-        "mixer": "Mixerbord · {n} kanaler",
+        "mixer": {
+          "one": "Mixerbord · {n} kanal",
+          "other": "Mixerbord · {n} kanaler"
+        },
         "whichChannels": "Vilka kanaler?",
         "pairLabel": "Kanal {l} och {r}",
         "channelHint": "De som har ljud just nu lyser.",
@@ -197,7 +200,10 @@
         "pick": "Kamera",
         "keepAudio": "Behåll separat ljudfil",
         "keepAudioDesc": "En ren ljudfil vid sidan av videon.",
-        "delivers": "Kameran levererar högst {height}p · {fps} bilder per sekund.",
+        "delivers": {
+          "one": "Kameran levererar högst {height}p · {n} bild per sekund.",
+          "other": "Kameran levererar högst {height}p · {n} bilder per sekund."
+        },
         "probeFailed": "Vi kunde inte läsa av vad kameran klarar. Inspelningen använder det kameran faktiskt levererar, upp till 1080p.",
         "none": "Hittar ingen kamera",
         "noneDesc": "Anslut en kamera, eller stäng av ”Ta med kamera”."
@@ -214,7 +220,10 @@
         "nothingToSave": "Ingenting har ändrats.",
         "launch": "Starta automatiskt med datorn",
         "launchDesc": "Utan det här startar inte inspelningen efter en omstart.",
-        "more": "Den här datorn har {n} fasta tider. Här ändrar du den första."
+        "more": {
+          "one": "Den här datorn har {n} fast tid. Här ändrar du den.",
+          "other": "Den här datorn har {n} fasta tider. Här ändrar du den första."
+        }
       },
       "days": {
         "0": "Måndag",
@@ -895,6 +904,7 @@
     "errCancelled": "Export avbruten.",
     "errTimeout": "Exporten tog för lång tid och stoppades. Försök igen, eller dela filen i mindre inspelningar.",
     "errFileNotFound": "Originalfilen är inte tillgänglig — är disken frånkopplad?",
+    "errDiskFull": "Disken är full. Frigör utrymme och försök igen.",
     "errCutData": "Internt fel i klippdata. Försök ladda om filen.",
     "playbackViaProxy": "Uppspelningen går via en tillfällig mellanfil (full kvalitet). Exporten använder alltid originalet.",
     "analyzingWaveform": "Analyserar vågform…",
@@ -916,7 +926,7 @@
     "diagnoseFail": "Kunde inte analysera kanalerna.",
     "diagnosing": "Analyserar…",
     "enhanceTitle": "Ljudförbättring",
-    "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format i exportfönstret.",
+    "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format på sidan Export.",
     "errPathNotAbsolute": "Ogiltig mapp eller filsökväg. Välj målmappen igen.",
     "metaDesc": "BESKRIVNING",
     "metaSave": "Spara metadata",
@@ -978,7 +988,7 @@
     "qualityReasons": "Orsak: {r}",
     "qualityAction": "Visa inspelning",
     "errorInvalidOpts": "Ogiltiga inspelningsinställningar — starta om och försök igen",
-    "errorNoSaveFolder": "Ingen mapp att spara i är vald — gå till Inställningar → Inspelning",
+    "errorNoSaveFolder": "Ingen mapp att spara i är vald — gå till sidan Inspelning och välj en i kortet ”Vart ska inspelningarna?”",
     "errorUnknown": "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo",
     "reconnectSecs": "s",
     "reconnecting": "Ljudkällan frånkopplad — återansluter",
@@ -1004,7 +1014,7 @@
   },
   "onboarding": {
     "promptTitle": "Dela anonym diagnostik?",
-    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System.",
+    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → Avancerat.",
     "rePromptTitle": "Vi frågar dig igen",
     "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
   },

@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 
 import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
+import type { TrashEntry } from "../legacy/bindings/TrashEntry";
+import type { PruneSummary } from "../legacy/bindings/PruneSummary";
 
 // Retensjonspasset — «Slettes automatisk etter {n} dager», endelig sant.
 //
@@ -13,8 +15,10 @@ import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
 // er SKJØTEN sett utenfra: at oppstarten faktisk spør, at en flytting blir en
 // lesbar toast med en vei til papirkurven, og at en stille oppstart er stille.
 
-/** Papirkurven slik `trash_list` svarer ETTER at passet har flyttet noe. */
-const MOVED_ENTRIES = [1, 2, 3].map((n) => ({
+/** Papirkurven slik `trash_list` svarer ETTER at passet har flyttet noe.
+ *  Typed as the GENERATED `TrashEntry` binding — a Rust rename of any field
+ *  must fail `npm run typecheck` here. */
+const MOVED_ENTRIES: TrashEntry[] = [1, 2, 3].map((n) => ({
   id: `t${n}`,
   originalPath: `/Users/test/Opptak/2026-05-0${n} Gudstjeneste.mp3`,
   trashedPath: `/Users/test/Opptak/.sundayrec-trash/${n}.mp3`,
@@ -31,7 +35,7 @@ test.describe("retensjonspasset ved oppstart", () => {
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
-        recordings_prune: { moved: 3, disabled: false },
+        recordings_prune: { moved: 3, disabled: false } satisfies PruneSummary,
         trash_list: MOVED_ENTRIES,
       },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
@@ -53,7 +57,7 @@ test.describe("retensjonspasset ved oppstart", () => {
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
-        recordings_prune: { moved: 0, disabled: false },
+        recordings_prune: { moved: 0, disabled: false } satisfies PruneSummary,
       },
       settings: { ...SETTLED_SETTINGS, autoDeleteDays: 90 },
       goto: "home",

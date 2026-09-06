@@ -127,14 +127,61 @@ describe("feilkodene", () => {
     );
   });
 
+  // F2-A-A: `path_guard::checked_input_file` sier «cannot resolve path …»
+  // FØR `export()` selv rekker å si `file_not_found` — uten denne rada var
+  // den vanligste måten en kildefil forsvinner på (frakoblet disk, flyttet
+  // eller slettet fil) usynlig for tabellen, og «er disken frakoblet?»-
+  // setningen ble aldri vist for nettopp det spørsmålet.
+  it("«cannot resolve path» fra path_guard gir samme setning som file_not_found", () => {
+    expect(
+      exportErrorKey(
+        "validation: cannot resolve path /Opptak/borte.mp3: No such file or directory (os error 2)",
+      ),
+    ).toBe("errFileNotFound");
+  });
+
+  // F2-A-A: en full disk klassifiseres i Rust (samme mønster som
+  // opptakeren) og krysser IPC med `disk_full` som den ledende koden.
+  it("disk_full er en egen, ledende kode", () => {
+    expect(
+      exportErrorKey(
+        "recording error: disk_full: av_interleaved_write_frame(): No space left on device",
+      ),
+    ).toBe("errDiskFull");
+  });
+
   it("en ukjent kode gir ingenting, ikke en råstreng", () => {
     expect(exportErrorKey("internal: noe_helt_nytt")).toBeNull();
     expect(exportErrorKey(undefined)).toBeNull();
+  });
+
+  // F2-A-A: den tidligere fallbacken søkte med `includes` over HELE
+  // meldingen for alle sju kodene, ikke bare de flerords-fraser som aldri
+  // kan bli `lead` — så et ord som «timeout» eller «cancelled» i 500 tegn rå
+  // ffmpeg-prosa (helt urelatert til vår egen `timeout`/`cancelled`-kode) ga
+  // feil setning. Den er nå strammet til KUN å gjelde koder med mellomrom.
+  it("et ord som nevner en kjent kode i fri ffmpeg-prosa gir ingen treff", () => {
+    expect(
+      exportErrorKey(
+        "recording error: ffmpeg failed: Connection timeout while probing filter graph",
+      ),
+    ).toBeNull();
+    expect(
+      exportErrorKey(
+        "recording error: ffmpeg failed: operation cancelled by remote peer",
+      ),
+    ).toBeNull();
   });
 
   it("avbrutt er ikke en feil", () => {
     expect(isCancelled("recording error: cancelled")).toBe(true);
     expect(isCancelled("validation: timeout")).toBe(false);
     expect(isCancelled(undefined)).toBe(false);
+    // Prosa som bare nevner ordet må heller ikke leses som en avbryting.
+    expect(
+      isCancelled(
+        "recording error: ffmpeg failed: operation cancelled by remote peer",
+      ),
+    ).toBe(false);
   });
 });

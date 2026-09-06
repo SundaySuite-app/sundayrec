@@ -124,7 +124,15 @@ mod imp {
 
 #[cfg(unix)]
 mod unix_imp {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
+
+    // Everything below spawns through `crate::util::hidden_std_command` rather
+    // than `Command::new`. On unix — the only target this module compiles for —
+    // that is the identity function; the point is that the rule "no raw
+    // `Command::new` outside the helper" holds with NO exceptions, so
+    // `crate::hidden_command_ratchet` can enforce it instead of a reviewer
+    // remembering it.
+    use crate::util::hidden_std_command;
 
     /// Build a `pkill -f`/`pgrep -f` ERE for `path` that can never match a
     /// process whose command line merely CONTAINS the pattern text (pkill's
@@ -172,7 +180,7 @@ mod unix_imp {
 
     fn pgrep_any(patterns: &[String]) -> bool {
         patterns.iter().any(|pat| {
-            Command::new("pgrep")
+            hidden_std_command("pgrep")
                 .args(["-f", pat])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -184,7 +192,7 @@ mod unix_imp {
 
     fn pkill_all(signal: &str, patterns: &[String]) {
         for pat in patterns {
-            let _ = Command::new("pkill")
+            let _ = hidden_std_command("pkill")
                 .args([signal, "-f", pat])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -238,7 +246,7 @@ mod unix_imp {
         // Detached: no stdio ties to us, and the std Child handle is dropped
         // without kill-on-drop — the reaper MUST outlive us; that's its job.
         // When we die it gets reparented (PID 1), fires the kills, and exits.
-        match Command::new("/bin/sh")
+        match hidden_std_command("/bin/sh")
             .args(["-c", &script])
             .stdin(Stdio::null())
             .stdout(Stdio::null())

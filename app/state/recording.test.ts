@@ -21,6 +21,7 @@ import {
   dismissReconnecting,
   finishedRecording,
   forgetMovedPath,
+  hydrateRecordingState,
   initRecording,
   isRecording,
   markSessionStarted,
@@ -29,14 +30,21 @@ import {
   silenceActive,
 } from "./recording";
 import { banners, clearBanners } from "./banners";
+import type { StatePayload } from "./recording-hydrate-core";
 
 interface Harness {
   emit: (channel: string, payload?: unknown) => void;
   off: () => void;
 }
 
-/** Et minimalt `window.api` med bare `on`, og en vei til å fyre kanalene. */
-function withFakeApi(): Harness {
+/** Hva `recordingSnapshot()` skal svare, og når. */
+interface FakeApiOpts {
+  /** Svaret oppstarts-snapshotet får. `undefined` = kommandoen finnes ikke. */
+  snapshot?: StatePayload | null;
+}
+
+/** Et minimalt `window.api` med `on` (+ snapshotet), og en vei til å fyre kanalene. */
+function withFakeApi(opts: FakeApiOpts = {}): Harness {
   const handlers = new Map<string, Array<(p: unknown) => void>>();
   (globalThis as unknown as { window: unknown }).window = {
     api: {
@@ -44,6 +52,7 @@ function withFakeApi(): Harness {
         handlers.set(channel, [...(handlers.get(channel) ?? []), fn]);
         return () => {};
       },
+      recordingSnapshot: () => Promise.resolve(opts.snapshot ?? null),
     },
   };
   const dispose = initRecording();
@@ -248,5 +257,95 @@ describe("forgetMovedPath", () => {
     finishedRecording.value = receipt;
     forgetMovedPath([]);
     expect(finishedRecording.value).toBe(receipt);
+  });
+});
+
+/**
+ * F2-T5: skjøten mellom kappløpsregelen (tabelltestet i
+ * `recording-hydrate-core.test.ts`) og skallet som teller hendelsene.
+ *
+ * Regelen kan være riktig og likevel virkningsløs: teller ingen opp, holder
+ * `snapshotStillApplies` alltid, og et utdatert svar vinner over motoren. Det
+ * er nøyaktig formen skjøtefeil har, så den prøves her — mot de EKTE
+ * lytterne, ikke mot en kopi.
+ */
+describe("oppstarts-snapshotet", () => {
+  const RECORDING: StatePayload = {
+    state: "recording",
+    reconnect_count: 0,
+    scheduled_stop_ms: 1_700_000_000_000,
+  };
+
+  it("reiser overlegget etter en reload midt i et opptak", async () => {
+    const h = withFakeApi({ snapshot: RECORDING });
+    expect(isRecording.value).toBe(false);
+    await hydrateRecordingState();
+    expect(isRecording.value).toBe(true);
+    // Nedtellingen kommer med, i den samme runden.
+    expect(scheduledStopMs.value).toBe(1_700_000_000_000);
+    h.off();
+  });
+
+  it("tar med gjenkoblingen, så stripa står etter en reload midt i den", async () => {
+    const h = withFakeApi({
+      snapshot: { ...RECORDING, state: "reconnecting", reconnect_count: 3 },
+    });
+    await hydrateRecordingState();
+    expect(isRecording.value).toBe(true);
+    expect(reconnecting.value).toBe(true);
+    h.off();
+  });
+
+  it("forkastes av en hendelse som landet mens spørsmålet var i flukt", async () => {
+    // MUTASJONSPRØVEN: fjern `stateGeneration += 1` fra
+    // `recording-overlay-stop`-handleren, og denne blir rød — snapshotet
+    // maler «tar opp» over en økt som er slutt, og ingen ny hendelse kommer
+    // for å rette det opp.
+    const h = withFakeApi({ snapshot: RECORDING });
+    const inFlight = hydrateRecordingState();
+    h.emit("recording-overlay-stop", { state: "stopped" });
+    await inFlight;
+    expect(isRecording.value).toBe(false);
+    h.off();
+  });
+
+  it("river ikke kvitteringen når opptaket ble ferdig mens vi spurte", async () => {
+    // `markSessionStarted()` nullstiller `finishedRecording`. Et snapshot som
+    // sier «recording» og lander etter at opptaket faktisk ble ferdig ville
+    // altså tatt kvitteringen med seg — filen brukeren nettopp fikk beskjed om.
+    const h = withFakeApi({ snapshot: RECORDING });
+    const inFlight = hydrateRecordingState();
+    h.emit("recording-finished", { file_path: "/tmp/gudstjeneste.flac" });
+    await inFlight;
+    expect(isRecording.value).toBe(false);
+    expect(finishedRecording.value?.path).toBe("/tmp/gudstjeneste.flac");
+    h.off();
+  });
+
+  it("lar kvitteringen stå når motoren svarer «idle»", async () => {
+    // Den vanlige oppstarten rett etter et opptak: motoren ER idle, og det
+    // skal ikke fjerne kvitteringen som allerede står på skjermen.
+    const h = withFakeApi({
+      snapshot: { state: "idle", reconnect_count: 0, scheduled_stop_ms: null },
+    });
+    finishedRecording.value = {
+      path: "/tmp/forrige.flac",
+      hasVideo: false,
+      atMs: 1,
+    };
+    await hydrateRecordingState();
+    expect(isRecording.value).toBe(false);
+    expect(finishedRecording.value?.path).toBe("/tmp/forrige.flac");
+    h.off();
+  });
+
+  it("«vi vet ikke» er ikke «ingenting går»", async () => {
+    // Shimmens pessimistiske reserve. Et opptak som ALLEREDE er kjent skal
+    // ikke rives ned fordi kommandoen ikke svarte.
+    const h = withFakeApi({ snapshot: null });
+    markSessionStarted();
+    await hydrateRecordingState();
+    expect(isRecording.value).toBe(true);
+    h.off();
   });
 });

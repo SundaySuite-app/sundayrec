@@ -24,9 +24,20 @@ describe("app i18n", () => {
     expect(t("app.page.record")).toBe("Opptak");
   });
 
-  it("offers only the two languages the redesign keeps translated", () => {
-    // The other five are PAUSED, not gone — see legacy/locales/parity.test.ts.
-    expect([...ACTIVE_LOCALES]).toEqual(["no", "en"]);
+  it("offers all seven languages, in the ALL_LOCALES order", () => {
+    // F2-S6: the translation round filled sv/da/de/fr/pl, `PAUSED_KEYS` is
+    // empty, and the picker offers every catalogue that exists. Pinned as a
+    // LIST, not as `toEqual(ALL_LOCALES)`: the order is what the picker shows,
+    // and "active" is still its own decision — see `ACTIVE_LOCALES`.
+    expect([...ACTIVE_LOCALES]).toEqual([
+      "no",
+      "en",
+      "sv",
+      "da",
+      "de",
+      "fr",
+      "pl",
+    ]);
   });
 
   it("a signal change gives t() the new text, and wakes a subscriber", async () => {
@@ -98,14 +109,14 @@ describe("app i18n", () => {
     expect(() => tDyn("app.nothing", "record")).toThrow(/finnes ikke/);
   });
 
-  // `app.language.<code>` hadde bare de to AKTIVE kodene. Språkvelgeren viser
-  // bare aktive språk i dag, så hullet var latent — men `tDyn` KASTER i DEV på
-  // en suffiks-bom og rendrer en tom etikett i prod, så den dagen et pauset
-  // språk tas i bruk (eller en flate viser navnet på det som står lagret) er
-  // det en tom eller krasjende valgboks. Alle sju har et navn nå, i begge
-  // katalogene.
+  // `app.language.<code>` hadde bare de to AKTIVE kodene. Hullet var latent
+  // mens fem språk stod pauset — men `tDyn` KASTER i DEV på en suffiks-bom og
+  // rendrer en tom etikett i prod, så det ville blitt en tom eller krasjende
+  // valgboks den dagen de kom i bruk. Den dagen er nå (F2-S6): alle sju står i
+  // `ACTIVE_LOCALES`, og hver av dem må ha et navn i hver av de sju
+  // katalogene — 49 oppslag, ikke to.
   it.each([...ALL_LOCALES])(
-    "språkvelgeren har et navn for «%s» — også de fem pausete",
+    "språkvelgeren har et navn for «%s», i alle sju katalogene",
     async (code) => {
       for (const shown of ACTIVE_LOCALES) {
         await setLocale(shown);
@@ -120,9 +131,20 @@ describe("app i18n", () => {
   // og usynlig» står — men da må TEKSTEN si hva det innebærer, ellers er det
   // appen som holder mikrofonen åpen uten at noen sa fra. Rust-doccen advarte
   // ordrett; katalogen sa ingenting.
+  //
+  // F2-S6: alle sju, ikke to. Setningen er den ene personvernopplysningen i
+  // appen som IKKE har en bryter ved siden av seg, og en oversettelse som
+  // korter den ned til «lyd fra før du trykket Start» tar den bort for alle som
+  // leser appen på det språket — uten at noen gate ser forskjell på en kortere
+  // setning og en fattigere.
   it.each([
     ["no", /mikrofonen åpen/i],
     ["en", /microphone open/i],
+    ["sv", /mikrofonen öppen/i],
+    ["da", /mikrofonen åben/i],
+    ["de", /Mikrofon im Hintergrund offen/i],
+    ["fr", /microphone ouvert/i],
+    ["pl", /mikrofon otwarty/i],
   ] as Array<[(typeof ACTIVE_LOCALES)[number], RegExp]>)(
     "forhåndsbufferen sier at den holder mikrofonen åpen (%s)",
     async (lang, needle) => {
@@ -136,14 +158,19 @@ describe("app i18n", () => {
     ["nothing stored", null, "no"],
     ["norsk", "no", "no"],
     ["engelsk", "en", "en"],
-    // Paused languages pick the NEAREST active one rather than rendering the
-    // redesigned strings as empty text.
-    ["svensk", "sv", "no"],
-    ["dansk", "da", "no"],
-    ["tysk", "de", "en"],
-    ["fransk", "fr", "en"],
-    ["polsk", "pl", "en"],
-    ["noe helt annet", "kv", "en"],
+    // F2-S6: alle sju er aktive, så et lagret språk brukes som det står. Den
+    // gamle nabospråk-mappingen (sv/da → no, resten → en) hørte pausen til, og
+    // ville i dag ha vært en app som stille nekter å starte på det språket
+    // brukeren faktisk valgte.
+    ["svensk", "sv", "sv"],
+    ["dansk", "da", "da"],
+    ["tysk", "de", "de"],
+    ["fransk", "fr", "fr"],
+    ["polsk", "pl", "pl"],
+    // …men en verdi som ikke er en av de sju er fortsatt ikke et språk.
+    // `settings.language` er `string | null` i wire-typen.
+    ["noe helt annet", "kv", "no"],
+    ["tom streng", "", "no"],
   ])("startup locale for %s", (_name, stored, expected) => {
     expect(resolveStartupLocale(stored)).toBe(expected);
   });
