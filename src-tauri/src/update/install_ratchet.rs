@@ -26,7 +26,9 @@
 //! [`crate::commands::path_ratchet`] established — parse the seam's own
 //! sources and hold them to a rule.
 //!
-//! ## The two rules
+//! ## The rules
+//!
+//! Two about spellings that must not appear:
 //!
 //! 1. **No `download_and_install(` anywhere under `src-tauri/src/update/`.**
 //!    The seam calls `Update::download` and `Update::install` separately, so
@@ -41,9 +43,25 @@
 //!    [`crate::platform::disarm_kill_on_close`], which clears the limit and
 //!    keeps every process in the job.
 //!
+//! …and two about SEQUENCE, which is where the rest of the bug lived:
+//!
+//! 3. **The finalisation wait must end in the install path.**
+//!    `AfterWait::Relaunch` in `window.rs` — the arm that runs once the
+//!    recording's file is safe — has to go through `relaunch_now`, the only
+//!    function that consults the staged bytes. An arm that restarted directly
+//!    would boot the OLD version on Windows and look perfectly correct on
+//!    macOS, where the install already happened during the download.
+//!
+//! 4. **Inside `relaunch_now`, the order is fixed**: ask whether anything is
+//!    staged, THEN disarm (a plain restart must keep the ffmpeg guard), THEN
+//!    write the log line (everything after the install is the plugin's own
+//!    `exit(0)`), THEN install, and only then fall through to the restart.
+//!
 //! Prose and string literals are blanked out first (the shared
 //! [`crate::hidden_command_ratchet::strip_to_code`]), so this module's own
 //! docs — which necessarily name both forbidden spellings — cannot trip it.
+//! That is also why rule 4 finds the log line by its CALL rather than by its
+//! sentence: the sentence is not in the stripped source to be found.
 
 #![cfg(test)]
 
