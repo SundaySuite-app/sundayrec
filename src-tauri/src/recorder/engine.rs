@@ -103,7 +103,7 @@ use crate::audio::device_watch::BackoffOutcome;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
-use crate::recorder::context::{SegmentCounters, SessionContext};
+use crate::recorder::context::SessionContext;
 use crate::recorder::native_capture::stream::CpalHostKind;
 use crate::recorder::preroll::PrerollClip;
 use crate::util::lock_recover;
@@ -1345,7 +1345,7 @@ async fn run_session(
         // thereafter) so a reconnect back-off can be cut short the moment the
         // mixer is plugged back in, instead of sleeping out the remaining
         // seconds. See `audio::device_watch` — no-op where no listener ships.
-        let device_signal = crate::ctx.audio::device_watch::device_change_signal();
+        let device_signal = crate::audio::device_watch::device_change_signal();
         // How many deliverables have already been finalised (concat + history row).
         // Each split closes one; session end finalises the rest. The pre-roll clip is
         // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
@@ -1718,7 +1718,7 @@ async fn run_session(
                                 // change — the device is back, so waiting out the
                                 // remaining seconds only lengthens the gap in the
                                 // recording (`audio::device_watch`).
-                                match crate::ctx.audio::device_watch::wait_reconnect_backoff(
+                                match crate::audio::device_watch::wait_reconnect_backoff(
                                     Duration::from_millis(delay_ms),
                                     &device_signal,
                                     &mut stop_rx,
@@ -1747,7 +1747,7 @@ async fn run_session(
                                 // spawn, so this ffmpeg enumeration is skipped.
                                 if ctx.backend == CaptureBackend::Ffmpeg {
                                     if let Ok(inv) =
-                                        crate::ctx.audio::device_enum::enumerate_ffmpeg_devices().await
+                                        crate::audio::device_enum::enumerate_ffmpeg_devices().await
                                     {
                                         if let Some(fresh) =
                                             sundayrec_core::device_match::find_best_device_match(

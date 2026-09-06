@@ -415,7 +415,7 @@ mod imp {
     use crate::recorder::context::SessionContext;
     use crate::recorder::engine::{
         extract_separate_audio, now_ms, RecordingEvent, RecordingFinished, RecordingLevels,
-        RecordingOpts, ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT,
+        ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT,
     };
     use crate::recorder::native_capture::stream::{
         build_input_stream_any, find_device, open_host, ring_capacity, StreamSink,
