@@ -5649,8 +5649,10 @@ mod tests {
                 let Some(ffmpeg) = ffmpeg_or_skip() else {
                     return;
                 };
-                // The mixer slider: 0 → 12 dB in 0.5 dB steps, plus the clamped
-                // ends a hand-rolled DTO can reach.
+                let level = "volume=-11.94dB"; // −18.06 dBFS sine → −30 dBFS
+                let before = peak_db(&ffmpeg, SINE, level);
+                // The mixer slider (0 → 12 dB in 0.5 dB steps) and the clamped
+                // ends only a hand-rolled DTO can reach.
                 for makeup_db in [-3.0, 0.0, 0.5, 1.0, 2.0, 6.5, 12.0, 90.0] {
                     let chain = one_filter(|c| {
                         c.compressor = CompressorStage {
@@ -5659,15 +5661,19 @@ mod tests {
                             ..CompressorStage::default()
                         }
                     });
-                    // peak_db asserts ffmpeg exited 0 — an out-of-range makeup
-                    // does not, and names the chain in the failure.
-                    let level = peak_db(&ffmpeg, SINE, &format!("volume=-11.94dB,{chain}"));
+                    // `peak_db` asserts ffmpeg exited 0 — an out-of-range
+                    // makeup does not, and it names the chain in the failure.
+                    let after = peak_db(&ffmpeg, SINE, &format!("{level},{chain}"));
+                    // …and every step lands on the dB it asked for, clamped.
+                    let want = makeup_db.clamp(0.0, 36.0);
+                    let got = after - before;
                     assert!(
-                        level.is_finite(),
-                        "makeup {makeup_db} dB produced no measurable output"
+                        (got - want).abs() <= 0.05,
+                        "makeup {makeup_db} dB moved the signal {got:+.3} dB, \
+                         expected {want:+.3} via `{chain}`"
                     );
                 }
-                eprintln!("vocal chain: every mixer makeup value builds and runs");
+                eprintln!("vocal chain: every mixer makeup value builds, runs and lands on its dB");
             }
         }
     }

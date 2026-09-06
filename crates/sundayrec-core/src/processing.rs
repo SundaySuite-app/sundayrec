@@ -127,12 +127,13 @@ pub fn channel_repair_filter(repair: ChannelRepair) -> Option<String> {
         ChannelRepair::GainDb { left_db, right_db } => {
             // LINEAR here, deliberately — the ONE surviving `coef(db_to_linear(…))`
             // in this file (see the units note at the top). `pan`'s per-channel
-            // gains are multipliers inside a channel expression, and unlike the
-            // dynamics filters they are not a plain option `av_strtod` reads,
-            // so `c0=6dB*c0` is not a form we can rely on. The 3-decimal
-            // rounding that ruined the −70 dB gate threshold is harmless at
-            // this scale: the ±24 dB clamp keeps the coefficient in
-            // `[0.063, 15.849]`, where a 0.001 step is at most 0.014 dB.
+            // gains live inside a channel EXPRESSION, not in a plain option, and
+            // the suffix is not accepted there: `pan=stereo|c0=6dB*c0|c1=6dB*c1`
+            // is "Error initializing filters" on the bundled sidecar, MEASURED.
+            // The 3-decimal rounding that ruined the −70 dB gate threshold is
+            // harmless at this scale anyway: the ±24 dB clamp keeps the
+            // coefficient in `[0.063, 15.849]`, where a 0.001 step is at most
+            // 0.014 dB.
             let l = db_to_linear(left_db.clamp(-24.0, 24.0));
             let r = db_to_linear(right_db.clamp(-24.0, 24.0));
             // A no-op (both ~unity) needs no filter.
