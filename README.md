@@ -155,9 +155,10 @@ asio-less approximation of the release feature combo), and **audit**
 (npm + cargo dependency audit). Releases are built and published as drafts by
 `.github/workflows/release.yml` (macOS arm64 + Windows). macOS **signing**
 activates once the `MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets exist;
-**notarization does not** — its env lines are commented out in `release.yml`
-pending Apple's Program License Agreement, so re-enabling it is a source edit.
-See `docs/RELEASE-CHECKLIST.md` §2/§2a.
+**notarization** is gated on the repo _variable_ `NOTARIZE_MAC` (off by
+default — Apple's Program License Agreement is still pending), read by the
+`[notarize-switch]` step in `release.yml`; flipping it to `true` re-enables
+notarization with no commit needed. See `docs/RELEASE-CHECKLIST.md` §2/§2a.
 
 ## Lisens
 
