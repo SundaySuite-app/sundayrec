@@ -329,6 +329,7 @@
         "updateRestarting": "Ponowne uruchamianie …",
         "updateRestartFailed": "Ponowne uruchomienie się nie udało. Zamknij aplikację i otwórz ją znowu — wtedy aktualizacja będzie aktywna.",
         "updateFailed": "Nie udało się sprawdzić aktualizacji",
+        "updateBusyRecording": "Nie można aktualizować podczas nagrywania",
         "updateNotesLabel": "Co nowego",
         "log": "Dziennik",
         "logDesc": "Do rozwiązywania problemów razem z nami. Bez dźwięku i bez haseł.",

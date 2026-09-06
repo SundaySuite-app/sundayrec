@@ -323,6 +323,7 @@
         "updateRestarting": "Restarting …",
         "updateRestartFailed": "The restart did not happen. Quit the app and open it again, and the update is active.",
         "updateFailed": "Could not check for updates",
+        "updateBusyRecording": "Cannot update while a recording is running",
         "updateNotesLabel": "What's new",
         "log": "Log",
         "logDesc": "For troubleshooting together with us. No audio and no passwords.",

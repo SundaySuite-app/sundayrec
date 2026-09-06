@@ -323,6 +323,7 @@
         "updateRestarting": "Wird neu gestartet …",
         "updateRestartFailed": "Der Neustart hat nicht stattgefunden. Beenden Sie die App und öffnen Sie sie erneut, dann ist das Update aktiv.",
         "updateFailed": "Es konnte nicht nach Updates gesucht werden",
+        "updateBusyRecording": "Während einer Aufnahme nicht möglich",
         "updateNotesLabel": "Was ist neu",
         "log": "Protokoll",
         "logDesc": "Zur Fehlersuche gemeinsam mit uns. Kein Ton und keine Passwörter.",
