@@ -121,6 +121,15 @@ describe("feilkodene", () => {
     expect(exportErrorKey("validation: invalid_duration")).toBe("errCutData");
   });
 
+  it("mono-avvisningen har sin egen setning — ikke den generelle", () => {
+    // Sømmen stopper en reparasjon som leser høyre inngangskanal på en
+    // monofil. Uten raden her får den frivillige den generelle setningen om
+    // at «noe gikk galt», for den ene feilen som har et konkret svar.
+    expect(exportErrorKey("validation: channel_repair_needs_stereo")).toBe(
+      "errChannelRepairNeedsStereo",
+    );
+  });
+
   it("path_guard-meldingen matcher fortsatt på innhold — den har ingen kode", () => {
     expect(exportErrorKey("path must be absolute: ../ut")).toBe(
       "errPathNotAbsolute",
@@ -148,6 +157,16 @@ describe("feilkodene", () => {
         "recording error: disk_full: av_interleaved_write_frame(): No space left on device",
       ),
     ).toBe("errDiskFull");
+  });
+
+  // F2-A-B: bakendens enkelt-flyt-vakt (`ExportEngine::try_begin`) avviser en
+  // andre eksport mens den første går. Rust-siden pinner den samme strengen i
+  // `the_busy_refusal_uses_the_code_the_renderer_translates` — to sider av én
+  // skjøt, hver med sin egen test på seg.
+  it("export_already_running har en setning, ikke en råstreng fra en annen prosess", () => {
+    expect(exportErrorKey("validation: export_already_running")).toBe(
+      "errExportAlreadyRunning",
+    );
   });
 
   it("en ukjent kode gir ingenting, ikke en råstreng", () => {

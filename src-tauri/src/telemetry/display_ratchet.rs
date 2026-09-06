@@ -75,6 +75,12 @@ const EXEMPT: &[(&str, &str, &str)] = &[
         "AppError::Recording over the ready-channel → UI; the operator must see WHICH folder failed",
     ),
     (
+        "recorder/cpal_capture.rs",
+        "kunne ikke opprette opptaksmappe",
+        "the Windows cpal video path's twin of the engine.rs site above — same message, same \
+         ready-channel, same reason (F2-W4 gave that path the decoupled capture folder too)",
+    ),
+    (
         "commands/path_guard.rs",
         "cannot resolve the save folder",
         "AppError::Validation → renderer; tells the operator their save-folder setting is broken",

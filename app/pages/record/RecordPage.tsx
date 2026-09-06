@@ -395,7 +395,15 @@ export function RecordPage() {
             <p data-testid="record-can-start" class={styles.why}>
               {t("app.record.canStart")}
             </p>
-          ) : null}
+          ) : (
+            // F2-T3: samme slisse de to andre hintene bruker — den står tom
+            // når kilden er klar, og en tom slisse er nøyaktig der en snarvei
+            // kan nevnes uten å legge en ekstra linje til en side som alt har
+            // to varianter av den fra før.
+            <p data-testid="record-start-hint" class={styles.why}>
+              {t("app.record.startHint")}
+            </p>
+          )}
 
           {/*
             «Neste opptak» og «Siste opptak» står her og ikke i høyrekolonnen.

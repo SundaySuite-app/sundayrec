@@ -103,8 +103,12 @@ const LIBRARY: Array<{
           detail="D"
           status="todo"
           actionLabel="Sett opp"
-          onAction={() => {}}
-        />,
+          collapseLabel="Lukk"
+          expanded
+          onExpand={() => {}}
+        >
+          x
+        </DecisionCard>,
       ),
     derived: [
       "probe-number",
@@ -112,6 +116,7 @@ const LIBRARY: Array<{
       "probe-answer",
       "probe-detail",
       "probe-action",
+      "probe-body",
     ],
   },
   {
@@ -457,6 +462,74 @@ describe("en sperret knapp bærer grunnen sin", () => {
     // IKKE `disabled`: da kunne ingen tabbe fram til knappen for å HØRE
     // hvorfor den er av.
     expect(html).not.toMatch(/<button[^>]*\sdisabled/);
+  });
+});
+
+// F2-T4: sjekklistas rader folder ut på stedet, akkurat som kontrollrommets
+// kort. Semantikken er ikke pynt — uten den er «kortet folder seg ut» en knapp
+// som «gjør noe» og en ny landmasse som dukket opp uten forklaring.
+describe("en sjekklistrad som folder ut", () => {
+  const row = (expanded: boolean) =>
+    render(
+      <DecisionCard
+        testId="r"
+        number={1}
+        question="Hvilken lyd?"
+        answer="Ikke satt opp"
+        status="todo"
+        actionLabel="Sett opp"
+        collapseLabel="Lukk"
+        expanded={expanded}
+        onExpand={() => {}}
+      >
+        {"skjermen"}
+      </DecisionCard>,
+    );
+
+  it("sier hva knappen styrer, og bytter etikett når den står åpen", () => {
+    const open = row(true);
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain('aria-controls="r-body"');
+    expect(open).toContain('id="r-body"');
+    expect(open).toContain("Lukk");
+  });
+
+  it("peker aldri på en kropp som ikke finnes", () => {
+    // Kollapset RIVES kroppen ut av treet (det er VU-regelen), og en
+    // `aria-controls` mot ingenting er en referanse en skjermleser ikke kan
+    // følge.
+    const shut = row(false);
+    expect(shut).toContain('aria-expanded="false"');
+    expect(shut).not.toContain("aria-controls");
+    expect(shut).not.toContain('id="r-body"');
+    expect(shut).toContain("Sett opp");
+  });
+
+  it("gir kroppen spørsmålets eget navn, ikke et nytt", () => {
+    // `aria-labelledby` mot raden som allerede står der: en etikett som ble
+    // skrevet en gang til er en etikett som kan si noe annet.
+    const open = row(true);
+    expect(open).toContain('aria-labelledby="r-question"');
+    expect(open).toContain('id="r-question"');
+    expect(open).toContain('tabindex="-1"');
+  });
+
+  it("er en vanlig navigerende rad uten `onExpand`", () => {
+    const plain = render(
+      <DecisionCard
+        testId="r"
+        number={1}
+        question="Q"
+        answer="A"
+        status="done"
+        actionLabel="Endre"
+        onAction={() => {}}
+      >
+        {"aldri rendret"}
+      </DecisionCard>,
+    );
+    expect(plain).not.toContain("aria-expanded");
+    expect(plain).not.toContain("aldri rendret");
   });
 });
 

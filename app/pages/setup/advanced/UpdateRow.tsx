@@ -33,6 +33,7 @@
 import { t, tf } from "../../../i18n";
 import { useSetting } from "../../../settings/use-setting";
 import { updatePhase } from "../../../state/auto-update";
+import { isRecording } from "../../../state/recording";
 import { updateView, type UpdateView } from "../../../state/update-core";
 import { Button } from "../../../ui/Button/Button";
 import { Chip } from "../../../ui/Chip/Chip";
@@ -88,6 +89,13 @@ export function UpdateRow() {
               <Button
                 variant="primary"
                 busy={view.action.busy}
+                // F2-W1: samme grunn som i banneret (`Shell.tsx`). Både «Last
+                // ned og installer» og «Start på nytt og installer» ender i en
+                // prosess som byttes ut — og en nedlasting kjeder rett videre
+                // til omstarten. Motoren avviser kallet uansett; dette er så
+                // den frivillige får VITE hvorfor, i stedet for en feil.
+                disabled={isRecording.value}
+                disabledReason={t("app.setup.advanced.updateBusyRecording")}
                 testId="adv-update-install"
                 onClick={() => void window.api.installUpdate()}
               >

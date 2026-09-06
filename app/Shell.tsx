@@ -78,6 +78,12 @@
 
 import { useEffect } from "preact/hooks";
 
+import {
+  decideShortcut,
+  isEditableTarget,
+  type ShortcutPage,
+} from "@lib/shortcuts-core";
+
 import { EditorPage, editorHeading } from "./editor/EditorPage";
 import { loadState } from "./editor/model";
 import { locale, t, tDyn, tf } from "./i18n";
@@ -89,16 +95,20 @@ import {
 } from "./pages/library/LibraryPage";
 import { TrashPage } from "./pages/library/TrashPage";
 import { ExportPage } from "./pages/export/ExportPage";
+import { sourceState } from "./pages/record/record-core";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { SetupPage } from "./pages/setup/SetupPage";
 import { consumePendingAction, pendingAction, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
+import { audioDevices } from "./state/devices";
 import { banners, dismissBanner } from "./state/banners";
+import { isRecording } from "./state/recording";
 import { hydrateError, settings } from "./state/settings";
 import { Banner } from "./ui/Banner/Banner";
 import { Button } from "./ui/Button/Button";
+import { activeDialog } from "./ui/dialog";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
 import { GlobalErrorBanner } from "./ui/GlobalErrorBanner/GlobalErrorBanner";
 import { PageShell } from "./ui/PageShell/PageShell";
@@ -113,6 +123,7 @@ export function Shell({ probe }: ShellProps) {
   const current = route.value;
   const failed = hydrateError.value;
   useTrayFolder();
+  useGlobalShortcuts();
 
   const firstRun = current.firstRun === true;
 
@@ -225,6 +236,82 @@ function useTrayFolder(): void {
   }, [armed]);
 }
 
+// ── Tastatursnarveier (F2-T3) ───────────────────────────────────────────────
+
+/** Bibliotekets søkefelt, adressert som testene adresserer det — `TextField`
+ *  har ingen ref-prop, og feltet finnes ikke i DOM-en før det er noe å søke
+ *  i (`LibraryPage.tsx`: bare når `anyRecordings`). */
+const LIBRARY_SEARCH_SELECTOR = '[data-testid="library-search"]';
+
+/**
+ * Én global `keydown`-lytter, montert så lenge skallet lever — som
+ * `useTrayFolder` over, og av samme grunn: handlingen skal virke uansett
+ * hvilken flate som står, ikke bare når en bestemt komponent er montert.
+ *
+ * Selve avgjørelsen er `decideShortcut` i `@lib/shortcuts-core.ts`, en ren
+ * tabell. Denne hooken er bare DOM-siden: den leser FERSK tilstand fra
+ * signalene INNE i håndtereren — ikke ved mount, `useEffect([])` kjører bare
+ * én gang — og kobler svaret til handlingene som allerede finnes:
+ *
+ *   "start"  → samme `pendingAction`-signal menylinjens «Start opptak»
+ *              bruker. `RecordPage` lytter på den allerede (`armed ===
+ *              "start-recording"` → `handleStart()`), og det er den
+ *              KANONISKE startveien — kamera-slipp, VU-opprydding, hele
+ *              rekkefølgen `e2e/record.spec.ts` pinner. Å kalle den her i
+ *              stedet for å skrive et andre `handleStart` er hele grunnen
+ *              denne veien virker uten å duplisere noe.
+ *   "search" → fokuser og marker biblioteksøket. Ikke en ref: samme
+ *              `data-testid`-adressering som ankeret i `RecordPage.tsx`
+ *              bruker med `document.getElementById`.
+ *
+ * `preventDefault` kalles BARE når svaret ikke er `null` — Space på en
+ * fokusert knapp skal fortsatt oppføre seg som Space (nettleserens egen
+ * «klikk den fokuserte knappen») når ingen av reglene her treffer.
+ */
+function useGlobalShortcuts(): void {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      const r = route.peek();
+      // Redigering har to visninger (se filhodet); søket finnes bare i den
+      // ene — biblioteklisten, ikke arbeidsflaten og ikke papirkurven.
+      const libraryVisible =
+        r.page === "edit" && r.tab !== TRASH_TAB && loadState.peek() === "idle";
+      const page: ShortcutPage =
+        r.page === "record" ? "record" : libraryVisible ? "library" : "other";
+
+      const action = decideShortcut({
+        key: event.key,
+        meta: event.metaKey,
+        ctrl: event.ctrlKey,
+        page,
+        isRecording: isRecording.peek(),
+        dialogOpen: activeDialog.peek() !== null,
+        targetIsEditable: isEditableTarget(
+          document.activeElement as HTMLElement | null,
+        ),
+        // Samme vilkår som Start-knappens `disabled`-prop — se
+        // `RecordPage.tsx`s `source.canStart`.
+        startEnabled: sourceState(settings.peek(), audioDevices.peek())
+          .canStart,
+      });
+      if (action === null) return;
+      event.preventDefault();
+
+      if (action === "start") {
+        pendingAction.value = "start-recording";
+        return;
+      }
+      const field = document.querySelector<HTMLInputElement>(
+        LIBRARY_SEARCH_SELECTOR,
+      );
+      field?.focus();
+      field?.select();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+}
+
 // ── Oppdateringsbanneret ────────────────────────────────────────────────────
 
 /**
@@ -248,6 +335,12 @@ function UpdateBanner() {
     <Button
       variant="secondary"
       testId="banner-update-install"
+      // F2-W1: ETT klikk her laster ned OG starter appen på nytt (se
+      // `installUpdate` i api-shimmen), så midt i en gudstjeneste er dette
+      // knappen som avslutter opptaket. Motoren avviser det samme kallet med
+      // en kode — knappen er høfligheten, ikke vakten.
+      disabled={isRecording.value}
+      disabledReason={t("app.setup.advanced.updateBusyRecording")}
       onClick={() => void window.api.installUpdate()}
     >
       {entry.state === "ready"

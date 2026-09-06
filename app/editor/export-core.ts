@@ -25,6 +25,24 @@ export const VIDEO_FORMAT = "mp4";
 /** Kodeken video-eksporten bruker. H.264 er den universelle. */
 export const VIDEO_CODEC = "h264";
 
+/**
+ * Fasen FØR bakenden har hørt om eksporten i det hele tatt.
+ *
+ * De to andre fasekodene (`measuring`, `encoding`) er BAKENDENS, festet mot
+ * Rust-siden av `export_phase_codes_match_the_renderer_literals`. Denne er
+ * skallets egen, og den finnes fordi F2-2s vindu er ekte: `runExport` venter på
+ * kanalanalysen — en full `astats`-passering, 30–60 s på en 90-minutters
+ * gudstjeneste — FØR det finnes en ffmpeg å melde prosent for. Fram til F2-A-B
+ * var det vinduet en knapp som så uberørt ut, og et andre klikk der var hele
+ * dobbelteksporten.
+ *
+ * Den bor i det samme signalet som bakendens koder, ikke i et eget: flaten
+ * spør «hva gjør eksporten nå», og det er ETT spørsmål med tre svar. Prisen er
+ * at koden må være en Rust ALDRI sender — derav «preparing», som ingen av
+ * ffmpeg-passeringene heter.
+ */
+export const EXPORT_PHASE_PREPARING = "preparing";
+
 /** Bitraten mp3 får når `settings.bitrate` er tom eller tull. Legacys eget
  *  tall, og det `QualityPage` skriver for «God». */
 export const FALLBACK_BITRATE_KBPS = 256;
@@ -157,6 +175,13 @@ export function folderLabel(folder: string): string {
  * `file_not_found`, så uten denne rada var den vanligste måten en fil
  * forsvinner på (frakoblet disk, flyttet/slettet fil) usynlig for tabellen.
  *
+ * `export_already_running` er bakendens enkelt-flyt-vakt (F2-A-B,
+ * `ExportEngine::try_begin`). Den skal i praksis aldri nå en frivillig — skallet
+ * setter `exporting` FØR kanalanalysen nå, så knappen rekker ikke å bli klikket
+ * to ganger — men vakten står i Rust nettopp fordi «flaten ville aldri gjort
+ * det» var antakelsen som brakk. En vakt uten en setning er en dialogboks med
+ * råtekst fra en annen prosess.
+ *
  * Matches på den STABILE ledende koden (`errorCode`, R3-C): `AppError`
  * serialiseres som «<kategori>: <kode>[: detalj]». Fallback-søket under bruker
  * `includes`, men KUN for kodene som har et mellomrom i seg — fraser som
@@ -173,7 +198,12 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["file_not_found", "errFileNotFound"],
   ["disk_full", "errDiskFull"],
   ["invalid_duration", "errCutData"],
+  // Reparasjonen leser høyre inngangskanal på en fil som ikke har en. ffmpeg
+  // avviser den IKKE — den gjengir 6 dB ned uten et ord — så sømmen stopper
+  // eksporten, og da må det stå hvorfor.
+  ["channel_repair_needs_stereo", "errChannelRepairNeedsStereo"],
   ["invalid_format", "errInvalidFormat"],
+  ["export_already_running", "errExportAlreadyRunning"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],
 ];

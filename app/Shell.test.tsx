@@ -236,6 +236,61 @@ describe("Shell", () => {
     recordings.value = null;
   });
 
+  it("REDIGERING skjuler en rad som ligger i papirkurven, og viser den igjen når angre fjerner den fra signalet (F2-A-F)", () => {
+    // Funnet: `toLibraryRows`/`LibraryPage.tsx` filtrerte ikke selv — bare
+    // `getHistory()` gjorde det, ved LASTING. Denne testen beviser at lista
+    // også følger `trashEntries`-SIGNALET uten en ny historikklasting: det er
+    // nøyaktig det «Angre» (som skriver til dette signalet før
+    // `loadRecordingCount()` er ferdig) er avhengig av for å ikke la den
+    // gjenopprettede raden mangle en runde til.
+    navigate("edit");
+    recordings.value = [
+      row({ path: "/a.mp3", filename: "a.mp3" }),
+      row({ path: "/b.mp3", filename: "b.mp3" }),
+    ];
+    trashEntries.value = [
+      {
+        id: "t1",
+        originalPath: "/a.mp3",
+        trashedPath: "/trash/1-a.mp3",
+        name: "a.mp3",
+        deletedAt: Date.now(),
+        related: [],
+        byteSize: 1000,
+      },
+    ];
+    const trashed = render(<Shell />);
+    expect(trashed).not.toContain("a.mp3");
+    expect(trashed).toContain("b.mp3");
+    expect(trashed).toContain("Opptak: 1");
+
+    // En sti papirkurven ikke nevner skal ikke røre noe — ukjent sti, uendret.
+    trashEntries.value = [
+      {
+        id: "t2",
+        originalPath: "/ukjent.mp3",
+        trashedPath: "/trash/2-ukjent.mp3",
+        name: "ukjent.mp3",
+        deletedAt: Date.now(),
+        related: [],
+        byteSize: 1000,
+      },
+    ];
+    const unrelated = render(<Shell />);
+    expect(unrelated).toContain("a.mp3");
+    expect(unrelated).toContain("b.mp3");
+    expect(unrelated).toContain("Opptak: 2");
+
+    // Angre: papirkurven mister raden — samme signal, ingen ny lasting.
+    trashEntries.value = [];
+    const restored = render(<Shell />);
+    expect(restored).toContain("a.mp3");
+    expect(restored).toContain("Opptak: 2");
+
+    trashEntries.value = null;
+    recordings.value = null;
+  });
+
   it("REDIGERING har en papirkurv-inngang også når kurven er tom", () => {
     // Atlaset §5, funn 9: legacy skjuler «Papirkurv»-lenken når `trash_list`
     // er tom, så en frivillig som slettet noe i går og leter etter det i dag

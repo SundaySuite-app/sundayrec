@@ -1272,8 +1272,9 @@ pub const EXPORT_PHASE_ENCODING: &str = "encoding";
 /// service used to be unkillable — the button was a stub returning `true`).
 ///
 /// A single slot rather than the mastering engine's id-keyed map because export
-/// is single-flight in the UI: the "Eksporter" button disables for the duration
-/// and the modal is closed, so there is never a second export to disambiguate.
+/// is single-flight — and, since F2-A-B, single-flight because THIS TYPE says
+/// so rather than because a button was assumed to be disabled (see
+/// `ExportEngine::try_begin`).
 /// The mutex is recovered with `unwrap_or_else(|e| e.into_inner())` for the same
 /// reason `MasterEngine`'s are — it guards a plain `Option` with no invariant a
 /// panic could half-break, and one panicked export must not poison every later
@@ -1292,6 +1293,52 @@ pub struct ExportEngine {
     /// one of those gaps killed nothing and was then forgotten — the export
     /// simply carried on and the next pass spawned as if nothing had happened.
     cancelled: std::sync::atomic::AtomicBool,
+    /// Whether an export owns the engine right now. Held by an [`ExportSlot`]
+    /// for the whole of [`export`], handed out by `ExportEngine::try_begin`.
+    ///
+    /// The single-slot design above USED to rest on "the button disables for
+    /// the duration". It does not: a double-click on Eksporter got two calls
+    /// through the renderer's guard (both waiting on the same memoised sound
+    /// analysis), and two exports on ONE engine destroy each other. B's
+    /// `reset_cancel()` clears A's cancel; B's `hold(child_b)` DROPS
+    /// `Some(child_a)`, and `kill_on_drop(true)` SIGKILLs A's ffmpeg. A then
+    /// reads EOF, `take()`s B's child, waits for B — and reports success on a
+    /// TRUNCATED file, because `out_path.exists()` is true of a file ffmpeg
+    /// never finished. B, left with `None`, reports "cancelled" although B's
+    /// file is the whole one. Two lies from one race.
+    ///
+    /// A renderer-side guard cannot fix this: the engine is reachable from any
+    /// caller of the command, and "the UI would never do that" is exactly the
+    /// assumption that broke.
+    // Read only by `try_begin`/`ExportSlot` (feature-on or test); the field
+    // itself compiles either way so the struct has ONE shape — same reason as
+    // `child` above.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    in_flight: std::sync::atomic::AtomicBool,
+}
+
+/// The token that says "this export owns the engine". Dropping it frees the
+/// engine again.
+///
+/// RAII and not an `end()` call at the bottom of [`export`], because [`export`]
+/// has around a dozen `?` early returns (a missing input, an unsupported
+/// format, a cut plan that keeps nothing, every cancel check, every ffmpeg
+/// failure) plus the panic path. An `end()` reachable only by falling off the
+/// end would leave the engine permanently "busy" the first time an export
+/// failed — turning a one-off error into an app that refuses to export until it
+/// is restarted.
+#[cfg(any(feature = "editor", test))]
+pub struct ExportSlot<'a> {
+    engine: &'a ExportEngine,
+}
+
+#[cfg(any(feature = "editor", test))]
+impl Drop for ExportSlot<'_> {
+    fn drop(&mut self) {
+        self.engine
+            .in_flight
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl Default for ExportEngine {
@@ -1306,7 +1353,27 @@ impl ExportEngine {
         Self {
             child: std::sync::Mutex::new(None),
             cancelled: std::sync::atomic::AtomicBool::new(false),
+            in_flight: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Claim the engine for one export, or `None` when another one already has
+    /// it. The claim is released when the returned [`ExportSlot`] drops.
+    ///
+    /// `compare_exchange` and not a load-then-store: the read and the write
+    /// must be ONE step, or two calls arriving together both see `false` and
+    /// both proceed — which is the very race this exists to stop.
+    #[cfg(any(feature = "editor", test))]
+    fn try_begin(&self) -> Option<ExportSlot<'_>> {
+        self.in_flight
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .ok()
+            .map(|_| ExportSlot { engine: self })
     }
 
     /// Hand the engine the live render so a cancel can reach it.
@@ -2213,11 +2280,15 @@ fn diagnosis_from_stderr(stderr: &str) -> AppResult<EditorChannelDiagnosis> {
             recommended: core_repair_to_dto(sundayrec_core::processing::ChannelRepair::None),
         },
         Some(pr) => {
+            // The RMS values come from the SAME astats summary we already have
+            // in hand. Passing `None` here (what this did) made the core decide
+            // on peaks alone, which cannot tell a crackling cable from a healthy
+            // channel — see the threshold note in `processing::diagnose_channels`.
             let d = core_diagnose(ChannelLevelsDb {
                 peak_left_db: pl,
                 peak_right_db: pr,
-                rms_left_db: None,
-                rms_right_db: None,
+                rms_left_db: levels.rms_db_left,
+                rms_right_db: levels.rms_db_right,
             });
             EditorChannelDiagnosis {
                 code: d.code.to_string(),
@@ -2257,9 +2328,20 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     let noise_floor = sundayrec_core::levels::parse_noise_floor_db(&stderr);
     let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
 
+    // `unusable_*` shares an arm with `dead_*` on purpose: it is the same fault
+    // seen from further away (the channel has SOMETHING, but 12 dB of makeup
+    // cannot rescue it), so the repair and the advice are identical. Reusing the
+    // sentence also keeps this block free of NEW Norwegian literals — I18N-R2
+    // moves the whole thing to catalogue keys. The screen does not read this
+    // summary at all; it renders `editor.chanUnusableLeft`/`…Right` from the
+    // diagnosis CODE, which says "too weak" rather than "silent".
     let repair_note = match diagnosis.code.as_str() {
-        "dead_left" => "høyre kanal kopieres til begge (venstre er stille — sjekk kabel)",
-        "dead_right" => "venstre kanal kopieres til begge (høyre er stille — sjekk kabel)",
+        "dead_left" | "unusable_left" => {
+            "høyre kanal kopieres til begge (venstre er stille — sjekk kabel)"
+        }
+        "dead_right" | "unusable_right" => {
+            "venstre kanal kopieres til begge (høyre er stille — sjekk kabel)"
+        }
         "imbalance" => "kanalene balanseres (ulik styrke)",
         "both_dead" => "begge kanaler er svært svake — sjekk tilkobling",
         "mono" => "mono-opptak",
@@ -2619,6 +2701,13 @@ fn build_pre_filters(
 /// render that fails is retried once in software (see
 /// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
 /// so it can never cost the user their export.
+///
+/// SINGLE-FLIGHT (F2-A-B): a second call while one is running is refused with
+/// `export_already_running` before it can touch a thing. The claim is taken
+/// HERE and not in [`editor_export`](crate::commands::editor::editor_export) so
+/// that no caller — command, test, or a future seam — can reach the engine
+/// around it; the very first line of the body it guards, `reset_cancel()`,
+/// already belongs to the export that is running.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
@@ -2639,6 +2728,12 @@ where
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
         parse_normalization_mode, plan_pass2,
     };
+
+    // One export at a time. `_slot` is BOUND, not `let _ = …`: a wildcard drops
+    // the token on the spot and the guard would be a no-op that still compiles.
+    let _slot = engine
+        .try_begin()
+        .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
 
     // A cancel of the PREVIOUS export must not abort this one — the engine is
     // long-lived managed state, the flag is per-export.
@@ -2680,18 +2775,20 @@ where
     // KEPT part of a 3-hour recording must not be timed as if it were 3 hours).
     let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
-    // 1b. The source's sample rate, so the encoder can be pinned to it. Without
-    //     this a mastered lossless export lands at loudnorm's internal 192 kHz.
+    // 1b. One probe, two answers: the source's sample rate (so the encoder can
+    //     be pinned to it — without this a mastered lossless export lands at
+    //     loudnorm's internal 192 kHz) and its channel count (so a stereo-only
+    //     channel repair can be refused before the graph is built).
     //     Best-effort: a failed probe (no ffprobe sidecar, exotic container)
-    //     simply means "emit no -ar", i.e. the pre-Phase-4 behaviour.
+    //     means "emit no -ar" and "channel count unknown", i.e. the pre-Phase-4
+    //     behaviour. The video path now probes too — one ffprobe against a
+    //     multi-minute render — so the repair guard covers it as well.
     bail_if_cancelled(engine)?;
+    let probed = load_recording(&req.input_path).await.ok();
     let source_rate: Option<u32> = if is_video {
         None // the video path encodes AAC via `video_codec_args` — no -ar there.
     } else {
-        load_recording(&req.input_path)
-            .await
-            .ok()
-            .and_then(|i| i.sample_rate)
+        probed.as_ref().and_then(|i| i.sample_rate)
     };
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
@@ -2735,7 +2832,20 @@ where
     });
     // A top-level channel repair overrides the chain's repair, and applies on its
     // own (in an otherwise-empty chain) when no vocal processing was requested.
-    if let Some(cr) = req.channel_repair.as_ref().map(|r| r.to_core()) {
+    let requested_repair = req.channel_repair.as_ref().map(|r| r.to_core());
+    // …but a repair that reads `c1` on a MONO source is nonsense, and ffmpeg
+    // does not say so: it drops the missing term and renders 6 dB down (see
+    // `channel_repair_needs_stereo`, which carries the measurement). Refuse,
+    // rather than hand back a quietly attenuated file the UI calls "repaired".
+    // `auto_process` answers `None` for mono, so this only catches a stale or
+    // hand-rolled request — which is exactly when a silent 6 dB would be
+    // hardest to explain.
+    if let (Some(cr), Some(1)) = (requested_repair, probed.as_ref().and_then(|i| i.channels)) {
+        if sundayrec_core::processing::channel_repair_needs_stereo(cr) {
+            return Err(AppError::Validation("channel_repair_needs_stereo".into()));
+        }
+    }
+    if let Some(cr) = requested_repair {
         match &mut chain {
             Some(c) => c.channel_repair = cr,
             None => {
@@ -4616,6 +4726,87 @@ mod tests {
         assert!(!engine.is_cancelled());
     }
 
+    // ── F2-A-B: one export at a time ────────────────────────────────────────
+    //
+    // The double-click the gransking found: two `editor_export` calls on the
+    // same engine. B's `reset_cancel()` clears A's cancel, B's `hold()` DROPS
+    // A's child (and `kill_on_drop(true)` SIGKILLs its ffmpeg), A then takes
+    // B's child and reports success on a truncated file while B reports
+    // "cancelled" on a whole one. The claim below is what makes the second call
+    // never get that far.
+
+    #[test]
+    fn a_second_export_cannot_claim_a_busy_engine() {
+        let engine = ExportEngine::new();
+        let first = engine.try_begin().expect("a fresh engine is free");
+        assert!(
+            engine.try_begin().is_none(),
+            "a second export must be refused while the first holds the engine"
+        );
+        // MUTATION PROBE: swap `compare_exchange` for a load-then-store and
+        // this line still passes — but drop `try_begin`'s claim entirely and
+        // the assert above goes green on a guard that guards nothing.
+        drop(first);
+    }
+
+    #[test]
+    fn the_engine_is_free_again_once_the_slot_drops() {
+        let engine = ExportEngine::new();
+        {
+            let _slot = engine.try_begin().expect("free");
+            assert!(engine.try_begin().is_none());
+        }
+        assert!(
+            engine.try_begin().is_some(),
+            "an export that ENDED must not leave the engine busy forever"
+        );
+    }
+
+    /// The reason the claim is RAII and not an `end()` at the bottom of
+    /// `export`: that function returns early through `?` a dozen times (a
+    /// missing input, an unsupported format, an empty cut plan, every cancel
+    /// check, every ffmpeg failure). A release reachable only by falling off
+    /// the end would turn the first failed export into an app that refuses to
+    /// export at all until it is restarted.
+    #[test]
+    fn an_export_that_fails_midway_still_frees_the_engine() {
+        let engine = ExportEngine::new();
+
+        fn fails_after_claiming(engine: &ExportEngine) -> AppResult<()> {
+            let _slot = engine
+                .try_begin()
+                .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
+            Err(AppError::Validation("invalid_format: ogg".into()))
+        }
+
+        assert!(fails_after_claiming(&engine).is_err());
+        assert!(
+            fails_after_claiming(&engine).is_err(),
+            "the second attempt must reach the SAME failure, not the busy guard"
+        );
+        assert!(engine.try_begin().is_some());
+    }
+
+    /// The refusal's wire code. `AppError::Validation` serialises as
+    /// `"validation: export_already_running"`, and the renderer matches the
+    /// LEADING snake code (`errorCode`, R3-C) against `EXPORT_ERROR_KEYS` in
+    /// `app/editor/export-core.ts`, where the row maps it to
+    /// `editor.errExportAlreadyRunning`. Reword the string here and the
+    /// sentence a volunteer reads goes silent, so pin it.
+    #[test]
+    fn the_busy_refusal_uses_the_code_the_renderer_translates() {
+        let engine = ExportEngine::new();
+        let _held = engine.try_begin().expect("free");
+        let refused: AppResult<()> = engine
+            .try_begin()
+            .map(|_| ())
+            .ok_or_else(|| AppError::Validation("export_already_running".into()));
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "validation: export_already_running"
+        );
+    }
+
     /// The progress phase codes cross the IPC boundary as bare strings and are
     /// matched by LITERAL in the renderer (`legacy/renderer/pages/editor/
     /// export-params.ts` → `EXPORT_PHASE_MEASURING` / `EXPORT_PHASE_ENCODING`,
@@ -6080,14 +6271,14 @@ mod tests {
             /// PANIC instead: a silent skip here is precisely how three
             /// measurable audio bugs shipped, and a green run that measured
             /// nothing must not look like a green run that measured everything.
-            fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
+            pub(super) fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
                 super::sidecar_or_skip("ffmpeg")
             }
 
             /// Peak level (dBFS) of `source` after `filters`, measured with
             /// `astats`. `filters` reaches ffmpeg as ONE argv element, so its
             /// commas are the filter parser's, not a shell's.
-            fn peak_db(ffmpeg: &std::path::Path, source: &str, filters: &str) -> f64 {
+            pub(super) fn peak_db(ffmpeg: &std::path::Path, source: &str, filters: &str) -> f64 {
                 let out = std::process::Command::new(ffmpeg)
                     .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", source])
                     .args([
@@ -6307,6 +6498,261 @@ mod tests {
                     );
                 }
                 eprintln!("vocal chain: every mixer makeup value builds, runs and lands on its dB");
+            }
+        }
+
+        // ── The channel diagnosis, MEASURED (F2-C-C) ─────────────────────────
+        //
+        // The unit tests in `sundayrec_core::processing` say what the RULES do
+        // with a given pair of numbers. They cannot say whether the numbers the
+        // SEAM feeds them are the recording's numbers — and for a year they were
+        // not: the seam passed `rms_*: None`, and the parser folded astats'
+        // `Overall` rollup into the right channel, so a stone-dead right channel
+        // arrived at the rules as "identical to the left".
+        //
+        // These tests build stereo files whose two channels are known by
+        // construction, run the REAL one-click analysis over them, and read back
+        // the recommendation. HARDWARE-FREE — lavfi synthesises every input.
+        mod channel_diagnosis_levels {
+            use super::vocal_chain_levels::ffmpeg_or_skip;
+            use crate::editor::{auto_process, export, ExportEngine};
+            use crate::media::ffmpeg::tests::ENV_LOCK;
+
+            /// Build a stereo wav whose LEFT and RIGHT legs come from separate
+            /// lavfi sources, so "left is a −12 dBFS sine, right is −70 dBFS
+            /// noise" is a fact about the file and not a hope about it.
+            ///
+            /// `left`/`right` are `(lavfi source, filter chain)`. Each chain
+            /// reaches ffmpeg inside one argv element, so its commas belong to
+            /// the filter parser.
+            fn stereo_pair(
+                ffmpeg: &std::path::Path,
+                dir: &std::path::Path,
+                name: &str,
+                left: (&str, &str),
+                right: (&str, &str),
+            ) -> String {
+                let src = dir.join(name);
+                let fc = format!(
+                    "[0:a]{}[l];[1:a]{}[r];[l][r]join=inputs=2:channel_layout=stereo[out]",
+                    left.1, right.1
+                );
+                let gen = std::process::Command::new(ffmpeg)
+                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", left.0])
+                    .args(["-f", "lavfi", "-i", right.0])
+                    .args(["-filter_complex", &fc, "-map", "[out]", "-y"])
+                    .arg(&src)
+                    .output()
+                    .expect("ffmpeg should run to generate the stereo pair");
+                assert!(
+                    gen.status.success(),
+                    "stereo pair generation failed: {}",
+                    String::from_utf8_lossy(&gen.stderr)
+                );
+                src.to_string_lossy().into_owned()
+            }
+
+            /// lavfi's `sine` is ~−18.06 dBFS, so every leg states its level as
+            /// a `volume` on top of that.
+            fn sine(secs: f64) -> String {
+                format!("sine=frequency=1000:sample_rate=48000:duration={secs}")
+            }
+            /// Pink noise with a PINNED seed — reproducible, not merely plausible.
+            /// Raw peak is ~−2.7 dBFS, so a leg asking for −40 dBFS says −37.3.
+            fn noise(secs: f64) -> String {
+                format!("anoisesrc=r=48000:d={secs}:c=pink:a=1:s=42")
+            }
+
+            /// Run the real one-click analysis over `path` with the sidecar
+            /// wired in, and return `(diagnosis code, repair mode)`.
+            fn analyse(ffmpeg: &std::path::Path, path: &str) -> (String, String) {
+                let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe")
+                    .expect("ffprobe sidecar sits next to the ffmpeg one");
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let res = {
+                    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                    unsafe {
+                        std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
+                        std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+                    }
+                    let r = rt.block_on(auto_process(path));
+                    unsafe {
+                        std::env::remove_var("SUNDAYREC_FFMPEG");
+                        std::env::remove_var("SUNDAYREC_FFPROBE");
+                    }
+                    r.expect("auto-process should analyse the lavfi source")
+                };
+                (
+                    res.diagnosis.code.clone(),
+                    res.diagnosis.recommended.mode.clone(),
+                )
+            }
+
+            /// The bad-cable case, end to end. Right is 58 dB below left, which
+            /// the seam could not see at all: the `Overall` rollup overwrote the
+            /// right channel with the LEFT channel's peak, and the pair reached
+            /// the rules as `balanced`.
+            #[test]
+            fn dead_right_channel_recommends_duplicate_left_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "dead_right.wav",
+                    (&sine(3.0), "volume=6.06dB"),   // −12 dBFS
+                    (&noise(3.0), "volume=-67.3dB"), // −70 dBFS: nothing
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(
+                    code, "dead_right",
+                    "a −70 dBFS right channel next to a −12 dBFS left is a fault, \
+                     not a balance problem"
+                );
+                assert_eq!(mode, "duplicateLeft");
+                eprintln!("channel diagnosis: −12/−70 dBFS → {code} / {mode}");
+            }
+
+            /// The 28 dB gap. A mono mix in L with low-level bleed in R used to
+            /// come back as `gainDb` with +12 on the right — a lift that cannot
+            /// close the gap and DOES raise the bleed by 12 dB.
+            #[test]
+            fn gap_wider_than_the_cap_recommends_duplicate_not_gain_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "bleed_right.wav",
+                    (&sine(3.0), "volume=6.06dB"),   // −12 dBFS
+                    (&noise(3.0), "volume=-37.3dB"), // −40 dBFS bleed
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(code, "unusable_right");
+                assert_eq!(
+                    mode, "duplicateLeft",
+                    "28 dB apart: `gainDb` +12 would leave the pair 16 dB apart \
+                     and call the file repaired"
+                );
+                eprintln!("channel diagnosis: −12/−40 dBFS → {code} / {mode}");
+            }
+
+            /// …and the other side of the same boundary: a pair that gain CAN
+            /// rescue must still be rescued with gain. Without this the new rule
+            /// could be "always duplicate" and every test above would pass.
+            #[test]
+            fn rescuable_imbalance_still_recommends_gain_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "quiet_right.wav",
+                    (&sine(3.0), "volume=6.06dB"),  // −12 dBFS
+                    (&sine(3.0), "volume=-1.94dB"), // −20 dBFS
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(code, "imbalance");
+                assert_eq!(mode, "gainDb");
+                eprintln!("channel diagnosis: −12/−20 dBFS → {code} / {mode}");
+            }
+
+            /// A healthy stereo pair must be left alone. The cheapest way for a
+            /// diagnosis to look clever is to always find something.
+            #[test]
+            fn balanced_pair_recommends_nothing_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = stereo_pair(
+                    &ffmpeg,
+                    dir.path(),
+                    "balanced.wav",
+                    (&sine(3.0), "volume=6.06dB"), // −12 dBFS
+                    (&sine(3.0), "volume=5.06dB"), // −13 dBFS
+                );
+                let (code, mode) = analyse(&ffmpeg, &src);
+                assert_eq!(code, "balanced");
+                assert_eq!(mode, "none");
+                eprintln!("channel diagnosis: −12/−13 dBFS → {code} / {mode}");
+            }
+
+            /// A repair that reads `c1` on a MONO file is refused, because
+            /// ffmpeg will not refuse it: `pan=stereo|c0=0.5*c0+0.5*c1` on mono
+            /// drops the missing term and renders 6.02 dB down, silently. This
+            /// test proves BOTH halves — that the export says no, and that the
+            /// thing it is saying no to really does lose 6 dB.
+            #[test]
+            fn mono_source_refuses_a_stereo_only_repair_or_skips() {
+                let Some(ffmpeg) = ffmpeg_or_skip() else {
+                    return;
+                };
+                let dir = tempfile::tempdir().unwrap();
+                let src = dir.path().join("mono.wav");
+                let gen = std::process::Command::new(&ffmpeg)
+                    .args(["-nostdin", "-hide_banner", "-f", "lavfi", "-i", &sine(3.0)])
+                    .args(["-ac", "1", "-y"])
+                    .arg(&src)
+                    .output()
+                    .expect("ffmpeg should generate the mono source");
+                assert!(gen.status.success());
+                let src = src.to_string_lossy().into_owned();
+
+                // Half one: the graph really is lossy on mono. −18.06 dBFS in.
+                let measured = super::vocal_chain_levels::peak_db(
+                    &ffmpeg,
+                    &sine(1.0),
+                    "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1",
+                );
+                assert!(
+                    (measured - -24.08).abs() <= 0.1,
+                    "a mono `monoMix` should lose 6.02 dB with no error; measured \
+                     {measured:.3} dBFS"
+                );
+
+                // Half two: the seam refuses to build it.
+                let mut req =
+                    super::export_request(&src, &dir.path().to_string_lossy(), "mp3", &[], 3.0);
+                req.channel_repair = Some(crate::editor::EditorChannelRepair {
+                    mode: "monoMix".into(),
+                    left_db: 0.0,
+                    right_db: 0.0,
+                });
+                let ffprobe = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe")
+                    .expect("ffprobe sidecar sits next to the ffmpeg one");
+                let engine = ExportEngine::new();
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let err = {
+                    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                    unsafe {
+                        std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                        std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+                    }
+                    let r = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                    unsafe {
+                        std::env::remove_var("SUNDAYREC_FFMPEG");
+                        std::env::remove_var("SUNDAYREC_FFPROBE");
+                    }
+                    r.expect_err("a stereo-only repair on a mono file must be refused")
+                };
+                assert!(
+                    err.to_string().contains("channel_repair_needs_stereo"),
+                    "the refusal must carry the code the shell has a sentence \
+                     for; got {err}"
+                );
+                eprintln!(
+                    "channel repair: mono + monoMix renders {measured:.2} dBFS \
+                     (−6.02 dB, silently) — the export refuses it"
+                );
             }
         }
     }

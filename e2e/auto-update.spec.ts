@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { boot, BOOT_FIXTURES, SETTLED_SETTINGS, fn } from "./harness";
+import { emit, spyEvents } from "./events";
 import { AUTO_UPDATE_INTERVAL_MS } from "../app/lib/pages/auto-update-schedule-core";
 
 // `e2e/auto-update.spec.ts`, re-pointed at the new shell. Every test TITLE here
@@ -286,6 +287,54 @@ test.describe("oppdateringsbanneret", () => {
     // til noen side.
     await page.getByTestId("nav-edit").click();
     await expect(page.getByTestId("banner-update")).toBeVisible();
+  });
+
+  // F2-W1. Ett klikk på «Last ned og installer» laster ned OG ber om
+  // omstarten (se `installUpdate` i api-shimmen), så midt i en gudstjeneste er
+  // dette knappen som avslutter opptaket — på Windows uten så mye som en
+  // feilmelding, fordi pluginens installer kaller `exit(0)` inne i
+  // nedlastingen. Motoren avviser kallet med `recording_in_progress`; dette er
+  // den halvdelen den frivillige faktisk SER.
+  test("begge oppdateringsknappene er av mens det tas opp, og sier hvorfor", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        update_check: { phase: "available", version: "0.16.0" },
+      },
+      settings: { ...SETTLED_SETTINGS, autoUpdate: true },
+      // Begge flatene i samme bilde: banneret står over hver side, og raden
+      // under Avansert er den andre knappen som leser den samme fasen. To
+      // flater som er uenige om hvorvidt man kan oppdatere er nøyaktig
+      // skjøtefeilen `state/update-core.ts` ble skrevet for å hindre.
+      goto: "settings:general",
+    });
+
+    const reason = "Kan ikke oppdatere mens det tas opp";
+    const banner = page.getByTestId("banner-update-install");
+    const row = page.getByTestId("adv-update-install");
+
+    // I ro: to helt vanlige knapper.
+    await expect(banner).toBeEnabled();
+    await expect(row).toBeEnabled();
+
+    // Motoren sier at en økt går. Grunnen, ikke bare gråfargen: `Button`
+    // legger den i `title`, i `aria-describedby` og i en skjult `<span>` — én
+    // og samme `reason`, så `title` er nok til å pinne alle tre (se
+    // `ui/Button/Button.tsx`).
+    await emit(page, "recording-overlay-stop", { state: "recording" });
+    for (const button of [banner, row]) {
+      await expect(button).toBeDisabled();
+      await expect(button).toHaveAttribute("title", reason);
+    }
+
+    // Og de kommer tilbake når opptaket er over — en knapp som blir stående
+    // grå etter gudstjenesten er en app som aldri kan oppdateres.
+    await emit(page, "recording-overlay-stop", { state: "stopped" });
+    await expect(banner).toBeEnabled();
+    await expect(row).toBeEnabled();
   });
 
   test("en oppdatert app reiser ingen stripe", async ({ page }) => {

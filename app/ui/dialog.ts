@@ -42,6 +42,13 @@ export interface ConfirmOpts {
   /** Rød bekreft-knapp. Gjør også AVBRYT til Enter-valget — en destruktiv
    *  handling skal aldri være ett feiltrykk unna. */
   danger?: boolean;
+  /**
+   * `cancelLabel` er den AKTIVE handlingen her, ikke den vanlige no-op-en —
+   * se `pages/record/stop.ts`s «stopp»-knapp. Escape og et klikk på sløret
+   * skal likevel treffe den TRYGGE knappen, uansett hvilken id den bærer.
+   * Se `@lib/ui/dialog-core.ts` for hvorfor `danger` ikke er alternativet.
+   */
+  escapeConfirms?: boolean;
 }
 
 export interface PendingDialog {
