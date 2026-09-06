@@ -7,7 +7,13 @@ import {
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
-import { DURATION, editorFixtures, EXPORT_HELD, FILE } from "./editor-fixtures";
+import {
+  DURATION,
+  editorFixtures,
+  exportOkMastered,
+  EXPORT_HELD,
+  FILE,
+} from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
 // EKSPORTERING som DESTINASJON — D3s tredje flate, sett utenfra.
@@ -189,6 +195,59 @@ test.describe("eksportering", () => {
     // Lista, ikke arbeidsflaten: fila ble lukket på veien.
     await expect(page.getByTestId("editor")).toHaveCount(0);
     await expect(page.getByTestId("library-row")).toHaveCount(1);
+  });
+
+  // F2-C-B: kvitteringen sier hvilket NIVÅ fila havnet på.
+  //
+  // «−16 LUFS» er ikke pynt. Bakenden planlegger nå pass 2 slik at loudnorm
+  // kan levere målet med én forsterkning, og når toppene ikke gir rom for det,
+  // lander eksporten LAVERE i stedet for å komprimere seg dit. Da må tallet
+  // brukeren ser være det fila faktisk har — og forskjellen forklares, ikke
+  // skjules.
+  test("kvitteringen sier nivået mastringen landet på", async ({ page }) => {
+    await openThenExport(page, {
+      editor_export: exportOkMastered({
+        mode: "linear",
+        achievedLufs: -16,
+        targetLufs: -16,
+        peakLimited: false,
+      }),
+    });
+    await page.getByTestId("editor-export-go").click();
+    const receipt = page.getByTestId("editor-exported");
+    await expect(receipt).toBeVisible();
+    await expect(receipt).toContainText("Nivå: −16 LUFS");
+    await expect(receipt).not.toContainText("begrenset");
+  });
+
+  test("et opptak med for høye topper lander lavere — og kvitteringen sier hvorfor", async ({
+    page,
+  }) => {
+    await openThenExport(page, {
+      editor_export: exportOkMastered({
+        mode: "linear",
+        achievedLufs: -20.8,
+        targetLufs: -16,
+        peakLimited: true,
+      }),
+    });
+    await page.getByTestId("editor-export-go").click();
+    const receipt = page.getByTestId("editor-exported");
+    await expect(receipt).toBeVisible();
+    // Det OPPNÅDDE nivået, ikke det ønskede — og grunnen ved siden av.
+    await expect(receipt).toContainText(
+      "Nivå: −20,8 LUFS (begrenset av topper)",
+    );
+    await expect(receipt).not.toContainText("−16");
+  });
+
+  test("uten mastring påstår kvitteringen ingenting om nivå", async ({
+    page,
+  }) => {
+    await openThenExport(page);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    await expect(page.getByTestId("editor-exported")).not.toContainText("LUFS");
   });
 
   test("en kjøring og en kvittering overlever et sidebytte bort og tilbake", async ({

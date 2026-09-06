@@ -689,6 +689,8 @@
       "includeVideoDesc": "The recording has a video track. Without this the export is audio only.",
       "videoLocksFormat": "The format is MP4 while the video is included.",
       "about": "about {mb} MB",
+      "level": "Level: {lufs} LUFS",
+      "levelCapped": "Level: {lufs} LUFS (limited by peaks)",
       "exported": "Exported",
       "exportAgain": "Export in another format",
       "toLibrary": "To the library",

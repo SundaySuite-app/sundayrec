@@ -689,6 +689,8 @@
       "includeVideoDesc": "Opptaket har et videospor. Uten dette blir eksporten bare lyd.",
       "videoLocksFormat": "Formatet er MP4 så lenge videoen er med.",
       "about": "ca. {mb} MB",
+      "level": "Nivå: {lufs} LUFS",
+      "levelCapped": "Nivå: {lufs} LUFS (begrenset av topper)",
       "exported": "Eksportert",
       "exportAgain": "Eksporter i annet format",
       "toLibrary": "Til biblioteket",

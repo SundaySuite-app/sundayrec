@@ -101,11 +101,31 @@ export const EXPORTED =
  *  `SEGMENTS`. */
 const EXPORT_RESULT: EditorExportResult = { outputPath: EXPORTED };
 
-/** An export that finishes at once. */
+/** An export that finishes at once. NO `loudness`: nothing mastered it, so
+ *  there is no level claim to make — which is what the backend answers. */
 export const EXPORT_OK = fn(`(args) => {
   (window.__E2E_EXPORTS__ ||= []).push(args.request);
   return ${JSON.stringify(EXPORT_RESULT)};
 }`);
+
+/**
+ * A MASTERED export, as the backend reports it since F2-C-B: it says which
+ * normalisation loudnorm actually performed and which level it landed on.
+ *
+ * `peakLimited` is the interesting half — a recording whose transients leave no
+ * room for the preset's target lands QUIETER, on purpose, instead of being
+ * compressed until it fits. The receipt has to say so, and this is what it
+ * says it from.
+ */
+export function exportOkMastered(
+  loudness: NonNullable<EditorExportResult["loudness"]>,
+): ReturnType<typeof fn> {
+  const result: EditorExportResult = { outputPath: EXPORTED, loudness };
+  return fn(`(args) => {
+    (window.__E2E_EXPORTS__ ||= []).push(args.request);
+    return ${JSON.stringify(result)};
+  }`);
+}
 
 /**
  * An export that HANGS until the spec says otherwise.

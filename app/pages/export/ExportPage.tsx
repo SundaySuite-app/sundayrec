@@ -88,6 +88,7 @@ import {
   cancelling,
   exportedBytes,
   exportedFolder,
+  exportedLoudness,
   exportedPath,
   exportedSeconds,
   exportErrorText,
@@ -531,6 +532,36 @@ function Running() {
  * Filnavnet er bakendens, ikke vår forutsigelse: den er den ENE som vet om det
  * lå en fil med det navnet der fra før.
  */
+/**
+ * «Nivå: −16 LUFS» — én linje, bare når det ER noe å si (F2-C-B).
+ *
+ * Nivået er ikke et ønske lenger: bakenden planlegger pass 2 slik at
+ * `loudnorm` kan levere det med ÉN forsterkning, og når toppene ikke gir rom
+ * for å nå presetets mål, lander eksporten lavere — og sier det, i stedet for
+ * å komprimere seg fram til tallet. Uten en mastring (eller uten et svar fra
+ * ffmpeg) står linja ikke der: en tom påstand er verre enn ingen.
+ */
+function levelLine(): string {
+  const l = exportedLoudness.value;
+  if (!l) return "";
+  const lufs = formatLufs(l.peakLimited ? l.achievedLufs : l.targetLufs);
+  return l.peakLimited
+    ? tf("app.editor.levelCapped", { lufs })
+    : tf("app.editor.level", { lufs });
+}
+
+/**
+ * LUFS til tekst: én desimal når den finnes, minustegn (U+2212) som resten av
+ * appen skriver det (`app.editor.mpSpeechClear` og de tre andre), og
+ * desimalskille fra språket — «−20,8» på norsk, «−20.8» på engelsk.
+ */
+function formatLufs(lufs: number): string {
+  const rounded = Math.round(lufs * 10) / 10;
+  return rounded
+    .toLocaleString(locale.value, { maximumFractionDigits: 1 })
+    .replace("-", "−");
+}
+
 function Receipt() {
   const path = exportedPath.value ?? "";
   const name = path.split(/[/\\]/).pop() ?? path;
@@ -538,6 +569,7 @@ function Receipt() {
   const meta = [
     spanLabel(exactSpan(exportedSeconds.value)),
     mb === null ? "" : tf("app.editor.about", { mb }),
+    levelLine(),
     folderLabel(exportedFolder.value),
   ]
     .filter(Boolean)

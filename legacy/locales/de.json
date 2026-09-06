@@ -689,6 +689,8 @@
       "includeVideoDesc": "Die Aufnahme hat eine Videospur. Ohne dies wird der Export nur Ton.",
       "videoLocksFormat": "Das Format ist MP4, solange das Video dabei ist.",
       "about": "ca. {mb} MB",
+      "level": "Pegel: {lufs} LUFS",
+      "levelCapped": "Pegel: {lufs} LUFS (durch Spitzen begrenzt)",
       "exported": "Exportiert",
       "exportAgain": "In anderem Format exportieren",
       "toLibrary": "Zur Bibliothek",

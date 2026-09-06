@@ -29,6 +29,7 @@ import { signal } from "@preact/signals";
 import { buildExportRequest } from "@lib/pages/editor/export-params";
 import { createEtaEstimator } from "@lib/ui/progress-core";
 import type { EditorExportProgress } from "@legacy/bindings/EditorExportProgress";
+import type { EditorExportLoudness } from "@legacy/bindings/EditorExportLoudness";
 
 import { settings } from "../state/settings";
 import {
@@ -77,6 +78,16 @@ export const exportedSeconds = signal(0);
 export const exportedBytes = signal<number | null>(null);
 /** Mappen fila havnet i. */
 export const exportedFolder = signal("");
+/**
+ * Hva mastringen faktisk gjorde med nivået, eller `null`.
+ *
+ * `null` betyr to ting som ser like ut herfra og skal gjøre det: ingen
+ * mastring ble valgt, eller ffmpeg sa ikke fra om hva den gjorde. Begge er
+ * «vi har ingenting å love» — og kvitteringen tier heller enn å påstå et
+ * nivå ingen har målt. Bakenden avgjør dette (`EditorExportResult.loudness`);
+ * her gjettes det ikke.
+ */
+export const exportedLoudness = signal<EditorExportLoudness | null>(null);
 /** Nøkkelen som forklarer hvorfor det ikke gikk, eller `null`. */
 export const exportErrorText = signal<string | null>(null);
 /** Var «feilen» at brukeren trykte Avbryt? Da er den ikke rød. */
@@ -124,6 +135,7 @@ export function resetExport(): void {
   exportedSeconds.value = 0;
   exportedBytes.value = null;
   exportedFolder.value = "";
+  exportedLoudness.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
 }
@@ -137,6 +149,7 @@ export async function pickExportFolder(): Promise<void> {
 /** Legg kvitteringen bort og kom tilbake til valgene, med dem stående. */
 export function exportAgain(): void {
   exportedPath.value = null;
+  exportedLoudness.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
 }
@@ -196,6 +209,7 @@ export async function runExport(
   exporting.value = true;
   cancelling.value = false;
   exportedPath.value = null;
+  exportedLoudness.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
   exportFraction.value = null;
@@ -252,7 +266,15 @@ export async function runExport(
     },
   );
 
-  let result: { ok: boolean; outputPath?: string; error?: string };
+  // `loudness` er VALGFRITT i `EditorExportResult` og settes bare når en
+  // mastring kjørte og ffmpeg sa fra om hva den gjorde — feltet arves derfor
+  // fra den genererte bindingen i stedet for å skrives av på nytt her.
+  let result: {
+    ok: boolean;
+    outputPath?: string;
+    loudness?: EditorExportLoudness;
+    error?: string;
+  };
   try {
     result = video
       ? await window.api.editorExportVideo(params)
@@ -284,6 +306,7 @@ export async function runExport(
       exportFolder.value || result.outputPath.replace(/[/\\][^/\\]*$/, "");
     exportedSeconds.value = keptSeconds;
     exportedBytes.value = video ? null : estimate;
+    exportedLoudness.value = result.loudness ?? null;
     // Eksporten lyktes — utkastet har gjort jobben sin.
     clearDraft();
     clearDirty();
