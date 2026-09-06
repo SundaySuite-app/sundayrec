@@ -185,10 +185,30 @@ pub fn parse_wasapi_device_list(stderr: &str) -> Vec<FfmpegDevice> {
 /// double-quoted substring per line, skip `Alternative name` lines and names
 /// starting with `@` (the dshow "alternative" device path), dedup on name. The
 /// `index` is insertion order (dshow is addressed by name).
+///
+/// F2-W7: dshow lists VIDEO devices first, then audio (see
+/// [`parse_video_dshow_device_list`]'s doc comment) — `list_devices_args`'s
+/// single `-list_devices true -f dshow` call hands the SAME combined stderr
+/// to both parsers, so this one must skip the video section the same way its
+/// sibling skips the audio section. Without the `in_audio` gate, a machine
+/// with both a camera and a microphone had every camera name ALSO listed as
+/// a selectable audio input — invisible on every CI lane before this PR,
+/// because `parse_inventory_splits_audio_and_video_on_current_platform`'s
+/// Windows branch (the only test that exercises this function with a
+/// realistic two-section fixture) had never run outside `cargo check` until
+/// `windows-check` gained a test step. See PR #231.
 pub fn parse_dshow_device_list(stderr: &str) -> Vec<FfmpegDevice> {
     let mut devices: Vec<FfmpegDevice> = Vec::new();
+    let mut in_audio = false; // dshow lists video first; skip it here
     for line in stderr.lines() {
-        if line.contains("Alternative name") {
+        if line
+            .to_ascii_lowercase()
+            .contains("directshow audio devices")
+        {
+            in_audio = true;
+            continue;
+        }
+        if !in_audio || line.contains("Alternative name") {
             continue;
         }
         if let Some(name) = first_double_quoted(line) {
@@ -489,7 +509,12 @@ mod tests {
 
     #[test]
     fn dshow_audio_dedups() {
+        // F2-W7: the header is load-bearing, not decoration — `parse_dshow_device_list`
+        // only starts collecting after it (see the function's doc comment), so a
+        // fixture without one would silently assert on an empty list instead of
+        // exercising the dedup.
         let stderr = "\
+[dshow @ 1] DirectShow audio devices
 [dshow @ 1] \"Mic\"
 [dshow @ 2] \"Mic\"";
         assert_eq!(parse_dshow_device_list(stderr).len(), 1);
@@ -500,12 +525,38 @@ mod tests {
         // An empty `""` must NOT register a nameless device (it would substring-
         // match every stored name in find_best_device_match). Matches the
         // documented `/"([^"]+)"/` one-or-more intent.
-        assert!(parse_dshow_device_list("[dshow @ 1] \"\"").is_empty());
+        assert!(
+            parse_dshow_device_list("[dshow @ 1] DirectShow audio devices\n[dshow @ 1] \"\"")
+                .is_empty()
+        );
         assert!(parse_video_dshow_device_list("[dshow @ 1] \"\"").is_empty());
-        // A real name on a later line still parses.
-        let devs = parse_dshow_device_list("[dshow @ 1] \"\"\n[dshow @ 1] \"Real Mic\"");
+        // A real name on a later line still parses. (Header included — see
+        // `dshow_audio_dedups` — this fixture is otherwise the same shape as
+        // production's, which is BOTH sections in one stderr blob.)
+        let devs = parse_dshow_device_list(
+            "[dshow @ 1] DirectShow audio devices\n[dshow @ 1] \"\"\n[dshow @ 1] \"Real Mic\"",
+        );
         assert_eq!(devs.len(), 1);
         assert_eq!(devs[0].name, "Real Mic");
+    }
+
+    /// F2-W7: THE bug this PR found — `parse_dshow_device_list` had no section
+    /// boundary at all (unlike its video sibling below), so on a machine with
+    /// both a camera and a microphone, `parse_inventory`'s single combined
+    /// dshow stderr made every camera name ALSO register as an audio input.
+    /// Windows-only (`parse_inventory` is behind `cfg!(target_os = "windows")`
+    /// in src-tauri/src/audio/device_enum.rs), so this never ran until
+    /// `windows-check` gained a test step. See PR #231.
+    #[test]
+    fn dshow_audio_skips_the_video_section_that_precedes_it() {
+        let stderr = "\
+[dshow @ 1] DirectShow video devices
+[dshow @ 1]  \"Logitech BRIO\"
+[dshow @ 1] DirectShow audio devices
+[dshow @ 1]  \"Microphone (USB Audio CODEC)\"";
+        let devs = parse_dshow_device_list(stderr);
+        assert_eq!(devs.len(), 1, "got {devs:?}");
+        assert_eq!(devs[0].name, "Microphone (USB Audio CODEC)");
     }
 
     // ── AVFoundation audio (section boundaries) ───────────────────────────────
