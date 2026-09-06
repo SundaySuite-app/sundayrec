@@ -173,7 +173,7 @@ pub async fn start_vu(
     let owner = mic_owner(recording, preroll.is_active(), engine.is_running());
     match vu_start_action(owner) {
         VuStartAction::Refuse => Err(crate::error::AppError::Audio(
-            "opptaket eier lydenheten — nivåene kommer fra opptaket".into(),
+            "the recording owns the audio device — the levels come from the recording".into(),
         )),
         VuStartAction::AdoptPreroll => {
             // `vu_channels` is None for the classic (ffmpeg) buffer, which emits
@@ -183,7 +183,7 @@ pub async fn start_vu(
             match preroll.vu_channels() {
                 Some(ch) => Ok(ch),
                 None => Err(crate::error::AppError::Audio(
-                    "forhåndsbufferen eier lydenheten".into(),
+                    "the pre-roll buffer owns the audio device".into(),
                 )),
             }
         }

@@ -391,6 +391,24 @@
           "needsAdmin": "Den här datorn kan väckas, men frågar efter administratörslösenord första gången.",
           "unknown": "Vi vet inte än om den här datorn kan väckas."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon kan inte starta från helt avstängt läge — bara från viloläge.",
+          "macIntelManualPowerOn": "En Intel-Mac kan starta från avstängt läge, men du måste aktivera ”Starta upp eller väck” manuellt i Systeminställningar → Batteri.",
+          "winTimerDiesWithApp": "Väckningen ställs in av SundayRec medan programmet körs. Avslutar du SundayRec helt försvinner väckningstimern.",
+          "winS5NeedsBios": "Väckning från helt avstängt läge (S5) kräver att ”Wake on RTC from S5” är aktiverat i BIOS — det kan inte slås på från programvaran.",
+          "linuxUnsupported": "Linux stöds inte för automatisk väckning från SundayRec.",
+          "platformUnsupported": "Plattformen stöds inte för automatisk väckning."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Låt datorn stå i viloläge (stäng inte av den) efter förberedelserna.",
+          "macDisableStandby": "Stäng av djup vila (standby) — den kan hindra datorn från att vakna.",
+          "macStayPluggedIn": "Strömmen måste vara ansluten — en Mac väcks inte tillförlitligt på batteri.",
+          "winKeepAppRunning": "Låt SundayRec vara igång — det startar automatiskt vid inloggning och ligger i systemfältet.",
+          "winSleepNotShutdown": "Försätt datorn i viloläge (Sleep/Hibernate) i stället för att stänga av den.",
+          "winStayPluggedIn": "Strömmen bör vara ansluten — många bärbara datorer stänger av väckningstimrar på batteri.",
+          "winCheckBios": "Om testväckningen misslyckas, leta efter ”Wake on RTC” i BIOS och slå på ”Tillåt väckningstimers” i energialternativen.",
+          "useMacOrWindows": "Använd en Mac eller en Windows-dator för att aktivera automatisk väckning."
+        },
         "wakeArm": "Aktivera väckning",
         "wakeArmWord": {
           "idle": "Registrera väckningen i operativsystemet nu. Kan kräva administratörslösenord.",
@@ -745,6 +763,15 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Spelar in nu",
     "noSchedule": "Ingen inspelning schemalagd",
+    "preflightCode": {
+      "ffmpegMissing": "ffmpeg-filen saknas. SundayRec måste installeras om.",
+      "deviceMissing": "Ljudenheten som är vald i inställningarna är inte ansluten.",
+      "folderNotWritable": "Det går inte att skriva till lagringsmappen.",
+      "diskLow": "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning.",
+      "micDenied": "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon.",
+      "cameraDenied": "Kameraåtkomst har inte getts.",
+      "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning."
+    },
     "preflightErrors": {
       "one": "{n} fel måste åtgärdas före inspelningen",
       "other": "{n} fel måste åtgärdas före inspelningen"
@@ -997,6 +1024,9 @@
     "errorStartTimeout": "Inspelningen kom inte i gång i tid — kontrollera att mikrofonen (och kameran) är ansluten, och att SundayRec har åtkomst under Systeminställningar → Integritet och säkerhet",
     "errorEngineExited": "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning, och kör Diagnos om det upprepas.",
     "errorVideoCapture": "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen.",
+    "errorCameraFormat": "Kameran stöder inte vald bildfrekvens eller upplösning — välj en annan videoinställning och försök igen.",
+    "errorCameraPermission": "Kameraåtkomst nekad — öppna Systeminställningar och ge appen åtkomst till kameran",
+    "errorCameraBusy": "Kameran används av ett annat program — stäng det (Teams, Zoom) och försök igen",
     "errorMux": "Ljud och bild kunde inte sättas ihop — båda råfilerna har behållits i lagringsmappen, så ingenting är förlorat.",
     "qualityAlarm": "VARNING: Inspelningen saknar ljud — filen innehåller {m} av {e} sekunder. Kontrollera inspelningen innan du litar på den.",
     "qualityReasons": "Orsak: {r}",
@@ -1079,8 +1109,5 @@
     "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
     "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
     "trashManifestUnreadable": "Papperskorgens innehåll kunde inte läsas. Filerna finns kvar, men appen vet inte längre var de kom ifrån."
-  },
-  "preflight": {
-    "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning."
   }
 }

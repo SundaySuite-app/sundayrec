@@ -24,6 +24,12 @@ vocalChainPreset: string,
  */
 masterPreset: string, 
 /**
- * A short Norwegian summary of what was decided, for a toast/hint.
+ * A short ENGLISH summary of what was decided — a RESERVE, for the log and
+ * for a support paste (F2-I18N-R2).
+ *
+ * The shell does not render it: `SoundStep`'s channel note is built from
+ * [`Self::diagnosis`]'s `code` and the profile names the chain, both in
+ * the volunteer's own language. Anything that wants the sentence on screen
+ * builds it from those two fields, never from this one.
  */
 summary: string, };

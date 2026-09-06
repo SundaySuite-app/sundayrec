@@ -13,7 +13,6 @@ import {
   formatSidebarStatus,
   formatWakeHint,
   intlParts,
-  localizeBackendFinding,
   parseLocalIso,
   shouldRefreshWake,
   WAKE_LEAD_MINUTES,
@@ -410,8 +409,20 @@ describe("missed + preflight formatting", () => {
   it("lets an error outrank warnings", () => {
     const out = formatPreflightHeadline(
       [
-        { severity: "warn", category: "disk", message: "a" },
-        { severity: "error", category: "device", message: "b" },
+        {
+          severity: "warn",
+          category: "disk",
+          message: "a",
+          code: null,
+          params: {},
+        },
+        {
+          severity: "error",
+          category: "device",
+          message: "b",
+          code: null,
+          params: {},
+        },
       ],
       ctx(),
     )!;
@@ -423,53 +434,26 @@ describe("missed + preflight formatting", () => {
   it("counts warnings when there is no error", () => {
     const out = formatPreflightHeadline(
       [
-        { severity: "warn", category: "disk", message: "a" },
-        { severity: "warn", category: "wake", message: "b" },
+        {
+          severity: "warn",
+          category: "disk",
+          message: "a",
+          code: null,
+          params: {},
+        },
+        {
+          severity: "warn",
+          category: "wake",
+          message: "b",
+          code: null,
+          params: {},
+        },
       ],
       ctx(),
     )!;
     expect(out.severity).toBe("warn");
     expect(out.text).toContain("status.preflightWarns.other");
     expect(out.text).toContain("2");
-  });
-});
-
-describe("localizeBackendFinding", () => {
-  it("substitutes the app's own text for a code it recognises", () => {
-    const finding = {
-      severity: "warn" as const,
-      category: "disk" as const,
-      message: "The save folder is synced by OneDrive.",
-      code: "save_folder_synced",
-    };
-    expect(localizeBackendFinding(finding, t)).toEqual({
-      ...finding,
-      message: "preflight.saveFolderSynced",
-    });
-  });
-
-  it("passes a finding with no code through unchanged", () => {
-    // Every finding that predates F-W9 — the backend's own (Norwegian)
-    // wording is exactly what must still reach the screen.
-    const finding = {
-      severity: "error" as const,
-      category: "disk" as const,
-      message: "Lagringsmappen kan ikke skrives.",
-    };
-    expect(localizeBackendFinding(finding, t)).toBe(finding);
-  });
-
-  it("passes through a code this build does not recognise", () => {
-    // A backend that has learned a new code before this client has must
-    // still say something true — the finding's own message — rather than
-    // guessing a key that isn't in the catalogue.
-    const finding = {
-      severity: "warn" as const,
-      category: "device" as const,
-      message: "some future finding",
-      code: "something_this_build_has_never_heard_of",
-    };
-    expect(localizeBackendFinding(finding, t)).toBe(finding);
   });
 });
 

@@ -91,6 +91,19 @@
 
 /* Vekkehistorikken (W6): en logg, ikke prosa — samme grep som
    DiagnoseRow.module.css bruker for IPC-ringen og enhetslista. */
+/* Plattformens forbehold og råd (`wake_capabilities`): en kort punktliste, ikke
+   et diagnosekort. Punktmarkøren er hele forskjellen fra hint-avsnittet over —
+   dette er FLERE ting, og en vegg av setninger uten kuler leses som én. */
+.wakeNotes {
+  margin: 0;
+  padding: 0 0 0 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
 .wakeHistoryList {
   list-style: none;
   margin: 0;

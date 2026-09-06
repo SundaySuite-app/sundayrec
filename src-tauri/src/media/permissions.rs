@@ -133,25 +133,40 @@ pub fn current() -> MediaPermissions {
     }
 }
 
-/// A ready-to-show Norwegian message when access is blocked, naming the System
-/// Settings pane the user must open. `None` when access isn't blocked.
+/// The message for a BLOCKED device — leading with the stable code the shell
+/// localises on. `None` when access isn't blocked.
+///
+/// ## F2-I18N-R2: the code leads, the prose is a reserve
+///
+/// This used to be a ready-to-show NORWEGIAN sentence, and it became the whole
+/// body of an `AppError::Recording` — so a volunteer whose app is in Polish got
+/// Norwegian in the one message that says why recording refused to start. The
+/// shell resolves the code out of the error text
+/// (`nativeErrorSuffixFromText`), exactly the way `no_save_folder` works in
+/// `settings.rs`; the English half is what a log, or a shell that predates the
+/// code, shows.
+///
+/// The two devices get two codes on purpose. `errorPermission` is the
+/// microphone's sentence — "Microphone access denied" for a blocked CAMERA is a
+/// true-sounding sentence about the wrong device, and the volunteer would go
+/// and open the wrong pane.
 pub fn blocked_message(kind: MediaKind, s: AuthStatus) -> Option<String> {
     if !s.is_blocked() {
         return None;
     }
-    let (device, pane) = match kind {
-        MediaKind::Camera => ("kameraet", "Kamera"),
-        MediaKind::Microphone => ("mikrofonen", "Mikrofon"),
+    let (code, device, pane) = match kind {
+        MediaKind::Camera => ("camera_permission_denied", "the camera", "Camera"),
+        MediaKind::Microphone => ("device_permission_denied", "the microphone", "Microphone"),
     };
     let why = match s {
         AuthStatus::Restricted => {
-            "Tilgang er sperret av systemadministrator (foreldrekontroll/MDM)."
+            "Access is blocked by a system administrator (parental controls/MDM)."
         }
-        _ => "Appen har ikke tilgang.",
+        _ => "The app does not have access.",
     };
     Some(format!(
-        "Får ikke bruke {device}. {why} Åpne Systeminnstillinger → Personvern og \
-         sikkerhet → {pane} og slå på SundayRec, og prøv igjen."
+        "{code}: cannot use {device}. {why} Open System Settings → Privacy & \
+         Security → {pane}, switch SundayRec on, and try again."
     ))
 }
 
@@ -189,18 +204,36 @@ mod tests {
         assert!(blocked_message(MediaKind::Microphone, AuthStatus::Unknown).is_none());
 
         let cam = blocked_message(MediaKind::Camera, AuthStatus::Denied).unwrap();
-        assert!(cam.contains("Kamera"), "names the camera pane: {cam}");
+        assert!(cam.contains("Camera"), "names the camera pane: {cam}");
         assert!(
-            cam.contains("Personvern"),
+            cam.contains("System Settings"),
             "points at System Settings: {cam}"
         );
 
         let mic = blocked_message(MediaKind::Microphone, AuthStatus::Restricted).unwrap();
-        assert!(mic.contains("Mikrofon"), "names the microphone pane: {mic}");
         assert!(
-            mic.contains("systemadministrator"),
+            mic.contains("Microphone"),
+            "names the microphone pane: {mic}"
+        );
+        assert!(
+            mic.contains("administrator"),
             "restricted explains MDM/parental control: {mic}"
         );
+    }
+
+    /// F2-I18N-R2: the code LEADS, and the two devices do not share one.
+    /// `nativeErrorSuffixFromText` scans the text for a known code, so a
+    /// message that lost its prefix silently becomes `errorUnknown`.
+    #[test]
+    fn blocked_message_leads_with_its_own_code() {
+        let cam = blocked_message(MediaKind::Camera, AuthStatus::Denied).unwrap();
+        let mic = blocked_message(MediaKind::Microphone, AuthStatus::Denied).unwrap();
+        assert!(cam.starts_with("camera_permission_denied: "), "{cam}");
+        assert!(mic.starts_with("device_permission_denied: "), "{mic}");
+        // English, both of them — a reserve in Norwegian is not a reserve.
+        for m in [&cam, &mic] {
+            assert!(!m.contains(['æ', 'ø', 'å']), "{m}");
+        }
     }
 
     #[cfg(not(target_os = "macos"))]

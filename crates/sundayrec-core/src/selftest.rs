@@ -253,16 +253,21 @@ pub struct SelfTestReport {
     /// warning). Drives the diagnose `capture_ok` tri-state.
     pub ok: bool,
     pub verdict: SelfTestVerdict,
-    /// WHY, in Norwegian prose, rendered verbatim by whoever shows the report.
+    /// WHY, in ENGLISH prose, rendered verbatim by whoever shows the report.
     ///
     /// ⚠️ These sentences are written HERE, in Rust, and the quality banner
     /// showed them word for word in all seven UI languages — a German volunteer
     /// read «Svakt signal — vurder å øke gain». Rust cannot translate them
     /// (the UI language lives in the settings row, and this function is pure),
-    /// so the fix is to stop asking it to: [`Self::reason_codes`] carries the
-    /// same list as machine-readable codes for the renderer to localise. The
-    /// prose stays for the diagnose report and the paste-into-a-support-mail
-    /// path, where a stable Norwegian sentence is the point.
+    /// so the fix was to stop asking it to: [`Self::reason_codes`] carries the
+    /// same list as machine-readable codes for the renderer to localise
+    /// (`QUALITY_REASON_KEYS` in `app/pages/record/record-core.ts`).
+    ///
+    /// The prose is the RESERVE, and F2-I18N-R2 made it English: it lands in
+    /// the diagnose report — one long support artefact whose reader is whoever
+    /// maintains the app, not the volunteer — and in a shell that meets a code
+    /// its catalogue predates. A stable sentence is the point; which language
+    /// it is stable in is settled by who reads it.
     pub reasons: Vec<String>,
     /// The same conditions as [`Self::reasons`], as codes — one per prose line,
     /// in the same order, set by the same branch.
@@ -336,7 +341,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if !size_is_plausible(f.size_bytes) {
         escalate(
             SelfTestVerdict::Fail,
-            format!("Ingen lyd fanget (fil {} B er for liten)", f.size_bytes),
+            format!("no audio captured (file {} B is too small)", f.size_bytes),
             QualityReason::NoAudioCaptured,
             &mut reasons,
             &mut codes,
@@ -346,7 +351,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if signal == TestRecordingSignal::Silent {
         escalate(
             SelfTestVerdict::Fail,
-            "Stille opptak — ingen signal (sjekk enhet/gain)".to_string(),
+            "silent recording — no signal (check the device/gain)".to_string(),
             QualityReason::SilentTake,
             &mut reasons,
             &mut codes,
@@ -356,7 +361,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if gap_sec >= FAIL_GAP_SEC {
         escalate(
             SelfTestVerdict::Fail,
-            format!("{gap_sec:.2}s manglende/stille lyd — hakking/dropp"),
+            format!("{gap_sec:.2}s of missing/silent audio — stutter/drops"),
             QualityReason::LargeGap,
             &mut reasons,
             &mut codes,
@@ -366,7 +371,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if f.drops >= FAIL_DROPS || f.xruns >= FAIL_XRUNS {
         escalate(
             SelfTestVerdict::Fail,
-            format!("Mange dropp ({}) / xruns ({})", f.drops, f.xruns),
+            format!("many drops ({}) / xruns ({})", f.drops, f.xruns),
             QualityReason::ManyDrops,
             &mut reasons,
             &mut codes,
@@ -380,7 +385,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
             escalate(
                 SelfTestVerdict::Warn,
                 format!(
-                    "Tvunget samplingsrate {forced} Hz ≠ enhetens {native} Hz (resampling kan gi dropp)"
+                    "forced sample rate {forced} Hz != the device's {native} Hz (resampling can cause drops)"
                 ),
                 QualityReason::ForcedRateMismatch,
                 &mut reasons,
@@ -392,7 +397,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if (WARN_GAP_SEC..FAIL_GAP_SEC).contains(&gap_sec) {
         escalate(
             SelfTestVerdict::Warn,
-            format!("{gap_sec:.2}s liten gap/stillhet i opptaket"),
+            format!("{gap_sec:.2}s small gap/silence in the recording"),
             QualityReason::SmallGap,
             &mut reasons,
             &mut codes,
@@ -402,7 +407,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if signal == TestRecordingSignal::Low {
         escalate(
             SelfTestVerdict::Warn,
-            "Svakt signal — vurder å øke gain".to_string(),
+            "weak signal — consider raising the gain".to_string(),
             QualityReason::LowSignal,
             &mut reasons,
             &mut codes,
@@ -412,7 +417,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     if (1..FAIL_DROPS).contains(&f.drops) || (1..FAIL_XRUNS).contains(&f.xruns) {
         escalate(
             SelfTestVerdict::Warn,
-            format!("Noen dropp ({}) / xruns ({})", f.drops, f.xruns),
+            format!("some drops ({}) / xruns ({})", f.drops, f.xruns),
             QualityReason::SomeDrops,
             &mut reasons,
             &mut codes,

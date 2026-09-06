@@ -223,7 +223,9 @@ async fn run_capture_probe(
         .unwrap_or(false)
     {
         return CaptureProbeOutcome {
-            skipped_reason: Some("et opptak pågår — lydprøven ville tatt enheten".into()),
+            skipped_reason: Some(
+                "a recording is in progress — the audio probe would have taken the device".into(),
+            ),
             ..Default::default()
         };
     }
@@ -238,7 +240,7 @@ async fn run_capture_probe(
     {
         return CaptureProbeOutcome {
             skipped_reason: Some(
-                "nivåmåleren bruker mikrofonen — stopp den og kjør Diagnose igjen".into(),
+                "the level meter is using the microphone — stop it and run Diagnose again".into(),
             ),
             ..Default::default()
         };
@@ -259,7 +261,7 @@ async fn run_capture_probe(
             // the hardware is broken when it is simply absent.
             tracing::warn!("capture probe skipped: {e}");
             return CaptureProbeOutcome {
-                skipped_reason: Some(format!("lydprøven kunne ikke starte: {e}")),
+                skipped_reason: Some(format!("the audio probe could not start: {e}")),
                 ..Default::default()
             };
         }

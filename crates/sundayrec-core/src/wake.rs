@@ -56,9 +56,127 @@ pub enum WakePlatform {
     Other,
 }
 
+/// A known LIMITATION of wake on this host, as a STABLE CODE.
+///
+/// Was `Vec<String>` of hardcoded Norwegian. The strings were user-facing —
+/// they are what a volunteer reads when the wake toggle cannot promise what it
+/// looks like it promises — and a Norwegian sentence out of the engine is a
+/// sentence six of the seven languages never get. The code is the contract
+/// instead: `app/pages/setup/advanced/ScheduleCard.tsx` renders it through
+/// `app.setup.advanced.wakeIssue.<code>`, and [`Self::as_str`] is the ENGLISH
+/// reserve for a shell that meets a code its catalogue predates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "WakeIssue.ts")]
+#[serde(rename_all = "camelCase")]
+pub enum WakeIssue {
+    /// Apple Silicon: `pmset poweron` does not work — wake only from sleep.
+    MacArmNoPowerOn,
+    /// Intel Mac: booting from off needs a manual System-Settings toggle.
+    MacIntelManualPowerOn,
+    /// Windows: the waitable timer is owned by the RUNNING process.
+    WinTimerDiesWithApp,
+    /// Windows: S5 (fully off) needs a BIOS toggle software cannot reach.
+    WinS5NeedsBios,
+    /// Linux has no supported wake mechanism here.
+    LinuxUnsupported,
+    /// Any other platform has no supported wake mechanism.
+    PlatformUnsupported,
+}
+
+impl WakeIssue {
+    /// English reserve. Not the app's voice — the app translates on the code;
+    /// this is what a log line, a support paste or an older shell shows.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MacArmNoPowerOn => {
+                "Apple Silicon cannot start from a fully powered-off state — only from sleep."
+            }
+            Self::MacIntelManualPowerOn => {
+                "An Intel Mac can start from off, but you must enable \"Start up or wake\" manually in System Settings → Battery."
+            }
+            Self::WinTimerDiesWithApp => {
+                "The wake timer is set by SundayRec while it runs. Quit SundayRec entirely and the wake timer goes with it."
+            }
+            Self::WinS5NeedsBios => {
+                "Waking from fully powered off (S5) requires \"Wake on RTC from S5\" in the BIOS — software cannot enable it."
+            }
+            Self::LinuxUnsupported => {
+                "Linux is not supported for automatic wake from SundayRec."
+            }
+            Self::PlatformUnsupported => {
+                "This platform is not supported for automatic wake."
+            }
+        }
+    }
+}
+
+/// Something the volunteer can DO about it, as a STABLE CODE. Same contract
+/// and same reason as [`WakeIssue`] — see its docs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "WakeRecommendation.ts")]
+#[serde(rename_all = "camelCase")]
+pub enum WakeRecommendation {
+    /// Leave the Mac asleep rather than shutting it down.
+    MacKeepAsleep,
+    /// Deep sleep (standby) can stop the machine from waking.
+    ///
+    /// ⚠️ The Norwegian this replaced pointed at a "Fiks automatisk" button —
+    /// `wake_fix_sleep`, which the new shell never brought back (it is in
+    /// `scripts/command-reachability-baseline.json` as unreachable). Advice
+    /// naming a control that is not on screen is worse than no advice, so the
+    /// sentence states the FACT and leaves the fix to the day the button
+    /// returns.
+    MacDisableStandby,
+    /// A Mac does not wake reliably on battery.
+    MacStayPluggedIn,
+    /// Leave SundayRec running — it autostarts and lives in the tray.
+    WinKeepAppRunning,
+    /// Sleep/hibernate the PC instead of shutting it down.
+    WinSleepNotShutdown,
+    /// Many laptops disable wake timers on battery.
+    WinStayPluggedIn,
+    /// If the test wake fails, check the BIOS and the power options.
+    WinCheckBios,
+    /// Unsupported platform: use a Mac or a Windows PC.
+    UseMacOrWindows,
+}
+
+impl WakeRecommendation {
+    /// English reserve — see [`WakeIssue::as_str`].
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MacKeepAsleep => {
+                "Leave the machine asleep (do not shut it down) once it is prepared."
+            }
+            Self::MacDisableStandby => {
+                "Turn deep sleep (standby) off — it can stop the machine from waking."
+            }
+            Self::MacStayPluggedIn => {
+                "Mains power must be connected — a Mac does not wake reliably on battery."
+            }
+            Self::WinKeepAppRunning => {
+                "Leave SundayRec running — it starts automatically at sign-in and sits in the system tray."
+            }
+            Self::WinSleepNotShutdown => {
+                "Put the machine to sleep (Sleep/Hibernate) rather than shutting it down."
+            }
+            Self::WinStayPluggedIn => {
+                "Mains power should be connected — many laptops disable wake timers on battery."
+            }
+            Self::WinCheckBios => {
+                "If the test wake fails, check the BIOS for \"Wake on RTC\" and enable \"Allow wake timers\" in the power options."
+            }
+            Self::UseMacOrWindows => {
+                "Use a Mac or a Windows PC to enable automatic wake."
+            }
+        }
+    }
+}
+
 /// Honest, OS-grounded statement of what wake can and can't do on this host.
 /// Mirrors the Electron `WakeCapabilities`. The `knownIssues`/`recommendations`
-/// are user-facing Norwegian, ported verbatim.
+/// are STABLE CODES ([`WakeIssue`]/[`WakeRecommendation`]) — the app renders
+/// them in the volunteer's own language; see those types.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "WakeCapabilities.ts")]
 #[serde(rename_all = "camelCase")]
@@ -70,62 +188,44 @@ pub struct WakeCapabilities {
     pub can_wake_from_off: bool,
     /// Scheduling wakes typically needs an admin/UAC prompt.
     pub needs_admin: bool,
-    pub known_issues: Vec<String>,
-    pub recommendations: Vec<String>,
+    pub known_issues: Vec<WakeIssue>,
+    pub recommendations: Vec<WakeRecommendation>,
 }
 
 /// Build the capability statement for `platform`. Pure port of
 /// `wake-verification.ts` `detectCapabilities` (the platform/arch branch is the
 /// shell's job — it passes the resolved [`WakePlatform`] in).
 pub fn detect_capabilities(platform: WakePlatform) -> WakeCapabilities {
+    use WakeIssue as I;
+    use WakeRecommendation as R;
     match platform {
         WakePlatform::MacArm => WakeCapabilities {
             platform,
             can_wake_from_sleep: true,
             can_wake_from_off: false,
             needs_admin: true,
-            known_issues: vec![
-                "Apple Silicon kan ikke starte fra fullstendig avslått tilstand — kun fra dvale."
-                    .to_string(),
-            ],
-            recommendations: vec![
-                "La maskinen stå i dvale (ikke slå den av) etter forberedelsene.".to_string(),
-                "Slå av dyp dvale (standby) med «Fiks automatisk»-knappen nedenfor.".to_string(),
-                "Tilkoblet strøm må være på — Mac vekker ikke pålitelig på batteri.".to_string(),
-            ],
+            known_issues: vec![I::MacArmNoPowerOn],
+            recommendations: vec![R::MacKeepAsleep, R::MacDisableStandby, R::MacStayPluggedIn],
         },
         WakePlatform::MacIntel => WakeCapabilities {
             platform,
             can_wake_from_sleep: true,
             can_wake_from_off: true,
             needs_admin: true,
-            known_issues: vec![
-                "Intel Mac kan starte fra avslått, men du må aktivere «Start opp eller vekk» manuelt i Systemvalg → Batteri."
-                    .to_string(),
-            ],
-            recommendations: vec![
-                "Tilkoblet strøm må være på — Mac vekker ikke pålitelig på batteri.".to_string(),
-            ],
+            known_issues: vec![I::MacIntelManualPowerOn],
+            recommendations: vec![R::MacStayPluggedIn],
         },
         WakePlatform::Win => WakeCapabilities {
             platform,
             can_wake_from_sleep: true,
             can_wake_from_off: false,
             needs_admin: false,
-            known_issues: vec![
-                "Vekkingen settes av SundayRec mens programmet kjører. Avslutter du SundayRec helt, forsvinner vekketimeren."
-                    .to_string(),
-                "Wake fra fullstendig avslått (S5) krever at «Wake on RTC from S5» er aktivert i BIOS — kan ikke aktiveres fra programvare."
-                    .to_string(),
-            ],
+            known_issues: vec![I::WinTimerDiesWithApp, I::WinS5NeedsBios],
             recommendations: vec![
-                "La SundayRec være i gang — den starter automatisk ved pålogging og ligger i systemkurven."
-                    .to_string(),
-                "Sett maskinen i dvale (Sleep/Hibernate), ikke skru den av.".to_string(),
-                "Tilkoblet strøm bør være på — mange bærbare deaktiverer vekketimere på batteri."
-                    .to_string(),
-                "Hvis test-wake feiler, sjekk BIOS for «Wake on RTC» og slå på «Tillat vekketimere» i strømalternativer."
-                    .to_string(),
+                R::WinKeepAppRunning,
+                R::WinSleepNotShutdown,
+                R::WinStayPluggedIn,
+                R::WinCheckBios,
             ],
         },
         WakePlatform::Linux => WakeCapabilities {
@@ -133,19 +233,15 @@ pub fn detect_capabilities(platform: WakePlatform) -> WakeCapabilities {
             can_wake_from_sleep: false,
             can_wake_from_off: false,
             needs_admin: false,
-            known_issues: vec![
-                "Linux støttes ikke for automatisk oppvåkning fra SundayRec.".to_string(),
-            ],
-            recommendations: vec![
-                "Bruk Mac eller Windows for å aktivere automatisk wake.".to_string(),
-            ],
+            known_issues: vec![I::LinuxUnsupported],
+            recommendations: vec![R::UseMacOrWindows],
         },
         WakePlatform::Other => WakeCapabilities {
             platform,
             can_wake_from_sleep: false,
             can_wake_from_off: false,
             needs_admin: false,
-            known_issues: vec!["Plattformen støttes ikke for automatisk oppvåkning.".to_string()],
+            known_issues: vec![I::PlatformUnsupported],
             recommendations: vec![],
         },
     }
@@ -855,6 +951,92 @@ mod tests {
         let lin = detect_capabilities(WakePlatform::Linux);
         assert!(!lin.can_wake_from_sleep);
         assert!(!detect_capabilities(WakePlatform::Other).can_wake_from_sleep);
+    }
+
+    /// F2-I18N-R2: the guidance is CODES, and every platform still says
+    /// something. An empty `known_issues` on an unsupported platform would be
+    /// the honest-looking silence the lists exist to prevent.
+    #[test]
+    fn capabilities_carry_codes_not_prose() {
+        assert_eq!(
+            detect_capabilities(WakePlatform::MacArm).known_issues,
+            vec![WakeIssue::MacArmNoPowerOn]
+        );
+        assert_eq!(
+            detect_capabilities(WakePlatform::MacArm).recommendations,
+            vec![
+                WakeRecommendation::MacKeepAsleep,
+                WakeRecommendation::MacDisableStandby,
+                WakeRecommendation::MacStayPluggedIn,
+            ]
+        );
+        assert_eq!(
+            detect_capabilities(WakePlatform::Win).known_issues,
+            vec![WakeIssue::WinTimerDiesWithApp, WakeIssue::WinS5NeedsBios]
+        );
+        for p in [
+            WakePlatform::MacArm,
+            WakePlatform::MacIntel,
+            WakePlatform::Win,
+            WakePlatform::Linux,
+            WakePlatform::Other,
+        ] {
+            assert!(
+                !detect_capabilities(p).known_issues.is_empty(),
+                "{p:?} says nothing about its limits"
+            );
+        }
+    }
+
+    /// The codes serialise to the camelCase suffixes the catalogue keys use
+    /// (`app.setup.advanced.wakeIssue.<code>`). A rename here is a silent
+    /// untranslated row there, so it is pinned.
+    #[test]
+    fn wake_codes_serialise_to_catalogue_suffixes() {
+        assert_eq!(
+            serde_json::to_string(&WakeIssue::MacArmNoPowerOn).unwrap(),
+            "\"macArmNoPowerOn\""
+        );
+        assert_eq!(
+            serde_json::to_string(&WakeRecommendation::WinCheckBios).unwrap(),
+            "\"winCheckBios\""
+        );
+    }
+
+    /// The English reserve is what a support paste or an older shell shows.
+    /// Empty or duplicated reserves would make two different limits read as
+    /// the same one.
+    #[test]
+    fn english_reserve_is_present_and_distinct() {
+        let issues = [
+            WakeIssue::MacArmNoPowerOn,
+            WakeIssue::MacIntelManualPowerOn,
+            WakeIssue::WinTimerDiesWithApp,
+            WakeIssue::WinS5NeedsBios,
+            WakeIssue::LinuxUnsupported,
+            WakeIssue::PlatformUnsupported,
+        ];
+        let recs = [
+            WakeRecommendation::MacKeepAsleep,
+            WakeRecommendation::MacDisableStandby,
+            WakeRecommendation::MacStayPluggedIn,
+            WakeRecommendation::WinKeepAppRunning,
+            WakeRecommendation::WinSleepNotShutdown,
+            WakeRecommendation::WinStayPluggedIn,
+            WakeRecommendation::WinCheckBios,
+            WakeRecommendation::UseMacOrWindows,
+        ];
+        let mut all: Vec<&str> = issues.iter().map(|i| i.as_str()).collect();
+        all.extend(recs.iter().map(|r| r.as_str()));
+        assert!(all.iter().all(|s| !s.trim().is_empty()));
+        let uniq: std::collections::HashSet<_> = all.iter().collect();
+        assert_eq!(uniq.len(), all.len(), "two codes share one sentence");
+        // No Norwegian slipped back into the reserve.
+        assert!(
+            !all.iter()
+                .any(|s| s.contains(['\u{e6}', '\u{f8}', '\u{e5}'])),
+            "the English reserve is not English"
+        );
     }
 
     #[test]

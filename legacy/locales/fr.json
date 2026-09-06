@@ -391,6 +391,24 @@
           "needsAdmin": "Cet ordinateur peut être réveillé, mais demande un mot de passe administrateur la première fois.",
           "unknown": "Nous ne savons pas encore si cet ordinateur peut être réveillé."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Un Mac Apple Silicon ne peut pas démarrer depuis l’état complètement éteint — uniquement depuis la veille.",
+          "macIntelManualPowerOn": "Un Mac Intel peut démarrer depuis l’état éteint, mais vous devez activer « Démarrer ou réveiller » manuellement dans Réglages Système → Batterie.",
+          "winTimerDiesWithApp": "Le réveil est programmé par SundayRec pendant qu’il tourne. Si vous quittez complètement SundayRec, la minuterie de réveil disparaît.",
+          "winS5NeedsBios": "Le réveil depuis l’état complètement éteint (S5) exige que « Wake on RTC from S5 » soit activé dans le BIOS — un logiciel ne peut pas l’activer.",
+          "linuxUnsupported": "Linux n’est pas pris en charge pour le réveil automatique depuis SundayRec.",
+          "platformUnsupported": "Cette plateforme n’est pas prise en charge pour le réveil automatique."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Laissez la machine en veille (ne l’éteignez pas) une fois les préparatifs terminés.",
+          "macDisableStandby": "Désactivez la veille profonde (standby) — elle peut empêcher la machine de se réveiller.",
+          "macStayPluggedIn": "L’alimentation secteur doit être branchée — un Mac ne se réveille pas de façon fiable sur batterie.",
+          "winKeepAppRunning": "Laissez SundayRec en marche — il démarre automatiquement à l’ouverture de session et reste dans la zone de notification.",
+          "winSleepNotShutdown": "Mettez la machine en veille (Sleep/Hibernate) au lieu de l’éteindre.",
+          "winStayPluggedIn": "L’alimentation secteur devrait être branchée — beaucoup de portables désactivent les minuteries de réveil sur batterie.",
+          "winCheckBios": "Si le réveil de test échoue, cherchez « Wake on RTC » dans le BIOS et activez « Autoriser les minuteries de réveil » dans les options d’alimentation.",
+          "useMacOrWindows": "Utilisez un Mac ou un PC Windows pour activer le réveil automatique."
+        },
         "wakeArm": "Activer le réveil",
         "wakeArmWord": {
           "idle": "Déclarez le réveil auprès du système d’exploitation maintenant. Un mot de passe administrateur peut être demandé.",
@@ -745,6 +763,15 @@
     "warningDevice": "{warning} : {name}",
     "recording": "Enregistrement en cours",
     "noSchedule": "Aucun enregistrement prévu",
+    "preflightCode": {
+      "ffmpegMissing": "Le binaire ffmpeg est absent. SundayRec doit être réinstallé.",
+      "deviceMissing": "Le périphérique audio choisi dans les réglages n’est pas connecté.",
+      "folderNotWritable": "Impossible d’écrire dans le dossier d’enregistrement.",
+      "diskLow": "Seulement {gb} Go libres sur le disque d’enregistrement — peut-être pas assez pour un enregistrement entier.",
+      "micDenied": "L’accès au microphone n’est pas accordé. Ouvrez Réglages Système → Confidentialité → Microphone.",
+      "cameraDenied": "L’accès à la caméra n’est pas accordé.",
+      "saveFolderSynced": "Le dossier d’enregistrement est synchronisé par « OneDrive », ce qui peut perturber un enregistrement en cours."
+    },
     "preflightErrors": {
       "one": "{n} erreur à corriger avant l’enregistrement",
       "other": "{n} erreurs à corriger avant l’enregistrement"
@@ -997,6 +1024,9 @@
     "errorStartTimeout": "L’enregistrement n’a pas démarré à temps — vérifiez que le microphone (et la caméra) sont branchés, et que SundayRec est autorisé sous Réglages Système → Confidentialité et sécurité",
     "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et lancez le Diagnostic si cela se répète.",
     "errorVideoCapture": "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
+    "errorCameraFormat": "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez.",
+    "errorCameraPermission": "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra",
+    "errorCameraBusy": "La caméra est utilisée par un autre programme — fermez-le (Teams, Zoom) et réessayez",
     "errorMux": "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu.",
     "qualityAlarm": "ATTENTION : Il manque de l’audio à l’enregistrement — le fichier contient {m} des {e} secondes. Vérifiez l’enregistrement avant de vous y fier.",
     "qualityReasons": "Cause : {r}",
@@ -1079,8 +1109,5 @@
     "deviceMissing": "Le périphérique audio « {device} » n’est pas connecté.",
     "diskLow": "L’espace disque commence à manquer — {freeGb} Go libres. L’enregistrement s’arrêtera de lui-même si le disque est plein.",
     "trashManifestUnreadable": "Le contenu de la corbeille n’a pas pu être lu. Les fichiers sont toujours là, mais l’application ne sait plus d’où ils viennent."
-  },
-  "preflight": {
-    "saveFolderSynced": "Le dossier d’enregistrement est synchronisé par « OneDrive », ce qui peut perturber un enregistrement en cours."
   }
 }

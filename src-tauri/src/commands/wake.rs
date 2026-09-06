@@ -31,10 +31,22 @@ use crate::wake::{
 /// How many days of upcoming starts wake scheduling/verification considers.
 const WAKE_HORIZON_DAYS: i64 = 14;
 
-/// What this host can do re: wake-from-sleep (capabilities + Norwegian guidance).
+/// What this host can do re: wake-from-sleep, plus the CODES for its limits
+/// and its advice — the shell renders those in the volunteer's own language
+/// (F2-I18N-R2); see [`sundayrec_core::wake::WakeIssue`].
+///
+/// The same limits go into the log in English on the way past. The log file is
+/// what a support report carries, and «this machine cannot be started from
+/// off» is the single most useful line in it when a Sunday went unrecorded —
+/// but it is only readable if it is in the language of whoever reads the log,
+/// which is not necessarily the language of whoever runs the app.
 #[tauri::command]
 pub fn wake_capabilities() -> WakeCapabilities {
-    detect_capabilities(current_platform())
+    let caps = detect_capabilities(current_platform());
+    for issue in &caps.known_issues {
+        tracing::info!(target: "wake", platform = ?caps.platform, "{}", issue.as_str());
+    }
+    caps
 }
 
 /// The OS sleep/power configuration (mac standby/autopoweroff, win wake-timers).

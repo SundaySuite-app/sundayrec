@@ -391,6 +391,24 @@
           "needsAdmin": "Dieser Computer kann aufgeweckt werden, fragt beim ersten Mal aber nach einem Administratorpasswort.",
           "unknown": "Wir wissen noch nicht, ob dieser Computer aufgeweckt werden kann."
         },
+        "wakeIssue": {
+          "macArmNoPowerOn": "Apple Silicon kann nicht aus dem vollständig ausgeschalteten Zustand starten — nur aus dem Ruhezustand.",
+          "macIntelManualPowerOn": "Ein Intel-Mac kann aus dem ausgeschalteten Zustand starten, aber Sie müssen „Starten oder aufwecken“ manuell in den Systemeinstellungen → Batterie aktivieren.",
+          "winTimerDiesWithApp": "Die Weckzeit wird von SundayRec gesetzt, solange das Programm läuft. Beenden Sie SundayRec vollständig, verschwindet der Wecktimer.",
+          "winS5NeedsBios": "Das Aufwecken aus dem vollständig ausgeschalteten Zustand (S5) setzt „Wake on RTC from S5“ im BIOS voraus — Software kann das nicht aktivieren.",
+          "linuxUnsupported": "Linux wird für das automatische Aufwecken durch SundayRec nicht unterstützt.",
+          "platformUnsupported": "Die Plattform wird für das automatische Aufwecken nicht unterstützt."
+        },
+        "wakeAdvice": {
+          "macKeepAsleep": "Lassen Sie den Rechner nach den Vorbereitungen im Ruhezustand (schalten Sie ihn nicht aus).",
+          "macDisableStandby": "Schalten Sie den Tiefschlaf (Standby) aus — er kann verhindern, dass der Rechner aufwacht.",
+          "macStayPluggedIn": "Das Netzteil muss angeschlossen sein — ein Mac wacht im Akkubetrieb nicht zuverlässig auf.",
+          "winKeepAppRunning": "Lassen Sie SundayRec laufen — es startet automatisch bei der Anmeldung und liegt im Infobereich.",
+          "winSleepNotShutdown": "Versetzen Sie den Rechner in den Ruhezustand (Sleep/Hibernate), statt ihn auszuschalten.",
+          "winStayPluggedIn": "Das Netzteil sollte angeschlossen sein — viele Notebooks deaktivieren Wecktimer im Akkubetrieb.",
+          "winCheckBios": "Schlägt die Testweckung fehl, prüfen Sie im BIOS „Wake on RTC“ und aktivieren Sie „Wecktimer zulassen“ in den Energieoptionen.",
+          "useMacOrWindows": "Verwenden Sie einen Mac oder einen Windows-PC, um das automatische Aufwecken zu aktivieren."
+        },
         "wakeArm": "Aufwecken aktivieren",
         "wakeArmWord": {
           "idle": "Die Weckzeiten jetzt im Betriebssystem registrieren. Kann ein Administratorpasswort erfordern.",
@@ -745,6 +763,15 @@
     "warningDevice": "{warning}: {name}",
     "recording": "Aufnahme läuft",
     "noSchedule": "Keine Aufnahme geplant",
+    "preflightCode": {
+      "ffmpegMissing": "Die ffmpeg-Datei fehlt. SundayRec muss neu installiert werden.",
+      "deviceMissing": "Das in den Einstellungen gewählte Audiogerät ist nicht angeschlossen.",
+      "folderNotWritable": "In den Speicherordner kann nicht geschrieben werden.",
+      "diskLow": "Nur {gb} GB frei auf dem Speicherlaufwerk — vielleicht nicht genug für eine ganze Aufnahme.",
+      "micDenied": "Der Mikrofonzugriff ist nicht erteilt. Öffnen Sie Systemeinstellungen → Datenschutz → Mikrofon.",
+      "cameraDenied": "Der Kamerazugriff ist nicht erteilt.",
+      "saveFolderSynced": "Der Speicherordner wird von „OneDrive“ synchronisiert, was eine laufende Aufnahme beeinträchtigen kann."
+    },
     "preflightErrors": {
       "one": "{n} Fehler muss vor der Aufnahme behoben werden",
       "other": "{n} Fehler müssen vor der Aufnahme behoben werden"
@@ -997,6 +1024,9 @@
     "errorStartTimeout": "Die Aufnahme kam nicht rechtzeitig in Gang — prüfen Sie, ob Mikrofon (und Kamera) angeschlossen sind, und ob SundayRec unter Systemeinstellungen → Datenschutz & Sicherheit Zugriff hat",
     "errorEngineExited": "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und führen Sie die Diagnose aus, wenn es sich wiederholt.",
     "errorVideoCapture": "Die Kamera lieferte kein Bild — der Ton wurde gespeichert und liegt in der Bibliothek. Prüfen Sie die Kameraverbindung, bevor Sie wieder mit Video aufnehmen.",
+    "errorCameraFormat": "Die Kamera unterstützt die gewählte Bildrate oder Auflösung nicht — wählen Sie eine andere Videoeinstellung und versuchen Sie es erneut.",
+    "errorCameraPermission": "Kamerazugriff verweigert — öffnen Sie die Systemeinstellungen und geben Sie der App Zugriff auf die Kamera",
+    "errorCameraBusy": "Die Kamera wird von einem anderen Programm verwendet — schließen Sie es (Teams, Zoom) und versuchen Sie es erneut",
     "errorMux": "Ton und Bild konnten nicht zusammengesetzt werden — beide Rohdateien sind im Speicherordner erhalten, es ist also nichts verloren.",
     "qualityAlarm": "WARNUNG: Der Aufnahme fehlt Audio — die Datei enthält {m} von {e} Sekunden. Prüfen Sie die Aufnahme, bevor Sie ihr vertrauen.",
     "qualityReasons": "Ursache: {r}",
@@ -1079,8 +1109,5 @@
     "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
     "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
     "trashManifestUnreadable": "Der Inhalt des Papierkorbs konnte nicht gelesen werden. Die Dateien sind noch da, aber die App weiß nicht mehr, woher sie stammen."
-  },
-  "preflight": {
-    "saveFolderSynced": "Der Speicherordner wird von „OneDrive“ synchronisiert, was eine laufende Aufnahme beeinträchtigen kann."
   }
 }

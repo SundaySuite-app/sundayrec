@@ -113,7 +113,7 @@ pub async fn telemetry_regenerate_install_id(
 pub fn telemetry_count(name: String) -> AppResult<()> {
     let counter = CounterName::from_wire(&name).ok_or_else(|| {
         AppError::Validation(format!(
-            "ukjent telemetri-teller «{name}» — navnet må stå i den faste lista"
+            "unknown telemetry counter \"{name}\" — the name must be on the closed list"
         ))
     })?;
     telemetry::counters::count(counter);

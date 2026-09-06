@@ -337,21 +337,35 @@ fn longest_speech(
     best
 }
 
-// ── Attention reasons (Norwegian, hardcoded — port ATTENTION_REASONS) ───────
+// ── Attention reasons (ENGLISH reserve — port of ATTENTION_REASONS) ─────────
 
-/// Why an episode might need extra human attention. Norwegian, hardcoded — these
-/// strings match `prep-episode.ts` `ATTENTION_REASONS` verbatim.
+/// Why an episode might need extra human attention.
+///
+/// ## F2-I18N-R2: ENGLISH, and why that is not a downgrade
+///
+/// These sentences ported `prep-episode.ts` `ATTENTION_REASONS` verbatim, in
+/// Norwegian. Nothing renders them: the reviewer surfaces consume
+/// [`AttentionReason`] CODES, and everything that STORES or SENDS a reason was
+/// already required to store the code (see [`AttentionReason::code`]). So the
+/// sentences are a reserve — a log line, a shadow-comparison dump, a debugger
+/// — and a reserve nobody can read is not a reserve.
+///
+/// ⚠️ [`AttentionReason::from_sentence`] matches these EXACTLY. The constants
+/// and that match are one thing in two places on purpose (the sentence is what
+/// [`derive_attention_reasons`] carries), so they change together or not at
+/// all — `reason_codes_match_the_sentences` is the test that says so.
 pub mod reasons {
-    pub const NO_SERMON_BLOCK: &str = "Vi fant ingen klar preken-blokk på over 3 minutter etter de første 5 min — kan være kort preken eller bønnemøte";
-    pub const SPEECH_AT_START: &str = "Største tale-segment er i starten — kanskje ikke prekenen?";
+    pub const NO_SERMON_BLOCK: &str = "no clear sermon block over 3 minutes was found after the first 5 min — this may be a short sermon or a prayer meeting";
+    pub const SPEECH_AT_START: &str =
+        "the largest speech segment is at the very start — perhaps not the sermon?";
     pub const MID_SILENCE: &str =
-        "Mye stillhet midt i opptaket — kan tyde på at noe er klippet bort";
+        "a lot of silence in the middle of the recording — something may have been cut out";
     pub const MOSTLY_MUSIC: &str =
-        "Lange musikk-blokker — er dette en konsert i stedet for en gudstjeneste?";
+        "long blocks of music — is this a concert rather than a service?";
     pub const LOW_CONFIDENCE: &str =
-        "Sermon-deteksjon hadde lav konfidens — sjekk at prekenen er innenfor det markerte området";
+        "sermon detection had low confidence — check that the sermon is inside the marked range";
     pub const VERY_SHORT: &str =
-        "Hele opptaket er kort — kanskje en del av en serie eller et avbrutt opptak";
+        "the whole recording is short — perhaps part of a series, or an interrupted recording";
 }
 
 /// The same six reasons as CODES rather than as their Norwegian sentences.

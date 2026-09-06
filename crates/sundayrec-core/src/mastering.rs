@@ -93,7 +93,7 @@ pub fn master_presets() -> Vec<MasterPreset> {
         MasterPreset {
             id: "speech-punchy".into(),
             label: "Tale — kraftig".into(),
-            description: "For svake stemmer eller støyete opptak. Sterkere prosessering.".into(),
+            description: "For weak voices or noisy recordings. Stronger processing.".into(),
             target_lufs: -14.0,
             target_lra: 6.0,
             true_peak_db: -1.0,

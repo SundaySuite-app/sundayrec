@@ -41,22 +41,74 @@ use crate::ffmpeg::Platform;
 /// genuine mid-recording disconnect that the reconnect machinery handles.
 pub const STARTUP_FAILURE_MS: i64 = 3000;
 
-/// Turn a failed video-capture ffmpeg's stderr tail into a clear, actionable
-/// Norwegian reason — so a camera that won't open reports WHY (e.g. an
-/// unsupported bilderate) instead of the confusing downstream "mux_failed" the
-/// user used to see. Pure + tested; the caller captures the tail and emits this.
-pub fn summarize_camera_failure(stderr_tail: &str) -> String {
+/// WHY a video capture failed, classified from ffmpeg's stderr tail.
+///
+/// Was four hardcoded Norwegian sentences returned as one `String` and emitted
+/// as the message of a single `video_capture_failed` error (F2-I18N-R2). Two
+/// things were wrong with that: the prose was the engine speaking one of the
+/// app's seven languages, and the four DISTINCT causes arrived under one code,
+/// so the shell collapsed them into one sentence anyway. "The camera is in use
+/// by another program" and "the camera does not support that frame rate" are
+/// different problems with different next steps.
+///
+/// Now each variant gets its own stable code — the table lives with the emit,
+/// in `src-tauri/src/recorder/two_process.rs`'s `camera_failure_code`, beside
+/// `error_code_str` and read by the same gate
+/// (`scripts/check-error-codes.mjs`). [`Self::as_str`] is the ENGLISH reserve
+/// for the log and for a reader that does not know the code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraFailure {
+    /// The requested frame rate / resolution is not one this camera has.
+    FormatUnsupported,
+    /// The OS refused camera access.
+    PermissionDenied,
+    /// Another program is holding the camera.
+    Busy,
+    /// Anything else — the safe generic answer.
+    OpenFailed,
+}
+
+impl CameraFailure {
+    /// Every variant, in declaration order — so the code table in
+    /// `src-tauri` can be checked for completeness rather than trusted.
+    pub const ALL: &'static [CameraFailure] = &[
+        CameraFailure::FormatUnsupported,
+        CameraFailure::PermissionDenied,
+        CameraFailure::Busy,
+        CameraFailure::OpenFailed,
+    ];
+
+    /// English reserve.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FormatUnsupported => {
+                "The camera does not support the chosen frame rate/resolution. Try another video setting."
+            }
+            Self::PermissionDenied => {
+                "Camera access denied. Give the app access to the camera in System Settings."
+            }
+            Self::Busy => "The camera is in use by another program. Close it and try again.",
+            Self::OpenFailed => {
+                "The camera could not be opened for recording. Check that it is connected and free."
+            }
+        }
+    }
+}
+
+/// Classify a failed video-capture ffmpeg's stderr tail — so a camera that
+/// won't open reports WHY instead of the confusing downstream "mux_failed" the
+/// user used to see. Pure + tested; the caller captures the tail and emits the
+/// variant's [`CameraFailure::code`].
+pub fn summarize_camera_failure(stderr_tail: &str) -> CameraFailure {
     let l = stderr_tail.to_lowercase();
     if l.contains("not supported") || l.contains("framerate") || l.contains("video_size") {
-        "Kameraet støtter ikke valgt bilderate/oppløsning. Prøv en annen \
-         videoinnstilling."
-            .into()
+        CameraFailure::FormatUnsupported
     } else if l.contains("permission") || l.contains("denied") || l.contains("not authorized") {
-        "Kameratilgang nektet. Gi appen tilgang til kameraet i Systeminnstillinger.".into()
+        CameraFailure::PermissionDenied
     } else if l.contains("in use") || l.contains("busy") || l.contains("-11804") {
-        "Kameraet er i bruk av et annet program. Lukk det og prøv igjen.".into()
+        CameraFailure::Busy
     } else {
-        "Kameraet kunne ikke åpnes for opptak. Sjekk at det er tilkoblet og ledig.".into()
+        CameraFailure::OpenFailed
     }
 }
 
@@ -553,16 +605,37 @@ mod tests {
 
     #[test]
     fn summarize_camera_failure_maps_the_common_reasons() {
-        assert!(summarize_camera_failure(
-            "Selected framerate (25.000000) is not supported by the device."
-        )
-        .contains("bilderate"));
-        assert!(
-            summarize_camera_failure("permission to capture video was denied").contains("nektet")
+        assert_eq!(
+            summarize_camera_failure(
+                "Selected framerate (25.000000) is not supported by the device."
+            ),
+            CameraFailure::FormatUnsupported
         );
-        assert!(summarize_camera_failure("device is in use by another process").contains("i bruk"));
-        // Unknown failure → the safe generic message.
-        assert!(summarize_camera_failure("some other error").contains("kunne ikke åpnes"));
+        assert_eq!(
+            summarize_camera_failure("permission to capture video was denied"),
+            CameraFailure::PermissionDenied
+        );
+        assert_eq!(
+            summarize_camera_failure("device is in use by another process"),
+            CameraFailure::Busy
+        );
+        // Unknown failure → the safe generic answer.
+        assert_eq!(
+            summarize_camera_failure("some other error"),
+            CameraFailure::OpenFailed
+        );
+    }
+
+    /// F2-I18N-R2: four causes, four codes, four English sentences. A shared
+    /// code would put two different problems behind one sentence — which is
+    /// exactly what the single `video_capture_failed` did.
+    #[test]
+    fn every_camera_failure_has_its_own_code_and_english_reserve() {
+        let all = CameraFailure::ALL;
+        assert_eq!(all.len(), 4);
+        let texts: std::collections::HashSet<_> = all.iter().map(|f| f.as_str()).collect();
+        assert_eq!(texts.len(), all.len());
+        assert!(all.iter().all(|f| !f.as_str().contains(['æ', 'ø', 'å'])));
     }
 
     fn mode(w: u32, h: u32, fps: u32) -> crate::capture::VideoCaptureMode {
