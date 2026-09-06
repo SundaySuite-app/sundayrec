@@ -847,6 +847,7 @@
     "exportExporting": "Exporterar…",
     "exportCancel": "Avbryt",
     "exportCancelling": "Avbryter…",
+    "exportPhasePreparing": "Analyserar ljudet…",
     "exportPhaseMeasuring": "Mäter ljudstyrka…",
     "exportPhaseEncoding": "Exporterar…",
     "remainingLabel": "Resultat",
@@ -886,6 +887,7 @@
     "jinglesVideoUnsupported": "Jinglar stöds inte för video ännu",
     "confirmClose": "Du har osparade ändringar. Stänga ändå?",
     "confirmOpenOther": "Du har osparade ändringar. Öppna ny fil ändå?",
+    "confirmExportRunning": "Exporten pågår. Vill du avbryta den?",
     "tlIntro": "Intro",
     "tlMain": "Huvudinspelning",
     "tlOutro": "Outro",
@@ -924,6 +926,8 @@
     "diagnosing": "Analyserar…",
     "enhanceTitle": "Ljudförbättring",
     "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format på sidan Export.",
+    "errExportAlreadyRunning": "En export pågår redan. Vänta tills den är klar.",
+    "errRecordingInProgress": "En inspelning pågår. Vänta tills den är klar innan du exporterar.",
     "errPathNotAbsolute": "Ogiltig mapp eller filsökväg. Välj målmappen igen.",
     "metaDesc": "BESKRIVNING",
     "metaSave": "Spara metadata",
@@ -1021,7 +1025,9 @@
   },
   "dialog": {
     "discardEditsBody": "Klippen du har gjort går förlorade. Själva inspelningsfilen rörs inte.",
-    "discardEdits": "Förkasta ändringarna"
+    "discardEdits": "Förkasta ändringarna",
+    "abortExportBody": "Filen som håller på att skapas blir inte färdig. Själva inspelningsfilen rörs inte.",
+    "abortExport": "Avbryt exporten"
   },
   "missed": {
     "banner": {

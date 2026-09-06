@@ -847,6 +847,7 @@
     "exportExporting": "Exporting…",
     "exportCancel": "Cancel",
     "exportCancelling": "Cancelling…",
+    "exportPhasePreparing": "Analyzing the audio…",
     "exportPhaseMeasuring": "Measuring loudness…",
     "exportPhaseEncoding": "Exporting…",
     "remainingLabel": "Result",
@@ -876,6 +877,7 @@
     "jinglesVideoUnsupported": "Jingles are not supported for video yet",
     "confirmClose": "You have unsaved changes. Close anyway?",
     "confirmOpenOther": "You have unsaved changes. Open a new file anyway?",
+    "confirmExportRunning": "The export is running. Cancel it?",
     "tlIntro": "Intro",
     "tlMain": "Main recording",
     "tlOutro": "Outro",
@@ -924,6 +926,8 @@
     "diagnosing": "Analyzing…",
     "enhanceTitle": "Audio enhancement",
     "errInvalidFormat": "This format is not supported for export. Choose a different format on the Export page.",
+    "errExportAlreadyRunning": "An export is already running. Wait until it has finished.",
+    "errRecordingInProgress": "A recording is in progress. Wait until it has finished before you export.",
     "errPathNotAbsolute": "Invalid folder or file path. Choose the destination folder again.",
     "metaDesc": "DESCRIPTION",
     "metaSave": "Save metadata",
@@ -1021,7 +1025,9 @@
   },
   "dialog": {
     "discardEditsBody": "The cuts you have made will be lost. The recording file itself is untouched.",
-    "discardEdits": "Discard the changes"
+    "discardEdits": "Discard the changes",
+    "abortExportBody": "The file being created will not be finished. The recording file itself is untouched.",
+    "abortExport": "Cancel the export"
   },
   "missed": {
     "banner": {

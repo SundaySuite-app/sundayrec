@@ -847,6 +847,7 @@
     "exportExporting": "Eksporterer…",
     "exportCancel": "Avbryt",
     "exportCancelling": "Avbryter…",
+    "exportPhasePreparing": "Analyserer lyden…",
     "exportPhaseMeasuring": "Måler lydstyrke…",
     "exportPhaseEncoding": "Eksporterer…",
     "remainingLabel": "Resultat",
@@ -886,6 +887,7 @@
     "jinglesVideoUnsupported": "Jingler støttes ikke for video ennå",
     "confirmClose": "Du har ulagrede endringer. Lukk likevel?",
     "confirmOpenOther": "Du har ulagrede endringer. Åpne ny fil likevel?",
+    "confirmExportRunning": "Eksporten pågår. Avbryte den?",
     "tlIntro": "Intro",
     "tlMain": "Hovedopptak",
     "tlOutro": "Outro",
@@ -924,6 +926,8 @@
     "diagnosing": "Analyserer…",
     "enhanceTitle": "Lydforbedring",
     "errInvalidFormat": "Formatet støttes ikke for eksport. Velg et annet format på Eksportering-siden.",
+    "errExportAlreadyRunning": "En eksport er allerede i gang. Vent til den er ferdig.",
+    "errRecordingInProgress": "Det pågår et opptak nå. Vent til opptaket er ferdig før du eksporterer.",
     "errPathNotAbsolute": "Ugyldig mappe eller filbane. Velg destinasjonsmappen på nytt.",
     "metaDesc": "BESKRIVELSE",
     "metaSave": "Lagre metadata",
@@ -1021,7 +1025,9 @@
   },
   "dialog": {
     "discardEditsBody": "Kuttene du har gjort går tapt. Selve opptaksfilen røres ikke.",
-    "discardEdits": "Forkast endringene"
+    "discardEdits": "Forkast endringene",
+    "abortExportBody": "Fila som holder på å bli laget blir ikke ferdig. Selve opptaksfilen røres ikke.",
+    "abortExport": "Avbryt eksporten"
   },
   "missed": {
     "banner": {

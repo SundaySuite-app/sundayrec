@@ -33,6 +33,7 @@
 import { routePlayback } from "@lib/pages/editor/play-regions";
 
 import { cancelDraftSave, resetHistoryMirror, restoreDraftCuts } from "./cuts";
+import { confirmAbandonExport } from "./discard";
 import {
   analyzing,
   E,
@@ -48,7 +49,7 @@ import {
   startedAtMs,
   duration as durationSignal,
 } from "./model";
-import { resetExport } from "./export";
+import { exporting, resetExport } from "./export";
 import { resetSound } from "./sound";
 import {
   ensurePlayerEl,
@@ -110,12 +111,35 @@ export interface OpenContext {
 }
 
 /**
- * Lukk den åpne fila.
+ * Lukk den åpne fila. Sann = den ble faktisk lukket.
  *
  * Bekreftelsen ved ulagrede endringer hører til FLATEN, ikke hit: den er en
- * setning en frivillig leser, og modellen har ingen katalog.
+ * setning en frivillig leser, og modellen har ingen katalog. EKSPORTVAKTEN
+ * (`confirmAbandonExport`, F2-3) er unntaket, og den er ikke en motsigelse:
+ * setningen bor fortsatt i `discard.ts`, men HÅNDHEVELSEN må stå her, fordi det
+ * som lekker ikke er en tekst — det er en ffmpeg-prosess. Fram til F2-A-B nullet
+ * `resetExport()` bare `exporting`, ingen cancel gikk til bakenden, og
+ * renderingen malte videre på en fil ingen flate lenger fortalte om.
+ *
+ * `false` betyr «brukeren ombestemte seg» — og da skal den som kalte oss heller
+ * ikke navigere.
  */
-export function closeFile(): void {
+export async function closeFile(): Promise<boolean> {
+  if (!(await confirmAbandonExport())) return false;
+  closeFileNow();
+  return true;
+}
+
+/**
+ * Selve lukkingen, uten spørsmålet. Privat: alt utenfra går gjennom vakten.
+ */
+function closeFileNow(): void {
+  // Å LUKKE er like mye et generasjonsskifte som å åpne. Uten bumpen sto hver
+  // `seq !== E.loadSeq`-vakt (her, i `export.ts`, i `sermon.ts`) igjen som sann
+  // etter en lukking, og en `runExport`/`runAnalysis` som fortsatt hang i en
+  // await fortsatte som om fila var åpen — inn i en `E.filePath` som `resetFileState`
+  // nettopp hadde tømt.
+  E.loadSeq += 1;
   cancelDraftSave();
   teardownPlayback();
   resetSound();
@@ -131,7 +155,30 @@ export async function pickAndOpen(): Promise<void> {
   if (picked) void openFile(picked);
 }
 
-export async function openFile(
+/**
+ * Åpne et opptak.
+ *
+ * ⚠️ Den synkrone halvdelen er load-bearing: `entry.ts` navigerer til
+ * REDIGERING og kaller denne, og fordi `loadState`/`filePath` settes FØR første
+ * `await`, rekker biblioteket aldri å blinke innom (se `app/Shell.tsx`). Derfor
+ * er eksportvakten en GREN og ikke en `await` på toppen: uten en eksport i
+ * gang går ingen tur innom mikrotask-køen, og oppstarten er den samme som før.
+ */
+export function openFile(
+  path: string,
+  context: OpenContext = {},
+): Promise<void> {
+  if (exporting.peek()) return askThenOpen(path, context);
+  return openFileNow(path, context);
+}
+
+/** Den sjeldne veien: spør først, åpne bare hvis eksporten fikk dø. */
+async function askThenOpen(path: string, context: OpenContext): Promise<void> {
+  if (!(await confirmAbandonExport())) return;
+  await openFileNow(path, context);
+}
+
+async function openFileNow(
   path: string,
   context: OpenContext = {},
 ): Promise<void> {
