@@ -3497,15 +3497,23 @@ mod tests {
     fn capture_base_path_keeps_the_delivery_stem() {
         // The capture base carries the delivery's OWN stem so `delivery_path_for`
         // maps it straight back, and splits derive `<stem>_2.<ext>`.
+        //
+        // F2-W7: `capture_base_path`/`delivery_path_for` return a STRING
+        // through `Path::join`, so their separator is the PLATFORM's (`\` on
+        // Windows) — the expected values below are built the same way,
+        // through `cap.join(...)`, rather than as forward-slash literals, so
+        // the test stays correct on both without a `cfg!` branch. A hardcoded
+        // `"/rec/…"` passed on macOS/Linux and failed the first time this ran
+        // on Windows (PR #231).
         let cap = capture_dir("/rec/sermon.mp3", "1");
         assert_eq!(
             capture_base_path(&cap, "/rec/sermon.mp3", "wav"),
-            "/rec/.sundayrec-capture-1/sermon.wav"
+            cap.join("sermon.wav").to_string_lossy()
         );
         // Video sessions capture to crash-tolerant Matroska.
         assert_eq!(
             capture_base_path(&cap, "/rec/service.mp4", "mkv"),
-            "/rec/.sundayrec-capture-1/service.mkv"
+            cap.join("service.mkv").to_string_lossy()
         );
         // Round-trip: capture base → delivery path reproduces the user's file.
         let base = capture_base_path(&cap, "/rec/sermon.mp3", "wav");
@@ -3515,7 +3523,9 @@ mod tests {
                 &delivery_dir_of("/rec/sermon.mp3"),
                 &delivery_ext("/rec/sermon.mp3")
             ),
-            "/rec/sermon.mp3"
+            std::path::Path::new("/rec")
+                .join("sermon.mp3")
+                .to_string_lossy()
         );
     }
 
