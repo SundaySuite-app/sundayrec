@@ -94,6 +94,24 @@ faktisk skal se nå — sist.
       10 dB varmere gir omtrent 3× flux), og bare et ekte øre på ekte
       opptak kan bekrefte at terskelen ikke er kalibrert for kun ett
       lydnivå. Noter resultatet i #111 uansett utfall.
+- [ ] **(tillegg — #252, macOS-siden av holde-våken-blokken) Holder maskinen
+      seg våken før et planlagt opptak?** Sett «Sove etter» kort
+      (Systeminnstillinger → Batteri/Strømadapter → 1 min), legg inn en slot
+      15 minutter fram, og la maskinen stå.
+      **Forventet FØR fiksen:** avgjørelsen om å holde maskinen våken var
+      portet fra Electron (`wake.rs`s `should_block`), men HANDLINGEN var
+      det aldri — ingen `IOPMAssertionCreateWithName`-kall fantes. En maskin
+      vekket av `pmset` ti minutter før gudstjenesten kunne sovne igjen på
+      den vanlige idle-timeren før opptaket i det hele tatt startet.
+      **Forventet ETTER (F2-W5, #252):** maskinen står våken forbi
+      1-minutts-grensa når klokka passerer T−30 min, og opptaket starter i
+      tide. `pmset -g assertions` skal liste `SundayRec: scheduled recording
+is due` i vinduet og `SundayRec: recording in progress` under selve
+      opptaket — ingen av dem igjen etterpå. Ta med i samme runde: skjermen
+      skal FORTSATT få sove (blokken ber med vilje ikke om en
+      skjerm-holdt-våken-variant), og sjekk om oppførselen er den samme på
+      batteri som på nettstrøm (respekten for `PreventSystemSleep` er ikke
+      garantert lik på batteri).
 - [ ] **(h) Et helt ekte 90-minutters opptak.** Skru på «Del opp lange
       opptak» med en kort grense (f.eks. 30 min) og ta opp en hel ekte
       gudstjeneste eller tilsvarende lengde med tale.
@@ -156,6 +174,19 @@ faktisk skal se nå — sist.
       et uhell, dør opptaket (ffmpeg mottar `CTRL_CLOSE_EVENT`).
       **Forventet ETTER (F2-W2, #237):** ingen av de seks stegene viser noe
       konsollvindu, noen gang.
+- [ ] **(w5) Samme holde-våken-blokk, Windows-siden.** Sett «Sove etter» til
+      **1 minutt** (Innstillinger → System → Strøm), legg inn en slot
+      **15 minutter fram**, og la maskinen stå.
+      **Forventet FØR fiksen:** samme hull som på Mac-en (se Mac-boksens
+      tillegg — #252): planleggerens `SetWaitableTimer` vekker maskinen ti
+      minutter før start, men Windows' «System unattended sleep timeout»
+      (standard 2 min) tar den tilbake til dvale før noe har åpnet en power
+      request — ingen `SetThreadExecutionState`-kall fantes.
+      **Forventet ETTER (F2-W5, #252):** maskinen står våken forbi
+      1-minutts-grensa når klokka passerer T−30 min, og opptaket starter.
+      `powercfg /requests` skal vise **SundayRec** under `SYSTEM` i
+      mellomtiden — og IKKE 40 minutter før start. Skjermen skal fortsatt få
+      sove (blokken bruker `ES_SYSTEM_REQUIRED`, ikke `ES_DISPLAY_REQUIRED`).
 - [ ] **(w6) Drep appen midt i et videoopptak.** Start et videoopptak
       (kamera + lyd), drep prosessen i Oppgavebehandling midt i økten, start
       appen på nytt.
@@ -202,11 +233,26 @@ faktisk skal se nå — sist.
       **Forventet på riggen:** alle fire kjører og består — ikke bare hopper
       over. Består de ikke her heller, er det et ekte funn, ikke et
       rigg-artefakt; skriv det opp mot #231.
+- [ ] **(w14) Unødvendig ASIO-sveip ved vanlig opptak.** Windows-maskin med
+      **én ASIO-driver installert** (ASIO4ALL holder) og en **WASAPI-enhet
+      valgt** i SundayRec.
+      **Forventet FØR fiksen:** hver opptaksstart, hver enhetsliste-åpning og
+      kapasitetsbenken kalte `is_asio_device` ubetinget — det sveipet ALLE
+      installerte ASIO-drivere (`host.devices()` → `ASIOInit` per driver) selv
+      når en helt vanlig WASAPI-enhet var valgt. Kunne poppe et driverpanel
+      opp midt i opptaksstart, eller ta lydkortet et ASIO-opptak skulle bruke
+      to linjer senere — verst på et planlagt opptak ingen står ved.
+      **Forventet ETTER (F2-W8, #253):** 1. **Startforsinkelsen er borte.** Ta tiden fra klikk til at
+      teller/VU løper, og sammenlign med v0.18.0-beta.1. 2. **Driverpanelet popper ikke opp** ved opptaksstart lenger. 3. **ASIO-stien er fortsatt intakt.** Velg ASIO-enheten i velgeren og
+      trykk opptak innen 30 s — diagnose viser `set_audio_engine: asio`,
+      og alle kanalene er der. 4. **Ferskhet.** Plugg inn et ASIO-grensesnitt mens appen står åpen,
+      vent over 30 s, åpne velgeren igjen: det skal dukke opp. Kjør
+      diagnose: den ser det med én gang (den dropper 30 s-memoet først).
 
-_(w4, w5, w7–w15 hører til andre F2-Windows-funn som løper i egne
+_(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
-logger, MSI/UAC på stable, ASIO-sondering på forespørsel, m.fl. Fylles inn
-her når de respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
+logger, MSI/UAC på stable, m.fl. Fylles inn her når de respektive PR-ene er
+merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## Ørene
 
@@ -262,6 +308,13 @@ kanal-duplisering) var tidligere en lytte-sjekk, men er nå fullt
 mutasjonstestet mot ekte ffmpeg-sidecar-målinger på kjente L/R-nivåer
 (F2-C-C, #248) — se PR-teksten for måletabellen. Den trenger ikke et øre på
 riggdagen lenger.
+
+_(v–ix hører til resten av lydkjede-gjennomgangen (rapport C) — ingen av dem
+endte som en kodefiks. De ble eierspørsmål i stedet, og står i
+`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)»:
+`-realtime 1` for VideoToolbox-enkoderen, en egen «Kirke»-mastringsprofil, og
+automatisk monolevering ved høyt korrelerte L/R-kanaler. Ingen av dem har noe
+å rigg-teste før eieren har bestemt seg og en PR har landet.)_
 
 ## Etterpå
 
