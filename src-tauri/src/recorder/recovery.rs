@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
 
-use sundayrec_core::recovery::{delivery_path_for, recoverable_deliverables, SessionManifest};
+use sundayrec_core::recovery::{recoverable_deliverables, SessionManifest};
 
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
@@ -405,15 +405,10 @@ pub(crate) async fn recover_session(
         // delivery format. `None` = legacy (the fragments already ARE the delivery
         // file → no transcode). The capture primary's stem (with any `_2` split
         // suffix) maps back into the save folder.
-        let delivery_spec = manifest.delivery_encode.as_ref().map(|enc| DeliverySpec {
-            delivery_path: delivery_path_for(&dm.primary_path, &enc.delivery_dir, &enc.ext),
-            ext: enc.ext.clone(),
-            channels: enc.channels,
-            sample_rate: enc.sample_rate,
-            bitrate_kbps: enc.bitrate_kbps,
-            mode: enc.mode,
-            hvc1_tag: enc.hvc1_tag,
-        });
+        let delivery_spec = manifest
+            .delivery_encode
+            .as_ref()
+            .map(|enc| DeliverySpec::from_manifest(enc, &dm.primary_path));
 
         let final_path = finalize_deliverable(&deliverable, preroll, delivery_spec.as_ref())
             .await
