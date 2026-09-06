@@ -43,6 +43,11 @@ import type { RecorderState } from "@legacy/bindings/RecorderState";
 
 import { levelWordFor } from "../audio/level-words";
 import { raiseBanner } from "./banners";
+import {
+  snapshotStillApplies,
+  type StatePayload,
+  type StateGeneration,
+} from "./recording-hydrate-core";
 
 /** Går det et opptak? */
 export const isRecording = signal(false);
@@ -185,6 +190,118 @@ export function dismissFinishedRecording(): void {
   if (finishedRecording.peek()) finishedRecording.value = null;
 }
 
+/**
+ * Hvor mange ganger motoren har sagt noe AUTORITATIVT om økta siden appen
+ * startet — hendelsene som avgjør om et opptak går i det hele tatt.
+ *
+ * Telleren finnes for `hydrateRecordingState()` under: den spør motoren én
+ * gang ved oppstart, og i den rundturen kan en ekte hendelse lande. Da er
+ * svaret vårt et bilde av et øyeblikk som er over, og det skal forkastes —
+ * uansett hva det sier. Regelen selv bor i `recording-hydrate-core.ts` og er
+ * tabelltestet der; her er bare telleren den leser.
+ *
+ * ⚠️ HVILKE hendelser som teller er valgt, ikke tilfeldig. De fire under er de
+ * som avgjør om en økt EKSISTERER. Varsler og nivåer teller ikke, og det er
+ * med vilje: et `recording://warning` under rundturen ville da forkastet
+ * snapshotet og etterlatt skjermen «klar» over et opptak som går — altså
+ * nøyaktig feilen dette lukker. Kostnaden ved å la det passere er at
+ * gjenkoblingsstripa kan ryddes ett hakk for tidlig, og den reises igjen av
+ * neste forsøk.
+ */
+let stateGeneration: StateGeneration = 0;
+
+/**
+ * Reduksjonen fra `recording://state`-nyttelast til skallets tro — ÉN
+ * funksjon, brukt av både hendelseslytteren og oppstarts-snapshotet.
+ *
+ * Delt ut av lytteren fordi snapshotet bærer nøyaktig den samme nyttelasten
+ * (`recording_snapshot` returnerer motorens `RecorderStatePayload`), og to
+ * kartlegginger fra den samme nyttelasten til den samme troen er skjøtefeilen
+ * `reference-seam-bugs` handler om — i den ene flaten der den koster en
+ * gudstjeneste.
+ */
+export function applyStatePayload(
+  payload: Partial<StatePayload> | null | undefined,
+): void {
+  // Fristen rir med på HVER tilstandsemit — også den motoren fyrer bare
+  // fordi fristen flyttet seg. Å ta den imot FØR forgreningen under er det
+  // som gjør nedtellingen bakendens og ikke en lokal gjetning.
+  if (payload && "scheduled_stop_ms" in payload) {
+    scheduledStopMs.value = payload.scheduled_stop_ms ?? null;
+  }
+  const st = payload?.state ?? null;
+  if (st) recorderState.value = st;
+  const live = liveFromRecordingState(st ?? undefined);
+  if (live === true) {
+    // Motoren sier at en økt er LIVE. Tror UI-et noe annet, er det UI-et
+    // som tar feil — ellers står brukeren med et opptak uten stoppknapp
+    // (rigg-hendelsen 2026-07-31).
+    if (!isRecording.peek()) markSessionStarted();
+  } else if (live === false) {
+    endSessionLocally();
+  }
+  // ⚠️ Gjenkoblingsstripa ryddes HER, fordi tilstanden er det ene stedet
+  // som VET. Motoren har en egen `reconnecting`-tilstand i sitt eget
+  // vokabular (`RecorderState`), så «recording» betyr beviselig at den er
+  // koblet til igjen — og da er stripa historie, uansett om
+  // `recording://reconnected` kom eller ikke. Se `recording-warning` under
+  // for hvorfor det «eller ikke» er det som gjorde stripa permanent.
+  //
+  // ⚠️ …og ETTER forgreningen over, ikke før. Både `markSessionStarted()` og
+  // `endSessionLocally()` nullstiller stripa som en del av øktopprydningen,
+  // så en emit som SIER «reconnecting» og treffer et skall som ennå ikke tror
+  // at en økt går — planleggeren, en gjenoppretting, eller en reload midt i
+  // gjenkoblingen — reiste stripa og fikk den spist av sin egen øktstart i
+  // samme kall. Rekkefølgen er hele forskjellen; sett linja tilbake over
+  // forgreningen, og gjenkoblingsraden i recording.test.ts sitt
+  // «oppstarts-snapshotet» blir rød.
+  if (st) reconnecting.value = st === "reconnecting";
+}
+
+/**
+ * Spør motoren ÉN gang, ved oppstart: «hva gjør du akkurat nå?»
+ *
+ * ## Hullet dette lukker
+ *
+ * Denne modulen fikk aldri en starttilstand. Den abonnerte på framtidige
+ * `recording://state`-hendelser, og Tauris `emit()` leverer bare til lyttere
+ * som allerede er koblet på. Et stabilt opptak fyrer ingenting — mellom
+ * «recording» og auto-stoppen en time senere er det ingen overganger — så en
+ * webview som lastes på nytt der (WebKit-prosessen dør og Tauri laster siden,
+ * eller en utvikler-reload) starter på `isRecording = false` og blir stående
+ * der. Frivilligen ser «klar» mens motoren eier mikrofonen: ingen overlegg,
+ * ingen klokke, ingen nedtelling, ingen stoppknapp — og den ene knappen som
+ * står der er Start, som motoren svarer «already recording» på.
+ *
+ * ## Ikke en polling
+ *
+ * Ett spørsmål, ved oppstart, gjennom den SAMME reduksjonen som hendelsen.
+ * `recording_status`-kommandoen F1 slettet var noe annet: en synkron kopi av
+ * en tilstand som pushes, for en lytter som allerede lyttet. Denne er for
+ * lytteren som ikke kunne ha lyttet.
+ *
+ * ## Kappløpet
+ *
+ * En ekte hendelse kan lande MENS kallet er i flukt, og da er den autoritativ:
+ * den kommer fra motoren i det øyeblikket noe skjedde, mens snapshotet
+ * beskriver et øyeblikk før spørsmålet ble stilt. Vi husker tellerstanden da
+ * vi spurte og forkaster svaret hvis den har flyttet seg. Verdiene kan ikke
+ * brukes til dette: et snapshot som sier «idle» ser ut som «ingen har sagt
+ * noe» (samme grunn som `RecordingOverlay.tsx`-effekten fra F2-T1 klarte seg
+ * med «er feltet tomt?» — der var det ETT tall, her er det hele troen).
+ *
+ * Skal ALDRI kastes: `recordingSnapshot()` går gjennom shimmens `call()`, som
+ * svarer `null` når motoren ikke svarer. `null` er «vi vet ikke», ikke «idle»
+ * — da lar vi troen stå.
+ */
+export async function hydrateRecordingState(): Promise<void> {
+  const askedAt = stateGeneration;
+  const snap = await window.api.recordingSnapshot();
+  if (!snap) return;
+  if (!snapshotStillApplies(askedAt, stateGeneration)) return;
+  applyStatePayload(snap);
+}
+
 let dispose: (() => void) | null = null;
 
 /**
@@ -198,41 +315,23 @@ export function initRecording(): () => void {
     window.api.on("recording-overlay-start", () => {
       // Motoren startet en økt vi ikke startet selv (planleggeren, eller en
       // gjenoppretting). Klokken begynner nå — vi vet ikke når den begynte.
+      stateGeneration += 1;
       if (!isRecording.peek()) markSessionStarted();
     }),
     // Kartlagt til `recording://state`, som fyrer på HVER overgang — les
-    // tilstanden, ikke anta «stopp».
+    // tilstanden, ikke anta «stopp». Selve reduksjonen bor i
+    // `applyStatePayload` over, fordi oppstarts-snapshotet skal gjennom den
+    // samme.
     window.api.on("recording-overlay-stop", (data: unknown) => {
-      const payload = data as
-        | { state?: RecorderState; scheduled_stop_ms?: number | null }
-        | undefined;
-      // Fristen rir med på HVER tilstandsemit — også den motoren fyrer bare
-      // fordi fristen flyttet seg. Å ta den imot FØR forgreningen under er det
-      // som gjør nedtellingen bakendens og ikke en lokal gjetning.
-      if (payload && "scheduled_stop_ms" in payload) {
-        scheduledStopMs.value = payload.scheduled_stop_ms ?? null;
-      }
-      const st = payload?.state ?? null;
-      if (st) recorderState.value = st;
-      // ⚠️ Gjenkoblingsstripa ryddes HER, fordi tilstanden er det ene stedet
-      // som VET. Motoren har en egen `reconnecting`-tilstand i sitt eget
-      // vokabular (`RecorderState`), så «recording» betyr beviselig at den er
-      // koblet til igjen — og da er stripa historie, uansett om
-      // `recording://reconnected` kom eller ikke. Se `recording-warning` under
-      // for hvorfor det «eller ikke» er det som gjorde stripa permanent.
-      if (st) reconnecting.value = st === "reconnecting";
-      const live = liveFromRecordingState(st ?? undefined);
-      if (live === null) return;
-      if (live) {
-        // Motoren sier at en økt er LIVE. Tror UI-et noe annet, er det UI-et
-        // som tar feil — ellers står brukeren med et opptak uten stoppknapp
-        // (rigg-hendelsen 2026-07-31).
-        if (!isRecording.peek()) markSessionStarted();
-        return;
-      }
-      endSessionLocally();
+      stateGeneration += 1;
+      applyStatePayload(
+        data as
+          | { state?: RecorderState; scheduled_stop_ms?: number | null }
+          | undefined,
+      );
     }),
     window.api.on("recording-finished", (data: unknown) => {
+      stateGeneration += 1;
       const d = data as
         { path?: string; file_path?: string; has_video?: boolean } | undefined;
       const path = d?.path ?? d?.file_path ?? null;
@@ -248,6 +347,7 @@ export function initRecording(): () => void {
       // TERMINAL: bakenden fyrer `recording://error` bare når økta er over.
       // Forbigående hikst kommer på `recording-warning` og må IKKE rive
       // overlegget ned.
+      stateGeneration += 1;
       const d = data as
         { error?: string; code?: string; message?: string } | undefined;
       endSessionLocally();

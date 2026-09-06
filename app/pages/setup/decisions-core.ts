@@ -113,10 +113,13 @@ export interface DecisionFacts {
    * Språket appen FAKTISK rendrer i (`app/i18n`s `locale`), ikke det som står
    * i `settings.language`.
    *
-   * Fem av de sju katalogene er pauset gjennom redesignet, så en profil som
-   * satte tysk leser engelsk på skjermen. Et kirkekort som svarte «Språk:
-   * tysk» ville sagt noe brukeren kan se med egne øyne at ikke stemmer — og
-   * ville dessuten slått opp en katalognøkkel `app/` ikke har.
+   * De to er like i dag: alle sju språk er aktive (F2-S6), så en profil satt
+   * til tysk LESER tysk. Skillet står fordi det er det ærlige: mens fem
+   * kataloger var pauset leste en tysk profil engelsk, og et kirkekort som
+   * svarte «Språk: tysk» ville sagt noe brukeren kan se med egne øyne at ikke
+   * stemmer. Kortet skal si det som står på skjermen, ikke det som står i
+   * basen — og de to kan skille lag igjen (en pause, en katalog som ikke
+   * lastet, `resolveStartupLocale` som avviser en korrupt verdi).
    */
   locale: string;
   /** Hva måleren hører i dette øyeblikket, eller `null` når ingen lytter. */

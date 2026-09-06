@@ -7,10 +7,9 @@
  * betyr «Preken · 4 min» rett under «… — 3 min 30 s». To tall om det samme,
  * samtidig, på samme skjerm.
  *
- * Tre `tf()`-nøkler og ingen `tn()`: `check-i18n-plurals.mjs` krever hver
- * flertallsgruppe i ALLE sju språk med riktige CLDR-kategorier og har ingen
- * unntak for de fem som er pauset. «s», «min» og «t» er invariante
- * forkortelser i hele tallområdet de faktisk vises for.
+ * Tre `tf()`-nøkler og ingen `tn()`. Pausen var én grunn til det (F2-S6
+ * avsluttet den); den som består er at «s», «min» og «t» er INVARIANTE
+ * forkortelser i alle sju språk, i hele tallområdet de faktisk vises for.
  */
 
 import { tf } from "../i18n";

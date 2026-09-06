@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * i18n-nøkkelgate for `app/` — hver nøkkel finnes, i riktig FORM, i både
- * no.json og en.json. Erstatter fallback-gaten for det nye skallet.
+ * i18n-nøkkelgate for `app/` — hver nøkkel finnes, i riktig FORM, i hver av
+ * de sju katalogene. Erstatter fallback-gaten for det nye skallet.
  *
  * ## Hvorfor en ny gate og ikke den gamle
  *
@@ -25,13 +25,18 @@
  *
  * Ingen av dem kaster. Alle fire ser ut som «teksten mangler bare litt».
  *
- * ## Hvorfor BÅDE no.json og en.json
+ * ## Hvorfor ALLE SJU katalogene
  *
- * `ACTIVE_LOCALES` i `app/i18n/index.ts` er `["no","en"]` gjennom redesignet
- * (de fem andre er PAUSET, se `legacy/locales/parity.test.ts`). Et krav om at
- * nøkkelen finnes i no.json alene ville gjort engelsk til et andrerangs språk
- * som oppdages av en bruker i stedet for av CI — og engelsk er språket
- * halve verden av frivillige leser appen på.
+ * `ACTIVE_LOCALES` i `app/i18n/index.ts` er alle sju siden F2-S6. Et krav om
+ * at nøkkelen finnes i no.json alene ville gjort de seks andre til
+ * andrerangs språk som oppdages av en BRUKER i stedet for av CI — og
+ * kravet må gjelde nøyaktig de språkene appen tilbyr, ellers er det ikke
+ * gaten som bestemmer hva som er oversatt, men flaksen.
+ *
+ * ⚠️ Speiler `ACTIVE_LOCALES`, ikke `ALL_LOCALES`: det som pauses der skal
+ * pauses her i samme bevegelse. `legacy/locales/parity.test.ts` er det andre
+ * halve svaret — den krever hele nøkkelsettet i alle sju katalogene uansett
+ * hvem som er aktiv, så en pause aldri blir til en katalog som råtner.
  *
  * ## `--unused` — FEILENDE siden fase B
  *
@@ -101,9 +106,9 @@ const LIB_DIR = path.join(APP_DIR, "lib");
 
 /**
  * Språkene `app/` er oversatt til NÅ. Speiler `ACTIVE_LOCALES` i
- * `app/i18n/index.ts`; de fem pausete språkene tas opp igjen i fase B.
+ * `app/i18n/index.ts` — alle sju siden F2-S6 (se filhodet).
  */
-const REQUIRED_LOCALES = ["no", "en"];
+const REQUIRED_LOCALES = ["no", "en", "sv", "da", "de", "fr", "pl"];
 
 const CLDR = new Set(["zero", "one", "two", "few", "many", "other"]);
 
@@ -319,7 +324,14 @@ function selfTest() {
   const calls = collectI18nCalls(sf);
   say(calls.length === 11, `vandringen fant ${calls.length} kall, fasit 11`);
 
-  const trees = { no: SELFTEST_TREE, en: SELFTEST_TREE };
+  // Fasiten må dekke NØYAKTIG de språkene gaten krever — bygd fra
+  // `REQUIRED_LOCALES`, ikke skrevet av som `{ no, en }`. Da S6 la til de fem
+  // manglet fixturen dem, og selvtesten meldte fem «feil» i kall som er
+  // korrekte: en selvtest som må håndredigeres hver gang lista vokser blir en
+  // selvtest noen slår av.
+  const trees = Object.fromEntries(
+    REQUIRED_LOCALES.map((l) => [l, SELFTEST_TREE]),
+  );
   const verdicts = calls.map((c) => checkCall(c, trees));
 
   // De fem første er riktige og må være STILLE — en gate som feiler på korrekt
@@ -357,16 +369,11 @@ function selfTest() {
     checkCall({ fn: "tDyn", key: "fix.group", argCount: 2 }, trees).length > 0,
     "flertallsgruppe er ikke et gyldig tDyn-prefiks",
   );
-  // Nøkkelen finnes i no.json, men ikke i en.json: engelsk må ikke kunne
-  // oppdages av en bruker i stedet for av CI.
+  // Nøkkelen finnes i no.json, men ikke i en.json: et av de andre aktive
+  // språkene må ikke kunne oppdages av en bruker i stedet for av CI.
   say(
-    checkCall(
-      { fn: "t", key: "fix.ok", argCount: 1 },
-      {
-        no: SELFTEST_TREE,
-        en: {},
-      },
-    ).length > 0,
+    checkCall({ fn: "t", key: "fix.ok", argCount: 1 }, { ...trees, en: {} })
+      .length > 0,
     "manglende nøkkel i en.json må feile",
   );
 

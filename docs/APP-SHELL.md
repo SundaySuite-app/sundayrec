@@ -212,27 +212,40 @@ This is also why `hydrateError` holds a key **suffix** (`"settingsLoadFailed"`)
 rather than a whole key: a variable holding `"error.settingsLoadFailed"` would
 be invisible to the gate.
 
-### Paused parity
+### Seven active languages, and the pause that is empty
 
-`ACTIVE_LOCALES` is `["no", "en"]` for the duration of the redesign. The other
-five catalogues are **paused, not dropped**: `PAUSED_LOCALES` and `PAUSED_KEYS`
-in `legacy/locales/parity.test.ts` excuse them **only** for keys the redesign
-adds, and only for missing ones — "no extra keys" still holds everywhere, and
-every key that existed before is still required in all seven. Translating the
-same screen four times while it is still moving is how a translator learns to
-stop reading carefully.
+✅ **`ACTIVE_LOCALES` is all seven since F2-S6** (2026-09), in `ALL_LOCALES`
+order — that is the order the picker shows. `PAUSED_KEYS` in
+`legacy/locales/parity.test.ts` is **empty**, `REQUIRED_LOCALES` in
+`check-i18n-keys.mjs` mirrors the active list, and every key is required in
+every catalogue.
 
-✅ **Fase B did half of it, and the useful half first.** 653 keys nothing reads
-were deleted from all seven catalogues before any translating starts — the
-five paused languages dropped sharply, and `PAUSED_KEYS` (the `app.*`
-surface) grew to cover the redesign's new keys since. Both counts keep moving
-as the redesign adds screens — `legacy/locales/parity.test.ts` and `npm run
-i18n-keys -- --list` give today's numbers. PR B is done; the translation
-round itself is what comes next.
+**The rule from S6 on:** a new key goes into all seven catalogues in the same
+PR. An empty value is not a placeholder — it is a blank label in the UI, and
+`t()` never says so.
 
-A stored language outside `ACTIVE_LOCALES` picks the nearest active one
-(`resolveStartupLocale`: sv/da → no, everything else → en) instead of rendering
-the redesigned strings as blanks. Nothing is written back to settings.
+The pause **mechanism** stays, and is the exception someone has to argue for:
+
+- `PAUSED_LOCALES` / `PAUSED_KEYS` (`legacy/locales/parity.test.ts`) excuse a
+  listed language for a listed key, and only for a **missing** one — "no extra
+  keys" holds everywhere regardless, so a language can never carry text
+  `no.json` lacks. The list only ratchets one way.
+- `languageOptions` / `isPausedLanguage` (`app/pages/setup/church-core.ts`) put
+  a stored-but-not-active language in the picker as a disabled row with its
+  real name. Both take the active list as an argument so the branch keeps its
+  tests while nothing is paused.
+
+Why it existed: the redesign tore the copy down and rebuilt it screen by
+screen, and translating the same screen four times while it is still moving is
+how a translator learns to stop reading carefully. Fase B did the useful half
+first — 653 keys nothing reads were deleted from all seven catalogues before
+any translating started — and the round itself landed as #228–#233.
+
+A stored language is now used **as it stands** (`resolveStartupLocale`): a
+profile migrated from legacy with `language: "de"` starts in German. The old
+neighbour-language mapping (sv/da → no, everything else → en) belonged to the
+pause. What the function still does is take `string | null` from the wire type
+and land anything that is not one of the seven on `no`.
 
 ## The two new gates
 
@@ -917,6 +930,14 @@ til `parity.test.ts`. En ny `tn()`-nøkkel ville altså krevd polske og franske
 flertallsformer midt i en pause som finnes for å slippe akkurat det. Så: `tf()`
 med en formulering som er riktig for tallområdet den faktisk viser
 («Miksebord · {n} kanaler» vises bare for n ≥ 3).
+
+✅ **Omgjort i F2-S6.** Pausen er over, og «riktig for tallområdet» viste seg å
+være riktig for NORSK tallområde: den polske oversetteren måtte skrive om alle
+tre til agreement-fri form («Mikser · kanały: {n}») fordi 2–4 og 5+ er hver sin
+substantivform. `app.setup.sound.mixer`, `app.setup.camera.delivers` og
+`app.setup.auto.more` er nå ekte flertallsgrupper i alle sju, lest med `tn()`.
+Lærdommen er generell: et tall limt inn i en setning er ikke en formulering
+man kan velge seg unna — det er en bøyning, og den finnes bare i katalogen.
 
 ## e2e: de fire re-pekte, med byte-identiske titler
 
@@ -2648,7 +2669,7 @@ katalogen, ikke appen.
 | `denied`       | `NotAllowedError`                                          | «Kameratilgang nektet — sjekk Systeminnstillinger»        |
 | `noResponse`   | enhver annen gUM-feil                                      | «Kamera svarte ikke — er det i bruk av et annet program?» |
 | `pickFirst`    | ingenting å vise ennå                                      | `searching` · `noneFound` · `listFailed` · `pickFirst`    |
-| `savedMissing` | lagret navn er ikke i listen                               | «Kamera "{name}" ikke funnet — velg et annet»             |
+| `savedMissing` | lagret navn er ikke i listen                               | `Kamera «{name}» ikke funnet — velg et annet`             |
 | `starting`     | strømmen er bedt om                                        | «Starter kamera…»                                         |
 | `live`         | strømmen er festet                                         | — (merket sier størrelse + fps)                           |
 
@@ -3368,28 +3389,32 @@ av hver sin runde, og en halvrettet tegning er verre enn en tydelig datert. Skal
 de rettes, hører det sammen med en republisering av artefakten. Denne seksjonen
 er den àjour kilden.
 
-## 5. Fem språk venter
+## 5. ✅ Sju språk er ute (F2-S6)
 
-`ACTIVE_LOCALES` er fortsatt `["no", "en"]`. `PAUSED_KEYS` i
-`legacy/locales/parity.test.ts` unnskylder nøkler i sv/da/de/fr/pl. Fase B
-ryddet 653 DØDE nøkler ut av alle sju katalogene først, nettopp så
-oversettelsesrunden ikke går på tekst ingen ser. Tallene endres —
+`ACTIVE_LOCALES` er alle sju, `PAUSED_KEYS` er tom, og `REQUIRED_LOCALES` i
+`check-i18n-keys.mjs` speiler den aktive lista — en manglende nøkkel i pl.json
+er en CI-feil, ikke noe en polsk frivillig oppdager. Fase B ryddet 653 DØDE
+nøkler ut av alle sju katalogene først, nettopp så oversettelsesrunden ikke
+gikk på tekst ingen ser; runden selv landet som #228–#233. Tallene endres —
 `legacy/locales/parity.test.ts` og `npm run i18n-keys -- --list` gir dagens.
-PR B er ute; oversettelsesrunden er neste.
+Detaljene om mekanismen står under «Seven active languages» lenger oppe.
 
 **V1 PR4 (stale tekster)** rettet ni no/en-verdier som pekte på flater D2/D3
 fjernet («Oppsett» som stedsnavn, «eksportvinduet», «Innstillinger → System»,
 en foreldet «historikk»-påstand i `importBody`). Fem av nøklene
 (`app.setup.advanced.schedDesc`, `schedFirstIsSetup`, `importBody`,
-`app.first.readyDesc`, `app.banner.missedHelp`) står allerede i `PAUSED_KEYS`,
-så oversettelsesrunden får den RETTEDE ordlyden rett fra start — ingen
-dobbeltoversettelse. De tre resterende (`editor.errInvalidFormat`,
+`app.first.readyDesc`, `app.banner.missedHelp`) stod den gangen i
+`PAUSED_KEYS`, så oversettelsesrunden fikk den RETTEDE ordlyden rett fra start
+— ingen dobbeltoversettelse. De tre resterende (`editor.errInvalidFormat`,
 `recording.errorNoSaveFolder`, `onboarding.promptDesc`) fantes FØR redesignet
-og er IKKE pauset — sv/da/de/fr/pl har dem fortsatt, men med den GAMLE
-ordlyden (peker på «eksportvinduet» / «Settings → Recording» /
-«Settings → System»). Paritetstesten sammenligner bare NØKKELSETT, ikke
-verdi, så dette er stille — de tre trenger en liten resynk når
-oversettelsesrunden tar sv/da/de/fr/pl.
+og var IKKE pauset, så sv/da/de/fr/pl bar dem videre med den GAMLE ordlyden.
+Paritetstesten sammenligner bare NØKKELSETT, ikke verdi, så det var stille.
+✅ **Resynket i S6** — de tre er skrevet om i alle fem språkene.
+
+⚠️ Det er den generelle formen på hullet: **en verdi som endrer seg etter at et
+språk er oversatt, er usynlig for enhver gate vi har.** Paritet ser nøkkelsett,
+flertallsgaten ser kategorier, nøkkelgaten ser at det står en streng der. Den
+som retter en no/en-tekst må selv spørre om de seks andre nå sier noe annet.
 
 ## 6. ✅ PR B: inventaret er flyttet
 

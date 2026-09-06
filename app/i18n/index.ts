@@ -65,36 +65,49 @@ export const ALL_LOCALES: readonly Locale[] = [
 ];
 
 /**
- * Språkene `app/` faktisk tilbyr i språkvelgeren gjennom redesignet.
+ * Språkene `app/` faktisk tilbyr i språkvelgeren.
  *
- * De fem andre er PAUSET, ikke fjernet: katalogene ligger der, legacy-skallet
- * bruker dem, og fase B tar dem opp igjen. Begrunnelsen og listen over hvilke
- * nøkler pausen gjelder står i `legacy/locales/parity.test.ts`
- * (`PAUSED_LOCALES` / `PAUSED_KEYS`) — ett sted, ved siden av testen som
- * håndhever den.
+ * ALLE SJU siden F2-S6 (2026-09): språkrunden fylte sv/da/de/fr/pl med hele
+ * nøkkelsettet, og `PAUSED_KEYS` i `legacy/locales/parity.test.ts` er tom.
+ * Rekkefølgen er den samme som `ALL_LOCALES` — det er den valgboksen viser.
+ *
+ * At de to listene er like NÅ er en tilstand, ikke en sannhet. PAUSE-
+ * mekanismen står (`PAUSED_LOCALES` / `PAUSED_KEYS` der, `languageOptions` /
+ * `isPausedLanguage` i `app/pages/setup/church-core.ts`), fordi et språk som
+ * ikke rekker en runde skal kunne tas ut herfra uten at noen må finne opp
+ * håndteringen på nytt. Derfor er dette fortsatt sin egen liste og ikke et
+ * alias for `ALL_LOCALES`.
  */
-export const ACTIVE_LOCALES: readonly Locale[] = ["no", "en"];
+export const ACTIVE_LOCALES: readonly Locale[] = [
+  "no",
+  "en",
+  "sv",
+  "da",
+  "de",
+  "fr",
+  "pl",
+];
 
 /**
  * Hvilket språk skallet skal starte på, gitt det som står lagret.
  *
- * Legacy gjør `settings.language ?? 'no'` og er ferdig. Det kan ikke `app/`
- * gjøre så lenge de fem andre språkene er PAUSET: en bruker som satte tysk i
- * det gamle skallet ville fått et nytt skall der de redesignede tekstene er
- * TOMME — `t()` svarer med tom streng for en nøkkel som ikke finnes, så
- * skjermen ville sett halvferdig ut uten å si hvorfor.
+ * Alle sju er aktive, så et lagret språk som er ett av dem brukes NÅ direkte —
+ * en profil migrert fra legacy med tysk starter på tysk. Nabospråk-mappingen
+ * (sv/da → no, resten → en) hørte pausen til: den fantes fordi et pauset språk
+ * ville rendret de redesignede nøklene som TOM tekst, og `t()` sier ikke fra
+ * når en nøkkel mangler. Nå finnes teksten, så det er ingenting å skjerme mot.
  *
- * Så vi velger et aktivt språk i stedet, og velger det nærmeste:
- * svensk og dansk går til norsk (nabospråk, og det er den nordiske
- * menighetsvirkeligheten), resten går til engelsk. Ingenting skrives til
- * innstillingene — det lagrede valget står, og fase B tar det i bruk igjen.
+ * Funksjonen består likevel, og gjør fortsatt det ingen `?? 'no'` gjør:
+ * `settings.language` er `string | null` i wire-typen, ikke innsnevret til de
+ * sju kodene. En korrupt eller håndredigert rad ender på «no» her, i stedet
+ * for å bli sendt videre som en kode ingen katalog har.
  */
 export function resolveStartupLocale(stored: string | null): Locale {
   if (!stored) return "no";
   if ((ACTIVE_LOCALES as readonly string[]).includes(stored)) {
     return stored as Locale;
   }
-  return stored === "sv" || stored === "da" ? "no" : "en";
+  return "no";
 }
 
 /**
