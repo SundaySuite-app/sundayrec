@@ -1360,8 +1360,10 @@ mod tests {
     fn clip_samples(path: &Path) -> Vec<i16> {
         let bytes = std::fs::read(path).expect("clip readable");
         bytes[wav::HEADER_LEN..]
-            .chunks_exact(2)
-            .map(|s| i16::from_le_bytes([s[0], s[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|s| i16::from_le_bytes(*s))
             .collect()
     }
 
@@ -1430,7 +1432,7 @@ mod tests {
         assert_eq!(*s.last().unwrap(), 0, "the clip must END at silence");
         // Both channels of the last real frame carry the SAME factor: an
         // interleaved ramp indexed by sample would split L and R apart.
-        for f in tail.chunks_exact(2) {
+        for f in tail.as_chunks::<2>().0 {
             assert_eq!(f[0], f[1], "L and R drifted apart inside the fade");
         }
     }

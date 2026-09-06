@@ -301,12 +301,12 @@ pub fn fade_out_tail_s16le(tail: &mut [u8], channels: u16) {
     let denom = frames as f32;
     for (i, frame) in tail.chunks_exact_mut(bytes_per_frame).enumerate() {
         let gain = (frames - 1 - i) as f32 / denom;
-        for sample in frame.chunks_exact_mut(2) {
-            let v = i16::from_le_bytes([sample[0], sample[1]]);
+        for sample in frame.as_chunks_mut::<2>().0 {
+            let v = i16::from_le_bytes(*sample);
             // `gain` is in [0, 1), so the product can never leave i16 range;
             // `clamp` is belt-and-braces against a future non-linear curve.
             let scaled = (f32::from(v) * gain).round().clamp(-32_768.0, 32_767.0);
-            sample.copy_from_slice(&(scaled as i16).to_le_bytes());
+            *sample = (scaled as i16).to_le_bytes();
         }
     }
 }
@@ -751,8 +751,10 @@ mod tests {
 
     /// Read an interleaved s16-LE payload back as samples.
     fn samples(pcm: &[u8]) -> Vec<i16> {
-        pcm.chunks_exact(2)
-            .map(|s| i16::from_le_bytes([s[0], s[1]]))
+        pcm.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|s| i16::from_le_bytes(*s))
             .collect()
     }
 
@@ -817,7 +819,7 @@ mod tests {
         }
         fade_out_tail_s16le(&mut pcm, 2);
         let out = samples(&pcm);
-        for (i, f) in out.chunks_exact(2).enumerate() {
+        for (i, f) in out.as_chunks::<2>().0.iter().enumerate() {
             let gain = (frames - 1 - i) as f32 / frames as f32;
             assert_eq!(f[0], (8_000.0 * gain).round() as i16, "L at frame {i}");
             assert_eq!(f[1], (-8_000.0 * gain).round() as i16, "R at frame {i}");
@@ -861,7 +863,7 @@ mod tests {
         let mut pcm = flat_pcm(96, 2, i16::MIN);
         fade_out_tail_s16le(&mut pcm, 2);
         let out = samples(&pcm);
-        assert!(out.iter().all(|&s| s <= 0 && s >= i16::MIN));
+        assert!(out.iter().all(|&s| s <= 0), "a sample flipped sign");
         assert_eq!(*out.last().unwrap(), 0);
     }
 
