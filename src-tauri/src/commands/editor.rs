@@ -307,11 +307,10 @@ pub async fn editor_export(
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
-    crate::telemetry::counters::count(export_counter_for_format(&request.format));
     // v0.15: hardware video encode is automatic — hardware first where the
     // platform has it, software on a failed render (the `editorHwEncode`
     // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
-    editor::export(
+    let result = editor::export(
         &engine,
         &request,
         editor::HW_ENCODE_FIRST,
@@ -325,7 +324,15 @@ pub async fn editor_export(
             );
         },
     )
-    .await
+    .await?;
+    // Counted HERE, after `editor::export` actually produced a file —
+    // `CounterName::EditorExportMp3`'s own doc comment promises "an export
+    // that FINISHED, by delivered format". Counting before the render ran (as
+    // this did until F2-A-A) counted every ATTEMPT — a cancelled export, a
+    // full disk, a missing input — as if it had been delivered, inflating the
+    // number against the very question the counter exists to answer.
+    crate::telemetry::counters::count(export_counter_for_format(&request.format));
+    Ok(result)
 }
 
 /// Abort the in-flight export (kills the render's ffmpeg). Returns whether one
