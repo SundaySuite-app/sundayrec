@@ -389,11 +389,10 @@ pub fn plan_pass2(m: &LoudnessMeasurement, preset: &MasterPreset) -> Pass2Plan {
         .max(measured.input_lra.ceil())
         .clamp(FF_LRA_MIN, FF_LRA_MAX);
 
-    // 2. The sentinel repair.
+    // 2. The sentinel repair (and ffmpeg's own `measured_LRA` ceiling).
     measured.input_lra = measured
         .input_lra
-        .max(LRA_SENTINEL_FLOOR)
-        .min(FF_MEASURED_LRA_MAX);
+        .clamp(LRA_SENTINEL_FLOOR, FF_MEASURED_LRA_MAX);
 
     // 3. The gain, capped by the ceiling.
     let wanted = preset.target_lufs - measured.input_i;
@@ -876,14 +875,12 @@ mod tests {
     fn rejects_block_with_non_finite_measurement() {
         // An overflowing token parses to a non-finite f64; the is_finite guard must
         // reject the block rather than hand back inf/NaN loudness.
-        let block =
-            r#"{ "input_i" : "1e400", "input_tp" : "-2.0", "input_lra" : "9.0",
+        let block = r#"{ "input_i" : "1e400", "input_tp" : "-2.0", "input_lra" : "9.0",
                  "input_thresh" : "-30.0" }"#;
         assert!(parse_loudnorm_json(block).is_none());
         // …and the same for a non-finite LRA or threshold: those two are what
         // decide whether linear mode is even possible.
-        let bad_lra =
-            r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_lra" : "1e400",
+        let bad_lra = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_lra" : "1e400",
                  "input_thresh" : "-30.0" }"#;
         assert!(parse_loudnorm_json(bad_lra).is_none());
     }

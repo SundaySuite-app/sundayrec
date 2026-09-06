@@ -4968,7 +4968,10 @@ mod tests {
                 name,
                 secs,
                 // −39 dBFS / −24 dBFS on lavfi's −18.06 dBFS sine.
-                &format!("if(lt(mod(t,{}),{step_secs}),0.0891,0.5012)", step_secs * 2.0),
+                &format!(
+                    "if(lt(mod(t,{}),{step_secs}),0.0891,0.5012)",
+                    step_secs * 2.0
+                ),
             )
         }
 
