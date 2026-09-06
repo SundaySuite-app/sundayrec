@@ -2669,7 +2669,7 @@ katalogen, ikke appen.
 | `denied`       | `NotAllowedError`                                          | «Kameratilgang nektet — sjekk Systeminnstillinger»        |
 | `noResponse`   | enhver annen gUM-feil                                      | «Kamera svarte ikke — er det i bruk av et annet program?» |
 | `pickFirst`    | ingenting å vise ennå                                      | `searching` · `noneFound` · `listFailed` · `pickFirst`    |
-| `savedMissing` | lagret navn er ikke i listen                               | «Kamera "{name}" ikke funnet — velg et annet»             |
+| `savedMissing` | lagret navn er ikke i listen                               | `Kamera «{name}» ikke funnet — velg et annet`             |
 | `starting`     | strømmen er bedt om                                        | «Starter kamera…»                                         |
 | `live`         | strømmen er festet                                         | — (merket sier størrelse + fps)                           |
 

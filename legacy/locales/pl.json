@@ -1063,7 +1063,7 @@
   "health": {
     "micDenied": "Odmówiono dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność i ochrona → Mikrofon i włącz SundayRec.",
     "micRestricted": "Dostęp do mikrofonu jest zablokowany przez administratora systemu lub kontrolę rodzicielską. Nagrywanie nie zadziała, dopóki blokada nie zostanie zdjęta.",
-    "cameraDenied": "Odmówiono dostępu do kamery. Otwórz Ustawienia systemowe → Prywatność i ochrona → Aparat i włącz SundayRec.",
+    "cameraDenied": "Odmówiono dostępu do kamery. Otwórz Ustawienia systemowe → Prywatność i ochrona → Kamera i włącz SundayRec.",
     "cameraRestricted": "Dostęp do kamery jest zablokowany przez administratora systemu lub kontrolę rodzicielską. Nagrywanie wideo nie zadziała, dopóki blokada nie zostanie zdjęta.",
     "ffmpegMissing": "Nie znaleziono wbudowanego silnika dźwięku (ffmpeg). Wideo, eksport i edycja nie będą działać — zainstaluj aplikację ponownie."
   },

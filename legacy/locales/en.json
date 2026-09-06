@@ -91,7 +91,7 @@
         "listError": "Error loading",
         "listFailed": "Could not get the camera list — check permissions",
         "pickFirst": "Choose a camera to see the picture",
-        "savedMissing": "Camera \"{name}\" not found — choose another",
+        "savedMissing": "Camera “{name}” not found — choose another",
         "starting": "Starting camera…",
         "denied": "Camera access denied — check System Settings",
         "noResponse": "Camera not responding — is another app using it?"
@@ -392,10 +392,10 @@
         "wakeArmWord": {
           "idle": "Register the wake-up with the operating system now. May ask for an administrator password.",
           "ok": "The wake-up is registered with the operating system.",
-          "autoRecordOff": "No wake-ups to register — «Record automatically» is off.",
+          "autoRecordOff": "No wake-ups to register — “Record automatically” is off.",
           "nothingUpcoming": "No wake-ups to register — nothing is scheduled ahead.",
           "needsAdmin": "Needs an administrator password — try again and answer the prompt.",
-          "disabled": "Turn on «Wake the machine from sleep» first.",
+          "disabled": "Turn on “Wake the machine from sleep” first.",
           "unsupported": "This machine cannot be woken by the app.",
           "cancelled": "You cancelled — nothing was registered.",
           "failed": "The wake-up was not registered."
@@ -486,7 +486,7 @@
         },
         "audio02": {
           "title": "The chosen audio device was not found",
-          "hint": "Connect the device, or pick another one under «Which sound?» on Record."
+          "hint": "Connect the device, or pick another one under “Which sound?” on Record."
         },
         "audio10": {
           "title": "Fell back to the classic audio engine",
@@ -494,11 +494,11 @@
         },
         "rate01": {
           "title": "A fixed sample rate is selected",
-          "hint": "If the sound card runs a different rate, ffmpeg resamples and you can get stutter. Choose «Auto» again unless you have a concrete reason."
+          "hint": "If the sound card runs a different rate, ffmpeg resamples and you can get stutter. Choose “Auto” again unless you have a concrete reason."
         },
         "video01": {
           "title": "Video is on, but no camera was found",
-          "hint": "Connect the camera, or turn off «Include camera» on Record."
+          "hint": "Connect the camera, or turn off “Include camera” on Record."
         },
         "video02": {
           "title": "The camera gave no picture",
@@ -510,7 +510,7 @@
         },
         "disk02": {
           "title": "Cannot write to the save folder",
-          "hint": "Choose a folder you can write to under «Where is the recording saved?» on Record."
+          "hint": "Choose a folder you can write to under “Where do recordings go?” on Record."
         },
         "perm01": {
           "title": "Microphone access is denied",
@@ -526,11 +526,11 @@
         },
         "capture01": {
           "title": "The last recording showed signs of stutter",
-          "hint": "Close other heavy programs, check the cable and power to the sound card, and that the sample rate is on «Auto». Then record again and see whether the numbers drop."
+          "hint": "Close other heavy programs, check the cable and power to the sound card, and that the sample rate is on “Auto”. Then record again and see whether the numbers drop."
         },
         "capture02": {
           "title": "The sound test got no sound",
-          "hint": "Check that the right device is chosen under «Which sound?» on Record, that the cable is in, and that no other program is holding the microphone. Then run the diagnosis again."
+          "hint": "Check that the right device is chosen under “Which sound?” on Record, that the cable is in, and that no other program is holding the microphone. Then run the diagnosis again."
         },
         "crash01": {
           "title": "The app has crashed",
@@ -772,7 +772,7 @@
     "undoFailed": "Could not bring everything back — check the trash.",
     "restoreFailed": "Could not restore",
     "deleteForever": "Delete for good",
-    "confirmPurgeOne": "Delete «{name}» for good?",
+    "confirmPurgeOne": "Delete “{name}” for good?",
     "confirmEmpty": {
       "one": "Delete {n} recording for good?",
       "other": "Delete {n} recordings for good?"
@@ -862,7 +862,7 @@
     "analyzeSpeech": "Speech segments",
     "analyzeMusic": "Music segments",
     "analyzeSilence": "Silence",
-    "layersNotAnalyzed": "Run «Analyse recording» under Clip tools to see speech, music and silence here.",
+    "layersNotAnalyzed": "Run “Analyse recording” under Clip tools to see speech, music and silence here.",
     "markSermon": "↦ Mark sermon automatically",
     "markSermonHint": "Trims everything before and after the highlighted sermon block.",
     "analyzedAt": "Last analyzed",

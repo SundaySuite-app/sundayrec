@@ -1082,7 +1082,7 @@ test.describe("kamera-preview på Opptak", () => {
       "savedMissing",
     );
     await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
-      'Kamera "Blackmagic ATEM" ikke funnet — velg et annet',
+      "Kamera «Blackmagic ATEM» ikke funnet — velg et annet",
     );
   });
 

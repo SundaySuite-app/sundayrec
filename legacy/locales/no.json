@@ -91,7 +91,7 @@
         "listError": "Feil ved lasting",
         "listFailed": "Kunne ikke hente kameraliste — sjekk tillatelser",
         "pickFirst": "Velg et kamera for å se bildet",
-        "savedMissing": "Kamera \"{name}\" ikke funnet — velg et annet",
+        "savedMissing": "Kamera «{name}» ikke funnet — velg et annet",
         "starting": "Starter kamera…",
         "denied": "Kameratilgang nektet — sjekk Systeminnstillinger",
         "noResponse": "Kamera svarte ikke — er det i bruk av et annet program?"
@@ -144,7 +144,7 @@
         "free": "{gb} GB ledig",
         "space": "{gb} GB ledig · plass til {hours} t",
         "unknownSpace": "Vi vet ikke hvor mye plass det er igjen her.",
-        "none": "Opptakene har ingen plass å ligge",
+        "none": "Opptakene har ingen plass å ligge på",
         "noneDesc": "Velg en mappe på denne maskinen. Uten den kan ikke appen ta opp."
       },
       "qualityLede": "Høyere kvalitet gir større filer. De fleste blir stående på God.",
@@ -490,14 +490,14 @@
         },
         "audio10": {
           "title": "Falt tilbake til klassisk lydmotor",
-          "hint": "Opptak virker fortsatt. Vil du ha den moderne motoren, sjekk driveren og at ingen andre programmer holder enheten."
+          "hint": "Opptak virker fortsatt. Vil du ha den moderne motoren, så sjekk driveren og at ingen andre programmer holder enheten."
         },
         "rate01": {
           "title": "Fast samplingsrate er valgt",
           "hint": "Kjører lydkortet en annen rate, regner ffmpeg om og du kan få hakking. Velg «Auto» igjen med mindre du har en konkret grunn."
         },
         "video01": {
-          "title": "Video er på, men ingen kamera ble funnet",
+          "title": "Video er på, men ikke noe kamera ble funnet",
           "hint": "Koble til kameraet, eller slå av «Ta med kamera» på Opptak."
         },
         "video02": {
@@ -510,7 +510,7 @@
         },
         "disk02": {
           "title": "Kan ikke skrive til lagringsmappen",
-          "hint": "Velg en mappe du har skrivetilgang til i «Hvor lagres opptaket?» på Opptak."
+          "hint": "Velg en mappe du har skrivetilgang til i «Hvor skal opptakene?» på Opptak."
         },
         "perm01": {
           "title": "Mikrofontilgang er nektet",
