@@ -289,11 +289,32 @@ export function setSermonWindow(next: Range, applied: boolean): void {
   syncSuggestion();
 }
 
-/** Legg tilbake kuttene fra en økt som ble avbrutt. Ingen `markDirty` her —
- *  de var allerede lagret som et utkast, og et opptak som ÅPNER som «ulagret»
- *  ville spurt om bekreftelse ved lukking uten at noen hadde gjort noe. */
+/**
+ * Legg tilbake kuttene fra en økt som ble avbrutt. Ingen `markDirty` her —
+ * de var allerede lagret som et utkast, og et opptak som ÅPNER som «ulagret»
+ * ville spurt om bekreftelse ved lukking uten at noen hadde gjort noe.
+ *
+ * ## F2-12: klemmes til `E.duration`, akkurat som et nytt kutt
+ *
+ * `loader.ts` filtrerer utkastet bare på `end > start` — et kutt som sluttet
+ * etter varigheten (fila ble kortet ned, eller lest med feil probe, mellom
+ * økten som skrev utkastet og denne) kom rett inn i `E.cuts` uklemt. Kuttet
+ * telte likevel med i `keptDuration`, som da tegnet et framdriftstall som
+ * aldri kunne nå 100 og drev opp den anslåtte gjenværende tiden.
+ *
+ * Fiksen går gjennom `addCutToList` — SAMME funksjon `addCut` bruker for et
+ * kutt fra en dra-operasjon — i stedet for en egen kopi av klemme-regelen:
+ * den klemmer til `[0, E.duration]` OG forkaster det som blir kortere enn
+ * `MIN_CUT_LENGTH_SEC` etter klemmingen, og fletter som den går. Rekkefølgen
+ * spiller ingen rolle — `mergeCuts` sorterer uansett — så resultatet er
+ * identisk med å klemme hele lista og flette den én gang.
+ */
 export function restoreDraftCuts(list: Cut[]): void {
-  E.cuts = mergeCuts(list);
+  let restored: Cut[] = [];
+  for (const c of list) {
+    restored = addCutToList(restored, c.start, c.end, E.duration) ?? restored;
+  }
+  E.cuts = restored;
   E.cutHistory = [E.cuts.map((c) => ({ ...c }))];
   E.cutHistoryIdx = 0;
   E.applied = E.cuts.length > 0;

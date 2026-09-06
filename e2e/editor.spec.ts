@@ -894,6 +894,45 @@ test.describe("editor", () => {
     await expect(page.getByTestId("editor-export-go")).toBeVisible();
   });
 
+  // F2-A-A: granskningens funn. En eksport som feiler med en kode ingen av
+  // radene i `EXPORT_ERROR_KEYS` kjenner (en USB-pinne trukket ut, en
+  // ffmpeg-klage appen ikke har en setning for …) viste FØR denne fiksen
+  // INGENTING — baren forsvant, og skjemaet sto der som om ingenting hadde
+  // skjedd. Ingen banner, ingen toast, ingen logglinje.
+  test("en eksport som feiler med en ukjent kode viser den generelle setningen, ikke ingenting", async ({
+    page,
+  }) => {
+    await openEditor(page, { editor_export: EXPORT_HELD });
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await goToExport(page);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exporting")).toBeVisible();
+
+    // Bakenden feiler av en grunn appen ikke har en kode for.
+    await page.evaluate(() =>
+      (
+        window as unknown as {
+          __E2E_FINISH_EXPORT__?: (err: string) => void;
+        }
+      ).__E2E_FINISH_EXPORT__?.(
+        "recording error: ffmpeg failed: en helt uventet ffmpeg-klage",
+      ),
+    );
+
+    await expect(page.getByTestId("editor-exporting")).toHaveCount(0);
+    const banner = page.getByTestId("editor-export-error");
+    await expect(banner).toBeVisible();
+    // Den generelle setningen — ikke en råstreng fra ffmpeg, og ikke stillhet.
+    await expect(banner).toContainText("Eksporten stoppet");
+    // Rødt, ikke nøytralt: dette er ikke brukeren som ba om noe.
+    await expect(banner).toHaveAttribute("data-tone", "bad");
+    // Ingen kvittering for en fil som ikke ble skrevet, og valgene står, så
+    // «prøv igjen» er ett klikk — som ved en avbrutt eksport.
+    await expect(page.getByTestId("editor-exported")).toHaveCount(0);
+    await expect(page.getByTestId("editor-export-go")).toBeVisible();
+  });
+
   test("kvitteringen viser bakendens filnavn, og «i annet format» tar deg tilbake", async ({
     page,
   }) => {

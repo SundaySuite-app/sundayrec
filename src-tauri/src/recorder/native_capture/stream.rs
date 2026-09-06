@@ -645,6 +645,11 @@ mod tests {
     #[test]
     fn default_host_opens_everywhere() {
         // The default host must open on every platform (CoreAudio/WASAPI).
+        // F2-W7: unlike the enumeration calls (`.default_input_device()`,
+        // `.input_devices()`) that crash the process on windows-latest (see
+        // PR #231), `cpal::default_host()` itself does not touch COM/WASAPI
+        // in cpal 0.17's Windows backend — left ungated to test that
+        // distinction rather than assumed.
         assert!(open_host(CpalHostKind::Default).is_ok());
     }
 }

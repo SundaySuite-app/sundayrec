@@ -354,12 +354,33 @@ pub fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// The cross-volume half of [`move_file`], split out so it can be tested on its
 /// own (a same-volume `rename` in a temp dir would never reach it).
+///
+/// ## F2-5: a copy that lands but cannot unlink its source
+///
+/// [`move_into_trash`] journals the entry BEFORE this runs (invariant 3), on
+/// the promise that a failed move leaves no bytes sitting at `trashed_path` —
+/// that is what lets [`list`] heal a half-finished move by dropping the entry.
+/// A source Windows still holds a handle on breaks that promise on its own:
+/// the copy succeeds, and only the unlink refuses. Left alone, that strands a
+/// real file at `trashed_path` — `list()` keeps the entry (it exists!), the
+/// history row is hidden as trashed, and the ORIGINAL is still sitting where
+/// it was, invisible to both. So: an unlink failure undoes the copy before
+/// returning the error, which puts the entry back in the shape `list()`
+/// already knows how to heal — a `trashed_path` that names nothing.
 pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
     if let Some(parent) = to.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::copy(from, to)?;
-    std::fs::remove_file(from)
+    if let Err(e) = std::fs::remove_file(from) {
+        // The copy landed but the source would not let go. Remove the copy
+        // rather than leave two live copies (one the caller thinks moved, one
+        // that never left) — best-effort, since a `to` that also refuses to
+        // unlink is the original problem restated, not a new one to surface.
+        let _ = std::fs::remove_file(to);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// `(dir, stem)` for a media path, or `None` when the path has neither.
@@ -995,6 +1016,66 @@ mod tests {
         // Put the modes back or the temp dir cannot clean itself up.
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
         fs::set_permissions(&media, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(media.is_file(), "the recording never left the library");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_copy_that_lands_but_cannot_unlink_its_source_leaves_no_trace() {
+        // F2-5: the OTHER half of the fallback failing. Here the COPY succeeds
+        // (the file itself is readable) and only the unlink refuses (the
+        // directory it lives in is not writable) — the shape a Windows handle
+        // still open on the source produces. Before the fix this stranded a
+        // real file at `trashed_path`: `list()` kept the entry because the
+        // file was really there, hiding the history row while the original
+        // sat untouched and unlisted in its folder.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        let media = locked.join("take.mp3");
+        fs::write(&media, b"audio bytes").unwrap();
+
+        // Readable file (so the copy succeeds) in an unwritable directory (so
+        // the unlink that follows is refused).
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Root ignores directory write bits; there is nothing to prove there.
+        let enforced = fs::write(locked.join("probe.tmp"), b"x").is_err();
+        if enforced {
+            let entries = move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]);
+            assert!(entries.is_err(), "the move should have refused");
+            assert_eq!(
+                read_manifest(dir.path()).len(),
+                1,
+                "journalled before the move, same as the other half"
+            );
+            assert!(
+                list(dir.path()).is_empty(),
+                "…and the listing drops it: trashed_path names nothing"
+            );
+            assert!(
+                read_manifest(dir.path()).is_empty(),
+                "…the manifest was rewritten, not just filtered"
+            );
+            // The load-bearing assertion: the fix undoes the copy. Without it
+            // the trash directory holds a real file the (now-empty) manifest
+            // no longer names — exactly the leak F2-5 reported.
+            let leftovers: Vec<String> = fs::read_dir(trash_dir(dir.path()))
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n != MANIFEST)
+                .collect();
+            assert!(
+                leftovers.is_empty(),
+                "the copy should have been undone, found {leftovers:?}"
+            );
+        }
+
+        // Put the mode back or the temp dir cannot clean itself up.
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
         assert!(media.is_file(), "the recording never left the library");
     }
 

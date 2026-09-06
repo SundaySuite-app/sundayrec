@@ -445,16 +445,33 @@ mod tests {
 
     #[test]
     fn derive_temp_path_places_temps_next_to_output() {
+        // F2-W7: `derive_temp_path` returns a STRING through `Path::join`, so
+        // its separator is the PLATFORM's (`\` on Windows) — the expected
+        // values are built the same way, through `Path::join`, rather than as
+        // forward-slash literals, so the test stays correct on both without a
+        // `cfg!` branch. A hardcoded `"/recordings/…"` passed on macOS/Linux
+        // and failed the first time this ran on Windows (PR #231).
+        let want = |name: &str| {
+            std::path::Path::new("/recordings")
+                .join(name)
+                .to_string_lossy()
+                .into_owned()
+        };
         let v = derive_temp_path("/recordings/service.mp4", "_vtmp", "mp4");
         let a = derive_temp_path("/recordings/service.mp4", "_atmp", "m4a");
-        assert_eq!(v, "/recordings/service_vtmp.mp4");
-        assert_eq!(a, "/recordings/service_atmp.m4a");
+        assert_eq!(v, want("service_vtmp.mp4"));
+        assert_eq!(a, want("service_atmp.m4a"));
     }
 
     #[test]
     fn derive_temp_path_handles_no_extension() {
         let v = derive_temp_path("/recordings/service", "_vtmp", "mp4");
-        assert_eq!(v, "/recordings/service_vtmp.mp4");
+        assert_eq!(
+            v,
+            std::path::Path::new("/recordings")
+                .join("service_vtmp.mp4")
+                .to_string_lossy()
+        );
     }
 
     #[test]

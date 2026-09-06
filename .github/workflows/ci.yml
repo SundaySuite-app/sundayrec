@@ -369,15 +369,21 @@ jobs:
           path: test-results/
           retention-days: 14
 
-  # Windows compile check — closes the "ubuntu-only CI" blind spot: the
+  # Windows check + test — closes the "ubuntu-only CI" blind spot: the
   # recorder's Windows halves (windows-sys job objects, cpal WASAPI paths,
-  # dshow arg builders, seek_write in the WAV writer) only COMPILE on a
-  # Windows target, and a PR with a merge conflict once shipped a Windows
-  # build break that ubuntu could never have caught. cargo check + clippy
-  # only (no tests, no bundle — release.yml builds the real installer), so
-  # the job stays fast. The repo is public → Actions minutes are free.
+  # dshow arg builders, seek_write in the WAV writer) only COMPILED on a
+  # Windows target until F2-W7, and a PR with a merge conflict once shipped a
+  # Windows build break that ubuntu could never have caught. No bundle here —
+  # release.yml builds the real installer — so the job stays reasonably fast.
+  # The repo is public → Actions minutes are free.
+  #
+  # F2-W7: `cargo test --workspace` now runs too (below), so the tests that
+  # were standing "rig" without needing to be — seek_write, logfile rotation,
+  # write_atomic's rename-over-existing-file, the trash rename fallback,
+  # path_guard, history::path_under's Windows arm — actually execute on
+  # Windows in CI, not just compile.
   windows-check:
-    name: Windows cargo check
+    name: Windows check + test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -407,6 +413,18 @@ jobs:
         run: |
           cargo check --workspace --all-targets
           cargo clippy --workspace --all-targets -- -D warnings
+
+      # F2-W7: the actual test suite, not just a compile check. Deliberately
+      # NOT `SUNDAYREC_REQUIRE_SIDECAR=1` (unlike the ubuntu `check` job above)
+      # — the sidecars this job stubs above are 0-byte files that satisfy
+      # tauri-build's existence check but cannot run, so the real-ffmpeg
+      # `_or_skips` tests must take their tolerant skip path here rather than
+      # be forced to panic on a lane that never has a real binary. Downloading
+      # the real ~80 MB Windows ffmpeg the way release.yml does is not worth
+      # the per-run cost just for this lane.
+      - name: cargo test (workspace)
+        working-directory: src-tauri
+        run: cargo test --workspace
 
       # Approximate the Windows RELEASE feature combo (release.yml builds
       # --no-default-features --features editor,tray,asio,updater,email;

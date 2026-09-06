@@ -2868,10 +2868,7 @@ where
     // software. The user only asked for "faster"; they must not lose the export
     // over it. A user cancel or the kill-timer is NOT an encoder failure — a
     // retry would ignore the cancel, or spend the timeout budget twice.
-    let hard_abort = matches!(&result, Err(e) if {
-        let s = e.to_string();
-        s.contains("cancelled") || s.contains("timeout")
-    });
+    let hard_abort = is_hard_abort(&result);
     if !hard_abort && sundayrec_core::editor::should_retry_with_software(want_hw, result.is_ok()) {
         tracing::warn!(
             error = %result.as_ref().err().map(|e| e.to_string()).unwrap_or_default(),
@@ -2920,6 +2917,24 @@ fn bail_if_cancelled(engine: &ExportEngine) -> AppResult<()> {
         return Err(AppError::Recording("cancelled".into()));
     }
     Ok(())
+}
+
+/// Whether an export failure is the user's own cancel or the kill-timer —
+/// either one MUST skip the software retry: retrying a cancelled render
+/// ignores the cancel, and retrying after a timeout spends the whole time
+/// budget twice. [`bail_if_cancelled`] (above) and `run_export_ffmpeg`'s own
+/// two arms all produce ONE bare code, always, with nothing appended —
+/// matching it EXACTLY, not a substring of the rendered `Display` string,
+/// means the OTHER failure arm (up to 500 characters of raw ffmpeg stderr)
+/// can never masquerade as a cancel/timeout just because those words happen
+/// to appear in some unrelated ffmpeg complaint (a network hiccup that says
+/// "timeout", a codec that says "operation cancelled").
+#[cfg(feature = "editor")]
+fn is_hard_abort(result: &AppResult<String>) -> bool {
+    matches!(result, Err(AppError::Recording(msg)) if {
+        let m = msg.as_str();
+        m == "cancelled" || m == "timeout"
+    })
 }
 
 #[cfg(feature = "editor")]
@@ -3075,6 +3090,26 @@ where
     if !status.success() {
         let short: String = tail.chars().rev().take(500).collect::<String>();
         let short: String = short.chars().rev().collect();
+        // A full disk is the one ffmpeg failure with an ACTIONABLE answer —
+        // classified from the SAME pattern list the recorder already matches
+        // ffmpeg's stderr against (`sundayrec_core::errors`), so "no space
+        // left"/"disk quota exceeded"/… map here exactly as they do
+        // mid-recording. Anything else stays the plain "ffmpeg failed" the
+        // renderer's `exportErrorKey` deliberately does not recognise — an
+        // unclassified failure gets the shell's OWN general sentence, not a
+        // guess dressed up as a diagnosis.
+        use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
+        let disk_full = classify_recording_error(&short) == RecordingErrorCode::DiskFull;
+        // Previously only the kill-timer branch above logged anything — a
+        // non-zero exit for any OTHER reason (unplugged drive, full disk,
+        // ffmpeg rejecting the args) left no trace at all, on either side of
+        // the IPC boundary. `tail` already went through the export request
+        // that produced it; nothing here adds a path beyond what
+        // `logfile.rs`'s own scrubber already redacts.
+        tracing::warn!(disk_full, tail = %short, "export: ffmpeg exited non-zero");
+        if disk_full {
+            return Err(AppError::Recording(format!("disk_full: {short}")));
+        }
         return Err(AppError::Recording(format!("ffmpeg failed: {short}")));
     }
     Ok(tail)
@@ -3399,6 +3434,29 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code(), "validation");
         assert!(!ran, "the grant closure must not run for a missing file");
+    }
+
+    /// F2-A-A: the hardware-retry guard must match the bare `cancelled`/
+    /// `timeout` codes EXACTLY, not a substring of the rendered message —
+    /// the OTHER failure arm (`ffmpeg failed: <stderr tail>`) can carry up to
+    /// 500 characters of raw ffmpeg text, and the old `.contains(...)` read
+    /// either word showing up there as ordinary prose as OUR own code, and
+    /// silently skipped a software retry the render was entitled to.
+    #[cfg(feature = "editor")]
+    #[test]
+    fn hard_abort_matches_the_bare_code_not_prose_that_mentions_it() {
+        assert!(is_hard_abort(&Err(AppError::Recording("cancelled".into()))));
+        assert!(is_hard_abort(&Err(AppError::Recording("timeout".into()))));
+        assert!(!is_hard_abort(&Err(AppError::Recording(
+            "ffmpeg failed: Connection timeout while probing filter graph".into()
+        ))));
+        assert!(!is_hard_abort(&Err(AppError::Recording(
+            "ffmpeg failed: operation cancelled by remote peer".into()
+        ))));
+        assert!(!is_hard_abort(&Err(AppError::Recording(
+            "disk_full: No space left on device".into()
+        ))));
+        assert!(!is_hard_abort(&Ok("stderr tail".into())));
     }
 
     #[cfg(not(feature = "editor"))]
@@ -4310,18 +4368,16 @@ mod tests {
         // Serialise the `SUNDAYREC_*` env overrides against the parallel suite.
         // Shared with media/ffmpeg.rs's tests — env vars are process-global,
         // so ONE lock must serialise every mutator (see its doc comment).
-        use crate::media::ffmpeg::tests::ENV_LOCK;
-
-        /// Path to the fetched dev sidecar, if `npm run ffmpeg` populated it.
-        /// Same lookup the `media::ffmpeg` integration tests use.
-        fn fetched_sidecar(name: &str) -> Option<std::path::PathBuf> {
-            let triple = env!("SUNDAYREC_TARGET_TRIPLE");
-            let ext = if cfg!(windows) { ".exe" } else { "" };
-            let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("binaries")
-                .join(format!("{name}-{triple}{ext}"));
-            p.is_file().then_some(p)
-        }
+        //
+        // F2-W7: `fetched_sidecar` comes from the same module — it used to be a
+        // local `is_file()`-only copy, which called the Windows CI job's 0-byte
+        // stub (ci.yml's "Stub ffmpeg sidecars" step) present and let the
+        // `Command::new(ffmpeg)` calls below run it — that fails to spawn (not
+        // a valid executable), turning every `_or_skips` test in this module
+        // into a hard panic on a lane that never has a real sidecar. The
+        // canonical helper also confirms the binary RUNS, so it skips cleanly
+        // there instead.
+        use crate::media::ffmpeg::tests::{fetched_sidecar, ENV_LOCK};
 
         /// Generate a 2 s lavfi A/V source (testsrc video + sine audio) in `dir`
         /// and return its path. HARDWARE-FREE — lavfi synthesises both streams.

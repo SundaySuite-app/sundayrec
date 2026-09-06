@@ -148,18 +148,34 @@ export function folderLabel(folder: string): string {
  * én tabell. Speilet er node-testet mot de samme kodene, og fase B slår dem
  * sammen igjen.
  *
+ * `disk_full` klassifiseres fra ffmpegs stderr i Rust (`run_export_ffmpeg`),
+ * med det SAMME mønsteret opptakeren allerede matcher stderr mot
+ * (`sundayrec_core::errors::classify_recording_error`) — «no space left»,
+ * «disk quota exceeded» … kommer hit nøyaktig som de gjør midt i et opptak.
+ * `cannot resolve path` er teksten `path_guard::checked_input_file` gir når
+ * kildefila er borte — den vakten kjører FØR `export()` selv rekker å si
+ * `file_not_found`, så uten denne rada var den vanligste måten en fil
+ * forsvinner på (frakoblet disk, flyttet/slettet fil) usynlig for tabellen.
+ *
  * Matches på den STABILE ledende koden (`errorCode`, R3-C): `AppError`
- * serialiseres som «<kategori>: <kode>[: detalj]», og et `includes`-søk over
- * hele meldingen ville truffet på prosa som bare NEVNER et kodeord.
+ * serialiseres som «<kategori>: <kode>[: detalj]». Fallback-søket under bruker
+ * `includes`, men KUN for kodene som har et mellomrom i seg — fraser som
+ * ALDRI kan bli `lead`, siden den ledende-kode-regexen aldri fanger mer enn
+ * ett `[a-z0-9_]`-ord. Et ett-ords kode som `timeout`/`cancelled` matcher
+ * ALDRI via fallback: et rått `includes`-søk over en hel ffmpeg-stderr-hale
+ * (opptil 500 tegn rå prosa) ville truffet ordet «timeout» i en helt
+ * urelatert nettverksklage og løyet om hvorfor eksporten faktisk stoppet.
  */
 const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["no_audio_remaining", "errNoAudioRemaining"],
   ["cancelled", "errCancelled"],
   ["timeout", "errTimeout"],
   ["file_not_found", "errFileNotFound"],
+  ["disk_full", "errDiskFull"],
   ["invalid_duration", "errCutData"],
   ["invalid_format", "errInvalidFormat"],
   ["path must be absolute", "errPathNotAbsolute"],
+  ["cannot resolve path", "errFileNotFound"],
 ];
 
 /** `null` = ingen kjent kode, og da sier flaten sin egen generelle setning
@@ -168,7 +184,11 @@ export function exportErrorKey(err: string | undefined): string | null {
   const lead = errorCode(err);
   const hit =
     EXPORT_ERROR_KEYS.find(([code]) => code === lead) ??
-    (err ? EXPORT_ERROR_KEYS.find(([code]) => err.includes(code)) : undefined);
+    (err
+      ? EXPORT_ERROR_KEYS.find(
+          ([code]) => code.includes(" ") && err.includes(code),
+        )
+      : undefined);
   return hit ? hit[1] : null;
 }
 
