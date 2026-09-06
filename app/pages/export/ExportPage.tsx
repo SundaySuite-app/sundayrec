@@ -92,6 +92,7 @@ import {
   exportedSeconds,
   exportErrorText,
   exportEtaMs,
+  exportFailed,
   exportFormat,
   exportFraction,
   exporting,
@@ -472,14 +473,22 @@ function Choices() {
  * Hva som gikk galt, når noe gjorde det.
  *
  * En AVBRUTT eksport er ikke en feil — brukeren ba om det — så den er nøytral
- * og ikke rød. De fem andre kodene er bakendens egne, og setningene er legacys
- * (og finnes derfor i alle sju språk). En kode vi ikke kjenner får den
- * generelle setningen i stedet for en råstreng fra en annen prosess.
+ * og ikke rød. De kjente kodene er bakendens egne, og setningene er legacys
+ * (og finnes derfor i alle sju språk).
+ *
+ * ⚠️ Vakten leser `exportFailed`, IKKE `exportErrorText`: en kode
+ * `exportErrorKey` ikke kjenner (en USB-pinne trukket ut, full disk under et
+ * annet navn, ffmpeg som feiler av en grunn appen ikke har en setning for) gir
+ * `suffix = null` — og hvis vakten så på DEN, viste flaten ingenting i det
+ * hele tatt: baren forsvant, og skjemaet sto der som om ingenting skjedde.
+ * `exportFailed` skiller «gikk det dårlig» fra «har vi en presis setning for
+ * det», så den generelle setningen under alltid er nåbar.
  */
 function ExportProblem() {
   const suffix = exportErrorText.value;
   const cancelled = exportWasCancelled.value;
-  if (!suffix && !cancelled) return null;
+  const failed = exportFailed.value;
+  if (!cancelled && !failed) return null;
   return (
     <Banner
       tone={cancelled ? "warn" : "bad"}

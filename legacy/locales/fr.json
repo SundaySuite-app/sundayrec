@@ -901,6 +901,7 @@
     "errCancelled": "Export annulé.",
     "errTimeout": "L’export a pris trop de temps et a été arrêté. Réessayez ou divisez le fichier en plusieurs enregistrements.",
     "errFileNotFound": "Le fichier original n’est pas disponible — le disque est-il déconnecté ?",
+    "errDiskFull": "Le disque est plein. Libérez de l’espace et réessayez.",
     "errCutData": "Erreur interne dans les données de coupe. Essayez de recharger le fichier.",
     "playbackViaProxy": "La lecture passe par un fichier intermédiaire temporaire (pleine qualité). L’export utilise toujours l’original.",
     "analyzingWaveform": "Analyse de la forme d’onde…",

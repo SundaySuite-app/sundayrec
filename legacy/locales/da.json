@@ -901,6 +901,7 @@
     "errCancelled": "Eksport annulleret.",
     "errTimeout": "Eksporten tog for lang tid og blev stoppet. Prøv igen, eller del filen i mindre optagelser.",
     "errFileNotFound": "Originalfilen er ikke tilgængelig — er disken afbrudt?",
+    "errDiskFull": "Disken er fuld. Frigør plads og prøv igen.",
     "errCutData": "Intern fejl i klippedata. Prøv at genindlæse filen.",
     "playbackViaProxy": "Afspilningen går via en midlertidig mellemfil (fuld kvalitet). Eksport bruger altid originalen.",
     "analyzingWaveform": "Analyserer bølgeform…",

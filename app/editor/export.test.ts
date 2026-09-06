@@ -21,6 +21,7 @@ import {
   exportedPath,
   exportedSeconds,
   exportErrorText,
+  exportFailed,
   exporting,
   exportWasCancelled,
   resetExport,
@@ -159,7 +160,47 @@ describe("runExport — generasjonsvakten", () => {
     // Fil B er ikke i en feiltilstand heller — den ba aldri om noen eksport.
     expect(exportErrorText.value).toBeNull();
     expect(exportWasCancelled.value).toBe(false);
+    expect(exportFailed.value).toBe(false);
     expect(deletedDrafts).toEqual([]);
+  });
+
+  // F2-A-A: FØR denne fiksen ble en feil UTEN kjent kode til stillhet —
+  // `exportErrorText` var `null`, `exportWasCancelled` var `false`, og
+  // `ExportProblem`s vakt (som bare så på DE to) viste ingenting: baren
+  // forsvant, og skjemaet sto der som om ingenting hadde skjedd.
+  // `exportFailed` er signalet som gjør «gikk det dårlig» sant selv når «har
+  // vi en presis setning for det» ikke er det.
+  it("en feilet eksport med en UKJENT kode setter exportFailed, ikke bare exportErrorText", async () => {
+    const call = deferred<{ ok: boolean; error?: string }>();
+    installFakeApi(call.promise);
+
+    const run = runExport(120, 1_000_000);
+    call.resolve({
+      ok: false,
+      error: "recording error: ffmpeg failed: en helt uventet ffmpeg-klage",
+    });
+    await run;
+
+    expect(exporting.value).toBe(false);
+    expect(exportedPath.value).toBeNull();
+    // Ingen av de kjente kodene matcher — flaten har ingen presis setning.
+    expect(exportErrorText.value).toBeNull();
+    expect(exportWasCancelled.value).toBe(false);
+    // …men den VET at det gikk dårlig, og det er det `ExportProblem` leser.
+    expect(exportFailed.value).toBe(true);
+  });
+
+  it("en avbrutt eksport setter IKKE exportFailed — brukeren ba om det", async () => {
+    const call = deferred<{ ok: boolean; error?: string }>();
+    installFakeApi(call.promise);
+
+    const run = runExport(120, 1_000_000);
+    call.resolve({ ok: false, error: "recording error: cancelled" });
+    await run;
+
+    expect(exportWasCancelled.value).toBe(true);
+    expect(exportErrorText.value).toBe("errCancelled");
+    expect(exportFailed.value).toBe(false);
   });
 
   // Den ANDRE awaiten — kanalanalysen, ikke selve eksportkallet. Samme vakt,

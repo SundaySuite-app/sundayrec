@@ -901,6 +901,7 @@
     "errCancelled": "Export abgebrochen.",
     "errTimeout": "Export dauerte zu lange und wurde gestoppt. Versuchen Sie es erneut oder teilen Sie die Datei in kleinere Aufnahmen.",
     "errFileNotFound": "Originaldatei ist nicht verfügbar — ist der Datenträger getrennt?",
+    "errDiskFull": "Der Datenträger ist voll. Geben Sie Speicherplatz frei und versuchen Sie es erneut.",
     "errCutData": "Interner Fehler in Schnittdaten. Versuchen Sie, die Datei neu zu laden.",
     "playbackViaProxy": "Die Wiedergabe läuft über eine temporäre Zwischendatei (volle Qualität). Der Export nutzt immer das Original.",
     "analyzingWaveform": "Wellenform wird analysiert…",

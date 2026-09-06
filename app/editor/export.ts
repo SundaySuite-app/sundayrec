@@ -77,10 +77,24 @@ export const exportedSeconds = signal(0);
 export const exportedBytes = signal<number | null>(null);
 /** Mappen fila havnet i. */
 export const exportedFolder = signal("");
-/** Nøkkelen som forklarer hvorfor det ikke gikk, eller `null`. */
+/** Nøkkelen som forklarer hvorfor det ikke gikk, eller `null`. Kan være
+ *  `null` MENS `exportFailed` er sann — en kode `exportErrorKey` ikke
+ *  kjenner er fortsatt en feil, bare en uten en egen setning. */
 export const exportErrorText = signal<string | null>(null);
 /** Var «feilen» at brukeren trykte Avbryt? Da er den ikke rød. */
 export const exportWasCancelled = signal(false);
+/**
+ * Gikk eksporten dårlig, uansett om koden er kjent?
+ *
+ * Skilt fra `exportErrorText` med vilje: FØR dette signalet fantes ble en
+ * feil UTEN kjent kode (en USB-pinne trukket ut, full disk, ffmpeg som
+ * feiler av en grunn appen ikke har en setning for) til stillhet —
+ * `ExportProblem`s vakt så `!exportErrorText.value` og viste ingenting, og
+ * den generelle setningen den selv skrev inn som fallback var død kode. Nå
+ * er «gikk det dårlig» og «har vi en presis setning for det» to spørsmål,
+ * og flaten kan svare «ja» på det første uten det andre.
+ */
+export const exportFailed = signal(false);
 
 /*
  * ⚠️ `exportDone` sto her fram til D3. Den var stegstripas hake på steg 3, og
@@ -126,6 +140,7 @@ export function resetExport(): void {
   exportedFolder.value = "";
   exportErrorText.value = null;
   exportWasCancelled.value = false;
+  exportFailed.value = false;
 }
 
 /** «Velg mappe …». Et avbrutt valg lar det forrige stå. */
@@ -139,6 +154,7 @@ export function exportAgain(): void {
   exportedPath.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
+  exportFailed.value = false;
 }
 
 export async function cancelExport(): Promise<void> {
@@ -198,6 +214,7 @@ export async function runExport(
   exportedPath.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
+  exportFailed.value = false;
   exportFraction.value = null;
   exportEtaMs.value = null;
   exportPhase.value = null;
@@ -291,4 +308,13 @@ export async function runExport(
   }
   exportWasCancelled.value = isCancelled(result.error);
   exportErrorText.value = exportErrorKey(result.error);
+  // Avbrutt er brukerens eget valg — ikke en feil, og ikke noe å varsle om.
+  // Alt annet er en eksport som gikk dårlig, uansett om `exportErrorText`
+  // over fant en kjent kode: `ExportProblem` leser DETTE signalet for om den
+  // skal vise noe i det hele tatt, den generelle setningen for om den ikke
+  // fant en presis en. Se filhodet for hvorfor de to ikke er det samme.
+  exportFailed.value = !exportWasCancelled.value;
+  if (exportFailed.value) {
+    console.warn("[export] eksport feilet:", result.error);
+  }
 }
