@@ -30,6 +30,8 @@
  * uten at noen abonnerer på innstillingen her.
  */
 
+import { exporting } from "../editor/export";
+import { loadState } from "../editor/model";
 import { t, tn } from "../i18n";
 import { navigate } from "../router/router";
 import { toast } from "../ui/toast";
@@ -50,8 +52,29 @@ export const TOAST_MS = 10_000;
  * Kjør ett pass. Shimmens `recordingsPrune` løser alltid (en feilet IPC
  * svarer `disabled`), så passet kan ikke kaste — og et pass som ikke flyttet
  * noe er stille, akkurat som papirkurv-sweepen.
+ *
+ * ## F2-6: aldri mens noe er åpent
+ *
+ * Passet flytter FILER — samme fil en åpen redigering leser fra eller en
+ * pågående eksport koder fra. Flyttet den under føttene på den ene eller den
+ * andre, svarer neste disk-lesning «No such file or directory» stille (loaded
+ * → editor.ts sin egen feilvei, mastret eksport → en avbrutt fase 2), og en
+ * frivillig som klippet i tjue minutter mister det uten forvarsel.
+ *
+ * Derfor: er `loadState` NOE ANNET enn `idle` — altså en fil under lasting
+ * (`loading`), åpen i arbeidsflaten (`ready`) eller stående i en feiltilstand
+ * (`error`, som fortsatt har fila `lastEdited` kan pekes tilbake på) — ELLER
+ * går en eksport, UTSETTES hele passet til NESTE tikk. Tolv timer unna, samme
+ * rytme som papirkurv-sweepen, så et pass som ble hoppet over ikke er et pass
+ * som ble glemt. Bare `idle` — ingen fil åpen i det hele tatt — er trygt.
  */
 export async function runRetentionPass(): Promise<void> {
+  if (loadState.peek() !== "idle" || exporting.peek()) {
+    console.info(
+      "[retention] passet er utsatt — en fil er under redigering eller eksport",
+    );
+    return;
+  }
   const summary = await window.api.recordingsPrune();
   if (summary.disabled || summary.moved <= 0) return;
 
