@@ -1310,6 +1310,10 @@ pub struct ExportEngine {
     /// A renderer-side guard cannot fix this: the engine is reachable from any
     /// caller of the command, and "the UI would never do that" is exactly the
     /// assumption that broke.
+    // Read only by `try_begin`/`ExportSlot` (feature-on or test); the field
+    // itself compiles either way so the struct has ONE shape — same reason as
+    // `child` above.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     in_flight: std::sync::atomic::AtomicBool,
 }
 
