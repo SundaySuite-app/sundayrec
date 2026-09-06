@@ -69,7 +69,7 @@
 //!
 //!   - **NDI, streaming, lossless master:** later phases.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -402,6 +402,17 @@ pub struct RecorderEngine {
     /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
     /// fell back, and why. `(engine, fallback_reason)`.
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
+    /// The `reconnect_count` of the LAST emitted `recording://state` payload.
+    ///
+    /// The count itself lives in the running session (`SessionState`), which is
+    /// gone the moment the supervisor is, and is unreachable from a command
+    /// while it lives. It is remembered here for one reason:
+    /// [`RecorderEngine::snapshot`] must answer with the SAME payload the event
+    /// carried, and a renderer that reloaded mid-reconnect has to be able to
+    /// draw «kobler til igjen (3/20)» from the snapshot alone. Written through
+    /// the same generation guard as the state itself, so a superseded
+    /// supervisor cannot stamp its count onto the live session.
+    last_reconnect_count: Arc<AtomicU32>,
     /// Monotonic session counter, bumped by every [`RecorderEngine::start`].
     ///
     /// `start()` stops the previous recording and immediately launches a new
@@ -468,6 +479,9 @@ pub struct StateWriter {
     /// readers take a `Receiver` from [`StateWriter::subscribe`], which cannot
     /// write.
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    /// The shared last-emitted reconnect count. PRIVATE, same as the state —
+    /// see [`RecorderEngine::last_reconnect_count`].
+    last_reconnect_count: Arc<AtomicU32>,
     /// The engine's live generation counter.
     session_generation: Arc<AtomicU64>,
     /// The generation this writer's session claimed at launch.
@@ -479,6 +493,7 @@ impl StateWriter {
         app: Arc<dyn StateSink>,
         last_state: Arc<Mutex<RecorderState>>,
         scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        last_reconnect_count: Arc<AtomicU32>,
         session_generation: Arc<AtomicU64>,
         generation: u64,
     ) -> Self {
@@ -486,6 +501,7 @@ impl StateWriter {
             app,
             last_state,
             scheduled_stop,
+            last_reconnect_count,
             session_generation,
             generation,
         }
@@ -556,6 +572,8 @@ impl StateWriter {
                 }
             }
         }
+        self.last_reconnect_count
+            .store(reconnect_count, Ordering::SeqCst);
         self.app.emit_state(RecorderStatePayload {
             state: to,
             reconnect_count,
@@ -570,6 +588,8 @@ impl StateWriter {
         if !self.may_write("restamp") {
             return;
         }
+        self.last_reconnect_count
+            .store(reconnect_count, Ordering::SeqCst);
         self.app.emit_state(RecorderStatePayload {
             state: *lock_recover(&self.last_state),
             reconnect_count,
@@ -592,6 +612,7 @@ impl RecorderEngine {
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
             audio_engine: Arc::new(Mutex::new((None, None))),
+            last_reconnect_count: Arc::new(AtomicU32::new(0)),
             session_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -599,13 +620,53 @@ impl RecorderEngine {
     /// The last state the engine emitted (best-effort; the supervisor updates it
     /// on every transition). Read in-process — `window.rs`'s close-vs-hide
     /// guard, `update/mod.rs`'s relaunch check, the scheduler's + diagnostics'
-    /// "is a recording active" probes, `commands/audio.rs` — never over IPC:
-    /// F2-T1 deleted the `recording_status` command that used to wrap this for
-    /// the renderer (nothing called it; `recording://state`, which 8 renderer
-    /// files listen on, already carries every transition — see
-    /// docs/archive/COMMAND_AUDIT_2026-08.md §4.9).
+    /// "is a recording active" probes, `commands/audio.rs` — never over IPC on
+    /// its own: F2-T1 deleted the `recording_status` command that used to wrap
+    /// this for the renderer (nothing called it; `recording://state`, which 8
+    /// renderer files listen on, already carries every transition — see
+    /// docs/archive/COMMAND_AUDIT_2026-08.md §4.9). What the renderer gets is
+    /// [`RecorderEngine::snapshot`] — the whole payload, once at boot, for the
+    /// one listener that could not have been listening: a reloaded webview.
     pub fn current_state(&self) -> RecorderState {
         *lock_recover(&self.last_state)
+    }
+
+    /// The LAST `recording://state` payload, rebuilt — the whole truth about the
+    /// running session in one read.
+    ///
+    /// ## Why this is not the deleted `recording_status` command coming back
+    ///
+    /// `recording_status` was a poll nobody called: `recording://state` fires on
+    /// every transition and eight renderer files listen on it, so asking again
+    /// was redundant — for a renderer that had been listening all along.
+    ///
+    /// A renderer that RELOADED never was. Tauri's `emit()` delivers to the
+    /// listeners registered at emit time and to nobody else, so a webview
+    /// reloaded mid-recording (a WebKit crash Tauri recovers from, or a
+    /// developer reload) subscribes to a channel whose last word — possibly the
+    /// only word of the whole service — has already been said. It draws «klar»
+    /// over an engine that owns the microphone, with no overlay, no countdown,
+    /// and a Start button the engine will answer «already recording» to.
+    ///
+    /// So: ONE snapshot at boot, not a poll. The three fields are the same three
+    /// [`StateWriter::set`] emits, read from the same shared handles, so the
+    /// renderer can run the answer through the very same reduction as the event
+    /// (`applyStatePayload` in `app/state/recording.ts`) instead of growing a
+    /// second, divergent one.
+    ///
+    /// ⚠️ The state and the deadline are two separate reads, so a transition
+    /// landing between them can hand back a payload no single emit ever
+    /// carried. That is not worth a lock across both: every field here is also
+    /// carried by the event, the event is authoritative on the renderer side
+    /// (see `snapshotStillApplies` in `app/state/recording-hydrate-core.ts`),
+    /// and a transition arriving mid-read is exactly the case the renderer's
+    /// generation guard drops the snapshot for.
+    pub fn snapshot(&self) -> RecorderStatePayload {
+        RecorderStatePayload {
+            state: self.current_state(),
+            reconnect_count: self.last_reconnect_count.load(Ordering::SeqCst),
+            scheduled_stop_ms: self.scheduled_stop_ms(),
+        }
     }
 
     /// A [`StateWriter`] scoped to `generation` — the ONLY handle a supervisor
@@ -616,6 +677,7 @@ impl RecorderEngine {
             Arc::new(app.clone()),
             Arc::clone(&self.last_state),
             Arc::clone(&self.scheduled_stop),
+            Arc::clone(&self.last_reconnect_count),
             Arc::clone(&self.session_generation),
             generation,
         )
@@ -3763,6 +3825,8 @@ mod tests {
         sink: Arc<RecordingSink>,
         last_state: Arc<Mutex<RecorderState>>,
         scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        /// The remembered reconnect count `snapshot()` reads back.
+        last_reconnect_count: Arc<AtomicU32>,
         stale: StateWriter,
         fresh: StateWriter,
     }
@@ -3776,12 +3840,14 @@ mod tests {
         let last_state = Arc::new(Mutex::new(state));
         let (tx, _rx) = tokio::sync::watch::channel(deadline);
         let scheduled_stop = Arc::new(tx);
+        let last_reconnect_count = Arc::new(AtomicU32::new(0));
         let current = Arc::new(AtomicU64::new(0));
         let writer = |generation| {
             StateWriter::new(
                 sink.clone(),
                 Arc::clone(&last_state),
                 Arc::clone(&scheduled_stop),
+                Arc::clone(&last_reconnect_count),
                 Arc::clone(&current),
                 generation,
             )
@@ -3792,6 +3858,7 @@ mod tests {
             sink,
             last_state,
             scheduled_stop,
+            last_reconnect_count,
             stale,
             fresh,
         }
@@ -3866,6 +3933,46 @@ mod tests {
         assert_eq!(payloads[1].scheduled_stop_ms, Some(1_700_000_060_000));
         assert_eq!(payloads[2].state, RecorderState::Stopped);
         assert_eq!(payloads[2].scheduled_stop_ms, None);
+    }
+
+    #[test]
+    fn the_remembered_reconnect_count_follows_the_emitted_payload() {
+        // F2-T5: `snapshot()` must answer with the SAME three fields the last
+        // event carried, and the count is the one field no command could reach
+        // — it lives in the session, which a reloaded renderer never saw.
+        let g = two_generations(RecorderState::Recording, None);
+
+        g.fresh.set(RecorderState::Reconnecting, 3);
+        assert_eq!(
+            g.last_reconnect_count.load(Ordering::SeqCst),
+            3,
+            "the renderer must be able to draw «kobler til igjen (3/20)» after a reload"
+        );
+
+        // A re-stamp carries a count too (the extend/cancel path) — same store.
+        g.fresh.restamp(4, None);
+        assert_eq!(g.last_reconnect_count.load(Ordering::SeqCst), 4);
+
+        // MUTATION PROOF: the store sits behind `may_write`, so a straggler
+        // finishing the 11:00 service cannot stamp its 0 onto the live count.
+        g.stale.set(RecorderState::Stopped, 0);
+        g.stale.restamp(0, None);
+        assert_eq!(
+            g.last_reconnect_count.load(Ordering::SeqCst),
+            4,
+            "a superseded session writes no field of the payload, this one included"
+        );
+    }
+
+    #[test]
+    fn a_fresh_engine_snapshots_idle_with_nothing_armed() {
+        // The boot case that is NOT a reload: a renderer starting against an
+        // engine that has never recorded must be told «idle», not left guessing.
+        let engine = RecorderEngine::new();
+        let snap = engine.snapshot();
+        assert_eq!(snap.state, RecorderState::Idle);
+        assert_eq!(snap.reconnect_count, 0);
+        assert_eq!(snap.scheduled_stop_ms, None);
     }
 
     #[test]

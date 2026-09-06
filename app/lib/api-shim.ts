@@ -45,6 +45,7 @@ import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
 import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { RecordingRow } from "../../legacy/bindings/RecordingRow";
+import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import { toEditorExportRequest } from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
@@ -874,6 +875,23 @@ const api: Record<string, unknown> = {
   // all). `RecordingOverlay.tsx`'s mount effect calls this now.
   recordingScheduledStopMs: async () =>
     call<number | null>("recording_scheduled_stop_ms", undefined, null),
+  // F2-T5: the WHOLE state, once, at boot.
+  //
+  // `recording://state` fires on transitions and a stable recording has none,
+  // and Tauri's `emit()` only reaches listeners that were already subscribed.
+  // A webview reloaded mid-service therefore starts from nothing and stays
+  // there until the auto-stop an hour later — «klar» painted over an engine
+  // that owns the microphone. This is the one question that fills that gap;
+  // the answer goes through the same reduction as the event
+  // (`applyStatePayload`, `app/state/recording.ts`).
+  //
+  // A READ, so `call()`'s fallback is right — and `null` is the PESSIMISTIC
+  // one on purpose: it means "we did not learn anything", not "idle". A
+  // fabricated `{ state: "idle" }` here would be this file telling the shell
+  // that no recording is running, which is the exact lie the command exists to
+  // stop. The caller leaves its belief alone on `null`.
+  recordingSnapshot: async () =>
+    call<RecorderStatePayload | null>("recording_snapshot", undefined, null),
   // ── The camera picture DURING a recording ──────────────────────────────
   //
   // The engine has written this file since v0.11 (`recorder/engine.rs` —
