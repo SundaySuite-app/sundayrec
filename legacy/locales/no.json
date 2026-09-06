@@ -576,6 +576,7 @@
       "gateReason": "Vi hører ingen lyd ennå. Snakk i mikrofonen, eller slå på mikseren.",
       "readyTitle": "Klar til søndag",
       "readyDesc": "Dette er det samme du finner under Innstillinger (tannhjulet) og på Opptak-skjermen senere.",
+      "fixHere": "Alt her kan rettes med én gang — raden åpner skjermen på stedet, og du blir stående i oppsettet.",
       "notifyTodo": "Ikke satt opp — ingen får beskjed hvis et opptak feiler.",
       "open": "Åpne SundayRec",
       "progress": "Framdrift",

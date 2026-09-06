@@ -576,6 +576,7 @@
       "gateReason": "We hear no sound yet. Speak into the microphone, or turn on the mixer.",
       "readyTitle": "Ready for Sunday",
       "readyDesc": "This is the same you will find under Settings (the gear) and on the Record screen later.",
+      "fixHere": "Everything here can be fixed right away — the row opens the screen in place, and you stay in the setup.",
       "notifyTodo": "Not set up — nobody is told if a recording fails.",
       "open": "Open SundayRec",
       "progress": "Progress",

@@ -576,6 +576,7 @@
       "gateReason": "Vi hör inget ljud än. Prata i mikrofonen, eller slå på mixerbordet.",
       "readyTitle": "Klar till söndag",
       "readyDesc": "Det här är samma sak som du senare hittar under Inställningar (kugghjulet) och på skärmen Inspelning.",
+      "fixHere": "Allt här kan rättas direkt — raden öppnar skärmen på plats, och du blir kvar i inställningen.",
       "notifyTodo": "Inte inställt — ingen får besked om en inspelning misslyckas.",
       "open": "Öppna SundayRec",
       "progress": "Förlopp",
