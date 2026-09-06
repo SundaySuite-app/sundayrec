@@ -4474,6 +4474,29 @@ mod tests {
             p.is_file().then_some(p)
         }
 
+        /// A sidecar, or `None` → the caller SKIPs — unless the lane REQUIRES
+        /// one (`SUNDAYREC_REQUIRE_SIDECAR=1`: ci.yml's `check` job,
+        /// `scripts/ci-local.sh`), in which case a missing binary is a panic.
+        ///
+        /// A green run that measured nothing must not look like a green run that
+        /// measured everything: the audio bugs this file's smoke tests exist to
+        /// catch are invisible to every other kind of test.
+        pub(super) fn sidecar_or_skip(name: &str) -> Option<std::path::PathBuf> {
+            match crate::media::ffmpeg::tests::fetched_sidecar(name) {
+                Some(p) => Some(p),
+                None => {
+                    assert!(
+                        std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
+                        "SUNDAYREC_REQUIRE_SIDECAR=1 but no runnable {name} sidecar — \
+                         run `npm run ffmpeg` first (a lane that requires the sidecar \
+                         must not silently skip the measurements)"
+                    );
+                    eprintln!("SKIP: no fetched {name} sidecar (run `npm run ffmpeg`)");
+                    None
+                }
+            }
+        }
+
         /// Generate a 2 s lavfi A/V source (testsrc video + sine audio) in `dir`
         /// and return its path. HARDWARE-FREE — lavfi synthesises both streams.
         fn lavfi_source(ffmpeg: &std::path::Path, dir: &std::path::Path) -> String {
@@ -4918,14 +4941,96 @@ mod tests {
             src.to_string_lossy().into_owned()
         }
 
-        /// Measure a file's INTEGRATED loudness (LUFS) with a plain loudnorm
-        /// analysis pass — the same measurement a broadcaster would run on the
+        /// A lavfi tone that alternates between two levels every `step_secs`,
+        /// with the levels chosen to give a WIDE loudness range.
+        ///
+        /// Unlike [`lavfi_dynamic_tone`] the two levels are only ~15 dB apart and
+        /// each segment is longer than the 3 s short-term window, which is what
+        /// makes the range MEASURABLE: EBU R128 gates blocks more than 20 LU
+        /// under the programme loudness out of the LRA entirely, so a −40/−10
+        /// alternation measures a LOW range, not a high one, and a 2 s
+        /// alternation smears both levels into every short-term window. Both
+        /// levels also sit under the presets' compressor thresholds, so the
+        /// preset chain passes the range through instead of squashing it.
+        ///
+        /// The result measures LRA ≈ 15 — over every preset's LRA target, which
+        /// is exactly what makes `loudnorm` refuse linear mode.
+        fn lavfi_wide_range_tone(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            secs: f64,
+            step_secs: f64,
+        ) -> String {
+            lavfi_tone(
+                ffmpeg,
+                dir,
+                name,
+                secs,
+                // −39 dBFS / −24 dBFS on lavfi's −18.06 dBFS sine.
+                &format!("if(lt(mod(t,{}),{step_secs}),0.0891,0.5012)", step_secs * 2.0),
+            )
+        }
+
+        /// A lavfi tone with a QUIET body and rare, brief loud transients — the
+        /// synthetic stand-in for a sermon at a sane level with a cough, a
+        /// dropped hymnal or a hand on the mic in it.
+        ///
+        /// High crest factor is the point: the bursts are too short to lift the
+        /// gated integrated loudness much, but they set the true peak. That gap
+        /// (≈ 20 dB) is what makes the preset's target unreachable with a single
+        /// gain — the second of `loudnorm`'s two linear-mode gates.
+        fn lavfi_peaky_tone(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            secs: f64,
+        ) -> String {
+            // Body ≈ −22.7 dBFS; 5 ms bursts at ≈ −1.2 dBFS every 2 s.
+            lavfi_tone(ffmpeg, dir, name, secs, "if(lt(mod(t,2),0.005),7.0,0.584)")
+        }
+
+        /// Render a 440 Hz lavfi sine through a per-frame `volume` expression.
+        /// The expression reaches ffmpeg as ONE argv element inside single
+        /// quotes, so its commas belong to the filter parser, not a shell.
+        fn lavfi_tone(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            secs: f64,
+            volume_expr: &str,
+        ) -> String {
+            let src = dir.join(name);
+            let gen = std::process::Command::new(ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("sine=frequency=440:sample_rate=48000:duration={secs}"),
+                    "-af",
+                    &format!("volume='{volume_expr}':eval=frame"),
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the tone source");
+            assert!(
+                gen.status.success(),
+                "tone generation failed: {}",
+                String::from_utf8_lossy(&gen.stderr)
+            );
+            src.to_string_lossy().into_owned()
+        }
+
+        /// The FULL EBU R128 measurement of a file — integrated, range, true
+        /// peak, threshold. The same analysis pass a broadcaster would run on the
         /// delivered file. `window` restricts it to `(start, duration)` seconds.
-        fn measure_integrated_lufs(
+        fn measure_ebu_r128(
             ffmpeg: &std::path::Path,
             path: &std::path::Path,
             window: Option<(f64, f64)>,
-        ) -> f64 {
+        ) -> sundayrec_core::mastering::LoudnessMeasurement {
             let mut cmd = std::process::Command::new(ffmpeg);
             cmd.args(["-nostdin", "-hide_banner"]);
             if let Some((start, dur)) = window {
@@ -4946,7 +5051,15 @@ mod tests {
             let stderr = String::from_utf8_lossy(&out.stderr);
             sundayrec_core::mastering::parse_loudnorm_json(&stderr)
                 .unwrap_or_else(|| panic!("no loudnorm JSON in verification pass: {stderr}"))
-                .input_i
+        }
+
+        /// Just the integrated loudness (LUFS) of [`measure_ebu_r128`].
+        fn measure_integrated_lufs(
+            ffmpeg: &std::path::Path,
+            path: &std::path::Path,
+            window: Option<(f64, f64)>,
+        ) -> f64 {
+            measure_ebu_r128(ffmpeg, path, window).input_i
         }
 
         /// `(codec_name, sample_rate)` of the first audio stream.
@@ -5302,6 +5415,185 @@ mod tests {
             );
         }
 
+        // ── F2-C-B: the mastering must be LINEAR, not a gain rider ───────────
+        //
+        // Landing on the target (above) says nothing about HOW. `loudnorm`
+        // reaches −16 LUFS just as happily by riding the gain in 3-second steps
+        // — which compresses, which is the one thing `music-speech`'s "Bevarer
+        // dynamikk" promises not to do, and which no string test can see.
+        //
+        // So these two run the real bundled ffmpeg over material chosen to trip
+        // each of `linear=true`'s two gates and read `Normalization Type` back
+        // out of the pass-2 summary. They are the ears we don't have.
+
+        /// GATE 1 — the LRA gate. A recording whose loudness range (15 LU) is
+        /// wider than the preset's `LRA` was normalised DYNAMICALLY: the preset's
+        /// LRA is loudnorm's permission slip for linear mode, not a setting.
+        ///
+        /// `plan_pass2` raises the gate to clear the measurement (inert in linear
+        /// mode — one gain changes no range), and the summary must then say
+        /// `Linear` while still landing on −16.
+        #[test]
+        fn a_wide_range_mastered_export_is_linear_not_gain_ridden_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "wide.wav", 20.0, 5.0);
+
+            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+            // The fixture only proves anything while its range OVERSHOOTS the
+            // preset's gate — that overshoot IS the bug.
+            let m = measure_ebu_r128(&ffmpeg, std::path::Path::new(&src), None);
+            assert!(
+                m.input_lra > preset.target_lra,
+                "fixture no longer exercises the bug: measured LRA {:.2} is inside \
+                 speech-clear's LRA {:.2} gate, so linear mode was never at risk",
+                m.input_lra,
+                preset.target_lra
+            );
+
+            let mut req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 20.0);
+            req.master_preset = Some("speech-clear".into());
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a mastered export should succeed");
+
+            let loudness = out
+                .loudness
+                .expect("a mastered export must report what the normalisation did");
+            assert_eq!(
+                loudness.mode,
+                EditorLoudnessMode::Linear,
+                "loudnorm gain-rode a {:.1} LU recording instead of levelling it \
+                 (asked for {:.1} LUFS, reported {:?}) — the LRA gate was not cleared",
+                m.input_lra,
+                loudness.target_lufs,
+                loudness
+            );
+            assert!(!loudness.peak_limited, "there is 20 dB of headroom here");
+            assert_eq!(loudness.achieved_lufs, preset.target_lufs);
+            assert_eq!(loudness.target_lufs, preset.target_lufs);
+
+            // …and it still lands where it says it does.
+            let measured =
+                measure_integrated_lufs(&ffmpeg, std::path::Path::new(&out.output_path), None);
+            let delta = measured - loudness.achieved_lufs;
+            assert!(
+                delta.abs() <= 1.0,
+                "linear master measured {measured:.2} LUFS against its own reported \
+                 {:.2} (Δ {delta:+.2} LU)",
+                loudness.achieved_lufs
+            );
+            eprintln!(
+                "editor export smoke: wide-range master ({:.1} LU) normalised {:?} at \
+                 {measured:.2} LUFS",
+                m.input_lra, loudness.mode
+            );
+        }
+
+        /// GATE 2 — the true-peak gate. A recording at −25 LUFS whose transients
+        /// already reach −5 dBTP cannot be lifted to −16 by one gain: +9 LU would
+        /// put the peaks at +4 dBTP. loudnorm's answer was to ride the gain;
+        /// ours is to land at the loudest level a single gain CAN reach and to
+        /// say which one that is, on the receipt.
+        #[test]
+        fn a_peaky_mastered_export_lands_quieter_and_says_so_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_peaky_tone(&ffmpeg, dir.path(), "peaky.wav", 12.0);
+
+            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+            // The fixture only proves anything while the gain the target implies
+            // does NOT fit under the ceiling.
+            let m = measure_ebu_r128(&ffmpeg, std::path::Path::new(&src), None);
+            let crest = m.input_tp - m.input_i;
+            let needed = preset.target_lufs - preset.true_peak_db;
+            assert!(
+                crest > needed,
+                "fixture no longer exercises the bug: crest factor {crest:.2} dB fits \
+                 inside the {needed:.2} dB the preset needs, so the ceiling never binds"
+            );
+
+            let mut req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 12.0);
+            req.master_preset = Some("speech-clear".into());
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a mastered export should succeed");
+
+            let loudness = out
+                .loudness
+                .expect("a mastered export must report what the normalisation did");
+            assert_eq!(
+                loudness.mode,
+                EditorLoudnessMode::Linear,
+                "loudnorm compressed a hot recording to reach a target it cannot \
+                 reach cleanly, instead of landing quieter: {loudness:?}"
+            );
+            assert!(
+                loudness.peak_limited,
+                "the ceiling bound here (crest {crest:.2} dB) — the receipt must say so"
+            );
+            assert!(
+                loudness.achieved_lufs < loudness.target_lufs,
+                "a peak-limited export must report a QUIETER level than the preset's: \
+                 {loudness:?}"
+            );
+
+            // The claim on the receipt has to survive a re-measure of the file,
+            // and the ceiling it was traded for has to actually hold.
+            let done = measure_ebu_r128(&ffmpeg, std::path::Path::new(&out.output_path), None);
+            let delta = done.input_i - loudness.achieved_lufs;
+            assert!(
+                delta.abs() <= 1.0,
+                "the receipt says {:.2} LUFS, the file measures {:.2} (Δ {delta:+.2} LU)",
+                loudness.achieved_lufs,
+                done.input_i
+            );
+            assert!(
+                done.input_tp <= preset.true_peak_db + 0.5,
+                "the export peaked at {:.2} dBTP, over the {:.2} dBTP ceiling the \
+                 quieter target was traded for",
+                done.input_tp,
+                preset.true_peak_db
+            );
+            eprintln!(
+                "editor export smoke: peaky master normalised {:?}, capped at \
+                 {:.2} LUFS (asked {:.2}); file measures {:.2} LUFS / {:.2} dBTP",
+                loudness.mode,
+                loudness.achieved_lufs,
+                loudness.target_lufs,
+                done.input_i,
+                done.input_tp
+            );
+        }
+
+        /// An UNMASTERED export has no loudness claim to make, and must not
+        /// invent one — nothing normalised the level, so there is nothing to
+        /// report and the receipt must stay quiet.
+        #[test]
+        fn an_unmastered_export_reports_no_loudness_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "plain.wav", 8.0, 2.0);
+            let req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 8.0);
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a plain export should succeed");
+            assert!(
+                out.loudness.is_none(),
+                "an export with no mastering preset claimed a loudness: {:?}",
+                out.loudness
+            );
+        }
+
         /// A 16-bit WAV export must be pcm_s16le AT THE SOURCE RATE. Without the
         /// `-ar` pin, a mastered export inherits loudnorm's internal 192 kHz.
         #[test]
@@ -5587,19 +5879,7 @@ mod tests {
             /// measurable audio bugs shipped, and a green run that measured
             /// nothing must not look like a green run that measured everything.
             fn ffmpeg_or_skip() -> Option<std::path::PathBuf> {
-                match crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg") {
-                    Some(p) => Some(p),
-                    None => {
-                        assert!(
-                            std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
-                            "SUNDAYREC_REQUIRE_SIDECAR=1 but no runnable ffmpeg sidecar — \
-                             run `npm run ffmpeg` first (the vocal-chain level tests must \
-                             not silently skip in a lane that requires them)"
-                        );
-                        eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
-                        None
-                    }
-                }
+                super::sidecar_or_skip("ffmpeg")
             }
 
             /// Peak level (dBFS) of `source` after `filters`, measured with
