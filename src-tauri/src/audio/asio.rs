@@ -384,11 +384,19 @@ pub const ASIO_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// A process-wide, TTL'd memo of the last ASIO enumeration.
 ///
-/// `probe` is never run while the lock is held: it can block for seconds inside
-/// a driver, and a stalled sweep must not also freeze the picker's next call.
+/// Two locks, on purpose:
+///   - `entry` guards the memo itself and is NEVER held across a probe. A sweep
+///     can block for seconds inside a driver, and a stalled sweep must not also
+///     freeze the next [`peek_at`](Self::peek_at).
+///   - `probing` serialises the sweeps. ASIO drivers are single-client, so two
+///     threads calling `ASIOInit` on the same driver at once is the very failure
+///     this module exists to avoid — the picker's blocking enumeration and a
+///     recording start CAN land together. The second caller waits for the first
+///     sweep and then reads its result instead of starting its own.
 pub(crate) struct AsioCache {
     ttl: Duration,
     entry: Mutex<Option<(Instant, Vec<AsioDevice>)>>,
+    probing: Mutex<()>,
 }
 
 impl AsioCache {
@@ -396,6 +404,7 @@ impl AsioCache {
         Self {
             ttl,
             entry: Mutex::new(None),
+            probing: Mutex::new(()),
         }
     }
 
@@ -417,6 +426,12 @@ impl AsioCache {
         now: Instant,
         probe: impl FnOnce() -> Vec<AsioDevice>,
     ) -> Vec<AsioDevice> {
+        if let Some(hit) = self.peek_at(now) {
+            return hit;
+        }
+        let _sweeping = crate::util::lock_recover(&self.probing);
+        // Re-check: whoever held `probing` may have just filled the memo, and
+        // their sweep is as good as the one we were about to start.
         if let Some(hit) = self.peek_at(now) {
             return hit;
         }
@@ -973,7 +988,44 @@ mod tests {
         cache.invalidate();
         let _ = cache.get_or_fill_at(t0, probe);
 
-        assert_eq!(sweeps.get(), 2, "diagnose must see the machine as it is now");
+        assert_eq!(
+            sweeps.get(),
+            2,
+            "diagnose must see the machine as it is now"
+        );
+    }
+
+    /// The picker's blocking enumeration and a recording start CAN land at the
+    /// same moment. ASIO drivers are single-client, so two concurrent
+    /// `ASIOInit` sweeps are exactly the failure this module is about: the
+    /// second caller must wait for the first and read its result.
+    #[test]
+    fn two_threads_racing_a_cold_memo_sweep_the_drivers_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Barrier;
+
+        let sweeps = AtomicUsize::new(0);
+        let cache = AsioCache::new(Duration::from_secs(30));
+        let gate = Barrier::new(2);
+        let t0 = Instant::now();
+
+        std::thread::scope(|s| {
+            for _ in 0..2 {
+                s.spawn(|| {
+                    gate.wait();
+                    cache.get_or_fill_at(t0, || {
+                        sweeps.fetch_add(1, Ordering::SeqCst);
+                        // Long enough that a second, unserialised sweep would
+                        // certainly have started before this one stored its
+                        // result.
+                        std::thread::sleep(Duration::from_millis(100));
+                        vec![device("ASIO4ALL v2")]
+                    });
+                });
+            }
+        });
+
+        assert_eq!(sweeps.load(Ordering::SeqCst), 1);
     }
 
     #[test]
