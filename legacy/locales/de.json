@@ -939,6 +939,7 @@
     "enhanceTitle": "Klangverbesserung",
     "errInvalidFormat": "Dieses Format wird für den Export nicht unterstützt. Wählen Sie auf der Seite „Export“ ein anderes Format.",
     "errExportAlreadyRunning": "Ein Export läuft bereits. Warten Sie, bis er fertig ist.",
+    "errDiskLowForExport": "Für diesen Export ist nicht genügend freier Speicherplatz vorhanden. Geben Sie Speicherplatz frei, oder wählen Sie mit „Ordner wählen…“ einen anderen Ordner.",
     "errRecordingInProgress": "Eine Aufnahme läuft gerade. Warten Sie, bis sie fertig ist, bevor Sie exportieren.",
     "errPathNotAbsolute": "Ungültiger Ordner oder Dateipfad. Wählen Sie den Zielordner erneut.",
     "metaDesc": "BESCHREIBUNG",

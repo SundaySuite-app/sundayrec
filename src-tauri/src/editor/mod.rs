@@ -2738,8 +2738,9 @@ where
     use std::path::Path;
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
-        collision_free_path, editor_tmp_path, ffmetadata, is_simple_audio_export, metadata_args,
-        resolve_output_dir, video_filter_complex, CutRegion, RecordingMetadata,
+        collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
+        ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
+        video_export_estimated_bytes, video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
@@ -2814,6 +2815,70 @@ where
     bail_if_cancelled(engine)?;
     let probed = load_recording(&req.input_path).await.ok();
     let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
+
+    // 1c. WHERE it lands, and whether there is room for it.
+    //
+    //     The paths are resolved here rather than after the mastering measure
+    //     pass because the disk guard has to run BEFORE anything expensive: a
+    //     full-file loudness measure on a 90-minute service takes minutes, and
+    //     spending them to then discover the volume was full is the whole
+    //     complaint. The file inside the folder is picked twice — a temp name
+    //     now (for ffmpeg to render into) and the collision-free FINAL name only
+    //     once the render exits zero, in step 7. See `editor_tmp_path`.
+    let base = Path::new(&req.input_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "redigert".into());
+    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
+    let out_stem = format!("{base}_redigert");
+    let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
+
+    //     F2-11: the recorder has had a low-disk guard since day one; the
+    //     EXPORT had none. A volunteer whose disk was nearly full got a full
+    //     progress bar, twenty minutes of waiting, and then ffmpeg's
+    //     `disk_full` — a true sentence, arriving as late as it possibly could.
+    //     `estimated_bytes` answers the same question the export modal's
+    //     `estimatedBytes` does, but it does NOT share its arithmetic and must
+    //     not be read as a second copy of it: the modal's `exportKbps` is
+    //     rate-blind (a flat 600 kbps for flac, whatever the master's rate),
+    //     which is honest enough for a number a user eyeballs and not honest
+    //     enough to refuse an export on. This one reads the bitrate out of
+    //     `codec_args`' own argv and falls back to real sample arithmetic; video,
+    //     which the modal declines to guess at, is estimated from the source's
+    //     own size. Deliberately the more pessimistic of the two — over-
+    //     estimating costs a false "no room", under-estimating costs the twenty
+    //     minutes this guard exists to save.
+    //     Best-effort in BOTH directions: a volume that will not report its
+    //     free space is not a volume that is full, and an estimate that cannot
+    //     be made is never invented in order to refuse (see
+    //     `export_disk_is_low`).
+    let estimated_bytes = if is_video {
+        std::fs::metadata(&req.input_path)
+            .ok()
+            .and_then(|m| video_export_estimated_bytes(m.len(), kept_duration, req.duration))
+    } else {
+        export_estimated_bytes(
+            fmt,
+            kept_duration,
+            req.bitrate,
+            req.bit_depth,
+            (source_rate, probed.as_ref().and_then(|i| i.channels)),
+        )
+    };
+    if let Ok(free) = fs4::available_space(&out_dir) {
+        if export_disk_is_low(free, estimated_bytes) {
+            tracing::warn!(
+                free_bytes = free,
+                estimated_bytes = ?estimated_bytes,
+                "export refused: not enough free space on the destination volume"
+            );
+            let free_mb = free / 1_000_000;
+            let need_mb = estimated_bytes.unwrap_or(0) / 1_000_000;
+            return Err(AppError::Recording(format!(
+                "disk_low_for_export: {free_mb} MB free, ~{need_mb} MB needed"
+            )));
+        }
+    }
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
@@ -2983,17 +3048,8 @@ where
         .into_iter()
         .collect();
 
-    // 3. Core picks the output directory ('' = "Samme mappe" → next to the
-    //    source). The file inside it is picked TWICE: a temp name now, for
-    //    ffmpeg to render into, and the collision-free FINAL name only once the
-    //    render has exited zero (step 7). See `editor_tmp_path` for why.
-    let base = Path::new(&req.input_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "redigert".into());
-    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
-    let out_stem = format!("{base}_redigert");
-    let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
+    // (3. The output directory and the render's temp path were resolved back in
+    //     step 1c, so the disk guard could run before the measure pass.)
 
     // 4. Intro/outro jingles (audio formats only — they wrap the audio track,
     //    so the mp4 video path ignores them). The intro is ffmpeg input 0, the
@@ -4793,6 +4849,32 @@ mod tests {
             refused.unwrap_err().to_string(),
             "validation: export_already_running"
         );
+    }
+
+    /// F2-11: the low-disk refusal crosses IPC with `disk_low_for_export` as
+    /// the LEADING code, which is the half `exportErrorKey` matches on. The
+    /// detail after it is free prose for the log — the shell never renders it,
+    /// and it must not be what decides which sentence is shown.
+    ///
+    /// The shell's side of this seam is pinned in
+    /// `app/editor/export-core.test.ts`; each side has its own test, because
+    /// neither one is wrong alone.
+    #[test]
+    fn the_low_disk_refusal_uses_the_code_the_renderer_translates() {
+        let refused =
+            AppError::Recording("disk_low_for_export: 120 MB free, ~980 MB needed".into());
+        let rendered = refused.to_string();
+        assert!(
+            rendered.starts_with("recording error: disk_low_for_export:"),
+            "the leading code is what the shell matches; got {rendered}"
+        );
+        // The guard's own decision, on the numbers that sentence reports.
+        use sundayrec_core::editor::{export_disk_is_low, EXPORT_DISK_HEADROOM_BYTES};
+        assert!(export_disk_is_low(120_000_000, Some(980_000_000)));
+        assert!(!export_disk_is_low(
+            980_000_000 + EXPORT_DISK_HEADROOM_BYTES,
+            Some(980_000_000)
+        ));
     }
 
     /// The progress phase codes cross the IPC boundary as bare strings and are

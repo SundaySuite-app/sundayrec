@@ -880,6 +880,138 @@ pub fn editor_tmp_path(dir: &str, base: &str, ext: &str) -> String {
     join(dir, &format!("{base}{EDITOR_TMP_SUFFIX}.{ext}"))
 }
 
+// ── Export disk guard (F2-11) ─────────────────────────────────────────────────
+
+/// Free space an export wants ON TOP of the file it is about to write: 256 MB.
+///
+/// Well under the recorder's own thresholds
+/// ([`crate::preflight::MIN_DISK_AUDIO_BYTES`], 500 MB) and deliberately so —
+/// those stop a LIVE take, where running out mid-service costs the recording
+/// itself. An export can be re-run; the only thing at stake is the twenty
+/// minutes it takes to discover the disk was full. So this margin is set to
+/// catch "this cannot possibly fit", not to police a comfortable machine.
+pub const EXPORT_DISK_HEADROOM_BYTES: u64 = 256 * 1024 * 1024;
+
+/// How much of the uncompressed size a lossless-compressed target (FLAC,
+/// WavPack, TTA) is assumed to take.
+///
+/// The renderer's own `exportKbps` says a flat 600 kbps stereo / 350 mono,
+/// which is legacy's number and is RATE-BLIND: it estimates a 96 kHz service
+/// exactly as if it were 48 kHz, and misses by half. Here the ratio hangs off
+/// the real PCM size instead, so it scales with rate and depth. 0.6 is a touch
+/// pessimistic for speech (FLAC usually lands nearer 0.5), and pessimistic in
+/// this direction only costs the estimate — never the export.
+const LOSSLESS_ESTIMATE_RATIO: f64 = 0.6;
+
+/// Bytes per second of a `kbps` stream — 1000 bits / 8. The renderer's
+/// `estimatedBytes` uses the same `kbps · 125`, on purpose: two numbers about
+/// the same thing must not be arrived at two ways.
+const BYTES_PER_KBPS_SECOND: f64 = 125.0;
+
+/// Roughly how many bytes an AUDIO export of `kept_sec` seconds will write, or
+/// `None` when nothing here can honestly say (an unknown source rate on a PCM
+/// target, a nonsensical duration).
+///
+/// The bitrate is read out of [`codec_args`]' OWN argv rather than restated:
+/// the defaults (`256k` mp3/AAC/Vorbis, `160k` Opus, `192k` AC-3/mp2/WMA) live
+/// in exactly one place, and a future change to any of them moves this estimate
+/// with it instead of leaving a second copy behind to rot.
+///
+/// PCM targets have no `-b:a`, so they are computed from what a sample costs:
+/// rate × channels × bytes-per-sample. Lossless-compressed targets take that
+/// times [`LOSSLESS_ESTIMATE_RATIO`].
+///
+/// It is an ESTIMATE and it is used as one — see [`export_disk_is_low`], which
+/// only ever asks "is there obviously not room for this".
+pub fn export_estimated_bytes(
+    fmt: &str,
+    kept_sec: f64,
+    bitrate_kbps: Option<u32>,
+    bit_depth: Option<u8>,
+    source: (Option<u32>, Option<u32>),
+) -> Option<u64> {
+    if !kept_sec.is_finite() || kept_sec <= 0.0 {
+        return None;
+    }
+    let (source_rate, channels) = source;
+    let args = codec_args(fmt, bitrate_kbps, bit_depth, source_rate);
+
+    // Lossy: the encoder was told a bitrate, so the size follows from it.
+    if let Some(kbps) = args
+        .windows(2)
+        .find(|w| w[0] == "-b:a")
+        .and_then(|w| w[1].trim_end_matches('k').parse::<f64>().ok())
+    {
+        return Some((kept_sec * kbps * BYTES_PER_KBPS_SECOND).round() as u64);
+    }
+
+    // PCM and lossless: a sample at a time. `-ar` in the argv is the rate that
+    // will actually be written (amr forces 8 kHz; the rest follow the source),
+    // which is what the file's size depends on.
+    let rate = args
+        .windows(2)
+        .find(|w| w[0] == "-ar")
+        .and_then(|w| w[1].parse::<u32>().ok())
+        .or(source_rate)
+        .filter(|r| *r > 0)? as f64;
+    let codec = args
+        .windows(2)
+        .find(|w| w[0] == "-c:a")
+        .map(|w| w[1].as_str())?;
+    let bytes_per_sample = match codec {
+        "pcm_s24le" => 3.0,
+        "pcm_s16le" | "pcm_s16be" => 2.0,
+        "pcm_mulaw" => 1.0,
+        // flac / wavpack / tta: the same samples, compressed.
+        _ => 2.0 * LOSSLESS_ESTIMATE_RATIO,
+    };
+    // An unknown channel count is assumed STEREO — the same assumption the
+    // renderer's `exportKbps` makes, and the one that does not under-estimate.
+    let ch = channels.filter(|c| *c > 0).unwrap_or(2).min(2) as f64;
+    Some((kept_sec * rate * ch * bytes_per_sample).round() as u64)
+}
+
+/// Roughly how many bytes a VIDEO export will write: the source's own size,
+/// scaled by the fraction of it that survives the cuts.
+///
+/// A proxy, and knowingly so. The renderer refuses to guess at all here
+/// (`estimatedBytes` returns `null` for video, because "a number we cannot work
+/// out is a number we must not show") — but a DISK GUARD is not a number shown
+/// to anyone, and a video export is the one that actually fills a disk. x264 at
+/// CRF 18 lands near a camera's own H.264 for the same resolution, so the
+/// source's bytes-per-second is the best information available before ffmpeg
+/// runs. `None` when either duration is unusable.
+pub fn video_export_estimated_bytes(
+    source_bytes: u64,
+    kept_sec: f64,
+    total_sec: f64,
+) -> Option<u64> {
+    if !kept_sec.is_finite() || kept_sec <= 0.0 || !total_sec.is_finite() || total_sec <= 0.0 {
+        return None;
+    }
+    let fraction = (kept_sec / total_sec).clamp(0.0, 1.0);
+    Some((source_bytes as f64 * fraction).round() as u64)
+}
+
+/// Is there obviously not room for this export?
+///
+/// `estimated_bytes` is `None` when nothing could be estimated (an unreadable
+/// probe, an exotic format) — and then the question narrows to the one thing
+/// that is still knowable: whether the volume is down to its last few hundred
+/// megabytes. It never guesses a size in order to refuse.
+///
+/// Deliberately one-directional: a `false` here promises nothing about the
+/// export succeeding (ffmpeg's own `disk_full` classification is still the last
+/// word), it only means "we have no reason to stop you". The value of stopping
+/// early is the twenty minutes a volunteer does not spend watching a render
+/// that cannot land.
+pub fn export_disk_is_low(free_bytes: u64, estimated_bytes: Option<u64>) -> bool {
+    let needed = estimated_bytes
+        .unwrap_or(0)
+        .saturating_add(EXPORT_DISK_HEADROOM_BYTES);
+    free_bytes < needed
+}
+
 /// Resolve the directory an export writes into, given the renderer's requested
 /// folder and the source file.
 ///
@@ -2681,6 +2813,141 @@ mod tests {
             !is_editor_temp_name(final_name),
             "the DELIVERED file must survive the next startup sweep: {final_name}"
         );
+    }
+
+    // ── F2-11: the export disk guard ─────────────────────────────────────────
+
+    #[test]
+    fn a_lossy_estimate_follows_the_bitrate_the_codec_args_ask_for() {
+        // One hour of 256 kbps mp3 ≈ 115 MB. The renderer's own `estimatedBytes`
+        // does `keptSec · kbps · 125`; this must be the same arithmetic, or the
+        // number the modal shows and the number the guard weighs disagree.
+        let hour = 3600.0;
+        let got = export_estimated_bytes("mp3", hour, None, None, (Some(48_000), Some(2)))
+            .expect("a bitrate-driven estimate");
+        assert_eq!(got, (hour * 256.0 * 125.0) as u64);
+        // An explicit bitrate wins, exactly as it does in `codec_args`.
+        let low = export_estimated_bytes("mp3", hour, Some(128), None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(low, got / 2);
+        // Opus defaults to 160k, not 256k — read from the argv, not restated.
+        let opus = export_estimated_bytes("opus", hour, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(opus, (hour * 160.0 * 125.0) as u64);
+    }
+
+    #[test]
+    fn a_wav_estimate_is_rate_times_channels_times_depth() {
+        // 1 s of 48 kHz 16-bit stereo = 192 000 bytes. Same formula as the
+        // renderer's `exportKbps` for wav.
+        let stereo = export_estimated_bytes("wav", 1.0, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(stereo, 48_000 * 2 * 2);
+        // 24-bit is half again as big…
+        let deep = export_estimated_bytes("wav", 1.0, None, Some(24), (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(deep, 48_000 * 2 * 3);
+        // …and a mono source is half of stereo.
+        let mono = export_estimated_bytes("wav", 1.0, None, None, (Some(48_000), Some(1)))
+            .expect("estimate");
+        assert_eq!(mono, 48_000 * 2);
+        // A 96 kHz master is estimated as 96 kHz, because a lossless target
+        // KEEPS the source rate (`output_sample_rate`).
+        let hi = export_estimated_bytes("wav", 1.0, None, None, (Some(96_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(hi, 96_000 * 2 * 2);
+    }
+
+    #[test]
+    fn a_flac_estimate_scales_with_the_rate_the_shell_ignores() {
+        // The renderer's flat 600 kbps stereo is rate-blind: it says the same
+        // thing about a 48 kHz and a 96 kHz service. Here 96 kHz is twice
+        // 48 kHz, which is the truth about the file.
+        let at48 = export_estimated_bytes("flac", 10.0, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        let at96 = export_estimated_bytes("flac", 10.0, None, None, (Some(96_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(at96, at48 * 2);
+        // …and it is a FRACTION of the uncompressed size, never more.
+        let wav = export_estimated_bytes("wav", 10.0, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert!(at48 < wav, "flac {at48} must be under wav {wav}");
+    }
+
+    #[test]
+    fn an_estimate_that_cannot_be_made_is_not_invented() {
+        // No source rate on a PCM target: nothing here knows how big that is.
+        assert_eq!(
+            export_estimated_bytes("wav", 60.0, None, None, (None, Some(2))),
+            None
+        );
+        // A useless duration is not an estimate of zero.
+        assert_eq!(
+            export_estimated_bytes("mp3", 0.0, None, None, (Some(48_000), Some(2))),
+            None
+        );
+        assert_eq!(
+            export_estimated_bytes("mp3", f64::NAN, None, None, (Some(48_000), Some(2))),
+            None
+        );
+        // A lossy target does NOT need the rate — the bitrate is the size.
+        assert!(export_estimated_bytes("mp3", 60.0, None, None, (None, None)).is_some());
+    }
+
+    #[test]
+    fn a_video_estimate_is_the_source_scaled_by_what_survives_the_cuts() {
+        // Half the recording kept ⇒ half the bytes.
+        assert_eq!(
+            video_export_estimated_bytes(1_000_000_000, 1800.0, 3600.0),
+            Some(500_000_000)
+        );
+        // Nothing cut ⇒ the source's own size.
+        assert_eq!(
+            video_export_estimated_bytes(4_000_000, 12.0, 12.0),
+            Some(4_000_000)
+        );
+        // A kept span longer than the source (impossible, but arithmetic is
+        // arithmetic) is clamped rather than inflated.
+        assert_eq!(
+            video_export_estimated_bytes(4_000_000, 99.0, 12.0),
+            Some(4_000_000)
+        );
+        assert_eq!(video_export_estimated_bytes(4_000_000, 12.0, 0.0), None);
+    }
+
+    #[test]
+    fn the_disk_guard_refuses_only_what_obviously_cannot_fit() {
+        let need = 1_000_000_000u64; // 1 GB of export
+                                     // Room for the file AND the headroom: fine.
+        assert!(!export_disk_is_low(
+            need + EXPORT_DISK_HEADROOM_BYTES,
+            Some(need)
+        ));
+        // One byte short of that: refused.
+        assert!(export_disk_is_low(
+            need + EXPORT_DISK_HEADROOM_BYTES - 1,
+            Some(need)
+        ));
+        // Room for the file but not for the headroom is still refused — the
+        // margin is the point.
+        assert!(export_disk_is_low(need + 1, Some(need)));
+    }
+
+    #[test]
+    fn an_unknown_size_only_refuses_an_almost_full_volume() {
+        // Nothing could be estimated. That must not become "refuse everything"
+        // (no export on an unreadable probe) NOR "allow everything" (a volume
+        // with 3 MB left).
+        assert!(!export_disk_is_low(EXPORT_DISK_HEADROOM_BYTES, None));
+        assert!(export_disk_is_low(EXPORT_DISK_HEADROOM_BYTES - 1, None));
+        assert!(export_disk_is_low(0, None));
+        // The headroom stays well under the recorder's own terminal floor: this
+        // guard protects twenty minutes of waiting, that one protects a service.
+        // Const-block assert — a relationship between two constants belongs to
+        // the compiler, not the test runner.
+        const {
+            assert!(EXPORT_DISK_HEADROOM_BYTES < crate::preflight::MIN_DISK_AUDIO_BYTES);
+        }
     }
 
     #[test]

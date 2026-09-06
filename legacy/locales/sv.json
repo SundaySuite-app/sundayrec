@@ -939,6 +939,7 @@
     "enhanceTitle": "Ljudförbättring",
     "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format på sidan Export.",
     "errExportAlreadyRunning": "En export pågår redan. Vänta tills den är klar.",
+    "errDiskLowForExport": "Det finns inte tillräckligt med ledigt utrymme för den här exporten. Frigör utrymme, eller välj en annan mapp med ”Välj mapp…”.",
     "errRecordingInProgress": "En inspelning pågår. Vänta tills den är klar innan du exporterar.",
     "errPathNotAbsolute": "Ogiltig mapp eller filsökväg. Välj målmappen igen.",
     "metaDesc": "BESKRIVNING",
