@@ -10,15 +10,19 @@ ikke lar seg presse sammen.
 
 **Forutsetninger:** en Mac og en Windows-boks, begge med SundayRec
 installert og et ekte lydoppsett (USB-mikrofon eller mikser) tilkoblet;
-tilgang til terminal på Mac-en (for `kill -9`); en kopi-vennlig ekte
+tilgang til terminal på Mac-en (for `kill -9`) og til Oppgavebehandling +
+`%APPDATA%`-mappa på Windows-boksen; en kopi-vennlig ekte
 `sundayrec.sqlite` det er greit å teste mot; nok tid til at maskinen kan
 sovne og våkne av seg selv minst én gang.
 
 Kryss av etter hvert. Et punkt som IKKE stemmer med forventet resultat er en
 feilrapport, ikke en avkrysning — noter det og fortsett til neste; ikke la
-ett rødt punkt stoppe resten av dagen.
+ett rødt punkt stoppe resten av dagen. Der et punkt er født av en bestemt
+F2-fiks (PR-nummer i parentes), står forventet resultat **FØR** fiksen først
+(så du vet hva et regresjonsfunn ville sett ut som) og **ETTER** — det du
+faktisk skal se nå — sist.
 
-## Mac-riggen
+## Mac-boksen
 
 - [ ] **(a) Trekk mikseren midt i opptaket.** Start et opptak, la det gå et
       minutt, trekk ut USB-kabelen til mikseren/mikrofonen og **la den stå
@@ -54,10 +58,32 @@ ett rødt punkt stoppe resten av dagen.
       har ikke mistet noe som lå der fra før.
 - [ ] **(e) Vekketest.** Skru på «Vekk maskinen fra dvale» (gearikonet →
       Avansert), og bruk **«Test vekking om 2 min»** på kortet «Flere tider
-      og spesialopptak». La maskinen sovne (eller sovne den selv).
-      **Forventet:** maskinen våkner av seg selv rundt to minutter senere,
-      uten et administratorpassord-spørsmål (med mindre appen selv har
-      advart om at akkurat denne maskinen trenger et).
+      og spesialopptak». La maskinen sovne (eller sovne den selv). Rett
+      etter at testen har løst ut (eller du har trykket «Avbryt»), kjør
+      `pmset -g sched` i Terminal.
+      **Forventet FØR fiksen:** «Test vekking»/«Avbryt» gikk rett på pmset og
+      **erstattet** hele vekkeplanen under samme eier (`SundayRec`) — en
+      test lørdag kunne slette søndagens ekte vekking uten varsel, og
+      heltekortet fortsatte å vise «armert» etterpå fordi det leser appens
+      egen forventning, ikke OS-ets svar.
+      **Forventet ETTER (F2-W3, #235):** maskinen våkner av seg selv rundt to
+      minutter senere, uten et administratorpassord-spørsmål (med mindre
+      appen selv har advart om at akkurat denne maskinen trenger et) — OG
+      `pmset -g sched` lister søndagens vekking under eieren `SundayRec`
+      **både før og etter** testen. Testens egen oppføring bruker en egen
+      eier (`SundayRec-test`) og er borte etter «Avbryt»; søndagens er
+      urørt.
+- [ ] **(e, fortsettelse) Er `cancelall` trygg for eieren den ber om?** På
+      samme rigg: `pmset schedule wake "<en dato/klokke 2 min fram>" Test`,
+      deretter `pmset schedule cancelall SundayRec`, og les `pmset -g sched`
+      mellom hvert steg.
+      **Ubevist (#235s «utenfor scope»):** `man pmset` sier eieren er en
+      valgfri hale til `type date+time`, men ingen har fått bekreftet på en
+      ekte Mac om `cancelall SundayRec` faktisk filtrerer på eier (kun
+      `SundayRec`-oppføringer forsvinner), kansellerer ALT uansett eier (også
+      testens `Test`-oppføring), eller feiler stille. Svaret avgjør om den
+      gamle, delte-eier-modellen noensinne var trygg på denne maskinen.
+      Noter resultatet i `docs/NEEDS-RICHARD.md`.
 - [ ] **(g) #111 — lyttetest med ulik inngangsgain.** Ta opp 3–4 korte klipp
       av den samme typen lyd (tale er nok) med tydelig ulik inngangsgain —
       stille, normal, kraftig. Lytt gjennom dem, og se spesielt etter om tale
