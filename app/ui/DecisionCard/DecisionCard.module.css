@@ -1,0 +1,65 @@
+.dec {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--sp-4) var(--sp-5);
+}
+
+/*
+ * Gult betyr «du må gjøre noe før søndag». Samme lag-over-flaten-teknikk som
+ * `Card`: kortet blir ikke et annet slags element, det får en tone.
+ */
+.todo {
+  border-color: var(--warn-line);
+  background:
+    linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--surface);
+}
+
+.num {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  background: var(--gold);
+  color: var(--on-gold);
+}
+
+/* Ubesvart: en ring i stedet for en fylt sirkel — den ser «åpen» ut. */
+.todo .num {
+  background: transparent;
+  color: var(--warn);
+  box-shadow: inset 0 0 0 2px var(--warn-line);
+}
+
+.body {
+  min-width: 0;
+}
+
+.question {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.answer {
+  margin-top: 2px;
+  font-size: var(--fs-val);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}

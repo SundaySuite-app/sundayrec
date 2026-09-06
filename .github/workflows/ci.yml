@@ -30,7 +30,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
+      - uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: clippy, rustfmt
 
@@ -67,6 +68,24 @@ jobs:
           npm run format:check
           npm run typecheck
 
+      # The shell must build, AND the bundle must contain no dynamic code
+      # evaluation — the shipped CSP is `script-src 'self'`, so a transform that
+      # reached for it would produce a bundle that builds fine and is a blank
+      # window in WKWebView. This is the standing version of the S0 spike's
+      # proof; e2e/boot.spec.ts is the runtime half.
+      #
+      # `dist/` is the artifact a release is cut from (tauri.conf.json's
+      # `frontendDist`), so since fase B this greps the bundle that actually
+      # ships rather than a parallel `dist-app/`.
+      - name: The shell builds under the shipped CSP
+        run: |
+          npm run build
+          if grep -rqE 'eval\(|new[[:space:]]+Function' dist; then
+            echo "::error::dist contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/APP-SHELL.md."
+            grep -rnE 'eval\(|new[[:space:]]+Function' dist | head -20
+            exit 1
+          fi
+
       # Vitest: pure renderer logic (editor cut-plan/geometry, locale parity).
       - name: Frontend unit tests
         run: npm run test
@@ -75,12 +94,83 @@ jobs:
       - name: App version in sync
         run: npm run version-sync
 
-      # A `data-i18n` fallback in index.html must agree with no.json, or the
-      # first-frame/missing-key text silently describes a UI that no longer
-      # exists (see scripts/check-i18n-fallbacks.mjs). This is in `npm run
-      # check` — mirrored here so a PR can't skip it by never running `check`.
-      - name: i18n fallback keys in sync with no.json
-        run: npm run i18n-fallbacks
+      # Peker hvert `t/tf/tn/tArr/tDyn`-kall i `app/` på en nøkkel som FINNES,
+      # i den formen kallet forutsetter, i BÅDE no.json og en.json? Alle fire
+      # feilformene (streng lest som gruppe, gruppe lest som streng, array som
+      # streng, tomt tDyn-subtre) er ellers HELT stille.
+      #
+      # …og motsatt vei: finnes det nøkler ingen leser? Den halvdelen var
+      # informativ mens legacy-skallet eide mesteparten av katalogen. Fase B
+      # slettet skallet, `--unused` ble en FEILENDE gate, og 653 nøkler ble
+      # ryddet ut av alle sju katalogene. «Leser» er BÅDE et `t()`-kall i
+      # SKALLET og en nøkkel navngitt av en delt kjerne under `app/lib/` — de
+      # rene modulene svarer med nøkler, og en prune som bare talte kallene
+      # ville slettet tekst som faktisk rendres.
+      #
+      # De to gamle HTML-gatene (`check-i18n-fallbacks`, `check-i18n-hardcoded`)
+      # er borte: begge målte `legacy/renderer/index.html`, som ikke finnes.
+      - name: i18n keys exist, and nothing dead is left behind
+        run: |
+          npm run i18n-keys
+          npm run i18n-keys:unused
+
+      # i18n-hardkodingsgate for `app/`, baseline 0 fra dag én: skallet har
+      # ingen gjeld å betale ned, hver streng skrives nå. Den ser prosa i
+      # JSX-tekst, i JSX-attributter OG i objekt-egenskaper (dialogtekstene er
+      # egenskaper, ikke attributter — en gate som bare så JSX ville bommet på
+      # hver streng en frivillig leser når det gjelder), og forbyr `data-i18n`,
+      # som er legacy-skallets mekanisme og stille feil i et reaktivt tre.
+      # Selvtest innebygd som mutasjonsvern.
+      - name: i18n hardcoded-text gate (app/)
+        run: npm run i18n-hardcoded-tsx
+
+      # i18n-flertallsgate: hver `tn()`-nøkkel må være en CLDR-flertallsgruppe,
+      # hver gruppe må ha nøyaktig kategoriene språket trenger (regnet ut med
+      # Intl.PluralRules, ikke listet for hånd), og ingen gruppe må leses med
+      # `t()`. En manglende `few` i pl.json er ellers helt stille: teksten er
+      # bare gal for 2–4 og 22–24. Selvtest innebygd som mutasjonsvern. I
+      # `npm run check` og ci-local.sh også — gate-paritet er lov.
+      - name: i18n plural groups complete in every locale
+        run: npm run i18n-plurals
+
+      # Fargegate for `app/`: en farge finnes ÉN gang, i app/styles/tokens.css,
+      # og hver komponent-CSS bruker `var(--…)`. Legacy-skallet har en pen
+      # `:root`-blokk og over tusen hardkodede farger under den — resultatet er
+      # en app eieren ikke kan fargejustere ett sted. Ett funn feller gaten, fra
+      # dag én. Selvtest innebygd som mutasjonsvern. I `npm run check` og
+      # ci-local.sh også — gate-paritet er lov.
+      - name: app colours only via tokens
+        run: npm run css-tokens
+
+      # Feilkode-skrallen: hver kode motoren sender på recording://error —
+      # `emit_error(…, "kode", …)`, `<sink>.error("kode", …)` og armene i
+      # `error_code_str` under src-tauri/src/recorder/** — må finnes i
+      # NATIVE_ERRORS i app/pages/record/record-core.ts. En kode som mangler
+      # blir ikke en feil og ikke en tom skjerm: den blir «errorUnknown», en
+      # sann setning som ikke sier noe, vist til en frivillig hvis kamera
+      # aldri åpnet. Fire koder lå slik. Selvtest innebygd som mutasjonsvern.
+      # I `npm run check` og ci-local.sh også — gate-paritet er lov.
+      - name: recorder error codes are translatable in the shell
+        run: npm run error-codes
+
+      # Norsk-skrallen (F1 D5): antall `æøåÆØÅ` i PRODUKSJONS-strengliteraler
+      # under src-tauri/src og crates/<krate>/src, per fil, mot en fasit som
+      # bare kan gå NED. Setningene som når en frivillig utenfor skjermen —
+      # OS-varselet og linja i varsel-e-posten — bor i
+      # `sundayrec_core::alerts`, der kompilatoren krever alle sju språk; denne
+      # gaten er det som hindrer at nye norske setninger sniker seg tilbake inn
+      # i motoren. Sju-språks-katalogene og de norske DATA-tabellene står på
+      # allowlisten i scripts/rust-norwegian-baseline.json, med grunnen skrevet
+      # ut. Selvtest innebygd som mutasjonsvern. I `npm run check` og
+      # ci-local.sh også — gate-paritet er lov.
+      - name: no new Norwegian string literals in Rust
+        run: npm run rust-norwegian
+
+      # docs/SMOKE-TEST.md's VERIFIED-BY pointers must resolve to tests that
+      # still exist — a pointer at nothing claims coverage that does not exist.
+      # In `npm run check` since E11; mirrored here so a PR can't skip it.
+      - name: Smoke-runbook VERIFIED-BY pointers resolve
+        run: npm run smoke-verified
 
       # The Rust suite is deliberately device-INDEPENDENT (device enumeration
       # tolerates zero devices; the cpal/ffmpeg streams are not opened in tests;
@@ -89,6 +179,15 @@ jobs:
       # docs/MIGRATION-TAURI2.md, Phase 0/3 hardware matrix.
       - name: Rust fmt / clippy / tests
         working-directory: src-tauri
+        # F1-M6 (D6): this job fetched the real ffmpeg/ffprobe sidecars above,
+        # so `recorder::longrun`'s E6.2/E6.4 tests have no excuse to take their
+        # `SKIP: no fetched ffmpeg/ffprobe sidecar` path here — that silent
+        # skip is exactly how the whole longrun suite went unexercised in CI
+        # without a single red run to show it. REQUIRE_SIDECAR turns that SKIP
+        # into a panic in this lane; a bare dev checkout without the sidecars
+        # still gets the tolerant skip (see EnvPin::acquire).
+        env:
+          SUNDAYREC_REQUIRE_SIDECAR: "1"
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
@@ -111,14 +210,14 @@ jobs:
             exit 1
           fi
 
-      # Regression gate for docs/COMMAND_AUDIT_2026-08.md: fails if a command
+      # Regression gate for docs/archive/COMMAND_AUDIT_2026-08.md: fails if a command
       # that was reachable from the renderer goes dark, or a newly-registered
       # command sits unreachable without anyone classifying it as intentional.
       # See scripts/check-command-reachability.mjs for the method.
       - name: Command reachability regression check
         run: npm run reachability
 
-      # The feature-off degradation path (every editor/whisper/tray/updater
+      # The feature-off degradation path (every editor/tray/updater
       # command returns feature_disabled) must keep COMPILING — it once broke
       # silently ("Permission updater:default not found") because nothing
       # gated it. Clippy (not just check) with -D warnings: `cargo check` let
@@ -129,22 +228,106 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
-      # E9's neural VAD is DEFAULT-OFF, so every step above compiles the seam
-      # OUT. Its value is a set of tests that catch failure modes the model has
-      # no error for — a 512-sample window instead of 576, `sr` at 8000, inputs
-      # bound by index, a lost symbolic batch dim — and a test that never runs
-      # protects nothing. This is the step where they run. It also keeps the
-      # feature-ON side under `-D warnings`: the default gate can never see it,
-      # which is exactly how a stub and its real implementation drift apart.
+  # E9's neural VAD is DEFAULT-OFF, so every step in `check` compiles the seam
+  # OUT. Its value is a set of tests that catch failure modes the model has
+  # no error for — a 512-sample window instead of 576, `sr` at 8000, inputs
+  # bound by index, a lost symbolic batch dim — and a test that never runs
+  # protects nothing. This is the job where they run. It also keeps the
+  # feature-ON side under `-D warnings`: the default gate can never see it,
+  # which is exactly how a stub and its real implementation drift apart.
+  #
+  # Its own JOB (split out of `check` 2026-08-09) purely for wall time: the
+  # vad lane took ~4½ min at the END of a ~21 min serial job while every other
+  # job in the pipeline had been idle for 15. Same two commands, same flags —
+  # only the job boundary moved. It pays its own ~2 min setup (apt + npm) to
+  # keep the environment byte-identical with the old in-job step, and carries
+  # its own Swatinem cache key (rust-cache keys by job id).
+  vad:
+    name: Rust clippy + tests (vad feature)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri + audio system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libasound2-dev
+
+      - run: npm ci
+
+      # Same real sidecars as `check` (not the Windows job's stubs), so any
+      # vad-adjacent test that resolves a binary behaves exactly as before.
+      - name: Fetch ffmpeg/ffprobe sidecars
+        run: npm run ffmpeg
+
       - name: Rust clippy + tests (vad feature)
         working-directory: src-tauri
         run: |
           cargo clippy --workspace --all-targets --features vad -- -D warnings
           cargo test --workspace --features vad vad::
 
-      # Compile the frontend + the Rust app on Linux (fast smoke; the real
-      # macOS/Windows bundles are built in release.yml). --no-bundle skips
-      # installer packaging.
+  # Compile the frontend + the Rust app on Linux (fast smoke; the real
+  # macOS/Windows bundles are built in release.yml). --no-bundle skips
+  # installer packaging.
+  #
+  # Its own JOB (split out of `check` 2026-08-09) for the same wall-time
+  # reason as `vad`: this release-profile build shares no artifacts with the
+  # debug-profile clippy/test steps anyway, and as the last step of a serial
+  # job it alone held the pipeline ~7 min past every other job's finish.
+  # Identical command; own cache key means the release artifacts stop
+  # competing with the debug artifacts for the shared cache's 2 GB budget.
+  build-smoke:
+    name: Build Tauri app (no bundle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri + audio system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libasound2-dev
+
+      - run: npm ci
+
+      - name: Fetch ffmpeg/ffprobe sidecars
+        run: npm run ffmpeg
+
       - name: Build Tauri app (no bundle)
         run: npm run tauri build -- --no-bundle
 
@@ -180,7 +363,7 @@ jobs:
       # lean.
       - name: Upload traces on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-traces
           path: test-results/
@@ -199,7 +382,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: clippy
 
@@ -226,7 +409,7 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
 
       # Approximate the Windows RELEASE feature combo (release.yml builds
-      # --no-default-features --features editor,tray,asio,updater,email,streaming;
+      # --no-default-features --features editor,tray,asio,updater,email;
       # asio needs the Steinberg SDK so it is left out here) — a feature-gate seam
       # that only breaks off-default used to surface at tag time. This line TRACKS
       # the release list: adding a feature there means adding it here.
@@ -239,7 +422,7 @@ jobs:
       # Don't assume this step proves the Windows release build compiles.
       - name: cargo check (Windows release feature combo, minus asio)
         working-directory: src-tauri
-        run: cargo check --workspace --no-default-features --features editor,tray,updater,email,streaming
+        run: cargo check --workspace --no-default-features --features editor,tray,updater,email
 
   # Dependency vulnerability scan — advisory DBs for both ecosystems. Runs as
   # its own job so a slow cargo-audit install doesn't hold up the main gate.
@@ -254,12 +437,90 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.0
 
-      - name: npm audit (high+)
-        run: npm audit --audit-level=high
+      # npm audit blocked EVERY push twice on 2026-09-04 when npmjs.org's own
+      # audit endpoint itself returned 503 (real log line: `npm warn audit
+      # 503 Service Unavailable … npm error audit endpoint returned an
+      # error`) — registry drift, not an advisory in this repo's dependency
+      # tree. The job went red exactly the same way a real finding would,
+      # and nothing said which one it was short of opening the raw log. This
+      # step tells the two apart:
+      #   - a REAL finding (npm audit ran and reported an advisory at or
+      #     above `high`) still fails the job, unchanged policy, with the
+      #     advisory output right here in the log.
+      #   - the endpoint being unreachable after 3 tries ALSO still fails the
+      #     job — this gate stays fail-closed, "could not check" must not
+      #     read as "checked and fine" — but says so with `::warning::` and a
+      #     plain sentence, so triage takes seconds instead of a re-run and a
+      #     guess.
+      # Backoff (30/60/120s) is only BETWEEN attempts. A single `npm audit`
+      # call took ~7 min end-to-end the day this was written (npm's own
+      # internal retries before it gave up on the 503); each attempt is now
+      # bounded to ~90 s by `--fetch-timeout` + `--fetch-retries=0` — THIS
+      # loop is the retry policy, npm's is not needed on top of it — so the
+      # whole loop's worst case (3 × 90 s + 210 s of backoff ≈ 8 min) fits
+      # inside the step's `timeout-minutes`.
+      #
+      # Deliberately UNCHANGED here: npm audit still scans the full tree
+      # (dev + runtime deps), still blocking at `high`. Splitting that into
+      # "--omit=dev blocking, full non-blocking" is a real option but a
+      # policy call, not a CI-hygiene one — see this PR's description.
+      - name: npm audit (high+), tolerant of registry 503s
+        # The overall bound; the per-attempt bound is npm's own --fetch-timeout
+        # below. Hitting this means something other than the registry hung.
+        timeout-minutes: 12
+        run: |
+          # The runner's default shell is `bash -e {0}`: errexit is ON, and
+          # `set -uo pipefail` does NOT turn it off. The first version of this
+          # step assumed it did, so a failing `npm audit` aborted the step at
+          # attempt 1 — before `status=$?`, before the log was printed, before
+          # the drift-vs-finding classification and its annotation (PR #213,
+          # run 33854448949: "attempt 1/3" then "exit code 1", nothing else).
+          # The `|| status=$?` guard below is what keeps the loop alive under
+          # -e; nothing else in the loop can fail on its own.
+          set -uo pipefail
+
+          max_attempts=3
+          backoffs=(30 60 120)
+          log="$(mktemp)"
+
+          for attempt in 1 2 3; do
+            echo "── npm audit attempt ${attempt}/${max_attempts} ──"
+            status=0
+            npm audit --audit-level=high --fetch-timeout=90000 --fetch-retries=0 >"$log" 2>&1 || status=$?
+            cat "$log"
+
+            if [ "$status" -eq 0 ]; then
+              echo "✓ npm audit clean."
+              exit 0
+            fi
+
+            if grep -qiE "audit endpoint returned an error|network timeout|registry\.npmjs\.org.*(Unavailable|Too Many Requests)|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN" "$log"; then
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                wait_s="${backoffs[$((attempt - 1))]}"
+                echo "::warning::npm audit attempt ${attempt}/${max_attempts} — the npmjs.org audit endpoint itself errored (registry drift, not necessarily a finding in this repo). Retrying in ${wait_s}s."
+                sleep "$wait_s"
+                continue
+              fi
+              echo "::warning::npm audit failed all ${max_attempts} attempts because the npmjs.org audit endpoint is unavailable — this is REGISTRY DRIFT, not a dependency finding. The job still fails on purpose (an unauditable tree does not pass silently); re-run once the registry recovers, and do not read this as a new advisory."
+              exit "$status"
+            fi
+
+            echo "::error::npm audit reported a real finding at or above 'high' (see the advisory output above) — not registry drift, no point retrying it."
+            exit "$status"
+          done
+
+      - name: Install cargo-audit (prebuilt binary — `cargo install --locked` took ~2 min here)
+        uses: taiki-e/install-action@v2
+        with:
+          # Version pinned (not the bare `@cargo-audit` shorthand ref, which
+          # floats to whatever install-action's latest release considers
+          # current) so a new cargo-audit release can't change this job's
+          # behaviour without a deliberate bump — same reasoning as the
+          # pinned Rust toolchain above. Check crates.io/crates/cargo-audit
+          # for newer versions when bumping.
+          tool: cargo-audit@0.22.2
 
       - name: cargo audit
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit
+        run: cargo audit

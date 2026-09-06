@@ -1,8 +1,6 @@
 //! Recorder commands — the thin IPC layer over `crate::recorder` (Fase 3).
 //!
 //! The renderer calls:
-//!   - `list_recording_devices` to discover capture devices (real ffmpeg
-//!     enumerator),
 //!   - `start_recording(opts)` / `stop_recording` to drive a unified capture,
 //!     listening for `recording://{state,started,progress,silence,error,
 //!     reconnecting,reconnected}` events,
@@ -14,7 +12,7 @@
 //! ordering is the whole feature:
 //!
 //! ```text
-//!   preview.stop_and_release()  ‖  preroll harvest     (concurrent: camera vs mic)
+//!   preroll harvest                                    (frees the mic)
 //!         → preroll.stop()                             (the leak guard)
 //!         → vu.stop()                                  (the last other owner)
 //!         → 400 ms settle                              (WebKit tears down async)
@@ -22,15 +20,16 @@
 //! ```
 //!
 //! Every arrow is rig-verified and every one of them was, at some point, a bug:
-//! the camera held by the preview so video silently failed; the rolling pre-roll
-//! ffmpeg keeping the mic for a whole VIDEO session; the Qu-5 refusing to open
-//! because WebKit still had the device in a 2-channel format (2026-07-31).
+//! the rolling pre-roll ffmpeg keeping the mic for a whole VIDEO session; the
+//! Qu-5 refusing to open because WebKit still had the device in a 2-channel
+//! format (2026-07-31). (Until v0.14 the diagram had one more concurrent arrow:
+//! releasing the idle camera-preview engine, which died with the Direkte page.)
 //!
 //! Until now that ordering lived only as a comment, because a `#[tauri::command]`
-//! taking five `State<'_, …>` handles cannot be called from a test — nothing in
-//! the repo invokes a command at all. So the body moved into
+//! taking several `State<'_, …>` handles cannot be called from a test — nothing
+//! in the repo invokes a command at all. So the body moved into
 //! [`start_recording_impl`], generic over [`StartRecordingDeps`]: the command is
-//! now a shim that pulls the five engines out of managed state, and the sequence
+//! now a shim that pulls the engines out of managed state, and the sequence
 //! is asserted against a recording mock in this module's tests.
 //!
 //! ### The rule for the ~16 command files still to do
@@ -50,26 +49,18 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 
-use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::settings::ChannelMode;
 
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::recorder::engine::{list_recording_devices as enumerate, RecorderEngine, RecordingOpts};
+use crate::recorder::engine::{RecorderEngine, RecordingOpts};
 use crate::recorder::preroll::{preroll_settings_from, PrerollClip, PrerollEngine, PrerollStatus};
 use crate::settings;
 use crate::test_recording::{run_test_recording as run_test, TestRecordingResult};
-
-/// List capture (audio) devices the recorder can match against, via the real
-/// ffmpeg device enumerator (F2.1).
-#[tauri::command]
-pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
-    enumerate().await
-}
 
 /// The latest in-recording camera preview frame, base64-encoded, or `None` if no
 /// frame is available yet. For a VIDEO recording the recording ffmpeg writes a
@@ -107,7 +98,7 @@ pub async fn plan_recording_opts(
     video: Option<bool>,
 ) -> AppResult<RecordingOpts> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    crate::scheduler::build_opts(
+    crate::recorder::opts::build_opts(
         &app,
         &s,
         custom_name.as_deref(),
@@ -204,11 +195,6 @@ pub trait StartRecordingDeps {
     /// Is the rolling pre-roll buffer running right now?
     fn preroll_is_active(&self) -> bool;
 
-    /// Release the camera preview and WAIT for it: on macOS a camera has a single
-    /// owner, and while the Home preview's ffmpeg child still holds it the
-    /// recorder's avfoundation video input can't open it and video silently fails.
-    fn release_preview(&self) -> impl std::future::Future<Output = ()> + Send;
-
     /// Harvest the trimmed clip of audio captured BEFORE this press (F3.2). Also
     /// frees the mic. `None` when nothing was captured.
     fn harvest_preroll(
@@ -244,24 +230,19 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
     opts: RecordingOpts,
 ) -> AppResult<()> {
     let pre_roll_seconds = deps.load_pre_roll_seconds().await?;
-    // Decided up front rather than inside the harvest future. Equivalent — the
-    // preview release touches the CAMERA and cannot change whether the pre-roll
-    // loop is running — and it makes the decision a value a test can assert.
+    // Decided up front so the decision is a value a test can assert.
     let plan = plan_preroll_harvest(pre_roll_seconds, deps.preroll_is_active(), &opts);
 
-    // Two independent device hand-offs must finish before the engine opens its
-    // devices: (1) release the camera preview, and (2) harvest the pre-roll clip
-    // (which also frees the mic). They touch DIFFERENT devices (camera vs mic), so
-    // we run them CONCURRENTLY instead of back-to-back — when both apply (video +
-    // pre-roll + a live preview), this shaves off roughly the smaller of the two
-    // waits from the felt start time.
-    let harvest = async {
-        match plan {
-            Some(plan) => deps.harvest_preroll(plan).await,
-            None => None,
-        }
+    // The mic hand-off must finish before the engine opens its devices: harvest
+    // the pre-roll clip (which also frees the mic). (Until v0.14 a second,
+    // concurrent hand-off released the idle camera-preview engine here; that
+    // engine died with the Direkte page — the webview never owns the camera
+    // during a start, and the in-recording preview is the recorder's own file
+    // sink.)
+    let clip = match plan {
+        Some(plan) => deps.harvest_preroll(plan).await,
+        None => None,
     };
-    let (_, clip) = tokio::join!(deps.release_preview(), harvest);
 
     // LEAK GUARD (2026-07-31 audit): the harvest above only STOPS the rolling
     // pre-roll capture on the audio-only path. For a VIDEO session (or pre-roll
@@ -286,7 +267,7 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
     started
 }
 
-/// The real [`StartRecordingDeps`]: the five managed engines + the pool, borrowed
+/// The real [`StartRecordingDeps`]: the managed engines + the pool, borrowed
 /// out of the command's `State` handles. Holds no logic of its own — every method
 /// is one call — which is the point: everything that could be wrong is now in
 /// [`start_recording_impl`], where it is tested.
@@ -294,7 +275,6 @@ struct TauriStartDeps<'a> {
     app: AppHandle,
     engine: &'a RecorderEngine,
     preroll: &'a PrerollEngine,
-    preview: &'a crate::media::preview::PreviewEngine,
     vu: &'a crate::audio::vu::VuEngine,
     pool: sqlx::SqlitePool,
 }
@@ -306,10 +286,6 @@ impl StartRecordingDeps for TauriStartDeps<'_> {
 
     fn preroll_is_active(&self) -> bool {
         self.preroll.is_active()
-    }
-
-    async fn release_preview(&self) {
-        self.preview.stop_and_release().await
     }
 
     async fn harvest_preroll(&self, plan: HarvestPlan) -> Option<PrerollClip> {
@@ -359,7 +335,6 @@ pub async fn start_recording(
     app: AppHandle,
     engine: State<'_, RecorderEngine>,
     preroll: State<'_, PrerollEngine>,
-    preview: State<'_, crate::media::preview::PreviewEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
     opts: RecordingOpts,
@@ -368,7 +343,6 @@ pub async fn start_recording(
         app,
         engine: &engine,
         preroll: &preroll,
-        preview: &preview,
         vu: &vu,
         pool: db.pool.clone(),
     };
@@ -500,7 +474,7 @@ pub fn recording_cancel_autostop(engine: State<'_, RecorderEngine>) -> AppResult
 /// `fs4` cross-platform probe (already a dep, used by preflight) instead of
 /// shelling out to `df`/`powershell`. Fully testable — no device, no ffmpeg.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/DiskSpace.ts")]
+#[ts(export, export_to = "DiskSpace.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiskSpace {
     /// Free space in bytes, or `null` when unavailable.
@@ -513,34 +487,36 @@ pub struct DiskSpace {
 /// Extracted (E5.3) because the fallback chain is real logic that used to be
 /// reachable only through `AppHandle` + a live filesystem: an unset save folder,
 /// a save folder on an ejected USB stick, and no documents dir at all are three
-/// different answers, and the last one must still be *a* path or the probe
-/// reports "unknown free space" on a perfectly healthy machine.
+/// different answers.
 ///
-/// Mirrors the Electron `if (!fs.existsSync(folder)) folder = documents` guard.
+/// R3: the folder itself comes from the canonical resolver; this function only
+/// adds the Electron `if (!fs.existsSync(folder)) folder = documents` volume
+/// fallback (a default `<Documents>/SundayRec` that hasn't been created yet
+/// still sits on the Documents volume). With nothing to stat it returns `None`
+/// — "free space unknown" — instead of the pre-R3 relative `"."`, which
+/// reported the free space of whatever the process's working directory was.
 /// `exists` is injected so the test does not need the directories to be real.
 pub fn resolve_disk_probe_path(
     save_folder: Option<&str>,
     documents_dir: Option<std::path::PathBuf>,
     exists: impl Fn(&std::path::Path) -> bool,
-) -> std::path::PathBuf {
-    let configured = save_folder
-        .map(std::path::PathBuf::from)
-        .or_else(|| documents_dir.clone())
-        .unwrap_or_default();
-    if !configured.as_os_str().is_empty() && exists(&configured) {
-        return configured;
+) -> Option<std::path::PathBuf> {
+    let resolved =
+        sundayrec_core::settings::resolve_save_folder(save_folder, documents_dir.as_deref()).ok();
+    match resolved {
+        Some(folder) if exists(&folder) => Some(folder),
+        _ => documents_dir,
     }
-    documents_dir.unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
 /// Read the free disk space for the configured save folder.
 #[tauri::command]
 pub async fn get_disk_space(app: AppHandle, db: State<'_, Db>) -> AppResult<DiskSpace> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    let documents = app.path().document_dir().ok();
+    let documents = crate::save_folder::documents_dir(&app);
     let probe = resolve_disk_probe_path(s.save_folder.as_deref(), documents, |p| p.exists());
     Ok(DiskSpace {
-        free_bytes: fs4::available_space(&probe).ok(),
+        free_bytes: probe.and_then(|p| fs4::available_space(&p).ok()),
     })
 }
 
@@ -609,7 +585,6 @@ mod tests {
             stop_on_silence: false,
             silence_threshold_db: None,
             silence_timeout_minutes: 5,
-            framerate: 30,
             channel_mode: ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
@@ -620,9 +595,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            video_resolution: String::new(),
-            video_codec: String::new(),
-            video_encoder: String::new(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,
@@ -686,8 +658,6 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     enum Step {
         LoadSettings,
-        ReleasePreviewStart,
-        ReleasePreviewEnd,
         HarvestStart(HarvestPlan),
         HarvestEnd,
         StopPreroll,
@@ -706,10 +676,6 @@ mod tests {
         preroll_active: bool,
         clip: Option<PrerollClip>,
         engine_fails: bool,
-        /// When set, `release_preview` blocks until `harvest_preroll` fires the
-        /// other half. A sequential implementation would deadlock on it.
-        preview_gate_rx: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
-        preview_gate_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     }
 
     impl MockDeps {
@@ -721,18 +687,7 @@ mod tests {
                 preroll_active: false,
                 clip: None,
                 engine_fails: false,
-                preview_gate_rx: Mutex::new(None),
-                preview_gate_tx: Mutex::new(None),
             }
-        }
-
-        /// Make the preview release wait for the harvest, so only a genuinely
-        /// CONCURRENT implementation can finish.
-        fn with_concurrency_handshake(mut self) -> Self {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            self.preview_gate_rx = Mutex::new(Some(rx));
-            self.preview_gate_tx = Mutex::new(Some(tx));
-            self
         }
 
         fn push(&self, step: Step) {
@@ -768,21 +723,8 @@ mod tests {
             self.preroll_active
         }
 
-        async fn release_preview(&self) {
-            self.push(Step::ReleasePreviewStart);
-            let gate = self.preview_gate_rx.lock().unwrap().take();
-            if let Some(rx) = gate {
-                let _ = rx.await;
-            }
-            self.push(Step::ReleasePreviewEnd);
-        }
-
         async fn harvest_preroll(&self, plan: HarvestPlan) -> Option<PrerollClip> {
             self.push(Step::HarvestStart(plan));
-            let gate = self.preview_gate_tx.lock().unwrap().take();
-            if let Some(tx) = gate {
-                let _ = tx.send(());
-            }
             tokio::task::yield_now().await;
             self.push(Step::HarvestEnd);
             self.clip.clone()
@@ -821,12 +763,12 @@ mod tests {
     }
 
     /// Run the impl under a deadline, so a choreography that never completes
-    /// (the sequential-instead-of-concurrent regression) fails loudly instead of
-    /// hanging the suite. Time is paused, so the deadline costs no wall clock.
+    /// fails loudly instead of hanging the suite. Time is paused, so the
+    /// deadline costs no wall clock.
     async fn run(deps: &MockDeps, o: RecordingOpts) -> AppResult<()> {
         tokio::time::timeout(Duration::from_secs(30), start_recording_impl(deps, o))
             .await
-            .expect("start_recording_impl did not finish — the two hand-offs are not concurrent")
+            .expect("start_recording_impl did not finish")
     }
 
     #[tokio::test(start_paused = true)]
@@ -840,40 +782,26 @@ mod tests {
                 start_offset_ms: 0,
             }),
             ..MockDeps::new()
-        }
-        .with_concurrency_handshake();
+        };
 
         run(&deps, opts()).await.expect("start should succeed");
 
         // 1. Settings first — the harvest plan depends on them.
         assert_eq!(deps.steps().first(), Some(&Step::LoadSettings));
 
-        // 2. The camera release and the mic harvest run CONCURRENTLY. Enforced
-        //    structurally: the mock's preview release blocks until the harvest
-        //    signals it, so a back-to-back implementation cannot reach here at
-        //    all — it deadlocks and `run` times out. The assertions then just
-        //    confirm both actually started before either finished.
-        let preview_start = deps.at(&Step::ReleasePreviewStart);
-        let preview_end = deps.at(&Step::ReleasePreviewEnd);
+        // 2. The mic harvest runs to completion before anything else touches
+        //    the device.
         let harvest_start = deps
             .steps()
             .iter()
             .position(|s| matches!(s, Step::HarvestStart(_)))
             .expect("the harvest never ran");
         let harvest_end = deps.at(&Step::HarvestEnd);
-        assert!(
-            harvest_start < preview_end,
-            "harvest must start before the preview release finishes"
-        );
-        assert!(
-            preview_start < harvest_end,
-            "the preview release must start before the harvest finishes"
-        );
+        assert!(harvest_start < harvest_end);
 
-        // 3. THEN the leak guard, and only after BOTH hand-offs are done: a
+        // 3. THEN the leak guard, only after the hand-off is done: a
         //    `preroll.stop()` racing the harvest would cut the clip short.
         let stop_preroll = deps.at(&Step::StopPreroll);
-        assert!(stop_preroll > preview_end);
         assert!(stop_preroll > harvest_end);
 
         // 4. The VU engine is the last other owner of the mic; it lets go after
@@ -951,7 +879,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn every_release_still_happens_when_nothing_is_running() {
-        // The boring path: no preview, no pre-roll, no meters. The releases are
+        // The boring path: no pre-roll, no meters. The releases are
         // unconditional on purpose — they are cheap, and "I thought it wasn't
         // running" is how the device ends up with two owners.
         let deps = MockDeps::new();
@@ -960,8 +888,6 @@ mod tests {
             deps.steps(),
             vec![
                 Step::LoadSettings,
-                Step::ReleasePreviewStart,
-                Step::ReleasePreviewEnd,
                 Step::StopPreroll,
                 Step::StopVu,
                 Step::Settle(DEVICE_SETTLE),
@@ -1010,7 +936,7 @@ mod tests {
                 Some(p("/Users/x/Documents")),
                 |_| true
             ),
-            p("/Volumes/Stick")
+            Some(p("/Volumes/Stick"))
         );
     }
 
@@ -1023,23 +949,31 @@ mod tests {
                 Some(p("/Users/x/Documents")),
                 |_| false
             ),
-            p("/Users/x/Documents")
+            Some(p("/Users/x/Documents"))
         );
     }
 
     #[test]
-    fn disk_probe_uses_documents_when_no_save_folder_is_configured() {
+    fn disk_probe_uses_the_default_subfolder_when_it_exists() {
+        // R3: the unset-folder default is the canonical `<Documents>/SundayRec`,
+        // not the bare Documents dir.
         assert_eq!(
             resolve_disk_probe_path(None, Some(p("/Users/x/Documents")), |_| true),
-            p("/Users/x/Documents")
+            Some(p("/Users/x/Documents/SundayRec"))
+        );
+        // Not created yet → stat the volume it hangs under.
+        assert_eq!(
+            resolve_disk_probe_path(None, Some(p("/Users/x/Documents")), |_| false),
+            Some(p("/Users/x/Documents"))
         );
     }
 
     #[test]
-    fn disk_probe_never_returns_an_empty_path() {
-        // An empty path makes `available_space` fail, which the UI reads as
-        // "free space unknown" on a perfectly healthy machine.
-        assert_eq!(resolve_disk_probe_path(None, None, |_| true), p("."));
-        assert_eq!(resolve_disk_probe_path(Some(""), None, |_| true), p("."));
+    fn disk_probe_never_returns_a_relative_path() {
+        // Pre-R3 this returned "." — the free space of the process's working
+        // directory, which is not any disk the recording lands on. `None` is
+        // the honest "free space unknown".
+        assert_eq!(resolve_disk_probe_path(None, None, |_| true), None);
+        assert_eq!(resolve_disk_probe_path(Some(""), None, |_| true), None);
     }
 }

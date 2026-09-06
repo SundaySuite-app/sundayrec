@@ -3,6 +3,863 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.18.0-beta.1 — resten av F1-gjennomgangen til beta-ringen
+
+Andre og siste runde fra gjennomgangen av hele appen: planlegger- og
+motorkorrekthet, søndagsvarsler på riktig språk, en håndfull renderer- og
+tilgjengelighetsfunn, og grunnmuren til et kommende e-postrelé som ingen bruker
+ser noe til ennå.
+
+### Et opptak som blir stoppet og startet på nytt kan ikke lenger skrives over av det gamle
+
+Stopper du et opptak og starter et nytt med én gang, mens det forrige ennå
+holder på med sin egen avslutning (sammenslåing og leveranse-enkoding av en
+gudstjeneste tar minutter), kunne den gamle økten før eller siden skrive
+`Stopped` og en tømt nedtelling over det NYE opptaket som fortsatt gikk —
+skjermen sa «Stoppet» mens kveldsmøtet ble tatt opp usynlig. Hver skrivevei til
+den delte tilstanden går nå gjennom én vakt som nekter en foreldet økt å skrive
+noe som helst.
+
+([#212](https://github.com/SundaySuite-app/sundayrec/pull/212))
+
+### Et planlagt opptak som ikke ble gjort, sier nå faktisk ifra
+
+To ting rettet sammen. To planlagte opptak på nøyaktig samme klokkeslett (en
+ukentlig luke og et spesialopptak) ga tidligere to opptaksstarter der den andre
+drepte den første etter et brøkdels sekund; nå vinner nøyaktig ett. Og har
+appen krasjet midt i en gudstjeneste, telles ikke lenger søndagen som «gikk
+glipp av» bare fordi sammenslåingen av det gjenopprettede opptaket ennå ikke er
+ferdig. Samtidig fikk løftet i innstillingene — e-post «når et opptak feiler
+eller et planlagt blir hoppet over» — endelig sin andre halvdel: en søndag som
+faktisk ikke ble tatt opp, sender nå den e-posten, uavhengig av det nye reléet
+under.
+
+([#213](https://github.com/SundaySuite-app/sundayrec/pull/213),
+[#219](https://github.com/SundaySuite-app/sundayrec/pull/219))
+
+### Norsk ut av motoren — varslene dine kommer nå på ditt eget språk
+
+Skjermvarsler og e-poster fra planleggeren og opptaksmotoren — «planlagt opptak
+startet», «ble ikke gjort», feilmeldinger fra selve opptaket — var alltid
+norske uansett hvilket av de sju språkene appen sto på, fordi denne ene flaten
+aldri ble oversatt da resten av grensesnittet ble det. Alle disse setningene
+er nå oversatt til alle sju språk, og en ny automatisk vakt stopper enhver
+fremtidig norsk streng som sniker seg inn i motoren igjen.
+
+([#224](https://github.com/SundaySuite-app/sundayrec/pull/224))
+
+### Renderer-korrekthet: en innstilling lagres når vinduet lukkes, en feil vises i stedet for en halv skjerm
+
+Endret du en innstilling og lukket vinduet innenfor det korte tidsvinduet før
+den ble skrevet til disk, kunne endringen forsvinne uten varsel — lagringen
+skjer nå også når vinduet skjules eller appen avsluttes. Et uventet
+render-unntak rev tidligere ned hele skjermbildet uten at noen fikk se hva som
+skjedde; det vises nå som et banner med en «Kopier»-knapp til support. Og en
+eksport som fullfører etter at du har åpnet en annen fil, skriver ikke lenger
+kvitteringen (eller sletter utkastet) for feil fil.
+
+([#210](https://github.com/SundaySuite-app/sundayrec/pull/210),
+[#217](https://github.com/SundaySuite-app/sundayrec/pull/217))
+
+### Kirkeprofilens språkvalg lyver ikke lenger for migrerte menigheter, og «Vis i Finder» sier ifra ved feil
+
+En menighet migrert fra det gamle skallet med et pauset språk (tysk, fransk,
+polsk …) fikk se «Norsk» i språkvelgeren uansett hva som faktisk var lagret —
+boksen viser nå riktig, deaktivert rad med en forklarende linje under. «Vis i
+Finder» i eksport-kvitteringen varslet tidligere ikke om noe når den feilet;
+den gjør det nå, som i Bibliotek og Opptak.
+
+([#215](https://github.com/SundaySuite-app/sundayrec/pull/215),
+[#217](https://github.com/SundaySuite-app/sundayrec/pull/217))
+
+### Vekking: færre bakgrunnsprosesser under et opptak, og en «Test vekking»-knapp
+
+Sjekken av om datamaskinens vekking fortsatt er armert kjørte tidligere hvert
+minutt uansett — inkludert under en hel gudstjeneste den ikke kunne endre seg
+i. Den kjører nå bare når noe som faktisk kan ha endret svaret skjer, aldri
+mens et opptak pågår. Under Innstillinger → Avansert kan du nå trykke «Test
+vekking om 2 minutter» og se med egne øyne at det virker, i stedet for å vente
+til en søndag avgjør det.
+
+([#216](https://github.com/SundaySuite-app/sundayrec/pull/216),
+[#217](https://github.com/SundaySuite-app/sundayrec/pull/217))
+
+### i18n-oppskriften også i resten av renderen, og en gammel mikser fjernet
+
+Seks native fildialoger (lagringsprofil, mediefiler …) viste norsk tekst
+uansett appens språk. Fem setninger som limte sammen en oversatt streng og en
+verdi i fast rekkefølge er nå hele katalogmaler, klare for språk med annen
+ordstilling. En hel gammel mikser-brukergrensesnitt som ingenting lenger kalte
+er fjernet.
+
+([#208](https://github.com/SundaySuite-app/sundayrec/pull/208))
+
+### Sjekklistens «Sett opp» er ikke lenger en enveis-utgang
+
+Trykket du «Sett opp» på et av punktene i førstegangs-sjekklisten («Klar til
+søndag»), endte du utenfor sekvensen — og siden fullføringen aldri ble
+stemplet, kjørte hele fem-spørsmålsrunden på nytt fra begynnelsen neste gang
+appen startet. En «Fortsett oppsettet»-chip fører deg nå rett tilbake til
+sjekklisten.
+
+([#218](https://github.com/SundaySuite-app/sundayrec/pull/218))
+
+### Kvitteringen ruller til seg selv, dempet tekst er lettere å lese, og overlegget sier igjen at du kan lukke vinduet
+
+«Opptaket er lagret»-kortet kunne stå langt under det synlige vinduet uten at
+noe fortalte deg det var der; det ruller nå til midten av skjermen og tar
+fokus. Dempet tekst (hint-linjer, forklaringer) hadde for lav kontrast mot
+bakgrunnen og er hevet til WCAG AA. Og hintet om at opptaket fortsetter i
+bakgrunnen når du lukker vinduet — sant siden vinduet fikk lov til å skjules i
+stedet for å avslutte opptaket — står igjen på skjermen. I tillegg: dialogens
+brødtekst er nå koblet til skjermlesere, og knappenes treffflater er målt og
+låst med en regresjonstest.
+
+([#220](https://github.com/SundaySuite-app/sundayrec/pull/220),
+[#222](https://github.com/SundaySuite-app/sundayrec/pull/222))
+
+### Appen viser endelig hva som er nytt når en oppdatering er klar
+
+Releasenotatet har alltid ligget i oppdateringsmanifestet, signaturverifisert
+og alt — men ble lest inn og kastet uten at noen så det. Banneret og raden
+under Avansert viser nå notatet selv, klippet med «Vis mer» når det er langt,
+og identisk med det du leser her.
+
+([#221](https://github.com/SundaySuite-app/sundayrec/pull/221),
+[#222](https://github.com/SundaySuite-app/sundayrec/pull/222))
+
+### Loggen du kopierer til support inneholder ikke lenger kontonavnet ditt
+
+`sundayrec.log` skrubbet allerede hemmeligheter, men aldri den lokale
+filstien — kopierte du loggen inn i en support-melding, sto ditt eget
+OS-kontonavn i klartekst i banen til opptaksmappen. Begge skrubberne kjører nå
+i samme omgang. I tillegg: en god del død kode er fjernet, og to hull i
+gate-dekningen (bindings-sjekken så ikke helt nye filer; en test-lane kunne
+hoppe stille over sin egen kjerneassert) er tettet.
+
+([#223](https://github.com/SundaySuite-app/sundayrec/pull/223))
+
+### Diagnose sier hvor rapporten skal sendes, og en driftsguide for frivillige
+
+«Kopier full rapport» i Diagnose har nå en linje under som sier hvor den skal
+sendes — et GitHub-issue eller support-e-posten, aldri sikkerhetsproblemer på
+e-post. Ny `docs/FRIVILLIG.md` er en norsk driftsguide for den som står ved
+skjermen uten en utvikler i rommet: installere, gi tilgang, ta opp, lese
+bannerfarger, og hvem man kontakter. Et par docs-referanser som hadde driftet
+ut av sync med koden er også rettet.
+
+([#214](https://github.com/SundaySuite-app/sundayrec/pull/214))
+
+### Grunnmuren til e-postreléet — ingenting synlig for noen ennå
+
+Rutingmatrisen, e-postmalene på alle sju språk og utboksens porter
+(rate-grense, ferskhet, «send aldri to ganger»), pluss selve utboksen, pumpa,
+de fem kommandoene og innstillingen den styres av. Alt er strukturelt inert
+til brukergrensesnittet som lar en frivillig faktisk melde seg på, kommer i en
+senere runde — pumpa spawner ikke uten et abonnement, og ingen meny eller
+knapp i appen peker hit ennå.
+
+([#187](https://github.com/SundaySuite-app/sundayrec/pull/187),
+[#202](https://github.com/SundaySuite-app/sundayrec/pull/202),
+[#219](https://github.com/SundaySuite-app/sundayrec/pull/219))
+
+### Småting
+
+En linje i `docs/APP-SHELL.md` påsto fortsatt at overleggets «du kan lukke
+vinduet»-hint ikke var lagt tilbake på skjermen; det ble det i denne runden,
+og linja er rettet.
+
+## v0.17.2-beta.1 — søndagsfiksene til beta-ringen
+
+Fire rettelser fra en gjennomgang av hele appen, samlet i en rask runde foran
+resten som kommer i neste versjon.
+
+### Opptaksfeil snakker nå til deg, ikke bare til loggen
+
+Fryser lydenheten et øyeblikk midt i et opptak — en løs USB-kontakt, et
+vaklende kabel — og motoren kobler til igjen på egen hånd, gikk koden
+`stuck_recording` tidligere ut på den TERMINALE feilkanalen: opptaksoverlegget
+forsvant fra skjermen, menylinjeikonet viste feil, og det gikk ut både
+native-varsel og e-post om at opptaket feilet — mens opptaket i virkeligheten
+fortsatte. Denne typen forbigående glipp går nå ut som en advarsel i stedet:
+overlegget står, telleren fortsetter, og ingen falsk feilmelding sendes. Gir
+gjenkoblingen opp for godt, kommer den ekte feilen (og e-posten) da, ikke før.
+
+Fire andre feilkoder — opptaket som ikke klarer å starte i tide, ffmpeg-
+motoren som dør midt i, kameraet som ikke åpner, sammenslåingen som feiler —
+viste tidligere alle det samme runde banneret uansett årsak. Hver har nå sin
+egen setning som sier hva som faktisk skjedde og hva som ble reddet. En
+ukjent kode faller fortsatt tilbake på en generisk setning, pluss motorens
+egen linje som detalj — aldri koden selv. En ny gate
+(`scripts/check-error-codes.mjs`) holder Rust-kildene og
+oversettelsestabellen i sync fra nå av.
+
+([#198](https://github.com/SundaySuite-app/sundayrec/pull/198))
+
+### Papirkurven overlever strømbrudd og samtidig rydding
+
+Papirkurvens manifest — appens eneste kobling fra en flyttet fil tilbake til
+der den kom fra — skrives nå atomisk, med én skriver om gangen. Går strømmen
+midt i en flytting, eller rydder to prosesser samtidig, blir manifestet aldri
+stående halvferdig eller usynlig for «Angre»: et slettet opptak kan ikke
+lenger forsvinne sporløst. Et manifest som likevel blir ulesbart, døpes om i
+stedet for å bli overskrevet, og varsler deg om det i stedet for å late som
+ingenting.
+
+([#199](https://github.com/SundaySuite-app/sundayrec/pull/199))
+
+### Historikken mister ikke et opptak fordi disken var travel
+
+SQLite-databasen bak opptakshistorikken kjører nå i WAL-modus i stedet for
+standardens rollback-journal. Før kunne en skrivning som traff en treg disk
+samtidig som en annen intern skriving, låse hele databasefila til
+tidsavbruddet rant ut — og opptaket havnet aldri i Historikk, selv om selve
+lydfila lå trygt på disken. WAL lar lesere og skrivere jobbe side om side;
+diagnoserapporten viser nå hvilken journalmodus installasjonen faktisk kjører.
+
+([#207](https://github.com/SundaySuite-app/sundayrec/pull/207))
+
+### Småting
+
+Dokumentasjonstekster som ikke lenger stemte — blant annet en pålogging appen
+ikke lenger har, og versjonsnumre som gikk ut på dato i distribusjonsguiden —
+er rettet, med en ny automatisk vakt som holder dem sanne
+([#203](https://github.com/SundaySuite-app/sundayrec/pull/203)). En
+avhengighet med et sikkerhetsvarsel er oppdatert
+([#196](https://github.com/SundaySuite-app/sundayrec/pull/196)).
+
+## v0.17.1-beta.1 — vedlikeholdsrunden, til beta-ringen først
+
+Runden etter det store redesignet: verktøy og ærlighet, ingen nye flater å lære.
+
+### «Slett gamle opptak» holder endelig ord
+
+Bryteren fantes, tallet ble lagret — men ingenting ryddet. Nå flyttes opptak
+eldre enn grensen til papirkurven (som teksten alltid har lovet), og papirkurven
+sletter for godt etter sine 30 dager. To sjanser til å angre, som resten av appen.
+
+### Diagnose er tilbake
+
+Under Innstillinger → Avansert: én «Kjør»-knapp som sjekker lydenheter, valgt
+enhet, mikrofontilgang, opptaksmotoren og en ekte lydprøve — med funnene
+forklart på norsk og «Kopier full rapport» til support. «Diagnostikk» i
+menylinja åpner den direkte. Pluss et test-opptak på ti sekunder.
+
+### Lettere å treffe
+
+Utvid-pilene på kortene og bryterne i Innstillinger har fått større
+trykkflater — samme utseende, lettere å treffe med musa (og fingre).
+
+### Småting
+
+Tekster som pekte på skjermer fra før ombyggingen er rettet, «Fjern passord»
+for e-postserveren virker (og vises bare når et passord faktisk er lagret),
+og en god del død motorkode er fjernet.
+
+## v0.17.0 — Opptak · Redigering · Eksportering
+
+Dette er den største endringen SundayRec har hatt, og den har ligget på
+beta-ringen siden august. Alt appen gjorde før, gjør den fortsatt — det er
+_å finne fram_ som er nytt. Kommer du fra v0.15, får du alt som har skjedd
+siden: det nye skallet, kontrollrommet på Opptak-siden, kamerabildet, de tre
+stedene nederst, og en håndfull ting som beskytter opptaket ditt.
+
+### Tre steder, nederst, i den rekkefølgen du gjør dem
+
+Før var det fem sider, åtte faner og 65 innstillinger, tegnet for noen som
+allerede visste hvordan appen virket. Nå er det **tre steder**, som ikoner
+nederst i vinduet — venstre mot høyre, slik en gudstjeneste faktisk blir til:
+
+- **Opptak** — der du tar opp, og der du gjør alt klart.
+- **Redigering** — der opptakene ligger, og der du klipper i dem.
+- **Eksportering** — der den ferdige fila blir laget.
+
+Øverst står bare merket og navnet på menigheten. Nederst, ved siden av de tre:
+statuslinjen til venstre — én setning som alltid er sann — og versjonen og et
+**tannhjul** til høyre. Bak tannhjulet ligger det som ikke hører til en søndag:
+hvilken kirke dere er, og Avansert.
+
+Venstrekanten er borte. Den brukte en sjettedel av bredden på å holde tre
+knapper, og den plassen er nå til innholdet.
+
+### Alt du trenger før gudstjenesten står på Opptak-skjermen
+
+Før sa Opptak-siden hva som var galt og sendte deg videre for å rette det — og
+tilbake, og til en tredje skjerm. De fem minuttene før gudstjenesten gikk med
+på å lete.
+
+Nå redigeres alt viktig **der det brukes**:
+
+- **Venstre side er det levende:** hvor lyden kommer fra, om vi hører den, og
+  den store Start-knappen. Under den står når neste automatiske opptak går, og
+  hva du tok opp sist. Den halvdelen flytter seg aldri.
+- **Høyre side er klargjøringen:** kamerabildet øverst, og under det fem kort —
+  _Hvor skal opptakene? · Hvilken kvalitet? · Ta med kamera · Ta opp
+  automatisk · Hvem får beskjed hvis noe går galt?_
+
+Hvert kort viser svaret som gjelder nå. Trykker du «Endre», folder **hele
+skjermen** for det spørsmålet seg ut på stedet — den samme skjermen du fikk
+første gang du satte opp appen, ikke en forenklet kopi. Start-knappen blir
+stående synlig mens du gjør det. De to tilleggene — kamera og automatisk
+opptak — har ingen «Endre»: bryteren deres åpner kortet, og slår du dem av,
+lukkes det igjen.
+
+Er vinduet smalt, legger de to kolonnene seg under hverandre i samme rekkefølge.
+
+### Kameraet viser et bilde — før opptaket, og mens det går
+
+Før sto det bare navnet på kameraet. Et navn ser nøyaktig likt ut med lokk på
+linsen, så et dødt kamera ble først oppdaget når fila ble åpnet dagen etter.
+
+- **På Opptak**, når «Ta med kamera» er på: et bilde av det kameraet faktisk
+  ser, med et merke i hjørnet som sier hvilken størrelse og bildefrekvens det
+  **leverer** — ikke hva innstillingen ba om. Et 720p-kamera under en
+  1080p-profil skal være synlig her.
+- **Mens opptaket går:** det samme bildet i opptaksvinduet, under målerne,
+  hentet fra opptaket selv.
+
+Går noe galt, sier bildet hva: «Kameratilgang nektet — sjekk
+Systeminnstillinger» er noe annet enn «Kamera svarte ikke — er det i bruk av et
+annet program?», og de to har hvert sitt neste steg. Etter at et opptak er
+stoppet, kommer bildet tilbake av seg selv etter et par sekunder — opptaket må
+bli ferdig med kameraet først.
+
+### Redigering er et sted, ikke noe som åpner seg
+
+Opptakene ligger under **Redigering**. Hver rad heter når den ble tatt opp
+(«Søndag 16. august 2026 · 11:00»), ikke hva fila heter. Sletter du noe, får du
+«Angre», og det du sletter havner i en papirkurv som alltid er der.
+
+Åpner du et opptak, blir du **stående på samme sted** — lista bytter til
+arbeidsflaten, og «Til biblioteket» tar deg tilbake til lista uten at noe
+flytter seg under deg.
+
+Og du er ikke bundet til dine egne opptak: **«Åpne fil…»** står alltid øverst i
+lista, og du kan **dra en fil rett inn i vinduet**. Er opptaket gjort på en
+annen opptaker, hører det like fullt hjemme her.
+
+Selve redigeringen er **to steg** nå: **Klipp** og **Lyd**. Steg 1 åpner med
+det eneste spørsmålet man har — _er dette prekenen?_ Forslaget står der
+allerede, og «Behold bare prekenen» er ett klikk. Steg 2 er lydforbedringen,
+med en før/etter-lytting som er ekte, og en avansert mikser for den som vil ha
+den.
+
+### Eksportering er sitt eget sted — og alltid ett klikk unna
+
+Eksporten var før et steg inne i redigeringen. Nå er det en destinasjon, og den
+er **aldri tom**: har du redigert noe i denne økta, står det øverst med én
+knapp — «Gjør klar». Har du ikke det, står det siste opptaket der i stedet, og
+sier at det er dét det er. Under ligger en kort liste over de andre opptakene,
+og «Åpne fil…» for alt annet.
+
+To spørsmål, ikke ti: **hvilket format**, og **hvor**. Bitraten følger
+kvalitetsvalget du allerede har gjort, lydbehandlingen står i steg 2 og gjentas
+ikke, og «Ta med video» dukker bare opp når opptaket faktisk har video.
+Originalen røres aldri — det blir en ny fil ved siden av.
+
+En eksport som går, **fortsetter å gå** om du ser på noe annet i mellomtiden,
+og kvitteringen står der når du kommer tilbake.
+
+### Tettere, uten at noe ble vanskeligere å treffe
+
+Skjermen er strammet inn overalt: mindre luft rundt kortene, en lavere
+Start-knapp, kortere rader. De to båndene øverst og nederst tar til sammen
+hundre piksler der venstrekanten tok to hundre — og innstrammingen henter inn
+det de kostet: på et vanlig vindu står Start-knappen synlig selv når du har
+foldet ut lydkortet ved siden av den. Ingen knapp ble mindre å treffe.
+
+### Opptaket ditt er bedre beskyttet
+
+- **Avslutt midt i et opptak spør én gang til.** Trykker du Cmd+Q eller
+  «Avslutt» mens gudstjenesten tas opp, avsluttes ingenting med det første: et
+  varsel forteller at det tas opp, og et nytt trykk innen ti sekunder stopper
+  opptaket ryddig — og appen blir stående til fila er ferdig skrevet. På macOS
+  gikk «Avslutt» tidligere helt utenom appens egen avslutningsvei og drepte
+  prosessen midt i lagringen; det hullet er lukket.
+- **Oppdateringens «Start på nytt» venter også.** Den stopper opptaket ryddig
+  og blir stående til fila er skrevet, før den nye versjonen starter.
+- **Å lukke vinduet stopper ikke opptaket.** Vinduet skjules i stedet, opptaket
+  går videre, og SundayRec blir stående i menylinja (systemstatusfeltet på
+  Windows). Uten et opptak i gang avslutter lukkeknappen appen som før.
+- **Vekking fra dvale respekterer «Ta opp automatisk».** Slo du av bryteren men
+  beholdt søndagstidene, vekket maskinen seg likevel — og meldte de avbestilte
+  vekkingene som «mangler». Begge deler er rettet.
+- **«Ta opp automatisk» kan slås av uten å miste tidene**, og nye
+  installasjoner får 15 sekunders **forhåndsbuffer**, så lyd fra like før du
+  trykket Start blir med.
+
+### Mindre ting du kanskje merker
+
+- **Ingen knapp lyver.** En knapp som er av, sier hvorfor. «Start opptak» var
+  grå fordi ingen lydkilde var valgt, og det sto ingen steder.
+- **Ingenting sier «alt er i orden» når det ikke er det.** Enhetskortet malte
+  «Tilkoblet ✓» for en innstilling ingen hadde satt. Nå står det gult og sier
+  hva som mangler.
+- **Farlige spørsmål er snudd riktig vei.** «Stoppe opptaket?» har «Fortsett å
+  ta opp» som standardvalg — trykk-Enter-svaret skal aldri være det som
+  avslutter gudstjenesteopptaket.
+- **Tall er ærlige.** Et opptak på 20 sekunder står som «Under 1 min», ikke
+  «0 min». Er lengden ukjent, står det «—».
+- **Alt kan leses.** Håndtakene som viser hvor prekenen begynner og slutter er
+  ekte knapper som kan flyttes med piltastene. Farger, kontrast og bevegelse
+  følger det maskinen er stilt inn på.
+- **Gamle lenker og snarveier lander fortsatt riktig.** Alt som pekte til en
+  innstillingsfane åpner nå kortet som eier spørsmålet, ferdig utfoldet.
+  «Åpne opptaksmappen» i menylinja åpner mappa og lander på Redigering.
+- **På Mac ligger ikke merket lenger under de tre vindusknappene.**
+
+### Dette er borte, og det er med vilje
+
+Notatet på et opptak vises, men kan ikke lenger redigeres · filterbrikkene i
+historikken (søket gjør jobben) · månedskalenderen (faste tider og
+spesialopptak er to lister under Avansert) · eksportvinduet ·
+Diagnose-skjermen · «Normaliser»-bryteren (nivået bestemmes av profilen eller
+mikseren, aldri av to ting samtidig) · intro/outro-jingler. Det som ikke ble
+bygget på nytt, er skrevet ned — ikke glemt.
+
+**Språk:** appen er på norsk og engelsk. Svensk, dansk, tysk, fransk og polsk
+kommer tilbake i en egen oversettelsesrunde — vi ryddet først bort 653
+tekststrenger som ikke lenger vises noe sted, så oversetterne slipper å bruke
+tid på skjermer som ikke finnes.
+
+_De tre beta-postene under er historikken bak denne utgivelsen; ingenting i dem
+er nytt i forhold til det som står over._
+
+## v0.16.0-beta.2 — kontrollrommet
+
+Beta-ringen prøvde det nye skallet og sa fra. Dette er svaret: logoen er
+tilbake, innstillingene har flyttet dit de hører hjemme, kameraet viser et
+bilde — og alt du trenger før gudstjenesten står på én skjerm.
+
+(Dette erstatter to setninger under v0.16.0-beta.1: at appen har tre steder —
+den har to og et tannhjul — og at det levende kamerabildet under opptak er
+borte. Det er tilbake.)
+
+### Logoen er tilbake
+
+Det nye skallet malte en gul boks med en «S» i. Det var en plassholder som ble
+med lenger enn den skulle, og resultatet var at man ikke kjente igjen sin egen
+app. Merket du har brukt i to år står øverst til venstre igjen — den samme
+tegningen, ikke en ny som ligner.
+
+### Innstillinger har flyttet ned på et tannhjul
+
+Før sto Oppsett som et av tre steder i venstrekanten, ved siden av Opptak og
+Bibliotek. Det ga inntrykk av at innstillinger er noe man går til like ofte som
+man tar opp, og det stemmer ikke: dere setter opp appen én gang og tar opp hver
+søndag.
+
+Nå er det **to steder** — Opptak og Bibliotek — og et **tannhjul nederst**, over
+statuslinjen, akkurat der det sto i den gamle appen. Bak tannhjulet ligger det
+som ikke hører til en søndag: hvilken kirke dere er, og Avansert.
+
+### Alt du trenger før gudstjenesten står på Opptak-skjermen
+
+Dette er den største endringen i denne runden. Før sa Opptak-siden hva som var
+galt og sendte deg til Oppsett for å rette det — og tilbake, og til en tredje
+skjerm. De fem minuttene før gudstjenesten gikk med på å lete.
+
+Nå redigeres alt viktig **der det brukes**:
+
+- **Venstre side er det levende:** hvor lyden kommer fra, om vi hører den, og
+  den store Start-knappen. Den halvdelen flytter seg aldri.
+- **Høyre side er klargjøringen:** kamerabildet øverst, og under det fem kort —
+  _Hvor skal opptakene? · Hvilken kvalitet? · Ta med kamera · Ta opp
+  automatisk · Hvem får beskjed hvis noe går galt?_
+
+Hvert kort viser svaret som gjelder nå. Trykker du «Endre», folder **hele
+skjermen** for det spørsmålet seg ut på stedet — den samme skjermen du fikk
+første gang du satte opp appen, ikke en forenklet kopi. Start-knappen blir
+stående synlig mens du gjør det, og du lukker kortet igjen når du er ferdig.
+De to tilleggene — kamera og automatisk opptak — har ingen «Endre»: bryteren
+deres åpner kortet, og slår du dem av, lukkes det igjen.
+
+Er vinduet smalt, legger de to kolonnene seg under hverandre i samme rekkefølge.
+
+### Kameraet viser et bilde — før opptaket, og mens det går
+
+Før sto det bare navnet på kameraet. Et navn ser nøyaktig likt ut med lokk på
+linsen, så et dødt kamera ble først oppdaget når fila ble åpnet dagen etter.
+
+- **På Opptak**, når «Ta med kamera» er på: et bilde av det kameraet faktisk
+  ser, med et merke i hjørnet som sier hvilken størrelse og bildefrekvens det
+  **leverer** — ikke hva innstillingen ba om. Et 720p-kamera under en
+  1080p-profil skal være synlig her.
+- **Mens opptaket går:** det samme bildet i opptaksvinduet, under målerne,
+  hentet fra opptaket selv.
+
+Går noe galt, sier bildet hva: «Kameratilgang nektet — sjekk
+Systeminnstillinger» er noe annet enn «Kamera svarte ikke — er det i bruk av et
+annet program?», og de to har hvert sitt neste steg. Etter at et opptak er
+stoppet, kommer bildet tilbake av seg selv etter et par sekunder — opptaket må
+bli ferdig med kameraet først.
+
+### Mindre ting du kanskje merker
+
+- **Ett spørsmål ble stilt to ganger.** «Skal SundayRec ta opp hver søndag av
+  seg selv?» sto rett over kortet «Ta opp automatisk», med den samme setningen
+  under seg. Det ene er borte.
+- **Kamerakortet navngir ikke et kamera som ikke skal brukes.** Er «Ta med
+  kamera» slått av, står det hva tillegget gjør — ikke hvilken enhet som er
+  valgt. Et kameranavn på et avslått tillegg leses som «dette skjer».
+- **Klarte ikke appen å lese kameralista**, sier den det nå — før sa den «ingen
+  kameraer funnet», og sendte deg for å sjekke en kabel som var i orden når
+  svaret lå i en tillatelse.
+- **Skjermlesere får vite at et kort folder seg ut**, i stedet for å møte en
+  knapp som «gjør noe» og en ny skjerm som dukker opp uten forklaring.
+- **Gamle lenker lander fortsatt riktig.** Alt som pekte til en
+  innstillingsfane åpner nå kortet som eier spørsmålet, ferdig utfoldet, i
+  stedet for en fane som ikke finnes lenger.
+- **På Mac ligger ikke merket lenger under de tre vindusknappene** øverst til
+  venstre.
+
+## v0.16.0-beta.1 — det nye SundayRec, til beta-ringen først
+
+Hele skallet er tegnet på nytt for en frivillig som aldri har sett appen.
+Beta-ringen får den første runden; si fra om alt som skurrer før den går bredt.
+
+### SundayRec har fått nytt utseende — tre steder: Opptak · Bibliotek · Oppsett
+
+Dette er den største endringen appen har hatt. Alt SundayRec gjør, gjør den
+fortsatt; det er _å finne fram_ som er nytt.
+
+Før var det fem sider, åtte faner og 65 innstillinger, tegnet for noen som
+allerede visste hvordan appen virket. Nå er det **tre steder**, og de heter det
+de er:
+
+- **Opptak** — der du tar opp. Én knapp. Over den står det hva lyden kommer fra
+  og om vi faktisk hører den; under står det hva som skjer videre.
+- **Bibliotek** — der opptakene ligger. Hver rad heter når den ble tatt opp
+  («Søndag 16. august 2026 · 11:00»), ikke hva fila heter. Sletter du noe, får
+  du «Angre», og det du sletter havner i en papirkurv som alltid er der.
+- **Oppsett** — fem spørsmål, ikke 65 brytere: _Hvilken lyd? Hvor skal
+  opptakene? Hvilken kvalitet? Hvilken kirke? Hvem får beskjed hvis noe går
+  galt?_ Svar én gang, så er dere klare hver søndag. Alt de fleste aldri trenger
+  å røre er samlet under **Avansert**, med en trygg standard.
+
+Og **Rediger**, som ikke er et sted man går, men noe et opptak åpner seg i: tre
+steg — **Klipp → Lyd → Eksporter**. Steg 1 åpner med det eneste spørsmålet man
+har: _er dette prekenen?_ Forslaget står der allerede, og «Behold bare prekenen»
+er ett klikk.
+
+**Det som er annerledes, og hvorfor:**
+
+- **Ingen knapp lyver.** En knapp som er av, sier hvorfor den er av. «Start
+  opptak» var grå fordi ingen lydkilde var valgt, og det sto ingen steder.
+- **Ingenting sier «alt er i orden» når det ikke er det.** Enhetskortet malte
+  «Tilkoblet ✓» for en innstilling ingen hadde satt. Nå står det gult og sier
+  hva som mangler.
+- **Ingen knapp gjør ingenting.** Finnes ikke skjermen ennå, finnes ikke
+  knappen heller. En død knapp lærer bort at knappene i denne appen ikke er til
+  å stole på, og den lærdommen overlever knappen.
+- **Farlige spørsmål er snudd riktig vei.** «Stoppe opptaket?» har «Fortsett å
+  ta opp» som standardvalg. Det er trykk-Enter-svaret, og det skal aldri være
+  det som avslutter gudstjenesteopptaket.
+- **Tall er ærlige.** Et opptak på 20 sekunder står som «Under 1 min», ikke
+  «0 min». Et opptak der lengden ikke er kjent står som «—», og sier ingenting.
+- **Alt kan leses.** Håndtakene som viser hvor prekenen begynner og slutter er
+  ekte knapper som kan flyttes med piltastene, ikke firkanter tegnet på et
+  lerret. Farger, kontrast og bevegelse følger det maskinen er stilt inn på.
+
+**Dette er borte, og det er med vilje:** notatet på et opptak vises, men kan
+ikke lenger redigeres · filterbrikkene i historikken (søket gjør jobben) ·
+månedskalenderen (faste tider og spesialopptak er to lister under Avansert) ·
+eksportvinduet (eksport er et steg) · Diagnose-skjermen · det levende
+kamerabildet under opptak. Det som ikke ble bygget på nytt, er skrevet ned —
+ikke glemt.
+
+**Språk:** appen er på norsk og engelsk. Svensk, dansk, tysk, fransk og polsk
+kommer tilbake i en egen oversettelsesrunde — vi ryddet først bort 653
+tekststrenger som ikke lenger vises noe sted, så oversetterne slipper å bruke
+tid på skjermer som ikke finnes.
+
+### Avslutt midt i et opptak spør nå én gang til, og venter til fila er trygg
+
+Trykket du Cmd+Q eller «Avslutt» mens gudstjenesten ble tatt opp, avsluttet
+SundayRec på flekken. Nå gjør den ikke det: første trykk avslutter ingenting, og
+et varsel forteller at det tas opp og at du kan trykke Avslutt igjen innen ti
+sekunder hvis du virkelig mener det.
+
+Gjør du det, stoppes opptaket ryddig — og appen blir stående til fila er ferdig
+skrevet, i stedet for å forsvinne midt i lagringen. Har du alt trykket Stopp og
+opptaket lagres, spør ikke appen på nytt; den venter til fila er trygg og
+avslutter så av seg selv. Må du ut med én gang uansett, avslutter et nytt trykk
+umiddelbart.
+
+Uten opptak avslutter Avslutt på første trykk, akkurat som før. (Dette erstatter
+setningen under v0.15.1-beta.1 om at Avslutt-valget «stopper fortsatt opptaket
+med vilje».)
+
+På macOS var Avslutt dessuten helt uavskjærbart før nå: valget gikk utenom
+appens egen avslutningsvei og drepte prosessen uten å stoppe opptaket i det hele
+tatt. Menylinja øverst på skjermen er bygget om for å lukke det hullet — den ser
+lik ut som før.
+
+### Oppdateringens «Start på nytt» venter også på opptaket ditt
+
+Vernet over dekket Cmd+Q og «Avslutt» — men ikke oppdateringen. Trykket du
+«Start på nytt og installer» mens gudstjenesten ble tatt opp, stoppet SundayRec
+opptaket og byttet ut seg selv med én gang, midt i lagringen. Fila kunne gå tapt
+på nøyaktig samme måte som før.
+
+Nå stopper omstarten opptaket ryddig og BLIR STÅENDE til fila er ferdig skrevet
+— historikkraden og leveransefila skal finnes — før den nye versjonen starter.
+Er du alt i gang med å avslutte, står omstarten over: oppdateringen ligger klar
+på disken og tas i bruk neste gang du starter appen.
+
+### Vekking fra dvale respekterer «Ta opp automatisk»
+
+Slo du av «Ta opp automatisk» men beholdt søndagstidene, vekket maskinen seg
+likevel 10:50 på søndag for et opptak appen så nekter å ta. Og
+vekkingskontrollen meldte de avbestilte vekkingene som «mangler», altså at noe
+var galt med maskinen. Begge deler er rettet: bryteren av betyr ingen vekking,
+og ingen forventning om en.
+
+Slår vekkingen feil i bakgrunnen — typisk fordi macOS krever administrator for å
+skrive en strømhendelse — står det nå i loggen én gang per oppstart, i stedet
+for ingen steder.
+
+## v0.15.1-beta.1
+
+Beta-ringens oppfriskning etter v0.15.0 — samme app, pluss tre endringer i
+opptaks-ryggraden som fortjener en runde i ringen før de når alle.
+
+### Å lukke vinduet stopper ikke lenger opptaket
+
+Lukket du vinduet mens gudstjenesten ble tatt opp, stoppet opptaket. Nå skjules
+vinduet i stedet: opptaket går videre, SundayRec blir stående i menylinja
+(systemstatusfeltet på Windows), og et varsel forteller deg hvor du finner
+vinduet igjen. Du henter det tilbake fra menylinja, fra Dock-ikonet på macOS,
+eller ved å starte SundayRec på nytt.
+
+Det samme gjelder mens opptaket lagres etter at du har stoppet — akkurat der
+kunne en lukking før ødelegge en ellers ferdig fil.
+
+Er det ingen opptak i gang, avslutter lukkeknappen appen som før. Avslutt-valget
+(Cmd+Q / «Avslutt» i menylinja) stopper fortsatt opptaket med vilje.
+
+### «Ta opp automatisk» kan slås av uten å miste tidene
+
+Å slå av automatisk opptak sletter ikke lenger den ukentlige tidsplanen —
+tidene blir stående og venter til bryteren slås på igjen. Planlagte
+spesialopptak (enkeltdatoer) går som før uansett.
+
+### Forhåndsbufferen er på fra start
+
+Nye installasjoner får 15 sekunders forhåndsbuffer — lyd fra like før du
+trykket Start blir med i opptaket. Har du allerede valgt en verdi (også 0),
+røres den ikke.
+
+## v0.15.0 — SundayRec gjør fire ting
+
+Tar opp gudstjenesten, lar deg redigere opptaket, mikser/mastrer lyden og
+eksporterer fila. Denne utgivelsen tar ut alt som ikke tjener de fire — både
+fra skjermen og fra koden (som ligger i git-historikken om noen trenger den
+igjen). Det er første steg i en større ombygging for frivillige som aldri har
+sett appen før; selve det nye utseendet kommer i senere utgivelser. Appen ser
+altså ut som før, men har færre knapper, færre innstillinger og trenger ikke
+lenger en C/C++-kompilator for å bygges.
+
+Gamle innstillinger og eksporterte profiler leses trygt — feltene som hørte til
+det fjernede droppes stille, alt annet beholdes.
+
+### Delingsfunksjonene er ute
+
+- **Sky-backup** (Google Drive / Dropbox / OneDrive) og kortet på Hjem.
+- **Podkast-feed (RSS)** og hele Podcast-kortet, inkludert «Forhåndsklargjøring
+  og gjennomgang».
+- **Gjennomgangskøen** — køen på Hjem, påminnelsene, menylinje-varselet og
+  redigeringens «klargjort for publisering»-modus. Redigeringen analyserer nå
+  ALLTID opptaket når du åpner det.
+- **Webhook** til Slack/Discord/Teams.
+- **Sunday-suite-koblingene** (SundaySong, SundayPlan, SundayEdit, SundayStage)
+  og `sundayrec://`-lenkene.
+- **Episodebilde / cover art** (standardbildet og bildet per opptak).
+- **Gmail-innlogging** som e-postvei — e-postvarsler fungerer som før, men
+  bare via SMTP (vertsnavn, brukernavn og app-passord).
+
+Beholdt: «Send e-post ved feil» med én mottaker og SMTP-oppsettet, og
+diagnostikk (med samtykke). Nøkler du hadde lagret for Google eller SundaySong
+ligger igjen i maskinens nøkkelring; slett dem der om du vil
+(Nøkkelringtilgang → søk «sundayrec»).
+
+### Innholdsfunksjonene er ute
+
+- **Transkribering** (whisper) — «Transkriber»-knappen, modellnedlastingen,
+  SRT/VTT/TXT-eksporten, søket i preken-tekst under Historikk og kortet på
+  Hjem. Historikk-søket finner fortsatt filnavn, dato og notat. Transkripsjon
+  gjøres bedre av verktøy laget for det, og dette var den eneste delen av appen
+  som krevde en C/C++-kompilator for å bygge.
+- **Prekenhjelp** (AI-oppsummering, tittel og sitater) — panelet i
+  redigeringen og nøkkelfeltet under System. Har du lagt inn en
+  Anthropic-nøkkel, ligger den igjen i maskinens nøkkelring; slett den der om
+  du vil (Nøkkelringtilgang → søk «sundayrec»). Diagnostikken sender ikke
+  lenger hvilke forslag du tok i bruk — spørsmålet om samtykke er det samme,
+  det dekker nå mindre.
+- **Kapittelmerker** — «Legg til kapitler» og kapittellista. Et opptak som
+  allerede har kapitler i sidefila beholder dem, men de vises og eksporteres
+  ikke lenger.
+- **«Hva appen har lagt merke til» og «Hva appen har justert»** under System,
+  og bryteren «La appen lære av rettelsene mine». Rettelsene dine i
+  redigeringen («Er ikke dette prekenen?») lagres fortsatt ved opptaket og
+  telles (med samtykke) i diagnostikken — det er bare visningen og den lokale
+  justeringen som er borte.
+- **Video-fanen** har nå ett valg: kamera av/på, hvilket kamera, og om du vil
+  beholde en separat lydfil. Oppløsning (1080p eller kameraets maks), 30
+  bilder/s, MP4/H.264 og maskinvarekoding på Mac er bestemt én gang for alle.
+  Den separate lydfila følger lydformatet du har valgt under Filer.
+  Video-eksporten i redigeringen prøver alltid maskinvarekoding først på Mac
+  og faller tilbake til programvare om den feiler — bryteren er borte.
+- **Døde innstillinger** (felter ingenting leste: inngangsvolum, EQ,
+  kompressor, limiter, «trim stillhet», «minimer til menylinje» m.fl.) er
+  tatt ut av modellen.
+
+### Polsk grammatikk (fra v0.14.1-beta.1)
+
+Beta-ringen fikk v0.14.1-beta.1 den 10. august: setninger som teller to ting
+samtidig bøyde bare det ene tallet på polsk. Flaten den fiksa («Hva appen har
+justert») er tatt ut over, men bøyingsmotoren består og brukes av de rundt
+førti andre setningene som teller noe.
+
+## v0.14.0 — slankere, og stødigere der det gjelder
+
+### Direkte-siden er fjernet — SundayRec er et opptaksprogram
+
+Live-streaming (Direkte-siden, RTMP-destinasjoner med stream-nøkler,
+lower-third-overlays) er tatt ut av appen. Funksjonen var aldri riggverifisert,
+og kirker som strømmer har allerede dedikerte verktøy til det — SundayRecs jobb
+er opptaket som overlever søndagen. Med på lasset gikk NDI-støtten (som aldri
+hadde SDK-et sitt), den frakoblede forhåndsvisnings-motoren for kamera (kameraet
+i selve opptaks-overlayet er en egen mekanisme og virker som før) og
+cue-broens nettverkshalvdel. Gamle innstillinger med stream-felter leses trygt —
+feltene droppes stille, alt annet beholdes. Stream-nøkler du har lagret ligger
+igjen i maskinens nøkkelring; slett dem der om du vil (Nøkkelringtilgang →
+søk «sundayrec»).
+
+### Lisens
+
+SundayRec er nå åpen kildekode under MIT-lisensen.
+
+### Appen gir ikke lenger opp midt i gudstjenesten
+
+Forsvinner lydenheten under et opptak — en usb-kabel som løsner, en mikser som
+starter på nytt — prøvde appen å koble seg til igjen tjue ganger og ga så opp.
+Det tok rundt tre minutter. Skjedde det under prekenen, var resten av
+gudstjenesten tapt.
+
+Nå måles tålmodigheten i tid i stedet for forsøk: de tre første minuttene
+oppfører appen seg nøyaktig som før, og deretter fortsetter den å prøve — i
+inntil fire timer — samtidig som den sier tydelig fra om hvor lenge enheten har
+vært borte. Den slutter aldri stille.
+
+To ting til i samme gate: appen merker med én gang at enheten er tilbake i
+stedet for å vente ut pausen sin, og den holder nå fem sekunder med lyd i
+minnet i stedet for ett — så et lite hikk i maskinen ikke koster deg sekunder
+av opptaket.
+
+### Riktige tallformer på alle språk
+
+«2 opptak» og «1 opptak» ble før valgt med en enkel regel som bare stemmer på
+norsk. For polske brukere ga det grammatisk gale former hele veien; tysk, fransk
+og de andre manglet entallsformer flere steder. Nå velges formen etter hvert
+språks egne regler.
+
+### Under panseret
+
+- **Oppdateringssjekken** kunne tilby deg en oppdatering til versjonen du
+  allerede kjørte. Sammenligningen er nå overlatt til et bredt brukt bibliotek
+  i stedet for egen kode.
+- **Appen ser tydeligere at et opptak lever.** Signalet den bruker til å avgjøre
+  «kom opptaket i gang» og «vokser filen fortsatt» kommer nå fra en maskinlesbar
+  kanal i stedet for tekst ment for mennesker — teksten endret seg mellom to
+  ffmpeg-versjoner, og et friskt opptak kunne da se dødt ut.
+- **Planlagt vekking** av maskinen er skrevet om på Windows og leser nå status
+  gjennom systemets eget grensesnitt på macOS. Merk: en test-vekking erstatter
+  den planlagte — sett tidsplanen på nytt etterpå.
+
+## v0.13.0 — ryddesjauen
+
+Én dag etter v0.12.0, og hele utgivelsen handler om å gjøre appen ærligere:
+fjerne det som ikke virket, få det som så ut som det virket til å faktisk
+virke, og luke ut tekst som pekte feil vei.
+
+### Innstillingene har fått ett hjem
+
+All lagring av innstillinger går nå ett sted, i stedet for to halvveis synkroniserte.
+Det var todelingen som lå bak feilene i v0.12.0 («automatisk sletting virket
+aldri», «kanalbytte ble ikke lagret») — nå er selve årsaken borte, ikke bare
+symptomene. Første gang du starter denne versjonen flyttes innstillingene dine
+over automatisk; du skal ikke merke noe.
+
+### Brytere som nå gjør det de sier
+
+- **«Varsle når opptak starter/stopper» virker** — de to bryterne lagret valget
+  ditt og gjorde ingenting. Nå styrer de faktisk varslene. Feilvarsler kan
+  aldri slås av: går et opptak galt, får du beskjed uansett.
+- **«Vis vindu ved oppstart» er fjernet** — den gjorde aldri noe, og har ikke
+  gjort det på lenge. Borte er også en håndfull andre døde valg og knapper som
+  lovte ting appen ikke kunne holde, blant dem en YouTube-kobling som alltid
+  feilet med en tom feilmelding.
+
+### Mindre rot, riktigere tekst
+
+- Bytter du språk midt i økta, beholder skjermen nå det den holdt på med, i
+  stedet for å nullstille status-tekster til standardverdier.
+- Integrasjoner-panelet finnes nå på alle sju språk.
+- Flere tekster som pekte til faner eller knapper som ikke finnes, er rettet.
+- Sletteknapper ser nå ut som sletteknapper.
+- Opprydding av gamle opptak og papirkurven jobber nå garantert i opptaksmappen
+  din — en intern uenighet om hvor den lå, kunne før la dem lete i feil mappe.
+- Har du oppgradert helt fra den gamle utgaven av SundayRec, kan appen nå finne
+  igjen de gamle programfilene dens forgjenger la igjen — de ryddes aldri uten
+  at du sier ja.
+
+---
+
+## v0.12.0 — den store kvalitetsutgivelsen
+
+Dette er den første vanlige utgivelsen siden v0.10.0, og den samler seks ukers
+kvalitetsarbeid: alt fra beta-rundene v0.11.x, pluss en natt med feilretting som
+fant ting ingen hadde merket. Kommer du fra v0.10.0 er alt under nytt for deg —
+overskriftene fra betaene står lenger ned og gjelder fortsatt.
+
+### Rettet: innstillinger som ikke ble tatt på alvor
+
+Ni innstillinger ble vist og bekreftet i appen uten at motoren noen gang fikk
+beskjed. De viktigste:
+
+- **Automatisk sletting av gamle opptak virket ikke** — uansett hva du valgte,
+  ble ingenting slettet automatisk. Nå følger motoren valget ditt. Sjekk
+  gjerne verdien under **Innstillinger** før søndag, siden den nå betyr noe.
+- **Bytte av oppdateringskanal ble ikke lagret.** Du kunne trykke «Ja, bruk
+  beta» og forbli på stabil uten å få vite det. Nå lagres valget, og
+  tekstlinjen under velgeren forteller hvilken kanal maskinen faktisk henter
+  fra.
+- Påminnelses-forsprang, inngangsvolum og «lær av rettelsene mine» nådde
+  heller ikke fram. Alle gjør det nå, og en automatisk vakt hindrer at nye
+  innstillinger kan havne i samme felle.
+
+### Rettet: Integrasjoner-panelet sa «Lagret ✓» uten å lagre
+
+Hele Integrasjoner-panelet kvitterte suksess mens ingenting ble tatt vare på.
+Nå er elleve av funksjonene koblet til ordentlig lagring, og de som ennå ikke
+finnes bak panelet sier det ærlig i stedet for å late som.
+
+### Rettet: filnavn kunne havne i krasjrapporter
+
+Feilmeldinger som nevnte filer med mellomrom i navnet («gudstjeneste 9. november.wav») kunne slippe deler av navnet gjennom vaskingen som anonym
+diagnostikk går gjennom. Meldinger fødes nå rene ved kilden, og en automatisk
+vakt passer på at nye feilmeldinger ikke kan gjøre samme feil.
+
+### Raskere å jobbe med
+
+En byggefeil gjorde at deler av appen ble bygget på nytt hver eneste gang,
+uansett om noe var endret. Utviklingssyklusen er en femtedel raskere og
+kvalitetskontrollen i skyen omtrent dobbelt så rask — noe som betyr at
+rettelser når deg raskere.
+
+---
+
 ## v0.11.1-beta.2 — appen begynner å lære av deg
 
 > **Betaversjon.** Du får den fordi du står på beta-kanalen under

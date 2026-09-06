@@ -26,9 +26,8 @@ import type { ShadowSettings } from "./ShadowSettings";
  * The A/B harness needs these locally anyway, which is where they are. If
  * central aggregation is ever wanted it is a new consent decision in a later
  * stage, not a quiet addition to an existing payload: see
- * `crate::telemetry::corrections::banded_corrections` and
- * `crate::telemetry::companion::companion_outcomes` for the two projections
- * that read this file, neither of which reads this collection.
+ * `crate::telemetry::corrections::banded_corrections` for the projection
+ * that reads this file, which does not read this collection.
  *
  * ## Privacy — the same rule as [`SermonPickCorrection`], inherited whole
  *

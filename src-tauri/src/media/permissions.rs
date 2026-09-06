@@ -48,7 +48,7 @@ impl MediaKind {
 
 /// Authorization status, mirroring Apple's `AVAuthorizationStatus`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/AuthStatus.ts")]
+#[ts(export, export_to = "AuthStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum AuthStatus {
     /// Never asked — opening the device will trigger the system prompt.
@@ -92,7 +92,7 @@ impl AuthStatus {
 
 /// The current camera + microphone authorization, for the UI / preflight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/MediaPermissions.ts")]
+#[ts(export, export_to = "MediaPermissions.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct MediaPermissions {
     pub camera: AuthStatus,

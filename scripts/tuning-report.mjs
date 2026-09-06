@@ -18,7 +18,8 @@
 //                             come from a build that captures corrections, so
 //                             "what is promoted" is part of reading the number.
 //   GET /v1/admin/history   — OPTIONAL: what the purge has already folded into
-//                             `agg_corrections`/`agg_companion`, i.e. everything
+//                             `agg_corrections` (and `agg_companion`, which only
+//                             pre-v0.15 builds ever fed), i.e. everything
 //                             older than the raw window. A 404 means the Worker
 //                             predates the route; the tool then says so instead
 //                             of silently reading less than exists.
@@ -28,8 +29,9 @@
 // here. Same split, and the same reason, as scripts/promote-release.mjs.
 //
 // ── READ-ONLY, STRUCTURALLY ─────────────────────────────────────────────────
-// There is exactly one HTTP function below, it hardcodes the method, and the
-// only two paths in this file are the two GETs above. `tuning-report.test.mjs`
+// There are exactly two HTTP functions below (`get`, and the 404-tolerant
+// `getOptional` the history route needs), both hardcode GET, and the only
+// three paths in this file are the three routes above. `tuning-report.test.mjs`
 // asserts both properties against the file's own source text, so a later edit
 // that adds a mutating call fails the gate rather than being noticed by a
 // reviewer. A reporting tool that could also act is a tool nobody can run
@@ -113,7 +115,9 @@ const DIRECTION_MEANING = {
 // The counters that say how much OPPORTUNITY there was to correct anything.
 // Zero corrections against a zero here is not evidence about the detector; zero
 // corrections against a large one is weak evidence, and the difference is the
-// whole reason both numbers are printed.
+// whole reason both numbers are printed. (`review.published` stopped being
+// SENT in R1 «Frivilligen først» — the review queue is gone — but aggregates
+// from older clients still carry it, so it is still read.)
 const EXPOSURE_COUNTERS = ["editor.opened", "review.published"];
 
 // ── The evidence bar, read from the harness rather than restated ─────────────
@@ -129,7 +133,12 @@ const AB_EVAL_PATH = "crates/sundayrec-core/src/ab_eval.rs";
 
 export function parseEvidenceBar(source) {
   const read = (name) => {
-    const m = source.match(new RegExp(`pub const ${name}: usize = (\\d+);`));
+    // Anchored to the start of a line so a commented-out declaration
+    // (`// pub const … = 99;` left behind by a move or rename) can never be
+    // read as the live constant — absence must throw, not report a ghost bar.
+    const m = source.match(
+      new RegExp(`^pub const ${name}: usize = (\\d+);`, "m"),
+    );
     return m ? Number(m[1]) : undefined;
   };
   const anyConclusion = read("MIN_CORPUS_FOR_ANY_CONCLUSION");
@@ -172,6 +181,28 @@ export function signTestP(n, k) {
 }
 
 // ── Shaping the summary into the rows a human reads ─────────────────────────
+
+/**
+ * Corrections whose SIGNAL name this tool does not know at all.
+ *
+ * `summariseCorrections` below iterates the known signals, so a row under a
+ * NEW signal never enters any fold — which is correct (there is nothing to
+ * attribute it to) but used to be silent, and silence here reads as "fewer
+ * corrections": the exact quiet loss the band/direction rule already refuses.
+ * Same normalisation as the fold: history serves `total`, raw serves `n`.
+ */
+export function countUnknownSignalRows(summary, history = null) {
+  const known = new Set(SIGNALS.map(([signal]) => signal));
+  const raw = Array.isArray(summary?.correctionBands)
+    ? summary.correctionBands
+    : [];
+  const folded = Array.isArray(history?.corrections?.rows)
+    ? history.corrections.rows.map((r) => ({ ...r, n: r.total }))
+    : [];
+  return [...raw, ...folded]
+    .filter((r) => !known.has(r?.signal))
+    .reduce((a, r) => a + (Number(r.n) || 0), 0);
+}
 
 /**
  * Fold `correctionBands` into one entry per signal: the counts per band, the
@@ -284,7 +315,13 @@ export function renderReport({
   const historyRead = history !== null && typeof history === "object";
   const signals = summariseCorrections(summary, bar, history);
   const grandTotal = signals.reduce((a, s) => a + s.total, 0);
-  const unrecognised = signals.reduce((a, s) => a + s.unrecognised, 0);
+  // Both axes of vocabulary drift: an unknown band/direction under a known
+  // signal, and a signal name this tool has never heard of. One number,
+  // because the reader's next move is the same for both — update the
+  // vocabulary here, then re-run.
+  const unrecognised =
+    signals.reduce((a, s) => a + s.unrecognised, 0) +
+    countUnknownSignalRows(summary, history);
 
   lines.push(
     "SundayRec — what the fleet's corrections say about the sermon detector",
@@ -415,6 +452,20 @@ export function renderReport({
     lines.push("");
   }
 
+  const unknownSignals = countUnknownSignalRows(summary, history);
+  if (unknownSignals > 0) {
+    lines.push(
+      `  ⚠ ${unknownSignals} correction${unknownSignals === 1 ? "" : "s"} under a signal this tool does not recognise —`,
+    );
+    lines.push(
+      "    dropped, not folded in. The client is ahead of the tool — update BANDS/SIGNALS",
+    );
+    lines.push(
+      "    here from crates/sundayrec-core/src/telemetry/corrections.rs.",
+    );
+    lines.push("");
+  }
+
   lines.push(renderCompanion(summary, history));
   lines.push(renderWindowNote(summary, history));
   return lines.join("\n").trimEnd() + "\n";
@@ -451,30 +502,34 @@ function renderSkew(s, bar) {
   return `→ ${share} % lean ${lean}${because}, but not distinguishable from a coin flip${pText}.`;
 }
 
-/** The companion's outcomes, which the same ritual reads and the same bar governs. */
+/**
+ * The companion's outcomes — NOT COLLECTED since v0.15. The AI sermon companion
+ * left SundayRec with the content cluster («Frivilligen først» R2), and the
+ * `companionOutcomes` field left the payload with it. The Worker still serves
+ * whatever pre-v0.15 builds reported (raw rows until the retention purge folds
+ * them into `agg_companion`, then history), so this section says so in one
+ * line and counts what is left rather than pretending the rows are current:
+ * they describe a feature that no longer ships, and no constant can move on
+ * them.
+ */
 function renderCompanion(summary, history = null) {
   const raw = Array.isArray(summary?.companionOutcomes)
     ? summary.companionOutcomes
     : [];
-  // Same normalisation as the corrections: history serves `total`, raw serves
-  // `n`, and the two sides of the purge cutoff never overlap.
   const folded = Array.isArray(history?.companion?.rows)
     ? history.companion.rows.map((r) => ({ ...r, n: r.total }))
     : [];
-  const rows = [...raw, ...folded];
-  const total = rows.reduce((a, r) => a + (Number(r.n) || 0), 0);
-  if (total === 0) {
-    return "COMPANION SUGGESTIONS\n  NOTHING TO READ — no outcome has been reported.\n";
-  }
-  const lines = ["COMPANION SUGGESTIONS — counts per kind"];
-  const kinds = [...new Set(rows.map((r) => r.kind))].sort();
-  for (const kind of kinds) {
-    const mine = rows.filter((r) => r.kind === kind);
-    const n = mine.reduce((a, r) => a + (Number(r.n) || 0), 0);
-    const parts = mine
-      .map((r) => `${r.outcome} ${Number(r.n) || 0}`)
-      .join(", ");
-    lines.push(`  ${pad(kind, 12)} ${parts}   (${n})`);
+  const total = [...raw, ...folded].reduce((a, r) => a + (Number(r.n) || 0), 0);
+  const lines = [
+    "COMPANION SUGGESTIONS — NOT COLLECTED since v0.15 (the AI companion left the app)",
+  ];
+  if (total > 0) {
+    lines.push(
+      `  ${total} historical outcome(s) from pre-v0.15 builds remain in the Worker's`,
+    );
+    lines.push(
+      "  aggregates. They describe a feature that no longer ships; nothing moves on them.",
+    );
   }
   lines.push("");
   return lines.join("\n");

@@ -4,4 +4,4 @@
  * Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
  * Maps 1:1 to [`sundayrec_core::editor::Sidecar`].
  */
-export type EditorSidecar = "meta" | "cutsDraft" | "transcript" | "peaks" | "segments" | "feedback";
+export type EditorSidecar = "meta" | "cutsDraft" | "peaks" | "segments" | "feedback";

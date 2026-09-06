@@ -26,8 +26,6 @@
 //! ffmpeg health-check are exercised here only against whatever the dev box has.
 //! The pure decision over the facts is what the tests cover.
 
-use std::path::PathBuf;
-
 use sqlx::SqlitePool;
 use sundayrec_core::device_match::find_best_device_match;
 use sundayrec_core::preflight::{
@@ -37,17 +35,6 @@ use sundayrec_core::preflight::{
 use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
 use crate::media::ffmpeg::ffmpeg_health;
 use crate::settings;
-
-/// Resolve the effective save folder: the user's `save_folder`, or the default
-/// `<documents>/SundayRec` (mirrors Electron `preflight.ts:39`). `documents_dir`
-/// is injected so this is testable without a desktop environment — the command
-/// passes the Tauri-resolved Documents directory.
-fn resolve_save_folder(save_folder: Option<&str>, documents_dir: &std::path::Path) -> PathBuf {
-    match save_folder {
-        Some(f) if !f.trim().is_empty() => PathBuf::from(f),
-        _ => documents_dir.join("SundayRec"),
-    }
-}
 
 /// Probe a folder for writability the way Electron did (`preflight.ts:40-47`):
 /// create it (recursively) if missing, write then delete a probe file. Returns
@@ -128,17 +115,23 @@ pub struct PreflightOutcome {
 /// (deferred to Fase 5). An empty `findings` means "alt klart".
 pub async fn run_preflight_detailed(
     pool: &SqlitePool,
-    documents_dir: &std::path::Path,
+    documents_dir: Option<&std::path::Path>,
 ) -> PreflightOutcome {
     let settings = settings::load(pool).await.unwrap_or_default();
 
     let ffmpeg_missing = !ffmpeg_health().available;
 
-    let folder = resolve_save_folder(settings.save_folder.as_deref(), documents_dir);
-    let writable = folder_writable(&folder);
-    // Only read free space if the folder exists/was created — otherwise the read
-    // would fail anyway and we'd skip the check (None) regardless.
-    let free = free_bytes(&folder);
+    // The canonical resolver (R3). An unresolvable folder (nothing configured,
+    // no Documents dir) is reported as NOT writable — that is exactly the
+    // finding the operator needs — instead of probing a relative "." like the
+    // pre-R3 command-side fallback did.
+    let (writable, free) = match sundayrec_core::settings::resolve_save_folder(
+        settings.save_folder.as_deref(),
+        documents_dir,
+    ) {
+        Ok(folder) => (folder_writable(&folder), free_bytes(&folder)),
+        Err(_) => (false, None),
+    };
 
     let device_name = settings
         .device_name
@@ -168,7 +161,7 @@ pub async fn run_preflight_detailed(
 /// The findings alone — what every existing caller wants.
 pub async fn run_preflight(
     pool: &SqlitePool,
-    documents_dir: &std::path::Path,
+    documents_dir: Option<&std::path::Path>,
 ) -> Vec<PreflightFinding> {
     run_preflight_detailed(pool, documents_dir).await.findings
 }
@@ -177,23 +170,8 @@ pub async fn run_preflight(
 mod tests {
     use super::*;
 
-    #[test]
-    fn resolve_save_folder_uses_setting_when_present() {
-        let docs = std::path::Path::new("/home/u/Documents");
-        let got = resolve_save_folder(Some("/recordings"), docs);
-        assert_eq!(got, PathBuf::from("/recordings"));
-    }
-
-    #[test]
-    fn resolve_save_folder_defaults_under_documents() {
-        let docs = std::path::Path::new("/home/u/Documents");
-        assert_eq!(resolve_save_folder(None, docs), docs.join("SundayRec"));
-        // Blank/whitespace setting falls back to the default too.
-        assert_eq!(
-            resolve_save_folder(Some("   "), docs),
-            docs.join("SundayRec")
-        );
-    }
+    // Save-folder resolution itself is the canonical
+    // `sundayrec_core::settings::resolve_save_folder` and is tested there.
 
     #[test]
     fn folder_writable_true_for_a_real_temp_dir() {

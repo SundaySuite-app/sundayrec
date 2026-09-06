@@ -2,9 +2,24 @@
 //! the `keyring` crate — NEVER plaintext files. Replaces Electron's
 //! `safeStorage`.
 //!
-//! OAuth tokens (Drive/YouTube/Gmail) and stream keys are written here in later
-//! phases (6/7); Phase 0 establishes the seam and the resolution precedence so
-//! the rest of the app has one place to reach for a credential.
+//! The SMTP password is written here (until v0.15 the AI companion's Anthropic
+//! key was too); Phase 0 established the seam and the resolution precedence so the rest of
+//! the app has one place to reach for a credential.
+//!
+//! ## Retired slots
+//!
+//! Earlier builds also wrote OAuth refresh tokens for Google Drive
+//! (`oauth.google_drive`), YouTube (`oauth.youtube`) and Gmail (`oauth.gmail`),
+//! a SundaySong API key (`integrations.song_api_key`), RTMP stream keys
+//! (`stream.key`, `stream.key.{destId}`) and — until v0.15 — the AI sermon
+//! companion's Anthropic API key (`companion.llm_api_key`). Those features are
+//! gone (cloud backup, podcast publishing, the Gmail mail transport, the
+//! Sunday-suite integrations, live streaming, the companion), so nothing reads
+//! or writes the slots any more — but the
+//! entries may still sit in users' keychains. They are left alone on purpose:
+//! keyring cannot enumerate accounts, and a startup sweep could block launch on
+//! a locked-keychain authorization prompt. The strings above are the contract
+//! for anyone who ever wants to clean them up by hand.
 
 use keyring::Entry;
 
@@ -19,51 +34,28 @@ const SERVICE: &str = "no.sundayrec.app";
 /// treat these strings as a storage contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretProvider {
-    /// Google Drive OAuth refresh token (cloud backup / upload).
-    GoogleDrive,
-    /// YouTube OAuth refresh token (publish / live).
-    YouTube,
-    /// Gmail OAuth refresh token (notification mailer).
-    Gmail,
-    /// RTMP stream key (live streaming).
+    /// HISTORICAL — the RTMP stream-key slot from the removed live-streaming
+    /// feature (v0.14). Nothing writes it any more; the variant stays as the
+    /// one provider the round-trip test below can safely write and delete
+    /// (see "Retired slots" in the module docs for the others).
     StreamKey,
     /// SMTP password for the email-alert mailer (never persisted in settings;
     /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
     SmtpPassword,
-    /// SundaySong / SundayPlan API key (bearer). Encrypted in the keychain, never
-    /// in the integration-settings blob — mirrors the Electron `setSongApiKey`.
-    SongApiKey,
-    /// Anthropic API key for the OPTIONAL AI sermon-companion summary seam (R8).
-    /// Stored in the OS keychain only — NEVER in settings, NEVER in a bundle. When
-    /// unset the companion falls back to the fully-local extractive summary.
-    CompanionLlmKey,
 }
 
 impl SecretProvider {
     /// The keychain account string for this provider.
     fn account(self) -> &'static str {
         match self {
-            SecretProvider::GoogleDrive => "oauth.google_drive",
-            SecretProvider::YouTube => "oauth.youtube",
-            SecretProvider::Gmail => "oauth.gmail",
             SecretProvider::StreamKey => "stream.key",
             SecretProvider::SmtpPassword => "email.smtp_password",
-            SecretProvider::SongApiKey => "integrations.song_api_key",
-            SecretProvider::CompanionLlmKey => "companion.llm_api_key",
         }
     }
 
     /// All providers — handy for a "disconnect everything" sweep.
-    pub fn all() -> [SecretProvider; 7] {
-        [
-            SecretProvider::GoogleDrive,
-            SecretProvider::YouTube,
-            SecretProvider::Gmail,
-            SecretProvider::StreamKey,
-            SecretProvider::SmtpPassword,
-            SecretProvider::SongApiKey,
-            SecretProvider::CompanionLlmKey,
-        ]
+    pub fn all() -> [SecretProvider; 2] {
+        [SecretProvider::StreamKey, SecretProvider::SmtpPassword]
     }
 }
 
@@ -92,51 +84,6 @@ pub fn has(provider: SecretProvider) -> bool {
 /// Delete a provider's secret. A missing entry is success, not an error.
 pub fn delete(provider: SecretProvider) -> AppResult<()> {
     match entry(provider)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(AppError::Internal(format!("keychain delete: {e}"))),
-    }
-}
-
-// ── Per-destination stream keys (R3) ──────────────────────────────────────────
-//
-// Live streaming pushes to MANY destinations, each with its own key — the single
-// [`SecretProvider::StreamKey`] slot isn't enough. We namespace each destination
-// under its own keychain account derived from the destination id. Mirrors the
-// Electron `stream-keys.ts` per-`destId` store, but in the OS keychain (never a
-// plaintext JSON file).
-
-/// The keychain account for a destination's stream key. Pure so the namespacing
-/// (and the fact that ids are kept distinct from the OAuth accounts above) is
-/// unit-tested without a real keychain.
-fn stream_key_account(dest_id: &str) -> String {
-    format!("stream.key.{dest_id}")
-}
-
-fn stream_key_entry(dest_id: &str) -> AppResult<Entry> {
-    Entry::new(SERVICE, &stream_key_account(dest_id))
-        .map_err(|e| AppError::Internal(format!("keychain entry: {e}")))
-}
-
-/// Store (or replace) a destination's stream key.
-pub fn set_stream_key(dest_id: &str, key: &str) -> AppResult<()> {
-    stream_key_entry(dest_id)?
-        .set_password(key)
-        .map_err(|e| AppError::Internal(format!("keychain set: {e}")))
-}
-
-/// Read a destination's stream key, or `None` when unset/unreadable.
-pub fn get_stream_key(dest_id: &str) -> Option<String> {
-    stream_key_entry(dest_id).ok()?.get_password().ok()
-}
-
-/// Whether a destination has a stored stream key (drives the UI's "saved" badge).
-pub fn has_stream_key(dest_id: &str) -> bool {
-    get_stream_key(dest_id).is_some()
-}
-
-/// Delete a destination's stream key. A missing entry is success.
-pub fn delete_stream_key(dest_id: &str) -> AppResult<()> {
-    match stream_key_entry(dest_id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(AppError::Internal(format!("keychain delete: {e}"))),
     }
@@ -217,41 +164,6 @@ mod tests {
     }
 
     #[test]
-    fn stream_key_accounts_are_namespaced_and_distinct_from_oauth() {
-        assert_eq!(stream_key_account("yt"), "stream.key.yt");
-        assert_ne!(stream_key_account("a"), stream_key_account("b"));
-        // Must not collide with the single OAuth StreamKey slot's account.
-        assert_ne!(stream_key_account("x"), SecretProvider::StreamKey.account());
-    }
-
-    // Tolerant: exercise the REAL keychain for a per-destination key when one is
-    // reachable, otherwise skip so headless CI stays green.
-    #[test]
-    fn real_stream_key_round_trip_or_skip() {
-        if !keychain_test_opted_in() {
-            return;
-        }
-        let id = "sundayrec-test-dest";
-        let sentinel = "stream-key-sentinel-1234";
-        match set_stream_key(id, sentinel) {
-            // Some headless backends (e.g. the GitHub Linux runner) accept the
-            // write but don't persist it, so the read won't round-trip. Only
-            // assert the full cycle when the value actually comes back; otherwise
-            // treat it as "no functional keychain" and skip (best-effort cleanup).
-            Ok(()) if get_stream_key(id).as_deref() == Some(sentinel) => {
-                assert!(has_stream_key(id));
-                delete_stream_key(id).expect("delete should succeed");
-                assert!(!has_stream_key(id));
-            }
-            Ok(()) => {
-                let _ = delete_stream_key(id);
-                eprintln!("SKIP: keychain write did not round-trip in this environment");
-            }
-            Err(e) => eprintln!("SKIP: no reachable keychain: {e}"),
-        }
-    }
-
-    #[test]
     fn provider_accounts_are_distinct() {
         let mut accounts: Vec<&str> = SecretProvider::all().iter().map(|p| p.account()).collect();
         let count = accounts.len();
@@ -262,7 +174,10 @@ mod tests {
 
     // Tolerant integration test: exercises the REAL keychain when one is
     // reachable, otherwise skips so the gate stays green in headless CI. Uses
-    // the StreamKey slot with a sentinel value it always cleans up.
+    // the historical StreamKey slot with a sentinel value it always cleans up —
+    // deliberately: it is the ONE provider nothing real writes any more, so the
+    // test's delete can never destroy a credential an install depends on
+    // (SmtpPassword is the live slot).
     #[test]
     fn real_keychain_round_trip_or_skip() {
         if !keychain_test_opted_in() {
@@ -271,8 +186,8 @@ mod tests {
         let provider = SecretProvider::StreamKey;
         let sentinel = "sundayrec-test-sentinel-value";
         match set(provider, sentinel) {
-            // See `real_stream_key_round_trip_or_skip`: a write that succeeds but
-            // doesn't read back (headless CI keychain) is a skip, not a failure.
+            // A write that succeeds but doesn't read back (headless CI
+            // keychain) is a skip, not a failure.
             Ok(()) if get(provider).as_deref() == Some(sentinel) => {
                 assert!(has(provider));
                 delete(provider).expect("delete should succeed");

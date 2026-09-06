@@ -31,10 +31,6 @@ silence_threshold_db: number | null,
  */
 silence_timeout_minutes: number, 
 /**
- * Capture framerate.
- */
-framerate: number, 
-/**
  * Output channel layout / downmix mode (stereo, mono-L, mono-R, mono-mix).
  */
 channel_mode: ChannelMode, 
@@ -82,23 +78,6 @@ keep_separate_audio: boolean,
  * the shared `audio_encode_args` seam.
  */
 separate_audio_format: string, 
-/**
- * Capture resolution tag (`"480p"`/`"720p"`/`"1080p"`/`"2160p"`) from
- * settings — the camera-mode probe TARGET, so a 1080p setting records 1080p
- * (when the camera advertises it). Empty → 720p. Serialized (it roundtrips
- * through the planner).
- */
-video_resolution: string, 
-/**
- * Recording video codec tag (`"h264"`/`"h265"`) from settings. Empty/unknown
- * → H.264. Drives the `-c:v` choice in the capture args.
- */
-video_codec: string, 
-/**
- * Recording video encoder backend (`"software"`/`"hardware"`) from settings.
- * `"hardware"` → VideoToolbox on macOS (realtime 4K); ignored off macOS.
- */
-video_encoder: string, 
 /**
  * Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
  * of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.

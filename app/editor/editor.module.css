@@ -1,0 +1,386 @@
+/*
+ * Rediger — canvasens sett 4, artboard 4.1.
+ *
+ * Ingen fargeliteraler: `app/styles/tokens.css` er ordboka, og
+ * `scripts/check-app-css-tokens.mjs` avviser alt annet. Gullvinduet, de to
+ * håndtakene og linjalen er derfor de samme tokens som resten av appen — en
+ * eier som endrer `--gold` endrer også prekenvinduet.
+ */
+
+/*
+ * ⚠️ `flex: 1 0 auto` og IKKE `flex: 1` + `min-height: 0`.
+ *
+ * Den gamle formen sa «voks for å fylle, og krymp så mye som helst». Andre
+ * halvdel var feilen: `min-height: 0` lar en flex-boks bli KORTERE enn
+ * innholdet sitt, og med `overflow: visible` blir resten stående og renne
+ * utenfor boksen. Samtidig står `.nextRow` nederst med `margin-top: auto`,
+ * altså festet til bunnen av DENNE boksen — så den havnet oppå innholdet som
+ * hadde rent ut under den.
+ *
+ * To regler som hver for seg er riktige, uenige i skjøten: «fyll høyden» og
+ * «knappen nederst». På main kolliderte de ikke, men bare fordi avspillings-
+ * knappen tilfeldigvis lå 15 px under `.nextRow`; D3s tetthetspass flyttet
+ * innholdet 36 px opp, og da lå den under. Proben fant det, ikke øyet.
+ *
+ * `0` i midten (flex-shrink) er hele fiksen: boksen er ALDRI kortere enn
+ * innholdet, så ingenting renner ut, og `<main>` ruller i stedet — som er
+ * det den er satt opp til å gjøre.
+ */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+  flex: 1 0 auto;
+}
+
+/* ── Topplinja ─────────────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  margin: 0;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex: none;
+}
+
+/* ── Bølgeformen ───────────────────────────────────────────────────────── */
+
+.wave {
+  position: relative;
+  min-height: 190px;
+  flex: 1;
+  border-radius: var(--r);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0 0 34px 0;
+  width: 100%;
+  height: calc(100% - 34px);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.minimap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 34px;
+  border-top: 1px solid var(--line);
+  touch-action: none;
+  cursor: pointer;
+}
+
+.keep {
+  position: absolute;
+  top: 0;
+  bottom: 34px;
+  background: var(--gold-soft);
+  border-left: 2px solid var(--gold);
+  border-right: 2px solid var(--gold);
+  pointer-events: none;
+}
+
+.keepLabel {
+  position: absolute;
+  top: 26px;
+  left: 10px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 36px;
+  margin: -18px 0 0 -7px;
+  padding: 0;
+  border-radius: 7px;
+  background: var(--gold);
+  border: 2px solid var(--bg);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ── Transportlinja ────────────────────────────────────────────────────── */
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.time {
+  font-size: var(--fs-val);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.total {
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+}
+
+.result {
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+}
+
+.play {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  cursor: pointer;
+}
+
+.play svg {
+  width: 20px;
+  height: 20px;
+}
+
+.play[aria-disabled="true"] {
+  background: var(--raised);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/* ── Kuttverktøyene ────────────────────────────────────────────────────── */
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.hint {
+  color: var(--ink-3);
+  font-size: var(--fs-base);
+  margin: 0;
+}
+
+.cutList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cutRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.cutRange {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cutSpan {
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  margin-right: auto;
+}
+
+/*
+ * ⚠️ Tomtilstandens former er BORTE herfra, ikke glemt. D3 flyttet slippsonen
+ * til `app/pages/library/library.module.css` (den omslutter hele REDIGERING nå)
+ * og «siste opptak»-kortet til `app/pages/export/export.module.css`, der det
+ * har blitt til «Sist redigert». Å la dem stå her ville vært tre klassenavn
+ * ingen selektor treffer — og en stilfil ingen tør røre neste gang.
+ */
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ── Lastingen ─────────────────────────────────────────────────────────── */
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6) 0;
+}
+
+.loadingText {
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  margin: 0;
+}
+
+/* ── «Er ikke dette prekenen?» ─────────────────────────────────────────── */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* ── Stegene 2 og 3 ────────────────────────────────────────────────────── */
+
+/*
+ * Ett steg er en kolonne med samme avstand mellom alt. Canvasens 4.2 og 4.3
+ * har ingen bølgeform å gi plass til, så innholdet står øverst og «neste»
+ * nederst — `margin-top: auto` på siste raden, slik artboardet gjør det.
+ */
+/* `flex: 1 0 auto` av samme grunn som `.page` over — se skjøt-notatet der. */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+  flex: 1 0 auto;
+}
+
+.nextRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--sp-2);
+}
+
+/* Tittel + forklaring til venstre, kontrollen til høyre. Formen SettingRow
+   har, uten lagringsmodellen: her lagres ingenting før eksporten. */
+.autoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.autoGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.autoTitle {
+  display: block;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── Lytt: Før | Etter ─────────────────────────────────────────────────── */
+
+.listenRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.seg {
+  display: flex;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+}
+
+.segButton {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-base);
+  padding: var(--sp-1) var(--sp-4);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+
+.segButton:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.segOn {
+  background: var(--gold);
+  color: var(--on-gold);
+  font-weight: 600;
+}
+
+/* ── Mikseren ──────────────────────────────────────────────────────────── */
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+
+/* Dempet, ikke borte: kontrollene beskriver kjeden også når den ikke er i
+   bruk, og en skjerm som skifter høyde når man trykker på en bryter er en
+   skjerm man mister plassen sin i. */
+.stagesOff {
+  opacity: 0.55;
+}
+
+.stageTitle {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-left: var(--sp-3);
+}
+
+.sliderRow > span:first-child {
+  min-width: 110px;
+}

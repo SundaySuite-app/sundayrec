@@ -96,12 +96,10 @@ use crate::settings::{ChannelMode, FileFormat, FilenamePattern, SampleRate, Sett
 use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
-pub mod companion;
 pub mod consent;
 pub mod corrections;
 pub mod queue;
 
-pub use companion::{CompanionOutcomeReport, MAX_COMPANION_OUTCOMES};
 pub use corrections::{CorrectionReport, MAX_CORRECTIONS};
 
 /// The payload schema version. Bumped when a field changes MEANING (a new
@@ -158,7 +156,7 @@ pub const NIL_INSTALL_ID: &str = "00000000-0000-0000-0000-000000000000";
 /// with no compile-time guarantee about its contents, so it is mapped here
 /// rather than forwarded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryOs.ts")]
+#[ts(export, export_to = "TelemetryOs.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryOs {
     Macos,
@@ -186,7 +184,7 @@ impl TelemetryOs {
 
 /// The CPU architecture, as a CLOSED set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryArch.ts")]
+#[ts(export, export_to = "TelemetryArch.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryArch {
     #[serde(rename = "x86_64")]
@@ -214,7 +212,7 @@ impl TelemetryArch {
 /// What kind of crash-adjacent event a [`CrashReport`] describes. Mirrors the
 /// `src-tauri` crash ring's `kind` field, as a closed set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CrashKind.ts")]
+#[ts(export, export_to = "CrashKind.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum CrashKind {
     /// The process panic hook fired.
@@ -248,7 +246,7 @@ impl CrashKind {
 /// [`derive_reason_codes`] is a faithful re-reading of that function's decisions
 /// from the numbers it recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/QualityReason.ts")]
+#[ts(export, export_to = "QualityReason.ts")]
 #[serde(rename_all = "kebab-case")]
 pub enum QualityReason {
     /// The delivered file is below the "did anything land" size floor.
@@ -282,7 +280,7 @@ pub enum QualityReason {
 /// The wire strings are dotted namespaces (`area.thing.variant`) so the endpoint
 /// can aggregate by prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CounterName.ts")]
+#[ts(export, export_to = "CounterName.ts")]
 pub enum CounterName {
     // ── Recording ────────────────────────────────────────────────────────────
     /// A recording the operator started by hand.
@@ -319,26 +317,9 @@ pub enum CounterName {
     /// Mastering was applied to a recording.
     #[serde(rename = "editor.master.applied")]
     EditorMasterApplied,
-    /// Chapters were auto-detected.
-    #[serde(rename = "editor.chapters.detected")]
-    EditorChaptersDetected,
-
-    // ── Post-production ──────────────────────────────────────────────────────
-    /// A whisper transcription was started.
-    #[serde(rename = "transcribe.run")]
-    TranscribeRun,
-    /// The AI sermon companion built chapters/highlights/summary.
-    #[serde(rename = "companion.build")]
-    CompanionBuild,
-    /// An episode was published from the review queue.
-    #[serde(rename = "review.published")]
-    ReviewPublished,
-    /// An episode was discarded from the review queue.
-    #[serde(rename = "review.discarded")]
-    ReviewDiscarded,
-    /// A podcast RSS feed was generated.
-    #[serde(rename = "publish.feed.generated")]
-    PublishFeedGenerated,
+    // (v0.15: `editor.chapters.detected`, `transcribe.run` and `companion.build`
+    // left the vocabulary with chapter detection, whisper transcription and the
+    // AI companion. Same rule as v0.14 below: removing the SENDER is enough.)
 
     // ── Files ────────────────────────────────────────────────────────────────
     /// A recording was moved to the trash.
@@ -348,19 +329,17 @@ pub enum CounterName {
     #[serde(rename = "trash.restored")]
     TrashRestored,
 
-    // ── Live + system ────────────────────────────────────────────────────────
-    /// A live stream was started.
-    #[serde(rename = "streaming.started")]
-    StreamingStarted,
+    // ── System ───────────────────────────────────────────────────────────────
+    // (v0.14: `streaming.started` left the vocabulary with the live-streaming
+    // feature. Removing the SENDER is enough — the Worker treats counter names
+    // as opaque strings, and an old client still sending it is simply a name
+    // this enum no longer parses.)
     /// The diagnose report was run.
     #[serde(rename = "diagnose.run")]
     DiagnoseRun,
     /// An update was downloaded and installed.
     #[serde(rename = "update.installed")]
     UpdateInstalled,
-    /// A cloud backup upload succeeded.
-    #[serde(rename = "cloud.upload.ok")]
-    CloudUploadOk,
 }
 
 /// Every [`CounterName`], in wire order. The single source of truth for the
@@ -378,18 +357,10 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorExportVideo,
     CounterName::EditorExportOther,
     CounterName::EditorMasterApplied,
-    CounterName::EditorChaptersDetected,
-    CounterName::TranscribeRun,
-    CounterName::CompanionBuild,
-    CounterName::ReviewPublished,
-    CounterName::ReviewDiscarded,
-    CounterName::PublishFeedGenerated,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
-    CounterName::StreamingStarted,
     CounterName::DiagnoseRun,
     CounterName::UpdateInstalled,
-    CounterName::CloudUploadOk,
 ];
 
 impl CounterName {
@@ -412,18 +383,10 @@ impl CounterName {
             Self::EditorExportVideo => "editor.export.video",
             Self::EditorExportOther => "editor.export.other",
             Self::EditorMasterApplied => "editor.master.applied",
-            Self::EditorChaptersDetected => "editor.chapters.detected",
-            Self::TranscribeRun => "transcribe.run",
-            Self::CompanionBuild => "companion.build",
-            Self::ReviewPublished => "review.published",
-            Self::ReviewDiscarded => "review.discarded",
-            Self::PublishFeedGenerated => "publish.feed.generated",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
-            Self::StreamingStarted => "streaming.started",
             Self::DiagnoseRun => "diagnose.run",
             Self::UpdateInstalled => "update.installed",
-            Self::CloudUploadOk => "cloud.upload.ok",
         }
     }
 
@@ -833,7 +796,7 @@ pub fn telemetry_path(path: &std::path::Path) -> String {
 
 /// One crash-ring record, projected onto the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CrashReport.ts")]
+#[ts(export, export_to = "CrashReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CrashReport {
     /// Which of the ring's three kinds this is.
@@ -863,7 +826,7 @@ pub struct CrashReport {
 /// engineer needs from a recording is whether the audio arrived, and these are
 /// the numbers that answer it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/QualityReport.ts")]
+#[ts(export, export_to = "QualityReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct QualityReport {
     /// Unix ms (UTC) the session ended.
@@ -914,7 +877,7 @@ pub struct QualityReport {
 /// to count how often each situation occurs across installs, which is the only
 /// question aggregate telemetry can honestly answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FindingReport.ts")]
+#[ts(export, export_to = "FindingReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct FindingReport {
     pub code: String,
@@ -927,7 +890,7 @@ pub struct FindingReport {
 /// "Gudstjeneste Nordstrand") and `scheduled_at` (a local ISO string carrying the
 /// congregation's service time) are both absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureReport.ts")]
+#[ts(export, export_to = "WakeFailureReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeFailureReport {
     pub kind: WakeFailureKind,
@@ -943,7 +906,7 @@ pub struct WakeFailureReport {
 
 /// One named counter and its value since the last successful send.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CounterReport.ts")]
+#[ts(export, export_to = "CounterReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CounterReport {
     pub name: CounterName,
@@ -963,7 +926,7 @@ pub struct CounterReport {
 ///   - `saveFolder` / `editorIntroPath` / `editorOutroPath` — filesystem paths.
 ///   - `churchName` / `responsiblePerson` — the two fields that would deanonymise
 ///     an install outright.
-///   - `emailAddress` / `emailSmtp*` / `webhookUrl` — addresses and endpoints.
+///   - `emailAddress` / `emailSmtp*` — addresses and endpoints.
 ///   - `slots` / `specialRecordings` — user-authored labels and a congregation's
 ///     weekly rhythm. Only their COUNTS travel.
 ///
@@ -972,7 +935,7 @@ pub struct CounterReport {
 /// free text — the `Church` variant says "this install names files after its
 /// congregation", never what that congregation is called.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WireSettings.ts")]
+#[ts(export, export_to = "WireSettings.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WireSettings {
     pub channels: ChannelMode,
@@ -983,31 +946,63 @@ pub struct WireSettings {
     pub format: FileFormat,
     pub bitrate_kbps: u32,
     pub filename_pattern: FilenamePattern,
+    /// WIRE-FROZEN since v0.15: the `inputVolume` setting left the app (the
+    /// recorder records raw), but the Worker's `parseSettings` lists every
+    /// settings key as REQUIRED — a missing one is `missing_field` → 400 → the
+    /// payload is dropped from the outbox without retry. So the key stays and
+    /// carries the constant the reader used to default to (100 %). Remove it
+    /// here only AFTER `sunday-telemetry/src/schema.ts` makes it optional; the
+    /// Worker ships first (its own rule 2).
     pub input_volume: i32,
     pub video_enabled: bool,
     pub stop_on_silence: bool,
     pub silence_threshold: i32,
     pub split_minutes: i32,
     pub auto_delete_days: i32,
+    /// WIRE-FROZEN since v0.15 (see `input_volume`): the control left, the
+    /// recorder never trimmed silence, so the constant is `false`.
     pub trim_silence: bool,
     /// Whether a pre-roll buffer is armed at all (not how long it is).
     pub preroll_enabled: bool,
+    /// WIRE-FROZEN since v0.15 (see `input_volume`): the meters are always on
+    /// now, so the constant is `true`.
     pub show_live_levels: bool,
     /// The escape hatch back to ffmpeg audio capture. Whether anyone still needs
     /// it decides when the legacy path can be deleted.
     pub classic_ffmpeg_audio: bool,
     /// The Windows DirectShow escape hatch, same question.
     pub classic_directshow: bool,
-    /// Automatic updates. SundayRec has no update CHANNEL concept (one feed for
-    /// everyone), so this flag is the whole of it.
+    /// Automatic updates on/off. (An update CHANNEL — stable/beta — exists too,
+    /// see [`crate::settings::UpdateChannel`], but it does not travel here.
+    /// Note before adding it: the beta ring is small, so "beta" on a report
+    /// narrows who sent it — that is a schema decision, not a field to slip in.)
     pub auto_update: bool,
     pub launch_at_login: bool,
     pub wake_from_sleep: bool,
-    /// How many weekly slots are configured — not what they are called.
+    /// How many weekly slots are CONFIGURED — not what they are called, and
+    /// deliberately not how many are active.
+    ///
+    /// ⚠️ The one place in the codebase that reads `Settings::slots` raw rather
+    /// than through [`crate::settings::Settings::active_slots`], and it is a
+    /// choice, not an oversight: `auto_record_enabled` travels on this same
+    /// payload, so "3 slots, switch off" and "0 slots" stay distinguishable on
+    /// the receiving end. Gating the count here would fold the two into one
+    /// number and lose exactly the difference worth reporting. Every OTHER
+    /// reader — the scheduler and both wake commands — must go through
+    /// `active_slots`.
     pub slot_count: u32,
     /// How many one-off special recordings are configured.
     pub special_count: u32,
 }
+
+/// The three WIRE-FROZEN settings values (see the field docs on
+/// [`WireSettings`]): the settings left the app in v0.15, the keys the Worker
+/// requires did not. These are the values every install reported before the
+/// fields were removed, i.e. the defaults — so the aggregate's distribution
+/// for them simply stops moving rather than shifting.
+pub const WIRE_INPUT_VOLUME: i32 = 100;
+pub const WIRE_TRIM_SILENCE: bool = false;
+pub const WIRE_SHOW_LIVE_LEVELS: bool = true;
 
 impl WireSettings {
     /// Project the full [`Settings`] down to the wire-safe subset. The single,
@@ -1021,20 +1016,23 @@ impl WireSettings {
             format: s.format,
             bitrate_kbps: s.bitrate_kbps(),
             filename_pattern: s.filename_pattern,
-            input_volume: s.input_volume,
+            input_volume: WIRE_INPUT_VOLUME,
             video_enabled: s.video_enabled,
             stop_on_silence: s.stop_on_silence,
             silence_threshold: s.silence_threshold,
             split_minutes: s.split_minutes,
             auto_delete_days: s.auto_delete_days,
-            trim_silence: s.trim_silence,
+            trim_silence: WIRE_TRIM_SILENCE,
             preroll_enabled: s.pre_roll_seconds > 0,
-            show_live_levels: s.show_live_levels,
+            show_live_levels: WIRE_SHOW_LIVE_LEVELS,
             classic_ffmpeg_audio: s.classic_ffmpeg_audio,
             classic_directshow: s.classic_directshow,
             auto_update: s.auto_update,
             launch_at_login: s.launch_at_login,
             wake_from_sleep: s.wake_from_sleep,
+            // Raw `slots`, on purpose — see the field's doc. `auto_record_enabled`
+            // rides along, so the receiver can tell "configured but disarmed"
+            // from "never set up".
             slot_count: s.slots.len() as u32,
             special_count: s.special_recordings.len() as u32,
         }
@@ -1053,7 +1051,7 @@ impl Default for WireSettings {
 /// calls (no backtraces, reason codes not sentences), and the controller /
 /// retention / anonymity terms this contract is one half of.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryPayload.ts")]
+#[ts(export, export_to = "TelemetryPayload.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryPayload {
     /// [`TELEMETRY_SCHEMA`] at build time.
@@ -1087,16 +1085,11 @@ pub struct TelemetryPayload {
     /// `sunday-telemetry/src/schema.ts` `OPTIONAL_PAYLOAD_KEYS`, which states
     /// the same rule from the receiving side and the deploy order it implies.
     pub corrections: Vec<CorrectionReport>,
-    /// What became of the AI companion's suggestions, as kinds and outcomes with
-    /// counts — see [`companion`] for what the consented sentence covers and
-    /// what it excludes.
-    ///
-    /// Collected under consent v2, like [`Self::corrections`], and OPTIONAL on
-    /// the wire for the same reason — but INDEPENDENTLY optional: the two ship
-    /// one release apart, so an install may well send one and not the other, and
-    /// the endpoint accepts every combination. See
-    /// `sunday-telemetry/src/schema.ts` `OPTIONAL_PAYLOAD_KEYS`.
-    pub companion_outcomes: Vec<CompanionOutcomeReport>,
+    // (v0.15: `companionOutcomes` left the wire with the AI companion. It was
+    // INDEPENDENTLY optional on the receiving side — `sunday-telemetry/src/
+    // schema.ts` `OPTIONAL_PAYLOAD_KEYS` — so a payload without it is accepted
+    // by the Worker exactly as a pre-v0.12 payload always was. No schema bump:
+    // dropping an optional field changes no field's meaning.)
 }
 
 impl TelemetryPayload {
@@ -1119,13 +1112,12 @@ impl TelemetryPayload {
             findings: Vec::new(),
             wake_failures: Vec::new(),
             corrections: Vec::new(),
-            companion_outcomes: Vec::new(),
         }
     }
 
     /// Whether this payload carries anything worth sending. A payload with no
     /// crashes, no quality records, no findings, no wake failures, no banded
-    /// correction, no companion outcome and no non-zero counter is just a
+    /// correction and no non-zero counter is just a
     /// header — sending it would be a ping, and a ping is not what the user
     /// consented to.
     ///
@@ -1144,7 +1136,6 @@ impl TelemetryPayload {
             // counters are: the accumulator never emits one, so a payload
             // holding only zeroes is a header wearing a collection.
             && self.corrections.iter().all(|c| c.count == 0)
-            && self.companion_outcomes.iter().all(|c| c.count == 0)
     }
 
     /// Trim every collection to its cap, keeping the NEWEST records (the ends of
@@ -1160,7 +1151,6 @@ impl TelemetryPayload {
         // product. Trimmed anyway, because "cannot happen" is the wrong thing to
         // rest a size cap on when the endpoint rejects an oversized array.
         keep_last(&mut self.corrections, MAX_CORRECTIONS);
-        keep_last(&mut self.companion_outcomes, MAX_COMPANION_OUTCOMES);
     }
 }
 
@@ -1179,7 +1169,7 @@ impl TelemetryPayload {
 ///     the question is actually asking. An empty shell would be technically
 ///     accurate and tell them nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryPreview.ts")]
+#[ts(export, export_to = "TelemetryPreview.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryPreview {
     /// The payload, pretty-printed. The REAL one — not a mock, not a sample.
@@ -1375,12 +1365,8 @@ mod tests {
             "corrections",
             "nested CorrectionReport[] — bands and counts, never seconds",
         ),
-        (
-            "companionOutcomes",
-            "nested CompanionOutcomeReport[] — kinds and outcomes, never the text",
-        ),
         // ── CrashReport ──────────────────────────────────────────────────────
-        ("kind", "enum CrashKind / WakeFailureKind / CompanionKind"),
+        ("kind", "enum CrashKind / WakeFailureKind"),
         ("at", "num — unix ms UTC"),
         (
             "message",
@@ -1453,18 +1439,6 @@ mod tests {
             "enum CorrectionBand — a coarse bucket, never a number of seconds",
         ),
         ("count", "num — how many records had that shape"),
-        // ── CompanionOutcomeReport ───────────────────────────────────────────
-        //
-        // Three fields, two of them closed enums and one a count. `kind` shares
-        // its key with CrashKind and WakeFailureKind above. What is NOT here is
-        // the point of the collection: no suggested title, no summary, no
-        // chapter names, no rewrite, no transcript, and no `at`. The three
-        // things this record can say are which of three kinds it was, what
-        // happened to it, and how often.
-        (
-            "outcome",
-            "enum CompanionOutcome — kept / kept-and-rewritten / dismissed / left alone",
-        ),
         // ── WireSettings ─────────────────────────────────────────────────────
         ("channels", "enum ChannelMode"),
         ("sampleRateMode", "enum SampleRate"),
@@ -1615,22 +1589,6 @@ mod tests {
                     1,
                 ),
             ],
-            companion_outcomes: vec![
-                CompanionOutcomeReport::new(
-                    companion::CompanionKey {
-                        kind: companion::CompanionKind::Title,
-                        outcome: companion::CompanionOutcome::AcceptedEdited,
-                    },
-                    3,
-                ),
-                CompanionOutcomeReport::new(
-                    companion::CompanionKey {
-                        kind: companion::CompanionKind::Chapters,
-                        outcome: companion::CompanionOutcome::LeftAlone,
-                    },
-                    2,
-                ),
-            ],
         }
     }
 
@@ -1731,7 +1689,6 @@ mod tests {
             church_name: "Nordstrand menighet".into(),
             responsible_person: "Kari Nordmann".into(),
             email_address: "kari@menighet.no".into(),
-            webhook_url: "https://hooks.slack.com/services/T00/B00/XXXXSECRET".into(),
             editor_intro_path: Some("/Users/kari/intro.wav".into()),
             ..Default::default()
         });
@@ -1776,7 +1733,6 @@ mod tests {
             "Qu-5",
             "Opptak",
             "/Users/",
-            "hooks.slack.com",
             "sbp_abc123",
             "gudstjeneste.wav",
             "intro.wav",
@@ -2227,10 +2183,12 @@ mod tests {
     /// The endpoint's own rejection rule, MIRRORED.
     ///
     /// Copied verbatim (modulo Rust escaping) from `ABSOLUTE_PATH_RE` in
-    /// `sunday-telemetry/src/schema.ts`, where a string field that matches it is
-    /// rejected with `unscrubbed_path` — a 400, which this client drops without
-    /// retrying. **The two must be changed together.** If you loosen this
-    /// mirror, loosen the Worker; if you tighten the Worker, tighten this.
+    /// `sunday-telemetry/src/validate.ts`, where a string field that matches it
+    /// is rejected with `unscrubbed_path` — a 400, which this client drops
+    /// without retrying. **The two must be changed together.** If you loosen
+    /// this mirror, loosen the Worker; if you tighten the Worker, tighten this.
+    /// (The relay's copy of the same mirror lives in
+    /// `email::tests::WORKER_ABSOLUTE_PATH_RE`, over the rendered mail bodies.)
     ///
     /// This is the seam that had no test, which is why the bug survived: both
     /// repos were internally consistent and disagreed at the boundary, so every
@@ -2353,9 +2311,13 @@ mod tests {
             ALL_COUNTERS.len(),
             "duplicate counter wire name"
         );
+        // R1 of «Frivilligen først» retired the review/publish/cloud counters
+        // with their features, R2 the transcribe/companion/chapter ones (the
+        // Worker treats names as opaque strings, so a sender that stops sending
+        // one costs nothing); the floor follows.
         assert!(
-            ALL_COUNTERS.len() >= 20,
-            "the seam coverage target is ~20 counters, found {}",
+            ALL_COUNTERS.len() >= 15,
+            "the seam coverage target is ~15 counters, found {}",
             ALL_COUNTERS.len()
         );
         // Every name is a dotted, lowercase namespace — the endpoint aggregates
@@ -2532,43 +2494,6 @@ mod tests {
     }
 
     #[test]
-    fn a_payload_carrying_only_companion_outcomes_is_worth_sending() {
-        // Same argument as the corrections case above, for the collection that
-        // arrived one release later: a payload whose only content is what became
-        // of a suggestion has to be both sent AND labelled non-empty, or the
-        // preview prints it on screen under «ingenting å sende akkurat nå».
-        let mut p = TelemetryPayload::new(NIL_INSTALL_ID, 2, "0.10.0", 0);
-        assert!(p.is_empty());
-        p.companion_outcomes = vec![CompanionOutcomeReport::new(
-            companion::CompanionKey {
-                kind: companion::CompanionKind::Title,
-                outcome: companion::CompanionOutcome::AcceptedEdited,
-            },
-            0,
-        )];
-        assert!(
-            p.is_empty(),
-            "a zero count is a header, like a zero counter"
-        );
-        p.companion_outcomes[0].count = 1;
-        assert!(!p.is_empty());
-    }
-
-    #[test]
-    fn a_companion_outcome_carries_no_text_from_the_suggestion_it_describes() {
-        // The one leak that would matter most: a sermon title is the thing this
-        // collection sits closest to. Asserted over the whole serialised payload
-        // rather than over the record alone, so a field added anywhere on the way
-        // to the wire is caught here too.
-        let p = maximal_payload();
-        let text = serde_json::to_string(&p).unwrap();
-        assert!(text.contains("accepted_edited"), "{text}");
-        for needle in ["suggested", "rewrite", "transcript", "summary"] {
-            assert!(!text.contains(needle), "{needle} reached the wire:\n{text}");
-        }
-    }
-
-    #[test]
     fn every_record_collection_counts_towards_is_empty() {
         // A ratchet beside `every_wire_field_is_classified`, guarding a
         // different promise. `is_empty` is what «vis hva som sendes» labels the
@@ -2578,10 +2503,12 @@ mod tests {
         // there is nothing there — the preview under-reporting itself, which is
         // precisely what the transparency affordance exists to rule out.
         //
-        // E8 added `corrections` and then `companionOutcomes`, and this test is
-        // how each got wired in rather than forgotten: it failed the moment the
-        // collection landed on the payload, and the only honest way to make it
-        // pass was to teach `is_empty` to consult it.
+        // E8 added `corrections` (and, until v0.15, `companionOutcomes`), and
+        // this test is how each got wired in rather than forgotten: it failed
+        // the moment the collection landed on the payload, and the only honest
+        // way to make it pass was to teach `is_empty` to consult it. The same
+        // ratchet runs the other way: `stale` below is what caught the
+        // companion collection leaving the payload.
         const CONSULTED: &[&str] = &[
             "counters",
             "crashes",
@@ -2589,7 +2516,6 @@ mod tests {
             "findings",
             "wakeFailures",
             "corrections",
-            "companionOutcomes",
         ];
 
         let value = serde_json::to_value(maximal_payload()).expect("serialise");
@@ -2672,6 +2598,39 @@ mod tests {
         // …while still answering the questions a quality record needs.
         for needed in ["channels", "sampleRateMode", "format", "videoEnabled"] {
             assert!(obj.contains_key(needed), "WireSettings must carry {needed}");
+        }
+    }
+
+    /// A4 (the e-mail relay): `email_receipt_enabled` and the rest of the relay
+    /// state (`notify.relay` in the `app_setting` bag — address, tokens,
+    /// confirmation timestamps) must NEVER reach `WireSettings`. Same
+    /// reasoning as `update_channel` — see the doc comment on `auto_update`
+    /// above (telemetry.rs:975-978): a subscription is per-machine identity
+    /// state, not a diagnostic fact worth reporting, and `from_settings`'s
+    /// allow-list already excludes it BY CONSTRUCTION (nobody wrote a line for
+    /// it) — this test is what keeps that true on purpose rather than by
+    /// accident.
+    ///
+    /// The field count is the sharper half of the pin: a relay field renamed
+    /// to dodge the substring check below would still trip this, because
+    /// `WireSettings` has carried exactly 22 keys since before the relay
+    /// existed and `from_settings` is a fixed, explicit projection — nothing
+    /// grows it silently.
+    #[test]
+    fn wire_settings_carries_no_relay_field_and_the_key_count_stays_22() {
+        let json = serde_json::to_value(WireSettings::default()).expect("serialise");
+        let obj = json.as_object().expect("object");
+        assert_eq!(
+            obj.len(),
+            22,
+            "WireSettings's key count moved — if a field was deliberately \
+             added, update this pin; if not, something leaked onto the wire"
+        );
+        for key in obj.keys() {
+            assert!(
+                !key.to_lowercase().contains("relay") && key != "emailReceiptEnabled",
+                "WireSettings must not carry relay/receipt state, found {key}"
+            );
         }
     }
 }

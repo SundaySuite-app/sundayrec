@@ -1,19 +1,27 @@
 import type { Page } from "@playwright/test";
+import { SETTINGS_DEFAULTS } from "../app/lib/settings-defaults";
 
 // The one way a spec boots the app.
 //
-// Two things have to be in place BEFORE the renderer's module scripts run, and
-// both go in the same `addInitScript`:
+// Everything a spec needs in place BEFORE the renderer's module scripts run
+// goes in one `addInitScript`: `window.__SUNDAYREC_FIXTURES__` — the E5.1
+// seam. Outside Tauri fixtures are honoured unconditionally (there is no
+// backend to shadow), so no query param is needed here; see
+// app/lib/fixtures-core.ts.
 //
-//   1. `window.__SUNDAYREC_FIXTURES__` — the E5.1 seam. Outside Tauri fixtures
-//      are honoured unconditionally (there is no backend to shadow), so no query
-//      param is needed here; see legacy/renderer/fixtures-core.ts.
-//   2. `localStorage["sundayrec.settings"]` — settings are NOT an invoke. The
-//      shim's `getSettings` reads that key directly, so a fixture cannot seed
-//      them and a test that tried would be quietly testing the defaults.
+// SETTINGS are fixtures like everything else since R4 (`settings_get` /
+// `settings_save` invokes — the localStorage store is dead). The harness
+// installs a tiny FIXTURE-BACKED STORE standing in for the backend's sqlite
+// row: a spec's partial `settings` seed is merged over `SETTINGS_DEFAULTS`
+// (emulating Rust's merge-over-defaults), every `settings_save` replaces the
+// stored object and is recorded for `settingsSavePayloads`, and the store
+// itself survives `page.reload()` — persistence across a teardown is exactly
+// what the reload specs assert. A spec can still override any of the three
+// commands with its own fixture; the store handlers are defaults.
 
-/** The localStorage key `api-shim.ts` persists settings under (`LS_KEY`). */
-export const SETTINGS_KEY = "sundayrec.settings";
+/** Where the harness's fake settings row lives between reloads. Not an app
+ *  key — the app never reads it — just the emulated backend's disk. */
+export const SETTINGS_DB_KEY = "__e2e.settingsDb";
 
 /** A canned answer per Tauri command name: a value, or a function of the args. */
 export type Fixtures = Record<string, unknown>;
@@ -24,12 +32,18 @@ export interface BootOptions {
   /** Seeded settings, merged over the shim's defaults by `loadSettings`. */
   settings?: Record<string, unknown>;
   /**
-   * `?goto=<page>[:<tab>]`. Pages: `home`, `schedule`, `live`, `settings`,
-   * `search` (that is Historikk — there is no `history` page), `editor`.
+   * `?goto=<page>[:<tab>]`, in the OLD shell's vocabulary — `home`, `schedule`,
+   * `settings`, `search` (that is the library; there never was a `history`
+   * page), `editor`, and the `settings:<tab>` forms. Those ids are still the
+   * ones written here because they are still the ones out in the world (the
+   * tray, deep links, this suite); `PAGE_ALIASES` / `TAB_ALIASES` in
+   * `app/router/router.ts` translate every one of them to a destination in the
+   * new three-place navigation, and `app/router/router.test.ts` has a row per
+   * form that appears in this repo.
    *
-   * ⚠️ `?goto=` also forces `hasLaunched`/`onboardingDone` true so screenshots
-   * skip first-run. Any spec that wants the onboarding wizard must boot WITHOUT
-   * it (see onboarding.spec.ts).
+   * ⚠️ `?goto=` also forces `onboardingDone` true so a deep-linked boot skips
+   * first-run. Any spec that wants the first-run sequence must boot WITHOUT it
+   * (see onboarding.spec.ts, first-run.spec.ts).
    */
   goto?: string;
 }
@@ -73,7 +87,8 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
   const payload = {
     fixtures: opts.fixtures ?? {},
     settings: opts.settings ?? null,
-    key: SETTINGS_KEY,
+    defaults: SETTINGS_DEFAULTS as unknown as Record<string, unknown>,
+    dbKey: SETTINGS_DB_KEY,
     marker: FN_MARKER,
     voidMarker: VOID_MARKER,
     // An init script runs on EVERY navigation in the context, including
@@ -142,6 +157,18 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
       };
     }
 
+    // `@tauri-apps/api`'s `unlisten` goes to a SECOND internals object
+    // (`__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener`) that only the
+    // real event plugin installs. Without it every page-switch that tears a
+    // listener down (e.g. home → settings stopping the VU feed) threw an
+    // unhandled TypeError into the console. A no-op is the truth here: the
+    // harness's `plugin:event|listen` never registers anything to remove.
+    if (!w.__TAURI_EVENT_PLUGIN_INTERNALS__) {
+      w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener() {},
+      };
+    }
+
     const revive = (v: unknown): unknown => {
       if (v && typeof v === "object") {
         const o = v as Record<string, unknown>;
@@ -155,15 +182,56 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
     const map: Record<string, unknown> = {};
     for (const [cmd, value] of Object.entries(p.fixtures))
       map[cmd] = revive(value);
+
+    // ── The fixture-backed settings store (stands in for sqlite) ────────────
+    // Installed as DEFAULT handlers — a spec's own fixture for any of these
+    // commands wins. The store is a localStorage row under a harness-only key,
+    // which is what lets a value survive `page.reload()` the way sqlite would.
+    const db = {
+      read: (): Record<string, unknown> => {
+        const raw = window.localStorage.getItem(p.dbKey);
+        return raw
+          ? (JSON.parse(raw) as Record<string, unknown>)
+          : { ...p.defaults };
+      },
+      write: (v: Record<string, unknown>): void =>
+        window.localStorage.setItem(p.dbKey, JSON.stringify(v)),
+    };
+    if (!("settings_get" in map)) map.settings_get = () => db.read();
+    if (!("settings_save" in map))
+      map.settings_save = (args?: Record<string, unknown>) => {
+        const s = (args?.settings ?? {}) as Record<string, unknown>;
+        db.write(s);
+        ((w.__settingsSaves ??= []) as unknown[]).push(s);
+        return s;
+      };
+    if (!("settings_import" in map))
+      map.settings_import = (args?: Record<string, unknown>) => {
+        // Emulates the backend's merge-over-defaults (`Settings::from_json_merged`).
+        const merged = {
+          ...p.defaults,
+          ...(JSON.parse((args?.json as string) ?? "{}") as Record<
+            string,
+            unknown
+          >),
+        };
+        db.write(merged);
+        ((w.__settingsImports ??= []) as unknown[]).push(args?.json);
+        return merged;
+      };
+
     // Fixtures ARE re-installed every navigation: they stand in for a backend,
     // and a backend does not disappear because the page reloaded.
     w.__SUNDAYREC_FIXTURES__ = map;
 
     if (window.localStorage.getItem(p.seedOnce)) return;
     window.localStorage.setItem(p.seedOnce, "1");
-    if (p.settings)
-      window.localStorage.setItem(p.key, JSON.stringify(p.settings));
-    else window.localStorage.removeItem(p.key);
+    // Seed the fake sqlite row exactly once per boot(): a reload then keeps
+    // what the app saved, so "survives a reload" assertions test the app.
+    window.localStorage.setItem(
+      p.dbKey,
+      JSON.stringify({ ...p.defaults, ...(p.settings ?? {}) }),
+    );
   }, payload);
 
   await page.goto(opts.goto ? `/?goto=${encodeURIComponent(opts.goto)}` : "/");
@@ -177,12 +245,11 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
 /**
  * A settings object that suppresses first-run.
  *
- * `checkAndShowOnboarding` gates on `onboardingDone` alone, so this is what
- * every spec except the onboarding one wants. (`?goto=` sets it too, but being
- * explicit means a spec that later drops `?goto=` does not silently gain a
- * wizard.)
+ * The first-run gate reads `onboardingDone` alone, so this is what every spec
+ * except the first-run ones wants. (`?goto=` sets it too, but being explicit
+ * means a spec that later drops `?goto=` does not silently gain a wizard.)
  */
-export const SETTLED_SETTINGS = { onboardingDone: true, hasLaunched: true };
+export const SETTLED_SETTINGS = { onboardingDone: true };
 
 /**
  * The commands the app touches on EVERY boot, answered with something harmless.
@@ -196,16 +263,14 @@ export const BOOT_FIXTURES: Fixtures = {
   app_info: { version: "0.10.0-e2e" },
   scheduler_status: { next: null },
   scheduler_reschedule: VOID,
-  settings_save: VOID,
+  // The retention pass runs unasked on every boot; `disabled` keeps it silent
+  // (no toast) so it cannot photobomb an unrelated spec's assertions.
+  recordings_prune: { moved: 0, disabled: true },
   get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500_000_000_000 },
   recordings_list: [],
   trash_list: [],
-  transcripts_list: [],
   list_audio_devices: [],
-  review_queue_list: [],
-  whisper_list_models: [],
-  thumbnail_get_default_info: null,
-  email_status: { featureBuilt: false, gmailConnected: false },
+  email_status: { featureBuilt: false },
   email_has_smtp_password: false,
   get_launch_at_login: false,
   // `needsPrompt: false` matters: a `true` here floats the one-time consent card
@@ -228,18 +293,48 @@ export const BOOT_FIXTURES: Fixtures = {
 };
 
 /**
- * Flip a settings toggle the way a person does.
- *
- * The `<input type="checkbox">` itself is `opacity: 0; width: 0; height: 0` (see
- * `.toggle input` in styles.css) — the visible control is the `.toggle-track`
- * sibling. So `input.check()` fails on visibility, and `{ force: true }` would
- * pass while testing something no user can do. Click the track.
- *
- * Assertions still target the input: `toBeChecked()` does not require visibility
- * and the input is the actual state.
+ * Every FULL settings object `settings_save` has received so far — recorded by
+ * the harness's default store handler at the exact boundary where the object
+ * leaves the renderer on its way to sqlite. The seam specs (settings-seam,
+ * update-channel) pin the R4 invariant on this observable: the payload is the
+ * whole vocabulary, so a field written is a field read back — nothing curated,
+ * nothing silently re-defaulted (the #113 family's ending).
  */
-export async function flipToggle(page: Page, id: string): Promise<void> {
-  await page.locator(`label.toggle:has(#${id}) .toggle-track`).click();
+export async function settingsSavePayloads(
+  page: Page,
+): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __settingsSaves?: Array<Record<string, unknown>>;
+        }
+      ).__settingsSaves ?? [],
+  );
+}
+
+/** The fake sqlite row as it stands right now — what a fresh `settings_get`
+ *  would answer. The storage-layer observable for "it actually persisted". */
+export async function storedSettings(
+  page: Page,
+): Promise<Record<string, unknown>> {
+  return page.evaluate(
+    (key) =>
+      JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<
+        string,
+        unknown
+      >,
+    SETTINGS_DB_KEY,
+  );
+}
+
+/** Every raw JSON string `settings_import` has received (the migration path). */
+export async function settingsImportPayloads(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __settingsImports?: string[] })
+        .__settingsImports ?? [],
+  );
 }
 
 /** One `recordings_list` row. NOTE: this command answers in snake_case. */

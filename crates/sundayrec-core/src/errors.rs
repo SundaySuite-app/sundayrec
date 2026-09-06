@@ -17,7 +17,7 @@ use ts_rs::TS;
 /// (`device_not_found`, `device_permission_denied`, …) so existing
 /// expectations and any persisted data line up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/RecordingErrorCode.ts")]
+#[ts(export, export_to = "RecordingErrorCode.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum RecordingErrorCode {
     DeviceNotFound,

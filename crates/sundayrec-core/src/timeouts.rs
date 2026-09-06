@@ -56,91 +56,22 @@ impl RecorderTimeouts {
     /// one of those steps is itself hung and doomed, which is exactly when a
     /// hard abort is the right answer. That is the point: abort only a TRUE hang.
     pub const STOP_ABORT_BACKSTOP_MS: u64 = 20 * 60_000;
-}
 
-/// Bounds on the transcription pipeline (E6.5).
-///
-/// Whisper had NO upper bound of any kind: the ffmpeg convert `await`ed
-/// `child.wait()` forever, inference `await`ed its blocking join forever, and
-/// the model download `await`ed each chunk forever. All three were cancel-flag
-/// only — which works when a human is watching and does nothing at all when the
-/// job is unattended, or when the user has closed the screen and the guard slot
-/// stays occupied for the rest of the session.
-///
-/// A wedged inference is not hypothetical: whisper.cpp is synchronous C++ on a
-/// blocking thread, and a bad model file, a pathological audio buffer or a GPU
-/// driver stall all end the same way — a thread that never returns.
-pub struct WhisperTimeouts;
-
-impl WhisperTimeouts {
-    /// Floor on the transcription bound. A 30-second clip on the fastest model
-    /// derives a bound of well under a minute; a cold Metal context, a model
-    /// paged in from disk and the first encoder pass can eat several of those
-    /// on their own, so the derived value never drops below this.
-    pub const TRANSCRIBE_FLOOR_MS: u64 = 10 * 60_000;
-
-    /// Absolute ceiling on the transcription bound. Past this, whatever is
-    /// happening is not transcription: the longest realistic job (a 3-hour
-    /// service on the slowest model, CPU-only) is a few hours, and nobody is
-    /// waiting on hour thirteen.
-    pub const TRANSCRIBE_CEILING_MS: u64 = 12 * 60 * 60_000;
-
-    /// How much slower than its ADVERTISED speed a model may legitimately run
-    /// before we call it wedged.
+    /// How long a *quit* may wait for the finalisation before the process dies
+    /// anyway (`sundayrec_core::window::quit_action` →
+    /// `QuitAction::StopThenWait`/`WaitOnly`).
     ///
-    /// `WhisperModelMeta::realtime_factor` is measured on an M1 Pro **with
-    /// Metal** (1.0 = realtime), so expected wall time is
-    /// `audio_sec / realtime_factor`. The same machine CPU-only is roughly 30×
-    /// slower (the module notes medium at ~30× realtime on Metal and slower
-    /// than realtime on CPU); an older Intel Mac is slower still. 40 covers the
-    /// worst configuration the app ships to with margin, and it is a WATCHDOG,
-    /// not a performance target — being generous costs nothing, being tight
-    /// would kill honest work.
-    pub const TRANSCRIBE_SLOWDOWN_FACTOR: u64 = 40;
-
-    /// Bound for transcribing `audio_sec` seconds with a model whose advertised
-    /// `realtime_factor` is `realtime_factor`:
+    /// Deliberately DERIVED from [`Self::STOP_ABORT_BACKSTOP_MS`] rather than
+    /// picked: the wait must outlive the supervisor's own last-resort abort, or
+    /// the quit gives up while the finalise chain is still legitimately running
+    /// and the volunteer loses exactly the file they waited for. The extra 30 s
+    /// is the margin for the abort itself to unwind and the state to reach
+    /// `Stopped`/`Failed`.
     ///
-    /// ```text
-    /// clamp(TRANSCRIBE_SLOWDOWN_FACTOR × audio_sec / realtime_factor,
-    ///       TRANSCRIBE_FLOOR_MS, TRANSCRIBE_CEILING_MS)
-    /// ```
-    ///
-    /// A zero/absent factor is treated as 1 (realtime) rather than dividing by
-    /// zero — the most pessimistic reading, which is the safe direction for a
-    /// watchdog.
-    pub fn transcribe_timeout_ms(audio_sec: f64, realtime_factor: u32) -> u64 {
-        let factor = u64::from(realtime_factor.max(1));
-        let audio_ms = (audio_sec.max(0.0) * 1000.0) as u64;
-        let derived = audio_ms
-            .saturating_mul(Self::TRANSCRIBE_SLOWDOWN_FACTOR)
-            .saturating_div(factor);
-        derived.clamp(Self::TRANSCRIBE_FLOOR_MS, Self::TRANSCRIBE_CEILING_MS)
-    }
-
-    /// Grace period after the transcription bound fires, before we give up
-    /// waiting for whisper to notice its abort flag. Inference polls the abort
-    /// callback between encoder/decoder steps, and one step of the largest model
-    /// on the slowest machine is seconds, not minutes.
-    pub const TRANSCRIBE_ABORT_GRACE_MS: u64 = 60_000;
-
-    /// Bound on the ffmpeg convert that produces whisper's 16 kHz mono WAV.
-    /// Same class as the recorder's 15-minute concat/delivery watchdog — one
-    /// short-lived ffmpeg over one file — doubled, because this one DECODES a
-    /// possibly-lossy multi-hour container rather than stream-copying it.
-    pub const CONVERT_MS: u64 = 30 * 60_000;
-
-    /// STALL bound on the model download: how long a live download may go
-    /// without delivering a single byte.
-    ///
-    /// Deliberately a stall bound and not a total one. A model is 148 MB–1.5 GB
-    /// and a slow church connection can legitimately take an hour, so any total
-    /// timeout either kills honest downloads or is so large it bounds nothing.
-    /// What is never legitimate is a socket that accepted the connection and
-    /// then went silent — the failure `reqwest`'s connect timeout cannot see.
-    /// Even a 100 kbit/s link delivers a chunk every few seconds, so a full
-    /// minute of nothing is dead, not slow.
-    pub const DOWNLOAD_STALL_MS: u64 = 60_000;
+    /// It is a *cap*, not a schedule: the normal quit ends the moment the
+    /// recorder reaches rest, typically in seconds. The cap only exists so a
+    /// wedged finalise cannot produce an app nobody can quit.
+    pub const QUIT_WAIT_CAP_MS: u64 = Self::STOP_ABORT_BACKSTOP_MS + 30_000;
 }
 
 #[cfg(test)]
@@ -156,6 +87,16 @@ mod tests {
     }
 
     #[test]
+    fn the_quit_wait_outlives_the_supervisors_own_abort() {
+        // A quit that gave up FIRST would kill the process mid-finalise — the
+        // exact loss the wait exists to prevent. It must outlast the backstop
+        // that aborts the supervisor, with room for that abort to unwind.
+        const _: () =
+            assert!(RecorderTimeouts::QUIT_WAIT_CAP_MS > RecorderTimeouts::STOP_ABORT_BACKSTOP_MS);
+        assert_eq!(RecorderTimeouts::QUIT_WAIT_CAP_MS, 1_230_000);
+    }
+
+    #[test]
     fn stop_abort_backstop_covers_the_whole_finalize_chain() {
         assert_eq!(RecorderTimeouts::STOP_ABORT_BACKSTOP_MS, 1_200_000);
         // The derivation, asserted: capture finalise + the 15-min concat/delivery
@@ -167,74 +108,5 @@ mod tests {
             RecorderTimeouts::STOP_ABORT_BACKSTOP_MS
                 > RecorderTimeouts::STOP_FINALIZE_MS + CONCAT_WATCHDOG_MS
         );
-    }
-
-    /// The transcription bound is DERIVED from the audio and the model, not
-    /// picked — asserted the same way the stop backstop is.
-    #[test]
-    fn transcribe_timeout_scales_with_the_audio_and_the_model() {
-        use crate::whisper::models;
-        let ms = WhisperTimeouts::transcribe_timeout_ms;
-
-        // A 90-minute service on the recommended model (large-v3-turbo,
-        // advertised 6× realtime): 40 × 5400 s / 6 = 36 000 s = 10 h.
-        assert_eq!(ms(5_400.0, 6), 36_000_000);
-        // The same service on the FASTEST model is proportionally tighter, and
-        // on the SLOWEST it hits the ceiling rather than growing without bound.
-        assert_eq!(ms(5_400.0, 14), 15_428_571);
-        assert_eq!(ms(5_400.0, 2), WhisperTimeouts::TRANSCRIBE_CEILING_MS);
-        assert!(
-            ms(5_400.0, 14) < ms(5_400.0, 6),
-            "a faster model, a tighter bound"
-        );
-        assert!(
-            ms(10_800.0, 6) > ms(5_400.0, 6),
-            "longer audio, longer bound"
-        );
-
-        // Short clips are governed by the floor, not the derivation — a cold
-        // Metal context and a paged-in model cost minutes on their own.
-        assert_eq!(ms(30.0, 14), WhisperTimeouts::TRANSCRIBE_FLOOR_MS);
-        assert_eq!(ms(0.0, 6), WhisperTimeouts::TRANSCRIBE_FLOOR_MS);
-        // Every real model produces a bound inside the band, for any audio
-        // length the app can be handed.
-        for m in models() {
-            for audio in [1.0, 600.0, 5_400.0, 10_800.0] {
-                let t = ms(audio, m.realtime_factor);
-                assert!(
-                    (WhisperTimeouts::TRANSCRIBE_FLOOR_MS..=WhisperTimeouts::TRANSCRIBE_CEILING_MS)
-                        .contains(&t),
-                    "{} at {audio}s derived {t} ms",
-                    m.id
-                );
-            }
-        }
-        // A nonsense factor must not divide by zero, and must be read
-        // pessimistically (realtime) rather than optimistically.
-        assert_eq!(ms(600.0, 0), ms(600.0, 1));
-    }
-
-    /// The pipeline bounds sit in a sane order relative to each other and to the
-    /// recorder's, so no stage can be killed while a slower one it depends on is
-    /// still legitimately running.
-    #[test]
-    fn whisper_pipeline_bounds_are_ordered() {
-        // The convert is one short-lived ffmpeg over one file — the same class
-        // as the recorder's concat watchdog, and generously longer than it.
-        const CONCAT_WATCHDOG_MS: u64 = 15 * 60_000;
-        const _: () = assert!(WhisperTimeouts::CONVERT_MS >= CONCAT_WATCHDOG_MS);
-        // Inference always gets at least as long as the convert that feeds it.
-        const _: () =
-            assert!(WhisperTimeouts::TRANSCRIBE_FLOOR_MS <= WhisperTimeouts::TRANSCRIBE_CEILING_MS);
-        const _: () = assert!(WhisperTimeouts::TRANSCRIBE_CEILING_MS > WhisperTimeouts::CONVERT_MS);
-        // The abort grace is short — whisper polls its abort flag between
-        // decoder steps, which are seconds apart at worst. Waiting for an abort
-        // must never approach the bound that triggered it.
-        const _: () = assert!(
-            WhisperTimeouts::TRANSCRIBE_ABORT_GRACE_MS < WhisperTimeouts::TRANSCRIBE_FLOOR_MS
-        );
-        // The download bound is a STALL, so it must be far shorter than any
-        // plausible total download time — that is the whole point of it.
-        const _: () = assert!(WhisperTimeouts::DOWNLOAD_STALL_MS <= 60_000);
     }
 }

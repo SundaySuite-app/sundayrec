@@ -1,31 +1,48 @@
 //! Audio commands — input-device discovery and the VU metering engine.
 //!
 //! Thin IPC layer over `crate::audio`. The renderer calls:
-//!   - `list_input_devices` once to populate the mic dropdown,
+//!   - `list_audio_devices` once to populate the mic dropdown,
 //!   - `start_vu` / `stop_vu` to drive the live VU, listening for the
 //!     `vu://levels` event for the per-channel dB snapshots.
+//!
+//! ## V1/PR3 + V1-halen — hva som forsvant herfra, og hvorfor
+//!
+//! Fem kommandoer gikk — fire i PR3, den femte i halen etter den.
+//! `list_input_devices` (den rå cpal-lista) fordi
+//! `list_audio_devices` er DEN samme lista, bare tagget med backend og flettet
+//! med ASIO — skallet har alltid kalt den; `list_audio_input_channels`,
+//! `probe_device_channels` og `scan_device_channels` fordi kanalvalget nå leser
+//! kanalantallet fra `start_vu`s FORHANDLEDE svar, som er det tallet VU-rutenettet
+//! faktisk måler på, i stedet for å blink-åpne enheten en ekstra gang for å spørre.
+//! Og `list_video_devices`, som var en ren delmengde av [`list_devices`]:
+//! kameralista går via shimmens `listVideoDevices` → `invoke("list_devices")` →
+//! `video_inputs`, og kommandonavnet fantes ikke som strenglitteral noe sted i
+//! skallet. Den ble FREDET i PR3 fordi den ikke sto i slettevedtaket — men
+//! fredningen hvilte på premisset «CameraCard bruker den», og PR3s egen
+//! doc-kommentar slo fast at det premisset var feil. Med premisset borte var
+//! det ingenting igjen å frede, så den gikk i denne runden.
+//!
+//! ⚠️ **Den INTERNE `crate::audio::devices::list_input_devices` lever videre** og
+//! er selve enumereringen: `list_audio_devices` (over) bruker den som
+//! `enumerate_inputs`, og `diagnostics/mod.rs:92` kaller den direkte for
+//! enhetslista i diagnoserapporten. Det som ble slettet var innpakningen rundt
+//! den, ikke den.
+//!
+//! ⚠️ ffmpeg-kanalskanneren (`channel_probe`) ble slettet i V1-halen (#183);
+//! gjenopprett fra git hvis en kanalvelger-flate designes.
 
 use tauri::{AppHandle, State};
 
 use sundayrec_core::audio::{mic_owner, vu_start_action, VuStartAction};
 use sundayrec_core::device_enum::{build_audio_diagnostics, AudioDiagnostics};
-use sundayrec_core::device_match::FfmpegDevice;
 
-use crate::audio::asio::{
-    list_asio_devices, list_asio_input_channels, merge_audio_inputs, AudioChannel, TaggedAudioInput,
-};
+use crate::audio::asio::{list_asio_devices, merge_audio_inputs, TaggedAudioInput};
 use crate::audio::device_enum::{
     enumerate_ffmpeg_devices, enumerate_ffmpeg_devices_cached, DeviceInventory,
 };
-use crate::audio::devices::{list_input_devices as enumerate_inputs, AudioDeviceList};
+use crate::audio::devices::list_input_devices as enumerate_inputs;
 use crate::audio::vu::VuEngine;
 use crate::error::AppResult;
-
-/// List the available input (microphone) devices for the VU dropdown (cpal).
-#[tauri::command]
-pub fn list_input_devices() -> AppResult<AudioDeviceList> {
-    enumerate_inputs()
-}
 
 /// The unified, backend-tagged audio-input list for the device picker: ASIO
 /// devices (Windows, when a driver is present) FIRST, then the host's
@@ -52,16 +69,6 @@ pub async fn list_audio_devices() -> AppResult<Vec<TaggedAudioInput>> {
     .map_err(|e| crate::error::AppError::Audio(format!("device enumeration task failed: {e}")))?
 }
 
-/// List the input channels of one ASIO device, for the channel (L/R) selector.
-/// Empty when the device is gone or ASIO is unavailable (the UI then falls back
-/// to the device's reported channel count). Runs on a blocking thread.
-#[tauri::command]
-pub async fn list_audio_input_channels(device_id: String) -> AppResult<Vec<AudioChannel>> {
-    tokio::task::spawn_blocking(move || list_asio_input_channels(&device_id))
-        .await
-        .map_err(|e| crate::error::AppError::Audio(format!("channel enumeration task failed: {e}")))
-}
-
 /// Enumerate the capture devices ffmpeg can see (audio + video), for the F2.1
 /// device picker. The recorder addresses these (avfoundation index / dshow name);
 /// the VU meter still uses the cpal `list_input_devices` list. See
@@ -76,24 +83,10 @@ pub async fn list_devices() -> AppResult<DeviceInventory> {
     enumerate_ffmpeg_devices_cached().await
 }
 
-/// List ONLY the camera (video) devices ffmpeg can see, for the settings camera
-/// dropdown. Mirrors the Electron `list-video-devices` / the video half of the
-/// device picker. Reuses the same `ffmpeg -list_devices` enumeration as
-/// [`list_devices`] and returns its `video_inputs`.
-///
-/// ⚠️ HARDWARE-UNVERIFIED — needs real cameras + the ffmpeg sidecar; only the
-/// pure parse helpers in `sundayrec_core::device_enum` are unit-tested.
-#[tauri::command]
-pub async fn list_video_devices() -> AppResult<Vec<FfmpegDevice>> {
-    // Cached (1.5 s) — see `list_devices`. The recorder resolves the camera via
-    // the uncached path at start, so a stale picker list never affects a capture.
-    Ok(enumerate_ffmpeg_devices_cached().await?.video_inputs)
-}
-
 /// What a camera can actually capture, for gating the resolution/fps UI to modes
 /// the device advertises (mirror of [`sundayrec_core::capture::CameraCapabilities`]).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS, PartialEq, Eq)]
-#[ts(export, export_to = "../../src/lib/bindings/CameraCapabilities.ts")]
+#[ts(export, export_to = "CameraCapabilities.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CameraCapabilities {
     pub max_width: u32,
@@ -201,30 +194,4 @@ pub async fn start_vu(
 pub fn stop_vu(engine: State<'_, VuEngine>) -> AppResult<()> {
     engine.stop();
     Ok(())
-}
-
-/// The selected device's REAL input channel count via the ffmpeg backend (the
-/// webview's getUserMedia caps at 2 and hid the picker for digital mixers).
-#[tauri::command]
-pub async fn probe_device_channels(
-    engine: State<'_, VuEngine>,
-    device_name: String,
-) -> AppResult<u32> {
-    // The ffmpeg blink-open fails if the VU stream holds another format.
-    engine.stop();
-    crate::audio::channel_probe::probe_input_channels(&device_name).await
-}
-
-/// Scan every input channel's peak over `secs` seconds — "which of my mixer's
-/// channels actually carry the mix?"
-#[tauri::command]
-pub async fn scan_device_channels(
-    engine: State<'_, VuEngine>,
-    device_name: String,
-    secs: u32,
-) -> AppResult<Vec<crate::audio::channel_probe::ChannelPeak>> {
-    // The ffmpeg scan opens the device itself; release the VU stream first
-    // (the renderer also stops the grid — this is the guarantee).
-    engine.stop();
-    crate::audio::channel_probe::scan_channel_peaks(&device_name, secs).await
 }

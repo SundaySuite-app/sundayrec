@@ -1,0 +1,30 @@
+.gate {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.note {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.explanation {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.hint {
+  display: block;
+  color: var(--ink-3);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.dimmed {
+  opacity: 0.5;
+}

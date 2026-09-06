@@ -8,6 +8,13 @@
 //! `"gudstjeneste"` fallback for the `church` pattern.
 //!
 //! No clock features are used — every entry point takes an explicit date.
+//!
+//! ⚠️ **This module is LIVE, and its only caller is `filename.rs`.** V1/PR3
+//! deleted the `liturgical_month` IPC command (a month-view for a Tidsplan
+//! calendar that never asked for one), which was the module's most VISIBLE
+//! consumer. What remains is the quiet one that actually ships: every
+//! `church`-pattern filename is named after the day's feast. Do not read
+//! "no command uses it" as "nothing uses it".
 
 use chrono::{Datelike, NaiveDate};
 

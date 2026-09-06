@@ -2,14 +2,21 @@
 //
 // ts-rs computes the relative import between two types from their `export_to`
 // paths. Our types live in TWO crates (`src-tauri` and `crates/sundayrec-core`)
-// whose `export_to` are anchored at different depths, so when a `src-tauri` type
-// imports a `sundayrec-core` type ts-rs emits a path that escapes the repo, e.g.
+// whose `export_to` USED TO be relative paths anchored at different depths, so
+// when a `src-tauri` type imported a `sundayrec-core` type ts-rs emitted a path
+// that escaped the repo, e.g.
 //   import type { ChannelMode } from "../../../../src/lib/bindings/ChannelMode";
 // That resolves to `<repo>/../src/lib/bindings/...` (outside the checkout), so it
-// builds locally (where a stray copy exists) but fails on a clean CI checkout
-// with TS2307. Every binding actually lives in this one directory, so the import
-// is always a sibling. Rewrite any `(…/)*src/lib/bindings/Name` import to
-// `./Name`. Idempotent; run as the last step of `npm run bindings`.
+// built locally (where a stray copy existed) but failed on a clean CI checkout
+// with TS2307.
+//
+// Since the `TS_RS_EXPORT_DIR` pin in `.cargo/config.toml`, every `export_to` is
+// a BARE file name against one absolute directory, so ts-rs already emits
+// `./Name` and this script normally reports "normalised 0 file(s)". It stays as
+// the belt to that braces: every binding lives in this one directory, so an
+// import that walks out of it is wrong however it got there. Rewrite any
+// `(…/)*src/lib/bindings/Name` import to `./Name`. Idempotent; run as the last
+// step of `npm run bindings`.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

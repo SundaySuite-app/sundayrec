@@ -28,9 +28,14 @@ use crate::error::{AppError, AppResult};
 pub async fn logs_reveal(app: tauri::AppHandle) -> AppResult<()> {
     use tauri_plugin_opener::OpenerExt;
 
+    // ENGLISH, not one of `sundayrec_core::alerts`' seven languages, and that is
+    // the honest call: `api-shim.ts` (`logsReveal`) catches this rejection,
+    // `console.warn`s it and returns `false`. It never becomes a sentence a
+    // volunteer reads — it is a developer diagnostic, and this codebase's
+    // diagnostics are English (F1 D5).
     let Some(dir) = crate::logfile::dir() else {
         return Err(AppError::Internal(
-            "loggfila er ikke aktiv i denne økten".into(),
+            "the log file is not active in this session".into(),
         ));
     };
     let live = crate::logfile::current_path().filter(|p| p.exists());
@@ -40,7 +45,7 @@ pub async fn logs_reveal(app: tauri::AppHandle) -> AppResult<()> {
             .opener()
             .open_path(dir.to_string_lossy().to_string(), None::<&str>),
     };
-    result.map_err(|e| AppError::Internal(format!("kunne ikke åpne loggmappen: {e}")))
+    result.map_err(|e| AppError::Internal(format!("could not open the log folder: {e}")))
 }
 
 /// The last `max_bytes` of the live log, cut at a line boundary.

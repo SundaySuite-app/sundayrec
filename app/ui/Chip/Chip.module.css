@@ -1,0 +1,46 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.neutral {
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+  background: var(--raised);
+}
+
+.good {
+  border: 1px solid var(--good-line);
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.warn {
+  border: 1px solid var(--warn-line);
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.bad {
+  border: 1px solid var(--bad-line);
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.gold {
+  border: 1px solid var(--gold-line);
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.rec {
+  border: 1px solid var(--rec);
+  color: var(--on-rec);
+  background: var(--rec);
+}

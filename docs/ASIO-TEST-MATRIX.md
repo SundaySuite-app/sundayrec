@@ -17,7 +17,7 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ## Windows — WASAPI (standard, vanlige enheter)
 
-- [ ] **Vanlig USB-mikrofon / lydkort:** velg i Innstillinger → Lyd → ta opp →
+- [ ] **Vanlig USB-mikrofon / lydkort:** velg i Oppsett → «Hvilken lyd?» → ta opp →
       ren fil, ingen «dropped»-advarsel, ingen hakking. Loggen viser
       `cpal capture starting host=WASAPI`.
 - [ ] **Stabilitet vs gammel dshow:** samme rigg som tidligere ga ustabile opptak
@@ -44,7 +44,7 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ## Windows — ASIO (pro-lydkort, f.eks. Soundcraft MADI-USB)
 
-- [ ] **Enumerering:** Innstillinger → Lyd viser kortet som ÉN enhet med
+- [ ] **Enumerering:** Oppsett → «Hvilken lyd?» viser kortet som ÉN enhet med
       «ASIO»-merke, øverst i lista (ikke oppdelt i stereopar).
 - [ ] **Kanalvalg:** kanalvelger (V/H) viser alle kortets inn-kanaler; velg f.eks.
       9 og 10.
@@ -63,8 +63,10 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 - [ ] **cpal feiler ved start** (åpne kortet i et annet program først) →
       SundayRec faller tilbake til DirectShow + viser «cpal_fallback»-melding,
       opptaket fungerer.
-- [ ] **«Klassisk lyd-motor (DirectShow)»-bryter** (Innstillinger → Lyd → Lyd-motor
-      (avansert)): slå på → opptak bruker dshow-veien; slå av → cpal igjen.
+- [ ] **«Opptaksmotor»-valget** (Oppsett → Avansert → «Opptaksmotor»): velg
+      «Klassisk (DirectShow)» → opptak bruker dshow-veien; tilbake til
+      «Innebygd» → cpal igjen. Raden er ETT valg av tre nå, ikke to brytere, og
+      DirectShow-alternativet finnes bare på Windows.
 - [ ] **ASIO4ALL** fungerer som generisk ASIO-driver.
 
 ## macOS — regresjon (skal være uendret)
@@ -80,8 +82,10 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
       _«Windows: moderne lyd-motor (WASAPI som standard, ASIO for pro-lydkort med
       flerkanals + lav latens) erstatter DirectShow. Faller automatisk tilbake til
       DirectShow, og kan tvinges via «Klassisk lyd-motor».»_
-- [ ] Bekreft Steinberg-attribusjonen vises i Windows-bygget (Innstillinger →
-      Generelt → «Lyd-teknologi»).
+- [ ] Bekreft Steinberg-attribusjonen vises i Windows-bygget (Oppsett →
+      Avansert, nederst — «Lyd-teknologi»). Kortet forsvant med legacy-skallet i
+      fase B og er bygget opp igjen; `AsioAttribution.test.tsx` pinner ordlyden,
+      men at kortet FAKTISK står i et Windows-bygg er fortsatt en rigg-sjekk.
 - [ ] Lyd-motoren forblir en **gratis kjernefunksjon** (ikke bak Pro-tier).
 
 ## Funksjons-paritet (Runde 3) — status

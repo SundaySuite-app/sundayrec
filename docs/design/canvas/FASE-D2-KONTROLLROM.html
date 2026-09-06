@@ -1,0 +1,2799 @@
+<meta charset="utf-8" />
+<title>Kontrollrommet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
+/>
+<style>
+  /* ───────────── Page chrome tokens — identiske med FASE-D-UTKAST-1 ───────── */
+  :root {
+    --bg: #f7f5f0;
+    --bg-2: #ffffff;
+    --ink: #1b1f2a;
+    --ink-2: #5b6272;
+    --ink-3: #8e95a6;
+    --line: #e2dfd6;
+    --gold: #c9951f;
+    --gold-soft: rgba(201, 149, 31, 0.12);
+    --ok: #1e9e5e;
+    --warn: #c47a00;
+    --bad: #c93b3f;
+    --sans:
+      "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      system-ui, sans-serif;
+    --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --rail: 248px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171f;
+      --bg-2: #1b1f2a;
+      --ink: #eef0f5;
+      --ink-2: #a7aebd;
+      --ink-3: #6e7689;
+      --line: #2b3140;
+      --gold: #ebb84b;
+      --gold-soft: rgba(235, 184, 75, 0.14);
+      --ok: #3ccb7f;
+      --warn: #f0b429;
+      --bad: #f2555a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171f;
+    --bg-2: #1b1f2a;
+    --ink: #eef0f5;
+    --ink-2: #a7aebd;
+    --ink-3: #6e7689;
+    --line: #2b3140;
+    --gold: #ebb84b;
+    --gold-soft: rgba(235, 184, 75, 0.14);
+    --ok: #3ccb7f;
+    --warn: #f0b429;
+    --bad: #f2555a;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--gold);
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  .page {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  @media (max-width: 960px) {
+    .page {
+      grid-template-columns: 1fr;
+    }
+    .rail {
+      position: static;
+      height: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+  }
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+    border-right: 1px solid var(--line);
+    padding: 28px 22px;
+    background: var(--bg);
+  }
+  .rail .brand {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin: 0 0 4px;
+  }
+  .rail .sub {
+    color: var(--ink-2);
+    font-size: 13px;
+    margin: 0 0 22px;
+  }
+  .rail nav a {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 7px 8px;
+    border-radius: 8px;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .rail nav a:hover {
+    background: var(--gold-soft);
+  }
+  .rail nav a .n {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    min-width: 18px;
+  }
+  .rail .tools {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 10px;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    background: var(--bg-2);
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--gold);
+    color: #1b1f2a;
+  }
+  .rail .hint {
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 1.45;
+  }
+
+  main {
+    padding: 40px clamp(20px, 4vw, 56px) 96px;
+    max-width: 1180px;
+  }
+  .intro h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(34px, 4.5vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .intro .lede {
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 26px;
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 10px;
+  }
+  .principles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+  }
+  .principles li {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .principles b {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .principles span {
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  section.set {
+    margin-top: 72px;
+    scroll-margin-top: 24px;
+  }
+  section.set > h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(26px, 3vw, 36px);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  section.set > .why {
+    color: var(--ink-2);
+    max-width: 66ch;
+    margin: 0 0 26px;
+    font-size: 16px;
+  }
+  section.set > .why code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--gold-soft);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .board-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1180/760;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+    background: #0e1321;
+    margin: 0 0 10px;
+  }
+  .board {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1180px;
+    height: 760px;
+    transform-origin: 0 0;
+  }
+  figure {
+    margin: 0 0 42px;
+  }
+  figcaption {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 14px;
+    color: var(--ink-2);
+    padding: 4px 2px;
+  }
+  figcaption b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  figcaption .id {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .decide {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--gold);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 8px 0 0;
+  }
+  .decide h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+  }
+  .decide ol,
+  .decide ul {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 8px;
+    font-size: 15px;
+  }
+  .decide li b {
+    font-weight: 600;
+  }
+  .decide .q {
+    color: var(--ink-2);
+  }
+
+  table.keys {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+  table.keys th,
+  table.keys td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.keys th {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  table.keys code {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+
+  /* ───────────── APP tokens (committed dark — the app's own world) ───────── */
+  .board {
+    --a-bg: #0e1321;
+    --a-surface: #151b2b;
+    --a-raised: #1c2435;
+    --a-line: #28324a;
+    --a-line-2: #344060;
+    --a-ink: #edf0f7;
+    --a-ink-2: #a2adc2;
+    --a-ink-3: #5e6b85;
+    --a-gold: #ebb84b;
+    --a-gold-soft: rgba(235, 184, 75, 0.14);
+    --a-gold-line: rgba(235, 184, 75, 0.42);
+    --a-rec: #e5484d;
+    --a-rec-soft: rgba(229, 72, 77, 0.16);
+    --a-good: #3ccb7f;
+    --a-good-soft: rgba(60, 203, 127, 0.14);
+    --a-warn: #f0b429;
+    --a-warn-soft: rgba(240, 180, 41, 0.14);
+    --a-bad: #f2555a;
+    --a-bad-soft: rgba(242, 85, 90, 0.14);
+    --a-r: 12px;
+    --a-r-sm: 8px;
+    background: var(--a-bg);
+    color: var(--a-ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+    display: grid;
+    grid-template-columns: 208px 1fr;
+    font-variant-numeric: tabular-nums;
+  }
+  .board * {
+    box-sizing: border-box;
+  }
+  .board p,
+  .board h1,
+  .board h2,
+  .board h3 {
+    margin: 0;
+  }
+  .board button {
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  /* Rail — D2: to destinasjoner, et tannhjul nederst, statuslinjen under */
+  .a-rail {
+    background: var(--a-surface);
+    border-right: 1px solid var(--a-line);
+    display: flex;
+    flex-direction: column;
+    /* 28 px topp = macOS' tittellinje. `.platform-darwin .rail` i appen. */
+    padding: 28px 14px 18px;
+  }
+  .a-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px 6px;
+  }
+  .a-logo i {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: block;
+    flex: none;
+  }
+  .a-logo i svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .a-logo b {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+  }
+  .a-church {
+    padding: 0 8px 22px;
+    font-size: 12.5px;
+    color: var(--a-ink-2);
+  }
+  .a-church.unset {
+    color: var(--a-warn);
+  }
+  .a-nav {
+    display: grid;
+    gap: 4px;
+  }
+  .a-nav button,
+  .a-gear button {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--a-ink-2);
+  }
+  .a-nav button.on,
+  .a-gear button.on {
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .a-nav svg,
+  .a-gear svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+  /* ⚠️ `margin-top:auto` bor HER, ikke på `.a-status`. To auto-marger i samme
+     flex-kolonne deler den ledige plassen, og tannhjulet ville svevet midt i
+     skinnen. Se APP-SHELL §D2. */
+  .a-gear {
+    margin-top: auto;
+    padding-bottom: 8px;
+  }
+  .a-status {
+    display: grid;
+    gap: 6px;
+    padding: 12px 10px 0;
+    border-top: 1px solid var(--a-line);
+  }
+  .a-status .line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .a-status .sub {
+    font-size: 12px;
+    color: var(--a-ink-3);
+    padding-left: 16px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--a-ink-3);
+    flex: none;
+  }
+  .dot.good {
+    background: var(--a-good);
+    box-shadow: 0 0 0 3px var(--a-good-soft);
+  }
+  .dot.warn {
+    background: var(--a-warn);
+    box-shadow: 0 0 0 3px var(--a-warn-soft);
+  }
+  .dot.rec {
+    background: var(--a-rec);
+    box-shadow: 0 0 0 3px var(--a-rec-soft);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .dot.listen {
+    background: var(--a-gold);
+    box-shadow: 0 0 0 3px var(--a-gold-soft);
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 3px var(--a-rec-soft);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgba(229, 72, 77, 0.08);
+    }
+  }
+
+  /* Main column */
+  .a-main {
+    padding: 24px 30px 18px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .a-h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .a-sub {
+    color: var(--a-ink-2);
+    font-size: 14.5px;
+  }
+  .a-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .a-card {
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    padding: 14px 16px;
+  }
+  .a-card.warn {
+    border-color: rgba(240, 180, 41, 0.5);
+    background:
+      linear-gradient(0deg, var(--a-warn-soft), var(--a-warn-soft)),
+      var(--a-surface);
+  }
+  .a-card.good {
+    border-color: rgba(60, 203, 127, 0.45);
+  }
+  .a-card.sel {
+    border-color: var(--a-gold-line);
+    background:
+      linear-gradient(0deg, var(--a-gold-soft), var(--a-gold-soft)),
+      var(--a-surface);
+  }
+  .a-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .a-grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .a-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .a-val {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .a-muted {
+    color: var(--a-ink-2);
+    font-size: 13px;
+  }
+  .a-small {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--a-line-2);
+    background: var(--a-raised);
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn.primary {
+    background: var(--a-gold);
+    border-color: var(--a-gold);
+    color: #1b1f2a;
+  }
+  .btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--a-gold);
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .btn.rec {
+    background: var(--a-rec);
+    border-color: var(--a-rec);
+    color: #fff;
+    font-size: 18px;
+    padding: 18px 28px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(229, 72, 77, 0.28);
+  }
+  .btn.rec i {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    display: inline-block;
+  }
+  .btn.lg {
+    font-size: 16px;
+    padding: 13px 22px;
+  }
+  .btn[disabled] {
+    opacity: 0.45;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink-2);
+    background: var(--a-raised);
+  }
+  .chip.good {
+    color: var(--a-good);
+    border-color: rgba(60, 203, 127, 0.4);
+    background: var(--a-good-soft);
+  }
+  .chip.warn {
+    color: var(--a-warn);
+    border-color: rgba(240, 180, 41, 0.4);
+    background: var(--a-warn-soft);
+  }
+  .chip.gold {
+    color: var(--a-gold);
+    border-color: var(--a-gold-line);
+    background: var(--a-gold-soft);
+  }
+  .chip.rec {
+    color: #fff;
+    background: var(--a-rec);
+    border-color: var(--a-rec);
+  }
+  .toggle {
+    width: 40px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--a-line-2);
+    position: relative;
+    flex: none;
+    border: 0;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+  }
+  .toggle.on {
+    background: var(--a-gold);
+  }
+  .toggle.on::after {
+    left: 21px;
+  }
+  .receipt {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--a-good);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* VU */
+  .vu {
+    display: grid;
+    gap: 8px;
+  }
+  .vu .bar {
+    height: 14px;
+    border-radius: 7px;
+    background: var(--a-raised);
+    overflow: hidden;
+    position: relative;
+  }
+  .vu .bar i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 7px;
+    background: linear-gradient(
+      90deg,
+      var(--a-good) 0 72%,
+      var(--a-warn) 72% 90%,
+      var(--a-rec) 90%
+    );
+  }
+  .vu .bar i::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: var(--w, 0%);
+    background: var(--a-raised);
+  }
+  .vu .bar b {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #fff;
+    opacity: 0.9;
+  }
+  .vu .scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--a-ink-3);
+    padding: 0 2px;
+  }
+  .vu.big .bar {
+    height: 22px;
+    border-radius: 11px;
+  }
+
+  /* ───────────── D2: kontrollrommet ───────────── */
+
+  /* To kolonner over 1100 px (7fr | 9fr), én under. `record.module.css`. */
+  .room {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 9fr);
+    gap: 14px;
+    align-items: start;
+    min-height: 0;
+  }
+  .live,
+  .prep {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+  .why {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+
+  /* Kompaktraden: tittel · verdi · [Endre] */
+  .cc {
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    padding: 9px 13px;
+  }
+  .cc[data-tone="warn"] {
+    border-color: rgba(240, 180, 41, 0.5);
+    background:
+      linear-gradient(0deg, var(--a-warn-soft), var(--a-warn-soft)),
+      var(--a-surface);
+  }
+  .cc .head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .cc .title {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .cc .value {
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 1px;
+  }
+  .cc .detail {
+    font-size: 12.5px;
+    color: var(--a-ink-2);
+    margin-top: 2px;
+  }
+  .cc .body {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--a-line);
+    display: grid;
+    gap: 10px;
+  }
+  .cc.pulse {
+    box-shadow: 0 0 0 2px var(--a-gold-line);
+  }
+
+  /* Kamerarammen — den ENE, for begge kildene */
+  .cam {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    border-radius: var(--a-r);
+    border: 1px solid var(--a-line);
+    background: #05070d;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+  }
+  .cam .ph {
+    font-size: 13px;
+    color: var(--a-ink-2);
+    text-align: center;
+    padding: 0 24px;
+  }
+  .cam .badge {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(5, 7, 13, 0.72);
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink);
+  }
+  .cam .phase {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(5, 7, 13, 0.72);
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink-3);
+  }
+  /* En «kamerastrøm»: deterministisk, ingen ekstern ressurs. */
+  .cam .feed {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        120% 90% at 62% 26%,
+        rgba(235, 184, 75, 0.28),
+        rgba(235, 184, 75, 0) 58%
+      ),
+      radial-gradient(
+        70% 60% at 26% 78%,
+        rgba(60, 120, 220, 0.34),
+        rgba(60, 120, 220, 0) 62%
+      ),
+      linear-gradient(170deg, #1a2740 0%, #0b1220 62%, #070b14 100%);
+  }
+  .cam .feed::after {
+    /* silhuetten: en talerstol og en menighet, i det store og hele */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(
+        to top,
+        rgba(3, 5, 10, 0.86) 0 22%,
+        rgba(3, 5, 10, 0) 46%
+      ),
+      radial-gradient(
+        14% 26% at 50% 56%,
+        rgba(3, 5, 10, 0.9),
+        rgba(3, 5, 10, 0) 70%
+      );
+  }
+  .cam.dead .feed {
+    display: none;
+  }
+
+  /* Opptaksoverlegget */
+  .ov {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 26px 32px;
+    background: var(--a-bg);
+  }
+  .ov .timer {
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .ov .meter {
+    width: 520px;
+  }
+  .ov .camera {
+    width: 380px;
+  }
+  .ov .facts {
+    font-size: 13px;
+    color: var(--a-ink-2);
+  }
+  .ov .hint {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+
+  /* Innstillinger-flaten */
+  .sectionLabel {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+    padding-top: 6px;
+  }
+  .setrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--a-line);
+  }
+  .setrow:last-child {
+    border-bottom: 0;
+  }
+  .field {
+    border: 1px solid var(--a-line-2);
+    border-radius: var(--a-r-sm);
+    background: var(--a-raised);
+    padding: 7px 11px;
+    font-size: 13.5px;
+    min-width: 190px;
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+  }
+  .tiles span {
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid var(--a-line);
+    background: var(--a-raised);
+    font-size: 10px;
+    display: grid;
+    place-items: center;
+    color: var(--a-ink-3);
+  }
+  .tiles span.hot {
+    border-color: var(--a-good);
+    color: var(--a-good);
+  }
+  .tiles span.sel {
+    border-color: var(--a-gold);
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .fold {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 26px;
+    background: linear-gradient(
+      to top,
+      rgba(14, 19, 33, 0.96),
+      rgba(14, 19, 33, 0)
+    );
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 5px;
+    font-size: 11px;
+    color: var(--a-ink-3);
+    pointer-events: none;
+  }
+</style>
+
+<div class="page">
+  <aside class="rail">
+    <p class="brand">Kontrollrommet</p>
+    <p class="sub">D2 · fasit mot koden, ikke ønsker</p>
+    <nav>
+      <a href="#s1"><span class="n">1</span><span>Skinnen</span></a>
+      <a href="#s2"><span class="n">2</span><span>Kontrollrommet</span></a>
+      <a href="#s3"><span class="n">3</span><span>Kortet folder ut</span></a>
+      <a href="#s4"><span class="n">4</span><span>Kamerafasene</span></a>
+      <a href="#s5"><span class="n">5</span><span>Overlegget</span></a>
+      <a href="#s6"><span class="n">6</span><span>Innstillinger</span></a>
+      <a href="#impl"><span class="n">✓</span><span>Implementert</span></a>
+      <a href="#krav"><span class="n">§</span><span>Eiers fire krav</span></a>
+    </nav>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Språk">
+        <button data-lang="no" aria-pressed="true">Norsk</button>
+        <button data-lang="en" aria-pressed="false">English</button>
+      </div>
+      <p class="hint">
+        Hver tavle er 1180×760 — Tauri-vinduets standardstørrelse. Alt du ser er
+        tegnet mot koden på <code>main</code> etter #165 · #166 · #167.
+      </p>
+    </div>
+  </aside>
+
+  <main>
+    <section class="intro">
+      <p class="eyebrow">Fase D2 · dokumentasjon</p>
+      <h1>Opptak er kontrollrommet</h1>
+      <p class="lede">
+        v0.16.0-beta.1 gikk ut på beta-ringen, og eieren så på sin egen app og
+        sa fire ting. Dette dokumentet tegner hva de fire ble — ikke som
+        forslag, men som det som faktisk står i appen nå. Der noe er en
+        restanse, står det skrevet at det er en restanse.
+      </p>
+      <ul class="principles">
+        <li>
+          <b>Det som brukes sammen, redigeres sammen</b>
+          <span
+            >De fem minuttene før gudstjenesten er den ene anledningen noen har
+            til å gjøre appen klar. De skal ikke gå med på navigasjon.</span
+          >
+        </li>
+        <li>
+          <b>Kortet folder ut den EKTE skjermen</b>
+          <span
+            >Ikke en kopi. To kopier av en skjerm er hvordan de to begynner å si
+            forskjellige ting om nøyaktig samme tilstand.</span
+          >
+        </li>
+        <li>
+          <b>Et navn er ikke et bilde</b>
+          <span
+            >«Kamera Logitech BRIO» ser nøyaktig likt ut med lokk på linsen.
+            Bare bildet kan si at det kommer noe fra enheten.</span
+          >
+        </li>
+      </ul>
+    </section>
+
+    <!-- ═══════════════════════ 1 · SKINNEN ═══════════════════════ -->
+    <section class="set" id="s1">
+      <h2>1 · Skinnen: to steder og et tannhjul</h2>
+      <p class="why">
+        Oppsett var destinasjon nummer tre, ved siden av Opptak og Bibliotek.
+        Det gjorde innstillinger til et likeverdig sted — noe man går til like
+        ofte som man tar opp — og det er ikke sant. Tannhjulet står nederst,
+        over statuslinjen, der den gamle appen hadde det. Ruten
+        <code>setup</code> lever videre uendret:
+        <code>data-testid="nav-setup"</code> og <code>aria-current</code> står
+        på tannhjulet, så <code>[data-testid^="nav-"]</code> teller fortsatt
+        tre.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div
+              class="a-main"
+              style="justify-content: center; align-items: center; gap: 22px"
+            >
+              <div class="a-card" style="width: 640px">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 12px"
+                  data-t="sh.what"
+                ></div>
+                <div style="display: grid; gap: 10px">
+                  <div class="a-row">
+                    <span class="chip gold">nav-record</span>
+                    <span class="a-muted" data-t="sh.r1"></span>
+                  </div>
+                  <div class="a-row">
+                    <span class="chip">nav-library</span>
+                    <span class="a-muted" data-t="sh.r2"></span>
+                  </div>
+                  <div class="a-row">
+                    <span class="chip">nav-setup</span>
+                    <span class="a-muted" data-t="sh.r3"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="a-card" style="width: 640px">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 10px"
+                  data-t="sh.measured"
+                ></div>
+                <div class="a-muted" style="display: grid; gap: 5px">
+                  <div><span data-t="sh.m1"></span> — <code>y = 23</code></div>
+                  <div>
+                    <span data-t="sh.m2"></span> —
+                    <code>x 22 · y 28 · 28×28</code>
+                  </div>
+                  <div>
+                    <span data-t="sh.m3"></span> — <code>y 664…707</code>
+                  </div>
+                  <div><span data-t="sh.m4"></span> — <code>y 724</code></div>
+                </div>
+              </div>
+              <p class="a-small" style="width: 640px" data-t="sh.note"></p>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>1.1 Skinnen etter D2</b>
+          <span data-t="cap.1"></span>
+          <span class="id">shell--rail-gear</span>
+        </figcaption>
+      </figure>
+      <div class="decide">
+        <h3 data-t="d.title"></h3>
+        <ul>
+          <li><b data-t="d1.a"></b> <span class="q" data-t="d1.ad"></span></li>
+          <li><b data-t="d1.b"></b> <span class="q" data-t="d1.bd"></span></li>
+          <li><b data-t="d1.c"></b> <span class="q" data-t="d1.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ 2 · KONTROLLROMMET ═══════════════════════ -->
+    <section class="set" id="s2">
+      <h2>2 · Kontrollrommet, kortene lukket</h2>
+      <p class="why">
+        To kolonner over 1100 px (<code>7fr | 9fr</code>), én under, i samme
+        rekkefølge. Venstre er <code>position: sticky</code> og LEVENDE: kilde,
+        måler, Start. Høyre er klargjøringen: kamerabildet øverst, så de fem
+        kortene. Hvert kort viser svaret som gjelder nå.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="position: relative">
+              <h1 class="a-h1" data-t="nav.record"></h1>
+              <div class="a-head">
+                <p class="a-sub" data-t="rec.sub"></p>
+                <span class="chip gold"
+                  ><i class="dot listen"></i><span data-t="rec.listening"></span
+                ></span>
+              </div>
+
+              <div class="room">
+                <!-- VENSTRE: sticky, levende -->
+                <div class="live">
+                  <div class="a-card">
+                    <div class="a-row">
+                      <div class="a-grow">
+                        <div class="a-label" data-t="rec.source"></div>
+                        <div class="a-val">
+                          Behringer X32 · <span data-t="rec.ch"></span> 15–16
+                        </div>
+                      </div>
+                      <span class="btn ghost" data-t="c.change"></span>
+                    </div>
+                  </div>
+
+                  <div class="a-card">
+                    <div class="vu big">
+                      <div class="a-row" style="margin-bottom: 6px">
+                        <i class="dot good"></i
+                        ><b style="font-size: 15px" data-t="vu.hear"></b>
+                      </div>
+                      <div class="bar">
+                        <i style="--w: 60%"></i><b style="left: 66%"></b>
+                      </div>
+                      <div class="bar">
+                        <i style="--w: 57%"></i><b style="left: 63%"></b>
+                      </div>
+                      <div class="scale">
+                        <span data-t="vu.quiet"></span
+                        ><span data-t="vu.good"></span
+                        ><span data-t="vu.loud"></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span class="btn rec" style="width: 100%"
+                    ><i></i><span data-t="rec.start"></span
+                  ></span>
+                </div>
+
+                <!-- HØYRE: klargjøringen -->
+                <div class="prep">
+                  <div class="cam">
+                    <div class="feed"></div>
+                    <span class="phase">data-phase="live"</span>
+                    <span class="badge">1920×1080 · 30 fps</span>
+                  </div>
+
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="set.q2"></div>
+                        <div class="value">/Users/frivillig/SundayRec</div>
+                      </div>
+                      <span class="btn ghost" data-t="c.change"></span>
+                    </div>
+                  </div>
+
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="set.q3"></div>
+                        <div class="value" data-t="q.good"></div>
+                      </div>
+                      <span class="btn ghost" data-t="c.change"></span>
+                    </div>
+                  </div>
+
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <button class="toggle on"></button>
+                      <div class="a-grow">
+                        <div class="title" data-t="set.camera"></div>
+                        <div class="value">FaceTime HD Camera</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <button class="toggle on"></button>
+                      <div class="a-grow">
+                        <div class="title" data-t="set.auto"></div>
+                        <div class="value">
+                          <span data-t="d.sunday"></span> 11:00 · 90 min
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cc" data-tone="warn">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="set.q5"></div>
+                        <div class="value" data-t="set.q5a"></div>
+                        <div class="detail" data-t="set.q5d"></div>
+                      </div>
+                      <span class="btn ghost" data-t="set.setup"></span>
+                    </div>
+                  </div>
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="rec.nextauto"></div>
+                        <div class="value">
+                          <span data-t="d.sunday"></span> 11:00
+                        </div>
+                        <div class="detail" data-t="rec.wake"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="rec.last"></div>
+                        <div class="value">
+                          <span data-t="d.sunday"></span> 16.
+                          <span data-t="d.aug"></span> · 1 t 02 min
+                        </div>
+                      </div>
+                      <span class="btn ghost" data-t="c.reveal"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fold" data-t="fold"></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.1 Opptak — klar</b>
+          <span data-t="cap.2"></span>
+          <span class="id">record--control-room</span>
+        </figcaption>
+      </figure>
+      <div class="scroll">
+        <table class="keys">
+          <thead>
+            <tr>
+              <th data-t="th.card"></th>
+              <th data-t="th.title"></th>
+              <th data-t="th.from"></th>
+              <th data-t="th.opens"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>sound</code></td>
+              <td data-t="set.q1"></td>
+              <td><code>record-core.ts</code></td>
+              <td data-t="tb.sound"></td>
+            </tr>
+            <tr>
+              <td><code>folder</code></td>
+              <td data-t="set.q2"></td>
+              <td><code>decisions-core</code> → <code>decision-text</code></td>
+              <td data-t="tb.change"></td>
+            </tr>
+            <tr>
+              <td><code>quality</code></td>
+              <td data-t="set.q3"></td>
+              <td><code>decisions-core</code> → <code>decision-text</code></td>
+              <td data-t="tb.change2"></td>
+            </tr>
+            <tr>
+              <td><code>camera</code></td>
+              <td data-t="set.camera"></td>
+              <td><code>cameraValue()</code></td>
+              <td data-t="tb.toggle"></td>
+            </tr>
+            <tr>
+              <td><code>auto</code></td>
+              <td data-t="set.auto"></td>
+              <td><code>autoValue()</code></td>
+              <td data-t="tb.toggle"></td>
+            </tr>
+            <tr>
+              <td><code>notify</code></td>
+              <td data-t="set.q5"></td>
+              <td><code>decisions-core</code> → <code>decision-text</code></td>
+              <td data-t="tb.change"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="decide">
+        <h3 data-t="d.title"></h3>
+        <ul>
+          <li><b data-t="d2.a"></b> <span class="q" data-t="d2.ad"></span></li>
+          <li><b data-t="d2.b"></b> <span class="q" data-t="d2.bd"></span></li>
+          <li><b data-t="d2.c"></b> <span class="q" data-t="d2.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ 3 · UTFOLDET ═══════════════════════ -->
+    <section class="set" id="s3">
+      <h2>3 · Kilde-kortet utfoldet — den ekte skjermen, på stedet</h2>
+      <p class="why">
+        <code>SoundPage</code> er den samme komponenten første-gangs-sekvensen
+        bruker. Modulsignalet <code>embedded</code> i <code>SubPage</code> tar
+        bort rammen (leden) når kortraden allerede har sagt hva skjermen er for.
+        Start blir stående synlig: WKWebView-proben målte kortet til 386 px
+        høyt, med Start på <code>y 616 + 64 &lt; 760</code>. Dette er også tavla
+        der det står TO målere på skjermen — og begge må ut av treet når
+        opptaket starter.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="position: relative">
+              <h1 class="a-h1" data-t="nav.record"></h1>
+              <div class="a-head">
+                <p class="a-sub" data-t="rec.sub"></p>
+                <span class="chip gold"
+                  ><i class="dot listen"></i><span data-t="rec.listening"></span
+                ></span>
+              </div>
+
+              <div class="room">
+                <div class="live">
+                  <div class="a-card sel">
+                    <div class="a-row">
+                      <div class="a-grow">
+                        <div class="a-label" data-t="rec.source"></div>
+                        <div class="a-val">
+                          Behringer X32 · <span data-t="rec.ch"></span> 15–16
+                        </div>
+                      </div>
+                      <span class="btn ghost" data-t="c.close"></span>
+                    </div>
+                    <div
+                      style="
+                        margin-top: 12px;
+                        padding-top: 12px;
+                        border-top: 1px solid var(--a-line);
+                        display: grid;
+                        gap: 9px;
+                      "
+                    >
+                      <div class="a-card" style="padding: 9px 12px">
+                        <div class="a-row">
+                          <div class="a-grow">
+                            <b
+                              style="font-size: 13.5px"
+                              data-t="set.builtin"
+                            ></b>
+                            <div class="a-small" data-t="set.builtind"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="a-card sel" style="padding: 9px 12px">
+                        <div class="a-row">
+                          <div class="a-grow">
+                            <b style="font-size: 13.5px">Behringer X32</b>
+                            <div class="a-small" data-t="set.mixer"></div>
+                          </div>
+                          <span class="receipt"
+                            >✓ <span data-t="c.saved"></span
+                          ></span>
+                        </div>
+                      </div>
+                      <div>
+                        <div
+                          class="a-label"
+                          style="margin-bottom: 5px"
+                          data-t="set.whichch"
+                        ></div>
+                        <div class="tiles">
+                          <span>1</span><span>2</span><span>3</span
+                          ><span>4</span> <span class="hot">5</span
+                          ><span>6</span><span>7</span><span>8</span>
+                          <span>13</span><span>14</span
+                          ><span class="sel">15</span><span class="sel">16</span
+                          ><span>17</span><span>18</span
+                          ><span class="hot">19</span><span>20</span>
+                        </div>
+                        <div
+                          class="a-small"
+                          style="margin-top: 5px"
+                          data-t="set.chhint"
+                        ></div>
+                      </div>
+                      <div class="vu">
+                        <div class="a-row" style="margin-bottom: 2px">
+                          <i class="dot good"></i
+                          ><b style="font-size: 13px" data-t="vu.hear"></b>
+                          <span class="a-small" style="margin-left: auto"
+                            >sound-vu</span
+                          >
+                        </div>
+                        <div class="bar">
+                          <i style="--w: 58%"></i><b style="left: 64%"></b>
+                        </div>
+                      </div>
+                      <div class="a-row" style="justify-content: flex-end">
+                        <span class="btn primary" data-t="set.usethis"></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="a-card">
+                    <div class="vu big">
+                      <div class="a-row" style="margin-bottom: 6px">
+                        <i class="dot good"></i
+                        ><b style="font-size: 15px" data-t="vu.hear"></b>
+                        <span class="a-small" style="margin-left: auto"
+                          >record-vu</span
+                        >
+                      </div>
+                      <div class="bar">
+                        <i style="--w: 60%"></i><b style="left: 66%"></b>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span class="btn rec" style="width: 100%"
+                    ><i></i><span data-t="rec.start"></span
+                  ></span>
+                </div>
+
+                <div class="prep">
+                  <div class="cam">
+                    <div class="feed"></div>
+                    <span class="phase">data-phase="live"</span>
+                    <span class="badge">1920×1080 · 30 fps</span>
+                  </div>
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="set.q2"></div>
+                        <div class="value">/Users/frivillig/SundayRec</div>
+                      </div>
+                      <span class="btn ghost" data-t="c.change"></span>
+                    </div>
+                  </div>
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="set.q3"></div>
+                        <div class="value" data-t="q.good"></div>
+                      </div>
+                      <span class="btn ghost" data-t="c.change"></span>
+                    </div>
+                  </div>
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <button class="toggle on"></button>
+                      <div class="a-grow">
+                        <div class="title" data-t="set.camera"></div>
+                        <div class="value">FaceTime HD Camera</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <button class="toggle on"></button>
+                      <div class="a-grow">
+                        <div class="title" data-t="set.auto"></div>
+                        <div class="value">
+                          <span data-t="d.sunday"></span> 11:00 · 90 min
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="cc" data-tone="warn">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="set.q5"></div>
+                        <div class="value" data-t="set.q5a"></div>
+                      </div>
+                      <span class="btn ghost" data-t="set.setup"></span>
+                    </div>
+                  </div>
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="rec.nextauto"></div>
+                        <div class="value">
+                          <span data-t="d.sunday"></span> 11:00
+                        </div>
+                        <div class="detail" data-t="rec.wake"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cc" data-tone="neutral">
+                    <div class="head">
+                      <div class="a-grow">
+                        <div class="title" data-t="rec.last"></div>
+                        <div class="value">
+                          <span data-t="d.sunday"></span> 16.
+                          <span data-t="d.aug"></span> · 1 t 02 min
+                        </div>
+                      </div>
+                      <span class="btn ghost" data-t="c.reveal"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="fold" data-t="fold"></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>3.1 «Hvilken lyd?» innbygget i kilde-kortet</b>
+          <span data-t="cap.3"></span>
+          <span class="id">record--sound-expanded</span>
+        </figcaption>
+      </figure>
+      <div class="decide">
+        <h3 data-t="d.title"></h3>
+        <ul>
+          <li><b data-t="d3.a"></b> <span class="q" data-t="d3.ad"></span></li>
+          <li><b data-t="d3.b"></b> <span class="q" data-t="d3.bd"></span></li>
+          <li><b data-t="d3.c"></b> <span class="q" data-t="d3.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ 4 · KAMERAFASENE ═══════════════════════ -->
+    <section class="set" id="s4">
+      <h2>4 · Kamerarammen og fasene</h2>
+      <p class="why">
+        <code>data-phase</code> er GROVSVARET — det e2e leser, og det som aldri
+        skal avhenge av ordlyd. Teksten er finere, fordi én fase kan ha fire
+        grunner. Rekkefølgen i tabellen er en beslutning: feilen fra
+        <code>getUserMedia</code> går FØR enhetslisten, for en nektet tilgang
+        gjør «Ingen kameraer funnet» til en oppfordring om å sjekke en kabel som
+        er i orden.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="a-main" style="justify-content: center; gap: 20px">
+              <div>
+                <h1 class="a-h1" data-t="cam.title"></h1>
+                <p class="a-sub" data-t="cam.sub"></p>
+              </div>
+              <div class="grid3">
+                <div>
+                  <div class="cam">
+                    <div class="feed"></div>
+                    <span class="phase">data-phase="live"</span>
+                    <span class="badge">1280×720 · 30 fps</span>
+                  </div>
+                  <p
+                    class="a-small"
+                    style="margin-top: 7px"
+                    data-t="cam.live"
+                  ></p>
+                </div>
+                <div>
+                  <div class="cam dead">
+                    <div class="feed"></div>
+                    <span class="phase">data-phase="denied"</span>
+                    <p class="ph" data-t="cam.denied"></p>
+                  </div>
+                  <p
+                    class="a-small"
+                    style="margin-top: 7px"
+                    data-t="cam.deniedd"
+                  ></p>
+                </div>
+                <div>
+                  <div class="cam dead">
+                    <div class="feed"></div>
+                    <span class="phase">data-phase="paused"</span>
+                    <p class="ph" style="color: var(--a-ink-3)">—</p>
+                  </div>
+                  <p
+                    class="a-small"
+                    style="margin-top: 7px"
+                    data-t="cam.paused"
+                  ></p>
+                </div>
+              </div>
+              <div class="a-card">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 8px"
+                  data-t="cam.rule"
+                ></div>
+                <div
+                  style="
+                    font-family: var(--mono);
+                    font-size: 13px;
+                    color: var(--a-gold);
+                  "
+                >
+                  { width: { ideal: 1920 }, aspectRatio: { ideal: 16 / 9 } }
+                </div>
+                <p
+                  class="a-muted"
+                  style="margin-top: 7px"
+                  data-t="cam.ruled"
+                ></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>4.1 Tre av åtte faser</b>
+          <span data-t="cap.4"></span>
+          <span class="id">camera--phases</span>
+        </figcaption>
+      </figure>
+      <div class="scroll">
+        <table class="keys">
+          <thead>
+            <tr>
+              <th>data-phase</th>
+              <th data-t="th.when"></th>
+              <th data-t="th.text"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>off</code></td>
+              <td data-t="ph.off"></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><code>paused</code></td>
+              <td data-t="ph.paused"></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><code>denied</code></td>
+              <td><code>NotAllowedError</code></td>
+              <td data-t="cam.denied"></td>
+            </tr>
+            <tr>
+              <td><code>noResponse</code></td>
+              <td data-t="ph.other"></td>
+              <td data-t="cam.noresponse"></td>
+            </tr>
+            <tr>
+              <td><code>pickFirst</code></td>
+              <td data-t="ph.pick"></td>
+              <td>
+                <code>searching · noneFound · listFailed · pickFirst</code>
+              </td>
+            </tr>
+            <tr>
+              <td><code>savedMissing</code></td>
+              <td data-t="ph.missing"></td>
+              <td data-t="cam.missing"></td>
+            </tr>
+            <tr>
+              <td><code>starting</code></td>
+              <td data-t="ph.starting"></td>
+              <td data-t="cam.starting"></td>
+            </tr>
+            <tr>
+              <td><code>live</code></td>
+              <td data-t="ph.live"></td>
+              <td data-t="ph.livet"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="decide">
+        <h3 data-t="d.title"></h3>
+        <ul>
+          <li><b data-t="d4.a"></b> <span class="q" data-t="d4.ad"></span></li>
+          <li><b data-t="d4.b"></b> <span class="q" data-t="d4.bd"></span></li>
+          <li><b data-t="d4.c"></b> <span class="q" data-t="d4.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ 5 · OVERLEGGET ═══════════════════════ -->
+    <section class="set" id="s5">
+      <h2>5 · Opptaksoverlegget, med kamerabilde</h2>
+      <p class="why">
+        Motoren eier kameraet mens opptaket går, så overlegget kan ikke ha en
+        <code>getUserMedia</code>-strøm. Det poller motorens egen preview-JPEG
+        (<code>recording_preview_frame</code>, 83 ms ≈ 12 Hz) og leser
+        sideforholdet ut av JPEG-HEADEREN, så rammen ikke hopper når det første
+        bildet lander. Rammen er den samme <code>CameraFrame</code> som på
+        Opptak: en frivillig som har sett bildet der skal kjenne igjen bildet
+        her.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="ov">
+              <span class="chip rec"
+                ><i class="dot"></i><span data-t="st.rec"></span
+              ></span>
+              <div class="timer">1:02:14</div>
+              <div class="meter">
+                <div class="vu big">
+                  <div class="bar">
+                    <i style="--w: 62%"></i><b style="left: 68%"></b>
+                  </div>
+                  <div class="bar">
+                    <i style="--w: 59%"></i><b style="left: 65%"></b>
+                  </div>
+                  <div class="scale">
+                    <span>−60 dB</span><span>−18 dB</span><span>0 dB</span>
+                  </div>
+                </div>
+              </div>
+              <div class="camera">
+                <div class="cam">
+                  <div class="feed"></div>
+                  <span class="phase">data-phase="live"</span>
+                </div>
+              </div>
+              <p class="facts">
+                Behringer X32 · <span data-t="ov.room"></span> 2 t 10 min ·
+                <span data-t="ov.camera"></span> FaceTime HD Camera
+              </p>
+              <span class="btn lg" data-t="ov.stop"></span>
+              <p class="hint" data-t="ov.autostop"></p>
+              <div class="a-row">
+                <span class="btn" data-t="ov.plus"></span>
+                <span class="btn" data-t="ov.cancel"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>5.1 Overlegget — opptak med video</b>
+          <span data-t="cap.5"></span>
+          <span class="id">overlay--camera</span>
+        </figcaption>
+      </figure>
+      <div class="decide">
+        <h3 data-t="d.title"></h3>
+        <ul>
+          <li><b data-t="d5.a"></b> <span class="q" data-t="d5.ad"></span></li>
+          <li><b data-t="d5.b"></b> <span class="q" data-t="d5.bd"></span></li>
+          <li><b data-t="d5.c"></b> <span class="q" data-t="d5.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ 6 · INNSTILLINGER ═══════════════════════ -->
+    <section class="set" id="s6">
+      <h2>6 · Innstillinger — det tannhjulet åpner</h2>
+      <p class="why">
+        Én flate, ikke to faner: kirkeprofilen øverst, seksjonsnavnet
+        <code>AVANSERT</code>, og resten under. <code>Level1</code> er slettet.
+        Kirkeprofilen er den ene av de fem spørsmålene som IKKE flyttet inn i
+        kontrollrommet, og grunnen er den samme som bar hele D2 — navnet og
+        språket er ikke noe man tar stilling til fem minutter før gudstjenesten.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="setup"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="position: relative">
+              <h1 class="a-h1" data-t="nav.setup"></h1>
+              <div class="a-card">
+                <div
+                  class="a-val"
+                  style="margin-bottom: 2px"
+                  data-t="set.q4"
+                ></div>
+                <p class="a-muted" data-t="ch.lede"></p>
+                <div style="margin-top: 8px">
+                  <div class="setrow">
+                    <div class="a-grow">
+                      <b style="font-size: 13.5px" data-t="ch.name"></b>
+                      <div class="a-small" data-t="ch.named"></div>
+                    </div>
+                    <span class="field">Bryn menighet</span>
+                    <span class="receipt"
+                      >✓ <span data-t="c.saved"></span
+                    ></span>
+                  </div>
+                  <div class="setrow">
+                    <div class="a-grow">
+                      <b style="font-size: 13.5px" data-t="ch.lang"></b>
+                      <div class="a-small" data-t="ch.langd"></div>
+                    </div>
+                    <span class="field" data-t="ch.langval"></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sectionLabel" data-t="adv.title"></div>
+              <div class="a-card">
+                <div class="setrow">
+                  <div class="a-grow">
+                    <b style="font-size: 13.5px" data-t="adv.engine"></b>
+                    <div class="a-small" data-t="adv.engined"></div>
+                  </div>
+                  <span class="field" data-t="adv.native"></span>
+                </div>
+                <div class="setrow">
+                  <div class="a-grow">
+                    <b style="font-size: 13.5px" data-t="adv.preroll"></b>
+                    <div class="a-small" data-t="adv.prerolld"></div>
+                  </div>
+                  <span class="field">15 <span data-t="adv.sec"></span></span>
+                </div>
+                <div class="setrow">
+                  <div class="a-grow">
+                    <b style="font-size: 13.5px" data-t="adv.more"></b>
+                    <div class="a-small" data-t="adv.mored"></div>
+                  </div>
+                  <span class="btn ghost" data-t="c.open"></span>
+                </div>
+                <div class="setrow">
+                  <div class="a-grow">
+                    <b style="font-size: 13.5px" data-t="adv.wake"></b>
+                    <div class="a-small" data-t="adv.waked"></div>
+                  </div>
+                  <button class="toggle on"></button>
+                </div>
+                <div class="setrow">
+                  <div class="a-grow">
+                    <b style="font-size: 13.5px" data-t="adv.update"></b>
+                    <div class="a-small" data-t="adv.updated"></div>
+                  </div>
+                  <span class="field" data-t="adv.stable"></span>
+                </div>
+                <div class="setrow">
+                  <div class="a-grow">
+                    <b style="font-size: 13.5px" data-t="adv.diag"></b>
+                    <div class="a-small" data-t="adv.diagd"></div>
+                  </div>
+                  <span class="btn ghost" data-t="adv.show"></span>
+                  <button class="toggle on"></button>
+                </div>
+              </div>
+              <div class="fold" data-t="fold2"></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>6.1 Innstillinger-flaten</b>
+          <span data-t="cap.6"></span>
+          <span class="id">settings--surface</span>
+        </figcaption>
+      </figure>
+      <div class="decide">
+        <h3 data-t="d.title"></h3>
+        <ul>
+          <li><b data-t="d6.a"></b> <span class="q" data-t="d6.ad"></span></li>
+          <li><b data-t="d6.b"></b> <span class="q" data-t="d6.bd"></span></li>
+          <li><b data-t="d6.c"></b> <span class="q" data-t="d6.cd"></span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ IMPLEMENTERT ═══════════════════════ -->
+    <section class="set" id="impl">
+      <h2>Dette er implementert</h2>
+      <p class="why">
+        Tavlene over er tegnet mot koden som fasit. Under står hva som faktisk
+        ligger på <code>main</code> etter #165 · #166 · #167 — og til slutt hva
+        som IKKE er gjort, så tegningen ikke leses som en kvittering på mer enn
+        den er.
+      </p>
+      <div class="scroll">
+        <table class="keys">
+          <thead>
+            <tr>
+              <th data-t="th.what"></th>
+              <th data-t="th.where"></th>
+              <th data-t="th.guard"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-t="im.logo"></td>
+              <td>
+                <code>app/ui/AppLogo/AppLogo.tsx</code>,
+                <code>app/public/icon.svg</code>
+              </td>
+              <td data-t="im.logog"></td>
+            </tr>
+            <tr>
+              <td data-t="im.gear"></td>
+              <td><code>app/ui/PageShell/PageShell.tsx</code></td>
+              <td data-t="im.gearg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.room"></td>
+              <td>
+                <code>app/pages/record/RecordPage.tsx</code> +
+                <code>record.module.css</code>
+              </td>
+              <td data-t="im.roomg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.cards"></td>
+              <td>
+                <code>app/ui/ControlCard/</code> +
+                <code>record/control-core.ts</code>
+              </td>
+              <td data-t="im.cardsg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.embed"></td>
+              <td>
+                <code>app/pages/setup/SubPage.tsx</code> (<code>embedded</code>)
+              </td>
+              <td data-t="im.embedg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.anchor"></td>
+              <td>
+                <code>app/router/router.ts</code> (<code>TAB_ALIASES</code>)
+              </td>
+              <td data-t="im.anchorg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.live"></td>
+              <td><code>app/ui/CameraPreview/LiveCameraPreview.tsx</code></td>
+              <td data-t="im.liveg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.poll"></td>
+              <td><code>app/ui/CameraPreview/PolledCameraPreview.tsx</code></td>
+              <td data-t="im.pollg"></td>
+            </tr>
+            <tr>
+              <td data-t="im.own"></td>
+              <td><code>app/ui/CameraPreview/ownership.ts</code></td>
+              <td data-t="im.owng"></td>
+            </tr>
+            <tr>
+              <td data-t="im.vu"></td>
+              <td>
+                <code>RecordPage.tsx</code> (<code>useControlCards</code>)
+              </td>
+              <td data-t="im.vug"></td>
+            </tr>
+            <tr>
+              <td data-t="im.settings"></td>
+              <td><code>app/pages/setup/SetupPage.tsx</code></td>
+              <td data-t="im.settingsg"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="decide">
+        <h3 data-t="rest.title"></h3>
+        <ol>
+          <li>
+            <b data-t="rest.a"></b> <span class="q" data-t="rest.ad"></span>
+          </li>
+          <li>
+            <b data-t="rest.b"></b> <span class="q" data-t="rest.bd"></span>
+          </li>
+          <li>
+            <b data-t="rest.c"></b> <span class="q" data-t="rest.cd"></span>
+          </li>
+          <li>
+            <b data-t="rest.d"></b> <span class="q" data-t="rest.dd"></span>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ EIERS FIRE KRAV ═══════════════════════ -->
+    <section class="set" id="krav">
+      <h2>Eiers fire krav — og hvor de bor</h2>
+      <p class="why">
+        Beta-ringen fikk v0.16.0-beta.1, og eieren svarte med fire ting. Dette
+        er de fire, i eierens egne ord, mot stedet i koden som er svaret.
+      </p>
+      <div class="scroll">
+        <table class="keys">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th data-t="th.want"></th>
+              <th data-t="th.lives"></th>
+              <th data-t="th.board"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td data-t="k1"></td>
+              <td>
+                <code>AppLogo.tsx</code> · <code>PageShell.module.css</code> ·
+                <code>app/public/icon.svg</code>
+              </td>
+              <td>1.1</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td data-t="k2"></td>
+              <td>
+                <code>CameraPreview/*</code> ·
+                <code>RecordPage.CameraPreviewBlock</code> ·
+                <code>RecordingOverlay</code>
+              </td>
+              <td>2.1 · 4.1 · 5.1</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td data-t="k3"></td>
+              <td>
+                <code>RecordPage.tsx</code> · <code>control-core.ts</code> ·
+                <code>ControlCard</code> · <code>SubPage.embedded</code>
+              </td>
+              <td>2.1 · 3.1</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td data-t="k4"></td>
+              <td>
+                <code>PageShell.tsx</code> (<code>PAGES</code> + tannhjulet) ·
+                <code>SetupPage.tsx</code>
+              </td>
+              <td>1.1 · 6.1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="decide">
+        <h3 data-t="lock.title"></h3>
+        <ol>
+          <li>
+            <b data-t="lock.a"></b> <span class="q" data-t="lock.ad"></span>
+          </li>
+          <li>
+            <b data-t="lock.b"></b> <span class="q" data-t="lock.bd"></span>
+          </li>
+          <li>
+            <b data-t="lock.c"></b> <span class="q" data-t="lock.cd"></span>
+          </li>
+          <li>
+            <b data-t="lock.d"></b> <span class="q" data-t="lock.dd"></span>
+          </li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  /* Ordboken — [no, en]. Verdiene er appens EGNE der de finnes
+     (`legacy/locales/{no,en}.json`); resten er tavletekst. */
+  const T = {
+    "c.change": ["Endre", "Change"],
+    "c.close": ["Lukk", "Close"],
+    "c.saved": ["Lagret", "Saved"],
+    "c.open": ["Åpne", "Open"],
+    "nav.record": ["Opptak", "Record"],
+    "nav.library": ["Bibliotek", "Library"],
+    "nav.setup": ["Innstillinger", "Settings"],
+    "st.ready": ["Alt er klart", "All set"],
+    "st.nosound": ["Lyden er ikke koblet til", "Sound isn’t connected"],
+    "st.rec": ["Tar opp", "Recording"],
+    fold: [
+      "«Neste automatiske opptak» og «Siste opptak» ligger under folden — siden ruller i #main",
+      "“Next automatic recording” and “Last recording” sit below the fold — the page scrolls inside #main",
+    ],
+    fold2: [
+      "Avansert fortsetter i appen — logg, innstillingsprofil, flere tider, SMTP — og er ikke tegnet her",
+      "Advanced continues in the app — log, settings profile, extra times, SMTP — and is not drawn here",
+    ],
+
+    /* 1 · skinnen */
+    "sh.what": ["Skinnen har tre knapper", "The rail has three buttons"],
+    "sh.r1": ["Destinasjon. Kontrollrommet.", "Destination. The control room."],
+    "sh.r2": ["Destinasjon. Opptakene.", "Destination. The recordings."],
+    "sh.r3": [
+      "IKKE en destinasjon — tannhjulet, nederst. Ruten er uendret.",
+      "NOT a destination — the gear, at the foot. The route is unchanged.",
+    ],
+    "sh.measured": ["Målt i en ekte WKWebView", "Measured in a real WKWebView"],
+    "sh.m1": ["Trafikklysene, bunn", "Traffic lights, bottom"],
+    "sh.m2": ["Logoen", "The logo"],
+    "sh.m3": ["Tannhjulet", "The gear"],
+    "sh.m4": ["Statuslinjen", "The status line"],
+    "sh.note": [
+      "Skinnen får 28 px topp på macOS — høyden på systemets tittellinje, ikke et smakstall. Uten den ligger merket under vindusknappene.",
+      "The rail gets 28 px of top padding on macOS — the height of the system title bar, not a taste call. Without it the mark sits under the window buttons.",
+    ],
+    "cap.1": [
+      "Gammel logo, to destinasjoner, tannhjul nederst over statuslinjen — og de tre nav-testid-ene er fortsatt tre.",
+      "The old logo, two destinations, a gear at the foot above the status line — and the three nav test ids are still three.",
+    ],
+    "d.title": ["Hva denne tavla står for", "What this board stands for"],
+    "d1.a": [
+      "Tannhjulet er ikke en destinasjon.",
+      "The gear is not a destination.",
+    ],
+    "d1.ad": [
+      "Plasseringen er hele budskapet: man setter opp appen én gang og tar opp hver søndag.",
+      "The placement is the whole message: you set the app up once and record every Sunday.",
+    ],
+    "d1.b": [
+      "Logoen er den gamle, ordrett.",
+      "The logo is the old one, verbatim.",
+    ],
+    "d1.bd": [
+      "Hentet node for node fra den utsendte appen. En logo som er «nesten» lik er feilen ingen melder, men alle ser.",
+      "Taken node by node from the shipped app. A logo that is “nearly” the same is the bug nobody reports but everybody sees.",
+    ],
+    "d1.c": ["Ruten `setup` er urørt.", "The `setup` route is untouched."],
+    "d1.cd": [
+      "`nav-setup` og `aria-current` flyttet med knappen, så alt som spør skinnen «hvor er jeg?» får samme svar.",
+      "`nav-setup` and `aria-current` moved with the button, so everything that asks the rail “where am I?” gets the same answer.",
+    ],
+
+    /* 2 · kontrollrommet */
+    "rec.sub": [
+      "Trykk Start når gudstjenesten begynner.",
+      "Press Start when the service begins.",
+    ],
+    "rec.listening": ["Lytter", "Listening"],
+    "rec.source": ["Lyd fra", "Sound from"],
+    "rec.ch": ["kanal", "channel"],
+    "rec.start": ["Start opptak", "Start recording"],
+    "rec.nextauto": ["Neste automatiske opptak", "Next automatic recording"],
+    "rec.wake": ["Maskinen vekkes kl. 10:50", "The computer wakes at 10:50"],
+    "rec.last": ["Siste opptak", "Last recording"],
+    "c.reveal": ["Vis i Finder", "Show in Finder"],
+    "d.aug": ["august", "August"],
+    "vu.hear": ["Vi hører lyd", "We hear sound"],
+    "vu.quiet": ["Stille", "Quiet"],
+    "vu.good": ["Bra", "Good"],
+    "vu.loud": ["For høyt", "Too loud"],
+    "set.q1": ["Hvilken lyd?", "Which sound?"],
+    "set.q2": ["Hvor skal opptakene?", "Where do recordings go?"],
+    "set.q3": ["Hvilken kvalitet?", "Which quality?"],
+    "set.q4": ["Hvilken kirke?", "Which church?"],
+    "set.q5": [
+      "Hvem får beskjed hvis noe går galt?",
+      "Who gets told if something goes wrong?",
+    ],
+    "set.q5a": ["Ingen ennå", "Nobody yet"],
+    "set.q5d": [
+      "Ingen får e-post — maskinen varsler bare den som sitter ved den.",
+      "Nobody gets email — the computer only tells whoever is sitting at it.",
+    ],
+    "set.setup": ["Sett opp", "Set up"],
+    "set.camera": ["Ta med kamera", "Include camera"],
+    "set.auto": ["Ta opp automatisk", "Record automatically"],
+    "set.free": ["ledig", "free"],
+    "set.room": ["plass til", "room for"],
+    "q.good": ["God", "Good"],
+    "q.goodd": [
+      "MP3. Passer for nett og deling.",
+      "MP3. Good for the web and sharing.",
+    ],
+    "d.sunday": ["Søndag", "Sunday"],
+    "th.card": ["Kort", "Card"],
+    "th.title": ["Tittel", "Title"],
+    "th.from": ["Verdien kommer fra", "The value comes from"],
+    "th.opens": ["Folder ut når", "Folds out when"],
+    "tb.sound": ["«Endre» / «Velg lyd»", "“Change” / “Choose sound”"],
+    "tb.change": ["«Endre» / «Sett opp»", "“Change” / “Set up”"],
+    "tb.change2": ["«Endre»", "“Change”"],
+    "tb.toggle": ["bryteren sin", "its own toggle"],
+    "cap.2": [
+      "Venstre er sticky og levende; høyre er klargjøringen. Varslingskortet er gult fordi spørsmålet ikke er besvart.",
+      "The left is sticky and live; the right is the getting-ready. The alerts card is amber because the question is unanswered.",
+    ],
+    "d2.a": ["Start flytter seg aldri.", "Start never moves."],
+    "d2.ad": [
+      "Venstrekolonnen er `position: sticky`. Et kort som folder seg ut til høyre skal ikke dytte den ene knappen man skal treffe.",
+      "The left column is `position: sticky`. A card folding out on the right must not push the one button you have to hit.",
+    ],
+    "d2.b": ["Bildet er ikke en innstilling.", "The picture is not a setting."],
+    "d2.bd": [
+      "Derfor står det ØVERST i høyrekolonnen og ikke inne i kamera-kortet: det er et faktum om rommet, og skal kunne leses uten å folde ut noe.",
+      "That is why it sits at the TOP of the right column and not inside the camera card: it is a fact about the room, readable without unfolding anything.",
+    ],
+    "d2.c": [
+      "Gult betyr ubesvart, ikke «ukjent».",
+      "Amber means unanswered, not “unknown”.",
+    ],
+    "d2.cd": [
+      "Enhetslisten og diskplassen leses asynkront. Et gult kort som blir nøytralt etter 100 ms er det som lærer folk å ignorere gult.",
+      "The device list and free space are read asynchronously. An amber card that turns neutral after 100 ms is what teaches people to ignore amber.",
+    ],
+
+    /* 3 · utfoldet */
+    "set.builtin": ["Maskinens egen mikrofon", "The computer’s own microphone"],
+    "set.builtind": [
+      "Kun for test, eller hvis dere ikke har mikser.",
+      "For testing only, or if you have no mixer.",
+    ],
+    "set.mixer": ["Miksebord · 32 kanaler", "Mixer · 32 channels"],
+    "set.whichch": ["Hvilke kanaler?", "Which channels?"],
+    "set.chhint": [
+      "De som har lyd nå, lyser.",
+      "The ones with sound right now light up.",
+    ],
+    "set.usethis": ["Bruk denne", "Use this"],
+    "cap.3": [
+      "Samme komponent som i første-gangs-sekvensen, uten leden. To målere står på skjermen — og begge rives ut av treet når Start trykkes.",
+      "The same component the first-run sequence uses, minus the lede. Two meters are on screen — and both leave the tree when Start is pressed.",
+    ],
+    "d3.a": ["Ingen kopi av skjermen.", "No copy of the screen."],
+    "d3.ad": [
+      "`SoundPage` er den samme komponenten. To kopier er hvordan de to begynner å si forskjellige ting om samme tilstand.",
+      "`SoundPage` is the same component. Two copies are how the two begin saying different things about the same state.",
+    ],
+    "d3.b": [
+      "VU-regelen gjelder BEGGE målerne.",
+      "The VU rule covers BOTH meters.",
+    ],
+    "d3.bd": [
+      "Strømmen er refcountet. En måler som ble stående ville bedt om nøyaktig den enheten motoren nettopp tok, midt i en gudstjeneste.",
+      "The feed is refcounted. A meter left standing would ask for exactly the device the recorder just took, in the middle of a service.",
+    ],
+    "d3.c": ["Leden kommer tilbake.", "The lede comes back."],
+    "d3.cd": [
+      "`embedded`-effekten er symmetrisk. Uten oppryddingen ville Innstillinger mistet leden sin etter et besøk her.",
+      "The `embedded` effect is symmetric. Without the cleanup, Settings would lose its lede after a visit here.",
+    ],
+
+    /* 4 · kamerafasene */
+    "cam.title": ["Én ramme, to kilder", "One frame, two sources"],
+    "cam.sub": [
+      "Sideforhold, plassholder og merke er felles. Barnet er <video> eller <img> — og det er hele forskjellen.",
+      "Aspect ratio, placeholder and badge are shared. The child is <video> or <img> — and that is the whole difference.",
+    ],
+    "cam.live": [
+      "Merket sier hva kameraet FAKTISK leverer, ikke hva profilen ba om. Et 720p-kamera under en 1080p-profil skal være synlig her.",
+      "The badge says what the camera ACTUALLY delivers, not what the profile asked for. A 720p camera under a 1080p profile must be visible here.",
+    ],
+    "cam.denied": [
+      "Kameratilgang nektet — sjekk Systeminnstillinger",
+      "Camera access denied — check System Settings",
+    ],
+    "cam.deniedd": [
+      "`NotAllowedError` og alt annet er TO svar, ikke ett: de har hvert sitt neste steg.",
+      "`NotAllowedError` and everything else are TWO answers, not one: they have different next steps.",
+    ],
+    "cam.paused": [
+      "Opptakeren eier kameraet. Fasen settes fra SLIPPET, ikke fra `isRecording` — ellers ville flaten sagt «Starter kamera…» om enheten vi nettopp ga fra oss.",
+      "The recorder owns the camera. The phase is set by the RELEASE, not by `isRecording` — otherwise the surface would say “Starting camera…” about the device we just gave up.",
+    ],
+    "cam.noresponse": [
+      "Kamera svarte ikke — er det i bruk av et annet program?",
+      "Camera didn’t answer — is another program using it?",
+    ],
+    "cam.missing": [
+      'Kamera "{name}" ikke funnet — velg et annet',
+      'Camera "{name}" not found — choose another',
+    ],
+    "cam.starting": ["Starter kamera…", "Starting camera…"],
+    "cam.rule": [
+      "Constraints-regelen, pinnet i test",
+      "The constraints rule, pinned in a test",
+    ],
+    "cam.ruled": [
+      "ALDRI `height`. Legacy ba om bredde OG høyde OG sideforhold, og WKWebView kollapset de tre uoppfyllbare idealene til et beskåret kvadrat på et 1080p-kamera. Og `audio: false` alltid — dette er skallets eneste getUserMedia.",
+      "NEVER `height`. Legacy asked for width AND height AND aspect ratio, and WKWebView collapsed the three unsatisfiable ideals into a cropped square on a 1080p camera. And `audio: false` always — this is the shell’s only getUserMedia.",
+    ],
+    "th.when": ["Når", "When"],
+    "th.text": ["Tekst", "Text"],
+    "ph.off": ["tillegget er av", "the add-on is off"],
+    "ph.paused": [
+      "opptakeren eier kameraet (fra slippet)",
+      "the recorder owns the camera (from the release)",
+    ],
+    "ph.other": ["enhver annen gUM-feil", "any other gUM failure"],
+    "ph.pick": ["ingenting å vise ennå", "nothing to show yet"],
+    "ph.missing": [
+      "lagret navn er ikke i listen",
+      "the saved name is not in the list",
+    ],
+    "ph.starting": ["strømmen er bedt om", "the stream has been asked for"],
+    "ph.live": ["strømmen er festet", "the stream is attached"],
+    "ph.livet": ["— (merket)", "— (the badge)"],
+    "cap.4": [
+      "Tre av åtte. `data-phase` er kontrakten utover; ordlyden er ikke det.",
+      "Three of eight. `data-phase` is the contract outward; the wording is not.",
+    ],
+    "d4.a": [
+      "Fasen og teksten er TO ting.",
+      "The phase and the text are TWO things.",
+    ],
+    "d4.ad": [
+      "En journeytest som venter på «Starter kamera…» tester katalogen, ikke appen.",
+      "A journey test waiting for “Starting camera…” tests the catalogue, not the app.",
+    ],
+    "d4.b": [
+      "Feilen går før enhetslisten.",
+      "The failure comes before the device list.",
+    ],
+    "d4.bd": [
+      "En nektet tilgang gjør «Ingen kameraer funnet» til en oppfordring om å sjekke en kabel som er i orden.",
+      "A denied permission turns “No cameras found” into an invitation to check a cable that is fine.",
+    ],
+    "d4.c": [
+      "Sju av ni tekster er portert ordrett.",
+      "Seven of nine texts are ported verbatim.",
+    ],
+    "d4.cd": [
+      "Tekst en frivillig har lest i produksjon i et år er ikke tekst vi skal finne på på nytt. De to som er skrevet om, viste til en «oppdater»-knapp som ikke finnes i dette skallet.",
+      "Text a volunteer has read in production for a year is not text to reinvent. The two that were rewritten pointed at a “refresh” button this shell does not have.",
+    ],
+
+    /* 5 · overlegget */
+    "ov.room": ["Plass til", "Room for"],
+    "ov.camera": ["Kamera", "Camera"],
+    "ov.stop": ["Stopp opptaket", "Stop recording"],
+    "ov.autostop": ["Stopper av seg selv om 27:46", "Stops by itself in 27:46"],
+    "ov.plus": ["+ 15 min", "+ 15 min"],
+    "ov.cancel": ["Avbryt auto-stopp", "Cancel auto-stop"],
+    "cap.5": [
+      "Brikka navngir enheten; bare bildet kan si at det kommer noe fra den. Begge står — de svarer på hvert sitt spørsmål.",
+      "The chip names the device; only the picture can say something is coming from it. Both stay — they answer different questions.",
+    ],
+    "d5.a": ["Poll, ikke strøm.", "Poll, not stream."],
+    "d5.ad": [
+      "Motoren eier kameraet. 83 ms, med en in-flight-vakt: uten den stabler kallene seg til en kø på ti når bakenden blir treg.",
+      "The engine owns the camera. 83 ms, with an in-flight guard: without it the calls stack into a queue of ten when the backend slows down.",
+    ],
+    "d5.b": [
+      "Pollen går bevisst utenom `call()`.",
+      "The poll deliberately bypasses `call()`.",
+    ],
+    "d5.bd": [
+      "12 Hz i en hel gudstjeneste ville overskrevet hele diagnostikk-ringen på fire sekunder — altså slettet sporene etter nettopp det opptaket som går galt.",
+      "12 Hz for a whole service would overwrite the entire diagnostics ring in four seconds — erasing the traces of the very recording that is going wrong.",
+    ],
+    "d5.c": [
+      "Sideforholdet leses av JPEG-headeren.",
+      "The aspect ratio is read from the JPEG header.",
+    ],
+    "d5.cd": [
+      "Så rammen ikke hopper når det første bildet lander.",
+      "So the frame does not jump when the first picture lands.",
+    ],
+
+    /* 6 · innstillinger */
+    "ch.lede": [
+      "Navnet og språket appen bruker.",
+      "The name and language the app uses.",
+    ],
+    "ch.name": ["Menighet eller kirke", "Congregation or church"],
+    "ch.named": ["Brukes i varslings-e-poster.", "Used in alert emails."],
+    "ch.lang": ["Språk i appen", "Language in the app"],
+    "ch.langd": ["Bytter med én gang.", "Switches immediately."],
+    "ch.langval": ["Norsk", "English"],
+    "adv.title": ["Avansert", "Advanced"],
+    "adv.engine": ["Opptaksmotor", "Recording engine"],
+    "adv.engined": [
+      "Bytt bare hvis lyden er hakkete.",
+      "Only switch if the sound stutters.",
+    ],
+    "adv.native": ["Innebygd", "Built-in"],
+    "adv.preroll": ["Forhåndsbuffer", "Pre-roll buffer"],
+    "adv.prerolld": [
+      "Lyd som tas med fra før du trykket Start.",
+      "Sound kept from before you pressed Start.",
+    ],
+    "adv.sec": ["sekunder", "seconds"],
+    "adv.more": [
+      "Flere tider og spesialopptak",
+      "Extra times and one-off recordings",
+    ],
+    "adv.mored": [
+      "Faste tidspunkter utover det ene, og enkeltdatoer.",
+      "Fixed times beyond the one, and single dates.",
+    ],
+    "adv.wake": ["Vekk maskinen fra dvale", "Wake the computer from sleep"],
+    "adv.waked": [
+      "Denne maskinen kan vekkes fra dvale.",
+      "This computer can be woken from sleep.",
+    ],
+    "adv.update": ["Oppdateringer", "Updates"],
+    "adv.updated": [
+      "Stabil anbefales. Beta får nye ting først.",
+      "Stable is recommended. Beta gets new things first.",
+    ],
+    "adv.stable": ["Stabil", "Stable"],
+    "adv.diag": ["Del anonym diagnostikk", "Share anonymous diagnostics"],
+    "adv.diagd": [
+      "Aldri lyd, navn eller filer. Du kan se nøyaktig hva som sendes.",
+      "Never audio, names or files. You can see exactly what is sent.",
+    ],
+    "adv.show": ["Vis", "Show"],
+    "cap.6": [
+      "Kirkeprofil øverst, «AVANSERT» som seksjonsnavn, ingen av de fem søndagsspørsmålene.",
+      "The church profile at the top, “ADVANCED” as a section name, none of the five Sunday questions.",
+    ],
+    "d6.a": ["Én flate, ikke to faner.", "One surface, not two tabs."],
+    "d6.ad": [
+      "`?goto=settings:general` og tannhjulet lander på det samme, og det er hele skjermen.",
+      "`?goto=settings:general` and the gear land on the same thing, and it is the whole screen.",
+    ],
+    "d6.b": ["Kirkeprofilen flyttet IKKE.", "The church profile did NOT move."],
+    "d6.bd": [
+      "Navnet og språket settes én gang. Det er ikke noe man tar stilling til fem minutter før gudstjenesten.",
+      "The name and language are set once. They are not something you decide five minutes before a service.",
+    ],
+    "d6.c": [
+      "De gamle fanene lever som omdirigering.",
+      "The old tabs live on as a redirect.",
+    ],
+    "d6.cd": [
+      'En `navigate("setup", { tab: "sound" })` fra et kallsted vi ikke fant sendes videre til kortet. En dyplenke som lander riktig er ikke en feil — den er en id vi ikke rakk å rydde.',
+      'A `navigate("setup", { tab: "sound" })` from a call site we did not find is forwarded to the card. A deep link that lands correctly is not a bug — it is an id we did not get around to tidying.',
+    ],
+
+    /* implementert */
+    "th.what": ["Hva", "What"],
+    "th.where": ["Hvor", "Where"],
+    "th.guard": ["Vakt", "Guard"],
+    "im.logo": ["Den gamle logoen + favikon", "The old logo + favicon"],
+    "im.logog": [
+      "Node-for-node-sammenligning mot d982012",
+      "Node-by-node comparison against d982012",
+    ],
+    "im.gear": [
+      "To destinasjoner, tannhjul nederst",
+      "Two destinations, gear at the foot",
+    ],
+    "im.gearg": [
+      "nav-*-antall = 3 · plasseringstest (mutasjonsbevist)",
+      "nav-* count = 3 · placement test (mutation-proved)",
+    ],
+    "im.room": ["To-kolonne-kontrollrommet", "The two-column control room"],
+    "im.roomg": [
+      "WKWebView-probe @1180×760 og @1000×760",
+      "WKWebView probe @1180×760 and @1000×760",
+    ],
+    "im.cards": [
+      "Seks kort med kompaktverdi",
+      "Six cards with a compact value",
+    ],
+    "im.cardsg": [
+      "control-core.test.ts · e2e/control-room.spec.ts",
+      "control-core.test.ts · e2e/control-room.spec.ts",
+    ],
+    "im.embed": [
+      "`embedded` — leden av og på",
+      "`embedded` — the lede off and on",
+    ],
+    "im.embedg": [
+      "«Innstillinger beholder leden sin …» (mutasjonsbevist)",
+      "“Settings keeps its lede …” (mutation-proved)",
+    ],
+    "im.anchor": [
+      "Ankeret folder ut, ruller og pulserer",
+      "The anchor unfolds, scrolls and pulses",
+    ],
+    "im.anchorg": [
+      "En rad per alias + en vakt som krysser kortlista",
+      "One row per alias + a guard crossing the card list",
+    ],
+    "im.live": ["Levende preview på Opptak", "Live preview on Record"],
+    "im.liveg": [
+      "Fase-tabell i node-gaten · e2e leser data-phase",
+      "Phase table in the node tier · e2e reads data-phase",
+    ],
+    "im.poll": [
+      "Pollet kamerabilde i overlegget",
+      "Polled camera picture in the overlay",
+    ],
+    "im.pollg": [
+      "In-flight-vakten (mutasjonsbevist) · jpeg-dims.test.ts",
+      "The in-flight guard (mutation-proved) · jpeg-dims.test.ts",
+    ],
+    "im.own": [
+      "Slipp FØR start, ta igjen ved nei",
+      "Release BEFORE start, resume on refusal",
+    ],
+    "im.owng": [
+      "«previewen slipper kameraet FØR start_recording» (mutasjonsbevist)",
+      "“the preview releases the camera BEFORE start_recording” (mutation-proved)",
+    ],
+    "im.vu": [
+      "Begge målerne ut ved opptaksstart",
+      "Both meters out when recording starts",
+    ],
+    "im.vug": [
+      "«opptaksstart river BEGGE målerne ut av treet» (mutasjonsbevist)",
+      "“starting a recording tears BOTH meters out of the tree” (mutation-proved)",
+    ],
+    "im.settings": [
+      "Innstillinger = kirkeprofil + Avansert",
+      "Settings = church profile + Advanced",
+    ],
+    "im.settingsg": [
+      "e2e/settings.spec.ts · advanced.spec.ts, re-pekt med byte-identiske titler",
+      "e2e/settings.spec.ts · advanced.spec.ts, re-pointed with byte-identical titles",
+    ],
+    "rest.title": [
+      "Dette er IKKE gjort — les tavlene med det i bakhodet",
+      "This is NOT done — read the boards with that in mind",
+    ],
+    "rest.a": ["Riggtest hos eieren.", "Rig test on the owner’s machine."],
+    "rest.ad": [
+      "Alt over er e2e + WKWebView-probe. Den ekte mikseren, det ekte kameraet og selve vindusdraget gjenstår — se docs/SMOKE-TEST.md §3, §4 og §9.",
+      "Everything above is e2e + a WKWebView probe. The real mixer, the real camera and the window drag itself remain — see docs/SMOKE-TEST.md §3, §4 and §9.",
+    ],
+    "rest.b": [
+      "«Starter kamera…» i 3-sekundersvinduet.",
+      "“Starting camera…” in the 3-second window.",
+    ],
+    "rest.bd": [
+      "Etter et opptak står rammen på `starting` mens restart-timeren løper, uten at noe faktisk starter. Ikke usant, men ikke presist — en egen fase for ventingen er ikke bygget.",
+      "After a recording the frame sits at `starting` while the restart timer runs, without anything actually starting. Not untrue, but not precise — a separate phase for the wait is not built.",
+    ],
+    "rest.c": [
+      "Atlaset er ikke re-fotografert.",
+      "The atlas has not been re-photographed.",
+    ],
+    "rest.cd": [
+      "docs/design/atlas/ viser v0.15-skallet. Fotografen er slettet, og en ny scenetabell er en egen jobb.",
+      "docs/design/atlas/ shows the v0.15 shell. The photographer is deleted, and a new scene table is its own job.",
+    ],
+    "rest.d": ["Dette er en tegning.", "This is a drawing."],
+    "rest.dd": [
+      "Tegnet mot koden som fasit, men fortsatt en tegning. Skjermbildepasset hører til riggtesten.",
+      "Drawn against the code as the source of truth, but still a drawing. The screenshot pass belongs to the rig test.",
+    ],
+
+    /* eiers fire krav */
+    "th.want": ["Eieren ville ha", "The owner wanted"],
+    "th.lives": ["Bor i", "Lives in"],
+    "th.board": ["Tavle", "Board"],
+    k1: [
+      "Den gamle logoen tilbake øverst i venstre hjørne",
+      "The old logo back in the top-left corner",
+    ],
+    k2: [
+      "Kamera-preview når kamera er på",
+      "A camera preview when the camera is on",
+    ],
+    k3: [
+      "Alt viktig redigerbart på ÉN skjerm — Opptak blir kontrollrommet",
+      "Everything important editable on ONE screen — Record becomes the control room",
+    ],
+    k4: [
+      "Innstillinger ut av nav-fanene, inn som tannhjul",
+      "Settings out of the nav tabs, in as a gear",
+    ],
+    "lock.title": [
+      "Eiervalgene som ble låst før koden ble skrevet",
+      "The owner’s choices, locked before any code was written",
+    ],
+    "lock.a": [
+      "Tannhjul + «Innstillinger» NEDERST.",
+      "Gear + “Settings” at the FOOT.",
+    ],
+    "lock.ad": [
+      "Den gamle appens mønster, over statuslinjen.",
+      "The old app’s pattern, above the status line.",
+    ],
+    "lock.b": ["ALT på Opptak.", "EVERYTHING on Record."],
+    "lock.bd": [
+      "Lydkilde m/ kanaler, mappe, kvalitet, kamera m/ preview, auto-opptak, varsling. Tannhjulet åpner kun Innstillinger/Avansert.",
+      "Sound source with channels, folder, quality, camera with preview, automatic recording, alerts. The gear opens only Settings/Advanced.",
+    ],
+    "lock.c": [
+      "Kortet folder seg ut PÅ STEDET.",
+      "The card folds out IN PLACE.",
+    ],
+    "lock.cd": [
+      "Ikke en ny skjerm, ikke et vindu.",
+      "Not a new screen, not a modal.",
+    ],
+    "lock.d": ["Fanene ellers som nå.", "The tabs are otherwise as they were."],
+    "lock.dd": [
+      "Oppsett-destinasjonen forsvinner; første-gangs-løpet består uendret.",
+      "The Setup destination disappears; the first-run sequence stands unchanged.",
+    ],
+  };
+
+  /* Merket, ordrett fra app/ui/AppLogo/AppLogo.tsx — inkludert
+     `srlogo-`-prefikset, som er kollisjonsvakten mot app-icon.svg. */
+  const LOGO = `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="srlogo-bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#2A4E92"/><stop offset="1" stop-color="#172F5E"/>
+      </linearGradient>
+      <radialGradient id="srlogo-glow" cx="0.26" cy="0.2" r="0.95">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+        <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="srlogo-gold" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#F2D58A"/><stop offset="1" stop-color="#EBB84B"/>
+      </linearGradient>
+      <clipPath id="srlogo-clip"><rect width="1024" height="1024" rx="228"/></clipPath>
+    </defs>
+    <g clip-path="url(#srlogo-clip)">
+      <rect width="1024" height="1024" fill="url(#srlogo-bg)"/>
+      <rect width="1024" height="1024" fill="url(#srlogo-glow)"/>
+      <path d="M 701.3 375.6 A 161.3 161.3 0 0 1 701.3 583.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <path d="M 322.7 375.6 A 161.3 161.3 0 0 0 322.7 583.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <path d="M 766.5 301.6 A 270.8 270.8 0 0 1 766.5 657.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <path d="M 257.4 301.6 A 270.8 270.8 0 0 0 257.4 657.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+      <rect x="479.5" y="320.0" width="65.0" height="425.8" rx="6.2" fill="url(#srlogo-gold)"/>
+      <rect x="376.8" y="437.6" width="270.4" height="65.0" rx="6.2" fill="url(#srlogo-gold)"/>
+    </g>
+  </svg>`;
+
+  const ICONS = {
+    record:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg>',
+    library:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M6 20h12"/></svg>',
+    /* Et EKTE tannhjul, geometrien fra PageShell.tsx: senter (12,12),
+       nav r 2,6, ring r 6,4, åtte tenner til r 9,2 for hver 45°. */
+    setup:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="2.6"/><path d="M12 5.6V2.8M12 18.4V21.2M5.6 12H2.8M18.4 12H21.2M16.5 7.5L18.5 5.5M7.5 7.5L5.5 5.5M7.5 16.5L5.5 18.5M16.5 16.5L18.5 18.5"/></svg>',
+  };
+  const NAV = {
+    record: "nav.record",
+    library: "nav.library",
+    setup: "nav.setup",
+  };
+  const STATUS = {
+    ready: ["good", "st.ready"],
+    nosound: ["warn", "st.nosound"],
+    rec: ["rec", "st.rec"],
+  };
+
+  let LANG = 0;
+  function renderRails() {
+    document.querySelectorAll(".a-rail[data-rail]").forEach((r) => {
+      const on = r.dataset.rail,
+        st = STATUS[r.dataset.status] || STATUS.ready,
+        church = r.dataset.church === "set";
+      const dest = ["record", "library"]
+        .map(
+          (k) =>
+            `<button class="${k === on ? "on" : ""}">${ICONS[k]}<span>${T[NAV[k]][LANG]}</span></button>`,
+        )
+        .join("");
+      r.innerHTML =
+        `<div class="a-logo"><i>${LOGO}</i><b>SundayRec</b></div>` +
+        `<div class="a-church ${church ? "" : "unset"}">${church ? "Bryn menighet" : LANG ? "Not set up yet" : "Ikke satt opp ennå"}</div>` +
+        `<div class="a-nav">${dest}</div>` +
+        `<div class="a-gear"><button class="${on === "setup" ? "on" : ""}">${ICONS.setup}<span>${T["nav.setup"][LANG]}</span></button></div>` +
+        `<div class="a-status"><div class="line"><i class="dot ${st[0]}"></i><span>${T[st[1]][LANG]}</span></div><div class="sub">SundayRec 0.16.0-beta.2</div></div>`;
+    });
+  }
+  function applyLang() {
+    const missing = [];
+    document.querySelectorAll("[data-t]").forEach((el) => {
+      const k = el.dataset.t;
+      if (!T[k]) {
+        missing.push(k);
+        el.textContent = "⟨" + k + "⟩";
+        el.style.outline = "2px solid red";
+        return;
+      }
+      el.textContent = T[k][LANG];
+    });
+    renderRails();
+    document
+      .querySelectorAll(".seg [data-lang]")
+      .forEach((b) =>
+        b.setAttribute(
+          "aria-pressed",
+          String((b.dataset.lang === "en") === (LANG === 1)),
+        ),
+      );
+    if (missing.length) console.warn("missing keys", missing);
+  }
+  document.querySelectorAll(".seg [data-lang]").forEach((b) =>
+    b.addEventListener("click", () => {
+      LANG = b.dataset.lang === "en" ? 1 : 0;
+      applyLang();
+    }),
+  );
+
+  /* Skalér tavlene ned i rammene sine — 1180×760 er alltid tegnestørrelsen. */
+  function scale() {
+    document.querySelectorAll(".board-wrap").forEach((w) => {
+      const b = w.querySelector(".board");
+      b.style.transform = "scale(" + w.clientWidth / 1180 + ")";
+    });
+  }
+  new ResizeObserver(scale).observe(document.body);
+  scale();
+  applyLang();
+</script>

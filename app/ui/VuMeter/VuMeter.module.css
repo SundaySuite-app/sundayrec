@@ -1,0 +1,32 @@
+.vu {
+  display: grid;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.word {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.numbers {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+
+/*
+ * Høyden er de to stolpene (14 px) pluss luften mellom (8 px) — den samme
+ * aritmetikken som `BAR_H`/`BAR_GAP` i VuMeter.tsx, fordi tegningen regner i
+ * enhetspiksler og elementet må gi den nøyaktig den plassen.
+ */
+.canvas {
+  display: block;
+  width: 100%;
+  height: 36px;
+}

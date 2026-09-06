@@ -15,17 +15,7 @@
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
-// Sunday Account (SSO) — the desktop login over the shared `sunday-auth` crate.
-// The browser loopback PKCE shell + shared-session persistence; the pure
-// decisions live in `sunday_auth::{pkce,supabase,session}`. NETWORK-UNVERIFIED.
-pub mod account;
 pub mod audio;
-// Bridge Integration #2 — the Rec-side live cue-bridge consumer. The
-// channel-name + LiveEvent→chapter fold live in `sundayrec_core`; this seam
-// owns the Supabase Realtime subscribe behind the default-off `bridge` feature
-// (INFRA-UNVERIFIED). The pure decode/channel helpers compile either way.
-pub mod bridge_live;
-pub mod cloud;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
 // `<app-data>/crashes/`. Featureless and dependency-free: a panic used to render
@@ -46,34 +36,24 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
-// E8 learning loops — the persistence edge for the corrections a human makes to
-// the detector's proposals. Writes into the `Feedback` sidecar via
-// `editor::record_trim_adjustment`; the decisions behind it are
-// `sundayrec_core::trim_feedback` and `sundayrec_core::feedback`.
-pub mod learning;
 // E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
 // `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
 // has no console and a macOS .app from Finder discards stdout, so an installed
 // app's log went to a file descriptor pointed at nothing.
 pub mod logfile;
 pub mod media;
-// R3 NDI receiver — default-off `ndi` feature (STUB; SDK not bundled). The
-// source-discovery/pixfmt/input-arg logic is `sundayrec_core::ndi`; this seam
-// returns `feature_disabled` (default) or a clear "NDI SDK not bundled" error.
-pub mod ndi;
 // The notification dispatch seam — ONE place a failure reaches the operator
-// (native + e-mail + webhook) and one place a degradation reaches the screen.
+// (native + e-mail) and one place a degradation reaches the screen.
 // Featureless: the `email` leg compiles out cleanly under
-// `--no-default-features` and the routing matrix degrades to native + webhook.
+// `--no-default-features` and the routing matrix degrades to native only.
 // The matrix itself is the unit-tested `sundayrec_core::notify`.
 pub mod notify;
 pub mod platform;
 pub mod preflight;
-// PU-3 podcast RSS publish — default-off `publish` feature (NETWORK-UNVERIFIED).
-// The XML shaping is `sundayrec_core::feed`; this seam maps history + writes/uploads.
-#[cfg(feature = "publish")]
-pub mod publish;
 pub mod recorder;
+// R3: THE save-folder resolution seam — every "configured folder or the
+// Documents default" question goes through here (7 divergent copies before).
+pub mod save_folder;
 pub mod scheduler;
 pub mod secrets;
 pub mod settings;
@@ -84,12 +64,6 @@ pub mod settings;
 // samples RSS + open descriptors throughout. Everything long is `#[ignore]`d;
 // the nightly `.github/workflows/soak.yml` runs the lavfi variant.
 pub mod soak;
-// R3 live RTMP streaming — default-off `streaming` feature (NETWORK/HARDWARE-
-// UNVERIFIED). The tee/encode/overlay argv + key validation are
-// `sundayrec_core::{streaming,overlay}`; this seam spawns ffmpeg + reads the
-// per-destination keys from the keychain. `stream_start` returns
-// `feature_disabled` in the default build.
-pub mod streaming;
 // E3 opt-in telemetry — the persistence seam around the pure wire contract and
 // consent state machine in `sundayrec_core::telemetry`. Owns the random install
 // id, the consent row, the counter map and the durable outbox. Featureless, and
@@ -98,16 +72,15 @@ pub mod streaming;
 pub mod telemetry;
 // E2.2 observability — ONE supervisor for every long-lived background task. The
 // scheduler had this pattern inline and was the only task that did; extracting
-// it gave the cloud worker, the review-reminder tick and the trash sweep the
-// same self-healing, and gave every restart a record. Session-scoped tasks
-// (recorder/streaming/preview supervisors, the low-disk poller) deliberately
-// stay bare — see the module docs for why restarting them would be WRONG.
+// it gave the trash sweep the same self-healing, and gave every restart a
+// record. Session-scoped tasks
+// (the recorder supervisor, the low-disk poller) deliberately stay bare — see
+// the module docs for why restarting them would be WRONG.
 pub mod supervise;
 pub mod test_recording;
-// PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
-// `default` and both release builds (install failure only logs a warning). The
-// menu-model + link parse are in `sundayrec_core`; this seam maps them to tauri
-// menu/tray + the scheme handler.
+// PU-2 menubar tray — `tray` feature, in `default` and both release builds
+// (install failure only logs a warning). The menu-model is in
+// `sundayrec_core`; this seam maps it to tauri menu/tray.
 #[cfg(feature = "tray")]
 pub mod tray;
 // Papirkurv — the recoverable delete behind Historikk. Files move to
@@ -115,17 +88,9 @@ pub mod tray;
 // until the entry is purged, which is the only step that loses anything.
 pub mod trash;
 
-/// Push a fresh review-queue count to the menubar tray. A no-op when the `tray`
-/// feature is off, so callers (the review commands) stay `cfg`-free.
-#[cfg(feature = "tray")]
-pub(crate) fn tray_note_review_queue(app: &tauri::AppHandle) {
-    tray::refresh_review_queue(app);
-}
-#[cfg(not(feature = "tray"))]
-pub(crate) fn tray_note_review_queue(_app: &tauri::AppHandle) {}
-
 /// Set the menubar tray's language from a UI language code. No-op without the
-/// `tray` feature — see [`tray_note_review_queue`].
+/// `tray` feature, so the caller (the `tray_set_language` command) stays
+/// `cfg`-free.
 #[cfg(feature = "tray")]
 pub(crate) fn tray_note_language(app: &tauri::AppHandle, code: &str) {
     tray::set_lang(app, sundayrec_core::tray::TrayLang::from_code(Some(code)));
@@ -139,7 +104,25 @@ pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
 // DTO + `UpdateEngine` compile in every build; `update_check`/
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
+// F1 A8 — the cached UI language, for the two places that cannot ask the
+// database for it: the capture loop (a settings read there is the 2026-07-31
+// back-pressure bug again) and `supervise::TaskAlert`. Everywhere else keeps
+// reading `settings.language` directly; see the module docs.
+pub mod ui_lang;
 pub mod util;
+// P3b — the macOS application menu. It exists ONLY so Cmd+Q is interceptable at
+// all: tauri's default menu wires Quit to AppKit's `terminate:`, which never
+// raises `RunEvent::ExitRequested`, so a Cmd+Q mid-service killed the process
+// without even stopping the capture. See the module docs for the full trail.
+// Compiled on every platform (so the Linux and Windows CI lanes clippy it too)
+// but INSTALLED only on macOS — see the `.menu(...)` call in `run`.
+pub mod menu;
+// P3 «Frivilligen først» — the main window's close button. Closing the window
+// used to END the service's recording (no `on_window_event` existed, so the last
+// window closing raised `ExitRequested`, whose handler stops the recorder).
+// During a session the close now HIDES the window instead; outside one it quits
+// exactly as before. The decision is the pure `sundayrec_core::window`.
+pub mod window;
 // E9 neural voice-activity backend (Silero VAD over `tract`). DEFAULT-OFF and
 // deliberately CALLER-LESS: no Tauri command, no shipped code path. It is here
 // to be measured before the unified sermon detector is allowed to use it. The
@@ -147,12 +130,6 @@ pub mod util;
 #[cfg(feature = "vad")]
 pub mod vad;
 pub mod wake;
-// PU-5 whisper transcription — `whisper` feature, in `default` and the macOS
-// release (Metal path verified on a real M1 Pro; Windows-runtime still an owner
-// rig test). The model registry/argv/normalise are `sundayrec_core::whisper`;
-// this seam runs inference (whisper-rs). The pure list/status entry points
-// compile without it; `transcribe` returns `feature_disabled` when off.
-pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -203,13 +180,10 @@ pub fn run() {
     // root-cause fix for the piled-up instances that crashed Windows Audio. (FIKS 1.)
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-        use tauri::Manager;
         tracing::info!("a second SundayRec launch was blocked — focusing the existing window");
-        if let Some(w) = app.get_webview_window("main") {
-            let _ = w.show();
-            let _ = w.unminimize();
-            let _ = w.set_focus();
-        }
+        // Also THE way back when the window was hidden by a close during a
+        // recording: launching SundayRec again brings it up.
+        window::show_main(app);
     }));
     let builder = builder
         .plugin(tauri_plugin_opener::init())
@@ -229,11 +203,6 @@ pub fn run() {
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
-    // PU-2: register the `sundayrec://` deep-link plugin only under `--features
-    // tray` (the scheme handler feeds `tray::dispatch_deep_link`). GUI-UNVERIFIED.
-    #[cfg(feature = "tray")]
-    let builder = builder.plugin(tauri_plugin_deep_link::init());
-
     let builder = builder
         // The VU engine holds at most one running cpal session; commands reach
         // it through managed state.
@@ -242,20 +211,20 @@ pub fn run() {
         // start/stop/reminder/preflight events (Fase 5). Started in setup once
         // the db pool is managed.
         .manage(scheduler::SchedulerEngine::new())
-        // The wake engine schedules OS wake-from-sleep timers (pmset/schtasks)
+        // A3: the one scheduled run in flight, stamped by the scheduler after a
+        // successful start and consumed by `notify::dispatch_receipt`. It is the
+        // only thing that can tell a recording somebody pressed Start for from
+        // one that ran while the building was empty — the recorder itself has no
+        // idea which button began the take, and teaching it would mean editing
+        // the capture path for a reporting reason.
+        .manage(scheduler::ScheduledRunMarker::new())
+        // The wake engine schedules OS wake-from-sleep timers (pmset on macOS,
+        // an in-process SetWaitableTimer on Windows)
         // for upcoming recordings + dedups repeated reschedules (Fase 5.2).
         .manage(wake::WakeEngine::new())
-        // The preview engine holds at most one running ffmpeg MJPEG stream.
-        .manage(media::preview::PreviewEngine::new())
         // The recorder engine holds at most one running unified ffmpeg capture
         // (Spike B). Commands reach it through managed state.
         .manage(recorder::engine::RecorderEngine::new())
-        // R3: the live-stream engine holds at most one running RTMP ffmpeg.
-        // Compiles in every build; only the spawn is feature-gated.
-        .manage(streaming::StreamEngine::new())
-        // R3 NDI: the transmit engine holds at most one running NDI output
-        // (camera → libndi). Compiles in every build; the sender is feature-gated.
-        .manage(ndi::NdiOutputEngine::new())
         // R7: the update engine holds the live check/download status the
         // renderer polls. Compiles in every build; the network/install seam is
         // gated behind the `updater` feature (in `default`).
@@ -267,23 +236,7 @@ pub fn run() {
         // The export engine holds the ONE in-flight render so
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
-        .manage(editor::ExportEngine::new())
-        // Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort a
-        // pending consent before the 300 s timeout.
-        .manage(cloud::ConnectGuard::new())
-        // Tracks in-flight whisper model downloads so `whisper_cancel_download`
-        // can abort one (one entry per active model id).
-        .manage(whisper::DownloadGuard::new())
-        // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
-        // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new())
-        // E1.1: inbound `sundayrec://captions` links that passed validation and
-        // are waiting for the operator to confirm. Nothing is written until a
-        // parked id comes back through `deeplink_confirm_captions`, so a page
-        // that fires the scheme cannot make us touch the disk on its own.
-        // Featureless on purpose: the same IPC surface exists with and without
-        // the `tray` feature (without it nothing ever parks).
-        .manage(commands::deeplink::PendingDeepLinks::new());
+        .manage(editor::ExportEngine::new());
 
     // PU-1: ONE alert throttle window for the whole process lifetime. The gate
     // (10 min per recipient+error pair) is what stops a flapping device from
@@ -294,7 +247,20 @@ pub fn run() {
     #[cfg(feature = "email")]
     let builder = builder.manage(email::AlertGateState::default());
 
+    // P3b: replace tauri's default macOS menu with the same menu, one item
+    // rewired — Quit. Off macOS tauri installs no menu at all, and adding one
+    // would be a visible regression, so this is macOS-only by construction.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::handle_event(app, event.id.as_ref()));
+
     builder
+        // P3 «Frivilligen først»: the close button must not end the service's
+        // recording. `window::on_event` hides the window instead while a capture
+        // is live or finalising, and stands aside otherwise — see
+        // `sundayrec_core::window::close_action` for the (unit-tested) rule.
+        .on_window_event(window::on_event)
         .setup(|app| {
             use tauri::Manager;
 
@@ -335,20 +301,12 @@ pub fn run() {
                     )
                 })?;
 
-            // Fase 6: drain the durable cloud-upload queue in the background.
-            // Idles cleanly when Google OAuth isn't configured (no spinning).
-            cloud::worker::spawn(
-                app.handle().clone(),
-                pool.clone(),
-                cloud::config::GoogleOAuthConfig::resolve(),
-            );
-
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch
             // must never shoot the primary's live capture) and before both the
             // crash-recovery scan (which reads, then deletes, the very files an
             // orphan is still writing) and our first own sidecar spawn
-            // (preroll/preview below), which the sweep can't tell from an
+            // (preroll below), which the sweep can't tell from an
             // orphan. Sweep first, THEN arm the reaper (the sweep must not
             // shoot the fresh reaper's pattern-carrying shell).
             platform::sweep_orphaned_sidecars();
@@ -421,19 +379,37 @@ pub fn run() {
             // Subscribe the notification dispatcher to the recorder's terminal
             // error event. Until now that event reached the tray badge and the
             // renderer and stopped there: an unattended failure produced no
-            // native notification, no e-mail and no webhook, which is precisely
-            // the case those three channels exist for. Observational (`listen`),
+            // native notification and no e-mail, which is precisely the case
+            // those two channels exist for. Observational (`listen`),
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
-            // Arm the review-queue reminder tick. The 24 h / 48 h / 7 d / auto-
-            // discard ladder in `sundayrec_core::review_queue` was complete and
-            // tested, and reachable only through a command with no callers —
-            // so an episode nobody reviewed sat in silence until it deleted
-            // itself a fortnight later. Its own small task, deliberately not the
-            // scheduler supervisor: nothing about a reminder belongs inside the
-            // loop that has to fire a recording start on time.
-            notify::reminders::spawn(app.handle().clone());
+            // Give the handle-less seams somewhere to raise a warning. The
+            // Papirkurv is plain filesystem code called from six places; when
+            // it finds a manifest it cannot read, this is how the volunteer
+            // hears about it instead of just the log file.
+            notify::arm_detached(app.handle().clone());
+
+            // …and the e-mail relay's pump, beside it. `maybe_spawn` starts
+            // NOTHING unless this machine has a subscription record: an install
+            // that never enrolled an address has no task, no connection pool and
+            // nothing that could resolve a hostname. When there is one, this is
+            // what delivers the messages that were queued while the app was
+            // closed — a failure alert written on Sunday evening on a machine
+            // that then lost its network reaches the inbox on Monday morning,
+            // instead of waiting for somebody to open the settings panel.
+            {
+                let handle = app.handle().clone();
+                crash::watch_handle(
+                    "notify::relay::startup",
+                    tauri::async_runtime::spawn(async move {
+                        let Some(db) = handle.try_state::<db::Db>() else {
+                            return;
+                        };
+                        notify::relay::sender::maybe_spawn(&handle, &db.pool).await;
+                    }),
+                );
+            }
 
             // Expire the Papirkurv. Without this the trash is a folder that
             // only ever grows — a delete that silently keeps every byte
@@ -446,8 +422,9 @@ pub fn run() {
             //     path; a panic, a kill or a `SUNDAYREC_BENCH_KEEP` run leaves
             //     it, and a 60 s 96 kHz stereo capture is ~23 MB.
             //   - `.__editor_tmp` / `.__editor_bak` beside recordings — swept
-            //     only by `editor_cleanup_temp_files`, a Tauri command with ZERO
-            //     callers, so a crashed export left a full-size copy of the
+            //     only by an `editor_cleanup_temp_files` Tauri command with ZERO
+            //     callers (deleted in V1/PR3; THIS sweep is the whole cleanup
+            //     now), so a crashed export left a full-size copy of the
             //     service on disk forever.
             // Background + best-effort: this is hygiene, not a startup
             // dependency, and it must never delay the window appearing.
@@ -502,34 +479,17 @@ pub fn run() {
             // every later rebuild a handle to `set_menu`/`set_icon` through.
             // `wire_state_sources` then subscribes the tray to the recorder's
             // and scheduler's existing events, so the menu tracks reality
-            // instead of freezing at `TrayState::default()`. The deep-link
-            // plugin (`sundayrec://`) is registered for the OAuth/import
-            // hand-off. GUI-UNVERIFIED.
+            // instead of freezing at `TrayState::default()`. GUI-UNVERIFIED.
             #[cfg(feature = "tray")]
             {
                 use sundayrec_core::tray::{TrayLang, TrayState};
-                use tauri_plugin_deep_link::DeepLinkExt;
                 // The UI language lives in the renderer's own settings blob, so
                 // it arrives via `tray_set_language` on boot; Norwegian until then.
                 let lang = TrayLang::from_code(None);
                 match tray::install(app.handle(), &TrayState::default(), lang) {
-                    Ok(()) => {
-                        tray::wire_state_sources(app.handle());
-                        // First paint of the review-queue callout — the scheduler
-                        // event that normally refreshes it may be minutes away.
-                        tray::refresh_review_queue(app.handle());
-                    }
+                    Ok(()) => tray::wire_state_sources(app.handle()),
                     Err(e) => tracing::warn!("tray install failed: {e}"),
                 }
-
-                // Route inbound `sundayrec://…` links through the unit-tested
-                // core parser + the shell dispatcher. GUI-UNVERIFIED.
-                let handle = app.handle().clone();
-                app.deep_link().on_open_url(move |event| {
-                    for url in event.urls() {
-                        let _ = tray::dispatch_deep_link(&handle, url.as_str());
-                    }
-                });
             }
 
             tracing::info!("SundayRec backend ready (db at {})", db_path.display());
@@ -540,27 +500,14 @@ pub fn run() {
             commands::app::set_launch_at_login,
             commands::app::get_launch_at_login,
             commands::app::tray_set_language,
-            commands::account::sunday_account_configured,
-            commands::account::sunday_account_status,
-            commands::account::sunday_sign_in,
-            commands::account::sunday_sign_out,
-            commands::account::sunday_whoami_song,
-            commands::audio::list_input_devices,
             commands::audio::list_audio_devices,
-            commands::audio::probe_device_channels,
-            commands::audio::scan_device_channels,
-            commands::audio::list_audio_input_channels,
             commands::audio::list_devices,
-            commands::audio::list_video_devices,
             commands::audio::get_camera_capabilities,
             commands::audio::diagnose_audio,
             commands::audio::start_vu,
             commands::audio::stop_vu,
             commands::media::ffmpeg_health,
-            commands::media::start_preview,
-            commands::media::stop_preview,
             commands::media::media_permissions,
-            commands::recorder::list_recording_devices,
             commands::recorder::recording_preview_frame,
             commands::recorder::plan_recording_opts,
             commands::recorder::start_recording,
@@ -575,15 +522,8 @@ pub fn run() {
             commands::recorder::get_disk_space,
             commands::recorder::run_test_recording,
             commands::recorder::run_capture_bench,
-            commands::db::setting_get,
-            commands::db::setting_set,
             commands::db::recordings_list,
-            commands::db::transcripts_list,
-            commands::db::learning_feedback_summary,
-            commands::db::learning_local_nudge,
-            commands::db::learning_local_nudge_reset,
             commands::db::recordings_delete,
-            commands::db::recordings_clear,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
             // Papirkurv. `trash_move` is what the delete actions in Historikk
@@ -592,27 +532,9 @@ pub fn run() {
             commands::trash::trash_list,
             commands::trash::trash_restore,
             commands::trash::trash_purge,
-            commands::calendar::liturgical_month,
-            commands::cloud::cloud_connection_status,
-            commands::cloud::cloud_is_configured,
-            commands::cloud::cloud_connect,
-            commands::cloud::cloud_cancel_connect,
-            commands::cloud::cloud_list_folders,
-            commands::cloud::cloud_set_folder,
-            commands::cloud::cloud_get_folder,
-            commands::cloud::cloud_process_queue_now,
-            commands::cloud::cloud_queue_status,
-            commands::cloud::cloud_enqueue_backup,
-            commands::cloud::cloud_retry_upload,
-            commands::cloud::cloud_remove_upload,
-            commands::cloud::cloud_clear_failed,
-            commands::cloud::cloud_disconnect,
-            commands::bridge::open_in_sundayedit,
-            commands::bridge::open_in_sundaystudio,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
-            commands::settings::settings_export,
             commands::settings::settings_import,
             commands::settings::settings_export_to_file,
             commands::settings::settings_import_from_file,
@@ -630,16 +552,13 @@ pub fn run() {
             commands::editor::editor_peaks,
             commands::editor::editor_extract_playback_proxy,
             commands::editor::editor_allow_asset_path,
-            commands::editor::editor_probe_peak,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
-            commands::editor::editor_detect_chapters,
             commands::editor::editor_diagnose_channels,
             commands::editor::editor_auto_process,
             commands::editor::editor_mastering_analyze,
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
-            commands::editor::editor_extract_frame,
             // P1 parity: sidecar persistence, stream probe, inline guard,
             // temp-file cleanup, and the full mastering preview/apply/cancel flow.
             commands::editor::editor_read_sidecar,
@@ -647,20 +566,24 @@ pub fn run() {
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
-            commands::editor::editor_record_companion_suggestion,
-            commands::editor::editor_probe_streams,
-            commands::editor::editor_read_file,
-            commands::editor::editor_cleanup_temp_files,
             commands::editor::editor_master_preview,
             commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
             // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
             commands::email::email_send_test,
-            commands::email::email_test_webhook,
             commands::email::email_clear_smtp_password,
             commands::email::email_set_smtp_password,
             commands::email::email_has_smtp_password,
+            // The e-mail relay (A2) — the light way to the same alerts: an
+            // address and a confirmation click instead of an SMTP host and an
+            // app password. Featureless (HTTP, not SMTP). Nothing is sent from
+            // these calls; they queue a row and ring the pump's doorbell.
+            commands::notify_relay::relay_status,
+            commands::notify_relay::relay_subscribe,
+            commands::notify_relay::relay_resend,
+            commands::notify_relay::relay_unsubscribe,
+            commands::notify_relay::relay_send_test,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,
@@ -673,80 +596,6 @@ pub fn run() {
             commands::wake::wake_cancel_test,
             commands::wake::wake_failure_history,
             commands::wake::wake_clear_failure_history,
-            // PU-5 whisper transcription (model registry pure; transcribe gated).
-            commands::whisper::whisper_list_models,
-            commands::whisper::whisper_model_status,
-            commands::whisper::whisper_download_model,
-            commands::whisper::whisper_cancel_download,
-            commands::whisper::whisper_delete_model,
-            commands::whisper::whisper_transcribe,
-            commands::whisper::whisper_cancel_transcribe,
-            commands::whisper::whisper_export_transcript,
-            // R8 AI sermon companion — chapters/highlights/summary from a
-            // transcript. Pure detectors in sundayrec-core; the OPTIONAL Anthropic
-            // summary seam is NETWORK-UNVERIFIED and falls back to a fully-local
-            // extractive summary when no key is configured.
-            commands::companion::companion_build,
-            commands::companion::companion_llm_configured,
-            commands::companion::companion_llm_status,
-            commands::companion::companion_set_llm_key,
-            commands::companion::companion_clear_llm_key,
-            // PU-6 episode prep + review queue + Stage import.
-            commands::review::prep_build_episode,
-            commands::review::review_queue_list,
-            commands::review::review_mark_published,
-            commands::review::review_mark_discarded,
-            commands::review::review_update_trim,
-            commands::review::review_update_master_preset,
-            commands::review::review_update_jingles,
-            commands::review::review_process_reminders,
-            commands::review::stage_import_manifest,
-            // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
-            // hand-offs (pure mappers in sundayrec-core; HTTP NETWORK-UNVERIFIED).
-            commands::integrations::integrations_get_settings,
-            commands::integrations::integrations_set_settings,
-            commands::integrations::integrations_get_service_link,
-            commands::integrations::integrations_song_set_apikey,
-            commands::integrations::integrations_song_has_apikey,
-            commands::integrations::integrations_song_submit_usage,
-            commands::integrations::integrations_plan_fetch_services,
-            commands::integrations::integrations_plan_update_service,
-            commands::integrations::integrations_sundayedit_send,
-            commands::integrations::integrations_sundayedit_import,
-            // E1.1 — the ONLY route from an inbound `sundayrec://captions` deep
-            // link to a sidecar write. Rust validated + parked the request; this
-            // is the operator's answer.
-            commands::deeplink::deeplink_confirm_captions,
-            // Bridge #2 — live cue → chapter mapping (renderer-driven).
-            commands::bridge_live::live_bridge_status,
-            commands::bridge_live::live_bridge_channel,
-            commands::bridge_live::live_bridge_map_event,
-            // R3 live streaming (tee/overlay argv pure; spawn gated by `streaming`).
-            commands::streaming::stream_status,
-            commands::streaming::stream_start,
-            commands::streaming::stream_stop,
-            commands::streaming::stream_preview_path,
-            commands::streaming::stream_set_key,
-            commands::streaming::stream_delete_key,
-            // Episode images (cover art) — default + per-episode override. Pure
-            // header probing in `sundayrec-core::image_probe`; no feature gate,
-            // no ffmpeg. The renderer had these six as stubs since the port.
-            commands::thumbnail::thumbnail_set_default,
-            commands::thumbnail::thumbnail_clear_default,
-            commands::thumbnail::thumbnail_get_default_info,
-            commands::thumbnail::thumbnail_set_episode,
-            commands::thumbnail::thumbnail_clear_episode,
-            commands::thumbnail::thumbnail_resolve,
-            // R3 NDI source discovery + receiver (STUB; gated by `ndi`).
-            commands::ndi::ndi_list_sources,
-            commands::ndi::ndi_start_receiver,
-            commands::ndi::ndi_output_runtime_available,
-            commands::ndi::ndi_output_start,
-            commands::ndi::ndi_output_stop,
-            // PU-3 podcast RSS publish (feed shaping pure; write/upload gated by `publish`).
-            commands::publish::publish_feed_status,
-            commands::publish::publish_feed_preview,
-            commands::publish::publish_generate_feed,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,
@@ -766,15 +615,66 @@ pub fn run() {
         // FIKS 2a: on app exit, stop every capture sidecar FIRST so nothing keeps
         // the audio/camera device open (graceful complement to the Job Object).
         // Best-effort — `stop()` is safe to call when idle.
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+        .run(|app_handle, event| match event {
+            // Every way out of the app lands here.
+            //
+            // ⚠️ THE distinction this arm is built on: `code` is `None` only for
+            // a quit the PERSON asked for (the last window closing, and — on
+            // Windows/Linux — the window manager's quit), and `Some(code)` for
+            // every programmatic `AppHandle::exit`/`restart`, including our own
+            // (`window::request_quit`'s wait, the tray, `update::relaunch`).
+            // Verified in the tauri 2.11.5 source rather than from memory:
+            // `RunEvent::ExitRequested`'s `code` is documented "`None` when the
+            // exit is requested by user interaction, `Some` when requested
+            // programmatically" (tauri/src/app.rs), and tauri-runtime-wry raises
+            // `code: None` from the last-window-destroyed path while
+            // `Message::RequestExit` carries `Some(code)`.
+            //
+            // Running the quit policy on a programmatic exit would refuse our
+            // OWN exit and leave an app that cannot die, so `code.is_some()`
+            // goes straight to the cleanup that has always been here.
+            tauri::RunEvent::ExitRequested { code, api, .. } => {
                 use tauri::Manager;
-                app_handle
-                    .state::<recorder::engine::RecorderEngine>()
-                    .stop();
-                app_handle.state::<media::preview::PreviewEngine>().stop();
-                app_handle.state::<audio::vu::VuEngine>().stop();
-                tracing::info!("app exit requested — stopped recorder/preview/vu sidecars");
+                if code.is_none()
+                    && window::request_quit(app_handle) == window::QuitVerdict::Handled
+                {
+                    // Refused (first press mid-service) or accepted-and-waiting.
+                    // Either way the process must stay alive; the wait's own
+                    // `app.exit(0)` comes back through here as `Some(0)`.
+                    api.prevent_exit();
+                } else {
+                    // FIKS 2a: stop every capture sidecar FIRST so nothing keeps
+                    // the audio/camera device open (graceful complement to the
+                    // Job Object). Best-effort — `stop()` is safe when idle.
+                    app_handle
+                        .state::<recorder::engine::RecorderEngine>()
+                        .stop();
+                    app_handle.state::<audio::vu::VuEngine>().stop();
+                    // F1-M5: WAL (see `db::store::open_pool`'s docs) can leave
+                    // recent commits sitting in `-wal` until checkpointed. An
+                    // orderly quit is the one moment nothing else is still
+                    // writing, so fold `-wal` into the main file now — a plain
+                    // copy of just `sundayrec.sqlite` (support, a manual
+                    // backup) is only complete once this has run.
+                    // `try_state`, not `state`: a shutdown path must never
+                    // panic, even if setup somehow never reached
+                    // `app.manage(db::Db::new(pool))`.
+                    if let Some(db) = app_handle.try_state::<db::Db>() {
+                        tauri::async_runtime::block_on(db::store::checkpoint_and_close(&db.pool));
+                    }
+                    tracing::info!(
+                        "app exit requested — stopped recorder/vu sidecars, checkpointed db"
+                    );
+                }
             }
+            // macOS: clicking the Dock icon when nothing is on screen is the
+            // system's own "bring it back" gesture — the natural companion to a
+            // window hidden by a close during a recording.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } => window::show_main(app_handle),
+            _ => {}
         });
 }

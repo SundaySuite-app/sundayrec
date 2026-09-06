@@ -10,10 +10,10 @@
 //! lives in `migrations/` and is applied by [`open_pool`].
 
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use sqlx::{Row, SqlitePool};
 use ts_rs::TS;
 use uuid::Uuid;
@@ -35,14 +35,83 @@ pub fn new_id() -> String {
 
 /// Open (creating if needed) the SQLite database at `db_path` and run all
 /// pending migrations. Foreign keys are enforced.
+///
+/// ## F1-M5 — WAL, not sqlx's silent default
+///
+/// sqlx 0.9's `SqliteConnectOptions` deliberately sends no `journal_mode` or
+/// `synchronous` PRAGMA unless asked (see its source: "Don't set
+/// `journal_mode` unless the user requested it"), so every build before this
+/// one ran on SQLite's own compiled-in defaults — a rollback journal
+/// (`DELETE` mode) plus `synchronous=FULL` — with only sqlx's own 5 s
+/// `busy_timeout`. That combination has a real Sunday failure mode: `finalize`
+/// writes the just-finished recording's history row ([`insert_recording`]) at
+/// the same moment the telemetry pump and a settings save are queued behind it
+/// on a slow disk (an AV scan, a Time Machine backup, an indexer). DELETE-mode
+/// takes an exclusive lock on the WHOLE file for every write, so all three
+/// serialise onto that one lock; once the 5 s timeout is exceeded,
+/// `insert_recording` returns `SQLITE_BUSY` (`database is locked`), the
+/// finished recording never lands in Historikk even though the audio file is
+/// sitting right there on disk, and the next `check_missed` pass — finding no
+/// row for the slot — reports the service as "not recorded".
+///
+/// WAL fixes the mechanism, not just the timeout: readers never block writers
+/// and writers never block readers (a writer appends to `-wal` instead of
+/// locking the main file; only writer-vs-writer is still serialised), so the
+/// settings save and the telemetry pump no longer contend with
+/// `insert_recording` for the same exclusive lock. `synchronous=NORMAL` is the
+/// level SQLite's own docs recommend pairing with WAL: still durable across an
+/// application crash — the failure this single-process, single-user desktop
+/// app actually needs to survive — and only theoretically losing the last
+/// commit on an OS crash or power loss, which `FULL` guards against at a
+/// fsync-per-transaction cost WAL doesn't need. `busy_timeout` still moves 5 s
+/// → 30 s, as headroom for the rare case writers ARE genuinely serialised
+/// (e.g. a checkpoint in progress) on a slow disk.
+///
+/// WAL is not free: it keeps a `-wal` and `-shm` file alongside the `.sqlite`
+/// file, and a manual "just copy the .sqlite" backup can miss whatever hasn't
+/// been checkpointed out of `-wal` yet — see [`checkpoint_and_close`], called
+/// from `lib.rs`'s exit handler on every orderly quit, and the PR notes for
+/// the safe copy procedure. Revert path: change `SqliteJournalMode::Wal` to
+/// `SqliteJournalMode::Delete` below — one line, no migration, no schema
+/// change.
 pub async fn open_pool(db_path: &Path) -> AppResult<SqlitePool> {
     let opts = SqliteConnectOptions::new()
         .filename(db_path)
         .create_if_missing(true)
-        .foreign_keys(true);
+        .foreign_keys(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(Duration::from_secs(30))
+        .synchronous(SqliteSynchronous::Normal);
     let pool = SqlitePool::connect_with(opts).await?;
     sqlx::migrate!().run(&pool).await?;
     Ok(pool)
+}
+
+/// Checkpoint the WAL into the main file, truncating `-wal` back to empty,
+/// then close the pool. Call this on an ORDERLY shutdown (see `lib.rs`'s
+/// `RunEvent::ExitRequested` handler) so a later plain-file copy of
+/// `sundayrec.sqlite` — support, a manual backup, anyone who doesn't know to
+/// take `-wal`/`-shm` along — is complete rather than silently missing
+/// whatever was still sitting in the WAL at exit (see the F1-M5 section of
+/// [`open_pool`]'s docs).
+///
+/// `TRUNCATE` (not sqlx/SQLite's default `PASSIVE`) blocks until every reader
+/// has let go and shrinks `-wal` to zero bytes, rather than merely copying
+/// what it can without blocking. That is the right trade here — this runs
+/// once, last, after the recorder and VU sidecars are already stopped, with
+/// nothing left that a brief wait would meaningfully delay.
+///
+/// Best-effort: a checkpoint that can't complete (e.g. a straggler holding a
+/// read snapshot) is logged and swallowed rather than panicking — a shutdown
+/// path must never be the reason the app fails to exit.
+pub async fn checkpoint_and_close(pool: &SqlitePool) {
+    if let Err(e) = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .execute(pool)
+        .await
+    {
+        tracing::warn!("wal_checkpoint(TRUNCATE) failed on shutdown: {e}");
+    }
+    pool.close().await;
 }
 
 // ── Settings (key/value bag) ─────────────────────────────────────────────────
@@ -94,7 +163,7 @@ pub async fn delete_setting(pool: &SqlitePool, key: &str) -> AppResult<()> {
 /// One recording-history row. `id`/`created_at` are assigned by
 /// [`insert_recording`] when omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingRow.ts")]
+#[ts(export, export_to = "RecordingRow.ts")]
 pub struct RecordingRow {
     pub id: String,
     pub file_path: String,
@@ -205,6 +274,11 @@ pub async fn delete_recordings_for_paths(pool: &SqlitePool, paths: &[String]) ->
 }
 
 /// Delete every recording-history row. Used by the "clear history" action.
+/// ⚠️ Uten kaller siden V1/PR3, der `recordings_clear`-kommandoen gikk (ingen
+/// flate, ingen i18n-nøkkel, ingen shim-metode — en «tøm hele historikken» uten
+/// bekreftelsesdialog er ikke en funksjon, det er en IPC-dør). Beholdt som
+/// lager-primitiv med sin egen test; går den runden der `store` slankes, går
+/// denne med.
 pub async fn clear_recordings(pool: &SqlitePool) -> AppResult<()> {
     sqlx::query("DELETE FROM recording").execute(pool).await?;
     Ok(())
@@ -621,18 +695,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migrations_create_every_table_including_the_upload_queue() {
+    async fn migrations_create_every_current_table_and_drop_the_retired_upload_queue() {
         let (pool, _d) = temp_pool().await;
-        // Every migrated table must be SELECTable on a fresh database. The queue
-        // and wake-failure tables come from later migrations, so this proves the
+        // Every migrated table must be SELECTable on a fresh database. The
+        // wake-failure table comes from a later migration, so this proves the
         // full migration set applied — not just the first one.
-        for table in ["app_setting", "recording", "upload_queue", "wake_failure"] {
+        for table in ["app_setting", "recording", "wake_failure"] {
             // AssertSqlSafe: sqlx 0.9 requires dynamic SQL to be explicitly
             // vouched for — `table` comes from the hardcoded list above.
             let q = sqlx::AssertSqlSafe(format!("SELECT COUNT(*) AS n FROM {table}"));
             let row = sqlx::query(q).fetch_one(&pool).await.expect(table);
             assert_eq!(row.get::<i64, _>("n"), 0, "{table} should start empty");
         }
+
+        // F1-A9: 0007 dropped `upload_queue` (the Fase 6 cloud-backup feature
+        // never shipped) — a FRESH database replays every migration file in
+        // order, 0003's `create table` included, so the only proof the drop
+        // actually took is that the table is gone afterwards, not merely that
+        // 0003 was never run.
+        let err = sqlx::query("SELECT COUNT(*) FROM upload_queue")
+            .fetch_one(&pool)
+            .await
+            .expect_err("upload_queue must no longer exist once migration 0007 has applied");
+        assert!(
+            err.to_string().contains("no such table"),
+            "expected a missing-table error, got: {err}"
+        );
     }
 
     #[tokio::test]
@@ -675,6 +763,91 @@ mod tests {
             get_setting(&reopened, "theme").await.unwrap().as_deref(),
             Some("\"dark\"")
         );
+        let recs = list_recordings(&reopened).await.unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].file_path, "/tmp/keep.mp3");
+    }
+
+    // ── F1-M5: WAL ────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn open_pool_turns_on_wal() {
+        // A fresh database must actually be in WAL mode — not just "the code
+        // calls `.journal_mode(Wal)`", but the PRAGMA the driver reads back
+        // agrees. `PRAGMA journal_mode` (no `=value`) is the query form.
+        let (pool, _d) = temp_pool().await;
+        let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+    }
+
+    #[tokio::test]
+    async fn two_pools_write_concurrently_without_database_is_locked() {
+        // The Sunday scenario in miniature: two INDEPENDENT pools (standing in
+        // for `finalize`'s `insert_recording` vs. the telemetry pump / a
+        // settings save) hammering the SAME file at once, each spraying its
+        // inserts across many concurrent tasks rather than one at a time.
+        // Separate pools share no in-process coordination at all — any
+        // serialisation has to happen at the SQLite file level, which is
+        // exactly what WAL's writer-queueing (instead of DELETE mode's
+        // whole-file exclusive lock) exists to make survivable. Every insert
+        // must succeed; none may see `database is locked`.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("concurrent.sqlite");
+        // Migrate once, up front, on a throwaway pool — so the two pools under
+        // test start from an already-migrated file instead of racing
+        // `sqlx::migrate!` against each other.
+        open_pool(&path).await.unwrap().close().await;
+
+        let pool_a = open_pool(&path).await.unwrap();
+        let pool_b = open_pool(&path).await.unwrap();
+
+        let mut tasks = Vec::new();
+        for i in 0..50 {
+            let p = pool_a.clone();
+            tasks.push(tokio::spawn(async move {
+                insert_recording(&p, sample(&format!("/rec/a-{i}.mp3"), i as f64)).await
+            }));
+        }
+        for i in 0..50 {
+            let p = pool_b.clone();
+            tasks.push(tokio::spawn(async move {
+                insert_recording(&p, sample(&format!("/rec/b-{i}.mp3"), i as f64)).await
+            }));
+        }
+        for t in tasks {
+            t.await
+                .expect("insert task panicked")
+                .expect("insert must not fail with `database is locked` under WAL");
+        }
+
+        let verify = open_pool(&path).await.unwrap();
+        assert_eq!(list_recordings(&verify).await.unwrap().len(), 100);
+    }
+
+    #[tokio::test]
+    async fn checkpoint_and_close_truncates_the_wal_so_a_bare_file_copy_is_complete() {
+        // Names the risk directly: someone (support, a manual backup script)
+        // copies only `sundayrec.sqlite` — never the `-wal`/`-shm` siblings.
+        // That is only safe once the WAL has been checkpointed INTO the main
+        // file, which is what an orderly shutdown must do before the process
+        // exits. Prove it end to end: write, checkpoint+close, copy ONLY the
+        // main file to a fresh path, reopen the copy, read it back.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("checkpoint.sqlite");
+
+        let pool = open_pool(&path).await.unwrap();
+        insert_recording(&pool, sample("/tmp/keep.mp3", 1.0))
+            .await
+            .unwrap();
+        checkpoint_and_close(&pool).await;
+
+        let bare_copy = dir.path().join("bare-copy.sqlite");
+        std::fs::copy(&path, &bare_copy).expect("copy the main file only");
+
+        let reopened = open_pool(&bare_copy).await.unwrap();
         let recs = list_recordings(&reopened).await.unwrap();
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].file_path, "/tmp/keep.mp3");

@@ -21,6 +21,13 @@ Please include what you found, the affected version, and reproduction steps.
 This is a small, single-maintainer project — expect an initial response
 within a few days, not an SLA.
 
+This channel is for **vulnerabilities only**. An ordinary bug (a crash, a
+wrong setting, a confusing screen) is not a security report — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for where those go (a public issue, or
+dev@sundaysuite.app). Two channels, two purposes: that address is read by a
+person and is not private, so a real vulnerability described there instead
+of through advisories would sit in the open until someone notices.
+
 ## Supported versions
 
 Only the **latest release on your channel** is supported. There is no LTS
@@ -28,8 +35,8 @@ branch and no backporting of fixes to older versions. Please update before
 reporting an issue that may already be fixed.
 
 SundayRec auto-updates from one of two rings — `stable` and `beta` — chosen per
-install under **Innstillinger → System**. Every install is on `stable` unless
-somebody deliberately moved it. The feed URL is built at run time from that
+install under **Oppsett → Avansert → «Oppdateringer»**. Every install is on
+`stable` unless somebody deliberately moved it. The feed URL is built at run time from that
 setting (`channel_feed_url` in `crates/sundayrec-core/src/update.rs`), not from
 `tauri.conf.json`; the `plugins.updater` block there names the stable feed only
 as a fallback for a build that somehow bypasses that path.
@@ -45,14 +52,14 @@ often started once and left unattended for the length of a service. The
 operator is not a security professional, and the machine is not IT-managed.
 Trust boundaries the app has to defend at:
 
-- **`sundayrec://` deep links** — inbound custom-scheme URLs from other apps
-  or a web page, which can be triggered without the operator's intent.
-- **Media files and their sidecars** — recordings, intro/outro clips,
-  subtitle files, transcripts — paths and content that ultimately come from
-  outside the process (a picked file, an imported recording, another Sunday
-  app).
-- **User-configured URLs** — webhook, SMTP, and integration API endpoints the
-  operator types in, which can point anywhere, including the local network.
+- **Media files and their sidecars** — recordings, intro/outro clips, the
+  `.meta`/`.cuts-draft`/`.feedback` JSON — paths and content that ultimately
+  come from outside the process (a picked file, an imported recording).
+- **User-configured endpoints** — the SMTP host the operator types in, which
+  can point anywhere, including the local network.
+- (The `sundayrec://` deep-link scheme, the chat webhook and the integration
+  API endpoints were removed in R1 of «Frivilligen først» — fewer boundaries
+  to defend.)
 - **The update feed** — a **first-party Cloudflare Worker** at
   `https://updates.sundaysuite.app/v1/update/{stable|beta}`, which the
   auto-updater polls, plus the signed artifact it downloads and installs.
@@ -103,17 +110,18 @@ So a future auditor doesn't have to re-derive these from scratch:
   where applicable, rooted under the configured save folder) before they
   reach the filesystem or ffmpeg. A test ratchet (E1.3) keeps commands that
   take a path from silently launching without going through it.
-- **Stream-key redaction in logs.** RTMP/streaming keys are kept out of log
-  output.
-- **Whisper model integrity.** Downloaded transcription models are
-  SHA-256-verified against a pinned hash and only renamed into place
-  (`.partial` → final) after the hash matches; a mismatch deletes the partial
-  instead of promoting it.
+- **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
+  tokens, and — defensively, though SundayRec no longer streams — the trailing
+  key segment of RTMP URLs) are kept out of log output
+  (`crates/sundayrec-core/src/redact.rs`).
+- (**Whisper model integrity** — the SHA-256-verified model download — left
+  with transcription in R2 of «Frivilligen først». The app downloads no
+  models any more; the VAD model is vendored and verified at build + load.)
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.
-- **OS keychain for credentials.** OAuth refresh tokens, the stream key, the
-  SMTP password, and API keys are stored via the OS-native credential store
+- **OS keychain for credentials.** The SMTP password is stored via the
+  OS-native credential store
   (macOS Keychain / Windows Credential Manager through the `keyring` crate;
   `src-tauri/src/secrets/`) — never in plaintext settings files. (E1.6 closed
   a legacy gap where the SMTP password had leaked into a plaintext
@@ -125,9 +133,13 @@ So a future auditor doesn't have to re-derive these from scratch:
   Windows Steinberg ASIO SDK download is SHA-256-pinned as a hard-fail
   (E1.5) — the SDK is a fixed 2019 artifact, so an unexpected hash means the
   download was tampered with or moved.
-- **PKCE + loopback for OAuth.** Google (Drive/YouTube/Gmail) OAuth uses the
-  PKCE flow with a loopback redirect, avoiding a stored client secret in the
-  desktop binary.
+- ~~**PKCE + loopback for OAuth.**~~ **No OAuth in this app any more.** The
+  Sunday Account (SSO) login used PKCE with a loopback redirect, avoiding a
+  stored client secret in the desktop binary; V1/PR3 deleted the whole login
+  (five commands with no caller and no screen) together with the `sunday-auth`
+  dependency. The Google Drive/YouTube/Gmail OAuth client that followed the
+  same pattern left with cloud backup in R1 of «Frivilligen først». SundayRec
+  now holds no OAuth client and mints no token.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.
@@ -137,10 +149,13 @@ So a future auditor doesn't have to re-derive these from scratch:
 
 ## Known gaps / accepted risks
 
-- **The shared Sunday session file has no Windows ACL.** `sunday-auth`
-  (from the upstream `sunday-platform` repo) writes the cross-app session
-  file atomically but does not yet restrict its permissions on Windows.
-  Tracked upstream, not in this repo.
+- ~~**The shared Sunday session file has no Windows ACL.**~~ **No longer this
+  app's risk.** `sunday-auth` (upstream `sunday-platform`) writes the cross-app
+  session file atomically without restricting its Windows permissions — but
+  V1/PR3 removed the dependency along with the login that used it, so SundayRec
+  neither writes nor reads that file. The gap is still real for whichever
+  Sunday app does; it is tracked upstream, and it is not in this repo's threat
+  model any more.
 - **macOS builds are signed but not notarized.** Apple's notary service
   currently returns 403 pending re-acceptance of the Program License
   Agreement (see `docs/DISTRIBUTION.md`); Gatekeeper will warn on first

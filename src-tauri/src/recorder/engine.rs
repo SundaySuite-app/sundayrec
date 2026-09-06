@@ -11,7 +11,8 @@
 //! A single **supervisor task** ([`run_session`]) owns the [`RecordingSession`]
 //! and the current [`RecorderState`]. It:
 //!   1. resolves the device with the REAL ffmpeg enumerator
-//!      ([`enumerate_ffmpeg_devices`]) + the core fuzzy match,
+//!      ([`crate::audio::device_enum::enumerate_ffmpeg_devices`]) + the core
+//!      fuzzy match,
 //!   2. spawns ffmpeg for the current segment and a per-segment **reader task**
 //!      that streams stderr lines back over a channel,
 //!   3. drives a `select!` loop over: reader events (progress / silence / error
@@ -74,6 +75,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use sundayrec_core::alerts::AlertText;
 use sundayrec_core::capture::{build_unified_capture_args, resolve_camera_mode, CaptureOpts};
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
@@ -82,7 +84,7 @@ use sundayrec_core::levels::{parse_ametadata_peak, ChannelLevels, SILENCE_FLOOR_
 use sundayrec_core::preflight::{
     finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
 };
-use sundayrec_core::progress::{parse_size_kb, StartupResolver};
+use sundayrec_core::progress::{parse_size_kb, ProgressStream, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::recovery::{
@@ -96,9 +98,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use ts_rs::TS;
 
-use crate::audio::device_enum::{
-    enumerate_ffmpeg_devices, enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE,
-};
+use crate::audio::device_enum::{enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE};
+use crate::audio::device_watch::BackoffOutcome;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
@@ -143,7 +144,7 @@ pub const QUALITY_EVENT: &str = "recording://quality";
 /// Payload for [`FINISHED_EVENT`] — where the finished recording landed, so the
 /// UI's "open in editor" action can load it straight into the editor.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingFinished.ts")]
+#[ts(export, export_to = "RecordingFinished.ts")]
 pub struct RecordingFinished {
     /// Absolute path to the finished recording file.
     pub file_path: String,
@@ -153,7 +154,7 @@ pub struct RecordingFinished {
 
 /// Options for [`RecorderEngine::start`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingOpts.ts")]
+#[ts(export, export_to = "RecordingOpts.ts")]
 pub struct RecordingOpts {
     /// Stored microphone/mixer name to fuzzy-match against the enumerated audio
     /// devices. Empty → first/default device.
@@ -168,8 +169,9 @@ pub struct RecordingOpts {
     pub silence_threshold_db: Option<i32>,
     /// Minutes of continuous silence before stop-on-silence fires (1–120).
     pub silence_timeout_minutes: u32,
-    /// Capture framerate.
-    pub framerate: u32,
+    // (v0.15: `framerate`, `video_resolution`, `video_codec` and `video_encoder`
+    // left these opts with the Video tab's knobs — they are the constants in
+    // `sundayrec_core::capture` now, read where the capture args are built.)
     /// Output channel layout / downmix mode (stereo, mono-L, mono-R, mono-mix).
     pub channel_mode: ChannelMode,
     /// Explicit 0-based device input channel → LEFT output (multi-channel mixers).
@@ -198,20 +200,6 @@ pub struct RecordingOpts {
     /// chosen from `Settings::separate_audio_format`. Drives the extract codec via
     /// the shared `audio_encode_args` seam.
     pub separate_audio_format: String,
-    /// Capture resolution tag (`"480p"`/`"720p"`/`"1080p"`/`"2160p"`) from
-    /// settings — the camera-mode probe TARGET, so a 1080p setting records 1080p
-    /// (when the camera advertises it). Empty → 720p. Serialized (it roundtrips
-    /// through the planner).
-    #[serde(default)]
-    pub video_resolution: String,
-    /// Recording video codec tag (`"h264"`/`"h265"`) from settings. Empty/unknown
-    /// → H.264. Drives the `-c:v` choice in the capture args.
-    #[serde(default)]
-    pub video_codec: String,
-    /// Recording video encoder backend (`"software"`/`"hardware"`) from settings.
-    /// `"hardware"` → VideoToolbox on macOS (realtime 4K); ignored off macOS.
-    #[serde(default)]
-    pub video_encoder: String,
     /// Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
     /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
     #[serde(default)]
@@ -231,7 +219,7 @@ pub struct RecordingOpts {
 
 /// A progress heartbeat sent to the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingProgress.ts")]
+#[ts(export, export_to = "RecordingProgress.ts")]
 pub struct RecordingProgress {
     /// Total bytes ffmpeg has written to the current segment so far.
     #[ts(type = "number")]
@@ -245,7 +233,7 @@ pub struct RecordingProgress {
 /// Field names mirror [`RecordingProgress`] (no serde rename) → the generated TS
 /// binding is `peak_db_left` / `peak_db_right`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingLevels.ts")]
+#[ts(export, export_to = "RecordingLevels.ts")]
 pub struct RecordingLevels {
     /// Peak level (dBFS) of the left / only channel.
     pub peak_db_left: f64,
@@ -264,7 +252,7 @@ impl From<ChannelLevels> for RecordingLevels {
 
 /// A classified recorder error / silence / reconnect notice sent to the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingEvent.ts")]
+#[ts(export, export_to = "RecordingEvent.ts")]
 pub struct RecordingEvent {
     /// Stable code the UI localises (snake_case, e.g. `device_disconnected`,
     /// `stuck_recording`, `silence_detected`).
@@ -276,7 +264,7 @@ pub struct RecordingEvent {
 /// The `recording://state` payload — the current [`RecorderState`] plus the
 /// reconnect attempt count so the UI can show "reconnecting (3/20)".
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecorderStatePayload.ts")]
+#[ts(export, export_to = "RecorderStatePayload.ts")]
 pub struct RecorderStatePayload {
     /// The lifecycle state.
     pub state: RecorderState,
@@ -313,7 +301,7 @@ pub fn build_record_args(
     let capture = CaptureOpts {
         stop_on_silence: opts.stop_on_silence,
         silence_threshold_db: opts.silence_threshold_db,
-        framerate: opts.framerate,
+        framerate: sundayrec_core::capture::RECORDING_FRAMERATE,
         channel_mode: opts.channel_mode,
         input_channel_l: opts.input_channel_l,
         input_channel_r: opts.input_channel_r,
@@ -326,11 +314,10 @@ pub fn build_record_args(
         // The probed camera mode (resolved in `start`); pins a size/rate the
         // device actually advertises so avfoundation opens the camera.
         video_input: opts.video_input,
-        video_codec: match opts.video_codec.as_str() {
-            "h265" | "hevc" => sundayrec_core::editor::VideoCodec::H265,
-            _ => sundayrec_core::editor::VideoCodec::H264,
-        },
-        hw_accel: opts.video_encoder == "hardware",
+        // v0.15: codec + encoder are constants (H.264; VideoToolbox where the
+        // platform has it — the builder gates `hw_accel` to macOS itself).
+        video_codec: sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+        hw_accel: sundayrec_core::capture::RECORDING_HW_ACCEL,
     };
     build_unified_capture_args(
         platform,
@@ -356,17 +343,6 @@ fn device_token(d: &FfmpegDevice) -> String {
         Some(i) => i.to_string(),
         None => d.name.clone(),
     }
-}
-
-/// Enumerate capture devices with the REAL ffmpeg enumerator (F2.1). Replaces
-/// the Spike-B cpal stub so the recorder gets true avfoundation indices /
-/// dshow names. Returns the audio inputs (the recorder mic match) and the video
-/// inputs (the camera match) separately.
-///
-/// ⚠️ HARDWARE-UNVERIFIED — spawns `ffmpeg -list_devices`.
-pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
-    let inv = enumerate_ffmpeg_devices().await?;
-    Ok(inv.audio_inputs)
 }
 
 /// What event the reader task sends the supervisor for each stderr line of
@@ -405,7 +381,9 @@ struct RecorderSession {
 /// at a time; starting again stops the previous one first.
 pub struct RecorderEngine {
     session: Mutex<Option<RecorderSession>>,
-    /// The last-emitted state, so `recording_status` can report it synchronously.
+    /// The last-emitted state, so `recording_status` can report it
+    /// synchronously. Supervisors never get this handle — they write it through
+    /// a generation-scoped [`StateWriter`] (see [`RecorderEngine::state_writer`]).
     last_state: Arc<Mutex<RecorderState>>,
     /// The live auto-stop deadline (absolute epoch ms, `None` = no auto-stop), as
     /// a watch channel so the running recording loop reacts to extend/cancel
@@ -413,17 +391,14 @@ pub struct RecorderEngine {
     /// `manual_max_minutes`) and clears it at session end; the
     /// `recording_extend_autostop` / `recording_cancel_autostop` commands move /
     /// clear it. Wrapped in `Arc` so both the engine (commands) and the
-    /// supervisor task share the one sender.
+    /// supervisor task share the one sender — the supervisor side reaches it
+    /// only through its [`StateWriter`].
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
     /// Which audio engine the LAST `start()` used (`"wasapi"`/`"asio"`/
     /// `"directshow"`/`"avfoundation"`) + any fallback reason. Surfaced by the
     /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
     /// fell back, and why. `(engine, fallback_reason)`.
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
-    /// Health telemetry of the LAST recording (drops/xruns/IPC-starvation),
-    /// accumulated automatically by the stderr reader and persisted at session
-    /// end. Surfaced by the diagnose tool; `None` until the first recording.
-    last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
     /// Monotonic session counter, bumped by every [`RecorderEngine::start`].
     ///
     /// `start()` stops the previous recording and immediately launches a new
@@ -431,8 +406,9 @@ pub struct RecorderEngine {
     /// minutes. Both write the SAME shared `last_state` / `scheduled_stop`, so the
     /// stale one's terminal emit used to clobber the live session (UI jumps to
     /// "Stopped", the countdown is cleared) while it kept recording. Each
-    /// supervisor captures its generation at launch and only touches shared state
-    /// while [`is_current_session`] still holds.
+    /// supervisor gets a [`StateWriter`] carrying the generation it claimed at
+    /// launch, and that writer refuses every shared write once
+    /// [`is_current_session`] stops holding.
     session_generation: Arc<AtomicU64>,
 }
 
@@ -443,6 +419,160 @@ pub struct RecorderEngine {
 /// Pure over the atomic so the guard itself is unit-tested.
 fn is_current_session(generation: u64, current: &AtomicU64) -> bool {
     generation == current.load(Ordering::SeqCst)
+}
+
+/// Where a `recording://state` payload goes.
+///
+/// The production sink is the Tauri [`AppHandle`]; a test substitutes a
+/// recorder, because an `AppHandle` cannot be constructed off a running app —
+/// the same reason [`crate::recorder::native_capture::segment::EventSink`]
+/// exists. Named `emit_state` rather than `emit` so it can never collide with
+/// `Emitter::emit` at a call site that has both traits in scope.
+pub trait StateSink: Send + Sync {
+    /// Deliver one `recording://state` payload to the renderer.
+    fn emit_state(&self, payload: RecorderStatePayload);
+}
+
+impl StateSink for AppHandle {
+    fn emit_state(&self, payload: RecorderStatePayload) {
+        let _ = self.emit(STATE_EVENT, payload);
+    }
+}
+
+/// The ONE door to the recorder's shared state.
+///
+/// `last_state` and the `scheduled_stop` countdown are shared by every
+/// supervisor the engine has launched, and [`RecorderEngine::start`]
+/// deliberately lets the previous one keep finalising (concat + delivery encode
+/// run for minutes on a full service) while the new recording begins. That is
+/// what bit on a Sunday: 12:05, the operator stops the service recording and
+/// immediately starts the evening meeting; the old supervisor then reaches its
+/// terminal write, and the LIVE session's screen went to "Stopped" with the
+/// countdown cleared while it kept recording invisibly.
+///
+/// So the shared handles are PRIVATE to this struct, and every write goes
+/// through [`StateWriter::set`], [`StateWriter::arm_autostop`] or
+/// [`StateWriter::restamp`] — each of which refuses a superseded generation.
+/// One guard, one place: a new call site cannot forget it, because it cannot
+/// reach `last_state` at all.
+#[derive(Clone)]
+pub struct StateWriter {
+    /// Where the payload goes (the real `AppHandle` in production).
+    app: Arc<dyn StateSink>,
+    /// The shared last-emitted state. PRIVATE — see the struct doc.
+    last_state: Arc<Mutex<RecorderState>>,
+    /// The shared auto-stop deadline. PRIVATE — writes go through the guard;
+    /// readers take a `Receiver` from [`StateWriter::subscribe`], which cannot
+    /// write.
+    scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    /// The engine's live generation counter.
+    session_generation: Arc<AtomicU64>,
+    /// The generation this writer's session claimed at launch.
+    generation: u64,
+}
+
+impl StateWriter {
+    fn new(
+        app: Arc<dyn StateSink>,
+        last_state: Arc<Mutex<RecorderState>>,
+        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        session_generation: Arc<AtomicU64>,
+        generation: u64,
+    ) -> Self {
+        Self {
+            app,
+            last_state,
+            scheduled_stop,
+            session_generation,
+            generation,
+        }
+    }
+
+    /// Is this writer's session still the engine's current one? `false` means a
+    /// newer recording has started and every write below is refused.
+    pub(crate) fn is_current(&self) -> bool {
+        is_current_session(self.generation, &self.session_generation)
+    }
+
+    /// The generation guard, in the one place every write passes through.
+    fn may_write(&self, write: &str) -> bool {
+        if self.is_current() {
+            return true;
+        }
+        tracing::debug!(
+            generation = self.generation,
+            write,
+            "recorder: suppressing shared-state write from a superseded session"
+        );
+        false
+    }
+
+    /// The live auto-stop deadline (absolute epoch ms), or `None` when none is
+    /// armed.
+    pub(crate) fn autostop_ms(&self) -> Option<u64> {
+        *self.scheduled_stop.borrow()
+    }
+
+    /// A READ-ONLY handle on the deadline, for the segment loops' `changed()`
+    /// arms. Handing out a `Receiver` (never the `Sender`) is what keeps the
+    /// countdown behind the guard.
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<Option<u64>> {
+        self.scheduled_stop.subscribe()
+    }
+
+    /// Arm (or clear) the shared auto-stop deadline for this session.
+    pub(crate) fn arm_autostop(&self, deadline: Option<u64>) {
+        if !self.may_write("autostop") {
+            return;
+        }
+        self.scheduled_stop.send_replace(deadline);
+    }
+
+    /// Emit a state change and remember it. Asserts the transition is legal via
+    /// the core table (a refused transition is a logic bug — logged, but we
+    /// still emit the requested state so the UI doesn't desync).
+    ///
+    /// A TERMINAL state (Stopped/Failed) clears the deadline first, so a
+    /// finished OR failed recording never ships a lingering countdown — the
+    /// clear lives here (one place) instead of being scattered before each
+    /// terminal write.
+    pub(crate) fn set(&self, to: RecorderState, reconnect_count: u32) {
+        if !self.may_write("state") {
+            return;
+        }
+        if to.is_terminal() {
+            self.scheduled_stop.send_replace(None);
+        }
+        {
+            let mut guard = lock_recover(&self.last_state);
+            match guard.transition(to) {
+                Some(next) => *guard = next,
+                None => {
+                    tracing::warn!("recorder: illegal state transition {:?} → {to:?}", *guard);
+                    *guard = to;
+                }
+            }
+        }
+        self.app.emit_state(RecorderStatePayload {
+            state: to,
+            reconnect_count,
+            scheduled_stop_ms: self.autostop_ms(),
+        });
+    }
+
+    /// Re-stamp the CURRENT state with a moved auto-stop deadline (no
+    /// transition): the extend/cancel commands change the countdown mid-segment
+    /// and the UI must re-sync without the state itself changing.
+    pub(crate) fn restamp(&self, reconnect_count: u32, scheduled_stop_ms: Option<u64>) {
+        if !self.may_write("restamp") {
+            return;
+        }
+        self.app.emit_state(RecorderStatePayload {
+            state: *lock_recover(&self.last_state),
+            reconnect_count,
+            scheduled_stop_ms,
+        });
+    }
 }
 
 impl Default for RecorderEngine {
@@ -459,7 +589,6 @@ impl RecorderEngine {
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
             audio_engine: Arc::new(Mutex::new((None, None))),
-            last_telemetry: Arc::new(Mutex::new(None)),
             session_generation: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -468,6 +597,19 @@ impl RecorderEngine {
     /// on every transition). Used by the `recording_status` command.
     pub fn current_state(&self) -> RecorderState {
         *lock_recover(&self.last_state)
+    }
+
+    /// A [`StateWriter`] scoped to `generation` — the ONLY handle a supervisor
+    /// gets on the shared state and countdown. Everything it writes is refused
+    /// the moment a newer `start()` claims the next generation.
+    fn state_writer(&self, app: &AppHandle, generation: u64) -> StateWriter {
+        StateWriter::new(
+            Arc::new(app.clone()),
+            Arc::clone(&self.last_state),
+            Arc::clone(&self.scheduled_stop),
+            Arc::clone(&self.session_generation),
+            generation,
+        )
     }
 
     /// Record which audio engine `start()` chose (+ optional fallback reason), for
@@ -485,12 +627,6 @@ impl RecorderEngine {
     /// Why the last recording fell back from the modern engine, if it did.
     pub fn last_audio_fallback(&self) -> Option<String> {
         lock_recover(&self.audio_engine).1.clone()
-    }
-
-    /// Health telemetry of the last recording (drops/xruns/IPC-starvation), for
-    /// the diagnose tool. `None` until the first recording on this engine.
-    pub fn last_recording_telemetry(&self) -> Option<RecordingTelemetry> {
-        lock_recover(&self.last_telemetry).clone()
     }
 
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
@@ -621,16 +757,22 @@ impl RecorderEngine {
         let mut opts = opts;
         if let Some(v) = &video {
             let modes = crate::media::camera::probe_camera_modes(&device_token(v), platform).await;
-            let (target_w, target_h) =
-                sundayrec_core::capture::resolution_dims(&opts.video_resolution);
-            match resolve_camera_mode(&modes, target_w, target_h, opts.framerate.max(1)) {
+            let (target_w, target_h) = sundayrec_core::capture::resolution_dims(
+                sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
+            );
+            match resolve_camera_mode(
+                &modes,
+                target_w,
+                target_h,
+                sundayrec_core::capture::RECORDING_FRAMERATE,
+            ) {
                 Some(m) => {
                     tracing::info!(
                         width = m.width,
                         height = m.height,
                         input_fps = m.input_fps,
-                        target_fps = opts.framerate,
-                        target_res = %opts.video_resolution,
+                        target_fps = sundayrec_core::capture::RECORDING_FRAMERATE,
+                        target_res = sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
                         "recorder: resolved camera capture mode from probe"
                     );
                     opts.video_input = Some(m);
@@ -701,22 +843,16 @@ impl RecorderEngine {
             let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
             let sup_app = app.clone();
-            let last_state = Arc::clone(&self.last_state);
-            let scheduled_stop = Arc::clone(&self.scheduled_stop);
+            // The cpal supervisor gets the SAME generation-guarded door as the
+            // unified path: a stopped-but-still-finalising cpal session can no
+            // longer write "Stopped" over the recording that replaced it.
+            let state = self.state_writer(&app, generation);
             // CLONE what the cpal attempt needs so the originals survive for the
             // dshow fallback below if cpal fails to start.
             let (opts_c, video_c, pool_c) = (opts.clone(), video.clone(), pool.clone());
             let supervisor = tauri::async_runtime::spawn(async move {
                 run_cpal_session(
-                    host_kind,
-                    sup_app,
-                    pool_c,
-                    opts_c,
-                    video_c,
-                    stop_rx,
-                    ready_tx,
-                    last_state,
-                    scheduled_stop,
+                    host_kind, sup_app, pool_c, opts_c, video_c, stop_rx, ready_tx, state,
                 )
                 .await;
             });
@@ -798,11 +934,8 @@ impl RecorderEngine {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let sup_app = app.clone();
-        let last_state = Arc::clone(&self.last_state);
-        let scheduled_stop = Arc::clone(&self.scheduled_stop);
-        let last_telemetry = Arc::clone(&self.last_telemetry);
+        let state = self.state_writer(&app, generation);
         let audio_engine = Arc::clone(&self.audio_engine);
-        let session_generation = Arc::clone(&self.session_generation);
         let supervisor = tauri::async_runtime::spawn(async move {
             run_session(
                 sup_app,
@@ -815,12 +948,8 @@ impl RecorderEngine {
                 preroll_clip,
                 stop_rx,
                 ready_tx,
-                last_state,
-                scheduled_stop,
-                last_telemetry,
+                state,
                 audio_engine,
-                session_generation,
-                generation,
             )
             .await;
         });
@@ -876,36 +1005,6 @@ impl RecorderEngine {
     }
 }
 
-/// Emit a state change and remember it. Asserts the transition is legal via the
-/// core table (a refused transition is a logic bug — logged, but we still emit
-/// the requested state so the UI doesn't desync).
-pub(crate) fn set_state(
-    app: &AppHandle,
-    last_state: &Arc<Mutex<RecorderState>>,
-    to: RecorderState,
-    reconnect_count: u32,
-    scheduled_stop_ms: Option<u64>,
-) {
-    {
-        let mut guard = lock_recover(last_state);
-        match guard.transition(to) {
-            Some(next) => *guard = next,
-            None => {
-                tracing::warn!("recorder: illegal state transition {:?} → {to:?}", *guard);
-                *guard = to;
-            }
-        }
-    }
-    let _ = app.emit(
-        STATE_EVENT,
-        RecorderStatePayload {
-            state: to,
-            reconnect_count,
-            scheduled_stop_ms,
-        },
-    );
-}
-
 /// The auto-stop deadline after the user extends by `minutes`: add to the current
 /// deadline so "+30 min" really extends (never shortens), falling back to `now`
 /// when nothing is armed or the existing deadline already passed. Pure → tested.
@@ -925,6 +1024,10 @@ const MAX_AUTOSTOP_MINUTES: u32 = 1440;
 
 /// Why the current segment's capture stopped — drives what the supervisor does
 /// next. Shared by the ffmpeg `run_segment` and the native `run_native_segment`.
+///
+/// `Debug`/`PartialEq` so a test can assert on the outcome of a driven segment
+/// (`native_capture::segment::drive_native_segment`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SegmentOutcome {
     /// Graceful stop requested by the user → finalise + end the session.
     GracefulStop,
@@ -1052,12 +1155,8 @@ async fn run_session(
     preroll_clip: Option<PrerollClip>,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
-    last_state: Arc<Mutex<RecorderState>>,
-    scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
-    last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
+    state: StateWriter,
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
-    session_generation: Arc<AtomicU64>,
-    generation: u64,
 ) {
     // The backend can demote itself once: native start failure → ffmpeg (the
     // automatic escape hatch — a recording must start even if cpal can't).
@@ -1075,44 +1174,26 @@ async fn run_session(
     // previous recording can't leak into this one.
     let initial_stop = (opts.manual_max_minutes > 0)
         .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
-    scheduled_stop.send_replace(initial_stop);
-    let mut stop_watch = scheduled_stop.subscribe();
-    // This session's OWN state, mirrored on every transition. `last_state` is
-    // SHARED with whatever session is current, so a straggler must read its own
-    // outcome from here for the end-of-session verdict, not from the live one.
+    state.arm_autostop(initial_stop);
+    let mut stop_watch = state.subscribe();
+    // This session's OWN state, mirrored on every transition. The engine's
+    // last-state is SHARED with whatever session is current, so a straggler must
+    // read its own outcome from here for the end-of-session verdict, not from
+    // the live one.
     let own_state = Arc::new(Mutex::new(RecorderState::Idle));
-    // Emit a state transition, always stamping the CURRENT auto-stop deadline so
-    // the UI countdown stays in sync on every transition (start, reconnect, stop).
-    // A TERMINAL state (Stopped/Failed) clears the deadline first, so a finished
-    // OR failed recording never ships a lingering countdown — the clear lives
-    // here (one place) instead of being scattered before each Failed exit.
+    // Mirror the transition into this session's own state, then hand it to the
+    // ONE guarded door. [`StateWriter::set`] stamps the current auto-stop
+    // deadline (so the UI countdown stays in sync on start, reconnect and stop),
+    // clears it on a terminal state, and refuses everything once `start()` has
+    // superseded this supervisor — which it may have done minutes ago, while
+    // this one was still finalising.
+    //
+    // Telemetry persist/verdict happens at run_session's SINGLE exit point
+    // (after the last finalize_pending), so the measured media durations are
+    // included — a terminal emit only clears the deadline.
     let emit_state = |to: RecorderState, reconnect_count: u32| {
         *lock_recover(&own_state) = to;
-        // Generation guard: `start()` may already have stopped us and launched a
-        // NEW recording while this supervisor finalises (up to minutes). Its
-        // terminal emit would otherwise clear the live countdown and drop the UI
-        // to "Stopped" mid-recording. A straggler stays silent.
-        if !is_current_session(generation, &session_generation) {
-            tracing::debug!(
-                generation,
-                ?to,
-                "recorder: suppressing state emit from a superseded session"
-            );
-            return;
-        }
-        if to.is_terminal() {
-            scheduled_stop.send_replace(None);
-            // Telemetry persist/verdict happens at run_session's SINGLE exit
-            // point (after the last finalize_pending), so the measured media
-            // durations are included — a terminal emit only clears the deadline.
-        }
-        set_state(
-            &app,
-            &last_state,
-            to,
-            reconnect_count,
-            *scheduled_stop.borrow(),
-        );
+        state.set(to, reconnect_count);
     };
     // Everything below runs inside ONE labeled block with a single exit point,
     // so the session-end telemetry verdict/persist can never be skipped by an
@@ -1163,9 +1244,22 @@ async fn run_session(
             },
             // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
             // reject hev1); the tag is NOT applied to the mkv capture itself.
-            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
+            // v0.15: the recording codec is the constant H.264, so this is never
+            // set — kept as an expression of the constant rather than a bare
+            // `false` so the day the codec changes, the remux follows.
+            hvc1_tag: !audio_only
+                && matches!(
+                    sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+                    sundayrec_core::editor::VideoCodec::H265
+                ),
         });
         let mut session = RecordingSession::new(session_output, start_ms);
+        // The OS device-list-change signal. Grabbed once per session (it installs
+        // the platform listener on first use and is a process-wide singleton
+        // thereafter) so a reconnect back-off can be cut short the moment the
+        // mixer is plugged back in, instead of sleeping out the remaining
+        // seconds. See `audio::device_watch` — no-op where no listener ships.
+        let device_signal = crate::audio::device_watch::device_change_signal();
         // How many deliverables have already been finalised (concat + history row).
         // Each split closes one; session end finalises the rest. The pre-roll clip is
         // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
@@ -1293,7 +1387,7 @@ async fn run_session(
                         Arc::clone(&segment_bytes),
                         deliverable_bytes,
                         &mut stop_rx,
-                        &last_state,
+                        &state,
                         &mut stop_watch,
                         Arc::clone(&telemetry),
                     )
@@ -1308,7 +1402,7 @@ async fn run_session(
                         Arc::clone(&segment_bytes),
                         deliverable_bytes,
                         &mut stop_rx,
-                        &last_state,
+                        &state,
                         &mut stop_watch,
                         Arc::clone(&telemetry),
                     )
@@ -1433,7 +1527,7 @@ async fn run_session(
                                 audio.clone(),
                                 video_dev.clone(),
                                 stop_rx,
-                                Arc::clone(&last_state),
+                                state.clone(),
                                 stop_watch.clone(),
                             )
                             .await;
@@ -1482,7 +1576,11 @@ async fn run_session(
                             let code = last_error
                                 .map(error_code_str)
                                 .unwrap_or("device_disconnected");
-                            emit_error(&app, code, "Opptaket kunne ikke gjenopprettes");
+                            emit_error(
+                                &app,
+                                code,
+                                &AlertText::RecordingNotRecovered.text(crate::ui_lang::current()),
+                            );
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // Fail-stop keeps the manifest (no delete on this path).
                             let _ = finalize_pending(
@@ -1509,6 +1607,7 @@ async fn run_session(
                             delay_ms,
                             attempt,
                             next_segment,
+                            degraded_for_ms,
                         } => {
                             // Respawn loop. A FAILED respawn is treated as just another
                             // unexpected exit: re-consult the pure policy and try again
@@ -1519,26 +1618,39 @@ async fn run_session(
                             let mut delay_ms = delay_ms;
                             let mut attempt = attempt;
                             let mut next_segment = next_segment;
+                            let mut degraded_for_ms = degraded_for_ms;
                             loop {
                                 emit_state(RecorderState::Reconnecting, session.reconnect_count());
                                 let _ = app.emit(
-                                RECONNECTING_EVENT,
-                                RecordingEvent {
-                                    code: "reconnecting".into(),
-                                    message: format!(
-                                        "Mister kontakt — forsøker å koble til igjen ({attempt}/{})",
-                                        sundayrec_core::reconnect::MAX_RECONNECT_ATTEMPTS
-                                    ),
-                                },
-                            );
-                                tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
+                                    RECONNECTING_EVENT,
+                                    RecordingEvent {
+                                        code: "reconnecting".into(),
+                                        message: reconnecting_message(attempt, degraded_for_ms),
+                                    },
+                                );
+                                tracing::warn!(attempt, delay_ms, degraded_for_ms, segment = %next_segment, "recorder: reconnecting");
                                 // The back-off must stay stop-responsive: with a dead
                                 // child there is nothing to wind down, so a stop (or
                                 // app quit) during the wait goes STRAIGHT to the
-                                // graceful finalize instead of respawning first.
-                                tokio::select! {
-                                    _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
-                                    _ = stop_rx.recv() => {
+                                // graceful finalize instead of respawning first. It is
+                                // also cut short when the OS reports a device-list
+                                // change — the device is back, so waiting out the
+                                // remaining seconds only lengthens the gap in the
+                                // recording (`audio::device_watch`).
+                                match crate::audio::device_watch::wait_reconnect_backoff(
+                                    Duration::from_millis(delay_ms),
+                                    &device_signal,
+                                    &mut stop_rx,
+                                )
+                                .await
+                                {
+                                    BackoffOutcome::Elapsed => {}
+                                    BackoffOutcome::DeviceChanged => {
+                                        tracing::info!(
+                                            "recorder: OS reported a device-list change — retrying now"
+                                        );
+                                    }
+                                    BackoffOutcome::Stopped => {
                                         tracing::info!("recorder: stop requested during reconnect back-off — finalizing");
                                         break 'session;
                                     }
@@ -1656,6 +1768,13 @@ async fn run_session(
                                             pinned_rate = Some(seg.spec.sample_rate);
                                         }
                                         child = c;
+                                        // The capture is alive again: close the
+                                        // reconnect STREAK. Both the time budget and
+                                        // the back-off ladder start over, so a long
+                                        // service that survives repeated brief dropouts
+                                        // can never accumulate its way to the hard cap
+                                        // (see `RecordingSession::on_reconnect_success`).
+                                        session.on_reconnect_success();
                                         let _ = app.emit(
                                             RECONNECTED_EVENT,
                                             RecordingEvent {
@@ -1678,10 +1797,12 @@ async fn run_session(
                                                 delay_ms: next_delay,
                                                 attempt: next_attempt,
                                                 next_segment: seg,
+                                                degraded_for_ms: next_degraded,
                                             } => {
                                                 delay_ms = next_delay;
                                                 attempt = next_attempt;
                                                 next_segment = seg;
+                                                degraded_for_ms = next_degraded;
                                             }
                                             RecoveryDecision::GiveUp => {
                                                 emit_error(
@@ -1786,7 +1907,6 @@ async fn run_session(
     finalize_session_telemetry(
         &app,
         &telemetry,
-        &last_telemetry,
         start_ms,
         // THIS session's outcome, not the shared mirror — a superseded supervisor
         // must not report the live recording's state as its own exit.
@@ -1935,6 +2055,85 @@ impl ReaderCtx {
     }
 }
 
+/// Mutable state of the STDOUT reader — the `-progress` channel's half of what
+/// [`ReaderCtx`] used to do alone. Same three jobs, same shapes: latch startup
+/// once, keep the watchdog's byte atomic live, coalesce the UI counter.
+struct ProgressCtx {
+    stream: ProgressStream,
+    startup: StartupResolver,
+    started_sent: bool,
+    last_progress_forward: std::time::Instant,
+}
+
+impl ProgressCtx {
+    fn new() -> Self {
+        Self {
+            stream: ProgressStream::new(),
+            startup: StartupResolver::new(),
+            started_sent: false,
+            last_progress_forward: std::time::Instant::now() - Duration::from_secs(60),
+        }
+    }
+}
+
+/// Fold one read of ffmpeg's `-progress` stdout into the startup latch, the
+/// watchdog byte atomic and the UI counter.
+///
+/// This is the migration of the recorder's heartbeat OFF the free-form stderr
+/// stats line. That line is a human report ffmpeg may reword — and did, when
+/// 7.1 renamed `size=…kB` to `KiB`; against a `kB`-only parser a perfectly
+/// healthy recording never fires `recording://started` and never appears to
+/// grow (caught 2026-08-06 on the 6.0 → 8.1.2 sidecar bump). The `-progress`
+/// blocks are the vocabulary ffmpeg treats as an interface — verified
+/// byte-identical across both binaries this app has shipped.
+///
+/// Startup is latched on BLOCK ARRIVAL, not on a byte count: ffmpeg 6.0's first
+/// block legitimately says `total_size=0`, and the `null` muxer says `N/A` for
+/// its whole run. A block existing at all is the proof that the device opened
+/// and encoding began — exactly what the first stderr stats line used to mean.
+///
+/// ## The zero-back-pressure invariant applies here too
+///
+/// Called from the task that drains a pipe ffmpeg BLOCKS on. It must never
+/// await: every hand-off is an atomic store or an mpsc `try_send`. See
+/// [`classify_stderr_line`] — the reasoning is identical, and the consequence
+/// of getting it wrong (avfoundation dropping samples) is the same.
+fn classify_progress_chunk(
+    chunk: &str,
+    ctx: &mut ProgressCtx,
+    msg_tx: &tokio::sync::mpsc::Sender<ReaderMsg>,
+    segment_bytes: &AtomicU64,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
+) {
+    for update in ctx.stream.push(chunk) {
+        // A block arrived → ffmpeg is running. Retry the send until one lands
+        // (a `try_send` can drop it on a full channel; the startup watchdog
+        // depends on it arriving).
+        if ctx.startup.observe_progress() || !ctx.started_sent {
+            if msg_tx.try_send(ReaderMsg::Started).is_ok() {
+                ctx.started_sent = true;
+            } else {
+                lock_recover(telemetry).note_msg_dropped();
+            }
+        }
+        // The watchdog's byte count rides the shared atomic — delivered even if
+        // every Progress MESSAGE were dropped. `None` (an `N/A` reading) HOLDS
+        // the previous value rather than storing 0: a shrink would read as a
+        // file that stopped growing.
+        let Some(bytes) = update.total_size else {
+            continue;
+        };
+        segment_bytes.store(bytes, Ordering::Relaxed);
+        // UI byte counter: ~1/s is plenty (blocks arrive ~2/s).
+        if ctx.last_progress_forward.elapsed() >= Duration::from_secs(1) {
+            ctx.last_progress_forward = std::time::Instant::now();
+            if msg_tx.try_send(ReaderMsg::Progress(bytes)).is_err() {
+                lock_recover(telemetry).note_msg_dropped();
+            }
+        }
+    }
+}
+
 /// Classify a single ffmpeg stderr line (split on `\r`/`\n` by the reader).
 ///
 /// ## The zero-back-pressure invariant (2026-07-31 incident)
@@ -2033,11 +2232,17 @@ async fn run_segment(
     // the native path.
     deliverable_bytes: u64,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    last_state: &Arc<Mutex<RecorderState>>,
+    state: &StateWriter,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
     telemetry: Arc<Mutex<RecordingTelemetry>>,
 ) -> SegmentOutcome {
     let Some(stderr) = child.stderr.take() else {
+        return SegmentOutcome::UnexpectedExit { last_error: None };
+    };
+    // stdout carries the `-progress` blocks (see `capture::PROGRESS_ARGS`). It
+    // is now LOAD-BEARING: with `-nostats` the periodic stats line is gone from
+    // stderr, so this pipe is where startup and the heartbeat come from.
+    let Some(stdout) = child.stdout.take() else {
         return SegmentOutcome::UnexpectedExit { last_error: None };
     };
     let mut stdin = child.stdin.take();
@@ -2060,6 +2265,53 @@ async fn run_segment(
         peak_db_left: SILENCE_FLOOR_DB,
         peak_db_right: None,
     });
+    // PROGRESS reader task: drains ffmpeg's `-progress` stdout → the startup
+    // latch, the watchdog byte atomic, and the coalesced UI counter. Same
+    // zero-back-pressure discipline as the stderr reader: its only await is the
+    // `read()` itself, so no consumer can stall it and let the pipe fill.
+    //
+    // Draining is not optional. With stdout previously nulled the channel cost
+    // nothing; now ffmpeg writes ~120 bytes into it twice a second, and a
+    // stalled reader would fill the pipe buffer in minutes and block the
+    // capture — the 2026-07-31 failure mode. Hence: no locks, no channels that
+    // can block, and a task that only ends at EOF.
+    //
+    // ⚠️ HARDWARE-UNVERIFIED. The protocol itself is proven against the real
+    // bundled binary (`media::ffmpeg`'s
+    // `the_real_binary_speaks_the_progress_protocol_or_skips`) and the
+    // dispatcher against the exact blocks it emits, but this task has only ever
+    // been run against a lavfi source: an avfoundation/dshow capture on a real
+    // rig is what would show whether the first block still arrives inside
+    // `STARTUP_TIMEOUT_MS` when a device (not a filter) has to open first.
+    let progress_bytes = Arc::clone(&segment_bytes);
+    let progress_telemetry = Arc::clone(&telemetry);
+    let progress_tx = msg_tx.clone();
+    let progress_reader = tauri::async_runtime::spawn(async move {
+        let mut ctx = ProgressCtx::new();
+        let mut stdout = BufReader::new(stdout);
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = match stdout.read(&mut chunk).await {
+                Ok(0) => break, // stdout closed → ffmpeg exited
+                Ok(n) => n,
+                Err(e) => {
+                    tracing::warn!("recorder progress read error: {e}");
+                    break;
+                }
+            };
+            // The block parser owns line reassembly, so a chunk that ends
+            // mid-key is held rather than dropped — no framing logic here.
+            let text = String::from_utf8_lossy(&chunk[..n]);
+            classify_progress_chunk(
+                &text,
+                &mut ctx,
+                &progress_tx,
+                &progress_bytes,
+                &progress_telemetry,
+            );
+        }
+    });
+
     let reader_bytes = Arc::clone(&segment_bytes);
     // The reader task takes ownership of the telemetry handle; keep our own so
     // the end of this segment can seal the capture process's drop/dup window.
@@ -2259,7 +2511,7 @@ async fn run_segment(
                 emit_error(
                     app,
                     "start_timeout",
-                    "Opptaket startet ikke i tide — sjekk at kamera/mikrofon er tilkoblet og at appen har tilgang (Systeminnstillinger → Personvern).",
+                    &AlertText::RecordingStartTimeout.text(crate::ui_lang::current()),
                 );
                 let _ = child.start_kill();
                 let _ = child.wait().await;
@@ -2272,7 +2524,18 @@ async fn run_segment(
             // Watchdog poll.
             _ = wd_tick.tick() => {
                 if wd.observe(segment_bytes.load(Ordering::Relaxed), now_ms()) == WatchdogVerdict::Stuck {
-                    emit_error(
+                    // WARNING, not error: this arm kills the encoder and breaks
+                    // to `UnexpectedExit`, which the recovery policy answers with
+                    // `Reconnect`. The session is NOT over, so the rule at
+                    // `ERROR_EVENT` applies — transient + retry goes out on
+                    // `WARNING_EVENT`. It used to be an error, and two things
+                    // rode on that channel: the UI tore the overlay down mid
+                    // service, and `notify::wire_failure_sources` (which listens
+                    // ONLY to `ERROR_EVENT`) fired a native alert AND an e-mail
+                    // saying the recording had failed — while the engine was
+                    // already reconnecting. If the reconnect really does give up,
+                    // the `GiveUp` arm emits the terminal error itself.
+                    emit_warning(
                         app,
                         "stuck_recording",
                         &format!(
@@ -2325,7 +2588,7 @@ async fn run_segment(
                             emit_error(
                                 app,
                                 "disk_full",
-                                "Lite ledig diskplass — stopper opptaket trygt før disken blir full.",
+                                &AlertText::RecordingDiskFull.text(crate::ui_lang::current()),
                             );
                             // Graceful stop so the container is finalised + playable.
                             stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
@@ -2359,14 +2622,7 @@ async fn run_segment(
                                 + Duration::from_secs(60 * 60 * 24 * 365 * 100),
                         ),
                     }
-                    let _ = app.emit(
-                        STATE_EVENT,
-                        RecorderStatePayload {
-                            state: *lock_recover(last_state),
-                            reconnect_count: session.reconnect_count(),
-                            scheduled_stop_ms: auto_deadline,
-                        },
-                    );
+                    state.restamp(session.reconnect_count(), auto_deadline);
                 }
             }
             // Stop-on-silence fired.
@@ -2390,9 +2646,12 @@ async fn run_segment(
         }
     };
 
-    // Make sure the reader + levels forwarder are done (the reader sends Exit
-    // then returns; dropping its `levels_tx` also ends the forwarder loop).
+    // Make sure the readers + levels forwarder are done (the stderr reader sends
+    // Exit then returns; dropping its `levels_tx` also ends the forwarder loop).
+    // The progress reader ends on its own at stdout EOF; aborting it here covers
+    // the paths where the child was killed rather than allowed to finish.
     reader.abort();
+    progress_reader.abort();
     levels_forwarder.abort();
     // E6.3: this capture PROCESS is over. Fold its cumulative `drop=`/`dup=`
     // maxima into the session totals so the next segment's counters (which
@@ -2510,13 +2769,19 @@ pub(crate) async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep
 
 /// Spawn ffmpeg taking ownership of the child (the supervisor holds it for the
 /// segment's whole life; dropping it triggers `kill_on_drop`).
-/// Spawn a RECORDING ffmpeg segment. Unlike the shared [`spawn_ffmpeg`] (which
-/// pipes stdout for the preview/editor MJPEG readers), the recording capture has NO
-/// stdout consumer — its live preview is a file sink, not a pipe. Leaving stdout
-/// piped but undrained is a latent deadlock: if ffmpeg ever wrote to it, the full
-/// pipe would stall the process → dropped capture samples ("hakkete"). So we send
-/// stdout to null here. stdin stays piped (we write `q` for a graceful, container-
-/// finalising stop) and stderr stays piped (the progress/levels/error reader).
+/// Spawn a RECORDING ffmpeg segment. All three standard streams are piped:
+///
+/// * **stdin** — we write `q` for a graceful, container-finalising stop.
+/// * **stdout** — the `-progress` blocks (`capture::PROGRESS_ARGS`): the startup
+///   latch and the watchdog heartbeat. It used to be `null`, because the only
+///   thing that had ever wanted stdout was the MJPEG preview tee, and an
+///   UNDRAINED media pipe is a deadlock that stalls ffmpeg and makes
+///   avfoundation drop samples ("hakkete"). That reasoning still stands and is
+///   why `run_segment` spawns a dedicated, never-awaiting reader for this pipe
+///   before anything else can block: the channel is now tiny (~120 B twice a
+///   second) but it is drained unconditionally, not left to fill.
+/// * **stderr** — errors + the `ametadata` level lines.
+///
 /// `kill_on_drop` prevents a zombie ffmpeg if the supervisor task is dropped.
 async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child> {
     use std::process::Stdio;
@@ -2525,7 +2790,7 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
     tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
@@ -2534,6 +2799,30 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
 
 /// Emit a classified TERMINAL error to the renderer (the UI tears the recording
 /// overlay down on this event — see [`ERROR_EVENT`]).
+/// The `recording://reconnecting` message for this attempt.
+///
+/// Used to read `"… ({attempt}/20)"`, which was a promise the recorder could
+/// keep only because it gave up after twenty tries. Under the 2026-08-10
+/// time-budget policy there is no denominator — so the message says the true
+/// thing instead: how many tries so far, and (once the streak passes
+/// `RECONNECT_GRACE_MS`) how long the device has been gone. That second half is
+/// the whole reason `degraded_for_ms` exists: a recorder that retries for an
+/// hour while the UI shows an unchanging cheerful "reconnecting" is the silent
+/// forever-loop the policy is required not to be.
+pub(crate) fn reconnecting_message(attempt: u32, degraded_for_ms: Option<u64>) -> String {
+    match degraded_for_ms {
+        None => format!("Mister kontakt — forsøker å koble til igjen (forsøk {attempt})"),
+        Some(gone_ms) => {
+            // Whole minutes: the operator needs "a while now", not precision.
+            let minutes = gone_ms / 60_000;
+            format!(
+                "Lydenheten har vært borte i {minutes} min — opptaket fortsetter å prøve \
+                 (forsøk {attempt}). Sjekk kabel og strøm til lydutstyret."
+            )
+        }
+    }
+}
+
 pub(crate) fn emit_error(app: &AppHandle, code: &str, message: &str) {
     let _ = app.emit(
         ERROR_EVENT,
@@ -2596,12 +2885,13 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
 /// from the `emit_state` terminal funnel). Writes the latest to
 /// `<app_data_dir>/last-recording.json` and appends to a capped, newest-last
 /// `recording-telemetry-history.json` ring so the diagnose tool can show a
-/// TREND. Also keeps the latest in memory for the synchronous status read.
-/// Best-effort — never fails the recorder.
+/// TREND — that ring, not an in-memory mirror, is what the diagnose tool
+/// actually reads (F1-A9: an earlier `last_telemetry` field shadowed it,
+/// written on every session end and read by nobody). Best-effort — never
+/// fails the recorder.
 fn finalize_session_telemetry(
     app: &AppHandle,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
-    last_telemetry: &Arc<Mutex<Option<RecordingTelemetry>>>,
     start_ms: u64,
     final_state: &Arc<Mutex<RecorderState>>,
     delivered_bytes: &AtomicU64,
@@ -2655,9 +2945,6 @@ fn finalize_session_telemetry(
         let _ = app.emit(QUALITY_EVENT, &report);
     }
 
-    // In-memory (diagnose status reads this synchronously).
-    *lock_recover(last_telemetry) = Some(t.clone());
-
     let Ok(dir) = app.path().app_data_dir() else {
         return;
     };
@@ -2666,11 +2953,10 @@ fn finalize_session_telemetry(
     tauri::async_runtime::spawn_blocking(move || {
         let _ = std::fs::create_dir_all(&dir);
 
-        // Most-recent snapshot.
+        // Most-recent snapshot. Atomic temp+rename through the shared helper:
+        // the trend view reads these files while this task writes them.
         if let Ok(json) = serde_json::to_string(&t) {
-            let path = dir.join("last-recording.json");
-            let tmp = dir.join("last-recording.json.tmp");
-            let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &path));
+            let _ = crate::util::write_atomic(&dir.join("last-recording.json"), json.as_bytes());
         }
 
         // Rolling history (cap 20, newest last) for the trend view.
@@ -2681,8 +2967,7 @@ fn finalize_session_telemetry(
             .unwrap_or_default();
         push_capped(&mut hist, t, 20);
         if let Ok(json) = serde_json::to_string(&hist) {
-            let tmp = dir.join("recording-telemetry-history.json.tmp");
-            let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &hist_path));
+            let _ = crate::util::write_atomic(&hist_path, json.as_bytes());
         }
     });
 }
@@ -2812,7 +3097,14 @@ async fn finalize_one(
             } else {
                 DeliveryMode::RemuxCopy
             },
-            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
+            // v0.15: the recording codec is the constant H.264, so this is never
+            // set — kept as an expression of the constant rather than a bare
+            // `false` so the day the codec changes, the remux follows.
+            hvc1_tag: !audio_only
+                && matches!(
+                    sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+                    sundayrec_core::editor::VideoCodec::H265
+                ),
         }
     };
 
@@ -2842,7 +3134,7 @@ async fn finalize_one(
         emit_error(
             app,
             "empty_output",
-            "Opptaket ble tomt eller skadet — ingen fil ble lagret.",
+            &AlertText::RecordingEmptyOutput.text(crate::ui_lang::current()),
         );
         return false;
     }
@@ -3082,6 +3374,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reconnecting_message_promises_no_denominator() {
+        // The old text was "(1/20)" — a countdown to giving up. The time-budget
+        // policy has no such number, and printing one would be a lie.
+        let m = reconnecting_message(1, None);
+        assert!(m.contains("forsøk 1"), "{m}");
+        assert!(
+            !m.contains("/20"),
+            "the retired attempt cap must not reappear: {m}"
+        );
+        assert!(!m.contains('/'), "no denominator at all: {m}");
+    }
+
+    #[test]
+    fn reconnecting_message_reports_how_long_the_device_has_been_gone() {
+        // Past the grace window the operator must be told the DURATION — this is
+        // what makes "keep retrying for the whole session" honest rather than a
+        // silent forever-loop.
+        let m = reconnecting_message(41, Some(23 * 60_000 + 30_000));
+        assert!(m.contains("23 min"), "whole minutes of absence: {m}");
+        assert!(m.contains("forsøk 41"), "{m}");
+        assert_ne!(
+            m,
+            reconnecting_message(41, None),
+            "a degraded streak must not read like an ordinary retry"
+        );
+    }
+
+    #[test]
     fn backend_routing_matrix() {
         // macOS audio-only → native engine (CoreAudio via the default host).
         assert!(matches!(
@@ -3141,7 +3461,6 @@ mod tests {
             stop_on_silence: false,
             silence_threshold_db: None,
             silence_timeout_minutes: 5,
-            framerate: 30,
             channel_mode: ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
@@ -3152,9 +3471,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            video_resolution: "720p".into(),
-            video_codec: "h264".into(),
-            video_encoder: "software".into(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,
@@ -3415,6 +3731,146 @@ mod tests {
         assert!(is_current_session(g, &engine.session_generation));
     }
 
+    /// A [`StateSink`] that keeps what it was handed, so the guard can be proven
+    /// end-to-end without an `AppHandle` (which cannot exist in a unit test).
+    #[derive(Default)]
+    struct RecordingSink(Mutex<Vec<RecorderStatePayload>>);
+
+    impl StateSink for RecordingSink {
+        fn emit_state(&self, payload: RecorderStatePayload) {
+            self.0.lock().expect("sink lock").push(payload);
+        }
+    }
+
+    impl RecordingSink {
+        fn payloads(&self) -> Vec<RecorderStatePayload> {
+            self.0.lock().expect("sink lock").clone()
+        }
+    }
+
+    /// The shared handles the engine owns, plus the two writers on them: one
+    /// from the superseded session, one from the live one.
+    struct TwoGenerations {
+        sink: Arc<RecordingSink>,
+        last_state: Arc<Mutex<RecorderState>>,
+        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+        stale: StateWriter,
+        fresh: StateWriter,
+    }
+
+    /// Build what `start()` builds twice over: the 11:00 service claims
+    /// generation 1; at 12:05 the operator stops it and starts the evening
+    /// meeting, which claims generation 2 while the first supervisor is still
+    /// finalising.
+    fn two_generations(state: RecorderState, deadline: Option<u64>) -> TwoGenerations {
+        let sink = Arc::new(RecordingSink::default());
+        let last_state = Arc::new(Mutex::new(state));
+        let (tx, _rx) = tokio::sync::watch::channel(deadline);
+        let scheduled_stop = Arc::new(tx);
+        let current = Arc::new(AtomicU64::new(0));
+        let writer = |generation| {
+            StateWriter::new(
+                sink.clone(),
+                Arc::clone(&last_state),
+                Arc::clone(&scheduled_stop),
+                Arc::clone(&current),
+                generation,
+            )
+        };
+        let stale = writer(current.fetch_add(1, Ordering::SeqCst) + 1);
+        let fresh = writer(current.fetch_add(1, Ordering::SeqCst) + 1);
+        TwoGenerations {
+            sink,
+            last_state,
+            scheduled_stop,
+            stale,
+            fresh,
+        }
+    }
+
+    #[test]
+    fn a_superseded_state_writer_changes_nothing_and_emits_nothing() {
+        let deadline = Some(1_700_000_000_000);
+        let g = two_generations(RecorderState::Recording, deadline);
+        let stale = &g.stale;
+        assert!(!stale.is_current(), "generation 1 has been superseded");
+
+        // The straggler runs its whole terminal chain: the countdown clear, the
+        // "Stopped" transition, and a re-stamp from its still-draining segment.
+        stale.set(RecorderState::Stopped, 0);
+        stale.arm_autostop(None);
+        stale.restamp(0, None);
+
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Recording,
+            "the evening meeting is still recording — the straggler must not write Stopped"
+        );
+        assert_eq!(
+            *g.scheduled_stop.borrow(),
+            deadline,
+            "the live session's countdown must survive the straggler"
+        );
+        assert!(
+            g.sink.payloads().is_empty(),
+            "a superseded session emits no state at all"
+        );
+    }
+
+    #[test]
+    fn the_live_state_writer_writes_and_a_terminal_state_clears_the_countdown() {
+        let deadline = Some(1_700_000_000_000);
+        let g = two_generations(RecorderState::Recording, deadline);
+        let fresh = &g.fresh;
+        assert!(fresh.is_current());
+
+        // Non-terminal: the state moves, the countdown is untouched and stamped.
+        fresh.set(RecorderState::Stopping, 2);
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Stopping
+        );
+        assert_eq!(*g.scheduled_stop.borrow(), deadline);
+
+        // A moved deadline re-stamps the CURRENT state, without a transition.
+        fresh.restamp(2, Some(1_700_000_060_000));
+
+        // Terminal: the countdown is cleared BEFORE the payload is stamped, so a
+        // finished recording never ships a lingering countdown.
+        fresh.set(RecorderState::Stopped, 2);
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Stopped
+        );
+        assert_eq!(*g.scheduled_stop.borrow(), None);
+
+        let payloads = g.sink.payloads();
+        assert_eq!(payloads.len(), 3, "three writes, three emits");
+        assert_eq!(payloads[0].state, RecorderState::Stopping);
+        assert_eq!(payloads[0].reconnect_count, 2);
+        assert_eq!(payloads[0].scheduled_stop_ms, deadline);
+        assert_eq!(
+            payloads[1].state,
+            RecorderState::Stopping,
+            "a re-stamp keeps the state and only moves the deadline"
+        );
+        assert_eq!(payloads[1].scheduled_stop_ms, Some(1_700_000_060_000));
+        assert_eq!(payloads[2].state, RecorderState::Stopped);
+        assert_eq!(payloads[2].scheduled_stop_ms, None);
+    }
+
+    #[test]
+    fn arming_the_countdown_is_behind_the_same_guard() {
+        // The initial arm at the top of a session is a shared write too: a
+        // straggler that re-armed it would resurrect a countdown on the live
+        // recording. Only the current session may arm.
+        let g = two_generations(RecorderState::Idle, None);
+        g.stale.arm_autostop(Some(1_700_000_000_000));
+        assert_eq!(*g.scheduled_stop.borrow(), None);
+        g.fresh.arm_autostop(Some(1_700_000_000_000));
+        assert_eq!(*g.scheduled_stop.borrow(), Some(1_700_000_000_000));
+    }
+
     #[test]
     fn device_token_prefers_index_then_name() {
         assert_eq!(
@@ -3554,15 +4010,20 @@ mod tests {
             "video is CFR-locked; got: {args:?}"
         );
         // The mp4 is the PRIMARY output; a video recording also writes the
-        // deadlock-proof preview JPEG (file sink, `-update 1`) as the tail — NEVER
-        // a `pipe:1` (the pipe was what could freeze the capture).
+        // deadlock-proof preview JPEG (file sink, `-update 1`) as the tail —
+        // never a MEDIA output on `pipe:1` (the pipe was what could freeze the
+        // capture). The one permitted `pipe:1` is the `-progress` channel's: a
+        // global flag, tiny, and drained unconditionally by its own reader task.
         assert!(
             args.iter().any(|a| a == "/tmp/av.mp4"),
             "mp4 present; got: {args:?}"
         );
         assert!(
-            !args.iter().any(|a| a == "pipe:1"),
-            "no pipe; got: {args:?}"
+            args.iter()
+                .enumerate()
+                .filter(|(_, a)| a.as_str() == "pipe:1")
+                .all(|(i, _)| i > 0 && args[i - 1] == "-progress"),
+            "no MEDIA output on the pipe; got: {args:?}"
         );
         assert!(
             args.windows(2).any(|w| w == ["-update", "1"]),
@@ -3717,7 +4178,6 @@ mod tests {
             stop_on_silence: true,
             silence_threshold_db: Some(-50),
             silence_timeout_minutes: 7,
-            framerate: 25,
             channel_mode: ChannelMode::MonoL,
             input_channel_l: None,
             input_channel_r: None,
@@ -3728,9 +4188,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: true,
             separate_audio_format: "wav".into(),
-            video_resolution: "1080p".into(),
-            video_codec: "h264".into(),
-            video_encoder: "software".into(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,
@@ -3925,6 +4382,177 @@ mod tests {
         }
         assert_eq!(started, 1, "Started delivered exactly once when it lands");
         assert_eq!(progress, 1, "intra-second progress messages are coalesced");
+    }
+
+    /// The `-progress` dispatcher does the same three jobs the stderr one did:
+    /// latch `Started` exactly once, keep the byte atomic live on EVERY block,
+    /// and coalesce the UI counter to ≤1/s. Fed the exact block shape the
+    /// bundled 8.1.2 sidecar emits.
+    #[test]
+    fn progress_reader_latches_started_once_and_keeps_bytes_live() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        for (size, us) in [(96_334u64, 1_024_000u64), (143_438, 1_514_667)] {
+            classify_progress_chunk(
+                &format!(
+                    "bitrate= 752.6kbits/s\ntotal_size={size}\nout_time_us={us}\n\
+                     out_time_ms={us}\nout_time=00:00:01.024000\ndup_frames=0\n\
+                     drop_frames=0\nspeed=2.01x\nprogress=continue\n"
+                ),
+                &mut ctx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        assert_eq!(bytes.load(Ordering::Relaxed), 143_438, "latest bytes live");
+
+        let mut started = 0;
+        let mut progress = 0;
+        while let Ok(m) = rx.try_recv() {
+            match m {
+                ReaderMsg::Started => started += 1,
+                ReaderMsg::Progress(_) => progress += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(started, 1, "Started delivered exactly once");
+        assert_eq!(progress, 1, "intra-second progress messages are coalesced");
+    }
+
+    /// Startup is latched on BLOCK ARRIVAL, never on a byte count. ffmpeg 6.0's
+    /// first block really does say `total_size=0`, and an `N/A` reading happens
+    /// for real. Either must still announce that the recording started — and an
+    /// `N/A` must HOLD the previous byte count, not reset it to zero (a shrink
+    /// reads to the watchdog exactly like a file that stopped growing).
+    #[test]
+    fn a_zero_or_na_block_still_starts_and_never_shrinks_the_byte_count() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        // ffmpeg 6.0's opening block: zero bytes, no speed yet.
+        classify_progress_chunk(
+            "bitrate=N/A\ntotal_size=0\nout_time_us=0\nspeed=N/A\nprogress=continue\n",
+            &mut ctx,
+            &tx,
+            &bytes,
+            &telemetry,
+        );
+        assert!(
+            matches!(rx.try_recv(), Ok(ReaderMsg::Started)),
+            "a zero-byte first block still resolves startup"
+        );
+        // A real reading, then an N/A one.
+        classify_progress_chunk(
+            "total_size=50000\nout_time_us=500000\nprogress=continue\n",
+            &mut ctx,
+            &tx,
+            &bytes,
+            &telemetry,
+        );
+        classify_progress_chunk(
+            "total_size=N/A\nout_time_us=1000000\nprogress=continue\n",
+            &mut ctx,
+            &tx,
+            &bytes,
+            &telemetry,
+        );
+        assert_eq!(
+            bytes.load(Ordering::Relaxed),
+            50_000,
+            "an N/A reading holds the last count instead of shrinking it"
+        );
+    }
+
+    /// The pipe splits blocks wherever it likes; a `Started` must not wait for a
+    /// tidy boundary that never comes. Fed one byte at a time, the dispatcher
+    /// still produces exactly one `Started` and the live byte count.
+    #[test]
+    fn progress_survives_reads_that_split_mid_block() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        let blob = "total_size=1234\nout_time_us=500000\nprogress=continue\n\
+                    total_size=5678\nout_time_us=1000000\nprogress=end\n";
+        for ch in blob.chars() {
+            classify_progress_chunk(&ch.to_string(), &mut ctx, &tx, &bytes, &telemetry);
+        }
+        assert_eq!(bytes.load(Ordering::Relaxed), 5678);
+        let mut started = 0;
+        while let Ok(m) = rx.try_recv() {
+            if matches!(m, ReaderMsg::Started) {
+                started += 1;
+            }
+        }
+        assert_eq!(started, 1);
+    }
+
+    /// MUTATION PROOF: the progress dispatcher must NOT accept the human stderr
+    /// stats line. If it did, a misrouted stream would half-work — and the
+    /// whole point of this channel is that the shape ffmpeg reserves the right
+    /// to reword can no longer decide whether a recording looks alive.
+    #[test]
+    fn the_progress_reader_ignores_the_human_stats_line() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        for unit in ["kB", "KiB"] {
+            classify_progress_chunk(
+                &format!("size=    1024{unit} time=00:00:10.00 bitrate= 838.9kbits/s\n"),
+                &mut ctx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        assert_eq!(
+            bytes.load(Ordering::Relaxed),
+            0,
+            "no heartbeat from stderr shape"
+        );
+        assert!(rx.try_recv().is_err(), "and no Started either");
+    }
+
+    /// The zero-back-pressure invariant, for the NEW pipe. `classify_progress_chunk`
+    /// runs in the task that drains a pipe ffmpeg blocks on, so a full mpsc must
+    /// cost a COUNTED message and nothing else — never a stall that would let
+    /// the pipe fill and push avfoundation into dropping samples.
+    #[test]
+    fn progress_classify_never_blocks_when_the_channel_is_full() {
+        let (tx, _rx) = tokio::sync::mpsc::channel::<ReaderMsg>(1);
+        tx.try_send(ReaderMsg::Progress(0)).unwrap(); // permanently full
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        for i in 1..=5u64 {
+            classify_progress_chunk(
+                &format!(
+                    "total_size={}\nout_time_us={}\nprogress=continue\n",
+                    i * 1000,
+                    i * 1000
+                ),
+                &mut ctx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        // The byte count reached the atomic even though every MESSAGE dropped.
+        assert_eq!(bytes.load(Ordering::Relaxed), 5000);
+        assert!(
+            lock_recover(&telemetry).msgs_dropped > 0,
+            "full-channel drops must be counted as telemetry"
+        );
     }
 
     #[test]

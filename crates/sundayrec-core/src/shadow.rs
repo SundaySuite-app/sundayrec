@@ -66,7 +66,7 @@ use crate::vad::{score_pcm_with, VadBackend, VadError, VadFrame, VAD_HOP_SAMPLES
 /// [`DEFAULT_POOLING`] can only pre-empt, not settle. Changing the default is a
 /// one-line edit there plus the test that pins it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/PoolingRule.ts")]
+#[ts(export, export_to = "PoolingRule.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum PoolingRule {
     /// The highest probability in the frame.
@@ -175,7 +175,7 @@ impl PoolingRule {
 /// field by field, so a sweep that varies one knob cannot produce records that
 /// disagree about which knob moved.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ShadowSettings.ts")]
+#[ts(export, export_to = "ShadowSettings.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ShadowSettings {
     pub pooling: PoolingRule,
@@ -432,7 +432,7 @@ pub const AGREEMENT_TOLERANCE_SEC: f64 = 0.05;
 /// Inherits [`crate::feedback::SermonPickCorrection`]'s privacy rule whole: two
 /// offsets and a confidence, no name, no path, no time of day.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ShadowSpan.ts")]
+#[ts(export, export_to = "ShadowSpan.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ShadowSpan {
     /// Offset from the START OF THE RECORDING, seconds. Never a clock time.
@@ -459,7 +459,7 @@ impl From<&SermonSegment> for ShadowSpan {
 /// reason: a time of day plus a duration identifies one service at one church.
 /// There is no field here any of those could occupy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ShadowComparison.ts")]
+#[ts(export, export_to = "ShadowComparison.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ShadowComparison {
     /// Length of the recording, seconds. A duration, not a time.

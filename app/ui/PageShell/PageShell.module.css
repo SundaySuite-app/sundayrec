@@ -1,0 +1,232 @@
+/*
+ * Tre rader: topplinja, siden, bunnlinja.
+ *
+ * `minmax(0, 1fr)` på midtraden og ikke `1fr`: en grid-rad har `min-height:
+ * auto` som standard, altså «minst så høy som innholdet», og da vokser HELE
+ * rutenettet forbi 100vh så snart en side er lang — bunnlinja ville rullet ut
+ * av skjermen sammen med innholdet. Nullen er det som lar raden være kortere
+ * enn innholdet sitt, slik at `<main>` kan rulle inni seg selv i stedet.
+ *
+ * `height` og ikke `min-height`: linjene skal stå der de står. En `min-height`
+ * ville latt vinduet vokse med innholdet, som er det samme som å si at bunn-
+ * linja ikke er en bunnlinje.
+ */
+.page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
+}
+
+/* ── Topplinja ────────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--topbar-h);
+  padding: 0 var(--sp-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+/*
+ * ⚠️ macOS: trafikklysene ligger OPPÅ innholdet.
+ *
+ * `tauri.conf.json` setter `titleBarStyle: "Overlay"` + `hiddenTitle`, altså
+ * ingen tittellinje — men lukk/minimer/maksimer males fortsatt i sin vanlige
+ * posisjon, øverst til venstre, nøyaktig der topplinja begynner.
+ *
+ * Fram til D3 var svaret `padding-top: 28px` på venstreskinnen: skinnen var
+ * bred og hadde plass til å begynne UNDER knappene. En 44 px høy topplinje har
+ * ikke det — 28 px topp ville latt 16 px stå igjen til et 22 px merke. Så
+ * offsetet snudde retning: knappene har en fast BREDDE, og topplinja begynner
+ * til høyre for dem.
+ *
+ * 84 px er ikke et smakstall. Det ytterste trafikklyset slutter ved x ≈ 69
+ * (målt i den ekte WKWebView-en, D2-proben), og 84 er det pluss 15 px luft —
+ * nok til at merket ikke rører knappene selv om Apple flytter dem noen piksler.
+ *
+ * Klassen settes på `documentElement` i `app/main.tsx` fra `currentOs()`
+ * (`platform-core.ts`), og `:global()` er det som gjør at CSS-moduler ikke
+ * hasher bort navnet main.tsx skriver. Windows og Linux får INGEN slik regel:
+ * der er tittellinjen ekte og topplinja begynner der den skal.
+ */
+:global(.platform-darwin) .topbar {
+  padding-left: 84px;
+}
+
+/*
+ * Produktnavnet ved siden av merket, med den gamle appens mål: 15 px, 700, og
+ * en anelse negativ sporing.
+ */
+.logoText {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+/*
+ * Kirken, bak en tynn skillelinje. Streken er CSS og ikke et tegn i treet:
+ * en «·» i JSX er tekst en oversetter aldri får se, og en gate som teller
+ * bokstavsekvenser har rett i å rope på den.
+ */
+.church {
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  /* Et langt kirkenavn får ikke skyve topplinja bredere enn vinduet. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* «Ikke satt opp ennå» er gult: det er noe som må gjøres, ikke en opplysning. */
+.churchUnset {
+  color: var(--warn);
+}
+
+/* ── Siden ───────────────────────────────────────────────────────────────── */
+
+.main {
+  padding: var(--pad-page-y) var(--pad-page-x) var(--pad-page-b);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+  min-width: 0;
+  /* Rullingen skjer HER, ikke i dokumentet — det er det som holder de to
+     linjene stående mens en lang side ruller under dem. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.h1 {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+/* Fokusringen på overskriften ville vært støy: den får fokus av hvert
+   rutebytte, også når musa gjorde det. `:focus-visible` i base.css gjelder
+   bare tastatur, og en programmatisk `focus()` regnes ikke som det — så det
+   er ingenting å slå av her. Regelen står som en påminnelse om at det er
+   sjekket. */
+.h1:focus {
+  outline: none;
+}
+
+/* ── Bunnlinja ───────────────────────────────────────────────────────────── */
+
+/*
+ * `1fr auto 1fr` er hele grunnen til at destinasjonene står SENTRERT i vinduet
+ * og ikke sentrert i det som er igjen etter statuslinjen. De to ytterfeltene
+ * deler den ledige plassen likt uansett hvor lang setningen til venstre er, så
+ * midten flytter seg ikke når statusen bytter fra «Alt er klart» til «Neste
+ * opptak søndag 10:00».
+ */
+.bottombar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: var(--bottombar-h);
+  padding: 0 var(--sp-4);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * `min-width: 0` på ytterfeltene, ellers er `1fr` i praksis `minmax(min-content,
+ * 1fr)`: sporet nekter å bli smalere enn teksten sin, og et smalt vindu får
+ * vannrett rulling i stedet for en avkortet setning.
+ */
+.statusCell {
+  min-width: 0;
+}
+
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.statusText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav {
+  display: flex;
+  gap: var(--sp-1);
+  justify-self: center;
+}
+
+/*
+ * Ikon over etikett, som i Resolve. `--fs-xs` er typeskalaens GULV (11 px) —
+ * etiketten under et ikon er det ene stedet i appen som får stå der, fordi
+ * ikonet bærer betydningen og ordet bekrefter den.
+ *
+ * `min-height: 44px` er treffmålet, ikke en høyde: 20 px ikon + 2 px + en 11
+ * px etikett er 35 px innhold, og en knapp man skal treffe med musa mens man
+ * ser på noe annet skal være større enn innholdet sitt.
+ */
+.navItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 72px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  padding: 4px var(--sp-3);
+  border-radius: 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.navItem:hover {
+  background: var(--gold-soft);
+}
+
+.on {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.navIcon {
+  display: inline-flex;
+  flex: none;
+}
+
+.navIcon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.tail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.version {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

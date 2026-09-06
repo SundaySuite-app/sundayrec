@@ -7,4 +7,4 @@
  * pre-check resting state (the renderer shows the "click to check" hint);
  * every other variant maps to an `update.<key>` i18n string.
  */
-export type UpdateStatus = { "phase": "idle" } | { "phase": "checking" } | { "phase": "upToDate" } | { "phase": "available", version: string, } | { "phase": "downloading", version: string, percent: number, } | { "phase": "readyToInstall", version: string, } | { "phase": "error", message: string, };
+export type UpdateStatus = { "phase": "idle" } | { "phase": "checking" } | { "phase": "upToDate" } | { "phase": "available", version: string, notes: string | null, } | { "phase": "downloading", version: string, percent: number, } | { "phase": "readyToInstall", version: string, notes: string | null, } | { "phase": "error", message: string, };

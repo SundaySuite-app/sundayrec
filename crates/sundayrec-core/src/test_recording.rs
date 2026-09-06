@@ -23,7 +23,7 @@ pub const MIN_TEST_SIZE_BYTES: u64 = 5_000;
 /// Why a test recording failed. Mirrors the Electron error strings so the
 /// renderer's i18n keys carry across unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TestRecordingError.ts")]
+#[ts(export, export_to = "TestRecordingError.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum TestRecordingError {
     /// ffmpeg couldn't find the named device.
@@ -39,7 +39,7 @@ pub enum TestRecordingError {
 /// Measured signal strength of a test recording. Mirrors the Electron
 /// `'silent' | 'low' | 'normal'` union.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TestRecordingSignal.ts")]
+#[ts(export, export_to = "TestRecordingSignal.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum TestRecordingSignal {
     /// Effectively muted / unplugged (RMS < −55 dB).

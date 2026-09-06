@@ -8,10 +8,9 @@
 //! written there because a silently-dead scheduler misses every future
 //! recording — which for a church recorder is the worst possible failure.
 //!
-//! But it is not the only task with that property. A dead cloud worker means
-//! the backups quietly stop; a dead review-reminder tick means an episode
-//! nobody looked at deletes itself a fortnight later, in silence; a dead trash
-//! sweep means "delete" becomes a leak with a nice name. Each of those was a
+//! But it is not the only task with that property. A dead trash sweep means
+//! "delete" becomes a leak with a nice name (and the since-removed cloud
+//! worker and review-reminder tick had the same shape). Each of those was a
 //! bare `spawn` whose `JoinHandle` was dropped on the floor — a panic inside
 //! them left no log line, no record, and no replacement.
 //!
@@ -23,14 +22,12 @@
 //! ## What is deliberately NOT supervised
 //!
 //! Restarting is only correct for a task that is *supposed* to run forever.
-//! Three long-running tasks in this app are session-scoped — they own a device
-//! or a process for exactly as long as the user asked, and their handle is held
-//! by an engine so `stop()` can abort them:
+//! One long-running task in this app is session-scoped — it owns a device
+//! or a process for exactly as long as the user asked, and its handle is held
+//! by an engine so `stop()` can abort it:
 //!
 //!   - the **recorder supervisor** (`recorder::engine`): re-spawning it after a
-//!     stop would start recording again;
-//!   - the **streaming supervisor** (`streaming`): same, for a live RTMP push;
-//!   - the **preview engine** (`media::preview`): same, for the camera.
+//!     stop would start recording again.
 //!
 //! and one is per-recording by design:
 //!
@@ -45,6 +42,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use sundayrec_core::alerts::AlertText;
 use tauri::AppHandle;
 
 /// A supervisor that ran at least this long before dying was a one-off, not a
@@ -68,10 +66,21 @@ const ESCALATE_AT: u32 = 3;
 /// in fifteen seconds is a real fault the operator can act on (restart the app,
 /// run Diagnose), and deciding per task what they are told is a decision worth
 /// making deliberately rather than defaulting.
+///
+/// F1 A8: the two `&'static str` fields were Norwegian sentences, so a Polish
+/// or German church was told its scheduler had died in a language it had not
+/// chosen. They are [`AlertText`] keys now, resolved to a sentence at FIRE
+/// time — not at spawn time — through [`crate::ui_lang`]. Spawn time is
+/// process start, before the renderer has pushed a language change; fire time
+/// is the moment the person is actually being told something.
 #[derive(Debug, Clone, Copy)]
 pub struct TaskAlert {
-    pub title: &'static str,
-    pub body: &'static str,
+    /// The notification title, or `None` for the bare app name. Three of the
+    /// five call sites want exactly that (both telemetry tasks and the relay
+    /// pump): "SundayRec" is a product name, and translating it seven ways
+    /// would be inventing work.
+    pub title: Option<AlertText>,
+    pub body: AlertText,
 }
 
 /// What to do after a supervised task's handle resolved. Pure — the whole
@@ -127,7 +136,16 @@ where
 {
     tauri::async_runtime::spawn(supervise_loop(
         name,
-        move || crate::notify::native(&app, alert.title, alert.body),
+        move || {
+            // Resolved HERE, when the alert actually fires: the volunteer may
+            // have picked their language long after this task was spawned.
+            let lang = crate::ui_lang::current();
+            let title = alert
+                .title
+                .map(|t| t.text(lang))
+                .unwrap_or_else(|| crate::notify::APP_TITLE.to_string());
+            crate::notify::native(&app, &title, &alert.body.text(lang));
+        },
         factory,
     ));
 }
@@ -148,8 +166,8 @@ where
         let started = tokio::time::Instant::now();
         // `tokio::spawn`, not `tauri::async_runtime::spawn`: we are already
         // INSIDE a runtime task here (the outer spawn entered it), so the
-        // "must be called from the context of a Tokio runtime" panic that
-        // `cloud::worker` documents cannot apply — and tokio's `JoinError`
+        // "must be called from the context of a Tokio runtime" panic cannot
+        // apply — and tokio's `JoinError`
         // tells us directly whether the task PANICKED or merely returned.
         let handle = tokio::spawn(factory());
         let outcome = handle.await;

@@ -1,0 +1,212 @@
+/*
+ * Skallets ordbok over farger, avstander og lag — og det ENESTE stedet i
+ * `app/` hvor en fargeliteral får stå.
+ *
+ * ## Hvorfor en gate og ikke en avtale
+ *
+ * `legacy/renderer/styles.css` har en pen `:root`-blokk med 52 variabler, og
+ * likevel ~1400 hardkodede farger under den: hver gang noen trengte «nesten
+ * den blå» ble det en ny literal. Resultatet er en app eieren ikke kan
+ * fargejustere ett sted, fordi de fleste fargene ikke bor der.
+ *
+ * Derfor: `scripts/check-app-css-tokens.mjs` avviser `#rrggbb` og `rgb()/rgba()`
+ * i ALLE `app/**\/*.css` unntatt denne fila. En ny farge er en ny token her, og
+ * eieren kan bytte hele paletten uten å åpne en eneste komponent.
+ *
+ * ## Hvor verdiene kommer fra
+ *
+ * Paletten er Fase D-canvasen (`docs/design/canvas/FASE-D-UTKAST-1.html`,
+ * `.board { --a-* }`), uten `a-`-prefikset: der var prefikset nødvendig fordi
+ * app-artboardene levde inne i en lys dokumentside, og de to palettene ville
+ * kollidert. Her er det bare appen.
+ *
+ * Avstands-, type- og lagskalaen er legacy-skallets (`--sp-*`, `--fs-*`,
+ * `--z-*`) uendret. Å finne på en ny skala ville betydd to sannheter om «hvor
+ * langt er ett hakk» i en app som skal bygges om side for side.
+ *
+ * ## Appen er mørk, med vilje
+ *
+ * Ingen `prefers-color-scheme`-blokk. Canvasens sett 0 låser «mørk app, gull
+ * som eneste aksent, rødt kun for opptak» — et lyst tema er et tillegg eieren
+ * kan be om senere, ikke noe som skal snike seg inn via en mediaspørring
+ * ingen har designet for.
+ */
+
+:root {
+  /* ── Grunnflater ──────────────────────────────────────────────────────── */
+  --bg: #0e1321;
+  --surface: #151b2b;
+  --raised: #1c2435;
+  --line: #28324a;
+  --line-2: #344060;
+
+  /* ── Tekst, fire nivåer ───────────────────────────────────────────────── */
+  --ink: #edf0f7;
+  --ink-2: #a2adc2;
+  /*
+   * F1-UX1/R7: var #5e6b85 til 2026-09 — 3,46:1 mot `--bg` og 3,20:1 mot
+   * `--surface`, begge under WCAG AA-gulvet på 4,5:1 for vanlig tekst. Brukt
+   * ~30 steder, blant annet `.hint`-linjene i opptaksoverlegget og `.why`
+   * under Start-knappen — tekst som skal LESES, ikke bare anes.
+   *
+   * #8794ad gir 6,06:1 mot `--bg` og 5,61:1 mot `--surface` (regnet med
+   * WCAG-formelen for relativ luminans; se PR-teksten for skriptet), og er
+   * fortsatt tydelig dimmere enn `--ink-2` (8,20/7,59:1) — hierarkiet
+   * ink > ink-2 > ink-3 står ved seg, bare med et gulv under seg selv.
+   */
+  --ink-3: #8794ad;
+
+  /* ── Gull: aksenten, og den eneste ────────────────────────────────────── */
+  --gold: #ebb84b;
+  --gold-soft: rgba(235, 184, 75, 0.14);
+  --gold-line: rgba(235, 184, 75, 0.42);
+
+  /* ── Rødt: KUN «det tas opp nå» ───────────────────────────────────────── */
+  --rec: #e5484d;
+  --rec-soft: rgba(229, 72, 77, 0.16);
+  --rec-line: rgba(229, 72, 77, 0.55);
+
+  /* ── Semantikk, skilt fra aksenten ────────────────────────────────────── */
+  --good: #3ccb7f;
+  --good-soft: rgba(60, 203, 127, 0.14);
+  --good-line: rgba(60, 203, 127, 0.45);
+  --warn: #f0b429;
+  --warn-soft: rgba(240, 180, 41, 0.14);
+  --warn-line: rgba(240, 180, 41, 0.5);
+  --bad: #f2555a;
+  --bad-soft: rgba(242, 85, 90, 0.14);
+  --bad-line: rgba(242, 85, 90, 0.55);
+
+  /*
+   * Tekst PÅ en fylt flate. Gull og rødt er lyse nok til at hvit tekst på dem
+   * ikke holder kontrastkravet — så en gullknapp har mørk tekst og en
+   * opptaksknapp lys. To tokens, så en komponent slipper å vite hvilken.
+   */
+  --on-gold: #1b1f2a;
+  --on-rec: #ffffff;
+  /* Bryterens knott og VU-spissmarkøren: ren hvit på alle underlag. */
+  --knob: #ffffff;
+
+  /* Bakgrunnen bak en modal. Egen token: den er ikke `--bg`, den er et slør. */
+  --scrim: rgba(6, 9, 18, 0.72);
+
+  /* ── Skygger ──────────────────────────────────────────────────────────── */
+  --shadow-dialog: 0 24px 70px rgba(0, 0, 0, 0.6);
+  --shadow-toast: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-rec: 0 10px 30px rgba(229, 72, 77, 0.28);
+  /* Pulsens ytre ring (StatusDot i opptak). Egen token fordi den er svakere
+     enn `--rec-soft` — en literal her ville vært den første av mange. */
+  --rec-pulse: rgba(229, 72, 77, 0.08);
+
+  /* ── Radier ───────────────────────────────────────────────────────────── */
+  --r: 12px;
+  --r-sm: 8px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* ── Avstand — legacy-skalaen, uendret ────────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+
+  /*
+   * ── Typografi ─────────────────────────────────────────────────────────
+   *
+   * FONTVALGET: systemstakken, ikke Hanken Grotesk — ennå.
+   *
+   * Canvasens sett 0 sier «Hanken Grotesk overalt i appen», og fonten er SIL
+   * OFL 1.1, altså fri å bunte. Men appen er offline og CSP-låst
+   * (`default-src 'self'`), så en Google Fonts-lenke ville blitt blokkert i
+   * WKWebView og fungert i nettleseren — den verste av alle feilmodusene. Den
+   * eneste veien er lokale `.woff2`-filer i repoet, og å hente inn binærfiler
+   * er en beslutning eieren skal ta selv (den drar også med seg
+   * OFL-lisensteksten som en fil vi må vedlikeholde).
+   *
+   * Så: `--font` er legacy-skallets systemstakk nå. Bytte til Hanken Grotesk
+   * er ÉN endring i denne fila pluss fire filer i `app/styles/fonts/` — se
+   * `docs/APP-SHELL.md` §Fonten.
+   */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+  /* Skalaen fra canvasens typeprøve. `--fs-xs` er GULVET: ingenting i appen
+     rendres under 11 px. */
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-body: 14.5px;
+  --fs-lg: 16px;
+  --fs-val: 17px;
+  --fs-xl: 22px;
+  --fs-h1: 26px;
+
+  /* ── Lag — legacy-skalaen, uendret ────────────────────────────────────── */
+  --z-page: 1;
+  --z-header: 50;
+  /*
+   * Opptaksoverlegget. UNDER `--z-modal` med vilje: stopp-bekreftelsen er en
+   * dialog, og en bekreftelse som havnet bak flaten den handler om ville vært
+   * en app der «Stoppe opptaket?» ikke går an å svare på.
+   */
+  --z-recording: 200;
+  --z-modal: 300;
+  --z-overlay: 350;
+  --z-toast: 400;
+  --z-critical: 500;
+
+  /* ── Skallets to bånd ─────────────────────────────────────────────────── */
+
+  /*
+   * D3 rev venstreskinnen (`--rail-w: 208px`) og satte navigasjonen NEDERST,
+   * som i DaVinci Resolve. De to tallene her er det som ble igjen av den: til
+   * sammen hundre piksler høye i stedet for to hundre piksler brede.
+   *
+   * 44 px er høyden på macOS' standard tittellinje — båndet trafikklysene er
+   * sentrert i — så topplinja er nøyaktig så høy som den ene tingen den må
+   * dele plass med. 56 px er et 44 px treffmål med 6 px luft over og under.
+   */
+  --topbar-h: 44px;
+  --bottombar-h: 56px;
+
+  /*
+   * ── Tetthet ───────────────────────────────────────────────────────────
+   *
+   * D3 la hundre piksler bånd oppå og under siden (`--topbar-h` +
+   * `--bottombar-h`), og de kom fra `<main>`. Proben målte hva det kostet:
+   * med et utfoldet kilde-kort på en 2-kanals lydenhet havnet Start-knappen
+   * 52 px UNDER bunnlinja — synlig i vinduet, men bak et bånd. Denne aksen
+   * er de 52 pikslene tilbake.
+   *
+   * ⚠️ Hvorfor SEMANTISKE navn og ikke flere `--sp-*`: `--sp-4` svarer på
+   * «hvor langt er fire hakk», ikke på «hvor tett står et kort». Da D3 skulle
+   * stramme opp, var `var(--sp-4)` brukt til seks forskjellige ting i de ni
+   * filene under, og å endre hakket ville flyttet alle seks. Navnene her sier
+   * hva avstanden GJØR, så neste tetthetsrunde er én verdi og ikke et søk.
+   *
+   * ⚠️ Det som IKKE bor her, med vilje: treffmål (knapper, brytere,
+   * nav-feltene — de er ≥ 40 px fordi en frivillig treffer dem mens hun ser
+   * på noe annet), dialogenes padding (en modal har luft fordi den er en
+   * avbrytelse), fontskalaen og VU-måleren. En tetthetsakse som også kunne
+   * krympe dem ville vært en knott som gjør appen vanskeligere å bruke.
+   */
+
+  /* Sidens egen luft: `<main>`s padding og avstanden mellom blokkene i den. */
+  --pad-page-y: 20px;
+  --pad-page-x: 24px;
+  --pad-page-b: 20px;
+  --gap-page: 14px;
+
+  /* Et kort. `-tight` er raden som står i en stabel med andre rader og skal
+     leses som én liste — ControlCard, bibliotekets rader, velgerens rader. */
+  --pad-card: 14px 18px;
+  --pad-card-tight: 10px 14px;
+
+  /* Mellom rader i en slik stabel, og mellom kolonnene i et rutenett. */
+  --gap-stack: 6px;
+  --gap-grid: 16px;
+}

@@ -160,7 +160,7 @@ pub fn observe_levels(data: &[f32], chans: usize, m: &MeterBanks) {
 /// the `vu://levels` Tauri event. `f32::NEG_INFINITY` (silence) is serialised by
 /// serde_json as `null`, which the renderer treats as "-∞ / floor".
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/VuLevels.ts")]
+#[ts(export, export_to = "VuLevels.ts")]
 pub struct VuLevels {
     /// Per-channel peak level since the last sample, in dBFS (≤ 0).
     pub peak_dbfs: Vec<f32>,

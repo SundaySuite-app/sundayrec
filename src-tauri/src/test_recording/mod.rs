@@ -194,7 +194,6 @@ pub async fn run_native_capture_bench(
         stop_on_silence: false,
         silence_threshold_db: None,
         silence_timeout_minutes: 5,
-        framerate: 30,
         channel_mode: ChannelMode::Stereo,
         input_channel_l: None,
         input_channel_r: None,
@@ -205,9 +204,6 @@ pub async fn run_native_capture_bench(
         live_levels: false,
         keep_separate_audio: false,
         separate_audio_format: "wav".into(),
-        video_resolution: String::new(),
-        video_codec: String::new(),
-        video_encoder: String::new(),
         classic_directshow: false,
         classic_ffmpeg_audio: false,
         video_input: None,
@@ -282,7 +278,6 @@ fn native_probe_opts(
         stop_on_silence: false,
         silence_threshold_db: None,
         silence_timeout_minutes: 5,
-        framerate: 30,
         channel_mode: ChannelMode::Stereo,
         input_channel_l: None,
         input_channel_r: None,
@@ -293,9 +288,6 @@ fn native_probe_opts(
         live_levels: false,
         keep_separate_audio: false,
         separate_audio_format: "wav".into(),
-        video_resolution: String::new(),
-        video_codec: String::new(),
-        video_encoder: String::new(),
         classic_directshow: false,
         classic_ffmpeg_audio: false,
         video_input: None,
@@ -483,7 +475,7 @@ async fn run_astats_rms(path: &str) -> Option<f64> {
 /// (camelCase): on success, the captured file's size + measured signal; on
 /// failure, the classified error kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TestRecordingResult.ts")]
+#[ts(export, export_to = "TestRecordingResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TestRecordingResult {
     /// Whether the test produced a plausible recording.
@@ -680,7 +672,6 @@ mod tests {
             stop_on_silence: false,
             silence_threshold_db: None,
             silence_timeout_minutes: 5,
-            framerate: 30,
             channel_mode: sundayrec_core::settings::ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
@@ -691,9 +682,6 @@ mod tests {
             live_levels: false,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            video_resolution: String::new(),
-            video_codec: String::new(),
-            video_encoder: String::new(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,

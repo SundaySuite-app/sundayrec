@@ -1,0 +1,20 @@
+-- SundayRec migration 0007 — drop the retired cloud-backup upload queue
+--
+-- `upload_queue` (0003) backed the Fase 6 cloud-backup feature (Google Drive /
+-- YouTube / Gmail uploads). That feature was removed before it ever shipped to
+-- a ring — `sundayrec-core::cloud::queue` and every caller are gone from the
+-- codebase (see F1-A9) — so the table has stood empty on every installed
+-- machine since. sqlx replays every migration file against a fresh database,
+-- so the `create table` in 0003 cannot be deleted retroactively; this DROP is
+-- how a migrated history removes a table instead.
+--
+-- Plain `drop table`, no cascade and no extra transaction handling beyond
+-- sqlx's own per-file transaction: nothing in this schema — no trigger, no
+-- view, no foreign key `ON DELETE` action anywhere — references
+-- `upload_queue`, so there is nothing else to unwind. The two indexes 0003
+-- created alongside it (`idx_upload_queue_dedup`, `idx_upload_queue_due`) go
+-- with it automatically — SQLite drops an index when its table is dropped.
+--
+-- `if exists` so this is idempotent (a database that, somehow, already lacks
+-- the table is not an error).
+drop table if exists upload_queue;

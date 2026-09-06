@@ -1,12 +1,18 @@
 # Needs Richard — Electron-parity seams (PU-1…R7)
 
 The pure decision logic for these features is ported into `sundayrec-core` and
-fully unit-tested; the impure seams sit behind cargo features. **Six of them are
-now in `default`** — `editor`, `whisper`, `tray`, `updater`, `email` and
-`streaming` — so the Rediger-screen, transcription, the tray, auto-update,
-failure e-mail and Direkte all ship in a normal build. The remaining
-**default-off** features are `publish`, `ndi` and `bridge`; scheduler/wake are
-always compiled. The items below need a real account / desktop session / device
+fully unit-tested; the impure seams sit behind cargo features. **Four of them
+are in `default`** — `editor`, `tray`, `updater` and `email` — so the
+Rediger-screen, the tray, auto-update and failure e-mail all ship in a normal
+build. Scheduler/wake are always compiled. (v0.14: `streaming`, `ndi` and
+`bridge` were REMOVED together with the Direkte page; R1 «Frivilligen først»
+2026-08-23 removed the sharing cluster — cloud backup, podcast RSS + `publish`,
+the chat webhook, the Gmail transport, the Sunday-suite integrations +
+`sundayrec://`, cover art and the review queue; R2 the same day removed the
+content cluster — `whisper` transcription (the only C/C++ dependency), the AI
+companion, chapter detection, the learning cards + local adaptivity, the dead
+settings fields and the Video tab's quality knobs. Their sections below are
+kept only as struck history.) The items below need a real account / desktop session / device
 / signing identity that the headless gate cannot provide. None block the default
 build or the gate. The consolidated "what only Richard can provide" checklist is
 at the bottom of this file.
@@ -14,8 +20,9 @@ at the bottom of this file.
 > **Status 2026-08-06 (`feat/make-it-real`, v0.10.0).** `email` and `streaming`
 > joined `default` in this round, several seams listed below as "remaining glue"
 > are now wired, and the IPC surface was audited end to end — see
-> `docs/COMMAND_AUDIT_2026-08.md` for which commands the UI can and cannot
-> reach, and the morning report `SundayRec-MAKE-IT-REAL-2026-08-06.md` (one
+> `docs/archive/COMMAND_AUDIT_2026-08.md` (arkivert i V1/PR3 — the living
+> truth is `scripts/command-reachability-baseline.json`) for which commands
+> the UI can and cannot reach, and the morning report `SundayRec-MAKE-IT-REAL-2026-08-06.md` (one
 > directory above the repo) for the rig checklist and the owner decisions.
 
 ## ⭐ Release blockers — current checklist (only Richard can do these)
@@ -23,7 +30,7 @@ at the bottom of this file.
 A precise, up-to-date list of the account/key/identity work standing between the
 code-complete state and a **signed, auto-updating, public release**. See
 `docs/archive/RELEASE-AUDIT-2026-06-01.md` for the pipeline audit and
-`docs/DISTRIBUTION.md` / `docs/GOOGLE-OAUTH-SETUP.md` for the step-by-step.
+`docs/DISTRIBUTION.md` for the step-by-step.
 Status updated 2026-08: releases are **signed + auto-updating in prod**; the
 only remaining release blocker is **notarization** (item 3).
 
@@ -35,23 +42,25 @@ only remaining release blocker is **notarization** (item 3).
 2. **Apple Developer ID signing — ✅ RESOLVED (~2026-07-31).** The cert was
    re-exported and the secrets are set: `MAC_CERTS` (base64 of the `.p12`) +
    `MAC_CERTS_PASSWORD`, mapped to tauri-action's `APPLE_CERTIFICATE` /
-   `APPLE_CERTIFICATE_PASSWORD` in `release.yml` env (lines 143–145;
-   `APPLE_SIGNING_IDENTITY` — `Developer ID Application: … (784GN847G4)` — is
-   hardcoded there). Published releases are **signed** since ~07-31. See
-   DISTRIBUTION.md "macOS code signing".
+   `APPLE_CERTIFICATE_PASSWORD` at the `[notarization]` marker in
+   `release.yml`'s env (`APPLE_SIGNING_IDENTITY` —
+   `Developer ID Application: … (784GN847G4)` — is hardcoded there). Published
+   releases are **signed** since ~07-31. See DISTRIBUTION.md "macOS code
+   signing".
 
 3. **Notarization — the real remaining blocker: the Apple Program License
    Agreement.** Apple's notary service returns **403 "A required agreement is
    missing or has expired"** until the updated PLA is accepted on
    developer.apple.com (team `784GN847G4`). Notarization is therefore
-   **deliberately disabled**: the `notarytool` env lines (`APPLE_ID`,
-   `APPLE_PASSWORD` ← `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are
-   commented out in `release.yml` (lines 146–155) — the comment block there
-   documents how to re-enable them once the agreement is signed. ⚠️ The
-   **app-specific password was leaked in chat** — **revoke it** at
-   appleid.apple.com → Sign-In and Security → App-Specific Passwords, **generate
-   a new one**, and store it only as the `APPLE_APP_SPECIFIC_PASSWORD` GitHub
-   secret.
+   **deliberately disabled** — since F1-D1 this is a repo **variable**,
+   `NOTARIZE_MAC` (Settings → Secrets and variables → Actions → Variables),
+   not three commented-out lines someone has to remember to uncomment. Off by
+   default, it skips the `[notarize-switch]`-marked step in `release.yml` that
+   would otherwise export `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`, so every
+   build is Developer ID-signed but not notarized. Re-enable by accepting the
+   PLA and setting the variable to `true` — no commit required. See
+   RELEASE-CHECKLIST.md §2a for the full mechanism and why it has to be a
+   separate step rather than a line in the build step's env.
 
 4. **Tauri updater — ✅ DONE, proven in prod.** The `plugins.updater` block
    (pubkey + endpoints) is in `tauri.conf.json`, `uploadUpdaterJson: true` is
@@ -61,12 +70,10 @@ only remaining release blocker is **notarization** (item 3).
    releases since v0.4.x** — the `latest.json` feed is verified in prod (v0.8.0
    current). See `docs/RELEASE-CHECKLIST.md`.
 
-5. **Google OAuth console client (Desktop app type).** Cloud connect/upload +
-   the cloud-Gmail email path need a Google OAuth client of type **Desktop app**
-   (a binary `client_id` is NOT the `.env` one — confirm the console client type
-   and the redirect). Provide `SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional secret) per
-   `docs/GOOGLE-OAUTH-SETUP.md`. Not a build blocker, but blocks the cloud/email
-   features at runtime.
+5. ~~**Google OAuth console client (Desktop app type).**~~ **GONE in R1
+   «Frivilligen først»** — cloud backup and the Gmail transport that needed
+   `SUNDAYREC_GOOGLE_CLIENT_ID` were removed; e-mail is SMTP-only and needs no
+   Google client. (`docs/archive/GOOGLE-OAUTH-SETUP.md` stays as history.)
 
 The per-feature seam detail follows below; this checklist is the release-gating
 subset.
@@ -79,39 +86,34 @@ subset.
   forever.
 - **✅ The keychain write path exists.** `email_set_smtp_password` /
   `email_has_smtp_password` / `email_clear_smtp_password` are wired to the
-  **Innstillinger → Varsler** card. The SMTP password is still intentionally NOT
+  **Oppsett → Avansert → «E-postserver (SMTP)»** card. The SMTP password is
+  still intentionally NOT
   in the settings bag — it lives in the OS keychain, and a stored password takes
   precedence over anything typed into the field. `email_smtp_from` lets the
   From: address differ from the account.
-- **A Gmail OAuth connection or SMTP credentials.** The Gmail path reuses the
-  cloud OAuth refresh token (connect Gmail first, which still needs the OAuth
-  client id — item 5 above); the SMTP path needs a host, port, user, and
-  app-password and works today.
+- **SMTP credentials.** SMTP is the one transport (the Gmail-API path left
+  with cloud backup in R1): a host, port, user and app-password.
 - **👤 Deliverability check (rig).** Confirm a real "✓ email works" message
   arrives from **Test e-post**, that a killed recording produces a failure
   e-mail, and that the throttle suppresses a 2nd identical alert within 10 min
   (smoke §8).
 
-## PU-2 — Tray + deep links (`--features tray`)
+## PU-2 — Tray (`--features tray`) — deep links REMOVED in R1
 
-- **A desktop session.** The native menubar/tray item and the `sundayrec://`
-  scheme registration (`tauri-plugin-deep-link`) need a real GUI to verify.
-  **(R7 update)** the tray is now actually **installed** in `setup()` under
-  `--features tray`: `tray::install` builds the `TrayIcon` from the unit-tested
-  core menu model, wires `on_menu_event` → `handle_menu_event` (Stop calls
-  `RecorderEngine::stop()` directly; start/preflight/diagnostics/review emit
-  `tray://action`; show/quit are in-process), and registers the deep-link plugin
-  routing inbound URLs through `dispatch_deep_link`. Build proven with
-  `cargo build -p sundayrec --features tray` + clippy `-D warnings`.
+- **A desktop session.** The native menubar/tray item needs a real GUI to
+  verify. **(R7 update)** the tray is now actually **installed** in `setup()`
+  under `--features tray`: `tray::install` builds the `TrayIcon` from the
+  unit-tested core menu model and wires `on_menu_event` → `handle_menu_event`
+  (Stop calls `RecorderEngine::stop()` directly; start/preflight/diagnostics
+  emit `tray://action`; show/quit are in-process). Build proven with
+  `cargo build -p sundayrec --features tray` + clippy `-D warnings`. (The
+  `sundayrec://` scheme, `tauri-plugin-deep-link` and `dispatch_deep_link`
+  left with the Sunday-suite integrations in R1.)
 - **Tray icon assets.** The Electron app shipped `tray-idle/recording/error`
   PNGs (+ macOS `Template` + Windows dark variants) under `assets/`. **(R7)** the
   shell currently reuses the app's **default window icon** for the tray; the
   per-state idle/recording/error assets still need bundling + a swap on
   `TrayState` change (`sundayrec_core::tray::icon_for` already picks the base).
-- **Scheme registration in `tauri.conf.json`** (`plugins.deep-link.desktop.schemes
-= ["sundayrec"]`) + the macOS `Info.plist` `CFBundleURLTypes` entry are still
-  needed for the OS to _deliver_ `sundayrec://` URLs to the running app (the
-  `on_open_url` listener is wired; the scheme must be registered with the OS).
 
 ## R7 — Auto-update (`--features updater`) — ✅ DONE, proven in prod
 
@@ -134,58 +136,57 @@ subset.
   real installs update from it. A dev build still short-circuits the check by
   design.
 
-## PU-3 — Podcast RSS publish (`--features publish`)
+## ~~PU-3 — Podcast RSS publish (`--features publish`)~~ — **FJERNET R1 2026-08-23**
 
-- **A connected Drive + a public-share capable account.** The orchestration
-  (write `podcast.xml`, upload via the existing resumable worker, create a
-  public share URL, cache the feed URL) needs a real Drive connection and
-  network. Only the XML builder (`sundayrec_core::feed`) is tested.
-- A `publish` seam module + the share-URL helper on the Drive worker are the
-  remaining glue (the Electron `createPublicShareUrl` / `uploadFile` path).
+The feed builder, the `publish` seam/feature and the Podcast card left with
+the sharing cluster. Git history is the feature flag.
 
 ## PU-4 — OS wake-timers + scheduled launch (no feature flag)
 
 - **A real Mac/Windows box.** The scheduler supervisor's wall-clock timing, the
-  `pmset`/`osascript`/`powershell`/`powercfg` shell-outs, the admin/UAC prompts,
-  and whether the machine _truly_ wakes from sleep are all HARDWARE-UNVERIFIED.
-  The next-fire / catch-up / missed / wake-point decisions are unit-tested in
-  `sundayrec_core::{schedule, wake}`; this is the "validated on a real rig" exit
-  the migration tracks (smoke §11).
+  `pmset`/`osascript` admin prompt, and whether the machine _truly_ wakes from
+  sleep remain HARDWARE-UNVERIFIED. What is NO LONGER unverified: the command
+  shaping and its quoting, the macOS escalation ladder and its
+  Permission/Cancelled classification, the Windows arm/clear ladder, the
+  `wmic`→CIM fallback, and the dedup invariants — all unit-tested over a fake
+  shell and fake timers in `src-tauri/src/wake/{plan,shell,win_timer,mod}.rs`.
+  The macOS IOKit read runs for real in the gate. Decisions stay in
+  `sundayrec_core::{schedule, wake}`; the rig exit is smoke §11.
+- **Windows wakes only while SundayRec runs.** The mechanism is an in-process
+  `SetWaitableTimer(fResume = TRUE)`, not a scheduled task: no UAC prompt and
+  nothing left behind on the machine, but the timer dies with the process. That
+  is the owner-approved model (autostart + tray), and it is stated in the app's
+  own capability text — please confirm on the rig that quitting the app really
+  does stop the wake, so nobody later "fixes" it back into a scheduled task.
+- **Windows code is compile-checked only here.** Nothing on a Mac builds the
+  `SetWaitableTimer` path; CI's `windows-check` lane is the only thing that
+  proves it compiles, and no automated test anywhere proves it wakes.
+- **Apple Silicon can lie about its own schedule.** `pmset -g sched` is known to
+  omit active schedules, so verification reads IOKit first and falls back to
+  `pmset`. A wake we cannot see is reported as a mismatch (prompting a
+  re-register) rather than assumed present — expect the occasional
+  "click Planlegg again" that turns out to have been unnecessary.
 - **Missed-recording persistence** still waits on a `status`/`error` column on
   the `recording` table (see the `scheduler/mod.rs` honest-gaps note).
 
-## PU-5 — Whisper transcription (`--features whisper`)
+## ~~PU-5 — Whisper transcription (`--features whisper`)~~ — **FJERNET R2 2026-08-23**
 
-- **A C/C++ toolchain + CMake.** The `whisper` feature pulls `whisper-rs`, which
-  compiles libwhisper from source. The default build + the CI gate carry no
-  whisper dep; `whisper_transcribe` returns `feature_disabled` there. Only the
-  `sundayrec-core::whisper` decisions (model registry, argv/thread heuristic,
-  convert argv, progress/exit parse, JSON-sidecar normalise, chunk/merge,
-  language map) are unit-tested.
-- **A downloaded model + a real recording.** The model download (the registry
-  has the URLs + SHAs; the download/SHA-verify itself is not yet wired — the
-  Electron `downloadModel` redirect-follow + hash check is the remaining glue),
-  the ffmpeg 16 kHz-mono conversion, and the inference are HARDWARE-UNVERIFIED
-  (smoke §10b). A whisper-cli sidecar path (instead of the `whisper-rs`
-  in-process binding) could be offered as an alternative — the argv builder
-  already matches the Electron `whisper-cli` invocation.
+Transcription left with the content cluster: the `whisper` feature, whisper-rs
+(libwhisper — the build's only C/C++ toolchain dependency, now gone), the
+model registry/download, the Transkribering panel, SRT/VTT/TXT export and the
+transcript search. No rig item remains. `.transcript.json` sidecars that
+already exist still travel with their recording through the trash.
 
-## PU-6 — Episode prep + review queue + Stage import (no feature flag)
+## ~~PU-6 — Episode prep + review queue + Stage import~~ — **FJERNET R1 2026-08-23**
 
-- **The audio-analysis stack.** `prep_build_episode` assembles an `EpisodePrep`
-  from analysis segments it is GIVEN — the ffmpeg/FFT `audio-analysis.ts` that
-  produces those segments is NOT ported yet, so the caller (or a later analysis
-  seam) must supply them. The sermon-detection + attention-reason + status
-  decisions ARE the unit-tested core.
-- **Reminder dispatch.** `review_process_reminders` returns the actions the
-  scheduler should fire (notify/email/webhook/auto-discard) as a decision; the
-  actual notification dispatch + the auto-discard history note should be wired to
-  the existing PU-1 email seam + the scheduler's native notifications. The queue
-  is persisted as a JSON blob under the `reviewQueue` settings key (mirrors the
-  Electron `electron-store` shape) so no schema migration is needed.
-- **Sidecar writes.** `stage_import_manifest` returns the mapped chapters +
-  `ServiceLink`; writing them into the recording's `.meta.json` + `.service.json`
-  sidecars (the Electron `applyStageManifest` fs step) is the remaining glue.
+The prep pipeline, the review queue + reminder ladder, the tray callout and
+the Stage manifest import left with the sharing cluster. One consequence for
+the owner: `learning::record_trim_deltas` / `current_tuning` (the E8/E10
+trim-correction loop and the local nudge) were only ever driven from the
+review path and had no caller — R2 removed the local nudge, the learning
+viewer cards and the `localAdaptivity` setting («dead → delete»); the
+trim-adjustment RECORD and its telemetry projection stay, dormant, for the
+day the editor writes it (`docs/LEARNING.md` §Status).
 
 ## R1 — Non-destructive editor (`--features editor`)
 
@@ -204,12 +205,11 @@ subset.
     drag-to-mark cut UI + waveform-overlaid timeline (the Electron
     `renderer/pages/editor/*`) is the renderer work for the next phase; the
     backend already accepts `cutRegions` and the core plans the keeps.
-  - **Intro/outro + chapter metadata on export.** The core builds the
-    intro/outro concat graph + the `;FFMETADATA1` chapter sidecar
-    (`audio_export_filter_complex(has_intro, has_outro)`, `ffmetadata`,
-    `metadata_args`), but the R1 `EditorExportRequest` doesn't yet carry those
-    fields — wire them through when the editor UI surfaces intro/outro pickers +
-    a chapter editor.
+  - **Chapter metadata on export.** The core still builds the `;FFMETADATA1`
+    chapter sidecar (`ffmetadata`, `metadata_args`, kept + tested), but since
+    R2 nothing produces chapters — the transcript-driven detector and the
+    chapter list left with the content cluster — so the export hands it an
+    empty list. A future chapter source only has to fill that list.
   - **Replace-mode + atomic swap.** R1 exports a new `*_redigert.<fmt>` file
     only. The Electron `saveEdited`/`safeReplaceFile` in-place replace (with the
     `.__editor_tmp`/`.__editor_bak` crash-recovery sweep) + the FORCE_WAV
@@ -221,7 +221,12 @@ subset.
     percentage + an ETA on the bar (`export_timeout_ms` is still the tested
     kill-timer).
 
-## Bridge Integration #2 — Live cue bridge (`--features bridge`)
+## ~~Bridge Integration #2 — Live cue bridge (`--features bridge`)~~ — **FJERNET v0.14**
+
+> Den native WebSocket-halvdelen (`bridge_live::subscribe`, `bridge`-feature-et,
+> `live_bridge_*`-kommandoene) ble fjernet med Direkte-siden. Den RENE
+> kontrakt-speilingen (`sundayrec-core::integrations::live_bridge`) består,
+> testet, med et doknotat om hvorfor — en framtidig konsument starter derfra.
 
 - **A live Supabase project + SundayStage publishing.** The Rec side SUBSCRIBES
   to `church:{churchId}:service:{serviceId}` and folds inbound `LiveEvent`s into
@@ -237,7 +242,11 @@ subset.
   emitting a Tauri event for the UI is the remaining glue. The Supabase URL +
   anon key also need to flow from settings (the integration `connection` config).
 
-## R3 — Live streaming (`streaming`, now in `default`)
+## ~~R3 — Live streaming (`streaming`)~~ — **FJERNET v0.14**
+
+> Hele strømme-flaten (Direkte-siden, `stream_*`-kommandoene, motoren,
+> `sundayrec-core::{streaming,overlay}`) ble fjernet i v0.14 — SundayRec er et
+> opptaksprogram. Riggpunktene under er derfor DØDE; historikk beholdt.
 
 - **A real camera + a real RTMP endpoint + a stream key.** The `streaming`
   feature compiles the ffmpeg spawn seam (`src-tauri/src/streaming/mod.rs`)
@@ -270,7 +279,10 @@ subset.
   keychain round-trips on the target machine (the tolerant test skips when no
   keychain is reachable).
 
-## R3 NDI — receiver (`--features ndi`) — **SDK NOT BUNDLED**
+## ~~R3 NDI — receiver (`--features ndi`)~~ — **FJERNET v0.14**
+
+> Eierbeslutningen fra kommando-revisjonens §4.5 falt: NDI (mottak OG sending,
+> stub + kjerne) er fjernet. Historikk beholdt under.
 
 - **The NDI SDK runtime + a native FFI binding + an NDI source on the LAN.** The
   `ndi` feature compiles a **STUB** seam (`src-tauri/src/ndi/mod.rs`):
@@ -298,26 +310,11 @@ subset.
   stream-stop. Bundle the SDK in `tauri.conf.json` (`externalBin`/resources) the
   way the Electron app `asarUnpack`-ed `vendor/grandiose`.
 
-## P6 — Transcript search backend wiring (no feature flag)
+## ~~P6 — Transcript search backend wiring (no feature flag)~~ — **FJERNET R2 2026-08-23**
 
-The transcript search **logic** is pure + gate-tested
-(`src/features/search/searchIndex.ts`: build-index / substring-scan / context /
-group / stats, 13 tests). What remains is the thin glue Richard's rig will need
-to make it live:
-
-- **A `transcript_list_all` command** (mirrors the Electron
-  `window.api.transcriptListAll`): enumerate every `<name>.transcript.json`
-  sidecar in the known recording folders and return `{ filePath, transcript }`
-  tuples for `buildIndex` to consume. The sidecar read/parse path already exists
-  in the editor seam; this is an aggregation over the save folder.
-- **A search panel + a `search` view** in the shell: the panel feeds the IPC
-  result to `searchTranscripts`, renders the grouped hits, and on click hands the
-  file + seek-time to the editor (the Electron `openEditorWithFile(fp, atSec)`
-  contract). Pure search is done; only the IPC list command + the render/route
-  are outstanding (GUI-deferred; smoke §6b).
-
-No new account, key, or device is required for this — it is in-repo glue, listed
-here so the search feature is not assumed fully wired end-to-end.
+The transcript index (`transcripts_list`), the hit-snippet rows and the «Med
+transkript» chip left with whisper. Historikk's search box still filters by
+filename, date and note (e2e-pinned).
 
 ## E2 — Observability: crash ring, log file, capture/video probes (no feature flag)
 
@@ -368,22 +365,27 @@ None of it blocks the default build or the gate.
 
 ### A real recording/streaming rig (HARDWARE-UNVERIFIED)
 
+This list is WHAT is still unverified. [`docs/RIG-DAY.md`](RIG-DAY.md) is HOW
+to verify it in one sitting — a checklist that walks the mixer-pull, the
+Windows camera/video restart, the `kill -9` mid-slot recovery, the WAL check
+against a real database, the wake test, an ASIO subset, and the #111
+gain-listening pass in a deliberate order, so the day doesn't turn into
+re-discovering these bullets one at a time.
+
 - **Record** (smoke §3–§6): a Mac/Windows box with a real mic + camera; prove
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
   wired but unproven on a device.
-- **Stream** (`streaming`, in `default`, smoke §R3): a real camera + a real RTMP
-  endpoint + a stream key. Auto-recovery + live stats are wired now; what is
-  missing is having seen them survive a real disconnect.
-- **Whisper** (`whisper`, in `default`, smoke §10b): a C/C++ toolchain + CMake,
-  a downloaded model (download + SHA-256 verify are wired, with a real
-  percentage), and a real recording.
-- **Cloud upload** (smoke §7): a connected Google Drive + network — the resumable
-  worker (PUTs, keychain token read, chunk math) is NETWORK-UNVERIFIED.
-- **OS wake-timers** (smoke §11): a real box for the `pmset`/`schtasks`/`powercfg`
-  shell-outs + admin/UAC prompts + a true sleep/wake cycle.
-- **NDI** (`--features ndi`): the NDI SDK runtime + an FFI binding + a LAN NDI
-  source — the seam is a deliberate STUB until the SDK is vendored (see above).
+- **The classic ffmpeg pre-roll hatch** (`classicFfmpegPreroll`, no UI): R2
+  kept this field ON PURPOSE — it is the only fallback to the legacy rolling
+  ffmpeg pre-roll engine, and the native cpal buffer is still unproven on the
+  rig. Once a real Sunday has proven the native buffer, the owner decides
+  whether the hatch AND the classic engine (`recorder/preroll.rs`
+  `ClassicPrerollEngine`) go — a live-path decision, not a settings sweep.
+- **OS wake-timers** (smoke §11): a real box for the `pmset` admin prompt, the
+  Windows `SetWaitableTimer` resume, and a true sleep/wake cycle. The argument
+  shaping, quoting and escalation ladders are unit-tested; the resume is not and
+  cannot be.
 - **Observability** (no feature flag, smoke §13): live-exercise
   `SUNDAYREC_TEST_PANIC` end to end, run the capture probe against the Qu-5 and
   the video probe with the camera held by another app, watch log rotation
@@ -392,28 +394,25 @@ None of it blocks the default build or the gate.
 
 ### Keys & secrets
 
-- **Google OAuth client** (Drive/YouTube/Gmail + cloud-Gmail email path):
-  `SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional secret) — see
-  docs/GOOGLE-OAUTH-SETUP.md. A binary `client_id` is NOT the same as the `.env`
-  one; confirm the console client is a **Desktop app** type.
 - **SMTP credentials** (`--features email`, SMTP path): host/port/user +
   app-password. The password is stored in the OS keychain, never the settings
   bag; the host/port/user now have a UI (R7).
-- **Anthropic API key** (`ANTHROPIC_API_KEY`): NOT currently consumed by
-  SundayRec — there is no LLM seam in this app (the AI rerank/translate work
-  lives in SundaySong). Listed here only so it isn't assumed to be wired; if a
-  future SundayRec feature wants Claude, follow the `getEmbedder()`/`getLlmClient()`
-  fetch-seam pattern from the suite (free tier works without a key).
+- **Anthropic API key**: NOT consumed by SundayRec — the AI sermon companion
+  (the one seam that read it, from the keychain slot `companion.llm_api_key`)
+  left in R2. A key stored there by an earlier build is left alone, like the
+  other retired keychain slots; delete it by hand if wanted.
 
 ### Signing, notarization & auto-update
 
 - **Apple Developer ID signing — ✅ DONE** (macOS release): the Developer ID
-  Application cert is set as `MAC_CERTS` / `MAC_CERTS_PASSWORD` (mapped in
-  `release.yml:143-145`); releases are signed since ~2026-07-31.
+  Application cert is set as `MAC_CERTS` / `MAC_CERTS_PASSWORD` (mapped at the
+  `[notarization]` marker in `release.yml`); releases are signed since
+  ~2026-07-31.
 - **Notarization — ⏸ the remaining blocker:** accept the updated Apple Program
   License Agreement on developer.apple.com (notary returns 403 until then),
-  then uncomment the `notarytool` env lines in `release.yml:146-155` (see
-  item 3 above).
+  then set the repo variable `NOTARIZE_MAC` to `true` (see item 3 above and
+  the `[notarize-switch]` marker in `release.yml` — no commit required, unlike
+  before F1-D1).
 - **Windows code-signing cert** (Windows release): for a non-SmartScreen-warned
   installer.
 - **Updater keypair — ✅ DONE, live since v0.4.x** (`--features updater`, R7):
@@ -430,7 +429,8 @@ None of it blocks the default build or the gate.
 Etter wake-from-sleep-funnet (merget i PR #2) gjorde jeg en systematisk audit av
 (a) hvilke `Settings`-felt backend-konsumentene faktisk leser vs. hva
 `syncBackendRecordingSettings` (api-shim → `settings_save`) sender, og (b) hele
-`call()`/`invoke()`-seamen i `legacy/renderer/api-shim.ts` mot Rust-signaturene.
+`call()`/`invoke()`-seamen i api-shim (`legacy/renderer/api-shim.ts` den gang,
+`app/lib/api-shim.ts` etter fase B) mot Rust-signaturene.
 Bakgrunn: backend-sqlite får KUN det kuraterte opptaks-subsettet; alt utenfor det
 re-defaultes av `#[serde(default)]` ved HVER lagring.
 
@@ -464,13 +464,17 @@ videoBitrateKbps, audioBitrateKbps, alsoRecord, overlays}` og signaturen
   stemmer. `streaming` er dessuten i `default` nå, så knappen er ikke lenger et
   `feature_disabled`-svar. Selve RTMP-pushen er fortsatt uverifisert mot rigg.
 
-**LENGER IKKE SANT (rettet 2026-08):** notatet under sa at «e-post/webhook/cloud/
-integrasjoner … frontend-metodene deres er bevisste no-op-stubs i `api-shim.ts`
-→ backend drives aldri av dem». Det gjelder nå **kun cloud og integrasjoner**.
-E-post og webhook er ekte: `email_send_test`, `email_test_webhook` og
-nøkkelring-kommandoene er koblet opp, og — viktigere — det ble funnet at
-kirke-/e-post-/webhook-innstillingene **aldri nådde sqlite i det hele tatt**
-(de lå kun i `localStorage`, så backend leste defaults). Det kuraterte
-subsettet i `syncBackendRecordingSettings` er utvidet deretter. Se
-`docs/COMMAND_AUDIT_2026-08.md` §4.2 for integrasjons-stubbene, som fortsatt
-står — med et fullt synlig panel over seg.
+**LENGER IKKE SANT (rettet 2026-08, sist 2026-08-09):** notatet under sa at
+«e-post/webhook/cloud/integrasjoner … frontend-metodene deres er bevisste
+no-op-stubs i `api-shim.ts` → backend drives aldri av dem». Det gjelder nå
+**kun cloud**. E-post og webhook er ekte: `email_send_test`,
+`email_test_webhook` og nøkkelring-kommandoene er koblet opp, og — viktigere —
+det ble funnet at kirke-/e-post-/webhook-innstillingene **aldri nådde sqlite i
+det hele tatt** (de lå kun i `localStorage`, så backend leste defaults). Det
+kuraterte subsettet i `syncBackendRecordingSettings` er utvidet deretter.
+**Integrasjons-stubbene er også borte:** PR #114 (2026-08-09) koblet alle ti
+`integrations_*`-kommandoene til ekte kall med ærlige kvitteringer (pinnet i
+`e2e/integrations.spec.ts`); se `docs/archive/COMMAND_AUDIT_2026-08.md` §4.2, som nå
+er merket løst. HTTP-sidene forblir nettverks-uverifiserte til riggtest.
+**(R1 «Frivilligen først» 2026-08-23: hele avsnittet over er historikk —
+cloud, webhook og integrasjonene er FJERNET; bare e-post-stien består.)**

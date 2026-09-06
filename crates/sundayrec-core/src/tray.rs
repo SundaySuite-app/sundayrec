@@ -40,8 +40,7 @@ impl TrayLang {
 }
 
 /// The live recorder/scheduler facts the menu reflects. Mirrors the module-level
-/// mutable state in `tray.ts` (`isRecording`, `hasError`, `nextRecording`,
-/// `reviewQueueCount`).
+/// mutable state in `tray.ts` (`isRecording`, `hasError`, `nextRecording`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TrayState {
     pub is_recording: bool,
@@ -49,8 +48,6 @@ pub struct TrayState {
     /// Pre-formatted short label of the next recording (e.g. "Sun 11:00"), or
     /// `None`. Wall-clock formatting is a shell concern; the core just places it.
     pub next_recording_label: Option<String>,
-    /// Episodes awaiting human review (0 hides the callout row).
-    pub review_queue_count: u32,
 }
 
 /// A stable identifier for what a menu item does. The shell switches on this to
@@ -62,7 +59,6 @@ pub enum TrayAction {
     ShowOnError,
     /// Non-interactive info row (next-recording line).
     None,
-    OpenReviewQueue,
     OpenWindow,
     StartRecording,
     StopRecording,
@@ -195,8 +191,8 @@ pub fn tooltip(state: &TrayState, lang: TrayLang) -> String {
 }
 
 /// Build the ordered tray menu for `state` + `lang`. Order + clickability:
-///   status → [next-recording info] → [review-queue callout] → open → start/stop
-///   → open-folder → diagnostics → quit.
+///   status → [next-recording info] → open → start/stop → open-folder →
+///   diagnostics → quit.
 ///
 /// The tray is a quick background-menu, so it carries ONE system action. The
 /// status row already answers "is the system OK?" at a glance; when it isn't,
@@ -231,16 +227,6 @@ pub fn build_menu(state: &TrayState, lang: TrayLang) -> Vec<TrayItem> {
                 false,
             ));
         }
-    }
-
-    // High-priority review-queue callout.
-    if state.review_queue_count > 0 {
-        items.push(TrayItem::Separator);
-        items.push(TrayItem::item(
-            review_queue_label(lang, state.review_queue_count),
-            TrayAction::OpenReviewQueue,
-            true,
-        ));
     }
 
     items.push(TrayItem::Separator);
@@ -394,55 +380,6 @@ fn next_label(l: TrayLang) -> &'static str {
     }
 }
 
-/// The review-queue callout label, with the count + singular/plural. Mirrors
-/// `tray.ts` `REVIEW_QUEUE_LABEL`.
-fn review_queue_label(l: TrayLang, n: u32) -> String {
-    let one = n == 1;
-    match l {
-        TrayLang::No => format!(
-            "📬 {n} {} for gjennomgang",
-            if one {
-                "episode klar"
-            } else {
-                "episoder klare"
-            }
-        ),
-        TrayLang::En => format!(
-            "📬 {n} {} ready for review",
-            if one { "episode" } else { "episodes" }
-        ),
-        TrayLang::De => format!(
-            "📬 {n} {} zur Überprüfung",
-            if one {
-                "Episode bereit"
-            } else {
-                "Episoden bereit"
-            }
-        ),
-        TrayLang::Sv => format!("📬 {n} avsnitt klart för granskning"),
-        TrayLang::Da => format!(
-            "📬 {n} {} klar til gennemgang",
-            if one { "episode" } else { "episoder" }
-        ),
-        TrayLang::Pl => format!(
-            "📬 {n} {} do przeglądu",
-            if one {
-                "odcinek gotowy"
-            } else {
-                "odcinki gotowe"
-            }
-        ),
-        TrayLang::Fr => format!(
-            "📬 {n} {} à examiner",
-            if one {
-                "épisode prêt"
-            } else {
-                "épisodes prêts"
-            }
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,12 +395,11 @@ mod tests {
     }
 
     #[test]
-    fn idle_menu_offers_start_and_no_review_callout() {
+    fn idle_menu_offers_start() {
         let menu = build_menu(&TrayState::default(), TrayLang::En);
         let acts = actions(&menu);
         assert!(acts.contains(&TrayAction::StartRecording));
         assert!(!acts.contains(&TrayAction::StopRecording));
-        assert!(!acts.contains(&TrayAction::OpenReviewQueue));
         // Status row is disabled when there's no error.
         assert_eq!(
             menu[0],
@@ -543,34 +479,6 @@ mod tests {
     }
 
     #[test]
-    fn review_callout_pluralizes_and_is_clickable() {
-        let one = TrayState {
-            review_queue_count: 1,
-            ..Default::default()
-        };
-        let menu = build_menu(&one, TrayLang::En);
-        let label = menu.iter().find_map(|i| match i {
-            TrayItem::Item {
-                label,
-                action: TrayAction::OpenReviewQueue,
-                ..
-            } => Some(label.clone()),
-            _ => None,
-        });
-        assert_eq!(label, Some("📬 1 episode ready for review".into()));
-
-        let many = TrayState {
-            review_queue_count: 3,
-            ..Default::default()
-        };
-        assert_eq!(
-            review_queue_label(TrayLang::En, 3),
-            "📬 3 episodes ready for review"
-        );
-        assert!(actions(&build_menu(&many, TrayLang::En)).contains(&TrayAction::OpenReviewQueue));
-    }
-
-    #[test]
     fn menu_always_ends_with_quit() {
         for lang in [TrayLang::No, TrayLang::Fr, TrayLang::Pl] {
             let menu = build_menu(&TrayState::default(), lang);
@@ -646,13 +554,11 @@ mod tests {
         assert!(!acts.contains(&TrayAction::None));
         assert_eq!(icon_for(&state), TrayIcon::Recording);
 
-        // 3. Recording ends and an episode lands in the review queue.
+        // 3. Recording ends → start is offered again, icon back to idle.
         state.is_recording = false;
-        state.review_queue_count = 2;
         let menu = build_menu(&state, lang);
         let acts = actions(&menu);
         assert!(acts.contains(&TrayAction::StartRecording));
-        assert!(acts.contains(&TrayAction::OpenReviewQueue));
         assert_eq!(icon_for(&state), TrayIcon::Idle);
 
         // 4. Something breaks → the status row becomes clickable, icon goes amber.
@@ -668,11 +574,8 @@ mod tests {
         ));
         assert_eq!(icon_for(&state), TrayIcon::Error);
 
-        // 5. Cleared + queue emptied → back to the opening shape.
+        // 5. Cleared → back to the opening shape.
         state.has_error = false;
-        state.review_queue_count = 0;
-        let acts = actions(&build_menu(&state, lang));
-        assert!(!acts.contains(&TrayAction::OpenReviewQueue));
         assert_eq!(
             build_menu(&state, lang),
             build_menu(
@@ -707,7 +610,7 @@ mod tests {
     #[test]
     fn changing_language_rebuilds_every_label() {
         let state = TrayState {
-            review_queue_count: 2,
+            next_recording_label: Some("Sun 11:00".into()),
             ..Default::default()
         };
         let no = build_menu(&state, TrayLang::No);

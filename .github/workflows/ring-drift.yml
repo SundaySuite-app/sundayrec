@@ -1,0 +1,180 @@
+# Daily check that each update channel is actually serving the newest
+# published GitHub release of its class.
+#
+# The failure mode this exists for: "published on GitHub" and "reaches
+# installed clients" are two separate facts (docs/RELEASE-CHECKLIST.md §5).
+# A release can be built, published, and "Latest" ticked — completely fine
+# on github.com, nothing red anywhere — and still be invisible to every
+# installed client, because promoting it
+# (`node scripts/promote-release.mjs <channel> <tag>`) is a separate manual
+# step with no other alarm if it gets forgotten. This workflow is that
+# alarm.
+#
+# NO SECRETS, on purpose — both sides of the comparison are already public:
+#   - `gh release list` (this repo is public; the auto-provided GITHUB_TOKEN
+#     below only avoids the unauthenticated API rate limit — it grants
+#     nothing this workflow doesn't already have as a public-repo reader)
+#   - `GET https://updates.sundaysuite.app/v1/update/{stable,beta}`, the same
+#     unauthenticated feed every installed client polls (see
+#     scripts/promote-release.mjs's "TWO HOSTS, ON PURPOSE" comment — this is
+#     the public host, not telemetry.sundaysuite.app; nothing here needs, or
+#     gets, the admin key)
+name: ring-drift
+
+on:
+  schedule:
+    # 05:11 UTC daily — off the hour on purpose (scheduled workflows queue up
+    # on the hour across all of GitHub Actions). Time of day is otherwise
+    # arbitrary: this checks state, it doesn't do anything time-sensitive.
+    - cron: "11 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ring-drift:
+    name: Compare promoted channels against GitHub releases
+    runs-on: ubuntu-latest
+    steps:
+      # No actions/checkout: everything below is a read against GitHub's API
+      # (via `gh --repo`, which doesn't need a local clone to know which repo)
+      # and the public update feed — fewer moving parts than checking out the
+      # repo just to throw the working tree away.
+      - name: Compare channels to GitHub releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail  # no -e: every fallible command below is behind an explicit check
+
+          summary="$GITHUB_STEP_SUMMARY"
+          fail=0
+
+          {
+            echo "## Ring drift"
+            echo ""
+            echo "Newest published GitHub release of each class, vs. what each update channel actually serves."
+            echo ""
+            echo "| Channel | Serving | Manifest pub_date | Newest on GitHub | Published | Result |"
+            echo "|---|---|---|---|---|---|"
+          } >> "$summary"
+
+          releases_json=$(gh release list --repo "$REPO" \
+            --json tagName,isPrerelease,isDraft,publishedAt --limit 100)
+
+          # Drafts are excluded explicitly (not trusted to already be absent
+          # from `gh release list`'s default output) — a draft is not a
+          # published release by this doc's own definition, and has no
+          # reliable publishedAt to sort by.
+          newest_stable_tag=$(echo "$releases_json" | jq -r \
+            '[.[] | select(.isDraft==false and .isPrerelease==false)] | sort_by(.publishedAt) | last | .tagName // empty')
+          newest_stable_pub=$(echo "$releases_json" | jq -r \
+            '[.[] | select(.isDraft==false and .isPrerelease==false)] | sort_by(.publishedAt) | last | .publishedAt // empty')
+          newest_beta_tag=$(echo "$releases_json" | jq -r \
+            '[.[] | select(.isDraft==false and .isPrerelease==true)] | sort_by(.publishedAt) | last | .tagName // empty')
+          newest_beta_pub=$(echo "$releases_json" | jq -r \
+            '[.[] | select(.isDraft==false and .isPrerelease==true)] | sort_by(.publishedAt) | last | .publishedAt // empty')
+
+          echo "Newest published stable tag: ${newest_stable_tag:-(none)} ($newest_stable_pub)"
+          echo "Newest published prerelease tag: ${newest_beta_tag:-(none)} ($newest_beta_pub)"
+
+          # $1=channel ("stable"|"beta"), $2=newest matching GitHub tag
+          # ("" if none published yet), $3=that tag's publishedAt.
+          check_channel() {
+            local channel="$1"
+            local gh_tag="$2"
+            local gh_pub="$3"
+            local url="https://updates.sundaysuite.app/v1/update/${channel}"
+            local body http_code curl_status
+            body="$(mktemp)"
+
+            http_code=$(curl -sS -o "$body" -w '%{http_code}' "$url")
+            curl_status=$?
+
+            if [ "$curl_status" -ne 0 ]; then
+              echo "::error::request to $url failed outright (curl exit $curl_status) — cannot tell whether '$channel' is in step."
+              echo "| $channel | (request failed) | — | ${gh_tag:-(none)} | $gh_pub | ERROR |" >> "$summary"
+              fail=1
+              return
+            fi
+
+            # The updater feed's own convention for "nothing to offer" is an
+            # empty 204 — the same shape whether the channel is paused
+            # (kill-switch on, see docs/ROLLBACK.md) or has never had a tag
+            # promoted. Either way there is no version to compare, so this is
+            # a warning, not a failure: a deliberate pause is a normal,
+            # correct state, not drift.
+            if [ "$http_code" = "204" ] || [ ! -s "$body" ]; then
+              echo "::warning::channel '$channel' returned HTTP $http_code with an empty body — paused (kill-switch on) or nothing promoted yet. Not treated as drift by itself."
+              echo "| $channel | (paused / nothing promoted) | — | ${gh_tag:-(none)} | $gh_pub | paused? |" >> "$summary"
+              return
+            fi
+
+            if [ "$http_code" != "200" ]; then
+              echo "::error::channel '$channel' returned unexpected HTTP $http_code from $url"
+              sed 's/^/  /' "$body"
+              echo "| $channel | (HTTP $http_code) | — | ${gh_tag:-(none)} | $gh_pub | ERROR |" >> "$summary"
+              fail=1
+              return
+            fi
+
+            local version pub_date
+            version=$(jq -r '.version // empty' "$body" 2>/dev/null)
+            pub_date=$(jq -r '.pub_date // empty' "$body" 2>/dev/null)
+
+            if [ -z "$version" ]; then
+              echo "::error::channel '$channel' returned HTTP 200 but the body has no .version — not the manifest shape promote-release.mjs writes."
+              echo "| $channel | (unparseable) | — | ${gh_tag:-(none)} | $gh_pub | ERROR |" >> "$summary"
+              fail=1
+              return
+            fi
+
+            local channel_tag="v${version}"
+
+            if [ -z "$gh_tag" ]; then
+              echo "| $channel | $channel_tag | $pub_date | (none published) | — | OK |" >> "$summary"
+              return
+            fi
+
+            if [ "$channel_tag" = "$gh_tag" ]; then
+              echo "| $channel | $channel_tag | $pub_date | $gh_tag | $gh_pub | OK — in step |" >> "$summary"
+              return
+            fi
+
+            # Channel disagrees with the newest GitHub release of its class.
+            # Only a hard failure once that release has had 24h for a human
+            # to run promote-release.mjs — a release published 10 minutes ago
+            # is a release in progress, not drift. Dates go through jq's own
+            # ISO-8601 parser (not the system `date` binary) so this doesn't
+            # depend on GNU vs. BSD date flags.
+            local now_epoch pub_epoch age_h
+            now_epoch=$(jq -rn 'now | floor')
+            pub_epoch=$(jq -rn --arg d "$gh_pub" '$d | fromdateiso8601' 2>/dev/null)
+            if [ -z "$pub_epoch" ]; then
+              echo "::error::could not parse GitHub publishedAt '$gh_pub' for '$channel' — treating as drift to stay fail-closed."
+              echo "| $channel | $channel_tag | $pub_date | $gh_tag | $gh_pub | ERROR (bad date) |" >> "$summary"
+              fail=1
+              return
+            fi
+            age_h=$(( (now_epoch - pub_epoch) / 3600 ))
+
+            if [ "$age_h" -gt 24 ]; then
+              echo "::error::channel '$channel' serves $channel_tag but GitHub's newest matching release is $gh_tag, published ${age_h}h ago — looks unpromoted. Run: node scripts/promote-release.mjs $channel $gh_tag"
+              echo "| $channel | $channel_tag | $pub_date | $gh_tag | $gh_pub | DRIFT (${age_h}h) |" >> "$summary"
+              fail=1
+            else
+              echo "::warning::channel '$channel' serves $channel_tag; GitHub's newest is $gh_tag, published only ${age_h}h ago — within the normal promotion window, not failing yet."
+              echo "| $channel | $channel_tag | $pub_date | $gh_tag | $gh_pub | recent (${age_h}h) |" >> "$summary"
+            fi
+          }
+
+          check_channel "stable" "$newest_stable_tag" "$newest_stable_pub"
+          check_channel "beta" "$newest_beta_tag" "$newest_beta_pub"
+
+          echo "" >> "$summary"
+          if [ "$fail" -ne 0 ]; then
+            echo "One or more channels look unpromoted, unexpectedly paused, or unreachable — see the table above, docs/RELEASE-CHECKLIST.md §5d–5e, and docs/ROLLBACK.md." >> "$summary"
+            exit 1
+          fi
+          echo "Both channels are in step with the newest published GitHub release of their class (or intentionally paused)." >> "$summary"

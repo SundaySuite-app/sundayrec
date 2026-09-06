@@ -1,0 +1,93 @@
+.group {
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.selected {
+  border-color: var(--gold-line);
+  background:
+    linear-gradient(0deg, var(--gold-soft), var(--gold-soft)), var(--surface);
+}
+
+.off {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/*
+ * Den ekte radioknappen: usynlig, men ikke `display:none` og ikke
+ * `visibility:hidden` — begge tar den ut av tabrekkefølgen og gjør gruppen
+ * uframkommelig med tastatur. Den beholder full størrelse under merket, så
+ * fokusringen legger seg der øyet forventer den.
+ */
+.input {
+  grid-area: 1 / 1;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.mark {
+  grid-area: 1 / 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  margin-top: 1px;
+  pointer-events: none;
+}
+
+.selected .mark {
+  border-color: var(--gold);
+  background: radial-gradient(circle, var(--gold) 0 5px, transparent 6px);
+}
+
+/* Fokusringen hører til kortet, ikke den usynlige inputen. */
+.input:focus-visible + .mark {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.body {
+  grid-area: 1 / 2;
+  display: block;
+  min-width: 0;
+}
+
+.titleLine {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.description {
+  display: block;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+  margin-top: 2px;
+}

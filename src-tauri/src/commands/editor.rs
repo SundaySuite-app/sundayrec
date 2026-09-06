@@ -18,11 +18,11 @@
 //! symmetry.
 
 use crate::editor::{
-    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorDecodeProgress,
-    EditorExportProgress, EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
-    EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
-    EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
-    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
+    self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
+    EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterApplyRequest,
+    EditorMasterApplyResult, EditorMasterPreviewRequest, EditorMasterPreviewResult,
+    EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar, ExportEngine,
+    MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -99,20 +99,6 @@ pub async fn editor_peaks(app: tauri::AppHandle, input_path: String) -> AppResul
     editor::peaks(&input_path, decode_progress(app, "editor://peaks-progress")).await
 }
 
-/// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
-/// basis, since the waveform peaks are an 8 kHz mono downmix that under-reads
-/// the real peak by several dB.
-///
-/// **Path policy: `UserChosenRead`** — the same guard every sibling editor
-/// command runs. Found unguarded by the E1.3 coverage ratchet: it is the one
-/// editor command whose `input_path` reached ffmpeg without validation, and it
-/// had its own bare `Path::exists()` check standing in for one.
-#[tauri::command]
-pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
-    super::path_guard::checked_input_file(&input_path)?;
-    crate::editor::probe_true_peak_db(&input_path).await
-}
-
 /// Transcode a large/exotic recording to a seekable stereo AAC proxy for
 /// full-fidelity playback; returns the temp-file path the renderer streams via
 /// `asset://` (an `<audio>` element). Export still runs on the original, so
@@ -148,9 +134,6 @@ pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult
 /// Cached in a `<stem>.segments.json` sidecar. `force` (the explicit «Analyser
 /// opptak» button) skips the cache read and re-runs the analysis; the automatic
 /// post-open run leaves it unset and gets the cached answer for free.
-///
-/// A pass that actually ran also offers the recording to the review queue — see
-/// [`offer_to_review_queue`].
 #[tauri::command]
 pub async fn editor_segments(
     app: tauri::AppHandle,
@@ -166,7 +149,6 @@ pub async fn editor_segments(
     .await?;
     if let Some(detection) = analysis {
         shadow_the_analysis(&app, &input_path, &detection);
-        offer_to_review_queue(&app, input_path, detection);
     }
     Ok(segments)
 }
@@ -185,9 +167,9 @@ pub async fn editor_segments(
 ///     it is in a build without the feature; nothing the operator is watching
 ///     waits on the model.
 ///   - **Only on a pass that actually ran.** `analysis` is `Some` only when the
-///     detection was computed rather than read from the segments cache — the
-///     same condition [`offer_to_review_queue`] uses. A cache hit has no
-///     `Detection` to compare against, and re-deriving one to shadow it would be
+///     detection was computed rather than read from the segments cache. A cache
+///     hit has no `Detection` to compare against, and re-deriving one to shadow
+///     it would be
 ///     two full passes for a screen the operator already has.
 ///   - **Only where a shadow is safe to run.** This is reachable from the
 ///     editor, on a machine that has just finished an analysis pass. It is not
@@ -203,9 +185,8 @@ fn shadow_the_analysis(
     detection: &sundayrec_core::detect::Detection,
 ) {
     let input_path = input_path.to_string();
-    // Cloned, not moved: the review queue is handed the SAME detection a moment
-    // later, and the shadow pass must never be able to reach the one the app
-    // acts on.
+    // Cloned, not moved: the shadow pass must never be able to reach the
+    // detection the app acts on.
     let heuristic = detection.clone();
     let progress = decode_progress(app.clone(), "editor://shadow-progress");
     crate::crash::watch_handle(
@@ -236,70 +217,6 @@ fn shadow_the_analysis(
 ) {
 }
 
-/// Put a freshly analysed recording into the review queue, in the background.
-///
-/// ## Why here, and not at the end of a recording or on a startup sweep
-///
-/// [`crate::commands::review::prep_build_episode`] consumes analysis segments
-/// rather than computing them, and the segments it needs carry `confidence`.
-/// That narrows the honest call sites to one:
-///
-///   - **End of a recording** is too early — no analysis exists yet, and
-///     producing it means a full decode + FFT pass over a service that has just
-///     finished, on the machine still finalising it. The rule that nothing may
-///     slow a recording rules this out even if the file were ready.
-///   - **A startup sweep** has two options and neither survives contact. Read
-///     the `<stem>.segments.json` cache and it must invent `confidence`, which
-///     the cache does not store. Run the analysis itself and it is a full
-///     decode and FFT pass per un-queued recording, at launch, unattended — on
-///     an app whose scheduler may be about to start a service.
-///   - **The end of an analysis pass** is where the segments exist, in full, for
-///     free. So that is where the queue is fed.
-///
-/// The consequence, stated plainly: a recording enters the queue the first time
-/// it is analysed, which in practice is the first time it is opened in the
-/// editor (the post-open detection runs on its own). A recording nobody ever
-/// opens never enters the queue — the alternative was a queue built on invented
-/// confidences, and a queue that is honest about fewer episodes beats one that
-/// is wrong about more.
-///
-/// «Offer», not «add»: the editor opens whatever the operator points it at, and
-/// only files the app actually recorded are episodes of this church's service.
-/// [`review::build_and_enqueue_if_recorded`] is where that is decided.
-///
-/// Detached (`spawn`) so the operator's segment view never waits on a settings
-/// read and a queue write, and best-effort: a failure is a log line. This runs
-/// while a service may be minutes from starting, and an episode that failed to
-/// reach a review queue is not something a volunteer can act on mid-service.
-fn offer_to_review_queue(
-    app: &tauri::AppHandle,
-    input_path: String,
-    detection: sundayrec_core::detect::Detection,
-) {
-    let app = app.clone();
-    crate::crash::watch_handle(
-        "review::offer_from_analysis",
-        tauri::async_runtime::spawn(async move {
-            use tauri::Manager;
-            let Some(db) = app.try_state::<crate::db::Db>() else {
-                return;
-            };
-            // Idempotent on the path, so the re-analysis that «Analyser opptak»
-            // forces lands here and changes nothing.
-            if let Err(e) = crate::commands::review::build_and_enqueue_if_recorded(
-                &app,
-                &db,
-                input_path,
-                detection.segments,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "review queue: could not enqueue analysed recording");
-            }
-        }),
-    );
-}
-
 /// The built-in mastering presets for the editor's preset dropdown. Pure core
 /// (no ffmpeg / feature gate), so the panel is never empty.
 #[tauri::command]
@@ -307,25 +224,17 @@ pub fn editor_master_presets() -> AppResult<Vec<crate::editor::EditorMasterPrese
     Ok(editor::master_presets())
 }
 
-/// Detect topic chapters from a transcript (Bible references + enumeration
-/// points). Pure/offline/deterministic — no ffmpeg, works without the `whisper`
-/// or `editor` features. Returns chapters on the original recording timeline.
-#[tauri::command]
-pub fn editor_detect_chapters(
-    lines: Vec<EditorTranscriptLine>,
-    lang: Option<String>,
-) -> AppResult<Vec<EditorChapter>> {
-    crate::telemetry::counters::count(
-        sundayrec_core::telemetry::CounterName::EditorChaptersDetected,
-    );
-    Ok(editor::detect_chapters(
-        &lines,
-        lang.as_deref().unwrap_or("no"),
-    ))
-}
-
 /// Analyse a recording's stereo channel balance and recommend a repair
 /// (swap / duplicate the good channel / per-channel makeup). HARDWARE-UNVERIFIED.
+///
+/// ⚠️ **BLIR STÅENDE selv om den er unåbar** (V1/PR3, der de fire søsken-probene
+/// gikk). Denne er ikke en dublett — den er den halvferdige enden av en flate
+/// som ER påbegynt: `app/editor/sound-profiles.ts` mapper allerede motorens
+/// kanalkoder (`dead_left`/`dead_right`/…) til i18n-nøkler som finnes oversatt i
+/// alle sju språkfilene (`editor.chanDeadLeft` og de fem andre), og
+/// `SoundStep.tsx` er stedet de skal vises. Det som mangler er kallet. Å slette
+/// motoren nå ville gjort de oversatte nøklene til søppel og betalt for
+/// halvparten av jobben to ganger.
 #[tauri::command]
 pub async fn editor_diagnose_channels(input_path: String) -> AppResult<EditorChannelDiagnosis> {
     super::path_guard::checked_input_file(&input_path)?;
@@ -394,28 +303,28 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
-    db: State<'_, crate::db::Db>,
     engine: State<'_, ExportEngine>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
-    // Hardware video encode is a per-install preference, not part of the export
-    // request: the renderer never has to know whether this machine has
-    // VideoToolbox. A settings read that fails is simply "off" (the default).
-    let hw_encode = crate::settings::load(&db.pool)
-        .await
-        .map(|s| s.editor_hw_encode)
-        .unwrap_or(false);
     crate::telemetry::counters::count(export_counter_for_format(&request.format));
-    editor::export(&engine, &request, hw_encode, move |pct, phase| {
-        let _ = app.emit(
-            "editor://export-progress",
-            EditorExportProgress {
-                pct,
-                phase: phase.to_string(),
-            },
-        );
-    })
+    // v0.15: hardware video encode is automatic — hardware first where the
+    // platform has it, software on a failed render (the `editorHwEncode`
+    // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
+    editor::export(
+        &engine,
+        &request,
+        editor::HW_ENCODE_FIRST,
+        move |pct, phase| {
+            let _ = app.emit(
+                "editor://export-progress",
+                EditorExportProgress {
+                    pct,
+                    phase: phase.to_string(),
+                },
+            );
+        },
+    )
     .await
 }
 
@@ -424,14 +333,6 @@ pub async fn editor_export(
 #[tauri::command]
 pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<bool> {
     editor::cancel_export(&engine).await
-}
-
-/// Extract a single video frame at `sec` seconds as a base64 JPEG (480px wide)
-/// for the editor's video-preview scrubber. HARDWARE-UNVERIFIED.
-#[tauri::command]
-pub async fn editor_extract_frame(input_path: String, sec: f64) -> AppResult<String> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::extract_frame(&input_path, sec).await
 }
 
 // ── P1 parity: sidecars, probe, file guard, cleanup, mastering flow ──────────────
@@ -459,7 +360,7 @@ pub fn editor_read_sidecar(
 /// a record this build cannot parse, and the atomic temp-and-rename that keeps a
 /// crash mid-write from truncating it. [`editor_delete_sidecar`] would skip
 /// `RecordingFeedback::is_empty` and remove the whole record — a person's
-/// corrections, the trim adjustments and the companion outcomes together.
+/// corrections and the trim adjustments together.
 ///
 /// The typed commands below are the only way in. This turns an intent that was
 /// only ever written down into one the wiring enforces.
@@ -524,68 +425,30 @@ pub fn editor_sermon_pick(
     Ok(editor::sermon_pick_index(&media_path, &segments))
 }
 
-/// Record what became of one of the AI companion's suggestions (E8), into the
-/// recording's `<stem>.feedback.json`. Returns whether it persisted.
-///
-/// The parameters ARE the privacy boundary: a kind, an outcome and a bool, all
-/// from closed vocabularies. There is no parameter the suggested title, the
-/// summary, the user's rewrite or the transcript could travel in, which is why
-/// this takes three scalars instead of the renderer's event object — and the app
-/// version is stamped here rather than sent, so the renderer cannot claim one.
-///
-/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
-/// commands; the target is a file next to a recording the user opened.
-#[tauri::command]
-pub fn editor_record_companion_suggestion(
-    media_path: String,
-    kind: sundayrec_core::feedback::CompanionSuggestionKind,
-    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-) -> AppResult<bool> {
-    super::path_guard::checked_path(&media_path)?;
-    Ok(editor::record_companion_suggestion(
-        &media_path,
-        kind,
-        outcome,
-        edited_after_accept,
-    ))
-}
-
-/// Probe just has_video/has_audio for the editor's audio-vs-video layout.
-#[tauri::command]
-pub async fn editor_probe_streams(input_path: String) -> AppResult<EditorStreamInfo> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::probe_streams(&input_path).await
-}
-
-/// Stat a recording and either return its bytes inline (≤100 MB) or signal
-/// `tooLarge` so the renderer streams it via the peaks-extract path. Async +
-/// spawn_blocking: a sync command runs on the main thread, and reading a
-/// hundreds-of-MB recording there froze the whole UI for the duration.
-#[tauri::command]
-pub async fn editor_read_file(media_path: String) -> AppResult<EditorFileRead> {
-    super::path_guard::checked_input_file(&media_path)?;
-    tokio::task::spawn_blocking(move || editor::read_file_guarded(&media_path))
-        .await
-        .map_err(|e| crate::error::AppError::Internal(format!("editor read join: {e}")))?
-}
-
-/// Sweep the given folders for crashed-edit temp/backup leftovers. Returns the
-/// count removed.
-///
-/// The AUTOMATIC path is `editor::startup_sweep`, wired into `lib.rs` setup
-/// (E6.5) — this doc comment used to claim "called at startup" while nothing
-/// called it at all, renderer or otherwise, so crashed exports left full-size
-/// copies of a service on disk forever. This command remains as the explicit
-/// "sweep THESE folders" entry point for a renderer that wants to clean a
-/// folder the startup sweep does not know about.
-#[tauri::command]
-pub fn editor_cleanup_temp_files(folders: Vec<String>) -> AppResult<usize> {
-    for folder in &folders {
-        super::path_guard::checked_path(folder)?;
-    }
-    Ok(editor::cleanup_temp_files(&folders))
-}
+// ── V1/PR3: fire prober som aldri fikk en dør ────────────────────────────────
+//
+// `editor_probe_peak`, `editor_probe_streams`, `editor_read_file` og
+// `editor_cleanup_temp_files` er BORTE som Tauri-kommandoer. Ingen av dem ble
+// noen gang kalt fra skallet, og hver enkelt hadde en levende erstatter:
+//
+//   - probe_peak    → `editor_mastering_analyze` svarer med true-peak som ÉN av
+//                     flere målinger; Normaliser leser den derfra.
+//   - probe_streams → `editor_load_recording` returnerer alt `hasVideo`/
+//                     `hasAudio` i `EditorMediaInfo` (loader.ts sier det rett
+//                     ut: «et eget `editor_probe_streams` ville vært en ny
+//                     ffprobe for et svar vi har»).
+//   - read_file     → avspilling går på `asset://` gjennom
+//                     `editor_allow_asset_path`; ingen leser en hel opptaksfil
+//                     inn i webviewet lenger.
+//   - cleanup_temp  → den AUTOMATISKE `editor::startup_sweep` (E6.5) kjører i
+//                     `lib.rs`-oppsettet på hver oppstart.
+//
+// ⚠️ IMPLEMENTASJONENE i `crate::editor` (`probe_true_peak_db`, `probe_streams`,
+// `read_file_guarded`, `cleanup_temp_files`) står IGJEN, med testene sine. Det
+// er ikke en forglemmelse: `editor/mod.rs` er 5407 linjer, `cleanup_temp_files`
+// har fortsatt en levende kaller i `startup_sweep`, og kirurgi der er den samme
+// risikoen som fikk mastering-kvartetten (b4) til å bli stående. Det som lukkes
+// her er IPC-flaten. Å åpne en dør igjen er én `#[tauri::command]`-innpakning.
 
 /// Render a windowed single-pass mastering preview to a temp mp3.
 #[tauri::command]
@@ -788,7 +651,6 @@ mod tests {
         for sidecar in [
             EditorSidecar::Meta,
             EditorSidecar::CutsDraft,
-            EditorSidecar::Transcript,
             EditorSidecar::Peaks,
             EditorSidecar::Segments,
         ] {

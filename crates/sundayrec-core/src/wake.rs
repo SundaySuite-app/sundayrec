@@ -2,7 +2,7 @@
 //!
 //! Ported from the Electron `src/main/wake.ts` and `src/main/wake-verification.ts`.
 //! Those files interleaved the *decisions* (which wake points to schedule, how to
-//! format a `pmset`/`schtasks` time, classifying an error string, parsing the OS
+//! format a `pmset` time, classifying an error string, parsing the OS
 //! power tools' text output, matching expected wakes against observed ones,
 //! deciding platform capabilities) with the actual I/O (`execFile` of
 //! `pmset`/`osascript`/`powershell`/`powercfg`, `powerSaveBlocker`,
@@ -14,8 +14,10 @@
 //!   - macOS Apple Silicon: `pmset` *wake* works, *poweron* does not; deep-sleep
 //!     (standby) can sabotage wake.
 //!   - macOS Intel: wake works, poweron needs a manual System-Settings toggle.
-//!   - Windows: Task Scheduler `WakeToRun` works from S3/S4; S5 needs a BIOS
-//!     toggle we can't reach. Laptops often disable wake timers on battery.
+//!   - Windows: a `SetWaitableTimer(fResume = TRUE)` armed by the RUNNING
+//!     process wakes the machine from S3/S4. It dies with the process, which is
+//!     acceptable because SundayRec autostarts and lives in the tray. S5 needs a
+//!     BIOS toggle we can't reach. Laptops often disable wake timers on battery.
 //!   - Linux/other: no supported wake mechanism.
 
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
@@ -44,7 +46,7 @@ pub const BLOCKER_SOON_MS: i64 = 30 * 60_000;
 /// The host class for wake purposes. Serialised to the EXACT Electron
 /// `WakePlatform` strings (`'mac-arm' | 'mac-intel' | 'win' | 'linux' | 'other'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakePlatform.ts")]
+#[ts(export, export_to = "WakePlatform.ts")]
 #[serde(rename_all = "kebab-case")]
 pub enum WakePlatform {
     MacArm,
@@ -58,7 +60,7 @@ pub enum WakePlatform {
 /// Mirrors the Electron `WakeCapabilities`. The `knownIssues`/`recommendations`
 /// are user-facing Norwegian, ported verbatim.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeCapabilities.ts")]
+#[ts(export, export_to = "WakeCapabilities.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeCapabilities {
     pub platform: WakePlatform,
@@ -111,10 +113,14 @@ pub fn detect_capabilities(platform: WakePlatform) -> WakeCapabilities {
             can_wake_from_off: false,
             needs_admin: false,
             known_issues: vec![
+                "Vekkingen settes av SundayRec mens programmet kjører. Avslutter du SundayRec helt, forsvinner vekketimeren."
+                    .to_string(),
                 "Wake fra fullstendig avslått (S5) krever at «Wake on RTC from S5» er aktivert i BIOS — kan ikke aktiveres fra programvare."
                     .to_string(),
             ],
             recommendations: vec![
+                "La SundayRec være i gang — den starter automatisk ved pålogging og ligger i systemkurven."
+                    .to_string(),
                 "Sett maskinen i dvale (Sleep/Hibernate), ikke skru den av.".to_string(),
                 "Tilkoblet strøm bør være på — mange bærbare deaktiverer vekketimere på batteri."
                     .to_string(),
@@ -188,7 +194,7 @@ pub fn key_of(dates: &[NaiveDateTime]) -> String {
 /// for `new_points`, and whether the user explicitly initiated this (`forced`).
 ///
 /// The decision is split out as a pure function so the dedup + stale-timer logic
-/// can be tested without spawning `pmset`/`schtasks`. The crucial correctness
+/// can be tested without touching `pmset` or a wake timer. The crucial correctness
 /// point: when the new set is *empty* we must still apply (to cancel any stale OS
 /// wakes the previous key registered) and record the empty key — otherwise a
 /// later re-add of the same time would dedup against a key whose OS timers were
@@ -237,8 +243,10 @@ pub fn format_pmset_date(d: NaiveDateTime) -> String {
     )
 }
 
-/// Windows `New-ScheduledTaskTrigger -At` format: `YYYY-MM-DDTHH:MM:00`. Port of
-/// `formatWinDateTime`.
+/// Windows wall-clock label: `YYYY-MM-DDTHH:MM:00`. Was the
+/// `New-ScheduledTaskTrigger -At` argument; since the scheduled-task mechanism
+/// was replaced by `SetWaitableTimer` (see the module header) it survives as the
+/// human-readable label each armed timer carries in logs and diagnostics.
 pub fn format_win_datetime(d: NaiveDateTime) -> String {
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:00",
@@ -248,31 +256,6 @@ pub fn format_win_datetime(d: NaiveDateTime) -> String {
         d.hour(),
         d.minute(),
     )
-}
-
-/// Build the PowerShell that registers one `SundayRec-Wake-N` scheduled task per
-/// wake point (each `-WakeToRun`, 1-minute limit, runs `cmd /c exit`). Direct
-/// port of `wake.ts` `buildWinTaskDefs`. `elevated` adds `-RunLevel Highest`.
-pub fn build_win_task_defs(wake_points: &[NaiveDateTime], elevated: bool) -> String {
-    wake_points
-        .iter()
-        .enumerate()
-        .map(|(i, d)| {
-            let dt = format_win_datetime(*d);
-            let run_level = if elevated { "-RunLevel Highest " } else { "" };
-            [
-                format!("$t{i} = New-ScheduledTaskTrigger -Once -At '{dt}'"),
-                format!("$s{i} = New-ScheduledTaskSettingsSet -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Minutes 1)"),
-                format!("$a{i} = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit'"),
-                format!(
-                    "Register-ScheduledTask -TaskName 'SundayRec-Wake-{}' -TaskPath '\\SundayRec' -Action $a{i} -Trigger $t{i} -Settings $s{i} {run_level}-Force | Out-Null",
-                    i + 1
-                ),
-            ]
-            .join("; ")
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
 }
 
 /// Why an OS wake-scheduling attempt failed — the `reason` the UI localises.
@@ -302,26 +285,178 @@ impl WakeErrorReason {
             WakeErrorReason::Error => "error",
         }
     }
+
+    /// The inverse of [`Self::as_str`] — the wire string back to the enum, so
+    /// code that has to reason about a `WakeResult.reason` does it in types
+    /// instead of by comparing string literals.
+    ///
+    /// `None` for anything unrecognised, which callers must treat as "a real
+    /// failure": an unknown reason is the one that has never been triaged.
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Some(match s {
+            "disabled" => WakeErrorReason::Disabled,
+            "cancelled" => WakeErrorReason::Cancelled,
+            "permission" => WakeErrorReason::Permission,
+            "unsupported" => WakeErrorReason::Unsupported,
+            "error" => WakeErrorReason::Error,
+            _ => return None,
+        })
+    }
+
+    /// Whether this failure is a *state of the machine* rather than a defect:
+    /// the user turned wake off, dismissed the prompt, or the OS wants an
+    /// elevation this call was never allowed to ask for.
+    ///
+    /// It does NOT mean harmless — a `Permission` here is a machine that will
+    /// sleep through the service. It means "expected from an unprivileged,
+    /// non-interactive attempt", i.e. not worth one log line per supervisor
+    /// pass. [`should_log_background_wake`] decides how often it IS worth one.
+    pub fn is_expected(self) -> bool {
+        matches!(
+            self,
+            WakeErrorReason::Disabled | WakeErrorReason::Cancelled | WakeErrorReason::Permission
+        )
+    }
 }
 
-/// How a Windows scheduling failure should be classified. Port of `classifyWinError`.
+/// What the supervisor does with one background wake-reschedule outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WakeLogAction {
+    /// Nothing happened worth saying (the reschedule succeeded).
+    Silent,
+    /// A real — or unclassified — failure. Logged every time, and it never eats
+    /// the once-per-launch budget the expected failures share.
+    Report,
+    /// The first expected failure this launch: log it, and spend the budget.
+    ReportOnce,
+    /// An expected failure that has already been reported: count it, say
+    /// nothing.
+    Suppress,
+}
+
+impl WakeLogAction {
+    /// Whether the supervisor writes a log line.
+    pub fn logs(self) -> bool {
+        matches!(self, Self::Report | Self::ReportOnce)
+    }
+
+    /// Whether this outcome spends from the once-per-launch budget.
+    ///
+    /// Only the expected failures do. A `Report` that counted would silence the
+    /// NEXT `permission` — the very failure the budget exists to make visible
+    /// once.
+    pub fn counts(self) -> bool {
+        matches!(self, Self::ReportOnce | Self::Suppress)
+    }
+}
+
+/// Whether the scheduler's *background* (unprivileged, non-interactive) wake
+/// reschedule should write a log line for this outcome.
+///
+/// ## The hole this closes
+///
+/// The supervisor logged every failure EXCEPT `permission`/`disabled`/
+/// `cancelled` — and `permission` is the one that matters most: a Mac that needs
+/// root to write a power event never gets asked from the supervisor (the
+/// interactive `wake_reschedule` is the only path that may prompt), so the wake
+/// is silently never armed and the machine sleeps through the service. Filtered
+/// to nothing, that failure existed in no log at all, and the first evidence was
+/// a missing recording.
+///
+/// ## …without turning the log into a metronome
+///
+/// The supervisor re-runs on every settings change and every timer, so logging
+/// each expected failure would bury the interesting lines. `quiet_reports_so_far`
+/// is how many expected failures this process has already reported: the first
+/// one is written, the rest are counted and silent. Once per launch is enough
+/// for a support log — it answers "was the wake ever armed?" — and it re-arms
+/// on the next start, which is also when the user's answer to it can change.
+pub fn background_wake_log_action(
+    ok: bool,
+    reason: Option<&str>,
+    quiet_reports_so_far: u32,
+) -> WakeLogAction {
+    if ok {
+        return WakeLogAction::Silent;
+    }
+    match reason.and_then(WakeErrorReason::from_wire) {
+        // Expected from an unprivileged pass: once per process.
+        Some(r) if r.is_expected() => {
+            if quiet_reports_so_far == 0 {
+                WakeLogAction::ReportOnce
+            } else {
+                WakeLogAction::Suppress
+            }
+        }
+        // A real failure — or one nobody has classified. Always.
+        _ => WakeLogAction::Report,
+    }
+}
+
+/// Why a *successful* wake reschedule armed nothing at all.
+///
+/// `ok: true, count: 0` is the same answer for "the schedule is empty", "the
+/// weekly plan is switched off" and "everything upcoming is already past the
+/// lead" — and a volunteer who just pressed «Registrer vekkinger» deserves to
+/// know which. Carried alongside the count so the UI can say it; `None`
+/// whenever something was actually armed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "WakeIdleReason.ts")]
+#[serde(rename_all = "camelCase")]
+pub enum WakeIdleReason {
+    /// «Ta opp automatisk» is off, so the weekly slots plan nothing —
+    /// [`crate::settings::Settings::active_slots`] answers with an empty slice
+    /// and there is nothing to wake FOR. Arming wakes anyway would be the
+    /// machine waking at 10:50 on a Sunday for a recording it will refuse to
+    /// make.
+    AutoRecordOff,
+    /// The plan is armed, but nothing falls inside the horizon (no slots, no
+    /// specials, or everything upcoming is already inside the wake lead).
+    NothingUpcoming,
+}
+
+/// Which [`WakeIdleReason`], if any, explains an empty wake set.
+///
+/// `auto_record_enabled` is the level-1 switch; `upcoming_count` is how many
+/// starts the horizon produced from the active slots plus the specials. The
+/// switch is checked only when the set is empty, because a disarmed weekly plan
+/// with a dated special still has something to wake for.
+pub fn wake_idle_reason(
+    auto_record_enabled: bool,
+    upcoming_count: usize,
+) -> Option<WakeIdleReason> {
+    if upcoming_count > 0 {
+        None
+    } else if !auto_record_enabled {
+        Some(WakeIdleReason::AutoRecordOff)
+    } else {
+        Some(WakeIdleReason::NothingUpcoming)
+    }
+}
+
+/// How a Windows `powercfg` failure should be classified. Port of `classifyWinError`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WinErrorKind {
-    /// Access-denied / unauthorized / privilege — retry without elevation, or surface a permission error.
+    /// Access-denied / unauthorized / privilege — the call needs elevation.
     Permission,
     /// Anything else.
     Error,
 }
 
-/// Classify a Windows scheduling stderr string. Based on `wake.ts`
-/// `classifyWinError`, with one deliberate improvement: the Electron pattern
+/// Classify a Windows power-tool stderr string. Based on `wake.ts`
+/// `classifyWinError`, with two deliberate improvements: the Electron pattern
 /// `access.?denied` only matches `accessdenied` / `access denied`, NOT the
 /// canonical Windows wording "**Access is denied.**" — so the original would
-/// mis-classify the most common permission failure as a generic error and skip
-/// the un-elevated retry. We accept `access is denied` too.
+/// mis-classify the most common permission failure as a generic error. We accept
+/// `access is denied`, and `administrator` (the wording `powercfg /setacvalueindex`
+/// uses), too.
+///
+/// Since the wake *scheduling* moved off `Register-ScheduledTask` and onto an
+/// in-process `SetWaitableTimer` (which needs no elevation at all), the only
+/// remaining caller is the `powercfg` "allow wake timers" fix.
 pub fn classify_win_error(msg: &str) -> WinErrorKind {
     static RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)access\s*(is\s+)?denied|unauthorized|privilege").unwrap()
+        Regex::new(r"(?i)access\s*(is\s+)?denied|unauthorized|privilege|administrator").unwrap()
     });
     if RE.is_match(msg) {
         WinErrorKind::Permission
@@ -360,7 +495,7 @@ pub const WAKE_FAILURE_MAX: usize = 20;
 /// The kind of wake outcome a [`WakeFailureEntry`] records. Serialised to the
 /// EXACT Electron strings (`'missed' | 'test_ok' | 'test_fail'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureKind.ts")]
+#[ts(export, export_to = "WakeFailureKind.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum WakeFailureKind {
     /// A scheduled recording's wake never produced a run.
@@ -374,7 +509,7 @@ pub enum WakeFailureKind {
 /// One wake-failure or test-wake outcome. Mirrors the renderer
 /// `WakeFailureEntry` (camelCase) field-for-field so saved rows carry across.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureEntry.ts")]
+#[ts(export, export_to = "WakeFailureEntry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeFailureEntry {
     /// Unix ms when the outcome was recorded.
@@ -494,8 +629,22 @@ pub fn parse_pmset_sched(stdout: &str, ref_year: Option<i32>) -> Vec<VerifiedWak
     out
 }
 
-/// Parse `powercfg -waketimers`, extracting each timer's expiry + owning task.
-/// Port of `parsePowercfgWaketimers`.
+/// Parse `powercfg -waketimers`, extracting each timer's expiry + owner.
+/// Port of `parsePowercfgWaketimers`, extended for the wake mechanism actually
+/// in use.
+///
+/// `powercfg` labels a timer by who set it, and the two forms differ:
+///
+/// ```text
+/// Timer set by [SYSTEM\TaskScheduler] … Reason: … 'NT TASK\SundayRec\SundayRec-Wake-1' …
+/// Timer set by [PROCESS] \Device\HarddiskVolume3\Program Files\SundayRec\SundayRec.exe …
+/// ```
+///
+/// The first is the old `Register-ScheduledTask` mechanism; the second is what a
+/// `SetWaitableTimer` armed by the running process reports. The `[PROCESS]` form
+/// carries no quotes at all, so the quoted-token branch alone would have labelled
+/// every one of our own timers `unknown` — the verification panel would show the
+/// timer but never recognise it as ours.
 pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
     static BLOCK_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\r?\n\s*\r?\n").unwrap());
     static EXPIRES: LazyLock<Regex> = LazyLock::new(|| {
@@ -506,8 +655,11 @@ pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
     });
     static TASK: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(?i)['"]([^'"]*SundayRec[^'"]*)['"]"#).unwrap());
+    static PROCESS: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)set\s+by\s+\[PROCESS\]\s+(\S.*?)\s+expires").unwrap());
     static REASON: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)Reason:\s*(.+)").unwrap());
-    let (block_split, expires, task, reason) = (&*BLOCK_SPLIT, &*EXPIRES, &*TASK, &*REASON);
+    let (block_split, expires, task, process, reason) =
+        (&*BLOCK_SPLIT, &*EXPIRES, &*TASK, &*PROCESS, &*REASON);
 
     let mut out = Vec::new();
     for block in block_split.split(stdout) {
@@ -534,14 +686,13 @@ pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
             continue;
         };
 
-        // Owner: task name from the path, else the Reason line, else 'unknown'.
+        // Owner: task name from the quoted path, else the `[PROCESS]` executable,
+        // else the Reason line, else 'unknown'.
         let owner = if let Some(t) = task.captures(block) {
             let path = &t[1];
-            path.split('\\')
-                .next_back()
-                .filter(|s| !s.is_empty())
-                .unwrap_or(path)
-                .to_string()
+            basename(path)
+        } else if let Some(p) = process.captures(block) {
+            basename(p[1].trim())
         } else if let Some(r) = reason.captures(block) {
             r[1].trim().chars().take(80).collect()
         } else {
@@ -553,6 +704,15 @@ pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
         });
     }
     out
+}
+
+/// The last `\`- or `/`-separated component of a Windows path, or the whole
+/// string when it has no separator (or ends in one).
+fn basename(path: &str) -> String {
+    path.rsplit(['\\', '/'])
+        .find(|s| !s.is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 /// Compare expected wakes to observed ones within `tolerance_ms`. Returns
@@ -582,7 +742,7 @@ pub fn compare_expected_to_observed(
 /// the Electron `SleepConfig`; every probe is optional so a partial read still
 /// renders. `wakeTimersEnabled` is Windows-only; the mac fields are macOS-only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SleepConfig.ts")]
+#[ts(export, export_to = "SleepConfig.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SleepConfig {
     // mac
@@ -809,17 +969,6 @@ mod tests {
     }
 
     #[test]
-    fn win_task_defs_contains_wake_to_run_and_indexed_names() {
-        let defs = build_win_task_defs(&[dt("2026-05-31 10:30:00")], false);
-        assert!(defs.contains("New-ScheduledTaskTrigger -Once -At '2026-05-31T10:30:00'"));
-        assert!(defs.contains("-WakeToRun"));
-        assert!(defs.contains("SundayRec-Wake-1"));
-        assert!(!defs.contains("-RunLevel Highest"));
-        let elevated = build_win_task_defs(&[dt("2026-05-31 10:30:00")], true);
-        assert!(elevated.contains("-RunLevel Highest"));
-    }
-
-    #[test]
     fn classify_win_error_detects_permission() {
         assert_eq!(
             classify_win_error("Access is denied."),
@@ -827,6 +976,12 @@ mod tests {
         );
         assert_eq!(
             classify_win_error("Unauthorized operation"),
+            WinErrorKind::Permission
+        );
+        // The wording `powercfg` uses when the shell is not elevated — this is
+        // the only remaining caller now that scheduling is an in-process timer.
+        assert_eq!(
+            classify_win_error("You do not have permission; run as administrator"),
             WinErrorKind::Permission
         );
         assert_eq!(
@@ -928,6 +1083,19 @@ Timer set by [SYSTEM\\TaskScheduler] expires at 5:30:00 PM on 5/31/2026.
     }
 
     #[test]
+    fn parse_powercfg_waketimers_names_the_owning_process() {
+        // What a `SetWaitableTimer(fResume = TRUE)` armed by the running app
+        // looks like: no quoted task path at all, just `[PROCESS] <exe path>`.
+        // Before the `[PROCESS]` branch this block parsed as owner `unknown`,
+        // so the verification panel could not tell our own timer from anyone's.
+        let out = "Timer set by [PROCESS] \\Device\\HarddiskVolume3\\Program Files\\SundayRec\\SundayRec.exe expires at 10:20:00 AM on 5/31/2026.\n  Reason: Scheduled wake";
+        let wakes = parse_powercfg_waketimers(out);
+        assert_eq!(wakes.len(), 1);
+        assert_eq!(wakes[0].scheduled_at, dt("2026-05-31 10:20:00"));
+        assert_eq!(wakes[0].owner_label, "SundayRec.exe");
+    }
+
+    #[test]
     fn parse_powercfg_handles_am_and_no_timers() {
         let am = "Timer set by [X] expires at 12:05:00 AM on 1/2/2026.\n  Reason: 'SundayRec-Wake-2' task";
         let wakes = parse_powercfg_waketimers(am);
@@ -1022,5 +1190,115 @@ Timer set by [SYSTEM\\TaskScheduler] expires at 5:30:00 PM on 5/31/2026.
         assert_eq!(parse_pmset_standby(" standby              1"), Some(true));
         assert_eq!(parse_pmset_standby(" standby              0"), Some(false));
         assert_eq!(parse_pmset_standby("no standby line"), None);
+    }
+
+    // ── The background reschedule's log gate ────────────────────────────────
+
+    #[test]
+    fn a_permission_failure_is_reported_once_instead_of_never() {
+        // THE regression: the supervisor filtered `permission` (and its two
+        // siblings) to silence, so the one failure that means "this machine will
+        // sleep through the service" appeared in no log at all. First one is
+        // written; the rest are counted.
+        assert_eq!(
+            background_wake_log_action(false, Some("permission"), 0),
+            WakeLogAction::ReportOnce
+        );
+        for seen in [1, 99] {
+            assert_eq!(
+                background_wake_log_action(false, Some("permission"), seen),
+                WakeLogAction::Suppress,
+                "{seen} reports in"
+            );
+        }
+    }
+
+    #[test]
+    fn the_expected_failures_share_the_one_report_between_them() {
+        // One line per launch, not one per reason: the second expected failure
+        // of any kind is still a repeat of "the unprivileged pass cannot arm
+        // wakes on this machine".
+        for reason in ["permission", "disabled", "cancelled"] {
+            assert!(
+                background_wake_log_action(false, Some(reason), 0).logs(),
+                "{reason}"
+            );
+            assert!(
+                !background_wake_log_action(false, Some(reason), 1).logs(),
+                "{reason}"
+            );
+            // …and both spend from the same budget, which is what makes them
+            // share it.
+            assert!(background_wake_log_action(false, Some(reason), 0).counts());
+            assert!(background_wake_log_action(false, Some(reason), 1).counts());
+        }
+    }
+
+    #[test]
+    fn a_real_failure_is_never_quietened_and_never_spends_the_budget() {
+        // `unsupported`/`error` — and anything nobody has classified, which is
+        // the reason most likely to be new — are logged every time. And they
+        // must NOT count: a burst of them would otherwise silence the next
+        // `permission`, which is the one failure the budget exists to show.
+        for reason in [Some("unsupported"), Some("error"), Some("banana"), None] {
+            let action = background_wake_log_action(false, reason, 5);
+            assert_eq!(action, WakeLogAction::Report, "{reason:?}");
+            assert!(action.logs(), "{reason:?} must always be logged");
+            assert!(!action.counts(), "{reason:?} must not spend the budget");
+        }
+    }
+
+    #[test]
+    fn success_says_nothing() {
+        assert_eq!(
+            background_wake_log_action(true, None, 0),
+            WakeLogAction::Silent
+        );
+        // Even a "reason" carried along with an ok result cannot make it noisy.
+        assert_eq!(
+            background_wake_log_action(true, Some("error"), 0),
+            WakeLogAction::Silent
+        );
+        assert!(!WakeLogAction::Silent.logs() && !WakeLogAction::Silent.counts());
+    }
+
+    #[test]
+    fn every_reason_survives_the_round_trip_through_the_wire() {
+        // `from_wire` is what lets the supervisor reason in types instead of in
+        // string literals; a variant it cannot parse would be treated as a real
+        // failure and log on every pass.
+        for r in [
+            WakeErrorReason::Disabled,
+            WakeErrorReason::Cancelled,
+            WakeErrorReason::Permission,
+            WakeErrorReason::Unsupported,
+            WakeErrorReason::Error,
+        ] {
+            assert_eq!(WakeErrorReason::from_wire(r.as_str()), Some(r), "{r:?}");
+        }
+        assert_eq!(WakeErrorReason::from_wire("nonsense"), None);
+    }
+
+    // ── Why a successful reschedule armed nothing ───────────────────────────
+
+    #[test]
+    fn an_empty_wake_set_says_whether_the_plan_is_switched_off() {
+        // «Registrer vekkinger» answering `ok: true, count: 0` is not an answer.
+        assert_eq!(
+            wake_idle_reason(false, 0),
+            Some(WakeIdleReason::AutoRecordOff)
+        );
+        assert_eq!(
+            wake_idle_reason(true, 0),
+            Some(WakeIdleReason::NothingUpcoming)
+        );
+    }
+
+    #[test]
+    fn a_wake_set_with_something_in_it_needs_no_excuse() {
+        // Specials are not gated by the level-1 switch, so "switched off" with
+        // an upcoming concert is a perfectly ordinary armed set.
+        assert_eq!(wake_idle_reason(true, 3), None);
+        assert_eq!(wake_idle_reason(false, 1), None);
     }
 }

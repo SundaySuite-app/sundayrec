@@ -1,0 +1,15 @@
+.receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--good);
+  /* Plassen holdes av selv når den er tom — se toppen av Receipt.tsx. */
+  min-height: 1em;
+  min-width: 1px;
+}
+
+.failed {
+  color: var(--bad);
+}

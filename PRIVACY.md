@@ -24,25 +24,17 @@ Resten av dokumentet forklarer detaljene, og hvorfor du kan etterprøve dem.
 ## Hva denne erklæringen gjelder — og hva den ikke gjelder
 
 Den gjelder **kun** den valgfrie diagnostikk- og bruksstatistikk-funksjonen,
-som du finner under **Innstillinger → System**.
+som du finner under **Oppsett → Avansert → «Del anonym diagnostikk»**.
 
 Resten av SundayRec sender aldri noe **til Sunday Suite** av seg selv, uansett
-hva du svarer her. Det finnes to unntak, og ingen av dem styres av dette
+hva du svarer her. Det finnes ett unntak, og det styres ikke av dette
 samtykket:
 
 - **Oppdateringssjekken**, som er beskrevet i sitt eget avsnitt rett under.
-- **Innlogging med Sunday-konto**, hvis du velger å logge inn. Da går
-  innloggingen til vår egen innloggingstjeneste, og den får naturlig nok vite
-  hvem du er — det er hele poenget med å logge inn. Det skjer bare når du selv
-  ber om det, og en installasjon som aldri logger inn tar aldri kontakt.
-  Innloggingen er ikke koblet til diagnostikken: installasjons-ID-en under er
-  ikke utledet fra kontoen din, og de to møtes aldri.
 
-At appen ellers sender ting over nett, gjør den selvsagt. Du kan laste opp et
-opptak til skylagring, sende et varsel til en webhook, sende e-post, laste ned
-en transkripsjonsmodell eller strømme direkte. Alt dette går dit **du** har
-bestemt, når du har bedt om det, og aldri innom oss. Denne erklæringen handler
-ikke om dem.
+At appen ellers sender ting over nett, gjør den selvsagt: du kan få e-post
+når et opptak feiler. Det går dit **du** har bestemt, når du har bedt om det,
+og aldri innom oss. Denne erklæringen handler ikke om det.
 
 ---
 
@@ -81,8 +73,8 @@ nettverksloggingen er slått av for hele tjeneren, og den loggingen tjeneren
 selv gjør, godtar kun et fast sett med felt som ikke identifiserer noen. En
 IP-adresse har ingen plass å havne i.
 
-**Du kan slå det av.** Under **Innstillinger → System** finnes «Oppdater
-automatisk». Slår du den av, tar appen ikke kontakt med serveren — verken ved
+**Du kan slå det av.** Under **Oppsett → Avansert → «Oppdateringer»** finnes
+«Oppdater automatisk». Slår du den av, tar appen ikke kontakt med serveren — verken ved
 oppstart eller den vanlige sjekken hver time. Det ene unntaket er om du selv
 trykker «Se etter oppdateringer nå», for da er det du som har bedt om det.
 
@@ -102,9 +94,9 @@ Spørsmål om personvern, innsyn eller sletting kan rettes til
 ## Uten at vi vet hvem du er
 
 SundayRec lager en tilfeldig installasjons-ID (en UUID) på din maskin. Den er
-**ikke** utledet fra e-post, navn, kirke eller en Sunday-konto, og den knyttes
-aldri til noen av delene. Vi kan altså ikke se hvem du er, hvilken menighet du
-tilhører, eller koble to installasjoner til samme person.
+**ikke** utledet fra e-post, navn eller kirke, og den knyttes aldri til noen
+av delene. Vi kan altså ikke se hvem du er, hvilken menighet du tilhører,
+eller koble to installasjoner til samme person.
 
 Vi kaller funksjonen «anonym diagnostikk» fordi det er slik den oppleves: vi
 vet ikke hvem du er. Men for å være helt presis er ID-en teknisk sett et
@@ -166,10 +158,16 @@ Selve tidspunktet opptaket ble avsluttet følger med, sammen med varigheten. Se
 
 ### Korrigeringene du gjør i redigeringsverktøyet
 
-Når SundayRec gjetter hvor prekenen begynner og slutter, og du flytter på det,
-sendes **hvor ofte** du flyttet noe og **omtrent hvor mye** — oppgitt som et
-grovt intervall, for eksempel «prekenstarten ble flyttet 30–60 sekunder
-tidligere».
+Det finnes to måter å rette appens gjetning på, og begge telles. Den ene er å
+**flytte på grensene** — appen fant riktig del av opptaket, men begynte eller
+sluttet litt feil. Den andre er å **velge en annen del av opptaket** — appen
+trodde noe annet var prekenen, for eksempel et leseinnslag eller en sang, og du
+pekte på den riktige blokka. De to rapporteres hver for seg, fordi de forteller
+oss to ulike ting om hva som gikk galt.
+
+For begge sendes det samme: **hvor ofte** det skjedde og **omtrent hvor mye**
+grensen flyttet seg — oppgitt som et grovt intervall, for eksempel
+«prekenstarten ble flyttet 30–60 sekunder tidligere».
 
 Intervallene er med vilje grove. Hensikten er å se mønstre på tvers av mange
 opptak — at forslaget for eksempel systematisk kommer litt for sent — ikke å
@@ -187,29 +185,12 @@ Grunnen til at vi ber om dette: den automatiske prekengjenkjenningen skal bli
 bedre for alle som bruker den, og et menneske som retter opp en dårlig gjetning
 er det eneste signalet som forteller den hva som var galt.
 
-### Hvilke automatiske forslag du tar i bruk
-
-Når appen foreslår en tittel, et sammendrag eller kapittelmerker, sendes hvilken
-av de tre det gjaldt, og om du beholdt resultatet slik det ble foreslått eller
-skrev det om etterpå.
-
-Selve forslaget sendes aldri. Det du eventuelt skrev i stedet, sendes aldri.
-Heller ikke transkripsjonen eller prekenen forslaget ble laget fra.
-
-Dette er ikke noe vi filtrerer bort i etterkant: dataformatet har ingen plass
-til tekst overhodet — bare til hvilken av de tre typene det var, og hva som
-skjedde med den.
-
-Grunnen til at vi spør om dette også: appen skal kunne lære hvilke typer
-forslag som faktisk er verdt å tilby, i stedet for at vi gjetter.
-
 ### Funksjonsbruk
 
 Navngitte tellere for hvilke funksjoner som brukes, fra en fast, forhåndsdefinert
-liste — for eksempel «eksport til MP3» eller «transkripsjon startet».
+liste — for eksempel «eksport til MP3» eller «opptak startet».
 
-Kun **antall** ganger. Aldri hva som ble eksportert, transkribert eller
-publisert.
+Kun **antall** ganger. Aldri hva som ble eksportert eller tatt opp.
 
 ### Resultatet av en diagnose du selv har kjørt
 
@@ -284,8 +265,8 @@ og etter det står bare dagstall igjen.
 
 Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Kirke- eller
 menighetsnavn. Navnet du har gitt et opptak. Navnet på mikseren eller lydkortet
-ditt. Mappen du lagrer i. Webhook-adresser og e-postoppsett. Navnene på de
-planlagte opptakene dine, og klokkeslettene de er satt opp til.
+ditt. Mappen du lagrer i. E-postoppsett. Navnene på de planlagte opptakene
+dine, og klokkeslettene de er satt opp til.
 
 For alt dette er det ikke bare filtrert bort i etterkant — dataformatet har rett
 og slett ingen plass å legge det i. Hvert felt som forlater maskinen er enten et
@@ -321,8 +302,8 @@ Du blir spurt — første gang i oppstartsveilederen for nye installasjoner, ell
 i et engangsspørsmål for installasjoner som allerede er satt opp.
 
 Du kan når som helst trekke samtykket tilbake, eller gi det på nytt, under
-**Innstillinger → System**. Å svare nei endrer ingenting i hvordan SundayRec
-fungerer.
+**Oppsett → Avansert → «Del anonym diagnostikk»**. Å svare nei endrer ingenting
+i hvordan SundayRec fungerer.
 
 ---
 
@@ -340,7 +321,7 @@ IP-adresser lagres aldri, verken midlertidig eller permanent.
 
 ## Slette dine data
 
-Under **Innstillinger → System → «Slett mine data»** skjer to ting.
+Under **Oppsett → Avansert → «Slett mine data»** skjer to ting.
 
 **Umiddelbart, lokalt på din maskin:** installasjons-ID-en din byttes ut med en
 ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
@@ -349,7 +330,7 @@ ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
 **Så snart maskinen har nett:** SundayRec ber serveren slette alt som ligger der
 under den gamle ID-en. Alle enkeltrapporter fjernes — krasjrapporter,
 kvalitetsdata, diagnosefunn, planlagte opptak som ikke startet, korrigeringer,
-forslagsbruk, bruksmål, alt. Også den tekniske raden som teller hvor mange
+bruksmål, alt. Også den tekniske raden som teller hvor mange
 rapporter ID-en har sendt, blir borte.
 
 Er maskinen offline når du trykker, sendes forespørselen neste gang den er på
@@ -366,8 +347,8 @@ slette. Det er også nettopp derfor de kan beholdes.
 
 ## «Vis hva som sendes»
 
-Under **Innstillinger → System** kan du når som helst åpne en forhåndsvisning
-av nøyaktig den datapakken SundayRec ville sendt neste gang.
+Under **Oppsett → Avansert → «Hva sendes»** kan du når som helst åpne en
+forhåndsvisning av nøyaktig den datapakken SundayRec ville sendt neste gang.
 
 Dette er ikke et eksempel eller en illustrasjon. Det er de faktiske dataene,
 slik de faktisk ville blitt sendt.
@@ -393,6 +374,12 @@ aldri til et «ja» på veien.
 
 Omfanget denne erklæringen beskriver, er **versjon 2**.
 
+Omfanget kan også bli **mindre** uten at vi spør på nytt — et samtykke til mer
+dekker mindre. Det har skjedd én gang: fram til v0.15 kunne appen også
+rapportere hvilke typer automatiske forslag (tittel, sammendrag, kapittelmerker)
+du tok i bruk. Den funksjonen finnes ikke lenger i SundayRec, og feltet sendes
+ikke. Har du sagt ja før, gjelder svaret ditt fortsatt — for det som er igjen.
+
 ---
 
-_Sist oppdatert: 2026-08-08._
+_Sist oppdatert: 2026-08-23._

@@ -24,6 +24,38 @@ have instead are two separate, narrower levers, and neither of them is undo:
 
 Both are real and both work. Neither reaches a machine that already updated.
 
+## The guarantee holds for strict semver, and only for strict semver
+
+The guard delegates to the `semver` crate (the same one Cargo and
+`tauri-plugin-updater` use), so it enforces semver.org exactly: build metadata
+is ignored for precedence, `0.11.0-beta.2` supersedes `-beta.1`, `-beta.10`
+supersedes `-beta.9`, and the stable `0.11.0` supersedes every `0.11.0-*`.
+
+For a version string that is **not** valid semver, the guard has nothing to
+order by and falls back to "the strings differ, so it is newer". That fallback
+is not an ordering — it answers _newer_ in both directions — so **the "only
+ever moves to a HIGHER version" promise above does not cover it.**
+
+In practice you cannot reach it, and three separate things have to break at
+once before you could:
+
+- The running version comes from the app's own package metadata, and **Cargo
+  refuses to build a package whose version is not strict semver** (a
+  zero-padded date like `2026.05.31` fails with "invalid leading zero in minor
+  version number").
+- The offered version comes from `tauri-plugin-updater`, which has already
+  parsed the manifest into a `semver::Version` before the guard sees it. A
+  manifest the crate cannot parse never gets this far.
+- `scripts/promote-release.mjs` requires `latest.json`'s `version` to equal the
+  tag without its `v`, and every tag this project has cut is
+  `vMAJOR.MINOR.PATCH[-beta.N]`.
+
+**The operating rule: tag releases as strict semver.** `v0.13.0`,
+`v0.14.0-beta.1`. Not `v2026.05.31`, not `v1.0`, not a leading zero in any
+field. A date-shaped tag is the one shape that looks reasonable and is not
+covered — `v2026.5.31` would be fine, `v2026.05.31` would not, and nothing in
+the pipeline will tell you which one you picked.
+
 ## What the kill-switch does NOT do
 
 - **It does not touch a machine that already downloaded and applied the bad
@@ -37,8 +69,9 @@ Both are real and both work. Neither reaches a machine that already updated.
   removing the GitHub asset does not reach back and un-run an installer that
   already ran.
 - **Propagation is not instant, but it is fast.** A running app re-checks for
-  updates about once an hour (`legacy/renderer/pages/general-page.ts`'s
-  startup-plus-hourly check), and the update feed itself is cached for 60
+  updates about once an hour (`app/state/auto-update.ts`'s startup-plus-hourly
+  check, over `@lib/pages/auto-update-schedule-core`), and the feed itself is
+  cached for 60
   seconds. So pausing a channel reaches an already-running installation
   within the hour, and a freshly-launched or manually-checked one
   immediately.
@@ -84,6 +117,10 @@ un-promote the tag.
 This protects the v0.11.0+ fleet within the hour (see propagation note
 above). It does **not** protect anyone still on a pre-0.11.0 build — that is
 step 2.
+
+Not at the Mac that has this script's Keychain item, or not the owner at
+all? See "Nødprosedyre uten Mac (10 min)" near the end of this file — same
+two routes, raw `curl`.
 
 ### 2. (only while a pre-0.11.0 fleet still exists) Un-latest the bad GitHub release
 
@@ -163,3 +200,76 @@ runbook live (same Worker, second custom domain). That split is deliberate:
 an update check happens whether or not the operator ever consented to
 telemetry (see `PRIVACY.md`), so it must not be served from a host whose name
 implies it only exists for people who opted in.
+
+## Nødprosedyre uten Mac (10 min)
+
+Everything above assumes `node scripts/promote-release.mjs`, which — until
+now — only ever worked on the owner's Mac, reading the admin key from that
+one Mac's Keychain. If the person who needs to pull the kill-switch right
+now is not at that Mac (a different operator, a phone with `curl` and no
+Node, a Windows laptop, anything), the admin API itself does not care what
+called it: these are the same three routes the script calls, written out
+raw. `scripts/promote-release.mjs` also has a second way to reach them
+without a Mac at all — `SUNDAYREC_ADMIN_KEY` as an environment variable,
+checked before the Keychain — if Node happens to be available; the `curl`
+below needs neither Node nor the script.
+
+**The admin key.** Set it as an environment variable in the shell you're
+using, once, and never paste the value anywhere else — not chat, not a
+shared doc, not an issue:
+
+```bash
+export ADMIN_KEY='<the admin key>'
+```
+
+Who hands you this key, and how, if you are not the owner and not at the
+owner's Mac, is the owner's decision, made at the time — that is
+deliberately not written down in this repo. Nothing below assumes an answer
+to it.
+
+**1. Read the current state of both channels** — confirms you're talking to
+the right thing before changing anything:
+
+```bash
+curl -sS https://telemetry.sundaysuite.app/v1/admin/channels \
+  -H "x-admin-key: $ADMIN_KEY"
+```
+
+**2. Pause the bad channel** — the kill-switch, the same one-line effect as
+`--pause` in the script. `"channel"` is `"stable"` or `"beta"`, whichever is
+serving the bad release:
+
+```bash
+curl -sS -X POST https://telemetry.sundaysuite.app/v1/admin/channel \
+  -H "x-admin-key: $ADMIN_KEY" \
+  -H "content-type: application/json" \
+  -d '{"channel":"stable","paused":true}'
+```
+
+**3. Confirm it took** — re-run step 1 and look for `"paused":true` on the
+channel you just touched. Pausing does not clear or change the promoted
+tag — see "What the kill-switch does NOT do" above, it applies here too.
+
+**4. Resume it later**, once steps 3–7 of the runbook above have happened on
+a machine that has the script (same route, `"paused":false`):
+
+```bash
+curl -sS -X POST https://telemetry.sundaysuite.app/v1/admin/channel \
+  -H "x-admin-key: $ADMIN_KEY" \
+  -H "content-type: application/json" \
+  -d '{"channel":"stable","paused":false}'
+```
+
+⚠️ **Both hosts matter here too.** These routes are on
+`telemetry.sundaysuite.app` (the admin host), not `updates.sundaysuite.app`
+(the public feed clients poll) — see "Why the update feed lives on a
+different host" above. The admin key is not accepted on the public host and
+would do nothing there.
+
+This covers the kill-switch and reading channel state only — the same two
+things `--pause`/`--resume`/no-args cover in the script. Promoting a NEW tag
+(`POST /v1/admin/promote`) additionally requires validating that tag's
+`latest.json` first — `scripts/promote-release.mjs`'s `manifestProblems()` —
+which is not something to hand-reconstruct in a raw `curl` command under
+time pressure. Step 5 above ("Cut a NEW tag…") waits for a machine that has
+the script.

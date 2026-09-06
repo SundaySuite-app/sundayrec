@@ -8,21 +8,20 @@ Single, current-state launchpad. The code is gate-green (the full Rust test suit
 
 ## State of the release pipeline (verified in repo)
 
-| Item                                                                                   | State                                                                                                           |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Build macOS + Windows on tag (`release.yml`)                                           | ✅ wired                                                                                                        |
-| Beta ring: `-beta.N` tag → GitHub pre-release, automatic                               | ✅ wired (`release.yml`'s `prerelease:` follows the tag)                                                        |
-| Auto-updater plugin + pubkey + endpoints (`tauri.conf.json`)                           | ✅ wired                                                                                                        |
-| `uploadUpdaterJson: true` in `release.yml`                                             | ✅ set (it was `includeUpdaterJson` until v0.11.0-beta.1 — never a real tauri-action input; the run ignored it) |
-| Channel promotion / kill-switch (`scripts/promote-release.mjs`)                        | ✅ wired — needs Keychain item `SundayRec telemetry admin key`                                                  |
-| Worker update-channel admin API (`telemetry.sundaysuite.app/v1/admin/*`)               | ✅ live — brukt til å forfremme v0.11.0-beta.1; `promote-release.mjs` kjører mot den                            |
-| Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ✅ shipped — `tauri.conf.json`'s endpoint and `sundayrec-core::update::DEFAULT_UPDATE_BASE` both name it        |
-| `sundayrec://` deep-link scheme registered (config + Info.plist)                       | ✅ config done — GUI-UNVERIFIED                                                                                 |
-| ts-rs bindings drift                                                                   | ✅ 0 diff (`npm run bindings`)                                                                                  |
-| macOS signing                                                                          | 🔑 needs `MAC_CERTS` + `MAC_CERTS_PASSWORD` (identity is hardcoded in `release.yml`)                            |
-| macOS notarization                                                                     | 🚫 DISABLED in `release.yml` (env lines commented out — Apple PLA 403). Secrets alone do NOT re-enable it — §2a |
-| Updater signing                                                                        | 🔑 needs `TAURI_SIGNING_*` secrets                                                                              |
-| Windows signing                                                                        | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                       |
+| Item                                                                                   | State                                                                                                             |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Build macOS + Windows on tag (`release.yml`)                                           | ✅ wired                                                                                                          |
+| Beta ring: `-beta.N` tag → GitHub pre-release, automatic                               | ✅ wired (`release.yml`'s `prerelease:` follows the tag)                                                          |
+| Auto-updater plugin + pubkey + endpoints (`tauri.conf.json`)                           | ✅ wired                                                                                                          |
+| `uploadUpdaterJson: true` in `release.yml`                                             | ✅ set (it was `includeUpdaterJson` until v0.11.0-beta.1 — never a real tauri-action input; the run ignored it)   |
+| Channel promotion / kill-switch (`scripts/promote-release.mjs`)                        | ✅ wired — needs Keychain item `SundayRec telemetry admin key`                                                    |
+| Worker update-channel admin API (`telemetry.sundaysuite.app/v1/admin/*`)               | ✅ live — brukt til å forfremme v0.11.0-beta.1; `promote-release.mjs` kjører mot den                              |
+| Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ✅ shipped — `tauri.conf.json`'s endpoint and `sundayrec-core::update::DEFAULT_UPDATE_BASE` both name it          |
+| ts-rs bindings drift                                                                   | ✅ 0 diff (`npm run bindings`)                                                                                    |
+| macOS signing                                                                          | 🔑 needs `MAC_CERTS` + `MAC_CERTS_PASSWORD` (identity is hardcoded in `release.yml`)                              |
+| macOS notarization                                                                     | 🚫 DISABLED by default (repo variable `NOTARIZE_MAC` unset — Apple PLA 403). Secrets alone do NOT enable it — §2a |
+| Updater signing                                                                        | 🔑 needs `TAURI_SIGNING_*` secrets                                                                                |
+| Windows signing                                                                        | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                         |
 
 ## 1. CI is not a blocker
 
@@ -44,7 +43,7 @@ Settings → Secrets and variables → Actions. Team ID **784GN847G4** is on fil
 > secrets called `APPLE_CERTIFICATE`/`APPLE_PASSWORD` produces four secrets
 > nothing reads and a build that is still unsigned.
 
-For signing (active today — `release.yml` lines 153–155):
+For signing (active today — the `[notarization]` marker in `release.yml`):
 
 - [ ] `MAC_CERTS` — base64 of the "Developer ID Application" `.p12`.
       ⚠️ The `.p12` on the Desktop reportedly has the **wrong password** —
@@ -58,25 +57,40 @@ For signing (active today — `release.yml` lines 153–155):
 For notarization (**inactive** — see §2a):
 
 - [ ] `APPLE_ID` — Apple Developer account email.
-- [ ] `APPLE_APP_SPECIFIC_PASSWORD` — an **app-specific** password. ⚠️ The
-      previous one was **leaked in chat** — revoke it at appleid.apple.com →
-      Sign-In and Security → App-Specific Passwords, generate a fresh one, store
+- [ ] `APPLE_APP_SPECIFIC_PASSWORD` — an **app-specific** password, generated at
+      appleid.apple.com → Sign-In and Security → App-Specific Passwords, stored
       only as this secret.
 - [ ] `APPLE_TEAM_ID` — `784GN847G4`.
 
-### 2a. Notarization needs a source edit, not a secret
+### 2a. Notarization is a repo variable now, not a source edit
 
-Adding the three secrets above changes **nothing on its own**. The
-`APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` env lines in `release.yml` are
-**commented out unconditionally** (lines 163–165), disabled 2026-07-31 because
-Apple's notary service returns 403 _"A required agreement is missing or has
+Adding the three secrets above changes **nothing on its own**. Notarization
+is gated by the repository **variable** `NOTARIZE_MAC` (Settings → Secrets
+and variables → Actions → **Variables**, not Secrets — it isn't sensitive,
+it's just a switch), off by default, disabled 2026-07-31 because Apple's
+notary service returns 403 _"A required agreement is missing or has
 expired"_ until the updated Program License Agreement is accepted on
-developer.apple.com for team 784GN847G4.
+developer.apple.com for team 784GN847G4 — still true today.
 
 - [ ] Accept the Program License Agreement at developer.apple.com.
-- [ ] **Uncomment those three lines in `release.yml`** and commit. Until that
-      commit exists, every build is Developer ID-signed but NOT notarized, and
-      first launch needs right-click ▸ Open.
+- [ ] Set `NOTARIZE_MAC` to `true`. **No commit required** — this used to
+      mean uncommenting three lines in `release.yml`; since F1-D1 it doesn't.
+      Until it's set, every build is Developer ID-signed but NOT notarized,
+      and first launch needs right-click ▸ Open.
+
+`release.yml` reads the variable in a step gated
+`if: matrix.platform == 'macos-latest' && vars.NOTARIZE_MAC == 'true'` — grep
+the file for `NOTARIZE_MAC`, or for the literal string `[notarize-switch]`,
+to find it. That step, and only that step,
+exports `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` into the build
+step's environment via `$GITHUB_ENV`; the build step's own `env:` block
+never names those three keys, on purpose — a present-but-empty
+`APPLE_TEAM_ID` is not the same as an absent one (tauri-action would read it
+as "notarize with this team" and fail with "Team ID must be at least 3
+characters" instead of skipping notarization cleanly). This can only be
+proven on a real tag build — nothing in `ci.yml` exercises `release.yml` —
+so treat the very next tag cut after flipping the variable as the only real
+test of this path.
 
 ## 3. Auto-update signing (plugin already wired — only secrets remain)
 
@@ -90,10 +104,39 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 
 ## 4. Optional runtime features (not build blockers)
 
-- [ ] **Google OAuth client (Desktop type)** for cloud backup + Gmail email path
-      → `SUNDAYREC_GOOGLE_CLIENT_ID` (see `GOOGLE-OAUTH-SETUP.md`).
-- [ ] **Anthropic API key** (OS keychain) for the live AI sermon-companion
-      summary — the keyless extractive path works without it.
+- (none since R2 «Frivilligen først» — the AI companion and its Anthropic
+  key left the app.)
+
+## ⚠️ 4b. The next stable ships the NEW SHELL
+
+Read this before §5, because it changes what "a normal release" means once.
+
+Fase B of «Frivilligen først» made `app/` the shipped frontend. `npm run build`
+now builds that shell into `dist/`, and `dist/` is what `tauri.conf.json`'s
+`frontendDist` bundles — so **every tag cut from `main` after that merge ships
+the redesign**, with no flag, no opt-in and no way to fall back except reverting
+the merge. The old Electron-port renderer is deleted, not disabled.
+
+What that means for the ring:
+
+- [ ] The **beta ring is not optional** for the first tag that carries it. The
+      direct-to-stable override in §5 exists for changes whose blast radius is
+      known; this one replaces every screen a volunteer touches.
+- [ ] §6a applies **by definition**: the shell owns the meter loop, the
+      recording overlay and boot ordering. The first real Sunday on it IS the
+      health gate.
+- [ ] Read `docs/SMOKE-TEST.md` **from the top**, not from memory. The
+      navigation is three destinations now, and the runbook's own translation
+      table is at the top of that file. Its «Flater som ikke finnes lenger»
+      section is what stops a missing screen being filed as a regression.
+- [ ] Know the open ends before the Sunday, not after — `docs/APP-SHELL.md`
+      §«Etter byttet» lists them. The one that can cost a recording: on a Mac
+      that needs an administrator prompt to write a power event, wake-from-sleep
+      is never armed, because the interactive path has no caller. A rig that
+      relies on waking from sleep must be checked awake first.
+- [ ] `ROLLBACK.md` in advance, as always — and note that rolling the CLIENT
+      back to a pre-fase-B build is a rollback of the whole UI, which is a
+      different conversation with a congregation than a bug fix.
 
 ## 5. Cut the release — two rings, beta first
 
@@ -105,6 +148,32 @@ published, "Latest" ticked, nothing red anywhere on GitHub. The channel just
 silently keeps offering the previous tag. Steps 5d/5e (and 5g's repeat of
 them) exist specifically to catch that — do not compress them into one
 mental step called "promote", they check different things.
+
+`.github/workflows/ring-drift.yml` also watches for exactly this, daily and
+on demand (`gh workflow run ring-drift.yml`) — it compares the newest
+published GitHub release of each class against what `stable`/`beta` actually
+serve and fails loudly once a channel is more than 24h behind. It is a
+safety net for when 5d/5e get skipped, not a replacement for doing them
+yourself right after publishing.
+
+### Direct-to-stable (owner override — the exception, written down)
+
+The **normal** path is beta first (§5a–§5f, then §5g). The owner can order a
+release straight to `stable` — **v0.12.0 shipped that way** (2026-08-09), with
+the beta ring left on v0.11.1-beta.2. That is an owner decision, not a
+shortcut anyone else may take, and the minimum bar is what v0.12.0 actually
+met:
+
+- [ ] Full CI green on the release commit — all six jobs, including the
+      complete Playwright e2e tier in CI (not just locally).
+- [ ] `npm run check` green on merged `main`.
+- [ ] Promote + verify exactly as §5d/§5e, but for `stable`
+      (`node scripts/promote-release.mjs stable vX.Y.Z`, then the
+      no-argument readback) — promote-release's manifest validation is the
+      last automated gate.
+- [ ] §6a still applies: if the release touched recording/editor/meter/boot
+      code, the first real Sunday on it IS the health gate — now run from
+      `stable`, with no ring underneath, so read `ROLLBACK.md` in advance.
 
 ### 5a. Bump + tag (beta ring)
 
@@ -188,10 +257,8 @@ the only action that makes a v0.11.0+ install able to see the release at all.
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
 - [ ] §2–11 smoke test on a real Mac/Windows rig (capture, VU, editor ffmpeg,
-      whisper, wake/scheduler, streaming).
-- [ ] **Deep-link**: after a signed `tauri build`, open `sundayrec://…` and
-      confirm it routes into the app (the config is in place but GUI-UNVERIFIED;
-      requires the `tray` feature, which release builds include).
+      wake/scheduler) — re-read, not remembered: fase B rewrote the navigation
+      in every one of those sections.
 
 ### 6a. Recording/editor health gate (HARD — for any build touching audio)
 
@@ -200,8 +267,10 @@ see audio stutter, recording-mode lag, or editor instability. So for any build
 that changed **`recorder/`, `capture.rs`, the editor, the meter loop, or boot
 ordering**, this is a publish blocker:
 
-- [ ] Run **§5b** (record normally → Diagnose → "Siste opptak" numbers). Paste
-      `Dropp / xruns / IPC-overbelastning` + the Trend into the release notes.
+- [ ] Run **§5b** (record normally, then read `<app-data>/last-recording.json`
+      — the Diagnose screen it used to be read from does not exist in the new
+      shell). Paste `Dropp / xruns / IPC-overbelastning` + the trend from
+      `recording-telemetry-history.json` into the release notes.
       Healthy = all ≈ 0, clean exit, no `SR-CAPTURE-01`.
 - [ ] Confirm the telemetry **detects** a deliberately-stressed capture (§5b
       step 3) — if the numbers don't move under a CPU hog, the gate is blind.

@@ -1,0 +1,33 @@
+/*
+ * Samme gul-tonede pille som `ui/Chip/Chip.module.css`s `.gold` — men denne
+ * ER en knapp, så den får sin egen hover/aktiv-tilstand i stedet for å dele
+ * fila med en brikke som eksplisitt IKKE skal se klikkbar ut. Se filhodet i
+ * FirstRunResumeChip.tsx.
+ *
+ * To foreldre, to akser: `RecordPage`s `.page` er et grid (`justify-self`
+ * styrer bredden der), `SetupPage`s er en flex-kolonne (`align-self` styrer
+ * den der — grid ignorerer `align-self` for bredde i én rad, flex ignorerer
+ * `justify-self` helt). Uten begge strekker pillen seg til foreldrenes fulle
+ * bredde i den ene av dem.
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  align-self: start;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--gold-line);
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+
+.chip:hover {
+  filter: brightness(1.12);
+}

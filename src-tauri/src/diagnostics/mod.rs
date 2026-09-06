@@ -43,7 +43,7 @@ use ts_rs::TS;
 /// subset of the Electron `DiagnosticsReport`; `clipboardOk` is dropped because
 /// the clipboard write is a UI-side concern (`navigator.clipboard`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/DiagnosticsReport.ts")]
+#[ts(export, export_to = "DiagnosticsReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsReport {
     /// The full markdown report (rendered by the panel + copied to clipboard).
@@ -101,10 +101,14 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         .map(|d| d.name)
         .collect();
 
-    // Save folder: free space + writability.
-    let folder = resolve_diag_folder(app, &s);
-    let free_disk_bytes = fs4::available_space(&folder).ok();
-    let save_folder_writable = Some(folder_is_writable(&folder));
+    // Save folder: free space + writability. An unresolvable folder (nothing
+    // configured, no Documents dir) reports honest unknowns rather than failing
+    // the whole diagnose — this is the tool you reach for when things are
+    // broken. Pre-R3 this could probe a literal "." (the unwrap_or sat outside
+    // the join); the canonical resolver never yields that.
+    let folder = crate::save_folder::resolve(app, s.save_folder.as_deref()).ok();
+    let free_disk_bytes = folder.as_deref().and_then(|f| fs4::available_space(f).ok());
+    let save_folder_writable = folder.as_deref().map(folder_is_writable);
 
     // OS permissions (macOS reports real status; elsewhere Unknown → None).
     let mic_permission = auth_to_opt(perm_status(MediaKind::Microphone));
@@ -121,6 +125,10 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     // back from disk so it survives an app restart between recording + diagnose.
     let recording_history = read_recording_history(app);
     let last_recording = recording_history.last().cloned();
+
+    // F1-M5: read back the live journal_mode/busy_timeout so the report can
+    // say whether THIS installation is actually running WAL.
+    let (db_journal_mode, db_busy_timeout_ms) = read_db_pragmas(pool).await;
 
     // E2.5: the live capture probe. Runs LAST among the probes so everything
     // cheap is already gathered if it has to be skipped or times out.
@@ -159,6 +167,8 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         crashes: read_crash_summary(),
         task_restarts: read_restart_summary(),
         log_file: read_log_file_info(),
+        db_journal_mode,
+        db_busy_timeout_ms,
     };
 
     // Structured findings (the error-code system) + the human report.
@@ -254,7 +264,7 @@ async fn run_capture_probe(
     //    that records audio only would be a permission prompt for nothing.
     let mut video_ok = None;
     if s.video_enabled {
-        match crate::media::preview::probe_video_frame(s.video_device_name.clone()).await {
+        match crate::media::video_probe::probe_video_frame(s.video_device_name.clone()).await {
             Ok(ok) => video_ok = Some(ok),
             Err(e) => tracing::warn!("video probe skipped: {e}"),
         }
@@ -296,6 +306,27 @@ fn read_restart_summary() -> Option<TaskRestartSummary> {
     })
 }
 
+/// F1-M5: read back the two knobs [`crate::db::store::open_pool`] sets, so the
+/// report says whether an installation is ACTUALLY running WAL rather than
+/// trusting the source code — SQLite keeps a file's own journal mode until
+/// something changes it, so an install that hasn't reopened its database since
+/// before this change would otherwise look identical to one that has.
+/// Best-effort: `None` on any query failure rather than failing the whole
+/// diagnose over it. `PRAGMA journal_mode`/`PRAGMA busy_timeout` with no
+/// `=value` are the query forms — they read the live setting, they don't set it.
+async fn read_db_pragmas(pool: &SqlitePool) -> (Option<String>, Option<u64>) {
+    let journal_mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode")
+        .fetch_one(pool)
+        .await
+        .ok();
+    let busy_timeout_ms = sqlx::query_scalar::<_, i64>("PRAGMA busy_timeout")
+        .fetch_one(pool)
+        .await
+        .ok()
+        .map(|ms| ms.max(0) as u64);
+    (journal_mode, busy_timeout_ms)
+}
+
 /// Where E2.3's file log is and how healthy it is. `None` when the file log did
 /// not start this session.
 fn read_log_file_info() -> Option<LogFileInfo> {
@@ -317,24 +348,6 @@ fn auth_to_opt(s: AuthStatus) -> Option<String> {
         AuthStatus::NotDetermined => Some("not_determined".into()),
         AuthStatus::Unknown => None,
     }
-}
-
-/// Resolve the save folder for the diagnose probe (settings override → default).
-/// Mirrors the scheduler's resolver without depending on its private helper.
-fn resolve_diag_folder(
-    app: &AppHandle,
-    s: &sundayrec_core::settings::Settings,
-) -> std::path::PathBuf {
-    if let Some(f) = &s.save_folder {
-        if !f.trim().is_empty() {
-            return std::path::PathBuf::from(f);
-        }
-    }
-    app.path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .map(|d| d.join("SundayRec"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
 /// Best-effort writability probe: create the dir, write + remove a marker file.
@@ -382,4 +395,23 @@ fn save_report(app: &AppHandle, markdown: &str) -> Option<String> {
     let path = dir.join("SundayRec-diagnose.md");
     std::fs::write(&path, markdown).ok()?;
     Some(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn read_db_pragmas_reports_wal_and_the_raised_busy_timeout() {
+        // F1-M5: proves the diagnostics-layer PRAGMA read-back itself works
+        // against a real (temp) pool — `crates/sundayrec-core`'s tests cover
+        // the other half, formatting these values into the report line.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = crate::db::store::open_pool(&dir.path().join("test.sqlite"))
+            .await
+            .expect("open_pool");
+        let (journal_mode, busy_timeout_ms) = read_db_pragmas(&pool).await;
+        assert_eq!(journal_mode.as_deref(), Some("wal"));
+        assert_eq!(busy_timeout_ms, Some(30_000));
+    }
 }

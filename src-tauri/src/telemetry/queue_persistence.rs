@@ -2,7 +2,8 @@
 //!
 //! The decisions live in `sundayrec-core::telemetry::queue` (a pure state
 //! machine over `Vec<TelemetryEntry>`); this is the durable mirror, shaped
-//! exactly like `cloud::store` so there is one convention to remember. Every
+//! exactly like the other sqlx-backed stores so there is one convention to
+//! remember. Every
 //! function takes `&SqlitePool` and unit-tests against a throwaway database.
 //!
 //! ## The bound is applied on write, not on read

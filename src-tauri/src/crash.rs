@@ -296,17 +296,18 @@ pub fn record_task_restart(task: &str, detail: &str) {
 
 /// Write one record into `dir` and prune the ring back to `cap`.
 ///
-/// Atomic temp+rename, exactly like `skriv_siste_feil_til_disk`: a reader (the
-/// diagnose report, or a support person with a Finder window) must never see a
-/// half-written file, least of all one written while the process was dying.
+/// Atomic temp+rename via [`crate::util::write_atomic`], exactly like
+/// `skriv_siste_feil_til_disk`: a reader (the diagnose report, or a support
+/// person with a Finder window) must never see a half-written file, least of
+/// all one written while the process was dying — which is also why the shared
+/// helper `fsync`s before the rename rather than trusting the process to
+/// outlive its own page cache.
 fn write_record(dir: &Path, prefix: &str, record: &CrashRecord, cap: usize) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let name = record_filename(prefix, unix_millis(), SEQ.fetch_add(1, Ordering::Relaxed));
     let body = serde_json::to_string_pretty(record)
         .unwrap_or_else(|_| "{\"schema\":1,\"kind\":\"panic\"}".to_string());
-    let tmp = dir.join(format!("{name}.tmp"));
-    std::fs::write(&tmp, body)?;
-    std::fs::rename(&tmp, dir.join(&name))?;
+    crate::util::write_atomic(&dir.join(&name), body.as_bytes())?;
     prune_ring(dir, prefix, cap);
     Ok(())
 }

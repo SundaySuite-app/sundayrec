@@ -2,7 +2,7 @@
 //!
 //! The impure half of the non-destructive editor. Every *decision* lives in the
 //! unit-tested core:
-//!   - cut/keep planning + filter-graph + codec + output-path + chapters →
+//!   - cut/keep planning + filter-graph + codec + output-path + metadata →
 //!     [`sundayrec_core::editor`],
 //!   - EBU R128 loudness measure/apply filter chains + the loudnorm JSON parse →
 //!     [`sundayrec_core::mastering`],
@@ -37,8 +37,8 @@
 //! the gate only compiles the I/O seam in or out. The public entry points
 //! compile either way; when the
 //! feature is OFF they return a clear `feature_disabled` error so the renderer
-//! can surface "editing isn't built into this build" (mirrors the `whisper`
-//! idiom). Enable with `--features editor` for the smoke test.
+//! can surface "editing isn't built into this build". Enable with
+//! `--features editor` for the smoke test.
 //!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
@@ -61,7 +61,7 @@ use sundayrec_core::detect::Detection;
 /// What a load-probe resolved about a recording, for the editor's first paint.
 /// The renderer-facing mirror of [`sundayrec_core::editor::ProbeResult`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorMediaInfo.ts")]
+#[ts(export, export_to = "EditorMediaInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMediaInfo {
     pub duration_sec: f64,
@@ -79,7 +79,7 @@ pub struct EditorMediaInfo {
 /// renderer's `<audio>.duration` can lie on VBR) and only falls back to
 /// `peaks.len() / 100` when the probe came up empty.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorPeaks.ts")]
+#[ts(export, export_to = "EditorPeaks.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorPeaks {
     /// Max-abs amplitude per bucket, 0..1, at 100 buckets per second
@@ -94,7 +94,7 @@ pub struct EditorPeaks {
 /// `SegmentType` lowercase strings (or `"sermon"` for the promoted block), the
 /// same shape `detectSegments` returned to the Electron renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorSegment.ts")]
+#[ts(export, export_to = "EditorSegment.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorSegment {
     pub start: f64,
@@ -134,7 +134,7 @@ pub struct EditorSegment {
 /// The measured loudness the mastering UI shows before/after a preset, mirroring
 /// the pass-1 `loudnorm` JSON the Electron mastering flow surfaced.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorLoudness.ts")]
+#[ts(export, export_to = "EditorLoudness.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorLoudness {
     /// Measured integrated loudness (LUFS).
@@ -171,7 +171,7 @@ impl EditorLoudness {
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
 /// `CutRegion`; converted to [`sundayrec_core::editor::CutRegion`] in the seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorCutRegion.ts")]
+#[ts(export, export_to = "EditorCutRegion.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorCutRegion {
     pub start: f64,
@@ -179,10 +179,11 @@ pub struct EditorCutRegion {
 }
 
 /// Export request — the cut-plan + a chosen format + optional mastering preset,
-/// intro/outro jingles, and topic chapters. Mirrors the non-video subset of the
-/// Electron `EditorExportParams` the editor UI sent (mp4 video re-encode aside).
+/// intro/outro jingles, and title/speaker/description. Mirrors the non-video
+/// subset of the Electron `EditorExportParams` the editor UI sent (mp4 video
+/// re-encode aside).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorExportRequest.ts")]
+#[ts(export, export_to = "EditorExportRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportRequest {
     pub input_path: String,
@@ -205,12 +206,11 @@ pub struct EditorExportRequest {
     /// Optional peak-normalization gain (dB) applied as a `volume` filter — what
     /// the editor's "Normalize" button computes. `None`/`0` is a no-op.
     pub gain_db: Option<f64>,
-    /// Topic chapters to embed in the exported file (FFMETADATA → ID3 CHAP/CTOC).
-    /// Times are in the ORIGINAL recording timeline; export remaps them through
-    /// the cut-plan and drops any that fall inside a cut. Empty = none embedded.
-    #[serde(default)]
-    pub chapters: Vec<EditorChapter>,
-    /// Optional file title (FFMETADATA `title`); also used as the chapter header.
+    // (v0.15: `chapters` left the request with the chapter UI — no source
+    // produces them any more. The core's FFMETADATA/ID3 CHAP path is kept and
+    // is simply handed an empty list, which makes it a no-op; see `export`.
+    // serde ignores the key if an old renderer still sends it.)
+    /// Optional file title (FFMETADATA `title`).
     #[serde(default)]
     pub title: Option<String>,
     /// Optional speaker (FFMETADATA `artist`).
@@ -237,32 +237,12 @@ pub struct EditorExportRequest {
     pub video_codec: Option<String>,
 }
 
-/// One chapter marker (a title at a time, in seconds). The renderer-facing mirror
-/// of [`sundayrec_core::editor::Chapter`].
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChapter.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorChapter {
-    pub time: f64,
-    pub title: String,
-}
-
-/// One timestamped transcript line fed to chapter detection. Mirrors the whisper
-/// `TranscriptSegment` subset the detector needs (start + text).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorTranscriptLine.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorTranscriptLine {
-    pub start: f64,
-    pub text: String,
-}
-
 /// How to repair the channel layout (mirror of
 /// [`sundayrec_core::processing::ChannelRepair`]). `mode` is one of
 /// `none|swapLr|duplicateLeft|duplicateRight|monoMix|gainDb`; `leftDb`/`rightDb`
 /// are only read for `gainDb`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChannelRepair.ts")]
+#[ts(export, export_to = "EditorChannelRepair.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorChannelRepair {
     pub mode: String,
@@ -295,7 +275,7 @@ impl EditorChannelRepair {
 
 /// One parametric EQ band (mirror of [`sundayrec_core::processing::EqBand`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorEqBand.ts")]
+#[ts(export, export_to = "EditorEqBand.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorEqBand {
     pub freq_hz: u32,
@@ -308,7 +288,7 @@ pub struct EditorEqBand {
 /// toggleable; `serde(default)` lets the renderer send a partial object. When an
 /// export carries this it overrides any `vocalChainPreset`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorProcessing.ts")]
+#[ts(export, export_to = "EditorProcessing.ts")]
 #[serde(rename_all = "camelCase", default)]
 pub struct EditorProcessing {
     pub channel_repair: Option<EditorChannelRepair>,
@@ -435,7 +415,7 @@ impl EditorProcessing {
 /// [`sundayrec_core::processing::ChannelDiagnosis`] plus the measured peaks and a
 /// ready-to-apply [`EditorChannelRepair`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChannelDiagnosis.ts")]
+#[ts(export, export_to = "EditorChannelDiagnosis.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorChannelDiagnosis {
     /// `balanced|imbalance|dead_left|dead_right|both_dead|mono`.
@@ -452,7 +432,7 @@ pub struct EditorChannelDiagnosis {
 /// vocal-chain + mastering presets to apply for the best out-of-the-box result.
 /// The renderer applies these to its export settings in a single click.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorAutoProcess.ts")]
+#[ts(export, export_to = "EditorAutoProcess.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorAutoProcess {
     /// The channel-balance analysis + recommended repair.
@@ -473,7 +453,7 @@ pub struct EditorAutoProcess {
 /// [`sundayrec_core::mastering::MasterPreset`]). The renderer renders `label`/
 /// `description` and applies by `id`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorMasterPreset.ts")]
+#[ts(export, export_to = "EditorMasterPreset.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreset {
     pub id: String,
@@ -504,44 +484,23 @@ pub fn master_presets() -> Vec<EditorMasterPreset> {
 
 /// The outcome of an export: where the file landed.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorExportResult.ts")]
+#[ts(export, export_to = "EditorExportResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportResult {
     pub output_path: String,
 }
 
-/// Detect topic chapters from a transcript (Bible references + enumeration
-/// points) in the transcript's language (`lang_code`: `en` → English, otherwise
-/// Norwegian). Pure, offline, deterministic — no ffmpeg, so it compiles + runs
-/// regardless of the `editor`/`whisper` features. Times are in the original
-/// recording timeline; `editor_export` remaps them through the cut-plan.
-pub fn detect_chapters(lines: &[EditorTranscriptLine], lang_code: &str) -> Vec<EditorChapter> {
-    use sundayrec_core::chapters::{detect_chapters as core_detect, Language, TranscriptLine};
-    let core_lines: Vec<TranscriptLine> = lines
-        .iter()
-        .map(|l| TranscriptLine {
-            start: l.start,
-            text: l.text.clone(),
-        })
-        .collect();
-    core_detect(&core_lines, Language::from_code(lang_code))
-        .into_iter()
-        .map(|c| EditorChapter {
-            time: c.time,
-            title: c.title,
-        })
-        .collect()
-}
-
 /// Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
 /// Maps 1:1 to [`sundayrec_core::editor::Sidecar`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorSidecar.ts")]
+#[ts(export, export_to = "EditorSidecar.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum EditorSidecar {
     Meta,
     CutsDraft,
-    Transcript,
+    // (`Transcript` left this renderer-facing enum in v0.15 with whisper; the
+    // core `Sidecar::Transcript` stays so old files still travel with their
+    // recording.)
     /// `<stem>.peaks.json` — the waveform cache (P3). Written/read by the seam
     /// itself, never by the renderer, but it shares the same path policy.
     Peaks,
@@ -558,7 +517,6 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
         match s {
             EditorSidecar::Meta => sundayrec_core::editor::Sidecar::Meta,
             EditorSidecar::CutsDraft => sundayrec_core::editor::Sidecar::CutsDraft,
-            EditorSidecar::Transcript => sundayrec_core::editor::Sidecar::Transcript,
             EditorSidecar::Peaks => sundayrec_core::editor::Sidecar::Peaks,
             EditorSidecar::Segments => sundayrec_core::editor::Sidecar::Segments,
             EditorSidecar::Feedback => sundayrec_core::editor::Sidecar::Feedback,
@@ -570,7 +528,7 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
 /// has_audio so the renderer can choose the audio-only vs video editor layout.
 /// Mirrors the Electron `editor-probe-streams` `MediaStreamInfo`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorStreamInfo.ts")]
+#[ts(export, export_to = "EditorStreamInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorStreamInfo {
     pub has_video: bool,
@@ -581,7 +539,7 @@ pub struct EditorStreamInfo {
 /// bytes inline, or it is over the 100 MB limit and the renderer must stream it
 /// via the peaks-extract path. Mirrors the `{ tooLarge, size }` shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorFileRead.ts")]
+#[ts(export, export_to = "EditorFileRead.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorFileRead {
     /// Over the inline limit — the renderer should stream instead.
@@ -753,9 +711,8 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 // correction", "what does it replace", "which block does it mean now" lives in
 // `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
 //
-// Three callers now share that read-modify-write: the sermon dropdown, review's
-// publish, and the AI companion panel. They are independent — a companion batch
-// finalises three events at once while a publish is in flight — and a
+// More than one caller shares that read-modify-write (the sermon dropdown, the
+// dormant trim seam, the shadow observer). They are independent, and a
 // read-modify-write of one file from two places at once loses whichever write
 // lands first. `FEEDBACK_LOCK` serialises them. It is deliberately ONE lock for
 // all recordings rather than one per path: these writes are a few hundred bytes
@@ -765,14 +722,13 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 /// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
 static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Tell the telemetry accumulators what a successful fold changed, as the file's
-/// PROJECTIONS before and after.
+/// Tell the telemetry accumulator what a successful fold changed, as the file's
+/// PROJECTION before and after.
 ///
-/// Called by all three seams and folding BOTH projections at every one — so a
-/// signal added to either projection later is reported from every seam at once
-/// rather than from the ones somebody remembered. The two read disjoint
-/// collections of the same file (`banded_corrections` the picks and trims,
-/// `companion_outcomes` the suggestions), so a record cannot be counted twice.
+/// Called by every correction seam — so a signal added to the projection later
+/// is reported from every seam at once rather than from the ones somebody
+/// remembered. (Until v0.15 a second, disjoint projection — the companion's
+/// suggestion outcomes — was folded here too.)
 ///
 /// Projections, not the event: a correction REPLACES the previous answer to the
 /// same baseline, so someone cycling through four blocks has made one decision,
@@ -784,7 +740,6 @@ fn observe_feedback_change(
     after: &sundayrec_core::feedback::RecordingFeedback,
 ) {
     crate::telemetry::corrections::observe_files(before, after);
-    crate::telemetry::companion::observe_files(before, after);
 }
 
 /// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
@@ -803,10 +758,7 @@ fn feedback_lock() -> std::sync::MutexGuard<'static, ()> {
 /// interpretable against the alternatives that existed, and the attention
 /// heuristics read the music/silence blocks the picker never offers.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorSermonPickRequest.ts"
-)]
+#[ts(export, export_to = "EditorSermonPickRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorSermonPickRequest {
     /// The segments as the UI had them WHEN THE CHOICE WAS MADE — i.e. before
@@ -865,18 +817,6 @@ fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::Recording
             Err(())
         }
     }
-}
-
-/// Read one recording's feedback file for the transparency summary (E8.T),
-/// treating "corrupt" the same as "missing" rather than as an error.
-///
-/// [`read_feedback`]'s `Err(())` exists to stop a WRITE from clobbering a file
-/// it cannot parse — there is nothing to clobber here. A summary is read-only
-/// and best-effort by nature: one unreadable sidecar among a whole history
-/// must shrink the count by one recording's worth of corrections, not fail
-/// the whole screen the operator opened to see what the app has noticed.
-pub fn read_feedback_for_summary(media_path: &str) -> sundayrec_core::feedback::RecordingFeedback {
-    read_feedback(media_path).unwrap_or_default()
 }
 
 /// Which block of `segments` the human's stored correction means, or `None`.
@@ -951,9 +891,13 @@ pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -
 /// `Some` carries the pure layer's verdict, including the two that write nothing
 /// (the operator published the proposal untouched, or moved the boundaries back
 /// onto it). `None` means we could not persist: an unreadable or newer-schema
-/// file we refuse to overwrite, or a failed write. The caller
-/// ([`crate::learning::record_trim_deltas`]) turns that into a log line — never
-/// into anything the operator sees.
+/// file we refuse to overwrite, or a failed write.
+///
+/// DORMANT since v0.15 (R1 removed its only caller, the review queue's
+/// `review_update_trim` → `learning::record_trim_deltas`). Kept, with its
+/// tests, because the trim-correction signal is part of the consented
+/// telemetry contract and the editor is the obvious next writer; see
+/// `docs/LEARNING.md`.
 pub fn record_trim_adjustment(
     media_path: &str,
     deltas: sundayrec_core::trim_feedback::TrimDeltas,
@@ -975,37 +919,6 @@ pub fn record_trim_adjustment(
     Some(outcome)
 }
 
-/// Append one companion-suggestion outcome to the recording's feedback file.
-/// Returns whether it persisted; `false` is an unreadable file we left alone or
-/// a failed write, and never reaches the panel.
-pub fn record_companion_suggestion(
-    media_path: &str,
-    kind: sundayrec_core::feedback::CompanionSuggestionKind,
-    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-) -> bool {
-    let _guard = feedback_lock();
-    let Ok(mut file) = read_feedback(media_path) else {
-        return false;
-    };
-    let before = file.clone();
-    sundayrec_core::feedback::record_companion_suggestion(
-        &mut file,
-        kind,
-        outcome,
-        edited_after_accept,
-        env!("CARGO_PKG_VERSION"),
-    );
-    // Only after the write, exactly as the two correction seams do: an outcome
-    // that did not reach the disk must not be counted as something the person
-    // told us, or the telemetry would report what the app itself has lost.
-    let written = write_feedback(media_path, &file);
-    if written {
-        observe_feedback_change(&before, &file);
-    }
-    written
-}
-
 /// Fold one shadow-mode observation into the recording's feedback file.
 ///
 /// Returns whether it persisted; `false` is an unreadable or newer-schema file
@@ -1014,7 +927,7 @@ pub fn record_companion_suggestion(
 /// become something the operator sees.
 ///
 /// **`observe_feedback_change` is deliberately NOT called here**, and that is
-/// the one line of this function that matters. The other three seams report
+/// the one line of this function that matters. The other seams report
 /// their change to the telemetry accumulators; this one must not, because a
 /// disagreement between two detectors is outside the three categories the
 /// consent text covers (crash reports, quality data, feature-usage counters).
@@ -1065,7 +978,8 @@ pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
 ///
 /// [`cleanup_temp_files`] was reachable only through the
 /// `editor_cleanup_temp_files` Tauri command, and that command had ZERO callers
-/// — renderer or otherwise. So an export or a mastering apply that crashed left
+/// — renderer or otherwise; V1/PR3 deleted it, so THIS sweep is now the whole
+/// cleanup. Before it, an export or a mastering apply that crashed left
 /// its `.__editor_tmp` / `.__editor_bak` beside the recording forever, and each
 /// one is the size of the recording it was editing. A 90-minute service's
 /// backup is hundreds of megabytes of invisible litter on the operator's disk.
@@ -1091,15 +1005,43 @@ pub async fn startup_sweep(pool: &sqlx::SqlitePool) -> usize {
             }
         }
     }
-    if folders.is_empty() {
-        return 0;
-    }
-    // Blocking readdir/unlink off the async runtime.
-    let removed = tokio::task::spawn_blocking(move || cleanup_temp_files(&folders))
-        .await
-        .unwrap_or(0);
+
+    // Blocking readdir/unlink off the async runtime. The mastering-preview
+    // sweep rides in the same blocking task: same lifecycle, same best-effort
+    // contract, one log line.
+    let removed = tokio::task::spawn_blocking(move || {
+        cleanup_temp_files(&folders) + cleanup_preview_temp_files(&std::env::temp_dir())
+    })
+    .await
+    .unwrap_or(0);
     if removed > 0 {
-        tracing::info!(removed, "startup: swept crashed-edit temp/backup leftovers");
+        tracing::info!(
+            removed,
+            "startup: swept editor temp/backup + mastering-preview leftovers"
+        );
+    }
+    removed
+}
+
+/// Sweep the OS temp dir for leftover mastering-preview mp3s
+/// (`sundayrec-master-preview-*.mp3`, written by [`master_preview`]). Each is
+/// ~800 kB (20 s @ 320 kbps) and the Lyd step renders one per sound profile per
+/// recording, so a machine that auditions freely accumulates megabytes that
+/// nothing ever reclaimed — `is_preview_temp_name` existed with zero callers
+/// (P4b restanse #1 in docs/APP-SHELL.md). Same discipline as
+/// [`cleanup_temp_files`]: the pure predicate decides, this layer does the
+/// readdir/unlink, best-effort, never panics. Returns how many were removed.
+pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
+    use sundayrec_core::mastering::is_preview_temp_name;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if is_preview_temp_name(&name) && std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
     }
     removed
 }
@@ -1136,10 +1078,7 @@ pub fn cleanup_temp_files(folders: &[String]) -> usize {
 /// of `inputPath` through the preset's single-pass chain to a temp mp3 the
 /// renderer can `<audio>`-play A/B against the original. Mirrors `master-preview`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterPreviewRequest.ts"
-)]
+#[ts(export, export_to = "EditorMasterPreviewRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewRequest {
     pub input_path: String,
@@ -1150,10 +1089,7 @@ pub struct EditorMasterPreviewRequest {
 
 /// Where the rendered preview mp3 landed (a temp file the renderer plays).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterPreviewResult.ts"
-)]
+#[ts(export, export_to = "EditorMasterPreviewResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewResult {
     pub preview_path: String,
@@ -1169,10 +1105,7 @@ pub struct EditorMasterPreviewResult {
 /// full-length ffmpeg read of a 90-minute service for a byte-identical answer.
 /// Optional for back-compat — absent means "measure it yourself".
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterApplyRequest.ts"
-)]
+#[ts(export, export_to = "EditorMasterApplyRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterApplyRequest {
     pub input_path: String,
@@ -1192,10 +1125,7 @@ pub struct EditorMasterApplyRequest {
 
 /// Where the mastered file landed.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterApplyResult.ts"
-)]
+#[ts(export, export_to = "EditorMasterApplyResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterApplyResult {
     pub output_path: String,
@@ -1204,7 +1134,7 @@ pub struct EditorMasterApplyResult {
 /// A mastering-apply progress tick, emitted on the `editor-master-progress`
 /// event. Mirrors the Electron `master-progress` `{ currentSec, totalSec }`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorMasterProgress.ts")]
+#[ts(export, export_to = "EditorMasterProgress.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterProgress {
     pub job_id: String,
@@ -1221,7 +1151,7 @@ pub struct EditorMasterProgress {
 /// Both mutexes are locked with `unwrap_or_else(|e| e.into_inner())`: they guard
 /// plain maps with no invariant a panic could half-break, so recovering a
 /// poisoned guard is correct — one panicked mastering job must not crash every
-/// later apply/cancel (same idiom as the whisper guards).
+/// later apply/cancel.
 pub struct MasterEngine {
     /// Pure legitimacy bookkeeping — register/cancel/complete.
     registry: std::sync::Mutex<sundayrec_core::mastering::JobRegistry>,
@@ -1252,7 +1182,7 @@ impl MasterEngine {
 /// is a stable CODE the renderer localises — `measuring` (mastering pass 1,
 /// which reports no percentage of its own) or `encoding` (the render).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorExportProgress.ts")]
+#[ts(export, export_to = "EditorExportProgress.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportProgress {
     pub pct: f32,
@@ -1274,7 +1204,7 @@ pub struct EditorExportProgress {
 /// `phase` field would be inventing a distinction the UI does not draw: each of
 /// these is a single pass, named by the surface that started it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorDecodeProgress.ts")]
+#[ts(export, export_to = "EditorDecodeProgress.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorDecodeProgress {
     pub fraction: f32,
@@ -1495,12 +1425,20 @@ pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult
     disabled("masteringAnalyze")
 }
 
+/// What the export command passes for `hw_first` (v0.15): always try the
+/// hardware encoder where the platform has one. A toggle for this was a setting
+/// nobody could reason about ("is my Mac's VideoToolbox good?") guarding a
+/// path that can only make an export faster — a failed hardware render is
+/// retried once in software. The parameter itself stays so the real-ffmpeg
+/// smoke tests can pin the software path on any machine.
+pub const HW_ENCODE_FIRST: bool = true;
+
 /// Render the cut-plan (+ optional mastering gain) to the requested format.
 #[cfg(not(feature = "editor"))]
 pub async fn export<F>(
     _engine: &ExportEngine,
     _req: &EditorExportRequest,
-    _hw_encode: bool,
+    _hw_first: bool,
     _on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
@@ -1529,12 +1467,6 @@ pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
         }
         None => Ok(false),
     }
-}
-
-/// Extract a single video frame at `sec` as a base64 JPEG for the video preview.
-#[cfg(not(feature = "editor"))]
-pub async fn extract_frame(_input_path: &str, _sec: f64) -> AppResult<String> {
-    disabled("extractFrame")
 }
 
 // ── HARDWARE-UNVERIFIED implementations (feature on) ─────────────────────────────
@@ -2040,8 +1972,10 @@ where
         }
         pcm.extend(
             chunk
-                .chunks_exact(2)
-                .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0),
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0),
         );
         if chunk.len() % 2 == 1 {
             carry = Some(chunk[chunk.len() - 1]);
@@ -2552,27 +2486,26 @@ where
 /// Tauri event. The in-flight child is parked in `engine` so
 /// [`cancel_export`] can kill it. HARDWARE-UNVERIFIED.
 ///
-/// `hw_encode` is the user's `editor_hw_encode` setting: on a VIDEO export on
-/// macOS it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a
-/// hardware render that fails is retried once in software (see
+/// `hw_first` ([`HW_ENCODE_FIRST`] in production): on a VIDEO export on macOS
+/// it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a hardware
+/// render that fails is retried once in software (see
 /// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
-/// so the toggle can never cost the user their export.
+/// so it can never cost the user their export.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
-    hw_encode: bool,
+    hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
     F: Fn(f32, &str),
 {
     use std::path::Path;
-    use sundayrec_core::chapters::remap_chapters_to_keeps;
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
         collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
-        video_filter_complex, Chapter as CoreChapter, CutRegion, RecordingMetadata,
+        video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
@@ -2783,28 +2716,22 @@ where
     let has_outro = outro.is_some();
     let main_input_idx = if has_intro { 1 } else { 0 };
 
-    // 4b. Topic chapters → FFMETADATA. The detector timed them on the ORIGINAL
-    //     recording; remap them through the cut-plan onto the exported timeline
-    //     and drop any inside a cut. Title/speaker/description ride along as tags.
-    //     NOTE: an intro jingle shifts the audio later; chapter times here are
-    //     relative to the main audio (no intro offset) — fine for the common
-    //     no-jingle podcast export, slightly early if a long intro is prepended.
-    let core_chapters: Vec<CoreChapter> = req
-        .chapters
-        .iter()
-        .map(|c| CoreChapter {
-            time: c.time,
-            title: c.title.clone(),
-        })
-        .collect();
+    // 4b. Title/speaker/description → tags, and chapters → FFMETADATA. Since
+    //     v0.15 nothing in the app produces chapters (the transcript-driven
+    //     detector left with the content cluster), so the list handed to the
+    //     core is ALWAYS empty and `ffmetadata` returns `None`: no metadata
+    //     input, no `-map_metadata`, and the tags go through `metadata_args`
+    //     alone. The FFMETADATA/ID3 CHAP path itself is kept in the core,
+    //     tested there, so a future chapter source only has to fill this list.
     let meta = RecordingMetadata {
         title: req.title.clone(),
         speaker: req.speaker.clone(),
         description: req.description.clone(),
-        chapters: remap_chapters_to_keeps(&core_chapters, &keeps),
+        chapters: Vec::new(),
     };
     // Write the `;FFMETADATA1` sidecar to a temp file ffmpeg reads as an extra
-    // input (`-map_metadata <idx>`). `None` when there are no chapters.
+    // input (`-map_metadata <idx>`). `None` when there are no chapters — i.e.
+    // always, today.
     let meta_path: Option<String> = match ffmetadata(&meta, kept_duration) {
         Some(text) => {
             // UNIQUE per export: the old `<stem>_chapters.ffmeta` collided
@@ -2830,12 +2757,12 @@ where
         Some("h265") | Some("hevc") => sundayrec_core::editor::VideoCodec::H265,
         _ => sundayrec_core::editor::VideoCodec::H264,
     };
-    // Hardware (VideoToolbox) video encode is an opt-in macOS speed-up. It has no
-    // CRF, so it needs a target bitrate, which depends on the source resolution —
+    // Hardware (VideoToolbox) video encode is a macOS speed-up. It has no CRF,
+    // so it needs a target bitrate, which depends on the source resolution —
     // probed ONLY when the hardware path is actually taken. An unreadable size
     // falls back to the 1080p rung rather than to a nonsense `0k`.
     bail_if_cancelled(engine)?;
-    let want_hw = is_video && hw_encode && cfg!(target_os = "macos");
+    let want_hw = is_video && hw_first && cfg!(target_os = "macos");
     let hw_bitrate_kbps = if want_hw {
         let (w, h) = probe_video_size(&req.input_path)
             .await
@@ -3153,36 +3080,6 @@ where
     Ok(tail)
 }
 
-/// Extract a single video frame at `sec` seconds, scaled to 480px wide, and
-/// return it as a base64-encoded JPEG (the renderer drops it into
-/// `data:image/jpeg;base64,…`). The argv (`-ss` before `-i`, `scale=480:-2`,
-/// one MJPEG frame to `pipe:1`) is the core's tested
-/// [`frame_extract_args`](sundayrec_core::editor::frame_extract_args) decision;
-/// the seam only spawns ffmpeg, collects stdout, and base64-encodes it.
-/// HARDWARE-UNVERIFIED — needs real video media.
-#[cfg(feature = "editor")]
-pub async fn extract_frame(input_path: &str, sec: f64) -> AppResult<String> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use sundayrec_core::editor::frame_extract_args;
-
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    let args = frame_extract_args(input_path, sec);
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| AppError::Recording(format!("frame extract wait: {e}")))?;
-    if !out.status.success() || out.stdout.is_empty() {
-        return Err(AppError::Recording(
-            "frame extract produced no image (no video stream or seek past end?)".into(),
-        ));
-    }
-    Ok(STANDARD.encode(&out.stdout))
-}
-
 // ── seam helpers (feature on) ────────────────────────────────────────────────────
 
 /// The first video stream's pixel dimensions, or `None` when ffprobe can't say.
@@ -3447,7 +3344,6 @@ mod tests {
             intro_path: None,
             outro_path: None,
             gain_db: None,
-            chapters: Vec::new(),
             title: None,
             speaker: None,
             description: None,
@@ -3458,11 +3354,6 @@ mod tests {
         };
         let engine = ExportEngine::new();
         assert!(export(&engine, &req, false, |_, _| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        assert!(extract_frame("/x.mp4", 1.0)
             .await
             .unwrap_err()
             .to_string()
@@ -3610,10 +3501,9 @@ mod tests {
     /// [`tmp_media`] for a test that WRITES a feedback record, plus the telemetry
     /// modules' process-wide test lock.
     ///
-    /// Every write here goes through `observe_feedback_change`, which feeds two
-    /// process-global accumulators. Those are shared mutable state, and the tests
-    /// that assert on them (`telemetry::corrections`, `telemetry::companion`)
-    /// take this same lock — so a feedback test running beside one of them would
+    /// Every write here goes through `observe_feedback_change`, which feeds a
+    /// process-global accumulator. That is shared mutable state, and the tests
+    /// that assert on it (`telemetry::corrections`) take this same lock — so a feedback test running beside one of them would
     /// otherwise add counts to a map another test is measuring. The lock also
     /// leaves consent OFF for the duration, which makes both seams inert and
     /// keeps THESE tests about the file rather than about telemetry.
@@ -3753,14 +3643,14 @@ mod tests {
     }
 
     /// Rewrite the sidecar as the build that only knew about sermon picks left
-    /// it: the two later collections ABSENT, not empty.
+    /// it: the later collections ABSENT, not empty.
     fn strip_to_phase_a_shape(media: &str) {
         let path = feedback_path(media);
         let mut json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let obj = json.as_object_mut().unwrap();
         obj.remove("trimAdjustments");
-        obj.remove("companionSuggestions");
+        obj.remove("shadowObservations");
         std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     }
 
@@ -3799,12 +3689,6 @@ mod tests {
         strip_to_phase_a_shape(&media);
 
         assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_some());
-        assert!(record_companion_suggestion(
-            &media,
-            sundayrec_core::feedback::CompanionSuggestionKind::Title,
-            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
-            false,
-        ));
 
         let file = stored(&media);
         assert_eq!(
@@ -3814,7 +3698,6 @@ mod tests {
         );
         assert_eq!(file.sermon_picks[0].chosen.index, 3);
         assert_eq!(file.trim_adjustments.len(), 1);
-        assert_eq!(file.companion_suggestions.len(), 1);
         // And the reopen path still answers with the human's block.
         assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
     }
@@ -3856,39 +3739,15 @@ mod tests {
         std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
 
         assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_none());
-        assert!(!record_companion_suggestion(
-            &media,
-            sundayrec_core::feedback::CompanionSuggestionKind::Title,
-            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
-            false,
-        ));
         assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
-    }
-
-    #[test]
-    fn a_companion_batch_appends_each_kind_and_writes_down_no_text() {
-        use sundayrec_core::feedback::{CompanionSuggestionKind as K, CompanionSuggestionOutcome};
-        let (_dir, media, _telemetry) = feedback_media();
-        for kind in [K::Title, K::Description, K::Chapters] {
-            assert!(record_companion_suggestion(
-                &media,
-                kind,
-                CompanionSuggestionOutcome::LeftAlone,
-                false,
-            ));
-        }
-        assert_eq!(stored(&media).companion_suggestions.len(), 3);
-
-        let raw = std::fs::read_to_string(feedback_path(&media)).unwrap();
-        assert!(!raw.contains("service"), "the recording's name leaked");
-        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
     }
 
     /// Every writer of `<stem>.feedback.json` must take [`FEEDBACK_LOCK`].
     ///
-    /// These four seams are genuinely concurrent in the app: shadow mode writes
+    /// These seams are genuinely concurrent in the app: shadow mode writes
     /// from a DETACHED task that is still running minutes after the editor
-    /// opened, while the companion panel finalises a batch and review publishes.
+    /// opened, while the sermon dropdown (and, once it has a writer again, the
+    /// trim seam) fold their own records.
     /// A read-modify-write of one file from two places at once loses whichever
     /// write lands first, and it loses it in the quietest possible way — the
     /// second writer's record is simply not in the file, and every function
@@ -3898,25 +3757,19 @@ mod tests {
     /// writer that forgets the guard fails here instead of in someone's service.
     #[test]
     fn concurrent_writers_do_not_lose_each_others_records() {
-        use sundayrec_core::feedback::{
-            build_shadow_observation, CompanionSuggestionKind as K, CompanionSuggestionOutcome,
-        };
+        use sundayrec_core::feedback::build_shadow_observation;
         let (_dir, media, _telemetry) = feedback_media();
 
         const ROUNDS: usize = 12;
         std::thread::scope(|s| {
-            // The companion panel, appending.
+            // The sermon dropdown, flipping between two blocks.
             s.spawn(|| {
-                for _ in 0..ROUNDS {
-                    assert!(record_companion_suggestion(
-                        &media,
-                        K::Title,
-                        CompanionSuggestionOutcome::Accepted,
-                        false,
-                    ));
+                for i in 0..ROUNDS {
+                    let chosen = if i % 2 == 0 { 3 } else { 2 };
+                    assert!(record_sermon_pick(&media, &pick_request(Some(1), chosen)));
                 }
             });
-            // Review's publish, replacing its one record over and over.
+            // The trim seam, replacing its one record over and over.
             s.spawn(|| {
                 for i in 0..ROUNDS {
                     assert!(record_trim_adjustment(&media, deltas(i as f64 + 1.0, 0.0)).is_some());
@@ -3937,9 +3790,14 @@ mod tests {
 
         let file = stored(&media);
         assert_eq!(
-            file.companion_suggestions.len(),
-            ROUNDS,
-            "an append-only record was lost to a concurrent writer"
+            file.sermon_picks.len(),
+            1,
+            "one detector baseline, one correction — the settled one"
+        );
+        assert_eq!(
+            file.sermon_picks[0].chosen.index,
+            2,
+            "the last pick (ROUNDS is even, so the final chosen block is 2) must be the one on file"
         );
         assert_eq!(
             file.trim_adjustments.len(),
@@ -3972,16 +3830,12 @@ mod tests {
     }
 
     #[test]
-    fn cuts_draft_and_transcript_use_distinct_files() {
+    fn cuts_draft_and_meta_use_distinct_files() {
         let (_dir, media) = tmp_media();
         let cuts = serde_json::json!({ "cuts": [{ "start": 1.0, "end": 2.0 }], "ts": 5 });
-        let transcript = serde_json::json!({ "segments": [] });
+        let meta = serde_json::json!({ "title": "Søndag" });
         assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &cuts));
-        assert!(write_sidecar(
-            &media,
-            EditorSidecar::Transcript,
-            &transcript
-        ));
+        assert!(write_sidecar(&media, EditorSidecar::Meta, &meta));
         assert_eq!(
             read_sidecar(&media, EditorSidecar::CutsDraft)
                 .unwrap()
@@ -3989,10 +3843,8 @@ mod tests {
             cuts
         );
         assert_eq!(
-            read_sidecar(&media, EditorSidecar::Transcript)
-                .unwrap()
-                .unwrap(),
-            transcript
+            read_sidecar(&media, EditorSidecar::Meta).unwrap().unwrap(),
+            meta
         );
     }
 
@@ -4024,6 +3876,40 @@ mod tests {
         assert!(d.join("service.mp3").exists());
         assert!(!d.join("service.mp3.__editor_tmp").exists());
         assert!(!d.join("clip.__editor_tmp.mp4").exists());
+    }
+
+    /// The preview sweep removes ONLY `sundayrec-master-preview-*.mp3` and
+    /// leaves every neighbour in the temp dir untouched — including near
+    /// misses: the right prefix with the wrong extension, and the right
+    /// extension without the prefix. Mutation check: neutering
+    /// `is_preview_temp_name` to `true` deletes the neighbours and fails the
+    /// keep-assertions; to `false`, the count assertion.
+    #[test]
+    fn preview_sweep_removes_only_master_preview_leftovers() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let d = dir.path();
+        std::fs::write(d.join("sundayrec-master-preview-abc123.mp3"), b"x").unwrap();
+        std::fs::write(d.join("sundayrec-master-preview-def456.mp3"), b"x").unwrap();
+        // Near misses and innocent bystanders that must survive:
+        std::fs::write(d.join("sundayrec-master-preview-half.wav"), b"keep").unwrap();
+        std::fs::write(d.join("unrelated-preview.mp3"), b"keep").unwrap();
+        std::fs::write(d.join("service.mp3"), b"keep").unwrap();
+        std::fs::create_dir(d.join("sundayrec-master-preview-imadir.mp3")).unwrap();
+
+        let removed = cleanup_preview_temp_files(d);
+        assert_eq!(removed, 2);
+        assert!(!d.join("sundayrec-master-preview-abc123.mp3").exists());
+        assert!(!d.join("sundayrec-master-preview-def456.mp3").exists());
+        assert!(d.join("sundayrec-master-preview-half.wav").exists());
+        assert!(d.join("unrelated-preview.mp3").exists());
+        assert!(d.join("service.mp3").exists());
+        // remove_file on a directory fails; the sweep must shrug, not panic.
+        assert!(d.join("sundayrec-master-preview-imadir.mp3").exists());
+
+        // Idempotent: a second pass finds nothing.
+        assert_eq!(cleanup_preview_temp_files(d), 0);
+        // A nonexistent dir is a no-op, not a panic.
+        assert_eq!(cleanup_preview_temp_files(&d.join("no-such-dir")), 0);
     }
 
     /// E6.5: the startup sweep really does reach the folders the editor writes
@@ -4769,7 +4655,9 @@ mod tests {
         }
 
         /// An export request for `input_path` into `output_folder` (pass `""`
-        /// for the "Samme mappe" default), cutting the middle 0.5 s out.
+        /// for the "Samme mappe" default), cutting the middle 0.5 s out. Carries
+        /// a title so the zero-chapter metadata path (tags via `-metadata`, no
+        /// FFMETADATA input) is exercised on every real export.
         fn cut_to_mp3_request(input_path: String, output_folder: &str) -> EditorExportRequest {
             EditorExportRequest {
                 input_path,
@@ -4786,8 +4674,7 @@ mod tests {
                 intro_path: None,
                 outro_path: None,
                 gain_db: None,
-                chapters: Vec::new(),
-                title: None,
+                title: Some("Søndag".into()),
                 speaker: None,
                 description: None,
                 vocal_chain_preset: None,
@@ -4824,7 +4711,6 @@ mod tests {
                 intro_path: None,
                 outro_path: None,
                 gain_db: None,
-                chapters: Vec::new(),
                 title: None,
                 speaker: None,
                 description: None,
@@ -5083,11 +4969,36 @@ mod tests {
                 !video.contains("video"),
                 "an audio export of a video source must carry no video stream; ffprobe: {video}"
             );
+            // v0.15: the request carries NO chapters any more, so the FFMETADATA
+            // input is absent — and the file must still be valid AND still carry
+            // the title tag, which now travels through `-metadata` alone.
+            let tags = probe_format_tags(&ffprobe, out);
+            assert!(
+                tags.contains("Søndag"),
+                "the title tag must survive a zero-chapter export; ffprobe tags: {tags}"
+            );
             eprintln!(
                 "editor export smoke: wrote {} ({dur:.2}s mp3, {} progress ticks)",
                 out.display(),
                 ticks.lock().unwrap().len()
             );
+        }
+
+        /// ffprobe the container's format tags (`title=…` lines).
+        fn probe_format_tags(ffprobe: &std::path::Path, path: &std::path::Path) -> String {
+            let probe = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format_tags=title",
+                    "-of",
+                    "default=noprint_wrappers=1",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run on the export output");
+            String::from_utf8_lossy(&probe.stdout).into_owned()
         }
 
         /// ffprobe every stream's codec_type — proves the simple audio path drops

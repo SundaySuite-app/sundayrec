@@ -20,7 +20,7 @@ const STANDARD_RATES: [u32; 4] = [44_100, 48_000, 88_200, 96_000];
 
 /// One audio device with the capabilities the VU UI needs.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/AudioDevice.ts")]
+#[ts(export, export_to = "AudioDevice.ts")]
 pub struct AudioDevice {
     /// Human-readable device name as reported by the OS.
     pub name: String,
@@ -36,7 +36,7 @@ pub struct AudioDevice {
 
 /// The result of enumerating the system's input devices.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/AudioDeviceList.ts")]
+#[ts(export, export_to = "AudioDeviceList.ts")]
 pub struct AudioDeviceList {
     /// The cpal host backing this enumeration (e.g. `"CoreAudio"`, `"WASAPI"`).
     pub host: String,

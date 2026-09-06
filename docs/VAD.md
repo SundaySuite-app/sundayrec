@@ -23,9 +23,9 @@ alone would not settle it — a feature can reach a release without being in
 `default` — so the second half matters more:
 
 - `.github/workflows/release.yml` builds with **explicit** feature lists, one per
-  platform (`--no-default-features --features editor,tray,updater,whisper,email,streaming`
-  on macOS, `editor,tray,asio,updater,email,streaming` on Windows). Neither names
-  `vad`.
+  platform (`--no-default-features --features editor,tray,updater,email` on
+  macOS, `editor,tray,asio,updater,email` on Windows — `streaming` left in
+  v0.14, `whisper` in v0.15). Neither names `vad`.
 - The repo has **no `--all-features` anywhere** — not in a workflow, not in
   `package.json`. There is no path by which the feature turns itself on.
 
@@ -243,8 +243,10 @@ same pick:
 | `trim_adjustments` | "right block, wrong edges"                   | **two deltas** | `Detection::sermon` (the strict pick) |
 
 A trim adjustment stores only the deltas — **the proposal it was measured against
-is not stored with it.** Review's `suggested_trim` is built from the strict pick
-in `prep::build_episode_prep`, so recovering what the human actually meant means
+is not stored with it.** Review's `suggested_trim` was built from the strict
+pick in `prep::build_episode_prep` (gone with the review queue in R1
+«Frivilligen først»; `Detection::sermon` is the same pick), so recovering what
+the human actually meant means
 re-deriving that proposal by running the heuristic again. That is valid, because
 the detector is deterministic and the recording has not changed — but only as
 long as the detector's boundary rule has not changed since the delta was

@@ -2,8 +2,10 @@
 //!
 //! These borrow the managed [`Db`] pool and delegate to the persistence
 //! functions (which carry the tests). Every command returns the validated,
-//! persisted [`Settings`] so the renderer's cache reflects exactly what the
-//! backend stored (post-clamping), with no second round-trip.
+//! persisted [`Settings`] so a caller CAN read back exactly what the backend
+//! stored (post-clamping) without a second round-trip. (The renderer's
+//! `saveSettings` currently discards the return value and keeps its in-memory
+//! copy — clamped/pruned differences surface at the next `settings_get`.)
 
 use std::path::PathBuf;
 
@@ -30,12 +32,6 @@ pub async fn settings_save(db: State<'_, Db>, settings: Settings) -> AppResult<S
 #[tauri::command]
 pub async fn settings_reset(db: State<'_, Db>) -> AppResult<Settings> {
     settings::reset(&db.pool).await
-}
-
-/// Export the current settings as pretty-printed JSON (for the F1.3 file dialog).
-#[tauri::command]
-pub async fn settings_export(db: State<'_, Db>) -> AppResult<String> {
-    settings::export(&db.pool).await
 }
 
 /// Import a (possibly partial/older) settings JSON: merge over defaults,

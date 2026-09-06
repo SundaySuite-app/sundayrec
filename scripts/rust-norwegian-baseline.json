@@ -1,0 +1,34 @@
+{
+  "_comment": "Generert av `node scripts/check-rust-norwegian.mjs --write-baseline`. `counts` er antall norske tegn (æøåÆØÅ) i PRODUKSJONS-strengliteraler per fil — kommentarer og #[cfg(test)] holdes utenfor. Skralla feiler når en fil går OPP, eller når en fil som ikke står her får norsk i seg. Ned er alltid greit; kjør --write-baseline etter en flytting så tallet ikke kan sprette tilbake. `allowlist` er filene der norsk er RIKTIG, med grunnen skrevet ut — ikke et sted å gjemme gjeld.",
+  "generatedAt": "2026-09-05T08:07:36.302Z",
+  "allowlist": {
+    "crates/sundayrec-core/src/alerts.rs": "SJU-SPRÅKS-KATALOG. Den norske armen er én sjuendedel av et sett kompilatoren krever komplett — `(AlertText, MailLang)`-matchen er uttømmende, så en variant KAN ikke legges til på norsk alene. Å telle den her ville felt gaten for å ha gjort det riktige: å legge til et nytt varsel på alle sju språk. Katalogens egne tester holder den ærlig (ikke-tom, sju ulike, plassholder-paritet).",
+    "crates/sundayrec-core/src/email.rs": "SJU-SPRÅKS-KATALOG, samme grunn som alerts.rs: `error_strings`/`test_strings`/`render_missed`/`render_receipt`/`render_confirm` er uttømmende matcher over MailLang, og `all_seven_languages_have_complete_catalogs` er testen som holder dem komplette.",
+    "crates/sundayrec-core/src/tray.rs": "SJU-SPRÅKS-KATALOG (menymodellen, `(item, TrayLang)`-matcher). Samme grunn.",
+    "crates/sundayrec-core/src/window.rs": "SJU-SPRÅKS-KATALOG (skjult-vindu- og avslutt-varslene, `(reason, TrayLang)`-matcher). Samme grunn.",
+    "crates/sundayrec-core/src/church_calendar.rs": "Helligdagsnavnene er DATA, ikke setninger. «Skjærtorsdag» er navnet på en rad i den norske kirkeåret-tabellen — det er ikke noe å oversette, og modulhodet sier det rett ut: kalenderen ER norsk. Kommer det en tysk kalender, får den sin egen tabell.",
+    "crates/sundayrec-core/src/diagnostics.rs": "SR-kodenes norske reserve i diagnose-rapporten. GJELD, ikke data: rapporten er brukervendt og bør oversettes — men den er én sammenhengende tekstflate på ~20 avsnitt som hører til språkrunden, ikke hit, og å dra den halvveis inn i AlertText ville gitt to kataloger for samme flate. Tallet vises med --list; det skal ikke vokse ubemerket."
+  },
+  "total": 121,
+  "counts": {
+    "crates/sundayrec-core/src/detect.rs": 8,
+    "crates/sundayrec-core/src/mastering.rs": 1,
+    "crates/sundayrec-core/src/preflight.rs": 5,
+    "crates/sundayrec-core/src/processing.rs": 4,
+    "crates/sundayrec-core/src/selftest.rs": 2,
+    "crates/sundayrec-core/src/two_process.rs": 5,
+    "crates/sundayrec-core/src/wake.rs": 36,
+    "src-tauri/src/commands/audio.rs": 2,
+    "src-tauri/src/commands/telemetry.rs": 2,
+    "src-tauri/src/diagnostics/mod.rs": 7,
+    "src-tauri/src/editor/mod.rs": 6,
+    "src-tauri/src/media/permissions.rs": 5,
+    "src-tauri/src/notify/disk.rs": 2,
+    "src-tauri/src/recorder/engine.rs": 12,
+    "src-tauri/src/recorder/native_capture/preroll.rs": 5,
+    "src-tauri/src/recorder/native_capture/segment.rs": 2,
+    "src-tauri/src/recorder/preroll.rs": 7,
+    "src-tauri/src/recorder/recovery.rs": 5,
+    "src-tauri/src/tray/mod.rs": 5
+  }
+}

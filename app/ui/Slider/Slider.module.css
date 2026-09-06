@@ -1,0 +1,25 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.range {
+  width: 180px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.range:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.value {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  /* Avlesningen skal ikke skyve naboen sin mens man drar. */
+  min-width: 5ch;
+  text-align: right;
+}

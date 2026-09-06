@@ -505,7 +505,11 @@ impl<B: VadBackend> VadStream<B> {
     ) -> Result<Vec<VadFrame>, VadError> {
         self.reset();
         let mut out = Vec::with_capacity(pcm.len() / VAD_HOP_SAMPLES);
-        for hop in pcm.chunks_exact(VAD_HOP_SAMPLES) {
+        // `as_chunks` (stable since 1.88) rather than `chunks_exact`: the hop is a
+        // compile-time constant, and newer clippy (`manual_slice_size_calculation`
+        // family) refuses the runtime form under -D warnings. Same semantics —
+        // the trailing partial hop is dropped either way.
+        for hop in pcm.as_chunks::<VAD_HOP_SAMPLES>().0 {
             out.push(self.push_hop(hop)?);
             on_hop(out.len());
         }

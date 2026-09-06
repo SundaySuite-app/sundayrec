@@ -52,17 +52,15 @@
 //!
 //! ## What is deliberately NOT reported HERE
 //!
-//!   - **Companion suggestion outcomes.** The `.feedback.json` file also records
-//!     whether the AI title/summary/chapters were kept or ignored. Those ARE
-//!     reported under consent v2 — the widened text names them — but by
-//!     [`super::companion`], as their own collection. They do not belong in this
-//!     one: a correction is a MOVEMENT with a direction and a magnitude band,
-//!     and keeping a generated title is neither, so it could only be carried
-//!     here by giving the band ladder a member that is not an interval. That
-//!     ladder IS the promise the Norwegian text makes about coarseness, and a
-//!     non-interval inside it would make the promise unreadable and every
-//!     per-band share meaningless. The two projections therefore read disjoint
-//!     collections of the same file, and no record is counted by both.
+//!   - **Anything that is not a movement.** (Until v0.15 the AI companion's
+//!     suggestion outcomes — kept / ignored — were reported by a sibling
+//!     projection as their own collection; the companion left with the content
+//!     cluster.) A correction is a MOVEMENT with a direction and a magnitude
+//!     band, and "kept a generated title" is neither, so such a thing could only
+//!     be carried here by giving the band ladder a member that is not an
+//!     interval. That ladder IS the promise the Norwegian text makes about
+//!     coarseness, and a non-interval inside it would make the promise
+//!     unreadable and every per-band share meaningless.
 //!   - **A pick with no auto-pick.** When the detector found no sermon at all
 //!     and the human chose one, there is no proposal to have moved FROM, so
 //!     there is no direction and no magnitude — only a count, which this
@@ -102,7 +100,7 @@ pub const CORRECTION_BAND_EDGES_SEC: [f64; 4] = [15.0, 30.0, 60.0, 120.0];
 /// correction says the block was right and the boundaries were not. Averaging
 /// them together would produce a number that describes neither failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionSignal.ts")]
+#[ts(export, export_to = "CorrectionSignal.ts")]
 pub enum CorrectionSignal {
     /// The review trim's start boundary, dragged away from where the analysis
     /// proposed it.
@@ -156,7 +154,7 @@ impl CorrectionSignal {
 /// invisible: the counts stay plausible, the tests stay green, and the tuning
 /// stage learns the opposite of what happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionDirection.ts")]
+#[ts(export, export_to = "CorrectionDirection.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum CorrectionDirection {
     /// Moved toward the start of the recording. For a start boundary this means
@@ -194,7 +192,7 @@ impl CorrectionDirection {
 /// [`CORRECTION_BAND_EDGES_SEC`] for the boundaries and the module docs for why
 /// they are these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionBand.ts")]
+#[ts(export, export_to = "CorrectionBand.ts")]
 pub enum CorrectionBand {
     /// A nudge. Everything from the point a drag stops being round-trip noise
     /// ([`UNCHANGED_TOLERANCE_SEC`]) up to 15 s.
@@ -301,7 +299,7 @@ impl CorrectionKey {
 /// Three closed enums and a count. There is no field here for a duration, a
 /// timestamp, a name or a path — see the module docs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionReport.ts")]
+#[ts(export, export_to = "CorrectionReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CorrectionReport {
     pub signal: CorrectionSignal,
@@ -429,9 +427,9 @@ pub fn banded_corrections(file: &RecordingFeedback) -> BTreeMap<CorrectionKey, u
         add(CorrectionSignal::SermonEnd, adjustment.deltas.end_delta_sec);
     }
 
-    // `companion_suggestions` is not read here, on purpose: it is
-    // `super::companion`'s collection, and a record counted by both projections
-    // would be reported twice, in two payload fields that mean different things.
+    // `shadow_observations` is not read here, on purpose: it is the app's own
+    // detectors disagreeing, not a human's correction, and it stays on the
+    // machine (see `crate::feedback::ShadowObservation`).
     out
 }
 
@@ -439,8 +437,7 @@ pub fn banded_corrections(file: &RecordingFeedback) -> BTreeMap<CorrectionKey, u
 mod tests {
     use super::*;
     use crate::feedback::{
-        record_companion_suggestion, record_sermon_pick, record_trim_adjustment,
-        CompanionSuggestionKind, CompanionSuggestionOutcome, FeedbackSegment, FeedbackSegmentKind,
+        record_sermon_pick, record_trim_adjustment, FeedbackSegment, FeedbackSegmentKind,
         SermonPickCorrection,
     };
     use crate::trim_feedback::TrimDeltas;
@@ -505,11 +502,11 @@ mod tests {
         assert_eq!(
             direction_of(
                 crate::trim_feedback::trim_deltas(
-                    Some(crate::prep::SuggestedTrim {
+                    Some(crate::detect::SuggestedTrim {
                         start_sec: 300.0,
                         end_sec: 2000.0
                     }),
-                    crate::prep::SuggestedTrim {
+                    crate::detect::SuggestedTrim {
                         start_sec: 330.0,
                         end_sec: 2000.0
                     },
@@ -785,29 +782,6 @@ mod tests {
         let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, pick(None, (700.0, 2200.0)));
         assert!(!file.sermon_picks.is_empty(), "the record itself is kept");
-        assert!(banded_corrections(&file).is_empty());
-    }
-
-    #[test]
-    fn companion_outcomes_are_not_projected_into_this_collection() {
-        // They ARE reported — by `super::companion`, as their own collection.
-        // What must not happen is one record landing in both projections, which
-        // would report it twice under two meanings. See the module docs.
-        let mut file = RecordingFeedback::default();
-        for kind in [
-            CompanionSuggestionKind::Title,
-            CompanionSuggestionKind::Description,
-            CompanionSuggestionKind::Chapters,
-        ] {
-            record_companion_suggestion(
-                &mut file,
-                kind,
-                CompanionSuggestionOutcome::Accepted,
-                true,
-                "0.10.0",
-            );
-        }
-        assert_eq!(file.companion_suggestions.len(), 3);
         assert!(banded_corrections(&file).is_empty());
     }
 

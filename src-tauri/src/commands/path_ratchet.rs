@@ -22,10 +22,11 @@
 //!
 //! A command is IN SCOPE when at least one parameter name (with any leading `_`
 //! stripped, lowercased) either contains `path` or ends with `folder`, `dir` or
-//! `file`. That deliberately over-matches — `cloud_set_folder` takes a Google
-//! Drive folder id, not a filesystem path, and is EXEMPT for exactly that
-//! reason. A false positive costs one line in a list; a false negative costs a
-//! security hole, which is the whole point of the ratchet.
+//! `file`. That deliberately over-matches — a command whose `folder` is a
+//! remote id rather than a filesystem path (the old `cloud_set_folder` was one)
+//! goes in EXEMPT with the reason. A false positive costs one line in a list; a
+//! false negative costs a security hole, which is the whole point of the
+//! ratchet.
 //!
 //! The parser tolerates what real source contains: doc-comments and `//` lines
 //! between the attribute and the `fn`, other attributes (`#[allow(...)]`),
@@ -45,52 +46,28 @@ const GUARDED: &[&str] = &[
     // ── R1 editor: every ffmpeg/fs entry point ──────────────────────────────
     "editor_load_recording",
     "editor_peaks",
-    "editor_probe_peak",
     "editor_extract_playback_proxy",
     "editor_allow_asset_path",
     "editor_segments",
     "editor_diagnose_channels",
     "editor_auto_process",
     "editor_mastering_analyze",
-    "editor_extract_frame",
     "editor_read_sidecar",
     "editor_write_sidecar",
     "editor_delete_sidecar",
     "editor_record_sermon_pick",
     "editor_sermon_pick",
-    "editor_record_companion_suggestion",
-    "editor_probe_streams",
-    "editor_read_file",
-    // ── Episode images ───────────────────────────────────────────────────────
-    "thumbnail_set_default",
-    "thumbnail_set_episode",
-    "thumbnail_clear_episode",
-    "thumbnail_resolve",
     // ── Papirkurv ────────────────────────────────────────────────────────────
     "trash_move",
     // ── E1.2 ─────────────────────────────────────────────────────────────────
-    "whisper_transcribe",
-    "whisper_export_transcript",
-    "integrations_get_service_link",
-    "integrations_song_submit_usage",
-    "integrations_sundayedit_send",
-    "integrations_sundayedit_import",
     "settings_export_to_file",
     "settings_import_from_file",
-    "cloud_enqueue_backup",
-    "open_in_sundayedit",
-    "open_in_sundaystudio",
-    "prep_build_episode",
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
 /// acts on. Every entry carries the reason it is safe; an entry without one is a
 /// hole waiting to be found.
-const EXEMPT: &[(&str, &str)] = &[(
-    "cloud_set_folder",
-    "`folder` is a Google Drive folder id + display name (CloudFolder), never a \
-     local path — it is persisted to the settings bag and sent to the Drive API",
-)];
+const EXEMPT: &[(&str, &str)] = &[];
 
 /// One `#[tauri::command]` found in the sources.
 #[derive(Debug)]
@@ -256,17 +233,23 @@ fn all_commands() -> Vec<Command> {
 fn the_parser_actually_finds_commands() {
     // A parser that silently matched nothing would turn every assertion below
     // into a no-op. Pin the floor.
+    //
+    // ⚠️ The floor is a PARSER-sanity floor, not a command-count ratchet: it
+    // asks "did this thing read the sources at all", and the honest answer to
+    // "there are fewer commands than yesterday" is to lower it, not to keep a
+    // command alive so a number holds. V1/PR3 deleted 12 dark commands (see the
+    // PR), taking the real count from 111 to ~91, so the floor moved 100 → 80.
+    // The named-command assertions below are what actually pins the behaviour.
     let commands = all_commands();
     assert!(
-        commands.len() > 100,
+        commands.len() > 80,
         "only {} #[tauri::command] functions parsed — the parser is broken",
         commands.len()
     );
     for known in [
         "editor_peaks",
-        "whisper_transcribe",
         "settings_export_to_file",
-        "deeplink_confirm_captions",
+        "editor_read_sidecar",
     ] {
         assert!(
             commands.iter().any(|c| c.name == known),

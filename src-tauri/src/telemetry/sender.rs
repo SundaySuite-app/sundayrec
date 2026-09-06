@@ -91,8 +91,8 @@ pub type SendFuture<'a> = Pin<Box<dyn Future<Output = Result<(), SendFailure>> +
 /// Deliver one payload. `Ok(())` means the endpoint accepted it.
 ///
 /// Implemented by [`super::http_sender::HttpTelemetrySender`] over
-/// `cloud::http_client()`'s bounded rustls client — the same pure-builder +
-/// thin-socket split `webhook.rs` and `notify::post_webhook` already use. The
+/// `util::http_client()`'s bounded rustls client — the same pure-builder +
+/// thin-socket split the rest of the shell's network seams use. The
 /// trait stays here, with the pump, so the tests below can substitute a sender
 /// that panics if it is ever called.
 pub trait TelemetrySender: Send + Sync {
@@ -286,8 +286,8 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
         app.clone(),
         "telemetry::sender",
         crate::supervise::TaskAlert {
-            title: "SundayRec",
-            body: "Bakgrunnsoppgaven for kvalitetsrapporter startet på nytt.",
+            title: None,
+            body: sundayrec_core::alerts::AlertText::QualityTaskRestarted,
         },
         move || {
             let app = app_for_loop.clone();

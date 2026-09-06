@@ -1,0 +1,62 @@
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-4);
+  align-items: center;
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.text {
+  min-width: 0;
+}
+
+.labelLine {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.label {
+  font-weight: 600;
+  font-size: var(--fs-body);
+}
+
+.description {
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  margin-top: 1px;
+}
+
+.controlCell {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.error {
+  font-size: var(--fs-sm);
+  color: var(--bad);
+  text-align: right;
+}
+
+/*
+ * Grået ut, men IKKE inert her: `inert` settes av Gate, som er det eneste som
+ * vet om raden er slått av fordi noe mangler (og som sier hvorfor). En rad som
+ * gjorde seg selv uklikkbar uten en grunn ved siden av ville vært den døde
+ * knappen i en annen form.
+ */
+.disabled {
+  opacity: 0.5;
+}

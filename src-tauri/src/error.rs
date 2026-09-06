@@ -4,9 +4,13 @@
 //! `serde::Serialize` so it crosses the IPC boundary as a stable JSON shape
 //! (`{ code, message }`) the renderer can pattern-match on.
 //!
-//! Keep `AppError::code()` (here) and the TS `AppError` union in
-//! `src/lib/bindings/` in sync when you add a variant. Domain variants
-//! (`Recording`, `Database`, `Export`, …) get added as their phases land.
+//! `AppError` carries no ts-rs binding — the shape below is written by hand,
+//! not derived — so nothing regenerates the TS side automatically. Keep
+//! `AppError::code()` (here) and the `CATEGORY_PREFIX` regex in
+//! `app/lib/error-code-core.ts` (which matches each variant's `#[error("…")]`
+//! message prefix, not `.code()`'s snake_case string) in sync when you add a
+//! variant. Domain variants (`Recording`, `Database`, `Export`, …) get added
+//! as their phases land.
 
 use serde::{Serialize, Serializer};
 use thiserror::Error;

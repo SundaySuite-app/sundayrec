@@ -1,0 +1,67 @@
+/*
+ * Kamerarammen. Én flate, to kilder — se CameraFrame.tsx.
+ *
+ * `aspect-ratio` og ikke en fast høyde: da har rammen riktig størrelse FØR
+ * første bilde er dekodet, og flaten hopper ikke i det bildet lander.
+ * `--rec-video-ar` overstyres av kalleren når headeren har fortalt hva
+ * kameraet faktisk leverer (`jpeg-dims.ts`); 16 / 9 er det opptaket skriver.
+ */
+
+.frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: var(--rec-video-ar, 16 / 9);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  /* `--bg` og ikke `--surface`: bildet skal være det lyseste i rammen. */
+  background: var(--bg);
+}
+
+/*
+ * Bildet — `<video>` eller `<img>`, samme regler.
+ *
+ * `contain` og ikke `cover`: en frivillig som ser på previewen sjekker
+ * BILLEDUTSNITTET, og en ramme som beskjærer for å fylle seg selv ville skjult
+ * nøyaktig det hun ser etter.
+ */
+.frame > video,
+.frame > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Ingen strøm ⇒ ingen tom svart boks oppå plassholderen. */
+.frame:not([data-phase="live"]) > video,
+.frame:not([data-phase="live"]) > img {
+  display: none;
+}
+
+.message {
+  margin: 0;
+  padding: 0 var(--sp-4);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/*
+ * Merket ligger OPPÅ bildet, nede til høyre. Det er et faktum om det man ser
+ * på, ikke en etikett ved siden av — og på en preview som fyller kortet er det
+ * ingen annen plass som ikke stjeler høyde fra bildet.
+ */
+.badge {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--scrim);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}

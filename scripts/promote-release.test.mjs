@@ -1,4 +1,4 @@
-// The promote gate's manifest check.
+// The promote gate's manifest check, and the admin-key source order.
 //
 // The shapes below are REAL: `betaManifest` and `stableManifest` are the
 // platform key sets the live feeds served on 2026-08-08 for v0.11.0-beta.1
@@ -6,9 +6,17 @@
 // `macOnlyManifest` is what release.yml's macOS leg actually uploaded to the
 // draft when the Windows leg failed in run 31206918593. Signatures are
 // truncated — only their presence/emptiness matters here.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { manifestProblems } from "./promote-release.mjs";
+// Hoisted above the `promote-release.mjs` import below, so the module under
+// test resolves this mock instead of the real `node:child_process` — the
+// only way to assert "Keychain not touched" is to prove `spawnSync` itself
+// was never called.
+vi.mock("node:child_process", () => ({ spawnSync: vi.fn() }));
+
+import { spawnSync } from "node:child_process";
+
+import { manifestProblems, readAdminKey } from "./promote-release.mjs";
 
 const entry = (sig = "dW50cnVzdGVk…") => ({
   signature: sig,
@@ -123,5 +131,60 @@ describe("manifestProblems", () => {
     expect(manifestProblems("nope", "v0.10.0")).toEqual([
       expect.stringContaining("not a JSON object"),
     ]);
+  });
+});
+
+// P2 (F1-D1): the kill-switch used to be reachable from exactly one person's
+// Keychain on exactly one Mac. SUNDAYREC_ADMIN_KEY is the documented
+// emergency way around that (docs/ROLLBACK.md "Nødprosedyre uten Mac") — an
+// env var checked BEFORE the Keychain, and which must short-circuit it
+// entirely rather than merely taking priority once both are read.
+describe("readAdminKey", () => {
+  const ORIGINAL_ENV = process.env.SUNDAYREC_ADMIN_KEY;
+
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.SUNDAYREC_ADMIN_KEY;
+    else process.env.SUNDAYREC_ADMIN_KEY = ORIGINAL_ENV;
+    vi.mocked(spawnSync).mockReset();
+  });
+
+  it("returns SUNDAYREC_ADMIN_KEY when set, and never spawns `security`", () => {
+    process.env.SUNDAYREC_ADMIN_KEY = "test-emergency-key";
+    expect(readAdminKey()).toBe("test-emergency-key");
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it("trims the env value", () => {
+    process.env.SUNDAYREC_ADMIN_KEY = "  test-emergency-key  \n";
+    expect(readAdminKey()).toBe("test-emergency-key");
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty/whitespace-only env var as unset and falls back to the Keychain", () => {
+    process.env.SUNDAYREC_ADMIN_KEY = "   ";
+    vi.mocked(spawnSync).mockReturnValue({
+      status: 0,
+      stdout: "keychain-key\n",
+      stderr: "",
+      error: undefined,
+    });
+    expect(readAdminKey()).toBe("keychain-key");
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the Keychain, unchanged, when the env var is unset", () => {
+    delete process.env.SUNDAYREC_ADMIN_KEY;
+    vi.mocked(spawnSync).mockReturnValue({
+      status: 0,
+      stdout: "keychain-key\n",
+      stderr: "",
+      error: undefined,
+    });
+    expect(readAdminKey()).toBe("keychain-key");
+    expect(spawnSync).toHaveBeenCalledWith(
+      "security",
+      ["find-generic-password", "-s", "SundayRec telemetry admin key", "-w"],
+      { encoding: "utf8" },
+    );
   });
 });

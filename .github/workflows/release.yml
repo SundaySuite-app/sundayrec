@@ -41,41 +41,30 @@ jobs:
           # ffmpeg sidecar matches. Intel/universal is a follow-up (needs both
           # ffmpeg arches + a universal target).
           #
-          # macOS ships `whisper` (transcription) with the Metal GPU backend
-          # (Cargo.toml's macOS target gives whisper-rs the `metal` feature) —
-          # without it the installed app could neither download a model nor
-          # transcribe (everything degraded to `feature_disabled`).
-          # History: an earlier release hit a ggml i8mm-intrinsic compile error
-          # (`vmmlaq_s32` vs "requires target feature 'i8mm'") on the M1 runner
-          # and whisper was dropped. The crate builds cleanly on a local M1 Pro
-          # (same arch as the runner), so it's re-enabled; if the runner's
-          # toolchain still trips, drop `whisper` from this line only and fall
-          # back to shipping whisper-cli as a sidecar (the Electron approach).
+          # (v0.15: `whisper` left this line with the transcription feature —
+          # the build has no C/C++ toolchain dependency any more, so the old
+          # ggml i8mm-intrinsic caveat is history too.)
           # The leading `--` forwards the rest to cargo (tauri-action runs
           # `tauri build <args>`, and tauri-cli only passes args after `--` on).
-          # `tray` ships the menubar/tray icon (+ sundayrec:// deep-link). It
+          # `tray` ships the menubar/tray icon. It
           # builds on both runners and degrades gracefully (install failure only
           # logs a warning), so it's safe to ship.
-          # `email` ships the SMTP/Gmail alerter — pure-Rust `lettre`, no native
+          # `email` ships the SMTP alerter — pure-Rust `lettre`, no native
           # dep. THESE LISTS ARE EXPLICIT: flipping Cargo.toml's `default` alone
           # never reaches a release, so both platform lines carry `email` too.
-          # `streaming` (R3, Fase 6) is the same story: the Direkte page shipped
-          # in every release with an enabled START button whose only effect was
-          # a raw `feature_disabled` string. It adds NO dependency (ffmpeg is a
-          # sidecar), so both platform lines carry it.
+          # (`streaming` left both lines in v0.14, `whisper` in v0.15 — both
+          # features are gone.)
           - platform: macos-latest
-            args: "-- --no-default-features --features editor,tray,updater,whisper,email,streaming"
+            args: "-- --no-default-features --features editor,tray,updater,email"
           # Windows adds `asio`: a low-latency, single-device multichannel audio
           # backend for pro interfaces (the dshow path splits them into stereo
           # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
           # set up by the windows-only steps below (see docs/BUILD_ASIO.md). The
           # recorder falls back to WASAPI automatically when no ASIO driver exists.
-          # `whisper` stays OFF here pending a RUNTIME verification on a real
-          # Windows box (the MSVC *compile* is proven green on every push by
-          # ci.yml's windows-check job, which checks default features incl.
-          # whisper — enabling it here is an owner decision + rig test).
+          # ci.yml's windows-check job compiles this list minus `asio` on every
+          # push.
           - platform: windows-latest
-            args: "-- --no-default-features --features editor,tray,asio,updater,email,streaming"
+            args: "-- --no-default-features --features editor,tray,asio,updater,email"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -107,7 +96,8 @@ jobs:
           cache: npm
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
+        uses: dtolnay/rust-toolchain@1.98.0
 
       # ── Windows ASIO build prerequisites (see docs/BUILD_ASIO.md) ──────────
       # cpal's `asio` feature compiles C++ glue + bindgen against the Steinberg
@@ -156,6 +146,62 @@ jobs:
       - name: Fetch bundled ffmpeg/ffprobe sidecars
         run: node scripts/fetch-ffmpeg.mjs
 
+      # ── Releasenotatet, HENTET FRA REPOET ──────────────────────────────
+      # `releaseBody` blir `notes`-feltet i `latest.json`, og det feltet er
+      # teksten brukeren leser i oppdateringsdialogen. tauri-action skriver det
+      # ved BYGGETID, så en tekst noen skriver på GitHub etterpå når aldri
+      # manifestet — og dermed aldri brukeren. Da dette var en fast tekst her i
+      # fila, fikk hver eneste utgivelse nøyaktig samme notat.
+      #
+      # Notatet bor derfor i `docs/release-notes/<tagg>.md` og blir reviewet i
+      # samme PR som versjonsbumpen. Skriptet AVBRYTER jobben hvis fila mangler,
+      # er tom eller står med en plassholder: en stille tilbakefall-tekst er
+      # nøyaktig feilen vi fikser, bare vanskeligere å oppdage.
+      #
+      # Den egentlige vakten ligger i CI, på PR, og stopper slippet før noen har
+      # begynt å bygge. Dette steget er den andre låsen på samme dør — den som
+      # fortsatt holder når en tagg dyttes fra en gammel commit.
+      - name: Hent releasenotatet for taggen
+        id: notat
+        shell: bash
+        run: node scripts/release-notes.mjs --emit "$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.ref_name }}
+
+      # ── Notarization switch: a repo VARIABLE, not a commented-out block ────
+      # [notarize-switch] — docs (NEEDS-RICHARD.md, RELEASE-CHECKLIST.md) point
+      # here instead of at a line number, same reason as [notarization] below:
+      # grep this repo for the literal string `[notarize-switch]` to find this
+      # step again.
+      # Off by default — see the comment on APPLE_CERTIFICATE below for why.
+      # Flip NOTARIZE_MAC to "true" (Settings → Secrets and variables →
+      # Actions → Variables) once the Program License Agreement is accepted;
+      # no commit needed, and nothing here can be left "half on" — either
+      # this step ran and exported real credentials, or it did not run and
+      # the three names below are genuinely absent from every later step's
+      # environment.
+      #
+      # THE TRAP THIS AVOIDS: writing
+      #   APPLE_TEAM_ID: ${{ vars.NOTARIZE_MAC == 'true' && secrets.APPLE_TEAM_ID || '' }}
+      # directly in the build step's env: map would set APPLE_TEAM_ID to an
+      # EMPTY STRING when the switch is off, not omit it — and tauri-action
+      # treats a present-but-empty team ID as "notarize with this team", not
+      # "don't notarize", failing with "Team ID must be at least 3
+      # characters" instead of skipping notarization cleanly (empty ≠
+      # absent).
+      #
+      # $GITHUB_ENV persists for every LATER step in this job — the same
+      # mechanism the ASIO setup above uses for CPAL_ASIO_DIR/LIBCLANG_PATH —
+      # so this step must stay BEFORE "Build, sign, and publish". Moving it
+      # after would silently disable notarization even with the switch on.
+      - name: Enable notarization env (owner-gated, off by default)
+        if: matrix.platform == 'macos-latest' && vars.NOTARIZE_MAC == 'true'
+        shell: bash
+        run: |
+          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+
       - name: Build, sign, and publish
         uses: tauri-apps/tauri-action@v1
         env:
@@ -169,19 +215,30 @@ jobs:
           # secrets (Developer ID, team 784GN847G4) under tauri-action's names,
           # so nothing has to be re-entered. MAC_CERTS = base64 .p12,
           # APPLE_APP_SPECIFIC_PASSWORD = the notarization app password.
+          #
+          # [notarization] — docs/DISTRIBUTION.md points here instead of at a
+          # line number: line numbers in this file drift every time it's
+          # edited, and a stale reference is worse than none. Grep this repo
+          # for the literal string `[notarization]` to find this block again.
           APPLE_CERTIFICATE: ${{ secrets.MAC_CERTS }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Richard Fossland (784GN847G4)"
-          # Notarization DISABLED 2026-07-31 (owner decision): Apple's notary
-          # service returns 403 "A required agreement is missing or has expired"
-          # until the updated Program License Agreement is accepted on
-          # developer.apple.com (team 784GN847G4). The app is still Developer
-          # ID-SIGNED (offline, works) — first launch needs right-click ▸ Open.
-          # Re-enable by uncommenting these three lines once the agreement is
-          # signed:
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Notarization is OFF by default (owner decision, 2026-07-31 —
+          # Apple's notary service returns 403 "A required agreement is
+          # missing or has expired" until the PLA is accepted on
+          # developer.apple.com for team 784GN847G4). The app is still
+          # Developer ID-SIGNED either way (offline, always works) — first
+          # launch needs right-click ▸ Open while this is off.
+          #
+          # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are deliberately NOT
+          # set here. They are exported conditionally, in the "Enable
+          # notarization env" step above, gated on the repo variable
+          # NOTARIZE_MAC — see that step's comment for why it has to be a
+          # separate step and not a line in this map. Do not add those three
+          # keys to this block, even set to "" to "temporarily disable"
+          # them — empty is not the same as absent (see above) and would
+          # send every build down the notarization path with broken
+          # credentials instead of skipping it cleanly.
           # Opt-in telemetry (Etappe 4). `src-tauri/src/telemetry/config.rs`
           # reads BOTH through `option_env!`, i.e. at COMPILE time — so they
           # have to be in the build step's env, not the runtime's. A build
@@ -199,16 +256,32 @@ jobs:
           # (default off) — see PRIVACY.md.
           SUNDAYREC_TELEMETRY_URL: https://telemetry.sundaysuite.app
           SUNDAYREC_TELEMETRY_KEY: ${{ secrets.SUNDAYREC_TELEMETRY_KEY }}
+          # The e-mail relay's endpoint. Read through `option_env!` by
+          # `src-tauri/src/notify/relay/config.rs`, i.e. at COMPILE time, so it
+          # belongs here beside the two above and not in the runtime env.
+          #
+          # NO new secret: the relay is a set of routes on the SAME Worker and
+          # authenticates with the SAME write key, which the line above already
+          # supplies (`resolve_write_key` is imported rather than re-derived,
+          # precisely so these cannot drift apart). A build that gets this URL
+          # without that key has no relay at all — better than one that POSTs
+          # and collects a 401, which the outbox reads as permanent and drops.
+          #
+          # A third host name, not `telemetry.`, because the confirmation link
+          # this produces lands in a volunteer's inbox: a link with "telemetry"
+          # in it reads as a tracking mail to the only person who has to judge
+          # it. Routing does not depend on the name — the Worker branches on the
+          # path — so this is about what the URL SAYS.
+          SUNDAYREC_NOTIFY_URL: https://notify.sundaysuite.app
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "SundayRec ${{ github.ref_name }}"
-          releaseBody: |
-            SundayRec — recording for church services (Tauri 2 rebuild).
-
-            See the assets below to download and install. If a build is
-            unsigned (pre-signing), on first launch:
-            - macOS: right-click the app ▸ Open ▸ Open.
-            - Windows: "More info" ▸ "Run anyway".
+          # Fra `docs/release-notes/<tagg>.md`, ikke fra denne fila. Se steget
+          # over for hvorfor. Vil du ha den lange versjonen med bilder og
+          # tabeller på selve utgivelsessiden, rediger utgivelsesteksten på
+          # GitHub etterpå — `latest.json` er da allerede lastet opp med
+          # notatet herfra.
+          releaseBody: ${{ steps.notat.outputs.notes }}
           releaseDraft: true
           # A `-beta.N` tag ships as a GitHub pre-release; a plain `vX.Y.Z` tag
           # ships as a normal release. Either way it lands as a DRAFT first —

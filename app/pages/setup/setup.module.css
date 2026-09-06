@@ -1,0 +1,126 @@
+/*
+ * Fellesflatene for de fem spørsmålsskjermene, Innstillinger-flaten og
+ * første-gangs-sekvensen.
+ *
+ * D2 tok bort tilleggenes egne klasser (`.addons`, `.addonHead`, `.addonTitle`,
+ * `.addonSummary`, `.addonBody`) og undersidens `.subHead`: kamera- og
+ * auto-kortet er `ControlCard`-rader i kontrollrommet nå, og de tegner
+ * topplinja si der. En CSS-modul som beholder klasser ingen bruker ser ut som
+ * om den fortsatt eier flaten.
+ */
+
+.page,
+.sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--ink-2);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+}
+
+.sectionLabel {
+  margin: var(--sp-4) 0 0;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* En rad med knapper nederst på en underside. */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+
+/* Kanalparene: «de som har lyd nå, lyser». */
+.pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.pair {
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  padding: 5px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.pair:hover {
+  border-color: var(--gold-line);
+}
+
+/* Signal NÅ. Grønt, ikke gull: gull er valget, grønt er «her er det lyd». */
+.pairLive {
+  border-color: var(--good-line);
+  color: var(--ink);
+}
+
+.pairOn,
+.pairOn:hover {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.hint {
+  font-size: var(--fs-base);
+  color: var(--ink-3);
+}
+
+/* Vekkehistorikken (W6): en logg, ikke prosa — samme grep som
+   DiagnoseRow.module.css bruker for IPC-ringen og enhetslista. */
+.wakeHistoryList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+/* Mappevisningen: stien er data, ikke prosa — den skal kunne leses tegn for
+   tegn, og den skal aldri sprenge kortet. */
+.path {
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+/* Klokkeslettfeltet. Nettleserens egen tidsvelger, i husets flate. */
+.time {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  padding: 7px var(--sp-3);
+}
+
+.time:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}

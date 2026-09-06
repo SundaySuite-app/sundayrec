@@ -1,0 +1,88 @@
+/*
+ * Grunnlaget under komponentene: nullstilling, dokumentets egne farger,
+ * fokusringen og bevegelsesbryteren.
+ *
+ * Alt annet i `app/` er CSS Modules. Dette er den ene globale fila, og den er
+ * kort med vilje — en global regel er en regel ingen komponent kan se at den
+ * arver.
+ */
+
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /*
+   * Tabulære tall i HELE appen. Klokken i opptaksoverlegget, varigheter i
+   * biblioteket, dB-tall under Avansert: proporsjonale sifre får dem til å
+   * skjelve når de teller, og et tall som skjelver leses som at noe henger.
+   */
+  font-variant-numeric: tabular-nums;
+}
+
+#app {
+  min-height: 100%;
+}
+
+/*
+ * `inert` er hvordan DialogHost stenger resten av appen ute. Attributtet gjør
+ * treet uklikkbart og usynlig for skjermlesere av seg selv, men sier
+ * ingenting om utseendet — uten dette ville bakgrunnen sett helt levende ut.
+ */
+[inert] {
+  cursor: default;
+  user-select: none;
+}
+
+/*
+ * Fokusringen: gull, og bare for tastatur (`:focus-visible`). En ring på
+ * musklikk lærer folk at ringen er støy; en app uten ring gjør
+ * tastaturnavigasjon umulig.
+ */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* Ingen knapp arver skriften sin fra nettleseren. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/*
+ * Bevegelse er et tillegg, aldri informasjon: alt som animerer her (bryteren
+ * som glir, opptaksprikken som pulserer, toasten som kommer inn) sier det
+ * samme med farge og form. Så den som har slått av bevegelse mister
+ * ingenting.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

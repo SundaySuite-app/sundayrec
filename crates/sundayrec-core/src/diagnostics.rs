@@ -28,18 +28,16 @@ use crate::selftest::RecordingTelemetry;
 /// keys) are intentionally absent — see the module docs: the report cannot leak
 /// what the type cannot hold.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SettingsSummary.ts")]
+#[ts(export, export_to = "SettingsSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsSummary {
     pub language: Option<String>,
     pub device_name: Option<String>,
     pub channels: String,
-    pub sample_rate: i32,
     /// The sample-rate MODE that actually drives capture: `"auto"` (native, no
     /// `-ar`) or a forced `"r44100"/"r48000"/"r96000"`. A forced rate that
     /// doesn't match the device resamples and can cause stutter.
     pub sample_rate_mode: String,
-    pub input_volume: i32,
     pub format: String,
     pub bitrate: String,
     pub filename_pattern: String,
@@ -48,25 +46,22 @@ pub struct SettingsSummary {
     pub stop_on_silence: bool,
     pub silence_threshold: i32,
     pub split_minutes: i32,
-    pub trim_silence: bool,
     pub auto_delete_days: i32,
     pub save_folder: Option<String>,
 }
 
 impl SettingsSummary {
     /// Project the full [`Settings`](crate::settings::Settings) down to the
-    /// non-secret subset. The F2.2 `Settings` model carries no secret fields yet
-    /// (cloud/stream/e-mail land in later phases), but this projection is the
-    /// single, explicit allow-list so adding those fields later cannot
+    /// non-secret subset. The `Settings` model itself carries no secret fields
+    /// (credentials live in the OS keychain), but this projection is the
+    /// single, explicit allow-list so adding such fields later cannot
     /// accidentally widen the report.
     pub fn from_settings(s: &crate::settings::Settings) -> Self {
         Self {
             language: s.language.clone(),
             device_name: s.device_name.clone(),
             channels: serde_plain_tag(&s.channels),
-            sample_rate: s.sample_rate,
             sample_rate_mode: serde_plain_tag(&s.sample_rate_mode),
-            input_volume: s.input_volume,
             format: serde_plain_tag(&s.format),
             bitrate: s.bitrate.clone(),
             filename_pattern: serde_plain_tag(&s.filename_pattern),
@@ -75,7 +70,6 @@ impl SettingsSummary {
             stop_on_silence: s.stop_on_silence,
             silence_threshold: s.silence_threshold,
             split_minutes: s.split_minutes,
-            trim_silence: s.trim_silence,
             auto_delete_days: s.auto_delete_days,
             save_folder: s.save_folder.clone(),
         }
@@ -96,7 +90,7 @@ fn serde_plain_tag<T: Serialize>(v: &T) -> String {
 /// Everything the `src-tauri` layer gathered, ready to be formatted. No secrets
 /// can appear here (see [`SettingsSummary`] / module docs).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/DiagnosticsInput.ts")]
+#[ts(export, export_to = "DiagnosticsInput.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsInput {
     /// App semver (e.g. `"0.1.0"`).
@@ -179,12 +173,30 @@ pub struct DiagnosticsInput {
     /// The rotating file log, if it is running.
     #[serde(default)]
     pub log_file: Option<LogFileInfo>,
+
+    // ── F1-M5: WAL ────────────────────────────────────────────────────────────
+    /// The app database's live `journal_mode`, read back via `PRAGMA
+    /// journal_mode` — should read `"wal"`. `None` when the probe failed (or a
+    /// test fixture didn't set it), which the report renders as "ukjent"
+    /// rather than silently claiming a mode. Lets a support report show
+    /// whether an installation is ACTUALLY running WAL rather than trusting
+    /// the source code — SQLite keeps a file's own journal mode until
+    /// something changes it, so an install that hasn't reopened its database
+    /// since before this change would otherwise look identical to one that has.
+    #[serde(default)]
+    pub db_journal_mode: Option<String>,
+    /// The app database's live `busy_timeout` in milliseconds, read back via
+    /// `PRAGMA busy_timeout` — should read `30000`. Same "couldn't ask" =
+    /// `None` convention as [`Self::db_journal_mode`].
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub db_busy_timeout_ms: Option<u64>,
 }
 
 /// What the crash ring holds — count + newest, not the records themselves. The
 /// report is a page a person reads, not a stack-trace archive.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/CrashSummary.ts")]
+#[ts(export, export_to = "CrashSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CrashSummary {
     pub count: usize,
@@ -197,7 +209,7 @@ pub struct CrashSummary {
 
 /// Supervised long-lived tasks that died and were restarted (E2.2).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/TaskRestartSummary.ts")]
+#[ts(export, export_to = "TaskRestartSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TaskRestartSummary {
     pub count: usize,
@@ -210,7 +222,7 @@ pub struct TaskRestartSummary {
 
 /// The rotating file log's state (E2.3).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/LogFileInfo.ts")]
+#[ts(export, export_to = "LogFileInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct LogFileInfo {
     /// Absolute path to the live log file.
@@ -228,7 +240,7 @@ pub struct LogFileInfo {
 /// the recorder on a classified failure). Lets the diagnose tool explain what
 /// stopped the previous recording even though it can't see in-process events.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/LastErrorInfo.ts")]
+#[ts(export, export_to = "LastErrorInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct LastErrorInfo {
     pub code: String,
@@ -238,7 +250,7 @@ pub struct LastErrorInfo {
 
 /// Severity of a [`DiagnosticFinding`], driving the UI badge + the support triage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/DiagnosticSeverity.ts")]
+#[ts(export, export_to = "DiagnosticSeverity.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
     /// Healthy — informational confirmation.
@@ -257,7 +269,7 @@ pub enum DiagnosticSeverity {
 /// asked for. `detail` carries the specifics (device name, free GB, …) and `hint`
 /// the concrete next step.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/DiagnosticFinding.ts")]
+#[ts(export, export_to = "DiagnosticFinding.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticFinding {
     pub code: String,
@@ -649,6 +661,16 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
             if active { "aktiv" } else { "ikke aktiv" }
         ));
     }
+    // F1-M5: one line so a support report shows whether this install is
+    // actually running WAL, not just what the source code says it should do.
+    lines.push(format!(
+        "- **Database (journal_mode / busy_timeout):** {} / {}",
+        input.db_journal_mode.as_deref().unwrap_or("ukjent"),
+        input
+            .db_busy_timeout_ms
+            .map(|ms| format!("{ms} ms"))
+            .unwrap_or_else(|| "ukjent".to_string())
+    ));
     lines.push(String::new());
 
     // ── Lyd-motor ─────────────────────────────────────────────────────────────
@@ -872,6 +894,25 @@ mod tests {
     }
 
     #[test]
+    fn database_line_shows_journal_mode_and_busy_timeout() {
+        // F1-M5: a support report must be able to say whether an install is
+        // actually running WAL.
+        let mut input = sample_input();
+        input.db_journal_mode = Some("wal".to_string());
+        input.db_busy_timeout_ms = Some(30_000);
+        let md = build_report_markdown(input);
+        assert!(md.contains("**Database (journal_mode / busy_timeout):** wal / 30000 ms"));
+    }
+
+    #[test]
+    fn database_line_says_ukjent_when_the_probe_could_not_ask() {
+        // `sample_input()` leaves both fields at the `Default` (`None`) — the
+        // line must still appear, honestly, rather than being silently omitted.
+        let md = build_report_markdown(sample_input());
+        assert!(md.contains("**Database (journal_mode / busy_timeout):** ukjent / ukjent"));
+    }
+
+    #[test]
     fn healthy_input_yields_single_ok_finding() {
         let f = detect_issues(&sample_input());
         assert_eq!(f.len(), 1);
@@ -1034,7 +1075,7 @@ mod tests {
         }
         // It does carry the safe fields.
         assert!(json.contains("Soundcraft USB"));
-        assert!(json.contains("sampleRate"));
+        assert!(json.contains("sampleRateMode"));
     }
 
     #[test]
@@ -1198,7 +1239,7 @@ mod tests {
         input.task_restarts = Some(TaskRestartSummary {
             count: 11,
             newest: Some("2026-08-06T10:30:00+02:00".into()),
-            tasks: vec!["cloud::worker".into(), "scheduler::supervisor".into()],
+            tasks: vec!["trash::sweep".into(), "scheduler::supervisor".into()],
         });
         let e = detect_issues(&input)
             .into_iter()

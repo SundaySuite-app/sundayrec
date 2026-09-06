@@ -18,14 +18,15 @@
 //! This is the Fase-1 subset of the Electron `Settings`. Fields that belong to
 //! later phases are deliberately NOT modelled yet and will be added in their
 //! own phase so the model stays honest about what is actually wired:
-//!   - `streamDestinations` (live streaming)               → Fase 7
-//!   - `email*` / webhook / notify* (notifications)        → Fase 6
+//!   - `email*` / notify* (notifications)                  → Fase 6
 //!   - `editorIntroPath` / `editorOutroPath` (editor)      → Fase 4
 //!   - `deviceChannels` (per-device channel maps)          → Fase 2/3
-//!   - `video*`, cloud backup, church profile, integrations → their phases
+//!   - `video*`, church profile                            → their phases
 //!
 //! When those land, add the field here with its serde tag matching the Electron
 //! key and extend [`Settings::validate`] / [`Default`] accordingly.
+
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -36,7 +37,7 @@ use crate::schedule::{ScheduleSlot, SpecialRecording};
 /// (`'stereo' | 'monoL' | 'monoR' | 'monoMix'`, see `types/index.ts:1`), so the
 /// tags are camelCase — NOT snake_case — to match stored/exported settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ChannelMode.ts")]
+#[ts(export, export_to = "ChannelMode.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum ChannelMode {
     /// Both channels, stereo.
@@ -55,7 +56,7 @@ pub enum ChannelMode {
 /// audio). The explicit rates force that rate via `-ar`. Serialised camelCase
 /// (`"auto" | "r44100" | "r48000" | "r96000"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SampleRate.ts")]
+#[ts(export, export_to = "SampleRate.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum SampleRate {
     /// Capture at the device's native rate (omit `-ar`).
@@ -71,7 +72,7 @@ pub enum SampleRate {
 /// Output audio container/codec. Serialised lowercase to match the Electron
 /// union (`'mp3' | 'wav' | 'flac' | 'aac'`, see `types/index.ts:2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FileFormat.ts")]
+#[ts(export, export_to = "FileFormat.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FileFormat {
     Mp3,
@@ -84,7 +85,7 @@ pub enum FileFormat {
 /// Electron union (`'date' | 'church' | 'plain' | 'datetime'`,
 /// see `types/index.ts:3`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FilenamePattern.ts")]
+#[ts(export, export_to = "FilenamePattern.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FilenamePattern {
     /// Date only (the Electron default).
@@ -102,7 +103,7 @@ pub enum FilenamePattern {
 /// (`/v1/update/{channel}`, see [`crate::update::channel_feed_url`]), so a
 /// renamed variant is a renamed live URL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/UpdateChannel.ts")]
+#[ts(export, export_to = "UpdateChannel.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannel {
     /// Versions that have already been through a real Sunday somewhere. Where
@@ -155,6 +156,42 @@ where
         .unwrap_or_else(default_update_channel))
 }
 
+/// Lenient per-field deserializer (R4): tolerate a malformed VALUE by taking
+/// the field's `Default` instead of failing the whole blob.
+///
+/// Same reasoning as [`deserialize_update_channel`]: [`Settings::from_json_merged`]
+/// falls back to the FULL defaults the moment ANY field rejects its value, so a
+/// hand-edited or drifted value in one of the R4 fields would otherwise reset
+/// the save folder, the schedule and every audio setting along with it. Here a
+/// bad value costs that one field and nothing else. Fields whose default is not
+/// `T::default()` (e.g. `update_channel`'s `Stable`) are subsequently
+/// normalised by [`Settings::validate`], which every load/save runs.
+fn lenient<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let raw = serde_json::Value::deserialize(de)?;
+    Ok(serde_json::from_value(raw).unwrap_or_default())
+}
+
+/// A per-device input-channel pair — which two native device channels feed the
+/// LEFT/RIGHT of a stereo recording (e.g. an X32's 16/17). Keyed by device id in
+/// [`Settings::device_channels`]; the flat [`Settings::input_channel_l`]/`_r`
+/// the recorder reads are DERIVED from this map in [`Settings::validate`].
+/// Serialised camelCase to match the Electron `DeviceChannels`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "DeviceChannels.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceChannels {
+    /// 0-based device channel routed to the LEFT output. Clamped 0..=31.
+    #[serde(default)]
+    pub channel_l: i32,
+    /// 0-based device channel routed to the RIGHT output. Clamped 0..=31.
+    #[serde(default)]
+    pub channel_r: i32,
+}
+
 /// The complete (Fase-1 subset) settings model.
 ///
 /// Every field carries `#[serde(default)]` so a partial or older JSON blob
@@ -162,16 +199,13 @@ where
 /// `store.get(key, default)` semantics, see [`Settings::from_json_merged`].
 /// Numeric ranges are enforced separately by [`Settings::validate`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/Settings.ts")]
+#[ts(export, export_to = "Settings.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     // ── System ──────────────────────────────────────────────────────────────
     /// UI language code (e.g. `"no"`, `"en"`), or `None` to follow the OS.
     #[serde(default = "default_language")]
     pub language: Option<String>,
-    /// Has the app ever been launched? Gates first-run behaviour.
-    #[serde(default)]
-    pub has_launched: bool,
     /// Has the user completed onboarding?
     #[serde(default)]
     pub onboarding_done: bool,
@@ -183,6 +217,13 @@ pub struct Settings {
     /// Stored capture device human-readable name (the device-match moat input).
     #[serde(default)]
     pub device_name: Option<String>,
+    /// Per-DEVICE channel routing, keyed by device id (R4). This is the SOURCE
+    /// the channel grid writes; the flat `input_channel_l`/`_r` the recorder
+    /// reads are derived from it for the selected device in
+    /// [`Settings::validate`], so switching devices switches routing with it
+    /// (the api-shim bridge used to do this flattening renderer-side).
+    #[serde(default, deserialize_with = "lenient")]
+    pub device_channels: HashMap<String, DeviceChannels>,
 
     // ── Video device (F2.1 — "alt som mater opptak") ─────────────────────────
     /// Capture video (camera) alongside audio? Default false (audio-only is the
@@ -198,38 +239,22 @@ pub struct Settings {
     /// it succeeds. dshow cameras are addressed by name, so this stays `None`.
     #[serde(default)]
     pub video_device_index: Option<i32>,
-    /// Capture resolution tag: `"480p"` | `"720p"` | `"1080p"` | `"2160p"` (4K).
-    /// Default `"720p"`.
-    #[serde(default = "default_video_resolution")]
-    pub video_resolution: String,
-    /// Capture frame rate (fps). Valid 1..=120, default 30.
-    #[serde(default = "default_video_framerate")]
-    pub video_framerate: i32,
-    /// Recording video container: `"mp4"` (default) | `"mov"`. Both are
-    /// QuickTime/ISO containers that take H.264/H.265 + AAC and `+faststart`.
-    #[serde(default = "default_video_container")]
-    pub video_container: String,
-    /// Recording video codec: `"h264"` (default, universal) | `"h265"` (HEVC,
-    /// ~half the size; for live 4K a hardware encoder is recommended).
-    #[serde(default = "default_video_codec")]
-    pub video_codec: String,
-    /// Recording video encoder backend: `"hardware"` (default — VideoToolbox on
-    /// macOS — realtime + low CPU, so the live preview/meters stay snappy and live
-    /// 4K H.265 is feasible) | `"software"` (libx264/5 — max compression
-    /// efficiency, but pegs the CPU and makes the live monitoring lag). Ignored
-    /// off macOS (always falls back to software).
-    #[serde(default = "default_video_encoder")]
-    pub video_encoder: String,
+    // (v0.15 — «lyd + video, ett valg»: `videoResolution`, `videoFramerate`,
+    // `videoContainer`, `videoCodec` and `videoEncoder` left the settings. They
+    // are the constants in `crate::capture` now — 1080p / 30 fps / mp4 / H.264 /
+    // hardware-where-available — with the argument for each beside it.)
     /// Mirror the camera horizontally (preview + recording). Default false.
     /// Electron `videoFlip` — handy for front-facing / mirrored stage cameras.
+    /// Kept: it is a per-machine preference the Home preview toggle persists.
     #[serde(default)]
     pub video_flip: bool,
-    /// Output muxing: `"combined"` (one A/V file) | `"separate"` (split files).
-    /// Default `"combined"`.
-    #[serde(default = "default_output_mode")]
-    pub output_mode: String,
     /// Also keep the standalone high-quality audio file next to a combined MP4?
-    #[serde(default)]
+    /// Default TRUE (R4): the renderer's default has always been «behold også
+    /// ren lydfil», and the api-shim bridge synced that `true` into sqlite on
+    /// every boot — so `true` is the deployed behaviour on every install. The
+    /// old `false` here was only ever visible to code reading defaults before
+    /// the first bridge sync.
+    #[serde(default = "default_true")]
     pub keep_separate_audio: bool,
     /// Windows ONLY escape hatch: force the legacy ffmpeg **DirectShow** audio
     /// capture instead of the modern cpal (WASAPI/ASIO) path. Default `false` —
@@ -253,14 +278,11 @@ pub struct Settings {
     /// only if the native buffer misbehaves on a specific rig.
     #[serde(default)]
     pub classic_ffmpeg_preroll: bool,
-    /// Container/codec for the standalone audio file extracted alongside a video
-    /// recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
-    /// safe choice for a "keep the clean audio" sidecar).
-    #[serde(default = "default_separate_audio_format")]
-    pub separate_audio_format: FileFormat,
-    /// Use a single ffmpeg process for A/V to eliminate sync drift? Default true.
-    #[serde(default = "default_true")]
-    pub av_sync: bool,
+    // (v0.15: `separateAudioFormat` left — the separate audio sidecar now
+    // follows `format`, the one audio-format choice the app has; `avSync`,
+    // `videoBitrate` and `outputMode` left as dead fields with no reader. Old
+    // blobs carrying them are dropped tolerantly like every retired key; see
+    // `legacy_blob_with_v015_dead_fields_imports_cleanly`.)
 
     // ── Audio processing ───────────────────────────────────────────────────────
     /// Input channel layout.
@@ -276,52 +298,19 @@ pub struct Settings {
     /// See [`Settings::input_channel_l`].
     #[serde(default)]
     pub input_channel_r: Option<i32>,
-    /// Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
-    /// back-compat with exported/old profiles; the RECORDER no longer reads it —
-    /// it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).
-    #[serde(default = "default_sample_rate")]
-    pub sample_rate: i32,
+    // (v0.15: the legacy numeric `sampleRate` field left. Nothing read it since
+    // `sample_rate_mode` arrived; an old profile still carrying it imports
+    // cleanly — serde ignores the key — see
+    // `legacy_blob_with_v015_dead_fields_imports_cleanly`.)
     /// How the capture sample rate is chosen. `Auto` (default) captures at the
     /// device's native rate (no resample → no choppiness); the explicit variants
     /// force a rate. This is what the recorder actually consults.
     #[serde(default = "default_sample_rate_mode")]
     pub sample_rate_mode: SampleRate,
-    /// Input gain as a percentage. Valid 0..=200, default 100.
-    #[serde(default = "default_input_volume")]
-    pub input_volume: i32,
-    /// Is the equalizer enabled?
-    #[serde(default)]
-    pub eq_enabled: bool,
-    /// Bass EQ gain in dB. Valid -24..=24, default 0.
-    #[serde(default)]
-    pub eq_bass: i32,
-    /// Mid EQ gain in dB. Valid -24..=24, default 0.
-    #[serde(default)]
-    pub eq_mid: i32,
-    /// Treble EQ gain in dB. Valid -24..=24, default 0.
-    #[serde(default)]
-    pub eq_treble: i32,
-    /// Is the compressor enabled?
-    #[serde(default)]
-    pub comp_enabled: bool,
-    /// Compressor threshold in dBFS. Valid -60..=0, default -24.
-    #[serde(default = "default_comp_threshold")]
-    pub comp_threshold: f64,
-    /// Compressor ratio. Valid 1..=100, default 4.
-    #[serde(default = "default_comp_ratio")]
-    pub comp_ratio: f64,
-    /// Compressor attack in ms. Valid 0.1..=2000, default 10.
-    #[serde(default = "default_comp_attack")]
-    pub comp_attack: f64,
-    /// Compressor release in ms. Valid 1..=9000, default 200.
-    #[serde(default = "default_comp_release")]
-    pub comp_release: f64,
-    /// Is the limiter enabled? Default true.
-    #[serde(default = "default_true")]
-    pub limiter_enabled: bool,
-    /// Limiter ceiling in dBFS. Valid -10..=0, default -1.
-    #[serde(default = "default_limiter_ceiling")]
-    pub limiter_ceiling: f64,
+    // (v0.15: `inputVolume`, the EQ trio, the compressor quartet and the limiter
+    // pair left. They were the Electron capture-chain knobs; the Tauri recorder
+    // has recorded RAW since v4.31 — dynamics/EQ live in the editor — and no
+    // UI or reader ever consulted them here.)
 
     // ── Output ─────────────────────────────────────────────────────────────────
     /// Output file format. Default mp3.
@@ -353,21 +342,48 @@ pub struct Settings {
     /// Auto-split interval in minutes. Valid 0..=480, 0 = off.
     #[serde(default)]
     pub split_minutes: i32,
-    /// Run ffmpeg `silenceremove` on the output (trim leading/trailing silence)?
-    #[serde(default)]
-    pub trim_silence: bool,
     /// Auto-stop manual recordings after N minutes. Valid 0..=1440, 0 = off.
     #[serde(default)]
     pub manual_max_minutes: i32,
-    /// Pre-roll buffer in seconds. Valid 0..=60, 0 = off.
-    #[serde(default)]
+    /// Pre-roll buffer in seconds. Valid 0..=60, 0 = off. Default **15** (P1b).
+    ///
+    /// This is the ONE control the redesigned Advanced screen shows for
+    /// pre-roll, and 0 on it means off. It defaults to 15 because the owner's
+    /// choice for «Frivilligen først» is «pre-roll on and invisible»: the
+    /// twelve seconds between «the service started» and «somebody pressed
+    /// Start» are the ones nobody can record twice.
+    ///
+    /// A profile written before this change carries its own value (usually 0)
+    /// and keeps it — only a profile with no key at all, i.e. a fresh install,
+    /// gets 15.
+    #[serde(default = "default_pre_roll_seconds")]
     pub pre_roll_seconds: i32,
-    /// Show the live L/R level meters during recording? Default true. When off,
-    /// the recorder drops the `astats` levels filter from its ffmpeg chain — the
-    /// meter's per-frame stderr can starve capture on a loaded machine, so turning
-    /// the meters off trades the display for maximum capture stability.
-    #[serde(default = "default_true")]
-    pub show_live_levels: bool,
+    /// ⚠️ **DEPRECATED — stored, never read.** Kept only so an existing profile
+    /// survives a round-trip through `settings_save` unchanged.
+    ///
+    /// It was the advanced opt-in for the ROLLING pre-roll buffer (R4), and the
+    /// doc here used to name `preroll-lifecycle.ts` as its gatekeeper. That
+    /// renderer is gone: the redesigned Advanced screen shows the SECONDS and
+    /// only the seconds, so the seconds had to become the switch — otherwise a
+    /// screen saying «15 sekunder» would buffer nothing. `app/state/preroll.ts`
+    /// derives `enabled` from `pre_roll_seconds > 0`, and telemetry's
+    /// `WireSettings::preroll_enabled` derives it the same way. Nothing reads
+    /// THIS field, in Rust or in the shell.
+    ///
+    /// The old reasoning — "not derivable, or a user who picked a length but
+    /// never flipped the switch would get a background capture they never asked
+    /// for" — was answered by removing the second control instead: the length
+    /// IS the asking now. See `docs/APP-SHELL.md` («Forhåndsbufferen er ÉN
+    /// kontroll nå»).
+    ///
+    /// Do NOT delete the field. Stored profiles carry `prerollEnabled`, and
+    /// `Settings` deserialises strictly enough that dropping a key nobody reads
+    /// is churn with a migration attached. It costs one bool.
+    #[serde(default)]
+    pub preroll_enabled: bool,
+    // (v0.15: `trimSilence` — a control with no consumer — and `showLiveLevels`
+    // — a reader with no control — left. The meters are always on: the
+    // recorder's `live_levels` is hardcoded `true` where the opts are built.)
     /// Reminder notification N minutes before a scheduled recording.
     /// Valid 0..=60, 0 = off.
     #[serde(default)]
@@ -377,12 +393,6 @@ pub struct Settings {
     /// Launch the app at OS login?
     #[serde(default)]
     pub launch_at_login: bool,
-    /// Show the window on startup (vs starting in the tray)?
-    #[serde(default)]
-    pub show_on_startup: bool,
-    /// Minimise to the system tray instead of quitting? Default true.
-    #[serde(default = "default_true")]
-    pub minimize_to_tray: bool,
     /// Wake the machine from sleep for scheduled recordings? Default true.
     #[serde(default = "default_true")]
     pub wake_from_sleep: bool,
@@ -391,9 +401,40 @@ pub struct Settings {
     pub protect_recording: bool,
 
     // ── Schedule (Fase 5) ─────────────────────────────────────────────────────
+    /// Is the weekly plan ARMED? Default `true`.
+    ///
+    /// P1b. Before this field an empty `slots` list was the only spelling of
+    /// "automatic recording is off", so the UI's off-switch had to DELETE the
+    /// time — a switch that throws away data it does not show. The flag
+    /// separates "armed" from "configured": turning it off keeps the times and
+    /// stops the planning.
+    ///
+    /// `default = true` and not `false` is the half that matters for existing
+    /// installs: a profile written before this field has no key for serde to
+    /// read, and `false` would silently disarm every church that already had a
+    /// Sunday slot — the exact failure this app exists to prevent. A fresh
+    /// profile has no slots anyway, so `true` there arms nothing.
+    ///
+    /// Only WEEKLY slots are gated. `special_recordings` are dated one-offs
+    /// somebody entered by hand for a specific concert; the level-1 switch is
+    /// about the recurring plan and never silently cancels those.
+    #[serde(default = "default_true")]
+    pub auto_record_enabled: bool,
     /// Weekly recurring recording windows. Empty by default. The scheduler
     /// engine turns these into start/stop/reminder/preflight timers; see
     /// [`crate::schedule`] for the decision logic.
+    ///
+    /// ⚠️ Read them through [`Settings::active_slots`], never directly: that is
+    /// the one place `auto_record_enabled` is honoured. The claim was false for
+    /// a while — both wake commands read this field raw, so a machine with «Ta
+    /// opp automatisk» OFF still woke at 10:50 on a Sunday for a recording the
+    /// scheduler would refuse to make, and `wake_verify` then reported the
+    /// wakes it had itself cancelled as missing.
+    ///
+    /// The ONE deliberate raw reader is [`crate::telemetry::WireSettings`]'s
+    /// `slot_count`, which reports what is CONFIGURED and carries
+    /// `auto_record_enabled` beside it (see that field's doc). Anything else
+    /// that reads `slots` directly is a bug in waiting.
     #[serde(default)]
     pub slots: Vec<ScheduleSlot>,
     /// One-off dated recordings (concerts, special services). Empty by default.
@@ -419,33 +460,34 @@ pub struct Settings {
     /// Fire a native notification when a recording stops? Default true.
     #[serde(default = "default_true")]
     pub notify_stop: bool,
-    /// Chat webhook URL (Slack/Discord/Teams). Empty = unset.
-    #[serde(default)]
-    pub webhook_url: String,
-    /// Also POST the webhook on warnings (not just errors)? Default false.
-    #[serde(default)]
-    pub webhook_on_warning: bool,
-    /// Per-URL opt-in for a webhook on the LOCAL network (E1.4).
-    ///
-    /// The webhook URL is fully user-controlled and its response is discarded —
-    /// a blind SSRF unless something says no. The default policy blocks
-    /// loopback/private/link-local addresses, but a church legitimately
-    /// webhooks a LAN device (a booth control panel, a Home Assistant box that
-    /// lights the "ON AIR" sign), so the settings UI asks out loud and sets this
-    /// flag for the URL the operator confirmed. Re-typing a different address
-    /// clears it — this is an opt-in for ONE address, not a mode.
-    #[serde(default)]
-    pub webhook_allow_local: bool,
+    // (The chat webhook — `webhookUrl`/`webhookOnWarning`/`webhookAllowLocal` —
+    // was removed with the sharing cluster. Old blobs still carrying the keys
+    // are DROPPED tolerantly on the next load/save, like the stream fields
+    // below; see `legacy_blob_with_removed_sharing_fields_imports_cleanly`.)
 
     // ── Email alerts (R7 — Electron `email*`; the SMTP pass lives in the OS ────
     //    keychain, NEVER here — mirrors `store.ts` `setSmtpPassword`) ───────────
     /// Send an email when a recording fails / a scheduled one is missed?
+    ///
+    /// Both halves of that sentence are TRUE as of A3, and only one of them was
+    /// before. The failure half has been wired since P; the missed half was a
+    /// promise this field made and nothing kept — `check_missed` decided what
+    /// had been missed, emitted an event to a renderer that might not be
+    /// running, and sent nothing. It now routes through the same dispatch, so
+    /// the mail goes out over whichever pipe the machine has: a configured SMTP
+    /// server if there is one, the SundaySuite relay otherwise
+    /// (`crate::notify::plan_failure`).
+    ///
+    /// ONE switch for both pipes, deliberately. "Send me an e-mail when a
+    /// recording fails" is the question the volunteer answered; which transport
+    /// carries it is not a second question they should have to answer.
     #[serde(default)]
     pub email_on_error: bool,
     /// Recipient address for alert emails. Empty = unset (Electron `''`).
     #[serde(default)]
     pub email_address: String,
-    /// SMTP host (blank = use the Gmail transport instead). Electron `emailSmtp`.
+    /// SMTP host. Blank = no transport at all (the Gmail-OAuth alternative left
+    /// with the cloud-backup OAuth client). Electron `emailSmtp`.
     #[serde(default)]
     pub email_smtp: String,
     /// SMTP port. Valid 1..=65535, default 587. Electron `emailSmtpPort: 587`.
@@ -468,6 +510,20 @@ pub struct Settings {
     #[serde(default)]
     pub email_smtp_from: String,
 
+    // ── E-mail relay receipt (A4) ───────────────────────────────────────────
+    /// Send a receipt e-mail via the relay when a PLANNED (scheduled)
+    /// recording finishes? Default off. Independent of `email_on_error` and
+    /// the SMTP fields above: the receipt travels through
+    /// `sunday-telemetry`'s relay (`notify.sundaysuite.app`), never through
+    /// SMTP, and is gated in the UI on a CONFIRMED relay subscription (A5) —
+    /// this field only remembers whether the toggle is on. Deliberately kept
+    /// out of `WireSettings`, matching the `updateChannel` precedent
+    /// (`telemetry.rs:975-978`): the relay subscription record
+    /// (`notify.relay` in the `app_setting` bag) is per-machine state, not a
+    /// diagnostic fact worth reporting.
+    #[serde(default)]
+    pub email_receipt_enabled: bool,
+
     // ── Editor intro/outro (R7 — Electron `editorIntroPath`/`editorOutroPath`) ─
     /// Path to an intro clip prepended on export, or `None`. Electron used
     /// `undefined`; we keep it `Option` so an unset value stays absent.
@@ -476,15 +532,18 @@ pub struct Settings {
     /// Path to an outro clip appended on export, or `None`.
     #[serde(default)]
     pub editor_outro_path: Option<String>,
-    /// Use the Apple **VideoToolbox** hardware encoder for the editor's VIDEO
-    /// export? Default `false` — software x264/x265 is the quality-per-bit
-    /// reference and works on every machine, so hardware stays opt-in. macOS
-    /// only: on Windows/Linux the flag is ignored (VideoToolbox does not exist
-    /// there), and even on macOS a hardware render that fails is retried once
-    /// with the software args, so the toggle can never make an export
-    /// unavailable — only faster.
-    #[serde(default)]
-    pub editor_hw_encode: bool,
+    // (`editorHwEncode` left in v0.15: the editor's video export tries the
+    // hardware encoder first wherever the platform has one and falls back to
+    // software on a failed render — a toggle for that guarded nothing.)
+
+    // (Live streaming was removed in v0.14, cloud backup with the sharing
+    // cluster after it. Old sqlite blobs may still carry `streamDestinations`/
+    // `streamResolution`/`streamFramerate`/`streamVideoBitrate`/`streamOverlays`
+    // and `cloudGoogleDrive`/`cloudDropbox`/`cloudOneDrive`/`podcast` — serde
+    // ignores unknown fields, so they are DROPPED tolerantly on the next
+    // load/save. See
+    // the tests `legacy_blob_with_stream_fields_imports_cleanly` and
+    // `legacy_blob_with_removed_sharing_fields_imports_cleanly`.)
 
     // ── Misc ─────────────────────────────────────────────────────────────────
     /// Download and install updates automatically? Default true.
@@ -501,20 +560,6 @@ pub struct Settings {
     /// Prompt to open the editor after a recording finishes? Default true.
     #[serde(default = "default_true")]
     pub ask_open_editor: bool,
-    /// May the app move its own proposed sermon boundaries toward what THIS
-    /// operator keeps correcting them to (E10)?
-    ///
-    /// Default [`crate::local_adaptivity::DEFAULT_LOCAL_ADAPTIVITY_ENABLED`],
-    /// which is where the argument for that default lives — it is a decision
-    /// about what a Sunday looks like, not a serde detail, so it is not spelled
-    /// `false` here where the reasoning could not follow it.
-    ///
-    /// Off means the shipped detector, exactly: the offsets stay at zero, the
-    /// corrections are still recorded, and the System tab still shows what they
-    /// say. Turning it back off, or pressing Nullstill, restores that
-    /// immediately.
-    #[serde(default = "default_local_adaptivity")]
-    pub local_adaptivity: bool,
 }
 
 // ── Per-field default helpers (so `#[serde(default = "...")]` and the `Default`
@@ -526,29 +571,8 @@ fn default_language() -> Option<String> {
 fn default_channels() -> ChannelMode {
     ChannelMode::Stereo
 }
-fn default_sample_rate() -> i32 {
-    48_000
-}
 fn default_sample_rate_mode() -> SampleRate {
     SampleRate::Auto
-}
-fn default_input_volume() -> i32 {
-    100
-}
-fn default_comp_threshold() -> f64 {
-    -24.0
-}
-fn default_comp_ratio() -> f64 {
-    4.0
-}
-fn default_comp_attack() -> f64 {
-    10.0
-}
-fn default_comp_release() -> f64 {
-    200.0
-}
-fn default_limiter_ceiling() -> f64 {
-    -1.0
 }
 fn default_format() -> FileFormat {
     FileFormat::Mp3
@@ -568,92 +592,46 @@ fn default_silence_threshold() -> i32 {
 fn default_silence_timeout_minutes() -> i32 {
     5
 }
+/// See [`Settings::pre_roll_seconds`] — 15 s, the middle of the 0/15/30 the UI
+/// offers, and the length that covers a late Start without holding a minute of
+/// audio nobody asked for.
+fn default_pre_roll_seconds() -> i32 {
+    15
+}
+
 fn default_true() -> bool {
     true
-}
-fn default_local_adaptivity() -> bool {
-    crate::local_adaptivity::DEFAULT_LOCAL_ADAPTIVITY_ENABLED
 }
 fn default_smtp_port() -> i32 {
     587
 }
-fn default_video_resolution() -> String {
-    // 1080p is the modern default for an uploaded church service — looks much
-    // better than 720p, storage is ample, and the (now-default) hardware encoder
-    // keeps it light. Gating still caps it to the camera's native max.
-    "1080p".to_string()
-}
-fn default_video_framerate() -> i32 {
-    30
-}
-fn default_video_container() -> String {
-    "mp4".to_string()
-}
-fn default_video_codec() -> String {
-    "h264".to_string()
-}
-fn default_video_encoder() -> String {
-    // Hardware (VideoToolbox) by default on a Mac-first app: it offloads the encode
-    // to the media engine, freeing the CPU so the live preview + VU meters stay
-    // snappy during recording (software libx264 pegged the CPU → laggy monitoring).
-    // Gated to macOS at capture time; non-mac silently uses software.
-    "hardware".to_string()
-}
-fn default_output_mode() -> String {
-    "combined".to_string()
-}
-fn default_separate_audio_format() -> FileFormat {
-    FileFormat::Wav
-}
 fn default_update_channel() -> UpdateChannel {
     UpdateChannel::Stable
 }
-
 impl Default for Settings {
     /// The Electron `defaults` object (`store.ts` lines 6+), field-for-field.
     fn default() -> Self {
         Self {
             language: default_language(),
-            has_launched: false,
             onboarding_done: false,
 
             device_id: None,
             device_name: None,
+            device_channels: HashMap::new(),
 
             video_enabled: false,
             video_device_name: None,
             video_device_index: None,
-            video_resolution: default_video_resolution(),
-            video_framerate: default_video_framerate(),
-            video_container: default_video_container(),
-            video_codec: default_video_codec(),
-            video_encoder: default_video_encoder(),
             video_flip: false,
-            output_mode: default_output_mode(),
-            keep_separate_audio: false,
+            keep_separate_audio: true,
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             classic_ffmpeg_preroll: false,
-            separate_audio_format: default_separate_audio_format(),
-            av_sync: true,
 
             channels: default_channels(),
             input_channel_l: None,
             input_channel_r: None,
-            sample_rate: default_sample_rate(),
             sample_rate_mode: default_sample_rate_mode(),
-            input_volume: default_input_volume(),
-            eq_enabled: false,
-            eq_bass: 0,
-            eq_mid: 0,
-            eq_treble: 0,
-            comp_enabled: false,
-            comp_threshold: default_comp_threshold(),
-            comp_ratio: default_comp_ratio(),
-            comp_attack: default_comp_attack(),
-            comp_release: default_comp_release(),
-            limiter_enabled: true,
-            limiter_ceiling: default_limiter_ceiling(),
 
             format: default_format(),
             bitrate: default_bitrate(),
@@ -665,18 +643,16 @@ impl Default for Settings {
             silence_threshold: default_silence_threshold(),
             silence_timeout_minutes: default_silence_timeout_minutes(),
             split_minutes: 0,
-            trim_silence: false,
             manual_max_minutes: 0,
-            pre_roll_seconds: 0,
-            show_live_levels: true,
+            pre_roll_seconds: default_pre_roll_seconds(),
+            preroll_enabled: false,
             reminder_minutes: 0,
 
             launch_at_login: false,
-            show_on_startup: false,
-            minimize_to_tray: true,
             wake_from_sleep: true,
             protect_recording: true,
 
+            auto_record_enabled: true,
             slots: Vec::new(),
             special_recordings: Vec::new(),
 
@@ -685,11 +661,6 @@ impl Default for Settings {
 
             notify_start: true,
             notify_stop: true,
-            webhook_url: String::new(),
-            webhook_on_warning: false,
-            // Fails CLOSED: a LAN webhook is unreachable until the operator has
-            // been asked and said yes.
-            webhook_allow_local: false,
 
             email_on_error: false,
             email_address: String::new(),
@@ -698,32 +669,20 @@ impl Default for Settings {
             email_smtp_user: String::new(),
             email_smtp_from: String::new(),
 
+            email_receipt_enabled: false,
+
             editor_intro_path: None,
             editor_outro_path: None,
-            editor_hw_encode: false,
 
             auto_update: true,
             update_channel: default_update_channel(),
             ask_open_editor: true,
-            local_adaptivity: default_local_adaptivity(),
         }
     }
 }
 
-/// Clamp a float to `[min, max]`, substituting `def` when it is not finite
-/// (NaN / ±∞). Direct port of the Electron `clampNum` (`store.ts:261`):
-/// `isNaN(n) || !isFinite(n) ? def : Math.max(min, Math.min(max, n))`.
-fn clamp_f64(v: f64, min: f64, max: f64, def: f64) -> f64 {
-    if v.is_finite() {
-        v.clamp(min, max)
-    } else {
-        def
-    }
-}
-
-/// Clamp an integer to `[min, max]`. Integers are always finite, so there is no
-/// default-fallback branch — the Electron `clampNum` only fell back for the
-/// float fields where NaN was reachable.
+/// Clamp an integer to `[min, max]`. (The float twin, `clamp_f64`, left in
+/// v0.15 with the compressor/limiter fields — the only non-integer settings.)
 fn clamp_i32(v: i32, min: i32, max: i32) -> i32 {
     v.clamp(min, max)
 }
@@ -736,41 +695,11 @@ impl Settings {
     /// This is idempotent: validating an already-valid `Settings` is a no-op.
     pub fn validate(&mut self) {
         // Audio processing
-        self.sample_rate = clamp_i32(self.sample_rate, 8_000, 192_000);
-        self.input_volume = clamp_i32(self.input_volume, 0, 200);
-        self.eq_bass = clamp_i32(self.eq_bass, -24, 24);
-        self.eq_mid = clamp_i32(self.eq_mid, -24, 24);
-        self.eq_treble = clamp_i32(self.eq_treble, -24, 24);
         self.input_channel_l = self.input_channel_l.map(|c| clamp_i32(c, 0, 31));
         self.input_channel_r = self.input_channel_r.map(|c| clamp_i32(c, 0, 31));
-        self.comp_threshold = clamp_f64(self.comp_threshold, -60.0, 0.0, -24.0);
-        self.comp_ratio = clamp_f64(self.comp_ratio, 1.0, 100.0, 4.0);
-        self.comp_attack = clamp_f64(self.comp_attack, 0.1, 2000.0, 10.0);
-        self.comp_release = clamp_f64(self.comp_release, 1.0, 9000.0, 200.0);
-        self.limiter_ceiling = clamp_f64(self.limiter_ceiling, -10.0, 0.0, -1.0);
 
         // Output
         self.auto_delete_days = clamp_i32(self.auto_delete_days, 0, 3650);
-
-        // Video capture
-        self.video_framerate = clamp_i32(self.video_framerate, 1, 120);
-        // Normalise resolution/container/codec tags to the known set; anything
-        // else falls back to a safe default rather than producing bad ffmpeg args.
-        if !matches!(
-            self.video_resolution.as_str(),
-            "480p" | "720p" | "1080p" | "2160p"
-        ) {
-            self.video_resolution = default_video_resolution();
-        }
-        if !matches!(self.video_container.as_str(), "mp4" | "mov") {
-            self.video_container = default_video_container();
-        }
-        if !matches!(self.video_codec.as_str(), "h264" | "h265") {
-            self.video_codec = default_video_codec();
-        }
-        if !matches!(self.video_encoder.as_str(), "software" | "hardware") {
-            self.video_encoder = default_video_encoder();
-        }
 
         // Recording behaviour
         self.silence_threshold = clamp_i32(self.silence_threshold, -90, 0);
@@ -784,12 +713,56 @@ impl Settings {
         // a valid TCP port (Electron left it un-clamped, but a 0/negative port
         // would be a hard ffmpeg/lettre error — clamp defensively).
         self.email_smtp_port = clamp_i32(self.email_smtp_port, 1, 65_535);
+
+        // Per-device channel map (R4): clamp every stored pair to real channel
+        // indices, then DERIVE the flat recorder fields from the map. The map is
+        // the source of truth whenever it exists at all: the selected device's
+        // entry becomes `input_channel_l`/`_r`, and a selected device WITHOUT an
+        // entry clears them (default routing) — exactly what the api-shim bridge
+        // used to compute, so switching to an unmapped device cannot inherit the
+        // previous device's channels. An EMPTY map leaves the flat fields alone,
+        // so an older exported profile that only carried `inputChannelL`/`R`
+        // keeps working.
+        for ch in self.device_channels.values_mut() {
+            ch.channel_l = clamp_i32(ch.channel_l, 0, 31);
+            ch.channel_r = clamp_i32(ch.channel_r, 0, 31);
+        }
+        if !self.device_channels.is_empty() {
+            if let Some(id) = self.device_id.as_deref() {
+                let pair = self.device_channels.get(id);
+                self.input_channel_l = pair.map(|p| p.channel_l);
+                self.input_channel_r = pair.map(|p| p.channel_r);
+            }
+        }
     }
 
     /// Validated copy — convenience for callers that prefer a value.
     pub fn validated(mut self) -> Self {
         self.validate();
         self
+    }
+
+    /// The weekly slots the scheduler is allowed to plan on — **the only way
+    /// slots should ever be read** outside this module.
+    ///
+    /// `auto_record_enabled == false` answers with an empty slice instead of
+    /// the stored list. One function and not a check at each call site: the
+    /// scheduler reads slots in six places (next start, wake horizon, reminder
+    /// events, the late-start window, the missed-check and the status command),
+    /// and a flag honoured in five of six is a machine that wakes at 10:50 on a
+    /// Sunday for a recording it will then refuse to make.
+    ///
+    /// Indices stay meaningful: a `TriggerKind::Slot(i)` produced from this
+    /// slice must be resolved against this slice too — which is automatic,
+    /// because "all of them" and "none of them" are the only two answers.
+    ///
+    /// Specials are deliberately NOT gated; see [`Settings::auto_record_enabled`].
+    pub fn active_slots(&self) -> &[ScheduleSlot] {
+        if self.auto_record_enabled {
+            &self.slots
+        } else {
+            &[]
+        }
     }
 
     /// The lossy-codec bitrate in kbps, parsed from the Electron-heritage
@@ -809,8 +782,8 @@ impl Settings {
     /// The capture sample rate the recorder should use, derived from
     /// [`Settings::sample_rate_mode`]. `Auto` → `None` (omit `-ar`, capture at the
     /// device's native rate → no resample → no choppiness); the explicit variants
-    /// → `Some(hz)`. This is the recorder's source of truth, NOT the legacy
-    /// `sample_rate: i32` field (kept only for back-compat).
+    /// → `Some(hz)`. This is the recorder's source of truth (the legacy numeric
+    /// `sampleRate` field left in v0.15).
     pub fn resolved_sample_rate(&self) -> Option<u32> {
         match self.sample_rate_mode {
             SampleRate::Auto => None,
@@ -833,6 +806,57 @@ impl Settings {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   Save-folder resolution — THE canonical resolver
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The default folder name under the OS Documents directory, i.e. the
+/// `<Documents>/SundayRec` every screen and background job means when no
+/// `save_folder` is configured (mirrors Electron `preflight.ts:39`).
+pub const DEFAULT_SAVE_SUBFOLDER: &str = "SundayRec";
+
+/// No save folder could be resolved: nothing is configured AND the platform
+/// could not report a usable Documents (or app-data) directory. The message
+/// leads with the stable `no_save_folder` snake code the renderer localizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoSaveFolder;
+
+impl std::fmt::Display for NoSaveFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "no_save_folder: no folder is configured and the OS reported no Documents directory",
+        )
+    }
+}
+
+impl std::error::Error for NoSaveFolder {}
+
+/// Resolve the effective save folder — the ONE rule every caller shares
+/// (recorder, scheduler, preflight, diagnostics, prune, trash sweep, disk
+/// probes, path guards):
+///
+///   - a non-blank configured `save_folder` wins verbatim;
+///   - otherwise the default is `<documents_dir>/SundayRec` — the SUBFOLDER,
+///     never the bare Documents directory (three pre-R3 callers pruned/swept
+///     the PARENT because they skipped the join);
+///   - no configured folder and no usable Documents dir is an ERROR — never a
+///     silent `"."`, which would point destructive jobs at whatever the
+///     process's working directory happens to be.
+pub fn resolve_save_folder(
+    save_folder: Option<&str>,
+    documents_dir: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf, NoSaveFolder> {
+    if let Some(f) = save_folder {
+        if !f.trim().is_empty() {
+            return Ok(std::path::PathBuf::from(f));
+        }
+    }
+    match documents_dir {
+        Some(d) if !d.as_os_str().is_empty() => Ok(d.join(DEFAULT_SAVE_SUBFOLDER)),
+        _ => Err(NoSaveFolder),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -842,7 +866,6 @@ mod tests {
         let s = Settings::default();
         // System
         assert_eq!(s.language, None);
-        assert!(!s.has_launched);
         assert!(!s.onboarding_done);
         // Audio device
         assert_eq!(s.device_id, None);
@@ -851,28 +874,12 @@ mod tests {
         assert!(!s.video_enabled);
         assert_eq!(s.video_device_name, None);
         assert_eq!(s.video_device_index, None);
-        assert_eq!(s.video_resolution, "1080p");
-        assert_eq!(s.video_framerate, 30);
-        assert_eq!(s.output_mode, "combined");
-        assert!(!s.keep_separate_audio);
-        assert_eq!(s.separate_audio_format, FileFormat::Wav);
-        assert!(s.av_sync);
+        assert!(!s.video_flip);
+        // R4: true — the deployed (bridge-synced) renderer default, see the field doc.
+        assert!(s.keep_separate_audio);
         // Audio processing
-        assert!(!s.eq_enabled);
         assert_eq!(s.channels, ChannelMode::Stereo);
-        assert_eq!(s.sample_rate, 48_000);
         assert_eq!(s.sample_rate_mode, SampleRate::Auto);
-        assert_eq!(s.input_volume, 100);
-        assert_eq!(s.eq_bass, 0);
-        assert_eq!(s.eq_mid, 0);
-        assert_eq!(s.eq_treble, 0);
-        assert!(!s.comp_enabled);
-        assert_eq!(s.comp_threshold, -24.0);
-        assert_eq!(s.comp_ratio, 4.0);
-        assert_eq!(s.comp_attack, 10.0);
-        assert_eq!(s.comp_release, 200.0);
-        assert!(s.limiter_enabled);
-        assert_eq!(s.limiter_ceiling, -1.0);
         // Output
         assert_eq!(s.format, FileFormat::Mp3);
         assert_eq!(s.bitrate, "256");
@@ -884,15 +891,13 @@ mod tests {
         assert_eq!(s.silence_threshold, -50);
         assert_eq!(s.silence_timeout_minutes, 5);
         assert_eq!(s.split_minutes, 0);
-        assert!(!s.trim_silence);
         assert_eq!(s.manual_max_minutes, 0);
-        assert_eq!(s.pre_roll_seconds, 0);
-        assert!(s.show_live_levels);
+        // P1b: pre-roll is ON and invisible — 15 s is the default for a fresh
+        // profile. (Electron's 0 lives on in every profile already written.)
+        assert_eq!(s.pre_roll_seconds, 15);
         assert_eq!(s.reminder_minutes, 0);
         // System behaviour
         assert!(!s.launch_at_login);
-        assert!(!s.show_on_startup);
-        assert!(s.minimize_to_tray);
         assert!(s.wake_from_sleep);
         assert!(s.protect_recording);
         // Schedule (Fase 5)
@@ -904,22 +909,17 @@ mod tests {
         // Notifications (R7)
         assert!(s.notify_start);
         assert!(s.notify_stop);
-        assert_eq!(s.webhook_url, "");
-        assert!(!s.webhook_on_warning);
-        // E1.4: the LAN opt-in must default OFF, or a blind SSRF ships on.
-        assert!(!s.webhook_allow_local);
         // Email (R7)
         assert!(!s.email_on_error);
         assert_eq!(s.email_address, "");
         assert_eq!(s.email_smtp, "");
         assert_eq!(s.email_smtp_port, 587);
         assert_eq!(s.email_smtp_user, "");
+        // E-mail relay receipt (A4)
+        assert!(!s.email_receipt_enabled);
         // Editor intro/outro (R7)
         assert_eq!(s.editor_intro_path, None);
         assert_eq!(s.editor_outro_path, None);
-        // Hardware video encode is OPT-IN: software x264/x265 is the default
-        // everywhere, so a fresh install exports video identically on every mac.
-        assert!(!s.editor_hw_encode);
         // Misc
         assert!(s.auto_update);
         assert!(s.ask_open_editor);
@@ -958,20 +958,14 @@ mod tests {
     }
 
     #[test]
-    fn validate_clamps_sample_rate() {
-        let mut over = Settings {
-            sample_rate: 999_999,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.sample_rate, 192_000);
+    fn email_receipt_enabled_defaults_false_and_round_trips_camel_case() {
+        // No legacy source for this one (A4 — it is new, not ported), so
+        // absence must fall back to the default rather than error.
+        let absent = Settings::from_json_merged(r#"{}"#);
+        assert!(!absent.email_receipt_enabled);
 
-        let mut under = Settings {
-            sample_rate: 1,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.sample_rate, 8_000);
+        let on = Settings::from_json_merged(r#"{"emailReceiptEnabled":true}"#);
+        assert!(on.email_receipt_enabled);
     }
 
     #[test]
@@ -1037,23 +1031,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_clamps_input_volume() {
-        let mut over = Settings {
-            input_volume: 5_000,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.input_volume, 200);
-
-        let mut under = Settings {
-            input_volume: -10,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.input_volume, 0);
-    }
-
-    #[test]
     fn validate_clamps_input_channels() {
         let mut s = Settings {
             input_channel_l: Some(99),
@@ -1069,69 +1046,6 @@ mod tests {
         none.validate();
         assert_eq!(none.input_channel_l, None);
         assert_eq!(none.input_channel_r, None);
-    }
-
-    #[test]
-    fn validate_clamps_eq_bands() {
-        let mut s = Settings {
-            eq_bass: 100,
-            eq_mid: -100,
-            eq_treble: 50,
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.eq_bass, 24);
-        assert_eq!(s.eq_mid, -24);
-        assert_eq!(s.eq_treble, 24);
-    }
-
-    #[test]
-    fn validate_clamps_compressor_fields_and_nan_falls_back() {
-        let mut s = Settings {
-            comp_threshold: -200.0,
-            comp_ratio: 0.0,
-            comp_attack: 9_999.0,
-            comp_release: 0.0,
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.comp_threshold, -60.0);
-        assert_eq!(s.comp_ratio, 1.0);
-        assert_eq!(s.comp_attack, 2000.0);
-        assert_eq!(s.comp_release, 1.0);
-
-        // NaN → per-field default (mirrors clampNum's isNaN branch).
-        let mut nan = Settings {
-            comp_threshold: f64::NAN,
-            comp_ratio: f64::INFINITY,
-            comp_attack: f64::NEG_INFINITY,
-            comp_release: f64::NAN,
-            limiter_ceiling: f64::NAN,
-            ..Default::default()
-        };
-        nan.validate();
-        assert_eq!(nan.comp_threshold, -24.0);
-        assert_eq!(nan.comp_ratio, 4.0);
-        assert_eq!(nan.comp_attack, 10.0);
-        assert_eq!(nan.comp_release, 200.0);
-        assert_eq!(nan.limiter_ceiling, -1.0);
-    }
-
-    #[test]
-    fn validate_clamps_limiter_ceiling() {
-        let mut over = Settings {
-            limiter_ceiling: 5.0,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.limiter_ceiling, 0.0);
-
-        let mut under = Settings {
-            limiter_ceiling: -50.0,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.limiter_ceiling, -10.0);
     }
 
     #[test]
@@ -1169,41 +1083,6 @@ mod tests {
         assert_eq!(s.manual_max_minutes, 1440);
         assert_eq!(s.pre_roll_seconds, 60);
         assert_eq!(s.reminder_minutes, 60);
-    }
-
-    #[test]
-    fn validate_clamps_video_framerate() {
-        let mut over = Settings {
-            video_framerate: 9_999,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.video_framerate, 120);
-
-        let mut under = Settings {
-            video_framerate: 0,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.video_framerate, 1);
-    }
-
-    #[test]
-    fn validate_normalizes_unknown_video_tags() {
-        // An older/garbage store may carry video tags outside the known set; they
-        // must be coerced back to the defaults rather than produce bad ffmpeg args.
-        let mut s = Settings {
-            video_resolution: "999p".into(),
-            video_container: "mkv".into(),
-            video_codec: "av1".into(),
-            video_encoder: "quantum".into(),
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.video_resolution, default_video_resolution());
-        assert_eq!(s.video_container, default_video_container());
-        assert_eq!(s.video_codec, default_video_codec());
-        assert_eq!(s.video_encoder, default_video_encoder());
     }
 
     #[test]
@@ -1289,15 +1168,14 @@ mod tests {
         // so an exported profile interoperates with the old build.
         let json = serde_json::to_value(Settings::default()).unwrap();
         let obj = json.as_object().unwrap();
-        assert!(obj.contains_key("hasLaunched"));
+        assert!(obj.contains_key("onboardingDone"));
         assert!(obj.contains_key("deviceName"));
         assert!(obj.contains_key("videoEnabled"));
         assert!(obj.contains_key("videoDeviceName"));
         assert!(obj.contains_key("videoDeviceIndex"));
-        assert!(obj.contains_key("sampleRate"));
+        assert!(obj.contains_key("keepSeparateAudio"));
         assert!(obj.contains_key("sampleRateMode"));
-        assert!(obj.contains_key("showLiveLevels"));
-        assert!(obj.contains_key("inputVolume"));
+        assert!(obj.contains_key("inputChannelL"));
         assert!(obj.contains_key("filenamePattern"));
         assert!(obj.contains_key("stopOnSilence"));
         assert!(obj.contains_key("silenceTimeoutMinutes"));
@@ -1305,8 +1183,51 @@ mod tests {
         assert!(obj.contains_key("updateChannel"));
         assert!(obj.contains_key("askOpenEditor"));
         // Schedule keys must match the Electron `Settings` interface.
+        assert!(obj.contains_key("autoRecordEnabled"));
         assert!(obj.contains_key("slots"));
         assert!(obj.contains_key("specialRecordings"));
+    }
+
+    // ── `auto_record_enabled` (P1b) ─────────────────────────────────────────
+
+    #[test]
+    fn auto_record_enabled_defaults_on_and_survives_an_older_profile() {
+        assert!(Settings::default().auto_record_enabled);
+
+        // A profile written before the field existed: the key is simply absent.
+        // `false` here would disarm every church that already had a Sunday slot
+        // — the failure this app exists to prevent — so the serde default is
+        // `true`, and the stored slots keep planning exactly as they did.
+        let older = Settings::from_json_merged(
+            r#"{"slots":[{"days":[6],"start":"11:00","stop":"12:30","max":null}]}"#,
+        );
+        assert!(older.auto_record_enabled, "an older profile stays armed");
+        assert_eq!(older.active_slots().len(), 1);
+
+        // An explicit `false` round-trips (it is a real answer, not an absence).
+        let off = Settings::from_json_merged(r#"{"autoRecordEnabled":false}"#);
+        assert!(!off.auto_record_enabled);
+    }
+
+    #[test]
+    fn active_slots_is_the_one_place_the_flag_is_honoured() {
+        let mut s = Settings {
+            slots: vec![ScheduleSlot {
+                days: vec![6],
+                start: "11:00".into(),
+                stop: "12:30".into(),
+                max: None,
+            }],
+            ..Settings::default()
+        };
+        assert_eq!(s.active_slots().len(), 1);
+
+        s.auto_record_enabled = false;
+        assert!(s.active_slots().is_empty(), "disarmed → nothing to plan");
+        // …and the times are still in the store. That is the whole point of the
+        // field: the switch parks the plan, it does not delete it.
+        assert_eq!(s.slots.len(), 1);
+        assert_eq!(s.slots[0].start, "11:00");
     }
 
     #[test]
@@ -1369,16 +1290,16 @@ mod tests {
         // The regression this guards: without the lenient deserializer the whole
         // blob would fail and `from_json_merged` would reset EVERY setting.
         let s = Settings::from_json_merged(
-            r#"{ "updateChannel": "canary", "sampleRate": 44100, "format": "flac" }"#,
+            r#"{ "updateChannel": "canary", "silenceThreshold": -40, "format": "flac" }"#,
         );
         assert_eq!(s.update_channel, UpdateChannel::Stable);
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.format, FileFormat::Flac);
 
         // Same for a value that is not even a string.
-        let s = Settings::from_json_merged(r#"{ "updateChannel": 3, "sampleRate": 44100 }"#);
+        let s = Settings::from_json_merged(r#"{ "updateChannel": 3, "silenceThreshold": -40 }"#);
         assert_eq!(s.update_channel, UpdateChannel::Stable);
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
     }
 
     #[test]
@@ -1420,14 +1341,14 @@ mod tests {
         // Only two fields present + one unknown field — the rest must default,
         // the unknown must be ignored.
         let s = Settings::from_json_merged(
-            r#"{ "sampleRate": 44100, "format": "wav", "someFutureField": true }"#,
+            r#"{ "silenceThreshold": -40, "format": "wav", "someFutureField": true }"#,
         );
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.format, FileFormat::Wav);
         // Untouched fields kept their defaults.
-        assert_eq!(s.input_volume, 100);
+        assert_eq!(s.silence_timeout_minutes, 5);
         assert_eq!(s.channels, ChannelMode::Stereo);
-        assert!(s.minimize_to_tray);
+        assert!(s.wake_from_sleep);
     }
 
     #[test]
@@ -1436,8 +1357,8 @@ mod tests {
             language: Some("en".to_string()),
             device_name: Some("Soundcraft USB".to_string()),
             channels: ChannelMode::MonoMix,
-            sample_rate: 44_100,
-            input_volume: 150,
+            sample_rate_mode: SampleRate::R44100,
+            silence_threshold: -40,
             format: FileFormat::Flac,
             filename_pattern: FilenamePattern::Datetime,
             stop_on_silence: true,
@@ -1450,5 +1371,368 @@ mod tests {
         let mut back = Settings::from_json_merged(&json);
         back.validate();
         assert_eq!(back, original);
+    }
+
+    // ── R4 unification fields ────────────────────────────────────────────────
+
+    #[test]
+    fn r4_fields_default_and_serialise_camel_case() {
+        let s = Settings::default();
+        assert!(s.device_channels.is_empty());
+        assert!(!s.preroll_enabled);
+
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in ["deviceChannels", "prerollEnabled"] {
+            assert!(obj.contains_key(key), "missing camelCase key {key}");
+        }
+    }
+
+    #[test]
+    fn preroll_enabled_is_stored_but_never_the_answer() {
+        // The doc on the field used to name a reader (`preroll-lifecycle.ts`)
+        // that no longer exists, which is how a dead field keeps looking alive.
+        // The seconds ARE the switch now — in the shell (`app/state/preroll.ts`)
+        // and on the wire — so the stored bool must not be able to change any
+        // answer. Both directions, because "false wins" and "true wins" are two
+        // different ways of re-wiring it by accident.
+        let armed_but_flag_off = Settings {
+            pre_roll_seconds: 15,
+            preroll_enabled: false,
+            ..Default::default()
+        };
+        let unarmed_but_flag_on = Settings {
+            pre_roll_seconds: 0,
+            preroll_enabled: true,
+            ..Default::default()
+        };
+        assert!(
+            crate::telemetry::WireSettings::from_settings(&armed_but_flag_off).preroll_enabled,
+            "15 s with the legacy flag off is pre-roll ON — the seconds decide"
+        );
+        assert!(
+            !crate::telemetry::WireSettings::from_settings(&unarmed_but_flag_on).preroll_enabled,
+            "0 s with the legacy flag on is pre-roll OFF — the seconds decide"
+        );
+
+        // …and it still survives a save/load round-trip, which is the ONLY
+        // reason the field is still here.
+        let json = serde_json::to_string(&unarmed_but_flag_on).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert!(back.preroll_enabled, "a stored profile keeps its own value");
+    }
+
+    #[test]
+    fn r4_fields_round_trip_through_json() {
+        let mut dc = HashMap::new();
+        dc.insert(
+            "dev-1".to_string(),
+            DeviceChannels {
+                channel_l: 16,
+                channel_r: 17,
+            },
+        );
+        let original = Settings {
+            device_id: Some("dev-1".to_string()),
+            device_channels: dc,
+            preroll_enabled: true,
+            ..Default::default()
+        }
+        .validated();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let back = Settings::from_json_merged(&json).validated();
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn r4_malformed_field_costs_only_that_field() {
+        // The lenient rule, per field: garbage in one R4 value must not reset
+        // the rest of the blob (the from_json_merged full-defaults trapdoor).
+        let s = Settings::from_json_merged(
+            r#"{
+                "silenceThreshold": -40,
+                "deviceChannels": "not-a-map"
+            }"#,
+        )
+        .validated();
+        // The neighbour survived — the whole point.
+        assert_eq!(s.silence_threshold, -40);
+        // The malformed field landed on its (validated) default.
+        assert!(s.device_channels.is_empty());
+    }
+
+    // Live streaming was removed in v0.14, but installed apps upgraded from
+    // older versions still carry the stream fields in their sqlite settings
+    // blob. The migration contract: those fields are DROPPED tolerantly — the
+    // blob imports cleanly, every neighbour keeps its value, and nothing fails.
+    #[test]
+    fn legacy_blob_with_stream_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "silenceThreshold": -40,
+                "churchName": "Domkirken",
+                "streamDestinations": [
+                    {"id": "yt", "name": "YouTube",
+                     "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
+                     "enabled": true, "hasKey": true}
+                ],
+                "streamResolution": "1080p",
+                "streamFramerate": 25,
+                "streamVideoBitrate": 4500,
+                "streamOverlays": [{"id": "o1", "type": "image"}]
+            }"#,
+        )
+        .validated();
+        // The neighbours survived — dropping stream fields costs nothing else.
+        assert_eq!(s.silence_threshold, -40);
+        assert_eq!(s.church_name, "Domkirken");
+        // And the round-trip writes a blob WITHOUT the retired fields.
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "streamDestinations",
+            "streamResolution",
+            "streamFramerate",
+            "streamVideoBitrate",
+            "streamOverlays",
+        ] {
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
+        }
+    }
+
+    // The sharing cluster (cloud backup, chat webhook, podcast RSS) was removed in R1 of
+    // «Frivilligen først». Upgraded installs still carry its keys in the sqlite
+    // blob, and an exported profile from an older build carries them too. Same
+    // contract as the stream fields: DROPPED tolerantly, neighbours intact, and
+    // the round-trip writes a blob without them.
+    #[test]
+    fn legacy_blob_with_removed_sharing_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "silenceThreshold": -40,
+                "emailAddress": "vakt@kirka.no",
+                "webhookUrl": "https://hooks.slack.com/services/T/B/X",
+                "webhookOnWarning": true,
+                "webhookAllowLocal": true,
+                "cloudGoogleDrive": {"enabled": true, "autoUpload": true,
+                                     "folderId": "f1", "folderName": "Opptak"},
+                "cloudDropbox": null,
+                "cloudOneDrive": {"enabled": false},
+                "podcast": {"enabled": true, "service": "google-drive",
+                            "title": "Domkirken taler", "autoPrepEnabled": true,
+                            "defaultMasterPreset": "speech-clear"}
+            }"#,
+        )
+        .validated();
+        assert_eq!(s.silence_threshold, -40);
+        assert_eq!(s.email_address, "vakt@kirka.no");
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "webhookUrl",
+            "webhookOnWarning",
+            "webhookAllowLocal",
+            "cloudGoogleDrive",
+            "cloudDropbox",
+            "cloudOneDrive",
+            "podcast",
+        ] {
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
+        }
+    }
+
+    // v0.15 («Frivilligen først» R2) removed the dead settings fields — the
+    // Electron capture-chain knobs nothing read, the legacy numeric sampleRate,
+    // and the controls without consumers. Every upgraded install and every
+    // exported profile still carries them. Same contract as the two tests
+    // above: DROPPED tolerantly, neighbours intact (including the owner's
+    // imported `separateAudioFormat: "flac"` — the value itself is gone, the
+    // `format` beside it survives and is what the sidecar follows now), and
+    // the round-trip writes a blob without them.
+    #[test]
+    fn legacy_blob_with_v015_dead_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "hasLaunched": true,
+                "sampleRate": 44100,
+                "sampleRateMode": "r44100",
+                "inputVolume": 150,
+                "eqEnabled": true, "eqBass": 3, "eqMid": -2, "eqTreble": 1,
+                "compEnabled": true, "compThreshold": -18.0, "compRatio": 3.0,
+                "compAttack": 5.0, "compRelease": 100.0,
+                "limiterEnabled": false, "limiterCeiling": -0.5,
+                "avSync": false,
+                "minimizeToTray": false,
+                "videoBitrate": 8000,
+                "outputMode": "separate",
+                "trimSilence": true,
+                "showLiveLevels": false,
+                "separateAudioFormat": "flac",
+                "format": "flac",
+                "localAdaptivity": true,
+                "videoResolution": "2160p",
+                "videoFramerate": 60,
+                "videoContainer": "mov",
+                "videoCodec": "h265",
+                "videoEncoder": "software",
+                "editorHwEncode": true,
+                "churchName": "Domkirken"
+            }"#,
+        )
+        .validated();
+        assert_eq!(s.sample_rate_mode, SampleRate::R44100);
+        assert_eq!(s.format, FileFormat::Flac);
+        assert_eq!(s.church_name, "Domkirken");
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "hasLaunched",
+            "sampleRate",
+            "inputVolume",
+            "eqEnabled",
+            "eqBass",
+            "eqMid",
+            "eqTreble",
+            "compEnabled",
+            "compThreshold",
+            "compRatio",
+            "compAttack",
+            "compRelease",
+            "limiterEnabled",
+            "limiterCeiling",
+            "avSync",
+            "minimizeToTray",
+            "videoBitrate",
+            "outputMode",
+            "trimSilence",
+            "showLiveLevels",
+            "separateAudioFormat",
+            "localAdaptivity",
+            "videoResolution",
+            "videoFramerate",
+            "videoContainer",
+            "videoCodec",
+            "videoEncoder",
+            "editorHwEncode",
+        ] {
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_derives_recorder_channels_from_the_device_map() {
+        let mut dc = HashMap::new();
+        dc.insert(
+            "qu5".to_string(),
+            DeviceChannels {
+                channel_l: 99, // clamps to 31
+                channel_r: -3, // clamps to 0
+            },
+        );
+        let mut s = Settings {
+            device_id: Some("qu5".to_string()),
+            device_channels: dc,
+            // Stale flat values that must be overwritten by the derivation.
+            input_channel_l: Some(4),
+            input_channel_r: Some(5),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, Some(31));
+        assert_eq!(s.input_channel_r, Some(0));
+        // Idempotent: a second validate changes nothing.
+        let once = s.clone();
+        s.validate();
+        assert_eq!(s, once);
+    }
+
+    #[test]
+    fn validate_clears_recorder_channels_for_an_unmapped_selected_device() {
+        // The bridge behaviour, preserved: switching to a device with no stored
+        // mapping means DEFAULT routing — inheriting the previous device's
+        // channels would record the wrong source (the 2026-07-31 Qu-5 class).
+        let mut dc = HashMap::new();
+        dc.insert(
+            "other-device".to_string(),
+            DeviceChannels {
+                channel_l: 16,
+                channel_r: 17,
+            },
+        );
+        let mut s = Settings {
+            device_id: Some("qu5".to_string()),
+            device_channels: dc,
+            input_channel_l: Some(16),
+            input_channel_r: Some(17),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, None);
+        assert_eq!(s.input_channel_r, None);
+    }
+
+    #[test]
+    fn validate_keeps_flat_channels_when_no_map_exists() {
+        // Back-compat: an older exported profile carries only the flat fields.
+        let mut s = Settings {
+            device_id: Some("qu5".to_string()),
+            input_channel_l: Some(2),
+            input_channel_r: Some(3),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, Some(2));
+        assert_eq!(s.input_channel_r, Some(3));
+    }
+
+    // ── resolve_save_folder — the canonical rule ─────────────────────────────
+
+    #[test]
+    fn resolve_save_folder_configured_wins_verbatim() {
+        let docs = std::path::Path::new("/Users/x/Documents");
+        assert_eq!(
+            resolve_save_folder(Some("/Volumes/Rig/Opptak"), Some(docs)).unwrap(),
+            std::path::PathBuf::from("/Volumes/Rig/Opptak")
+        );
+    }
+
+    #[test]
+    fn resolve_save_folder_default_is_the_subfolder_never_bare_documents() {
+        // The pre-R3 bug: three callers (trash sweep, recordings_prune, trash
+        // commands) used the BARE Documents dir as the recordings root. The
+        // canonical rule always appends the subfolder.
+        let docs = std::path::Path::new("/Users/x/Documents");
+        for unset in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                resolve_save_folder(unset, Some(docs)).unwrap(),
+                std::path::PathBuf::from("/Users/x/Documents/SundayRec")
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_save_folder_without_documents_errors_never_dot() {
+        // diagnostics/mod.rs pre-R3 could yield a literal "." (the unwrap_or
+        // sat OUTSIDE the join). The canonical rule refuses instead.
+        for docs in [None, Some(std::path::Path::new(""))] {
+            let err = resolve_save_folder(None, docs).unwrap_err();
+            assert_eq!(err, NoSaveFolder);
+            assert!(err.to_string().starts_with("no_save_folder"));
+        }
+        // A configured folder needs no Documents dir at all.
+        assert_eq!(
+            resolve_save_folder(Some("/Volumes/Rig/Opptak"), None).unwrap(),
+            std::path::PathBuf::from("/Volumes/Rig/Opptak")
+        );
     }
 }

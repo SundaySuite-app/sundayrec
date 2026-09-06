@@ -1,0 +1,4487 @@
+<meta charset="utf-8" />
+<title>Frivilligen først</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap"
+/>
+<style>
+  /* ───────────── Page chrome tokens (theme-aware) ───────────── */
+  :root {
+    --bg: #f7f5f0;
+    --bg-2: #ffffff;
+    --ink: #1b1f2a;
+    --ink-2: #5b6272;
+    --ink-3: #8e95a6;
+    --line: #e2dfd6;
+    --gold: #c9951f;
+    --gold-soft: rgba(201, 149, 31, 0.12);
+    --ok: #1e9e5e;
+    --warn: #c47a00;
+    --bad: #c93b3f;
+    --sans:
+      "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      system-ui, sans-serif;
+    --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --rail: 248px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171f;
+      --bg-2: #1b1f2a;
+      --ink: #eef0f5;
+      --ink-2: #a7aebd;
+      --ink-3: #6e7689;
+      --line: #2b3140;
+      --gold: #ebb84b;
+      --gold-soft: rgba(235, 184, 75, 0.14);
+      --ok: #3ccb7f;
+      --warn: #f0b429;
+      --bad: #f2555a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171f;
+    --bg-2: #1b1f2a;
+    --ink: #eef0f5;
+    --ink-2: #a7aebd;
+    --ink-3: #6e7689;
+    --line: #2b3140;
+    --gold: #ebb84b;
+    --gold-soft: rgba(235, 184, 75, 0.14);
+    --ok: #3ccb7f;
+    --warn: #f0b429;
+    --bad: #f2555a;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--gold);
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  .page {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  @media (max-width: 960px) {
+    .page {
+      grid-template-columns: 1fr;
+    }
+    .rail {
+      position: static;
+      height: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+  }
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+    border-right: 1px solid var(--line);
+    padding: 28px 22px;
+    background: var(--bg);
+  }
+  .rail .brand {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin: 0 0 4px;
+  }
+  .rail .sub {
+    color: var(--ink-2);
+    font-size: 13px;
+    margin: 0 0 22px;
+  }
+  .rail nav a {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 7px 8px;
+    border-radius: 8px;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .rail nav a:hover {
+    background: var(--gold-soft);
+  }
+  .rail nav a .n {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    min-width: 18px;
+  }
+  .rail .tools {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 10px;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    background: var(--bg-2);
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--gold);
+    color: #1b1f2a;
+  }
+  .rail .hint {
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 1.45;
+  }
+
+  main {
+    padding: 40px clamp(20px, 4vw, 56px) 96px;
+    max-width: 1180px;
+  }
+  .intro h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(34px, 4.5vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .intro .lede {
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 26px;
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 10px;
+  }
+  .principles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+  }
+  .principles li {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .principles b {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .principles span {
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  section.set {
+    margin-top: 72px;
+    scroll-margin-top: 24px;
+  }
+  section.set > h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(26px, 3vw, 36px);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  section.set > .why {
+    color: var(--ink-2);
+    max-width: 66ch;
+    margin: 0 0 26px;
+    font-size: 16px;
+  }
+  section.set > .why code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--gold-soft);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .board-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1180/760;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+    background: #0e1321;
+    margin: 0 0 10px;
+  }
+  .board {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1180px;
+    height: 760px;
+    transform-origin: 0 0;
+  }
+  figure {
+    margin: 0 0 42px;
+  }
+  figcaption {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 14px;
+    color: var(--ink-2);
+    padding: 4px 2px;
+  }
+  figcaption b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  figcaption .id {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .decide {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--gold);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 8px 0 0;
+  }
+  .decide h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+  }
+  .decide ol {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 8px;
+    font-size: 15px;
+  }
+  .decide li b {
+    font-weight: 600;
+  }
+  .decide .q {
+    color: var(--ink-2);
+  }
+
+  .tokens {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 0 0 28px;
+  }
+  .sw {
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+    background: var(--bg-2);
+  }
+  .sw i {
+    display: block;
+    height: 56px;
+  }
+  .sw div {
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .sw div b {
+    display: block;
+    font-size: 13px;
+  }
+  .sw div code {
+    font-family: var(--mono);
+    color: var(--ink-3);
+  }
+  .typescale {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 28px;
+    padding: 18px 22px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg-2);
+  }
+  .typescale div {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .typescale code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    min-width: 140px;
+  }
+  table.keys {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+  table.keys th,
+  table.keys td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.keys th {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  table.keys code {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+
+  /* ───────────── APP tokens (committed dark — the app's own world) ───────────── */
+  .board {
+    --a-bg: #0e1321;
+    --a-surface: #151b2b;
+    --a-raised: #1c2435;
+    --a-line: #28324a;
+    --a-line-2: #344060;
+    --a-ink: #edf0f7;
+    --a-ink-2: #a2adc2;
+    --a-ink-3: #5e6b85;
+    --a-gold: #ebb84b;
+    --a-gold-soft: rgba(235, 184, 75, 0.14);
+    --a-gold-line: rgba(235, 184, 75, 0.42);
+    --a-rec: #e5484d;
+    --a-rec-soft: rgba(229, 72, 77, 0.16);
+    --a-good: #3ccb7f;
+    --a-good-soft: rgba(60, 203, 127, 0.14);
+    --a-warn: #f0b429;
+    --a-warn-soft: rgba(240, 180, 41, 0.14);
+    --a-bad: #f2555a;
+    --a-bad-soft: rgba(242, 85, 90, 0.14);
+    --a-r: 12px;
+    --a-r-sm: 8px;
+    background: var(--a-bg);
+    color: var(--a-ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.45;
+    display: grid;
+    grid-template-columns: 208px 1fr;
+    font-variant-numeric: tabular-nums;
+  }
+  .board * {
+    box-sizing: border-box;
+  }
+  .board p,
+  .board h1,
+  .board h2,
+  .board h3 {
+    margin: 0;
+  }
+  .board button {
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  /* Rail (the three destinations) */
+  .a-rail {
+    background: var(--a-surface);
+    border-right: 1px solid var(--a-line);
+    display: flex;
+    flex-direction: column;
+    padding: 22px 14px 18px;
+  }
+  .a-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px 6px;
+  }
+  .a-logo i {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--a-gold);
+    display: grid;
+    place-items: center;
+    color: #1b1f2a;
+    font-weight: 800;
+    font-size: 15px;
+  }
+  .a-logo b {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .a-church {
+    padding: 0 8px 22px;
+    font-size: 12.5px;
+    color: var(--a-ink-2);
+  }
+  .a-church.unset {
+    color: var(--a-warn);
+  }
+  .a-nav {
+    display: grid;
+    gap: 4px;
+  }
+  .a-nav button {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--a-ink-2);
+  }
+  .a-nav button.on {
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .a-nav svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+  .a-status {
+    margin-top: auto;
+    display: grid;
+    gap: 6px;
+    padding: 12px 10px 0;
+    border-top: 1px solid var(--a-line);
+  }
+  .a-status .line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .a-status .sub {
+    font-size: 12px;
+    color: var(--a-ink-3);
+    padding-left: 16px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--a-ink-3);
+    flex: none;
+  }
+  .dot.good {
+    background: var(--a-good);
+    box-shadow: 0 0 0 3px var(--a-good-soft);
+  }
+  .dot.warn {
+    background: var(--a-warn);
+    box-shadow: 0 0 0 3px var(--a-warn-soft);
+  }
+  .dot.rec {
+    background: var(--a-rec);
+    box-shadow: 0 0 0 3px var(--a-rec-soft);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .dot.listen {
+    background: var(--a-gold);
+    box-shadow: 0 0 0 3px var(--a-gold-soft);
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 3px var(--a-rec-soft);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgba(229, 72, 77, 0.08);
+    }
+  }
+
+  /* Main column */
+  .a-main {
+    padding: 30px 36px 28px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .a-h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .a-sub {
+    color: var(--a-ink-2);
+    font-size: 14.5px;
+  }
+  .a-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .a-card {
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    padding: 18px 20px;
+  }
+  .a-card.warn {
+    border-color: rgba(240, 180, 41, 0.5);
+    background:
+      linear-gradient(0deg, var(--a-warn-soft), var(--a-warn-soft)),
+      var(--a-surface);
+  }
+  .a-card.bad {
+    border-color: rgba(242, 85, 90, 0.5);
+    background:
+      linear-gradient(0deg, var(--a-bad-soft), var(--a-bad-soft)),
+      var(--a-surface);
+  }
+  .a-card.good {
+    border-color: rgba(60, 203, 127, 0.45);
+  }
+  .a-card.sel {
+    border-color: var(--a-gold-line);
+    background:
+      linear-gradient(0deg, var(--a-gold-soft), var(--a-gold-soft)),
+      var(--a-surface);
+  }
+  .a-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .a-grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .a-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .a-val {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .a-muted {
+    color: var(--a-ink-2);
+    font-size: 13px;
+  }
+  .a-small {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--a-line-2);
+    background: var(--a-raised);
+    padding: 9px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .btn.primary {
+    background: var(--a-gold);
+    border-color: var(--a-gold);
+    color: #1b1f2a;
+  }
+  .btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--a-gold);
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .btn.danger {
+    background: transparent;
+    border-color: var(--a-bad);
+    color: var(--a-bad);
+  }
+  .btn.rec {
+    background: var(--a-rec);
+    border-color: var(--a-rec);
+    color: #fff;
+    font-size: 18px;
+    padding: 18px 28px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(229, 72, 77, 0.28);
+  }
+  .btn.rec i {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    display: inline-block;
+  }
+  .btn.big {
+    font-size: 16px;
+    padding: 13px 22px;
+    border-radius: 12px;
+  }
+  .btn.lg {
+    font-size: 16px;
+    padding: 13px 22px;
+  }
+  .btn[disabled] {
+    opacity: 0.45;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink-2);
+    background: var(--a-raised);
+  }
+  .chip.good {
+    color: var(--a-good);
+    border-color: rgba(60, 203, 127, 0.4);
+    background: var(--a-good-soft);
+  }
+  .chip.warn {
+    color: var(--a-warn);
+    border-color: rgba(240, 180, 41, 0.4);
+    background: var(--a-warn-soft);
+  }
+  .chip.gold {
+    color: var(--a-gold);
+    border-color: var(--a-gold-line);
+    background: var(--a-gold-soft);
+  }
+  .chip.rec {
+    color: #fff;
+    background: var(--a-rec);
+    border-color: var(--a-rec);
+  }
+  .toggle {
+    width: 40px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--a-line-2);
+    position: relative;
+    flex: none;
+    border: 0;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s;
+  }
+  .toggle.on {
+    background: var(--a-gold);
+  }
+  .toggle.on::after {
+    left: 21px;
+  }
+  .receipt {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--a-good);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--a-line-2);
+    background: var(--a-raised);
+    display: grid;
+    place-items: center;
+  }
+  .icon-btn.primary {
+    background: var(--a-gold);
+    border-color: var(--a-gold);
+    color: #1b1f2a;
+  }
+  .icon-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* VU */
+  .vu {
+    display: grid;
+    gap: 10px;
+  }
+  .vu .bar {
+    height: 14px;
+    border-radius: 7px;
+    background: var(--a-raised);
+    overflow: hidden;
+    position: relative;
+  }
+  .vu .bar i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 7px;
+    background: linear-gradient(
+      90deg,
+      var(--a-good) 0 72%,
+      var(--a-warn) 72% 90%,
+      var(--a-rec) 90%
+    );
+  }
+  .vu .bar i::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: var(--w, 0%);
+    background: var(--a-raised);
+  }
+  .vu .bar b {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #fff;
+    opacity: 0.9;
+  }
+  .vu .scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--a-ink-3);
+    padding: 0 2px;
+  }
+  .vu.big .bar {
+    height: 26px;
+    border-radius: 13px;
+  }
+
+  /* Lists */
+  .a-list {
+    display: grid;
+    gap: 8px;
+  }
+  .a-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    background: var(--a-surface);
+  }
+  .a-item .t {
+    font-size: 15.5px;
+    font-weight: 600;
+  }
+  .a-item .s {
+    font-size: 13px;
+    color: var(--a-ink-2);
+    margin-top: 2px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .a-item .acts {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Decision cards (Oppsett) */
+  .dec {
+    display: grid;
+    grid-template-columns: 42px 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 13px 18px;
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    background: var(--a-surface);
+  }
+  .dec .num {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 15px;
+    background: var(--a-raised);
+    border: 1px solid var(--a-line-2);
+  }
+  .dec.done .num {
+    background: var(--a-good-soft);
+    border-color: rgba(60, 203, 127, 0.45);
+    color: var(--a-good);
+  }
+  .dec.todo .num {
+    background: var(--a-warn-soft);
+    border-color: rgba(240, 180, 41, 0.5);
+    color: var(--a-warn);
+  }
+  .dec .q {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .dec .a {
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .dec .d {
+    font-size: 13px;
+    color: var(--a-ink-2);
+    margin-top: 2px;
+  }
+
+  /* Step bar (Rediger) */
+  .steps {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid var(--a-line);
+    border-radius: 12px;
+    background: var(--a-surface);
+    width: max-content;
+  }
+  .steps button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border: 0;
+    background: transparent;
+    padding: 9px 18px;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--a-ink-2);
+  }
+  .steps button.on {
+    background: var(--a-gold-soft);
+    color: var(--a-gold);
+  }
+  .steps button.done {
+    color: var(--a-good);
+  }
+  .steps .k {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    border: 1px solid currentColor;
+  }
+  .wave {
+    flex: 1;
+    min-height: 170px;
+    border-radius: var(--a-r);
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    position: relative;
+    overflow: hidden;
+  }
+  .wave canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .wave .keep {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--a-gold-soft);
+    border-left: 2px solid var(--a-gold);
+    border-right: 2px solid var(--a-gold);
+  }
+  .wave .keep span {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--a-gold);
+  }
+  .wave .handle {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 36px;
+    margin-top: -18px;
+    border-radius: 7px;
+    background: var(--a-gold);
+    border: 2px solid var(--a-bg);
+  }
+  .wave .cut {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.04) 0 6px,
+      transparent 6px 12px
+    );
+  }
+  .wave .head {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #fff;
+  }
+  .wave .tl {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 10px 6px;
+    font-size: 11px;
+    color: var(--a-ink-3);
+  }
+  .radio {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 12px;
+    align-items: start;
+    padding: 14px 16px;
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    background: var(--a-surface);
+  }
+  .radio.sel {
+    border-color: var(--a-gold-line);
+    background:
+      linear-gradient(0deg, var(--a-gold-soft), var(--a-gold-soft)),
+      var(--a-surface);
+  }
+  .radio i {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--a-line-2);
+    margin-top: 1px;
+  }
+  .radio.sel i {
+    border-color: var(--a-gold);
+    background: radial-gradient(circle, var(--a-gold) 0 5px, transparent 6px);
+  }
+  .radio .t {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .radio .d {
+    font-size: 13px;
+    color: var(--a-ink-2);
+    margin-top: 2px;
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* Overlays */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 9, 18, 0.72);
+    display: grid;
+    place-items: center;
+    backdrop-filter: blur(2px);
+  }
+  .dialog {
+    width: 460px;
+    background: var(--a-surface);
+    border: 1px solid var(--a-line-2);
+    border-radius: 16px;
+    padding: 26px 28px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  }
+  .dialog h3 {
+    font-size: 19px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .dialog p {
+    color: var(--a-ink-2);
+    font-size: 14px;
+  }
+  .dialog .acts {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .toast {
+    position: absolute;
+    right: 28px;
+    bottom: 26px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--a-raised);
+    border: 1px solid var(--a-line-2);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .toast.good {
+    border-color: rgba(60, 203, 127, 0.5);
+  }
+  .toast.bad {
+    border-color: rgba(242, 85, 90, 0.6);
+  }
+  .banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-radius: var(--a-r);
+    font-weight: 600;
+  }
+  .banner.bad {
+    background: var(--a-bad-soft);
+    border: 1px solid rgba(242, 85, 90, 0.55);
+  }
+  .banner.warn {
+    background: var(--a-warn-soft);
+    border: 1px solid rgba(240, 180, 41, 0.5);
+  }
+  .banner .x {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .a-full {
+    grid-column: 1/-1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 40px;
+  }
+  .timer {
+    font-size: 92px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .empty {
+    display: grid;
+    place-items: center;
+    text-align: center;
+    gap: 10px;
+    padding: 40px 20px;
+    border: 1px dashed var(--a-line-2);
+    border-radius: var(--a-r);
+    color: var(--a-ink-2);
+  }
+  .empty b {
+    color: var(--a-ink);
+    font-size: 16px;
+  }
+  .empty svg {
+    width: 40px;
+    height: 40px;
+    color: var(--a-ink-3);
+  }
+  .a-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--a-line-2);
+    border-radius: 10px;
+    background: var(--a-surface);
+    color: var(--a-ink-3);
+    width: 340px;
+  }
+  .a-field {
+    display: grid;
+    gap: 6px;
+  }
+  .a-field label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .a-field .in {
+    padding: 10px 13px;
+    border: 1px solid var(--a-line-2);
+    border-radius: 9px;
+    background: var(--a-raised);
+    font-size: 14.5px;
+  }
+  .a-field .in.ph {
+    color: var(--a-ink-3);
+  }
+  .a-field .err {
+    font-size: 12.5px;
+    color: var(--a-bad);
+  }
+  .stepdots {
+    display: flex;
+    gap: 6px;
+  }
+  .stepdots i {
+    width: 28px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--a-line-2);
+  }
+  .stepdots i.on {
+    background: var(--a-gold);
+  }
+  .stepdots i.done {
+    background: var(--a-good);
+  }
+  .acc {
+    display: grid;
+  }
+  .acc .r {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 4px;
+    border-bottom: 1px solid var(--a-line);
+  }
+  .acc .r:last-child {
+    border-bottom: 0;
+  }
+  .acc .r .t {
+    font-weight: 600;
+    font-size: 14.5px;
+  }
+  .acc .r .d {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+  }
+  .acc .r .v {
+    margin-left: auto;
+    color: var(--a-ink-2);
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .kbd {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--a-line-2);
+    color: var(--a-ink-2);
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .gallery .a-card h3 {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+    margin-bottom: 12px;
+  }
+  .comp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 18px;
+  }
+  .comp {
+    display: grid;
+    gap: 8px;
+    align-content: start;
+    padding: 12px 14px;
+    border: 1px solid var(--a-line);
+    border-radius: var(--a-r);
+    background: var(--a-surface);
+  }
+  .comp h4 {
+    margin: 0;
+    font-size: 11.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--a-ink-3);
+  }
+  .comp .line {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .srow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--a-line);
+  }
+  .srow:last-child {
+    border-bottom: 0;
+  }
+  .srow .t {
+    font-weight: 600;
+    font-size: 14.5px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .srow .d {
+    font-size: 12.5px;
+    color: var(--a-ink-3);
+    margin-top: 1px;
+  }
+  .srow .e {
+    font-size: 12.5px;
+    color: var(--a-bad);
+    margin-top: 3px;
+  }
+  .sel-in {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border: 1px solid var(--a-line-2);
+    border-radius: 8px;
+    background: var(--a-raised);
+    font-size: 13.5px;
+  }
+  .gate {
+    position: relative;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .gate-note {
+    font-size: 12.5px;
+    color: var(--a-warn);
+    font-weight: 600;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+</style>
+<div class="page">
+  <aside class="rail">
+    <p class="brand">Frivilligen først</p>
+    <p class="sub">SundayRec · designutkast Fase D · 23. aug 2026</p>
+    <nav>
+      <a href="#s0"><span class="n">0</span>Språk, farger, byggeklosser</a>
+      <a href="#s1"><span class="n">1</span>Skallet: tre steder</a>
+      <a href="#s2"><span class="n">2</span>Opptak</a>
+      <a href="#s3"><span class="n">3</span>Bibliotek</a>
+      <a href="#s4"><span class="n">4</span>Rediger: Klipp → Lyd → Eksporter</a>
+      <a href="#s5"><span class="n">5</span>Oppsett: fem beslutninger</a>
+      <a href="#s6"><span class="n">6</span>Første gang</a>
+      <a href="#s7"><span class="n">7</span>Tomt, feil og beskjed</a>
+      <a href="#s8"><span class="n">·</span>Alle avgjørelsene samlet</a>
+    </nav>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Språk i artboards">
+        <button type="button" data-lang="no" aria-pressed="true">Norsk</button>
+        <button type="button" data-lang="en" aria-pressed="false">
+          English
+        </button>
+      </div>
+      <p class="hint">
+        Bryteren bytter språket <em>inne i</em> artboardene — det er samme
+        skjermer, samme nøkler. Rammene er 1180 × 760, appens faktiske vindu.
+      </p>
+    </div>
+  </aside>
+
+  <main>
+    <header class="intro">
+      <p class="eyebrow">SundayRec · Fase D av «Frivilligen først»</p>
+      <h1>Én frivillig. Fire jobber. Tre steder å være.</h1>
+      <p class="lede">
+        Dette er det nye SundayRec tegnet som skjermer, ikke som argumenter.
+        Hver ramme er en ekte skjerm i appens vindu, med ekte tekst — ingen
+        plassholdere. Under hvert sett står hva du sier ja til ved å godkjenne
+        det, og de spørsmålene bare du kan svare på.
+      </p>
+      <ul class="principles">
+        <li>
+          <b>Tre steder: Opptak · Bibliotek · Oppsett</b
+          ><span
+            >Ikke fem sider og åtte faner. En frivillig skal aldri lure på hvor
+            hun er.</span
+          >
+        </li>
+        <li>
+          <b>Statusspråk, aldri teknikk</b
+          ><span
+            >«Vi hører lyd» i stedet for «−18,4 dBFS». Tallene finnes, men bak
+            «Avansert».</span
+          >
+        </li>
+        <li>
+          <b>Én vei til hver ting</b
+          ><span
+            >Mix/master finnes ett sted: som steget «Lyd» i Rediger. Ikke fem
+            dører.</span
+          >
+        </li>
+        <li>
+          <b>Ærlig grønt</b
+          ><span
+            >Grønt betyr «dette vil virke på søndag», ikke «ingen feil oppdaget
+            ennå». Appen sier aldri «Tilkoblet» om en kilde ingen har
+            valgt.</span
+          >
+        </li>
+      </ul>
+    </header>
+
+    <!-- ═══════════════════════ SET 0 ═══════════════════════ -->
+    <section class="set" id="s0">
+      <h2>0 · Språk, farger og byggeklosser</h2>
+      <p class="why">
+        Paletten er kirkerommet søndag morgen: mørk grunn, varmt gull som eneste
+        aksent, og rødt <em>bare</em> for selve opptaket. Semantiske farger
+        (bra/obs/feil) er skilt fra aksenten, så en gul knapp aldri kan
+        forveksles med en advarsel. Fonten er Hanken Grotesk — merkevarens
+        brødtekst — med tabulære tall så tider og nivåer står stille.
+      </p>
+      <div class="tokens">
+        <div class="sw">
+          <i style="background: #0e1321"></i>
+          <div><b>Grunn</b><code>--a-bg #0E1321</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #151b2b"></i>
+          <div><b>Flate</b><code>--a-surface #151B2B</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #1c2435"></i>
+          <div><b>Hevet</b><code>--a-raised #1C2435</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #edf0f7"></i>
+          <div><b>Tekst</b><code>--a-ink #EDF0F7</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #a2adc2"></i>
+          <div><b>Dempet</b><code>--a-ink-2 #A2ADC2</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #ebb84b"></i>
+          <div><b>Gull — aksent</b><code>--a-gold #EBB84B</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #e5484d"></i>
+          <div>
+            <b>Opptak — kun Start og «Tar opp»</b><code>--a-rec #E5484D</code>
+          </div>
+        </div>
+        <div class="sw">
+          <i style="background: #3ccb7f"></i>
+          <div><b>Bra</b><code>--a-good #3CCB7F</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #f0b429"></i>
+          <div><b>Obs</b><code>--a-warn #F0B429</code></div>
+        </div>
+        <div class="sw">
+          <i style="background: #f2555a"></i>
+          <div><b>Feil</b><code>--a-bad #F2555A</code></div>
+        </div>
+      </div>
+      <div class="typescale">
+        <div>
+          <code>h1 · 26/700</code
+          ><span
+            style="font-size: 26px; font-weight: 700; letter-spacing: -0.01em"
+            >Opptak</span
+          >
+        </div>
+        <div>
+          <code>verdi · 17/600</code
+          ><span style="font-size: 17px; font-weight: 600"
+            >Behringer X32 · kanal 15–16</span
+          >
+        </div>
+        <div>
+          <code>brødtekst · 14.5/400</code
+          ><span style="font-size: 14.5px"
+            >Vi hører lyd. Alt er klart til søndag.</span
+          >
+        </div>
+        <div>
+          <code>etikett · 11.5/700 +.1em</code
+          ><span
+            style="
+              font-size: 11.5px;
+              font-weight: 700;
+              letter-spacing: 0.1em;
+              text-transform: uppercase;
+              color: var(--ink-3);
+            "
+            >Hvilken lyd?</span
+          >
+        </div>
+        <div>
+          <code>tider · tabular</code
+          ><span
+            style="
+              font-size: 22px;
+              font-weight: 700;
+              font-variant-numeric: tabular-nums;
+            "
+            >1:02:14 &nbsp;·&nbsp; 0:28:10</span
+          >
+        </div>
+      </div>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="a-main" style="padding: 26px 32px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="c.title"></h1>
+                  <p class="a-sub" data-t="c.sub"></p>
+                </div>
+              </div>
+              <div class="comp-grid">
+                <div class="comp">
+                  <h4>Button</h4>
+                  <div class="line">
+                    <span class="btn primary" data-t="c.save"></span
+                    ><span class="btn" data-t="c.cancel"></span
+                    ><span class="btn ghost" data-t="c.change"></span
+                    ><span class="btn danger" data-t="c.delete"></span
+                    ><span class="btn" disabled data-t="c.busy"></span>
+                  </div>
+                </div>
+                <div class="comp">
+                  <h4>StatusDot + statuslinje</h4>
+                  <div class="line">
+                    <span class="chip good"
+                      ><i class="dot good"></i
+                      ><span data-t="st.ready"></span></span
+                    ><span class="chip warn"
+                      ><i class="dot warn"></i
+                      ><span data-t="st.nosound"></span></span
+                    ><span class="chip rec"
+                      ><i class="dot" style="background: #fff"></i
+                      ><span data-t="st.rec"></span></span
+                    ><span class="chip"
+                      ><i class="dot listen"></i><span data-t="st.listen"></span
+                    ></span>
+                  </div>
+                </div>
+                <div class="comp">
+                  <h4>SettingRow + Toggle + Receipt</h4>
+                  <div class="srow">
+                    <div>
+                      <div class="t">
+                        <span data-t="c.row1"></span
+                        ><span class="receipt"
+                          >✓ <span data-t="c.saved"></span
+                        ></span>
+                      </div>
+                      <div class="d" data-t="c.row1d"></div>
+                    </div>
+                    <button
+                      class="toggle on"
+                      role="switch"
+                      aria-checked="true"
+                    ></button>
+                  </div>
+                  <div class="srow">
+                    <div>
+                      <div class="t" data-t="c.row2"></div>
+                      <div class="d" data-t="c.row2d"></div>
+                      <div class="e" data-t="c.row2e"></div>
+                    </div>
+                    <span class="sel-in">12 ▾</span>
+                  </div>
+                </div>
+                <div class="comp">
+                  <h4>RadioCards</h4>
+                  <div class="grid2">
+                    <div class="radio sel">
+                      <i></i>
+                      <div>
+                        <div class="t" data-t="q.good"></div>
+                        <div class="d" data-t="q.goodd"></div>
+                      </div>
+                    </div>
+                    <div class="radio">
+                      <i></i>
+                      <div>
+                        <div class="t" data-t="q.best"></div>
+                        <div class="d" data-t="q.bestd"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="comp">
+                  <h4>Gate</h4>
+                  <div class="gate-note">⚠ <span data-t="c.gate"></span></div>
+                  <div class="gate">
+                    <div class="srow">
+                      <div><div class="t" data-t="c.gated"></div></div>
+                      <button class="toggle"></button>
+                    </div>
+                  </div>
+                </div>
+                <div class="comp">
+                  <h4>EmptyState · Toast · Dialog</h4>
+                  <div class="empty" style="padding: 18px">
+                    <b data-t="lib.empty"></b
+                    ><span class="a-small" data-t="lib.emptyd"></span>
+                  </div>
+                  <div class="line">
+                    <span class="toast good" style="position: static"
+                      ><span data-t="c.toastok"></span></span
+                    ><span class="toast bad" style="position: static"
+                      ><span data-t="c.toastbad"></span
+                      ><span
+                        class="btn ghost"
+                        style="padding: 0"
+                        data-t="c.retry"
+                      ></span
+                    ></span>
+                  </div>
+                </div>
+                <div class="comp" style="grid-column: 1/-1">
+                  <h4>VuMeter — nivå 1 har ingen tall</h4>
+                  <div class="vu">
+                    <div class="a-row" style="margin-bottom: 4px">
+                      <i class="dot listen"></i><b data-t="vu.hear"></b
+                      ><span class="a-muted" data-t="vu.heard"></span>
+                    </div>
+                    <div class="bar">
+                      <i style="--w: 58%"></i><b style="left: 64%"></b>
+                    </div>
+                    <div class="bar">
+                      <i style="--w: 54%"></i><b style="left: 61%"></b>
+                    </div>
+                    <div class="scale">
+                      <span data-t="vu.quiet"></span
+                      ><span data-t="vu.good"></span
+                      ><span data-t="vu.loud"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>0.1 Komponentbiblioteket</b
+          ><span
+            >Én av hver. Dette er kontrakten S1b bygger — ikke en stilguide, men
+            de eneste delene appen får settes sammen av.</span
+          ><span class="id">components</span>
+        </figcaption>
+      </figure>
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 0</h3>
+        <ol>
+          <li>
+            <b>Mørk app, gull som eneste aksent, rødt kun for opptak.</b>
+            <span class="q"
+              >Lys modus kommer senere som tillegg — ikke nå.</span
+            >
+          </li>
+          <li>
+            <b>Hanken Grotesk overalt i appen.</b>
+            <span class="q">Ingen serif i appen; Playfair er nettsidens.</span>
+          </li>
+          <li>
+            <b>Nivå 1 viser aldri tall for lydnivå</b> — bare «Vi hører lyd / Vi
+            hører ingenting / For høyt».
+            <span class="q"
+              >Tallene bor under Avansert og i opptaksoverlegget for den som
+              vil.</span
+            >
+          </li>
+          <li>
+            <b>Komponentbiblioteket over er komplett.</b>
+            <span class="q"
+              >Trenger en side noe annet, endrer vi biblioteket — ikke
+              siden.</span
+            >
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 1 ═══════════════════════ -->
+    <section class="set" id="s1">
+      <h2>1 · Skallet: tre steder å være</h2>
+      <p class="why">
+        Fem sider og åtte faner blir tre destinasjoner. Nederst i skinnen står
+        <em>én</em> setning som alltid er sann — og den er ikke grønn før lyden
+        faktisk er koblet til. Kirkenavnet står under logoen, så en frivillig på
+        en ukjent maskin vet at hun er på riktig sted.
+      </p>
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div
+              class="a-main"
+              style="justify-content: center; align-items: center; gap: 26px"
+            >
+              <div class="a-card" style="width: 640px">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 12px"
+                  data-t="sh.variants"
+                ></div>
+                <div class="a-list">
+                  <div class="a-row">
+                    <i class="dot good"></i><b data-t="st.ready"></b
+                    ><span class="a-muted" data-t="sh.v1"></span>
+                  </div>
+                  <div class="a-row">
+                    <i class="dot warn"></i><b data-t="st.nosound"></b
+                    ><span class="a-muted" data-t="sh.v2"></span>
+                  </div>
+                  <div class="a-row">
+                    <i class="dot rec"></i><b data-t="st.rec"></b
+                    ><span class="a-muted"
+                      >11:42 · <span data-t="sh.v3"></span
+                    ></span>
+                  </div>
+                  <div class="a-row">
+                    <i class="dot"></i><b data-t="st.next"></b
+                    ><span class="a-muted" data-t="sh.v4"></span>
+                  </div>
+                  <div class="a-row">
+                    <i class="dot warn"></i><b data-t="st.lowdisk"></b
+                    ><span class="a-muted" data-t="sh.v5"></span>
+                  </div>
+                </div>
+              </div>
+              <p class="a-small" style="width: 640px" data-t="sh.note"></p>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>1.1 Skinnen og statuslinjen</b
+          ><span
+            >Tre destinasjoner, kirkenavn, og de fem setningene statuslinjen kan
+            si. Ingen «Alt er klart» uten at en lydkilde er valgt og hørt.</span
+          ><span class="id">shell--status</span>
+        </figcaption>
+      </figure>
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 1</h3>
+        <ol>
+          <li>
+            <b>Navnene Opptak · Bibliotek · Oppsett.</b>
+            <span class="q"
+              >Alternativ vurdert: «Hjem» i stedet for «Opptak» — forkastet,
+              fordi siden bare gjør én ting.</span
+            >
+          </li>
+          <li>
+            <b>Statuslinjen er appens eneste «alt er klart».</b> Ingen grønn
+            hero på Opptak-siden i tillegg.
+          </li>
+          <li>
+            <b>Kirkenavnet i skinnen.</b>
+            <span class="q"
+              >Står «Ikke satt opp ennå» i gult til det er fylt inn.</span
+            >
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 2 ═══════════════════════ -->
+    <section class="set" id="s2">
+      <h2>2 · Opptak</h2>
+      <p class="why">
+        Siden har én jobb. Den forteller først <em>hvor lyden kommer fra</em> —
+        aldri «Innebygd mikrofon · Tilkoblet» om noe ingen har valgt — så om vi
+        hører den, og så en stor Start-knapp. Kamera og automatisk opptak er
+        tillegg som vises bare hvis de er slått på i Oppsett.
+      </p>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="rec.title"></h1>
+                  <p class="a-sub" data-t="rec.sub"></p>
+                </div>
+                <span class="chip gold"
+                  ><i class="dot listen"></i><span data-t="rec.listening"></span
+                ></span>
+              </div>
+              <div class="a-card">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <div class="a-label" data-t="rec.source"></div>
+                    <div class="a-val">
+                      Behringer X32 · <span data-t="rec.ch"></span> 15–16
+                    </div>
+                  </div>
+                  <span class="btn ghost" data-t="c.change"></span>
+                </div>
+              </div>
+              <div class="a-card">
+                <div class="vu big">
+                  <div class="a-row" style="margin-bottom: 6px">
+                    <i class="dot good"></i
+                    ><b style="font-size: 16px" data-t="vu.hear"></b
+                    ><span class="a-muted" data-t="vu.heard"></span>
+                  </div>
+                  <div class="bar">
+                    <i style="--w: 60%"></i><b style="left: 66%"></b>
+                  </div>
+                  <div class="bar">
+                    <i style="--w: 57%"></i><b style="left: 63%"></b>
+                  </div>
+                  <div class="scale">
+                    <span data-t="vu.quiet"></span><span data-t="vu.good"></span
+                    ><span data-t="vu.loud"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="a-row" style="gap: 16px">
+                <span class="btn rec" style="flex: 1"
+                  ><i></i><span data-t="rec.start"></span></span
+                ><span
+                  class="a-card"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 12px 16px;
+                  "
+                  ><button class="toggle on"></button
+                  ><span
+                    ><b data-t="rec.camera"></b>
+                    <div class="a-small">FaceTime HD</div></span
+                  ></span
+                >
+              </div>
+              <div class="grid2">
+                <div class="a-card">
+                  <div class="a-label" data-t="rec.nextauto"></div>
+                  <div class="a-val" style="margin-top: 4px">
+                    <span data-t="d.sunday"></span> 11:00
+                  </div>
+                  <div class="a-small" data-t="rec.nextautod"></div>
+                </div>
+                <div class="a-card">
+                  <div class="a-label" data-t="rec.last"></div>
+                  <div class="a-val" style="margin-top: 4px">
+                    <span data-t="d.sunday"></span> 16.
+                    <span data-t="d.aug"></span> · 1 t 02 min
+                  </div>
+                  <div class="a-row" style="margin-top: 6px; gap: 8px">
+                    <span class="chip good" data-t="lib.edited"></span
+                    ><span
+                      class="btn ghost"
+                      style="padding: 0"
+                      data-t="lib.openedit"
+                    ></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.1 Opptak — klar</b
+          ><span
+            >Kilde først, så hørsel, så Start. Kamera-tillegget og neste
+            automatiske opptak vises fordi de er slått på i Oppsett.</span
+          ><span class="id">record--ready</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="nosound"
+              data-church="unset"
+            ></div>
+            <div class="a-main">
+              <div class="a-head">
+                <div><h1 class="a-h1" data-t="rec.title"></h1></div>
+              </div>
+              <div class="a-card warn">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <div class="a-val" data-t="rec.nosrc"></div>
+                    <div
+                      class="a-muted"
+                      style="margin-top: 4px"
+                      data-t="rec.nosrcd"
+                    ></div>
+                  </div>
+                  <span class="btn primary" data-t="rec.choose"></span>
+                </div>
+              </div>
+              <div class="a-card">
+                <div class="vu big">
+                  <div class="a-row" style="margin-bottom: 6px">
+                    <i class="dot"></i
+                    ><b
+                      style="font-size: 16px; color: var(--a-ink-2)"
+                      data-t="vu.nothing"
+                    ></b>
+                  </div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="scale">
+                    <span data-t="vu.quiet"></span><span data-t="vu.good"></span
+                    ><span data-t="vu.loud"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="a-row" style="gap: 16px">
+                <span class="btn rec" style="flex: 1; opacity: 0.4"
+                  ><i></i><span data-t="rec.start"></span
+                ></span>
+              </div>
+              <p class="a-small" data-t="rec.whyblocked"></p>
+              <div class="a-card" style="margin-top: auto">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <b data-t="rec.autoq"></b>
+                    <div class="a-small" data-t="rec.autoqd"></div>
+                  </div>
+                  <span class="btn ghost" data-t="rec.setup"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.2 Opptak — ingen lydkilde valgt</b
+          ><span
+            >Start-knappen er sperret med en grunn, ikke bare grå. Dette
+            erstatter dagens «Innebygd mikrofon · Tilkoblet».</span
+          ><span class="id">record--no-source</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="nosound"
+              data-church="set"
+            ></div>
+            <div class="a-main">
+              <div class="a-head">
+                <div><h1 class="a-h1" data-t="rec.title"></h1></div>
+              </div>
+              <div class="a-card warn">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <div class="a-val" data-t="rec.lost"></div>
+                    <div
+                      class="a-muted"
+                      style="margin-top: 4px"
+                      data-t="rec.lostd"
+                    ></div>
+                  </div>
+                  <span class="btn" data-t="rec.usebuiltin"></span
+                  ><span class="btn primary" data-t="rec.retry"></span>
+                </div>
+              </div>
+              <div class="a-card">
+                <div class="vu big">
+                  <div class="a-row" style="margin-bottom: 6px">
+                    <i class="dot warn"></i
+                    ><b style="font-size: 16px" data-t="vu.nothing"></b
+                    ><span class="a-muted" data-t="vu.nothingd"></span>
+                  </div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                  <div class="scale">
+                    <span data-t="vu.quiet"></span><span data-t="vu.good"></span
+                    ><span data-t="vu.loud"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="a-row" style="gap: 16px">
+                <span class="btn rec" style="flex: 1"
+                  ><i></i><span data-t="rec.start"></span
+                ></span>
+              </div>
+              <p class="a-small" data-t="rec.canstart"></p>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.3 Opptak — mikseren er borte</b
+          ><span
+            >Kilden er valgt, men ikke funnet. Start er mulig, med ærlig
+            advarsel — og ett klikk til maskinens mikrofon hvis det er bedre enn
+            ingenting.</span
+          ><span class="id">record--source-missing</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div
+              class="a-full"
+              style="
+                background: radial-gradient(
+                  ellipse at 50% 30%,
+                  rgba(229, 72, 77, 0.1),
+                  transparent 60%
+                );
+              "
+            >
+              <span class="chip rec" style="font-size: 14px; padding: 6px 14px"
+                ><i
+                  class="dot"
+                  style="background: #fff; animation: pulse 1.4s infinite"
+                ></i
+                ><span data-t="st.rec"></span
+              ></span>
+              <div class="timer">0:42:17</div>
+              <div style="width: 720px" class="vu big">
+                <div
+                  class="a-row"
+                  style="justify-content: center; margin-bottom: 6px"
+                >
+                  <i class="dot good"></i
+                  ><b style="font-size: 16px" data-t="ov.fine"></b>
+                </div>
+                <div class="bar">
+                  <i style="--w: 62%"></i><b style="left: 70%"></b>
+                </div>
+                <div class="bar">
+                  <i style="--w: 59%"></i><b style="left: 66%"></b>
+                </div>
+              </div>
+              <div class="a-row" style="gap: 28px; color: var(--a-ink-2)">
+                <span>Behringer X32</span><span>·</span
+                ><span><span data-t="ov.room"></span> 14 t</span><span>·</span
+                ><span><span data-t="ov.camera"></span> FaceTime HD</span>
+              </div>
+              <span
+                class="btn big"
+                style="min-width: 280px; margin-top: 10px"
+                data-t="ov.stop"
+              ></span>
+              <p class="a-small" data-t="ov.hint"></p>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.4 Opptak pågår</b
+          ><span
+            >Fullt vindu. Klokken, «Alt ser bra ut», og Stopp som en rolig knapp
+            — rødt er reservert for at opptaket <em>går</em>.</span
+          ><span class="id">record--running</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="a-full" style="opacity: 0.35">
+              <span class="chip rec" style="font-size: 14px; padding: 6px 14px"
+                ><span data-t="st.rec"></span
+              ></span>
+              <div class="timer">1:02:14</div>
+            </div>
+            <div class="overlay">
+              <div class="dialog">
+                <h3 data-t="ov.stopq"></h3>
+                <p data-t="ov.stopqd"></p>
+                <div class="acts">
+                  <span class="btn" data-t="ov.stopyes"></span
+                  ><span class="btn primary" data-t="ov.continue"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.5 Stoppe?</b
+          ><span
+            >Primærknappen er «Fortsett å ta opp». Et uhell midt i prekenen skal
+            koste ett klikk til, ikke opptaket.</span
+          ><span class="id">record--stop-confirm</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div
+              class="a-main"
+              style="justify-content: center; align-items: center"
+            >
+              <div
+                class="a-card good"
+                style="
+                  width: 620px;
+                  padding: 28px 30px;
+                  display: grid;
+                  gap: 14px;
+                "
+              >
+                <div class="a-row">
+                  <i class="dot good"></i>
+                  <h2
+                    style="font-size: 22px; font-weight: 700"
+                    data-t="done.title"
+                  ></h2>
+                </div>
+                <div>
+                  <div class="a-val">2026-08-23 Gudstjeneste.mp3</div>
+                  <div class="a-muted">
+                    1 t 02 min 14 s · 112 MB · Dokumenter / SundayRec
+                  </div>
+                </div>
+                <div class="a-row" style="gap: 10px; margin-top: 6px">
+                  <span class="btn primary lg" data-t="done.edit"></span
+                  ><span class="btn lg" data-t="done.show"></span
+                  ><span class="btn ghost" data-t="done.ok"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>2.6 Opptaket er lagret</b
+          ><span
+            >Kvitteringen er et kort, ikke en toast som forsvinner. Herfra er
+            Rediger ett klikk.</span
+          ><span class="id">record--done</span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 2</h3>
+        <ol>
+          <li>
+            <b>Start er sperret til en lydkilde er valgt eksplisitt</b> — også
+            hvis valget er maskinens egen mikrofon.
+            <span class="q"
+              >Dette er den største adferdsendringen i hele programmet. I dag
+              tar appen opp på laptop-mikrofonen uten å si fra.</span
+            >
+          </li>
+          <li>
+            <b
+              >Ingen grønn hero, ingen «Format»- og «Lagring»-kort på Opptak.</b
+            >
+            Kvalitet og mappe er Oppsett-beslutninger; de vises i kvitteringen
+            etter opptak.
+          </li>
+          <li>
+            <b>Stopp er ikke rød.</b> Rødt = «tar opp». Bekreftelsen har
+            «Fortsett» som primær.
+          </li>
+          <li>
+            <b>Kvittering som kort med «Åpne i Rediger»</b> erstatter dagens
+            «vil du redigere?»-toast.
+          </li>
+          <li class="q">
+            <b>Spørsmål:</b> Skal «Bruk maskinens mikrofon» (2.3) finnes som
+            nødutgang når mikseren er borte, eller er det for farlig å gjøre
+            lett?
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 3 ═══════════════════════ -->
+    <section class="set" id="s3">
+      <h2>3 · Bibliotek</h2>
+      <p class="why">
+        Historikk og Rediger-inngangen blir ett sted. Radene snakker som
+        mennesker: «Søndag 16. august», ikke filnavn først. Papirkurven har
+        alltid en inngang — i dag forsvinner lenken når kurven er tom, og en
+        frivillig som leter etter gårsdagens opptak finner ingen dør.
+      </p>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="lib.title"></h1>
+                  <p class="a-sub">
+                    14 <span data-t="lib.count"></span> · 13 t 40 min
+                  </p>
+                </div>
+                <div class="a-search">⌕ <span data-t="lib.search"></span></div>
+              </div>
+              <div class="a-list">
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.sunday"></span> 23.
+                      <span data-t="d.aug"></span> 2026 · 11:00
+                    </div>
+                    <div class="s">
+                      <span>1 t 02 min</span
+                      ><span class="chip" data-t="lib.video"></span
+                      ><span class="chip good" data-t="lib.exported"></span>
+                    </div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn primary" data-t="lib.openedit"></span
+                    ><span class="btn" data-t="lib.show"></span>
+                  </div>
+                </div>
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.sunday"></span> 16.
+                      <span data-t="d.aug"></span> 2026 · 11:00
+                    </div>
+                    <div class="s">
+                      <span>1 t 04 min</span
+                      ><span class="chip good" data-t="lib.edited"></span>
+                    </div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn primary" data-t="lib.openedit"></span
+                    ><span class="btn" data-t="lib.show"></span>
+                  </div>
+                </div>
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.sunday"></span> 9.
+                      <span data-t="d.aug"></span> 2026 · 11:00
+                    </div>
+                    <div class="s">
+                      <span>58 min</span
+                      ><span class="chip warn" data-t="lib.interrupted"></span>
+                    </div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn primary" data-t="lib.openedit"></span
+                    ><span class="btn" data-t="lib.show"></span>
+                  </div>
+                </div>
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.wed"></span> 5.
+                      <span data-t="d.aug"></span> 2026 · 19:30 ·
+                      <span class="a-muted" data-t="lib.manual"></span>
+                    </div>
+                    <div class="s"><span>42 min</span></div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn primary" data-t="lib.openedit"></span
+                    ><span class="btn" data-t="lib.show"></span>
+                  </div>
+                </div>
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.sunday"></span> 2.
+                      <span data-t="d.aug"></span> 2026 · 11:00
+                    </div>
+                    <div class="s">
+                      <span>1 t 01 min</span
+                      ><span class="chip good" data-t="lib.exported"></span>
+                    </div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn primary" data-t="lib.openedit"></span
+                    ><span class="btn" data-t="lib.show"></span>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: space-between"
+              >
+                <span class="a-small"
+                  ><span data-t="lib.autodel"></span> 90
+                  <span data-t="lib.days"></span> ·
+                  <span
+                    class="btn ghost"
+                    style="padding: 0; font-size: 12.5px"
+                    data-t="c.change"
+                  ></span></span
+                ><span class="btn ghost" data-t="lib.trash"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>3.1 Bibliotek med opptak</b
+          ><span
+            >Dato som tittel, varighet og tilstand som brikker, to handlinger
+            per rad. Slett ligger bak «Vis i Finder»-menyen, ikke på
+            raden.</span
+          ><span class="id">library--list</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main">
+              <div class="a-head">
+                <div><h1 class="a-h1" data-t="lib.title"></h1></div>
+              </div>
+              <div class="empty" style="flex: 1">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                >
+                  <rect x="3" y="7" width="18" height="13" rx="2" />
+                  <path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2" /></svg
+                ><b data-t="lib.empty"></b><span data-t="lib.emptyd"></span
+                ><span
+                  class="btn primary"
+                  style="margin-top: 8px"
+                  data-t="lib.gorec"
+                ></span>
+              </div>
+              <div class="a-row" style="justify-content: flex-end">
+                <span
+                  class="btn ghost"
+                  style="color: var(--a-ink-3)"
+                  data-t="lib.trashempty"
+                ></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>3.2 Tomt bibliotek</b
+          ><span
+            >Tomtilstanden sier hva som skjer her og peker på det ene stedet det
+            kan starte. Papirkurven finnes selv når den er tom.</span
+          ><span class="id">library--empty</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="lib.trashtitle"></h1>
+                  <p class="a-sub" data-t="lib.trashd"></p>
+                </div>
+                <span class="btn ghost" data-t="lib.back"></span>
+              </div>
+              <div class="a-list">
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.sunday"></span> 26.
+                      <span data-t="d.jul"></span> 2026 · 11:00
+                    </div>
+                    <div class="s">
+                      <span>1 t 03 min</span
+                      ><span class="a-small"
+                        ><span data-t="lib.deletedin"></span> 27
+                        <span data-t="lib.days"></span
+                      ></span>
+                    </div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn" data-t="lib.restore"></span
+                    ><span class="btn danger" data-t="lib.delnow"></span>
+                  </div>
+                </div>
+                <div class="a-item">
+                  <div>
+                    <div class="t">
+                      <span data-t="d.sunday"></span> 19.
+                      <span data-t="d.jul"></span> 2026 · 11:00
+                    </div>
+                    <div class="s">
+                      <span>1 t 00 min</span
+                      ><span class="a-small"
+                        ><span data-t="lib.deletedin"></span> 20
+                        <span data-t="lib.days"></span
+                      ></span>
+                    </div>
+                  </div>
+                  <div class="acts">
+                    <span class="btn" data-t="lib.restore"></span
+                    ><span class="btn danger" data-t="lib.delnow"></span>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: flex-end"
+              >
+                <span class="btn danger" data-t="lib.emptytrash"></span>
+              </div>
+            </div>
+            <div class="toast good">
+              <span data-t="lib.movedtrash"></span
+              ><span
+                class="btn ghost"
+                style="padding: 0"
+                data-t="c.undo"
+              ></span>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>3.3 Papirkurven + angre-toast</b
+          ><span
+            >Slett er alltid angrbart i 30 dager. Toasten «Flyttet til
+            papirkurven · Angre» er den eneste bekreftelsen — ingen dialog før
+            handlingen.</span
+          ><span class="id">library--trash</span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 3</h3>
+        <ol>
+          <li>
+            <b>Historikk + Rediger-inngang = Bibliotek.</b> Rediger nås bare
+            herfra og fra kvitteringen etter opptak.
+          </li>
+          <li>
+            <b>Slett uten dialog, med angre.</b> Papirkurven tømmes automatisk
+            etter 30 dager; «Slett nå» i kurven er eneste permanente handling og
+            har dialog.
+          </li>
+          <li>
+            <b>Notatfeltet er borte</b> fra nivå 1.
+            <span class="q"
+              >Det fantes 24 nøkler for notater; atlaset viser at det brukes til
+              «Gudstjeneste»-merking som datoen alt sier. Kan komme tilbake som
+              «Gi nytt navn».</span
+            >
+          </li>
+          <li>
+            <b>Filter «Lyd / Video» er borte</b> — video er en brikke på raden.
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 4 ═══════════════════════ -->
+    <section class="set" id="s4">
+      <h2>4 · Rediger: Klipp → Lyd → Eksporter</h2>
+      <p class="why">
+        Tre steg i rekkefølge, alltid synlige, fritt å hoppe mellom.
+        Klipp-steget åpner med appens forslag («Vi tror prekenen er her») og to
+        store valg. Lyd-steget er <em>det eneste stedet</em> mix/master finnes —
+        «Automatisk lydforbedring» er på, med tre navngitte valg; mikseren
+        ligger bak Avansert. Eksporter er format + hvor, og ingenting annet.
+      </p>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 14px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1">
+                    <span data-t="d.sunday"></span> 23.
+                    <span data-t="d.aug"></span> 2026
+                  </h1>
+                  <p class="a-sub">2026-08-23 Gudstjeneste.mp3 · 1 t 02 min</p>
+                </div>
+                <span class="btn ghost" data-t="ed.close"></span>
+              </div>
+              <div class="steps">
+                <button class="on">
+                  <span class="k">1</span><span data-t="ed.cut"></span></button
+                ><button>
+                  <span class="k">2</span
+                  ><span data-t="ed.sound"></span></button
+                ><button>
+                  <span class="k">3</span><span data-t="ed.export"></span>
+                </button>
+              </div>
+              <div class="a-card sel" style="padding: 14px 18px">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <b style="font-size: 16px" data-t="ed.found"></b>
+                    <div class="a-muted" data-t="ed.foundd"></div>
+                  </div>
+                  <span class="btn primary" data-t="ed.keepsermon"></span
+                  ><span class="btn" data-t="ed.keepall"></span>
+                </div>
+              </div>
+              <div class="wave">
+                <canvas data-wave="1"></canvas>
+                <div class="cut" style="left: 0; width: 22%"></div>
+                <div class="keep" style="left: 22%; width: 50%">
+                  <span><span data-t="ed.sermonCap"></span> · 28 min</span>
+                </div>
+                <div class="cut" style="left: 72%; right: 0"></div>
+                <div class="handle" style="left: calc(22% - 7px)"></div>
+                <div class="handle" style="left: calc(72% - 7px)"></div>
+                <div class="head" style="left: 34%"></div>
+                <div class="tl">
+                  <span>0:00</span><span>0:15</span><span>0:30</span
+                  ><span>0:45</span><span>1:02</span>
+                </div>
+              </div>
+              <div class="a-row" style="gap: 14px">
+                <span class="icon-btn primary"
+                  ><svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" /></svg></span
+                ><b style="font-size: 18px">0:21:08</b
+                ><span class="a-muted">/ 1:02:14</span
+                ><span class="a-muted" style="margin-left: auto"
+                  ><span data-t="ed.result"></span>:
+                  <b style="color: var(--a-ink)">28 min 10 s</b></span
+                ><span class="btn ghost" data-t="ed.manual"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>4.1 Klipp</b
+          ><span
+            >Forslaget ligger i bølgeformen med to håndtak. «Behold bare
+            prekenen» er ett klikk; «Klipp manuelt» avslører kuttverktøyene for
+            den som vil.</span
+          ><span class="id">editor--cut</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 14px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1">
+                    <span data-t="d.sunday"></span> 23.
+                    <span data-t="d.aug"></span> 2026
+                  </h1>
+                  <p class="a-sub">
+                    <span data-t="ed.result"></span>: 28 min 10 s
+                  </p>
+                </div>
+                <span class="btn ghost" data-t="ed.close"></span>
+              </div>
+              <div class="steps">
+                <button class="done">
+                  <span class="k">✓</span><span data-t="ed.cut"></span></button
+                ><button class="on">
+                  <span class="k">2</span
+                  ><span data-t="ed.sound"></span></button
+                ><button>
+                  <span class="k">3</span><span data-t="ed.export"></span>
+                </button>
+              </div>
+              <div class="a-card">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <b style="font-size: 16px" data-t="snd.auto"></b>
+                    <div class="a-muted" data-t="snd.autod"></div>
+                  </div>
+                  <button class="toggle on"></button>
+                </div>
+              </div>
+              <div class="grid3">
+                <div class="radio sel">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="snd.speech"></div>
+                    <div class="d" data-t="snd.speechd"></div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="snd.mixed"></div>
+                    <div class="d" data-t="snd.mixedd"></div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="snd.none"></div>
+                    <div class="d" data-t="snd.noned"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="a-card">
+                <div class="a-row">
+                  <b data-t="snd.listen"></b>
+                  <div
+                    class="seg"
+                    style="
+                      background: var(--a-raised);
+                      border-color: var(--a-line-2);
+                    "
+                  >
+                    <button
+                      style="color: var(--a-ink-2)"
+                      data-t="snd.before"
+                    ></button
+                    ><button
+                      style="background: var(--a-gold); color: #1b1f2a"
+                      data-t="snd.after"
+                    ></button>
+                  </div>
+                  <span class="icon-btn primary"
+                    ><svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5v14l11-7z" /></svg></span
+                  ><span class="a-muted"
+                    >0:21:08 — <span data-t="snd.sample"></span
+                  ></span>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: space-between"
+              >
+                <span class="btn ghost" data-t="snd.advanced"></span
+                ><span class="btn primary lg" data-t="ed.next"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>4.2 Lyd</b
+          ><span
+            >Mix/master som tre ord. Før/etter-lytting på et 20-sekunders
+            utsnitt fra prekenen. «Åpne mikseren» er den ene døren til dagens
+            ~20 kontroller.</span
+          ><span class="id">editor--sound</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 14px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1">
+                    <span data-t="d.sunday"></span> 23.
+                    <span data-t="d.aug"></span> 2026
+                  </h1>
+                  <p class="a-sub">
+                    <span data-t="ed.result"></span>: 28 min 10 s ·
+                    <span data-t="snd.speech"></span>
+                  </p>
+                </div>
+                <span class="btn ghost" data-t="ed.close"></span>
+              </div>
+              <div class="steps">
+                <button class="done">
+                  <span class="k">✓</span><span data-t="ed.cut"></span></button
+                ><button class="done">
+                  <span class="k">✓</span
+                  ><span data-t="ed.sound"></span></button
+                ><button class="on">
+                  <span class="k">3</span><span data-t="ed.export"></span>
+                </button>
+              </div>
+              <div class="a-label" data-t="ex.format"></div>
+              <div class="grid3">
+                <div class="radio sel">
+                  <i></i>
+                  <div>
+                    <div class="t">
+                      MP3
+                      <span
+                        class="chip gold"
+                        style="margin-left: 6px"
+                        data-t="c.recommended"
+                      ></span>
+                    </div>
+                    <div class="d" data-t="ex.mp3d"></div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t">FLAC</div>
+                    <div class="d" data-t="ex.flacd"></div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t">WAV</div>
+                    <div class="d" data-t="ex.wavd"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="a-label" data-t="ex.where"></div>
+              <div class="grid2">
+                <div class="radio sel">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="ex.samefolder"></div>
+                    <div class="d">Dokumenter / SundayRec</div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="ex.pick"></div>
+                    <div class="d" data-t="ex.pickd"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="a-card" style="padding: 12px 18px">
+                <div class="a-row">
+                  <div class="a-grow">
+                    <b data-t="ex.video"></b>
+                    <div class="a-small" data-t="ex.videod"></div>
+                  </div>
+                  <button class="toggle"></button>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: space-between"
+              >
+                <span class="a-muted"
+                  >2026-08-23 Gudstjeneste –
+                  <span data-t="ed.sermon"></span>.mp3 ·
+                  <span data-t="ex.about"></span> 27 MB</span
+                ><span class="btn primary lg" data-t="ex.go"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>4.3 Eksporter</b
+          ><span
+            >Format og hvor. Kvalitet følger Oppsett; bitrate, bitdybde og kodek
+            finnes ikke her. «Ta med video» vises bare når opptaket har
+            video.</span
+          ><span class="id">editor--export</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="library"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div
+              class="a-main"
+              style="justify-content: center; align-items: center"
+            >
+              <div
+                class="a-card good"
+                style="
+                  width: 620px;
+                  padding: 28px 30px;
+                  display: grid;
+                  gap: 14px;
+                "
+              >
+                <div class="a-row">
+                  <i class="dot good"></i>
+                  <h2
+                    style="font-size: 22px; font-weight: 700"
+                    data-t="ex.done"
+                  ></h2>
+                </div>
+                <div>
+                  <div class="a-val">
+                    2026-08-23 Gudstjeneste –
+                    <span data-t="ed.sermon"></span>.mp3
+                  </div>
+                  <div class="a-muted">
+                    28 min 10 s · 27 MB · Dokumenter / SundayRec
+                  </div>
+                </div>
+                <div class="a-row" style="gap: 10px; margin-top: 6px">
+                  <span class="btn primary lg" data-t="done.show"></span
+                  ><span class="btn lg" data-t="ex.again"></span
+                  ><span class="btn ghost" data-t="ex.backlib"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>4.4 Eksportert</b
+          ><span
+            >Samme kvitteringsform som etter opptak. Originalen er urørt; den
+            redigerte fila har «– preken» i navnet.</span
+          ><span class="id">editor--exported</span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 4</h3>
+        <ol>
+          <li>
+            <b>Mix/master finnes bare som steget «Lyd».</b> Dagens fem dører
+            (Normaliser, Mastering-panel, eksport-mastering, auto-forbedring,
+            mikser) blir én bryter + tre valg.
+            <span class="q"
+              >`_mastert`-fila ved siden av originalen forsvinner.</span
+            >
+          </li>
+          <li>
+            <b>Tre navn: Tale · Tale og musikk · Ingen.</b>
+            <span class="q"
+              >Bak dem ligger dagens LUFS-presets og stemmebehandling — vi
+              velger verdiene, ikke frivilligen.</span
+            >
+          </li>
+          <li>
+            <b>Eksport = format + hvor.</b> Bitrate/bitdybde/kodek ut. MP3
+            følger kvalitetsvalget i Oppsett.
+          </li>
+          <li>
+            <b>Innhold-fanen (tittel/taler/beskrivelse) er borte.</b>
+            <span class="q"
+              >Etter fjerningen brukes feltene bare i sidecar-fila. Kommer
+              tilbake med publisering.</span
+            >
+          </li>
+          <li class="q">
+            <b>Spørsmål:</b> Skal «Behold bare prekenen» også være
+            standard-forslaget <em>uten</em> klikk — altså at eksport uten å
+            røre noe gir preken-utsnittet? Jeg har tegnet det som et aktivt
+            valg.
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 5 ═══════════════════════ -->
+    <section class="set" id="s5">
+      <h2>5 · Oppsett: fem beslutninger</h2>
+      <p class="why">
+        65 kontroller i fem faner blir fem spørsmål som en frivillig kan svare
+        på uten å vite hva en samplingsrate er. Hvert spørsmål viser svaret som
+        står nå og om det er i orden. Under: to tillegg som utvider siden når de
+        slås på, og «Avansert» for alt annet — inkludert alt dagens Lyd-,
+        Opptak- og System-faner har som <em>noen</em> trenger.
+      </p>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="setup"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 12px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="set.title"></h1>
+                  <p class="a-sub" data-t="set.sub"></p>
+                </div>
+              </div>
+              <div class="a-list">
+                <div class="dec done">
+                  <div class="num">1</div>
+                  <div>
+                    <div class="q" data-t="set.q1"></div>
+                    <div class="a">
+                      Behringer X32 · <span data-t="rec.ch"></span> 15–16
+                    </div>
+                    <div class="d">
+                      <span class="receipt"
+                        >✓ <span data-t="vu.hear"></span
+                      ></span>
+                    </div>
+                  </div>
+                  <span class="btn" data-t="c.change"></span>
+                </div>
+                <div class="dec done">
+                  <div class="num">2</div>
+                  <div>
+                    <div class="q" data-t="set.q2"></div>
+                    <div class="a">Dokumenter / SundayRec</div>
+                    <div class="d">
+                      412 GB <span data-t="set.free"></span> ·
+                      <span data-t="set.room"></span> 300 t
+                    </div>
+                  </div>
+                  <span class="btn" data-t="c.change"></span>
+                </div>
+                <div class="dec done">
+                  <div class="num">3</div>
+                  <div>
+                    <div class="q" data-t="set.q3"></div>
+                    <div class="a" data-t="q.good"></div>
+                    <div class="d" data-t="q.goodd"></div>
+                  </div>
+                  <span class="btn" data-t="c.change"></span>
+                </div>
+                <div class="dec done">
+                  <div class="num">4</div>
+                  <div>
+                    <div class="q" data-t="set.q4"></div>
+                    <div class="a">
+                      Bryn menighet · <span data-t="set.lang"></span>
+                    </div>
+                  </div>
+                  <span class="btn" data-t="c.change"></span>
+                </div>
+                <div class="dec todo">
+                  <div class="num">5</div>
+                  <div>
+                    <div class="q" data-t="set.q5"></div>
+                    <div class="a" data-t="set.q5a"></div>
+                    <div class="d" data-t="set.q5d"></div>
+                  </div>
+                  <span class="btn primary" data-t="set.setup"></span>
+                </div>
+              </div>
+              <div
+                class="a-label"
+                style="margin-top: 8px"
+                data-t="set.addons"
+              ></div>
+              <div class="grid2">
+                <div
+                  class="a-card"
+                  style="display: flex; align-items: center; gap: 14px"
+                >
+                  <button class="toggle on"></button>
+                  <div class="a-grow">
+                    <b data-t="rec.camera"></b>
+                    <div class="a-small">FaceTime HD</div>
+                  </div>
+                  <span class="btn ghost" data-t="c.change"></span>
+                </div>
+                <div
+                  class="a-card"
+                  style="display: flex; align-items: center; gap: 14px"
+                >
+                  <button class="toggle on"></button>
+                  <div class="a-grow">
+                    <b data-t="set.auto"></b>
+                    <div class="a-small">
+                      <span data-t="d.sunday"></span> 11:00 · 90 min
+                    </div>
+                  </div>
+                  <span class="btn ghost" data-t="c.change"></span>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: space-between"
+              >
+                <span class="btn ghost" data-t="set.advanced"></span
+                ><span class="a-small"
+                  >SundayRec 1.0.0 · <span data-t="set.uptodate"></span
+                ></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>5.1 Oppsett — nivå 1</b
+          ><span
+            >Fem spørsmål med svar og tilstand. Nummer 5 er gul fordi ingen får
+            beskjed hvis noe går galt — i dag den vanligste tomme innstillingen
+            i eierens egen profil.</span
+          ><span class="id">setup--level1</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="setup"
+              data-status="nosound"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 12px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="set.q1"></h1>
+                  <p class="a-sub" data-t="set.q1d"></p>
+                </div>
+                <span class="btn ghost" data-t="c.back"></span>
+              </div>
+              <div class="a-list">
+                <div class="radio sel">
+                  <i></i>
+                  <div class="a-grow">
+                    <div class="t">
+                      Behringer X32
+                      <span class="chip good" style="margin-left: 6px"
+                        >USB</span
+                      >
+                    </div>
+                    <div class="d" data-t="set.mixer"></div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t">Scarlett 2i2</div>
+                    <div class="d">USB</div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="set.builtin"></div>
+                    <div class="d" data-t="set.builtind"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="a-card">
+                <div
+                  class="a-label"
+                  style="margin-bottom: 10px"
+                  data-t="set.whichch"
+                ></div>
+                <div class="a-row" style="gap: 8px; flex-wrap: wrap">
+                  <span class="chip">1–2</span><span class="chip">3–4</span
+                  ><span class="chip">5–6</span><span class="chip">7–8</span
+                  ><span class="chip">9–10</span><span class="chip">11–12</span
+                  ><span class="chip">13–14</span
+                  ><span class="chip gold">15–16 ✓</span
+                  ><span class="chip">17–18</span
+                  ><span
+                    class="a-small"
+                    style="margin-left: 6px"
+                    data-t="set.chhint"
+                  ></span>
+                </div>
+              </div>
+              <div class="a-card">
+                <div class="vu">
+                  <div class="a-row" style="margin-bottom: 6px">
+                    <i class="dot good"></i><b data-t="vu.hear"></b
+                    ><span class="a-muted" data-t="set.testhint"></span>
+                  </div>
+                  <div class="bar">
+                    <i style="--w: 55%"></i><b style="left: 62%"></b>
+                  </div>
+                  <div class="bar">
+                    <i style="--w: 52%"></i><b style="left: 58%"></b>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: flex-end; gap: 10px"
+              >
+                <span class="btn ghost" data-t="set.advsound"></span
+                ><span class="btn primary lg" data-t="set.usethis"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>5.2 Hvilken lyd? — åpnet</b
+          ><span
+            >Enhet, kanalpar og hørselstest på én skjerm. Kanalrutenettet på 32
+            ruter blir par-brikker med «det som har lyd nå lyser». Lydmotor og
+            samplingsrate bor bak «Avansert lyd».</span
+          ><span class="id">setup--sound</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="setup"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 12px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="set.q5"></h1>
+                  <p class="a-sub" data-t="set.q5dd"></p>
+                </div>
+                <span class="btn ghost" data-t="c.back"></span>
+              </div>
+              <div class="a-card">
+                <div class="srow">
+                  <div>
+                    <div class="t" data-t="ntf.os"></div>
+                    <div class="d" data-t="ntf.osd"></div>
+                  </div>
+                  <button class="toggle on"></button>
+                </div>
+                <div class="srow">
+                  <div>
+                    <div class="t" data-t="ntf.mail"></div>
+                    <div class="d" data-t="ntf.maild"></div>
+                  </div>
+                  <button class="toggle on"></button>
+                </div>
+              </div>
+              <div class="a-card" style="display: grid; gap: 14px">
+                <div class="a-field">
+                  <label data-t="ntf.to"></label>
+                  <div class="in">lydansvarlig@brynmenighet.no</div>
+                </div>
+                <div class="a-row" style="gap: 10px">
+                  <span class="btn primary" data-t="c.save"></span
+                  ><span class="btn" data-t="c.cancel"></span
+                  ><span class="btn ghost" data-t="ntf.test"></span
+                  ><span class="receipt" style="margin-left: auto"
+                    >✓ <span data-t="ntf.testok"></span
+                  ></span>
+                </div>
+                <p class="a-small" data-t="ntf.smtp"></p>
+              </div>
+              <div
+                class="a-card"
+                style="display: flex; align-items: center; gap: 14px"
+              >
+                <button class="toggle on"></button>
+                <div class="a-grow">
+                  <b data-t="ntf.remind"></b>
+                  <div class="a-small" data-t="ntf.remindd"></div>
+                </div>
+                <span class="sel-in">15 min ▾</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>5.3 Hvem får beskjed? — åpnet</b
+          ><span
+            >OS-varsel alltid, én e-postadresse med eksplisitt Lagre (ikke
+            auto-lagring — det er den ene innstillingen der et halvskrevet felt
+            ikke må lagres). SMTP er én setning og en lenke.</span
+          ><span class="id">setup--notify</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="setup"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 10px">
+              <div class="a-head">
+                <div>
+                  <h1 class="a-h1" data-t="adv.title"></h1>
+                  <p class="a-sub" data-t="adv.sub"></p>
+                </div>
+                <span class="btn ghost" data-t="c.back"></span>
+              </div>
+              <div class="a-card acc" style="padding: 4px 20px">
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.engine"></div>
+                    <div class="d" data-t="adv.engined"></div>
+                  </div>
+                  <div class="v">
+                    <span data-t="adv.native"></span><span class="kbd">▾</span>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.preroll"></div>
+                    <div class="d" data-t="adv.prerolld"></div>
+                  </div>
+                  <div class="v">15 s<span class="kbd">▾</span></div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.silence"></div>
+                    <div class="d" data-t="adv.silenced"></div>
+                  </div>
+                  <div class="v">
+                    <span data-t="c.off"></span><button class="toggle"></button>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.maxlen"></div>
+                    <div class="d" data-t="adv.maxlend"></div>
+                  </div>
+                  <div class="v">3 t<span class="kbd">▾</span></div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.split"></div>
+                    <div class="d" data-t="adv.splitd"></div>
+                  </div>
+                  <div class="v">
+                    <span data-t="c.off"></span><button class="toggle"></button>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.autodel"></div>
+                    <div class="d" data-t="adv.autodeld"></div>
+                  </div>
+                  <div class="v">
+                    90 <span data-t="lib.days"></span
+                    ><button class="toggle on"></button>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.mixer"></div>
+                    <div class="d" data-t="adv.mixerd"></div>
+                  </div>
+                  <div class="v">
+                    <span class="btn ghost" data-t="c.open"></span>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.diag"></div>
+                    <div class="d" data-t="adv.diagd"></div>
+                  </div>
+                  <div class="v">
+                    <span class="btn ghost" data-t="adv.show"></span
+                    ><button class="toggle on"></button>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.update"></div>
+                    <div class="d" data-t="adv.updated"></div>
+                  </div>
+                  <div class="v">
+                    <span data-t="adv.stable"></span><span class="kbd">▾</span>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.log"></div>
+                    <div class="d" data-t="adv.logd"></div>
+                  </div>
+                  <div class="v">
+                    <span class="btn ghost" data-t="adv.show"></span
+                    ><span class="btn ghost" data-t="adv.copy"></span>
+                  </div>
+                </div>
+                <div class="r">
+                  <div>
+                    <div class="t" data-t="adv.profile"></div>
+                    <div class="d" data-t="adv.profiled"></div>
+                  </div>
+                  <div class="v">
+                    <span class="btn ghost" data-t="adv.export"></span
+                    ><span class="btn ghost" data-t="adv.import"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>5.4 Avansert</b
+          ><span
+            >Alt som har en leser i Rust og som noen faktisk trenger, som én
+            liste med ett ord per rad. Ingen faner. De fire innstillingene uten
+            bakendleser er ikke med.</span
+          ><span class="id">setup--advanced</span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 5</h3>
+        <ol>
+          <li>
+            <b>Fem spørsmål er hele nivå 1.</b> Kvalitet = «God / Best / Arkiv»
+            (MP3 256 / FLAC / WAV) — ikke format og bitrate som to valg.
+          </li>
+          <li>
+            <b>«Hvem får beskjed?» er gul til det er svart.</b>
+            <span class="q"
+              >Det er den ene innstillingen som forhindrer tapte gudstjenester,
+              og den eneste som var tom på din maskin.</span
+            >
+          </li>
+          <li>
+            <b>Tilleggene utvider siden</b>; «Ta opp automatisk» holder én
+            ukentlig tid + varighet.
+            <span class="q"
+              >Kalenderen med spesialopptak og vekke-diagnostikken går til
+              Avansert.</span
+            >
+          </li>
+          <li>
+            <b>Avansert er én liste</b> — lydmotor, forhåndsbuffer, stillhet,
+            maks lengde, deling av filer, sletting, mikser, diagnostikk,
+            oppdateringskanal, logg, profil.
+            <span class="q"
+              >Ute: «Spør om redigering etter opptak», «Beskytt opptak»,
+              «Oppdater automatisk», «Start med maskinen» — de fire har ingen
+              bakendleser eller er alltid på.</span
+            >
+          </li>
+          <li class="q">
+            <b>Spørsmål:</b> Skal «Start automatisk med maskinen» likevel inn
+            under «Ta opp automatisk» (det er meningsløst uten)?
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 6 ═══════════════════════ -->
+    <section class="set" id="s6">
+      <h2>6 · Første gang</h2>
+      <p class="why">
+        Ingen egen veiviser: første gang er Oppsett vist ett spørsmål om gangen,
+        og lydtesten er porten. Dagens veiviser spør aldri om lagringsmappe og
+        sier «Alt er klart!» til en app som tar opp på feil mikrofon. Her sier
+        siste skjerm bare det som er sant.
+      </p>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="a-main" style="padding: 44px 120px; gap: 18px">
+              <div class="a-row" style="justify-content: space-between">
+                <div class="a-logo"><i>S</i><b>SundayRec</b></div>
+                <div class="stepdots">
+                  <i class="on"></i><i></i><i></i><i></i><i></i>
+                </div>
+              </div>
+              <div>
+                <div class="a-label" data-t="ob.step"></div>
+                <h1
+                  class="a-h1"
+                  style="font-size: 30px; margin-top: 6px"
+                  data-t="set.q1"
+                ></h1>
+                <p class="a-sub" style="margin-top: 6px" data-t="ob.q1d"></p>
+              </div>
+              <div class="a-list">
+                <div class="radio sel">
+                  <i></i>
+                  <div class="a-grow">
+                    <div class="t">
+                      Behringer X32
+                      <span class="chip good" style="margin-left: 6px"
+                        >USB</span
+                      >
+                    </div>
+                    <div class="d" data-t="set.mixer"></div>
+                  </div>
+                </div>
+                <div class="radio">
+                  <i></i>
+                  <div>
+                    <div class="t" data-t="set.builtin"></div>
+                    <div class="d" data-t="set.builtind"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="a-card">
+                <div class="vu">
+                  <div class="a-row" style="margin-bottom: 6px">
+                    <i class="dot warn"></i><b data-t="vu.nothing"></b
+                    ><span class="a-muted" data-t="ob.talk"></span>
+                  </div>
+                  <div class="bar"></div>
+                  <div class="bar"></div>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: space-between"
+              >
+                <span
+                  class="btn ghost"
+                  style="color: var(--a-ink-3)"
+                  data-t="ob.skip"
+                ></span
+                ><span class="btn primary lg" disabled data-t="ob.next"></span>
+              </div>
+              <p class="a-small" style="text-align: right" data-t="ob.gate"></p>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>6.1 Første gang — steg 1 av 5, porten</b
+          ><span
+            >«Neste» er sperret til appen hører lyd. «Fortsett uten lyd» finnes,
+            i grått, og gjør statuslinjen gul til testen er gjort.</span
+          ><span class="id">firstrun--sound-gate</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="a-main" style="padding: 44px 120px; gap: 18px">
+              <div class="a-row" style="justify-content: space-between">
+                <div class="a-logo"><i>S</i><b>SundayRec</b></div>
+                <div class="stepdots">
+                  <i class="done"></i><i class="done"></i><i class="done"></i
+                  ><i class="done"></i><i class="done"></i>
+                </div>
+              </div>
+              <div>
+                <h1
+                  class="a-h1"
+                  style="font-size: 30px"
+                  data-t="ob.readytitle"
+                ></h1>
+                <p class="a-sub" style="margin-top: 6px" data-t="ob.readyd"></p>
+              </div>
+              <div class="a-card acc" style="padding: 4px 20px">
+                <div class="r">
+                  <i class="dot good"></i>
+                  <div>
+                    <div class="t" data-t="set.q1"></div>
+                    <div class="d">
+                      Behringer X32 · <span data-t="rec.ch"></span> 15–16 ·
+                      <span data-t="vu.heard"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="r">
+                  <i class="dot good"></i>
+                  <div>
+                    <div class="t" data-t="set.q2"></div>
+                    <div class="d">
+                      Dokumenter / SundayRec · 412 GB
+                      <span data-t="set.free"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="r">
+                  <i class="dot good"></i>
+                  <div>
+                    <div class="t" data-t="set.q3"></div>
+                    <div class="d" data-t="q.good"></div>
+                  </div>
+                </div>
+                <div class="r">
+                  <i class="dot good"></i>
+                  <div>
+                    <div class="t" data-t="set.q4"></div>
+                    <div class="d">
+                      Bryn menighet · <span data-t="set.lang"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="r">
+                  <i class="dot warn"></i>
+                  <div>
+                    <div class="t" data-t="set.q5"></div>
+                    <div class="d" data-t="ob.notset"></div>
+                  </div>
+                  <div class="v">
+                    <span class="btn ghost" data-t="set.setup"></span>
+                  </div>
+                </div>
+              </div>
+              <div
+                class="a-row"
+                style="margin-top: auto; justify-content: flex-end; gap: 10px"
+              >
+                <span class="btn primary lg" data-t="ob.open"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>6.2 Første gang — klar til søndag</b
+          ><span
+            >Sjekklisten er de samme fem spørsmålene. Ingen «Alt er klart!» —
+            den gule raden er gul, og den følger med inn i Oppsett.</span
+          ><span class="id">firstrun--ready</span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 6</h3>
+        <ol>
+          <li>
+            <b>Første gang = Oppsett i sekvens.</b> Samme komponenter, samme
+            nøkler — ingen egen veiviser-kode å vedlikeholde.
+          </li>
+          <li>
+            <b>Lydtesten er porten</b>, med en grå nødutgang.
+            <span class="q"
+              >Diagnostikk-samtykket er ikke et steg lenger; det spørres én gang
+              som kort første gang appen står på Opptak (sett 7).</span
+            >
+          </li>
+          <li>
+            <b>«Ta opp automatisk» er ikke et steg.</b> Manuelt først; tillegget
+            tilbys på Opptak-siden etterpå.
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════ SET 7 ═══════════════════════ -->
+    <section class="set" id="s7">
+      <h2>7 · Tomt, feil og beskjed</h2>
+      <p class="why">
+        Det som skjer når noe mangler eller går galt, tegnet som gjenbrukbare
+        former. Feil sier hva som skjedde, når, og hva du kan gjøre — aldri
+        «ukjent feil». Atlaset fant at den viktigste tomtilstanden i appen
+        (ingen lagringsmappe) ikke fantes i det hele tatt.
+      </p>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board">
+            <div
+              class="a-rail"
+              data-rail="record"
+              data-status="ready"
+              data-church="set"
+            ></div>
+            <div class="a-main" style="gap: 14px">
+              <div class="banner bad">
+                <i class="dot" style="background: var(--a-bad)"></i>
+                <div>
+                  <div data-t="err.lost"></div>
+                  <div
+                    class="a-small"
+                    style="font-weight: 400"
+                    data-t="err.lostd"
+                  ></div>
+                </div>
+                <div class="x">
+                  <span class="btn" data-t="err.openlib"></span
+                  ><span class="btn ghost" data-t="c.dismiss"></span>
+                </div>
+              </div>
+              <div class="banner warn">
+                <i class="dot warn"></i>
+                <div>
+                  <div data-t="err.disk"></div>
+                  <div
+                    class="a-small"
+                    style="font-weight: 400"
+                    data-t="err.diskd"
+                  ></div>
+                </div>
+                <div class="x"><span class="btn" data-t="err.free"></span></div>
+              </div>
+              <div class="banner warn">
+                <i class="dot warn"></i>
+                <div>
+                  <div data-t="err.missed"></div>
+                  <div
+                    class="a-small"
+                    style="font-weight: 400"
+                    data-t="err.missedd"
+                  ></div>
+                </div>
+                <div class="x">
+                  <span class="btn" data-t="err.why"></span
+                  ><span class="btn ghost" data-t="c.dismiss"></span>
+                </div>
+              </div>
+              <div
+                class="a-card"
+                style="
+                  margin-top: 10px;
+                  width: 640px;
+                  display: grid;
+                  gap: 12px;
+                  border-color: var(--a-gold-line);
+                "
+              >
+                <b style="font-size: 16px" data-t="cons.title"></b>
+                <p class="a-muted" data-t="cons.d"></p>
+                <div class="a-row" style="gap: 10px">
+                  <span class="btn" data-t="cons.no"></span
+                  ><span class="btn primary" data-t="cons.yes"></span
+                  ><span class="btn ghost" data-t="cons.what"></span>
+                </div>
+              </div>
+            </div>
+            <div class="toast bad">
+              <span data-t="c.toastbad"></span
+              ><span
+                class="btn ghost"
+                style="padding: 0"
+                data-t="c.retry"
+              ></span>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>7.1 Bannere, samtykkekortet og en feil-toast</b
+          ><span
+            >Rød stripe = noe gikk tapt, med tidspunkt. Gul = noe trenger deg
+            før søndag. Samtykkekortet har to likeverdige knapper og «Hva
+            sendes?».</span
+          ><span class="id">states--banners</span>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="board-wrap">
+          <div class="board" style="grid-template-columns: 1fr">
+            <div class="a-main" style="padding: 26px 32px">
+              <div class="gallery">
+                <div class="a-card">
+                  <h3 data-t="g.nofolder"></h3>
+                  <div class="empty" style="padding: 18px">
+                    <b data-t="e.nofolder"></b
+                    ><span class="a-small" data-t="e.nofolderd"></span
+                    ><span class="btn primary" data-t="e.pickfolder"></span>
+                  </div>
+                </div>
+                <div class="a-card">
+                  <h3 data-t="g.nocam"></h3>
+                  <div class="empty" style="padding: 18px">
+                    <b data-t="e.nocam"></b
+                    ><span class="a-small" data-t="e.nocamd"></span
+                    ><span class="btn" data-t="rec.retry"></span>
+                  </div>
+                </div>
+                <div class="a-card">
+                  <h3 data-t="g.nodev"></h3>
+                  <div class="empty" style="padding: 18px">
+                    <b data-t="e.nodev"></b
+                    ><span class="a-small" data-t="e.nodevd"></span
+                    ><span class="btn" data-t="rec.retry"></span>
+                  </div>
+                </div>
+                <div class="a-card">
+                  <h3 data-t="g.loadfail"></h3>
+                  <div class="empty" style="padding: 18px">
+                    <b data-t="e.loadfail"></b
+                    ><span class="a-small" data-t="e.loadfaild"></span
+                    ><span class="btn" data-t="done.show"></span>
+                  </div>
+                </div>
+                <div class="a-card" style="grid-column: 1/-1">
+                  <h3 data-t="g.dialog"></h3>
+                  <div
+                    class="dialog"
+                    style="width: auto; box-shadow: none; padding: 18px 20px"
+                  >
+                    <h3 data-t="dlg.emptytrash"></h3>
+                    <p data-t="dlg.emptytrashd"></p>
+                    <div class="acts">
+                      <span class="btn" data-t="c.cancel"></span
+                      ><span class="btn danger" data-t="lib.emptytrash"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <b>7.2 Tomtilstander og den farlige dialogen</b
+          ><span
+            >Samme EmptyState-komponent overalt: hva som mangler, hvorfor det
+            betyr noe, og den ene knappen. Farlige dialoger har rød
+            sekundærknapp — aldri rød primær.</span
+          ><span class="id">states--empty</span>
+        </figcaption>
+      </figure>
+
+      <div class="decide">
+        <h3>Dette sier du ja til ved å godkjenne sett 7</h3>
+        <ol>
+          <li>
+            <b>Tre bannerformer</b> (tapt / trenger deg / gikk glipp av) og én
+            toast-form. Ingen egen oppdateringstoast — oppdateringer er en rad i
+            Avansert og et gult banner når en er klar.
+          </li>
+          <li>
+            <b>Samtykkekortet vises på Opptak, én gang</b>, etter første
+            oppstart. Ikke i sekvensen.
+          </li>
+          <li>
+            <b>Ingen lagringsmappe blir en ekte tomtilstand</b> på Opptak og i
+            Oppsett — den som i dag ikke finnes.
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="set" id="s8">
+      <h2>Alle avgjørelsene samlet</h2>
+      <p class="why">
+        Svar gjerne med settnummer: «godkjenn 0–3, juster 4.2 slik …». Alt som
+        ikke er nevnt går som tegnet. Spørsmålene merket <em>?</em> er de jeg
+        ikke kan avgjøre for deg.
+      </p>
+      <div class="scroll">
+        <table class="keys">
+          <tr>
+            <th>Sett</th>
+            <th>Avgjørelse</th>
+            <th>Type</th>
+          </tr>
+          <tr>
+            <td>0</td>
+            <td>
+              Mørk app, gull-aksent, rødt kun for opptak; Hanken Grotesk; ingen
+              tall i nivå 1-måleren; biblioteket er komplett
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>1</td>
+            <td>
+              Opptak · Bibliotek · Oppsett; statuslinjen er eneste «alt er
+              klart»; kirkenavn i skinnen
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>
+              Start sperret til lydkilde er valgt eksplisitt; ingen
+              hero/format/lagring-kort; Stopp ikke rød; kvitteringskort
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>
+              «Bruk maskinens mikrofon» som nødutgang når mikseren er borte
+            </td>
+            <td><b>?</b></td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>
+              Historikk + Rediger-inngang = Bibliotek; slett uten dialog m/
+              angre; notat og Lyd/Video-filter ut
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>
+              Mix/master = steget Lyd (bryter + Tale / Tale og musikk / Ingen);
+              eksport = format + hvor; Innhold-fanen ut
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Skal preken-utsnittet være standard uten klikk?</td>
+            <td><b>?</b></td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>
+              Fem spørsmål; kvalitet = God/Best/Arkiv; «Hvem får beskjed?» gul
+              til svart; tillegg utvider; Avansert = én liste; fire leserløse
+              innstillinger ut
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>«Start med maskinen» inn under «Ta opp automatisk»?</td>
+            <td><b>?</b></td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>
+              Første gang = Oppsett i sekvens; lydtest som port m/ grå
+              nødutgang; samtykke og tidsplan er ikke steg
+            </td>
+            <td>godkjenn</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>
+              Tre bannerformer, én toast, samtykkekort på Opptak, «ingen mappe»
+              som ekte tomtilstand
+            </td>
+            <td>godkjenn</td>
+          </tr>
+        </table>
+      </div>
+      <p class="why" style="margin-top: 18px">
+        Når settene er godkjent starter fase S1b (komponentbiblioteket slik sett
+        0 viser det) og deretter P1 Oppsett — den siden som prøver hele
+        fundamentet. Språknøklene i artboardene er første utkast til
+        <code>no.json</code>/<code>en.json</code> for det nye skallet.
+      </p>
+    </section>
+  </main>
+</div>
+<script>
+  /* Copy dictionary — [no, en]. This IS the first draft of app/ locale keys. */
+  const T = {
+    "c.title": ["Byggeklossene", "The building blocks"],
+    "c.sub": [
+      "Én av hver. Alt i appen settes sammen av disse.",
+      "One of each. Everything in the app is built from these.",
+    ],
+    "c.save": ["Lagre", "Save"],
+    "c.cancel": ["Avbryt", "Cancel"],
+    "c.change": ["Endre", "Change"],
+    "c.delete": ["Slett", "Delete"],
+    "c.busy": ["Lagrer …", "Saving …"],
+    "c.saved": ["Lagret", "Saved"],
+    "c.row1": ["Varsle når opptaket starter", "Notify when recording starts"],
+    "c.row1d": [
+      "Et lite varsel fra maskinen, ikke e-post.",
+      "A small notification from the computer, not email.",
+    ],
+    "c.row2": ["Slett automatisk etter", "Delete automatically after"],
+    "c.row2d": [
+      "Opptak eldre enn dette flyttes til papirkurven.",
+      "Recordings older than this go to the trash.",
+    ],
+    "c.row2e": ["Må være minst 30 dager.", "Must be at least 30 days."],
+    "c.gate": [
+      "Slå på «Ta med kamera» først",
+      "Turn on “Include camera” first",
+    ],
+    "c.gated": ["Behold separat lydfil", "Keep a separate audio file"],
+    "c.toastok": ["Lagret", "Saved"],
+    "c.toastbad": [
+      "Kunne ikke lagre — verdien er satt tilbake",
+      "Couldn’t save — the value was reverted",
+    ],
+    "c.retry": ["Prøv igjen", "Try again"],
+    "c.undo": ["Angre", "Undo"],
+    "c.back": ["Tilbake", "Back"],
+    "c.off": ["Av", "Off"],
+    "c.open": ["Åpne", "Open"],
+    "c.recommended": ["Anbefalt", "Recommended"],
+    "c.dismiss": ["Lukk", "Dismiss"],
+    "st.ready": ["Alt er klart", "All set"],
+    "st.nosound": ["Lyden er ikke koblet til", "Sound isn’t connected"],
+    "st.rec": ["Tar opp", "Recording"],
+    "st.listen": ["Lytter", "Listening"],
+    "st.next": ["Neste opptak søndag 11:00", "Next recording Sunday 11:00"],
+    "st.lowdisk": ["Lite plass igjen", "Running out of space"],
+    "sh.variants": ["Statuslinjen kan si", "The status line can say"],
+    "sh.v1": [
+      "Lydkilde valgt og hørt, plass på disken.",
+      "Sound source chosen and heard, space on disk.",
+    ],
+    "sh.v2": [
+      "Ingen kilde valgt, eller mikseren er borte.",
+      "No source chosen, or the mixer is gone.",
+    ],
+    "sh.v3": [
+      "Tiden teller. Klikk går til opptaket.",
+      "The clock is running. Click goes to the recording.",
+    ],
+    "sh.v4": [
+      "Når «Ta opp automatisk» er på.",
+      "When “Record automatically” is on.",
+    ],
+    "sh.v5": ["Under 2 timer igjen.", "Less than 2 hours left."],
+    "sh.note": [
+      "Setningen er alltid den samme fem, aldri fri tekst. Gul betyr «du må gjøre noe før søndag». Rød betyr bare at opptaket går.",
+      "Always one of these five, never free text. Amber means “you need to do something before Sunday”. Red only ever means the recording is running.",
+    ],
+    "rec.title": ["Opptak", "Record"],
+    "rec.sub": [
+      "Trykk Start når gudstjenesten begynner.",
+      "Press Start when the service begins.",
+    ],
+    "rec.listening": ["Lytter", "Listening"],
+    "rec.source": ["Lyd fra", "Sound from"],
+    "rec.ch": ["kanal", "channel"],
+    "rec.start": ["Start opptak", "Start recording"],
+    "rec.camera": ["Ta med kamera", "Include camera"],
+    "rec.nextauto": ["Neste automatiske opptak", "Next automatic recording"],
+    "rec.nextautod": [
+      "Om 2 dager · 90 min · maskinen vekkes",
+      "In 2 days · 90 min · the computer will wake",
+    ],
+    "rec.last": ["Siste opptak", "Last recording"],
+    "rec.nosrc": [
+      "Du har ikke valgt hvor lyden kommer fra",
+      "You haven’t chosen where the sound comes from",
+    ],
+    "rec.nosrcd": [
+      "Velg miksebordet — eller maskinens egen mikrofon hvis det er det dere bruker.",
+      "Choose the mixer — or the computer’s own microphone if that’s what you use.",
+    ],
+    "rec.choose": ["Velg lyd", "Choose sound"],
+    "rec.whyblocked": [
+      "Start er sperret til lyden er valgt. Vi tar aldri opp på en kilde ingen har valgt.",
+      "Start is blocked until sound is chosen. We never record from a source nobody picked.",
+    ],
+    "rec.autoq": [
+      "Skal SundayRec ta opp hver søndag av seg selv?",
+      "Should SundayRec record every Sunday by itself?",
+    ],
+    "rec.autoqd": [
+      "Sett en tid én gang. Maskinen vekkes og starter selv.",
+      "Set a time once. The computer wakes and starts on its own.",
+    ],
+    "rec.setup": ["Sett opp", "Set up"],
+    "rec.lost": ["Finner ikke Behringer X32", "Can’t find Behringer X32"],
+    "rec.lostd": [
+      "Sjekk at mikseren er på og at USB-kabelen sitter. Sist sett i går 19:42.",
+      "Check that the mixer is on and the USB cable is in. Last seen yesterday 19:42.",
+    ],
+    "rec.usebuiltin": [
+      "Bruk maskinens mikrofon",
+      "Use the computer’s microphone",
+    ],
+    "rec.retry": ["Søk igjen", "Search again"],
+    "rec.canstart": [
+      "Du kan starte likevel — opptaket blir stille til mikseren er tilbake.",
+      "You can start anyway — the recording stays silent until the mixer is back.",
+    ],
+    "vu.hear": ["Vi hører lyd", "We hear sound"],
+    "vu.heard": ["Nivået er bra.", "The level is good."],
+    "vu.nothing": ["Vi hører ingenting", "We hear nothing"],
+    "vu.nothingd": ["Er mikseren på?", "Is the mixer on?"],
+    "vu.quiet": ["Stille", "Quiet"],
+    "vu.good": ["Bra", "Good"],
+    "vu.loud": ["For høyt", "Too loud"],
+    "ov.fine": ["Alt ser bra ut", "Everything looks good"],
+    "ov.room": ["Plass til", "Room for"],
+    "ov.camera": ["Kamera", "Camera"],
+    "ov.stop": ["Stopp opptaket", "Stop recording"],
+    "ov.hint": [
+      "Du kan lukke vinduet — opptaket fortsetter i bakgrunnen.",
+      "You can close the window — recording continues in the background.",
+    ],
+    "ov.stopq": ["Stoppe opptaket?", "Stop the recording?"],
+    "ov.stopqd": [
+      "1 t 02 min er tatt opp. Stopper du nå, lagres det du har.",
+      "1 h 02 min recorded so far. If you stop now, what you have is saved.",
+    ],
+    "ov.stopyes": ["Stopp", "Stop"],
+    "ov.continue": ["Fortsett å ta opp", "Keep recording"],
+    "done.title": ["Opptaket er lagret", "Recording saved"],
+    "done.edit": ["Åpne i Rediger", "Open in Edit"],
+    "done.show": ["Vis i Finder", "Show in Finder"],
+    "done.ok": ["Ferdig", "Done"],
+    "lib.title": ["Bibliotek", "Library"],
+    "lib.count": ["opptak", "recordings"],
+    "lib.search": ["Søk etter dato eller navn", "Search by date or name"],
+    "lib.video": ["Video", "Video"],
+    "lib.exported": ["Eksportert", "Exported"],
+    "lib.edited": ["Redigert", "Edited"],
+    "lib.interrupted": ["Avbrutt", "Interrupted"],
+    "lib.manual": ["manuelt", "manual"],
+    "lib.openedit": ["Rediger", "Edit"],
+    "lib.show": ["Vis i Finder", "Show in Finder"],
+    "lib.autodel": ["Slettes automatisk etter", "Deleted automatically after"],
+    "lib.days": ["dager", "days"],
+    "lib.trash": ["Papirkurv (2)", "Trash (2)"],
+    "lib.trashempty": ["Papirkurven er tom", "Trash is empty"],
+    "lib.empty": ["Ingen opptak ennå", "No recordings yet"],
+    "lib.emptyd": [
+      "Det første dukker opp her når du har tatt opp.",
+      "The first one shows up here once you’ve recorded.",
+    ],
+    "lib.gorec": ["Gå til Opptak", "Go to Record"],
+    "lib.trashtitle": ["Papirkurv", "Trash"],
+    "lib.trashd": [
+      "Opptak her slettes for godt etter 30 dager.",
+      "Recordings here are deleted for good after 30 days.",
+    ],
+    "lib.back": ["Tilbake til biblioteket", "Back to library"],
+    "lib.deletedin": ["Slettes om", "Deleted in"],
+    "lib.restore": ["Legg tilbake", "Put back"],
+    "lib.delnow": ["Slett nå", "Delete now"],
+    "lib.emptytrash": ["Tøm papirkurven", "Empty trash"],
+    "lib.movedtrash": ["Flyttet til papirkurven", "Moved to trash"],
+    "ed.close": ["Lukk", "Close"],
+    "ed.cut": ["Klipp", "Cut"],
+    "ed.sound": ["Lyd", "Sound"],
+    "ed.export": ["Eksporter", "Export"],
+    "ed.found": ["Vi tror prekenen er her", "We think the sermon is here"],
+    "ed.foundd": [
+      "Fra 0:13:40 til 0:41:50 — 28 minutter. Dra i håndtakene for å justere.",
+      "From 0:13:40 to 0:41:50 — 28 minutes. Drag the handles to adjust.",
+    ],
+    "ed.keepsermon": ["Behold bare prekenen", "Keep only the sermon"],
+    "ed.keepall": ["Behold alt", "Keep everything"],
+    "ed.sermon": ["preken", "sermon"],
+    "ed.sermonCap": ["Preken", "Sermon"],
+    "ed.result": ["Resultat", "Result"],
+    "ed.manual": ["Klipp manuelt", "Cut manually"],
+    "ed.next": ["Neste: Eksporter", "Next: Export"],
+    "snd.auto": ["Automatisk lydforbedring", "Automatic sound improvement"],
+    "snd.autod": [
+      "Jevner ut nivået og gjør talen tydeligere. Originalen røres ikke.",
+      "Evens out the level and makes speech clearer. The original is untouched.",
+    ],
+    "snd.speech": ["Tale", "Speech"],
+    "snd.speechd": [
+      "For preken og liturgi. Anbefalt.",
+      "For sermon and liturgy. Recommended.",
+    ],
+    "snd.mixed": ["Tale og musikk", "Speech and music"],
+    "snd.mixedd": [
+      "Når lovsang skal være med.",
+      "When worship music is included.",
+    ],
+    "snd.none": ["Ingen", "None"],
+    "snd.noned": [
+      "Eksporter lyden slik den ble tatt opp.",
+      "Export the sound exactly as recorded.",
+    ],
+    "snd.listen": ["Lytt", "Listen"],
+    "snd.before": ["Før", "Before"],
+    "snd.after": ["Etter", "After"],
+    "snd.sample": ["20 sekunder fra prekenen", "20 seconds from the sermon"],
+    "snd.advanced": ["Avansert: åpne mikseren", "Advanced: open the mixer"],
+    "ex.format": ["Format", "Format"],
+    "ex.mp3d": [
+      "Liten fil. Passer for nett og deling.",
+      "Small file. Good for the web and sharing.",
+    ],
+    "ex.flacd": [
+      "Samme kvalitet som opptaket, mindre fil.",
+      "Same quality as the recording, smaller file.",
+    ],
+    "ex.wavd": ["Ukomprimert. Størst fil.", "Uncompressed. Largest file."],
+    "ex.where": ["Hvor", "Where"],
+    "ex.samefolder": [
+      "Samme mappe som opptaket",
+      "Same folder as the recording",
+    ],
+    "ex.pick": ["Velg mappe …", "Choose folder …"],
+    "ex.pickd": [
+      "Minnepinne, Dropbox-mappe, hvor som helst.",
+      "USB stick, Dropbox folder, anywhere.",
+    ],
+    "ex.video": ["Ta med video (MP4)", "Include video (MP4)"],
+    "ex.videod": [
+      "Opptaket har video fra FaceTime HD.",
+      "The recording has video from FaceTime HD.",
+    ],
+    "ex.about": ["ca.", "about"],
+    "ex.go": ["Eksporter", "Export"],
+    "ex.done": ["Eksportert", "Exported"],
+    "ex.again": ["Eksporter i annet format", "Export in another format"],
+    "ex.backlib": ["Til biblioteket", "To the library"],
+    "set.title": ["Oppsett", "Setup"],
+    "set.sub": [
+      "Fem spørsmål. Svar én gang, så er dere klare hver søndag.",
+      "Five questions. Answer once, and you’re ready every Sunday.",
+    ],
+    "set.q1": ["Hvilken lyd?", "Which sound?"],
+    "set.q1d": [
+      "Velg det dere tar opp fra, og sjekk at vi hører det.",
+      "Choose what you record from, and check that we hear it.",
+    ],
+    "set.q2": ["Hvor skal opptakene?", "Where do recordings go?"],
+    "set.q3": ["Hvilken kvalitet?", "Which quality?"],
+    "set.q4": ["Hvilken kirke?", "Which church?"],
+    "set.q5": [
+      "Hvem får beskjed hvis noe går galt?",
+      "Who gets told if something goes wrong?",
+    ],
+    "set.q5a": ["Ingen ennå", "Nobody yet"],
+    "set.q5d": [
+      "Hvis et opptak stopper, bør noen få vite det før gudstjenesten er over.",
+      "If a recording stops, someone should know before the service ends.",
+    ],
+    "set.q5dd": [
+      "Maskinen sier alltid fra. E-post er for den som ikke sitter ved den.",
+      "The computer always tells you. Email is for whoever isn’t sitting at it.",
+    ],
+    "set.setup": ["Sett opp", "Set up"],
+    "set.free": ["ledig", "free"],
+    "set.room": ["plass til", "room for"],
+    "set.lang": ["norsk", "Norwegian"],
+    "set.addons": ["Tillegg", "Add-ons"],
+    "set.auto": ["Ta opp automatisk", "Record automatically"],
+    "set.advanced": ["Avansert", "Advanced"],
+    "set.uptodate": ["oppdatert", "up to date"],
+    "set.mixer": ["Miksebord · 32 kanaler", "Mixer · 32 channels"],
+    "set.builtin": ["Maskinens egen mikrofon", "The computer’s own microphone"],
+    "set.builtind": [
+      "Kun for test, eller hvis dere ikke har mikser.",
+      "For testing only, or if you have no mixer.",
+    ],
+    "set.whichch": ["Hvilke kanaler?", "Which channels?"],
+    "set.chhint": [
+      "De som har lyd nå, lyser.",
+      "The ones with sound right now light up.",
+    ],
+    "set.testhint": [
+      "Snakk i mikrofonen eller spill litt.",
+      "Speak into the microphone or play something.",
+    ],
+    "set.advsound": ["Avansert lyd", "Advanced sound"],
+    "set.usethis": ["Bruk denne", "Use this"],
+    "ntf.os": ["Varsel på maskinen", "Notification on the computer"],
+    "ntf.osd": [
+      "Når opptaket starter, stopper eller feiler. Alltid på.",
+      "When recording starts, stops or fails. Always on.",
+    ],
+    "ntf.mail": ["E-post hvis noe går galt", "Email if something goes wrong"],
+    "ntf.maild": [
+      "Én adresse. Sendes bare ved feil, aldri ellers.",
+      "One address. Sent only on failure, never otherwise.",
+    ],
+    "ntf.to": ["Send til", "Send to"],
+    "ntf.test": ["Send en test", "Send a test"],
+    "ntf.testok": ["Testen kom fram 11:02", "Test arrived 11:02"],
+    "ntf.smtp": [
+      "E-posten sendes via SundaySuite. Vil du bruke deres egen e-postserver (SMTP)? Sett opp under Avansert.",
+      "Email is sent via SundaySuite. Want to use your own mail server (SMTP)? Set it up under Advanced.",
+    ],
+    "ntf.remind": [
+      "Påminnelse før automatisk opptak",
+      "Reminder before automatic recording",
+    ],
+    "ntf.remindd": [
+      "Så noen rekker å slå på mikseren.",
+      "So someone has time to turn on the mixer.",
+    ],
+    "adv.title": ["Avansert", "Advanced"],
+    "adv.sub": [
+      "Ting de fleste aldri trenger å røre. Alt her har en trygg standard.",
+      "Things most people never need to touch. Everything here has a safe default.",
+    ],
+    "adv.engine": ["Opptaksmotor", "Recording engine"],
+    "adv.engined": [
+      "Bytt bare hvis lyden er hakkete.",
+      "Only switch if the sound stutters.",
+    ],
+    "adv.native": ["Innebygd", "Built-in"],
+    "adv.preroll": ["Forhåndsbuffer", "Pre-roll buffer"],
+    "adv.prerolld": [
+      "Lyd som tas med fra før du trykket Start.",
+      "Sound kept from before you pressed Start.",
+    ],
+    "adv.silence": ["Stopp ved lang stillhet", "Stop on long silence"],
+    "adv.silenced": [
+      "Stopper automatisk etter 5 minutter uten lyd.",
+      "Stops automatically after 5 minutes without sound.",
+    ],
+    "adv.maxlen": ["Maks lengde på et opptak", "Maximum recording length"],
+    "adv.maxlend": [
+      "Sikkerhetsnett hvis noen glemmer å stoppe.",
+      "A safety net if someone forgets to stop.",
+    ],
+    "adv.split": ["Del opp lange opptak", "Split long recordings"],
+    "adv.splitd": ["Én fil per time.", "One file per hour."],
+    "adv.autodel": ["Slett gamle opptak", "Delete old recordings"],
+    "adv.autodeld": [
+      "Flyttes til papirkurven, ikke slettet for godt.",
+      "Moved to the trash, not deleted for good.",
+    ],
+    "adv.mixer": ["Mikser og lydbehandling", "Mixer and sound processing"],
+    "adv.mixerd": [
+      "Standardverdiene bak «Tale» og «Tale og musikk».",
+      "The defaults behind “Speech” and “Speech and music”.",
+    ],
+    "adv.diag": ["Del anonym diagnostikk", "Share anonymous diagnostics"],
+    "adv.diagd": [
+      "Aldri lyd, navn eller filer. Du kan se nøyaktig hva som sendes.",
+      "Never audio, names or files. You can see exactly what is sent.",
+    ],
+    "adv.show": ["Vis", "Show"],
+    "adv.update": ["Oppdateringer", "Updates"],
+    "adv.updated": [
+      "Stabil anbefales. Beta får nye ting først.",
+      "Stable is recommended. Beta gets new things first.",
+    ],
+    "adv.stable": ["Stabil", "Stable"],
+    "adv.log": ["Logg", "Log"],
+    "adv.logd": [
+      "Til feilsøking sammen med oss.",
+      "For troubleshooting together with us.",
+    ],
+    "adv.copy": ["Kopier", "Copy"],
+    "adv.profile": ["Innstillingsprofil", "Settings profile"],
+    "adv.profiled": [
+      "Ta med oppsettet til en annen maskin.",
+      "Take the setup to another computer.",
+    ],
+    "adv.export": ["Eksporter", "Export"],
+    "adv.import": ["Importer", "Import"],
+    "ob.step": ["Steg 1 av 5", "Step 1 of 5"],
+    "ob.q1d": [
+      "Velg det dere tar opp fra. Så sjekker vi at vi hører det.",
+      "Choose what you record from. Then we check that we hear it.",
+    ],
+    "ob.talk": [
+      "Snakk i mikrofonen, eller slå på mikseren.",
+      "Speak into the microphone, or turn on the mixer.",
+    ],
+    "ob.skip": ["Fortsett uten lyd", "Continue without sound"],
+    "ob.next": ["Neste", "Next"],
+    "ob.gate": [
+      "«Neste» åpnes når vi hører lyd.",
+      "“Next” opens once we hear sound.",
+    ],
+    "ob.readytitle": ["Klar til søndag", "Ready for Sunday"],
+    "ob.readyd": [
+      "Dette er det samme du finner under Oppsett senere.",
+      "This is the same you’ll find under Setup later.",
+    ],
+    "ob.notset": [
+      "Ikke satt opp — ingen får beskjed hvis et opptak feiler.",
+      "Not set up — nobody is told if a recording fails.",
+    ],
+    "ob.open": ["Åpne SundayRec", "Open SundayRec"],
+    "err.lost": [
+      "Opptaket ble avbrutt kl. 11:42",
+      "The recording was interrupted at 11:42",
+    ],
+    "err.lostd": [
+      "Lyden fra Behringer X32 forsvant. 42 minutter er lagret; resten mangler.",
+      "Sound from Behringer X32 disappeared. 42 minutes are saved; the rest is missing.",
+    ],
+    "err.openlib": ["Vis opptaket", "Show recording"],
+    "err.disk": [
+      "Plass til 1 time og 40 minutter",
+      "Room for 1 hour and 40 minutes",
+    ],
+    "err.diskd": [
+      "Neste automatiske opptak er 90 minutter. Frigjør plass før søndag.",
+      "The next automatic recording is 90 minutes. Free up space before Sunday.",
+    ],
+    "err.free": ["Frigjør plass", "Free up space"],
+    "err.missed": [
+      "Søndag 16. august ble ikke tatt opp",
+      "Sunday 16 August was not recorded",
+    ],
+    "err.missedd": [
+      "Maskinen var av. Automatisk opptak krever at den står på eller i dvale.",
+      "The computer was off. Automatic recording needs it on or asleep.",
+    ],
+    "err.why": ["Hva kan jeg gjøre?", "What can I do?"],
+    "cons.title": [
+      "Vil du hjelpe oss å gjøre SundayRec bedre?",
+      "Want to help make SundayRec better?",
+    ],
+    "cons.d": [
+      "Anonyme tall om hva som virker og hva som feiler. Aldri lyd, navn eller filer.",
+      "Anonymous numbers about what works and what fails. Never audio, names or files.",
+    ],
+    "cons.no": ["Nei takk", "No thanks"],
+    "cons.yes": ["Ja, del anonymt", "Yes, share anonymously"],
+    "cons.what": ["Hva sendes?", "What is sent?"],
+    "g.nofolder": ["Ingen lagringsmappe", "No storage folder"],
+    "g.nocam": ["Ingen kamera", "No camera"],
+    "g.nodev": ["Ingen lydenheter", "No sound devices"],
+    "g.loadfail": ["Fil kan ikke åpnes", "File can’t be opened"],
+    "g.dialog": ["Farlig handling", "Dangerous action"],
+    "e.nofolder": [
+      "Opptakene har ingen plass å ligge",
+      "Recordings have nowhere to go",
+    ],
+    "e.nofolderd": [
+      "Velg en mappe på denne maskinen. Uten den kan ikke appen ta opp.",
+      "Choose a folder on this computer. Without it the app can’t record.",
+    ],
+    "e.pickfolder": ["Velg mappe", "Choose folder"],
+    "e.nocam": ["Finner ikke noe kamera", "Can’t find a camera"],
+    "e.nocamd": [
+      "Koble til et kamera, eller slå av «Ta med kamera».",
+      "Connect a camera, or turn off “Include camera”.",
+    ],
+    "e.nodev": ["Finner ingen lydenheter", "Can’t find any sound devices"],
+    "e.nodevd": [
+      "Ikke engang maskinens mikrofon. Sjekk tilgangen under Systeminnstillinger → Personvern.",
+      "Not even the computer’s microphone. Check access under System Settings → Privacy.",
+    ],
+    "e.loadfail": ["Kan ikke åpne dette opptaket", "Can’t open this recording"],
+    "e.loadfaild": [
+      "Fila ser ut til å være skadet. Originalen ligger der den var.",
+      "The file looks damaged. The original is where it was.",
+    ],
+    "dlg.emptytrash": ["Tømme papirkurven?", "Empty the trash?"],
+    "dlg.emptytrashd": [
+      "2 opptak slettes for godt. Dette kan ikke angres.",
+      "2 recordings are deleted for good. This can’t be undone.",
+    ],
+    "q.good": ["God", "Good"],
+    "q.goodd": [
+      "MP3. Passer for nett og deling. Ca. 1 GB per 10 timer.",
+      "MP3. Good for the web and sharing. About 1 GB per 10 hours.",
+    ],
+    "q.best": ["Best", "Best"],
+    "q.bestd": [
+      "FLAC. Alt som kom inn, uten tap. Ca. 5 GB per 10 timer.",
+      "FLAC. Everything that came in, lossless. About 5 GB per 10 hours.",
+    ],
+    "d.sunday": ["Søndag", "Sunday"],
+    "d.wed": ["Onsdag", "Wednesday"],
+    "d.aug": ["august", "August"],
+    "d.jul": ["juli", "July"],
+  };
+  const NAV = {
+    record: ["Opptak", "Record"],
+    library: ["Bibliotek", "Library"],
+    setup: ["Oppsett", "Setup"],
+  };
+  const STATUS = {
+    ready: ["good", "st.ready"],
+    nosound: ["warn", "st.nosound"],
+    rec: ["rec", "st.rec"],
+    next: ["", "st.next"],
+  };
+  const ICONS = {
+    record:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg>',
+    library:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="5" rx="1.5"/><path d="M6 20h12"/></svg>',
+    setup:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.5"/><circle cx="10" cy="17" r="2.5"/></svg>',
+  };
+  let LANG = 0;
+  function renderRails() {
+    document.querySelectorAll(".a-rail[data-rail]").forEach((r) => {
+      const on = r.dataset.rail,
+        st = STATUS[r.dataset.status] || STATUS.ready,
+        church = r.dataset.church === "set";
+      r.innerHTML = `<div class="a-logo"><i>S</i><b>SundayRec</b></div>
+      <div class="a-church ${church ? "" : "unset"}">${church ? "Bryn menighet" : LANG ? "Not set up yet" : "Ikke satt opp ennå"}</div>
+      <div class="a-nav">${["record", "library", "setup"].map((k) => `<button class="${k === on ? "on" : ""}">${ICONS[k]}<span>${NAV[k][LANG]}</span></button>`).join("")}</div>
+      <div class="a-status"><div class="line"><i class="dot ${st[0]}"></i><span>${T[st[1]][LANG]}</span></div><div class="sub">SundayRec 1.0.0</div></div>`;
+    });
+  }
+  function applyLang() {
+    const missing = [];
+    document.querySelectorAll("[data-t]").forEach((el) => {
+      const k = el.dataset.t;
+      if (!T[k]) {
+        missing.push(k);
+        el.textContent = "⟨" + k + "⟩";
+        el.style.outline = "2px solid red";
+        return;
+      }
+      el.textContent = T[k][LANG];
+    });
+    renderRails();
+    document
+      .querySelectorAll(".seg [data-lang]")
+      .forEach((b) =>
+        b.setAttribute(
+          "aria-pressed",
+          String((b.dataset.lang === "en") === (LANG === 1)),
+        ),
+      );
+    if (missing.length) console.warn("missing keys", missing);
+  }
+  document.querySelectorAll(".seg [data-lang]").forEach((b) =>
+    b.addEventListener("click", () => {
+      LANG = b.dataset.lang === "en" ? 1 : 0;
+      applyLang();
+    }),
+  );
+  /* Scale boards to their frame */
+  function scale() {
+    document.querySelectorAll(".board-wrap").forEach((w) => {
+      const b = w.querySelector(".board");
+      b.style.transform = "scale(" + w.clientWidth / 1180 + ")";
+    });
+  }
+  new ResizeObserver(scale).observe(document.body);
+  scale();
+  /* Waveform (seeded, deterministic) */
+  document.querySelectorAll("canvas[data-wave]").forEach((c) => {
+    const W = (c.width = 1120),
+      H = (c.height = 170),
+      g = c.getContext("2d");
+    let s = 7;
+    const rnd = () => {
+      s = (s * 16807) % 2147483647;
+      return s / 2147483647;
+    };
+    g.fillStyle = "rgba(235,184,75,.55)";
+    for (let x = 0; x < W; x += 3) {
+      const t = x / W;
+      let a = 0.25 + 0.35 * Math.sin(t * 18) + 0.2 * rnd();
+      if (t > 0.22 && t < 0.72) a = 0.35 + 0.25 * rnd();
+      if (t < 0.04 || (t > 0.44 && t < 0.47)) a = 0.05 + 0.05 * rnd();
+      a = Math.min(1, Math.max(0.03, a));
+      const h = a * (H - 30);
+      g.fillRect(x, (H - 30) / 2 - h / 2 + 6, 2, h);
+    }
+  });
+  applyLang();
+</script>

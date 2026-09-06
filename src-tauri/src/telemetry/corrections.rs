@@ -372,9 +372,9 @@ mod tests {
 
     #[test]
     fn an_unchanged_file_is_not_an_event() {
-        // Every companion-suggestion write lands here with an identical
-        // projection, and the sermon seam calls it after a write that changed
-        // nothing worth banding.
+        // A shadow-observation write lands here with an identical projection,
+        // and the sermon seam calls it after a write that changed nothing
+        // worth banding.
         let _g = guard();
         let (_, after) = adjusted(40.0, 0.0, "0.10.0");
         observe_files(&after, &after);

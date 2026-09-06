@@ -521,9 +521,33 @@ mod tests {
     }
 
     impl EnvPin {
+        /// `None` when no fetched sidecar is on disk — every call site's
+        /// `SKIP:` path.
+        ///
+        /// F1-M6 (D6): a lane that already ran `npm run ffmpeg` (ci.yml's
+        /// `check` job, `scripts/ci-local.sh`) has no excuse for that `None` —
+        /// it is exactly how this whole longrun suite went unexercised in CI
+        /// for as long as it did, with every run reporting green over a SKIP.
+        /// Setting `SUNDAYREC_REQUIRE_SIDECAR=1` turns the missing-sidecar
+        /// case into a panic here instead, so a lane that is SUPPOSED to have
+        /// the binaries fails loudly the moment it does not — one choke
+        /// point for every one of this module's `EnvPin::acquire` call sites,
+        /// rather than nine copies of the same check. A bare dev checkout
+        /// that has not run the fetch script yet is the only caller meant to
+        /// still take the `None`/SKIP path.
         fn acquire(split_bytes: Option<u64>) -> Option<Self> {
             let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let (ffmpeg, ffprobe) = (fetched_sidecar("ffmpeg")?, fetched_sidecar("ffprobe")?);
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                assert!(
+                    std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),
+                    "SUNDAYREC_REQUIRE_SIDECAR=1 but no fetched ffmpeg/ffprobe \
+                     sidecar — run `npm run ffmpeg` first (the longrun suite \
+                     must not silently skip in a lane that requires it)"
+                );
+                return None;
+            };
             // SAFETY: serialised by ENV_LOCK; all three restored on Drop, which
             // runs before the guard is released.
             unsafe {
@@ -856,8 +880,17 @@ mod tests {
                 include_str!("native_capture/segment.rs"),
             ),
         ] {
+            // Either spelling of the guard counts. The ffmpeg path calls
+            // `should_force_split` directly; the native path reads the
+            // threshold and compares in `segment::disk_guard_verdict`, because
+            // `should_force_split` consults a process-global env override and a
+            // decision function that quietly reads ambient state cannot be
+            // table-tested (it is a coin flip against whatever else is running
+            // — how the 2026-08-10 CI-only failure arrived). What this test
+            // guards is that BOTH paths still consult the cap at all.
             assert!(
-                src.contains("wav::should_force_split"),
+                src.contains("wav::should_force_split")
+                    || src.contains("wav::forced_split_threshold_bytes"),
                 "{name} no longer consults the 4 GiB RIFF-cap guard — a long \
                  service will silently produce an unreadable capture"
             );
@@ -1270,6 +1303,142 @@ mod tests {
         assert!(
             s.delivered[0].delivered && s.delivered[0].data_bytes > 0,
             "the surviving audio is still delivered to the user"
+        );
+    }
+
+    /// The crash Sunday, end to end (F1 finding A10): a REAL capture, REALLY
+    /// killed, and then the two questions the next launch asks about it.
+    ///
+    /// The recording exists — as fragments a manifest points at — but the
+    /// history row that says so is written by a concat that, for a three-hour
+    /// service, takes minutes. `check_missed` runs from its own startup task and
+    /// wins that race, so it asked the database a question recovery had not
+    /// finished answering and got "nothing recorded on Sunday". With the missed
+    /// dispatch behind it that answer is a desktop notification and an e-mail to
+    /// a volunteer whose recording is at that moment being salvaged.
+    ///
+    /// This is the ONE place the whole chain is exercised against a real killed
+    /// ffmpeg rather than a fabricated fixture: lavfi audio (no microphone, no
+    /// permission prompt), SIGKILL with no trailer and no manifest delete, the
+    /// manifest read back off disk by the production `pending_windows_in`, and
+    /// the missed decision made by the production core. What it still cannot
+    /// prove is that the APP dies the way this capture did — that is the rig
+    /// day's `kill -9`.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_crashed_service_is_recovered_and_never_reported_missed() {
+        use chrono::{Datelike, Duration as ChronoDuration, Local, TimeZone};
+        use sundayrec_core::schedule::{missed_recordings, ScheduleSlot};
+
+        let Some(_pin) = EnvPin::acquire(None) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let save = tempfile::tempdir().expect("tempdir");
+        let pool = temp_pool(save.path()).await;
+        let mut s = HeadlessSession::new(save.path(), RATE).expect("session");
+
+        // The service records, and the machine dies mid-take.
+        let fragment = s.current_fragment();
+        assert_eq!(
+            s.capture_segment(&fragment, StopMode::Kill(Duration::from_millis(900)))
+                .await,
+            HeadlessOutcome::Killed
+        );
+
+        // What a crash leaves behind: the manifest, unfinalised, where
+        // `write_manifest` puts it. Nothing deletes it — that is the definition
+        // of a crash.
+        let recovery_dir = tempfile::tempdir().expect("recovery dir");
+        let manifest = s.manifest("wav");
+        std::fs::write(
+            recovery_dir
+                .path()
+                .join(format!("{}.json", manifest.session_id)),
+            manifest.to_json().unwrap(),
+        )
+        .unwrap();
+
+        // The scheduler's weekly slot, positioned on the service that just died,
+        // and a sweep running two hours later — past the 60-min late-start
+        // window, so this occurrence is a missed CANDIDATE.
+        let covered = crate::scheduler::covered_windows_local(
+            crate::recorder::recovery::pending_windows_in(recovery_dir.path()),
+        );
+        assert_eq!(covered.len(), 1, "one interrupted session on disk");
+        let began = covered[0].start;
+        let sweep_at = began + ChronoDuration::hours(2);
+        let slot = ScheduleSlot {
+            days: vec![began.weekday().num_days_from_monday()],
+            start: began.format("%H:%M").to_string(),
+            stop: (began + ChronoDuration::hours(2))
+                .format("%H:%M")
+                .to_string(),
+            max: None,
+        };
+
+        // 1. The database is empty, because recovery has not run yet.
+        assert!(
+            list_recordings(&pool).await.unwrap().is_empty(),
+            "precondition: nothing has been finalised"
+        );
+        assert_eq!(
+            missed_recordings(
+                std::slice::from_ref(&slot),
+                &[],
+                sweep_at,
+                &[],
+                &[],
+                &std::collections::HashSet::new()
+            )
+            .len(),
+            1,
+            "and on the database alone, this Sunday reads as never recorded"
+        );
+
+        // 2. …but the manifest on disk says otherwise, so nothing is reported.
+        assert!(
+            missed_recordings(
+                std::slice::from_ref(&slot),
+                &[],
+                sweep_at,
+                &[],
+                &covered,
+                &std::collections::HashSet::new()
+            )
+            .is_empty(),
+            "a recovery in flight is not a missed recording"
+        );
+
+        // 3. Recovery finishes, and the hand-over is clean: the history row now
+        //    covers the same occurrence on its own, with no window needed. (In
+        //    production the manifest is deleted only AFTER this row is written,
+        //    which is what makes the two overlap rather than leave a gap.)
+        let recovered = crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+        assert_eq!(recovered, 1, "the killed capture is salvaged into a file");
+        let rows = list_recordings(&pool).await.unwrap();
+        let history: Vec<chrono::NaiveDateTime> = rows
+            .iter()
+            .filter_map(|r| {
+                Local
+                    .timestamp_millis_opt(r.started_at as i64)
+                    .single()
+                    .map(|dt| dt.naive_local())
+            })
+            .collect();
+        assert_eq!(history.len(), 1);
+        assert!(
+            missed_recordings(
+                std::slice::from_ref(&slot),
+                &[],
+                sweep_at,
+                &history,
+                &[],
+                &std::collections::HashSet::new()
+            )
+            .is_empty(),
+            "once the row lands, history alone covers it — the window was only \
+             ever standing in for this"
         );
     }
 

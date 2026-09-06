@@ -5,36 +5,25 @@
 //! purge, the one irreversible step — drop the history rows of the recordings
 //! that just stopped existing.
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::db::{store, Db};
 use crate::error::AppResult;
 use crate::settings;
 use crate::trash::{self, TrashEntry};
 
-/// Where recordings live, and therefore where the trash lives: the configured
-/// save folder, or the OS documents dir when none is set (same resolution as
-/// `recordings_prune`).
+/// Where recordings live, and therefore where the trash lives: the canonical
+/// [`crate::save_folder::resolve`] (R3) — the configured save folder, or
+/// `<Documents>/SundayRec`. The pre-R3 fallback was the BARE Documents dir, so
+/// with no folder configured the `.sundayrec-trash` was created in (and
+/// restored from) the PARENT of where recordings actually live.
 ///
-/// Refuses an EMPTY resolution rather than falling through to a relative
-/// `.sundayrec-trash`, which would land inside whatever the process happens to
-/// have as its working directory — the app bundle, or `/`. `recordings_prune`
-/// can treat an empty save dir as "pruning is off"; a trash cannot, because the
-/// caller is about to move a recording somewhere.
+/// An unresolvable folder is still an error, never a relative
+/// `.sundayrec-trash` inside whatever the process's working directory is —
+/// the caller is about to move a recording somewhere.
 async fn save_dir(app: &AppHandle, db: &State<'_, Db>) -> AppResult<std::path::PathBuf> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    let dir = s.save_folder.unwrap_or_else(|| {
-        app.path()
-            .document_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    });
-    if dir.trim().is_empty() {
-        return Err(crate::error::AppError::Validation(
-            "no save folder is configured, so there is nowhere to put a trash".into(),
-        ));
-    }
-    Ok(std::path::PathBuf::from(dir))
+    crate::save_folder::resolve(app, s.save_folder.as_deref())
 }
 
 /// Move recordings into the trash, with their sidecars and video siblings.
@@ -100,4 +89,35 @@ pub async fn trash_purge(app: AppHandle, db: State<'_, Db>, ids: Vec<String>) ->
         );
     }
     Ok(purged.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn the_trash_lives_in_the_recordings_subfolder_not_bare_documents() {
+        // The exact resolution `save_dir` performs with no folder configured.
+        // Before R3 it resolved the BARE Documents dir, so `.sundayrec-trash`
+        // was created in the PARENT of where recordings actually live.
+        let dir =
+            crate::save_folder::resolve_with_documents(None, Some(Path::new("/Users/x/Documents")))
+                .unwrap();
+        assert_eq!(dir, PathBuf::from("/Users/x/Documents/SundayRec"));
+    }
+
+    #[test]
+    fn save_dir_resolves_only_through_the_canonical_resolver() {
+        // Source ratchet: fails if someone re-inlines a Documents lookup here.
+        let src = include_str!("trash.rs");
+        assert!(
+            src.contains("save_folder::resolve("),
+            "save_dir must resolve via crate::save_folder::resolve"
+        );
+        let needle = concat!("document", "_dir");
+        assert!(
+            !src.contains(needle),
+            "trash commands must not resolve the Documents dir themselves"
+        );
+    }
 }

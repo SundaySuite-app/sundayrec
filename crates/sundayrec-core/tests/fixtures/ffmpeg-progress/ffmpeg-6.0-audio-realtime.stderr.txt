@@ -1,0 +1,13 @@
+Input #0, lavfi, from 'sine=frequency=440:sample_rate=48000:duration=2':
+  Duration: N/A, start: 0.000000, bitrate: 768 kb/s
+  Stream #0:0: Audio: pcm_s16le, 48000 Hz, mono, s16, 768 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
+Output #0, wav, to '/private/tmp/claude-501/-Users-richardfossland/91d5a332-3428-4dce-af0b-620bdfbcf3b9/scratchpad/fixtures/out60.wav':
+  Metadata:
+    ISFT            : Lavf60.3.100
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, mono, s16, 768 kb/s
+    Metadata:
+      encoder         : Lavc60.3.100 pcm_s16le
+size=     188kB time=00:00:01.98 bitrate= 774.5kbits/s speed=0.989x    
+video:0kB audio:188kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.040625%

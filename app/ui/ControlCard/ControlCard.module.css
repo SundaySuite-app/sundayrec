@@ -1,0 +1,175 @@
+/*
+ * Kontrollrommets rad. Samme flate, kant og radius som `Card` — den er ETT kort
+ * blant kort — men med en tettere padding, fordi fem av dem står i en stabel og
+ * skal kunne leses som én liste.
+ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--pad-card-tight);
+}
+
+/* Gult betyr «du må gjøre noe før søndag». Samme lag-over-flaten som `Card`:
+   en full fargeflate leses som et annet slags element. */
+.warn {
+  border-color: var(--warn-line);
+  background:
+    linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--surface);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.lead {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Spørsmålet er ETIKETTEN, svaret er verdien — motsatt av dagens app, der
+   korttittelen er innstillingens navn og verdien står med liten grå skrift. */
+.title {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.value {
+  margin-top: 2px;
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+/* Hvorfor svaret holder, eller hva som mangler. Dempet: den er begrunnelsen,
+   ikke svaret. */
+.detail {
+  margin-top: 2px;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+/*
+ * Utfoldingsknappen. En egen, liten knapp og ikke `Button`: den står i en rad
+ * som er 44 px høy, og husets `secondary` ville dratt raden opp i høyden til
+ * kortet ikke lenger leses som en linje.
+ */
+.expand {
+  position: relative;
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  padding: 5px var(--sp-3);
+  cursor: pointer;
+}
+
+/*
+ * Treffflaten er STØRRE enn knappen — og den er usynlig.
+ *
+ * Knappen måler 30,1 px. Det er under gulvet på 44 som et fingertrykk trenger,
+ * og kommentaren over sier hvorfor den ikke bare kan vokse: den står i en rad
+ * som skal leses som ÉN linje, og en høyere knapp drar hele kortet ut av form.
+ * Så flaten vokser og tegningen står, uten at en piksel flytter seg.
+ *
+ * ## Hvorfor 8 og ikke 7
+ *
+ * 30,1 + 2 × 7 = 44,1 er regnestykket man gjør i hodet, og det er feil her.
+ * En absolutt plassert `::after` måler fra forelderens PADDING-boks, og
+ * `.expand` har 1 px kant på hver side. 7 px ga 42,1 px målt treffhøyde — under
+ * gulvet, med en grønn CSS-fil som så riktig ut. 8 px legger tilbake de to
+ * pikslene kanten spiser: 28,1 + 16 = 44,1. Målt utenfra med
+ * `elementFromPoint` (`e2e/hit-targets.spec.ts`) blir det 44–45.
+ *
+ * ## Bare loddrett
+ *
+ * `left`/`right` står på 0 med vilje. Knappene i denne appen står side om side
+ * med 8 px mellom seg der det er trangest (målt: `adv-log-show` → `adv-log-copy`
+ * på Avansert), så en flate som vokste sidelengs ville spist naboens klikk. En
+ * knapp som stjeler trykket fra knappen ved siden av er verre enn en knapp som
+ * er 30 px høy.
+ *
+ * Loddrett er det trygt: over og under knappen ligger kortets egen luft
+ * (10 px padding) og deretter 6 px til neste kort — og der er det ingenting å
+ * klikke på. Nærmeste kontroll rett over/under en utfoldingsknapp er den neste
+ * kortradens egen utfoldingsknapp, 57 px unna (målt på Opptak). Hver av dem
+ * rekker 7 px utenfor sin egen kant; 14 av 57 er ikke i nærheten av å møtes.
+ *
+ * ⚠️ Ingen `pointer-events: none` her: da ville flaten vært usynlig for
+ * treff-testen òg, og hele grepet et null-tillegg. Pseudo-elementet treffer
+ * som forelderen sin — det ER knappen, målt utenfra.
+ */
+.expand::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: 0;
+  right: 0;
+}
+
+.expand:hover {
+  border-color: var(--gold-line);
+  color: var(--ink);
+}
+
+.expand:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/*
+ * Kroppen: skjermen kortet handler om, på stedet. Skillelinjen er det som
+ * sier at den hører til raden over og ikke er et nytt kort.
+ *
+ * `--sp-2` og ikke `--sp-3` rundt streken: et utfoldet kort er den ene
+ * tilstanden der siden faktisk er lengre enn ruten, så de 8 pikslene her er
+ * de dyreste på skjermen. Streken skiller like tydelig med 8 px rundt seg —
+ * det er kontrasten som skiller, ikke avstanden.
+ */
+.body {
+  margin-top: var(--sp-2);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-2);
+}
+
+/*
+ * Pulsen: man KOM hit fra en lenke. To sekunder, én gang — ikke en løkke.
+ * `prefers-reduced-motion` slår den av; kanten blir stående gull i stedet, så
+ * påstanden «det er DETTE kortet» ikke går tapt sammen med bevegelsen.
+ */
+.pulse {
+  border-color: var(--gold-line);
+  animation: control-pulse 2s ease-out 1;
+}
+
+@keyframes control-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--gold-soft);
+  }
+  40% {
+    box-shadow: 0 0 0 6px var(--gold-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--gold-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}

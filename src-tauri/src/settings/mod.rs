@@ -22,6 +22,15 @@ pub const SETTINGS_KEY: &str = "settings";
 /// key is absent), merge it over the defaults so older/partial blobs never
 /// crash, then validate (clamp numeric ranges). The result is always a valid
 /// [`Settings`].
+///
+/// Also warms [`crate::ui_lang`] with `settings.language`. That is a cache
+/// write, not a second source of truth: the capture loop and the task
+/// supervisors cannot do a database round-trip when they need to name a
+/// language, and this is the funnel every settings read already goes through —
+/// the scheduler's supervisor pass, every failure dispatch, every command. A
+/// caller who has the `Settings` in hand should keep using
+/// `MailLang::from_code(settings.language.as_deref())` directly; see
+/// `ui_lang`'s module docs for which two places may not.
 pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
     let raw = store::get_setting(pool, SETTINGS_KEY).await?;
     let mut settings = match raw {
@@ -29,12 +38,26 @@ pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
         None => Settings::default(),
     };
     settings.validate();
+    crate::ui_lang::note(settings.language.as_deref());
     Ok(settings)
 }
 
 /// Validate then persist the settings, returning the stored (validated) value.
+///
+/// R4: this is also where ended special recordings are pruned — the ONE pruner.
+/// The scheduler used to prune sqlite while the renderer's in-memory copy
+/// stayed stale, so the next full-object `settings_save` resurrected exactly
+/// what was just removed (R3 papered over it with a renderer-side mirror, now
+/// deleted). Pruning at the write boundary makes the prune un-revertable: no
+/// save can put a >7-days-ended special back, whoever sends it.
 pub async fn save(pool: &SqlitePool, mut settings: Settings) -> AppResult<Settings> {
     settings.validate();
+    let now = chrono::Local::now().naive_local();
+    let (kept, pruned) =
+        sundayrec_core::schedule::prune_specials(&settings.special_recordings, now);
+    if pruned > 0 {
+        settings.special_recordings = kept;
+    }
     let json = serde_json::to_string(&settings)?;
     store::set_setting(pool, SETTINGS_KEY, &json).await?;
     Ok(settings)
@@ -83,7 +106,7 @@ pub async fn import_from_path(pool: &SqlitePool, path: &Path) -> AppResult<Setti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sundayrec_core::settings::{ChannelMode, FileFormat};
+    use sundayrec_core::settings::{ChannelMode, FileFormat, SampleRate};
 
     /// A pool over a temp-dir database file, fully migrated.
     async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
@@ -108,7 +131,7 @@ mod tests {
             language: Some("en".to_string()),
             channels: ChannelMode::MonoMix,
             format: FileFormat::Wav,
-            input_volume: 150,
+            silence_threshold: -40,
             ..Default::default()
         };
 
@@ -123,30 +146,30 @@ mod tests {
     async fn save_validates_before_persisting() {
         let (pool, _d) = temp_pool().await;
         let s = Settings {
-            sample_rate: 999_999,
-            input_volume: 5_000,
+            silence_threshold: 5,
+            split_minutes: 9_999,
             ..Default::default()
         };
         let stored = save(&pool, s).await.unwrap();
-        assert_eq!(stored.sample_rate, 192_000);
-        assert_eq!(stored.input_volume, 200);
+        assert_eq!(stored.silence_threshold, 0);
+        assert_eq!(stored.split_minutes, 480);
         // Persisted value is the clamped one.
         let loaded = load(&pool).await.unwrap();
-        assert_eq!(loaded.sample_rate, 192_000);
-        assert_eq!(loaded.input_volume, 200);
+        assert_eq!(loaded.silence_threshold, 0);
+        assert_eq!(loaded.split_minutes, 480);
     }
 
     #[tokio::test]
     async fn load_merges_partial_stored_blob_over_defaults() {
         let (pool, _d) = temp_pool().await;
         // Simulate an older/partial blob written directly to the store.
-        store::set_setting(&pool, SETTINGS_KEY, r#"{ "sampleRate": 44100 }"#)
+        store::set_setting(&pool, SETTINGS_KEY, r#"{ "silenceThreshold": -40 }"#)
             .await
             .unwrap();
         let loaded = load(&pool).await.unwrap();
-        assert_eq!(loaded.sample_rate, 44_100);
+        assert_eq!(loaded.silence_threshold, -40);
         // Everything else defaulted.
-        assert_eq!(loaded.input_volume, 100);
+        assert_eq!(loaded.silence_timeout_minutes, 5);
         assert_eq!(loaded.channels, ChannelMode::Stereo);
     }
 
@@ -154,7 +177,7 @@ mod tests {
     async fn reset_persists_defaults() {
         let (pool, _d) = temp_pool().await;
         let s = Settings {
-            input_volume: 150,
+            silence_threshold: -40,
             ..Default::default()
         };
         save(&pool, s).await.unwrap();
@@ -189,7 +212,7 @@ mod tests {
         let (pool, _d) = temp_pool().await;
         let imported = import(&pool, r#"{ "language": "fr" }"#).await.unwrap();
         assert_eq!(imported.language, Some("fr".to_string()));
-        assert_eq!(imported.input_volume, 100);
+        assert_eq!(imported.silence_timeout_minutes, 5);
     }
 
     #[tokio::test]
@@ -198,7 +221,7 @@ mod tests {
         let s = Settings {
             language: Some("de".to_string()),
             format: FileFormat::Flac,
-            input_volume: 150,
+            silence_threshold: -40,
             ..Default::default()
         };
         save(&pool, s.clone()).await.unwrap();
@@ -234,7 +257,7 @@ mod tests {
         save(
             &pool,
             Settings {
-                input_volume: 150,
+                silence_threshold: -40,
                 ..Default::default()
             },
         )
@@ -245,13 +268,13 @@ mod tests {
         save(
             &pool,
             Settings {
-                input_volume: 80,
+                silence_threshold: -30,
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-        assert_eq!(load(&pool).await.unwrap().input_volume, 80);
+        assert_eq!(load(&pool).await.unwrap().silence_threshold, -30);
         // Exactly one row backs the settings key.
         assert_eq!(
             store::get_all_settings(&pool)
@@ -278,15 +301,15 @@ mod tests {
     async fn import_clamps_out_of_range_values_before_persisting() {
         let (pool, _d) = temp_pool().await;
         // An imported blob with an out-of-range numeric is clamped on the way in.
-        let imported = import(&pool, r#"{ "inputVolume": 9000, "sampleRate": 1 }"#)
+        let imported = import(&pool, r#"{ "silenceThreshold": 9000, "splitMinutes": -1 }"#)
             .await
             .unwrap();
-        assert_eq!(imported.input_volume, 200);
-        assert_eq!(imported.sample_rate, 8_000);
+        assert_eq!(imported.silence_threshold, 0);
+        assert_eq!(imported.split_minutes, 0);
         // The persisted value is the clamped one, not the raw import.
         let loaded = load(&pool).await.unwrap();
-        assert_eq!(loaded.input_volume, 200);
-        assert_eq!(loaded.sample_rate, 8_000);
+        assert_eq!(loaded.silence_threshold, 0);
+        assert_eq!(loaded.split_minutes, 0);
     }
 
     #[tokio::test]
@@ -325,12 +348,11 @@ mod tests {
         let (pool, _d) = temp_pool().await;
         let full = Settings {
             language: Some("de".to_string()),
-            has_launched: true,
             onboarding_done: true,
             channels: ChannelMode::MonoR,
             format: FileFormat::Flac,
-            input_volume: 175,
-            sample_rate: 96_000,
+            sample_rate_mode: SampleRate::R96000,
+            silence_threshold: -40,
             ..Default::default()
         };
         // Sanity: this is genuinely different from the defaults.
@@ -341,6 +363,46 @@ mod tests {
 
         let loaded = load(&pool).await.unwrap();
         assert_eq!(loaded, full, "full settings survive the DB round-trip");
+    }
+
+    #[tokio::test]
+    async fn save_prunes_long_ended_specials_so_a_stale_save_cannot_resurrect_them() {
+        use sundayrec_core::schedule::SpecialRecording;
+        let (pool, _d) = temp_pool().await;
+        let mk = |id: &str, date: &str| SpecialRecording {
+            id: Some(id.to_string()),
+            date: date.to_string(),
+            name: "Konsert".to_string(),
+            start: "10:00".to_string(),
+            stop: "12:00".to_string(),
+            device_id: None,
+        };
+        let old = mk("old", "2000-01-01"); // ended decades ago → pruned
+        let future = mk(
+            "future",
+            &(chrono::Local::now().date_naive() + chrono::Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+
+        // The scenario that produced the R3 mirror: the backend pruned, a
+        // renderer holding a STALE copy saves the full object again. The write
+        // boundary itself must drop the ended special.
+        let stored = save(
+            &pool,
+            Settings {
+                special_recordings: vec![old.clone(), future.clone()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(stored.special_recordings, vec![future.clone()]);
+        assert_eq!(
+            load(&pool).await.unwrap().special_recordings,
+            vec![future],
+            "the persisted list is the pruned one"
+        );
     }
 
     #[tokio::test]

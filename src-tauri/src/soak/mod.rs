@@ -420,8 +420,19 @@ pub fn lavfi_capture_args(
         .map(|i| i + 2)
         .unwrap_or(0);
 
-    let mut args: Vec<String> = vec![
-        "-hide_banner".into(),
+    let mut args: Vec<String> = vec!["-hide_banner".into()];
+    // THE HEARTBEAT CHANNEL. `-progress pipe:1 -nostats` is part of the
+    // production head (`build_unified_capture_args`), and it is what the
+    // recorder's startup latch and watchdog actually read. A harness that
+    // rebuilt the head by hand and kept only the tail was no longer exercising
+    // that path at all — the one thing a soak is for is proving the real
+    // plumbing survives an hour. Taken from the shared const so it cannot drift.
+    args.extend(
+        sundayrec_core::progress::PROGRESS_ARGS
+            .iter()
+            .map(|s| (*s).to_string()),
+    );
+    args.extend([
         "-f".into(),
         "lavfi".into(),
         // `-re` is what turns a fast render into a SOAK. Without it lavfi
@@ -440,7 +451,7 @@ pub fn lavfi_capture_args(
         // therefore lost samples, with no startup allowance needed.
         "-t".into(),
         secs.to_string(),
-    ];
+    ]);
     args.extend_from_slice(&production[tail_start..]);
     args
 }
@@ -476,6 +487,33 @@ pub async fn run_lavfi_capture_bench(
             String::from_utf8_lossy(&bytes).into_owned()
         })
     });
+    // stdout now carries the `-progress` blocks, and it MUST be drained: an
+    // unread pipe fills, ffmpeg blocks on the write, and a blocked ffmpeg drops
+    // capture samples — the 2026-07-31 failure mode, which is precisely what
+    // this harness exists to catch. Folding the blocks through the REAL
+    // `ProgressStream` also means the soak exercises the recorder's heartbeat
+    // parser rather than a lookalike, and gives back the drop/dup counters
+    // `-nostats` removes from stderr.
+    let progress = child.stdout.take().map(|mut stdout| {
+        tokio::spawn(async move {
+            let mut stream = sundayrec_core::progress::ProgressStream::new();
+            let mut buf = [0u8; 4096];
+            let mut last = sundayrec_core::progress::ProgressUpdate::default();
+            let mut blocks = 0u64;
+            loop {
+                match stdout.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        for u in stream.push(&String::from_utf8_lossy(&buf[..n])) {
+                            blocks += 1;
+                            last = u;
+                        }
+                    }
+                }
+            }
+            (last, blocks)
+        })
+    });
     // Generous: lavfi renders far faster than realtime, but `-t` still paces the
     // encode on some builds. A wedged child is killed rather than hanging the run.
     let deadline = Duration::from_secs(u64::from(secs) + 60);
@@ -490,6 +528,10 @@ pub async fn run_lavfi_capture_bench(
         Some(h) => h.await.unwrap_or_default(),
         None => String::new(),
     };
+    let (progress_last, progress_blocks) = match progress {
+        Some(h) => h.await.unwrap_or_default(),
+        None => Default::default(),
+    };
     if !status.map(|s| s.success()).unwrap_or(false) {
         return Err(AppError::Recording(format!(
             "soak: lavfi capture failed — {}",
@@ -500,6 +542,20 @@ pub async fn run_lavfi_capture_bench(
                 .collect::<Vec<_>>()
                 .join(" | ")
         )));
+    }
+
+    // The heartbeat itself is now part of what the soak proves. Zero blocks on
+    // a capture that otherwise succeeded means the recorder's startup latch
+    // would never fire and its watchdog would never see the file grow — a
+    // perfectly healthy recording looking dead, which is the exact failure the
+    // `-progress` channel was introduced to end. A soak that passed through
+    // that would be worse than no soak.
+    if progress_blocks == 0 {
+        return Err(AppError::Recording(
+            "soak: ffmpeg produced no -progress blocks — the recorder's startup latch and \
+             watchdog heartbeat would both be dead on this build"
+                .into(),
+        ));
     }
 
     let measured_sec = crate::media::ffmpeg::probe_duration_secs(output_path)
@@ -515,8 +571,12 @@ pub async fn run_lavfi_capture_bench(
     let facts = st::SelfTestFacts {
         expected_sec: f64::from(secs),
         measured_sec,
-        drops: st::parse_drop_count(&stderr_buf),
-        dups: st::parse_dup_count(&stderr_buf),
+        // From the `-progress` channel, not stderr: `-nostats` (which the
+        // production argv carries) deletes the human line `drop=`/`dup=` were
+        // scraped from, so scraping stderr here would report a flat zero for a
+        // capture that dropped every second frame.
+        drops: progress_last.drop_frames,
+        dups: progress_last.dup_frames,
         xruns: st::parse_xrun_count(&stderr_buf).saturating_add(capture_drop_lines),
         size_bytes,
         // A synthetic full-scale-ish sine: report it as measured so the verdict
@@ -716,11 +776,15 @@ mod tests {
             let tail_start = production.iter().position(|a| a == "-i").unwrap() + 2;
             let soak = lavfi_capture_args(platform, 30, 48_000, Some(48_000), true, "/tmp/x.wav");
 
-            // The soak head is the realtime-paced lavfi input + the media bound.
+            // The soak head is the production progress flags + the
+            // realtime-paced lavfi input + the media bound.
             assert_eq!(
-                &soak[..8],
+                &soak[..11],
                 &[
                     "-hide_banner",
+                    "-progress",
+                    "pipe:1",
+                    "-nostats",
                     "-f",
                     "lavfi",
                     "-re",
@@ -732,7 +796,7 @@ mod tests {
                 "{platform:?}: lavfi input block"
             );
             assert_eq!(
-                &soak[8..],
+                &soak[11..],
                 &production[tail_start..],
                 "{platform:?}: the tail must be the PRODUCTION capture argv, byte for byte"
             );
@@ -741,6 +805,51 @@ mod tests {
                 production[tail_start..].iter().any(|a| a == "-af"),
                 "{platform:?}: the production tail carries the filter chain"
             );
+        }
+    }
+
+    /// The soak must ask for the SAME machine-readable progress channel the
+    /// recorder does. Rebuilding the head by hand silently dropped these three
+    /// flags, and with them the only part of the recorder's heartbeat path the
+    /// harness could have exercised: the startup latch and the watchdog both
+    /// read `-progress`, not the tail.
+    #[test]
+    fn lavfi_args_carry_the_production_progress_flags() {
+        for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
+            let soak = lavfi_capture_args(platform, 5, 48_000, None, true, "/tmp/x.wav");
+            for flag in sundayrec_core::progress::PROGRESS_ARGS {
+                assert!(
+                    soak.iter().any(|a| a == flag),
+                    "{platform:?}: the soak argv dropped `{flag}`"
+                );
+            }
+            // …and BEFORE the input, exactly where the production head puts them.
+            let i = soak.iter().position(|a| a == "-progress").unwrap();
+            let input = soak.iter().position(|a| a == "-i").unwrap();
+            assert!(i < input, "{platform:?}: -progress must be a global flag");
+        }
+    }
+
+    /// Every global flag the production head carries must survive into the soak
+    /// head. The input block (`-f <backend> … -i <token>`) is the ONLY thing
+    /// lavfi is allowed to replace — this is the guard that caught `-progress`
+    /// going missing, and it will catch the next one too.
+    #[test]
+    fn the_soak_head_keeps_every_production_global_flag() {
+        for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
+            let opts = CaptureOpts::default();
+            let production = build_unified_capture_args(platform, None, "0", "/tmp/x.wav", &opts);
+            let input_start = production
+                .iter()
+                .position(|a| a == "-f")
+                .expect("the production head opens the device with -f");
+            let soak = lavfi_capture_args(platform, 5, 48_000, None, true, "/tmp/x.wav");
+            for flag in &production[..input_start] {
+                assert!(
+                    soak.contains(flag),
+                    "{platform:?}: the soak head dropped the production global flag `{flag}`"
+                );
+            }
         }
     }
 

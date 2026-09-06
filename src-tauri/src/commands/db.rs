@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tauri::{Manager, State};
+use tauri::State;
 use ts_rs::TS;
 
 use sundayrec_core::history::{decide_prune, PruneCandidate};
@@ -15,135 +15,16 @@ use crate::db::Db;
 use crate::error::AppResult;
 use crate::settings;
 
-/// Read a setting's raw (JSON-encoded) value, or `null` if unset.
-#[tauri::command]
-pub async fn setting_get(db: State<'_, Db>, key: String) -> AppResult<Option<String>> {
-    store::get_setting(&db.pool, &key).await
-}
-
-/// Insert or update a setting.
-#[tauri::command]
-pub async fn setting_set(db: State<'_, Db>, key: String, value: String) -> AppResult<()> {
-    store::set_setting(&db.pool, &key, &value).await
-}
-
 /// List recordings, newest first, for the home-screen history.
 #[tauri::command]
 pub async fn recordings_list(db: State<'_, Db>) -> AppResult<Vec<RecordingRow>> {
     store::list_recordings(&db.pool).await
 }
 
-/// One transcript sidecar paired with the source recording's base path (no
-/// extension), shaped exactly for the renderer's `TranscriptSidecar` search
-/// interface (`{ basePath, transcript }`). Serialised-only — the renderer owns
-/// the matching TS interface, so no ts-rs binding is needed.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TranscriptSidecarDto {
-    /// Source recording base path with its media extension stripped.
-    pub base_path: String,
-    /// The parsed `<name>.transcript.json` contents.
-    pub transcript: sundayrec_core::whisper::TranscriptData,
-}
-
-/// Strip the final extension from a path (`/rec/sermon.mp3` → `/rec/sermon`).
-fn strip_media_ext(path: &str) -> String {
-    let p = std::path::Path::new(path);
-    if p.extension().is_some() {
-        p.with_extension("").to_string_lossy().into_owned()
-    } else {
-        path.to_string()
-    }
-}
-
-/// List every recording's parsed transcript sidecar (`<name>.transcript.json`)
-/// for the "Søk i prekener" full-text index. Recordings that have not been
-/// transcribed (no sidecar, or an unparseable one) are silently skipped.
-/// Read-only — reuses the editor sidecar reader + the history listing.
-#[tauri::command]
-pub async fn transcripts_list(db: State<'_, Db>) -> AppResult<Vec<TranscriptSidecarDto>> {
-    let rows = store::list_recordings(&db.pool).await?;
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
-        let Some(value) =
-            crate::editor::read_sidecar(&row.file_path, crate::editor::EditorSidecar::Transcript)?
-        else {
-            continue;
-        };
-        let Ok(transcript) =
-            serde_json::from_value::<sundayrec_core::whisper::TranscriptData>(value)
-        else {
-            continue;
-        };
-        out.push(TranscriptSidecarDto {
-            base_path: strip_media_ext(&row.file_path),
-            transcript,
-        });
-    }
-    Ok(out)
-}
-
-/// «Hva har appen lagt merke til» (E8.T) — fold every recording's
-/// `<stem>.feedback.json` into the counts + trim-direction verdict the
-/// System-tab transparency card shows. Same shape as [`transcripts_list`]:
-/// walk the history, read each sidecar, skip what is not there.
-///
-/// Deliberately NOT called automatically when the settings tab opens — the
-/// renderer only invokes this from an explicit "vis hva appen har lagt merke
-/// til" button, and never while a recording is in progress. A history of a
-/// few dozen small JSON sidecars is cheap on its own, but "cheap" and "safe to
-/// run unprompted during a live service" are different bars, and this stays
-/// on the READ side of the second one on purpose.
-#[tauri::command]
-pub async fn learning_feedback_summary(
-    db: State<'_, Db>,
-) -> AppResult<sundayrec_core::learning_summary::LearningSummary> {
-    let rows = store::list_recordings(&db.pool).await?;
-    let files: Vec<sundayrec_core::feedback::RecordingFeedback> = rows
-        .iter()
-        .map(|r| crate::editor::read_feedback_for_summary(&r.file_path))
-        .collect();
-    Ok(sundayrec_core::learning_summary::summarize_feedback(&files))
-}
-
-/// What this install has adjusted about itself, for the same System-tab card
-/// (E10).
-///
-/// Recomputes rather than reading a cache, and walks the same sidecars
-/// [`learning_feedback_summary`] does — see [`crate::learning::refresh_nudge`]
-/// for why a cheap cached read would show the wrong answer on the one day the
-/// card matters most. The renderer applies the same "not while recording"
-/// refusal as the summary card, for the same reason.
-///
-/// Returns the shipped zeroes whenever adaptivity is off, so the card describes
-/// what will HAPPEN rather than what happens to be stored.
-#[tauri::command]
-pub async fn learning_local_nudge(
-    db: State<'_, Db>,
-) -> AppResult<sundayrec_core::local_adaptivity::LocalNudge> {
-    Ok(crate::learning::refresh_nudge(&db).await)
-}
-
-/// Put the detector back to the shipped constants, now — the card's «Nullstill»
-/// button. Zeroes the learned nudge AND turns adaptivity off; see
-/// [`crate::learning::reset_nudge`] for why neither half alone is a reset.
-#[tauri::command]
-pub async fn learning_local_nudge_reset(
-    db: State<'_, Db>,
-) -> AppResult<sundayrec_core::local_adaptivity::LocalNudge> {
-    Ok(crate::learning::reset_nudge(&db).await)
-}
-
 /// Delete one recording-history row by id.
 #[tauri::command]
 pub async fn recordings_delete(db: State<'_, Db>, id: String) -> AppResult<()> {
     store::delete_recording(&db.pool, &id).await
-}
-
-/// Delete the entire recording history.
-#[tauri::command]
-pub async fn recordings_clear(db: State<'_, Db>) -> AppResult<()> {
-    store::clear_recordings(&db.pool).await
 }
 
 /// Set (or clear, with `null`) a recording's free-text note (capped at 4096
@@ -157,53 +38,76 @@ pub async fn recording_update_note(
     store::update_recording_note(&db.pool, &id, note).await
 }
 
-/// The outcome of one auto-delete prune pass. Mirrors the Electron
-/// `cleanupOldRecordings` bookkeeping (`deleted` + `skippedAwaitingCloud`).
+/// The outcome of one retention pass: how many recordings were MOVED into the
+/// Papirkurv. (Until the owner decision below, the field was `deleted` and the
+/// pass hard-deleted — see the history on `recordings_prune`.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/PruneSummary.ts")]
+#[ts(export, export_to = "PruneSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PruneSummary {
-    /// Recordings whose file was deleted and history row dropped.
-    pub deleted: usize,
-    /// Rows held back this pass because a configured cloud service hasn't
-    /// confirmed the upload yet (only counted when cloud auto-backup is on).
-    pub kept_awaiting_cloud: usize,
+    /// Recordings whose file was moved into the trash this pass. Their history
+    /// rows stay — the trash's own purge is the one moment a row dies.
+    pub moved: usize,
     /// Whether retention is disabled (`autoDeleteDays <= 0`) — the UI shows a
-    /// hint rather than "0 deleted".
+    /// hint rather than "0 moved".
     pub disabled: bool,
 }
 
-/// Auto-delete recordings past the `autoDeleteDays` retention window.
+/// One retention pass: move recordings past the `autoDeleteDays` window into
+/// the Papirkurv.
 ///
 /// Reads `autoDeleteDays` + `saveFolder` from settings, runs the pure
-/// [`decide_prune`] decision over the current history, then unlinks the chosen
-/// files and drops their rows. Returns a [`PruneSummary`]. Disabled (no-op) when
+/// [`decide_prune`] decision over the current history, then moves the chosen
+/// files into [`crate::trash`] — sidecars ride along, exactly as a manual
+/// delete in Bibliotek. Returns a [`PruneSummary`]. Disabled (no-op) when
 /// `autoDeleteDays <= 0`, matching the Electron early-return.
 ///
-/// The Tauri history doesn't yet persist per-recording cloud-upload confirmation,
-/// so `expected_cloud` is empty here (the cloud-completeness guard is exercised
-/// in the core unit tests); when that column lands the wiring is a one-line map.
+/// ## Papirkurv, ikke hard sletting — eierbeslutning 2026-08-31
+///
+/// V1/PR3 fant denne som en skjøtefeil: kommandoen var appens ENESTE
+/// implementasjon av auto-slettingen som loves på to skjermer (bryteren «Slett
+/// gamle opptak» på Avansert, «Slettes automatisk etter {n} dager» i
+/// bibliotekfoten) — og den hadde ingen kallere, så ingenting ble noen gang
+/// slettet. Verre: koden slettet filene for godt der BEGGE UI-tekstene
+/// («Flyttes til papirkurven, ikke slettet for godt», `autoDeleteDesc` +
+/// `autoDeleteConfirmBody`) lover papirkurven. Eieren avgjorde: papirkurven,
+/// som teksten sier. Retensjonen er dermed totrinns — `autoDeleteDays` →
+/// papirkurv → 30 dager til ([`crate::trash::AUTO_PURGE_DAYS`], sweepens
+/// jobb) → borte for godt.
+///
+/// ## Radene består, og passet er idempotent
+///
+/// Flyttingen rører IKKE `recording`-tabellen (se modulhodet i `crate::trash`:
+/// raden er appens minne om at gudstjenesten fantes, og purge er det ene
+/// øyeblikket den dør). En rad hvis fil alt ligger i kurven — eller er ryddet
+/// vekk for hånd — peker på en sti uten fil; `move_into_trash` hopper over det
+/// som ikke er en fil, så neste pass teller den ikke om igjen.
+///
+/// Flyttingen skjer én oppføring om gangen, med vilje. Opprinnelig fordi
+/// `move_into_trash` skrev manifestet først ETTER hele lista si, så ett kall
+/// for alle kandidatene mistet oppføringene for alt som rakk å flytte før en
+/// feilende fil. F1-M2 fjernet den fellen — manifestet journalføres nå per
+/// opptak, FØR fila flyttes — men per-fil-løkka blir stående av den andre
+/// grunnen: en feilende fil skal koste seg selv og ikke resten av passet,
+/// og `move_into_trash` gir opp hele kallet på første flytting som nekter.
 #[tauri::command]
 pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<PruneSummary> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let days = s.auto_delete_days as i64;
 
-    // Resolve the save folder (fall back to the OS documents dir, mirroring the
-    // Electron default). An empty save dir disables pruning in the core decision.
-    let save_dir = s.save_folder.clone().unwrap_or_else(|| {
-        app.path()
-            .document_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    });
-
     if days <= 0 {
         return Ok(PruneSummary {
-            deleted: 0,
-            kept_awaiting_cloud: 0,
+            moved: 0,
             disabled: true,
         });
     }
+
+    // The canonical resolver (R3). The pre-R3 fallback was the BARE Documents
+    // directory, so `decide_prune`'s "lives under the save dir" guard accepted
+    // ANY file under Documents — pruning could move recordings outside
+    // `<Documents>/SundayRec`, the folder the recorder writes into.
+    let save_dir = crate::save_folder::resolve(&app, s.save_folder.as_deref())?;
+    let save_dir_str = save_dir.to_string_lossy().into_owned();
 
     let rows = store::list_recordings(&db.pool).await?;
     let cutoff_ms = (store::now_ms() as i64) - days * 86_400_000;
@@ -213,30 +117,98 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
             id: r.id.clone(),
             file_path: Some(r.file_path.clone()),
             started_at_ms: Some(r.started_at as i64),
-            cloud_uploaded: Vec::new(),
         })
         .collect();
 
-    let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir, &[]);
+    let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir_str);
+    let paths: Vec<String> = rows
+        .iter()
+        .filter(|r| decision.delete_ids.contains(&r.id))
+        .map(|r| r.file_path.clone())
+        .collect();
 
-    let mut deleted = 0usize;
-    for id in &decision.delete_ids {
-        if let Some(row) = rows.iter().find(|r| &r.id == id) {
-            // Best-effort unlink: a missing file (already gone) still counts as
-            // pruned; a failed unlink keeps the history row so the user can see it.
-            match std::fs::remove_file(&row.file_path) {
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => continue,
+    if paths.is_empty() {
+        return Ok(PruneSummary {
+            moved: 0,
+            disabled: false,
+        });
+    }
+
+    let moved = tokio::task::spawn_blocking(move || {
+        let mut moved = 0usize;
+        for path in paths {
+            match crate::trash::move_into_trash(&save_dir, &[path]) {
+                Ok(entries) => moved += entries.len(),
+                // Best-effort per recording: a file that will not move stays in
+                // the library (its row is untouched), and the pass goes on.
+                Err(e) => tracing::warn!("retention: could not move into trash: {e}"),
             }
         }
-        store::delete_recording(&db.pool, id).await?;
-        deleted += 1;
+        moved
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Internal(format!("retention join: {e}")))?;
+
+    if moved > 0 {
+        tracing::info!(
+            "retention: moved {moved} recording(s) older than {days} day(s) into the trash"
+        );
     }
 
     Ok(PruneSummary {
-        deleted,
-        kept_awaiting_cloud: decision.kept_awaiting_cloud,
+        moved,
         disabled: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn prune_scopes_to_the_recordings_subfolder_not_bare_documents() {
+        // The exact resolution `recordings_prune` performs with no folder
+        // configured. Before R3 it resolved the BARE Documents dir, so
+        // `decide_prune`'s under-the-save-dir guard accepted any old file
+        // anywhere under Documents.
+        let dir =
+            crate::save_folder::resolve_with_documents(None, Some(Path::new("/Users/x/Documents")))
+                .unwrap();
+        assert_eq!(dir, PathBuf::from("/Users/x/Documents/SundayRec"));
+    }
+
+    #[test]
+    fn prune_moves_into_the_trash_and_never_hard_deletes() {
+        // Source ratchet for the owner decision (2026-08-31): retention MOVES
+        // recordings into the Papirkurv — both UI texts promise exactly that
+        // («Flyttes til papirkurven, ikke slettet for godt»). A hard delete
+        // reappearing here would delete services for good under a text that
+        // promises the opposite, which is the seam V1/PR3 refused to wire.
+        let src = include_str!("db.rs");
+        assert!(
+            src.contains("move_into_trash"),
+            "recordings_prune must route through crate::trash::move_into_trash"
+        );
+        // Split so this test's own source doesn't match itself.
+        let needle = concat!("remove", "_file");
+        assert!(
+            !src.contains(needle),
+            "db commands must never unlink recordings — the trash is the only delete"
+        );
+    }
+
+    #[test]
+    fn prune_resolves_only_through_the_canonical_resolver() {
+        // Source ratchet: fails if someone re-inlines a Documents lookup here.
+        let src = include_str!("db.rs");
+        assert!(
+            src.contains("save_folder::resolve("),
+            "recordings_prune must resolve via crate::save_folder::resolve"
+        );
+        let needle = concat!("document", "_dir");
+        assert!(
+            !src.contains(needle),
+            "db commands must not resolve the Documents dir themselves"
+        );
+    }
 }
