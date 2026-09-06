@@ -59,9 +59,10 @@ export async function runRetentionPass(): Promise<void> {
   // (papirkurv-tellinga, biblioteklista) allerede stemme med den.
   await Promise.all([loadTrash(), loadRecordingCount()]);
 
-  // `trash.*`, ikke `app.*`: nøklene bor hos papirkurv-søsknene sine, som er
-  // oversatt i alle sju katalogene — en flertallsgruppe kan ikke bo i det
-  // pausede `app.`-subtreet (`app/lib/i18n.test.ts` sveiper alle sju).
+  // `trash.*`, ikke `app.*`: nøklene bor hos papirkurv-søsknene sine
+  // (`app/lib/i18n.test.ts` sveiper alle sju). Plasseringen ble avgjort mens
+  // `app.`-subtreet var pauset og derfor ikke kunne bære en flertallsgruppe;
+  // pausen er over (F2-S6), men naboskapet er fortsatt den riktige grunnen.
   toast("info", tn("trash.retentionMoved", summary.moved), {
     durationMs: TOAST_MS,
     action: {

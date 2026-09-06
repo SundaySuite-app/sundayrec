@@ -253,8 +253,11 @@ describe("4 — Hvilken kirke?", () => {
   });
 
   it("språket er det som RENDRES, ikke det som står lagret", () => {
-    // En profil satt til tysk leser engelsk gjennom redesignet (fem kataloger
-    // er pauset). Kortet skal si det brukeren faktisk ser.
+    // Slik så det ut mens fem kataloger var pauset: en profil satt til tysk
+    // leste engelsk. Alle sju er aktive nå (F2-S6), så de to følger hverandre
+    // i praksis — men påstanden er om hvilken KILDE kortet leser, og den kan
+    // skille lag igjen (en pause, en katalog som ikke lastet). Kortet skal si
+    // det brukeren faktisk ser.
     const d = decideChurch(
       withSettings(
         { churchName: "Bryn menighet", language: "de" },

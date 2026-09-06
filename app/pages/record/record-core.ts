@@ -172,12 +172,12 @@ function pad2(n: number): string {
  *
  * ## Hvorfor en form og ikke en streng
  *
- * `tn()` er utelukket: `check-i18n-plurals.mjs` krever hver flertallsgruppe i
- * ALLE sju språk med riktige CLDR-kategorier og har ingen unntak for de fem
- * pausede — en ny `tn()`-nøkkel ville krevd polske flertallsformer midt i
- * pausen som finnes for å slippe akkurat det. Så: tre `tf()`-nøkler, og
- * kjernen velger hvilken. «14 t», «14 t 20 min» og «45 min» er riktige for
- * hele tallområdet de faktisk vises for.
+ * `tn()` var en gang utelukket av pausen — en ny flertallsgruppe ville krevd
+ * polske former midt i den. Pausen er over (F2-S6), og formen består likevel:
+ * «14 t», «14 t 20 min» og «45 min» bruker INVARIANTE forkortelser, riktige i
+ * hele tallområdet de faktisk vises for og i alle sju språk. Så: tre
+ * `tf()`-nøkler, og kjernen velger hvilken. Se `span-text.ts` for hva som
+ * gjør valget om.
  */
 export type SpanKind = "none" | "hours" | "hoursMinutes" | "minutes";
 
