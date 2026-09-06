@@ -163,7 +163,11 @@ export function parsePausedLists(source) {
     );
   }
   const keysBlock = source.match(
-    /PAUSED_KEYS\s*=\s*new Set\(\[([\s\S]*?)\n\]\)/,
+    // Tåler `PAUSED_KEYS: Set<string> = …`, `new Set<string>([…])` og en
+    // TOM liste på én linje (`new Set<string>([])`) — språkrunden (F2-S)
+    // tømte lista, og en tom liste må fortsatt bli funnet, ikke feile som
+    // «omformet».
+    /PAUSED_KEYS(?::\s*Set<[^>]+>)?\s*=\s*new Set(?:<[^>]+>)?\(\[([\s\S]*?)\s*\]\)/,
   );
   if (!keysBlock) {
     throw new Error(
