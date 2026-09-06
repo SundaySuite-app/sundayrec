@@ -4310,18 +4310,16 @@ mod tests {
         // Serialise the `SUNDAYREC_*` env overrides against the parallel suite.
         // Shared with media/ffmpeg.rs's tests — env vars are process-global,
         // so ONE lock must serialise every mutator (see its doc comment).
-        use crate::media::ffmpeg::tests::ENV_LOCK;
-
-        /// Path to the fetched dev sidecar, if `npm run ffmpeg` populated it.
-        /// Same lookup the `media::ffmpeg` integration tests use.
-        fn fetched_sidecar(name: &str) -> Option<std::path::PathBuf> {
-            let triple = env!("SUNDAYREC_TARGET_TRIPLE");
-            let ext = if cfg!(windows) { ".exe" } else { "" };
-            let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("binaries")
-                .join(format!("{name}-{triple}{ext}"));
-            p.is_file().then_some(p)
-        }
+        //
+        // F2-W7: `fetched_sidecar` comes from the same module — it used to be a
+        // local `is_file()`-only copy, which called the Windows CI job's 0-byte
+        // stub (ci.yml's "Stub ffmpeg sidecars" step) present and let the
+        // `Command::new(ffmpeg)` calls below run it — that fails to spawn (not
+        // a valid executable), turning every `_or_skips` test in this module
+        // into a hard panic on a lane that never has a real sidecar. The
+        // canonical helper also confirms the binary RUNS, so it skips cleanly
+        // there instead.
+        use crate::media::ffmpeg::tests::{fetched_sidecar, ENV_LOCK};
 
         /// Generate a 2 s lavfi A/V source (testsrc video + sine audio) in `dir`
         /// and return its path. HARDWARE-FREE — lavfi synthesises both streams.
