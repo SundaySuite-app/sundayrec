@@ -376,22 +376,35 @@ re-discovering these bullets one at a time.
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
   wired but unproven on a device.
-- **F2's Windows-only fixes** (`docs/RIG-DAY.md` (w1)/(w2)/(w3)/(w6)): four
-  fixes touched real Windows-only code paths and are unproven beyond a
+- **F2's Windows-only fixes** (`docs/RIG-DAY.md` (w1)/(w2)/(w3)/(w5)/(w6)/(w14)):
+  six fixes touched real Windows-only code paths and are unproven beyond a
   cross-compiled `cargo check`/`clippy` and CI's `windows-check` lane (which
   since #231 also runs `cargo test --workspace` on a real Windows runner, not
   just check+clippy) — the auto-updater no longer killing its own installer
   via the ffmpeg job-object (#243), the update button being refused outright
   while a recording is live (#243), no console window opening behind any of
-  22 process-spawn sites (#237), and a Windows video recording surviving a
-  crash via an MKV capture + recovery manifest (#246). A/V sync on the
-  Windows video path remains unproven regardless (unchanged by #246). A
-  fifth, narrower gap: four cpal/WASAPI unit tests (`audio::vu`,
-  `native_capture::segment` ×2, `native_capture::preroll`) are
+  22 process-spawn sites (#237), a Windows video recording surviving a crash
+  via an MKV capture + recovery manifest (#246), the machine staying awake
+  between a scheduled wake and the recording actually starting via a
+  `SetThreadExecutionState` block (#252), and recording start no longer
+  sweeping every installed ASIO driver when a plain WASAPI device is
+  selected (#253). A/V sync on the Windows video path remains unproven
+  regardless (unchanged by #246). A seventh, narrower gap: four cpal/WASAPI
+  unit tests (`audio::vu`, `native_capture::segment` ×2,
+  `native_capture::preroll`) are
   `#[cfg_attr(windows, ignore = "F2-W7: … — see PR #231")]` because the CI
   runner's image crashes (`STATUS_ACCESS_VIOLATION`) the moment they open a
   real audio stream — they need a Windows box with a working audio service
   and a microphone to even run, let alone pass.
+- **The same keep-awake block, macOS side** (`docs/RIG-DAY.md` tillegg —
+  #252): the Electron port carried the _decision_ to keep the machine awake
+  (`wake.rs`'s `should_block`) but never the _action_ — no
+  `IOPMAssertionCreateWithName`/`SetThreadExecutionState` call existed on
+  either platform until #252. Unproven on real hardware: whether a machine
+  that actually fell asleep, woken by a timer, stays up the ~10 minutes
+  until a scheduled recording starts (macOS via `IOPMAssertionCreateWithName`
+  ×2, Windows via `SetThreadExecutionState`), and whether `PreventSystemSleep`
+  is honored on battery the same way it is on AC power.
 - **The wake test no longer endangers the real schedule, unproven on
   hardware** (`docs/RIG-DAY.md` (e)/(e, fortsettelse)/(tillegg — Windows)):
   F2-W3 (#235) found that "Test wake in 2 min" used to erase Sunday's real
