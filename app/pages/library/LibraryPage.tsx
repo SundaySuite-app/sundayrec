@@ -72,6 +72,7 @@ import { openInEditor } from "../../editor/entry";
 import { openFile, pickAndOpen } from "../../editor/loader";
 import { locale, t, tf } from "../../i18n";
 import { navigate } from "../../router/router";
+import { currentOs } from "../../state/platform-core";
 import { loadRecordingCount, recordings } from "../../state/recordings";
 import { settings } from "../../state/settings";
 import { loadTrash, trashCount } from "../../state/trash";
@@ -241,6 +242,10 @@ export function LibraryPage() {
   const rows =
     entries === null ? null : toLibraryRows(filterEntries(entries, query));
   const anyRecordings = entries !== null && entries.length > 0;
+  // F2-T3: ⌘F på macOS, Ctrl+F ellers — samme kilde `main.tsx` bruker for
+  // `platform-*`-klassen, ikke UA-strengen. Bare et visningsspørsmål: selve
+  // snarveien (`Shell.tsx`s `useGlobalShortcuts`) godtar begge uansett OS.
+  const searchShortcut = currentOs() === "mac" ? "⌘F" : "Ctrl+F";
 
   async function remove(row: LibraryRow): Promise<void> {
     if (busy) return;
@@ -286,7 +291,9 @@ export function LibraryPage() {
               <TextField
                 value={query}
                 onInput={setQuery}
-                placeholder={t("app.library.search")}
+                placeholder={tf("app.library.searchPlaceholder", {
+                  shortcut: searchShortcut,
+                })}
                 labelId="library-search-label"
                 testId="library-search"
               />
