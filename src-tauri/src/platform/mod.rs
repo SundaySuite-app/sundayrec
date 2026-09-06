@@ -11,6 +11,26 @@
 //! inherit the job, and when the SundayRec process dies for ANY reason the OS
 //! tears the whole job down — every ffmpeg child included.
 //!
+//! ## The one child that must NOT be torn down (F2-W1)
+//!
+//! The rule "everything we start dies with us" has exactly one exception, and
+//! it is the reason no Windows install could ever update itself: the update
+//! installer. `tauri-plugin-updater` starts
+//! `SundayRec_x.y.z_x64-setup.exe` with `ShellExecuteW` — our child, so a
+//! member of our job — and then calls `std::process::exit(0)`. That closed the
+//! only handle to the job, `KILL_ON_JOB_CLOSE` fired, and the OS killed the
+//! installer a few milliseconds into unpacking. No error, no dialog, no
+//! restart: the window simply vanished and the next launch was the old
+//! version.
+//!
+//! [`disarm_kill_on_close`] is the way out. It keeps the job and keeps every
+//! process in it, and only takes the teeth out (`LimitFlags = 0`), moments
+//! before the installer is started and after the recorder has been stopped and
+//! waited for — so there is no ffmpeg left for the guard to protect anyone
+//! from. It is deliberately NOT `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`: that
+//! would take every FUTURE child out of the job, which is the guard itself,
+//! removed for the rest of the session rather than for the last second of it.
+//!
 //! macOS/Linux have no Job Object equivalent, and the 2026-07-31 rig incident
 //! proved the hole is real there too: a crashed instance left an ffmpeg
 //! recording the room for 12+ minutes with no UI. Two unix mechanisms close it:
@@ -41,6 +61,34 @@ pub fn orphan_guard_active() -> bool {
     ORPHAN_GUARD.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Take the kill-on-close teeth out of the Job Object, so a child started
+/// AFTER this call survives our exit. Windows-only; see the module docs for
+/// the one caller that needs it ([`crate::update::relaunch_now`], immediately
+/// before the update installer is started).
+///
+/// Returns whether the process is now free to leave a child behind: `true`
+/// when the limit was cleared, and `true` on a platform/session that never had
+/// a job at all (nothing is holding the installer down there either). `false`
+/// means the job is still armed and starting an installer would be pointless —
+/// the caller says so in `update-relaunch.log` rather than guessing.
+///
+/// **One way only.** There is no re-arm, and there must not be: the only
+/// caller is on the path where the process is about to be replaced, and a
+/// "disarm, change your mind, re-arm" API is an invitation to disarm somewhere
+/// a service is still being recorded.
+#[cfg(windows)]
+pub fn disarm_kill_on_close() -> bool {
+    imp::disarm_kill_on_close()
+}
+
+/// Non-Windows: there is no Job Object, so nothing holds a child down and the
+/// answer is trivially "go ahead". (The unix reaper only ever shoots the
+/// bundled ffmpeg/ffprobe paths, never an installer.)
+#[cfg(not(windows))]
+pub fn disarm_kill_on_close() -> bool {
+    true
+}
+
 /// Terminate sidecar (ffmpeg/ffprobe) survivors from PREVIOUS app instances.
 ///
 /// MUST run after the single-instance gate (a second launch would otherwise kill
@@ -68,13 +116,24 @@ pub(crate) static ORPHAN_GUARD: std::sync::atomic::AtomicBool =
 
 #[cfg(windows)]
 mod imp {
-    use windows_sys::Win32::Foundation::CloseHandle;
+    use std::sync::OnceLock;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    /// The job handle, as an `isize` so the cell is `Send + Sync` (a raw
+    /// `HANDLE` is `*mut c_void`, which is neither).
+    ///
+    /// It is still never closed — the job must stay open for the whole process
+    /// lifetime — but it is now REMEMBERED rather than merely leaked, because
+    /// [`disarm_kill_on_close`] needs it. A leak you cannot name is a leak you
+    /// cannot correct; that was the whole shape of F2-W1.
+    static JOB: OnceLock<isize> = OnceLock::new();
 
     pub fn guard_child_processes() {
         // SAFETY: a self-contained sequence of Win32 calls with checked returns.
@@ -113,12 +172,60 @@ mod imp {
                 return;
             }
             // Deliberately do NOT `CloseHandle(job)`: the handle is intentionally
-            // leaked so the job stays open for the whole process lifetime and
+            // kept so the job stays open for the whole process lifetime and
             // KILL_ON_JOB_CLOSE fires when we exit/die. (`job` is a Copy raw handle;
             // letting it go out of scope does nothing — the OS handle stays open.)
+            // It is parked in `JOB` rather than dropped on the floor so
+            // `disarm_kill_on_close` can reach it. `set` can only fail if this
+            // ran twice, which the "call ONCE" contract forbids — and even
+            // then the first job is the live one, so keeping it is right.
+            let _ = JOB.set(job as isize);
             super::ORPHAN_GUARD.store(true, std::sync::atomic::Ordering::Relaxed);
             tracing::info!("orphan-guard: process placed in kill-on-close Job Object");
         }
+    }
+
+    /// Clear every basic limit on the job — `KILL_ON_JOB_CLOSE` with them — so
+    /// the update installer we are about to start outlives our exit.
+    ///
+    /// Same information class, same struct and same size as the arming call
+    /// above, with the one flag removed: the exact inverse, which is the only
+    /// shape of this that can be read and believed. NOT
+    /// `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` — that would take every future
+    /// child OUT of the job, i.e. remove the ffmpeg guard rather than the
+    /// teeth, and it would keep doing so for as long as the process lived.
+    pub fn disarm_kill_on_close() -> bool {
+        let Some(&job) = JOB.get() else {
+            // No job was ever created (`CreateJobObject`/`AssignProcess`
+            // failed at startup and we fell back to `kill_on_drop`). Nothing
+            // is holding the installer down, so the caller may proceed.
+            tracing::info!("orphan-guard: no job object to disarm — nothing holds a child down");
+            return true;
+        };
+        let job = job as HANDLE;
+        // SAFETY: `job` is the handle `guard_child_processes` created and never
+        // closed, and `info` is a fully-initialised, correctly-sized struct of
+        // the class named alongside it.
+        let ok = unsafe {
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = 0;
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                std::ptr::addr_of!(info) as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if ok == 0 {
+            tracing::error!(
+                "orphan-guard: could not clear KILL_ON_JOB_CLOSE — an installer \
+                 started now would be killed with us"
+            );
+            return false;
+        }
+        super::ORPHAN_GUARD.store(false, std::sync::atomic::Ordering::Relaxed);
+        tracing::info!("orphan-guard: kill-on-close cleared — a child may now outlive us");
+        true
     }
 }
 
