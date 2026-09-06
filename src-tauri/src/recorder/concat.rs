@@ -88,6 +88,36 @@ pub(crate) struct DeliverySpec {
     pub hvc1_tag: bool,
 }
 
+impl DeliverySpec {
+    /// Build the spec for ONE capture primary from the session's persisted
+    /// [`AudioEncodeManifest`] — the manifest's own fields plus the delivery path
+    /// derived from the capture stem (which carries any `_2` split suffix).
+    ///
+    /// The single place a manifest becomes a finalise spec. It has three callers —
+    /// the live stop (`engine::finalize_one`), the next-launch crash recovery
+    /// (`recovery::recover_session`) and the Windows cpal video stop (F2-W4) — and
+    /// they MUST agree: a recording finalised by one and a recording finalised by
+    /// another are the same recording, one of them just went through a crash.
+    pub(crate) fn from_manifest(
+        enc: &sundayrec_core::recovery::AudioEncodeManifest,
+        capture_primary: &str,
+    ) -> Self {
+        Self {
+            delivery_path: sundayrec_core::recovery::delivery_path_for(
+                capture_primary,
+                &enc.delivery_dir,
+                &enc.ext,
+            ),
+            ext: enc.ext.clone(),
+            channels: enc.channels,
+            sample_rate: enc.sample_rate,
+            bitrate_kbps: enc.bitrate_kbps,
+            mode: enc.mode,
+            hvc1_tag: enc.hvc1_tag,
+        }
+    }
+}
+
 /// Hard limit on the concat-copy ffmpeg run (and, reusing the same bound, on the
 /// delivery encode/remux). A stream-copy of even a multi-hour service is fast and
 /// a long service's WAV→mp3 encode is minutes at worst; anything past this means

@@ -287,6 +287,20 @@ pub fn build_cpal_pipe_audio_args(
 /// time (the single-process analogue of the two-process start_time probe). The
 /// video is conformed to CFR (`-r/-fps_mode cfr`) to stay locked to the audio.
 ///
+/// ## `output_path` is the decoupled MKV CAPTURE, not the user's mp4 (F2-W4)
+///
+/// This builder used to be pointed straight at the user's `.mp4`. An mp4 has no
+/// `moov` atom until ffmpeg finalises it, so a Windows video session that ended
+/// any way other than a clean stop — Task Manager kill, power cut, a Windows
+/// update reboot, the console window that used to be closable — left an
+/// UNPLAYABLE file, and no recovery manifest existed to tell the next launch it
+/// was even there. The caller now points this at `.sundayrec-capture-<id>/
+/// <stem>.mkv` (playable up to the crash point) and remuxes it to the mp4 at
+/// stop, exactly like the macOS path. Two container-dependent decisions below —
+/// `+faststart` and the `hvc1` tag — are gated on the ISO containers so they
+/// simply drop out for the Matroska capture, and the tag is re-applied by the
+/// finalize remux instead ([`crate::recovery::AudioEncodeManifest::hvc1_tag`]).
+///
 /// ⚠️ The dual-clock A/V sync here is the riskiest part of the cpal path and is
 /// HARDWARE-UNVERIFIED — it must be lip-sync checked on a Windows rig.
 #[allow(clippy::too_many_arguments)]
@@ -331,14 +345,22 @@ pub fn build_cpal_pipe_video_args(
     args.push("-af".into());
     args.push("aresample=async=1000:first_pts=0".into());
 
+    // The `hvc1` FourCC is an ISO/QuickTime-container concept: the decoupled
+    // capture is Matroska (own codec IDs, rejects foreign tags), so it is stamped
+    // only for a direct ISO-container output and otherwise applied at the finalize
+    // remux. Same gate as `build_unified_capture_args`.
+    let iso_container = matches!(ext_of(output_path), "mp4" | "mov" | "m4v");
+
     // Software video encode (VideoToolbox is mac-only; ASIO is Windows-only).
     args.push("-c:v".into());
     match video_codec {
         crate::editor::VideoCodec::H264 => args.push("libx264".into()),
         crate::editor::VideoCodec::H265 => {
             args.push("libx265".into());
-            args.push("-tag:v".into());
-            args.push("hvc1".into());
+            if iso_container {
+                args.push("-tag:v".into());
+                args.push("hvc1".into());
+            }
         }
     }
     args.push("-preset".into());
@@ -360,7 +382,7 @@ pub fn build_cpal_pipe_video_args(
 
     args.push("-avoid_negative_ts".into());
     args.push("make_zero".into());
-    if matches!(ext_of(output_path), "mp4" | "mov" | "m4v") {
+    if iso_container {
         args.push("-movflags".into());
         args.push("+faststart".into());
     }
@@ -1964,6 +1986,82 @@ mod tests {
         assert!(has_pair(&args, "-movflags", "+faststart"));
         assert!(has_pair(&args, "-map", "0:v"));
         assert_eq!(args.last().map(String::as_str), Some("/rec/preview.jpg"));
+    }
+
+    /// F2-W4 GOLDEN. The Windows video capture must land in the session's hidden
+    /// capture folder as **Matroska**, not straight into the user's mp4: an mp4
+    /// has no `moov` atom until a clean stop, so a Task-Manager kill / power cut
+    /// / Windows-update reboot mid-service left an unplayable file. MKV is
+    /// playable up to the crash point and is remuxed (`-c copy`) to the mp4 at
+    /// stop — the macOS path's shape.
+    #[test]
+    fn cpal_video_args_capture_to_the_sessions_mkv_not_the_users_mp4() {
+        let capture = "/rec/.sundayrec-capture-1700000000000/service.mkv";
+        let args = build_cpal_pipe_video_args(
+            "Logitech BRIO",
+            30,
+            48_000,
+            2,
+            capture,
+            None,
+            192,
+            crate::editor::VideoCodec::H264,
+            None,
+        );
+        // The ONE output is the capture MKV inside the per-session folder.
+        assert_eq!(args.last().map(String::as_str), Some(capture));
+        assert!(has_pair(&args, "-y", capture));
+        assert!(
+            !args.iter().any(|a| a.ends_with(".mp4")),
+            "no argument may still point at the delivery mp4: {args:?}"
+        );
+        // `+faststart` is an ISO-container flag; Matroska rejects it (and the
+        // whole-file rewrite it pays for is what the decoupling removes).
+        assert!(
+            !args.iter().any(|a| a == "+faststart"),
+            "mkv must not get faststart"
+        );
+        // Everything that makes the capture a real recording is unchanged.
+        assert!(has_pair(&args, "-i", "video=Logitech BRIO"));
+        assert!(has_pair(&args, "-i", "pipe:0"));
+        assert!(has_pair(&args, "-c:v", "libx264"));
+        assert!(has_pair(&args, "-fps_mode", "cfr"));
+        // Unknown extension → AAC, the codec the mp4 remux stream-copies.
+        assert!(has_pair(&args, "-c:a", "aac"));
+    }
+
+    /// The `hvc1` FourCC is ISO/QuickTime-only — stamping it on the Matroska
+    /// capture can make the mux reject the tag. It belongs on the finalize remux
+    /// (`AudioEncodeManifest::hvc1_tag`), exactly as `build_unified_capture_args`
+    /// already decided. Dormant while the recording codec is the H.264 constant;
+    /// pinned so the day it changes, the capture does not break.
+    #[test]
+    fn cpal_video_args_only_tag_hvc1_for_an_iso_container() {
+        let mkv = build_cpal_pipe_video_args(
+            "Cam",
+            30,
+            48_000,
+            2,
+            "/rec/.sundayrec-capture-1/service.mkv",
+            None,
+            192,
+            crate::editor::VideoCodec::H265,
+            None,
+        );
+        assert!(has_pair(&mkv, "-c:v", "libx265"));
+        assert!(!mkv.iter().any(|a| a == "hvc1"), "mkv takes no hvc1 tag");
+        let mp4 = build_cpal_pipe_video_args(
+            "Cam",
+            30,
+            48_000,
+            2,
+            "/rec/service.mp4",
+            None,
+            192,
+            crate::editor::VideoCodec::H265,
+            None,
+        );
+        assert!(has_pair(&mp4, "-tag:v", "hvc1"), "mp4 still gets the tag");
     }
 
     #[test]
