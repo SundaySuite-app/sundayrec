@@ -111,6 +111,31 @@ pub fn list_input_devices() -> AppResult<AudioDeviceList> {
     })
 }
 
+/// Just the NAMES of the default host's input devices — the cheap half of
+/// [`list_input_devices`].
+///
+/// It skips `supported_input_configs()`, which is the expensive part: on Windows
+/// that ACTIVATES every WASAPI endpoint to read its mix format, and all the
+/// caller here wants is "does the host already know a device by this name".
+/// Never errors: a host that refuses to enumerate yields an empty list, which
+/// the one caller ([`crate::audio::asio::is_asio_device`]) reads as "we learned
+/// nothing", not as "the name is unknown".
+///
+/// The default host is WASAPI on Windows and Core Audio on macOS — never ASIO
+/// (cpal only reaches ASIO through an explicit `host_from_id(HostId::Asio)`), so
+/// this call can never load an ASIO driver.
+#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
+pub fn list_input_device_names() -> Vec<String> {
+    let host = cpal::default_host();
+    match host.input_devices() {
+        Ok(devices) => devices.filter_map(|d| d.name().ok()).collect(),
+        Err(e) => {
+            tracing::debug!(error = %e, "devices: could not enumerate host input names");
+            Vec::new()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,6 +149,26 @@ mod tests {
         // Every reported input is tagged as an input.
         for d in &list.inputs {
             assert_eq!(d.direction, "input");
+        }
+    }
+
+    #[test]
+    fn name_only_enumeration_agrees_with_the_full_one() {
+        // The cheap list is the same list, minus the capability probing. CI
+        // runners may have zero microphones, so the contract is set membership,
+        // not a count.
+        let full = list_input_devices().expect("enumeration should not error");
+        let names = list_input_device_names();
+        for d in &full.inputs {
+            // "Unknown device" is the full path's placeholder for a device whose
+            // name could not be read; the name-only path drops such a device.
+            if d.name != "Unknown device" {
+                assert!(
+                    names.contains(&d.name),
+                    "name-only enumeration dropped {:?}",
+                    d.name
+                );
+            }
         }
     }
 

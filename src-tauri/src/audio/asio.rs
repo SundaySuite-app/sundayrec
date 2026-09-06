@@ -15,11 +15,27 @@
 //! falls back to the existing dshow/WASAPI capture automatically. See
 //! `docs/BUILD_ASIO.md` for the Windows build env.
 //!
+//! ## Enumeration is not free — it LOADS drivers
+//!
+//! cpal's ASIO `host.devices()` calls `ASIOInit` on every installed driver. ASIO
+//! drivers are single-client, so that sweep can pop a driver control panel or
+//! take the sound card a WASAPI capture is about to open. So the sweep happens
+//! only when it can change an answer ([`resolve_is_asio_device`]) and its result
+//! is memoised for [`ASIO_CACHE_TTL`] ([`AsioCache`]).
+//!
+//! [`list_asio_devices`] is the ONE function that sweeps. Everything else reads
+//! its result: the picker's `list_audio_devices`, the recorder's
+//! [`is_asio_device`], [`list_asio_input_channels`]. Adding a second sweep
+//! anywhere re-opens the finding.
+//!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
 //! The cpal ASIO calls can only be exercised on a Windows box with an ASIO driver
 //! installed (ASIO4ALL is enough for a smoke test). Off-Windows builds compile the
 //! stubs; the types + their serde/ts-rs derives are what the unit tests cover.
+
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -307,31 +323,6 @@ mod imp {
         };
         devices.map(|d| summarise(&d)).collect()
     }
-
-    pub fn list_asio_input_channels(device_id: &str) -> Vec<AudioChannel> {
-        let Some(host) = asio_host() else {
-            return Vec::new();
-        };
-        let Ok(devices) = host.devices() else {
-            return Vec::new();
-        };
-        for d in devices {
-            if d.name().ok().as_deref() == Some(device_id) {
-                let count = d
-                    .supported_input_configs()
-                    .map(|cfgs| cfgs.map(|c| c.channels()).max().unwrap_or(0))
-                    .unwrap_or(0);
-                return input_channels_for(count);
-            }
-        }
-        Vec::new()
-    }
-
-    pub fn is_asio_device(name: &str) -> bool {
-        list_asio_devices()
-            .iter()
-            .any(|d| d.name == name || d.id == name)
-    }
 }
 
 // ── Stub path (everything else) ──────────────────────────────────────────────
@@ -342,33 +333,246 @@ mod imp {
     pub fn list_asio_devices() -> Vec<AsioDevice> {
         Vec::new()
     }
+}
 
-    pub fn list_asio_input_channels(_device_id: &str) -> Vec<AudioChannel> {
-        Vec::new()
+// ── Asking ASIO only when it is actually needed (F2-W8) ──────────────────────
+//
+// Enumerating the ASIO host is not a read: cpal's `host.devices()` LOADS every
+// installed ASIO driver and calls `ASIOInit` on it. ASIO drivers are
+// single-client, so an ASIO4ALL or a Realtek-ASIO waking up can pop a driver
+// control panel, or take the sound card that the WASAPI capture is about to
+// open two lines later. Recording start called `is_asio_device()` — hence a
+// full sweep — on EVERY start, even when the operator had picked a WASAPI
+// device and no ASIO path could ever be taken. This section makes the sweep
+// conditional and memoises it.
+
+/// Whether this build can reach ASIO at all: Windows AND the `asio` feature.
+///
+/// A `const` (not a `#[cfg]` block) so the decision below is one plain boolean
+/// that unit tests can drive both ways off-Windows; the optimiser folds it, so
+/// the macOS build still short-circuits without doing any work.
+pub const ASIO_AVAILABLE: bool = cfg!(all(target_os = "windows", feature = "asio"));
+
+/// How long one ASIO enumeration is reused before the drivers are asked again.
+///
+/// 30 s: long enough that a session in the device picker — open it, scroll,
+/// close, re-open, then press record — costs ONE driver sweep instead of one
+/// per click, and short enough that an interface plugged in mid-service shows
+/// up without restarting the app. Windows ships no device-change listener
+/// (see [`crate::audio::device_watch`]), so this TTL, plus the explicit
+/// [`invalidate_asio_cache`] the diagnose tool calls, is the whole freshness
+/// story on the platform ASIO exists on.
+pub const ASIO_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// A process-wide, TTL'd memo of the last ASIO enumeration.
+///
+/// Two locks, on purpose:
+///   - `entry` guards the memo itself and is NEVER held across a probe. A sweep
+///     can block for seconds inside a driver, and a stalled sweep must not also
+///     freeze the next [`peek_at`](Self::peek_at).
+///   - `probing` serialises the sweeps. ASIO drivers are single-client, so two
+///     threads calling `ASIOInit` on the same driver at once is the very failure
+///     this module exists to avoid — the picker's blocking enumeration and a
+///     recording start CAN land together. The second caller waits for the first
+///     sweep and then reads its result instead of starting its own.
+pub(crate) struct AsioCache {
+    ttl: Duration,
+    entry: Mutex<Option<(Instant, Vec<AsioDevice>)>>,
+    probing: Mutex<()>,
+}
+
+impl AsioCache {
+    pub(crate) const fn new(ttl: Duration) -> Self {
+        Self {
+            ttl,
+            entry: Mutex::new(None),
+            probing: Mutex::new(()),
+        }
     }
 
-    pub fn is_asio_device(_name: &str) -> bool {
-        false
+    /// The memoised devices if the entry is still younger than the TTL at `now`,
+    /// else `None`. Never probes.
+    pub(crate) fn peek_at(&self, now: Instant) -> Option<Vec<AsioDevice>> {
+        let guard = crate::util::lock_recover(&self.entry);
+        match guard.as_ref() {
+            Some((stamp, devices)) if now.saturating_duration_since(*stamp) < self.ttl => {
+                Some(devices.clone())
+            }
+            _ => None,
+        }
     }
+
+    /// The memoised devices, or `probe()` — which is then memoised at `now`.
+    pub(crate) fn get_or_fill_at(
+        &self,
+        now: Instant,
+        probe: impl FnOnce() -> Vec<AsioDevice>,
+    ) -> Vec<AsioDevice> {
+        if let Some(hit) = self.peek_at(now) {
+            return hit;
+        }
+        let _sweeping = crate::util::lock_recover(&self.probing);
+        // Re-check: whoever held `probing` may have just filled the memo, and
+        // their sweep is as good as the one we were about to start.
+        if let Some(hit) = self.peek_at(now) {
+            return hit;
+        }
+        let fresh = probe();
+        *crate::util::lock_recover(&self.entry) = Some((now, fresh.clone()));
+        fresh
+    }
+
+    /// Drop the memo, so the next call probes.
+    pub(crate) fn invalidate(&self) {
+        *crate::util::lock_recover(&self.entry) = None;
+    }
+}
+
+static ASIO_CACHE: AsioCache = AsioCache::new(ASIO_CACHE_TTL);
+
+/// Forget the memoised ASIO enumeration, so the next call asks the drivers again.
+///
+/// Called by the diagnose tool, whose whole job is to report what is on the
+/// machine RIGHT NOW; a Windows device-change listener would call it too, if one
+/// shipped (see [`crate::audio::device_watch`] for why none does).
+pub fn invalidate_asio_cache() {
+    ASIO_CACHE.invalidate();
 }
 
 /// Enumerate the ASIO input devices visible on this machine. Empty when ASIO is
 /// unavailable (non-Windows, feature off, or no driver installed).
+///
+/// Memoised for [`ASIO_CACHE_TTL`] — see [`AsioCache`]. Use
+/// [`invalidate_asio_cache`] first when a stale answer would be wrong.
 pub fn list_asio_devices() -> Vec<AsioDevice> {
-    imp::list_asio_devices()
+    if !ASIO_AVAILABLE {
+        return Vec::new();
+    }
+    ASIO_CACHE.get_or_fill_at(Instant::now(), imp::list_asio_devices)
 }
 
 /// List the input channels of one ASIO device. Empty if the device is gone or
 /// ASIO is unavailable.
+///
+/// Reads the channel count out of [`list_asio_devices`] — so it shares the ONE
+/// memo, and cannot become a second, unconditional way to load every installed
+/// driver. It used to walk the ASIO host itself with its own `host.devices()`
+/// sweep; nothing in the shipped path calls it today (the channel count comes
+/// from `start_vu`'s negotiated reply — see [`crate::commands::audio`]), so that
+/// sweep was a landmine for whichever caller brought it back, not a live cost.
+///
+/// Same answer as the old walk: `summarise` derives `input_channels` from the
+/// same `supported_input_configs().map(channels).max()` this used to compute
+/// inline. Device names are matched case-insensitively, like everywhere else in
+/// this module.
 pub fn list_asio_input_channels(device_id: &str) -> Vec<AudioChannel> {
-    imp::list_asio_input_channels(device_id)
+    input_channels_of(&list_asio_devices(), device_id)
+}
+
+/// The lookup half of [`list_asio_input_channels`], with the device list passed
+/// in so it can be exercised without an ASIO driver. Empty for a name no device
+/// answers to.
+fn input_channels_of(devices: &[AsioDevice], device_id: &str) -> Vec<AudioChannel> {
+    let needle = device_id.to_lowercase();
+    devices
+        .iter()
+        .find(|d| d.id.to_lowercase() == needle || d.name.to_lowercase() == needle)
+        .map(|d| input_channels_for(d.input_channels))
+        .unwrap_or_default()
+}
+
+/// Case-insensitive device-name membership. Windows spells the same interface
+/// with different casing across its WASAPI and ASIO views.
+fn contains_name(names: &[String], name: &str) -> bool {
+    let needle = name.to_lowercase();
+    names.iter().any(|n| n.to_lowercase() == needle)
+}
+
+/// Every string an enumerated ASIO device answers to.
+///
+/// Both `name` AND `id`, because that is what the membership test replaced here
+/// did (`d.name == name || d.id == name`). The two are the same string today —
+/// see [`AsioDevice`] — so this is a no-op that stays correct if a later backend
+/// gives `id` a stabler handle.
+fn device_names(devices: &[AsioDevice]) -> Vec<String> {
+    devices
+        .iter()
+        .flat_map(|d| [d.name.clone(), d.id.clone()])
+        .collect()
+}
+
+/// Whether resolving `name` requires ASKING the ASIO host — the call that loads
+/// (`ASIOInit`s) every installed ASIO driver.
+///
+/// `false` when the host's own input devices already answer to `name`: a device
+/// WASAPI/Core Audio names is reached through that backend, so there is nothing
+/// for ASIO to add. `false` for an empty name — nothing is configured, and no
+/// driver has ever reported `""` as its name, so a sweep could only answer "no".
+/// `true` otherwise, INCLUDING when `known_non_asio_names` is empty: knowing
+/// nothing about the host's devices is not evidence that the name isn't ASIO.
+pub fn needs_asio_probe(name: &str, known_non_asio_names: &[String]) -> bool {
+    if name.trim().is_empty() {
+        return false;
+    }
+    !contains_name(known_non_asio_names, name)
+}
+
+/// The whole decision behind [`is_asio_device`], with its three lookups passed
+/// in so tests can count them.
+///
+/// In order of cost:
+///   1. ASIO unreachable in this build, or no device configured → `false`, free.
+///   2. A fresh enumeration is already memoised → answer from it, free.
+///   3. The host (WASAPI/Core Audio) already knows the name → `false`, one cheap
+///      name-only enumeration ([`crate::audio::devices::list_input_device_names`]).
+///   4. Only now: sweep the ASIO drivers.
+///
+/// ⚠️ Step 3's trade-off, stated plainly: if a WASAPI endpoint reports EXACTLY
+/// the same name as an installed ASIO driver, this routes to WASAPI without
+/// asking ASIO. In practice the two views name a card differently ("ASIO4ALL
+/// v2" / "Focusrite USB ASIO" vs "Mikrofon (Focusrite USB Audio)") — the
+/// same-name dedup in [`merge_audio_inputs`] is defensive, not the common case —
+/// and step 2 covers the ordinary flow, where the picker has just enumerated
+/// ASIO and the user then presses record. The cost of being wrong is a WASAPI
+/// recording instead of a multichannel ASIO one; the cost of the old
+/// unconditional sweep was a driver panel, or a stolen sound card, at the start
+/// of every service. Rig point (w14) checks it on real hardware.
+pub(crate) fn resolve_is_asio_device(
+    asio_available: bool,
+    name: &str,
+    fresh_asio_names: Option<Vec<String>>,
+    host_names: impl FnOnce() -> Vec<String>,
+    probe_asio_names: impl FnOnce() -> Vec<String>,
+) -> bool {
+    if !asio_available || name.trim().is_empty() {
+        return false;
+    }
+    if let Some(known) = fresh_asio_names {
+        return contains_name(&known, name);
+    }
+    if !needs_asio_probe(name, &host_names()) {
+        return false;
+    }
+    contains_name(&probe_asio_names(), name)
 }
 
 /// Whether `name` matches a currently-present ASIO device. Used by the recorder to
 /// decide whether to take the ASIO capture path or fall back to dshow/WASAPI.
 /// Always `false` when ASIO is unavailable.
+///
+/// Every caller — recording start, the capture bench, the pre-service capture
+/// probe — goes through here, so they all share one answer and one memo. See
+/// [`resolve_is_asio_device`] for what it costs.
 pub fn is_asio_device(name: &str) -> bool {
-    imp::is_asio_device(name)
+    resolve_is_asio_device(
+        ASIO_AVAILABLE,
+        name,
+        ASIO_CACHE
+            .peek_at(Instant::now())
+            .map(|devices| device_names(&devices)),
+        crate::audio::devices::list_input_device_names,
+        || device_names(&list_asio_devices()),
+    )
 }
 
 #[cfg(test)]
@@ -538,6 +742,363 @@ mod tests {
         let mut out3 = Vec::new();
         route_frame(&[ChannelRoute::Pick(99)], &frame, &mut out3);
         assert_eq!(out3, vec![0.0]);
+    }
+
+    // ── F2-W8: asking ASIO only when it can change the answer ────────────────
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    fn device(name: &str) -> AsioDevice {
+        AsioDevice {
+            id: name.into(),
+            name: name.into(),
+            backend: AudioBackendKind::Asio,
+            input_channels: 32,
+            output_channels: 32,
+            default_sample_rate: 48_000,
+            supported_sample_rates: vec![48_000],
+        }
+    }
+
+    #[test]
+    fn needs_probe_is_false_for_a_name_the_host_already_knows() {
+        let host = names(&["Mikrofon (Realtek(R) Audio)", "Line In (Focusrite USB)"]);
+        assert!(!needs_asio_probe("Mikrofon (Realtek(R) Audio)", &host));
+    }
+
+    #[test]
+    fn needs_probe_is_true_for_a_name_the_host_does_not_know() {
+        let host = names(&["Mikrofon (Realtek(R) Audio)"]);
+        assert!(needs_asio_probe("Focusrite USB ASIO", &host));
+    }
+
+    #[test]
+    fn needs_probe_is_true_when_the_host_list_is_empty() {
+        // Knowing nothing about the host's devices is not evidence that the
+        // name isn't ASIO — an empty list must not short-circuit to "no".
+        assert!(needs_asio_probe("Focusrite USB ASIO", &[]));
+    }
+
+    #[test]
+    fn needs_probe_compares_case_insensitively() {
+        // Windows spells the same interface with different casing in its WASAPI
+        // and ASIO views; a casing difference must not force a driver sweep.
+        let host = names(&["MIKROFON (Realtek(R) Audio)"]);
+        assert!(!needs_asio_probe("mikrofon (realtek(r) audio)", &host));
+    }
+
+    #[test]
+    fn needs_probe_is_false_for_an_empty_name() {
+        // Nothing configured: no driver reports "" as its name, so a sweep
+        // could only ever answer "no".
+        assert!(!needs_asio_probe("", &[]));
+        assert!(!needs_asio_probe("   ", &names(&["Some device"])));
+    }
+
+    /// The start path's decision, with both lookups counted. A WASAPI name must
+    /// never reach the ASIO host — that sweep is what loads every installed
+    /// driver.
+    #[test]
+    fn start_path_with_a_wasapi_name_never_asks_the_asio_host() {
+        use std::cell::Cell;
+        let host_calls = Cell::new(0u32);
+        let asio_calls = Cell::new(0u32);
+
+        let is_asio = resolve_is_asio_device(
+            true, // pretend Windows + the `asio` feature
+            "Mikrofon (Realtek(R) Audio)",
+            None, // cold cache — the scheduler's first start after boot
+            || {
+                host_calls.set(host_calls.get() + 1);
+                names(&["Mikrofon (Realtek(R) Audio)", "Stereo Mix"])
+            },
+            || {
+                asio_calls.set(asio_calls.get() + 1);
+                names(&["ASIO4ALL v2"])
+            },
+        );
+
+        assert!(!is_asio, "a WASAPI device is not the ASIO path");
+        assert_eq!(asio_calls.get(), 0, "the ASIO host must not be touched");
+        assert_eq!(host_calls.get(), 1, "one cheap host enumeration");
+    }
+
+    #[test]
+    fn a_device_answers_to_both_its_name_and_its_id() {
+        // The membership test this replaced was `d.name == name || d.id == name`;
+        // the two are the same string today, but the contract is kept.
+        let mut d = device("Soundcraft MADI USB");
+        d.id = "asio:madi-0".into();
+        let names = device_names(std::slice::from_ref(&d));
+        assert!(contains_name(&names, "Soundcraft MADI USB"));
+        assert!(contains_name(&names, "asio:madi-0"));
+        assert!(!contains_name(&names, "USB Audio CODEC"));
+    }
+
+    #[test]
+    fn channel_listing_reads_the_memoised_device_list() {
+        // `list_asio_input_channels` used to run its own `host.devices()` sweep
+        // — a second, unconditional way to load every installed driver. It now
+        // looks the count up in the ONE memoised list, and gives the same
+        // answer the walk did.
+        let mut d = device("Soundcraft MADI USB");
+        d.input_channels = 32;
+        d.id = "asio:madi-0".into();
+        let devices = vec![d];
+
+        assert_eq!(
+            input_channels_of(&devices, "Soundcraft MADI USB").len(),
+            32,
+            "found by name"
+        );
+        assert_eq!(
+            input_channels_of(&devices, "asio:madi-0").len(),
+            32,
+            "and by id"
+        );
+        assert_eq!(
+            input_channels_of(&devices, "SOUNDCRAFT MADI USB").len(),
+            32,
+            "casing must not lose the device"
+        );
+        assert_eq!(
+            input_channels_of(&devices, "Mikrofon (Realtek(R) Audio)"),
+            Vec::new(),
+            "a device the ASIO host does not have has no ASIO channels"
+        );
+        assert!(input_channels_of(&[], "anything").is_empty());
+        // The labels are the shared ones, one-based.
+        assert_eq!(
+            input_channels_of(&devices, "asio:madi-0")[8].label,
+            "Input 9",
+            "channel 9/10 of the mixer is exactly what ASIO is here for"
+        );
+    }
+
+    #[test]
+    fn an_unknown_name_falls_through_to_the_asio_sweep() {
+        use std::cell::Cell;
+        let asio_calls = Cell::new(0u32);
+        let is_asio = resolve_is_asio_device(
+            true,
+            "ASIO4ALL v2",
+            None,
+            || names(&["Mikrofon (Realtek(R) Audio)"]),
+            || {
+                asio_calls.set(asio_calls.get() + 1);
+                names(&["ASIO4ALL v2"])
+            },
+        );
+        assert!(is_asio);
+        assert_eq!(asio_calls.get(), 1);
+    }
+
+    #[test]
+    fn a_fresh_memo_answers_without_any_lookup_at_all() {
+        use std::cell::Cell;
+        let host_calls = Cell::new(0u32);
+        let asio_calls = Cell::new(0u32);
+        let bump = |c: &Cell<u32>| c.set(c.get() + 1);
+
+        // The picker enumerated ASIO seconds ago; record is pressed. The memo
+        // answers both ways — including for the pro card whose WASAPI shadow
+        // shares its name, which is exactly the case the host short-circuit
+        // would get wrong.
+        let is_asio = resolve_is_asio_device(
+            true,
+            "Soundcraft MADI USB",
+            Some(names(&["Soundcraft MADI USB"])),
+            || {
+                bump(&host_calls);
+                names(&["Soundcraft MADI USB"])
+            },
+            || {
+                bump(&asio_calls);
+                Vec::new()
+            },
+        );
+        assert!(is_asio, "the memo says this name IS an ASIO device");
+        assert_eq!(host_calls.get(), 0);
+        assert_eq!(asio_calls.get(), 0);
+
+        let is_asio = resolve_is_asio_device(
+            true,
+            "Mikrofon (Realtek(R) Audio)",
+            Some(names(&["Soundcraft MADI USB"])),
+            || {
+                bump(&host_calls);
+                Vec::new()
+            },
+            || {
+                bump(&asio_calls);
+                Vec::new()
+            },
+        );
+        assert!(!is_asio);
+        assert_eq!(host_calls.get(), 0);
+        assert_eq!(asio_calls.get(), 0);
+    }
+
+    #[test]
+    fn an_unreachable_asio_backend_costs_nothing() {
+        use std::cell::Cell;
+        let calls = Cell::new(0u32);
+        // macOS, or Windows without the `asio` feature: no lookup may happen.
+        let is_asio = resolve_is_asio_device(
+            false,
+            "Whatever",
+            None,
+            || {
+                calls.set(calls.get() + 1);
+                Vec::new()
+            },
+            || {
+                calls.set(calls.get() + 1);
+                Vec::new()
+            },
+        );
+        assert!(!is_asio);
+        assert_eq!(calls.get(), 0);
+    }
+
+    #[test]
+    fn an_empty_device_name_costs_nothing() {
+        use std::cell::Cell;
+        let calls = Cell::new(0u32);
+        let is_asio = resolve_is_asio_device(
+            true,
+            "",
+            None,
+            || {
+                calls.set(calls.get() + 1);
+                Vec::new()
+            },
+            || {
+                calls.set(calls.get() + 1);
+                Vec::new()
+            },
+        );
+        assert!(!is_asio);
+        assert_eq!(calls.get(), 0);
+    }
+
+    #[test]
+    fn two_calls_inside_the_ttl_sweep_the_drivers_once() {
+        use std::cell::Cell;
+        let sweeps = Cell::new(0u32);
+        let probe = || {
+            sweeps.set(sweeps.get() + 1);
+            vec![device("ASIO4ALL v2")]
+        };
+        let cache = AsioCache::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+
+        let first = cache.get_or_fill_at(t0, probe);
+        let second = cache.get_or_fill_at(t0 + Duration::from_secs(29), probe);
+
+        assert_eq!(sweeps.get(), 1, "the second call came out of the memo");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn a_call_past_the_ttl_sweeps_again() {
+        use std::cell::Cell;
+        let sweeps = Cell::new(0u32);
+        let probe = || {
+            sweeps.set(sweeps.get() + 1);
+            vec![device("ASIO4ALL v2")]
+        };
+        let cache = AsioCache::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+
+        let _ = cache.get_or_fill_at(t0, probe);
+        let _ = cache.get_or_fill_at(t0 + Duration::from_secs(31), probe);
+
+        assert_eq!(sweeps.get(), 2, "an interface plugged in later shows up");
+    }
+
+    #[test]
+    fn peek_never_sweeps_and_expires_with_the_ttl() {
+        let cache = AsioCache::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+        assert_eq!(cache.peek_at(t0), None, "cold cache has nothing to offer");
+
+        let _ = cache.get_or_fill_at(t0, || vec![device("ASIO4ALL v2")]);
+        assert_eq!(
+            cache.peek_at(t0 + Duration::from_secs(29)),
+            Some(vec![device("ASIO4ALL v2")])
+        );
+        assert_eq!(cache.peek_at(t0 + Duration::from_secs(31)), None);
+    }
+
+    #[test]
+    fn invalidating_the_memo_forces_the_next_sweep() {
+        use std::cell::Cell;
+        let sweeps = Cell::new(0u32);
+        let probe = || {
+            sweeps.set(sweeps.get() + 1);
+            vec![device("ASIO4ALL v2")]
+        };
+        let cache = AsioCache::new(Duration::from_secs(30));
+        let t0 = Instant::now();
+
+        let _ = cache.get_or_fill_at(t0, probe);
+        cache.invalidate();
+        let _ = cache.get_or_fill_at(t0, probe);
+
+        assert_eq!(
+            sweeps.get(),
+            2,
+            "diagnose must see the machine as it is now"
+        );
+    }
+
+    /// The picker's blocking enumeration and a recording start CAN land at the
+    /// same moment. ASIO drivers are single-client, so two concurrent
+    /// `ASIOInit` sweeps are exactly the failure this module is about: the
+    /// second caller must wait for the first and read its result.
+    #[test]
+    fn two_threads_racing_a_cold_memo_sweep_the_drivers_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Barrier;
+
+        let sweeps = AtomicUsize::new(0);
+        let cache = AsioCache::new(Duration::from_secs(30));
+        let gate = Barrier::new(2);
+        let t0 = Instant::now();
+
+        std::thread::scope(|s| {
+            for _ in 0..2 {
+                s.spawn(|| {
+                    gate.wait();
+                    cache.get_or_fill_at(t0, || {
+                        sweeps.fetch_add(1, Ordering::SeqCst);
+                        // Long enough that a second, unserialised sweep would
+                        // certainly have started before this one stored its
+                        // result.
+                        std::thread::sleep(Duration::from_millis(100));
+                        vec![device("ASIO4ALL v2")]
+                    });
+                });
+            }
+        });
+
+        assert_eq!(sweeps.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn asio_availability_matches_the_platform_and_feature() {
+        // The const the whole decision hangs on. On this (macOS/Linux, or
+        // feature-off) lane it must be false, so `is_asio_device` short-circuits
+        // before enumerating anything.
+        assert_eq!(
+            ASIO_AVAILABLE,
+            cfg!(all(target_os = "windows", feature = "asio"))
+        );
+        // And the public entry point agrees, with no device configured.
+        assert!(!is_asio_device(""));
     }
 
     #[test]
