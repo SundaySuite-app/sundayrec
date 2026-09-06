@@ -2092,10 +2092,7 @@ impl LevelMeter {
 
     /// The latest L/R snapshot.
     fn snapshot(&self) -> ChannelLevels {
-        ChannelLevels {
-            peak_db_left: self.left,
-            peak_db_right: self.right,
-        }
+        ChannelLevels::peaks(self.left, self.right)
     }
 }
 
@@ -2332,10 +2329,8 @@ async fn run_segment(
     // incident). A full channel costs a counted message, never capture.
     let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
     // Live levels ride a `watch` (latest-wins by construction, never queues).
-    let (levels_tx, mut levels_rx) = tokio::sync::watch::channel(ChannelLevels {
-        peak_db_left: SILENCE_FLOOR_DB,
-        peak_db_right: None,
-    });
+    let (levels_tx, mut levels_rx) =
+        tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
     // PROGRESS reader task: drains ffmpeg's `-progress` stdout → the startup
     // latch, the watchdog byte atomic, and the coalesced UI counter. Same
     // zero-back-pressure discipline as the stderr reader: its only await is the
@@ -4287,10 +4282,7 @@ mod tests {
 
     #[test]
     fn recording_levels_from_channel_levels() {
-        let lv = RecordingLevels::from(ChannelLevels {
-            peak_db_left: -6.0,
-            peak_db_right: Some(-7.0),
-        });
+        let lv = RecordingLevels::from(ChannelLevels::peaks(-6.0, Some(-7.0)));
         assert_eq!(lv.peak_db_left, -6.0);
         assert_eq!(lv.peak_db_right, Some(-7.0));
     }
@@ -4411,10 +4403,8 @@ mod tests {
     fn classify_never_blocks_when_every_consumer_stalls() {
         let (tx, _rx) = tokio::sync::mpsc::channel::<ReaderMsg>(1);
         tx.try_send(ReaderMsg::Progress(0)).unwrap(); // permanently full
-        let (levels_tx, levels_rx) = tokio::sync::watch::channel(ChannelLevels {
-            peak_db_left: SILENCE_FLOOR_DB,
-            peak_db_right: None,
-        });
+        let (levels_tx, levels_rx) =
+            tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
         drop(levels_rx); // dead levels consumer
         let bytes = AtomicU64::new(0);
         let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
@@ -4473,10 +4463,8 @@ mod tests {
         // The UI byte counter rides ~1/s messages; the watchdog's byte count is
         // written straight to the atomic on EVERY size= line.
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
-        let (levels_tx, _levels_rx_keep) = tokio::sync::watch::channel(ChannelLevels {
-            peak_db_left: SILENCE_FLOOR_DB,
-            peak_db_right: None,
-        });
+        let (levels_tx, _levels_rx_keep) =
+            tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
         let bytes = AtomicU64::new(0);
         let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
         let mut ctx = ReaderCtx::new();
