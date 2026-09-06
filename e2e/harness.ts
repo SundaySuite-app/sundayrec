@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { SETTINGS_DEFAULTS } from "../app/lib/settings-defaults";
 import type { RecordingRow } from "../legacy/bindings/RecordingRow";
 import type { PruneSummary } from "../legacy/bindings/PruneSummary";
+import type { RecorderStatePayload } from "../legacy/bindings/RecorderStatePayload";
 
 // The one way a spec boots the app.
 //
@@ -271,6 +272,17 @@ export const BOOT_FIXTURES: Fixtures = {
   // fail `npm run typecheck` rather than leave the boot pass silently unable
   // to parse its own fixture.
   recordings_prune: { moved: 0, disabled: true } satisfies PruneSummary,
+  // F2-T5: the boot-time «what are you doing right now?» question. Idle is the
+  // truth for every spec that is not about a running recording, and answering
+  // it here keeps the question out of the IPC failure ring on 30-odd boots.
+  // Typed as the GENERATED binding for the same reason as `recordings_prune`
+  // above: a Rust rename must fail `npm run typecheck`, not leave the boot
+  // pass quietly unable to read its own fixture.
+  recording_snapshot: {
+    state: "idle",
+    reconnect_count: 0,
+    scheduled_stop_ms: null,
+  } satisfies RecorderStatePayload,
   get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500_000_000_000 },
   recordings_list: [],
   trash_list: [],

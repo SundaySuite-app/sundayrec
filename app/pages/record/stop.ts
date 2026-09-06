@@ -14,6 +14,19 @@
  * En rød stoppknapp midt i et rødt overlegg er nøyaktig den fargekollisjonen
  * sett 0 låste bort.
  *
+ * ## F2-T3: Escape skal ikke kunne stoppe opptaket
+ *
+ * `cancelLabel` bærer «stopp» — den AKTIVE handlingen, ikke den vanlige
+ * no-op-en avbryt-knappen ellers er. `DialogHost` lukker enhver dialog med
+ * Escape (og et klikk på sløret) via KNAPPEN MED `isCancel`, uansett hva den
+ * knappen betyr — og uten `escapeConfirms: true` er det nettopp «stopp»-
+ * knappen. Bevist i praksis (`e2e/record.spec.ts`): et Escape-trykk kalte
+ * `stop_recording` og satte opptaket i «Fullfører …» — nøyaktig den ene
+ * uhellet bekreftelsen finnes for å forhindre, bare via tastaturet i stedet
+ * for et feilklikk. `escapeConfirms: true` flytter Escape til «Fortsett å ta
+ * opp» uten å røre stilen (fortsatt ghost, fortsatt ikke Enter-default) — se
+ * `@lib/ui/dialog-core.ts`.
+ *
  * ## Egen fil
  *
  * Både overleggets stoppknapp og menylinjens «Stopp opptak» skal gjennom det
@@ -48,6 +61,7 @@ export async function confirmAndStop(): Promise<void> {
     }),
     confirmLabel: t("app.overlay.keep"),
     cancelLabel: t("app.overlay.stopYes"),
+    escapeConfirms: true,
   });
   if (keepRecording) return;
 

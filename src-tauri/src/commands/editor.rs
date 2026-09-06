@@ -592,6 +592,25 @@ mod tests {
 
     // ── The export path guards ───────────────────────────────────────────────
 
+    /// A syntactically absolute path that (almost certainly) does not exist —
+    /// for exercising the "missing file" branch of `path_guard::checked_input_file`,
+    /// which must get PAST `require_absolute` to reach its `canonicalize()`
+    /// error.
+    ///
+    /// F2-W7: a bare `/definitely/not/here.mp3` literal is absolute on
+    /// Unix but NOT on Windows (`Path::is_absolute()` there requires a
+    /// drive/UNC prefix — a leading `\` alone is only "has_root"), so on
+    /// Windows the old literal was rejected by `require_absolute` itself
+    /// ("path must be absolute: …") before ever reaching the
+    /// "cannot resolve path …" branch these tests mean to exercise.
+    fn missing_absolute_path() -> &'static str {
+        if cfg!(windows) {
+            "C:\\definitely\\not\\here.mp3"
+        } else {
+            "/definitely/not/here.mp3"
+        }
+    }
+
     fn request(input: &str, folder: &str) -> EditorExportRequest {
         serde_json::from_value(serde_json::json!({
             "inputPath": input,
@@ -634,7 +653,7 @@ mod tests {
 
     #[test]
     fn a_missing_input_file_is_refused_before_anything_else() {
-        let err = check_export_paths(&request("/definitely/not/here.mp3", ""))
+        let err = check_export_paths(&request(missing_absolute_path(), ""))
             .expect_err("a non-existent input must be refused");
         assert!(err.to_string().contains("cannot resolve path"), "got {err}");
     }
@@ -646,11 +665,11 @@ mod tests {
         std::fs::write(&src, b"x").unwrap();
 
         let mut req = request(src.to_str().unwrap(), "");
-        req.intro_path = Some("/definitely/not/here.mp3".into());
+        req.intro_path = Some(missing_absolute_path().into());
         check_export_paths(&req).expect_err("a bogus intro must be refused");
 
         let mut req = request(src.to_str().unwrap(), "");
-        req.outro_path = Some("/definitely/not/here.mp3".into());
+        req.outro_path = Some(missing_absolute_path().into());
         check_export_paths(&req).expect_err("a bogus outro must be refused");
 
         // …and `None` for both is the normal case, which must still pass.

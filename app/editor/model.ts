@@ -192,7 +192,15 @@ export const loadState = signal<LoadState>("idle");
 export const loadPhase = signal<string | null>(null);
 /** Hvor langt lastefasen er kommet (0–1), eller `null` for ubestemt. */
 export const loadProgress = signal<number | null>(null);
-/** Feilteksten når `loadState` er `error`. En nøkkel, ikke prosa. */
+/**
+ * Feilteksten når `loadState` er `error`. En nøkkel, ikke prosa.
+ *
+ * To kjente verdier — `"unreadable"` (formatet støttes kanskje ikke, eller
+ * fila er skadet) og `"not_found"` (F2-9: fila fantes ikke da lasteren
+ * spurte — mest sannsynlig i papirkurven). `LoadStates.tsx` sin `LoadFailed`
+ * er det ENE stedet som leser verdien for å velge tekst og handling; ellers
+ * bærer den bare som `data-reason` på `#editor` for e2e-laget.
+ */
 export const loadError = signal<string | null>(null);
 export const playbackSource = signal<PlaybackSource>("original");
 /** Hva fila er, utover lengden. `null` før den er lest. */
@@ -231,19 +239,41 @@ export interface LastEdited {
  * EKSPORTERING uten en åpen fil er ikke en tom side: eierens tredje D3-valg er
  * at det alltid skal være ett klikk fra en eksport. Kortet der leser dette.
  *
- * To regler, og de er hele kontrakten:
+ * Tre regler, og de er hele kontrakten:
  *
  *   1. Skrives av lasteren når en åpning når `ready` — ikke ved `loading`. En
  *      fil som ikke lot seg lese er ikke noe man har redigert.
  *   2. Nullstilles ALDRI av `closeFile`/`resetFileState`. Å lukke fila er
  *      nettopp situasjonen kortet finnes for; en «sist redigert» som forsvant i
  *      det man lukket ville vært en huskelapp som glemmer.
+ *   3. Nullstilles av [`forgetMovedPath`] — og BARE av den — når papirkurven
+ *      eller retensjonspasset flytter filen. Uten det tilbyr kortet «Gjør
+ *      klar» på en sti som ikke lenger fører til opptaket (F2-9): lasteren
+ *      feiler, og feilteksten sa «formatet støttes kanskje ikke, eller fila er
+ *      skadet» om en fil som bare lå i papirkurven.
  *
  * Øktvarig med vilje: ingenting skrives til disk. `recordings_list` bærer INGEN
  * redigert-status (se `app/state/recordings.ts`), og et merke som gjettes ut av
  * sidevogner er verre enn ingen merke.
  */
 export const lastEdited = signal<LastEdited | null>(null);
+
+/**
+ * Glem «sist redigert» hvis dens fil er blant `paths` — regel 3 over.
+ *
+ * Kalt av papirkurv-sømmen (`LibraryPage.remove`/`undoTrash`) og
+ * retensjonspasset (`state/retention.ts`) RETT ETTER at de har flyttet noe,
+ * aldri av lasteren selv: den kjenner bare filen den nettopp åpnet, ikke hva
+ * som skjer med den etterpå. Ren funksjon — bare signalet, ingen IPC — så
+ * kravet er likhet på STIEN (kortet og papirkurven kjenner opptaket ved
+ * samme streng), ikke identitet på objektet.
+ */
+export function forgetMovedPath(paths: readonly string[]): void {
+  const current = lastEdited.peek();
+  if (current && paths.includes(current.path)) {
+    lastEdited.value = null;
+  }
+}
 
 // ── Synkroniseringen: ett par, ett sted ─────────────────────────────────────
 

@@ -670,14 +670,14 @@ mod tests {
     /// binary must point `SUNDAYREC_FFMPEG` at this path under the shared
     /// `media::ffmpeg::tests::ENV_LOCK`. Relying on a PATH ffmpeg instead passes
     /// on a dev Mac (homebrew) and fails on CI runners with none.
-    fn fetched_sidecar(name: &str) -> Option<PathBuf> {
-        let triple = env!("SUNDAYREC_TARGET_TRIPLE");
-        let ext = if cfg!(windows) { ".exe" } else { "" };
-        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("binaries")
-            .join(format!("{name}-{triple}{ext}"));
-        p.is_file().then_some(p)
-    }
+    ///
+    /// F2-W7: this used to be a local `is_file()`-only copy, which called the
+    /// Windows CI job's 0-byte stub (ci.yml's "Stub ffmpeg sidecars" step)
+    /// present and let `sine_wav`'s `Command::new(ffmpeg)` below run it — that
+    /// fails to spawn (not a valid executable), turning this test's tolerant
+    /// SKIP into a hard panic on a lane that never has a real sidecar. Delegate
+    /// to the canonical helper instead, which also confirms the binary RUNS.
+    use crate::media::ffmpeg::tests::fetched_sidecar;
 
     /// Write a real `secs`-second s16 PCM WAV at `path` via lavfi (no hardware).
     fn sine_wav(ffmpeg: &Path, path: &Path, secs: u32) {

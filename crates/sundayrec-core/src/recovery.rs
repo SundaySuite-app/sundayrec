@@ -338,20 +338,27 @@ mod tests {
 
     #[test]
     fn delivery_path_for_maps_stem_into_delivery_dir() {
+        // F2-W7: `delivery_path_for` returns a STRING through `Path::join`, so
+        // its separator is the PLATFORM's (`\` on Windows) — the expected
+        // values are built the same way, through `Path::join`, rather than as
+        // forward-slash literals, so the test stays correct on both without a
+        // `cfg!` branch. A hardcoded `"/rec/sermon.mp3"` passed on macOS/Linux
+        // and failed on Windows the first time this ran there (PR #231).
+        let want = |name: &str| Path::new("/rec").join(name).to_string_lossy().into_owned();
         // Deliverable 0: the base stem maps to the delivery file.
         assert_eq!(
             delivery_path_for("/tmp/cap-123/sermon.wav", "/rec", "mp3"),
-            "/rec/sermon.mp3"
+            want("sermon.mp3")
         );
         // A split deliverable keeps its `_2` suffix through the mapping.
         assert_eq!(
             delivery_path_for("/tmp/cap-123/sermon_2.wav", "/rec", "flac"),
-            "/rec/sermon_2.flac"
+            want("sermon_2.flac")
         );
         // No extension → just the stem in the delivery dir.
         assert_eq!(
             delivery_path_for("/tmp/cap-123/sermon.wav", "/rec", ""),
-            "/rec/sermon"
+            want("sermon")
         );
     }
 

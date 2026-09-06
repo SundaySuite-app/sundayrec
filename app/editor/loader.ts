@@ -34,6 +34,7 @@ import { routePlayback } from "@lib/pages/editor/play-regions";
 
 import { cancelDraftSave, resetHistoryMirror, restoreDraftCuts } from "./cuts";
 import { confirmAbandonExport } from "./discard";
+import { isMissingFileFailure } from "./loader-core";
 import {
   analyzing,
   E,
@@ -93,6 +94,24 @@ function routeForEditor(ext: string): "element" | "proxy" {
   const dotted = norm.startsWith(".") ? norm : `.${norm}`;
   if (VIDEO_ELEMENT_EXTS.has(dotted)) return "element";
   return routePlayback(dotted);
+}
+
+/**
+ * F2-9: did the LAST recorded failure of `cmd` mean the file is gone?
+ *
+ * `call()` (`api-shim.ts`) never rejects — it swallows every IPC error into
+ * the shim's fallback value and remembers the failure in a bounded ring
+ * (`getRecentIpcFailures`), newest first. That is why `editorLoadRecording`
+ * resolving to `null` alone cannot tell a moved/trashed file apart from one
+ * ffprobe genuinely could not parse: both look like "no info" from here. The
+ * ring is the one place the actual error text survived, so this reads it
+ * back right after the call that just failed — before anything else queued
+ * behind it can overwrite the newest entry for `cmd`.
+ */
+function lastFailureLooksLikeMissingFile(cmd: string): boolean {
+  const failures = window.api?.getRecentIpcFailures?.() ?? [];
+  const mine = failures.find((f) => f.cmd === cmd);
+  return mine ? isMissingFileFailure(mine.error) : false;
 }
 
 /** Det biblioteket vet om raden, og som editoren ikke kan lese ut av fila. */
@@ -214,6 +233,10 @@ async function openFileNow(
   // ffprobe-en fra før; et eget `editor_probe_streams` ville vært en ny
   // prosess for et svar vi allerede holder i hånda.
   let seconds = 0;
+  // F2-9: remembered NOW, right after the call that would have produced it —
+  // see `lastFailureLooksLikeMissingFile` for why `info === null` alone
+  // cannot tell "moved to the trash" apart from "genuinely unreadable".
+  let notFound = false;
   try {
     const info = await window.api.editorLoadRecording(path);
     if (info && Number.isFinite(info.durationSec) && info.durationSec > 0) {
@@ -225,6 +248,8 @@ async function openFileNow(
         channels: info.channels ?? null,
         sampleRate: info.sampleRate ?? null,
       };
+    } else {
+      notFound = lastFailureLooksLikeMissingFile("editor_load_recording");
     }
   } catch {
     seconds = 0;
@@ -276,7 +301,12 @@ async function openFileNow(
 
   if (seconds <= 0) {
     loadState.value = "error";
-    loadError.value = "unreadable";
+    // F2-9: "not_found" gets its own text and a way to the trash
+    // (`LoadStates.tsx`'s `LoadFailed`) instead of the generic "the format
+    // may not be supported, or the file is damaged" — which was true of
+    // neither cause, and actively misleading for a file sitting in the
+    // Papirkurv.
+    loadError.value = notFound ? "not_found" : "unreadable";
     return;
   }
 

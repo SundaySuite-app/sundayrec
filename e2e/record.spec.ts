@@ -325,6 +325,63 @@ test.describe("opptaksoverlegget", () => {
     expect((await calls(page)).stop_recording ?? 0).toBe(0);
   });
 
+  test("F2-T3: Escape på stopp-bekreftelsen lukker den UTEN å stoppe", async ({
+    page,
+  }) => {
+    // «Stopp» bor bak `cancelLabel` — ghost-knappen, ikke Enter-standarden —
+    // og DialogHost lukker ELLERS enhver dialog med Escape via nøyaktig den
+    // knappen. Uten `escapeConfirms: true` i `stop.ts` er Escape derfor et
+    // stille stopp-klikk: bevist en gang (før denne fiksen) ved at denne
+    // testen kalte `stop_recording` og satte overlegget i «Fullfører opptak».
+    // Bekreftelsens hele poeng — at et uhell skal koste ett klikk til, ikke
+    // opptaket — holder ikke hvis tastaturets egen «lukk dette»-tast er det
+    // ene uhellet den ikke tåler.
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    await page.getByTestId("overlay-stop").click();
+    const dialog = page.getByTestId("dialog");
+    await expect(dialog).toBeVisible();
+    // Vent til fokuset FAKTISK har flyttet inn i dialogen (samme mønster som
+    // `dialog.spec.ts`) — ellers kappløper Escape mot DialogHosts egen
+    // `requestAnimationFrame`, og treffer et element utenfor dialogen som
+    // ikke har noen Escape-håndterer i det hele tatt.
+    await expect(page.getByTestId("dialog-ok")).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+
+    // Opptaket går fortsatt — ingen finalisering, ingen kall til motoren.
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("overlay-stop")).toHaveText("Stopp opptaket");
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+  });
+
+  test("F2-T3: et klikk på sløret bak stopp-bekreftelsen stopper heller ikke", async ({
+    page,
+  }) => {
+    // Samme knapp, samme feilmodus, ulik trigger: DialogHost lukker via
+    // `cancelId` også når sløret klikkes (`onMouseDown` på `event.currentTarget`
+    // alene — se DialogHost.tsx). Ett klikk like utenfor en liten dialogboks
+    // midt i et fullskjerms overlegg er lett å gjøre ved et uhell.
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+
+    await page.getByTestId("overlay-stop").click();
+    const dialog = page.getByTestId("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Et klikk i selve sløret, ikke i dialogboksen — øverste venstre hjørne av
+    // viewporten er alltid slør så lenge dialogen ikke fyller hele skjermen.
+    await page.getByTestId("dialog-scrim").click({ position: { x: 2, y: 2 } });
+    await expect(dialog).toHaveCount(0);
+
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    expect((await calls(page)).stop_recording ?? 0).toBe(0);
+  });
+
   test("kvitteringen står som et kort når motoren melder at fila er ferdig", async ({
     page,
   }) => {
@@ -1256,5 +1313,85 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     });
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
     await expect(page.getByTestId("overlay-camera-preview")).toHaveCount(0);
+  });
+});
+
+// ── F2-T3: tastatursnarveier ─────────────────────────────────────────────────
+//
+// `decideShortcut` er node-testet som en tabell (`app/lib/shortcuts-core.
+// test.ts`). Det dette nivået beviser er SKJØTEN: at et ekte tastetrykk i en
+// ekte nettleser faktisk når `pendingAction` og derfra den KANONISKE
+// startveien (`handleStart` i RecordPage.tsx) — samme kjede menylinjens
+// «Start opptak» går gjennom, se `router/router.ts`s `pendingAction`.
+test.describe("F2-T3: tastatursnarveier på Opptak", () => {
+  test("Space starter opptaket når Start er aktiv", async ({ page }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await expect(page.getByTestId("record-source-value")).toHaveText(
+      "Behringer X32",
+    );
+    await expect(page.getByTestId("record-start")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    // Ingenting er trykket — fokus står på <body>, akkurat som når en
+    // frivillig lener seg mot mellomromstasten uten å ha klikket noe først.
+    await page.keyboard.press("Space");
+
+    await expect
+      .poll(() => calls(page))
+      .toEqual(
+        expect.objectContaining({
+          plan_recording_opts: 1,
+          start_recording: 1,
+        }),
+      );
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  });
+
+  test("R starter opptaket akkurat som Space", async ({ page }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.keyboard.press("r");
+    await expect
+      .poll(() => calls(page))
+      .toEqual(
+        expect.objectContaining({
+          plan_recording_opts: 1,
+          start_recording: 1,
+        }),
+      );
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  });
+
+  test("Space gjør ingenting når Start er sperret (ingen kilde valgt)", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...SETTLED_SETTINGS, deviceId: null, deviceName: null },
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-start")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await page.keyboard.press("Space");
+    await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
+    expect(await calls(page)).toEqual({});
+  });
+
+  test("Space gjør ingenting mens et opptak går — stopp er et bevisst klikk", async ({
+    page,
+  }) => {
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+    await page.getByTestId("record-start").click();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    const before = await calls(page);
+
+    await page.keyboard.press("Space");
+
+    expect(await calls(page)).toEqual(before);
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("dialog")).toHaveCount(0);
   });
 });

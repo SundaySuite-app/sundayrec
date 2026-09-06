@@ -47,6 +47,7 @@ import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
+import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 
 /** `editor_export`'s wrapped result — `editorCall` (`api-shim.ts`) always adds
  *  `ok`, and only adds `error` on failure; `outputPath` is the real
@@ -127,6 +128,12 @@ declare global {
        *  `isRecording` became true with no `recording://state` payload to
        *  read one from — see `RecordingOverlay.tsx`'s mount effect. */
       recordingScheduledStopMs: () => Promise<number | null>;
+      /** The engine's CURRENT `recording://state` payload — asked ONCE at
+       *  startup, for the renderer that could not have been listening: a
+       *  webview reloaded mid-recording. `null` means the engine did not
+       *  answer, which is «vi vet ikke» and NOT «idle» — the caller leaves its
+       *  belief alone. See `hydrateRecordingState()` in `app/state/recording.ts`. */
+      recordingSnapshot: () => Promise<RecorderStatePayload | null>;
       /** One base64 JPEG from the engine's preview sink, or `null` when it has
        *  not written a frame yet. Only meaningful DURING a recording — the
        *  recorder owns the camera then, so this is the only way to see it. */
