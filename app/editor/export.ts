@@ -18,6 +18,11 @@
  * (`fraction === null`) helt til et ekte tall kommer, og ETA-estimatoren fôres
  * ikke med en brøk som ikke er en brøk.
  *
+ * Den ENE fasen som ikke er bakendens er `EXPORT_PHASE_PREPARING`
+ * («Analyserer lyden…»), og den finnes fordi kjøringen begynner FØR bakenden
+ * hører om den: kanalanalysen er en full passering over opptaket. Se
+ * `runExport`.
+ *
  * ## Abonnementet varer så lenge eksporten varer
  *
  * Ett abonnement per kjøring, revet ned i `finally`. Et modulnivå-abonnement
@@ -31,10 +36,12 @@ import { createEtaEstimator } from "@lib/ui/progress-core";
 import type { EditorExportProgress } from "@legacy/bindings/EditorExportProgress";
 import type { EditorExportLoudness } from "@legacy/bindings/EditorExportLoudness";
 
+import { isRecording } from "../state/recording";
 import { settings } from "../state/settings";
 import {
   bitrateKbps,
   exportErrorKey,
+  EXPORT_PHASE_PREPARING,
   isCancelled,
   VIDEO_CODEC,
   VIDEO_FORMAT,
@@ -136,7 +143,25 @@ export function exportExtension(): string {
   return isVideoExport() ? VIDEO_FORMAT : exportFormat.value;
 }
 
+/**
+ * Hvilken KJØRING som gjelder.
+ *
+ * `E.loadSeq` svarer på «er det fortsatt den samme FILA»; denne svarer på «er
+ * det fortsatt den samme EKSPORTEN». De to er ikke det samme spørsmålet siden
+ * F2-A-B: `runExport` setter `exporting` FØR kanalanalysen, og i det vinduet
+ * (30–60 s på en gudstjeneste) kan brukeren rekke å trykke Avbryt uten at fila
+ * har byttet. Bakenden har ingen ffmpeg å drepe da, så det er DENNE telleren
+ * som gjør at kjøringen faktisk stopper i stedet for å eksportere videre etter
+ * en avbryting som så ut til å virke.
+ *
+ * Bumpes av `cancelExport` og av `resetExport` — altså av alt som sier «det som
+ * var i gang, gjelder ikke lenger».
+ */
+let runSeq = 0;
+
 export function resetExport(): void {
+  // Enhver kjøring som fortsatt henger i en `await` er foreldreløs herfra.
+  runSeq += 1;
   exportFormat.value = DEFAULT_EXPORT_FORMAT;
   exportFolder.value = "";
   includeVideo.value = false;
@@ -177,7 +202,29 @@ export async function cancelExport(): Promise<void> {
   // mens eksporten gikk til ende. Et andre klikk er ufarlig — avbryting er
   // idempotent.
   cancelling.value = true;
+  // Avbryt FØR bakenden har hørt om eksporten i det hele tatt.
+  //
+  // I forberedelsesfasen finnes det ingen ffmpeg å drepe — kjøringen henger i
+  // kanalanalysen — så `editor_cancel_export` svarer et sant «nei, ingenting
+  // kjørte», og uten dette gikk eksporten videre etter en avbryting som SÅ ut
+  // til å virke. Kjøringsnummeret er det som stopper den; kvitteringen under er
+  // ordrett den bakenden ville gitt, så flaten ikke kan se forskjell på hvilken
+  // side av spawnen brukeren rakk å trykke.
+  if (exportPhase.peek() === EXPORT_PHASE_PREPARING) {
+    runSeq += 1;
+    exporting.value = false;
+    cancelling.value = false;
+    exportPhase.value = null;
+    exportFraction.value = null;
+    exportEtaMs.value = null;
+    exportWasCancelled.value = true;
+    exportErrorText.value = "errCancelled";
+    exportFailed.value = false;
+  }
   try {
+    // Kalles UANSETT fase: en eksport skallet tror er i forberedelse, men som
+    // bakenden faktisk har spawnet (en tilstand bare en feil kan lage), skal
+    // ikke overleve fordi flaten var sikker på at den ikke fantes.
     await window.api.editorCancelExport();
   } catch {
     /* ingenting kjørte, eller bakenden svarte ikke — samme utfall for brukeren */
@@ -206,21 +253,42 @@ export async function cancelExport(): Promise<void> {
  * `seq` er `E.loadSeq` slik den var da DENNE kjøringen startet. Sjekket
  * etter HVER `await`, FØR noe skrives — samme mønster som `loader.ts` og
  * `sermon.ts`.
+ *
+ * ## Vakten må stå FØR analysen, ikke etter (F2-2)
+ *
+ * `exporting`-vakten på første linje var sann — og verdiløs, fordi den vernet
+ * om et flagg som ble satt LANGT senere. `ensureSoundAnalysis()` er en full
+ * `astats`-passering over hele opptaket; på en 90 minutters gudstjeneste tar
+ * den 30–60 sekunder. I hele det vinduet så «Eksporter» uberørt ut, og et
+ * andre klikk gikk rett gjennom vakten, ventet på den SAMME memoiserte
+ * analysen, og sendte en andre `editor_export`. Hva to eksporter på én motor
+ * gjør med hverandres filer står i `ExportEngine`s `in_flight`-felt; kort sagt
+ * meldte den ene suksess på en trunkert fil og den andre «avbrutt» på en hel.
+ *
+ * Så: flagget settes først, fasen sier «Analyserer lyden…», og Kjører-visningen
+ * står med en ubestemt bar og en Avbryt-knapp som faktisk avbryter (se
+ * `cancelExport`). Analysen kommer etterpå.
  */
 export async function runExport(
   keptSeconds: number,
   estimate: number | null,
 ): Promise<void> {
   if (!E.filePath || exporting.value) return;
+  // Eksport UNDER opptak (F2-11): begge er full-fil ffmpeg-arbeid, og CPU-en de
+  // konkurrerer om er den samme som capture-tråden trenger. Et stall der er
+  // ikke en treg eksport — det er tapte samples i gudstjenesten som tas opp NÅ
+  // (målt 2026-07-31: 15–56 % av samplene forsvant da en ffmpeg strupte seg
+  // selv). Opptaket vinner, og skjermen sier hvorfor i stedet for at knappen
+  // bare ikke gjør noe.
+  if (isRecording.peek()) {
+    exportedPath.value = null;
+    exportWasCancelled.value = false;
+    exportErrorText.value = "errRecordingInProgress";
+    exportFailed.value = true;
+    return;
+  }
   const seq = E.loadSeq;
-
-  // Kanalanalysen først: en frivillig som gikk rett fra Klipp til Eksporter
-  // skal få den samme reparasjonen som en som stoppet innom Lyd. Den er
-  // memoisert, så den koster ingenting når steget har vært åpent.
-  if (soundProfile.value !== "none") await ensureSoundAnalysis();
-  // Fila kan ha byttet MENS analysen ventet. Ingenting er skrevet ennå —
-  // bare gå stille ut, som om eksporten aldri ble bedt om.
-  if (seq !== E.loadSeq) return;
+  const run = ++runSeq;
 
   exporting.value = true;
   cancelling.value = false;
@@ -231,6 +299,23 @@ export async function runExport(
   exportFailed.value = false;
   exportFraction.value = null;
   exportEtaMs.value = null;
+  // Skallets egen fase: det finnes ingen ffmpeg å melde prosent for ennå.
+  exportPhase.value = EXPORT_PHASE_PREPARING;
+
+  // Kanalanalysen: en frivillig som gikk rett fra Klipp til Eksporter skal få
+  // den samme reparasjonen som en som stoppet innom Lyd. Den er memoisert, så
+  // den koster ingenting når steget har vært åpent.
+  if (soundProfile.value !== "none") await ensureSoundAnalysis();
+  // Fila kan ha byttet MENS analysen ventet. Ingenting er skrevet ennå — bare
+  // gå stille ut, som om eksporten aldri ble bedt om. Og RØR IKKE signalene:
+  // `openFile`/`closeFile` har alt nullstilt dem for fila som står nå.
+  if (seq !== E.loadSeq) return;
+  // …eller brukeren rakk å trykke Avbryt mens analysen gikk. `cancelExport`
+  // har skrevet kvitteringen; det eneste som gjenstår er å ikke eksportere.
+  if (run !== runSeq) return;
+
+  // Forberedelsen er over; herfra er fasen bakendens egen. `null` og ikke
+  // «encoding»: den koden skal komme fra Rust, ikke gjettes her.
   exportPhase.value = null;
 
   const video = isVideoExport();

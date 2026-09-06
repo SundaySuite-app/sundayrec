@@ -579,6 +579,7 @@
       "gateReason": "Vi hører ingen lyd endnu. Tal i mikrofonen, eller tænd mixerpulten.",
       "readyTitle": "Klar til søndag",
       "readyDesc": "Det her er det samme, du finder under Indstillinger (tandhjulet) og på Optagelse-skærmen senere.",
+      "fixHere": "Alt her kan rettes med det samme — rækken åbner skærmen på stedet, og du bliver i opsætningen.",
       "notifyTodo": "Ikke sat op — ingen får besked, hvis en optagelse fejler.",
       "open": "Åbn SundayRec",
       "progress": "Fremgang",
@@ -855,6 +856,7 @@
     "exportExporting": "Eksporterer…",
     "exportCancel": "Annuller",
     "exportCancelling": "Annullerer…",
+    "exportPhasePreparing": "Analyserer lyden…",
     "exportPhaseMeasuring": "Måler lydstyrke…",
     "exportPhaseEncoding": "Eksporterer…",
     "remainingLabel": "Resultat",
@@ -894,6 +896,7 @@
     "jinglesVideoUnsupported": "Jingler understøttes ikke til video endnu",
     "confirmClose": "Du har ikke-gemte ændringer. Luk alligevel?",
     "confirmOpenOther": "Du har ikke-gemte ændringer. Åbn ny fil alligevel?",
+    "confirmExportRunning": "Eksporten er i gang. Vil du afbryde den?",
     "tlIntro": "Intro",
     "tlMain": "Hovedoptagelse",
     "tlOutro": "Outro",
@@ -935,6 +938,9 @@
     "diagnosing": "Analyserer…",
     "enhanceTitle": "Lydforbedring",
     "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format på siden Eksport.",
+    "errExportAlreadyRunning": "En eksport er allerede i gang. Vent, til den er færdig.",
+    "errDiskLowForExport": "Der er ikke plads nok til denne eksport. Frigør plads, eller vælg en anden mappe med »Vælg mappe…«.",
+    "errRecordingInProgress": "Der er en optagelse i gang. Vent, til den er færdig, før du eksporterer.",
     "errPathNotAbsolute": "Ugyldig mappe eller filsti. Vælg destinationsmappen igen.",
     "metaDesc": "BESKRIVELSE",
     "metaSave": "Gem metadata",
@@ -1032,7 +1038,9 @@
   },
   "dialog": {
     "discardEditsBody": "De klip, du har lavet, går tabt. Selve optagelsesfilen røres ikke.",
-    "discardEdits": "Kassér ændringerne"
+    "discardEdits": "Kassér ændringerne",
+    "abortExportBody": "Filen, der er ved at blive lavet, bliver ikke færdig. Selve optagelsesfilen røres ikke.",
+    "abortExport": "Afbryd eksporten"
   },
   "missed": {
     "banner": {

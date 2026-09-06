@@ -1091,6 +1091,47 @@ GJENTATT-tekst til en fersk installasjon. App-kopiene er rettet, med grunnen
 ved siden av; legacy-filene er urørt fordi de skal stå som de er til de
 slettes.
 
+## F2-T4 — sjekklista folder ut PÅ STEDET
+
+Fram til nå var sjekklistas «Sett opp» en UTGANG: den navigerte til kortet på
+OPPTAK (kirkeraden til Innstillinger), og F1-UX2 dempet det med et minne og en
+«Fortsett oppsettet»-chip som førte tilbake. Kortene foldet ut inne i sekvensen
+sto igjen som M/L. Det er dette.
+
+Raden folder nå ut den EKTE skjermen på stedet, over det samme
+`embedded`-signalet kontrollrommet bruker (`SubPage.tsx`). **Alle fem radene**
+gjør det — de fem spørsmålene ER de fem skjermene sekvensen nettopp gikk
+gjennom, så det finnes ingen rad uten en skjerm å vise, og ingen som må falle
+tilbake på en navigering. («Ta med kamera» og «Ta opp automatisk» er ikke rader
+her: de er ikke ett av de fem spørsmålene — se `firstrun-core.ts`.)
+
+Reglene er lånt fra kontrollrommet, ikke oppfunnet på nytt:
+
+| regel                           | hvor den bor                | hvorfor                                                                                                   |
+| ------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| flere kort åpne samtidig        | `withRow` (`firstrun-core`) | samme som `useControlCards`; to adferder for den samme raden på to skjermer etter hverandre er forvirring |
+| kortet står til brukeren lukker | `Checklist`                 | kvitteringen bor INNE i kortet — en skjerm som rev seg selv bort tok med seg beviset                      |
+| lyd-kortet kollapser ved opptak | `Checklist`s effekt         | monteringen ER VU-vakten; en måler som ble stående ba om enheten opptaket nettopp tok                     |
+| ingen egen måler på selve lista | `vuWord: null`              | sjekklisten er et sammendrag, ikke en test — hørselstesten står inne i kortet, som før                    |
+
+Raden over kortet blir grønn i samme øyeblikk kortet lagrer: begge leser
+`settings`-signalet, og `decisions-core` er den samme tabellen kontrollrommet
+regner med.
+
+**Chippen er ikke fjernet, og den er ikke arbeidsledig.** Bunnlinja står under
+første gang også, og et utfoldet kort kan ha sin egen lenke ut («Avansert lyd» i
+`SoundPage`). Det som ENDRET seg er hvem som skriver `firstRunReturn`: én knapp
+som navigerte er blitt et speil av posisjonen (`useRememberPosition`), fordi
+begge de gjenværende utgangene kan skje fra et SPØRSMÅL og ikke bare fra
+sjekklisten. Chippen fører derfor nå tilbake til nøyaktig det steget man forlot,
+i stedet for alltid til sjekklisten.
+
+⚠️ `useEmbedded()` står i `Checklist` og ikke i `FirstRun`: spørsmålsskjermene
+skal BEHOLDE leden sin (den er hele forklaringen når skjermen står alene). Den
+er symmetrisk ved konstruksjon, og lekkasjen den ville gitt — INNSTILLINGER uten
+lede etter et besøk i sjekklisten — er vaktet i `e2e/first-run.spec.ts`, med
+samme form som kontrollrommets egen vakt i `e2e/control-room.spec.ts`.
+
 ---
 
 # P2 — Opptak, jobben appen finnes for
@@ -2552,6 +2593,15 @@ kroppen har id-en den peker på. `Button` fikk de to som props i D2 nettopp ford
 kilde-kortets «Endre» er en slik knapp uten å være en `ControlCard`-rad. Uten
 dem er «kort folder seg ut på stedet» en knapp som «gjør noe» og en ny landmasse
 som dukker opp uten forklaring.
+
+⚠️ **F2-T4: `DecisionCard` folder også ut nå** — nummeret er fortsatt
+forskjellen mellom de to, ikke utfoldingen. Sjekklistas rader har fått
+`onExpand`/`expanded`/`children` med den samme semantikken (`Button`s
+`expanded` + `controls`), pluss to ting `ControlCard` ikke har: kroppen er en
+NAVNGITT gruppe (`aria-labelledby` mot radens eget spørsmål) og den får FOKUS
+når den åpner seg, fordi raden står i en liste man går gjennom ovenfra og ned
+og en tastaturbruker ellers blir stående på knappen mens skjermen vokser under
+henne. Se «F2-T4 — sjekklista folder ut PÅ STEDET» under P1b.
 
 ### VU-regelen fikk en andre måler å passe på
 

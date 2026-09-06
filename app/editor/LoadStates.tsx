@@ -105,7 +105,7 @@ export function LoadFailed() {
         <Button
           variant="ghost"
           testId="editor-load-error-close"
-          onClick={closeFile}
+          onClick={() => void closeFile()}
         >
           {t("editor.closeFile")}
         </Button>

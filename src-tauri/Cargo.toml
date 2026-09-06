@@ -246,11 +246,17 @@ tauri-plugin-updater = { version = "2", optional = true }
 # `Win32_Storage_FileSystem` (F2-W6): `SetFileAttributesW`/`FILE_ATTRIBUTE_HIDDEN`
 # for `util::hide_dir_on_windows` — a leading `.` hides a folder on macOS but is
 # just an ordinary, visible name to Explorer.
+#
+# `Win32_System_Power` (F2-W5) is the one addition beyond the Job-Object set:
+# `SetThreadExecutionState` + `ES_CONTINUOUS`/`ES_SYSTEM_REQUIRED`, the keep-awake
+# block in `src/power.rs`. It is a kernel32 call taking one integer, so the
+# feature pulls in no further module.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_JobObjects",
+    "Win32_System_Power",
     "Win32_System_Threading",
 ] }
 

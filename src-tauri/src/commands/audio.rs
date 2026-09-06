@@ -54,7 +54,9 @@ use crate::error::AppResult;
 /// frontend can call this one command on every platform.
 ///
 /// cpal/ASIO enumeration is BLOCKING (it talks to the driver), so it runs on a
-/// blocking thread to keep the async runtime free.
+/// blocking thread to keep the async runtime free. The ASIO half is memoised for
+/// [`crate::audio::asio::ASIO_CACHE_TTL`]: it LOADS every installed ASIO driver,
+/// so re-opening the picker a few seconds later must not do it again.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — the ASIO branch needs a Windows rig with an ASIO
 /// driver; the merge/dedup logic is pure + unit-tested.

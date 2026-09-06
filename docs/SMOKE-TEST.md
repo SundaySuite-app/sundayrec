@@ -209,12 +209,20 @@ a wizard with screens of its own — it is the five real question screens shown 
 order, with a progress line and «Fortsett uten lyd» as the emergency exit, so
 nothing a volunteer learns there has to be unlearned afterwards. Those are the
 SAME five screens the control-room cards fold out afterwards (D2), so the
-sequence teaches the app a volunteer will actually use. The consent
+sequence teaches the app a volunteer will actually use — and since F2-T4 the
+checklist on the last screen folds them out the same way: **«Sett opp» opens
+the screen in place, in the row, and never leaves the sequence.** The row above
+turns green the moment the card saves, and the card stays open until you close
+it. The «Fortsett oppsettet» chip still exists for the exits that remain (the
+bottom bar, a link inside an expanded card), and it now returns to exactly the
+step you left. The consent
 question (E3.6) asks with the «Aldri»-list on display, records the answer —
 yes _or_ no — through `telemetry_consent_set`, treats a decline as fully equal,
 and cannot trap the operator if the backend rejects the answer. The renderer half of all of that is pinned in the browser
 tier; only the native window/DB boot itself stays a rig observation:
 
+- VERIFIED-BY: e2e/first-run.spec.ts::«Sett opp» folder ut skjermen PÅ STEDET, og raden blir grønn uten navigering
+- VERIFIED-BY: e2e/first-run.spec.ts::bunnlinja forlater sekvensen, og chippen fører tilbake til steget man sto på
 - VERIFIED-BY: e2e/onboarding.spec.ts::first run shows the wizard; a settled install does not
 - VERIFIED-BY: e2e/onboarding.spec.ts::the consent step exists, and says what is and is not collected
 - VERIFIED-BY: e2e/onboarding.spec.ts::«Ja, del anonymt» grants consent and finishes the wizard

@@ -19,10 +19,9 @@
 
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterApplyRequest,
-    EditorMasterApplyResult, EditorMasterPreviewRequest, EditorMasterPreviewResult,
-    EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar, ExportEngine,
-    MasterEngine,
+    EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterPreviewRequest,
+    EditorMasterPreviewResult, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar,
+    ExportEngine, MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -300,6 +299,14 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 
 /// Apply the cut-plan (+ optional mastering) and render to the chosen format,
 /// emitting `editor://export-progress` ticks the renderer draws as a real bar.
+///
+/// ONE AT A TIME (F2-A-B): a call arriving while an export is running comes
+/// back as `validation: export_already_running` — [`editor::export`] claims the
+/// engine before it touches anything, and the renderer maps that code to
+/// `editor.errExportAlreadyRunning`. The guard lives down there rather than
+/// here so it cannot be walked around by another caller of the same seam; the
+/// `in_flight` field on `ExportEngine` documents what two exports on one engine
+/// actually do to each other's files.
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
@@ -466,30 +473,11 @@ pub async fn editor_master_preview(
     editor::master_preview(&request).await
 }
 
-/// Run the full two-pass mastering apply, emitting `editor-master-progress`
-/// ticks, tracked by job id for cancellation.
-#[tauri::command]
-pub async fn editor_master_apply(
-    app: tauri::AppHandle,
-    engine: State<'_, MasterEngine>,
-    request: EditorMasterApplyRequest,
-) -> AppResult<EditorMasterApplyResult> {
-    super::path_guard::checked_input_file(&request.input_path)?;
-    super::path_guard::checked_path(&request.output_path)?;
-    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::EditorMasterApplied);
-    let job_id = request.job_id.clone();
-    editor::master_apply(&engine, &request, move |current_sec, total_sec| {
-        let _ = app.emit(
-            "editor-master-progress",
-            EditorMasterProgress {
-                job_id: job_id.clone(),
-                current_sec,
-                total_sec,
-            },
-        );
-    })
-    .await
-}
+// `editor_master_apply` (the `#[tauri::command]` wrapper around
+// `editor::master_apply`) closed F2-C-E T10: no caller in app/e2e/tray, and
+// already carried as `unreachable` in `scripts/command-reachability-baseline.json`
+// — see the note above `editor::master_apply` in `crate::editor` for the full
+// reasoning and what stays.
 
 /// Abort an in-flight mastering apply by job id. Returns whether it was live.
 #[tauri::command]

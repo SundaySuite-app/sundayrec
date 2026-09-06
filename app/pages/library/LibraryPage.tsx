@@ -66,7 +66,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import type { TrashEntry } from "@lib/pages/trash-core";
-import { trashedPaths } from "@lib/pages/trash-core";
+import { trashedPaths, withoutTrashed } from "@lib/pages/trash-core";
 
 import { confirmDiscard } from "../../editor/discard";
 import { openInEditor } from "../../editor/entry";
@@ -242,9 +242,26 @@ export function LibraryPage() {
     void loadTrash();
   }, []);
 
+  // F2-A-F: filtrer mot SIGNALET `trashEntries`, ikke bare mot øyeblikksbildet
+  // `getHistory()` selv filtrerte ved forrige lasting. `api-shim.ts`s
+  // `getHistory` gjør allerede sin egen `trash_list`-join ved LASTING (se dens
+  // kommentar «Filtering it out HERE…») — linjen under er sikkerhetsnettet for
+  // tiden MELLOM to lastinger: en `trashEntries`-oppdatering (angre, sveipen,
+  // retensjonspasset) skal flytte raden med en gang, uten at noe nytt kall til
+  // `loadRecordingCount()` er det som redder den. Ingen ny IPC her — begge
+  // signalene er allerede lest av `useEffect` over (og av søskensidene som
+  // deler dem), så dette er ett `trash_list`-resultat brukt på nytt, ikke et
+  // nytt.
+  const visibleEntries =
+    entries === null
+      ? null
+      : withoutTrashed(entries, trashedPaths([...(trashEntries.value ?? [])]));
+
   const rows =
-    entries === null ? null : toLibraryRows(filterEntries(entries, query));
-  const anyRecordings = entries !== null && entries.length > 0;
+    visibleEntries === null
+      ? null
+      : toLibraryRows(filterEntries(visibleEntries, query));
+  const anyRecordings = visibleEntries !== null && visibleEntries.length > 0;
   // F2-T3: ⌘F på macOS, Ctrl+F ellers — samme kilde `main.tsx` bruker for
   // `platform-*`-klassen, ikke UA-strengen. Bare et visningsspørsmål: selve
   // snarveien (`Shell.tsx`s `useGlobalShortcuts`) godtar begge uansett OS.

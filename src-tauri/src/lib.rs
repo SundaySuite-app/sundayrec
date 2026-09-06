@@ -50,6 +50,12 @@ pub mod media;
 // The matrix itself is the unit-tested `sundayrec_core::notify`.
 pub mod notify;
 pub mod platform;
+// F2-W5 — keep-awake blocks. `sundayrec_core::wake::should_block` has decided
+// since the Electron port that the app should hold a power blocker in the last
+// 30 minutes before a start; nothing ever acted on it, so a Windows box woken by
+// our own timer at T−10 could hit the 2-minute unattended-sleep timeout and be
+// asleep again when the recording was due. This module is the missing half.
+pub mod power;
 pub mod preflight;
 pub mod recorder;
 // R3: THE save-folder resolution seam — every "configured folder or the
@@ -589,14 +595,17 @@ pub fn run() {
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
             // P1 parity: sidecar persistence, stream probe, inline guard,
-            // temp-file cleanup, and the full mastering preview/apply/cancel flow.
+            // temp-file cleanup, and the mastering preview/cancel flow.
+            // (`editor_master_apply` closed F2-C-E T10 — never called from
+            // app/e2e/tray, and already `unreachable` in the reachability
+            // baseline; see the note above `editor::master_apply` in
+            // `crate::editor` for why the implementation stays.)
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,
-            commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
             // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
