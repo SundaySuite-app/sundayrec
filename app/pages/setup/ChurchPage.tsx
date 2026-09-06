@@ -17,21 +17,24 @@
  * «trykk Lagre først» — det gamle skallet sa begge deler til forskjellige
  * tider.
  *
- * ⚠️ Bare norsk og engelsk står i lista. De fem andre katalogene er PAUSET
- * gjennom redesignet (`ACTIVE_LOCALES`), ikke fjernet — å tilby et språk der
- * halvparten av skjermen er tom er verre enn å ikke tilby det ennå. Verdien
- * som står lagret røres ikke: en profil satt til tysk beholder «de» i basen og
- * får språket tilbake i fase B.
+ * ✅ Alle sju språk står i lista siden F2-S6 (`ACTIVE_LOCALES`). Gjennom
+ * redesignet var det bare norsk og engelsk — å tilby et språk der halvparten
+ * av skjermen er tom er verre enn å ikke tilby det ennå — og en profil satt
+ * til tysk beholdt «de» i basen hele veien. Nå får den tysk tilbake.
  *
- * ## Valgboksen lyver ikke lenger om det pausede valget (F1-R2 / R9)
+ * ## Valgboksen lyver ikke om et valg den ikke kan tilby (F1-R2 / R9)
  *
- * Før la `<Select>` bare fram de to aktive kodene som `<option>`. En profil
+ * Før la `<Select>` bare fram de aktive kodene som `<option>`. En profil
  * migrert med `language: "de"` satte da kontrollens `value` til noe INGEN
  * option hadde — og en `<select>` uten treff blant sine egne options viser
  * stille den FØRSTE optionen, uansett hva som faktisk står lagret. Se
- * `church-core.ts`s `languageOptions`: den legger til en tredje, DEAKTIVERT
- * rad med det ekte navnet når det lagrede språket er pauset, og linja under
- * boksen (`isPausedLanguage`) sier hvorfor den ikke kan velges på nytt.
+ * `church-core.ts`s `languageOptions`: den legger til en ekstra, DEAKTIVERT
+ * rad med det ekte navnet når det lagrede språket ikke er aktivt, og linja
+ * under boksen (`isPausedLanguage`) sier hvorfor den ikke kan velges.
+ *
+ * ⚠️ Med alle sju aktive er `paused` alltid `false`, så raden og linja rendres
+ * ikke i dag. De står fordi en pause kan skje igjen — se `church-core.ts`s
+ * filhode, som forklarer hvorfor mekanismen fortsatt er dekket av tester.
  */
 
 import { locale, setLocale, t, tDyn, tf, type Locale } from "../../i18n";
