@@ -174,7 +174,7 @@
         "mail": "E-mail si quelque chose ne va pas",
         "mailDesc": "Une seule adresse. Envoyé uniquement en cas d’erreur, jamais autrement.",
         "nobodyDesc": "Personne ne reçoit d’e-mail — l’ordinateur ne prévient que celui qui est devant.",
-        "emailDesc": "Envoyé uniquement en cas d’erreur, jamais autrement.",
+        "emailDesc": "Envoyé en cas d’erreur — et pour l’accusé de réception, s’il est activé.",
         "gateChip": "Non configuré",
         "gateSmtp": "Confirmez l’adresse e-mail, ou configurez un serveur e-mail (SMTP) sous Avancé.",
         "gateChipUnavailable": "Non disponible",

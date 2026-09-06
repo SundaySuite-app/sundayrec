@@ -174,7 +174,7 @@
         "mail": "E-post om något går fel",
         "mailDesc": "En adress. Skickas bara vid fel, aldrig annars.",
         "nobodyDesc": "Ingen får e-post — datorn säger bara till den som sitter vid den.",
-        "emailDesc": "Skickas bara vid fel, aldrig annars.",
+        "emailDesc": "Skickas vid fel — och vid kvitto, om det är påslaget.",
         "gateChip": "Inte inställt",
         "gateSmtp": "Bekräfta e-postadressen, eller ställ in en e-postserver (SMTP) under Avancerat.",
         "gateChipUnavailable": "Inte tillgängligt",
