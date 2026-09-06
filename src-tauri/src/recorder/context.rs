@@ -73,6 +73,22 @@ use crate::recorder::preroll::PrerollClip;
 /// state to reason about. Keeping them out is the choice with the fewest
 /// surprises: the context is what a session READS, the channels are how it
 /// talks.
+///
+/// Three more things are per-session but still not fields, because nothing
+/// hands them DOWN — each supervisor mints its own from what is already here,
+/// and a field would only invite a second, disagreeing copy:
+///
+/// - the keep-awake block (F2-W5). `run_session` takes it from
+///   [`session_keep_awake`](crate::recorder::engine::session_keep_awake) as a
+///   local binding whose DROP is the release. As a field it would be released
+///   whenever the context was, which — since the context is `Clone` — is a
+///   thing that happens more than once per session.
+/// - the capture folder and the crash-recovery manifest (F1/#246). Both are
+///   derived inside the session from `opts.output_path` + the session id, which
+///   is itself stamped after the routing. Deriving beats carrying: there is no
+///   window in which the folder in the struct and the folder on disk can differ.
+/// - the segment's counters. They live one SEGMENT, not one session — see
+///   [`SegmentCounters`].
 #[derive(Clone)]
 pub(crate) struct SessionContext {
     /// The Tauri handle every `recording://*` event is emitted through.
