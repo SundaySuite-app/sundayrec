@@ -5,7 +5,13 @@ import type { EditorExportLoudness } from "./EditorExportLoudness";
  * The outcome of an export: where the file landed, and — with a mastering
  * preset — what happened to the level.
  */
-export type EditorExportResult = { outputPath: string, 
+export type EditorExportResult = { 
+/**
+ * Where the finished file landed — the name AFTER the atomic rename
+ * (F2-4), never the temp it was rendered through. The receipt shows this,
+ * and the renderer's `predictedOutputName` is only a preview of it.
+ */
+outputPath: string, 
 /**
  * `None` for an unmastered export, and for a mastered one whose pass-2
  * report we could not read. OPTIONAL on the TS side on purpose: every

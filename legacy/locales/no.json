@@ -939,6 +939,7 @@
     "enhanceTitle": "Lydforbedring",
     "errInvalidFormat": "Formatet støttes ikke for eksport. Velg et annet format på Eksportering-siden.",
     "errExportAlreadyRunning": "En eksport er allerede i gang. Vent til den er ferdig.",
+    "errDiskLowForExport": "Det er ikke nok ledig plass til denne eksporten. Frigjør plass, eller velg en annen mappe med «Velg mappe…».",
     "errRecordingInProgress": "Det pågår et opptak nå. Vent til opptaket er ferdig før du eksporterer.",
     "errPathNotAbsolute": "Ugyldig mappe eller filbane. Velg destinasjonsmappen på nytt.",
     "metaDesc": "BESKRIVELSE",

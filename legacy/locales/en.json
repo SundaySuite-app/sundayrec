@@ -939,6 +939,7 @@
     "enhanceTitle": "Audio enhancement",
     "errInvalidFormat": "This format is not supported for export. Choose a different format on the Export page.",
     "errExportAlreadyRunning": "An export is already running. Wait until it has finished.",
+    "errDiskLowForExport": "There is not enough free space for this export. Free up space, or pick another folder with “Choose folder…”.",
     "errRecordingInProgress": "A recording is in progress. Wait until it has finished before you export.",
     "errPathNotAbsolute": "Invalid folder or file path. Choose the destination folder again.",
     "metaDesc": "DESCRIPTION",
