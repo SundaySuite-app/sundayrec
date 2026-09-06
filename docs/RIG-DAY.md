@@ -105,13 +105,13 @@ faktisk skal se nå — sist.
       den vanlige idle-timeren før opptaket i det hele tatt startet.
       **Forventet ETTER (F2-W5, #252):** maskinen står våken forbi
       1-minutts-grensa når klokka passerer T−30 min, og opptaket starter i
-      tide. `pmset -g assertions` skal liste `SundayRec: scheduled recording
-is due` i vinduet og `SundayRec: recording in progress` under selve
-      opptaket — ingen av dem igjen etterpå. Ta med i samme runde: skjermen
-      skal FORTSATT få sove (blokken ber med vilje ikke om en
-      skjerm-holdt-våken-variant), og sjekk om oppførselen er den samme på
-      batteri som på nettstrøm (respekten for `PreventSystemSleep` er ikke
-      garantert lik på batteri).
+      tide. Kjør `pmset -g assertions` i vinduet: den skal liste eieren
+      `SundayRec` med grunnen «scheduled recording is due», og under selve
+      opptaket samme eier med grunnen «recording in progress» — ingen av dem
+      igjen etterpå. Ta med i samme runde: skjermen skal FORTSATT få sove
+      (blokken ber med vilje ikke om en skjerm-holdt-våken-variant), og sjekk
+      om oppførselen er den samme på batteri som på nettstrøm (respekten for
+      `PreventSystemSleep` er ikke garantert lik på batteri).
 - [ ] **(h) Et helt ekte 90-minutters opptak.** Skru på «Del opp lange
       opptak» med en kort grense (f.eks. 30 min) og ta opp en hel ekte
       gudstjeneste eller tilsvarende lengde med tale.
@@ -242,12 +242,15 @@ is due` i vinduet og `SundayRec: recording in progress` under selve
       når en helt vanlig WASAPI-enhet var valgt. Kunne poppe et driverpanel
       opp midt i opptaksstart, eller ta lydkortet et ASIO-opptak skulle bruke
       to linjer senere — verst på et planlagt opptak ingen står ved.
-      **Forventet ETTER (F2-W8, #253):** 1. **Startforsinkelsen er borte.** Ta tiden fra klikk til at
-      teller/VU løper, og sammenlign med v0.18.0-beta.1. 2. **Driverpanelet popper ikke opp** ved opptaksstart lenger. 3. **ASIO-stien er fortsatt intakt.** Velg ASIO-enheten i velgeren og
-      trykk opptak innen 30 s — diagnose viser `set_audio_engine: asio`,
-      og alle kanalene er der. 4. **Ferskhet.** Plugg inn et ASIO-grensesnitt mens appen står åpen,
-      vent over 30 s, åpne velgeren igjen: det skal dukke opp. Kjør
-      diagnose: den ser det med én gang (den dropper 30 s-memoet først).
+      **Forventet ETTER (F2-W8, #253):** fire ting, i samme økt. 1) Ta tiden
+      fra klikk til at teller/VU løper, og sammenlign med v0.18.0-beta.1 —
+      startforsinkelsen skal være borte. 2) Driverpanelet popper ikke opp ved
+      opptaksstart lenger. 3) ASIO-stien er fortsatt intakt: velg
+      ASIO-enheten i velgeren og trykk opptak innen 30 s — diagnose viser
+      `set_audio_engine: asio`, og alle kanalene er der. 4) Ferskhet: plugg
+      inn et ASIO-grensesnitt mens appen står åpen, vent over 30 s, åpne
+      velgeren igjen — det skal dukke opp; kjør diagnose og den ser det med
+      én gang (den dropper 30 s-memoet først).
 
 _(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
