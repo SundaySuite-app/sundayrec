@@ -422,19 +422,9 @@ jobs:
       # be forced to panic on a lane that never has a real binary. Downloading
       # the real ~80 MB Windows ffmpeg the way release.yml does is not worth
       # the per-run cost just for this lane.
-      #
-      # `--test-threads=1`: cargo test's default full parallelism crashed the
-      # whole process with STATUS_ACCESS_VIOLATION on windows-latest — twice,
-      # in two different places, neither a Rust panic — once two of the
-      # obvious real-cpal/WASAPI suspects were already `ignore`d (see PR
-      # #231). WASAPI/COM state is thread-affine; running every test on its
-      # own single worker thread, one at a time, removes the cross-thread
-      # contention that seemed to trigger it, at the cost of wall time the
-      # repo's public-CI minutes can afford. No coverage lost — every test
-      # still runs, just not concurrently with another.
       - name: cargo test (workspace)
         working-directory: src-tauri
-        run: cargo test --workspace -- --test-threads=1
+        run: cargo test --workspace
 
       # Approximate the Windows RELEASE feature combo (release.yml builds
       # --no-default-features --features editor,tray,asio,updater,email;
