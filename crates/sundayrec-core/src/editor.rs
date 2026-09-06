@@ -325,11 +325,43 @@ pub fn is_supported_export_format(fmt: &str) -> bool {
         )
 }
 
+/// The `-c:a aac -b:a 256k [-ar <rate>]` a video export's audio track gets,
+/// shared by the software and hardware codec-arg builders so the two can never
+/// drift apart on the ONE thing F2-8 was about.
+///
+/// `source_rate` pins the encoder's rate via [`output_sample_rate`], asked as
+/// if the target were plain AAC — because it is: `min(source, 48 kHz)`, snapped
+/// to a rate the AAC encoder accepts. `None` (probe failed) emits no `-ar`,
+/// which is the pre-F2-8 behaviour.
+///
+/// Why it matters: with a mastering preset the audio pad reaching the encoder
+/// comes out of `loudnorm`, which runs its internal graph at 192 kHz. Neither
+/// video builder emitted `-ar`, so the AAC encoder was handed that pad and
+/// picked whatever rate it could stand — a silent resample of the one file the
+/// church actually publishes. The audio-only path has pinned `-ar` since
+/// Phase 4 ([`codec_args`]); the video path simply never did.
+fn video_audio_codec_args(source_rate: Option<u32>) -> Vec<String> {
+    let s = |v: &str| v.to_string();
+    let mut a = vec![s("-c:a"), s("aac"), s("-b:a"), s("256k")];
+    if let Some(rate) = output_sample_rate("aac", source_rate) {
+        a.extend([s("-ar"), rate.to_string()]);
+    }
+    a
+}
+
 /// Build the video + audio codec args for a video export, honouring the chosen
 /// container and codec. H.265 carries the `hvc1` tag for QuickTime/Apple
 /// compatibility; `+faststart` (web progressive playback) is only emitted for
 /// the ISO/QuickTime containers that support it (mp4/mov/m4v — NOT mkv).
-pub fn video_codec_args(container: &str, codec: VideoCodec, crf: Option<u8>) -> Vec<String> {
+///
+/// `source_rate` pins the AAC track's sample rate — see
+/// [`video_audio_codec_args`].
+pub fn video_codec_args(
+    container: &str,
+    codec: VideoCodec,
+    crf: Option<u8>,
+    source_rate: Option<u32>,
+) -> Vec<String> {
     let s = |v: &str| v.to_string();
     let crf = crf.unwrap_or(18);
     let mut a: Vec<String> = match codec {
@@ -337,7 +369,7 @@ pub fn video_codec_args(container: &str, codec: VideoCodec, crf: Option<u8>) -> 
         VideoCodec::H265 => vec![s("-c:v"), s("libx265"), s("-tag:v"), s("hvc1")],
     };
     a.extend([s("-preset"), s("veryfast"), s("-crf"), crf.to_string()]);
-    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("256k")]);
+    a.extend(video_audio_codec_args(source_rate));
     if matches!(container, "mp4" | "mov" | "m4v") {
         a.extend([s("-movflags"), s("+faststart")]);
     }
@@ -381,6 +413,7 @@ pub fn videotoolbox_codec_args(
     container: &str,
     codec: VideoCodec,
     bitrate_kbps: u32,
+    source_rate: Option<u32>,
 ) -> Vec<String> {
     let s = |v: &str| v.to_string();
     let mut a: Vec<String> = match codec {
@@ -393,7 +426,10 @@ pub fn videotoolbox_codec_args(
         s("-realtime"),
         s("1"),
     ]);
-    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("256k")]);
+    // The hardware path only swaps the VIDEO encoder — the audio track is the
+    // same AAC, and so is its rate pin. A software retry after a failed
+    // hardware render must land the same file.
+    a.extend(video_audio_codec_args(source_rate));
     if matches!(container, "mp4" | "mov" | "m4v") {
         a.extend([s("-movflags"), s("+faststart")]);
     }
@@ -635,11 +671,27 @@ pub fn audio_simple_export_args(
 
 /// The video filter graph (trim + audio-processing) for a single main input.
 /// Mirrors `buildVideoFilterComplex`. Returns `(filter_complex, v_out, a_out)`.
+///
+/// `total_duration` is the SOURCE recording's length, and it is here for the
+/// same reason it is in [`audio_export_filter_complex`]: it decides which
+/// segment edges are interior cuts and therefore get a de-click [`join_fades`]
+/// envelope.
+///
+/// F2-7: until that parameter existed the video path spliced its audio with a
+/// raw `atrim…asetpts` and nothing else — the audio-only path has had
+/// [`atrim_faded`] since the de-click work, the video path never got it. Every
+/// cut in a video export therefore carried exactly the click the audio export
+/// was fixed to avoid: same recording, same cuts, two different answers, and
+/// the one a church publishes to YouTube was the clicking one. The VIDEO side
+/// of the graph is untouched — a 15 ms gain envelope belongs on the audio pad,
+/// and frames are cut on their own boundaries.
 pub fn video_filter_complex(
     main_idx: usize,
     keeps: &[KeepSegment],
     proc_filters: &[String],
+    total_duration: f64,
 ) -> (String, String, String) {
+    let a_ref = format!("[{main_idx}:a]");
     let mut parts: Vec<String> = Vec::new();
     if keeps.len() == 1 {
         let seg = &keeps[0];
@@ -648,11 +700,7 @@ pub fn video_filter_complex(
             ts(seg.start),
             ts(seg.end)
         ));
-        let mut a_chain = vec![format!(
-            "[{main_idx}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS",
-            ts(seg.start),
-            ts(seg.end)
-        )];
+        let mut a_chain = vec![atrim_faded(&a_ref, seg, total_duration)];
         a_chain.extend(proc_filters.iter().cloned());
         parts.push(format!("{}[a_main]", a_chain.join(",")));
     } else {
@@ -663,9 +711,8 @@ pub fn video_filter_complex(
                 ts(seg.end)
             ));
             parts.push(format!(
-                "[{main_idx}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS[aseg{i}]",
-                ts(seg.start),
-                ts(seg.end)
+                "{}[aseg{i}]",
+                atrim_faded(&a_ref, seg, total_duration)
             ));
         }
         let v_in: String = (0..keeps.len()).map(|i| format!("[vseg{i}]")).collect();
@@ -802,6 +849,167 @@ where
         }
         i += 1;
     }
+}
+
+/// The path an export RENDERS into, before it is renamed onto the
+/// [`collision_free_path`] the user finally sees: `dir/base.__editor_tmp.ext`.
+///
+/// F2-4. The export used to hand ffmpeg the final name and `-y`, so an abort at
+/// 40 % — a cancel, the kill-timer, a failed render, a pulled drive — left a
+/// half-written `<navn>_redigert.mp3` sitting in the folder. In Finder it looks
+/// finished; opened it is an mp4 with no `moov` atom, or an mp3 that stops
+/// mid-sentence. And because the name was taken, the next attempt landed as
+/// `_redigert_2` — so the file the pastor reaches for first is the broken one.
+///
+/// Three properties this name has to carry, and each one is load-bearing:
+///
+///  1. **The extension is LAST.** ffmpeg picks the output container from it. A
+///     temp called `service_redigert.mp3.__editor_tmp` muxes as nothing at all.
+///  2. **`.__editor_tmp.` appears verbatim**, so [`is_editor_temp_name`] matches
+///     it and `startup_sweep` reaps a crashed render's leftovers for free —
+///     including a hard power cut, where no `Drop` in any process can run.
+///  3. **It is in the SAME directory as the output**, so the finishing move is
+///     a rename within one filesystem: atomic, and never a cross-device copy of
+///     a multi-gigabyte video.
+///
+/// The name is deliberately deterministic rather than uuid-tagged: two exports
+/// cannot overlap (`ExportEngine::try_begin`, F2-A-B) and the app is
+/// single-instance, so the only file this can ever collide with is a leftover
+/// from a render that already died — which `-y` should overwrite, not preserve.
+pub fn editor_tmp_path(dir: &str, base: &str, ext: &str) -> String {
+    join(dir, &format!("{base}{EDITOR_TMP_SUFFIX}.{ext}"))
+}
+
+// ── Export disk guard (F2-11) ─────────────────────────────────────────────────
+
+/// Free space an export wants ON TOP of the file it is about to write: 256 MB.
+///
+/// Well under the recorder's own thresholds
+/// ([`crate::preflight::MIN_DISK_AUDIO_BYTES`], 500 MB) and deliberately so —
+/// those stop a LIVE take, where running out mid-service costs the recording
+/// itself. An export can be re-run; the only thing at stake is the twenty
+/// minutes it takes to discover the disk was full. So this margin is set to
+/// catch "this cannot possibly fit", not to police a comfortable machine.
+pub const EXPORT_DISK_HEADROOM_BYTES: u64 = 256 * 1024 * 1024;
+
+/// How much of the uncompressed size a lossless-compressed target (FLAC,
+/// WavPack, TTA) is assumed to take.
+///
+/// The renderer's own `exportKbps` says a flat 600 kbps stereo / 350 mono,
+/// which is legacy's number and is RATE-BLIND: it estimates a 96 kHz service
+/// exactly as if it were 48 kHz, and misses by half. Here the ratio hangs off
+/// the real PCM size instead, so it scales with rate and depth. 0.6 is a touch
+/// pessimistic for speech (FLAC usually lands nearer 0.5), and pessimistic in
+/// this direction only costs the estimate — never the export.
+const LOSSLESS_ESTIMATE_RATIO: f64 = 0.6;
+
+/// Bytes per second of a `kbps` stream — 1000 bits / 8. The renderer's
+/// `estimatedBytes` uses the same `kbps · 125`, on purpose: two numbers about
+/// the same thing must not be arrived at two ways.
+const BYTES_PER_KBPS_SECOND: f64 = 125.0;
+
+/// Roughly how many bytes an AUDIO export of `kept_sec` seconds will write, or
+/// `None` when nothing here can honestly say (an unknown source rate on a PCM
+/// target, a nonsensical duration).
+///
+/// The bitrate is read out of [`codec_args`]' OWN argv rather than restated:
+/// the defaults (`256k` mp3/AAC/Vorbis, `160k` Opus, `192k` AC-3/mp2/WMA) live
+/// in exactly one place, and a future change to any of them moves this estimate
+/// with it instead of leaving a second copy behind to rot.
+///
+/// PCM targets have no `-b:a`, so they are computed from what a sample costs:
+/// rate × channels × bytes-per-sample. Lossless-compressed targets take that
+/// times [`LOSSLESS_ESTIMATE_RATIO`].
+///
+/// It is an ESTIMATE and it is used as one — see [`export_disk_is_low`], which
+/// only ever asks "is there obviously not room for this".
+pub fn export_estimated_bytes(
+    fmt: &str,
+    kept_sec: f64,
+    bitrate_kbps: Option<u32>,
+    bit_depth: Option<u8>,
+    source: (Option<u32>, Option<u32>),
+) -> Option<u64> {
+    if !kept_sec.is_finite() || kept_sec <= 0.0 {
+        return None;
+    }
+    let (source_rate, channels) = source;
+    let args = codec_args(fmt, bitrate_kbps, bit_depth, source_rate);
+
+    // Lossy: the encoder was told a bitrate, so the size follows from it.
+    if let Some(kbps) = args
+        .windows(2)
+        .find(|w| w[0] == "-b:a")
+        .and_then(|w| w[1].trim_end_matches('k').parse::<f64>().ok())
+    {
+        return Some((kept_sec * kbps * BYTES_PER_KBPS_SECOND).round() as u64);
+    }
+
+    // PCM and lossless: a sample at a time. `-ar` in the argv is the rate that
+    // will actually be written (amr forces 8 kHz; the rest follow the source),
+    // which is what the file's size depends on.
+    let rate = args
+        .windows(2)
+        .find(|w| w[0] == "-ar")
+        .and_then(|w| w[1].parse::<u32>().ok())
+        .or(source_rate)
+        .filter(|r| *r > 0)? as f64;
+    let codec = args
+        .windows(2)
+        .find(|w| w[0] == "-c:a")
+        .map(|w| w[1].as_str())?;
+    let bytes_per_sample = match codec {
+        "pcm_s24le" => 3.0,
+        "pcm_s16le" | "pcm_s16be" => 2.0,
+        "pcm_mulaw" => 1.0,
+        // flac / wavpack / tta: the same samples, compressed.
+        _ => 2.0 * LOSSLESS_ESTIMATE_RATIO,
+    };
+    // An unknown channel count is assumed STEREO — the same assumption the
+    // renderer's `exportKbps` makes, and the one that does not under-estimate.
+    let ch = channels.filter(|c| *c > 0).unwrap_or(2).min(2) as f64;
+    Some((kept_sec * rate * ch * bytes_per_sample).round() as u64)
+}
+
+/// Roughly how many bytes a VIDEO export will write: the source's own size,
+/// scaled by the fraction of it that survives the cuts.
+///
+/// A proxy, and knowingly so. The renderer refuses to guess at all here
+/// (`estimatedBytes` returns `null` for video, because "a number we cannot work
+/// out is a number we must not show") — but a DISK GUARD is not a number shown
+/// to anyone, and a video export is the one that actually fills a disk. x264 at
+/// CRF 18 lands near a camera's own H.264 for the same resolution, so the
+/// source's bytes-per-second is the best information available before ffmpeg
+/// runs. `None` when either duration is unusable.
+pub fn video_export_estimated_bytes(
+    source_bytes: u64,
+    kept_sec: f64,
+    total_sec: f64,
+) -> Option<u64> {
+    if !kept_sec.is_finite() || kept_sec <= 0.0 || !total_sec.is_finite() || total_sec <= 0.0 {
+        return None;
+    }
+    let fraction = (kept_sec / total_sec).clamp(0.0, 1.0);
+    Some((source_bytes as f64 * fraction).round() as u64)
+}
+
+/// Is there obviously not room for this export?
+///
+/// `estimated_bytes` is `None` when nothing could be estimated (an unreadable
+/// probe, an exotic format) — and then the question narrows to the one thing
+/// that is still knowable: whether the volume is down to its last few hundred
+/// megabytes. It never guesses a size in order to refuse.
+///
+/// Deliberately one-directional: a `false` here promises nothing about the
+/// export succeeding (ffmpeg's own `disk_full` classification is still the last
+/// word), it only means "we have no reason to stop you". The value of stopping
+/// early is the twenty minutes a volunteer does not spend watching a render
+/// that cannot land.
+pub fn export_disk_is_low(free_bytes: u64, estimated_bytes: Option<u64>) -> bool {
+    let needed = estimated_bytes
+        .unwrap_or(0)
+        .saturating_add(EXPORT_DISK_HEADROOM_BYTES);
+    free_bytes < needed
 }
 
 /// Resolve the directory an export writes into, given the renderer's requested
@@ -1106,11 +1314,14 @@ pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
 /// temp dir and sweeps stale ones by this prefix so they don't accumulate.
 pub const PLAYBACK_PROXY_PREFIX: &str = "sundayrec-playback-proxy-";
 
-/// One-shot true-peak probe over the ORIGINAL file: `volumedetect` into the
-/// null muxer. Used by the editor's Normalize when the loaded buffer is the
-/// 8 kHz waveform extract — peaks computed from that band-limited downmix
-/// under-read the real peak by several dB, so normalizing from them could push
-/// the EXPORT into clipping (the export always runs on the original).
+/// One-shot SAMPLE-peak probe over the ORIGINAL file: `volumedetect` into the
+/// null muxer. `volumedetect`'s `max_volume` is the highest raw PCM sample
+/// magnitude, not an oversampled ITU-R BS.1770 true-peak reading (that would be
+/// `ebur128=peak=true`) — "true-peak" here used to overstate what this measures.
+/// Used by the editor's Normalize when the loaded buffer is the 8 kHz waveform
+/// extract — peaks computed from that band-limited downmix under-read the real
+/// peak by several dB, so normalizing from them could push the EXPORT into
+/// clipping (the export always runs on the original).
 pub fn peak_probe_args(input_path: &str) -> Vec<String> {
     [
         "-nostdin",
@@ -1935,7 +2146,7 @@ mod tests {
         // (Asserted through `video_codec_args` directly — the `mp4_codec_args`
         // alias it used to go through had no callers and was removed.)
         assert_eq!(
-            video_codec_args("mp4", VideoCodec::H264, None),
+            video_codec_args("mp4", VideoCodec::H264, None, None),
             vec![
                 "-c:v",
                 "libx264",
@@ -1950,6 +2161,69 @@ mod tests {
                 "-movflags",
                 "+faststart"
             ]
+        );
+    }
+
+    // ── F2-8: the video path's AAC rate ──────────────────────────────────────
+
+    #[test]
+    fn video_export_pins_the_aac_rate_to_the_source() {
+        // 48 kHz in, 48 kHz out — the pin exists so `loudnorm`'s internal
+        // 192 kHz graph cannot decide the encoder's rate for us.
+        let a = video_codec_args("mp4", VideoCodec::H264, None, Some(48_000));
+        assert!(a.windows(2).any(|w| w == ["-ar", "48000"]), "{a:?}");
+        // The rate follows the AUDIO pad, so it sits after `-c:a aac`.
+        let ar = a.iter().position(|x| x == "-ar").expect("-ar");
+        let ca = a.iter().position(|x| x == "-c:a").expect("-c:a");
+        assert!(ca < ar, "-ar belongs to the audio codec: {a:?}");
+    }
+
+    #[test]
+    fn video_export_caps_a_high_rate_source_at_48k() {
+        // A 96 kHz master is capped, not preserved: AAC is a LOSSY target and
+        // `output_sample_rate` already says so for every other lossy format.
+        for rate in [96_000, 192_000] {
+            let a = video_codec_args("mp4", VideoCodec::H264, None, Some(rate));
+            assert!(
+                a.windows(2).any(|w| w == ["-ar", "48000"]),
+                "{rate} Hz source must cap at 48 kHz: {a:?}"
+            );
+        }
+        // …and a rate BELOW the ceiling is kept, snapped to one AAC accepts.
+        let a = video_codec_args("mp4", VideoCodec::H264, None, Some(44_100));
+        assert!(a.windows(2).any(|w| w == ["-ar", "44100"]), "{a:?}");
+    }
+
+    #[test]
+    fn video_export_with_an_unknown_rate_emits_no_ar() {
+        // A failed probe must not invent a rate — that is the pre-F2-8
+        // behaviour, and it is the right one when we do not know.
+        let a = video_codec_args("mp4", VideoCodec::H264, None, None);
+        assert!(!a.iter().any(|x| x == "-ar"), "{a:?}");
+        let hw = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, None);
+        assert!(!hw.iter().any(|x| x == "-ar"), "{hw:?}");
+    }
+
+    #[test]
+    fn the_hardware_retry_lands_the_same_audio_track() {
+        // A hardware render that fails is re-run in software. The two argv
+        // differ in the VIDEO encoder and nothing else — including the rate
+        // pin, or the retry would quietly deliver a differently-resampled
+        // audio track than the attempt it replaced.
+        let sw = video_codec_args("mp4", VideoCodec::H264, None, Some(96_000));
+        let hw = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, Some(96_000));
+        let audio_of = |a: &[String]| -> Vec<String> {
+            let at = a.iter().position(|x| x == "-c:a").expect("-c:a");
+            a[at..]
+                .iter()
+                .take_while(|x| *x != "-movflags")
+                .cloned()
+                .collect()
+        };
+        assert_eq!(audio_of(&sw), audio_of(&hw), "sw {sw:?}\nhw {hw:?}");
+        assert_eq!(
+            audio_of(&sw),
+            vec!["-c:a", "aac", "-b:a", "256k", "-ar", "48000"]
         );
     }
 
@@ -1976,18 +2250,18 @@ mod tests {
 
     #[test]
     fn h265_args_carry_hvc1_tag_and_faststart_only_on_iso() {
-        let mov = video_codec_args("mov", VideoCodec::H265, None);
+        let mov = video_codec_args("mov", VideoCodec::H265, None, None);
         assert!(mov.windows(2).any(|w| w == ["-c:v", "libx265"]), "{mov:?}");
         assert!(mov.windows(2).any(|w| w == ["-tag:v", "hvc1"]), "{mov:?}");
         assert!(mov.windows(2).any(|w| w == ["-movflags", "+faststart"]));
         // mkv does NOT support faststart.
-        let mkv = video_codec_args("mkv", VideoCodec::H265, None);
+        let mkv = video_codec_args("mkv", VideoCodec::H265, None, None);
         assert!(!mkv.iter().any(|a| a == "+faststart"), "{mkv:?}");
     }
 
     #[test]
     fn video_codec_args_crf_override() {
-        let a = video_codec_args("mp4", VideoCodec::H264, Some(23));
+        let a = video_codec_args("mp4", VideoCodec::H264, Some(23), None);
         assert!(a.windows(2).any(|w| w == ["-crf", "23"]), "{a:?}");
     }
 
@@ -2001,7 +2275,7 @@ mod tests {
 
     #[test]
     fn videotoolbox_uses_hw_encoder_bitrate_and_realtime() {
-        let a = videotoolbox_codec_args("mov", VideoCodec::H265, 40_000);
+        let a = videotoolbox_codec_args("mov", VideoCodec::H265, 40_000, None);
         assert!(
             a.windows(2).any(|w| w == ["-c:v", "hevc_videotoolbox"]),
             "{a:?}"
@@ -2013,7 +2287,7 @@ mod tests {
         assert!(!a.iter().any(|x| x == "-crf"));
         assert!(!a.iter().any(|x| x == "-preset"));
         // H.264 hardware variant.
-        let h264 = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000);
+        let h264 = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, None);
         assert!(h264.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
     }
 
@@ -2278,11 +2552,88 @@ mod tests {
             start: 2.0,
             end: 8.0,
         }];
-        let (fc, v, a) = video_filter_complex(0, &keeps, &[]);
+        // A whole-file keep (start 0, end == duration) has no interior edge, so
+        // no fade — the trim string is byte-identical to the pre-F2-7 one.
+        let (fc, v, a) = video_filter_complex(0, &keeps, &[], 8.0);
         assert_eq!(v, "[v_main]");
         assert_eq!(a, "[a_main]");
         assert!(fc.contains("[0:v]trim=start=2.0000:end=8.0000,setpts=PTS-STARTPTS[v_main]"));
-        assert!(fc.contains("[0:a]atrim=start=2.0000:end=8.0000,asetpts=PTS-STARTPTS[a_main]"));
+        assert!(fc.contains("[0:a]atrim=start=2.0000:end=8.0000,asetpts=PTS-STARTPTS,afade=t=in"));
+    }
+
+    // ── F2-7: the video path's audio joins are faded too ─────────────────────
+
+    #[test]
+    fn video_filter_single_keep_untouched_file_has_no_fade() {
+        let keeps = vec![KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        }];
+        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[], 10.0);
+        assert!(
+            !fc.contains("afade"),
+            "no cut, no splice, no envelope: {fc}"
+        );
+        assert!(fc.contains("[0:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[a_main]"));
+    }
+
+    #[test]
+    fn video_filter_fades_every_interior_cut_edge() {
+        // 0–5 and 6–10 out of a 10 s source: the FIRST segment's end and the
+        // SECOND's start are the splice, and only those two get an envelope.
+        let keeps = vec![
+            KeepSegment {
+                start: 0.0,
+                end: 5.0,
+            },
+            KeepSegment {
+                start: 6.0,
+                end: 10.0,
+            },
+        ];
+        let (fc, _v, _a) = video_filter_complex(0, &keeps, &[], 10.0);
+        assert!(
+            fc.contains("asetpts=PTS-STARTPTS,afade=t=out:st=4.9850:d=0.015[aseg0]"),
+            "the first segment fades OUT into the cut: {fc}"
+        );
+        assert!(
+            fc.contains("asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.015[aseg1]"),
+            "the second fades IN out of it: {fc}"
+        );
+        assert_eq!(
+            fc.matches("afade").count(),
+            2,
+            "the file's own start and end are NOT splices: {fc}"
+        );
+        // The video pads are byte-identical to the pre-F2-7 graph.
+        assert!(fc.contains("[0:v]trim=start=0.0000:end=5.0000,setpts=PTS-STARTPTS[vseg0]"));
+        assert!(fc.contains("[0:v]trim=start=6.0000:end=10.0000,setpts=PTS-STARTPTS[vseg1]"));
+    }
+
+    #[test]
+    fn video_and_audio_paths_agree_on_the_join_fade() {
+        // The bug F2-7 fixes was a DISAGREEMENT, not a missing feature: the two
+        // graphs answered "how do you splice a cut" differently. Pin that they
+        // now produce the same audio chain for the same segment.
+        let keeps = vec![
+            KeepSegment {
+                start: 1.0,
+                end: 4.0,
+            },
+            KeepSegment {
+                start: 7.0,
+                end: 9.0,
+            },
+        ];
+        let (video_fc, _v, _a) = video_filter_complex(0, &keeps, &[], 12.0);
+        for seg in &keeps {
+            let audio_chain = atrim_faded("[0:a]", seg, 12.0);
+            assert!(
+                video_fc.contains(&audio_chain),
+                "the video path must splice audio exactly as the audio path does\n\
+                 wanted: {audio_chain}\n   in: {video_fc}"
+            );
+        }
     }
 
     #[test]
@@ -2297,11 +2648,14 @@ mod tests {
                 end: 10.0,
             },
         ];
-        let (fc, _v, _a) = video_filter_complex(1, &keeps, &["acompressor".to_string()]);
+        let (fc, _v, _a) = video_filter_complex(1, &keeps, &["acompressor".to_string()], 10.0);
         assert!(fc.contains("[vseg0]"));
         assert!(fc.contains("[vseg0][vseg1]concat=n=2:v=1:a=0[v_main]"));
         assert!(fc.contains("[aseg0][aseg1]concat=n=2:v=0:a=1[a_concat]"));
         assert!(fc.contains("[a_concat]acompressor[a_main]"));
+        // The processing chain still runs AFTER the concat, so the fades sit on
+        // the raw segments where the splice actually is.
+        assert!(fc.contains("afade=t=out:st=4.9850:d=0.015[aseg0]"));
     }
 
     // ── ffmetadata ───────────────────────────────────────────────────────────
@@ -2409,6 +2763,194 @@ mod tests {
             .collect();
         let p = collision_free_path("/rec", "service", "mp3", |c| taken.contains(c));
         assert_eq!(p, "/rec/service_3.mp3");
+    }
+
+    // ── F2-4: the temp path an export renders into ───────────────────────────
+
+    #[test]
+    fn editor_tmp_path_keeps_the_extension_last() {
+        // ffmpeg picks the container from the extension: it MUST be the suffix.
+        assert_eq!(
+            editor_tmp_path("/rec", "service_redigert", "mp3"),
+            "/rec/service_redigert.__editor_tmp.mp3"
+        );
+        assert_eq!(
+            editor_tmp_path("/rec/", "service_redigert", "mp4"),
+            "/rec/service_redigert.__editor_tmp.mp4"
+        );
+    }
+
+    #[test]
+    fn the_startup_sweep_reaps_a_crashed_renders_temp() {
+        // A hard power cut runs no `Drop` in any process. The ONLY thing that
+        // cleans up then is the startup sweep, and it cleans up what
+        // `is_editor_temp_name` recognises — so the two must agree.
+        for (base, ext) in [
+            ("service_redigert", "mp3"),
+            ("2026-09-06 Gudstjeneste_redigert", "mp4"),
+            ("møte_redigert", "flac"),
+        ] {
+            let tmp = editor_tmp_path("/rec", base, ext);
+            let name = tmp.rsplit('/').next().expect("a file name");
+            assert!(
+                is_editor_temp_name(name),
+                "the sweep must recognise its own render temp: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_temp_name_is_not_a_name_the_export_could_deliver() {
+        // The final name and the temp name must never collide, or the rename
+        // would be a no-op onto itself and the sweep would delete the export.
+        let dir = "/rec";
+        let base = "service_redigert";
+        let tmp = editor_tmp_path(dir, base, "mp3");
+        let mut taken: HashSet<String> = HashSet::new();
+        taken.insert(tmp.clone());
+        let final_path = collision_free_path(dir, base, "mp3", |c| taken.contains(c));
+        assert_ne!(final_path, tmp);
+        assert_eq!(final_path, "/rec/service_redigert.mp3");
+        let final_name = final_path.rsplit('/').next().expect("a file name");
+        assert!(
+            !is_editor_temp_name(final_name),
+            "the DELIVERED file must survive the next startup sweep: {final_name}"
+        );
+    }
+
+    // ── F2-11: the export disk guard ─────────────────────────────────────────
+
+    #[test]
+    fn a_lossy_estimate_follows_the_bitrate_the_codec_args_ask_for() {
+        // One hour of 256 kbps mp3 ≈ 115 MB. The renderer's own `estimatedBytes`
+        // does `keptSec · kbps · 125`; this must be the same arithmetic, or the
+        // number the modal shows and the number the guard weighs disagree.
+        let hour = 3600.0;
+        let got = export_estimated_bytes("mp3", hour, None, None, (Some(48_000), Some(2)))
+            .expect("a bitrate-driven estimate");
+        assert_eq!(got, (hour * 256.0 * 125.0) as u64);
+        // An explicit bitrate wins, exactly as it does in `codec_args`.
+        let low = export_estimated_bytes("mp3", hour, Some(128), None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(low, got / 2);
+        // Opus defaults to 160k, not 256k — read from the argv, not restated.
+        let opus = export_estimated_bytes("opus", hour, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(opus, (hour * 160.0 * 125.0) as u64);
+    }
+
+    #[test]
+    fn a_wav_estimate_is_rate_times_channels_times_depth() {
+        // 1 s of 48 kHz 16-bit stereo = 192 000 bytes. Same formula as the
+        // renderer's `exportKbps` for wav.
+        let stereo = export_estimated_bytes("wav", 1.0, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(stereo, 48_000 * 2 * 2);
+        // 24-bit is half again as big…
+        let deep = export_estimated_bytes("wav", 1.0, None, Some(24), (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(deep, 48_000 * 2 * 3);
+        // …and a mono source is half of stereo.
+        let mono = export_estimated_bytes("wav", 1.0, None, None, (Some(48_000), Some(1)))
+            .expect("estimate");
+        assert_eq!(mono, 48_000 * 2);
+        // A 96 kHz master is estimated as 96 kHz, because a lossless target
+        // KEEPS the source rate (`output_sample_rate`).
+        let hi = export_estimated_bytes("wav", 1.0, None, None, (Some(96_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(hi, 96_000 * 2 * 2);
+    }
+
+    #[test]
+    fn a_flac_estimate_scales_with_the_rate_the_shell_ignores() {
+        // The renderer's flat 600 kbps stereo is rate-blind: it says the same
+        // thing about a 48 kHz and a 96 kHz service. Here 96 kHz is twice
+        // 48 kHz, which is the truth about the file.
+        let at48 = export_estimated_bytes("flac", 10.0, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        let at96 = export_estimated_bytes("flac", 10.0, None, None, (Some(96_000), Some(2)))
+            .expect("estimate");
+        assert_eq!(at96, at48 * 2);
+        // …and it is a FRACTION of the uncompressed size, never more.
+        let wav = export_estimated_bytes("wav", 10.0, None, None, (Some(48_000), Some(2)))
+            .expect("estimate");
+        assert!(at48 < wav, "flac {at48} must be under wav {wav}");
+    }
+
+    #[test]
+    fn an_estimate_that_cannot_be_made_is_not_invented() {
+        // No source rate on a PCM target: nothing here knows how big that is.
+        assert_eq!(
+            export_estimated_bytes("wav", 60.0, None, None, (None, Some(2))),
+            None
+        );
+        // A useless duration is not an estimate of zero.
+        assert_eq!(
+            export_estimated_bytes("mp3", 0.0, None, None, (Some(48_000), Some(2))),
+            None
+        );
+        assert_eq!(
+            export_estimated_bytes("mp3", f64::NAN, None, None, (Some(48_000), Some(2))),
+            None
+        );
+        // A lossy target does NOT need the rate — the bitrate is the size.
+        assert!(export_estimated_bytes("mp3", 60.0, None, None, (None, None)).is_some());
+    }
+
+    #[test]
+    fn a_video_estimate_is_the_source_scaled_by_what_survives_the_cuts() {
+        // Half the recording kept ⇒ half the bytes.
+        assert_eq!(
+            video_export_estimated_bytes(1_000_000_000, 1800.0, 3600.0),
+            Some(500_000_000)
+        );
+        // Nothing cut ⇒ the source's own size.
+        assert_eq!(
+            video_export_estimated_bytes(4_000_000, 12.0, 12.0),
+            Some(4_000_000)
+        );
+        // A kept span longer than the source (impossible, but arithmetic is
+        // arithmetic) is clamped rather than inflated.
+        assert_eq!(
+            video_export_estimated_bytes(4_000_000, 99.0, 12.0),
+            Some(4_000_000)
+        );
+        assert_eq!(video_export_estimated_bytes(4_000_000, 12.0, 0.0), None);
+    }
+
+    #[test]
+    fn the_disk_guard_refuses_only_what_obviously_cannot_fit() {
+        let need = 1_000_000_000u64; // 1 GB of export
+                                     // Room for the file AND the headroom: fine.
+        assert!(!export_disk_is_low(
+            need + EXPORT_DISK_HEADROOM_BYTES,
+            Some(need)
+        ));
+        // One byte short of that: refused.
+        assert!(export_disk_is_low(
+            need + EXPORT_DISK_HEADROOM_BYTES - 1,
+            Some(need)
+        ));
+        // Room for the file but not for the headroom is still refused — the
+        // margin is the point.
+        assert!(export_disk_is_low(need + 1, Some(need)));
+    }
+
+    #[test]
+    fn an_unknown_size_only_refuses_an_almost_full_volume() {
+        // Nothing could be estimated. That must not become "refuse everything"
+        // (no export on an unreadable probe) NOR "allow everything" (a volume
+        // with 3 MB left).
+        assert!(!export_disk_is_low(EXPORT_DISK_HEADROOM_BYTES, None));
+        assert!(export_disk_is_low(EXPORT_DISK_HEADROOM_BYTES - 1, None));
+        assert!(export_disk_is_low(0, None));
+        // The headroom stays well under the recorder's own terminal floor: this
+        // guard protects twenty minutes of waiting, that one protects a service.
+        // Const-block assert — a relationship between two constants belongs to
+        // the compiler, not the test runner.
+        const {
+            assert!(EXPORT_DISK_HEADROOM_BYTES < crate::preflight::MIN_DISK_AUDIO_BYTES);
+        }
     }
 
     #[test]

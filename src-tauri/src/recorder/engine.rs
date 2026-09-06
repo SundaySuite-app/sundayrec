@@ -103,6 +103,7 @@ use crate::audio::device_watch::BackoffOutcome;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
+use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::native_capture::stream::CpalHostKind;
 use crate::recorder::preroll::PrerollClip;
 use crate::util::lock_recover;
@@ -899,6 +900,43 @@ impl RecorderEngine {
             && !opts.classic_directshow
             && (is_asio || !needs_dshow_only)
             && !matches!(backend, CaptureBackend::NativeAudio { .. });
+        // ── The session context (F2-T2) ─────────────────────────────────────
+        // Built ONCE, before the capture path is routed, so every supervisor
+        // gets the very same fields — above all the very same generation-guarded
+        // `StateWriter`. It used to be twelve loose arguments to `run_session`
+        // and eight (a DIFFERENT eight) to `run_cpal_session`, which is exactly
+        // why `session_generation` reached only one of them (F1-A5).
+        //
+        // `audio` is the ffmpeg-side device. A path that addresses the mic BY
+        // NAME through cpal — the native engine, and the Windows cpal-pipe path
+        // below — needs it only for manifest/history metadata, so an ASIO-only
+        // device with no dshow shadow gets a name-only entry instead of failing
+        // the start. The PURE-ffmpeg path does need a real match, and that check
+        // stays on its own branch below, unchanged: a cpal attempt that falls
+        // through to DirectShow still gets the honest "no audio device matched".
+        let name_only_audio = || {
+            FfmpegDevice::new(
+                opts.audio_device_name.clone(),
+                if cfg!(windows) {
+                    "dshow"
+                } else {
+                    "avfoundation"
+                },
+                None,
+            )
+        };
+        let ctx = SessionContext {
+            app: app.clone(),
+            pool,
+            platform,
+            backend,
+            audio: dshow_audio.clone().unwrap_or_else(name_only_audio),
+            video,
+            preroll_clip,
+            state: self.state_writer(&app, generation),
+            audio_engine: Arc::clone(&self.audio_engine),
+            opts,
+        };
         // Why the modern engine fell back, if it did — recorded into the engine
         // status (read by the diagnose tool), NOT surfaced as a fatal recording
         // error (the recording proceeds fine on DirectShow).
@@ -921,19 +959,16 @@ impl RecorderEngine {
             }
             let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
-            let sup_app = app.clone();
-            // The cpal supervisor gets the SAME generation-guarded door as the
-            // unified path: a stopped-but-still-finalising cpal session can no
-            // longer write "Stopped" over the recording that replaced it.
-            let state = self.state_writer(&app, generation);
-            // CLONE what the cpal attempt needs so the originals survive for the
-            // dshow fallback below if cpal fails to start.
-            let (opts_c, video_c, pool_c) = (opts.clone(), video.clone(), pool.clone());
+            // CLONE the whole context so the original survives for the dshow
+            // fallback below if cpal fails to start. The clone shares every `Arc`
+            // the context holds — the `StateWriter`'s state/countdown handles and
+            // its `session_generation` counter included — so the cpal supervisor
+            // gets the SAME generation-guarded door as the unified path: a
+            // stopped-but-still-finalising cpal session can no longer write
+            // "Stopped" over the recording that replaced it.
+            let cpal_ctx = ctx.clone();
             let supervisor = tauri::async_runtime::spawn(async move {
-                run_cpal_session(
-                    host_kind, sup_app, pool_c, opts_c, video_c, stop_rx, ready_tx, state,
-                )
-                .await;
+                run_cpal_session(host_kind, cpal_ctx, stop_rx, ready_tx).await;
             });
             match ready_rx.await {
                 Ok(Ok(())) => {
@@ -965,33 +1000,22 @@ impl RecorderEngine {
             }
         }
 
-        // Resolve the ffmpeg-side device. The native backend resolves its own
-        // device (fuzzy, by name, via cpal) — the ffmpeg match is only needed
-        // there for manifest/history metadata and the automatic ffmpeg
-        // fallback, so an ASIO-only device with no dshow shadow synthesizes a
-        // name-only entry instead of erroring the whole start.
-        let audio = match dshow_audio {
-            Some(d) => d,
-            None if matches!(backend, CaptureBackend::NativeAudio { .. }) => FfmpegDevice::new(
-                opts.audio_device_name.clone(),
-                if cfg!(windows) {
-                    "dshow"
-                } else {
-                    "avfoundation"
-                },
-                None,
-            ),
-            None => {
-                return Err(AppError::Recording(format!(
-                    "no audio device matched '{}'",
-                    opts.audio_device_name
-                )))
-            }
-        };
+        // The PURE-ffmpeg path needs a REAL ffmpeg device match — it has no other
+        // way to address the mic. (The native backend resolves its own device
+        // fuzzily, by name, via cpal, so `ctx.audio` already carries the
+        // name-only entry its manifest/history metadata needs; the same is true
+        // of the cpal-pipe attempt above, which is why this check sits HERE and
+        // not before the routing.)
+        if dshow_audio.is_none() && !matches!(ctx.backend, CaptureBackend::NativeAudio { .. }) {
+            return Err(AppError::Recording(format!(
+                "no audio device matched '{}'",
+                ctx.opts.audio_device_name
+            )));
+        }
         // Record the engine label for the diagnose tool (a native start failure
         // later overwrites this with the fallback engine + reason inside
         // `run_session`).
-        let engine_label = match backend {
+        let engine_label = match ctx.backend {
             CaptureBackend::NativeAudio { host } => host.label(),
             CaptureBackend::Ffmpeg => {
                 if cfg!(windows) {
@@ -1012,25 +1036,8 @@ impl RecorderEngine {
         // progress. (The supervisor signals exactly once — a perfect oneshot.)
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
-        let sup_app = app.clone();
-        let state = self.state_writer(&app, generation);
-        let audio_engine = Arc::clone(&self.audio_engine);
         let supervisor = tauri::async_runtime::spawn(async move {
-            run_session(
-                sup_app,
-                pool,
-                opts,
-                platform,
-                backend,
-                audio,
-                video,
-                preroll_clip,
-                stop_rx,
-                ready_tx,
-                state,
-                audio_engine,
-            )
-            .await;
+            run_session(ctx, stop_rx, ready_tx).await;
         });
 
         match ready_rx.await {
@@ -1231,31 +1238,54 @@ pub(crate) fn session_keep_awake() -> crate::power::PowerBlock {
 /// the whole recording, segment by segment, across reconnects and splits, then
 /// writes one history row.
 ///
+/// Everything the session runs against arrives in ONE [`SessionContext`]
+/// (F2-T2) — this used to be twelve loose parameters, and that friction is why
+/// the cpal path was forgotten when `session_generation` was added (F1-A5).
+/// `ctx` is `mut` because two of its fields legitimately move during a session:
+/// the backend can demote itself to ffmpeg once, and a reconnect re-resolves the
+/// audio device by name. Writing them back into the context (rather than into
+/// locals) is what makes every later spawn, manifest and history row see them.
+///
 /// ⚠️ HARDWARE-UNVERIFIED — drives real captures over a long runtime.
-#[allow(clippy::too_many_arguments)]
 async fn run_session(
-    app: AppHandle,
-    pool: Option<SqlitePool>,
-    opts: RecordingOpts,
-    platform: Platform,
-    backend: CaptureBackend,
-    mut audio: FfmpegDevice,
-    video: Option<FfmpegDevice>,
-    preroll_clip: Option<PrerollClip>,
+    mut ctx: SessionContext,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
-    state: StateWriter,
-    audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 ) {
+    // The exhaustiveness gate (see `SessionContext`'s doc): every field is named
+    // here, with no `..`. A field added to the context stops THIS path compiling
+    // until someone has decided what the ffmpeg supervisor does with it — the
+    // same gate `run_cpal_session` and `run_two_process_session` open with.
+    //
+    // Unlike those two, this path ignores NOTHING: it is the full supervisor, and
+    // all ten fields are used below (`pool` and `preroll_clip` inside
+    // `finalize_pending`, which now takes the context too). So the bindings are
+    // `_` and the body reads — and writes — through `ctx` itself.
+    let SessionContext {
+        app: _,
+        pool: _,
+        opts: _,
+        platform: _,
+        backend: _,
+        audio: _,
+        video: _,
+        preroll_clip: _,
+        state: _,
+        audio_engine: _,
+    } = &ctx;
     // F2-W5: hold the machine awake for the WHOLE session — this binding is
     // dropped (and the block released) by the normal return, by every early
     // `break 'run`, and by `stop()`'s backstop aborting this task. It is taken
     // before the ready handshake, so it overlaps the scheduler's own block and
     // leaves no instant where nothing is asking the OS to stay up.
     let _keep_awake = session_keep_awake();
-    // The backend can demote itself once: native start failure → ffmpeg (the
-    // automatic escape hatch — a recording must start even if cpal can't).
-    let mut backend = backend;
+    // The ONE door to shared state, cloned out of the context so the long-lived
+    // `emit_state` closure below doesn't hold a borrow on `ctx` (which the
+    // backend demotion and the reconnect device re-resolve must be able to
+    // mutate). A cloned `StateWriter` shares the very same `Arc`s — including
+    // the `session_generation` counter — so this is the same door, not a second
+    // one; pinned by `a_cloned_state_writer_shares_the_same_generation_guard`.
+    let state = ctx.state.clone();
     let start_ms = now_ms();
     // Session-wide health counters, fed per-line by each segment's stderr reader
     // (drops/xruns/IPC-starvation) and persisted at session end via `emit_state`.
@@ -1267,8 +1297,8 @@ async fn run_session(
     // reconnects re-pin the SAME stop time, not a fresh duration). `manual_max
     // == 0` means no auto-stop. Always send_replace so a stale deadline from a
     // previous recording can't leak into this one.
-    let initial_stop = (opts.manual_max_minutes > 0)
-        .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
+    let initial_stop = (ctx.opts.manual_max_minutes > 0)
+        .then(|| start_ms + u64::from(ctx.opts.manual_max_minutes) * 60_000);
     state.arm_autostop(initial_stop);
     let mut stop_watch = state.subscribe();
     // This session's OWN state, mirrored on every transition. The engine's
@@ -1307,8 +1337,8 @@ async fn run_session(
         //     pays the `+faststart` whole-file rewrite.
         // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
         // user's chosen delivery format.
-        let audio_only = video.is_none();
-        let cap_dir = capture_dir(&opts.output_path, &session_id);
+        let audio_only = ctx.video.is_none();
+        let cap_dir = capture_dir(&ctx.opts.output_path, &session_id);
         if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
             tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
             let _ = ready.send(Err(AppError::Recording(format!(
@@ -1318,12 +1348,16 @@ async fn run_session(
             emit_state(RecorderState::Failed, 0);
             break 'run;
         }
+        // F2-W6: a leading `.` hides this on macOS for free; Windows needs the
+        // real attribute or a volunteer browsing the save folder mid-service
+        // finds — and can "tidy away" — the live capture fragments.
+        crate::util::hide_dir_on_windows(&cap_dir);
         let capture_ext = if audio_only { "wav" } else { "mkv" };
-        let session_output = capture_base_path(&cap_dir, &opts.output_path, capture_ext);
+        let session_output = capture_base_path(&cap_dir, &ctx.opts.output_path, capture_ext);
         // How to turn the capture into the delivery file — persisted in the
         // crash-recovery manifest so an interrupted recording can be finished on the
         // next launch.
-        let delivery_encode = Some(delivery_encode_for(&opts, audio_only));
+        let delivery_encode = Some(delivery_encode_for(&ctx.opts, audio_only));
         let mut session = RecordingSession::new(session_output, start_ms);
         // The OS device-list-change signal. Grabbed once per session (it installs
         // the platform listener on first use and is a process-wide singleton
@@ -1342,7 +1376,7 @@ async fn run_session(
         let mut all_delivered = true;
         // Clear any stale preview frame from a previous video recording so the tile
         // doesn't briefly show last time's image before ffmpeg writes a fresh one.
-        if opts.video_device_name.is_some() {
+        if ctx.opts.video_device_name.is_some() {
             let _ = std::fs::remove_file(recording_preview_path());
         }
         emit_state(RecorderState::Preparing, 0);
@@ -1357,11 +1391,11 @@ async fn run_session(
         // fragments (reconnects) — feeds the native RIFF-cap forced split.
         let mut deliverable_bytes: u64 = 0;
         let mut child = match spawn_capture(
-            backend,
-            platform,
-            &audio,
-            video.as_ref(),
-            &opts,
+            ctx.backend,
+            ctx.platform,
+            &ctx.audio,
+            ctx.video.as_ref(),
+            &ctx.opts,
             session.primary_path(),
             None,
         )
@@ -1371,11 +1405,11 @@ async fn run_session(
                 let _ = ready.send(Ok(()));
                 c
             }
-            Err(native_err) if matches!(backend, CaptureBackend::NativeAudio { .. }) => {
+            Err(native_err) if matches!(ctx.backend, CaptureBackend::NativeAudio { .. }) => {
                 tracing::warn!(
                     "recorder: native capture start failed ({native_err}); falling back to ffmpeg"
                 );
-                *lock_recover(&audio_engine) = (
+                *lock_recover(&ctx.audio_engine) = (
                     Some(
                         if cfg!(windows) {
                             "directshow"
@@ -1386,13 +1420,13 @@ async fn run_session(
                     ),
                     Some(native_err.to_string()),
                 );
-                backend = CaptureBackend::Ffmpeg;
+                ctx.backend = CaptureBackend::Ffmpeg;
                 match spawn_capture(
-                    backend,
-                    platform,
-                    &audio,
-                    video.as_ref(),
-                    &opts,
+                    ctx.backend,
+                    ctx.platform,
+                    &ctx.audio,
+                    ctx.video.as_ref(),
+                    &ctx.opts,
                     session.primary_path(),
                     None,
                 )
@@ -1431,12 +1465,12 @@ async fn run_session(
             // before the clean delete at session end, the startup scan finalises these
             // fragments instead of losing the recording. Best-effort; never blocks.
             crate::recorder::recovery::write_manifest(
-                &app,
+                &ctx.app,
                 &session_manifest(
                     &session_id,
                     &session,
-                    &audio,
-                    &preroll_clip,
+                    &ctx.audio,
+                    &ctx.preroll_clip,
                     start_ms,
                     &delivery_encode,
                 ),
@@ -1448,34 +1482,26 @@ async fn run_session(
             // (after concat), so we no longer accumulate a session-wide byte total;
             // `segment_bytes` still drives this segment's live progress + watchdog.
             let segment_bytes = Arc::new(AtomicU64::new(0));
+            // The three counters THIS segment is driven against — built fresh per
+            // segment (the byte counter is per fragment, the deliverable total is
+            // recomputed at every reconnect) and handed to whichever loop runs it.
+            let counters = SegmentCounters {
+                segment_bytes: Arc::clone(&segment_bytes),
+                deliverable_bytes,
+                telemetry: Arc::clone(&telemetry),
+            };
             let outcome = match child {
                 CaptureChild::Ffmpeg(c) => {
-                    run_segment(
-                        &app,
-                        *c,
-                        &opts,
-                        &session,
-                        Arc::clone(&segment_bytes),
-                        deliverable_bytes,
-                        &mut stop_rx,
-                        &state,
-                        &mut stop_watch,
-                        Arc::clone(&telemetry),
-                    )
-                    .await
+                    run_segment(&ctx, *c, &session, counters, &mut stop_rx, &mut stop_watch).await
                 }
                 CaptureChild::Native(seg) => {
                     crate::recorder::native_capture::segment::run_native_segment(
-                        &app,
+                        &ctx,
                         *seg,
-                        &opts,
                         &session,
-                        Arc::clone(&segment_bytes),
-                        deliverable_bytes,
+                        counters,
                         &mut stop_rx,
-                        &state,
                         &mut stop_watch,
-                        Arc::clone(&telemetry),
                     )
                     .await
                 }
@@ -1493,14 +1519,10 @@ async fn run_session(
                     // its fragments + write its history row) BEFORE opening the next.
                     let close_ms = now_ms();
                     all_delivered &= finalize_pending(
-                        &app,
-                        &pool,
+                        &ctx,
                         &session,
                         &mut finalized,
                         close_ms,
-                        &preroll_clip,
-                        &audio,
-                        &opts,
                         &telemetry,
                         &delivered_bytes,
                     )
@@ -1509,11 +1531,11 @@ async fn run_session(
                     let next = session.begin_split_segment(close_ms);
                     tracing::info!(segment = %next, "recorder: split — starting new segment");
                     match spawn_capture(
-                        backend,
-                        platform,
-                        &audio,
-                        video.as_ref(),
-                        &opts,
+                        ctx.backend,
+                        ctx.platform,
+                        &ctx.audio,
+                        ctx.video.as_ref(),
+                        &ctx.opts,
                         &next,
                         None, // new deliverable — free to renegotiate the rate
                     )
@@ -1528,19 +1550,15 @@ async fn run_session(
                         }
                         Err(e) => {
                             tracing::error!("recorder: split respawn failed: {e}");
-                            emit_error(&app, "device_error", &e.to_string());
+                            emit_error(&ctx.app, "device_error", &e.to_string());
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // A failing exit keeps the manifest either way (only the
                             // clean stop deletes it), so the verdict is moot here.
                             let _ = finalize_pending(
-                                &app,
-                                &pool,
+                                &ctx,
                                 &session,
                                 &mut finalized,
                                 now_ms(),
-                                &preroll_clip,
-                                &audio,
-                                &opts,
                                 &telemetry,
                                 &delivered_bytes,
                             )
@@ -1561,7 +1579,7 @@ async fn run_session(
                     // the two-process path (separate captures + mux). Narrow trigger
                     // (pure decision in core); anything else falls through to the
                     // normal reconnect policy below. HARDWARE-UNVERIFIED.
-                    if let Some(video_dev) = video.as_ref() {
+                    if let Some(video_dev) = ctx.video.as_ref() {
                         if sundayrec_core::two_process::should_fallback_to_two_process(
                             true,
                             finalized == 0,
@@ -1573,7 +1591,7 @@ async fn run_session(
                                 "recorder: unified video startup failed with no output — \
                              switching to two-process fallback"
                             );
-                            let _ = app.emit(
+                            let _ = ctx.app.emit(
                                 RECONNECTING_EVENT,
                                 RecordingEvent {
                                     code: "two_process_fallback".into(),
@@ -1588,17 +1606,12 @@ async fn run_session(
                             // extend this manifest, so it would otherwise sit as
                             // harmless litter until a future startup scan skips it.
                             let _ = std::fs::remove_file(session.primary_path());
-                            crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+                            crate::recorder::recovery::delete_manifest(&ctx.app, &session_id).await;
 
                             let result = crate::recorder::two_process::run_two_process_session(
-                                app.clone(),
-                                pool.clone(),
-                                opts.clone(),
-                                platform,
-                                audio.clone(),
+                                ctx.clone(),
                                 video_dev.clone(),
                                 stop_rx,
-                                state.clone(),
                                 stop_watch.clone(),
                             )
                             .await;
@@ -1611,15 +1624,15 @@ async fn run_session(
                                     // muxed file — a mux failure or a camera that
                                     // never opened leaves `output_path` absent, and
                                     // those return Ok(()) too.
-                                    if tokio::fs::metadata(&opts.output_path)
+                                    if tokio::fs::metadata(&ctx.opts.output_path)
                                         .await
                                         .map(|m| m.len() > 0)
                                         .unwrap_or(false)
                                     {
-                                        let _ = app.emit(
+                                        let _ = ctx.app.emit(
                                             FINISHED_EVENT,
                                             RecordingFinished {
-                                                file_path: opts.output_path.clone(),
+                                                file_path: ctx.opts.output_path.clone(),
                                                 has_video: true,
                                             },
                                         );
@@ -1627,7 +1640,7 @@ async fn run_session(
                                     emit_state(RecorderState::Stopped, 0)
                                 }
                                 Err(e) => {
-                                    emit_error(&app, "device_error", &e.to_string());
+                                    emit_error(&ctx.app, "device_error", &e.to_string());
                                     emit_state(RecorderState::Failed, 0);
                                 }
                             }
@@ -1648,21 +1661,17 @@ async fn run_session(
                                 .map(error_code_str)
                                 .unwrap_or("device_disconnected");
                             emit_error(
-                                &app,
+                                &ctx.app,
                                 code,
                                 &AlertText::RecordingNotRecovered.text(crate::ui_lang::current()),
                             );
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // Fail-stop keeps the manifest (no delete on this path).
                             let _ = finalize_pending(
-                                &app,
-                                &pool,
+                                &ctx,
                                 &session,
                                 &mut finalized,
                                 now_ms(),
-                                &preroll_clip,
-                                &audio,
-                                &opts,
                                 &telemetry,
                                 &delivered_bytes,
                             )
@@ -1692,7 +1701,7 @@ async fn run_session(
                             let mut degraded_for_ms = degraded_for_ms;
                             loop {
                                 emit_state(RecorderState::Reconnecting, session.reconnect_count());
-                                let _ = app.emit(
+                                let _ = ctx.app.emit(
                                     RECONNECTING_EVENT,
                                     RecordingEvent {
                                         code: "reconnecting".into(),
@@ -1735,33 +1744,33 @@ async fn run_session(
                                 // zero-byte recording (2026-07-31). The native
                                 // backend re-resolves by name inside its own
                                 // spawn, so this ffmpeg enumeration is skipped.
-                                if backend == CaptureBackend::Ffmpeg {
+                                if ctx.backend == CaptureBackend::Ffmpeg {
                                     if let Ok(inv) =
                                         crate::audio::device_enum::enumerate_ffmpeg_devices().await
                                     {
                                         if let Some(fresh) =
                                             sundayrec_core::device_match::find_best_device_match(
                                                 &inv.audio_inputs,
-                                                &opts.audio_device_name,
+                                                &ctx.opts.audio_device_name,
                                             )
                                         {
-                                            if fresh.index != audio.index {
+                                            if fresh.index != ctx.audio.index {
                                                 tracing::warn!(
-                                                    old = ?audio.index,
+                                                    old = ?ctx.audio.index,
                                                     new = ?fresh.index,
                                                     "recorder: device index moved — re-resolved before respawn"
                                                 );
                                             }
-                                            audio = fresh.clone();
+                                            ctx.audio = fresh.clone();
                                         }
                                     }
                                 }
                                 match spawn_capture(
-                                    backend,
-                                    platform,
-                                    &audio,
-                                    video.as_ref(),
-                                    &opts,
+                                    ctx.backend,
+                                    ctx.platform,
+                                    &ctx.audio,
+                                    ctx.video.as_ref(),
+                                    &ctx.opts,
                                     &next_segment,
                                     pinned_rate, // an _rN fragment must match its siblings
                                 )
@@ -1791,14 +1800,10 @@ async fn run_session(
                                                 // deliverable — this one's verdict
                                                 // must reach the clean stop.
                                                 all_delivered &= finalize_pending(
-                                                    &app,
-                                                    &pool,
+                                                    &ctx,
                                                     &session,
                                                     &mut finalized,
                                                     now_ms(),
-                                                    &preroll_clip,
-                                                    &audio,
-                                                    &opts,
                                                     &telemetry,
                                                     &delivered_bytes,
                                                 )
@@ -1806,11 +1811,11 @@ async fn run_session(
                                                 let split_path =
                                                     session.begin_split_segment(now_ms());
                                                 match spawn_capture(
-                                                    backend,
-                                                    platform,
-                                                    &audio,
-                                                    video.as_ref(),
-                                                    &opts,
+                                                    ctx.backend,
+                                                    ctx.platform,
+                                                    &ctx.audio,
+                                                    ctx.video.as_ref(),
+                                                    &ctx.opts,
                                                     &split_path,
                                                     None,
                                                 )
@@ -1822,7 +1827,7 @@ async fn run_session(
                                                     }
                                                     Err(e) => {
                                                         emit_error(
-                                                            &app,
+                                                            &ctx.app,
                                                             "device_error",
                                                             &e.to_string(),
                                                         );
@@ -1846,7 +1851,7 @@ async fn run_session(
                                         // can never accumulate its way to the hard cap
                                         // (see `RecordingSession::on_reconnect_success`).
                                         session.on_reconnect_success();
-                                        let _ = app.emit(
+                                        let _ = ctx.app.emit(
                                             RECONNECTED_EVENT,
                                             RecordingEvent {
                                                 code: "reconnected".into(),
@@ -1877,7 +1882,7 @@ async fn run_session(
                                             }
                                             RecoveryDecision::GiveUp => {
                                                 emit_error(
-                                                    &app,
+                                                    &ctx.app,
                                                     "device_disconnected",
                                                     &e.to_string(),
                                                 );
@@ -1887,14 +1892,10 @@ async fn run_session(
                                                 );
                                                 // Fail-stop keeps the manifest.
                                                 let _ = finalize_pending(
-                                                    &app,
-                                                    &pool,
+                                                    &ctx,
                                                     &session,
                                                     &mut finalized,
                                                     now_ms(),
-                                                    &preroll_clip,
-                                                    &audio,
-                                                    &opts,
                                                     &telemetry,
                                                     &delivered_bytes,
                                                 )
@@ -1922,14 +1923,10 @@ async fn run_session(
         // deliverable — concat its fragments + write its history row.
         emit_state(RecorderState::Stopping, session.reconnect_count());
         all_delivered &= finalize_pending(
-            &app,
-            &pool,
+            &ctx,
             &session,
             &mut finalized,
             now_ms(),
-            &preroll_clip,
-            &audio,
-            &opts,
             &telemetry,
             &delivered_bytes,
         )
@@ -1937,7 +1934,7 @@ async fn run_session(
         if all_delivered {
             // Clean finish: every deliverable reached the user's format and has its
             // history row, so the recovery manifest is no longer needed.
-            crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+            crate::recorder::recovery::delete_manifest(&ctx.app, &session_id).await;
         } else {
             // A stop is only "clean" for the deliverables that actually delivered.
             // One that fell back to its raw capture still has salvageable audio on
@@ -1957,16 +1954,16 @@ async fn run_session(
         // Record→edit hand-off: tell the UI where the finished file landed so it can
         // offer "open in editor". Only when the main file actually exists + is
         // non-empty (a recording that produced nothing skips the suggestion).
-        if tokio::fs::metadata(&opts.output_path)
+        if tokio::fs::metadata(&ctx.opts.output_path)
             .await
             .map(|m| m.len() > 0)
             .unwrap_or(false)
         {
-            let _ = app.emit(
+            let _ = ctx.app.emit(
                 FINISHED_EVENT,
                 RecordingFinished {
-                    file_path: opts.output_path.clone(),
-                    has_video: opts.video_device_name.is_some(),
+                    file_path: ctx.opts.output_path.clone(),
+                    has_video: ctx.opts.video_device_name.is_some(),
                 },
             );
         }
@@ -1976,7 +1973,7 @@ async fn run_session(
         tracing::info!("recorder: session stopped cleanly");
     } // 'run — the ONE exit point:
     finalize_session_telemetry(
-        &app,
+        &ctx.app,
         &telemetry,
         start_ms,
         // THIS session's outcome, not the shared mirror — a superseded supervisor
@@ -2335,22 +2332,33 @@ fn classify_stderr_line(
 /// and waits for it to finalise before returning.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED.
-#[allow(clippy::too_many_arguments)]
+///
+/// Its ten former parameters are now two groups plus the segment's own three
+/// (F2-T2): the session's app handle / options / state door arrive in `ctx`, and
+/// the byte + telemetry counters in [`SegmentCounters`] — the same grouping the
+/// native path's [`run_native_segment`](crate::recorder::native_capture::segment::run_native_segment)
+/// takes, so the two segment loops read alike.
 async fn run_segment(
-    app: &AppHandle,
+    ctx: &SessionContext,
     mut child: tokio::process::Child,
-    opts: &RecordingOpts,
     session: &RecordingSession,
-    segment_bytes: Arc<AtomicU64>,
-    // Bytes already captured into the current deliverable's PREVIOUS fragments
-    // (`_rN` reconnect pieces) — feeds the RIFF-cap forced split, exactly as on
-    // the native path.
-    deliverable_bytes: u64,
+    counters: SegmentCounters,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    state: &StateWriter,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
-    telemetry: Arc<Mutex<RecordingTelemetry>>,
 ) -> SegmentOutcome {
+    // Read the three session fields this loop needs out of the context once. The
+    // `StateWriter` is the context's OWN (not a second one), so the segment's
+    // countdown restamps go through the very same generation guard the
+    // supervisor's transitions do.
+    let (app, opts, state) = (&ctx.app, &ctx.opts, &ctx.state);
+    // `deliverable_bytes` = bytes already captured into the current deliverable's
+    // PREVIOUS fragments (`_rN` reconnect pieces) — feeds the RIFF-cap forced
+    // split, exactly as on the native path.
+    let SegmentCounters {
+        segment_bytes,
+        deliverable_bytes,
+        telemetry,
+    } = counters;
     let Some(stderr) = child.stderr.take() else {
         return SegmentOutcome::UnexpectedExit { last_error: None };
     };
@@ -3104,16 +3112,16 @@ fn finalize_session_telemetry(
 /// user's chosen format (see [`finalize_one`]). The caller ANDs these across the
 /// whole session and keeps the crash-recovery manifest when any failed — a clean
 /// stop with a failed delivery still has audio to salvage on the next launch.
-#[allow(clippy::too_many_arguments)]
+/// Five of this function's ten former parameters — the app handle, the pool, the
+/// pre-roll clip, the audio device and the options — were the SESSION's, threaded
+/// down one call at a time. They arrive as `ctx` now (F2-T2); `session_generation`
+/// is not among them because finalisation writes state only through the
+/// supervisor, never itself.
 async fn finalize_pending(
-    app: &AppHandle,
-    pool: &Option<SqlitePool>,
+    ctx: &SessionContext,
     session: &RecordingSession,
     finalized: &mut usize,
     end_ms: u64,
-    preroll_clip: &Option<PrerollClip>,
-    audio: &FfmpegDevice,
-    opts: &RecordingOpts,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
 ) -> bool {
@@ -3128,19 +3136,8 @@ async fn finalize_pending(
             .get(index + 1)
             .map(|next| next.started_at_ms)
             .unwrap_or(end_ms);
-        all_delivered &= finalize_one(
-            app,
-            pool,
-            d,
-            index,
-            deliverable_end,
-            preroll_clip,
-            audio,
-            opts,
-            telemetry,
-            delivered_bytes,
-        )
-        .await;
+        all_delivered &=
+            finalize_one(ctx, d, index, deliverable_end, telemetry, delivered_bytes).await;
     }
     *finalized = total;
     all_delivered
@@ -3165,16 +3162,17 @@ async fn finalize_pending(
 /// the user's format) or the finished file failed the validity gate. The caller
 /// keeps the crash-recovery manifest on `false` so the next launch retries the
 /// delivery from the surviving capture instead of forfeiting it.
-#[allow(clippy::too_many_arguments)]
+///
+/// Like [`finalize_pending`], the session-owned half of its inputs arrives as
+/// `ctx` (F2-T2): the app handle it surfaces `empty_output` through, the pool it
+/// writes the row into, the pre-roll clip it prepends to deliverable 0, the audio
+/// device the row is stamped with, and the options that decide the delivery
+/// format and the separate-audio sidecar.
 async fn finalize_one(
-    app: &AppHandle,
-    pool: &Option<SqlitePool>,
+    ctx: &SessionContext,
     deliverable: &sundayrec_core::recorder::Deliverable,
     index: usize,
     end_ms: u64,
-    preroll_clip: &Option<PrerollClip>,
-    audio: &FfmpegDevice,
-    opts: &RecordingOpts,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
 ) -> bool {
@@ -3188,7 +3186,7 @@ async fn finalize_one(
     }
     // Pre-roll is prepended ONLY to the first deliverable's first fragment.
     let preroll_path = if index == 0 {
-        preroll_clip.as_ref().map(|c| c.raw_path.as_str())
+        ctx.preroll_clip.as_ref().map(|c| c.raw_path.as_str())
     } else {
         None
     };
@@ -3199,9 +3197,9 @@ async fn finalize_one(
     // save folder with the delivery extension.
     // The SAME spec the crash-recovery manifest carries — a live stop and a
     // next-launch recovery must deliver identically (see `delivery_encode_for`).
-    let audio_only = opts.video_device_name.is_none();
+    let audio_only = ctx.opts.video_device_name.is_none();
     let delivery_spec = DeliverySpec::from_manifest(
-        &delivery_encode_for(opts, audio_only),
+        &delivery_encode_for(&ctx.opts, audio_only),
         &deliverable.primary_path,
     );
 
@@ -3229,7 +3227,7 @@ async fn finalize_one(
             "recorder: finished file is missing/empty/undecodable — not writing history row"
         );
         emit_error(
-            app,
+            &ctx.app,
             "empty_output",
             &AlertText::RecordingEmptyOutput.text(crate::ui_lang::current()),
         );
@@ -3250,13 +3248,15 @@ async fn finalize_one(
     }
     delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
-    let Some(pool) = pool else { return delivered };
+    let Some(pool) = &ctx.pool else {
+        return delivered;
+    };
     let started_at = deliverable.started_at_ms;
     let duration_ms = end_ms.saturating_sub(started_at) as f64;
     let row = RecordingRow {
         id: String::new(),
         file_path: final_path.clone(),
-        device_name: Some(audio.name.clone()),
+        device_name: Some(ctx.audio.name.clone()),
         started_at: started_at as f64,
         duration_ms: Some(duration_ms),
         byte_size,
@@ -3272,8 +3272,16 @@ async fn finalize_one(
     // standalone audio file next to it and write a SECOND history row. Guarded on
     // the recording actually having video (audio-only recordings are already the
     // audio, so there's nothing to extract).
-    if opts.keep_separate_audio && opts.video_device_name.is_some() {
-        extract_separate_audio(pool, &final_path, started_at, duration_ms, opts, audio).await;
+    if ctx.opts.keep_separate_audio && ctx.opts.video_device_name.is_some() {
+        extract_separate_audio(
+            pool,
+            &final_path,
+            started_at,
+            duration_ms,
+            &ctx.opts,
+            &ctx.audio,
+        )
+        .await;
     }
     delivered
 }
@@ -3899,6 +3907,67 @@ mod tests {
             stale,
             fresh,
         }
+    }
+
+    /// F2-T2's load-bearing clone property. `SessionContext` derives `Clone`,
+    /// and `start()` USES that: the Windows cpal attempt is handed a clone so
+    /// the original survives a fall-through to DirectShow. If cloning the
+    /// context minted a SECOND, independently-guarded door, the two capture
+    /// paths would once again be writing state through different plumbing —
+    /// which is the exact shape of the F1-A5 bug the struct exists to prevent.
+    ///
+    /// A `StateWriter` clone shares every `Arc` — the sink, the shared state,
+    /// the countdown AND the engine's live generation counter — and keeps its
+    /// session's own claimed `generation`. So being superseded supersedes the
+    /// clone too, in the same instant, without anyone having to remember it.
+    #[test]
+    fn a_cloned_state_writer_shares_the_same_generation_guard() {
+        let deadline = Some(1_700_000_000_000);
+        let g = two_generations(RecorderState::Recording, deadline);
+        // The 11:00 service's writer, and the copy `start()` would have handed
+        // to the cpal attempt. Both were current when they were made.
+        let clone = g.stale.clone();
+
+        // …and then the evening meeting claimed generation 2 (that is what
+        // `two_generations` builds). BOTH must now be refused.
+        assert!(!g.stale.is_current());
+        assert!(
+            !clone.is_current(),
+            "the clone must see the same supersession — not its own generation counter"
+        );
+
+        clone.set(RecorderState::Stopped, 0);
+        clone.arm_autostop(None);
+        clone.restamp(0, None);
+
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Recording,
+            "a cloned door is the SAME door: the straggler's clone must not write Stopped either"
+        );
+        assert_eq!(
+            *g.scheduled_stop.borrow(),
+            deadline,
+            "nor may it clear the live session's countdown"
+        );
+        assert!(g.sink.payloads().is_empty(), "and it emits nothing");
+
+        // The other direction: a CURRENT writer's clone writes, through the very
+        // same shared handles — one door, reachable from both capture paths.
+        let live = g.fresh.clone();
+        assert!(live.is_current());
+        live.set(RecorderState::Stopping, 1);
+        assert_eq!(
+            *g.last_state.lock().expect("state lock"),
+            RecorderState::Stopping,
+            "the clone writes into the ORIGINAL's shared state, not a copy of it"
+        );
+        assert_eq!(
+            g.last_reconnect_count.load(Ordering::SeqCst),
+            1,
+            "…including the shared reconnect count"
+        );
+        assert_eq!(g.sink.payloads().len(), 1, "and through the same sink");
     }
 
     #[test]

@@ -29,13 +29,13 @@ macOS-signed and auto-updating; the one remaining gap is **notarization**
 
 ## Phase status
 
-| Capability                   | State                                                                                                                                                                         |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                                                                                      |
-| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                                                                                      |
-| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; gated on the repo variable `NOTARIZE_MAC` (off by default) at the `[notarize-switch]` marker in `release.yml`, pending re-acceptance |
-| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                                                                                     |
-| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `uploadUpdaterJson` + `TAURI_SIGNING_*` secrets; feed verified in prod                                                               |
+| Capability                   | State                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                                                                                                                                                                                                                                                                                              |
+| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                                                                                                                                                                                                                                                                                              |
+| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; gated on the repo variable `NOTARIZE_MAC` (off by default) at the `[notarize-switch]` marker in `release.yml`, pending re-acceptance                                                                                                                                                                                                         |
+| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                                                                                                                                                                                                                                                                                             |
+| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `uploadUpdaterJson` + `TAURI_SIGNING_*` secrets; feed + full update flow verified in prod on **macOS**. Windows silently failed to complete an update (its own job-object killed the installer) until F2-W1 (#243) — that fix is cross-compile/CI-checked only, not yet run on a real Windows box (see NEEDS-RICHARD.md HARDWARE-UNVERIFIED) |
 
 macOS builds are **signed but not notarized**: Gatekeeper warns on first
 launch → right-click ▸ Open. Windows is unsigned → "More info" ▸ "Run anyway".
@@ -127,10 +127,14 @@ secret.
 The updater is **live in published releases**: the plugin is installed, the
 public key + `endpoints` are in `tauri.conf.json` under `plugins.updater`,
 `uploadUpdaterJson: true` is set in `release.yml`, and the signing secrets are
-in place — the `latest.json` feed is verified in prod (see
-[GitHub Releases](https://github.com/SundaySuite-app/sundayrec/releases) for
-the current tags). Nothing here remains to set up; the only outstanding
-release-pipeline gap is macOS **notarization** (previous section).
+in place — the `latest.json` feed is fetched and verified in prod on both
+platforms (see [GitHub Releases](https://github.com/SundaySuite-app/sundayrec/releases)
+for the current tags). Nothing here remains to set up on the signing side; the
+outstanding gaps are macOS **notarization** (previous section) and confirming
+F2-W1 (#243) — which fixed a Windows-only bug where the app's own ffmpeg
+job-object killed the installer mid-update — on a **real Windows box**
+(unverified so far; see NEEDS-RICHARD.md HARDWARE-UNVERIFIED and
+`docs/RIG-DAY.md` (w1)/(w2)).
 
 | Secret                               | Value                                                                                                          |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
@@ -163,5 +167,6 @@ tests, version/i18n/smoke-pointer/reachability checks, Rust fmt/clippy/tests,
 ts-rs bindings drift, feature-off clippy), **vad** (clippy + tests with the
 `vad` feature), **build-smoke** (a `--no-bundle` compile of the whole app on
 Linux), **e2e** (the Playwright renderer tier), **windows-check** (Windows
-cargo check + clippy), and **audit** (npm + cargo advisories). No secrets
-required.
+`cargo check` + clippy + `cargo test --workspace` on a real Windows runner —
+since F2-W7, #231; before that it only compile-checked), and **audit** (npm +
+cargo advisories). No secrets required.

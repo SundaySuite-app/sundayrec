@@ -455,10 +455,7 @@ function selfTest() {
     ),
     "camera_failure_code-armene ble ikke funnet",
   );
-  say(
-    CODE_TABLE_FNS.length >= 2,
-    "CODE_TABLE_FNS har mistet en tabell",
-  );
+  say(CODE_TABLE_FNS.length >= 2, "CODE_TABLE_FNS har mistet en tabell");
 
   // …og det som IKKE skal telle.
   for (const nope of ["commented_out", "blocked", "stuck_recording"]) {

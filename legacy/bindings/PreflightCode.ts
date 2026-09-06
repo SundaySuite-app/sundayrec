@@ -20,4 +20,4 @@
  * [`Self::as_str`] is the ENGLISH reserve — the log line, and the text field
  * a shell older than the code would fall back on.
  */
-export type PreflightCode = "ffmpegMissing" | "deviceMissing" | "folderNotWritable" | "diskLow" | "micDenied" | "cameraDenied";
+export type PreflightCode = "ffmpegMissing" | "deviceMissing" | "folderNotWritable" | "diskLow" | "micDenied" | "cameraDenied" | "saveFolderSynced";

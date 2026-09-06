@@ -29,10 +29,23 @@
  * punktene hver gang noen navigerer tilbake til OPPTAK er hvordan gult slutter
  * å bety noe.
  *
- * ⚠️ Funnene er TEKST når de er bygget, så et språkbytte etterpå oversetter
- * dem ikke. Det er arvet fra legacy, og det riktige stedet å løse det er å la
- * `buildHealthFindings` svare med data i stedet for setninger — samme grep som
- * `decisions-core`. Ikke i P2.
+ * ⚠️ `buildHealthFindings` svarer fortsatt med TEKST, så et språkbytte etterpå
+ * oversetter ikke DE tre funnene. Det er arvet fra legacy, og det riktige
+ * stedet å løse det er å la den svare med data i stedet for setninger — samme
+ * grep som `decisions-core`. Ikke i P2.
+ *
+ * ## BAKENDENS funn er data (F2-W9 → F2-I18N-R2)
+ *
+ * F2-W9 ga det første funnet en stabil `code` og oversatte det HER, ved
+ * mottak, med én `if` i `localizeBackendFinding`. F2-I18N-R2 ga hvert eneste
+ * bakend-funn en `PreflightCode`, og flyttet oppslaget til der raden TEGNES
+ * (`preflightText` i `RecordPage`, mot `status.preflightCode.<kode>`).
+ *
+ * Det er ikke bare ryddigere — det fikser ⚠️-en over for bakendens halvdel: en
+ * oversettelse gjort ved mottak fryser språket den hadde da, så en frivillig
+ * som bytter språk etterpå blir stående med det gamle. Et oppslag ved render
+ * kan ikke gjøre det. Rust-teksten (`message`) er ENGELSK reserve for et funn
+ * uten kode — og det er bare de tre `buildHealthFindings` lager selv.
  */
 
 import { buildHealthFindings } from "@lib/status/health-findings";

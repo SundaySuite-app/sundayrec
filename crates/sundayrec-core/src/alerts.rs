@@ -104,6 +104,8 @@ pub enum AlertText {
     PreflightMicDenied,
     /// Preflight body: the OS is blocking the camera.
     PreflightCameraDenied,
+    /// Preflight body: the save folder is inside a OneDrive-synced tree (F2-W9).
+    PreflightSaveFolderSynced,
     /// A scheduled recording started (governed by `notify_start`).
     ScheduledStarted,
     /// A scheduled recording was stopped by the schedule (governed by
@@ -159,6 +161,7 @@ impl AlertText {
         AlertText::PreflightDiskLow,
         AlertText::PreflightMicDenied,
         AlertText::PreflightCameraDenied,
+        AlertText::PreflightSaveFolderSynced,
         AlertText::ScheduledStarted,
         AlertText::ScheduledStopped,
         AlertText::ScheduledSkippedBusy,
@@ -461,6 +464,29 @@ impl AlertText {
             (A::PreflightCameraDenied, L::Da) => "Der er ikke givet adgang til kameraet.",
             (A::PreflightCameraDenied, L::Pl) => "Nie przyznano dostępu do kamery.",
             (A::PreflightCameraDenied, L::Fr) => "L'accès à la caméra n'est pas accordé.",
+
+            // ── PreflightSaveFolderSynced ──────────────────────────────────────────────
+            (A::PreflightSaveFolderSynced, L::No) => {
+                "Lagringsmappen synkroniseres av OneDrive, som kan forstyrre et opptak som pågår."
+            }
+            (A::PreflightSaveFolderSynced, L::En) => {
+                "The save folder is synced by OneDrive, which can interfere with a recording in progress."
+            }
+            (A::PreflightSaveFolderSynced, L::De) => {
+                "Der Speicherordner wird von OneDrive synchronisiert, was eine laufende Aufnahme stören kann."
+            }
+            (A::PreflightSaveFolderSynced, L::Sv) => {
+                "Lagringsmappen synkroniseras av OneDrive, vilket kan störa en pågående inspelning."
+            }
+            (A::PreflightSaveFolderSynced, L::Da) => {
+                "Lagringsmappen synkroniseres af OneDrive, hvilket kan forstyrre en igangværende optagelse."
+            }
+            (A::PreflightSaveFolderSynced, L::Pl) => {
+                "Folder zapisu jest synchronizowany przez OneDrive, co może zakłócić trwające nagrywanie."
+            }
+            (A::PreflightSaveFolderSynced, L::Fr) => {
+                "Le dossier d’enregistrement est synchronisé par OneDrive, ce qui peut perturber un enregistrement en cours."
+            }
 
             // ── ScheduledStarted ────────────────────────────────────────────
             (A::ScheduledStarted, L::No) => "Planlagt opptak startet.",
@@ -819,7 +845,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            28,
+            29,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();

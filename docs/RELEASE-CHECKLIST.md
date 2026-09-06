@@ -191,7 +191,14 @@ met:
       exactly this — macOS built fine and the draft came out with mac assets
       only, which looks like a flake rather than a rule. `release.yml` now passes
       `--bundles nsis` for Windows beta tags. **Stable releases still ship both**,
-      so a missing `.msi` on a stable draft IS a problem.
+      so a missing `.msi` on a stable draft IS a problem today.
+      ⚠️ **Owner decision pending (F2, not yet coded):** the F2 Windows rig
+      exploration flagged that the `.msi` uses Tauri's default `perMachine`
+      install scope, which prompts UAC even for a volunteer with no admin
+      rights — NSIS' default (`currentUser`) does not. The recommendation is
+      to make stable NSIS-only too and drop `.msi` from the release matrix;
+      see `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2». Until the owner
+      decides, this checkbox's "both" requirement stands as written.
 
 ### 5b. Pin the Windows ffmpeg hash (one-off, only if an entry is missing)
 

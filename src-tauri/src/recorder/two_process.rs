@@ -46,7 +46,6 @@ use std::time::Duration;
 use sqlx::SqlitePool;
 use sundayrec_core::capture::VideoCaptureMode;
 use sundayrec_core::device_match::FfmpegDevice;
-use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::two_process::{
     av_offset_decision, build_audio_capture_args, build_mux_args, build_video_capture_args,
@@ -57,9 +56,8 @@ use tauri::{AppHandle, Emitter};
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::ffprobe_path;
-use crate::recorder::engine::{
-    now_ms, sleep_opt, stop_and_wait_bounded, RecordingOpts, StateWriter, ERROR_EVENT,
-};
+use crate::recorder::context::SessionContext;
+use crate::recorder::engine::{now_ms, sleep_opt, stop_and_wait_bounded, ERROR_EVENT};
 
 /// Hard limit on the mux ffmpeg run. A `-c:v copy` mux of even a multi-hour
 /// service is fast (audio re-encode dominates and is still real-time-ish);
@@ -132,18 +130,33 @@ pub async fn probe_start_time_sec(path: &str) -> Option<f64> {
 /// a best-effort history row pointing at the video temp.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — opens a real camera + mic and runs for a long time.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_two_process_session(
-    app: AppHandle,
-    pool: Option<SqlitePool>,
-    opts: RecordingOpts,
-    platform: Platform,
-    audio: FfmpegDevice,
+pub(crate) async fn run_two_process_session(
+    ctx: SessionContext,
     video: FfmpegDevice,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
-    state: StateWriter,
     mut stop_watch: tokio::sync::watch::Receiver<Option<u64>>,
 ) -> AppResult<()> {
+    // The exhaustiveness gate (see [`SessionContext`]): every field is named,
+    // with no `..`, so a field added to the context stops THIS path compiling
+    // until someone has said what the two-process fallback does with it. What it
+    // deliberately ignores: `backend` (this path IS the backend — two plain
+    // ffmpegs), `video` (handed in separately above, because unlike the unified
+    // path this fallback only exists for a video session and must not be
+    // callable without a camera), `preroll_clip` and `split`/reconnect state (the
+    // fallback is scoped to a SIMPLE session — see the doc above), and
+    // `audio_engine` (no engine choice is made here).
+    let SessionContext {
+        app,
+        pool,
+        opts,
+        platform,
+        backend: _,
+        audio,
+        video: _,
+        preroll_clip: _,
+        state,
+        audio_engine: _,
+    } = ctx;
     let video_temp = derive_temp_path(&opts.output_path, "_vtmp", "mkv");
     let audio_temp = derive_temp_path(&opts.output_path, "_atmp", "mkv");
 

@@ -225,7 +225,15 @@ export function initNextRecording(): () => void {
   });
 
   safeListen<NextRecordingState["preflight"]>(EV_PREFLIGHT, (payload) => {
-    setPreflightFindings(Array.isArray(payload) ? payload : []);
+    const findings = Array.isArray(payload) ? payload : [];
+    // Funnene lagres som DATA, ikke som ferdig tekst (F2-I18N-R2): hvert
+    // bakend-funn bærer en `PreflightCode`, og `RecordPage`s `preflightText`
+    // slår den opp i det øyeblikket raden tegnes. F2-W9 oversatte dem her, ved
+    // MOTTAK, og det var én kode og én `if` — men en oversettelse gjort ved
+    // mottak fryser språket den hadde da: bytter en frivillig språk etterpå,
+    // står funnet igjen på det gamle. Det er nøyaktig ⚠️-en `state/preflight.ts`
+    // selv noterte, og den er borte når oppslaget skjer ved render.
+    setPreflightFindings(findings);
   });
 
   // Innstillingene og opptaks-signalet mates inn: en tidsplan-endring eller en

@@ -11,7 +11,10 @@ ikke gjøre noe — det skjer automatisk:
   kanaler** (DirectShow delte dem i «stereopar», så du f.eks. ikke fikk tak i kanal
   9/10). ASIO gir også lavest latens og mest stabil pro-lyd.
 
-macOS er upåvirket — der brukes Core Audio (via ffmpeg), som allerede fungerer bra.
+macOS er upåvirket av selve ASIO/WASAPI-skiftet — der brukes Core Audio. Et
+**lyd-only**-opptak går siden 2026-08-01 via samme native motor som beskrevet
+under («For utviklere»); et opptak **med video** bruker ffmpeg/avfoundation
+som før, uendret.
 
 ## Slik gjør du
 
@@ -43,18 +46,29 @@ Innebygd.
 
 ## macOS
 
-På macOS trengs ingenting av dette: Core Audio viser allerede et samle-lydkort som
-én enhet med alle kanaler, og SundayRec bruker ffmpeg/avfoundation som før —
+På macOS trengs ingen driverinstallasjon eller enhetsmerking av den typen denne
+siden beskriver: Core Audio viser allerede et samle-lydkort som én enhet med
+alle kanaler. Et **lyd-only**-opptak skriver siden 2026-08-01 direkte til WAV
+via den samme native cpal-motoren som Windows-siden (cpal → CoreAudio → ring →
+WAV-skriver, ingen ffmpeg i selve fangsten) — den gamle ffmpeg/avfoundation-veien
+mistet målbart samples, og det gjaldt begge plattformer. Et opptak **med
+video** (kamera + lyd) bruker fortsatt ffmpeg/avfoundation for begge sporene,
 uendret.
 
 ---
 
 ## For utviklere / lisens
 
-Lydfangst på Windows går gjennom `cpal` (`recorder::cpal_capture`): **WASAPI** er
-standard og krever ingen feature; **ASIO** er en valgfri Cargo-feature (`asio`)
-fordi den lenker mot Steinberg ASIO SDK. Begge piper rå PCM inn i ffmpeg-sidecaren.
-Bygg-oppsett for ASIO: se [`BUILD_ASIO.md`](./BUILD_ASIO.md).
+Lydfangst på Windows går gjennom `cpal`: **WASAPI** er standard og krever ingen
+feature; **ASIO** er en valgfri Cargo-feature (`asio`) fordi den lenker mot
+Steinberg ASIO SDK. **Siden 2026-08-01** skriver et lyd-only-opptak (på begge
+plattformer) direkte til WAV via den native motoren
+(`recorder::native_capture`: cpal → ring → WAV-skriver) — INGEN ffmpeg
+involvert i selve fangsten. `recorder::cpal_capture`s rå-PCM-pipe inn i
+ffmpeg-sidecaren lever videre bare for **video**-økter (kamera via dshow +
+cpal-lyd i samme ffmpeg-prosess) og den klassiske ffmpeg-hatchen
+(`classicFfmpegPreroll`). Bygg-oppsett for ASIO: se
+[`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ### Tredjeparts-komponenter brukt av Windows-lyd-veien
 

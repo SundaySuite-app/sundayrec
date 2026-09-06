@@ -769,7 +769,8 @@
       "folderNotWritable": "The save folder cannot be written to.",
       "diskLow": "Only {gb} GB free on the save disk — perhaps not enough for a whole recording.",
       "micDenied": "Microphone access has not been granted. Open System Settings → Privacy → Microphone.",
-      "cameraDenied": "Camera access has not been granted."
+      "cameraDenied": "Camera access has not been granted.",
+      "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress."
     },
     "preflightErrors": {
       "one": "{n} error to fix before the recording",
@@ -965,6 +966,7 @@
     "enhanceTitle": "Audio enhancement",
     "errInvalidFormat": "This format is not supported for export. Choose a different format on the Export page.",
     "errExportAlreadyRunning": "An export is already running. Wait until it has finished.",
+    "errDiskLowForExport": "There is not enough free space for this export. Free up space, or pick another folder with “Choose folder…”.",
     "errRecordingInProgress": "A recording is in progress. Wait until it has finished before you export.",
     "errPathNotAbsolute": "Invalid folder or file path. Choose the destination folder again.",
     "metaDesc": "DESCRIPTION",

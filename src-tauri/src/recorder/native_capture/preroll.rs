@@ -133,7 +133,8 @@ pub struct NativePrerollEngine {
     channels: Arc<AtomicU16>,
     /// Run-generation counter.
     gen: Arc<AtomicU64>,
-    /// Where segment files live (app-data `tmp`; tests pass a tempdir).
+    /// Where segment files live (local-app-data `tmp`, F2-W10; tests pass a
+    /// tempdir).
     tmp_dir: PathBuf,
 }
 

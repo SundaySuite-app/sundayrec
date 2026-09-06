@@ -191,7 +191,8 @@ pub struct EditorExportRequest {
     pub duration: f64,
     /// Output container: `mp3|aac|wav|flac|mp4`.
     pub format: String,
-    /// Folder to write into; the seam picks a collision-free name there.
+    /// Folder to write into; the seam renders through a temp file there and
+    /// picks the collision-free name only once the render succeeded (F2-4).
     pub output_folder: String,
     /// Output bitrate (kbps) for lossy formats; `None` uses the codec default.
     pub bitrate: Option<u32>,
@@ -539,6 +540,9 @@ pub struct EditorExportLoudness {
 #[ts(export, export_to = "EditorExportResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportResult {
+    /// Where the finished file landed — the name AFTER the atomic rename
+    /// (F2-4), never the temp it was rendered through. The receipt shows this,
+    /// and the renderer's `predictedOutputName` is only a preview of it.
     pub output_path: String,
     /// `None` for an unmastered export, and for a mastered one whose pass-2
     /// report we could not read. OPTIONAL on the TS side on purpose: every
@@ -1347,6 +1351,65 @@ impl Drop for ExportSlot<'_> {
     }
 }
 
+/// The half-written render, and the promise that it does not outlive the
+/// export that is writing it (F2-4).
+///
+/// [`export`] renders into `<stem>_redigert.__editor_tmp.<ext>` and renames it
+/// onto the delivered name only after ffmpeg exits zero. Everything between
+/// those two points is a file that must not survive: a cancel, the kill-timer,
+/// an ffmpeg failure, a failed hardware render whose software retry also
+/// failed, a rename that could not complete.
+///
+/// RAII, for the same reason [`ExportSlot`] is: the tail of `export()` returns
+/// through `?` from half a dozen places, and a `remove_file` line at the bottom
+/// would be reached by exactly none of them — which is how a truncated file
+/// wearing the finished name reached a Sunday service in the first place.
+/// [`delivered`](TempRender::delivered) disarms it on the ONE path where the
+/// temp is no longer ours: the rename has already moved it.
+///
+/// It is not the only cleanup: a hard power cut runs no `Drop` anywhere, and
+/// the leftover is then reaped by `startup_sweep` — which is why the temp name
+/// is one `sundayrec_core::editor::is_editor_temp_name` recognises.
+#[cfg(feature = "editor")]
+struct TempRender {
+    /// `None` once the file has been delivered (renamed) — nothing to reap.
+    path: Option<String>,
+}
+
+#[cfg(feature = "editor")]
+impl TempRender {
+    /// Guard `path` until it is delivered or this value drops.
+    fn armed(path: &str) -> Self {
+        Self {
+            path: Some(path.to_string()),
+        }
+    }
+
+    /// The render made it to its final name — stand down.
+    fn delivered(&mut self) {
+        self.path = None;
+    }
+}
+
+#[cfg(feature = "editor")]
+impl Drop for TempRender {
+    fn drop(&mut self) {
+        // Best-effort, and deliberately silent about "it was not there": the
+        // common case is an export that failed BEFORE ffmpeg created anything.
+        if let Some(path) = self.path.take() {
+            match std::fs::remove_file(&path) {
+                Ok(()) => tracing::info!("export: removed the unfinished render"),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "export: could not remove the unfinished render — the startup \
+                     sweep will reap it"
+                ),
+            }
+        }
+    }
+}
+
 impl Default for ExportEngine {
     fn default() -> Self {
         Self::new()
@@ -1510,7 +1573,9 @@ where
     disabled("extractPlaybackProxy")
 }
 
-/// True-peak probe over the original file (Normalize's honest basis).
+/// Sample-peak probe over the original file (Normalize's honest basis). Named
+/// for the `probeTruePeak` disabled-feature code it still returns, not for what
+/// it measures — see the full impl's doc comment below.
 #[cfg(not(feature = "editor"))]
 pub async fn probe_true_peak_db(_input_path: &str) -> AppResult<Option<f64>> {
     disabled("probeTruePeak")
@@ -1890,11 +1955,17 @@ where
     grant(path)
 }
 
-/// True-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
+/// SAMPLE-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
 /// honest basis for Normalize when the in-memory buffer is the 8 kHz waveform
 /// extract (its peaks under-read the real peak; the EXPORT runs on the
 /// original, so normalizing from extract peaks risked clipping). `None` when
 /// the probe fails — the caller falls back to buffer peaks.
+///
+/// F2-C-E: despite the function's name (kept as-is — it is the
+/// `probeTruePeak`-keyed command the shell already calls), `volumedetect`'s
+/// `max_volume` is a raw-sample peak, not an oversampled ITU-R BS.1770
+/// true-peak reading. See [`sundayrec_core::editor::peak_probe_args`]'s doc
+/// comment for the same correction at the core.
 #[cfg(feature = "editor")]
 pub async fn probe_true_peak_db(input_path: &str) -> AppResult<Option<f64>> {
     use sundayrec_core::editor::{parse_max_volume_db, peak_probe_args};
@@ -2451,6 +2522,18 @@ pub async fn master_preview(
 /// The preset chain / loudnorm filters / codec args are the core's tested
 /// decisions; the seam spawns ffmpeg, streams `-progress`, and parses the
 /// current-second with the core. HARDWARE-UNVERIFIED.
+///
+/// ⚠️ F2-C-E T10 closed the `editor_master_apply` **Tauri command** — grep
+/// found no caller in `app/`, `e2e/`, or the tray, and it was already carried
+/// as `unreachable` (part of the "mastering-kvartetten") in
+/// `scripts/command-reachability-baseline.json`. This function itself stays,
+/// same as the sibling `probe_true_peak_db`/`probe_streams`/`read_file_guarded`
+/// precedent in `commands/editor.rs`: it still has a live Rust-level test, and
+/// `editor/mod.rs` surgery is exactly the risk that precedent named. A T10
+/// finding stands unfixed here as a result — `master_codec_args` (in
+/// `sundayrec_core::mastering`) has no `-ar`, so a two-pass loudnorm apply on a
+/// lossless target inherits `loudnorm`'s internal 192 kHz graph. Not worth
+/// fixing code no door reaches; worth knowing if this door ever reopens.
 #[cfg(feature = "editor")]
 pub async fn master_apply<F>(
     engine: &MasterEngine,
@@ -2642,6 +2725,40 @@ where
     })
 }
 
+/// Build the pre-loudnorm filter graph, in order: normalize gain, THEN the
+/// vocal chain, THEN the mastering preset's own filters.
+///
+/// T12: the gain (the editor's "Normalize" button, a `volume=…dB` filter) goes
+/// FIRST, ahead of `chain`'s filters — the vocal chain's compressor/limiter is
+/// its LAST stage, so this order leaves the limiter with final say over the
+/// rendered peak. The previous order (gain appended AFTER the chain) let a
+/// positive gain push the already-limited signal back over 0 dBFS, undoing the
+/// limiter entirely. Gain is SKIPPED when a mastering preset is active:
+/// loudnorm sets the delivery level, so a volume shift ahead of it changes
+/// nothing but the measured input (the export modal says so instead of
+/// claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
+/// without ffmpeg.
+#[cfg(feature = "editor")]
+fn build_pre_filters(
+    chain: Option<sundayrec_core::processing::VocalChain>,
+    gain_db: Option<f64>,
+    preset: Option<&sundayrec_core::mastering::MasterPreset>,
+) -> Vec<String> {
+    let mut pre_filters: Vec<String> = Vec::new();
+    if preset.is_none() {
+        if let Some(g) = gain_db {
+            if g.is_finite() && g.abs() > f64::EPSILON {
+                pre_filters.push(format!("volume={g:.2}dB"));
+            }
+        }
+    }
+    pre_filters.extend(chain.map(|c| c.build_filters()).unwrap_or_default());
+    if let Some(p) = preset {
+        pre_filters.push(p.filters.clone());
+    }
+    pre_filters
+}
+
 /// Render the cut-plan + optional mastering gain to the requested format. The
 /// keep-segments, filter graph, codec args, output directory, output path and
 /// timeout are ALL the core's tested decisions; the seam spawns ffmpeg, streams
@@ -2665,6 +2782,14 @@ where
 /// that no caller — command, test, or a future seam — can reach the engine
 /// around it; the very first line of the body it guards, `reset_cancel()`,
 /// already belongs to the export that is running.
+///
+/// ATOMIC (F2-4): ffmpeg renders into
+/// [`editor_tmp_path`](sundayrec_core::editor::editor_tmp_path) and the file is
+/// renamed onto its collision-free FINAL name only after the render exits zero.
+/// Every other way out takes the half-written file with it ([`TempRender`]), so
+/// a cancel, the kill-timer or a failed encode can no longer leave a truncated
+/// `<navn>_redigert.<ext>` that looks finished in Finder — and the delivered
+/// name is picked after the render, not twenty minutes before it.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
@@ -2678,8 +2803,9 @@ where
     use std::path::Path;
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
-        collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
-        video_filter_complex, CutRegion, RecordingMetadata,
+        collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
+        ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
+        video_export_estimated_bytes, video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
@@ -2740,17 +2866,90 @@ where
     //     means "emit no -ar" and "channel count unknown", i.e. the pre-Phase-4
     //     behaviour. The video path now probes too — one ffprobe against a
     //     multi-minute render — so the repair guard covers it as well.
+    //
+    //     F2-8: this used to answer `None` for VIDEO, on the reasoning that the
+    //     video path encodes AAC through `video_codec_args` and there is no -ar
+    //     there. That was the bug, not the justification for it: with a
+    //     mastering preset the graph runs through loudnorm's internal 192 kHz,
+    //     and an AAC encoder handed a 192 kHz pad picks the nearest rate it can
+    //     stand — so the sermon a church uploads carried a resampled audio
+    //     track nobody asked for. The rate is probed for video too now, and
+    //     both video codec-arg builders pin `-ar` from it under exactly the
+    //     rule `output_sample_rate` already states for lossy targets:
+    //     min(source, 48 kHz), snapped to a rate AAC accepts.
     bail_if_cancelled(engine)?;
     let probed = load_recording(&req.input_path).await.ok();
-    let source_rate: Option<u32> = if is_video {
-        None // the video path encodes AAC via `video_codec_args` — no -ar there.
+    let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
+
+    // 1c. WHERE it lands, and whether there is room for it.
+    //
+    //     The paths are resolved here rather than after the mastering measure
+    //     pass because the disk guard has to run BEFORE anything expensive: a
+    //     full-file loudness measure on a 90-minute service takes minutes, and
+    //     spending them to then discover the volume was full is the whole
+    //     complaint. The file inside the folder is picked twice — a temp name
+    //     now (for ffmpeg to render into) and the collision-free FINAL name only
+    //     once the render exits zero, in step 7. See `editor_tmp_path`.
+    let base = Path::new(&req.input_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "redigert".into());
+    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
+    let out_stem = format!("{base}_redigert");
+    let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
+
+    //     F2-11: the recorder has had a low-disk guard since day one; the
+    //     EXPORT had none. A volunteer whose disk was nearly full got a full
+    //     progress bar, twenty minutes of waiting, and then ffmpeg's
+    //     `disk_full` — a true sentence, arriving as late as it possibly could.
+    //     `estimated_bytes` answers the same question the export modal's
+    //     `estimatedBytes` does, but it does NOT share its arithmetic and must
+    //     not be read as a second copy of it: the modal's `exportKbps` is
+    //     rate-blind (a flat 600 kbps for flac, whatever the master's rate),
+    //     which is honest enough for a number a user eyeballs and not honest
+    //     enough to refuse an export on. This one reads the bitrate out of
+    //     `codec_args`' own argv and falls back to real sample arithmetic; video,
+    //     which the modal declines to guess at, is estimated from the source's
+    //     own size. Deliberately the more pessimistic of the two — over-
+    //     estimating costs a false "no room", under-estimating costs the twenty
+    //     minutes this guard exists to save.
+    //     Best-effort in BOTH directions: a volume that will not report its
+    //     free space is not a volume that is full, and an estimate that cannot
+    //     be made is never invented in order to refuse (see
+    //     `export_disk_is_low`).
+    let estimated_bytes = if is_video {
+        std::fs::metadata(&req.input_path)
+            .ok()
+            .and_then(|m| video_export_estimated_bytes(m.len(), kept_duration, req.duration))
     } else {
-        probed.as_ref().and_then(|i| i.sample_rate)
+        export_estimated_bytes(
+            fmt,
+            kept_duration,
+            req.bitrate,
+            req.bit_depth,
+            (source_rate, probed.as_ref().and_then(|i| i.channels)),
+        )
     };
+    if let Ok(free) = fs4::available_space(&out_dir) {
+        if export_disk_is_low(free, estimated_bytes) {
+            tracing::warn!(
+                free_bytes = free,
+                estimated_bytes = ?estimated_bytes,
+                "export refused: not enough free space on the destination volume"
+            );
+            let free_mb = free / 1_000_000;
+            let need_mb = estimated_bytes.unwrap_or(0) / 1_000_000;
+            return Err(AppError::Recording(format!(
+                "disk_low_for_export: {free_mb} MB free, ~{need_mb} MB needed"
+            )));
+        }
+    }
 
     // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
-    //      vocal chain → (normalize gain, only without a preset) → preset chain.
+    //      (normalize gain, only without a preset) → vocal chain → preset chain.
+    //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
+    //    final say over the peak — see `build_pre_filters`.
     //
     //    An empty preset id is "no mastering" (the renderer sends `undefined`,
     //    but a stray '' must not read as an unknown preset).
@@ -2765,10 +2964,24 @@ where
     // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
     // loudnorm: shape the tone/dynamics first, set delivery loudness last. A full
     // `processing` object wins; otherwise resolve the one-click preset id.
+    //
+    // F2-C-E T5: `vocal_chain_preset_by_id` now takes a measured noise floor and
+    // uses it for `afftdn:nf` instead of the preset's baked-in guess. No caller
+    // reaches this branch with one today — the app shell never sends
+    // `vocalChainPreset` at all (`app/editor/sound-profiles.ts`: "vocalChainPreset
+    // sendes ALDRI", it only ever sends a mastering preset or a full `processing`
+    // chain), so this stays `None` until a future caller (`auto_process`, which
+    // already measures the floor) threads its own measurement through the
+    // request. `None` here keeps `voice-podcast`'s `nf` exactly as before (its
+    // guess already WAS −25, `resolve_noise_floor_db`'s fallback); the only
+    // behaviour change is `voice-noisy-room`'s no-measurement `nf` moving from
+    // its old −20 guess to the same −25 fallback — both sit at the noisy end of
+    // afftdn's range, and nothing today calls this branch with that preset id
+    // (see the file search noted above), so there is no live regression.
     let mut chain = req.processing.as_ref().map(|p| p.to_core()).or_else(|| {
         req.vocal_chain_preset
             .as_deref()
-            .and_then(sundayrec_core::processing::vocal_chain_preset_by_id)
+            .and_then(|id| sundayrec_core::processing::vocal_chain_preset_by_id(id, None))
             .map(|p| p.chain)
     });
     // A top-level channel repair overrides the chain's repair, and applies on its
@@ -2798,22 +3011,7 @@ where
             }
         }
     }
-    let mut pre_filters: Vec<String> = chain.map(|c| c.build_filters()).unwrap_or_default();
-    // Peak-normalization gain (the editor's "Normalize" button) → a `volume`
-    // filter. It is SKIPPED when a mastering preset is active: loudnorm sets the
-    // delivery level, so a volume shift in front of it changes nothing but the
-    // measured input. (The export modal says so instead of claiming
-    // "Normalisert" — see `editor.volumeByMastering`.)
-    if preset.is_none() {
-        if let Some(g) = req.gain_db {
-            if g.is_finite() && g.abs() > f64::EPSILON {
-                pre_filters.push(format!("volume={g:.2}dB"));
-            }
-        }
-    }
-    if let Some(p) = &preset {
-        pre_filters.push(p.filters.clone());
-    }
+    let pre_filters = build_pre_filters(chain, req.gain_db, preset.as_ref());
 
     // The kill-timer for EACH ffmpeg pass, from the media it actually renders.
     let timeout_ms = export_timeout_ms_for(kept_duration);
@@ -2916,16 +3114,8 @@ where
         .into_iter()
         .collect();
 
-    // 3. Core picks the output directory ('' = "Samme mappe" → next to the
-    //    source) and then the collision-free file name inside it.
-    let base = Path::new(&req.input_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "redigert".into());
-    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
-    let out_path = collision_free_path(&out_dir, &format!("{base}_redigert"), fmt, |c| {
-        Path::new(c).exists()
-    });
+    // (3. The output directory and the render's temp path were resolved back in
+    //     step 1c, so the disk guard could run before the measure pass.)
 
     // 4. Intro/outro jingles (audio formats only — they wrap the audio track,
     //    so the mp4 video path ignores them). The intro is ffmpeg input 0, the
@@ -3017,13 +3207,21 @@ where
             args.extend(["-i".into(), p.clone()]);
         }
         if is_video {
-            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters);
+            // `req.duration` (the SOURCE length) is what tells the core which
+            // segment edges are interior cuts and therefore need the de-click
+            // fade — the same argument the audio graph above already gets.
+            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters, req.duration);
             args.extend(["-filter_complex".into(), fc]);
             args.extend(["-map".into(), v_out, "-map".into(), a_out]);
             args.extend(if use_hw {
-                sundayrec_core::editor::videotoolbox_codec_args(fmt, video_codec, hw_bitrate_kbps)
+                sundayrec_core::editor::videotoolbox_codec_args(
+                    fmt,
+                    video_codec,
+                    hw_bitrate_kbps,
+                    source_rate,
+                )
             } else {
-                sundayrec_core::editor::video_codec_args(fmt, video_codec, None)
+                sundayrec_core::editor::video_codec_args(fmt, video_codec, None, source_rate)
             });
         } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
             // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
@@ -3059,7 +3257,10 @@ where
         // Machine-readable progress on stdout, and `-nostats` to silence the human
         // stats line we would otherwise have to drain from stderr for no gain.
         args.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
-        args.extend(["-y".into(), out_path.clone()]);
+        // The TEMP path, never the delivered one: a half-written export must
+        // not be able to wear the finished file's name (F2-4). `-y` overwrites
+        // a leftover temp from a render that already died.
+        args.extend(["-y".into(), tmp_path.clone()]);
         args
     };
 
@@ -3080,6 +3281,12 @@ where
     } else {
         (0.0, 99.0)
     };
+    // From HERE until the rename in step 7, the only file this export owns is
+    // the temp — and every way out of this function that is not "the rename
+    // succeeded" must take it with it. `export()` returns early through `?` a
+    // dozen times, and a cleanup line at the bottom would be reached by none of
+    // them; the same reason `ExportSlot` is RAII rather than an `end()` call.
+    let mut render = TempRender::armed(&tmp_path);
     let mut result = run_export_ffmpeg(
         engine,
         &build_args(want_hw),
@@ -3121,9 +3328,27 @@ where
     // promises, or loudnorm's gain rider (F2-C-B). Before, this was `result?;`
     // and the summary went in the bin.
     let render_stderr = result?;
-    if !Path::new(&out_path).exists() {
+    if !Path::new(&tmp_path).exists() {
         return Err(AppError::Recording("export produced no output file".into()));
     }
+
+    // 7. THE FINISHING MOVE (F2-4). ffmpeg has exited zero and closed the
+    //    container, so — and only now — the render is a file worth a name.
+    //
+    //    Picking the collision-free name HERE rather than before the spawn also
+    //    closes the TOCTOU window the old code had: it chose `_redigert`,
+    //    rendered for twenty minutes, and wrote over whatever had appeared at
+    //    that path in the meantime. The gap between "this name is free" and
+    //    "this name is taken by us" is now a single `rename`.
+    let out_path = collision_free_path(&out_dir, &out_stem, fmt, |c| Path::new(c).exists());
+    std::fs::rename(&tmp_path, &out_path).map_err(|e| {
+        // The temp is still ours to clean up — `render` is still armed, and its
+        // Drop runs on the way out of this `?`.
+        tracing::warn!(error = %e, "export: could not put the finished render in place");
+        AppError::Recording(format!("export rename: {e}"))
+    })?;
+    // Delivered. Nothing left for the guard to reap.
+    render.delivered();
     // What actually happened to the level. `None` without a preset, and `None`
     // when the report did not say — "we did not read it back" must not render as
     // "it was linear".
@@ -4305,6 +4530,80 @@ mod tests {
         );
     }
 
+    // ── T12: the "Normalize" gain must lead the chain, not trail it ──────────────
+    //
+    // `build_pre_filters` decides the one thing T12 fixed: the export-level
+    // gain's position relative to the vocal chain. Pure — no ffmpeg — asserted
+    // on the returned filter STRINGS and their order, not on rendered audio.
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_puts_gain_before_the_chains_limiter() {
+        let mut chain = sundayrec_core::processing::VocalChain::default();
+        chain.limiter.enabled = true;
+        let filters = build_pre_filters(Some(chain), Some(6.0), None);
+        let gain_at = filters
+            .iter()
+            .position(|f| f == "volume=6.00dB")
+            .expect("gain filter present");
+        let limiter_at = filters
+            .iter()
+            .position(|f| f.starts_with("alimiter="))
+            .expect("limiter filter present");
+        assert!(
+            gain_at < limiter_at,
+            "T12: gain must run BEFORE the chain's limiter, not after (filters: {filters:?})"
+        );
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_skips_gain_when_a_preset_is_active() {
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        let filters = build_pre_filters(None, Some(6.0), Some(&preset));
+        assert_eq!(
+            filters,
+            vec![preset.filters.clone()],
+            "loudnorm owns the level with a preset active — no gain filter"
+        );
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_skips_zero_and_nonfinite_gain() {
+        assert!(build_pre_filters(None, Some(0.0), None).is_empty());
+        assert!(build_pre_filters(None, Some(f64::NAN), None).is_empty());
+        assert!(build_pre_filters(None, None, None).is_empty());
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_filters_orders_gain_then_chain_then_preset() {
+        // Default chain is highpass+compressor "on"; drop the compressor so the
+        // chain renders to exactly ONE filter and the expected list stays simple.
+        let mut chain = sundayrec_core::processing::VocalChain::default();
+        chain.compressor.enabled = false;
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        // No preset: gain leads, chain follows.
+        let no_preset = build_pre_filters(Some(chain.clone()), Some(3.0), None);
+        assert_eq!(
+            no_preset,
+            vec![
+                "volume=3.00dB".to_string(),
+                format!("highpass=f={}", chain.highpass.freq_hz)
+            ]
+        );
+        // With a preset: gain is skipped, chain still runs, preset trails.
+        let with_preset = build_pre_filters(Some(chain.clone()), Some(3.0), Some(&preset));
+        assert_eq!(
+            with_preset,
+            vec![
+                format!("highpass=f={}", chain.highpass.freq_hz),
+                preset.filters.clone()
+            ]
+        );
+    }
+
     // ── derived caches (P3): the peaks + segments sidecars ───────────────────────
     //
     // The cache KEY is (format version, file size, file mtime). These exercise
@@ -4692,6 +4991,32 @@ mod tests {
         );
     }
 
+    /// F2-11: the low-disk refusal crosses IPC with `disk_low_for_export` as
+    /// the LEADING code, which is the half `exportErrorKey` matches on. The
+    /// detail after it is free prose for the log — the shell never renders it,
+    /// and it must not be what decides which sentence is shown.
+    ///
+    /// The shell's side of this seam is pinned in
+    /// `app/editor/export-core.test.ts`; each side has its own test, because
+    /// neither one is wrong alone.
+    #[test]
+    fn the_low_disk_refusal_uses_the_code_the_renderer_translates() {
+        let refused =
+            AppError::Recording("disk_low_for_export: 120 MB free, ~980 MB needed".into());
+        let rendered = refused.to_string();
+        assert!(
+            rendered.starts_with("recording error: disk_low_for_export:"),
+            "the leading code is what the shell matches; got {rendered}"
+        );
+        // The guard's own decision, on the numbers that sentence reports.
+        use sundayrec_core::editor::{export_disk_is_low, EXPORT_DISK_HEADROOM_BYTES};
+        assert!(export_disk_is_low(120_000_000, Some(980_000_000)));
+        assert!(!export_disk_is_low(
+            980_000_000 + EXPORT_DISK_HEADROOM_BYTES,
+            Some(980_000_000)
+        ));
+    }
+
     /// The progress phase codes cross the IPC boundary as bare strings and are
     /// matched by LITERAL in the renderer (`legacy/renderer/pages/editor/
     /// export-params.ts` → `EXPORT_PHASE_MEASURING` / `EXPORT_PHASE_ENCODING`,
@@ -4740,7 +5065,7 @@ mod tests {
         /// measured everything: the audio bugs this file's smoke tests exist to
         /// catch are invisible to every other kind of test.
         pub(super) fn sidecar_or_skip(name: &str) -> Option<std::path::PathBuf> {
-            match crate::media::ffmpeg::tests::fetched_sidecar(name) {
+            match fetched_sidecar(name) {
                 Some(p) => Some(p),
                 None => {
                     assert!(
@@ -4846,8 +5171,10 @@ mod tests {
         /// behind, and the sidecar cache is written.
         #[test]
         fn peaks_stream_a_lavfi_source_and_cache_it_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -4937,8 +5264,10 @@ mod tests {
         /// recompute would also have nowhere to find ffmpeg.
         #[test]
         fn peaks_second_open_reads_the_sidecar_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -4971,8 +5300,10 @@ mod tests {
         /// Segments: compute → cache → serve from cache → `force` recomputes.
         #[test]
         fn segments_cache_round_trip_on_silence_and_tone_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5438,10 +5769,11 @@ mod tests {
 
         #[test]
         fn export_cuts_and_encodes_mp3_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
 
@@ -5550,8 +5882,10 @@ mod tests {
         /// source file.
         #[test]
         fn export_with_empty_folder_lands_next_to_the_source_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
 
@@ -5611,10 +5945,11 @@ mod tests {
         /// shift the result by another 6 LU.
         #[test]
         fn mastered_export_lands_on_the_preset_target_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5859,10 +6194,11 @@ mod tests {
         /// `-ar` pin, a mastered export inherits loudnorm's internal 192 kHz.
         #[test]
         fn wav16_export_is_s16_at_the_source_rate_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5896,10 +6232,11 @@ mod tests {
         /// (`should_retry_with_software`).
         #[test]
         fn video_export_keeps_the_video_stream_and_honours_the_cuts_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5948,14 +6285,83 @@ mod tests {
             eprintln!("editor export smoke: video landed as {dur:.2}s mp4 ({streams:?})");
         }
 
-        /// The mirror hazard: a 96 kHz master must NOT be quietly downsampled.
-        /// This one also exercises the filter_complex path's `-ar` (two keeps).
+        /// F2-8: the video path's AAC track lands at the pinned rate.
+        ///
+        /// Until F2-8 the seam answered `None` for the video path's
+        /// `source_rate` and neither video codec-arg builder emitted `-ar`, so
+        /// the encoder took whatever the graph handed it — 192 kHz out of
+        /// `loudnorm` with a mastering preset, 96 kHz off a high-rate master
+        /// without one. Here a 96 kHz source is exported to mp4 and the audio
+        /// stream must come back at 48 kHz: the cap `output_sample_rate`
+        /// already states for every OTHER lossy target.
         #[test]
-        fn flac_export_of_a_96k_source_stays_96k_or_skips() {
+        fn video_export_pins_the_aac_rate_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
                 (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
             else {
                 eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            // A 96 kHz A/V source. mkv + flac audio, because 96 kHz is exactly
+            // the rate an mp4/AAC source container would refuse to hold.
+            let src = dir.path().join("src96.mkv");
+            let gen = std::process::Command::new(&ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=size=320x240:rate=15:duration=2",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=96000:duration=2",
+                    "-shortest",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "flac",
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the 96 kHz A/V source");
+            assert!(
+                gen.status.success(),
+                "96 kHz A/V source generation failed: {}",
+                String::from_utf8_lossy(&gen.stderr)
+            );
+
+            let req = export_request(
+                &src.to_string_lossy(),
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.75, 1.25)],
+                2.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a software video export should succeed");
+            let (codec, rate) =
+                probe_audio_stream(&ffprobe, std::path::Path::new(&out.output_path));
+            assert_eq!(codec, "aac", "the video path encodes AAC");
+            assert_eq!(
+                rate, 48_000,
+                "a video export's AAC track must be pinned at min(source, 48 kHz), \
+                 not left to the encoder's own guess"
+            );
+            eprintln!("editor export smoke: video AAC pinned at {rate} Hz from a 96 kHz source");
+        }
+
+        /// The mirror hazard: a 96 kHz master must NOT be quietly downsampled.
+        /// This one also exercises the filter_complex path's `-ar` (two keeps).
+        #[test]
+        fn flac_export_of_a_96k_source_stays_96k_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5983,10 +6389,11 @@ mod tests {
         /// duration.
         #[test]
         fn multi_cut_export_with_join_fades_runs_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6022,10 +6429,11 @@ mod tests {
         /// mastering preset on it double-processed every recording.
         #[test]
         fn auto_process_recommends_no_mastering_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -6069,8 +6477,10 @@ mod tests {
         /// export with the kill-timer overridden to 1 ms.
         #[test]
         fn export_timeout_kills_the_render_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
 
@@ -6106,7 +6516,203 @@ mod tests {
                 !rt.block_on(cancel_export(&engine)).unwrap(),
                 "the timeout must leave no ffmpeg child behind"
             );
+            // F2-4: and it leaves no FILE behind either. Before, the render
+            // wrote straight to `<stem>_redigert.mp3`; a kill at 40 % left that
+            // name occupied by an mp3 that stops mid-sentence — which looks
+            // finished in Finder, and which the next attempt politely stepped
+            // around as `_redigert_2`.
+            assert_eq!(
+                leftovers(dir.path()),
+                Vec::<String>::new(),
+                "an aborted export must leave the folder as it found it"
+            );
             eprintln!("editor export smoke: kill-timer aborted the render ({msg})");
+        }
+
+        /// Every name an export could have left in `dir` — the delivered one and
+        /// the temp it renders through. The source file is not one of them.
+        fn leftovers(dir: &std::path::Path) -> Vec<String> {
+            let mut names: Vec<String> = std::fs::read_dir(dir)
+                .expect("the export folder is readable")
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.contains("_redigert") || n.contains(".__editor_tmp"))
+                .collect();
+            names.sort();
+            names
+        }
+
+        /// F2-4: a CANCELLED export leaves nothing behind — and does not poison
+        /// the good name for the retry.
+        ///
+        /// The cancel path is the one a volunteer actually takes ("Avbryt" is a
+        /// Tuesday; the kill-timer is a wedged machine), and it is where the
+        /// whole bug lived: the render wrote straight to `<stem>_redigert.flac`,
+        /// so an abort at 40 % left that name occupied by a file that plays for
+        /// a while and then stops. The retry then landed as `_redigert_2`, and
+        /// the one the pastor reaches for first is the broken one.
+        ///
+        /// It is also where the mutation proof aims: disarm `TempRender`'s Drop
+        /// and this test finds a `long_redigert.__editor_tmp.flac` in the folder.
+        #[test]
+        fn export_cancel_leaves_no_half_file_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+
+            let dir = tempfile::tempdir().unwrap();
+            // A LONG source, so the render is still running when the cancel
+            // lands — a 2 s clip would finish before the cancel could be aimed.
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "long.wav", 48_000, 600.0);
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "flac",
+                &[(100.0, 101.0)],
+                600.0,
+            );
+
+            let engine = Arc::new(ExportEngine::new());
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let err = {
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe {
+                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                }
+                // Cancel once the render has actually produced some output —
+                // cancelling an export that has not written a byte would prove
+                // nothing about cleaning up a half-written file.
+                let canceller = {
+                    let engine = Arc::clone(&engine);
+                    let dir = dir.path().to_path_buf();
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        for _ in 0..600 {
+                            let wrote_something = std::fs::read_dir(&dir)
+                                .into_iter()
+                                .flatten()
+                                .flatten()
+                                .any(|e| {
+                                    e.file_name().to_string_lossy().contains(".__editor_tmp.")
+                                        && e.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                                });
+                            if wrote_something {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(25));
+                        }
+                        rt.block_on(cancel_export(&engine))
+                    })
+                };
+                let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                let _ = canceller.join().expect("the canceller thread");
+                unsafe {
+                    std::env::remove_var("SUNDAYREC_FFMPEG");
+                }
+                result.expect_err("a cancelled export must not report success")
+            };
+            assert!(
+                err.to_string().contains("cancelled"),
+                "the renderer's `isCancelled` matches the bare code; got {err}"
+            );
+            assert_eq!(
+                leftovers(dir.path()),
+                Vec::<String>::new(),
+                "Avbryt must take the half-written render with it"
+            );
+
+            // …and the retry gets the name the volunteer expects. This is the
+            // half of F2-4 a user can SEE: before, the aborted attempt had
+            // already claimed `long_redigert.flac`, so this line would come
+            // back `long_redigert_2.flac` with a truncated file sitting in
+            // front of it. Keep 1 s out of the 600 so the retry is quick.
+            let retry_req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "flac",
+                &[(0.0, 300.0), (301.0, 600.0)],
+                600.0,
+            );
+            let retry = run_export_blocking(&ffmpeg, &ffprobe, &retry_req)
+                .0
+                .expect("the retry after a cancel should succeed");
+            assert!(
+                retry.output_path.ends_with("long_redigert.flac"),
+                "a cancelled attempt must not have taken the good name: {retry:?}"
+            );
+            assert_eq!(
+                leftovers(dir.path()),
+                vec!["long_redigert.flac".to_string()],
+                "one delivered file, no temp"
+            );
+            eprintln!("editor export smoke: cancel left the folder clean, retry got the name");
+        }
+
+        /// F2-4: the DELIVERED name is picked after the render, not before —
+        /// and two exports in a row therefore land side by side.
+        ///
+        /// The old order (name first, render into it) is what made an aborted
+        /// export poison the good name: attempt 1 died holding `_redigert`, so
+        /// attempt 2 became `_redigert_2` and the broken file stayed first in
+        /// the folder. Here BOTH exports succeed, so both names are legitimate
+        /// — the assertion is that the second did not overwrite the first, and
+        /// that no temp survives either of them.
+        #[test]
+        fn two_exports_land_side_by_side_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "service.wav", 48_000, 4.0);
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp3",
+                &[(1.0, 2.0)],
+                4.0,
+            );
+
+            let first = run_export_blocking(&ffmpeg, &ffprobe, &req)
+                .0
+                .expect("the first export should succeed");
+            let first_len = std::fs::metadata(&first.output_path)
+                .expect("the first export exists")
+                .len();
+            assert!(
+                first.output_path.ends_with("service_redigert.mp3"),
+                "{first:?}"
+            );
+
+            let second = run_export_blocking(&ffmpeg, &ffprobe, &req)
+                .0
+                .expect("the second export should succeed");
+            assert!(
+                second.output_path.ends_with("service_redigert_2.mp3"),
+                "the second export steps around the first: {second:?}"
+            );
+            assert_eq!(
+                std::fs::metadata(&first.output_path)
+                    .expect("the first export still exists")
+                    .len(),
+                first_len,
+                "the second export must not have written over the first"
+            );
+            assert_eq!(
+                leftovers(dir.path()),
+                vec![
+                    "service_redigert.mp3".to_string(),
+                    "service_redigert_2.mp3".to_string()
+                ],
+                "two delivered files and not a single temp"
+            );
+            eprintln!("editor export smoke: two exports landed side by side");
         }
 
         // ── The vocal chain, MEASURED (F2-C-A) ───────────────────────────────

@@ -387,7 +387,7 @@ async fn finalize_video_capture(app: Option<&AppHandle>, capture: &VideoCapture)
     }
 }
 
-pub use imp::run_cpal_session;
+pub(crate) use imp::run_cpal_session;
 
 mod imp {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -412,9 +412,10 @@ mod imp {
     use crate::db::store::insert_recording;
     use crate::error::{AppError, AppResult};
     use crate::media::ffmpeg::spawn_ffmpeg;
+    use crate::recorder::context::SessionContext;
     use crate::recorder::engine::{
         extract_separate_audio, now_ms, RecordingEvent, RecordingFinished, RecordingLevels,
-        RecordingOpts, StateWriter, ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT,
+        ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT,
     };
     use crate::recorder::native_capture::stream::{
         build_input_stream_any, find_device, open_host, ring_capacity, StreamSink,
@@ -510,17 +511,44 @@ mod imp {
 
     /// Run a cpal capture session (audio-only OR video+cpal-audio) over the given
     /// host. See the module header for architecture and scope.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn run_cpal_session(
+    ///
+    /// The session's inputs arrive as the SAME [`SessionContext`] the ffmpeg
+    /// supervisor takes (F2-T2). That is the whole point of the struct: this path
+    /// used to take its own, DIFFERENT eight parameters, which is why
+    /// `session_generation` was threaded into `run_session` and forgotten here
+    /// (F1-A5). `host_kind` stays a parameter because it is not session context
+    /// but the routing decision `start()` made — which of the two cpal hosts this
+    /// attempt is.
+    pub(crate) async fn run_cpal_session(
         host_kind: CpalHostKind,
-        app: AppHandle,
-        pool: Option<SqlitePool>,
-        opts: RecordingOpts,
-        video: Option<FfmpegDevice>,
+        ctx: SessionContext,
         mut stop_rx: tokio::sync::mpsc::Receiver<()>,
         ready_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
-        state: StateWriter,
     ) {
+        // The exhaustiveness gate (see [`SessionContext`]): every field is named,
+        // with no `..`, so a field added to the context stops THIS path compiling
+        // until someone has said what the cpal supervisor does with it. THIS is
+        // the gate F1-A5 needed. What it deliberately ignores:
+        //   - `platform` / `backend` — this path IS the routing outcome (cpal
+        //     audio piped into the ffmpeg that owns the camera);
+        //   - `audio` — cpal addresses the mic BY NAME (`opts.audio_device_name`),
+        //     and the sidecar/history metadata below stamps its own `"cpal"`-host
+        //     entry rather than the dshow shadow;
+        //   - `preroll_clip` — unsupported here by construction: `start()` routes
+        //     a pre-roll session to dshow, and warns on ASIO where it cannot;
+        //   - `audio_engine` — `start()` records the label itself for this path.
+        let SessionContext {
+            app,
+            pool,
+            opts,
+            platform: _,
+            backend: _,
+            audio: _,
+            video,
+            preroll_clip: _,
+            state,
+            audio_engine: _,
+        } = ctx;
         let label = host_kind.label();
         // The session's start AND its id (a singleton engine never repeats a
         // start timestamp). Stamped before the device probe, like `run_session`
@@ -576,6 +604,10 @@ mod imp {
                 ))));
                 return;
             }
+            // F2-W6: a leading `.` hides this on macOS for free; Windows needs
+            // the real attribute or a volunteer browsing the save folder
+            // mid-service finds — and can "tidy away" — the live fragments.
+            crate::util::hide_dir_on_windows(&c.cap_dir);
         }
         // What ffmpeg actually writes: the MKV capture (video) or, for audio-only,
         // the user's file itself.

@@ -49,6 +49,133 @@ fn platform_data_dir() -> Option<PathBuf> {
     }
 }
 
+/// The OS LOCAL app-data directory — resolved WITHOUT a Tauri app handle.
+///
+/// Mirrors `tauri::PathResolver::app_local_data_dir()`
+/// (`dirs::data_local_dir()?.join(identifier)`) — the same relationship
+/// [`app_data_dir`] has to `app.path().app_data_dir()`, and for the same
+/// reason: [`crate::logfile::init`] has to be armed before any `AppHandle`
+/// exists.
+///
+/// Differs from [`app_data_dir`] ONLY on Windows (F2-W10): `%LOCALAPPDATA%`
+/// rather than the ROAMING `%APPDATA%`. Two things this app writes
+/// continuously while a service runs — the pre-roll engine's rolling capture
+/// segments (`lib.rs` setup) and the file log ([`crate::logfile::init`]) —
+/// have no business being roamed at all, and a roaming profile is exactly the
+/// kind of location a sync client can lock a file that is still growing, or
+/// simply make slow: a domain's roaming-profile share, or a personal OneDrive
+/// a user has pointed at their whole profile by hand (see
+/// `sundayrec_core::preflight::looks_like_onedrive` for the save-folder half
+/// of that same problem, F2-W9). `%LOCALAPPDATA%` is never roamed or synced
+/// by Windows itself.
+///
+/// On macOS and Linux this returns the EXACT same path as [`app_data_dir`] —
+/// [`platform_local_data_dir`] falls through to [`platform_data_dir`] there,
+/// so the two cannot drift apart by editing one and forgetting the other. Any
+/// caller switching from [`app_data_dir`] to this function therefore changes
+/// NOTHING on those two platforms; see
+/// `app_local_data_dir_is_the_same_dir_as_app_data_dir_off_windows` below.
+pub fn app_local_data_dir() -> Option<PathBuf> {
+    let identifier = bundle_identifier()?;
+    Some(platform_local_data_dir()?.join(identifier))
+}
+
+/// `dirs::data_local_dir()`, hand-rolled — see [`platform_data_dir`], which
+/// this function literally IS off Windows.
+fn platform_local_data_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        platform_data_dir()
+    }
+}
+
+// ── One-time move to local app-data (F2-W10) ─────────────────────────────────
+
+/// What a caller switching a sub-path from [`app_data_dir`] to
+/// [`app_local_data_dir`] should do about data already sitting at the OLD
+/// (roaming) location.
+///
+/// A pure decision over the two facts that matter — kept separate from the
+/// actual `rename` in [`move_once_best_effort`] so the three cases are a table
+/// a test can drive without touching a filesystem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrateAction {
+    /// Nothing to move: either nothing has ever written to the old path, or a
+    /// previous launch already moved it. The common case on every launch but
+    /// the one right after this upgrade.
+    Nothing,
+    /// Move `old` to `new`: the upgrade case — a previous version left data at
+    /// the old roaming path, and the new local path is still untouched.
+    Move,
+    /// Both exist. Most likely two versions of the app have run on this
+    /// machine, or a previous move got only partway before a crash. Leave
+    /// both alone rather than guess which one to keep — silently merging or
+    /// overwriting could destroy whichever turns out to matter, and the
+    /// caller can carry on writing to `new` either way.
+    LeaveBoth,
+}
+
+/// [`MigrateAction`] from whether the old and new directories currently
+/// exist.
+pub fn plan_one_time_move(old_exists: bool, new_exists: bool) -> MigrateAction {
+    match (old_exists, new_exists) {
+        (false, _) => MigrateAction::Nothing,
+        (true, false) => MigrateAction::Move,
+        (true, true) => MigrateAction::LeaveBoth,
+    }
+}
+
+/// Carry out [`plan_one_time_move`]'s decision for `old` → `new`, best-effort.
+///
+/// Never fails the caller: a permissions error, a cross-device rename, or a
+/// previous move that got only partway all just log a warning and leave `old`
+/// exactly where it was. Worst case, the move never happens and old data sits
+/// unused at the roaming path forever — precisely as it always did before
+/// F2-W10 introduced a local path to move it to.
+pub fn move_once_best_effort(old: &Path, new: &Path) {
+    match plan_one_time_move(old.is_dir(), new.is_dir()) {
+        MigrateAction::Nothing => {}
+        MigrateAction::LeaveBoth => {
+            tracing::warn!(
+                old = %old.display(),
+                new = %new.display(),
+                "F2-W10: both the old (roaming) and new (local) directory exist — leaving both, not merging"
+            );
+        }
+        MigrateAction::Move => {
+            if let Some(parent) = new.parent() {
+                if std::fs::create_dir_all(parent).is_err() {
+                    tracing::warn!(
+                        dir = %parent.display(),
+                        "F2-W10: could not create the local app-data directory — leaving the old one in place"
+                    );
+                    return;
+                }
+            }
+            match std::fs::rename(old, new) {
+                Ok(()) => {
+                    tracing::info!(
+                        old = %old.display(),
+                        new = %new.display(),
+                        "F2-W10: moved to local app-data"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        old = %old.display(),
+                        new = %new.display(),
+                        "F2-W10: one-time move to local app-data failed, leaving the old directory in place: {e}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// The platform we're running on, mapped to the core [`Platform`] enum. A
 /// compile-time `cfg!` check, consolidated here so the recorder, preroll, and
 /// preview seams stop each carrying an identical copy.
@@ -179,6 +306,53 @@ pub fn hidden_std_command(program: impl AsRef<std::ffi::OsStr>) -> std::process:
     #[cfg(not(windows))]
     {
         std::process::Command::new(program)
+    }
+}
+
+// ── Hidden directories (Windows) ──────────────────────────────────────────────
+
+/// Mark `dir` hidden in Windows Explorer (F2-W6).
+///
+/// A leading `.` hides a folder on macOS (Finder) for free, but it is just an
+/// ordinary character to Windows — `.sundayrec-capture-<id>` (the live capture
+/// folder) and `.sundayrec-trash` (the Papirkurv) sit there in plain sight in
+/// Explorer. A volunteer poking around the save folder mid-service can find —
+/// and "tidy away" — the WAV/MKV fragments a live recording is still writing,
+/// or mistake the Papirkurv for stray junk and delete what was meant to be
+/// recoverable. Setting the real `FILE_ATTRIBUTE_HIDDEN` bit closes that gap
+/// the same way Explorer's own "Hidden items" folders behave.
+///
+/// Call this right after `create_dir_all` creates the directory — the
+/// attribute is a property of the directory ENTRY, so it must already exist.
+/// Best-effort and silent to the caller: odd ACLs or a network share that
+/// rejects the attribute only logs a warning. The directory still does its
+/// actual job either way (a live recording, a moved-to-trash file); it just
+/// stays visible, which is exactly today's behaviour — never a reason to fail
+/// a recording or a delete.
+pub fn hide_dir_on_windows(dir: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        use windows_sys::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN};
+
+        let wide: Vec<u16> = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: `wide` is a NUL-terminated UTF-16 buffer, valid and unchanged
+        // for the duration of this call — everything `SetFileAttributesW`
+        // requires of its pointer argument.
+        let ok = unsafe { SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_HIDDEN) };
+        if ok == 0 {
+            let err = std::io::Error::last_os_error();
+            tracing::warn!(dir = %dir.display(), "could not mark directory hidden: {err}");
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = dir;
     }
 }
 
@@ -322,6 +496,99 @@ mod tests {
         assert!(dir.is_absolute(), "{}", dir.display());
     }
 
+    // ── app_local_data_dir (F2-W10) ─────────────────────────────────────────
+
+    #[test]
+    fn the_app_local_data_dir_is_the_local_platform_dir_joined_with_the_identifier() {
+        let Some(dir) = app_local_data_dir() else {
+            return; // no HOME/APPDATA/LOCALAPPDATA in this environment
+        };
+        let id = bundle_identifier().unwrap();
+        assert_eq!(dir.file_name().unwrap().to_string_lossy(), id);
+        assert_eq!(dir.parent().unwrap(), platform_local_data_dir().unwrap());
+        assert!(dir.is_absolute(), "{}", dir.display());
+    }
+
+    /// F2-W10's pin: macOS (and Linux) have no roaming/local split at all, so
+    /// the switch away from [`app_data_dir`] must be a complete no-op there —
+    /// anyone relying on the OLD location keeps finding their files in
+    /// exactly the same place, with nothing to migrate.
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn app_local_data_dir_is_the_same_dir_as_app_data_dir_off_windows() {
+        assert_eq!(app_local_data_dir(), app_data_dir());
+    }
+
+    /// The Windows half of the same pin: `%LOCALAPPDATA%` and `%APPDATA%` are
+    /// real, DIFFERENT special folders there, which is the entire point of
+    /// F2-W10 — a test that only checked "doesn't panic" would pass even if
+    /// this had quietly become another copy of [`platform_data_dir`].
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn app_local_data_dir_differs_from_app_data_dir_on_windows() {
+        let local = app_local_data_dir().expect("LOCALAPPDATA must be set on windows-latest");
+        let roaming = app_data_dir().expect("APPDATA must be set on windows-latest");
+        assert_ne!(
+            local, roaming,
+            "F2-W10: local and roaming app-data must not be the same directory"
+        );
+    }
+
+    // ── plan_one_time_move / move_once_best_effort (F2-W10) ────────────────
+
+    #[test]
+    fn plan_one_time_move_covers_all_three_cases() {
+        assert_eq!(plan_one_time_move(false, false), MigrateAction::Nothing);
+        assert_eq!(plan_one_time_move(false, true), MigrateAction::Nothing);
+        assert_eq!(plan_one_time_move(true, false), MigrateAction::Move);
+        assert_eq!(plan_one_time_move(true, true), MigrateAction::LeaveBoth);
+    }
+
+    #[test]
+    fn move_once_best_effort_moves_the_old_directory_to_the_new_path() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("old/logs");
+        let new = root.path().join("new/logs");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("sundayrec.log"), b"hello").unwrap();
+
+        move_once_best_effort(&old, &new);
+
+        assert!(!old.exists(), "the old directory must be gone after a move");
+        assert_eq!(
+            std::fs::read(new.join("sundayrec.log")).unwrap(),
+            b"hello",
+            "the file's contents must survive the move"
+        );
+    }
+
+    #[test]
+    fn move_once_best_effort_does_nothing_when_there_is_no_old_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("old/logs");
+        let new = root.path().join("new/logs");
+
+        move_once_best_effort(&old, &new);
+
+        assert!(!new.exists(), "nothing to move must not invent a directory");
+    }
+
+    #[test]
+    fn move_once_best_effort_leaves_both_directories_alone_when_both_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("old/logs");
+        let new = root.path().join("new/logs");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("old.log"), b"old").unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join("new.log"), b"new").unwrap();
+
+        move_once_best_effort(&old, &new);
+
+        assert_eq!(std::fs::read(old.join("old.log")).unwrap(), b"old");
+        assert_eq!(std::fs::read(new.join("new.log")).unwrap(), b"new");
+    }
+
     #[test]
     fn detect_platform_matches_the_build_target() {
         let p = detect_platform();
@@ -412,5 +679,47 @@ mod tests {
         write_atomic_async(&path, b"2").await.unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"2");
         assert!(leftovers(dir.path()).is_empty());
+    }
+
+    // ── hide_dir_on_windows (F2-W6) ──────────────────────────────────────────
+
+    /// Real Explorer visibility, not a mock: `windows-check` runs this on
+    /// `windows-latest`, so the assertion below is the actual bit a real
+    /// Explorer window reads, via the same std API that reads it.
+    #[cfg(windows)]
+    #[test]
+    fn hide_dir_on_windows_sets_the_real_hidden_attribute() {
+        use std::os::windows::fs::MetadataExt;
+
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join(".sundayrec-capture-1700000000000");
+        std::fs::create_dir_all(&target).unwrap();
+        let before = std::fs::metadata(&target).unwrap().file_attributes();
+        assert_eq!(
+            before & FILE_ATTRIBUTE_HIDDEN,
+            0,
+            "precondition: a freshly created directory must not already be hidden"
+        );
+
+        hide_dir_on_windows(&target);
+
+        let after = std::fs::metadata(&target).unwrap().file_attributes();
+        assert_ne!(
+            after & FILE_ATTRIBUTE_HIDDEN,
+            0,
+            "FILE_ATTRIBUTE_HIDDEN was not set after hide_dir_on_windows"
+        );
+    }
+
+    /// Off Windows the helper is the identity function — it must not touch the
+    /// filesystem at all (there is nothing to touch: no attribute bit exists),
+    /// so calling it on a directory that does not even exist must not panic or
+    /// error.
+    #[cfg(not(windows))]
+    #[test]
+    fn hide_dir_on_windows_is_a_no_op_off_windows() {
+        hide_dir_on_windows(Path::new("/does/not/exist"));
     }
 }

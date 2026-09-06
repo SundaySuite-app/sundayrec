@@ -95,14 +95,27 @@ static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// itself a finding.
 static DROPPED: AtomicU64 = AtomicU64::new(0);
 
-/// Start the file log: create `<app-data>/logs`, spawn the writer thread, and
-/// return the `MakeWriter` for a `tracing_subscriber` layer.
+/// Start the file log: create `<app-local-data>/logs`, spawn the writer
+/// thread, and return the `MakeWriter` for a `tracing_subscriber` layer.
 ///
-/// `None` when no app-data directory can be resolved or the directory cannot be
-/// created — in which case the app logs to stdout exactly as it did before,
-/// which is a degradation, not a failure.
+/// `None` when no local app-data directory can be resolved or the directory
+/// cannot be created — in which case the app logs to stdout exactly as it did
+/// before, which is a degradation, not a failure.
+///
+/// F2-W10: this used to live under the ROAMING app-data dir
+/// ([`crate::util::app_data_dir`]) — the very directory a Windows roaming
+/// profile or a mis-pointed OneDrive sync can lock or slow down, which is a
+/// bad place for a file this app appends to constantly while a service runs.
+/// [`crate::util::app_local_data_dir`] is never roamed or synced by Windows
+/// itself; on macOS and Linux it is the exact same directory as before, so
+/// nothing there changes. Whatever a previous version left at the old
+/// location is moved once, best-effort, so last Sunday's log is not
+/// stranded — see [`crate::util::move_once_best_effort`].
 pub fn init() -> Option<FileLogWriter> {
-    let dir = crate::util::app_data_dir()?.join("logs");
+    let dir = crate::util::app_local_data_dir()?.join("logs");
+    if let Some(old_dir) = crate::util::app_data_dir().map(|d| d.join("logs")) {
+        crate::util::move_once_best_effort(&old_dir, &dir);
+    }
     if std::fs::create_dir_all(&dir).is_err() {
         return None;
     }

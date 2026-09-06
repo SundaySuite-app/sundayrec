@@ -769,7 +769,8 @@
       "folderNotWritable": "Det går inte att skriva till lagringsmappen.",
       "diskLow": "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning.",
       "micDenied": "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon.",
-      "cameraDenied": "Kameraåtkomst har inte getts."
+      "cameraDenied": "Kameraåtkomst har inte getts.",
+      "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning."
     },
     "preflightErrors": {
       "one": "{n} fel måste åtgärdas före inspelningen",
@@ -965,6 +966,7 @@
     "enhanceTitle": "Ljudförbättring",
     "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format på sidan Export.",
     "errExportAlreadyRunning": "En export pågår redan. Vänta tills den är klar.",
+    "errDiskLowForExport": "Det finns inte tillräckligt med ledigt utrymme för den här exporten. Frigör utrymme, eller välj en annan mapp med ”Välj mapp…”.",
     "errRecordingInProgress": "En inspelning pågår. Vänta tills den är klar innan du exporterar.",
     "errPathNotAbsolute": "Ogiltig mapp eller filsökväg. Välj målmappen igen.",
     "metaDesc": "BESKRIVNING",

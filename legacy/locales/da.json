@@ -769,7 +769,8 @@
       "folderNotWritable": "Der kan ikke skrives til lagringsmappen.",
       "diskLow": "Kun {gb} GB ledig på lagringsdisken — måske ikke nok til en hel optagelse.",
       "micDenied": "Der er ikke givet adgang til mikrofonen. Åbn Systemindstillinger → Anonymitet → Mikrofon.",
-      "cameraDenied": "Der er ikke givet adgang til kameraet."
+      "cameraDenied": "Der er ikke givet adgang til kameraet.",
+      "saveFolderSynced": "Lagringsmappen synkroniseres af »OneDrive«, hvilket kan forstyrre en igangværende optagelse."
     },
     "preflightErrors": {
       "one": "{n} fejl skal rettes før optagelsen",
@@ -965,6 +966,7 @@
     "enhanceTitle": "Lydforbedring",
     "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format på siden Eksport.",
     "errExportAlreadyRunning": "En eksport er allerede i gang. Vent, til den er færdig.",
+    "errDiskLowForExport": "Der er ikke plads nok til denne eksport. Frigør plads, eller vælg en anden mappe med »Vælg mappe…«.",
     "errRecordingInProgress": "Der er en optagelse i gang. Vent, til den er færdig, før du eksporterer.",
     "errPathNotAbsolute": "Ugyldig mappe eller filsti. Vælg destinationsmappen igen.",
     "metaDesc": "BESKRIVELSE",

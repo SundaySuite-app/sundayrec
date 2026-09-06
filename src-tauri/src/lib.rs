@@ -36,7 +36,8 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
-// E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
+// E2.3 observability — the rotating file log under `<app-local-data>/logs`
+// (F2-W10 moved it off the roaming `<app-data>` dir). Until it,
 // `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
 // has no console and a macOS .app from Finder discards stdout, so an installed
 // app's log went to a file descriptor pointed at nothing.
@@ -377,9 +378,31 @@ pub fn run() {
             }
 
             // The pre-roll engine (F3.2) writes its rolling temp captures under
-            // a `tmp` dir in app-data (cleaned up on harvest/stop). Managed here
-            // because it needs the resolved app-data path. At most one loop runs.
-            let tmp_dir = db_dir.join("tmp");
+            // a `tmp` dir (cleaned up on harvest/stop). Managed here because it
+            // needs a resolved path.
+            //
+            // F2-W10: that dir moved from the ROAMING app-data dir to the LOCAL
+            // one — a rolling capture segment is exactly the kind of file a
+            // Windows roaming profile or a mis-pointed OneDrive sync can lock
+            // while it is still growing (see `looks_like_onedrive`, F2-W9's
+            // save-folder half of the same problem). Whatever a previous
+            // version left under the old path is moved once, best-effort; a
+            // resolution failure (astronomically rare — the same class of
+            // failure `db_dir` above already ruled out) just keeps the old
+            // roaming location rather than losing pre-roll altogether.
+            let tmp_dir = match app.path().app_local_data_dir() {
+                Ok(local_dir) => {
+                    let new_tmp_dir = local_dir.join("tmp");
+                    util::move_once_best_effort(&db_dir.join("tmp"), &new_tmp_dir);
+                    new_tmp_dir
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "resolving local app-data dir failed ({e}); pre-roll stays under the roaming app-data dir"
+                    );
+                    db_dir.join("tmp")
+                }
+            };
             app.manage(recorder::preroll::PrerollEngine::new(tmp_dir));
 
             // Launch the scheduler supervisor now that the db pool + recorder
@@ -572,14 +595,17 @@ pub fn run() {
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
             // P1 parity: sidecar persistence, stream probe, inline guard,
-            // temp-file cleanup, and the full mastering preview/apply/cancel flow.
+            // temp-file cleanup, and the mastering preview/cancel flow.
+            // (`editor_master_apply` closed F2-C-E T10 — never called from
+            // app/e2e/tray, and already `unreachable` in the reachability
+            // baseline; see the note above `editor::master_apply` in
+            // `crate::editor` for why the implementation stays.)
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,
-            commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
             // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
