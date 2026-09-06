@@ -922,7 +922,7 @@
     "diagnoseFail": "Impossible d’analyser les canaux.",
     "diagnosing": "Analyse en cours…",
     "enhanceTitle": "Amélioration audio",
-    "errInvalidFormat": "Ce format n’est pas pris en charge pour l’export. Choisissez un autre format dans la fenêtre d’export.",
+    "errInvalidFormat": "Ce format n’est pas pris en charge pour l’export. Choisissez un autre format sur la page Export.",
     "errPathNotAbsolute": "Dossier ou chemin de fichier non valide. Sélectionnez à nouveau le dossier de destination.",
     "metaDesc": "DESCRIPTION",
     "metaSave": "Enregistrer les métadonnées",
@@ -984,7 +984,7 @@
     "qualityReasons": "Cause : {r}",
     "qualityAction": "Afficher l’enregistrement",
     "errorInvalidOpts": "Réglages d’enregistrement non valides — redémarrez et réessayez",
-    "errorNoSaveFolder": "Aucun dossier de sauvegarde choisi — allez dans Réglages → Enregistrement",
+    "errorNoSaveFolder": "Aucun dossier de sauvegarde choisi — allez sur la page Enregistrement et choisissez-en un dans la carte « Où vont les enregistrements ? »",
     "errorUnknown": "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts",
     "reconnectSecs": "s",
     "reconnecting": "Source audio déconnectée — reconnexion en cours",
@@ -1010,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Partager des diagnostics anonymes ?",
-    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Paramètres → Système.",
+    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Avancé.",
     "rePromptTitle": "Nous vous reposons la question",
     "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
   },

@@ -922,7 +922,7 @@
     "diagnoseFail": "Kunne ikke analysere kanalerne.",
     "diagnosing": "Analyserer…",
     "enhanceTitle": "Lydforbedring",
-    "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format i eksportvinduet.",
+    "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format på siden Eksport.",
     "errPathNotAbsolute": "Ugyldig mappe eller filsti. Vælg destinationsmappen igen.",
     "metaDesc": "BESKRIVELSE",
     "metaSave": "Gem metadata",
@@ -984,7 +984,7 @@
     "qualityReasons": "Årsag: {r}",
     "qualityAction": "Vis optagelse",
     "errorInvalidOpts": "Ugyldige optagelsesindstillinger — genstart og prøv igen",
-    "errorNoSaveFolder": "Der er ikke valgt en mappe at gemme i — gå til Indstillinger → Optagelse",
+    "errorNoSaveFolder": "Der er ikke valgt en mappe at gemme i — gå til siden Optagelse og vælg en i kortet »Hvor skal optagelserne hen?«",
     "errorUnknown": "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
     "reconnectSecs": "s",
     "reconnecting": "Lydkilden er frakoblet — genopretter forbindelsen",
@@ -1010,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Dele anonym diagnostik?",
-    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → System.",
+    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → Avanceret.",
     "rePromptTitle": "Vi spørger dig igen",
     "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her."
   },

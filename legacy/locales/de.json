@@ -922,7 +922,7 @@
     "diagnoseFail": "Kanäle konnten nicht analysiert werden.",
     "diagnosing": "Analysiert…",
     "enhanceTitle": "Klangverbesserung",
-    "errInvalidFormat": "Dieses Format wird für den Export nicht unterstützt. Wählen Sie im Exportfenster ein anderes Format.",
+    "errInvalidFormat": "Dieses Format wird für den Export nicht unterstützt. Wählen Sie auf der Seite „Export“ ein anderes Format.",
     "errPathNotAbsolute": "Ungültiger Ordner oder Dateipfad. Wählen Sie den Zielordner erneut.",
     "metaDesc": "BESCHREIBUNG",
     "metaSave": "Metadaten speichern",
@@ -984,7 +984,7 @@
     "qualityReasons": "Ursache: {r}",
     "qualityAction": "Aufnahme anzeigen",
     "errorInvalidOpts": "Ungültige Aufnahmeeinstellungen — neu starten und erneut versuchen",
-    "errorNoSaveFolder": "Kein Speicherordner gewählt — gehen Sie zu Einstellungen → Aufnahme",
+    "errorNoSaveFolder": "Kein Speicherordner gewählt — gehen Sie zur Seite „Aufnahme“ und wählen Sie einen in der Karte „Wohin mit den Aufnahmen?“",
     "errorUnknown": "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind",
     "reconnectSecs": "s",
     "reconnecting": "Audioquelle getrennt — verbindet neu",
@@ -1010,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Anonyme Diagnosedaten teilen?",
-    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → System antworten.",
+    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → Erweitert antworten.",
     "rePromptTitle": "Wir fragen noch einmal nach",
     "rePromptDesc": "Sie haben dies bereits beantwortet, aber wir fragen erneut, weil sich erweitert hat, was gegebenenfalls geteilt wird: Ihre Korrekturen im Editor können jetzt auch ungefähr angeben, wie weit ein automatischer Vorschlag verschoben wurde — zum Beispiel „30–60 Sekunden früher“ — und nicht nur, dass er verschoben wurde. Der Text selbst wird nie gesendet. Ihre frühere Antwort wurde nicht übernommen, weder als Ja noch als Nein, und es wird nichts gesendet, bevor Sie hier antworten."
   },

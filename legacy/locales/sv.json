@@ -922,7 +922,7 @@
     "diagnoseFail": "Kunde inte analysera kanalerna.",
     "diagnosing": "Analyserar…",
     "enhanceTitle": "Ljudförbättring",
-    "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format i exportfönstret.",
+    "errInvalidFormat": "Formatet stöds inte för export. Välj ett annat format på sidan Export.",
     "errPathNotAbsolute": "Ogiltig mapp eller filsökväg. Välj målmappen igen.",
     "metaDesc": "BESKRIVNING",
     "metaSave": "Spara metadata",
@@ -984,7 +984,7 @@
     "qualityReasons": "Orsak: {r}",
     "qualityAction": "Visa inspelning",
     "errorInvalidOpts": "Ogiltiga inspelningsinställningar — starta om och försök igen",
-    "errorNoSaveFolder": "Ingen mapp att spara i är vald — gå till Inställningar → Inspelning",
+    "errorNoSaveFolder": "Ingen mapp att spara i är vald — gå till sidan Inspelning och välj en i kortet ”Vart ska inspelningarna?”",
     "errorUnknown": "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo",
     "reconnectSecs": "s",
     "reconnecting": "Ljudkällan frånkopplad — återansluter",
@@ -1010,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Dela anonym diagnostik?",
-    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System.",
+    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → Avancerat.",
     "rePromptTitle": "Vi frågar dig igen",
     "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
   },
