@@ -95,7 +95,12 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     }
 
     // ── Extended facts (the comprehensive diagnose) ──────────────────────────
-    // ASIO devices (Windows + feature; empty otherwise).
+    // ASIO devices (Windows + feature; empty otherwise). The enumeration is
+    // memoised for the recorder's sake (it LOADS every installed ASIO driver —
+    // see `audio::asio`), but diagnose is the one caller whose whole job is to
+    // report the machine as it is RIGHT NOW, so it drops the memo first and
+    // pays for a fresh sweep.
+    crate::audio::asio::invalidate_asio_cache();
     let asio_devices: Vec<String> = crate::audio::asio::list_asio_devices()
         .into_iter()
         .map(|d| d.name)
