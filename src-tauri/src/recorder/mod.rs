@@ -32,6 +32,10 @@
 //! what the manual smoke-test must confirm.
 
 pub mod concat;
+// F2-T2: the session context (and the segment counters) every capture path and
+// every finalisation step is run against — one struct instead of the 12–16
+// loose parameters that made the cpal path easy to forget (F1-A5).
+pub(crate) mod context;
 pub mod cpal_capture;
 pub mod engine;
 // v0.15: the opts composition (save folder / filename / formats) the manual
