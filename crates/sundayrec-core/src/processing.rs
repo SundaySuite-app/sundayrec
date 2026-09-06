@@ -681,9 +681,32 @@ pub fn vocal_chain_presets() -> Vec<VocalChainPreset> {
     ]
 }
 
-/// Look up a vocal-chain preset by id.
-pub fn vocal_chain_preset_by_id(id: &str) -> Option<VocalChainPreset> {
-    vocal_chain_presets().into_iter().find(|p| p.id == id)
+/// Look up a vocal-chain preset by id, with `afftdn`'s `nf` replaced by a real
+/// measurement when one is available.
+///
+/// F2-C-E T5: every built-in preset bakes in a *guessed* `noise_floor_db`
+/// (`voice-podcast` −25, `voice-noisy-room` −20) — a "typical room" a producer
+/// picked at authoring time. A church sanctuary is quieter than that guess by a
+/// wide margin (a clean take commonly measures −60…−70 dBFS, see
+/// [`recommend_vocal_preset`]'s own threshold comment), so `nf=-25` tells
+/// `afftdn` the floor is ~35–45 dB louder than it actually is. `auto_process`
+/// already runs an `astats` pass and has the real number in hand; this is where
+/// it gets applied instead of thrown away.
+///
+/// `measured_noise_floor_db` is [`resolve_noise_floor_db`]'d (clamped to
+/// `afftdn`'s `[-80, -20]` range, falling back to −25 when `None`/non-finite) and
+/// OVERWRITES the preset's own guess unconditionally — a real measurement is
+/// always a better bet than a value picked in the abstract, and the −25
+/// fallback matches what `voice-podcast` already assumed (only
+/// `voice-noisy-room`'s no-measurement case moves, −20 → −25; harmless, both
+/// sit at the noisy end of the valid range).
+pub fn vocal_chain_preset_by_id(
+    id: &str,
+    measured_noise_floor_db: Option<f64>,
+) -> Option<VocalChainPreset> {
+    let mut preset = vocal_chain_presets().into_iter().find(|p| p.id == id)?;
+    preset.chain.denoise.noise_floor_db = resolve_noise_floor_db(measured_noise_floor_db);
+    Some(preset)
 }
 
 /// A measured noise floor (dBFS) above this is "noisy" — a clean recording sits
@@ -699,6 +722,18 @@ pub fn recommend_vocal_preset(noise_floor_db: Option<f64>) -> &'static str {
         Some(nf) if nf.is_finite() && nf > NOISE_NOISY_THRESHOLD_DB => "voice-noisy-room",
         _ => "voice-podcast",
     }
+}
+
+/// Clamp a measured noise floor (dBFS) to what `afftdn:nf` accepts (`[-80,
+/// -20]`), or fall back to −25 dB — the same "typical room" guess the static
+/// presets used — when there is no usable measurement. NO `dB` suffix at the
+/// call site: like the rest of `afftdn`'s options, the bare number IS the dB
+/// value (see the units note at the top of this file).
+pub fn resolve_noise_floor_db(measured_db: Option<f64>) -> f64 {
+    measured_db
+        .filter(|db| db.is_finite())
+        .map(|db| db.clamp(-80.0, -20.0))
+        .unwrap_or(-25.0)
 }
 
 #[cfg(test)]
@@ -1201,7 +1236,7 @@ mod tests {
 
     #[test]
     fn podcast_preset_has_full_chain() {
-        let p = vocal_chain_preset_by_id("voice-podcast").unwrap();
+        let p = vocal_chain_preset_by_id("voice-podcast", None).unwrap();
         let parts = p.chain.build_filters();
         assert!(parts.iter().any(|s| s.starts_with("highpass=")));
         assert!(parts.iter().any(|s| s.starts_with("afftdn=")));
@@ -1213,7 +1248,7 @@ mod tests {
 
     #[test]
     fn unknown_preset_id_is_none() {
-        assert!(vocal_chain_preset_by_id("nope").is_none());
+        assert!(vocal_chain_preset_by_id("nope", None).is_none());
     }
 
     #[test]
@@ -1227,5 +1262,50 @@ mod tests {
         // No measurement / non-finite → default to podcast.
         assert_eq!(recommend_vocal_preset(None), "voice-podcast");
         assert_eq!(recommend_vocal_preset(Some(f64::NAN)), "voice-podcast");
+    }
+
+    // ── T5: a real measurement must reach `afftdn:nf`, not the −25 guess ────────
+
+    #[test]
+    fn resolve_noise_floor_clamps_and_falls_back() {
+        // A church sanctuary's clean-take floor (−55…−70 dBFS) is well inside
+        // afftdn's [-80, -20] range — it must pass through UNCLAMPED.
+        assert_eq!(resolve_noise_floor_db(Some(-62.0)), -62.0);
+        assert_eq!(resolve_noise_floor_db(Some(-70.0)), -70.0);
+        // Outside afftdn's range in either direction → clamp, not a filter error.
+        assert_eq!(resolve_noise_floor_db(Some(-95.0)), -80.0);
+        assert_eq!(resolve_noise_floor_db(Some(-5.0)), -20.0);
+        // No measurement, or a non-finite one → the −25 "typical room" fallback.
+        assert_eq!(resolve_noise_floor_db(None), -25.0);
+        assert_eq!(resolve_noise_floor_db(Some(f64::NAN)), -25.0);
+        assert_eq!(resolve_noise_floor_db(Some(f64::INFINITY)), -25.0);
+    }
+
+    #[test]
+    fn preset_lookup_with_measurement_overrides_afftdn_nf_string() {
+        // WITH a measurement: the church-floor example from the T5 finding, −62
+        // dBFS, must show up verbatim in the rendered `afftdn=` filter string —
+        // not the preset's baked-in −25 guess.
+        let measured = vocal_chain_preset_by_id("voice-podcast", Some(-62.0)).unwrap();
+        let filters = measured.chain.build_filters();
+        assert!(
+            filters.iter().any(|f| f.starts_with("afftdn=") && f.contains(":nf=-62:")),
+            "expected nf=-62 from the measurement, got {filters:?}"
+        );
+
+        // WITHOUT a measurement: falls back to −25 — for EVERY preset, including
+        // `voice-noisy-room`, which used to bake in its own −20 guess.
+        let unmeasured_podcast = vocal_chain_preset_by_id("voice-podcast", None).unwrap();
+        assert!(unmeasured_podcast
+            .chain
+            .build_filters()
+            .iter()
+            .any(|f| f.starts_with("afftdn=") && f.contains(":nf=-25:")));
+        let unmeasured_noisy = vocal_chain_preset_by_id("voice-noisy-room", None).unwrap();
+        assert!(unmeasured_noisy
+            .chain
+            .build_filters()
+            .iter()
+            .any(|f| f.starts_with("afftdn=") && f.contains(":nf=-25:")));
     }
 }
