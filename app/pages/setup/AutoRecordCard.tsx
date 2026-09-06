@@ -50,7 +50,7 @@ import { useEffect } from "preact/hooks";
 
 import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
-import { t, tDyn, tf } from "../../i18n";
+import { t, tDyn, tf, tn } from "../../i18n";
 import { navigate } from "../../router/router";
 import { useDraftForm } from "../../settings/use-draft-form";
 import { usePatch } from "../../settings/use-patch";
@@ -156,7 +156,7 @@ export function AutoRecordCard({
       {plan ? <PlanEditor plan={plan} slots={slots} /> : null}
       {slots.length > 1 ? (
         <p data-testid="setup-auto-more" class={styles.hint}>
-          {tf("app.setup.auto.more", { n: slots.length })}
+          {tn("app.setup.auto.more", slots.length)}
         </p>
       ) : null}
       <BoundToggle

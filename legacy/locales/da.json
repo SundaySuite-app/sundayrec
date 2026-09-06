@@ -123,7 +123,10 @@
         "builtIn": "Computerens egen mikrofon",
         "builtInDesc": "Kun til test, eller hvis I ikke har en mixerpult.",
         "external": "USB / Ekstern",
-        "mixer": "Mixerpult · {n} kanaler",
+        "mixer": {
+          "one": "Mixerpult · {n} kanal",
+          "other": "Mixerpult · {n} kanaler"
+        },
         "whichChannels": "Hvilke kanaler?",
         "pairLabel": "Kanal {l} og {r}",
         "channelHint": "De, der har lyd nu, lyser.",
@@ -197,7 +200,10 @@
         "pick": "Kamera",
         "keepAudio": "Behold separat lydfil",
         "keepAudioDesc": "En ren lydfil ved siden af videoen.",
-        "delivers": "Kameraet leverer højst {height}p · {fps} billeder i sekundet.",
+        "delivers": {
+          "one": "Kameraet leverer højst {height}p · {n} billede i sekundet.",
+          "other": "Kameraet leverer højst {height}p · {n} billeder i sekundet."
+        },
         "probeFailed": "Vi kunne ikke læse, hvad kameraet kan. Optagelsen bruger det, kameraet faktisk leverer, op til 1080p.",
         "none": "Kan ikke finde et kamera",
         "noneDesc": "Tilslut et kamera, eller slå »Tag kamera med« fra."
@@ -214,7 +220,10 @@
         "nothingToSave": "Ingenting er ændret.",
         "launch": "Start automatisk med computeren",
         "launchDesc": "Uden det starter optagelsen ikke efter en genstart.",
-        "more": "Denne computer har {n} faste tidspunkter. Her ændrer du det første."
+        "more": {
+          "one": "Denne computer har {n} fast tidspunkt. Her ændrer du det.",
+          "other": "Denne computer har {n} faste tidspunkter. Her ændrer du det første."
+        }
       },
       "days": {
         "0": "Mandag",
@@ -853,7 +862,7 @@
     "analyzeSpeech": "Talesegmenter",
     "analyzeMusic": "Musiksegmenter",
     "analyzeSilence": "Stilhed",
-    "layersNotAnalyzed": "Kør «Analysér optagelse» under Klippeværktøj for at se tale, musik og stilhed her.",
+    "layersNotAnalyzed": "Kør »Analysér optagelse« under Klippeværktøj for at se tale, musik og stilhed her.",
     "markSermon": "↦ Markér prædiken automatisk",
     "markSermonHint": "Trimmer alt før og efter det fremhævede prædikenblok.",
     "sermonPickerLabel": "Er dette ikke prædikenen?",
@@ -913,7 +922,7 @@
     "diagnoseFail": "Kunne ikke analysere kanalerne.",
     "diagnosing": "Analyserer…",
     "enhanceTitle": "Lydforbedring",
-    "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format i eksportvinduet.",
+    "errInvalidFormat": "Formatet understøttes ikke til eksport. Vælg et andet format på siden Eksport.",
     "errPathNotAbsolute": "Ugyldig mappe eller filsti. Vælg destinationsmappen igen.",
     "metaDesc": "BESKRIVELSE",
     "metaSave": "Gem metadata",
@@ -975,7 +984,7 @@
     "qualityReasons": "Årsag: {r}",
     "qualityAction": "Vis optagelse",
     "errorInvalidOpts": "Ugyldige optagelsesindstillinger — genstart og prøv igen",
-    "errorNoSaveFolder": "Der er ikke valgt en mappe at gemme i — gå til Indstillinger → Optagelse",
+    "errorNoSaveFolder": "Der er ikke valgt en mappe at gemme i — gå til siden Optagelse og vælg en i kortet »Hvor skal optagelserne hen?«",
     "errorUnknown": "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
     "reconnectSecs": "s",
     "reconnecting": "Lydkilden er frakoblet — genopretter forbindelsen",
@@ -1001,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Dele anonym diagnostik?",
-    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → System.",
+    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → Avanceret.",
     "rePromptTitle": "Vi spørger dig igen",
     "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her."
   },
@@ -1047,7 +1056,7 @@
   "notify": {
     "prerollDead": "Forbufferen virker ikke — lyd fra før du trykker optag bliver ikke gemt.",
     "recoverySkipped": "En afbrudt optagelse kunne ikke gendannes helt: {file}",
-    "deviceMissing": "Lydenheden “{device}” er ikke tilsluttet.",
+    "deviceMissing": "Lydenheden »{device}« er ikke tilsluttet.",
     "diskLow": "Der begynder at være lidt plads tilbage på disken — {freeGb} GB ledig. Optagelsen stopper af sig selv, hvis disken bliver fuld.",
     "trashManifestUnreadable": "Papirkurvens indhold kunne ikke læses. Filerne ligger der stadig, men appen ved ikke længere, hvor de kom fra."
   }

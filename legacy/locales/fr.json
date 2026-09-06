@@ -123,7 +123,10 @@
         "builtIn": "Le microphone de l’ordinateur",
         "builtInDesc": "Pour tester seulement, ou si vous n’avez pas de table de mixage.",
         "external": "USB / Externe",
-        "mixer": "Table de mixage · {n} canaux",
+        "mixer": {
+          "one": "Table de mixage · {n} canal",
+          "other": "Table de mixage · {n} canaux"
+        },
         "whichChannels": "Quels canaux ?",
         "pairLabel": "Canaux {l} et {r}",
         "channelHint": "Ceux qui reçoivent du son s’allument.",
@@ -197,7 +200,10 @@
         "pick": "Caméra",
         "keepAudio": "Conserver un fichier audio séparé",
         "keepAudioDesc": "Un fichier audio seul à côté de la vidéo.",
-        "delivers": "La caméra fournit au maximum {height}p · {fps} images par seconde.",
+        "delivers": {
+          "one": "La caméra fournit au maximum {height}p · {n} image par seconde.",
+          "other": "La caméra fournit au maximum {height}p · {n} images par seconde."
+        },
         "probeFailed": "Nous n’avons pas pu lire les capacités de la caméra. L’enregistrement utilisera ce que la caméra fournit réellement, jusqu’à 1080p.",
         "none": "Aucune caméra trouvée",
         "noneDesc": "Branchez une caméra, ou désactivez « Inclure la caméra »."
@@ -214,7 +220,10 @@
         "nothingToSave": "Rien n’a changé.",
         "launch": "Lancer automatiquement avec l’ordinateur",
         "launchDesc": "Sans cela, l’enregistrement ne démarre pas après un redémarrage.",
-        "more": "Cet ordinateur a {n} horaires fixes. Ici, vous modifiez le premier."
+        "more": {
+          "one": "Cet ordinateur a {n} horaire fixe. Ici, vous le modifiez.",
+          "other": "Cet ordinateur a {n} horaires fixes. Ici, vous modifiez le premier."
+        }
       },
       "days": {
         "0": "Lundi",
@@ -771,7 +780,7 @@
     "confirmEmptyBody": "Les fichiers sont supprimés du disque. Cette action est irréversible.",
     "deletedAt": "Supprimé",
     "deletedAtLine": "{deletedAt} {when}",
-    "today": "aujourd'hui",
+    "today": "aujourd’hui",
     "yesterday": "hier",
     "daysAgo": {
       "one": "il y a {n} jour",
@@ -823,9 +832,9 @@
     "normalizeResult": "Crête désormais à -1 dBFS — sûr pour l’export.",
     "normalizeAlready": "La crête est déjà à -1 dBFS — aucune modification nécessaire.",
     "normalizeReset": "↺ Réinitialiser",
-    "normalizeExportHint": "La normalisation s'entend à l'export, pas à l'écoute de contrôle.",
+    "normalizeExportHint": "La normalisation s’entend à l’export, pas à l’écoute de contrôle.",
     "exportTitle": "Exporter…",
-    "exportType": "Type d'export",
+    "exportType": "Type d’export",
     "exportTypeVideo": "Vidéo (avec audio)",
     "exportTypeAudio": "Audio uniquement",
     "exportFormat": "Format",
@@ -853,8 +862,8 @@
     "analyzeSpeech": "Segments parlés",
     "analyzeMusic": "Segments musicaux",
     "analyzeSilence": "Silence",
-    "layersNotAnalyzed": "Lancez «Analyser l'enregistrement» dans Outils de coupe pour voir ici la parole, la musique et le silence.",
-    "markSermon": "↦ Marquer le sermon automatiquement",
+    "layersNotAnalyzed": "Lancez «Analyser l’enregistrement» dans Outils de coupe pour voir ici la parole, la musique et le silence.",
+    "markSermon": "↦ Marquer la prédication automatiquement",
     "markSermonHint": "Coupe tout avant et après le bloc de prédication mis en évidence.",
     "sermonPickerLabel": "N’est-ce pas la prédication ?",
     "speechBlock": "Bloc de parole",
@@ -867,7 +876,7 @@
     "willBeTrimmed": "sera supprimé",
     "willRemain": "de prédication restant",
     "analyzedAt": "Dernière analyse",
-    "tabsAria": "Outils de l'enregistrement",
+    "tabsAria": "Outils de l’enregistrement",
     "tabAudio": "Audio",
     "tabContent": "Contenu",
     "tabClip": "Outils de coupe",
@@ -880,12 +889,12 @@
     "tlIntro": "Intro",
     "tlMain": "Enregistrement principal",
     "tlOutro": "Outro",
-    "sermonLabel": "Sermon estimé",
+    "sermonLabel": "Prédication estimée",
     "tooltipSpeech": "Parole",
     "tooltipMusic": "Musique",
     "tooltipSilence": "Silence",
     "tooltipMixed": "Mixte",
-    "tooltipSermon": "Sermon estimé",
+    "tooltipSermon": "Prédication estimée",
     "export320kbps": "320 kbps (haute qualité)",
     "kbdJumpToSermon": "Aller à la prédication",
     "errNoAudioRemaining": "Plus d’audio — les coupes couvrent tout l’enregistrement. Retirez au moins une coupe avant d’exporter.",
@@ -893,10 +902,10 @@
     "errTimeout": "L’export a pris trop de temps et a été arrêté. Réessayez ou divisez le fichier en plusieurs enregistrements.",
     "errFileNotFound": "Le fichier original n’est pas disponible — le disque est-il déconnecté ?",
     "errCutData": "Erreur interne dans les données de coupe. Essayez de recharger le fichier.",
-    "playbackViaProxy": "La lecture passe par un fichier intermédiaire temporaire (pleine qualité). L'export utilise toujours l'original.",
+    "playbackViaProxy": "La lecture passe par un fichier intermédiaire temporaire (pleine qualité). L’export utilise toujours l’original.",
     "analyzingWaveform": "Analyse de la forme d’onde…",
     "preparingPlayback": "Préparation de la lecture…",
-    "qualityFallback": "La lecture n'est pas disponible pour ce fichier — ce format ne peut pas être lu ici. Le découpage et l'export fonctionnent normalement.",
+    "qualityFallback": "La lecture n’est pas disponible pour ce fichier — ce format ne peut pas être lu ici. Le découpage et l’export fonctionnent normalement.",
     "autoEnhance": "✨ Amélioration audio automatique (un clic)",
     "autoEnhanceFail": "Impossible d’analyser l’audio (nécessite la version éditeur).",
     "autoEnhancing": "✨ Analyse en cours…",
@@ -913,7 +922,7 @@
     "diagnoseFail": "Impossible d’analyser les canaux.",
     "diagnosing": "Analyse en cours…",
     "enhanceTitle": "Amélioration audio",
-    "errInvalidFormat": "Ce format n’est pas pris en charge pour l’export. Choisissez un autre format dans la fenêtre d’export.",
+    "errInvalidFormat": "Ce format n’est pas pris en charge pour l’export. Choisissez un autre format sur la page Export.",
     "errPathNotAbsolute": "Dossier ou chemin de fichier non valide. Sélectionnez à nouveau le dossier de destination.",
     "metaDesc": "DESCRIPTION",
     "metaSave": "Enregistrer les métadonnées",
@@ -971,28 +980,28 @@
     "errorEngineExited": "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et lancez le Diagnostic si cela se répète.",
     "errorVideoCapture": "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
     "errorMux": "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu.",
-    "qualityAlarm": "ATTENTION : Il manque de l'audio à l'enregistrement — le fichier contient {m} des {e} secondes. Vérifiez l'enregistrement avant de vous y fier.",
+    "qualityAlarm": "ATTENTION : Il manque de l’audio à l’enregistrement — le fichier contient {m} des {e} secondes. Vérifiez l’enregistrement avant de vous y fier.",
     "qualityReasons": "Cause : {r}",
     "qualityAction": "Afficher l’enregistrement",
     "errorInvalidOpts": "Réglages d’enregistrement non valides — redémarrez et réessayez",
-    "errorNoSaveFolder": "Aucun dossier de sauvegarde choisi — allez dans Réglages → Enregistrement",
+    "errorNoSaveFolder": "Aucun dossier de sauvegarde choisi — allez sur la page Enregistrement et choisissez-en un dans la carte « Où vont les enregistrements ? »",
     "errorUnknown": "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts",
     "reconnectSecs": "s",
     "reconnecting": "Source audio déconnectée — reconnexion en cours",
     "silenceWarn": "Silence détecté — l’enregistrement s’arrêtera automatiquement si le silence persiste.",
     "videoNone": "Pas de vidéo (audio seulement)",
     "videoListError": "Erreur de chargement des caméras",
-    "autostopFailed": "Impossible de modifier l'arrêt automatique. L'enregistrement continue — arrêtez-le manuellement si nécessaire.",
+    "autostopFailed": "Impossible de modifier l’arrêt automatique. L’enregistrement continue — arrêtez-le manuellement si nécessaire.",
     "autostopIn": "Arrêt auto dans",
     "extend15": "+ 15 min",
-    "cancelAutostop": "Annuler l'arrêt auto",
-    "qrNoAudio": "Aucun son n'a été capté — le fichier est trop petit pour contenir quoi que ce soit.",
-    "qrSilent": "L'enregistrement est silencieux — aucun signal. Vérifiez le périphérique et le gain.",
+    "cancelAutostop": "Annuler l’arrêt auto",
+    "qrNoAudio": "Aucun son n’a été capté — le fichier est trop petit pour contenir quoi que ce soit.",
+    "qrSilent": "L’enregistrement est silencieux — aucun signal. Vérifiez le périphérique et le gain.",
     "qrGapFail": "Des parties du son manquent ou sont silencieuses — saccades ou coupures.",
     "qrDropsFail": "De nombreuses coupures du périphérique audio.",
-    "qrSampleRate": "La fréquence d'échantillonnage a été forcée hors de celle du périphérique — la conversion peut provoquer des coupures.",
-    "qrGapWarn": "Un petit trou ou un silence dans l'enregistrement.",
-    "qrLowSignal": "Signal faible — envisagez d'augmenter le gain.",
+    "qrSampleRate": "La fréquence d’échantillonnage a été forcée hors de celle du périphérique — la conversion peut provoquer des coupures.",
+    "qrGapWarn": "Un petit trou ou un silence dans l’enregistrement.",
+    "qrLowSignal": "Signal faible — envisagez d’augmenter le gain.",
     "qrDropsWarn": "Quelques coupures du périphérique audio.",
     "qrClean": "Enregistrement régulier, aucune coupure."
   },
@@ -1001,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Partager des diagnostics anonymes ?",
-    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Paramètres → Système.",
+    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Avancé.",
     "rePromptTitle": "Nous vous reposons la question",
     "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
   },
@@ -1030,11 +1039,11 @@
     "cancel": "Pas maintenant"
   },
   "health": {
-    "micDenied": "L'accès au microphone est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Microphone et activez SundayRec.",
-    "micRestricted": "L'accès au microphone est bloqué par un administrateur système ou le contrôle parental. L'enregistrement ne fonctionnera pas tant que le blocage persiste.",
-    "cameraDenied": "L'accès à la caméra est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Caméra et activez SundayRec.",
-    "cameraRestricted": "L'accès à la caméra est bloqué par un administrateur système ou le contrôle parental. L'enregistrement vidéo ne fonctionnera pas tant que le blocage persiste.",
-    "ffmpegMissing": "Le moteur audio intégré (ffmpeg) est introuvable. La vidéo, l'export et le montage ne fonctionneront pas — réinstallez l'application."
+    "micDenied": "L’accès au microphone est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Microphone et activez SundayRec.",
+    "micRestricted": "L’accès au microphone est bloqué par un administrateur système ou le contrôle parental. L’enregistrement ne fonctionnera pas tant que le blocage persiste.",
+    "cameraDenied": "L’accès à la caméra est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Caméra et activez SundayRec.",
+    "cameraRestricted": "L’accès à la caméra est bloqué par un administrateur système ou le contrôle parental. L’enregistrement vidéo ne fonctionnera pas tant que le blocage persiste.",
+    "ffmpegMissing": "Le moteur audio intégré (ffmpeg) est introuvable. La vidéo, l’export et le montage ne fonctionneront pas — réinstallez l’application."
   },
   "progress": {
     "etaCalculating": "estimation …",
@@ -1045,10 +1054,10 @@
     "etaHoursMinutes": "environ {h} h {m} min restantes"
   },
   "notify": {
-    "prerollDead": "La mémoire tampon ne fonctionne pas — le son capté avant que vous appuyiez sur enregistrer n'est pas conservé.",
-    "recoverySkipped": "Un enregistrement interrompu n'a pas pu être entièrement récupéré : {file}",
-    "deviceMissing": "Le périphérique audio « {device} » n'est pas connecté.",
-    "diskLow": "L'espace disque commence à manquer — {freeGb} Go libres. L'enregistrement s'arrêtera de lui-même si le disque est plein.",
-    "trashManifestUnreadable": "Le contenu de la corbeille n'a pas pu être lu. Les fichiers sont toujours là, mais l'application ne sait plus d'où ils viennent."
+    "prerollDead": "La mémoire tampon ne fonctionne pas — le son capté avant que vous appuyiez sur enregistrer n’est pas conservé.",
+    "recoverySkipped": "Un enregistrement interrompu n’a pas pu être entièrement récupéré : {file}",
+    "deviceMissing": "Le périphérique audio « {device} » n’est pas connecté.",
+    "diskLow": "L’espace disque commence à manquer — {freeGb} Go libres. L’enregistrement s’arrêtera de lui-même si le disque est plein.",
+    "trashManifestUnreadable": "Le contenu de la corbeille n’a pas pu être lu. Les fichiers sont toujours là, mais l’application ne sait plus d’où ils viennent."
   }
 }

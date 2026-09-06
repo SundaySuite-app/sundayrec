@@ -81,26 +81,29 @@ export function requiredCategories(locale: string): Set<string> {
 }
 
 /**
- * ## Pauset paritet — «Frivilligen først» (S1a, 2026-08)
+ * ## Pausemekanismen — tom, og med vilje beholdt (S1a 2026-08, S6 2026-09)
  *
- * Redesignet river og bygger UI-teksten i `app/` om igjen, skjerm for skjerm,
- * gjennom seks faser. Å oversette hver nye nøkkel til sju språk mens teksten
- * fortsatt flytter seg er å oversette det samme fire ganger — og en oversetter
- * som får det samme til gjennomsyn fire ganger slutter å lese nøye.
+ * ✅ **Ingenting er pauset i dag.** Alle sju språk står i `ACTIVE_LOCALES`
+ * (`app/i18n/index.ts`), `PAUSED_KEYS` under er tom, og hele nøkkelsettet
+ * kreves i alle sju katalogene. Lista her navngir hvilke språk som KAN pauses,
+ * ikke hvilke som er det.
  *
- * Så: `app/` er norsk + engelsk (`ACTIVE_LOCALES` i `app/i18n/index.ts`) fram
- * til fase B, og de fem andre språkene er PAUSET for de nøklene redesignet
- * legger til — og BARE for dem.
+ * Bakgrunnen: redesignet rev og bygde UI-teksten i `app/` om igjen, skjerm for
+ * skjerm, gjennom seks faser. Å oversette hver nye nøkkel til sju språk mens
+ * teksten fortsatt flytter seg er å oversette det samme fire ganger — og en
+ * oversetter som får det samme til gjennomsyn fire ganger slutter å lese nøye.
+ * Så `app/` var norsk + engelsk fram til språkrunden, og de fem andre språkene
+ * var pauset for de nøklene redesignet la til — og BARE for dem.
  *
  * Det er hele poenget med `PAUSED_KEYS`. Den er en eksplisitt, innsjekket
- * liste: en nøkkel som fantes FØR redesignet har nøyaktig de kravene den
- * alltid har hatt, og en glemt oversettelse av gammel tekst er fortsatt en
- * feilende test. Bare det som står i lista slipper unna, og bare i de fem
- * pausete språkene — «ingen EKSTRA nøkler» gjelder fortsatt overalt, så et
- * språk kan aldri få tekst no.json ikke har.
+ * liste: en nøkkel som fantes FØR pausen har nøyaktig de kravene den alltid
+ * har hatt, og en glemt oversettelse av gammel tekst er fortsatt en feilende
+ * test. Bare det som står i lista slipper unna, og bare i de pausete språkene
+ * — «ingen EKSTRA nøkler» gjelder overalt uansett, så et språk kan aldri få
+ * tekst no.json ikke har.
  *
- * Fase B tømmer lista. Den går derfor bare én vei som skrallen: å legge noe
- * til her er en beslutning noen må skrive ned, ikke noe som siger inn.
+ * Lista går bare én vei, som en skralle: å legge noe til her er en beslutning
+ * noen må skrive ned, ikke noe som siger inn.
  */
 export const PAUSED_LOCALES = ['sv', 'da', 'de', 'fr', 'pl']
 
@@ -111,9 +114,14 @@ export const PAUSED_LOCALES = ['sv', 'da', 'de', 'fr', 'pl']
  * #229 sv, #230 da, #232 fr, og pl i samme PR som denne tømmingen), så
  * pause-vakten under («hver pauset nøkkel mangler i minst ett pauset
  * språk») krevde at lista ble tom i samme øyeblikk som det siste språket
- * kom inn. MEKANISMEN står: en ny nøkkel som ikke kan oversettes til alle
- * sju med én gang, pauses her i en append-blokk med kommentarhode
- * (`// F2-<id>`) — og forsvinner igjen når oversettelsen kommer.
+ * kom inn. F2-S6 tok konsekvensen av det og aktiverte alle sju i appen.
+ *
+ * MEKANISMEN står: en ny nøkkel som ikke kan oversettes til alle sju med én
+ * gang, pauses her i en append-blokk med kommentarhode (`// F2-<id>`) — og
+ * forsvinner igjen når oversettelsen kommer. ⚠️ Fra og med S6 er REGELEN at
+ * en ny nøkkel skal inn i alle sju katalogene i samme PR (tom nøkkel = tom
+ * tekst er ikke et alternativ — den blir en tom etikett i UI). Lista her er
+ * unntaket noen må argumentere for, ikke standardveien.
  */
 export const PAUSED_KEYS = new Set<string>([])
 

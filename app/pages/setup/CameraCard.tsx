@@ -34,7 +34,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import { t, tf } from "../../i18n";
+import { t, tn } from "../../i18n";
 import { confirmIfRecordingImminent } from "../../settings/guards";
 import {
   loadVideoDevices,
@@ -169,9 +169,11 @@ function CameraPicker() {
         if (!alive) return;
         setCapability(
           cap && cap.supportedResolutions.length > 0
-            ? tf("app.setup.camera.delivers", {
+            ? // Bilderaten er TELLINGEN («1 bilde» / «5 klatek»), oppløsningen
+              // er en vanlig innsetting. `tn` binder `{n}` til count og tar
+              // resten som params — se `app/i18n/index.ts`.
+              tn("app.setup.camera.delivers", cap.maxFps, {
                 height: cap.maxHeight,
-                fps: cap.maxFps,
               })
             : t("app.setup.camera.probeFailed"),
         );

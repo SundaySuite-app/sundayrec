@@ -156,45 +156,48 @@ test.describe("kvalitet", () => {
 });
 
 test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
-  test("et pauset språk (tysk) vises EKTE og deaktivert, ikke stille som «Norsk»", async ({
+  test("et lagret «de» starter appen på TYSK, og tysk er velgbart", async ({
     page,
   }) => {
-    // Migrert fra legacy: `settings.language` kan stå på et av de fem PAUSEDE
-    // språkene. `resolveStartupLocale` (`app/i18n/index.ts`) mapper det til et
-    // aktivt språk ved oppstart — men skriver ALDRI verdien tilbake, med
-    // vilje. Før R9 fikk `<Select>` da en `value` («de») INGEN `<option>`
-    // hadde, og en `<select>` uten treff blant sine egne options viser stille
-    // den FØRSTE optionen — «Norsk»/«Norwegian», uansett hva som faktisk stod
-    // lagret.
+    // Migrert fra legacy: `settings.language` kan stå på hva som helst av de
+    // sju. Gjennom redesignet var bare norsk og engelsk aktive, og da mappet
+    // `resolveStartupLocale` «de» til engelsk mens basen beholdt «de» — som ga
+    // `<Select>` en `value` INGEN `<option>` hadde, og en `<select>` uten treff
+    // blant sine egne options viser stille den FØRSTE optionen.
+    //
+    // F2-S6 fjernet grunnen til mappingen: alle sju er aktive, så «de» brukes
+    // som det står. Påstanden er flyttet, ikke svekket — det som skal bevises
+    // er fortsatt at det lagrede valget er DET boksen viser.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, language: "de" },
       goto: "settings",
     });
 
-    // Tysk er ikke aktivt, så appen selv står på engelsk — nærmeste aktive
-    // språk for alt utenom svensk/dansk (`resolveStartupLocale`).
+    // Appen SELV står på tysk nå — ikke på nærmeste nabospråk.
     await expect(page.getByTestId("setup-church")).toBeVisible();
+    await expect(page.getByTestId("setup-church-lede")).toHaveText(
+      "Der Name und die Sprache, die die App verwendet.",
+    );
 
     const select = page.getByTestId("church-language-control-input");
     await expect(select).toHaveValue("de");
 
-    // Den tredje raden bærer det EKTE navnet — ikke ekkoet av koden — og kan
-    // ikke velges på nytt.
+    // Raden bærer det EKTE navnet — på tysk, siden det er appens språk — og er
+    // velgbar som alle de andre.
     const german = select.locator('option[value="de"]');
-    await expect(german).toHaveText("German");
-    await expect(german).toBeDisabled();
-    // De to aktive står der fortsatt, og ER velgbare.
-    await expect(select.locator('option[value="no"]')).toBeEnabled();
-    await expect(select.locator('option[value="en"]')).toBeEnabled();
+    await expect(german).toHaveText("Deutsch");
+    await expect(german).toBeEnabled();
+    await expect(select.locator("option")).toHaveCount(7);
+    for (const code of ["no", "en", "sv", "da", "fr", "pl"]) {
+      await expect(select.locator(`option[value="${code}"]`)).toBeEnabled();
+    }
 
-    // Og linja under boksen sier hvorfor, uten å late som ingenting er galt.
-    await expect(page.getByTestId("church-language-paused")).toHaveText(
-      "This language is temporarily unavailable in the redesigned setup — the app shows English for now.",
-    );
+    // Og ingen linje under boksen unnskylder noe: ingenting er pauset.
+    await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
   });
 
-  test("et AKTIVT språk viser ingen tredje rad og ingen pauset-linje", async ({
+  test("valgboksen tilbyr alle sju katalogene, ingen deaktivert", async ({
     page,
   }) => {
     await boot(page, {
@@ -205,8 +208,31 @@ test.describe("kirkeprofilen — språket til en migrert profil (R9)", () => {
 
     const select = page.getByTestId("church-language-control-input");
     await expect(select).toHaveValue("no");
-    await expect(select.locator("option")).toHaveCount(2);
+    await expect(select.locator("option")).toHaveCount(7);
+    await expect(select.locator("option:disabled")).toHaveCount(0);
     await expect(page.getByTestId("church-language-paused")).toHaveCount(0);
+  });
+
+  test("et språkbytte til polsk maler skjermen om, og lagres", async ({
+    page,
+  }) => {
+    // Den nye halvdelen av S6: et av de fem språkene som var pauset er nå et
+    // valg en frivillig faktisk kan ta. Byttet skjer i samme frame (`setLocale`
+    // laster katalogen FØR signalet flippes), og verdien skrives.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { ...SETTLED_SETTINGS, language: "no" },
+      goto: "settings",
+    });
+
+    await page.getByTestId("church-language-control-input").selectOption("pl");
+
+    await expect(page.getByTestId("setup-church-lede")).toHaveText(
+      "Nazwa i język, których używa aplikacja.",
+    );
+    await expect
+      .poll(async () => (await storedSettings(page)).language)
+      .toBe("pl");
   });
 });
 

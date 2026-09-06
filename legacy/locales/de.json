@@ -123,7 +123,10 @@
         "builtIn": "Eingebautes Mikrofon",
         "builtInDesc": "Nur zum Testen, oder wenn Sie kein Mischpult haben.",
         "external": "USB / Extern",
-        "mixer": "Mischpult · {n} Kanäle",
+        "mixer": {
+          "one": "Mischpult · {n} Kanal",
+          "other": "Mischpult · {n} Kanäle"
+        },
         "whichChannels": "Welche Kanäle?",
         "pairLabel": "Kanal {l} und {r}",
         "channelHint": "Die, auf denen jetzt Ton ist, leuchten.",
@@ -197,7 +200,10 @@
         "pick": "Kamera",
         "keepAudio": "Separate Audiodatei behalten",
         "keepAudioDesc": "Eine reine Audiodatei neben dem Video.",
-        "delivers": "Die Kamera liefert höchstens {height}p · {fps} Bilder pro Sekunde.",
+        "delivers": {
+          "one": "Die Kamera liefert höchstens {height}p · {n} Bild pro Sekunde.",
+          "other": "Die Kamera liefert höchstens {height}p · {n} Bilder pro Sekunde."
+        },
         "probeFailed": "Wir konnten nicht auslesen, was die Kamera kann. Die Aufnahme nutzt das, was die Kamera tatsächlich liefert, bis zu 1080p.",
         "none": "Wir finden keine Kamera",
         "noneDesc": "Schließen Sie eine Kamera an, oder schalten Sie „Mit Kamera aufnehmen“ aus."
@@ -214,7 +220,10 @@
         "nothingToSave": "Es hat sich nichts geändert.",
         "launch": "Automatisch mit dem Computer starten",
         "launchDesc": "Ohne dies startet die Aufnahme nach einem Neustart nicht.",
-        "more": "Dieser Computer hat {n} feste Zeiten. Hier ändern Sie die erste."
+        "more": {
+          "one": "Dieser Computer hat {n} feste Zeit. Hier ändern Sie sie.",
+          "other": "Dieser Computer hat {n} feste Zeiten. Hier ändern Sie die erste."
+        }
       },
       "days": {
         "0": "Montag",
@@ -913,7 +922,7 @@
     "diagnoseFail": "Kanäle konnten nicht analysiert werden.",
     "diagnosing": "Analysiert…",
     "enhanceTitle": "Klangverbesserung",
-    "errInvalidFormat": "Dieses Format wird für den Export nicht unterstützt. Wählen Sie im Exportfenster ein anderes Format.",
+    "errInvalidFormat": "Dieses Format wird für den Export nicht unterstützt. Wählen Sie auf der Seite „Export“ ein anderes Format.",
     "errPathNotAbsolute": "Ungültiger Ordner oder Dateipfad. Wählen Sie den Zielordner erneut.",
     "metaDesc": "BESCHREIBUNG",
     "metaSave": "Metadaten speichern",
@@ -975,7 +984,7 @@
     "qualityReasons": "Ursache: {r}",
     "qualityAction": "Aufnahme anzeigen",
     "errorInvalidOpts": "Ungültige Aufnahmeeinstellungen — neu starten und erneut versuchen",
-    "errorNoSaveFolder": "Kein Speicherordner gewählt — gehen Sie zu Einstellungen → Aufnahme",
+    "errorNoSaveFolder": "Kein Speicherordner gewählt — gehen Sie zur Seite „Aufnahme“ und wählen Sie einen in der Karte „Wohin mit den Aufnahmen?“",
     "errorUnknown": "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind",
     "reconnectSecs": "s",
     "reconnecting": "Audioquelle getrennt — verbindet neu",
@@ -1001,7 +1010,7 @@
   },
   "onboarding": {
     "promptTitle": "Anonyme Diagnosedaten teilen?",
-    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → System antworten.",
+    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → Erweitert antworten.",
     "rePromptTitle": "Wir fragen noch einmal nach",
     "rePromptDesc": "Sie haben dies bereits beantwortet, aber wir fragen erneut, weil sich erweitert hat, was gegebenenfalls geteilt wird: Ihre Korrekturen im Editor können jetzt auch ungefähr angeben, wie weit ein automatischer Vorschlag verschoben wurde — zum Beispiel „30–60 Sekunden früher“ — und nicht nur, dass er verschoben wurde. Der Text selbst wird nie gesendet. Ihre frühere Antwort wurde nicht übernommen, weder als Ja noch als Nein, und es wird nichts gesendet, bevor Sie hier antworten."
   },

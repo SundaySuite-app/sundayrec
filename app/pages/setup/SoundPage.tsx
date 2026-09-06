@@ -49,7 +49,7 @@ import { isBuiltInDevice } from "@lib/audio/capture";
 import { nextSignalState } from "@lib/pages/channel-grid-logic";
 import type { VuLevels } from "@legacy/bindings/VuLevels";
 
-import { t, tf } from "../../i18n";
+import { t, tf, tn } from "../../i18n";
 import { navigate } from "../../router/router";
 import { confirmIfRecordingImminent } from "../../settings/guards";
 import { usePatch } from "../../settings/use-patch";
@@ -286,7 +286,7 @@ function toOption(device: AudioDeviceOption): RadioOption {
     description: device.asio
       ? ASIO
       : device.channels > 2
-        ? tf("app.setup.sound.mixer", { n: device.channels })
+        ? tn("app.setup.sound.mixer", device.channels)
         : builtIn
           ? t("app.setup.sound.builtInDesc")
           : t("app.setup.sound.external"),

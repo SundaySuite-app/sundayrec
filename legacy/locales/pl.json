@@ -123,7 +123,12 @@
         "builtIn": "Wbudowany mikrofon komputera",
         "builtInDesc": "Tylko do testów albo jeśli nie masz miksera.",
         "external": "USB / Zewnętrzne",
-        "mixer": "Mikser · kanały: {n}",
+        "mixer": {
+          "one": "Mikser · {n} kanał",
+          "few": "Mikser · {n} kanały",
+          "many": "Mikser · {n} kanałów",
+          "other": "Mikser · {n} kanału"
+        },
         "whichChannels": "Które kanały?",
         "pairLabel": "Kanał {l} i {r}",
         "channelHint": "Te, które mają teraz dźwięk, świecą.",
@@ -197,7 +202,12 @@
         "pick": "Kamera",
         "keepAudio": "Zachowaj osobny plik audio",
         "keepAudioDesc": "Czysty plik audio obok wideo.",
-        "delivers": "Kamera daje maksymalnie {height}p · {fps} klatek na sekundę.",
+        "delivers": {
+          "one": "Kamera daje maksymalnie {height}p · {n} klatkę na sekundę.",
+          "few": "Kamera daje maksymalnie {height}p · {n} klatki na sekundę.",
+          "many": "Kamera daje maksymalnie {height}p · {n} klatek na sekundę.",
+          "other": "Kamera daje maksymalnie {height}p · {n} klatki na sekundę."
+        },
         "probeFailed": "Nie udało się odczytać, co potrafi kamera. Nagranie użyje tego, co kamera faktycznie daje, do 1080p.",
         "none": "Nie znaleziono kamery",
         "noneDesc": "Podłącz kamerę albo wyłącz „Dołącz kamerę”."
@@ -214,7 +224,12 @@
         "nothingToSave": "Nic się nie zmieniło.",
         "launch": "Uruchamiaj razem z komputerem",
         "launchDesc": "Bez tego nagrywanie nie wystartuje po ponownym uruchomieniu.",
-        "more": "Stałych godzin na tym komputerze: {n}. Tutaj zmieniasz pierwszą."
+        "more": {
+          "one": "Ten komputer ma {n} stałą godzinę. Tutaj ją zmieniasz.",
+          "few": "Ten komputer ma {n} stałe godziny. Tutaj zmieniasz pierwszą.",
+          "many": "Ten komputer ma {n} stałych godzin. Tutaj zmieniasz pierwszą.",
+          "other": "Ten komputer ma {n} stałej godziny. Tutaj zmieniasz pierwszą."
+        }
       },
       "days": {
         "0": "Poniedziałek",
@@ -925,7 +940,7 @@
     "diagnoseFail": "Nie udało się przeanalizować kanałów.",
     "diagnosing": "Analizowanie…",
     "enhanceTitle": "Poprawa dźwięku",
-    "errInvalidFormat": "Ten format nie jest obsługiwany przy eksporcie. Wybierz inny format w oknie eksportu.",
+    "errInvalidFormat": "Ten format nie jest obsługiwany przy eksporcie. Wybierz inny format na stronie Eksport.",
     "errPathNotAbsolute": "Nieprawidłowy folder lub ścieżka pliku. Wybierz ponownie folder docelowy.",
     "metaDesc": "OPIS",
     "metaSave": "Zapisz metadane",
@@ -987,7 +1002,7 @@
     "qualityReasons": "Przyczyna: {r}",
     "qualityAction": "Pokaż nagranie",
     "errorInvalidOpts": "Nieprawidłowe ustawienia nagrywania — uruchom ponownie i spróbuj jeszcze raz",
-    "errorNoSaveFolder": "Nie wybrano folderu zapisu — przejdź do Ustawienia → Nagrywanie",
+    "errorNoSaveFolder": "Nie wybrano folderu zapisu — przejdź na stronę Nagrywanie i wybierz go w karcie „Gdzie zapisywać nagrania?”",
     "errorUnknown": "Coś poszło nie tak podczas nagrywania — sprawdź, czy urządzenie audio i folder zapisu są gotowe",
     "reconnectSecs": "s",
     "reconnecting": "Źródło dźwięku odłączone — ponowne łączenie",
@@ -1013,7 +1028,7 @@
   },
   "onboarding": {
     "promptTitle": "Udostępniać anonimową diagnostykę?",
-    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → System.",
+    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → Zaawansowane.",
     "rePromptTitle": "Pytamy jeszcze raz",
     "rePromptDesc": "Odpowiadałeś już na to pytanie, ale zadajemy je ponownie, ponieważ zakres tego, co ewentualnie jest udostępniane, został rozszerzony: Twoje korekty w edytorze mogą teraz również podawać, o ile mniej więcej przesunięto automatyczną propozycję — na przykład „30–60 sekund wcześniej” — a nie tylko to, że została przesunięta. Sam tekst nigdy nie jest wysyłany. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj."
   },
@@ -1048,7 +1063,7 @@
   "health": {
     "micDenied": "Odmówiono dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność i ochrona → Mikrofon i włącz SundayRec.",
     "micRestricted": "Dostęp do mikrofonu jest zablokowany przez administratora systemu lub kontrolę rodzicielską. Nagrywanie nie zadziała, dopóki blokada nie zostanie zdjęta.",
-    "cameraDenied": "Odmówiono dostępu do kamery. Otwórz Ustawienia systemowe → Prywatność i ochrona → Aparat i włącz SundayRec.",
+    "cameraDenied": "Odmówiono dostępu do kamery. Otwórz Ustawienia systemowe → Prywatność i ochrona → Kamera i włącz SundayRec.",
     "cameraRestricted": "Dostęp do kamery jest zablokowany przez administratora systemu lub kontrolę rodzicielską. Nagrywanie wideo nie zadziała, dopóki blokada nie zostanie zdjęta.",
     "ffmpegMissing": "Nie znaleziono wbudowanego silnika dźwięku (ffmpeg). Wideo, eksport i edycja nie będą działać — zainstaluj aplikację ponownie."
   },
