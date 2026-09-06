@@ -701,6 +701,8 @@
       "includeVideoDesc": "Inspelningen har ett videospår. Utan det här blir exporten bara ljud.",
       "videoLocksFormat": "Formatet är MP4 så länge videon är med.",
       "about": "ca {mb} MB",
+      "level": "Nivå: {lufs} LUFS",
+      "levelCapped": "Nivå: {lufs} LUFS (begränsad av topparna)",
       "exported": "Exporterad",
       "exportAgain": "Exportera i ett annat format",
       "toLibrary": "Till biblioteket",

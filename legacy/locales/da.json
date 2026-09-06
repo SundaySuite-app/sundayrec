@@ -701,6 +701,8 @@
       "includeVideoDesc": "Optagelsen har et videospor. Uden det bliver eksporten kun lyd.",
       "videoLocksFormat": "Formatet er MP4, så længe videoen er med.",
       "about": "ca. {mb} MB",
+      "level": "Niveau: {lufs} LUFS",
+      "levelCapped": "Niveau: {lufs} LUFS (begrænset af toppene)",
       "exported": "Eksporteret",
       "exportAgain": "Eksportér i et andet format",
       "toLibrary": "Til biblioteket",

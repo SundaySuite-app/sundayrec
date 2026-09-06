@@ -701,6 +701,8 @@
       "includeVideoDesc": "L’enregistrement a une piste vidéo. Sans cela, l’export sera uniquement audio.",
       "videoLocksFormat": "Le format est MP4 tant que la vidéo est incluse.",
       "about": "env. {mb} Mo",
+      "level": "Niveau : {lufs} LUFS",
+      "levelCapped": "Niveau : {lufs} LUFS (limité par les crêtes)",
       "exported": "Exporté",
       "exportAgain": "Exporter dans un autre format",
       "toLibrary": "Vers la bibliothèque",

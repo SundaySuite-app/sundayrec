@@ -7,11 +7,39 @@
 //!   1. **measure** — run the preset chain + `loudnorm(print_format=json)` to a
 //!      null sink; parse the measured `input_i / input_lra / input_tp /
 //!      input_thresh / target_offset` from ffmpeg's stderr JSON block,
-//!   2. **apply** — re-run with those measured values fed back into `loudnorm`
-//!      in `linear=true` mode for a clean, deterministic result at the target.
+//!   2. **apply** — re-run with those measured values fed back into `loudnorm`,
+//!      asking for `linear=true`: ONE gain change over the whole file, no
+//!      programme-dependent riding.
 //!
-//! This module is the *pure* half: the preset table, the loudnorm JSON parser,
-//! and the three filter-string builders (measure / apply / preview). The
+//! ## `linear=true` is a WISH, not an instruction
+//!
+//! This is the part that used to be untrue in the doc above. `linear=true` is
+//! ffmpeg's *default*, and loudnorm silently falls back to its 3-second gain
+//! rider ("Dynamic") unless every one of these holds — verified against the
+//! bundled ffmpeg 8.1.2, each one measured, not read:
+//!
+//!   * `measured_LRA <= LRA` — the preset's LRA is a GATE, not a setting. A
+//!     sermon measuring LRA 12 against `speech-clear`'s `LRA=8` was normalised
+//!     dynamically, i.e. compressed, by the preset that promises it will not be.
+//!   * `measured_TP + (I − measured_I) <= TP` — the gain the target implies must
+//!     fit under the ceiling. −23 LUFS at −4 dBTP asked to reach −16 needs +7 LU,
+//!     which puts the peak at +3 dBTP: over the −1 ceiling, so: dynamic.
+//!   * `measured_LRA != 0` and `measured_thresh != -70` — these are loudnorm's
+//!     "not measured" SENTINELS, and they were also this module's defaults for a
+//!     missing JSON key. A truncated pass-1 block therefore produced a silently
+//!     dynamic pass 2 rather than an error.
+//!
+//! [`plan_pass2`] is the answer: it decides, from the pass-1 numbers, what pass 2
+//! can honestly deliver — raising the `LRA` gate to clear the measured range
+//! (harmless: in linear mode `LRA` steers nothing), and capping the gain at the
+//! true-peak ceiling, reporting the QUIETER target it then lands on instead of
+//! reaching for one it can only hit by compressing. Dynamic normalisation stays
+//! available to ffmpeg as a fallback, but never as a silent substitute for what
+//! the preset said: the seam parses `Normalization Type` back out of pass 2 and
+//! says which one actually ran.
+//!
+//! This module is the *pure* half: the preset table, the loudnorm parsers, the
+//! pass-2 plan, and the filter-string builders (measure / apply / preview). The
 //! `src-tauri` shell (`media::mastering`, behind the `editor` feature) spawns
 //! ffmpeg with these strings and parses progress.
 
@@ -117,9 +145,22 @@ pub struct LoudnessMeasurement {
 /// pass 1 and parse the five fields. Mirrors `parseLoudnormJson`:
 ///   - identify single-level `{…}` blocks by brace depth (loudnorm never nests),
 ///   - prefer the *last* block containing both `input_i` and `input_tp`,
-///   - parse the string-valued numeric fields, defaulting LRA→0, thresh→-70,
-///     offset→0 when absent/non-finite,
-///   - require finite `input_i` and `input_tp`, else return `None`.
+///   - parse the string-valued numeric fields,
+///   - require finite `input_i`, `input_tp`, `input_lra` AND `input_thresh`,
+///     else return `None`.
+///
+/// ⚠️ `input_lra` and `input_thresh` used to DEFAULT to `0` and `-70` when the
+/// key was missing or non-finite — which reads as a harmless "we don't know" and
+/// is nothing of the sort: those two numbers are precisely loudnorm's
+/// "not measured" sentinels, and either of them switches `linear=true` off
+/// (measured, ffmpeg 8.1.2). A garbled pass-1 block therefore produced a
+/// perfectly ordinary-looking pass 2 that quietly gain-rode the whole service.
+/// A measurement we could not read is now an ERROR the seam reports, not a
+/// different mastering nobody asked for.
+///
+/// `target_offset` keeps its `0` default: it is loudnorm's own suggested
+/// residual, unused in linear mode ([`plan_pass2`]), and absent from plenty of
+/// legitimate blocks.
 pub fn parse_loudnorm_json(stderr: &str) -> Option<LoudnessMeasurement> {
     if stderr.is_empty() {
         return None;
@@ -156,15 +197,15 @@ pub fn parse_loudnorm_json(stderr: &str) -> Option<LoudnessMeasurement> {
         let target_offset = val("target_offset")
             .or_else(|| val("normalization_type"))
             .unwrap_or(0.0);
-        match (input_i, input_tp) {
-            (Some(i), Some(tp)) if i.is_finite() && tp.is_finite() => {
+        let input_lra = val("input_lra").filter(|v| v.is_finite());
+        let input_thresh = val("input_thresh").filter(|v| v.is_finite());
+        match (input_i, input_tp, input_lra, input_thresh) {
+            (Some(i), Some(tp), Some(lra), Some(thresh)) if i.is_finite() && tp.is_finite() => {
                 return Some(LoudnessMeasurement {
                     input_i: i,
-                    input_lra: val("input_lra").filter(|v| v.is_finite()).unwrap_or(0.0),
+                    input_lra: lra,
                     input_tp: tp,
-                    input_thresh: val("input_thresh")
-                        .filter(|v| v.is_finite())
-                        .unwrap_or(-70.0),
+                    input_thresh: thresh,
                     target_offset: if target_offset.is_finite() {
                         target_offset
                     } else {
@@ -227,6 +268,199 @@ fn parse_float_lenient(s: &str) -> Option<f64> {
     t[..end].parse::<f64>().ok()
 }
 
+// ── What pass 2 can honestly deliver ──────────────────────────────────────────
+
+/// Which normalisation `loudnorm` actually performed — read back out of the
+/// pass-2 report, never assumed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NormalizationMode {
+    /// One constant gain over the whole file. What every preset promises.
+    Linear,
+    /// loudnorm's 3-second gain rider, with its own LRA reduction. Audible as
+    /// pumping on music, and the opposite of "Bevarer dynamikk".
+    Dynamic,
+}
+
+// ffmpeg's own domain for the `loudnorm` options we set — from
+// `ffmpeg -h filter=loudnorm` (8.1.2). Out-of-range values make ffmpeg REFUSE
+// the whole filter graph, so the plan clamps into these rather than trusting
+// that a measurement is sane.
+const FF_I_MIN: f64 = -70.0;
+const FF_I_MAX: f64 = -5.0;
+const FF_LRA_MIN: f64 = 1.0;
+const FF_LRA_MAX: f64 = 50.0;
+const FF_MEASURED_LRA_MAX: f64 = 99.0;
+/// loudnorm's "measured_LRA was not supplied" sentinel — and, therefore, a
+/// value we can never send for a range we DID measure.
+const FF_MEASURED_LRA_UNSET: f64 = 0.0;
+/// Ditto for the measurement threshold.
+const FF_MEASURED_THRESH_UNSET: f64 = -70.0;
+/// Ditto for the true peak.
+const FF_MEASURED_TP_UNSET: f64 = 99.0;
+/// The smallest LRA we may claim to have measured. See [`plan_pass2`].
+const LRA_SENTINEL_FLOOR: f64 = 0.01;
+
+/// What pass 2 will be asked to do, and what it can actually deliver.
+///
+/// Built by [`plan_pass2`] from the pass-1 measurement; rendered into the
+/// filter string by [`loudnorm_apply_filter`]. Everything the seam needs for an
+/// honest receipt is here, so nothing downstream has to re-derive it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pass2Plan {
+    /// The `I=` pass 2 is given — the preset's target, or a QUIETER one when the
+    /// true-peak ceiling capped the gain. This is the number to show the user.
+    pub target_lufs: f64,
+    /// The preset's own target, kept for the "…but you asked for −16" half of
+    /// the receipt.
+    pub preset_lufs: f64,
+    /// The `LRA=` gate pass 2 is given — at least the measured range, so
+    /// linear mode is reachable.
+    pub target_lra: f64,
+    /// The `TP=` ceiling, always the preset's: it is the one promise that must
+    /// not bend.
+    pub true_peak_db: f64,
+    /// The measured values as they will be SENT — rounded to the two decimals
+    /// the string carries (so this plan's arithmetic is ffmpeg's), with the
+    /// LRA sentinel repaired.
+    pub measured: LoudnessMeasurement,
+    /// The gain pass 2 applies, in LU. `target_lufs − measured.input_i`.
+    pub offset: f64,
+    /// True when the true-peak ceiling forced a quieter target than the preset's.
+    pub peak_limited: bool,
+    /// True when ffmpeg can honour `linear=true` from exactly these numbers.
+    /// False means "we could not make linear reachable" — the seam warns, and
+    /// the result says `Dynamic` rather than pretending.
+    pub linear: bool,
+}
+
+/// Round to the two decimals the filter string carries.
+fn r2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+/// Decide what pass 2 should ask ffmpeg for, given what pass 1 measured.
+///
+/// Three decisions, in order:
+///
+/// 1. **Raise the `LRA` gate to clear the measured range.**
+///    `LRA = max(preset, ceil(measured))`. In linear mode `LRA` steers nothing
+///    — loudnorm applies one gain and the range comes out as it went in — so
+///    the only thing the preset's LRA ever did on the apply pass was decide
+///    whether linear mode was allowed at all. Raising it costs nothing and is
+///    the difference between `music-speech` keeping the dynamics it advertises
+///    and having them ridden away.
+///
+/// 2. **Repair the `measured_LRA` sentinel.** A genuinely uniform signal
+///    measures `0.00`, which is byte-identical to loudnorm's "not supplied".
+///    We floor what we send at `0.01` — the smallest value the two-decimal
+///    string can express, and an upper bound on any range that printed as
+///    `0.00`. It changes no gain (linear mode does not use `measured_LRA` for
+///    anything but the gate) and it stops a lab-clean recording from being the
+///    one thing that gets compressed.
+///
+/// 3. **Cap the gain at the true-peak ceiling, and report the quieter target.**
+///    If reaching the preset's LUFS would push `measured_TP` over `TP`, the
+///    honest answer is not "compress it until it fits" — it is "this file lands
+///    at −18, not −16". So the plan lowers `I=` to `measured_I + (TP −
+///    measured_TP)`, which is the loudest level a single gain can reach without
+///    clipping, and flags `peak_limited` so the receipt can say so. Dynamic
+///    normalisation remains something a user could one day *choose*; it is no
+///    longer what they get by accident.
+///
+/// The cap carries 0.02 LU of slack. Pass 2's numbers reach ffmpeg as
+/// two-decimal strings and ffmpeg re-derives the gate from THOSE, so a target
+/// computed to sit exactly on the ceiling can land a rounding step above it —
+/// and a coin-flip between linear and dynamic is a far worse trade than 0.02 LU
+/// of loudness nobody can hear.
+pub fn plan_pass2(m: &LoudnessMeasurement, preset: &MasterPreset) -> Pass2Plan {
+    // Everything we send is rounded to 2 dp; plan on those numbers, not on the
+    // full-precision ones, so this plan and ffmpeg agree on the gate.
+    let mut measured = LoudnessMeasurement {
+        input_i: r2(m.input_i),
+        input_lra: r2(m.input_lra),
+        input_tp: r2(m.input_tp),
+        input_thresh: r2(m.input_thresh),
+        target_offset: r2(m.target_offset),
+    };
+
+    // 1. The gate, wide enough for the range we measured.
+    let target_lra = preset
+        .target_lra
+        .max(measured.input_lra.ceil())
+        .clamp(FF_LRA_MIN, FF_LRA_MAX);
+
+    // 2. The sentinel repair (and ffmpeg's own `measured_LRA` ceiling).
+    measured.input_lra = measured
+        .input_lra
+        .clamp(LRA_SENTINEL_FLOOR, FF_MEASURED_LRA_MAX);
+
+    // 3. The gain, capped by the ceiling.
+    let wanted = preset.target_lufs - measured.input_i;
+    let headroom = preset.true_peak_db - measured.input_tp;
+    let peak_limited = wanted > headroom;
+    let target_lufs = if peak_limited {
+        // In hundredths from end to end: the division by 100 is the ONE step,
+        // so the result is the double nearest a two-decimal number and
+        // `fmt_num` prints `-19.72`, not `-19.720000000000002`.
+        (((measured.input_i + headroom) * 100.0).round() - 2.0) / 100.0
+    } else {
+        preset.target_lufs
+    }
+    .clamp(FF_I_MIN, FF_I_MAX);
+    let offset = target_lufs - measured.input_i;
+
+    // Whether ffmpeg will honour `linear=true`, evaluated with ffmpeg's own
+    // predicate on the values we are about to hand it. Normally true by
+    // construction; false when a measurement collides with a sentinel we cannot
+    // repair (a near-silent file whose threshold really is −70) or when the I=
+    // clamp had to pull the target back up over the ceiling.
+    let linear = measured.input_tp != FF_MEASURED_TP_UNSET
+        && measured.input_thresh != FF_MEASURED_THRESH_UNSET
+        && measured.input_lra != FF_MEASURED_LRA_UNSET
+        && measured.input_lra <= target_lra
+        && measured.input_tp + offset <= preset.true_peak_db;
+
+    Pass2Plan {
+        target_lufs,
+        preset_lufs: preset.target_lufs,
+        target_lra,
+        true_peak_db: preset.true_peak_db,
+        measured,
+        offset,
+        peak_limited,
+        linear,
+    }
+}
+
+/// Read the normalisation `loudnorm` actually performed out of a pass-2 report.
+///
+/// Accepts BOTH shapes the filter can print, because the two apply paths differ:
+/// `print_format=summary`'s `Normalization Type:   Linear` and
+/// `print_format=json`'s `"normalization_type" : "linear"`. The LAST occurrence
+/// wins — a stderr tail can hold more than one pass.
+///
+/// `None` means "the report did not say", which the seam treats as "we don't
+/// know" rather than as either mode. Nothing here guesses.
+pub fn parse_normalization_mode(stderr: &str) -> Option<NormalizationMode> {
+    let mut found = None;
+    for line in stderr.lines() {
+        // summary: `Normalization Type:   Linear`
+        let value = line
+            .split("Normalization Type:")
+            .nth(1)
+            // json: `"normalization_type" : "linear",`
+            .or_else(|| line.split("\"normalization_type\"").nth(1));
+        let Some(v) = value else { continue };
+        let v = v.to_ascii_lowercase();
+        if v.contains("linear") {
+            found = Some(NormalizationMode::Linear);
+        } else if v.contains("dynamic") {
+            found = Some(NormalizationMode::Dynamic);
+        }
+    }
+    found
+}
+
 // ── Filter-chain builders ──────────────────────────────────────────────────────
 
 /// The pass-1 `loudnorm` filter ALONE — the preset's target triple plus
@@ -247,26 +481,32 @@ pub fn loudnorm_measure_filter(preset: &MasterPreset) -> String {
     )
 }
 
-/// The pass-2 `loudnorm` filter ALONE — target triple + the measured values in
-/// `linear=true` mode. The counterpart of [`loudnorm_measure_filter`]; the
-/// measured values are formatted to 2 decimals exactly as the TS `.toFixed(2)`
-/// did.
+/// The pass-2 `loudnorm` filter ALONE — built from a [`Pass2Plan`], never from
+/// the preset's targets directly. The counterpart of [`loudnorm_measure_filter`];
+/// the measured values are formatted to 2 decimals exactly as the TS
+/// `.toFixed(2)` did.
 ///
-/// `linear=true` is what makes the second pass a single, deterministic gain
-/// change (no programme-dependent riding), which is only honest when the values
-/// were measured over the SAME signal this filter now sees.
-pub fn loudnorm_apply_filter(preset: &MasterPreset, m: &LoudnessMeasurement) -> String {
+/// The plan is what makes `linear=true` mean something: `I=` and `LRA=` here are
+/// the ones [`plan_pass2`] proved reachable, not the ones the preset wished for.
+/// `print_format=summary` is load-bearing — it is how the seam learns which
+/// normalisation actually ran ([`parse_normalization_mode`]).
+///
+/// `offset=` still carries pass 1's own suggested residual. Linear mode IGNORES
+/// it (measured: an `offset=9` on a linear pass moved nothing), and it is the
+/// right value for the dynamic path we no longer choose but ffmpeg may still
+/// fall back to.
+pub fn loudnorm_apply_filter(plan: &Pass2Plan) -> String {
     format!(
         "loudnorm=I={}:LRA={}:TP={}:measured_I={:.2}:measured_LRA={:.2}:measured_TP={:.2}\
          :measured_thresh={:.2}:offset={:.2}:linear=true:print_format=summary",
-        fmt_num(preset.target_lufs),
-        fmt_num(preset.target_lra),
-        fmt_num(preset.true_peak_db),
-        m.input_i,
-        m.input_lra,
-        m.input_tp,
-        m.input_thresh,
-        m.target_offset
+        fmt_num(plan.target_lufs),
+        fmt_num(plan.target_lra),
+        fmt_num(plan.true_peak_db),
+        plan.measured.input_i,
+        plan.measured.input_lra,
+        plan.measured.input_tp,
+        plan.measured.input_thresh,
+        plan.measured.target_offset
     )
 }
 
@@ -276,10 +516,19 @@ pub fn build_measure_pass_filters(preset: &MasterPreset) -> String {
     format!("{},{}", preset.filters, loudnorm_measure_filter(preset))
 }
 
-/// Pass-2 (apply) filters: the preset chain + a `loudnorm` carrying the measured
-/// values in `linear=true` mode. Mirrors `buildApplyPassFilters`.
-pub fn build_apply_pass_filters(preset: &MasterPreset, m: &LoudnessMeasurement) -> String {
-    format!("{},{}", preset.filters, loudnorm_apply_filter(preset, m))
+/// Pass-2 (apply) filters: the preset chain + the planned `loudnorm`. Mirrors
+/// `buildApplyPassFilters`. Returns the plan alongside the string, because the
+/// caller has to report what the plan settled on (which target, linear or not)
+/// and re-deriving it would be a second place that could disagree.
+pub fn build_apply_pass_filters(
+    preset: &MasterPreset,
+    m: &LoudnessMeasurement,
+) -> (String, Pass2Plan) {
+    let plan = plan_pass2(m, preset);
+    (
+        format!("{},{}", preset.filters, loudnorm_apply_filter(&plan)),
+        plan,
+    )
 }
 
 /// Single-pass preview filters — target loudnorm only, lower CPU. Mirrors
@@ -589,19 +838,34 @@ mod tests {
         assert!(parse_loudnorm_json("{ \"foo\" : \"1\" }").is_none());
     }
 
+    /// F2-C-B. `input_lra` and `input_thresh` used to default to `0` / `-70`
+    /// when the key was missing — the two values loudnorm reads as "not
+    /// measured", and either of them turns `linear=true` into dynamic gain
+    /// riding. A block we cannot fully read must be a MISS, so the seam can say
+    /// so, not a measurement that silently masters differently.
     #[test]
-    fn missing_lra_and_thresh_default() {
-        let block = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0" }"#;
-        let m = parse_loudnorm_json(block).unwrap();
-        assert_eq!(m.input_lra, 0.0);
-        assert_eq!(m.input_thresh, -70.0);
+    fn a_block_missing_lra_or_thresh_is_not_a_measurement() {
+        let no_lra = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_thresh" : "-30.0" }"#;
+        let no_thresh = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_lra" : "9.0" }"#;
+        let neither = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0" }"#;
+        assert!(parse_loudnorm_json(no_lra).is_none());
+        assert!(parse_loudnorm_json(no_thresh).is_none());
+        assert!(parse_loudnorm_json(neither).is_none());
+        // …and a complete one still parses, target_offset absent and all.
+        let full = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_lra" : "9.0",
+                        "input_thresh" : "-30.0" }"#;
+        let m = parse_loudnorm_json(full).unwrap();
+        assert_eq!(m.input_lra, 9.0);
+        assert_eq!(m.input_thresh, -30.0);
         assert_eq!(m.target_offset, 0.0);
     }
 
     #[test]
     fn prefers_last_loudnorm_block() {
-        let two =
-            format!("{{ \"input_i\" : \"-30.0\", \"input_tp\" : \"-9.0\" }}\nnoise\n{SAMPLE}");
+        let two = format!(
+            "{{ \"input_i\" : \"-30.0\", \"input_tp\" : \"-9.0\", \"input_lra\" : \"4.0\", \
+             \"input_thresh\" : \"-40.0\" }}\nnoise\n{SAMPLE}"
+        );
         let m = parse_loudnorm_json(&two).unwrap();
         // The SAMPLE block is later → its values win.
         assert_eq!(m.input_i, -23.45);
@@ -611,8 +875,14 @@ mod tests {
     fn rejects_block_with_non_finite_measurement() {
         // An overflowing token parses to a non-finite f64; the is_finite guard must
         // reject the block rather than hand back inf/NaN loudness.
-        let block = r#"{ "input_i" : "1e400", "input_tp" : "-2.0" }"#;
+        let block = r#"{ "input_i" : "1e400", "input_tp" : "-2.0", "input_lra" : "9.0",
+                 "input_thresh" : "-30.0" }"#;
         assert!(parse_loudnorm_json(block).is_none());
+        // …and the same for a non-finite LRA or threshold: those two are what
+        // decide whether linear mode is even possible.
+        let bad_lra = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_lra" : "1e400",
+                 "input_thresh" : "-30.0" }"#;
+        assert!(parse_loudnorm_json(bad_lra).is_none());
     }
 
     #[test]
@@ -626,17 +896,20 @@ mod tests {
     fn lenient_parse_ignores_trailing_units() {
         // loudnorm sometimes annotates values; the JS-parseFloat-style lenient
         // parse must take the leading number and drop the trailing unit.
-        let block = r#"{ "input_i" : "-23.45 LUFS", "input_tp" : "-3.12 dBTP" }"#;
+        let block = r#"{ "input_i" : "-23.45 LUFS", "input_tp" : "-3.12 dBTP",
+                        "input_lra" : "9.40 LU", "input_thresh" : "-33.51 LUFS" }"#;
         let m = parse_loudnorm_json(block).unwrap();
         assert_eq!(m.input_i, -23.45);
         assert_eq!(m.input_tp, -3.12);
+        assert_eq!(m.input_lra, 9.40);
     }
 
     #[test]
     fn target_offset_falls_back_to_normalization_type() {
         // Mirrors the TS `target_offset ?? normalization_type` chain: when
         // target_offset is absent, a numeric normalization_type is used.
-        let block = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "normalization_type" : "5.0" }"#;
+        let block = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "input_lra" : "9.0",
+                        "input_thresh" : "-30.0", "normalization_type" : "5.0" }"#;
         let m = parse_loudnorm_json(block).unwrap();
         assert_eq!(m.target_offset, 5.0);
     }
@@ -778,12 +1051,13 @@ mod tests {
             build_measure_pass_filters(&p),
             format!("{},{}", p.filters, loudnorm_measure_filter(&p))
         );
+        let (applied, plan) = build_apply_pass_filters(&p, &m);
         assert_eq!(
-            build_apply_pass_filters(&p, &m),
-            format!("{},{}", p.filters, loudnorm_apply_filter(&p, &m))
+            applied,
+            format!("{},{}", p.filters, loudnorm_apply_filter(&plan))
         );
-        assert!(loudnorm_apply_filter(&p, &m).contains("measured_I=-23.45"));
-        assert!(loudnorm_apply_filter(&p, &m).contains(":linear=true"));
+        assert!(applied.contains("measured_I=-23.45"));
+        assert!(applied.contains(":linear=true"));
     }
 
     #[test]
@@ -796,13 +1070,214 @@ mod tests {
             input_thresh: -33.5,
             target_offset: 7.451,
         };
-        let f = build_apply_pass_filters(&p, &m);
+        let (f, _plan) = build_apply_pass_filters(&p, &m);
         assert!(f.contains("measured_I=-23.46"));
         assert!(f.contains("measured_LRA=9.40"));
         assert!(f.contains("measured_TP=-3.10"));
         assert!(f.contains("measured_thresh=-33.50"));
         assert!(f.contains("offset=7.45"));
         assert!(f.contains(":linear=true:print_format=summary"));
+    }
+
+    // ── F2-C-B: the pass-2 plan ──────────────────────────────────────────────────
+
+    /// The measurement that keeps recurring below: a sermon at −23 LUFS whose
+    /// peaks already sit at −4 dBTP, with a wide 15 LU range.
+    fn sermon(input_i: f64, input_lra: f64, input_tp: f64) -> LoudnessMeasurement {
+        LoudnessMeasurement {
+            input_i,
+            input_lra,
+            input_tp,
+            input_thresh: input_i - 10.0,
+            target_offset: 0.0,
+        }
+    }
+
+    /// (i) The LRA GATE. A file measuring 15 LU against `speech-clear`'s
+    /// `LRA=8` is exactly the case ffmpeg answers with dynamic gain riding —
+    /// the compression the preset promises not to do. The plan raises the gate
+    /// to the measured range, which in linear mode steers nothing at all.
+    #[test]
+    fn plan_raises_the_lra_gate_to_clear_the_measured_range() {
+        let p = get_preset_by_id("speech-clear").unwrap();
+        let plan = plan_pass2(&sermon(-20.0, 15.0, -8.0), &p);
+        assert_eq!(plan.target_lra, 15.0, "the gate must clear the measurement");
+        assert!(plan.linear, "…and linear must then be reachable");
+        assert!(
+            loudnorm_apply_filter(&plan).contains("LRA=15"),
+            "got: {}",
+            loudnorm_apply_filter(&plan)
+        );
+        // A fractional range rounds UP — the gate is `measured <= LRA`, so
+        // landing a hundredth short would put us back on the dynamic path.
+        let plan = plan_pass2(&sermon(-20.0, 15.01, -8.0), &p);
+        assert_eq!(plan.target_lra, 16.0);
+        // A range NARROWER than the preset's leaves the preset's gate alone.
+        let plan = plan_pass2(&sermon(-20.0, 3.0, -8.0), &p);
+        assert_eq!(plan.target_lra, 8.0);
+    }
+
+    /// (ii) The TRUE-PEAK gate. −23 LUFS at −4 dBTP cannot reach −16 with one
+    /// gain: +7 LU puts the peak at +3 dBTP, four over the ceiling. The old
+    /// code asked anyway and got a gain rider; the plan asks for the loudest
+    /// level a single gain CAN reach, and says which one that is.
+    #[test]
+    fn plan_caps_the_gain_at_the_true_peak_ceiling_and_reports_the_target_it_reached() {
+        let p = get_preset_by_id("speech-clear").unwrap(); // −16 LUFS, −1 dBTP
+        let plan = plan_pass2(&sermon(-23.0, 6.0, -4.0), &p);
+        assert!(plan.peak_limited, "the ceiling must bind here");
+        // +3 LU of headroom, minus the 0.02 LU of printing slack.
+        assert!(
+            (plan.target_lufs - -20.02).abs() < 1e-9,
+            "capped target was {} LUFS, expected −20.02",
+            plan.target_lufs
+        );
+        assert_eq!(plan.preset_lufs, -16.0, "the receipt still knows the ask");
+        assert!(plan.linear, "the whole point: it is reachable linearly");
+        // The peak the plan implies is UNDER the ceiling, which is what makes
+        // ffmpeg accept linear mode.
+        assert!(plan.measured.input_tp + plan.offset <= p.true_peak_db);
+        assert!(loudnorm_apply_filter(&plan).contains("I=-20.02"));
+    }
+
+    /// (iii) A measurement with room to spare is left exactly alone: the preset's
+    /// target, the preset's gate, no cap, linear.
+    #[test]
+    fn plan_leaves_a_reachable_target_untouched() {
+        let p = get_preset_by_id("speech-clear").unwrap();
+        let plan = plan_pass2(&sermon(-23.0, 6.0, -12.0), &p);
+        assert!(!plan.peak_limited);
+        assert_eq!(plan.target_lufs, -16.0);
+        assert_eq!(plan.target_lra, 8.0);
+        assert!(plan.linear);
+        assert!((plan.offset - 7.0).abs() < 1e-9);
+        assert!(loudnorm_apply_filter(&plan).starts_with("loudnorm=I=-16:LRA=8:TP=-1"));
+    }
+
+    /// A genuinely uniform signal measures LRA `0.00`, which is byte-identical
+    /// to loudnorm's "measured_LRA was not supplied" — and would switch linear
+    /// mode off. The floor at the printable `0.01` is an upper bound on any
+    /// range that printed as zero, and it changes no gain.
+    #[test]
+    fn plan_repairs_the_zero_lra_sentinel() {
+        let p = get_preset_by_id("speech-clear").unwrap();
+        let plan = plan_pass2(&sermon(-30.0, 0.0, -12.0), &p);
+        assert_eq!(plan.measured.input_lra, 0.01);
+        assert!(plan.linear);
+        assert!(loudnorm_apply_filter(&plan).contains("measured_LRA=0.01"));
+    }
+
+    /// The one sentinel we cannot repair: a near-silent file really can measure
+    /// a −70 threshold, and then linear mode is off no matter what we send. The
+    /// plan says so up front instead of letting the seam discover it in a log.
+    #[test]
+    fn plan_admits_when_linear_is_out_of_reach() {
+        let p = get_preset_by_id("speech-clear").unwrap();
+        let m = LoudnessMeasurement {
+            input_thresh: -70.0,
+            ..sermon(-60.0, 4.0, -40.0)
+        };
+        assert!(!plan_pass2(&m, &p).linear);
+    }
+
+    /// Every number the plan sends has to sit inside ffmpeg's own option range,
+    /// or ffmpeg refuses the graph outright and the export dies.
+    #[test]
+    fn plan_stays_inside_ffmpegs_option_ranges() {
+        for p in master_presets() {
+            for m in [
+                sermon(-70.0, 0.0, -60.0),
+                sermon(-1.0, 60.0, 0.5),
+                sermon(-99.0, 99.0, -99.0),
+                sermon(-23.0, 12.0, -4.0),
+            ] {
+                let plan = plan_pass2(&m, &p);
+                assert!(
+                    (FF_I_MIN..=FF_I_MAX).contains(&plan.target_lufs),
+                    "I={} out of range for {m:?}",
+                    plan.target_lufs
+                );
+                assert!(
+                    (FF_LRA_MIN..=FF_LRA_MAX).contains(&plan.target_lra),
+                    "LRA={} out of range for {m:?}",
+                    plan.target_lra
+                );
+                assert!((0.0..=FF_MEASURED_LRA_MAX).contains(&plan.measured.input_lra));
+            }
+        }
+    }
+
+    /// The plan never asks for MORE than the preset — capping is the only
+    /// direction it may move the target.
+    #[test]
+    fn plan_never_asks_for_more_than_the_preset() {
+        for p in master_presets() {
+            for tp in [-30.0, -12.0, -4.0, -0.5] {
+                for i in [-40.0, -23.0, -16.0, -8.0] {
+                    let plan = plan_pass2(&sermon(i, 8.0, tp), &p);
+                    assert!(
+                        plan.target_lufs <= p.target_lufs + 1e-9,
+                        "{} asked for {} LUFS from a −{p:?} preset",
+                        p.id,
+                        plan.target_lufs
+                    );
+                }
+            }
+        }
+    }
+
+    /// A capped target has to PRINT as a clean two-decimal number. `-19.72` is
+    /// a filter argument; `-19.720000000000002` is a filter argument that makes
+    /// a log unreadable and a diff meaningless.
+    #[test]
+    fn a_capped_target_prints_cleanly() {
+        let p = get_preset_by_id("speech-clear").unwrap();
+        for tp in [-4.0, -3.33, -2.07, -0.91, -4.44] {
+            let plan = plan_pass2(&sermon(-23.17, 6.0, tp), &p);
+            let printed = fmt_num(plan.target_lufs);
+            let decimals = printed.split('.').nth(1).map(str::len).unwrap_or(0);
+            assert!(
+                decimals <= 2,
+                "capped target printed as `{printed}` — more than two decimals"
+            );
+        }
+    }
+
+    // ── F2-C-B: reading the mode back ────────────────────────────────────────────
+
+    #[test]
+    fn reads_the_normalization_mode_from_both_report_formats() {
+        // print_format=summary — what the apply pass asks for.
+        let summary = "Output Threshold:    -28.1 LUFS\n\nNormalization Type:   Dynamic\n\
+                       Target Offset:        +0.5 LU\n";
+        assert_eq!(
+            parse_normalization_mode(summary),
+            Some(NormalizationMode::Dynamic)
+        );
+        assert_eq!(
+            parse_normalization_mode("Normalization Type:   Linear"),
+            Some(NormalizationMode::Linear)
+        );
+        // print_format=json — the same fact, the other spelling.
+        assert_eq!(
+            parse_normalization_mode("\t\"normalization_type\" : \"linear\","),
+            Some(NormalizationMode::Linear)
+        );
+        // A report that does not say is not a guess.
+        assert_eq!(parse_normalization_mode(""), None);
+        assert_eq!(parse_normalization_mode("ffmpeg version 8.1.2"), None);
+        // The numeric `normalization_type` the old target_offset fallback reads
+        // is not a mode either.
+        assert_eq!(
+            parse_normalization_mode("\"normalization_type\" : \"5.0\""),
+            None
+        );
+        // Two passes in one buffer: the LAST word wins.
+        let both = "Normalization Type:   Dynamic\nNormalization Type:   Linear\n";
+        assert_eq!(
+            parse_normalization_mode(both),
+            Some(NormalizationMode::Linear)
+        );
     }
 
     #[test]

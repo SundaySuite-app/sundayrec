@@ -707,6 +707,8 @@
       "includeVideoDesc": "Nagranie ma ścieżkę wideo. Bez tego eksport będzie tylko dźwiękiem.",
       "videoLocksFormat": "Format to MP4, dopóki wideo jest dołączone.",
       "about": "ok. {mb} MB",
+      "level": "Poziom: {lufs} LUFS",
+      "levelCapped": "Poziom: {lufs} LUFS (ograniczony przez szczyty)",
       "exported": "Wyeksportowano",
       "exportAgain": "Eksportuj w innym formacie",
       "toLibrary": "Do biblioteki",
