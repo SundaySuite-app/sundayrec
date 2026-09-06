@@ -57,38 +57,71 @@ function trashEntry(over: Partial<TrashEntry> = {}): TrashEntry {
   };
 }
 
+/**
+ * `localStorage`-nøkkelen den fiktive papirkurven lever under — samme mønster
+ * som harness.ts's fiktive sqlite-rad for innstillinger.
+ *
+ * Et `window.*`-globalt nulles av `page.reload()`; `localStorage` gjør det
+ * IKKE. Det er nøyaktig forskjellen F2-A-F handler om: en «Slett» som bare
+ * flyttet raden i rendererens eget minne ville sett riktig ut helt til siden
+ * lastes på nytt. `library.spec.ts`s reload-test nedenfor er derfor avhengig
+ * av at fikstur-papirkurven overlever en reload akkurat som en ekte backend
+ * ville gjort — et JS-global ville gjort testen grønn av en gal grunn.
+ */
+const TRASH_DB_KEY = "__e2e.library.trashDb";
+
 /** Papirkurven som en LISTE fikstursiden kan endre, med tellere på kommandoene
  *  som endrer den. Se `history.spec.ts` for hvorfor en statisk `trash_move`
  *  ikke holder her: skallet leser lista på nytt etter enhver endring. */
 const TRASH_STORE: Fixtures = {
-  trash_list: fn(`() => (window.__E2E_TRASH__ ||= [])`),
+  trash_list: fn(
+    `() => JSON.parse(localStorage.getItem(${JSON.stringify(TRASH_DB_KEY)}) || "[]")`,
+  ),
+  trash_move: fn(`(args) => {
+    const key = ${JSON.stringify(TRASH_DB_KEY)};
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
+    const moved = args.paths.map((p, i) => ({
+      id: "t" + (list.length + i), originalPath: p, trashedPath: "/tmp/trash/x",
+      name: p.split("/").pop(), deletedAt: Date.now(), related: [], byteSize: 1000,
+    }));
+    localStorage.setItem(key, JSON.stringify([...list, ...moved]));
+    (window.__E2E_TRASHED__ ||= []).push(...args.paths);
+    return moved;
+  }`),
   trash_restore: fn(`(args) => {
-    const list = (window.__E2E_TRASH__ ||= []);
+    const key = ${JSON.stringify(TRASH_DB_KEY)};
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
     const at = list.findIndex((e) => e.id === args.id);
     const gone = at >= 0 ? list.splice(at, 1)[0] : null;
+    localStorage.setItem(key, JSON.stringify(list));
     (window.__E2E_RESTORED__ ||= []).push(args.id);
     return gone ?? { id: args.id, originalPath: "", trashedPath: "", name: "",
                      deletedAt: Date.now(), related: [], byteSize: 0 };
   }`),
   trash_purge: fn(`(args) => {
-    const list = (window.__E2E_TRASH__ ||= []);
+    const key = ${JSON.stringify(TRASH_DB_KEY)};
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
     const keep = args.ids.length
       ? list.filter((e) => !args.ids.includes(e.id))
       : [];
     (window.__E2E_PURGED__ ||= []).push(args.ids);
-    window.__E2E_TRASH__ = keep;
+    localStorage.setItem(key, JSON.stringify(keep));
     return list.length - keep.length;
   }`),
 };
 
-/** Legg oppføringene i den delte papirkurven FØR skallet leser den. */
+/** Legg oppføringene i den delte papirkurven FØR skallet leser den — i det
+ *  SAMME `localStorage`-laget `TRASH_STORE` leser fra (se `TRASH_DB_KEY`). */
 async function seedTrash(
   page: Page,
   entries: Record<string, unknown>[],
 ): Promise<void> {
-  await page.addInitScript((seed) => {
-    (window as unknown as Record<string, unknown>).__E2E_TRASH__ = seed;
-  }, entries);
+  await page.addInitScript(
+    ({ key, seed }: { key: string; seed: unknown }) => {
+      window.localStorage.setItem(key, JSON.stringify(seed));
+    },
+    { key: TRASH_DB_KEY, seed: entries },
+  );
 }
 
 async function openLibrary(page: Page, fixtures: Fixtures): Promise<void> {
@@ -437,6 +470,73 @@ test.describe("F2-T3: tastatursnarveier i biblioteket", () => {
     await search.click();
     await page.keyboard.type("a b");
     await expect(search).toHaveValue("a b");
+  });
+});
+
+// ── F2-A-F: papirkurven skjuler raden, ikke bare rendererens minne ─────────
+//
+// Funnet: biblioteket filtrerte bare ved LASTING (`getHistory()`s egen
+// `trash_list`-join), aldri reaktivt mot et signal. En «Slett» som bare
+// fjernet raden lokalt ville sett riktig ut i akkurat den samme testen som
+// øvrige spec-er her kjører — helt til siden lastes på nytt. Derfor
+// `page.reload()` under, ikke bare en ny render: det er den ENE handlingen
+// som skiller «flyttet i en fiktiv backend» fra «bare pyntet i DOM-en», og
+// `TRASH_STORE` er `localStorage`-lagret (se `TRASH_DB_KEY`) nettopp for at
+// reloaden tester APPEN og ikke fikstur-seedingen.
+test.describe("F2-A-F: en slettet rad overlever en omstart", () => {
+  test("slett → reload (omstart) → raden er fortsatt borte; angre → raden er tilbake, også etter enda en reload", async ({
+    page,
+  }) => {
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      ...TRASH_STORE,
+      recordings_list: ROWS,
+    });
+    await expect(page.getByTestId("library-row")).toHaveCount(2);
+
+    await page
+      .getByTestId("library-row")
+      .filter({ hasText: "Bønnemøte" })
+      .getByTestId("library-row-delete")
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_TRASHED__))
+      .toEqual(["/Users/test/Opptak/2026-08-09 Bønnemøte.mp3"]);
+    await expect(page.getByTestId("library-row")).toHaveCount(1);
+
+    // Omstarten. `?goto=search` står fortsatt i URL-en etter en reload, så
+    // appen lander tilbake på biblioteket akkurat som ved en ekte kald start.
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof (window as any).showPage === "function",
+    );
+    await expect(page.getByTestId("main")).toHaveAttribute("data-page", "edit");
+
+    // Raden er FORTSATT borte — historikkraden består (F1-M2), men den skal
+    // ikke tilby «Rediger» mot en fil som ligger i papirkurven.
+    await expect(page.getByTestId("library-row")).toHaveCount(1);
+    await expect(page.getByTestId("main")).not.toContainText("Bønnemøte");
+
+    // Angre, fra papirkurv-visningen inne i biblioteket — raden kommer
+    // tilbake med en gang.
+    await page.getByTestId("library-trash-open").click();
+    await expect(page.getByTestId("trash-row")).toHaveCount(1);
+    await page.getByTestId("trash-row-restore").click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_RESTORED__))
+      .toEqual(["t0"]);
+    await page.getByTestId("trash-back").click();
+    await expect(page.getByTestId("library-row")).toHaveCount(2);
+    await expect(page.getByTestId("main")).toContainText("Bønnemøte");
+
+    // Og symmetrisk: den gjenopprettede raden blir stående etter ENDA en
+    // omstart, ikke bare i den samme fanen som klikket «Legg tilbake».
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof (window as any).showPage === "function",
+    );
+    await expect(page.getByTestId("library-row")).toHaveCount(2);
+    await expect(page.getByTestId("main")).toContainText("Bønnemøte");
   });
 });
 
