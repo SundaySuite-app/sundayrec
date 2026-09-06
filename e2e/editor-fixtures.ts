@@ -1,5 +1,8 @@
 import { BOOT_FIXTURES, fn, VOID, type Fixtures } from "./harness";
 import type { EditorSegment } from "../legacy/bindings/EditorSegment";
+import type { EditorMediaInfo } from "../legacy/bindings/EditorMediaInfo";
+import type { EditorExportResult } from "../legacy/bindings/EditorExportResult";
+import type { EditorAutoProcess } from "../legacy/bindings/EditorAutoProcess";
 
 // The editor's fixtured recording — ONE recipe, read by both shells.
 //
@@ -33,6 +36,9 @@ export const SEGMENTS: EditorSegment[] = [
 export function editorFixtures(over: Fixtures = {}): Fixtures {
   return {
     ...BOOT_FIXTURES,
+    // Typed as the GENERATED `EditorMediaInfo` binding — same reasoning as
+    // `SEGMENTS` below: a Rust rename here must fail `npm run typecheck`
+    // rather than leave `editorLoadRecording` answering `undefined` in prod.
     editor_load_recording: {
       durationSec: DURATION,
       hasVideo: false,
@@ -40,7 +46,7 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
       channels: 2,
       sampleFmt: "s16",
       sampleRate: 48_000,
-    },
+    } satisfies EditorMediaInfo,
     editor_allow_asset_path: VOID,
     // ~100 buckets/sec. Generated in the page rather than shipped as a 60 000
     // element literal across the init-script boundary.
@@ -88,10 +94,17 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
 export const EXPORTED =
   "/Users/test/Opptak/2026-08-02 Gudstjeneste_redigert.mp3";
 
+/** The `editor_export` result, typed as the GENERATED `EditorExportResult`
+ *  binding — `fn()` fixtures are opaque strings to `tsc`, so the DTO is built
+ *  here (where it IS real TypeScript) and its JSON spliced into the fixture
+ *  source below. A Rust rename of `outputPath` fails here, same reasoning as
+ *  `SEGMENTS`. */
+const EXPORT_RESULT: EditorExportResult = { outputPath: EXPORTED };
+
 /** An export that finishes at once. */
 export const EXPORT_OK = fn(`(args) => {
   (window.__E2E_EXPORTS__ ||= []).push(args.request);
-  return { outputPath: ${JSON.stringify(EXPORTED)} };
+  return ${JSON.stringify(EXPORT_RESULT)};
 }`);
 
 /**
@@ -107,12 +120,15 @@ export const EXPORT_HELD = fn(`(args) => {
   (window.__E2E_EXPORTS__ ||= []).push(args.request);
   return new Promise((resolve, reject) => {
     window.__E2E_FINISH_EXPORT__ = (err) =>
-      err ? reject(new Error(err)) : resolve({ outputPath: ${JSON.stringify(EXPORTED)} });
+      err ? reject(new Error(err)) : resolve(${JSON.stringify(EXPORT_RESULT)});
   });
 }`);
 
-/** The channel diagnosis `editor_auto_process` answers with. `balanced` +
- *  `mode: "none"` = nothing to repair, which is the ordinary recording. */
+/** The channel diagnosis `editor_auto_process` answers with, typed as the
+ *  GENERATED `EditorAutoProcess` binding (nesting `EditorChannelDiagnosis` +
+ *  `EditorChannelRepair`) — same reasoning as `SEGMENTS`: a Rust rename of
+ *  any of these fields must fail `npm run typecheck`. `balanced` + `mode:
+ *  "none"` = nothing to repair, which is the ordinary recording. */
 export const AUTO_PROCESS = {
   diagnosis: {
     code: "balanced",
@@ -124,7 +140,7 @@ export const AUTO_PROCESS = {
   vocalChainPreset: "voice-podcast",
   masterPreset: "",
   summary: "Automatisk lydforbedring: kanalbalanse OK, podkast-stemme.",
-};
+} satisfies EditorAutoProcess;
 
 /** A recording whose left channel is dead — the one case where the repair
  *  MUST ride along, or the export is half silent. */
@@ -136,4 +152,4 @@ export const AUTO_PROCESS_DEAD_LEFT = {
     peakLeftDb: -70,
     recommended: { mode: "duplicateRight", leftDb: 0, rightDb: 0 },
   },
-};
+} satisfies EditorAutoProcess;

@@ -8,6 +8,7 @@ import {
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
+import type { TrashEntry } from "../legacy/bindings/TrashEntry";
 
 // BIBLIOTEK — jobb nr. 2, sett utenfra. Nytt i P3, uten en legacy-motpart.
 //
@@ -39,10 +40,10 @@ const ROWS = [
   }),
 ];
 
-/** Én papirkurv-oppføring, i formen `trash_list` faktisk svarer med. */
-function trashEntry(
-  over: Record<string, unknown> = {},
-): Record<string, unknown> {
+/** Én papirkurv-oppføring, i formen `trash_list` faktisk svarer med. Typed as
+ *  the GENERATED `TrashEntry` binding — a Rust rename of any field must fail
+ *  `npm run typecheck` here. */
+function trashEntry(over: Partial<TrashEntry> = {}): TrashEntry {
   return {
     id: "t1",
     originalPath: "/Users/test/Opptak/2026-07-26 Gudstjeneste.mp3",
