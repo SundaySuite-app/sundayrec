@@ -121,7 +121,92 @@ faktisk skal se nå — sist.
       (skal finalisere pent med «device_disconnected», ikke henge).
       **Forventet:** alle fire består som beskrevet i den fulle matrisen —
       dette er ikke en erstatning for den, bare det minste utvalget som hører
-      hjemme på en dag som ellers handler om Mac-riggen.
+      hjemme på en dag som ellers handler om Mac-boksen.
+- [ ] **(w1) Windows-oppdatering installerer seg selv.** Fra en installert
+      NSIS-beta på Windows, med Oppgavebehandling åpen: gearikonet →
+      Avansert (eller banneret) → «Se etter oppdateringer» → «Last ned og
+      installer».
+      **Forventet FØR fiksen:** vinduet forsvant, ingen installer-dialog kom,
+      og appen startet ikke på nytt — neste gang appen ble åpnet, var det
+      fortsatt den gamle versjonen, uten en eneste feilmelding eller
+      logglinje (årsak: appens eget ffmpeg-jobbvern la installeren i samme
+      Job Object som SundayRec selv, og oppdateringspluginens `exit(0)` etter
+      utpakking tok installeren med seg i fallet).
+      **Forventet ETTER (F2-W1, #243):** en synlig, passiv installer kjører,
+      `SundayRec_*_x64-setup.exe` blir IKKE drept i Oppgavebehandling, og
+      appen kommer tilbake i den nye versjonen. `%APPDATA%\…\update-relaunch.log`
+      skal ha linjen `installing <versjon> (<n> bytes) — job-object
+kill-on-close disarmed: true`.
+- [ ] **(w2) Oppdatering er sperret mens det tas opp.** Start et opptak, gå
+      til banneret / gearikonet → Avansert.
+      **Forventet FØR fiksen:** «Last ned og installer» var trykkbar midt i
+      et opptak, og ett klikk kjedet rett videre til omstart — ingen
+      advarsel om at et opptak gikk.
+      **Forventet ETTER (F2-W1, #243):** knappen er grå med forklaringen
+      «Kan ikke oppdatere mens det tas opp», både i banneret og under
+      Avansert. Stopp opptaket → knappen virker igjen med én gang.
+- [ ] **(w3) Ingen svarte konsollvinduer.** Gjennom én økt på Windows, se
+      etter et svart/konsoll-vindu ved hvert av disse seks stegene: 1) start
+      appen og enhetslisten, 2) start et lydopptak, 3) start et opptak MED
+      video, 4) stopp opptaket (leverings-transkodingen), 5) last et opptak i
+      Redigering og kjør en eksport, 6) bruk «Test vekking».
+      **Forventet FØR fiksen:** et svart konsollvindu ved hver enhetsliste og
+      hver start; ett stående i minuttvis under leverings-transkodingen; med
+      video, ett stående HELE gudstjenesten — og lukker en frivillig det ved
+      et uhell, dør opptaket (ffmpeg mottar `CTRL_CLOSE_EVENT`).
+      **Forventet ETTER (F2-W2, #237):** ingen av de seks stegene viser noe
+      konsollvindu, noen gang.
+- [ ] **(w6) Drep appen midt i et videoopptak.** Start et videoopptak
+      (kamera + lyd), drep prosessen i Oppgavebehandling midt i økten, start
+      appen på nytt.
+      **Forventet FØR fiksen:** cpal-videostien på Windows skrev rett til
+      brukerens `.mp4` uten noe gjenopprettingsmanifest — en krasj (eller et
+      strømbrudd, en omstart fra Windows Update, eller det lukkbare
+      konsollvinduet fra (w3)) ga en UAVSPILLBAR fil, og appen visste ikke
+      ved neste oppstart at opptaket i det hele tatt hadde eksistert.
+      Gudstjenesten var borte, uten et ord.
+      **Forventet ETTER (F2-W4, #246):** en SPILLBAR fil dukker opp i
+      Redigerings historikk ved neste oppstart, merket «Gjenopprettet etter
+      uventet avslutning», og den skjulte `.sundayrec-capture-*`-mappa er
+      borte etterpå.
+- [ ] **(w6, fortsettelse) Ta med i samme runde:** (a) et helt normalt
+      videoopptak stoppet pent — filen skal ligge som vanlig mp4, og den
+      skjulte mappa skal være ryddet; (b) lepp-synk over en hel gudstjeneste
+      på denne stien er fortsatt HARDWARE-UVERIFISERT (uendret av #246 — det
+      er bare krasjsikkerheten som er ny, ikke synk-kvaliteten).
+- [ ] **(tillegg — #235, Windows-siden av vekketesten).** Sett en ekte
+      ukentlig vekketid noen minutter fram, bruk «Test vekking om 2 min», la
+      testen løse ut eller trykk «Avbryt», og vent til den EKTE planlagte
+      tiden.
+      **Forventet FØR fiksen:** testens `timers.clear()` lukket ALLE
+      `SetWaitableTimer`-håndtak samtidig — søndagens vekking kunne dø
+      sammen med testens egen.
+      **Forventet ETTER (F2-W3, #235):** testen og den ekte planen ligger i
+      hvert sitt `TimerSlot` (Schedule/Test); maskinen skal våkne på den ekte
+      tiden uansett hvor mange ganger testknappen er brukt i mellomtiden. 👤
+      Windows har ingen `pmset -g sched`-motsvarighet for å inspisere en
+      armert timer utenfra — beviset her er rent behaviorelt (våkner den,
+      eller gjør den ikke).
+- [ ] **(tillegg — #231) Fire lydtester som bare kan klassifiseres på ekte
+      Windows-maskinvare.** Kjør `cargo test --workspace` i `src-tauri` på
+      selve riggen (ikke CI), med en ekte mikrofon tilkoblet:
+      `audio::vu::tests::vu_stream_negotiates_max_channels_or_skips`,
+      `recorder::native_capture::segment::tests::native_capture_records_two_seconds_or_skips`,
+      `…preroll::tests::native_preroll_buffers_meters_and_harvests_or_skips`,
+      `…segment::tests::a_failed_spawn_leaves_no_capture_file`.
+      **Forventet i CI (uten rigg):** alle fire er
+      `#[cfg_attr(windows, ignore = "F2-W7: … — se PR #231")]` — CI-runnerens
+      image krasjer (`STATUS_ACCESS_VIOLATION`) så snart de faktisk BYGGER en
+      cpal-strøm (`IAudioClient::Initialize`), etter alt å dømme fordi
+      runner-imaget mangler en fungerende Windows-lydtjeneste.
+      **Forventet på riggen:** alle fire kjører og består — ikke bare hopper
+      over. Består de ikke her heller, er det et ekte funn, ikke et
+      rigg-artefakt; skriv det opp mot #231.
+
+_(w4, w5, w7–w15 hører til andre F2-Windows-funn som løper i egne
+runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
+logger, MSI/UAC på stable, ASIO-sondering på forespørsel, m.fl. Fylles inn
+her når de respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## Etterpå
 
