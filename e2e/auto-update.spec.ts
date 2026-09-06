@@ -317,26 +317,24 @@ test.describe("oppdateringsbanneret", () => {
     const row = page.getByTestId("adv-update-install");
 
     // I ro: to helt vanlige knapper.
-    await expect(banner).toBeVisible();
-    await expect(row).toBeVisible();
-    await expect(banner).not.toHaveAttribute("aria-disabled", "true");
-    await expect(row).not.toHaveAttribute("aria-disabled", "true");
+    await expect(banner).toBeEnabled();
+    await expect(row).toBeEnabled();
 
-    // Motoren sier at en økt går.
+    // Motoren sier at en økt går. Grunnen, ikke bare gråfargen: `Button`
+    // legger den i `title`, i `aria-describedby` og i en skjult `<span>` — én
+    // og samme `reason`, så `title` er nok til å pinne alle tre (se
+    // `ui/Button/Button.tsx`).
     await emit(page, "recording-overlay-stop", { state: "recording" });
     for (const button of [banner, row]) {
-      await expect(button).toHaveAttribute("aria-disabled", "true");
-      // Grunnen, ikke bare gråfargen: `Button` legger den i `title`, i en
-      // skjult `<span>` OG i `aria-describedby` — se `ui/Button/Button.tsx`.
+      await expect(button).toBeDisabled();
       await expect(button).toHaveAttribute("title", reason);
-      await expect(button).toContainText(reason);
     }
 
     // Og de kommer tilbake når opptaket er over — en knapp som blir stående
     // grå etter gudstjenesten er en app som aldri kan oppdateres.
     await emit(page, "recording-overlay-stop", { state: "stopped" });
-    await expect(banner).not.toHaveAttribute("aria-disabled", "true");
-    await expect(row).not.toHaveAttribute("aria-disabled", "true");
+    await expect(banner).toBeEnabled();
+    await expect(row).toBeEnabled();
   });
 
   test("en oppdatert app reiser ingen stripe", async ({ page }) => {
