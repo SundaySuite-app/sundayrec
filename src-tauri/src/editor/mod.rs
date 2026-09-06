@@ -4572,7 +4572,7 @@ mod tests {
         /// measured everything: the audio bugs this file's smoke tests exist to
         /// catch are invisible to every other kind of test.
         pub(super) fn sidecar_or_skip(name: &str) -> Option<std::path::PathBuf> {
-            match crate::media::ffmpeg::tests::fetched_sidecar(name) {
+            match fetched_sidecar(name) {
                 Some(p) => Some(p),
                 None => {
                     assert!(
@@ -4678,8 +4678,10 @@ mod tests {
         /// behind, and the sidecar cache is written.
         #[test]
         fn peaks_stream_a_lavfi_source_and_cache_it_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -4769,8 +4771,10 @@ mod tests {
         /// recompute would also have nowhere to find ffmpeg.
         #[test]
         fn peaks_second_open_reads_the_sidecar_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -4803,8 +4807,10 @@ mod tests {
         /// Segments: compute → cache → serve from cache → `force` recomputes.
         #[test]
         fn segments_cache_round_trip_on_silence_and_tone_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5270,10 +5276,11 @@ mod tests {
 
         #[test]
         fn export_cuts_and_encodes_mp3_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
 
@@ -5382,8 +5389,10 @@ mod tests {
         /// source file.
         #[test]
         fn export_with_empty_folder_lands_next_to_the_source_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
 
@@ -5443,10 +5452,11 @@ mod tests {
         /// shift the result by another 6 LU.
         #[test]
         fn mastered_export_lands_on_the_preset_target_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5691,10 +5701,11 @@ mod tests {
         /// `-ar` pin, a mastered export inherits loudnorm's internal 192 kHz.
         #[test]
         fn wav16_export_is_s16_at_the_source_rate_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5728,10 +5739,11 @@ mod tests {
         /// (`should_retry_with_software`).
         #[test]
         fn video_export_keeps_the_video_stream_and_honours_the_cuts_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5784,10 +5796,11 @@ mod tests {
         /// This one also exercises the filter_complex path's `-ar` (two keeps).
         #[test]
         fn flac_export_of_a_96k_source_stays_96k_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5815,10 +5828,11 @@ mod tests {
         /// duration.
         #[test]
         fn multi_cut_export_with_join_fades_runs_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5854,10 +5868,11 @@ mod tests {
         /// mastering preset on it double-processed every recording.
         #[test]
         fn auto_process_recommends_no_mastering_or_skips() {
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
+            // the note on the single-sidecar tests above.
             let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
                 return;
             };
             let dir = tempfile::tempdir().unwrap();
@@ -5901,8 +5916,10 @@ mod tests {
         /// export with the kill-timer overridden to 1 ms.
         #[test]
         fn export_timeout_kills_the_render_or_skips() {
-            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — the
+            // latter skips unconditionally, even under `SUNDAYREC_REQUIRE_SIDECAR=1`
+            // (ci.yml's `check` job), where a missing sidecar must panic instead.
+            let Some(ffmpeg) = sidecar_or_skip("ffmpeg") else {
                 return;
             };
 
