@@ -19,8 +19,9 @@
  * ikke med en brøk som ikke er en brøk.
  *
  * Den ENE fasen som ikke er bakendens er `EXPORT_PHASE_PREPARING`
- * («Forbereder …»), og den finnes fordi kjøringen begynner FØR bakenden hører
- * om den: kanalanalysen er en full passering over opptaket. Se `runExport`.
+ * («Analyserer lyden…»), og den finnes fordi kjøringen begynner FØR bakenden
+ * hører om den: kanalanalysen er en full passering over opptaket. Se
+ * `runExport`.
  *
  * ## Abonnementet varer så lenge eksporten varer
  *
