@@ -3689,20 +3689,63 @@ mod tests {
         );
     }
 
+    /// A child that exits immediately, spawned from a NATIVE image on every
+    /// platform.
+    ///
+    /// `windows-latest` has no native `true`: the name resolves through PATH to
+    /// Git for Windows' MSYS coreutils (`C:\Program Files\Git\usr\bin\true.exe`),
+    /// and the first MSYS process on a cold runner pays the `msys-2.0.dll` load
+    /// plus a Defender scan — seconds of it, all AFTER `spawn()` has returned and
+    /// therefore inside the window this test measures. `cmd /C exit 0` runs a
+    /// system image that is already resident.
+    fn quick_exit_command() -> tokio::process::Command {
+        if cfg!(windows) {
+            let mut cmd = tokio::process::Command::new("cmd");
+            cmd.args(["/C", "exit", "0"]);
+            cmd
+        } else {
+            tokio::process::Command::new("true")
+        }
+    }
+
     #[tokio::test]
     async fn stop_and_wait_within_returns_promptly_on_a_cooperative_exit() {
         // A process that actually exits (models a clean ffmpeg finalise) must not
         // be held up for the full bound.
-        let mut child = tokio::process::Command::new("true")
+        let mut child = quick_exit_command()
             .stdin(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .expect("spawn `true`");
+            .expect("spawn the quick-exit child");
         let mut stdin = child.stdin.take();
         let start = std::time::Instant::now();
         stop_and_wait_within(&mut child, &mut stdin, Duration::from_secs(30)).await;
+        // The DETERMINISTIC half of the proof, independent of any clock: a
+        // SUCCESSFUL status means the child exited on its own and the helper left
+        // through its `child.wait()` path. The kill arm cannot fake this — a
+        // killed child reports a signal on Unix and exit code 1 on Windows,
+        // never success.
+        let exited_by_itself = child
+            .try_wait()
+            .expect("try_wait after the helper returned")
+            .expect("the helper must have reaped the child")
+            .success();
         assert!(
-            start.elapsed() < Duration::from_secs(5),
+            exited_by_itself,
+            "the child must have exited on its own, not been killed"
+        );
+        // The wall-clock half: 5 s on Unix, unchanged. Windows CI runners start
+        // processes far more slowly (image load and Defender scanning happen
+        // after `spawn()` returns), so the budget there is 20 s — still well
+        // inside the 30 s bound, so "did not wait out the bound" is exactly what
+        // it keeps proving.
+        let budget = if cfg!(windows) {
+            Duration::from_secs(20)
+        } else {
+            Duration::from_secs(5)
+        };
+        assert!(
+            start.elapsed() < budget,
             "a cooperative exit must not wait out the bound"
         );
     }
