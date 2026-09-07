@@ -84,11 +84,7 @@ export async function runSilentPreflightOnce(): Promise<void> {
   try {
     const [health, result] = await Promise.all([
       collectHealthFindings(),
-      // Kastet, akkurat som legacy gjør det: den omgivende typen i
-      // `main.ts` beskriver `category` som `string`, mens bakenden svarer med
-      // den genererte `PreflightCategory`. Verdien er den samme; det er typen
-      // som er for løs.
-      window.api.runPreflight() as Promise<{ findings?: PreflightFinding[] }>,
+      window.api.runPreflight(),
     ]);
     const findings = [...health, ...(result?.findings ?? [])];
     // Bare når det FAKTISK er noe. Et tomt skriv ville tømt et varsel
