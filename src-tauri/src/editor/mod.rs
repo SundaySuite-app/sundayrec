@@ -3397,13 +3397,6 @@ where
     })
 }
 
-/// The export kill-timer in milliseconds: the core's duration-scaled
-/// [`export_timeout_ms`](sundayrec_core::editor::export_timeout_ms), unless
-/// `SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE` names a shorter one.
-///
-/// The override exists for the real-ffmpeg smoke test, which has to prove the
-/// timeout path actually kills the child — waiting out the 10-minute floor to
-/// learn that is not a test anyone runs. Never set in production.
 /// Stop the export here if the user has pressed Avbryt, with the SAME bare
 /// `cancelled` code a killed child produces — the renderer's
 /// `describeExportError` and the hardware-retry guard both match on it, so a
@@ -3434,6 +3427,13 @@ fn is_hard_abort(result: &AppResult<String>) -> bool {
     })
 }
 
+/// The export kill-timer in milliseconds: the core's duration-scaled
+/// [`export_timeout_ms`](sundayrec_core::editor::export_timeout_ms), unless
+/// `SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE` names a shorter one.
+///
+/// The override exists for the real-ffmpeg smoke test, which has to prove the
+/// timeout path actually kills the child — waiting out the 10-minute floor to
+/// learn that is not a test anyone runs. Never set in production.
 #[cfg(feature = "editor")]
 fn export_timeout_ms_for(kept_duration: f64) -> u64 {
     std::env::var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE")
