@@ -48,6 +48,7 @@ import type { EditorExportResult } from "../../legacy/bindings/EditorExportResul
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
+import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
 
 /** `editor_export`'s wrapped result — `editorCall` (`api-shim.ts`) always adds
  *  `ok`, and only adds `error` on failure; `outputPath` is the real
@@ -145,13 +146,7 @@ declare global {
       prerollStop?: () => Promise<void>;
       /** Whether the rolling pre-roll buffer is actually running. */
       prerollStatus?: () => Promise<{ active: boolean }>;
-      runPreflight: () => Promise<{
-        findings: {
-          severity: "warn" | "error";
-          category: string;
-          message: string;
-        }[];
-      }>;
+      runPreflight: () => Promise<{ findings: PreflightFinding[] }>;
       pickFolder: () => Promise<string | null>;
       /** Open a folder in the OS file manager. Resolves FALSE when the
        *  opener refused — the shim catches, so the boolean is the only place

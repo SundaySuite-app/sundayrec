@@ -958,7 +958,9 @@ const api: Record<string, unknown> = {
   stopVu: async () => invoke<void>("stop_vu"),
   // run_preflight returns Vec<PreflightFinding> directly; old code reads { findings }.
   runPreflight: async () => ({
-    findings: await call<unknown[]>("run_preflight", undefined, []),
+    findings: await call<
+      import("../../legacy/bindings/PreflightFinding").PreflightFinding[]
+    >("run_preflight", undefined, []),
   }),
 
   // ── File dialogs / shell (Tauri dialog + opener plugins) ────────────────
