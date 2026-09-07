@@ -617,13 +617,42 @@ pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecord
 mod tests {
     use super::*;
 
+    /// A child that exits immediately, spawned from a NATIVE image on every
+    /// platform.
+    ///
+    /// `windows-latest` has no native `true`: the name resolves through PATH to
+    /// Git for Windows' MSYS coreutils (`C:\Program Files\Git\usr\bin\true.exe`),
+    /// and the first MSYS process on a cold runner pays the `msys-2.0.dll` load
+    /// plus a Defender scan — seconds of it, all AFTER `spawn()` has returned and
+    /// therefore inside the bound this test gives the child. `cmd /C exit 0` runs
+    /// a system image that is already resident.
+    fn quick_exit_command() -> tokio::process::Command {
+        if cfg!(windows) {
+            let mut cmd = tokio::process::Command::new("cmd");
+            cmd.args(["/C", "exit", "0"]);
+            cmd
+        } else {
+            tokio::process::Command::new("true")
+        }
+    }
+
     #[tokio::test]
     async fn wait_bounded_returns_status_for_a_quick_child() {
         // A process that exits immediately yields its status well inside the bound.
-        let mut child = tokio::process::Command::new("true")
+        let mut child = quick_exit_command()
             .spawn()
-            .expect("spawn `true`");
-        let status = wait_bounded(&mut child, Duration::from_secs(5)).await;
+            .expect("spawn the quick-exit child");
+        // `Some(status)` that is `success()` IS the deterministic assertion here:
+        // `wait_bounded` returns `None` (and kills) on timeout, so this can only
+        // pass on the un-timed-out path. 5 s on Unix, unchanged; 30 s on Windows,
+        // where CI runners start processes far more slowly (image load and
+        // Defender scanning happen after `spawn()` returns).
+        let bound = if cfg!(windows) {
+            Duration::from_secs(30)
+        } else {
+            Duration::from_secs(5)
+        };
+        let status = wait_bounded(&mut child, bound).await;
         assert!(status.map(|s| s.success()).unwrap_or(false));
     }
 
