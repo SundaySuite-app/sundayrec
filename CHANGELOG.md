@@ -3,6 +3,23 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.19.1 — vedlikehold
+
+Ingen brukersynlige endringer. Tre etterslepspunkter fra F2-runden.
+
+- **Typesikkerhet.** `runPreflight` i skallets API-kontrakt var en håndskrevet
+  tvilling av den genererte ts-rs-bindingen; nå peker den på bindingen selv
+  (`PreflightFinding`), så en omdøping i Rust stopper `npm run typecheck` i
+  stedet for å gi tomme felter på skjermen. Samme klasse som F2-A-E lukket for
+  editor/eksport-sømmen.
+- **Windows-CI.** De to prosess-timing-testene spawnet `true`, som på
+  `windows-latest` løses til Git for Windows' MSYS-coreutils — kald oppstart
+  koster sekunder etter `spawn()` og sprengte testens budsjett. Nå native
+  `cmd /C exit 0`, et klokkeuavhengig bevis på at barnet avsluttet selv, og
+  romsligere budsjett kun på Windows.
+- **Dokumentasjon i koden.** To dok-kommentarer i eksportmotoren satt på hver
+  sin gale funksjon etter en tidligere omorganisering.
+
 ## v0.19.0 — sju språk, Windows som virker, og ettermiddagsflyten
 
 Stor runde etter F1: språkrunden, tre nye granskinger (ettermiddagsflyten,
