@@ -229,7 +229,7 @@ sha2 = "0.11"
 # `rand`: the only thing asked of it is "fill this buffer from the system", and
 # a token minted from anything weaker would look exactly like a real one while
 # being guessable. Already in the tree via `uuid`.
-getrandom = "0.3"
+getrandom = "0.4"
 # E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
 # no system onnxruntime to ship or find. Only pulled under `--features vad`.
 tract-onnx = { version = "0.23.4", optional = true }
