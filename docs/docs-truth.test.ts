@@ -78,6 +78,19 @@ describe("docs-truth", () => {
     );
   });
 
+  // Beta-følger-stabil (2026-09): scripts/promote-release.mjs's "THE RULE"
+  // started letting a plain `vX.Y.Z` tag be promoted to BOTH "stable" and
+  // "beta", not just "stable" — an official release must reach beta testers
+  // too, so nobody on the beta ring is left running something older than
+  // the fleet. §5g is where that second promotion actually happens; pinned
+  // here so a future edit to the checklist can't quietly drop it back to
+  // "promote to stable only" without this test noticing.
+  it("RELEASE-CHECKLIST.md nevner at et rent tagg promoteres til beta òg (2026-09, beta-følger-stabil)", () => {
+    expect(readDoc("docs/RELEASE-CHECKLIST.md")).toContain(
+      "node scripts/promote-release.mjs beta vX.Y.Z",
+    );
+  });
+
   it('DISTRIBUTION.md påstår ikke at auto-update-feeden er "verified in prod" uten forbehold (F2-DOCS-1) — Windows-siden er uverifisert til F2-W1/#243 er riggtestet', () => {
     expect(readDoc("docs/DISTRIBUTION.md")).not.toContain(
       "feed verified in prod",
