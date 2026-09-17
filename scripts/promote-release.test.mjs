@@ -1,4 +1,5 @@
-// The promote gate's manifest check, and the admin-key source order.
+// The promote gate's manifest check, the channel/tag rule, and the
+// admin-key source order.
 //
 // The shapes below are REAL: `betaManifest` and `stableManifest` are the
 // platform key sets the live feeds served on 2026-08-08 for v0.11.0-beta.1
@@ -16,7 +17,11 @@ vi.mock("node:child_process", () => ({ spawnSync: vi.fn() }));
 
 import { spawnSync } from "node:child_process";
 
-import { manifestProblems, readAdminKey } from "./promote-release.mjs";
+import {
+  manifestProblems,
+  readAdminKey,
+  tagChannelProblem,
+} from "./promote-release.mjs";
 
 const entry = (sig = "dW50cnVzdGVk…") => ({
   signature: sig,
@@ -131,6 +136,47 @@ describe("manifestProblems", () => {
     expect(manifestProblems("nope", "v0.10.0")).toEqual([
       expect.stringContaining("not a JSON object"),
     ]);
+  });
+});
+
+// The asymmetric ring rule ("THE RULE" at the top of promote-release.mjs,
+// 2026-09): a `-beta.N` tag still clears only "beta", but a plain `vX.Y.Z`
+// tag now clears BOTH channels — an official release reaches the beta ring
+// too, so a beta tester never ends up running something older than the
+// fleet. Table-driven so the four corners (and the invalid-tag case) read as
+// one shape instead of four separate assertions that could silently drift
+// apart from each other.
+describe("tagChannelProblem", () => {
+  it.each([
+    ["beta", "v0.19.2", null],
+    ["stable", "v0.19.2", null],
+    ["beta", "v0.20.0-beta.1", null],
+    [
+      "stable",
+      "v0.20.0-beta.1",
+      '"v0.20.0-beta.1" is a beta tag (-beta.N) — it can only be promoted to "beta", not "stable".',
+    ],
+    [
+      "beta",
+      "not-a-tag",
+      '"not-a-tag" doesn\'t look like a release tag (expected "vX.Y.Z" or "vX.Y.Z-beta.N").',
+    ],
+  ])("channel=%s tag=%s → %s", (channel, tag, expected) => {
+    expect(tagChannelProblem(channel, tag)).toBe(expected);
+  });
+
+  it("lets a plain tag clear the beta channel (the new half of the rule)", () => {
+    // Before 2026-09 this was the one rejected corner — a plain tag could
+    // only ever be promoted to "stable". An official release is now fair
+    // game for the beta ring too, so beta testers are never left running
+    // something older than the fleet.
+    expect(tagChannelProblem("beta", "v0.19.2")).toBeNull();
+  });
+
+  it("still refuses a beta tag on stable — that half of the rule is unchanged", () => {
+    expect(tagChannelProblem("stable", "v0.19.2-beta.1")).toContain(
+      'can only be promoted to "beta", not "stable"',
+    );
   });
 });
 

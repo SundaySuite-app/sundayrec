@@ -24,7 +24,15 @@
 // ── THE RULE (enforced here AND server-side — this is the fast, local check
 //    that saves a round trip and a confusing audit-log entry) ──────────────
 //   a `vX.Y.Z-beta.N` tag can only be promoted to the "beta"   channel
-//   a plain     `vX.Y.Z` tag can only be promoted to the "stable" channel
+//   a plain     `vX.Y.Z` tag can be promoted to "stable" AND/OR "beta"
+//
+//   ASYMMETRIC ON PURPOSE: a beta tester must never end up running something
+//   OLDER than the fleet, so a plain, already-official release is always
+//   fair game for the beta channel too — see ring-drift.yml, which checks
+//   beta against the newest of (beta, stable), not beta alone. The reverse
+//   stays closed: a `-beta.N` build is untested by definition, and letting
+//   one reach "stable" would put every volunteer's Sunday in front of it,
+//   not just the testers who signed up for that risk.
 //
 // ── THE ADMIN KEY ────────────────────────────────────────────────────────────
 // Two sources, tried in order (see readAdminKey() below):
@@ -62,6 +70,11 @@
 //   node scripts/promote-release.mjs stable v0.11.0
 //   node scripts/promote-release.mjs --pause stable
 //   node scripts/promote-release.mjs --resume stable
+//
+//   An official release (a plain `vX.Y.Z` tag) is promoted to BOTH rings —
+//   run it twice, once per channel:
+//   node scripts/promote-release.mjs stable v0.19.2
+//   node scripts/promote-release.mjs beta v0.19.2
 
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
@@ -293,24 +306,28 @@ function printResult({ status, ok, payload }) {
   if (!ok) process.exit(1);
 }
 
-// ── channel/tag agreement — checked locally, before any request or even a
-// Keychain read, so a typo never costs a network round trip ────────────────
-function assertTagMatchesChannel(channel, tag) {
+// ── channel/tag agreement — pure and exported so it is unit-testable without
+// spawning a process or hitting fail()'s process.exit(1). Returns a problem
+// string, or `null` when `tag` may be promoted to `channel`. Checked locally,
+// before any request or even a Keychain read, so a typo never costs a
+// network round trip. See "THE RULE" at the top of this file for why a plain
+// tag clears BOTH channels but a beta tag clears only one.
+export function tagChannelProblem(channel, tag) {
   if (!BETA_TAG.test(tag) && !STABLE_TAG.test(tag)) {
-    fail(
-      `"${tag}" doesn't look like a release tag (expected "vX.Y.Z" or "vX.Y.Z-beta.N").`,
-    );
+    return `"${tag}" doesn't look like a release tag (expected "vX.Y.Z" or "vX.Y.Z-beta.N").`;
   }
   if (BETA_TAG.test(tag) && channel !== "beta") {
-    fail(
-      `"${tag}" is a beta tag (-beta.N) — it can only be promoted to "beta", not "${channel}".`,
-    );
+    return `"${tag}" is a beta tag (-beta.N) — it can only be promoted to "beta", not "${channel}".`;
   }
-  if (STABLE_TAG.test(tag) && channel !== "stable") {
-    fail(
-      `"${tag}" is a plain release tag — it can only be promoted to "stable", not "${channel}".`,
-    );
-  }
+  // A plain vX.Y.Z tag clears either channel — every caller in this file
+  // already checked `channel` against CHANNELS (stable|beta) before getting
+  // here, so there is nothing left to reject.
+  return null;
+}
+
+function assertTagMatchesChannel(channel, tag) {
+  const problem = tagChannelProblem(channel, tag);
+  if (problem) fail(problem);
 }
 
 // ── best-effort friendly summary of GET /v1/admin/channels — printResult()
