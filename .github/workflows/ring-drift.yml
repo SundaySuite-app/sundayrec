@@ -1,5 +1,4 @@
-# Daily check that each update channel is actually serving the newest
-# published GitHub release of its class.
+# Daily check that each update channel is actually serving what it should.
 #
 # The failure mode this exists for: "published on GitHub" and "reaches
 # installed clients" are two separate facts (docs/RELEASE-CHECKLIST.md §5).
@@ -9,6 +8,22 @@
 # (`node scripts/promote-release.mjs <channel> <tag>`) is a separate manual
 # step with no other alarm if it gets forgotten. This workflow is that
 # alarm.
+#
+# ── WHAT "SHOULD" MEANS, PER CHANNEL (2026-09, beta-follows-stable) ────────
+#   stable → the newest published NON-prerelease GitHub release. Unchanged.
+#   beta   → the HIGHER, BY SEMVER, of (newest published prerelease, newest
+#            published non-prerelease) — not whichever was published more
+#            recently. `scripts/promote-release.mjs`'s "THE RULE" now lets a
+#            plain `vX.Y.Z` tag be promoted to BOTH rings, so a stable
+#            release counts as fully caught-up for beta too; a beta tester
+#            must never be left running something older than the fleet. A
+#            v0.19.2 stable published after v0.20.0-beta.1 does NOT put beta
+#            in drift — 0.20.0-beta.1 is still the higher version. This is
+#            computed below by `semver_gt`, a small numeric major/minor/patch
+#            compare (a lexical/string compare would get `0.9.0` vs `0.10.0`
+#            backwards). The 24h grace window is unchanged either way — it
+#            now just starts from whichever tag's `publishedAt` won the
+#            semver compare, not always the prerelease's.
 #
 # NO SECRETS, on purpose — both sides of the comparison are already public:
 #   - `gh release list` (this repo is public; the auto-provided GITHUB_TOKEN
@@ -54,9 +69,12 @@ jobs:
           {
             echo "## Ring drift"
             echo ""
-            echo "Newest published GitHub release of each class, vs. what each update channel actually serves."
+            echo "What each update channel should be serving, vs. what it actually serves."
+            echo "Stable's target is the newest published non-prerelease. Beta's target is"
+            echo "the higher BY SEMVER of the newest prerelease and the newest non-prerelease"
+            echo "(a plain tag now reaches both rings — see this workflow's file header)."
             echo ""
-            echo "| Channel | Serving | Manifest pub_date | Newest on GitHub | Published | Result |"
+            echo "| Channel | Serving | Manifest pub_date | Should serve | Published | Result |"
             echo "|---|---|---|---|---|---|"
           } >> "$summary"
 
@@ -79,8 +97,70 @@ jobs:
           echo "Newest published stable tag: ${newest_stable_tag:-(none)} ($newest_stable_pub)"
           echo "Newest published prerelease tag: ${newest_beta_tag:-(none)} ($newest_beta_pub)"
 
-          # $1=channel ("stable"|"beta"), $2=newest matching GitHub tag
-          # ("" if none published yet), $3=that tag's publishedAt.
+          # semver_gt A B → success (exit 0) if tag A outranks tag B, for
+          # this repo's two tag shapes only: a plain `vMAJOR.MINOR.PATCH` or
+          # `vMAJOR.MINOR.PATCH-beta.N` (docs/ROLLBACK.md "the guarantee
+          # holds for strict semver" — same shapes promote-release.mjs's
+          # STABLE_TAG/BETA_TAG accept). Numeric major/minor/patch compare —
+          # NOT lexical/string — because a string compare gets `0.9.0` vs
+          # `0.10.0` backwards the moment any field reaches two digits (this
+          # repo is on 0.19.x already). Only once the core versions are equal
+          # does the pre-release suffix decide: no suffix outranks having one
+          # (semver.org §11.3 — `1.0.0` > `1.0.0-beta.1`). That is the one
+          # rule this whole function exists for: `v0.19.2` > `v0.19.2-beta.3`.
+          semver_gt() {
+            local a="${1#v}" b="${2#v}"
+            local a_core="${a%%-*}" b_core="${b%%-*}"
+            local a_pre="" b_pre=""
+            case "$a" in *-*) a_pre="${a#*-}" ;; esac
+            case "$b" in *-*) b_pre="${b#*-}" ;; esac
+
+            local a_maj a_min a_pat b_maj b_min b_pat
+            IFS='.' read -r a_maj a_min a_pat <<< "$a_core"
+            IFS='.' read -r b_maj b_min b_pat <<< "$b_core"
+
+            if [ "$a_maj" -gt "$b_maj" ]; then
+              return 0
+            elif [ "$a_maj" -lt "$b_maj" ]; then
+              return 1
+            fi
+            if [ "$a_min" -gt "$b_min" ]; then
+              return 0
+            elif [ "$a_min" -lt "$b_min" ]; then
+              return 1
+            fi
+            if [ "$a_pat" -gt "$b_pat" ]; then
+              return 0
+            elif [ "$a_pat" -lt "$b_pat" ]; then
+              return 1
+            fi
+            if [ -z "$a_pre" ] && [ -n "$b_pre" ]; then
+              return 0
+            fi
+            return 1
+          }
+
+          # Beta's comparison target: the higher BY SEMVER of the newest
+          # prerelease and the newest stable — see the file header
+          # ("beta-follows-stable", 2026-09). Defaults to the prerelease tag
+          # (including when it's empty) and only switches to the stable tag
+          # when a stable tag exists AND outranks it.
+          beta_candidate_tag="$newest_beta_tag"
+          beta_candidate_pub="$newest_beta_pub"
+          if [ -z "$newest_beta_tag" ]; then
+            beta_candidate_tag="$newest_stable_tag"
+            beta_candidate_pub="$newest_stable_pub"
+          elif [ -n "$newest_stable_tag" ] && semver_gt "$newest_stable_tag" "$newest_beta_tag"; then
+            beta_candidate_tag="$newest_stable_tag"
+            beta_candidate_pub="$newest_stable_pub"
+          fi
+          echo "Beta candidate (higher by semver of prerelease/stable): ${beta_candidate_tag:-(none)} ($beta_candidate_pub)"
+
+          # $1=channel ("stable"|"beta"), $2=the tag this channel should now
+          # be serving ("" if nothing published yet) — for "stable" that's
+          # simply the newest published non-prerelease; for "beta" it's
+          # $beta_candidate_tag computed above, NOT always the newest
+          # prerelease. $3=that tag's publishedAt.
           check_channel() {
             local channel="$1"
             local gh_tag="$2"
@@ -142,7 +222,9 @@ jobs:
               return
             fi
 
-            # Channel disagrees with the newest GitHub release of its class.
+            # Channel disagrees with the tag it should now be serving (for
+            # "beta" that may be the newest STABLE tag — see beta_candidate_*
+            # above, this function doesn't need to know or care which).
             # Only a hard failure once that release has had 24h for a human
             # to run promote-release.mjs — a release published 10 minutes ago
             # is a release in progress, not drift. Dates go through jq's own
@@ -160,17 +242,17 @@ jobs:
             age_h=$(( (now_epoch - pub_epoch) / 3600 ))
 
             if [ "$age_h" -gt 24 ]; then
-              echo "::error::channel '$channel' serves $channel_tag but GitHub's newest matching release is $gh_tag, published ${age_h}h ago — looks unpromoted. Run: node scripts/promote-release.mjs $channel $gh_tag"
+              echo "::error::channel '$channel' serves $channel_tag but should now be serving $gh_tag, published ${age_h}h ago — looks unpromoted. Run: node scripts/promote-release.mjs $channel $gh_tag"
               echo "| $channel | $channel_tag | $pub_date | $gh_tag | $gh_pub | DRIFT (${age_h}h) |" >> "$summary"
               fail=1
             else
-              echo "::warning::channel '$channel' serves $channel_tag; GitHub's newest is $gh_tag, published only ${age_h}h ago — within the normal promotion window, not failing yet."
+              echo "::warning::channel '$channel' serves $channel_tag; it should now be serving $gh_tag, published only ${age_h}h ago — within the normal promotion window, not failing yet."
               echo "| $channel | $channel_tag | $pub_date | $gh_tag | $gh_pub | recent (${age_h}h) |" >> "$summary"
             fi
           }
 
           check_channel "stable" "$newest_stable_tag" "$newest_stable_pub"
-          check_channel "beta" "$newest_beta_tag" "$newest_beta_pub"
+          check_channel "beta" "$beta_candidate_tag" "$beta_candidate_pub"
 
           echo "" >> "$summary"
           if [ "$fail" -ne 0 ]; then
