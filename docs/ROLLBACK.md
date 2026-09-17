@@ -98,11 +98,24 @@ the kill-switch alone protects everyone.
 
 Run these in order.
 
-### 1. Pause the channel immediately
+### 1. Pause the channel immediately — BOTH, if the bad release was official
 
 ```bash
 node scripts/promote-release.mjs --pause stable      # or: beta
 ```
+
+**A bad release cut from a plain `vX.Y.Z` tag (2026-09: §5g now promotes
+every official release to `beta` too, not just `stable`) can be sitting on
+BOTH rings at once.** Check the no-argument readback below before deciding
+one pause is enough — if both channels show the bad tag, pause both:
+
+```bash
+node scripts/promote-release.mjs --pause stable
+node scripts/promote-release.mjs --pause beta
+```
+
+A bad `-beta.N` tag, by contrast, can still only ever be on `beta` — that
+half of the rule (`scripts/promote-release.mjs`'s "THE RULE") is unchanged.
 
 Confirm it took:
 
@@ -110,7 +123,7 @@ Confirm it took:
 node scripts/promote-release.mjs
 ```
 
-Expect the paused channel to show **PAUSED**, with its promoted tag
+Expect the paused channel(s) to show **PAUSED**, with the promoted tag
 unchanged — pausing stops serving updates from that channel, it does not
 un-promote the tag.
 
@@ -147,30 +160,44 @@ git push origin v0.11.1
 This is the only way to get already-updated installs onto good code — there
 is no lower-version path. If the bad release was a beta (`v0.11.0-beta.1`),
 the fix can be another beta (`v0.11.0-beta.2`) if you want another beta-ring
-pass first, or go straight to a stable tag once you're confident — either way
-it must be a HIGHER version than the bad one, on the SAME channel it is
-replacing.
+pass first, **or (2026-09) a plain tag** — since a plain `vX.Y.Z` tag can now
+be promoted straight to `beta`, the fix for a bad beta no longer has to be
+another `-beta.N` build; promoting the next good official release to `beta`
+works too, and is one fewer beta-only build to cut. Either way it must be a
+HIGHER version than the bad one.
 
-### 5. Let the release build, then promote the fixed tag
+If the bad release was itself a plain tag that had reached **both** rings
+(the normal case since §5g), the fix needs promoting to **both** as well —
+see step 5.
+
+### 5. Let the release build, then promote the fixed tag — to every ring the bad one was on
 
 ```bash
 node scripts/promote-release.mjs stable v0.11.1
 ```
 
-### 6. Confirm the channel is actually un-paused
+If the bad release was official and had reached `beta` too (§5g), promote
+the fix there as well — same tag, both channels:
+
+```bash
+node scripts/promote-release.mjs beta v0.11.1
+```
+
+### 6. Confirm every channel you paused is actually un-paused
 
 Pausing and promoting are independent controls (separate fields, separate
 endpoints) — promoting a new tag does not automatically clear a pause you set
-in step 1.
+in step 1. If step 1 paused both `stable` and `beta`, check both here.
 
 ```bash
 node scripts/promote-release.mjs
 ```
 
-If it still shows **PAUSED**, resume it explicitly:
+If either still shows **PAUSED**, resume it explicitly:
 
 ```bash
 node scripts/promote-release.mjs --resume stable
+node scripts/promote-release.mjs --resume beta
 ```
 
 ### 7. Verify
@@ -179,18 +206,21 @@ node scripts/promote-release.mjs --resume stable
 node scripts/promote-release.mjs
 ```
 
-Confirm the channel shows the new, fixed tag and is **not** paused. Then run
-the normal verification for that channel before considering this done — see
-`RELEASE-CHECKLIST.md` and `SMOKE-TEST.md`'s beta-søndag section.
+Confirm every channel you touched shows the new, fixed tag and is **not**
+paused — both `stable` and `beta` if the bad release had reached both. Then
+run the normal verification for each channel before considering this done —
+see `RELEASE-CHECKLIST.md` and `SMOKE-TEST.md`'s beta-søndag section.
 
 ## Summary
 
-| You want to…                                       | Can you?        | How                                                                         |
-| -------------------------------------------------- | --------------- | --------------------------------------------------------------------------- |
-| Stop NEW updates to a bad version (v0.11.0+ fleet) | Yes             | `node scripts/promote-release.mjs --pause <channel>`                        |
-| Stop a pre-0.11.0 install from updating to it      | Yes, separately | Un-latest / pre-release the GitHub release itself (step 2)                  |
-| Undo an update on a machine that already took it   | **No**          | Not possible — ship a newer version instead (steps 3–5)                     |
-| Remove the bad installer from GitHub               | Doesn't help    | The manifest is Worker-served; already-downloaded installers are unaffected |
+| You want to…                                                     | Can you?        | How                                                                                 |
+| ---------------------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------- |
+| Stop NEW updates to a bad version (v0.11.0+ fleet)               | Yes             | `node scripts/promote-release.mjs --pause <channel>`                                |
+| Stop a pre-0.11.0 install from updating to it                    | Yes, separately | Un-latest / pre-release the GitHub release itself (step 2)                          |
+| Undo an update on a machine that already took it                 | **No**          | Not possible — ship a newer version instead (steps 3–5)                             |
+| Remove the bad installer from GitHub                             | Doesn't help    | The manifest is Worker-served; already-downloaded installers are unaffected         |
+| Roll back a bad OFFICIAL release sitting on BOTH rings (2026-09) | Yes, both       | Pause `stable` AND `beta` (step 1), promote the fix to `stable` AND `beta` (step 5) |
+| Fix a bad `-beta.N` release without cutting a new beta tag       | Yes (2026-09)   | Promote a good plain `vX.Y.Z` tag straight to `beta` — see step 4                   |
 
 ## Why the update feed lives on a different host than the admin API
 
@@ -235,9 +265,11 @@ curl -sS https://telemetry.sundaysuite.app/v1/admin/channels \
   -H "x-admin-key: $ADMIN_KEY"
 ```
 
-**2. Pause the bad channel** — the kill-switch, the same one-line effect as
-`--pause` in the script. `"channel"` is `"stable"` or `"beta"`, whichever is
-serving the bad release:
+**2. Pause the bad channel(s)** — the kill-switch, the same one-line effect
+as `--pause` in the script. `"channel"` is `"stable"` or `"beta"`, whichever
+is serving the bad release — repeat with `"beta"` too if step 1's readback
+shows the bad tag on both (the normal case for a bad official release since
+§5g, see the runbook above):
 
 ```bash
 curl -sS -X POST https://telemetry.sundaysuite.app/v1/admin/channel \

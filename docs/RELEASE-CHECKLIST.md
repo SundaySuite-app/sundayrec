@@ -150,19 +150,24 @@ them) exist specifically to catch that — do not compress them into one
 mental step called "promote", they check different things.
 
 `.github/workflows/ring-drift.yml` also watches for exactly this, daily and
-on demand (`gh workflow run ring-drift.yml`) — it compares the newest
-published GitHub release of each class against what `stable`/`beta` actually
-serve and fails loudly once a channel is more than 24h behind. It is a
-safety net for when 5d/5e get skipped, not a replacement for doing them
+on demand (`gh workflow run ring-drift.yml`) — it compares what `stable`
+actually serves against the newest published non-prerelease, and what `beta`
+actually serves against the HIGHER, BY SEMVER, of the newest prerelease and
+the newest non-prerelease (2026-09: an official release reaches both rings
+now — see below — so a stable tag published after the last beta counts as
+beta being caught up too, not as beta falling behind). Either way it fails
+loudly once the channel is more than 24h behind. It is a safety net for when
+5d/5e (or 5g's beta step below) get skipped, not a replacement for doing them
 yourself right after publishing.
 
 ### Direct-to-stable (owner override — the exception, written down)
 
 The **normal** path is beta first (§5a–§5f, then §5g). The owner can order a
 release straight to `stable` — **v0.12.0 shipped that way** (2026-08-09), with
-the beta ring left on v0.11.1-beta.2. That is an owner decision, not a
-shortcut anyone else may take, and the minimum bar is what v0.12.0 actually
-met:
+the beta ring left on v0.11.1-beta.2 (that was fine under the OLD rule, where
+a plain tag could only ever go to `stable` — see below for why it no longer
+is). That is an owner decision, not a shortcut anyone else may take, and the
+minimum bar is what v0.12.0 actually met:
 
 - [ ] Full CI green on the release commit — all six jobs, including the
       complete Playwright e2e tier in CI (not just locally).
@@ -171,6 +176,15 @@ met:
       (`node scripts/promote-release.mjs stable vX.Y.Z`, then the
       no-argument readback) — promote-release's manifest validation is the
       last automated gate.
+- [ ] **Also promote the same tag to `beta`** (2026-09,
+      `node scripts/promote-release.mjs beta vX.Y.Z`) — since
+      `scripts/promote-release.mjs`'s "THE RULE" started letting a plain tag
+      reach either channel, a direct-to-stable release is still an official
+      release, and skipping this leaves beta testers on an older build than
+      the fleet. It also avoids a false alarm: `ring-drift.yml` now expects
+      `beta` to be serving the newer of (newest beta, newest stable), so an
+      unpromoted beta ring reads as DRIFT once this tag is 24h old, not as
+      "beta intentionally skipped."
 - [ ] §6a still applies: if the release touched recording/editor/meter/boot
       code, the first real Sunday on it IS the health gate — now run from
       `stable`, with no ring underneath, so read `ROLLBACK.md` in advance.
@@ -246,20 +260,40 @@ the only action that makes a v0.11.0+ install able to see the release at all.
       go through `SMOKE-TEST.md`'s **beta-søndag** section. Do not promote to
       `stable` until that section is clean.
 
-### 5g. Repeat 5a–5e for the stable tag
+### 5g. Repeat 5a–5e for the stable tag — THEN promote it to `beta` too
 
 - [ ] Bump to the plain `vX.Y.Z` (same lockstep bump as 5a), tag, push,
       review, publish (5c) — the plain tag builds as a normal (non-pre-)
       release automatically.
-- [ ] **Promote**: `node scripts/promote-release.mjs stable vX.Y.Z`.
-- [ ] **Verify**: `node scripts/promote-release.mjs` — confirm `stable`
-      reports the new tag and is not paused.
+- [ ] **Promote to `stable`**: `node scripts/promote-release.mjs stable vX.Y.Z`.
+- [ ] **Promote the SAME tag to `beta`** (2026-09, beta-follows-stable):
+      `node scripts/promote-release.mjs beta vX.Y.Z`. An official release is
+      promoted to **both** rings — a plain tag is now valid on either
+      channel (`scripts/promote-release.mjs`'s "THE RULE"), and skipping
+      this leaves beta testers running something older than the fleet, which
+      is exactly the gap this rule change closes. (A beta build, i.e. a
+      `-beta.N` tag, is unaffected by any of this — it still goes to `beta`
+      only, same as always.)
+- [ ] **Verify — readback shows BOTH channels on the same tag**:
+      `node scripts/promote-release.mjs` (no arguments) — confirm `stable`
+      **and** `beta` both report `vX.Y.Z` and neither is paused. Seeing only
+      one of them updated means the second promote call above was skipped or
+      failed.
+- [ ] **Byte-verify BOTH feeds against `latest.json`** — fetch
+      `https://updates.sundaysuite.app/v1/update/stable` and
+      `https://updates.sundaysuite.app/v1/update/beta`, and compare each
+      against `vX.Y.Z`'s `latest.json` asset on the GitHub release (version,
+      `pub_date`, and every platform's `url` + `signature`). They must agree
+      exactly. The readback above only proves the Worker recorded the right
+      **tag** on each channel; this is what proves both channels are
+      actually serving the right **bytes**.
 
 > If a promoted release turns out to be bad after all, see `ROLLBACK.md`.
 > Short version: pausing a channel stops NEW updates — it does not undo one
 > that already happened. The only way back for an install that already
 > updated is a NEWER version containing the fix; "rollback" in the literal
-> sense is not an operation this system has.
+> sense is not an operation this system has. A bad official release now sits
+> on both rings, so both need pausing/replacing — `ROLLBACK.md` says so.
 
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
