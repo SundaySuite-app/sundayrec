@@ -3,6 +3,25 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.19.2 — sikkerhet, avhengigheter, og beta følger stabil
+
+Sikkerhetsrettelse og opprydding i avhengighetene. Beta-ringen får nå samme
+utgivelse som stabil.
+
+- **Sikkerhet.** rustls 0.23.43 → 0.23.45 (RUSTSEC-2026-0285: TLS
+  1.3-håndtrykksmeldinger godtatt på tvers av krypteringsnivå). rustls er
+  TLS-stakken under oppdatereren, telemetrien og e-postvarslene. js-yaml 4.3.2
+  (GHSA-2883-xcg3-v3hh) gjelder bare utviklerverktøy.
+- **Avhengigheter.** getrandom 0.4, uuid 1.26.1 og tract-onnx 0.23.7; vitest 5;
+  @preact/signals 2.11.2, vite 8.3, eslint 10.10, typescript-eslint 8.70,
+  Playwright 1.63 med flere.
+- **Beta følger stabil.** En offisiell utgivelse promoteres nå til både stabil
+  og beta, så beta-testerne aldri kjører eldre enn flåten.
+  `promote-release.mjs` godtar et rent tagg på beta, mens et beta-tagg
+  fortsatt aldri når stabil. Ring-drift-vakten måler beta mot den høyeste av
+  beta og stabil, og runbooken har fått steget. Worker-siden kom i
+  sunday-telemetry #11.
+
 ## v0.19.1 — vedlikehold
 
 Ingen brukersynlige endringer. Tre etterslepspunkter fra F2-runden.
