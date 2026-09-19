@@ -3,6 +3,26 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.20.0 — FFmpeg 9 og rammeverk-runden
+
+Rammeverk-runden for desktop-appene (19.09). Motoren under opptak og eksport er
+byttet, resten er vedlikehold du ikke ser.
+
+- **FFmpeg 8.1.2 → 9.0.1.** Samme byggservere og samme to-lags pinning som før
+  (arkivet mot utgiverens SHA-256, binæren mot `ffmpeg-checksums.json`). Alle
+  seks binærpinnene er satt på forhånd, også Windows. Hele Rust-suiten er kjørt
+  med ekte 9.0.1 og `SUNDAYREC_REQUIRE_SIDECAR=1`, så røyktestene for mastring,
+  kanaldiagnose, MP3/FLAC/video-eksport, avbrudd og timeout har målt mot den nye
+  versjonen og ikke hoppet over seg selv.
+- **reqwest 0.12 → 0.13.** TLS går fortsatt på `ring`, som i oppdatereren, og
+  sertifikatene sjekkes nå mot operativsystemets rotsertifikater. Underveis ble
+  det funnet en panikk som ville rammet første nettkall: reqwest 0.13 bygger
+  ingen klient uten en installert kryptoleverandør. `http_client()` installerer
+  den nå, og en test vokter det.
+- **TypeScript 7** via `@typescript/native` (se `docs/TYPESCRIPT-7.md`).
+- **Avhengigheter.** Nyeste minor/patch i npm og cargo, vitest 5.0.1. Rust 1.98.1
+  i CI, og Tauri-pakkene bumpes nå i én Dependabot-PR på tvers av npm og cargo.
+
 ## v0.19.2 — sikkerhet, avhengigheter, og beta følger stabil
 
 Sikkerhetsrettelse og opprydding i avhengighetene. Beta-ringen får nå samme
