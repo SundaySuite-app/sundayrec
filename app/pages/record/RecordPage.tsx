@@ -105,6 +105,7 @@ import { CameraCard } from "../setup/CameraCard";
 import { answerText, detailText } from "../setup/decision-text";
 import { decisionsFor } from "../setup/decisions-core";
 import { FirstRunResumeChip } from "../setup/FirstRunResumeChip";
+import { relayTransport } from "../setup/relay-core";
 import { FolderPage } from "../setup/FolderPage";
 import { NotifyPage } from "../setup/NotifyPage";
 import { QualityPage } from "../setup/QualityPage";
@@ -127,6 +128,7 @@ import {
 } from "../../state/disk";
 import { emailTransport, refreshEmailFacts } from "../../state/email";
 import { prerollActive } from "../../state/preroll";
+import { relayFacts, refreshRelayFacts } from "../../state/relay";
 import {
   dismissMissed,
   dismissPreflight,
@@ -199,6 +201,7 @@ export function RecordPage() {
     void loadAudioDevices();
     void refreshDiskSpace();
     void refreshEmailFacts();
+    void refreshRelayFacts();
     // Én gang per oppstart, ikke per besøk — se `state/preflight.ts`.
     void runSilentPreflightOnce();
   }, []);
@@ -525,6 +528,7 @@ function ControlStack({
       diskFreeBytes: diskFreeBytes.value,
       roomMinutes: currentRoomMinutes(),
       emailTransport: emailTransport(),
+      relayConfirmed: relayTransport(relayFacts.value),
       locale: locale.value,
       // Ingen måler i en kompaktrad: kortet sier hva som er VALGT, og
       // hørselstesten står i venstrekolonnen.

@@ -75,6 +75,7 @@ import {
 } from "../../state/disk";
 import { emailTransport, refreshEmailFacts } from "../../state/email";
 import { isRecording } from "../../state/recording";
+import { relayFacts, refreshRelayFacts } from "../../state/relay";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -86,6 +87,7 @@ import { toast } from "../../ui/toast";
 import { ChurchPage } from "./ChurchPage";
 import { answerText, detailText, questionText } from "./decision-text";
 import { decisionsFor, needsSetUp, type DecisionId } from "./decisions-core";
+import { relayTransport } from "./relay-core";
 import {
   dots,
   FIRST_RUN_STEP_COUNT,
@@ -191,6 +193,7 @@ export function FirstRun() {
     void loadAudioDevices();
     void refreshDiskSpace();
     void refreshEmailFacts();
+    void refreshRelayFacts();
   }, []);
 
   // Porten lytter bare på steg 1, og bare når en enhet FINNES å lytte på.
@@ -384,6 +387,7 @@ function Checklist() {
     diskFreeBytes: diskFreeBytes.value,
     roomMinutes: currentRoomMinutes(),
     emailTransport: emailTransport(),
+    relayConfirmed: relayTransport(relayFacts.value),
     locale: locale.value,
     // Fortsatt ingen måler på selve sjekklisten: den er et sammendrag, ikke en
     // test. Hørselstesten står inne i lyd-kortet, der den alltid har stått.
