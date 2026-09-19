@@ -16,7 +16,12 @@
 //! enumerator is gone one test later, and whether COM is still up depends on
 //! which other test threads happen to be alive. That is the intermittent
 //! windows-latest crash of 2026-09-19, and — mis-read then as a stream-building
-//! problem — the reason F2-W7 (#231) had to `#[ignore]` four cpal tests.
+//! problem — the reason F2-W7 (#231) had to `#[ignore]` four cpal tests, which
+//! run on Windows again now. Proof, from a windows-latest probe (run
+//! 35465912824): with the cpal tests run sequentially, main died 10/10 in
+//! `audio::devices::tests::name_only_enumeration_agrees_with_the_full_one` —
+//! the second enumeration, right after the first one's thread had exited —
+//! and 0/10 with this module; the full suite in parallel, 0/8.
 //!
 //! The fix is to make the FIRST cpal call in the process happen here, on a
 //! thread that joins the multi-threaded apartment and never exits. cpal's
@@ -83,5 +88,21 @@ mod tests {
     fn ensure_is_idempotent_and_returns() {
         super::ensure();
         super::ensure();
+    }
+
+    /// The exact shape of the crash: the thread that makes a cpal call exits —
+    /// its COM guard runs `CoUninitialize` — and ANOTHER thread enumerates
+    /// afterwards. Without the anchor this is a use-after-free whenever no
+    /// other COM thread happens to be alive; with it, the enumerator was never
+    /// created on either of these threads. Harmless on macOS (Core Audio).
+    #[test]
+    fn enumeration_survives_the_first_callers_thread_exiting() {
+        for _ in 0..2 {
+            std::thread::spawn(|| {
+                let _ = crate::audio::devices::list_input_device_names();
+            })
+            .join()
+            .expect("enumeration thread must not panic");
+        }
     }
 }
