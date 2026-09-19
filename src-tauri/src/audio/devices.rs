@@ -92,6 +92,7 @@ fn summarise_input(device: &cpal::Device, is_default: bool) -> AudioDevice {
 /// Enumerate input devices on the default host.
 #[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 pub fn list_input_devices() -> AppResult<AudioDeviceList> {
+    crate::audio::com_anchor::ensure();
     let host = cpal::default_host();
 
     let default_in = host.default_input_device().and_then(|d| d.name().ok());
@@ -126,6 +127,7 @@ pub fn list_input_devices() -> AppResult<AudioDeviceList> {
 /// this call can never load an ASIO driver.
 #[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 pub fn list_input_device_names() -> Vec<String> {
+    crate::audio::com_anchor::ensure();
     let host = cpal::default_host();
     match host.input_devices() {
         Ok(devices) => devices.filter_map(|d| d.name().ok()).collect(),

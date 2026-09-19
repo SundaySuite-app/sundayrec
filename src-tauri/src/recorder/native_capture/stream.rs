@@ -53,6 +53,9 @@ impl CpalHostKind {
 /// Open the requested cpal host. The explicit WASAPI/ASIO ids exist only on
 /// Windows; `Default` works everywhere.
 pub fn open_host(kind: CpalHostKind) -> Result<cpal::Host, String> {
+    // Before ANY cpal WASAPI call: see `audio::com_anchor` for the
+    // use-after-free this prevents (a no-op outside Windows).
+    crate::audio::com_anchor::ensure();
     match kind {
         CpalHostKind::Default => Ok(cpal::default_host()),
         CpalHostKind::Wasapi => {
