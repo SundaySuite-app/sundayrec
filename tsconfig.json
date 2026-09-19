@@ -13,6 +13,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
+    // TS 7 laster ikke lenger alle @types/* automatisk (types → []). Node-typene
+    // trengs av testene, e2e og playwright.config.ts (import.meta.dirname,
+    // process, __dirname). Se docs/TYPESCRIPT-7.md.
+    "types": ["node"],
     "paths": {
       "@lib/*": ["./app/lib/*"],
       "@legacy/*": ["./legacy/*"]
