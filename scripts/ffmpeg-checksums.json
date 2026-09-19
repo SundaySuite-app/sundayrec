@@ -1,9 +1,9 @@
 {
-  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars fetched by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. This is the SECOND pin layer: the script already hard-pins the SHA-256 of every downloaded ARCHIVE, so these cover the exact unpacked bytes that get bundled and shipped. A mismatch hard-fails the fetch; a MISSING key only warns (see checkPin) \u2014 which is safe only because the archive pin above it never can be missing, so never delete a key here expecting the fetch to stop. Reset for ffmpeg 8.1.2 (2026-08-06, was 6.0 from the frozen ffmpeg-static npm package). All four shipping/CI hosts are now pinned: mac arm64 computed on the owner's machine, windows + linux captured from CI run logs as planned. An x86_64-apple-darwin entry is still absent because no Intel mac build exists yet; add one when the universal build lands.",
-  "ffmpeg-aarch64-apple-darwin": "eaf91238e104dd0e262bc6510e25061855cc99a6955a721b0ac99660d58c473d",
-  "ffprobe-aarch64-apple-darwin": "ed9dc5871914b466b96b402c9ec0ba68ce4f836e72faa464b1b4e279835bd4a6",
-  "ffmpeg-x86_64-unknown-linux-gnu": "bea0dfb96f7223b1be497cf11ccda9ddd9a39103b948b342bb6db1c60a56be12",
-  "ffprobe-x86_64-unknown-linux-gnu": "f0a9c3c87d45fe323ae893fe9820150a46f5af9fc5f75066712097f160befac5",
-  "ffmpeg-x86_64-pc-windows-msvc": "1326dde4c84ff1f96fe6b8916c5bed29e163e9b5dccf995f6f3db069d143ec5e",
-  "ffprobe-x86_64-pc-windows-msvc": "b49ccc7c6547b141ad5a2f6ec69cc04323d7133d7704d70b331b904c63eecb07"
+  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars fetched by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. This is the SECOND pin layer: the script already hard-pins the SHA-256 of every downloaded ARCHIVE, so these cover the exact unpacked bytes that get bundled and shipped. A mismatch hard-fails the fetch; a MISSING key only warns (see checkPin) — which is safe only because the archive pin above it never can be missing, so never delete a key here expecting the fetch to stop. Reset for ffmpeg 9.0.1 (2026-09-19, was 8.1.2). All three shipping/CI hosts were pinned up front on the owner's machine this time, not from CI logs: mac arm64 by running the fetch script itself, windows + linux by extracting the same members from archives first verified against the publishers' .sha256 files (the Windows CI lane never downloads the real binary, so a CI-log pin would only have arrived with the first release). An x86_64-apple-darwin entry is still absent because no Intel mac build exists yet; add one when the universal build lands.",
+  "ffmpeg-aarch64-apple-darwin": "393e4c395020a1cb7cbd77fbe00599ce69d1c6466fee0dbd59d13f86a81a1611",
+  "ffprobe-aarch64-apple-darwin": "7abc49fb2bdf2204f018e76dc6e0a8ae7643313bae09a9fa43e7eb12442271bc",
+  "ffmpeg-x86_64-unknown-linux-gnu": "45e34db9aab2951db628c1ab069116f3c412e6a987b7f3d7ce00d8366157711a",
+  "ffprobe-x86_64-unknown-linux-gnu": "f18321fab1219aa55d6b22bad200bc339f195523ca974303f9412c52e4be2f2e",
+  "ffmpeg-x86_64-pc-windows-msvc": "72a489eccd008c2ec2c0a5856c5c75bc3d8bbfa90166c4566865c246445e6aa3",
+  "ffprobe-x86_64-pc-windows-msvc": "19202b23c0043f15ad1b7bce2344f406fd52bd6efd8f995ce02e7392a1cec52f"
 }
