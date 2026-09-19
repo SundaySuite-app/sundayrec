@@ -198,12 +198,22 @@ fs4 = "1.1"
 # HTTP client for the telemetry sender and the Sunday Account (SSO) token
 # exchange. rustls (no system OpenSSL). The pure decisions live in `sundayrec-core`;
 # reqwest is just the wire.
-reqwest = { version = "0.12", default-features = false, features = [
-    "rustls-tls",
+# reqwest 0.13 med `rustls-no-provider`, IKKE `rustls`. 0.13 sin `rustls`-feature
+# drar inn aws-lc (en C-avhengighet) som ANDRE kryptoleverandør ved siden av
+# `ring`, som tauri-plugin-updater og lettre allerede har kompilert inn. Med
+# `rustls-no-provider` må leverandøren installeres i prosessen før første
+# klient, ellers får reqwest panikk — `util::http_client()` gjør det
+# (`ensure_rustls_provider`), med samme grep som updateren selv bruker. Røttene
+# kommer fra OS-et (rustls-platform-verifier), som i updateren. Voktet av
+# `util::tests::http_client_builds_in_a_process_with_no_provider_installed`.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls-no-provider",
     "charset",
     "http2",
     "json",
 ] }
+# Kun for å installere ring som prosessens rustls-leverandør (se reqwest over).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 # ── Optional Electron-parity seam deps (feature-gated, see [features]; some ──
 # ── are pulled in by `default` via tray/updater) ─────────────────────────────
