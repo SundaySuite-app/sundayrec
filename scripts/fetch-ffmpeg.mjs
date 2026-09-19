@@ -53,9 +53,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, basename } from "node:path";
 
 // The ffmpeg release this app is built and tested against. 9.0 shipped
-// 2026-08-04 and is deliberately NOT used: a two-day-old major is not
-// something a Sunday-morning recording should depend on.
-const FFMPEG_VERSION = "8.1.2";
+// 2026-08-04 and was held back while it was days old — a fresh major is not
+// something a Sunday-morning recording should depend on. 9.0.1 (the newest
+// 9.0.x BOTH build servers below publish, checked 2026-09-19; 9.0.2 is out on
+// ffmpeg.org but not yet built by either) replaced 8.1.2 in the framework
+// round of 2026-09-19, gated by CI's real-ffmpeg smokes and a listening check.
+const FFMPEG_VERSION = "9.0.1";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "src-tauri", "binaries");
@@ -97,51 +100,51 @@ const SOURCES = {
   // Ships in the macOS release.
   "aarch64-apple-darwin": martinRiedl(
     "macOS arm64",
-    "macos/arm64/1783011502_8.1.2",
+    "macos/arm64/1787073674_9.0.1",
     {
       ffmpeg:
-        "ef1aa60006c7b77ce170c1608c08d8e4ba1c30c5746f2ac986ded932d0ac2c3c",
+        "8287a1b2229e05eb41859f073e18e6c52c60a778f2f5e6881070fe51b79407fe",
       ffprobe:
-        "c39787f4af7a3932502d2d48db6f6feaaa836b48a73ef78c32cc3285df61dfaf",
+        "102a26b8940a053298d9929bfaae71e4b6ef65ba5f19a99a88c433108560741a",
     },
   ),
   // Intel macs — not built today, kept so a universal build is one line away.
   "x86_64-apple-darwin": martinRiedl(
     "macOS x86_64",
-    "macos/amd64/1783018342_8.1.2",
+    "macos/amd64/1787081194_9.0.1",
     {
       ffmpeg:
-        "a52ef43883f44c219766d4b3bdde4e635b35465d0b704c01c3a0566b59775df9",
+        "5bdead62ff504ab9b447cc72b212c4fb481e3f7de5877d427a51bee8136dda40",
       ffprobe:
-        "5408ca588c8c72b0dde3afe676d0a7acf25ef97e55ae6eba5c7bede1cda42695",
+        "34511bbcf1988ad2886023bf5ace4f44cf62e6defeb3d194d6f7619e5b061f7f",
     },
   ),
   // CI only — the ubuntu job needs a real sidecar so the self-skipping
   // real-ffmpeg smokes actually RUN. Nothing is shipped from Linux.
   "x86_64-unknown-linux-gnu": martinRiedl(
     "Linux x86_64",
-    "linux/amd64/1783011670_8.1.2",
+    "linux/amd64/1787074600_9.0.1",
     {
       ffmpeg:
-        "56452c0bfc4ee0325cd615d62f46ba8264f62eed34f727c2224c6c84fa7b8719",
+        "18bec7d5c2ab3b24d277466b758394e109b0479133b98d155c5540ed3013fa74",
       ffprobe:
-        "c6f2d36e98f9a4445fad0b0be539f4c4faf13fd502116bf131becd53f56cd390",
+        "227c122cabb36444d7dee7f5c9c9db9e36e15ab7a9b43eb2196936fb177f9ad3",
     },
   ),
   "aarch64-unknown-linux-gnu": martinRiedl(
     "Linux arm64",
-    "linux/arm64/1783010599_8.1.2",
+    "linux/arm64/1787072884_9.0.1",
     {
       ffmpeg:
-        "ab9e16864b6bf4ae7e13bbdbdc29621be11a5c547c57af8d4250e9fa2f5e6461",
+        "92cff3dec20d996bb5b8a918b156b64301338e7c28046053c82d0935cf7c6eb2",
       ffprobe:
-        "fb78317b81cdeb614533be59e489019b754afd199670666af28f0e9574be395b",
+        "208379f31219f52333ed769e9159ca2964355b7c7c4420233bcca769b5edef62",
     },
   ),
   // Ships in the Windows release.
   "x86_64-pc-windows-msvc": gyan(
     `ffmpeg-${FFMPEG_VERSION}-essentials_build`,
-    "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec",
+    "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
   ),
 };
 
