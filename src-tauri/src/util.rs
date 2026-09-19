@@ -197,6 +197,7 @@ pub fn detect_platform() -> Platform {
 /// timeout caps a stalled response. (Lived in the cloud-backup module until that
 /// feature was removed; the Sunday Account + telemetry paths still need it.)
 pub(crate) fn http_client() -> reqwest::Client {
+    ensure_rustls_provider();
     reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(120))
@@ -207,6 +208,20 @@ pub(crate) fn http_client() -> reqwest::Client {
             tracing::warn!("http client builder failed ({e}); using default");
             reqwest::Client::new()
         })
+}
+
+/// Install `ring` as the process-wide rustls crypto provider, once.
+///
+/// reqwest runs on `rustls-no-provider` (see Cargo.toml), and in that mode it
+/// PANICS on `Client::builder().build()` when no provider is installed — it does
+/// not pick one from the compiled-in features. tauri-plugin-updater and lettre
+/// each install ring the same way right before they build a client, but nothing
+/// guarantees either has run before our first request, so we do it ourselves.
+/// Idempotent: a provider that is already installed (ours or theirs) wins.
+pub(crate) fn ensure_rustls_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
 }
 
 /// Unix milliseconds as i64 — the timestamp convention every shell-side clock
@@ -456,6 +471,20 @@ pub async fn write_atomic_async(path: &Path, bytes: &[u8]) -> std::io::Result<()
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn http_client_builds_in_a_process_with_no_provider_installed() {
+        // reqwest 0.13 on `rustls-no-provider` panics in `build()` unless a
+        // rustls crypto provider is installed first — it compiles fine and only
+        // fails at runtime, on whichever request happens to come first. A test
+        // process starts with none installed, exactly like a fresh app launch
+        // before the updater has run, so this is where that failure shows up.
+        let _ = http_client();
+        assert!(
+            rustls::crypto::CryptoProvider::get_default().is_some(),
+            "http_client() must leave a process-wide provider installed"
+        );
+    }
 
     #[test]
     fn lock_recover_returns_inner_after_poison() {
