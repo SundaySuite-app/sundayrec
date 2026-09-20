@@ -307,24 +307,15 @@ mod tests {
     /// count, never fewer than the default config advertises — the channel
     /// grid depends on it. SELF-SKIPPING on machines without an input device.
     ///
-    /// F2-W7: identified with `--test-threads=1` (single-threaded, so
-    /// unambiguous) as the exact test running when windows-latest crashes the
-    /// whole process with STATUS_ACCESS_VIOLATION — its "test ... " line in
-    /// the CI log has no completion status; the process died mid-test, not
-    /// mid-panic. `--test-threads=1` did NOT prevent the crash (this test
-    /// alone, no other thread involved), which rules out cross-test WASAPI/COM
-    /// contention as the cause and points at `build_vu_stream` itself:
-    /// unlike the plain enumeration calls that passed reliably in every run
-    /// (`list_input_devices_does_not_panic_and_reports_a_host`,
-    /// `default_host_opens_everywhere`), this one goes on to actually BUILD a
-    /// cpal input stream via `device.default_input_config()` +
-    /// `build_vu_stream`, and stream construction is a far more invasive
-    /// WASAPI call (`IAudioClient::Initialize`) than listing device names.
-    /// See PR #231. Real-device behaviour stays rig-verified.
-    #[cfg_attr(
-        windows,
-        ignore = "F2-W7: build_vu_stream crashes the test process on windows-latest (STATUS_ACCESS_VIOLATION building a real WASAPI stream) — see PR #231"
-    )]
+    /// F2-W7 (#231) had this `#[ignore]`d on Windows after it killed the test process
+    /// with STATUS_ACCESS_VIOLATION; that was read as a stream-building (or
+    /// enumeration) problem, even under `--test-threads=1`. The real cause was
+    /// cpal's cached WASAPI enumerator outliving the COM apartment of the
+    /// short-lived test thread that created it — libtest gives every test its own
+    /// thread, even single-threaded. Fixed at the root in `audio::com_anchor`, and
+    /// proven on windows-latest (probe run 35465912824): the sequential cpal tests
+    /// died 10/10 on main and 0/10 with the anchor, with this test included.
+    /// Real-device behaviour stays rig-verified.
     #[test]
     fn vu_stream_negotiates_max_channels_or_skips() {
         use cpal::traits::{DeviceTrait, HostTrait};

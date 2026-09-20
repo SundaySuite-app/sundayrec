@@ -53,6 +53,9 @@ impl CpalHostKind {
 /// Open the requested cpal host. The explicit WASAPI/ASIO ids exist only on
 /// Windows; `Default` works everywhere.
 pub fn open_host(kind: CpalHostKind) -> Result<cpal::Host, String> {
+    // Before ANY cpal WASAPI call: see `audio::com_anchor` for the
+    // use-after-free this prevents (a no-op outside Windows).
+    crate::audio::com_anchor::ensure();
     match kind {
         CpalHostKind::Default => Ok(cpal::default_host()),
         CpalHostKind::Wasapi => {
@@ -645,11 +648,10 @@ mod tests {
     #[test]
     fn default_host_opens_everywhere() {
         // The default host must open on every platform (CoreAudio/WASAPI).
-        // F2-W7: unlike the enumeration calls (`.default_input_device()`,
-        // `.input_devices()`) that crash the process on windows-latest (see
-        // PR #231), `cpal::default_host()` itself does not touch COM/WASAPI
-        // in cpal 0.17's Windows backend — left ungated to test that
-        // distinction rather than assumed.
+        // `open_host` also starts `audio::com_anchor` first, which is what keeps
+        // the enumeration calls (`.default_input_device()`, `.input_devices()`)
+        // from crashing the process once the thread that first made them exits
+        // (the F2-W7 crash of #231, root-caused 2026-09-19).
         assert!(open_host(CpalHostKind::Default).is_ok());
     }
 }

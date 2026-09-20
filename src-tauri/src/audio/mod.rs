@@ -7,6 +7,8 @@
 //!   - [`devices`]     enumerate input devices + capabilities (cpal, for the VU)
 //!   - [`device_enum`] real ffmpeg `-list_devices` enumeration (recorder addressing)
 //!   - [`asio`]        Windows ASIO device + channel enumeration (Fase 2)
+//!   - [`com_anchor`]  Windows: keeps cpal's WASAPI device enumerator in a COM
+//!     apartment that lives as long as the process (see its header)
 //!   - [`vu`]          the VU engine: cpal input stream → `PeakMeters` → `vu://levels`
 //!   - [`device_watch`] the OS device-list-change signal that cuts short the
 //!     recorder's reconnect back-off (macOS CoreAudio; see its header)
@@ -17,6 +19,7 @@
 //! HARDWARE-UNVERIFIED until smoke-tested on a real device.
 
 pub mod asio;
+pub mod com_anchor;
 pub mod device_enum;
 pub mod device_watch;
 pub mod devices;

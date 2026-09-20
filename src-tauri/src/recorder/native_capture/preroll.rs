@@ -1717,19 +1717,15 @@ mod tests {
     /// Everything under test is the production path; only the Tauri emit is
     /// swapped for a counter through the same `VuSink` seam production uses.
     ///
-    /// F2-W7: once past its own skip check, this reaches `build_input_stream_any`
-    /// — an ACTUAL cpal/WASAPI stream build, not just enumeration — which
-    /// crashes the whole test PROCESS with STATUS_ACCESS_VIOLATION on
-    /// GitHub's windows-latest runner. Same finding as
-    /// `native_capture::segment::native_capture_records_two_seconds_or_skips`
-    /// and `audio::vu::tests::vu_stream_negotiates_max_channels_or_skips`
-    /// (whose doc comment has the full evidence — confirmed with
-    /// `--test-threads=1`, ruling out cross-test contention). See PR #231.
+    /// F2-W7 (#231) had this `#[ignore]`d on Windows after it killed the test process
+    /// with STATUS_ACCESS_VIOLATION; that was read as a stream-building (or
+    /// enumeration) problem, even under `--test-threads=1`. The real cause was
+    /// cpal's cached WASAPI enumerator outliving the COM apartment of the
+    /// short-lived test thread that created it — libtest gives every test its own
+    /// thread, even single-threaded. Fixed at the root in `audio::com_anchor`, and
+    /// proven on windows-latest (probe run 35465912824): the sequential cpal tests
+    /// died 10/10 on main and 0/10 with the anchor, with this test included.
     /// Real-device behaviour stays rig-verified.
-    #[cfg_attr(
-        windows,
-        ignore = "F2-W7: building a real cpal/WASAPI stream crashes the test process on windows-latest (STATUS_ACCESS_VIOLATION) — see PR #231"
-    )]
     #[tokio::test(flavor = "multi_thread")]
     async fn native_preroll_buffers_meters_and_harvests_or_skips() {
         use cpal::traits::HostTrait;
