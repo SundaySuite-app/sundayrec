@@ -3,6 +3,7 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
+  relayEmpty,
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
@@ -28,10 +29,18 @@ test.describe("email card", () => {
     // `email_status.featureBuilt: false` is the `--no-default-features` build.
     // The card must wear the unavailable chip + explanation rather than
     // offering controls that end in a mystery failure.
+    //
+    // ⚠️ A5: «no send path at all» now takes BOTH halves. The relay is HTTP and
+    // deliberately featureless (`commands/notify_relay.rs`), so a build without
+    // the `email` cargo feature can still send — as long as it was built with a
+    // relay endpoint. `unavailable` is therefore the intersection: no feature
+    // AND no endpoint. With an endpoint the card is `unconfigured` instead,
+    // which `notify-relay.spec.ts` pins.
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
         email_status: { featureBuilt: false },
+        relay_status: relayEmpty({ endpointBuilt: false }),
       },
       settings: SETTLED_SETTINGS,
       goto: "settings:sharing",
@@ -77,16 +86,19 @@ test.describe("email card", () => {
 
     const gate = page.getByTestId("notify-email-gate");
     await expect(gate).toHaveAttribute("data-gate", "unconfigured");
+    // ⚠️ A5 reworded the reason rather than adding a second one: with the relay
+    // as the main way, «requires an SMTP server» would send a volunteer to a
+    // screen she does not need. The sentence now names BOTH ways out, and it is
+    // the same sentence on the gate and on the button.
+    const reason =
+      "Bekreft e-postadressen, eller sett opp en e-postserver (SMTP) under Avansert.";
     await expect(gate.getByTestId("notify-email-gate-banner")).toContainText(
-      "Krever en e-postserver (SMTP). Sett opp under Avansert.",
+      reason,
     );
     const testBtn = page.getByTestId("notify-test");
     await expect(testBtn).toHaveAttribute("aria-disabled", "true");
     // A disabled button carries its reason — three places at once, see Button.
-    await expect(testBtn).toHaveAttribute(
-      "title",
-      "Krever en e-postserver (SMTP). Sett opp under Avansert.",
-    );
+    await expect(testBtn).toHaveAttribute("title", reason);
   });
 
   test("«Test e-post» sends through the configured SMTP transport", async ({
