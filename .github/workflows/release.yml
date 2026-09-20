@@ -103,6 +103,13 @@ jobs:
       # cpal's `asio` feature compiles C++ glue + bindgen against the Steinberg
       # ASIO SDK, so the Windows job needs the MSVC environment, libclang, and
       # the SDK. macOS skips all of this (no `asio` feature there).
+      #
+      # ⚠️ A Windows step that COMPILES (cargo/tauri) must not use `shell: bash`.
+      # Git-bash puts C:\Program Files\Git\usr\bin first on PATH, where MSYS's
+      # own link.exe shadows the MSVC linker and every build script dies with
+      # "linking with `link.exe` failed" — nothing about the error names bash.
+      # tauri-action runs outside bash, so this applies to hand-written run
+      # steps (proven the hard way in a throwaway probe, 2026-09-20).
       - name: Set up MSVC environment (Windows, for ASIO)
         if: matrix.platform == 'windows-latest'
         uses: ilammy/msvc-dev-cmd@v1
