@@ -19,6 +19,9 @@ pub mod media;
 // (it is HTTP, not SMTP) and takes no path: see the module docs.
 pub mod notify_relay;
 pub mod path_guard;
+// «Legg ut» — open the chosen upload page. Takes nothing from the renderer;
+// the URL comes from the stored setting via `sundayrec_core::publish`.
+pub mod publish;
 // E1.3 — a TEST-only module: the coverage ratchet that makes it impossible to
 // land a new path-taking command without classifying it as guarded or exempt.
 // Compiled out of every non-test build by its own inner `#![cfg(test)]`.

@@ -69,6 +69,7 @@ pub mod preflight;
 pub mod preroll;
 pub mod processing;
 pub mod progress;
+pub mod publish;
 pub mod reconnect;
 pub mod recorder;
 pub mod recovery;

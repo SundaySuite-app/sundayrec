@@ -439,7 +439,28 @@
           "onBattery": "lief auf Akku"
         },
         "audioTech": "Audio-Technologie",
-        "diagnoseReportWhere": "Fügen Sie den Bericht in ein GitHub-Issue ein, oder senden Sie ihn an dev@sundaysuite.app."
+        "diagnoseReportWhere": "Fügen Sie den Bericht in ein GitHub-Issue ein, oder senden Sie ihn an dev@sundaysuite.app.",
+        "publishTitle": "Veröffentlichen",
+        "publishDesc": "Nach einem Export kann die App die Seite öffnen, auf die Sie hochladen – mit Titel und Beschreibung zum Kopieren bereit. SundayRec lädt selbst nichts hoch.",
+        "publishWhere": "Wo veröffentlichen Sie?",
+        "publishChannelName": {
+          "custom": "Eigene Seite",
+          "none": "Keine"
+        },
+        "publishChannelDesc": {
+          "soundcloud": "Oft auch Ihr Podcast-Feed (RSS)",
+          "youtube": "Hochladen in YouTube Studio",
+          "spotify": "Podcast in Spotify for Creators",
+          "custom": "Zum Beispiel WordPress oder Ihr Podcast-Hoster",
+          "none": "Die Bestätigung zeigt nur die Datei"
+        },
+        "publishUrl": "Link zur Upload-Seite",
+        "publishUrlDesc": "Muss mit https:// beginnen",
+        "publishUrlNotHttps": "Der Link muss mit https:// beginnen",
+        "publishUrlInvalid": "Das sieht nicht wie eine Webadresse aus",
+        "publishTemplate": "Feste Beschreibung",
+        "publishTemplateDesc": "Wird beim Export eingesetzt und kann dort geändert werden. {title}, {speaker}, {date} und {church} werden ersetzt.",
+        "publishTemplatePlaceholder": "Predigt aus {church}, {date}. Sprecher: {speaker}."
       }
     },
     "diagnose": {
@@ -743,7 +764,17 @@
       "contentSpeakerPlaceholder": "Wer hat gesprochen?",
       "contentDescription": "Beschreibung",
       "contentDescriptionPlaceholder": "Bibeltext, Thema oder eine Zeile über die Gemeinde",
-      "contentHint": "Alles ist optional. Mit einem Titel bekommt die Datei ihn als Namen – den schlagen SoundCloud und ähnliche Seiten beim Hochladen vor."
+      "contentHint": "Alles ist optional. Mit einem Titel bekommt die Datei ihn als Namen – den schlagen SoundCloud und ähnliche Seiten beim Hochladen vor.",
+      "publishTitle": "Auf {channel} veröffentlichen",
+      "publishTitleCustom": "Veröffentlichen",
+      "publishOpen": "{channel} öffnen",
+      "publishOpenCustom": "Upload-Seite öffnen",
+      "publishHint": "Ziehen Sie die Datei auf die Seite, die sich öffnet, und fügen Sie Titel und Beschreibung ein.",
+      "publishCopy": "Kopieren",
+      "publishCopied": "Kopiert",
+      "publishCopyFailed": "Kopieren fehlgeschlagen. Markieren Sie den Text und kopieren Sie ihn selbst.",
+      "publishNothing": "Unter Einstellungen → Erweitert ist kein gültiger https-Link eingetragen, daher wurde nichts geöffnet.",
+      "publishFailed": "Die Seite konnte nicht geöffnet werden. Öffnen Sie sie selbst im Browser."
     },
     "span": {
       "hours": "{h} Std.",

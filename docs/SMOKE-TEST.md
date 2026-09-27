@@ -946,6 +946,24 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      VERIFIED-BY: e2e/export-page.spec.ts::feltene følger eksporten, og tittelen blir filnavnet
      VERIFIED-BY: e2e/export-page.spec.ts::det som ble lagret sist, står i feltene neste gang
      VERIFIED-BY: crates/sundayrec-core/src/editor.rs::export_stem_matches_the_shared_vectors
+   - **Expected («Legg ut»):** under the receipt, the panel **«Legg ut på
+     SoundCloud»** (the default channel) shows the exported title and
+     description, each with its own **«Kopier»**; **«Åpne SoundCloud»** opens
+     `https://soundcloud.com/upload` in the **system browser** (not inside the
+     app). Drag the file in from «Vis i Finder» and note whether SoundCloud
+     pre-fills the track title from the file name or from the ID3 `title` tag.
+     Then set **Innstillinger → Avansert → Legg ut** to «Egen side» with an
+     `http://` link: Oppsett refuses it on the spot, and a link that got in
+     some other way makes the receipt say it was not opened. «Ingen» removes
+     the panel. The browser opening is the OS handler and stays GUI-UNVERIFIED;
+     the rest is covered:
+     VERIFIED-BY: e2e/publish.spec.ts::SoundCloud er standarden: tittel og beskrivelse kan kopieres hver for seg, og knappen åpner siden
+     VERIFIED-BY: e2e/publish.spec.ts::en egen lenke bakenden ikke godtar, blir en setning — ikke en knapp som ikke gjør noe
+     VERIFIED-BY: e2e/publish.spec.ts::«Ingen» betyr ingen panel — bare fila
+     VERIFIED-BY: e2e/publish.spec.ts::en lenke som ikke er https, sies fra om og lagres ikke
+     VERIFIED-BY: e2e/publish.spec.ts::malen fylles inn live, og fryses når noen skriver selv
+     VERIFIED-BY: crates/sundayrec-core/src/publish.rs::custom_upload_url_matches_the_shared_vectors
+     VERIFIED-BY: crates/sundayrec-core/src/publish.rs::the_fixed_channels_are_https_and_do_not_need_a_link
    - **Expected:** when it is done, the receipt offers three ways on — «Vis i
      Finder», «Eksporter i annet format», «Til biblioteket».
    - The destination half of the old modal's honesty claim:

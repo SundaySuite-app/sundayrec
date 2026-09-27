@@ -52,6 +52,7 @@ import {
   type ExportFormat,
 } from "./export-core";
 import { DEFAULT_EXPORT_FORMAT } from "./export-core";
+import { renderDescription } from "./publish-core";
 import { clearDirty, E, mediaInfo } from "./model";
 import { clearDraft } from "./cuts";
 import {
@@ -86,8 +87,45 @@ export const includeVideo = signal(false);
 export const exportTitle = signal("");
 /** Hvem som talte. Blir `artist`-taggen. */
 export const exportSpeaker = signal("");
-/** Fritekst. Blir `comment`-taggen. */
+/** Fritekst. Blir `comment`-taggen. Les den gjennom `currentDescription()`. */
 export const exportDescription = signal("");
+/**
+ * Følger beskrivelsen fortsatt malen fra Oppsett?
+ *
+ * Sann til noen skriver i feltet selv — da er teksten deres, og malen røres
+ * ikke igjen — eller til en lagret, ikke-tom beskrivelse leses inn fra
+ * `.meta.json`.
+ * Mens den er sann, fylles `{tittel}`, `{taler}` og de andre inn LIVE: en
+ * tittel skrevet etter at siden åpnet, står i beskrivelsen med én gang.
+ */
+export const descriptionFollowsTemplate = signal(true);
+
+/**
+ * Beskrivelsen slik den står i feltet og slik den blir sendt.
+ *
+ * Malen (`settings.publishDescriptionTemplate`) med feltene fylt inn så lenge
+ * ingen har skrevet i beskrivelsen selv og malen ikke er tom; ellers det som
+ * står i `exportDescription`.
+ */
+export function currentDescription(): string {
+  const template = settings.value.publishDescriptionTemplate ?? "";
+  if (!descriptionFollowsTemplate.value || template.trim() === "") {
+    return exportDescription.value;
+  }
+  return renderDescription(template, {
+    title: exportTitle.value,
+    speaker: exportSpeaker.value,
+    date: localIsoDate(E.startedAtMs),
+    church: settings.value.churchName ?? "",
+    locale: locale.value,
+  });
+}
+
+/** Brukeren skrev i beskrivelsen: teksten er deres herfra. */
+export function editDescription(next: string): void {
+  exportDescription.value = next;
+  descriptionFollowsTemplate.value = false;
+}
 
 // ── Kjøringen ───────────────────────────────────────────────────────────────
 
@@ -197,6 +235,7 @@ export function resetExport(): void {
   exportTitle.value = "";
   exportSpeaker.value = "";
   exportDescription.value = "";
+  descriptionFollowsTemplate.value = true;
   exporting.value = false;
   exportFraction.value = null;
   exportEtaMs.value = null;
@@ -246,6 +285,11 @@ export async function loadExportContent(
     exportTitle.value = saved.title;
     exportSpeaker.value = saved.speaker;
     exportDescription.value = saved.description;
+    // Det som ble sendt sist, er fasiten — også en beskrivelse som en gang
+    // kom fra malen. En mal endret i mellomtiden skal ikke skrive om den.
+    // Men en TOM beskrivelse er ingen tekst å verne om: den som eksporterte
+    // med bare en tittel før malen fantes, skal få malen neste gang.
+    descriptionFollowsTemplate.value = saved.description.trim() === "";
     return;
   }
   const date = localIsoDate(startedAtMs);
@@ -438,7 +482,7 @@ export async function runExport(
   const content: ExportContent = {
     title: exportTitle.value.trim(),
     speaker: exportSpeaker.value.trim(),
-    description: exportDescription.value.trim(),
+    description: currentDescription().trim(),
   };
 
   const params = buildExportRequest({

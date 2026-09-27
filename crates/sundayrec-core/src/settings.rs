@@ -31,6 +31,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::publish::PublishTarget;
 use crate::schedule::{ScheduleSlot, SpecialRecording};
 
 /// Input channel layout. Serialised to the EXACT Electron string union
@@ -453,6 +454,26 @@ pub struct Settings {
     #[serde(default)]
     pub responsible_person: String,
 
+    // ── «Legg ut» — where the finished file goes (no upload; see `publish`) ────
+    /// The channel the export receipt's «Legg ut» panel opens. SoundCloud by
+    /// default; `none` hides the panel. Lenient: an unknown channel written by
+    /// a newer build costs this field, not the whole blob.
+    #[serde(default, deserialize_with = "lenient")]
+    pub publish_target: PublishTarget,
+    /// The church's own upload page, used when `publish_target` is `custom`.
+    /// Stored as typed; vetted every time it is OPENED
+    /// ([`crate::publish::custom_upload_url`]: `https://` only, no userinfo),
+    /// so a bad link is a panel that says so, never a URL handed to the OS.
+    #[serde(default)]
+    pub publish_custom_url: String,
+    /// A fixed description the «Innhold» card starts from, with `{tittel}`,
+    /// `{taler}`, `{dato}` and `{kirke}` filled in (English aliases accepted).
+    /// Empty = the description starts empty. Rendered in the renderer
+    /// (`renderDescription`), never here: it is prefill, not a tag the backend
+    /// composes.
+    #[serde(default)]
+    pub publish_description_template: String,
+
     // ── Notifications (R7 — Electron `notifyStart`/`notifyStop`) ───────────────
     /// Fire a native notification when a scheduled recording starts? Default true.
     #[serde(default = "default_true")]
@@ -658,6 +679,10 @@ impl Default for Settings {
 
             church_name: String::new(),
             responsible_person: String::new(),
+
+            publish_target: PublishTarget::default(),
+            publish_custom_url: String::new(),
+            publish_description_template: String::new(),
 
             notify_start: true,
             notify_stop: true,
@@ -1546,6 +1571,45 @@ mod tests {
                 "{gone} must not survive the round-trip"
             );
         }
+    }
+
+    // «Legg ut»: a blob from before the three publish fields existed gets the
+    // defaults (SoundCloud, no link, no template) and loses nothing else.
+    #[test]
+    fn a_blob_without_the_publish_fields_gets_their_defaults() {
+        let s = Settings::from_json_merged(r#"{"churchName": "Domkirken"}"#).validated();
+        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.publish_target, PublishTarget::Soundcloud);
+        assert_eq!(s.publish_custom_url, "");
+        assert_eq!(s.publish_description_template, "");
+    }
+
+    #[test]
+    fn the_publish_fields_round_trip_under_their_camel_case_names() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "publishTarget": "custom",
+                "publishCustomUrl": "https://kirken.no/last-opp",
+                "publishDescriptionTemplate": "Preken av {taler}, {dato}."
+            }"#,
+        );
+        assert_eq!(s.publish_target, PublishTarget::Custom);
+        assert_eq!(s.publish_custom_url, "https://kirken.no/last-opp");
+        assert_eq!(s.publish_description_template, "Preken av {taler}, {dato}.");
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["publishTarget"], "custom");
+        let none = Settings::from_json_merged(r#"{"publishTarget": "none"}"#);
+        assert_eq!(none.publish_target, PublishTarget::Off);
+    }
+
+    #[test]
+    fn an_unknown_publish_target_costs_that_field_and_nothing_else() {
+        // A newer build's channel, read by this one: the save folder and the
+        // schedule must not be reset along with it (`lenient`).
+        let s =
+            Settings::from_json_merged(r#"{"publishTarget": "mastodon", "silenceThreshold": -40}"#);
+        assert_eq!(s.publish_target, PublishTarget::Soundcloud);
+        assert_eq!(s.silence_threshold, -40);
     }
 
     // v0.15 («Frivilligen først» R2) removed the dead settings fields — the

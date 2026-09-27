@@ -3714,3 +3714,25 @@ mod tests {
         assert_eq!(out, vec!["/a".to_string()]);
     }
 }
+
+#[cfg(test)]
+mod export_stem_proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Whatever is typed as a title, the stem is a single safe path
+        /// segment: never empty, no separator or reserved character, no
+        /// control character, and never ending in a dot or a space.
+        #[test]
+        fn export_stem_is_always_one_safe_segment(title in "\\PC{0,160}", dated in any::<bool>()) {
+            let date = dated.then_some("2026-09-27");
+            let stem = export_stem("opptak", Some(&title), date);
+            prop_assert!(!stem.is_empty());
+            prop_assert!(!stem.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')));
+            prop_assert!(!stem.chars().any(char::is_control));
+            prop_assert!(!stem.ends_with('.') && !stem.ends_with(' '));
+            prop_assert!(stem.chars().count() <= EXPORT_TITLE_MAX_CHARS + "2026-09-27 ".len());
+        }
+    }
+}

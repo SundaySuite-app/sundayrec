@@ -352,6 +352,10 @@ declare global {
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —
        *  resolves to whether the OS actually opened something. */
+      /** «Legg ut»: open the upload page for the stored channel. `nothing` =
+       *  the channel is off or the custom link did not pass; `failed` = the
+       *  OS would not open it. Never rejects. */
+      publishOpenUploadPage: () => Promise<"opened" | "nothing" | "failed">;
       logsReveal: () => Promise<boolean>;
       /** The tail of the live log file, clamped server-side to 512 KB
        *  regardless of `maxBytes`. Empty string means nothing logged yet. */

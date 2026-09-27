@@ -141,6 +141,27 @@ subset.
 The feed builder, the `publish` seam/feature and the Podcast card left with
 the sharing cluster. Git history is the feature flag.
 
+## «Legg ut» — manuell SoundCloud-flyt (2026-09), API-integrasjon lagt på is
+
+Eksporten fikk «Innhold» (tittel/taler/beskrivelse som tagger, tittelen som
+filnavn) og kvitteringen et «Legg ut»-panel: kanalen menigheten velger under
+Innstillinger → Avansert (SoundCloud som standard, ellers YouTube, Spotify for
+Creators, en egen `https://`-lenke eller ingen) åpnes i nettleseren, og tittel
+og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
+
+- **Eierbeslutning: ingen SoundCloud-API nå.** SoundCloud tar ikke imot åpen
+  registrering (søknadsskjema, krever Artist Pro, manuell godkjenning), og en
+  integrasjon ville gjeninnført OAuth, tokenlagring og opplastingskø — det R1
+  fjernet med vilje. Gevinsten over dra-og-slipp er liten.
+- **Grunnlaget for å ta den opp igjen:** tellerne `editor.publish.soundcloud`
+  / `.youtube` / `.spotify` / `.custom` (samtykkestyrt, som alle tellere) sier
+  hvor ofte knappen brukes og til hvilken kanal. Viser de reell bruk, er neste
+  steg å søke om API-tilgang. Den gamle OAuth/PKCE-loopback-koden fra fase 6
+  ligger i git-historikken (PR #139, commit `daadeb7`) som referanse.
+- **GUI-UNVERIFIED:** at `open_url` faktisk åpner systemnettleseren på macOS og
+  Windows, og om SoundCloud fyller inn tittelen fra filnavnet eller fra
+  ID3-`title` — se SMOKE-TEST.md, «Legg ut».
+
 ## PU-4 — OS wake-timers + scheduled launch (no feature flag)
 
 - **A real Mac/Windows box.** The scheduler supervisor's wall-clock timing, the

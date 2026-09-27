@@ -2356,6 +2356,33 @@ selv. Og da hadde feltene en jobb.
   prekenen het, og en gjettet tittel ville gitt hver eksport et nytt filnavn.
   Bare på norsk, fordi dagnavnene er norske.
 
+## «Legg ut» — panelet under kvitteringen
+
+`PublishPanel` i `ExportPage.tsx` står under kvitteringen når
+`settings.publishTarget` ikke er `none`. Det laster ikke opp noe. Det gjør de
+tre tingene som står rundt overleveringen:
+
+- **Tittel og beskrivelse med hver sin «Kopier».** Opplastingsskjemaene har
+  separate felter, og utklippstavla holder én ting om gangen. Teksten er
+  øyeblikksbildet fra eksporten (`exportedContent`), ikke feltene, så panelet
+  tilbyr det som faktisk står i fila.
+- **«Åpne SoundCloud»** (eller YouTube, Spotify, «opplastingssiden») kaller
+  `publish_open_upload_page` UTEN argumenter. Bakenden leser kanalen, slår opp
+  adressen i `sundayrec_core::publish::upload_page_url` og vetter en egen lenke
+  (`custom_upload_url`: bare `https://`, ingen `bruker@`, én linje) før den gis
+  til operativsystemet. Webviewet kan altså ikke be OS-et åpne en adresse den
+  selv har funnet på, og `opener`-kapabiliteten ble ikke utvidet.
+- **Et nei blir en setning.** `nothing` (lenken ble ikke godtatt) og `failed`
+  (OS-et nektet) gir hver sin linje i panelet i stedet for en knapp som ser ut
+  til å virke.
+
+Kanalen og den faste beskrivelsen settes i `PublishCard` under Avansert.
+Beskrivelsen følger malen live (`currentDescription`) til noen skriver i den
+selv (`editDescription`), eller til en lagret beskrivelse leses inn. Da fryses
+den. Lenken sjekkes to steder med de SAMME vektorene
+(`crates/sundayrec-core/tests/fixtures/custom-upload-url.json`): i Oppsett mens
+den skrives, som høflighet, og i bakenden når den åpnes, som vakt.
+
 ## Filnavnet er bakendens — og tittelen er brukerens
 
 `editor::export` spør `sundayrec_core::editor::export_stem` om navnet og lar

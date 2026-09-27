@@ -317,6 +317,17 @@ pub enum CounterName {
     /// Mastering was applied to a recording.
     #[serde(rename = "editor.master.applied")]
     EditorMasterApplied,
+    /// «Legg ut» opened an upload page, by channel. The numbers that say
+    /// whether a real SoundCloud integration would ever pay for itself —
+    /// the channel is a closed enum too, never the church's own link.
+    #[serde(rename = "editor.publish.soundcloud")]
+    EditorPublishSoundcloud,
+    #[serde(rename = "editor.publish.youtube")]
+    EditorPublishYoutube,
+    #[serde(rename = "editor.publish.spotify")]
+    EditorPublishSpotify,
+    #[serde(rename = "editor.publish.custom")]
+    EditorPublishCustom,
     // (v0.15: `editor.chapters.detected`, `transcribe.run` and `companion.build`
     // left the vocabulary with chapter detection, whisper transcription and the
     // AI companion. Same rule as v0.14 below: removing the SENDER is enough.)
@@ -357,6 +368,10 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorExportVideo,
     CounterName::EditorExportOther,
     CounterName::EditorMasterApplied,
+    CounterName::EditorPublishSoundcloud,
+    CounterName::EditorPublishYoutube,
+    CounterName::EditorPublishSpotify,
+    CounterName::EditorPublishCustom,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
     CounterName::DiagnoseRun,
@@ -383,6 +398,10 @@ impl CounterName {
             Self::EditorExportVideo => "editor.export.video",
             Self::EditorExportOther => "editor.export.other",
             Self::EditorMasterApplied => "editor.master.applied",
+            Self::EditorPublishSoundcloud => "editor.publish.soundcloud",
+            Self::EditorPublishYoutube => "editor.publish.youtube",
+            Self::EditorPublishSpotify => "editor.publish.spotify",
+            Self::EditorPublishCustom => "editor.publish.custom",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
             Self::DiagnoseRun => "diagnose.run",

@@ -140,6 +140,15 @@ So a future auditor doesn't have to re-derive these from scratch:
   dependency. The Google Drive/YouTube/Gmail OAuth client that followed the
   same pattern left with cloud backup in R1 of «Frivilligen først». SundayRec
   now holds no OAuth client and mints no token.
+- **«Legg ut» opens one page, never one the webview names.** The export
+  receipt's button calls `publish_open_upload_page`, which takes no argument:
+  it reads the stored channel and asks `sundayrec_core::publish::upload_page_url`,
+  which answers with a fixed `https://` address (SoundCloud, YouTube, Spotify
+  for Creators) or the church's own link after `custom_upload_url` has vetted
+  it (`https://` only, no userinfo, one line, at most 2048 characters). The
+  `opener` capability did not widen for it, and nothing is uploaded — the
+  volunteer drags the file in, logged in to the church's own account in their
+  own browser.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

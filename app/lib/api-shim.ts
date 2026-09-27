@@ -1162,6 +1162,21 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
+  // «Legg ut»: open the church's chosen upload page. No argument on purpose —
+  // the backend reads the stored channel and vets any custom link, so no URL
+  // ever crosses from the webview to the OS opener. Three answers, because the
+  // receipt says three different things: opened, nothing to open (channel
+  // off, or a link that did not pass), or the OS refused.
+  publishOpenUploadPage: async (): Promise<"opened" | "nothing" | "failed"> => {
+    try {
+      return (await invoke<boolean>("publish_open_upload_page"))
+        ? "opened"
+        : "nothing";
+    } catch (e) {
+      console.warn("[api-shim] publish_open_upload_page failed", e);
+      return "failed";
+    }
+  },
   logsReveal: async () => {
     try {
       await invoke("logs_reveal");

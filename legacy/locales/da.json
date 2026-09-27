@@ -439,7 +439,28 @@
           "onBattery": "kørte på batteri"
         },
         "audioTech": "Lydteknologi",
-        "diagnoseReportWhere": "Indsæt rapporten i et GitHub-issue, eller send den til dev@sundaysuite.app."
+        "diagnoseReportWhere": "Indsæt rapporten i et GitHub-issue, eller send den til dev@sundaysuite.app.",
+        "publishTitle": "Udgivelse",
+        "publishDesc": "Efter en eksport kan appen åbne siden, I uploader på, med titel og beskrivelse klar til at kopiere. SundayRec uploader ikke noget selv.",
+        "publishWhere": "Hvor lægger I ud?",
+        "publishChannelName": {
+          "custom": "Egen side",
+          "none": "Ingen"
+        },
+        "publishChannelDesc": {
+          "soundcloud": "Ofte også jeres podcast (RSS)",
+          "youtube": "Upload i YouTube Studio",
+          "spotify": "Podcast i Spotify for Creators",
+          "custom": "For eksempel WordPress eller jeres podcastvært",
+          "none": "Kvitteringen viser kun filen"
+        },
+        "publishUrl": "Link til uploadsiden",
+        "publishUrlDesc": "Skal starte med https://",
+        "publishUrlNotHttps": "Linket skal starte med https://",
+        "publishUrlInvalid": "Det ligner ikke en webadresse",
+        "publishTemplate": "Fast beskrivelse",
+        "publishTemplateDesc": "Udfyldes ved eksport, hvor den kan ændres. {title}, {speaker}, {date} og {church} erstattes.",
+        "publishTemplatePlaceholder": "Prædiken fra {church}, {date}. Taler: {speaker}."
       }
     },
     "diagnose": {
@@ -743,7 +764,17 @@
       "contentSpeakerPlaceholder": "Hvem talte?",
       "contentDescription": "Beskrivelse",
       "contentDescriptionPlaceholder": "Bibeltekst, tema eller en linje om menigheden",
-      "contentHint": "Alt er valgfrit. Skriver du en titel, får filen den som navn – det er det, SoundCloud og lignende foreslår, når du uploader."
+      "contentHint": "Alt er valgfrit. Skriver du en titel, får filen den som navn – det er det, SoundCloud og lignende foreslår, når du uploader.",
+      "publishTitle": "Læg ud på {channel}",
+      "publishTitleCustom": "Læg ud",
+      "publishOpen": "Åbn {channel}",
+      "publishOpenCustom": "Åbn uploadsiden",
+      "publishHint": "Træk filen ind på siden, der åbnes, og indsæt titel og beskrivelse.",
+      "publishCopy": "Kopiér",
+      "publishCopied": "Kopieret",
+      "publishCopyFailed": "Kunne ikke kopiere. Markér teksten, og kopiér den selv.",
+      "publishNothing": "Der er intet gyldigt https-link under Indstillinger → Avanceret, så intet blev åbnet.",
+      "publishFailed": "Kunne ikke åbne siden. Åbn den selv i browseren."
     },
     "span": {
       "hours": "{h} t",
