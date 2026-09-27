@@ -695,12 +695,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migrations_create_every_current_table_and_drop_the_retired_upload_queue() {
+    async fn migrations_create_every_current_table_and_drop_the_retired_ones() {
         let (pool, _d) = temp_pool().await;
         // Every migrated table must be SELECTable on a fresh database. The
         // wake-failure table comes from a later migration, so this proves the
-        // full migration set applied — not just the first one.
-        for table in ["app_setting", "recording", "wake_failure"] {
+        // full migration set applied — not just the first one. `notify_seen`
+        // (0006) outlived the e-mail relay it was built for: the missed-recording
+        // notice still keys on it.
+        for table in ["app_setting", "recording", "wake_failure", "notify_seen"] {
             // AssertSqlSafe: sqlx 0.9 requires dynamic SQL to be explicitly
             // vouched for — `table` comes from the hardcoded list above.
             let q = sqlx::AssertSqlSafe(format!("SELECT COUNT(*) AS n FROM {table}"));
@@ -720,6 +722,37 @@ mod tests {
         assert!(
             err.to_string().contains("no such table"),
             "expected a missing-table error, got: {err}"
+        );
+
+        // 0008 dropped `notify_outbox` with the e-mail relay — same proof.
+        let err = sqlx::query("SELECT COUNT(*) FROM notify_outbox")
+            .fetch_one(&pool)
+            .await
+            .expect_err("notify_outbox must no longer exist once migration 0008 has applied");
+        assert!(
+            err.to_string().contains("no such table"),
+            "expected a missing-table error, got: {err}"
+        );
+    }
+
+    /// 0008 also deletes the relay's local subscription record. Replaying the
+    /// statement on a migrated database is the upgrade path in miniature: the
+    /// row an old version left behind is gone, and every other setting stays.
+    #[tokio::test]
+    async fn the_relay_subscription_record_does_not_survive_0008() {
+        let (pool, _d) = temp_pool().await;
+        set_setting(&pool, "notify.relay", r#"{"subId":"s","address":"a@b.no"}"#)
+            .await
+            .unwrap();
+        set_setting(&pool, "settings", "{}").await.unwrap();
+        sqlx::raw_sql(include_str!("../../migrations/0008_drop_notify_outbox.sql"))
+            .execute(&pool)
+            .await
+            .expect("0008 is idempotent on a migrated database");
+        assert!(get_setting(&pool, "notify.relay").await.unwrap().is_none());
+        assert_eq!(
+            get_setting(&pool, "settings").await.unwrap().as_deref(),
+            Some("{}")
         );
     }
 

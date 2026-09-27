@@ -16,9 +16,9 @@
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
 //!   - [`device_enum`]  — pure ffmpeg `-list_devices` stderr parsers (audio + video)
-//!   - [`email`]         — error/test/missed/receipt/confirm mail templates (7-lang) + throttle/dedup gate (PU-1)
-//!   - [`alerts`]        — the sentences the NATIVE notification and the alert mail's body say, in the same 7 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
-//!   - [`relay`]         — the e-mail relay's outbox decisions: which queued row may leave an unconfirmed subscription, when a row is too old to send, and what "we already said this" means per event kind (A1)
+//!   - [`lang`]          — the seven UI languages the backend speaks in (`Lang`), for the native notifications' catalogue
+//!   - [`alerts`]        — the sentences the NATIVE notification says, in the 7 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
+//!   - [`notify`]        — the notification decisions: warning codes, once-semantics for the repeating observers, and the "we already said this" ledger for missed recordings
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
 //!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
@@ -56,12 +56,12 @@ pub mod device_enum;
 pub mod device_match;
 pub mod diagnostics;
 pub mod editor;
-pub mod email;
 pub mod errors;
 pub mod feedback;
 pub mod ffmpeg;
 pub mod filename;
 pub mod history;
+pub mod lang;
 pub mod levels;
 pub mod mastering;
 pub mod notify;
@@ -73,7 +73,6 @@ pub mod reconnect;
 pub mod recorder;
 pub mod recovery;
 pub mod redact;
-pub mod relay;
 pub mod schedule;
 pub mod selftest;
 pub mod settings;

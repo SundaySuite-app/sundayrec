@@ -18,7 +18,7 @@
 //! This is the Fase-1 subset of the Electron `Settings`. Fields that belong to
 //! later phases are deliberately NOT modelled yet and will be added in their
 //! own phase so the model stays honest about what is actually wired:
-//!   - `email*` / notify* (notifications)                  → Fase 6
+//!   - notify* (notifications)                             → Fase 6
 //!   - `editorIntroPath` / `editorOutroPath` (editor)      → Fase 4
 //!   - `deviceChannels` (per-device channel maps)          → Fase 2/3
 //!   - `video*`, church profile                            → their phases
@@ -448,7 +448,7 @@ pub struct Settings {
     /// `''` default, not `null`). See `store.ts` `churchName: ''`.
     #[serde(default)]
     pub church_name: String,
-    /// Person responsible for recordings (shown in diagnostics + email alerts).
+    /// Person responsible for recordings (shown in diagnostics).
     /// Empty string = unset (Electron `responsiblePerson: ''`).
     #[serde(default)]
     pub responsible_person: String,
@@ -465,64 +465,14 @@ pub struct Settings {
     // are DROPPED tolerantly on the next load/save, like the stream fields
     // below; see `legacy_blob_with_removed_sharing_fields_imports_cleanly`.)
 
-    // ── Email alerts (R7 — Electron `email*`; the SMTP pass lives in the OS ────
-    //    keychain, NEVER here — mirrors `store.ts` `setSmtpPassword`) ───────────
-    /// Send an email when a recording fails / a scheduled one is missed?
-    ///
-    /// Both halves of that sentence are TRUE as of A3, and only one of them was
-    /// before. The failure half has been wired since P; the missed half was a
-    /// promise this field made and nothing kept — `check_missed` decided what
-    /// had been missed, emitted an event to a renderer that might not be
-    /// running, and sent nothing. It now routes through the same dispatch, so
-    /// the mail goes out over whichever pipe the machine has: a configured SMTP
-    /// server if there is one, the SundaySuite relay otherwise
-    /// (`crate::notify::plan_failure`).
-    ///
-    /// ONE switch for both pipes, deliberately. "Send me an e-mail when a
-    /// recording fails" is the question the volunteer answered; which transport
-    /// carries it is not a second question they should have to answer.
-    #[serde(default)]
-    pub email_on_error: bool,
-    /// Recipient address for alert emails. Empty = unset (Electron `''`).
-    #[serde(default)]
-    pub email_address: String,
-    /// SMTP host. Blank = no transport at all (the Gmail-OAuth alternative left
-    /// with the cloud-backup OAuth client). Electron `emailSmtp`.
-    #[serde(default)]
-    pub email_smtp: String,
-    /// SMTP port. Valid 1..=65535, default 587. Electron `emailSmtpPort: 587`.
-    #[serde(default = "default_smtp_port")]
-    pub email_smtp_port: i32,
-    /// SMTP username. Empty = unset (Electron `emailSmtpUser: ''`). The PASSWORD
-    /// is intentionally absent — it is stored in the OS keychain by the `email`
-    /// seam, never persisted to the settings bag.
-    #[serde(default)]
-    pub email_smtp_user: String,
-    /// Explicit envelope/`From:` address for alert mail. Empty = derive it, which
-    /// is what every pre-existing config does: the renderer used to synthesise
-    /// `emailSmtpUser || recipient` client-side. Providers increasingly reject a
-    /// `From:` that isn't the authenticated identity (or a verified alias), and
-    /// the login username is not always a mailbox — SendGrid wants `apikey`,
-    /// Fastmail/Migadu use `user@domain` handles — so the address has to be
-    /// settable on its own. The derivation stays as the fallback (see
-    /// `commands::email::resolve_from_address`) so old configs keep working
-    /// untouched.
-    #[serde(default)]
-    pub email_smtp_from: String,
-
-    // ── E-mail relay receipt (A4) ───────────────────────────────────────────
-    /// Send a receipt e-mail via the relay when a PLANNED (scheduled)
-    /// recording finishes? Default off. Independent of `email_on_error` and
-    /// the SMTP fields above: the receipt travels through
-    /// `sunday-telemetry`'s relay (`notify.sundaysuite.app`), never through
-    /// SMTP, and is gated in the UI on a CONFIRMED relay subscription (A5) —
-    /// this field only remembers whether the toggle is on. Deliberately kept
-    /// out of `WireSettings`, matching the `updateChannel` precedent
-    /// (`telemetry.rs:975-978`): the relay subscription record
-    /// (`notify.relay` in the `app_setting` bag) is per-machine state, not a
-    /// diagnostic fact worth reporting.
-    #[serde(default)]
-    pub email_receipt_enabled: bool,
+    // (E-mail alerts — `emailOnError`/`emailAddress`/`emailSmtp`/
+    // `emailSmtpPort`/`emailSmtpUser`/`emailSmtpFrom` and the relay's
+    // `emailReceiptEnabled` — were removed with the SMTP alerter and the
+    // SundaySuite relay: failures are told on the machine, natively, and
+    // nowhere else. Old blobs still carrying the keys are DROPPED tolerantly on
+    // the next load/save; `settings::email_cleanup` in the shell reads them once
+    // first, to clear the retired SMTP password and say what changed. See
+    // `legacy_blob_with_removed_email_fields_imports_cleanly`.)
 
     // ── Editor intro/outro (R7 — Electron `editorIntroPath`/`editorOutroPath`) ─
     /// Path to an intro clip prepended on export, or `None`. Electron used
@@ -602,9 +552,6 @@ fn default_pre_roll_seconds() -> i32 {
 fn default_true() -> bool {
     true
 }
-fn default_smtp_port() -> i32 {
-    587
-}
 fn default_update_channel() -> UpdateChannel {
     UpdateChannel::Stable
 }
@@ -662,15 +609,6 @@ impl Default for Settings {
             notify_start: true,
             notify_stop: true,
 
-            email_on_error: false,
-            email_address: String::new(),
-            email_smtp: String::new(),
-            email_smtp_port: default_smtp_port(),
-            email_smtp_user: String::new(),
-            email_smtp_from: String::new(),
-
-            email_receipt_enabled: false,
-
             editor_intro_path: None,
             editor_outro_path: None,
 
@@ -708,11 +646,6 @@ impl Settings {
         self.manual_max_minutes = clamp_i32(self.manual_max_minutes, 0, 1440);
         self.pre_roll_seconds = clamp_i32(self.pre_roll_seconds, 0, 60);
         self.reminder_minutes = clamp_i32(self.reminder_minutes, 0, 60);
-
-        // Email (R7). The SMTP port is the only numeric email field; clamp it to
-        // a valid TCP port (Electron left it un-clamped, but a 0/negative port
-        // would be a hard ffmpeg/lettre error — clamp defensively).
-        self.email_smtp_port = clamp_i32(self.email_smtp_port, 1, 65_535);
 
         // Per-device channel map (R4): clamp every stored pair to real channel
         // indices, then DERIVE the flat recorder fields from the map. The map is
@@ -909,14 +842,6 @@ mod tests {
         // Notifications (R7)
         assert!(s.notify_start);
         assert!(s.notify_stop);
-        // Email (R7)
-        assert!(!s.email_on_error);
-        assert_eq!(s.email_address, "");
-        assert_eq!(s.email_smtp, "");
-        assert_eq!(s.email_smtp_port, 587);
-        assert_eq!(s.email_smtp_user, "");
-        // E-mail relay receipt (A4)
-        assert!(!s.email_receipt_enabled);
         // Editor intro/outro (R7)
         assert_eq!(s.editor_intro_path, None);
         assert_eq!(s.editor_outro_path, None);
@@ -926,46 +851,15 @@ mod tests {
     }
 
     #[test]
-    fn validate_clamps_smtp_port() {
-        let mut over = Settings {
-            email_smtp_port: 999_999,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.email_smtp_port, 65_535);
-
-        let mut under = Settings {
-            email_smtp_port: 0,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.email_smtp_port, 1);
-    }
-
-    #[test]
     fn r7_fields_merge_from_partial_json() {
         // A partial blob carrying only the new R7 keys fills the rest from
         // defaults (Electron `store.get(key, default)` semantics).
-        let s = Settings::from_json_merged(
-            r#"{"churchName":"Domkirken","emailOnError":true,"emailAddress":"a@b.no"}"#,
-        );
+        let s =
+            Settings::from_json_merged(r#"{"churchName":"Domkirken","responsiblePerson":"Kari"}"#);
         assert_eq!(s.church_name, "Domkirken");
-        assert!(s.email_on_error);
-        assert_eq!(s.email_address, "a@b.no");
+        assert_eq!(s.responsible_person, "Kari");
         // Untouched field keeps its default.
-        assert_eq!(s.email_smtp_port, 587);
         assert!(s.notify_start);
-    }
-
-    #[test]
-    fn email_receipt_enabled_defaults_false_and_round_trips_camel_case() {
-        // No legacy source for this one (A4 — it is new, not ported), so
-        // absence must fall back to the default rather than error.
-        let absent = Settings::from_json_merged(r#"{}"#);
-        assert!(!absent.email_receipt_enabled);
-
-        let on = Settings::from_json_merged(r#"{"emailReceiptEnabled":true}"#);
-        assert!(on.email_receipt_enabled);
     }
 
     #[test]
@@ -1514,7 +1408,7 @@ mod tests {
         let s = Settings::from_json_merged(
             r#"{
                 "silenceThreshold": -40,
-                "emailAddress": "vakt@kirka.no",
+                "churchName": "Domkirken",
                 "webhookUrl": "https://hooks.slack.com/services/T/B/X",
                 "webhookOnWarning": true,
                 "webhookAllowLocal": true,
@@ -1529,7 +1423,7 @@ mod tests {
         )
         .validated();
         assert_eq!(s.silence_threshold, -40);
-        assert_eq!(s.email_address, "vakt@kirka.no");
+        assert_eq!(s.church_name, "Domkirken");
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
         for gone in [
@@ -1540,6 +1434,49 @@ mod tests {
             "cloudDropbox",
             "cloudOneDrive",
             "podcast",
+        ] {
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
+        }
+    }
+
+    // The SMTP alerter and the SundaySuite e-mail relay were removed together:
+    // failures are told on the machine and nowhere else. Every upgraded install
+    // that ever opened the notify page carries the e-mail keys. Same contract as
+    // the tests around this one: DROPPED tolerantly, neighbours intact, and the
+    // round-trip writes a blob without them.
+    #[test]
+    fn legacy_blob_with_removed_email_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "churchName": "Domkirken",
+                "notifyStart": false,
+                "emailOnError": true,
+                "emailAddress": "vakt@kirka.no",
+                "emailSmtp": "smtp.kirka.no",
+                "emailSmtpPort": 465,
+                "emailSmtpUser": "vakt",
+                "emailSmtpFrom": "opptak@kirka.no",
+                "emailReceiptEnabled": true,
+                "reminderMinutes": 10
+            }"#,
+        )
+        .validated();
+        assert_eq!(s.church_name, "Domkirken");
+        assert!(!s.notify_start);
+        assert_eq!(s.reminder_minutes, 10);
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "emailOnError",
+            "emailAddress",
+            "emailSmtp",
+            "emailSmtpPort",
+            "emailSmtpUser",
+            "emailSmtpFrom",
+            "emailReceiptEnabled",
         ] {
             assert!(
                 !obj.contains_key(gone),

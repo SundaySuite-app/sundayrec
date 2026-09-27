@@ -5,10 +5,9 @@
 //!
 //! Every other user-facing surface in this app is localized: the renderer has
 //! `legacy/locales`, the tray has [`crate::tray`], the window notices have
-//! [`crate::window`], and the mails have [`crate::email`]. The two channels that
-//! reach a volunteer who is NOT at the machine — the native OS notification and
-//! the plaintext line an alert mail carries — were the exception. They were
-//! written in Norwegian, as literals, at the point of failure:
+//! [`crate::window`]. The native OS notification — the channel that reaches a
+//! volunteer who is not looking at the app — was the exception. Its sentences
+//! were written in Norwegian, as literals, at the point of failure:
 //!
 //! ```text
 //! dispatch_scheduler_failure(app, "scheduled_start_timeout",
@@ -16,9 +15,8 @@
 //! ```
 //!
 //! A Polish volunteer who set the app to Polish, whose church runs an
-//! unattended 11:00 service, got a Polish interface, a Polish mail *subject*
-//! from [`crate::email`] — and this sentence, in Norwegian, as the one line that
-//! told them what had actually happened.
+//! unattended 11:00 service, got a Polish interface — and this sentence, in
+//! Norwegian, as the one line that told them what had actually happened.
 //!
 //! ## The shape
 //!
@@ -31,8 +29,8 @@
 //! strings, and that a template's `{placeholder}` survived translation.
 //!
 //! Templates are filled with [`AlertText::fill`], the same `{name}` convention
-//! and the same replace-loop [`crate::email`] uses, so there is one placeholder
-//! syntax in the codebase rather than two.
+//! the renderer's catalogue uses, so there is one placeholder syntax in the
+//! codebase rather than two.
 //!
 //! ## What is deliberately NOT here
 //!
@@ -56,10 +54,10 @@
 //!   both are allowlisted in the `check-rust-norwegian.mjs` ratchet with the
 //!   reason spelled out there.
 
-use crate::email::MailLang;
+use crate::lang::Lang;
 
 /// One user-facing sentence the shell says outside the renderer: a native OS
-/// notification body or title, or the line an alert mail prints.
+/// notification body or title.
 ///
 /// Fieldless and [`Copy`] on purpose — `supervise::TaskAlert` is `Copy` and is
 /// stored beside a task for its whole life, and a variant carrying a `String`
@@ -80,8 +78,6 @@ pub enum AlertText {
     /// The telemetry drain / sender restarted (one body, two tasks — they are
     /// the same news to the operator: quality reporting hiccuped).
     QualityTaskRestarted,
-    /// The e-mail relay's outbox pump restarted.
-    EmailTaskRestarted,
 
     // ── Scheduler ───────────────────────────────────────────────────────────
     /// Title of the pre-service preflight notification.
@@ -129,7 +125,7 @@ pub enum AlertText {
     /// Several were. `{count}` `{label}` `{at}`
     MissedMany,
 
-    // ── Recorder (terminal failures that reach native + mail) ───────────────
+    // ── Recorder (terminal failures that reach the native notification) ────
     /// The reconnect policy gave up.
     RecordingNotRecovered,
     /// The ffmpeg capture produced no first progress in time (audio + video).
@@ -153,7 +149,6 @@ impl AlertText {
         AlertText::TrashSweepTaskTitle,
         AlertText::TrashSweepTaskBody,
         AlertText::QualityTaskRestarted,
-        AlertText::EmailTaskRestarted,
         AlertText::PreflightTitle,
         AlertText::PreflightFfmpegMissing,
         AlertText::PreflightDeviceMissing,
@@ -203,9 +198,9 @@ impl AlertText {
     /// Public because the tests and the `--list` side of a future tooling pass
     /// want to see the template itself; call sites want [`Self::text`] or
     /// [`Self::fill`].
-    pub fn template(self, lang: MailLang) -> &'static str {
+    pub fn template(self, lang: Lang) -> &'static str {
         use AlertText as A;
-        use MailLang as L;
+        use Lang as L;
         match (self, lang) {
             // ── SchedulerTaskTitle ──────────────────────────────────────────
             (A::SchedulerTaskTitle, L::No) => "SundayRec — planlegger-feil",
@@ -317,27 +312,6 @@ impl AlertText {
             }
             (A::QualityTaskRestarted, L::Fr) => {
                 "La tâche d'arrière-plan des rapports de qualité a redémarré."
-            }
-
-            // ── EmailTaskRestarted ──────────────────────────────────────────
-            (A::EmailTaskRestarted, L::No) => {
-                "Bakgrunnsoppgaven for e-postvarsler startet på nytt."
-            }
-            (A::EmailTaskRestarted, L::En) => "The background task for e-mail alerts restarted.",
-            (A::EmailTaskRestarted, L::De) => {
-                "Die Hintergrundaufgabe für E-Mail-Benachrichtigungen wurde neu gestartet."
-            }
-            (A::EmailTaskRestarted, L::Sv) => {
-                "Bakgrundsuppgiften för e-postaviseringar startade om."
-            }
-            (A::EmailTaskRestarted, L::Da) => {
-                "Baggrundsopgaven for e-mailbeskeder startede forfra."
-            }
-            (A::EmailTaskRestarted, L::Pl) => {
-                "Zadanie w tle dla powiadomień e-mail zostało uruchomione ponownie."
-            }
-            (A::EmailTaskRestarted, L::Fr) => {
-                "La tâche d'arrière-plan des alertes e-mail a redémarré."
             }
 
             // ── PreflightTitle ──────────────────────────────────────────────
@@ -791,7 +765,7 @@ impl AlertText {
     /// `debug_assert` in tests and dev builds and still returns something
     /// truthful (the template) in release — an alert with a visible `{detail}`
     /// is bad, an alert that panicked the recorder mid-service is worse.
-    pub fn text(self, lang: MailLang) -> String {
+    pub fn text(self, lang: Lang) -> String {
         debug_assert!(
             self.params().is_empty(),
             "{self:?} takes {:?} — use AlertText::fill",
@@ -803,10 +777,10 @@ impl AlertText {
     /// The sentence for `lang` with its `{placeholder}`s replaced.
     ///
     /// Unknown keys in `vars` are ignored and unfilled placeholders are left
-    /// standing, exactly like [`crate::email`]'s `fill` — the tests below are
+    /// standing — the tests below are
     /// what make "left standing" impossible in practice, by checking each
     /// variant against its own [`Self::params`].
-    pub fn fill(self, lang: MailLang, vars: &[(&str, &str)]) -> String {
+    pub fn fill(self, lang: Lang, vars: &[(&str, &str)]) -> String {
         let mut out = self.template(lang).to_string();
         for (k, v) in vars {
             out = out.replace(&format!("{{{k}}}"), v);
@@ -845,7 +819,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            29,
+            28,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -857,7 +831,7 @@ mod tests {
     #[test]
     fn all_seven_languages_have_a_sentence_for_every_alert() {
         for &a in AlertText::ALL {
-            for &lang in MailLang::ALL {
+            for &lang in Lang::ALL {
                 let t = a.template(lang);
                 assert!(!t.trim().is_empty(), "{a:?}/{lang:?} is empty");
                 // No stray whitespace from a line continuation gone wrong.
@@ -875,8 +849,8 @@ mod tests {
         // hold — no two of these languages spell any of these sentences the
         // same way — so the check is exact rather than "at least a few differ".
         for &a in AlertText::ALL {
-            for (i, &l1) in MailLang::ALL.iter().enumerate() {
-                for &l2 in &MailLang::ALL[i + 1..] {
+            for (i, &l1) in Lang::ALL.iter().enumerate() {
+                for &l2 in &Lang::ALL[i + 1..] {
                     assert_ne!(
                         a.template(l1),
                         a.template(l2),
@@ -896,7 +870,7 @@ mod tests {
         for &a in AlertText::ALL {
             let declared: std::collections::BTreeSet<String> =
                 a.params().iter().map(|p| p.to_string()).collect();
-            for &lang in MailLang::ALL {
+            for &lang in Lang::ALL {
                 let found: std::collections::BTreeSet<String> =
                     placeholders(a.template(lang)).into_iter().collect();
                 assert_eq!(
@@ -914,7 +888,7 @@ mod tests {
         // that would have caught a `{min}`/`{minutes}` rename on one side only.
         for &a in AlertText::ALL {
             let vars: Vec<(&str, &str)> = a.params().iter().map(|p| (*p, "X")).collect();
-            for &lang in MailLang::ALL {
+            for &lang in Lang::ALL {
                 let s = a.fill(lang, &vars);
                 assert!(
                     !s.contains('{') && !s.contains('}'),
@@ -932,31 +906,31 @@ mod tests {
         // volunteer has read every Sunday for a year, for no gain — so the
         // wording is pinned here rather than left to the next tidy-up.
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::No, &[("min", "10")]),
+            AlertText::Reminder.fill(Lang::No, &[("min", "10")]),
             "Opptak starter om 10 minutter"
         );
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::En, &[("min", "15")]),
+            AlertText::Reminder.fill(Lang::En, &[("min", "15")]),
             "Recording starts in 15 minutes"
         );
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::De, &[("min", "5")]),
+            AlertText::Reminder.fill(Lang::De, &[("min", "5")]),
             "Aufnahme beginnt in 5 Minuten"
         );
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::Sv, &[("min", "5")]),
+            AlertText::Reminder.fill(Lang::Sv, &[("min", "5")]),
             "Inspelning börjar om 5 minuter"
         );
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::Da, &[("min", "5")]),
+            AlertText::Reminder.fill(Lang::Da, &[("min", "5")]),
             "Optagelse starter om 5 minutter"
         );
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::Pl, &[("min", "5")]),
+            AlertText::Reminder.fill(Lang::Pl, &[("min", "5")]),
             "Nagranie rozpocznie się za 5 minut"
         );
         assert_eq!(
-            AlertText::Reminder.fill(MailLang::Fr, &[("min", "5")]),
+            AlertText::Reminder.fill(Lang::Fr, &[("min", "5")]),
             "Enregistrement dans 5 minutes"
         );
     }
@@ -965,14 +939,14 @@ mod tests {
     fn an_unknown_language_code_still_gets_a_sentence() {
         // The whole point of the fallback: a settings blob carrying `"xx"` (or
         // nothing at all) must still produce a real alert, in Norwegian.
-        let lang = MailLang::from_code(Some("xx"));
+        let lang = Lang::from_code(Some("xx"));
         assert_eq!(
             AlertText::ScheduledSkippedBusy.text(lang),
-            AlertText::ScheduledSkippedBusy.text(MailLang::No)
+            AlertText::ScheduledSkippedBusy.text(Lang::No)
         );
         assert_eq!(
-            AlertText::ScheduledSkippedBusy.text(MailLang::from_code(None)),
-            AlertText::ScheduledSkippedBusy.text(MailLang::No)
+            AlertText::ScheduledSkippedBusy.text(Lang::from_code(None)),
+            AlertText::ScheduledSkippedBusy.text(Lang::No)
         );
     }
 
@@ -983,7 +957,7 @@ mod tests {
         // this module the sentence below was Norwegian — the ONE line telling
         // them the service was not recorded.
         let s = AlertText::MissedOne.fill(
-            MailLang::from_code(Some("pl")),
+            Lang::from_code(Some("pl")),
             &[
                 ("label", "Ukentlig opptak (11:00–13:00)"),
                 ("at", "2026-09-06T11:00:00"),
@@ -1001,7 +975,7 @@ mod tests {
 
     #[test]
     fn fill_ignores_a_key_the_template_does_not_have() {
-        let s = AlertText::ScheduledStarted.fill(MailLang::En, &[("nope", "x")]);
+        let s = AlertText::ScheduledStarted.fill(Lang::En, &[("nope", "x")]);
         assert_eq!(s, "Scheduled recording started.");
     }
 
