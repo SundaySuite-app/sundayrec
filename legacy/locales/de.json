@@ -735,7 +735,15 @@
       "prepare": "Vorbereiten",
       "pickTitle": "Oder wählen Sie eine andere Aufnahme",
       "emptyDesc": "Nehmen Sie zuerst etwas auf, oder öffnen Sie eine Datei vom Computer.",
-      "use": "Wählen"
+      "use": "Wählen",
+      "content": "Inhalt",
+      "contentTitle": "Titel",
+      "contentTitlePlaceholder": "Zum Beispiel „Der gute Hirte“",
+      "contentSpeaker": "Sprecher",
+      "contentSpeakerPlaceholder": "Wer hat gesprochen?",
+      "contentDescription": "Beschreibung",
+      "contentDescriptionPlaceholder": "Bibeltext, Thema oder eine Zeile über die Gemeinde",
+      "contentHint": "Alles ist optional. Mit einem Titel bekommt die Datei ihn als Namen – den schlagen SoundCloud und ähnliche Seiten beim Hochladen vor."
     },
     "span": {
       "hours": "{h} Std.",

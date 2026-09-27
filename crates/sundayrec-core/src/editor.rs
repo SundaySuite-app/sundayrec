@@ -757,11 +757,20 @@ pub struct ChapterMarker {
 
 /// Optional recording metadata for the export — title/speaker/description plus
 /// chapters. Mirrors the `RecordingMetadata` shape the editor consumed.
+///
+/// `album` and `date` joined with «Innhold» in the export: the church name and
+/// the service date, so a podcast app or SoundCloud that reads the tags files
+/// the episode under the congregation and the right Sunday. Both are plain
+/// strings the renderer already has — `settings.churchName` and the
+/// recording's `startedAt` as `YYYY-MM-DD` — and both are omitted when empty,
+/// like the other three.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RecordingMetadata {
     pub title: Option<String>,
     pub speaker: Option<String>,
     pub description: Option<String>,
+    pub album: Option<String>,
+    pub date: Option<String>,
     pub chapters: Vec<Chapter>,
 }
 
@@ -780,6 +789,12 @@ pub fn ffmetadata(meta: &RecordingMetadata, duration: f64) -> Option<String> {
     }
     if let Some(s) = &meta.speaker {
         lines.push(format!("artist={s}"));
+    }
+    if let Some(a) = &meta.album {
+        lines.push(format!("album={a}"));
+    }
+    if let Some(d) = &meta.date {
+        lines.push(format!("date={d}"));
     }
     if let Some(d) = &meta.description {
         lines.push(format!("comment={d}"));
@@ -805,8 +820,9 @@ pub fn ffmetadata(meta: &RecordingMetadata, duration: f64) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-/// The `-metadata` output arguments (title/artist/comment) for an export, the
-/// non-chapter half of `metaArgs`. Chapters arrive via `-map_metadata`.
+/// The `-metadata` output arguments (title/artist/album/date/comment) for an
+/// export, the non-chapter half of `metaArgs`. Chapters arrive via
+/// `-map_metadata`.
 pub fn metadata_args(meta: &RecordingMetadata) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(t) = &meta.title {
@@ -816,6 +832,14 @@ pub fn metadata_args(meta: &RecordingMetadata) -> Vec<String> {
     if let Some(s) = &meta.speaker {
         args.push("-metadata".to_string());
         args.push(format!("artist={s}"));
+    }
+    if let Some(a) = &meta.album {
+        args.push("-metadata".to_string());
+        args.push(format!("album={a}"));
+    }
+    if let Some(d) = &meta.date {
+        args.push("-metadata".to_string());
+        args.push(format!("date={d}"));
     }
     if let Some(d) = &meta.description {
         args.push("-metadata".to_string());
@@ -849,6 +873,87 @@ where
         }
         i += 1;
     }
+}
+
+/// The longest title, in characters, an export's file name carries.
+///
+/// A sermon title is a sentence at most; anything longer is a description
+/// pasted into the wrong field, and a 300-character file name is one Windows
+/// Explorer truncates and some sync tools refuse outright (the full path has to
+/// stay under `MAX_PATH` on machines without long-path support).
+pub const EXPORT_TITLE_MAX_CHARS: usize = 100;
+
+/// The file STEM an export is delivered under (no extension, no `_2`).
+///
+/// Without a title it is what it always was: `<source stem>_redigert`. With a
+/// title it is `<YYYY-MM-DD> <title>` — or just `<title>` when the recording's
+/// date is unknown (a file opened from outside the library) — because the
+/// file name is what SoundCloud and every other upload form offers as the
+/// episode's title and address. The title is the volunteer's own words, so
+/// the name makes no claim about the content the app could get wrong; the
+/// date keeps a folder of episodes sorted by Sunday.
+///
+/// The title is cleaned before it can become a path: every control or
+/// whitespace character is one space, runs collapse, the ends are trimmed, it
+/// is cut to [`EXPORT_TITLE_MAX_CHARS`] characters (characters, not bytes, so a
+/// cut never splits a letter), and the result goes through
+/// [`crate::filename::sanitize_filename`] like every recording name does. A
+/// title that cleans down to nothing — only dots, only spaces — falls back to
+/// the untitled name rather than to `opptak`.
+///
+/// `date` is used only when it is a real `YYYY-MM-DD` date. The renderer's
+/// mirror is `predictedOutputName` in `app/editor/export-core.ts`; both read
+/// the vectors in `tests/fixtures/export-stem.json`.
+pub fn export_stem(source_stem: &str, title: Option<&str>, date: Option<&str>) -> String {
+    let untitled = || format!("{source_stem}_redigert");
+    let Some(title) = title.map(clean_export_title) else {
+        return untitled();
+    };
+    if title.trim_end_matches(['.', ' ']).is_empty() {
+        return untitled();
+    }
+    let date = date.map(str::trim).filter(|d| is_iso_date(d));
+    let joined = match date {
+        Some(d) => format!("{d} {title}"),
+        None => title,
+    };
+    crate::filename::sanitize_filename(&joined)
+}
+
+/// Exactly `YYYY-MM-DD` in ASCII digits, and a date that exists. The shape is
+/// checked by hand before chrono sees it, because chrono's `%m`/`%d` also take
+/// `2026-9-7` and the renderer's mirror has to agree with this byte for byte.
+fn is_iso_date(d: &str) -> bool {
+    let b = d.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+        && chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok()
+}
+
+/// One space for every control/whitespace run, trimmed, cut to
+/// [`EXPORT_TITLE_MAX_CHARS`] characters. See [`export_stem`].
+fn clean_export_title(title: &str) -> String {
+    let spaced: String = title
+        .chars()
+        .map(|c| {
+            if c.is_control() || c.is_whitespace() {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let collapsed = spaced
+        .split(' ')
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cut: String = collapsed.chars().take(EXPORT_TITLE_MAX_CHARS).collect();
+    cut.trim_end_matches(' ').to_string()
 }
 
 /// The path an export RENDERS into, before it is renamed onto the
@@ -2672,6 +2777,8 @@ mod tests {
             title: Some("Service".into()),
             speaker: Some("Pastor".into()),
             description: None,
+            album: None,
+            date: None,
             chapters: vec![
                 Chapter {
                     time: 0.0,
@@ -2699,6 +2806,8 @@ mod tests {
             title: None,
             speaker: None,
             description: None,
+            album: None,
+            date: None,
             chapters: vec![
                 Chapter {
                     time: 60.0,
@@ -2739,12 +2848,103 @@ mod tests {
             title: Some("T".into()),
             speaker: None,
             description: Some("D".into()),
+            album: None,
+            date: None,
             chapters: vec![],
         };
         assert_eq!(
             metadata_args(&meta),
             vec!["-metadata", "title=T", "-metadata", "comment=D"]
         );
+    }
+
+    #[test]
+    fn metadata_args_carries_album_and_date_before_the_comment() {
+        let meta = RecordingMetadata {
+            title: Some("Den gode hyrde".into()),
+            speaker: Some("Kari Nordmann".into()),
+            description: Some("Joh 10".into()),
+            album: Some("Sentrumskirken".into()),
+            date: Some("2026-09-27".into()),
+            chapters: vec![],
+        };
+        assert_eq!(
+            metadata_args(&meta),
+            vec![
+                "-metadata",
+                "title=Den gode hyrde",
+                "-metadata",
+                "artist=Kari Nordmann",
+                "-metadata",
+                "album=Sentrumskirken",
+                "-metadata",
+                "date=2026-09-27",
+                "-metadata",
+                "comment=Joh 10",
+            ]
+        );
+    }
+
+    #[test]
+    fn ffmetadata_header_carries_album_and_date() {
+        let meta = RecordingMetadata {
+            title: Some("T".into()),
+            album: Some("Kirken".into()),
+            date: Some("2026-09-27".into()),
+            chapters: vec![Chapter {
+                time: 0.0,
+                title: "Hele".into(),
+            }],
+            ..RecordingMetadata::default()
+        };
+        let out = ffmetadata(&meta, 10.0).unwrap();
+        assert!(out.starts_with(";FFMETADATA1\ntitle=T\nalbum=Kirken\ndate=2026-09-27\n[CHAPTER]"));
+    }
+
+    // ── export_stem ────────────────────────────────────────────────────────────
+
+    /// The vectors the renderer's `predictedOutputName` is held to as well —
+    /// one file, two readers, so the preview line and the delivered name
+    /// cannot drift apart.
+    #[test]
+    fn export_stem_matches_the_shared_vectors() {
+        #[derive(serde::Deserialize)]
+        struct Vector {
+            name: String,
+            source: String,
+            title: Option<String>,
+            date: Option<String>,
+            expect: String,
+        }
+        let vectors: Vec<Vector> =
+            serde_json::from_str(include_str!("../tests/fixtures/export-stem.json")).unwrap();
+        assert!(vectors.len() >= 10, "the fixture lost its vectors");
+        for v in vectors {
+            assert_eq!(
+                export_stem(&v.source, v.title.as_deref(), v.date.as_deref()),
+                v.expect,
+                "vector «{}»",
+                v.name
+            );
+        }
+    }
+
+    #[test]
+    fn export_stem_cuts_long_titles_on_a_character_boundary() {
+        let title = "ø".repeat(EXPORT_TITLE_MAX_CHARS + 20);
+        let stem = export_stem("x", Some(&title), None);
+        assert_eq!(stem.chars().count(), EXPORT_TITLE_MAX_CHARS);
+        assert!(stem.chars().all(|c| c == 'ø'));
+    }
+
+    #[test]
+    fn export_stem_keeps_the_temp_name_recognisable() {
+        // The temp render name is built from the stem; the startup sweep finds
+        // leftovers by `.__editor_tmp.`, whatever the stem looks like.
+        let stem = export_stem("s", Some("Preken: «Nåde»"), Some("2026-09-27"));
+        assert!(is_editor_temp_name(&format!(
+            "{stem}{EDITOR_TMP_SUFFIX}.mp3"
+        )));
     }
 
     // ── output path policy ─────────────────────────────────────────────────────

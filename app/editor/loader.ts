@@ -12,7 +12,8 @@
  *      sekundet og cacher svaret ved siden av opptaket. Ingen lydbuffer bygges
  *      i renderer-en, så en FLAC på fire timer koster like lite minne som en på
  *      fire minutter.
- *   4. **Sidevognene**: kutt-utkastet fra en økt som ble avbrutt.
+ *   4. **Sidevognene**: kutt-utkastet fra en økt som ble avbrutt, og
+ *      eksportens «Innhold» (`.meta.json`) fra forrige gang.
  *
  * `E.loadSeq` vokter alt sammen: hver `await` sjekker den på nytt, så en
  * bruker som åpner fil nummer to midt i lastingen aldri får den førstes
@@ -50,7 +51,7 @@ import {
   startedAtMs,
   duration as durationSignal,
 } from "./model";
-import { exporting, resetExport } from "./export";
+import { exporting, loadExportContent, resetExport } from "./export";
 import { resetSound } from "./sound";
 import {
   ensurePlayerEl,
@@ -339,6 +340,12 @@ async function openFileNow(
   } catch {
     /* et utkast som ikke lot seg lese er ikke en grunn til å ikke åpne fila */
   }
+  if (seq !== E.loadSeq) return;
+
+  // 4b. Innholdet: tittel/taler/beskrivelse fra `.meta.json`, eller dagens
+  // navn på en helligdag. To raske oppslag, og EKSPORTERING skal ha dem før
+  // noen rekker å se feltene. Vokter selv på `seq`.
+  await loadExportContent(path, E.startedAtMs, seq);
   if (seq !== E.loadSeq) return;
 
   loadPhase.value = null;

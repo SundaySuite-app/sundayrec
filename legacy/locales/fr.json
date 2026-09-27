@@ -735,7 +735,15 @@
       "prepare": "Préparer",
       "pickTitle": "Ou choisissez un autre enregistrement",
       "emptyDesc": "Enregistrez d’abord quelque chose, ou ouvrez un fichier de cet ordinateur.",
-      "use": "Choisir"
+      "use": "Choisir",
+      "content": "Contenu",
+      "contentTitle": "Titre",
+      "contentTitlePlaceholder": "Par exemple « Le bon berger »",
+      "contentSpeaker": "Orateur",
+      "contentSpeakerPlaceholder": "Qui a parlé ?",
+      "contentDescription": "Description",
+      "contentDescriptionPlaceholder": "Passage biblique, thème ou une ligne sur l’église",
+      "contentHint": "Tout est facultatif. Avec un titre, le fichier porte ce nom – c’est ce que SoundCloud et les sites similaires proposent lors de l’envoi."
     },
     "span": {
       "hours": "{h} h",

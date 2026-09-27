@@ -212,6 +212,8 @@ export function toEditorExportRequest(
     title: (m.title as string) || null,
     speaker: (m.speaker as string) || null,
     description: (m.description as string) || null,
+    album: (m.album as string) || null,
+    date: (m.date as string) || null,
     vocalChainPreset: (o.vocalChainPreset as string) || null,
     processing,
     channelRepair: (o.channelRepair ?? null) as EditorChannelRepair | null,

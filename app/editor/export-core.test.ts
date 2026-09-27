@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,10 +7,14 @@ import {
   estimatedBytes,
   exportErrorKey,
   exportKbps,
+  exportStem,
   folderLabel,
   folderOf,
   isCancelled,
+  isIsoDate,
+  localIsoDate,
   megabytes,
+  parseSavedContent,
   predictedOutputName,
 } from "./export-core";
 
@@ -94,6 +100,25 @@ describe("navnet og mappen", () => {
     expect(predictedOutputName("/Opptak/tale", "mp3")).toBe(
       "tale_redigert.mp3",
     );
+  });
+
+  it("med tittel får fila tittelen, med dato foran", () => {
+    expect(
+      predictedOutputName(
+        "/Opptak/gudstjeneste_2026-09-27.mp3",
+        "mp3",
+        "Den gode hyrde",
+        "2026-09-27",
+      ),
+    ).toBe("2026-09-27 Den gode hyrde.mp3");
+    // Uten dato (en fil utenfra biblioteket): bare tittelen.
+    expect(
+      predictedOutputName("/Opptak/import.wav", "flac", "Den gode hyrde", null),
+    ).toBe("Den gode hyrde.flac");
+    // En tom tittel er ingen tittel.
+    expect(
+      predictedOutputName("/Opptak/tale.mp3", "mp3", "   ", "2026-09-27"),
+    ).toBe("tale_redigert.mp3");
   });
 
   it("«Samme mappe» er opptakets egen mappe", () => {
@@ -217,5 +242,76 @@ describe("feilkodene", () => {
         "recording error: ffmpeg failed: operation cancelled by remote peer",
       ),
     ).toBe(false);
+  });
+});
+
+describe("filnavnet speiler kjernen", () => {
+  // Den SAMME fila `export_stem_matches_the_shared_vectors` leser i Rust. Går
+  // denne rød og ikke den, har forhåndsvisningen begynt å love et annet navn
+  // enn det bakenden skriver.
+  const vectors = JSON.parse(
+    readFileSync(
+      join(
+        import.meta.dirname,
+        "../../crates/sundayrec-core/tests/fixtures/export-stem.json",
+      ),
+      "utf8",
+    ),
+  ) as Array<{
+    name: string;
+    source: string;
+    title: string | null;
+    date: string | null;
+    expect: string;
+  }>;
+
+  it("fixturen har vektorene sine", () => {
+    expect(vectors.length).toBeGreaterThanOrEqual(10);
+  });
+
+  for (const v of vectors) {
+    it(v.name, () => {
+      expect(exportStem(v.source, v.title, v.date)).toBe(v.expect);
+    });
+  }
+
+  it("en lang tittel kuttes på et tegn, ikke midt i det", () => {
+    const stem = exportStem("x", "🙏".repeat(120), null);
+    expect(Array.from(stem)).toHaveLength(100);
+  });
+});
+
+describe("datoen", () => {
+  it("er YYYY-MM-DD og finnes", () => {
+    expect(isIsoDate("2026-09-27")).toBe(true);
+    expect(isIsoDate("2028-02-29")).toBe(true);
+    expect(isIsoDate("2026-02-30")).toBe(false);
+    expect(isIsoDate("2026-9-7")).toBe(false);
+    expect(isIsoDate("")).toBe(false);
+  });
+
+  it("regnes i lokal tid, slik opptakets eget filnavn gjør", () => {
+    const ms = new Date(2026, 8, 27, 0, 30).getTime();
+    expect(localIsoDate(ms)).toBe("2026-09-27");
+    expect(localIsoDate(null)).toBeNull();
+  });
+});
+
+describe("innholdet i sidevogna", () => {
+  it("leser de tre strengene og ignorerer resten", () => {
+    expect(
+      parseSavedContent({
+        title: "T",
+        speaker: 3,
+        description: "D",
+        chapters: [{ time: 0, title: "x" }],
+      }),
+    ).toEqual({ title: "T", speaker: "", description: "D" });
+  });
+
+  it("en tom eller ukjent sidevogn er ingenting", () => {
+    expect(parseSavedContent(null)).toBeNull();
+    expect(parseSavedContent("tull")).toBeNull();
+    expect(parseSavedContent({ title: "", speaker: "" })).toBeNull();
   });
 });

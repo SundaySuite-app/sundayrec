@@ -603,6 +603,7 @@ pub fn run() {
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
+            commands::editor::editor_church_day_name,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,

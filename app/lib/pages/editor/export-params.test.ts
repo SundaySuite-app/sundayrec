@@ -175,6 +175,8 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       title: "Søndag",
       speaker: null,
       description: null,
+      album: null,
+      date: null,
       vocalChainPreset: null,
       processing: null,
       channelRepair: null,
@@ -207,11 +209,35 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       title: "Søndag",
       speaker: null,
       description: null,
+      album: null,
+      date: null,
       vocalChainPreset: null,
       processing: null,
       channelRepair: null,
       videoCodec: "h265",
     } satisfies EditorExportRequest);
+  });
+
+  it("carries album and date from the metadata — «Innhold»'s church name and service date", () => {
+    const request = toEditorExportRequest(
+      "audio",
+      buildExportRequest({
+        ...base,
+        metadata: {
+          title: "Den gode hyrde",
+          speaker: "Kari",
+          description: "",
+          album: "Sentrumskirken",
+          date: "2026-09-27",
+        },
+      }),
+    );
+    expect(request.title).toBe("Den gode hyrde");
+    expect(request.speaker).toBe("Kari");
+    // An empty string is no description, not an empty tag.
+    expect(request.description).toBeNull();
+    expect(request.album).toBe("Sentrumskirken");
+    expect(request.date).toBe("2026-09-27");
   });
 
   it("sends videoCodec: null on the audio path — it used to be OMITTED entirely", () => {

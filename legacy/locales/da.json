@@ -735,7 +735,15 @@
       "prepare": "Gør klar",
       "pickTitle": "Eller vælg en anden optagelse",
       "emptyDesc": "Optag noget først, eller åbn en fil fra computeren.",
-      "use": "Vælg"
+      "use": "Vælg",
+      "content": "Indhold",
+      "contentTitle": "Titel",
+      "contentTitlePlaceholder": "For eksempel »Den gode hyrde«",
+      "contentSpeaker": "Taler",
+      "contentSpeakerPlaceholder": "Hvem talte?",
+      "contentDescription": "Beskrivelse",
+      "contentDescriptionPlaceholder": "Bibeltekst, tema eller en linje om menigheden",
+      "contentHint": "Alt er valgfrit. Skriver du en titel, får filen den som navn – det er det, SoundCloud og lignende foreslår, når du uploader."
     },
     "span": {
       "hours": "{h} t",

@@ -735,7 +735,15 @@
       "prepare": "Gör klar",
       "pickTitle": "Eller välj en annan inspelning",
       "emptyDesc": "Spela in något först, eller öppna en fil från datorn.",
-      "use": "Välj"
+      "use": "Välj",
+      "content": "Innehåll",
+      "contentTitle": "Titel",
+      "contentTitlePlaceholder": "Till exempel ”Den gode herden”",
+      "contentSpeaker": "Talare",
+      "contentSpeakerPlaceholder": "Vem talade?",
+      "contentDescription": "Beskrivning",
+      "contentDescriptionPlaceholder": "Bibeltext, tema eller en rad om församlingen",
+      "contentHint": "Allt är valfritt. Skriver du en titel får filen den som namn – det är det SoundCloud och liknande föreslår när du laddar upp."
     },
     "span": {
       "hours": "{h} tim",

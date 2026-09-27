@@ -31,7 +31,8 @@
  * videokodek, format, bitrate, «Bithybde» *(skrivefeil for «Bitdybde», sendt i
  * alle sju språk)*, destinasjon, behandling, intro & outro, lydforbedring —
  * ni klikk hvis alt velges. Her er det to spørsmål: **hvilket format**, og
- * **hvor**.
+ * **hvor** — pluss et valgfritt «Innhold» (tittel, taler, beskrivelse), som
+ * kom med publiseringen; se `Content`.
  *
  * ## Det som følger av noe annet, spør vi ikke om
  *
@@ -82,6 +83,8 @@ import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { ProgressBar } from "../../ui/ProgressBar/ProgressBar";
 import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
 import { reveal } from "../../ui/reveal";
+import { TextArea } from "../../ui/TextArea/TextArea";
+import { TextField } from "../../ui/TextField/TextField";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import {
   cancelExport,
@@ -100,7 +103,10 @@ import {
   exportPhase,
   exportWasCancelled,
   exportAgain,
+  exportDescription,
   exportFolder,
+  exportSpeaker,
+  exportTitle,
   includeVideo,
   isVideoExport,
   pickExportFolder,
@@ -116,6 +122,7 @@ import {
   exportKbps,
   folderLabel,
   folderOf,
+  localIsoDate,
   megabytes,
   predictedOutputName,
   type ExportFormat,
@@ -129,6 +136,7 @@ import {
   lastEdited,
   loadState,
   mediaInfo,
+  startedAtMs,
 } from "../../editor/model";
 import { settings } from "../../state/settings";
 import { spanLabel } from "../../editor/span";
@@ -379,7 +387,12 @@ function Choices() {
   // regne ut på forhånd, og et tall vi ikke kan regne ut skal vi ikke vise.
   const bytes = video ? null : estimatedBytes(kept, kbps);
   const mb = megabytes(bytes);
-  const name = predictedOutputName(E.filePath, exportExtension());
+  const name = predictedOutputName(
+    E.filePath,
+    exportExtension(),
+    exportTitle.value,
+    localIsoDate(startedAtMs.value),
+  );
   const folder = exportFolder.value || folderOf(E.filePath);
 
   const formats: RadioOption[] = EXPORT_FORMATS.map((id) => ({
@@ -422,6 +435,8 @@ function Choices() {
           {t("app.editor.videoLocksFormat")}
         </p>
       ) : null}
+
+      <Content />
 
       <span class={styles.label}>{t("app.editor.exWhere")}</span>
       <RadioCards
@@ -476,6 +491,67 @@ function Choices() {
           {t("editor.save")}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * «Innhold» — tittel, taler og beskrivelse. Alt valgfritt.
+ *
+ * Et tredje spørsmål på en side som med vilje har to, og det har en grunn:
+ * `docs/APP-SHELL.md` holdt Innhold-fanen tilbake til den hadde en jobb, og
+ * jobben er publiseringen. Tittelen blir filnavnet (`export_stem`), og det er
+ * navnet SoundCloud og de andre foreslår som episodens tittel når fila dras
+ * inn. Uten tittel er ingenting endret: fila heter `<navn>_redigert` som før.
+ *
+ * Feltene er fylt fra opptakets `.meta.json` når de ble skrevet sist, eller —
+ * på en helligdag — med dagens navn (`loadExportContent`). Ingenting lagres
+ * før eksporten lykkes.
+ */
+function Content() {
+  return (
+    <div data-testid="export-content" class={styles.content}>
+      <span class={styles.label}>{t("app.export.content")}</span>
+      <div class={styles.field}>
+        <span id="export-title-label" class={styles.fieldLabel}>
+          {t("app.export.contentTitle")}
+        </span>
+        <TextField
+          value={exportTitle.value}
+          onInput={(next) => (exportTitle.value = next)}
+          placeholder={t("app.export.contentTitlePlaceholder")}
+          labelId="export-title-label"
+          describedBy="export-content-hint"
+          testId="export-title"
+        />
+      </div>
+      <div class={styles.field}>
+        <span id="export-speaker-label" class={styles.fieldLabel}>
+          {t("app.export.contentSpeaker")}
+        </span>
+        <TextField
+          value={exportSpeaker.value}
+          onInput={(next) => (exportSpeaker.value = next)}
+          placeholder={t("app.export.contentSpeakerPlaceholder")}
+          labelId="export-speaker-label"
+          testId="export-speaker"
+        />
+      </div>
+      <div class={styles.field}>
+        <span id="export-description-label" class={styles.fieldLabel}>
+          {t("app.export.contentDescription")}
+        </span>
+        <TextArea
+          value={exportDescription.value}
+          onInput={(next) => (exportDescription.value = next)}
+          placeholder={t("app.export.contentDescriptionPlaceholder")}
+          labelId="export-description-label"
+          testId="export-description"
+        />
+      </div>
+      <p id="export-content-hint" class={styles.hint}>
+        {t("app.export.contentHint")}
+      </p>
     </div>
   );
 }

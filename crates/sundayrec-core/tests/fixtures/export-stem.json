@@ -1,0 +1,128 @@
+[
+  {
+    "name": "untitled keeps today's name",
+    "source": "gudstjeneste_2026-09-27",
+    "title": null,
+    "date": "2026-09-27",
+    "expect": "gudstjeneste_2026-09-27_redigert"
+  },
+  {
+    "name": "empty title is untitled",
+    "source": "opptak",
+    "title": "",
+    "date": "2026-09-27",
+    "expect": "opptak_redigert"
+  },
+  {
+    "name": "whitespace-only title is untitled",
+    "source": "opptak",
+    "title": "  \t\n ",
+    "date": null,
+    "expect": "opptak_redigert"
+  },
+  {
+    "name": "dots-only title is untitled, not «opptak»",
+    "source": "opptak",
+    "title": "...",
+    "date": "2026-09-27",
+    "expect": "opptak_redigert"
+  },
+  {
+    "name": "title and date",
+    "source": "gudstjeneste_2026-09-27",
+    "title": "Den gode hyrde",
+    "date": "2026-09-27",
+    "expect": "2026-09-27 Den gode hyrde"
+  },
+  {
+    "name": "title without a date",
+    "source": "import",
+    "title": "Den gode hyrde",
+    "date": null,
+    "expect": "Den gode hyrde"
+  },
+  {
+    "name": "a date in another shape is ignored",
+    "source": "import",
+    "title": "Den gode hyrde",
+    "date": "27.09.2026",
+    "expect": "Den gode hyrde"
+  },
+  {
+    "name": "an unpadded date is ignored",
+    "source": "import",
+    "title": "Den gode hyrde",
+    "date": "2026-9-7",
+    "expect": "Den gode hyrde"
+  },
+  {
+    "name": "an impossible date is ignored",
+    "source": "import",
+    "title": "Den gode hyrde",
+    "date": "2026-02-30",
+    "expect": "Den gode hyrde"
+  },
+  {
+    "name": "a padded date is trimmed",
+    "source": "import",
+    "title": "Amen",
+    "date": " 2026-09-27 ",
+    "expect": "2026-09-27 Amen"
+  },
+  {
+    "name": "path and illegal characters become underscores",
+    "source": "s",
+    "title": "Preken: «Nåde» / Joh 3?",
+    "date": "2026-09-27",
+    "expect": "2026-09-27 Preken_ «Nåde» _ Joh 3_"
+  },
+  {
+    "name": "line breaks and tabs collapse to one space",
+    "source": "s",
+    "title": "Linje en\n\tLinje   to",
+    "date": null,
+    "expect": "Linje en Linje to"
+  },
+  {
+    "name": "outer spaces are trimmed",
+    "source": "s",
+    "title": "   Tittel   ",
+    "date": "2026-09-27",
+    "expect": "2026-09-27 Tittel"
+  },
+  {
+    "name": "trailing dots are dropped (Windows refuses them)",
+    "source": "s",
+    "title": "Amen...",
+    "date": "2026-09-27",
+    "expect": "2026-09-27 Amen"
+  },
+  {
+    "name": "a reserved device name alone is dodged",
+    "source": "s",
+    "title": "CON",
+    "date": null,
+    "expect": "_CON"
+  },
+  {
+    "name": "a reserved word after a date is harmless",
+    "source": "s",
+    "title": "con",
+    "date": "2026-09-27",
+    "expect": "2026-09-27 con"
+  },
+  {
+    "name": "emoji and letters outside Latin-1 survive",
+    "source": "s",
+    "title": "🙏 Bønn – Ζωή",
+    "date": "2026-12-24",
+    "expect": "2026-12-24 🙏 Bønn – Ζωή"
+  },
+  {
+    "name": "a non-breaking space counts as whitespace",
+    "source": "s",
+    "title": "1. påskedag",
+    "date": "2027-03-28",
+    "expect": "2027-03-28 1. påskedag"
+  }
+]

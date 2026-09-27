@@ -291,6 +291,19 @@ declare global {
       editorAutoProcess: (
         filePath: string,
       ) => Promise<EditorAutoProcess | null>;
+      /** The liturgical day on a `YYYY-MM-DD` date («1. påskedag»), or null
+       *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
+      editorChurchDayName: (date: string) => Promise<string | null>;
+      /** The recording's saved «Innhold» (`<stem>.meta.json`), raw — parse it
+       *  with `parseSavedContent`. Null when there is none. */
+      editorReadContent: (filePath: string) => Promise<unknown>;
+      /** Save «Innhold» beside the recording. Resolves to whether it stuck. */
+      editorSaveContent: (
+        filePath: string,
+        content: { title: string; speaker: string; description: string },
+      ) => Promise<boolean>;
+      /** Remove the saved «Innhold» — an export with every field empty. */
+      editorDeleteContent: (filePath: string) => Promise<boolean>;
       editorReadCutsDraft: (filePath: string) => Promise<unknown>;
       editorSaveCutsDraft: (filePath: string, cuts: unknown) => Promise<void>;
       editorDeleteCutsDraft: (filePath: string) => Promise<void>;

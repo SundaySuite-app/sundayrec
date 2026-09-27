@@ -2325,22 +2325,58 @@ av OPPTAKET).
 - **Bitrate-, bitdybde- og kodek-velgere.** Bitrate følger `settings.bitrate`
   (det `QualityPage` skriver: 256 for «God»). WAV er 16 bit. Video er H.264 i
   mp4 — ett format, fordi MOV og MKV er valg ingen frivillig har en mening om.
-- **Innhold-fanen** (tittel/taler/beskrivelse) — eiervalg, kommer med
-  publisering. `metadata` sendes ikke, så FFMETADATA-taggene står tomme.
 - **AAC** som eksportformat. Bakenden støtter det; tre kort er et valg, fire er
   en meny.
 - **Intro/outro-jinglene.** Ikke bygget i noe steg ennå (P4a sa det samme).
 
-## Filnavnet er bakendens, og canvasens «– preken» ble ikke bygget
+## «Innhold» kom med publiseringen
 
-`editor::export` skriver `<navn>_redigert.<ext>` og lar `collision_free_path`
-legge på `_2`, `_3` … Canvasens `2026-08-23 Gudstjeneste – preken.mp3` ville
-krevd en Rust-endring, og den ville dessuten vært en PÅSTAND om innholdet:
-`_redigert` er sant også for den som trykket «Behold alt».
+Tittel, taler og beskrivelse sto lenge på lista over det som bevisst ikke
+fantes («eiervalg, kommer med publisering»). Publiseringen kom — ikke som en
+opplasting fra appen, men som «Legg ut»: fila og teksten gjort klare, så den
+frivillige drar fila inn på SoundCloud (eller den kanalen menigheten har valgt)
+selv. Og da hadde feltene en jobb.
 
-Linja over knappen er derfor en **forutsigelse** (`predictedOutputName`), og
+- **Bakenden tok imot dem hele tiden.** `title`, `speaker` og `description`
+  fantes i `EditorExportRequest` siden P2b og ble skrevet som
+  `title`/`artist`/`comment`; det var skallet som aldri sendte `metadata`.
+  Nå sender `runExport` alle tre, pluss `album` (`settings.churchName`) og
+  `date` (opptakets dag, `YYYY-MM-DD`, i lokal tid).
+- **Et tredje, valgfritt spørsmål.** `Content` i `ExportPage.tsx` står mellom
+  format og mappe. Alt er valgfritt; uten tittel er ingenting endret.
+- **Husket ved opptaket.** Når eksporten lykkes, lagres feltene i opptakets
+  `.meta.json` (sidevogna Electron-editoren brukte til det samme, og som
+  allerede følger opptaket gjennom papirkurven). `loadExportContent` leser den
+  tilbake ved åpning. Tomt innhold sletter sidevogna i stedet for å skrive en
+  tom en.
+- **En helligdag foreslår seg selv.** Uten lagret innhold, på en kjent
+  helligdag, fylles tittelen med dagens navn («1. påskedag») fra den samme
+  tabellen opptakene får navn fra (`editor_church_day_name` →
+  `church_calendar`). En vanlig søndag får INGEN tittel: appen vet ikke hva
+  prekenen het, og en gjettet tittel ville gitt hver eksport et nytt filnavn.
+  Bare på norsk, fordi dagnavnene er norske.
+
+## Filnavnet er bakendens — og tittelen er brukerens
+
+`editor::export` spør `sundayrec_core::editor::export_stem` om navnet og lar
+`collision_free_path` legge på `_2`, `_3` … Uten tittel er det
+`<navn>_redigert.<ext>`, som før: `_redigert` er sant også for den som trykket
+«Behold alt». Med tittel er det `<YYYY-MM-DD> <tittel>.<ext>` (eller bare
+tittelen når opptaksdatoen er ukjent), fordi filnavnet er det SoundCloud og de
+andre foreslår som episodens tittel og adresse.
+
+Canvasens `2026-08-23 Gudstjeneste – preken.mp3` ble likevel ikke bygget:
+«– preken» ville vært APPENS påstand om innholdet i en fil der brukeren kanskje
+trykket «Behold alt». En tittel er brukerens egne ord, og da gjetter ikke navnet.
+Tittelen vaskes før den blir en sti (kontrolltegn og linjeskift blir ett
+mellomrom, maks 100 tegn, `sanitize_filename` som opptaksnavnene).
+
+Linja over knappen er fortsatt en **forutsigelse** (`predictedOutputName`), og
 kvitteringen viser stien bakenden faktisk svarte med. Den er fasiten; vi kan
-ikke vite om det lå en fil med det navnet der fra før.
+ikke vite om det lå en fil med det navnet der fra før. Forutsigelsen og
+bakenden leser de SAMME testvektorene
+(`crates/sundayrec-core/tests/fixtures/export-stem.json`), så de to ikke kan
+gli fra hverandre uten at en test går rød.
 
 ## Størrelsesanslaget regnes av FILA, ikke av innstillingene
 

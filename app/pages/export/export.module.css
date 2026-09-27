@@ -91,6 +91,26 @@
   color: var(--ink);
 }
 
+/* «Innhold»: tre felter under hverandre, etikett over felt. Ingen kort
+   rundt — det er et spørsmål på siden, som format og mappe, ikke en innstilling. */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.fieldLabel {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
 /* Forutsigelsen til venstre, den store knappen til høyre — nederst, fordi det
    er der man er ferdig med å lese. */
 .exportBar {

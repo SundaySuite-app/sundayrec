@@ -1556,6 +1556,24 @@ const api: Record<string, unknown> = {
   editorCancelExport: async () =>
     call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
+  editorChurchDayName: async (date: string) =>
+    call<string | null>("editor_church_day_name", { date }, null),
+  // «Innhold» lives in the recording's `.meta.json` — the sidecar kind the
+  // Electron editor kept title/speaker/description in, and one that already
+  // travels with the recording through the papirkurv.
+  editorReadContent: async (fp: string) =>
+    call("editor_read_sidecar", { mediaPath: fp, sidecar: "meta" }, null),
+  editorSaveContent: async (
+    fp: string,
+    content: { title: string; speaker: string; description: string },
+  ) =>
+    call(
+      "editor_write_sidecar",
+      { mediaPath: fp, sidecar: "meta", value: content },
+      false,
+    ),
+  editorDeleteContent: async (fp: string) =>
+    call("editor_delete_sidecar", { mediaPath: fp, sidecar: "meta" }, false),
   editorReadCutsDraft: async (fp: string) =>
     call("editor_read_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, null),
   // The old main wrapped the cut array as { cuts, ts }; preserve that so the

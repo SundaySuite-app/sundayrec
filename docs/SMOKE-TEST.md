@@ -930,11 +930,22 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      its receipt) still there, not the form again.
    - **Expected:** the destination reads **«Samme mappe som opptaket»** and a
      `*_redigert.<fmt>` file lands next to the source (no "path must be
-     absolute"). Each format states its trade-off («Liten fil. Passer for nett
+     absolute") — or `<YYYY-MM-DD> <tittel>.<fmt>` when «Innhold» has a title
+     (see the next bullet). Each format states its trade-off («Liten fil. Passer for nett
      og deling.» / «Samme kvalitet som opptaket, mindre fil.» / «Ukomprimert.
      Størst fil.») and the size estimate «ca. N MB» is computed **from the
      file**, not from the settings. The progress bar moves for real. On playback
      the marked regions are gone and the level is on target.
+   - **Expected («Innhold»):** fill in a title, a speaker and a description
+     before exporting. The line over the button predicts
+     `<YYYY-MM-DD> <tittel>.<fmt>` for a recording opened from the library, the
+     delivered file has that name, and `ffprobe -show_format <file>` lists
+     `title`, `artist` (the speaker), `comment` (the description), `album` (the
+     church name from Oppsett) and `date`. Close the file and open the same
+     recording again: the three fields are filled in from its `.meta.json`.
+     VERIFIED-BY: e2e/export-page.spec.ts::feltene følger eksporten, og tittelen blir filnavnet
+     VERIFIED-BY: e2e/export-page.spec.ts::det som ble lagret sist, står i feltene neste gang
+     VERIFIED-BY: crates/sundayrec-core/src/editor.rs::export_stem_matches_the_shared_vectors
    - **Expected:** when it is done, the receipt offers three ways on — «Vis i
      Finder», «Eksporter i annet format», «Til biblioteket».
    - The destination half of the old modal's honesty claim:

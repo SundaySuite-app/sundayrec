@@ -735,7 +735,15 @@
       "prepare": "Get it ready",
       "pickTitle": "Or choose another recording",
       "emptyDesc": "Record something first, or open a file from this machine.",
-      "use": "Choose"
+      "use": "Choose",
+      "content": "Content",
+      "contentTitle": "Title",
+      "contentTitlePlaceholder": "For example “The Good Shepherd”",
+      "contentSpeaker": "Speaker",
+      "contentSpeakerPlaceholder": "Who spoke?",
+      "contentDescription": "Description",
+      "contentDescriptionPlaceholder": "Bible passage, theme or a line about the church",
+      "contentHint": "All optional. If you write a title, the file is named after it — that is what SoundCloud and similar sites suggest when you upload."
     },
     "span": {
       "hours": "{h} h",

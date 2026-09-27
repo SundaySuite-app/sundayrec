@@ -60,6 +60,9 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
     }`),
     editor_read_sidecar: null,
     editor_write_sidecar: true,
+    // Ingen helligdag: «Innhold» får ingen foreslått tittel med mindre en
+    // spec sier noe annet.
+    editor_church_day_name: null,
     editor_delete_sidecar: fn(`(args) => {
       (window.__E2E_DELETED_SIDECARS__ ||= []).push(args.sidecar);
       return true;

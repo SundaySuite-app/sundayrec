@@ -741,7 +741,15 @@
       "prepare": "Przygotuj",
       "pickTitle": "Albo wybierz inne nagranie",
       "emptyDesc": "Najpierw coś nagraj albo otwórz plik z komputera.",
-      "use": "Wybierz"
+      "use": "Wybierz",
+      "content": "Treść",
+      "contentTitle": "Tytuł",
+      "contentTitlePlaceholder": "Na przykład „Dobry Pasterz”",
+      "contentSpeaker": "Mówca",
+      "contentSpeakerPlaceholder": "Kto mówił?",
+      "contentDescription": "Opis",
+      "contentDescriptionPlaceholder": "Fragment Biblii, temat lub zdanie o wspólnocie",
+      "contentHint": "Wszystko jest opcjonalne. Jeśli wpiszesz tytuł, plik otrzyma go jako nazwę – to właśnie proponuje SoundCloud i podobne serwisy przy przesyłaniu."
     },
     "span": {
       "hours": "{h} godz.",
