@@ -13,7 +13,7 @@
  *
  *   • **kirkeprofilen** — navnet og språket, spørsmål 4. Det er ikke noe man
  *     tar stilling til fem minutter før gudstjenesten; det settes én gang.
- *   • **Avansert** — opptaksmotor, forhåndsbuffer, oppdateringer, logg, SMTP,
+ *   • **Avansert** — opptaksmotor, forhåndsbuffer, oppdateringer, logg,
  *     flere tider. Alt som har en trygg standard.
  *
  * Én flate, ikke to faner: `?goto=settings:general` (den gamle System-fanen) og
@@ -40,7 +40,6 @@ import { t } from "../../i18n";
 import { navigate, route } from "../../router/router";
 import { loadAudioDevices } from "../../state/devices";
 import { refreshDiskSpace } from "../../state/disk";
-import { refreshEmailFacts } from "../../state/email";
 import { AdvancedPage } from "./AdvancedPage";
 import { ChurchPage } from "./ChurchPage";
 import { FirstRunResumeChip } from "./FirstRunResumeChip";
@@ -74,7 +73,6 @@ export function SetupPage() {
   useEffect(() => {
     void loadAudioDevices();
     void refreshDiskSpace();
-    void refreshEmailFacts();
   }, []);
 
   // En gammel fane-id som slapp gjennom: send den til kortet som eier

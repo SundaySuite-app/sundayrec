@@ -169,7 +169,7 @@ export function BoundTextField<K extends ScalarSettingKey>({
   testId,
 }: BoundBase<K> & {
   placeholder?: string;
-  type?: "text" | "email";
+  type?: "text";
   /** Returner en melding for å avvise verdien. */
   validate?: (value: Settings[K]) => string | null;
 }) {

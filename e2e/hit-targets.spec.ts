@@ -104,8 +104,8 @@ async function measure(page: Page, selector: string): Promise<Hit[]> {
       const out: Hit[] = [];
       for (const node of nodes) {
         if (node.getBoundingClientRect().width === 0) continue;
-        // `Gate` slår av hele undertreet sitt med `inert` når bakenden ikke
-        // finnes (e-post uten `smtp`-featuren). Da svarer `elementFromPoint`
+        // `Gate` slår av hele undertreet sitt med `inert` når det ikke kan
+        // brukes ennå (påminnelsen uten en armert tid). Da svarer `elementFromPoint`
         // med gaten og ikke kontrollen — som er nøyaktig meningen, og ikke noe
         // en treffflate kan eller skal gjøre noe med.
         if (node.closest("[inert]")) continue;
@@ -286,15 +286,13 @@ test.describe("treffflater", () => {
     // (`::after` er −8 px fra padding-boksen; kanten spiser 1 av dem.)
     await page.getByTestId("control-notify-expand").click();
     await expect(page.getByTestId("setup-notify")).toBeVisible();
-    // Tre og ikke fire: kroppen har to brytere, men e-postbryteren står bak en
-    // `Gate` som er `inert` uten `smtp`-featuren. Den skal IKKE svare på et
-    // trykk, og telles derfor ikke — se `measure`.
-    // To ghost-knapper: kilde-kortets «Endre» OG kroppens «Test»-knapp
-    // (`notify-test`).
+    // Kroppen har én bryter (varsel på maskinen). E-postbryteren og
+    // «Test»-knappen ved siden av den er borte med e-postvarslene.
+    // Én ghost-knapp: kilde-kortets «Endre».
     await assertHitTargets(page, "record/notify", {
       toggles: 3,
       expands: 3,
-      ghosts: 2,
+      ghosts: 1,
     });
   });
 
@@ -363,10 +361,9 @@ test.describe("treffflater", () => {
       ).toBeGreaterThanOrEqual(GHOST_FLOOR - PROBE_STEP);
     }
     const toggles = await measure(page, 'button[role="switch"]');
-    // ÉN: varslingskortet har tre brytere, men to av dem står bak en `Gate`
-    // som er `inert` (e-post uten `smtp`-featuren, påminnelsen uten en armert
-    // tid). De skal IKKE svare på et trykk, og telles derfor ikke — se
-    // `measure`. Samme tall som kortet bidrar med i kontrollrommet.
+    // ÉN: varslingskortets bryter for varsel på maskinen. Påminnelsen står
+    // bak en `Gate` som er `inert` uten en armert tid, og telles derfor ikke —
+    // se `measure`. Samme tall som kortet bidrar med i kontrollrommet.
     expect(toggles.length, "first-run/notify: antall brytere målt").toBe(1);
     for (const t of toggles) {
       expect(

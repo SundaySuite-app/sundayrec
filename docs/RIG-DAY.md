@@ -30,7 +30,7 @@ faktisk skal se nå — sist.
       **Forventet:** opptaksoverlegget blir stående med en
       gjenkoblingsstripe (ikke en feilmelding), og når enheten kobles til
       igjen fortsetter samme opptak — ÉN fil etterpå, ingen splitt. Ingen
-      feil-e-post og ingen system-varsel underveis: dette er en advarsel,
+      system-varsel underveis: dette er en advarsel,
       ikke en feil, så lenge motoren får koblet til igjen.
 - [ ] **(a, fortsettelse) Sett den ALDRI tilbake.** Gjenta med en ny
       opptaksøkt, men denne gangen: la mikseren stå frakoblet. **Forventet:**

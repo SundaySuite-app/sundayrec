@@ -125,8 +125,7 @@ export function decisionRows(decisions: readonly Decision[]): ControlRow[] {
       // Samme regel som nivå 1 hadde: «Sett opp» bare når det bokstavelig talt
       // ikke står et svar. En mappe som er valgt, men der disken ikke har
       // svart ennå, er noe man ENDRER.
-      needsSetUp:
-        decision.answer.key === "notSetUp" || decision.answer.key === "nobody",
+      needsSetUp: decision.answer.key === "notSetUp",
     });
   }
   return rows;

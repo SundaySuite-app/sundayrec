@@ -125,7 +125,11 @@ import {
   diskFreeBytes,
   refreshDiskSpace,
 } from "../../state/disk";
-import { emailTransport, refreshEmailFacts } from "../../state/email";
+import {
+  dismissEmailRemovedNotice,
+  emailRemovedNotice,
+  loadEmailRemovedNotice,
+} from "../../state/email-removed";
 import { prerollActive } from "../../state/preroll";
 import {
   dismissMissed,
@@ -192,15 +196,16 @@ export function RecordPage() {
   // oppryddingen er hele poenget, se toppen av fila.
   useEmbedded();
 
-  // Enhetslisten, ledig plass og e-postveien leses når SIDEN åpnes, ikke ved
-  // oppstart: fakta hentet ved boot er gamle når noen faktisk står foran
-  // mikseren. Alle tre er inndata kortene sier noe SANT med.
+  // Enhetslisten og ledig plass leses når SIDEN åpnes, ikke ved oppstart:
+  // fakta hentet ved boot er gamle når noen faktisk står foran mikseren. Begge
+  // er inndata kortene sier noe SANT med.
   useEffect(() => {
     void loadAudioDevices();
     void refreshDiskSpace();
-    void refreshEmailFacts();
     // Én gang per oppstart, ikke per besøk — se `state/preflight.ts`.
     void runSilentPreflightOnce();
+    // Likeså engangsbeskjeden om at e-postvarslene er fjernet.
+    void loadEmailRemovedNotice();
   }, []);
 
   // Ankeret: fold ut kortet, rull dit, og puls når man KOM hit. Rekkefølgen er
@@ -524,7 +529,6 @@ function ControlStack({
       devices: audioDevices.value,
       diskFreeBytes: diskFreeBytes.value,
       roomMinutes: currentRoomMinutes(),
-      emailTransport: emailTransport(),
       locale: locale.value,
       // Ingen måler i en kompaktrad: kortet sier hva som er VALGT, og
       // hørselstesten står i venstrekolonnen.
@@ -1207,6 +1211,24 @@ function RecordBanners() {
               }
             >
               {t("app.banner.missedWhy")}
+            </Button>
+          }
+        />
+      ) : null}
+
+      {emailRemovedNotice.value ? (
+        <Banner
+          tone="warn"
+          testId="banner-email-removed"
+          title={t("app.banner.emailRemovedTitle")}
+          detail={t("app.banner.emailRemovedDesc")}
+          actions={
+            <Button
+              variant="secondary"
+              testId="banner-email-removed-ok"
+              onClick={() => void dismissEmailRemovedNotice()}
+            >
+              {t("app.banner.emailRemovedOk")}
             </Button>
           }
         />

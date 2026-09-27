@@ -17,7 +17,6 @@ import type { SampleRate } from "./SampleRate";
  *   - `saveFolder` / `editorIntroPath` / `editorOutroPath` — filesystem paths.
  *   - `churchName` / `responsiblePerson` — the two fields that would deanonymise
  *     an install outright.
- *   - `emailAddress` / `emailSmtp*` — addresses and endpoints.
  *   - `slots` / `specialRecordings` — user-authored labels and a congregation's
  *     weekly rhythm. Only their COUNTS travel.
  *

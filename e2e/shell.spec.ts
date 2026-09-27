@@ -410,12 +410,8 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
           },
         ],
       },
-      settings: {
-        ...SOUND_CHOSEN,
-        saveFolder: "/Users/frivillig/SundayRec",
-        emailOnError: false,
-        emailAddress: "",
-      },
+      // Ingen mappe valgt: det er det ubesvarte spørsmålet her.
+      settings: { ...SOUND_CHOSEN, saveFolder: null },
       goto: "home",
     });
     for (const id of [
@@ -428,21 +424,24 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     ]) {
       await expect(page.getByTestId(id)).toBeVisible();
     }
+    // Ingen mappe ⇒ gul. Det er hele grunnen til at noen oppdager den tomme
+    // innstillingen før en søndag i stedet for etter — og knappen sier
+    // «Sett opp» fordi det ikke står et svar.
     await expect(page.getByTestId("control-folder")).toHaveAttribute(
-      "data-tone",
-      "neutral",
-    );
-    // Ingen får beskjed hvis noe går galt ⇒ gul. Det er hele grunnen til at
-    // noen oppdager den tomme innstillingen før en søndag i stedet for etter.
-    await expect(page.getByTestId("control-notify")).toHaveAttribute(
       "data-tone",
       "warn",
     );
-    // Knappen sier «Sett opp» fordi det ikke står et svar — og den folder ut
-    // skjermen som lar deg gi ett, uten å forlate kontrollrommet.
-    await expect(page.getByTestId("control-notify-expand")).toHaveText(
+    await expect(page.getByTestId("control-folder-expand")).toHaveText(
       "Sett opp",
     );
+    // Varslingen er alltid besvart — feil varsles på maskinen uansett — så
+    // den er nøytral og noe man ENDRER. Raden folder ut skjermen der det
+    // gjøres, uten å forlate kontrollrommet.
+    await expect(page.getByTestId("control-notify")).toHaveAttribute(
+      "data-tone",
+      "neutral",
+    );
+    await expect(page.getByTestId("control-notify-expand")).toHaveText("Endre");
     await page.getByTestId("control-notify-expand").click();
     await expect(page.getByTestId("setup-notify")).toBeVisible();
     await expect(page.getByTestId("app-heading")).toHaveText("Opptak");

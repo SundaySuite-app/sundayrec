@@ -6,9 +6,9 @@
  * `code` is the coarse category (`"validation"`, `"recording"`, …) and
  * `message` is the `Display` string `"<category>: <detail>"`. Every branchable
  * detail leads with a stable snake code (`no_save_folder`, `feature_disabled`,
- * `cancelled`, `no_config_smtp_host`, …) followed by optional prose. Before
- * this helper, call sites substring-matched English PROSE out of those
- * messages (`err.includes('no_config: smtp host')`,
+ * `cancelled`, …) followed by optional prose. Before this helper, call sites
+ * substring-matched English PROSE out of those messages
+ * (`err.includes('no_config: smtp host')`,
  * `msg.endsWith("cancelled")`) — matching that breaks the day someone rewords
  * a Rust format string.
  *

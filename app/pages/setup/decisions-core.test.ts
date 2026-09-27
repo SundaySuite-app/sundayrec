@@ -12,7 +12,6 @@ import {
   channelPairs,
   decisionsFor,
   needsSetUp,
-  notifyGateStatus,
   qualityIdFor,
   type DecisionFacts,
   type DecisionStatus,
@@ -26,7 +25,6 @@ function facts(over: Partial<DecisionFacts> = {}): DecisionFacts {
     devices: null,
     diskFreeBytes: null,
     roomMinutes: null,
-    emailTransport: null,
     locale: "no",
     vuWord: null,
     ...over,
@@ -269,77 +267,29 @@ describe("4 — Hvilken kirke?", () => {
 });
 
 describe("5 — Hvem får beskjed?", () => {
-  const READY = {
-    emailOnError: true,
-    emailAddress: "lyd@brynmenighet.no",
-  } satisfies Partial<Settings>;
-
-  it("fabrikkfersk ⇒ ingen får beskjed", () => {
-    const d = decideNotify(facts({ emailTransport: false }));
-    expect(d.answered).toBe(false);
-    expect(d.answer).toEqual({ key: "nobody" });
-    expect(d.detail).toEqual({ key: "nobodyDesc" });
-  });
-
-  it("maskinvarsler alene gjør det ikke besvart", () => {
-    // Dette er hele poenget med spørsmålet: hvis ingen sitter ved maskinen,
-    // er et OS-varsel noe ingen ser.
-    const d = decideNotify(
-      withSettings(
-        { notifyStart: true, notifyStop: true },
-        { emailTransport: false },
-      ),
-    );
-    expect(d.answered).toBe(false);
-    expect(d.answer).toEqual({ key: "nobody" });
-  });
-
-  it("adresse uten bryter ⇒ ikke besvart", () => {
-    const d = decideNotify(
-      withSettings(
-        { emailAddress: "lyd@brynmenighet.no", emailOnError: false },
-        { emailTransport: true },
-      ),
-    );
-    expect(d.answered).toBe(false);
-  });
-
-  it("bryter uten adresse ⇒ ikke besvart", () => {
-    const d = decideNotify(
-      withSettings(
-        { emailOnError: true, emailAddress: "" },
-        { emailTransport: true },
-      ),
-    );
-    expect(d.answered).toBe(false);
-  });
-
-  it("alt utfylt, men ingen sendevei ⇒ ikke besvart, og teksten sier det", () => {
-    const d = decideNotify(withSettings(READY, { emailTransport: false }));
-    expect(d.answered).toBe(false);
-    expect(d.answer).toEqual({ key: "nobody" });
-    expect(d.detail).toEqual({ key: "nobodyDesc" });
-  });
-
-  it("sendeveien ikke sjekket ennå ⇒ ingen påstand", () => {
-    const d = decideNotify(withSettings(READY, { emailTransport: null }));
-    expect(d.status).toBe<DecisionStatus>("unknown");
-    expect(d.answered).toBe(false);
-  });
-
-  it("adresse + bryter + sendevei ⇒ done", () => {
-    const d = decideNotify(withSettings(READY, { emailTransport: true }));
+  it("fabrikkfersk ⇒ den som står ved maskinen, og det er et svar", () => {
+    // Feilvarselet på maskinen kan ikke slås av, så spørsmålet er besvart i
+    // hver installasjon. E-postvarslene som en gang gjorde kortet gult er
+    // fjernet.
+    const d = decideNotify(facts());
     expect(d.answered).toBe(true);
-    expect(d.answer).toEqual({ key: "email", address: "lyd@brynmenighet.no" });
-    expect(d.detail).toEqual({ key: "emailDesc" });
+    expect(d.status).toBe<DecisionStatus>("done");
+    expect(d.answer).toEqual({ key: "onMachine" });
+    expect(d.detail).toEqual({ key: "onMachineDesc" });
+  });
+
+  it("start-/stopp-bryteren endrer ikke svaret — feil varsles uansett", () => {
+    const d = decideNotify(
+      withSettings({ notifyStart: false, notifyStop: false }),
+    );
+    expect(d.answered).toBe(true);
+    expect(d.answer).toEqual({ key: "onMachine" });
   });
 });
 
 describe("de fem sammen", () => {
-  it("en fabrikkfersk app har svart på nøyaktig ÉN — kvalitet", () => {
-    const all = decisionsFor(
-      facts({ devices: [], diskFreeBytes: null, emailTransport: false }),
-    );
+  it("en fabrikkfersk app har svart på nøyaktig TO — kvalitet og varsling", () => {
+    const all = decisionsFor(facts({ devices: [], diskFreeBytes: null }));
     expect(all.map((d) => d.id)).toEqual([
       "sound",
       "folder",
@@ -347,8 +297,9 @@ describe("de fem sammen", () => {
       "church",
       "notify",
     ]);
-    expect(answeredCount(all)).toBe(1);
+    expect(answeredCount(all)).toBe(2);
     expect(all.find((d) => d.id === "quality")?.answered).toBe(true);
+    expect(all.find((d) => d.id === "notify")?.answered).toBe(true);
   });
 
   it("en ferdig satt opp app har svart på alle fem", () => {
@@ -359,14 +310,11 @@ describe("de fem sammen", () => {
           deviceName: "Behringer X32",
           saveFolder: "/Users/f/Opptak",
           churchName: "Bryn menighet",
-          emailOnError: true,
-          emailAddress: "lyd@brynmenighet.no",
         },
         {
           devices: [X32],
           diskFreeBytes: 412_000_000_000,
           roomMinutes: 18_000,
-          emailTransport: true,
         },
       ),
     );
@@ -377,9 +325,7 @@ describe("de fem sammen", () => {
 describe("needsSetUp — «Sett opp» eller «Endre»", () => {
   it("«Sett opp» bare når det ikke står et svar", () => {
     expect(needsSetUp(decideFolder(facts()))).toBe(true);
-    expect(needsSetUp(decideNotify(facts({ emailTransport: false })))).toBe(
-      true,
-    );
+    expect(needsSetUp(decideNotify(facts()))).toBe(false);
   });
 
   it("en mappe uten diskssvar er noe man ENDRER, ikke setter opp", () => {
@@ -394,42 +340,6 @@ describe("needsSetUp — «Sett opp» eller «Endre»", () => {
 
   it("kvalitet er alltid noe man endrer", () => {
     expect(needsSetUp(decideQuality(facts()))).toBe(false);
-  });
-});
-
-describe("notifyGateStatus", () => {
-  const built = {
-    featureBuilt: true,
-    smtpConfigured: true,
-    smtpPasswordAvailable: true,
-  };
-
-  it("ikke lest ennå ⇒ åpen — en bryter som er inert i et halvsekund tar ikke imot det første klikket", () => {
-    expect(notifyGateStatus(null)).toBe("ok");
-  });
-
-  it("uten e-postfeaturen ⇒ «finnes ikke i denne utgaven»", () => {
-    // Det er ikke noe brukeren kan gjøre noe med, og å la henne prøve er å be
-    // om en lørdagskveld.
-    expect(notifyGateStatus({ ...built, featureBuilt: false })).toBe(
-      "unavailable",
-    );
-  });
-
-  it("uten SMTP-vert ⇒ «ikke satt opp», som er noe man KAN gjøre noe med", () => {
-    expect(notifyGateStatus({ ...built, smtpConfigured: false })).toBe(
-      "unconfigured",
-    );
-  });
-
-  it("uten passord ⇒ også «ikke satt opp» — vert og brukernavn alene sender ingenting", () => {
-    expect(notifyGateStatus({ ...built, smtpPasswordAvailable: false })).toBe(
-      "unconfigured",
-    );
-  });
-
-  it("alt på plass ⇒ åpen, og uten banner", () => {
-    expect(notifyGateStatus(built)).toBe("ok");
   });
 });
 
