@@ -27,19 +27,15 @@
 //! and compiles but has NOT been exercised against a live clock/device. Mac
 //! permission prompts (mic/notification) are also a runtime concern.
 //!
-//! ## Honest gaps (carried to a later Fase-5 slice)
+//! ## Honest gaps
 //!
-//! - **Missed-recording persistence.** [`sundayrec_core::schedule::missed_recordings`]
-//!   decides what was missed, and [`check_missed`] emits it + notifies, but the
-//!   current `recording` table has no `status`/`error` column to store a "missed"
-//!   row (Electron used a `wakeFailureHistory` ring + a `status` field). Logging
-//!   missed/skipped rows waits on that schema. Dedup therefore only considers
-//!   real recordings, not previously-logged misses.
+//! - **Missed occurrences are not history rows.** [`check_missed`] emits them,
+//!   notifies once per occurrence (the `notify_seen` ledger) and, when a wake
+//!   was due, logs them to the wake-failure ring — but the `recording` table
+//!   has no `status` column, so a missed Sunday never appears in the library.
 //! - **Special device override.** `SpecialRecording.device_id` is a stored id, but
 //!   the recorder matches by NAME; mapping id→name needs the device list. Until
-//!   then a special uses the global `device_name`.
-//! - **Wake-from-sleep.** Actually waking the machine (pmset / SetWaitableTimer) is
-//!   Fase 5.2; this slice schedules and fires while the app is running/awake.
+//!   then a special uses the global `device_name`. (Tracked in `docs/PLAN.md`.)
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
