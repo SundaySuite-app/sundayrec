@@ -93,7 +93,7 @@ pub mod trash;
 /// `cfg`-free.
 #[cfg(feature = "tray")]
 pub(crate) fn tray_note_language(app: &tauri::AppHandle, code: &str) {
-    tray::set_lang(app, sundayrec_core::tray::TrayLang::from_code(Some(code)));
+    tray::set_lang(app, sundayrec_core::lang::Lang::from_code(Some(code)));
 }
 #[cfg(not(feature = "tray"))]
 pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
@@ -499,10 +499,11 @@ pub fn run() {
             // instead of freezing at `TrayState::default()`. GUI-UNVERIFIED.
             #[cfg(feature = "tray")]
             {
-                use sundayrec_core::tray::{TrayLang, TrayState};
+                use sundayrec_core::lang::Lang;
+                use sundayrec_core::tray::TrayState;
                 // The UI language lives in the renderer's own settings blob, so
                 // it arrives via `tray_set_language` on boot; Norwegian until then.
-                let lang = TrayLang::from_code(None);
+                let lang = Lang::from_code(None);
                 match tray::install(app.handle(), &TrayState::default(), lang) {
                     Ok(()) => tray::wire_state_sources(app.handle()),
                     Err(e) => tracing::warn!("tray install failed: {e}"),

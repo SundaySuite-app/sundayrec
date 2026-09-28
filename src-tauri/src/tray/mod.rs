@@ -16,7 +16,7 @@
 //! never touched again: a tray that permanently said "✅ Klar / Start opptak nå"
 //! even mid-recording, with no next-recording line.
 //! [`TrayController`] closes that loop. It is Tauri-managed state holding the
-//! live [`TrayState`] + [`TrayLang`] and the `TrayIcon` handle, and every mutation
+//! live [`TrayState`] + [`Lang`] and the `TrayIcon` handle, and every mutation
 //! goes through [`update`], which re-renders the menu, the tooltip and the icon
 //! — but only when the projected state actually CHANGED, so the high-frequency
 //! `recording://state` stream can't thrash the menubar.
@@ -39,9 +39,10 @@ use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
+use sundayrec_core::lang::Lang;
 use sundayrec_core::tray::{
     badge_rgb, build_menu as build_model, format_next_label, icon_for, tooltip, with_status_badge,
-    TrayAction, TrayItem, TrayLang, TrayState,
+    TrayAction, TrayItem, TrayState,
 };
 
 /// The event the tray emits for an action the renderer/commands handle. The
@@ -88,7 +89,7 @@ pub fn action_from_id(id: &str) -> Option<TrayAction> {
 pub fn build_menu<R: Runtime>(
     app: &AppHandle<R>,
     state: &TrayState,
-    lang: TrayLang,
+    lang: Lang,
 ) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
     for item in build_model(state, lang) {
@@ -167,7 +168,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, menu_id: &str) {
 //   The live tray — managed state, rebuilt on every change
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The live tray: the `TrayIcon` handle plus the [`TrayState`]/[`TrayLang`] the
+/// The live tray: the `TrayIcon` handle plus the [`TrayState`]/[`Lang`] the
 /// menu, tooltip and icon are projected from. Stored as Tauri-managed state, so
 /// it lives for the whole process (which is also what keeps the tray on screen —
 /// dropping the handle removes it).
@@ -182,7 +183,7 @@ pub struct TrayController<R: Runtime> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TrayView {
     state: TrayState,
-    lang: TrayLang,
+    lang: Lang,
 }
 
 impl<R: Runtime> TrayController<R> {
@@ -260,7 +261,7 @@ pub fn update<R: Runtime>(app: &AppHandle<R>, mutate: impl FnOnce(&mut TrayState
 /// Switch the tray's language and relabel every row. Called from the
 /// `tray_set_language` command when the renderer's language changes (the UI
 /// language lives in the renderer's own settings blob, not the backend's).
-pub fn set_lang<R: Runtime>(app: &AppHandle<R>, lang: TrayLang) {
+pub fn set_lang<R: Runtime>(app: &AppHandle<R>, lang: Lang) {
     let Some(ctl) = app.try_state::<TrayController<R>>() else {
         return;
     };
@@ -338,13 +339,13 @@ pub fn wire_state_sources<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// The tray's current language (Norwegian when the tray isn't installed).
-fn current_lang<R: Runtime>(app: &AppHandle<R>) -> TrayLang {
+fn current_lang<R: Runtime>(app: &AppHandle<R>) -> Lang {
     app.try_state::<TrayController<R>>()
         .map(|ctl| match ctl.view.lock() {
             Ok(g) => g.lang,
             Err(p) => p.into_inner().lang,
         })
-        .unwrap_or(TrayLang::No)
+        .unwrap_or(Lang::No)
 }
 
 /// Build + install the menubar tray icon with the current [`TrayState`] menu
@@ -356,11 +357,7 @@ fn current_lang<R: Runtime>(app: &AppHandle<R>) -> TrayLang {
 /// projection. The resulting [`TrayController`] is stored as managed state — that
 /// is what keeps the tray alive AND what later rebuilds go through.
 /// GUI-UNVERIFIED.
-pub fn install<R: Runtime>(
-    app: &AppHandle<R>,
-    state: &TrayState,
-    lang: TrayLang,
-) -> tauri::Result<()> {
+pub fn install<R: Runtime>(app: &AppHandle<R>, state: &TrayState, lang: Lang) -> tauri::Result<()> {
     use tauri::tray::TrayIconBuilder;
 
     let menu = build_menu(app, state, lang)?;

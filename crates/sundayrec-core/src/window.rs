@@ -64,8 +64,8 @@
 //! `prevent_exit` is a no-op for a restart. The wait therefore has to come
 //! first.
 
+use crate::lang::Lang;
 use crate::recorder::RecorderState;
-use crate::tray::TrayLang;
 
 /// What the shell should do with a close request on the main window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,33 +118,31 @@ pub fn close_action(state: RecorderState) -> CloseAction {
 /// afford to lose is still running" — the same class as the failure
 /// notifications, which ignore the toggles too (see
 /// `scheduler::should_notify`'s `failure_notices_ignore_the_toggles`).
-pub fn hidden_notice(reason: HideReason, lang: TrayLang, spot: TraySpot) -> (String, String) {
+pub fn hidden_notice(reason: HideReason, lang: Lang, spot: TraySpot) -> (String, String) {
     let title = match (reason, lang) {
-        (HideReason::Recording, TrayLang::No) => "SundayRec tar fortsatt opp",
-        (HideReason::Recording, TrayLang::En) => "SundayRec is still recording",
-        (HideReason::Recording, TrayLang::De) => "SundayRec nimmt weiterhin auf",
-        (HideReason::Recording, TrayLang::Sv) => "SundayRec spelar fortfarande in",
-        (HideReason::Recording, TrayLang::Da) => "SundayRec optager stadig",
-        (HideReason::Recording, TrayLang::Pl) => "SundayRec nadal nagrywa",
-        (HideReason::Recording, TrayLang::Fr) => "SundayRec enregistre toujours",
-        (HideReason::Finishing, TrayLang::No) => "SundayRec lagrer opptaket",
-        (HideReason::Finishing, TrayLang::En) => "SundayRec is saving the recording",
-        (HideReason::Finishing, TrayLang::De) => "SundayRec speichert die Aufnahme",
-        (HideReason::Finishing, TrayLang::Sv) => "SundayRec sparar inspelningen",
-        (HideReason::Finishing, TrayLang::Da) => "SundayRec gemmer optagelsen",
-        (HideReason::Finishing, TrayLang::Pl) => "SundayRec zapisuje nagranie",
-        (HideReason::Finishing, TrayLang::Fr) => "SundayRec enregistre le fichier",
+        (HideReason::Recording, Lang::No) => "SundayRec tar fortsatt opp",
+        (HideReason::Recording, Lang::En) => "SundayRec is still recording",
+        (HideReason::Recording, Lang::De) => "SundayRec nimmt weiterhin auf",
+        (HideReason::Recording, Lang::Sv) => "SundayRec spelar fortfarande in",
+        (HideReason::Recording, Lang::Da) => "SundayRec optager stadig",
+        (HideReason::Recording, Lang::Pl) => "SundayRec nadal nagrywa",
+        (HideReason::Recording, Lang::Fr) => "SundayRec enregistre toujours",
+        (HideReason::Finishing, Lang::No) => "SundayRec lagrer opptaket",
+        (HideReason::Finishing, Lang::En) => "SundayRec is saving the recording",
+        (HideReason::Finishing, Lang::De) => "SundayRec speichert die Aufnahme",
+        (HideReason::Finishing, Lang::Sv) => "SundayRec sparar inspelningen",
+        (HideReason::Finishing, Lang::Da) => "SundayRec gemmer optagelsen",
+        (HideReason::Finishing, Lang::Pl) => "SundayRec zapisuje nagranie",
+        (HideReason::Finishing, Lang::Fr) => "SundayRec enregistre le fichier",
     };
     let body = match lang {
-        TrayLang::No => "Vinduet er skjult, ikke lukket. Hent det tilbake fra {spot}.",
-        TrayLang::En => "The window is hidden, not closed. Bring it back from the {spot}.",
-        TrayLang::De => {
-            "Das Fenster ist ausgeblendet, nicht geschlossen. Hol es über {spot} zurück."
-        }
-        TrayLang::Sv => "Fönstret är dolt, inte stängt. Hämta tillbaka det från {spot}.",
-        TrayLang::Da => "Vinduet er skjult, ikke lukket. Hent det tilbage fra {spot}.",
-        TrayLang::Pl => "Okno jest ukryte, a nie zamknięte. Przywróć je z {spot}.",
-        TrayLang::Fr => "La fenêtre est masquée, pas fermée. Rouvrez-la depuis {spot}.",
+        Lang::No => "Vinduet er skjult, ikke lukket. Hent det tilbake fra {spot}.",
+        Lang::En => "The window is hidden, not closed. Bring it back from the {spot}.",
+        Lang::De => "Das Fenster ist ausgeblendet, nicht geschlossen. Hol es über {spot} zurück.",
+        Lang::Sv => "Fönstret är dolt, inte stängt. Hämta tillbaka det från {spot}.",
+        Lang::Da => "Vinduet er skjult, ikke lukket. Hent det tilbage fra {spot}.",
+        Lang::Pl => "Okno jest ukryte, a nie zamknięte. Przywróć je z {spot}.",
+        Lang::Fr => "La fenêtre est masquée, pas fermée. Rouvrez-la depuis {spot}.",
     };
     (
         title.to_string(),
@@ -154,22 +152,22 @@ pub fn hidden_notice(reason: HideReason, lang: TrayLang, spot: TraySpot) -> (Str
 
 /// The localised name of the place the app's icon sits, in the grammatical form
 /// the `{spot}` slot above needs ("from the …").
-fn spot_noun(spot: TraySpot, lang: TrayLang) -> &'static str {
+fn spot_noun(spot: TraySpot, lang: Lang) -> &'static str {
     match (spot, lang) {
-        (TraySpot::Menubar, TrayLang::No) => "menylinja",
-        (TraySpot::Menubar, TrayLang::En) => "menu bar",
-        (TraySpot::Menubar, TrayLang::De) => "die Menüleiste",
-        (TraySpot::Menubar, TrayLang::Sv) => "menyraden",
-        (TraySpot::Menubar, TrayLang::Da) => "menulinjen",
-        (TraySpot::Menubar, TrayLang::Pl) => "paska menu",
-        (TraySpot::Menubar, TrayLang::Fr) => "la barre de menus",
-        (TraySpot::SystemTray, TrayLang::No) => "systemstatusfeltet",
-        (TraySpot::SystemTray, TrayLang::En) => "system tray",
-        (TraySpot::SystemTray, TrayLang::De) => "den Infobereich",
-        (TraySpot::SystemTray, TrayLang::Sv) => "aktivitetsfältet",
-        (TraySpot::SystemTray, TrayLang::Da) => "proceslinjen",
-        (TraySpot::SystemTray, TrayLang::Pl) => "zasobnika systemowego",
-        (TraySpot::SystemTray, TrayLang::Fr) => "la zone de notification",
+        (TraySpot::Menubar, Lang::No) => "menylinja",
+        (TraySpot::Menubar, Lang::En) => "menu bar",
+        (TraySpot::Menubar, Lang::De) => "die Menüleiste",
+        (TraySpot::Menubar, Lang::Sv) => "menyraden",
+        (TraySpot::Menubar, Lang::Da) => "menulinjen",
+        (TraySpot::Menubar, Lang::Pl) => "paska menu",
+        (TraySpot::Menubar, Lang::Fr) => "la barre de menus",
+        (TraySpot::SystemTray, Lang::No) => "systemstatusfeltet",
+        (TraySpot::SystemTray, Lang::En) => "system tray",
+        (TraySpot::SystemTray, Lang::De) => "den Infobereich",
+        (TraySpot::SystemTray, Lang::Sv) => "aktivitetsfältet",
+        (TraySpot::SystemTray, Lang::Da) => "proceslinjen",
+        (TraySpot::SystemTray, Lang::Pl) => "zasobnika systemowego",
+        (TraySpot::SystemTray, Lang::Fr) => "la zone de notification",
     }
 }
 
@@ -405,61 +403,61 @@ pub fn wait_outcome(state: RecorderState, elapsed_ms: u64, cap_ms: u64) -> QuitW
 /// notice is gated by the `notifyStart`/`notifyStop` comfort toggles, because
 /// both say "what you just did did not do what you expected, and something you
 /// cannot afford to lose is at stake".
-pub fn quit_notice(notice: QuitNotice, lang: TrayLang) -> (String, String) {
+pub fn quit_notice(notice: QuitNotice, lang: Lang) -> (String, String) {
     let (title, body) = match (notice, lang) {
-        (QuitNotice::Refused, TrayLang::No) => (
+        (QuitNotice::Refused, Lang::No) => (
             "SundayRec tar opp",
             "Trykk Avslutt igjen innen {seconds} sekunder for å stoppe opptaket og avslutte.",
         ),
-        (QuitNotice::Refused, TrayLang::En) => (
+        (QuitNotice::Refused, Lang::En) => (
             "SundayRec is recording",
             "Press Quit again within {seconds} seconds to stop the recording and quit.",
         ),
-        (QuitNotice::Refused, TrayLang::De) => (
+        (QuitNotice::Refused, Lang::De) => (
             "SundayRec nimmt auf",
             "Drücke innerhalb von {seconds} Sekunden erneut auf Beenden, um die Aufnahme zu stoppen und das Programm zu schließen.",
         ),
-        (QuitNotice::Refused, TrayLang::Sv) => (
+        (QuitNotice::Refused, Lang::Sv) => (
             "SundayRec spelar in",
             "Tryck Avsluta igen inom {seconds} sekunder för att stoppa inspelningen och avsluta.",
         ),
-        (QuitNotice::Refused, TrayLang::Da) => (
+        (QuitNotice::Refused, Lang::Da) => (
             "SundayRec optager",
             "Tryk Afslut igen inden for {seconds} sekunder for at stoppe optagelsen og afslutte.",
         ),
-        (QuitNotice::Refused, TrayLang::Pl) => (
+        (QuitNotice::Refused, Lang::Pl) => (
             "SundayRec nagrywa",
             "Naciśnij Zakończ ponownie w ciągu {seconds} sekund, aby zatrzymać nagrywanie i zamknąć aplikację.",
         ),
-        (QuitNotice::Refused, TrayLang::Fr) => (
+        (QuitNotice::Refused, Lang::Fr) => (
             "SundayRec enregistre",
             "Appuyez de nouveau sur Quitter dans les {seconds} secondes pour arrêter l'enregistrement et quitter.",
         ),
-        (QuitNotice::Waiting, TrayLang::No) => (
+        (QuitNotice::Waiting, Lang::No) => (
             "Lagrer opptaket",
             "SundayRec avslutter når fila er trygg. Ett trykk til avslutter med én gang.",
         ),
-        (QuitNotice::Waiting, TrayLang::En) => (
+        (QuitNotice::Waiting, Lang::En) => (
             "Saving the recording",
             "SundayRec quits once the file is safe. One more press quits immediately.",
         ),
-        (QuitNotice::Waiting, TrayLang::De) => (
+        (QuitNotice::Waiting, Lang::De) => (
             "Aufnahme wird gespeichert",
             "SundayRec beendet sich, sobald die Datei sicher ist. Noch einmal drücken beendet sofort.",
         ),
-        (QuitNotice::Waiting, TrayLang::Sv) => (
+        (QuitNotice::Waiting, Lang::Sv) => (
             "Sparar inspelningen",
             "SundayRec avslutas när filen är trygg. Ett tryck till avslutar direkt.",
         ),
-        (QuitNotice::Waiting, TrayLang::Da) => (
+        (QuitNotice::Waiting, Lang::Da) => (
             "Gemmer optagelsen",
             "SundayRec afslutter, når filen er sikker. Endnu et tryk afslutter med det samme.",
         ),
-        (QuitNotice::Waiting, TrayLang::Pl) => (
+        (QuitNotice::Waiting, Lang::Pl) => (
             "Zapisywanie nagrania",
             "SundayRec zamknie się, gdy plik będzie bezpieczny. Kolejne naciśnięcie zamyka natychmiast.",
         ),
-        (QuitNotice::Waiting, TrayLang::Fr) => (
+        (QuitNotice::Waiting, Lang::Fr) => (
             "Sauvegarde de l'enregistrement",
             "SundayRec se ferme une fois le fichier en sécurité. Une pression de plus quitte immédiatement.",
         ),
@@ -551,13 +549,13 @@ mod tests {
     #[test]
     fn the_hide_notice_is_localised_in_all_seven_languages() {
         let langs = [
-            TrayLang::No,
-            TrayLang::En,
-            TrayLang::De,
-            TrayLang::Sv,
-            TrayLang::Da,
-            TrayLang::Pl,
-            TrayLang::Fr,
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
         ];
         let mut titles = Vec::new();
         for lang in langs {
@@ -583,8 +581,8 @@ mod tests {
 
     #[test]
     fn finalising_does_not_claim_the_service_is_still_being_recorded() {
-        let (recording, _) = hidden_notice(HideReason::Recording, TrayLang::No, TraySpot::Menubar);
-        let (finishing, _) = hidden_notice(HideReason::Finishing, TrayLang::No, TraySpot::Menubar);
+        let (recording, _) = hidden_notice(HideReason::Recording, Lang::No, TraySpot::Menubar);
+        let (finishing, _) = hidden_notice(HideReason::Finishing, Lang::No, TraySpot::Menubar);
         assert_ne!(recording, finishing);
         assert_eq!(recording, "SundayRec tar fortsatt opp");
         assert_eq!(finishing, "SundayRec lagrer opptaket");
@@ -592,11 +590,11 @@ mod tests {
 
     #[test]
     fn the_notice_names_the_right_place_per_platform() {
-        let (_, mac) = hidden_notice(HideReason::Recording, TrayLang::No, TraySpot::Menubar);
-        let (_, win) = hidden_notice(HideReason::Recording, TrayLang::No, TraySpot::SystemTray);
+        let (_, mac) = hidden_notice(HideReason::Recording, Lang::No, TraySpot::Menubar);
+        let (_, win) = hidden_notice(HideReason::Recording, Lang::No, TraySpot::SystemTray);
         assert!(mac.contains("menylinja"), "{mac}");
         assert!(win.contains("systemstatusfeltet"), "{win}");
-        let (_, mac_en) = hidden_notice(HideReason::Recording, TrayLang::En, TraySpot::Menubar);
+        let (_, mac_en) = hidden_notice(HideReason::Recording, Lang::En, TraySpot::Menubar);
         assert!(mac_en.contains("menu bar"), "{mac_en}");
     }
 
@@ -788,13 +786,13 @@ mod tests {
     #[test]
     fn the_quit_notices_are_localised_in_all_seven_languages() {
         let langs = [
-            TrayLang::No,
-            TrayLang::En,
-            TrayLang::De,
-            TrayLang::Sv,
-            TrayLang::Da,
-            TrayLang::Pl,
-            TrayLang::Fr,
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
         ];
         for notice in [QuitNotice::Refused, QuitNotice::Waiting] {
             let mut titles = Vec::new();
@@ -822,13 +820,13 @@ mod tests {
         // The refusal has to name the window — "press again" without "within
         // ten seconds" is an instruction the volunteer cannot follow.
         for lang in [
-            TrayLang::No,
-            TrayLang::En,
-            TrayLang::De,
-            TrayLang::Sv,
-            TrayLang::Da,
-            TrayLang::Pl,
-            TrayLang::Fr,
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
         ] {
             let (_, refused) = quit_notice(QuitNotice::Refused, lang);
             assert!(refused.contains("10"), "{lang:?}: {refused}");
@@ -852,9 +850,9 @@ mod tests {
             0,
             "a fractional second has no wording"
         );
-        let (_, pl) = quit_notice(QuitNotice::Refused, TrayLang::Pl);
+        let (_, pl) = quit_notice(QuitNotice::Refused, Lang::Pl);
         assert!(pl.contains("10 sekund"), "{pl}");
-        let (_, no) = quit_notice(QuitNotice::Refused, TrayLang::No);
+        let (_, no) = quit_notice(QuitNotice::Refused, Lang::No);
         assert!(no.contains("10 sekunder"), "{no}");
     }
 
@@ -863,13 +861,13 @@ mod tests {
         // "I did not quit" and "I am quitting" are opposite messages; a shared
         // string would be the cruellest possible bug here.
         for lang in [
-            TrayLang::No,
-            TrayLang::En,
-            TrayLang::De,
-            TrayLang::Sv,
-            TrayLang::Da,
-            TrayLang::Pl,
-            TrayLang::Fr,
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
         ] {
             assert_ne!(
                 quit_notice(QuitNotice::Refused, lang),

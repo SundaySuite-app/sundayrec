@@ -59,8 +59,8 @@ use std::time::{Duration, Instant};
 
 use tauri::{Manager, Window, WindowEvent};
 
+use sundayrec_core::lang::Lang;
 use sundayrec_core::timeouts::RecorderTimeouts;
-use sundayrec_core::tray::TrayLang;
 use sundayrec_core::window::{
     close_action, hidden_notice, quit_action, quit_notice, wait_outcome, CloseAction, HideReason,
     QuitAction, QuitNotice, QuitWait, TraySpot, QUIT_REPEAT_FLOOR_MS,
@@ -412,18 +412,18 @@ fn notify_quit<R: tauri::Runtime>(app: &tauri::AppHandle<R>, notice: QuitNotice)
 }
 
 /// The volunteer's UI language, from the settings row. Async because the
-/// event-loop callback must never block on the database; `TrayLang::No` is the
+/// event-loop callback must never block on the database; `Lang::No` is the
 /// fallback the tray uses for the same lookup.
-async fn ui_lang<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> TrayLang {
+async fn ui_lang<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Lang {
     match app.try_state::<crate::db::Db>() {
-        Some(db) => TrayLang::from_code(
+        Some(db) => Lang::from_code(
             crate::settings::load(&db.pool)
                 .await
                 .unwrap_or_default()
                 .language
                 .as_deref(),
         ),
-        None => TrayLang::No,
+        None => Lang::No,
     }
 }
 
