@@ -736,15 +736,19 @@ pub async fn check_missed(
         &triggered_keys,
     );
     let out: Vec<MissedRecordingInfo> = missed
-        .into_iter()
+        .iter()
         .map(|m| MissedRecordingInfo {
             at: fmt_dt(m.when),
-            label: m.label,
+            label: m.label.clone(),
         })
         .collect();
     if !out.is_empty() {
         let _ = app.emit(MISSED_EVENT, &out);
-        report_missed(app, pool, &out).await;
+        let slots: Vec<crate::notify::MissedSlot> = missed
+            .iter()
+            .map(crate::notify::MissedSlot::from_missed)
+            .collect();
+        report_missed(app, pool, &settings, &slots).await;
     }
     Ok(out)
 }
@@ -801,11 +805,15 @@ pub(crate) fn covered_windows_local(pending: Vec<(u64, u64)>) -> Vec<CoveredWind
 /// The ledger is stamped AFTER the notification: failing to stamp it costs one
 /// possible repeat on the next launch, which is a great deal better than a
 /// stamped Sunday nobody was ever told about.
-async fn report_missed(app: &AppHandle, pool: &SqlitePool, missed: &[MissedRecordingInfo]) {
+async fn report_missed(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    settings: &Settings,
+    missed: &[crate::notify::MissedSlot],
+) {
     use sundayrec_core::notify::SeenScope;
 
-    let settings = settings::load(pool).await.unwrap_or_default();
-    let lang = lang_of(&settings);
+    let lang = lang_of(settings);
     let now = crate::util::now_ms();
 
     let fresh = unreported_missed(pool, missed, now).await;
@@ -828,6 +836,23 @@ async fn report_missed(app: &AppHandle, pool: &SqlitePool, missed: &[MissedRecor
         ),
     );
 
+    // «Vekkehistorikk» — the log under Avansert → Test vekking — was written by
+    // nothing: `insert_wake_failure` had tests and no caller, so the list was
+    // empty on every machine. A missed occurrence belongs in it exactly when a
+    // wake was supposed to get the machine up for it; with «Vekk maskinen fra
+    // dvale» off, nothing was going to wake it, and the entry («Gikk glipp av en
+    // planlagt vekking») would blame the wrong thing. `fresh` is already the
+    // once-per-occurrence set, so the log gets one line per missed Sunday.
+    if settings.wake_from_sleep {
+        for slot in &fresh {
+            if let Err(e) =
+                crate::db::store::insert_wake_failure(pool, &missed_wake_entry(slot, now)).await
+            {
+                tracing::warn!("scheduler: could not log the missed wake: {e}");
+            }
+        }
+    }
+
     for slot in &fresh {
         if let Err(e) =
             crate::notify::seen::seen_mark(pool, SeenScope::Missed, &slot.seen_key(), now).await
@@ -848,17 +873,14 @@ async fn report_missed(app: &AppHandle, pool: &SqlitePool, missed: &[MissedRecor
 /// twice on a Sunday afternoon performs.
 async fn unreported_missed(
     pool: &SqlitePool,
-    missed: &[MissedRecordingInfo],
+    missed: &[crate::notify::MissedSlot],
     now_ms: i64,
 ) -> Vec<crate::notify::MissedSlot> {
     use sundayrec_core::notify::{seen_decision, SeenScope};
 
     let mut fresh = Vec::new();
-    for m in missed {
-        let slot = crate::notify::MissedSlot {
-            at: m.at.clone(),
-            label: m.label.clone(),
-        };
+    for slot in missed {
+        let slot = slot.clone();
         let last = crate::notify::seen::seen_get(pool, SeenScope::Missed, &slot.seen_key())
             .await
             .unwrap_or_else(|e| {
@@ -885,24 +907,58 @@ async fn unreported_missed(
 
 /// The one sentence the native notification shows.
 ///
-/// F1 A8: this was the last Norwegian-only sentence on the missed path, which
-/// made it the worst one. A church whose machine slept through Sunday morning
-/// gets exactly this line on the desktop; a Polish volunteer got it in
-/// Norwegian. The slot LABEL inside it stays as the schedule wrote
-/// it — see [`sundayrec_core::alerts`]'s header: it is hashed into the durable
-/// `notify_seen` key, so translating it would re-alert the same Sunday every
-/// time somebody changes language.
+/// F1 A8 made the sentence itself speak the volunteer's language; the two
+/// things inside it did not. The slot's name was the canonical Norwegian label
+/// (it is hashed into the durable `notify_seen` key, so it cannot follow the
+/// language) and the time was the raw `2026-09-06T11:00:00` the ledger stores.
+/// Both are now WORDS built beside the key: [`alerts::missed_label`] from the
+/// slot's kind, and the tray's own weekday + clock («søn. 11:00») for the time.
+/// The key underneath is unchanged — a volunteer who switches language is not
+/// told about the same Sunday twice.
+///
+/// [`alerts::missed_label`]: sundayrec_core::alerts::missed_label
 fn missed_summary(missed: &[crate::notify::MissedSlot], lang: Lang) -> String {
+    let words = |slot: &crate::notify::MissedSlot| {
+        (
+            sundayrec_core::alerts::missed_label(&slot.kind, lang),
+            sundayrec_core::tray::format_next_label(Some(&slot.at), lang)
+                .unwrap_or_else(|| slot.at.clone()),
+        )
+    };
     match missed {
-        [one] => AlertText::MissedOne.fill(lang, &[("label", &one.label), ("at", &one.at)]),
-        many => AlertText::MissedMany.fill(
-            lang,
-            &[
-                ("count", &many.len().to_string()),
-                ("label", &many[0].label),
-                ("at", &many[0].at),
-            ],
-        ),
+        [one] => {
+            let (label, at) = words(one);
+            AlertText::MissedOne.fill(lang, &[("label", &label), ("at", &at)])
+        }
+        many => {
+            let (label, at) = words(&many[0]);
+            AlertText::MissedMany.fill(
+                lang,
+                &[
+                    ("count", &many.len().to_string()),
+                    ("label", &label),
+                    ("at", &at),
+                ],
+            )
+        }
+    }
+}
+
+/// The «Vekkehistorikk» line for a missed occurrence: stamped `now`, keyed on
+/// the time the recording (and so the wake before it) was due. The canonical
+/// label goes in, as it does for every other row: the list renders the kind
+/// and the time, and telemetry drops the label before anything leaves.
+fn missed_wake_entry(
+    slot: &crate::notify::MissedSlot,
+    now_ms: i64,
+) -> sundayrec_core::wake::WakeFailureEntry {
+    sundayrec_core::wake::WakeFailureEntry {
+        timestamp: now_ms,
+        scheduled_at: slot.at.clone(),
+        kind: sundayrec_core::wake::WakeFailureKind::Missed,
+        label: slot.label.clone(),
+        reason: None,
+        delta_sec: None,
     }
 }
 
@@ -1753,10 +1809,26 @@ mod tests {
         (pool, dir)
     }
 
-    fn info(at: &str, label: &str) -> MissedRecordingInfo {
-        MissedRecordingInfo {
+    /// A swept slot as `check_missed` hands it over. The kind only matters to
+    /// the sentence; the ledger keys on `at` + `label`.
+    fn info(at: &str, label: &str) -> crate::notify::MissedSlot {
+        crate::notify::MissedSlot {
             at: at.into(),
             label: label.into(),
+            kind: sundayrec_core::schedule::MissedKind::Special {
+                name: Some(label.into()),
+            },
+        }
+    }
+
+    fn weekly_sunday() -> crate::notify::MissedSlot {
+        crate::notify::MissedSlot {
+            at: "2026-09-06T11:00:00".into(),
+            label: "Ukentlig opptak (11:00–13:00)".into(),
+            kind: sundayrec_core::schedule::MissedKind::Weekly {
+                start: "11:00".into(),
+                stop: "13:00".into(),
+            },
         }
     }
 
@@ -1844,13 +1916,13 @@ mod tests {
     /// The sentence the native notification shows, singular and plural.
     #[test]
     fn the_missed_summary_counts_what_it_names() {
-        let one = crate::notify::MissedSlot {
-            at: "2026-09-06T11:00:00".into(),
-            label: "Ukentlig opptak (11:00–13:00)".into(),
-        };
+        let one = weekly_sunday();
         let many = vec![one.clone(), one.clone(), one.clone()];
         let s1 = missed_summary(std::slice::from_ref(&one), Lang::No);
-        assert!(s1.contains("Ukentlig opptak") && s1.contains("2026-09-06T11:00:00"));
+        assert_eq!(
+            s1, "Planlagt opptak ble ikke gjort: Ukentlig opptak (11:00–13:00) (søn. 11:00).",
+            "a Norwegian volunteer reads the canonical label, and a time — not an ISO string"
+        );
         assert!(
             !s1.starts_with('1') && !s1.contains("eldste"),
             "a single occurrence is named, not counted and not ranked: {s1}"
@@ -1869,10 +1941,42 @@ mod tests {
         );
         let p3 = missed_summary(&many, Lang::Pl);
         assert!(p3.starts_with("Nie wykonano 3 "), "{p3}");
-        // The slot LABEL is deliberately untranslated in both: it is hashed
-        // into the durable `notify_seen` key, and a key that moves with the
-        // language re-alerts the same Sunday. See `sundayrec_core::alerts`.
-        assert!(p1.contains("Ukentlig opptak (11:00–13:00)"), "{p1}");
+        // The slot's NAME and TIME are Polish too now — the words are built
+        // from the kind; the Norwegian label stays underneath, as the key.
+        assert!(p1.contains("Cotygodniowe nagranie (11:00–13:00)"), "{p1}");
+        assert!(p1.contains("niedz. 11:00"), "{p1}");
+        assert!(
+            !p1.contains("Ukentlig") && !p1.contains("2026-09-06T"),
+            "{p1}"
+        );
+        assert!(p3.contains("Cotygodniowe nagranie"), "{p3}");
+        assert_eq!(
+            one.seen_key(),
+            crate::notify::MissedSlot {
+                kind: sundayrec_core::schedule::MissedKind::Special { name: None },
+                ..one.clone()
+            }
+            .seen_key(),
+            "the key is at + canonical label — the words never reach it"
+        );
+    }
+
+    /// «Vekkehistorikk» gets one line per missed occurrence, and only when a
+    /// wake was supposed to happen. The row is what `wake_failure_history`
+    /// hands the list: kind `missed`, due at the slot's time.
+    #[tokio::test]
+    async fn a_missed_sunday_lands_in_the_wake_history() {
+        let (pool, _d) = temp_pool().await;
+        let slot = weekly_sunday();
+        crate::db::store::insert_wake_failure(&pool, &missed_wake_entry(&slot, 1_000))
+            .await
+            .unwrap();
+        let rows = crate::db::store::list_wake_failures(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, sundayrec_core::wake::WakeFailureKind::Missed);
+        assert_eq!(rows[0].scheduled_at, "2026-09-06T11:00:00");
+        assert_eq!(rows[0].timestamp, 1_000);
+        assert_eq!(rows[0].reason, None);
     }
 
     // ── The seam: what A3 reports is what M4 already filtered ────────────────
@@ -1921,7 +2025,7 @@ mod tests {
 
         // `check_missed`'s own conversion from the core's verdict to the shape
         // `report_missed` consumes.
-        let sweep = |covered: &[CoveredWindow]| -> Vec<MissedRecordingInfo> {
+        let sweep = |covered: &[CoveredWindow]| -> Vec<crate::notify::MissedSlot> {
             missed_recordings(
                 std::slice::from_ref(&slot),
                 &[],
@@ -1930,11 +2034,8 @@ mod tests {
                 covered,
                 &HashSet::new(),
             )
-            .into_iter()
-            .map(|m| MissedRecordingInfo {
-                at: fmt_dt(m.when),
-                label: m.label,
-            })
+            .iter()
+            .map(crate::notify::MissedSlot::from_missed)
             .collect()
         };
 

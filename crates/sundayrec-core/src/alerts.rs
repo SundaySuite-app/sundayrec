@@ -124,6 +124,10 @@ pub enum AlertText {
     MissedOne,
     /// Several were. `{count}` `{label}` `{at}`
     MissedMany,
+    /// What a missed weekly slot is called in the sentence. `{start}` `{stop}`
+    MissedWeeklyLabel,
+    /// What a missed special recording without a name is called.
+    MissedSpecialLabel,
 
     // ── Recorder (terminal failures that reach the native notification) ────
     /// The reconnect policy gave up.
@@ -212,6 +216,8 @@ impl AlertText {
         AlertText::Reminder,
         AlertText::MissedOne,
         AlertText::MissedMany,
+        AlertText::MissedWeeklyLabel,
+        AlertText::MissedSpecialLabel,
         AlertText::RecordingNotRecovered,
         AlertText::RecordingStartTimeout,
         AlertText::RecordingStartTimeoutMic,
@@ -286,6 +292,7 @@ impl AlertText {
             AlertText::PreflightDiskLow | AlertText::TakeDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
+            AlertText::MissedWeeklyLabel => &["start", "stop"],
             _ => &[],
         }
     }
@@ -732,6 +739,23 @@ impl AlertText {
                  ({at})."
             }
 
+            // ── MissedWeeklyLabel ───────────────────────────────────────────
+            (A::MissedWeeklyLabel, L::No) => "Ukentlig opptak ({start}–{stop})",
+            (A::MissedWeeklyLabel, L::En) => "Weekly recording ({start}–{stop})",
+            (A::MissedWeeklyLabel, L::De) => "Wöchentliche Aufnahme ({start}–{stop})",
+            (A::MissedWeeklyLabel, L::Sv) => "Veckoinspelning ({start}–{stop})",
+            (A::MissedWeeklyLabel, L::Da) => "Ugentlig optagelse ({start}–{stop})",
+            (A::MissedWeeklyLabel, L::Pl) => "Cotygodniowe nagranie ({start}–{stop})",
+            (A::MissedWeeklyLabel, L::Fr) => "Enregistrement hebdomadaire ({start}–{stop})",
+            // ── MissedSpecialLabel ──────────────────────────────────────────
+            // The renderer's own word for these (`specialsTitle`), singular.
+            (A::MissedSpecialLabel, L::No) => "Spesialopptak",
+            (A::MissedSpecialLabel, L::En) => "One-off recording",
+            (A::MissedSpecialLabel, L::De) => "Einmalige Aufnahme",
+            (A::MissedSpecialLabel, L::Sv) => "Engångsinspelning",
+            (A::MissedSpecialLabel, L::Da) => "Enkeltoptagelse",
+            (A::MissedSpecialLabel, L::Pl) => "Nagranie jednorazowe",
+            (A::MissedSpecialLabel, L::Fr) => "Enregistrement ponctuel",
             // ── RecordingNotRecovered ───────────────────────────────────────
             (A::RecordingNotRecovered, L::No) => "Opptaket kunne ikke gjenopprettes",
             (A::RecordingNotRecovered, L::En) => "The recording could not be recovered",
@@ -1120,6 +1144,22 @@ impl AlertText {
     }
 }
 
+/// What a missed occurrence is called in the notification, in `lang`.
+///
+/// The CANONICAL label ([`crate::schedule::MissedRecording::label`]) stays
+/// Norwegian because it is a key; this is the words. A named special recording
+/// keeps the name a person typed — it is theirs, not ours to translate.
+pub fn missed_label(kind: &crate::schedule::MissedKind, lang: Lang) -> String {
+    use crate::schedule::MissedKind;
+    match kind {
+        MissedKind::Weekly { start, stop } => {
+            AlertText::MissedWeeklyLabel.fill(lang, &[("start", start), ("stop", stop)])
+        }
+        MissedKind::Special { name: Some(name) } => name.clone(),
+        MissedKind::Special { name: None } => AlertText::MissedSpecialLabel.text(lang),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1150,7 +1190,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            46,
+            48,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -1360,6 +1400,51 @@ mod tests {
         assert_eq!(
             AlertText::for_recording_code("something_new"),
             AlertText::RecordingFailedUnknown
+        );
+    }
+
+    #[test]
+    fn a_missed_label_reads_in_norwegian_exactly_as_the_key_does() {
+        // Norwegian notifications are byte-identical to before: the words for a
+        // Norwegian volunteer ARE the canonical label. Another language gets
+        // its own words, and the key underneath does not move.
+        use crate::schedule::{missed_recordings, MissedKind, ScheduleSlot};
+        use chrono::NaiveDateTime;
+        let slot = ScheduleSlot {
+            days: vec![6],
+            start: "11:00".into(),
+            stop: "13:00".into(),
+            max: None,
+        };
+        let now = NaiveDateTime::parse_from_str("2026-06-07 15:00", "%Y-%m-%d %H:%M").unwrap();
+        let missed = missed_recordings(
+            std::slice::from_ref(&slot),
+            &[],
+            now,
+            &[],
+            &[],
+            &Default::default(),
+        );
+        assert_eq!(missed.len(), 1, "precondition: one missed Sunday");
+        assert_eq!(missed_label(&missed[0].kind, Lang::No), missed[0].label);
+        assert_eq!(
+            missed_label(&missed[0].kind, Lang::En),
+            "Weekly recording (11:00–13:00)"
+        );
+        assert_eq!(
+            missed_label(&MissedKind::Special { name: None }, Lang::No),
+            "Spesialopptak",
+            "the unnamed special's Norwegian word is its canonical label too"
+        );
+        assert_eq!(
+            missed_label(
+                &MissedKind::Special {
+                    name: Some("Bryllup Kari og Ola".into())
+                },
+                Lang::Fr
+            ),
+            "Bryllup Kari og Ola",
+            "a name somebody typed is not ours to translate"
         );
     }
 
