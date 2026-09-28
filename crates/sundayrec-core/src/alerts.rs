@@ -137,6 +137,34 @@ pub enum AlertText {
     RecordingDiskFull,
     /// The finished file was missing, empty or undecodable.
     RecordingEmptyOutput,
+    // The raw-text codes (F2-VARSLING «Senere»): the engine emits these with
+    // an ffmpeg line or a Rust error as the message, which is diagnostics, not
+    // a sentence. Their wording is the renderer's own (`recording.error*` in
+    // `legacy/locales`) — see [`AlertText::for_recording_code`].
+    /// `device_not_found` — the input device is not there.
+    RecordingDeviceNotFound,
+    /// `device_permission_denied` — the OS refused the microphone.
+    RecordingPermissionDenied,
+    /// `device_busy` — another program holds the input device.
+    RecordingDeviceBusy,
+    /// `device_error` — the input device could not be opened or reopened.
+    RecordingDeviceError,
+    /// `device_disconnected` — the input device went away mid-take.
+    RecordingDeviceDisconnected,
+    /// `ffmpeg_exited` — the capture process died on its own.
+    RecordingEngineExited,
+    /// `video_capture_failed` — the camera delivered no picture.
+    RecordingVideoCapture,
+    /// `camera_format_unsupported`.
+    RecordingCameraFormat,
+    /// `camera_permission_denied`.
+    RecordingCameraPermission,
+    /// `camera_busy`.
+    RecordingCameraBusy,
+    /// `mux_failed` — audio and video could not be combined.
+    RecordingMux,
+    /// A code this catalog has no sentence for.
+    RecordingFailedUnknown,
 
     // ── During a take (only while the window is not in focus) ───────────────
     /// The silence watcher tripped: nothing is reaching the recording.
@@ -189,6 +217,18 @@ impl AlertText {
         AlertText::RecordingStartTimeoutMic,
         AlertText::RecordingDiskFull,
         AlertText::RecordingEmptyOutput,
+        AlertText::RecordingDeviceNotFound,
+        AlertText::RecordingPermissionDenied,
+        AlertText::RecordingDeviceBusy,
+        AlertText::RecordingDeviceError,
+        AlertText::RecordingDeviceDisconnected,
+        AlertText::RecordingEngineExited,
+        AlertText::RecordingVideoCapture,
+        AlertText::RecordingCameraFormat,
+        AlertText::RecordingCameraPermission,
+        AlertText::RecordingCameraBusy,
+        AlertText::RecordingMux,
+        AlertText::RecordingFailedUnknown,
         AlertText::TakeSilence,
         AlertText::TakeQuality,
         AlertText::TakeReconnecting,
@@ -196,6 +236,40 @@ impl AlertText {
         AlertText::WakeNotArmed,
         AlertText::TestNotification,
     ];
+
+    /// The sentence a terminal recorder failure is told with, by its wire code.
+    ///
+    /// The engine emits `recording://error` with a code and a message, and for
+    /// most codes the message is diagnostics — the last ffmpeg stderr line, a
+    /// Rust `io::Error`, a camera classifier's English tag. The renderer never
+    /// shows that text for a code it knows (`nativeErrorDetail`); the native
+    /// notification showed it verbatim. This is the notification's half of the
+    /// renderer's `NATIVE_ERRORS` table, worded identically (pinned by
+    /// `recording_failures_say_what_the_window_says`), so the volunteer reads
+    /// the same sentence on the desktop and in the app.
+    ///
+    /// An unknown code gets the generic sentence rather than the raw message:
+    /// a new code without a line here is a vaguer notification, never an
+    /// untranslated one.
+    pub fn for_recording_code(code: &str) -> AlertText {
+        match code {
+            "device_not_found" | "no_device" => AlertText::RecordingDeviceNotFound,
+            "device_permission_denied" => AlertText::RecordingPermissionDenied,
+            "device_busy" => AlertText::RecordingDeviceBusy,
+            "device_error" => AlertText::RecordingDeviceError,
+            "device_disconnected" => AlertText::RecordingDeviceDisconnected,
+            "disk_full" => AlertText::RecordingDiskFull,
+            "start_timeout" => AlertText::RecordingStartTimeout,
+            "empty_output" => AlertText::RecordingEmptyOutput,
+            "ffmpeg_exited" => AlertText::RecordingEngineExited,
+            "video_capture_failed" => AlertText::RecordingVideoCapture,
+            "camera_format_unsupported" => AlertText::RecordingCameraFormat,
+            "camera_permission_denied" => AlertText::RecordingCameraPermission,
+            "camera_busy" => AlertText::RecordingCameraBusy,
+            "mux_failed" => AlertText::RecordingMux,
+            _ => AlertText::RecordingFailedUnknown,
+        }
+    }
 
     /// The placeholder names this variant's templates carry, without braces.
     /// Empty for the sentences that take no parameter.
@@ -780,6 +854,102 @@ impl AlertText {
                 "L'enregistrement était vide ou endommagé — aucun fichier n'a été enregistré."
             }
 
+            // ── RecordingDeviceNotFound ──────────────────────────────────────
+            (A::RecordingDeviceNotFound, L::No) => "Lydenheten ble ikke funnet — sjekk USB-tilkoblingen",
+            (A::RecordingDeviceNotFound, L::En) => "Audio device not found — check the USB connection",
+            (A::RecordingDeviceNotFound, L::De) => "Audiogerät nicht gefunden — USB-Verbindung prüfen",
+            (A::RecordingDeviceNotFound, L::Sv) => "Ljudenheten hittades inte — kontrollera USB-anslutningen",
+            (A::RecordingDeviceNotFound, L::Da) => "Lydenheden blev ikke fundet — tjek USB-forbindelsen",
+            (A::RecordingDeviceNotFound, L::Pl) => "Nie znaleziono urządzenia audio — sprawdź połączenie USB",
+            (A::RecordingDeviceNotFound, L::Fr) => "Périphérique audio introuvable — vérifiez la connexion USB",
+            // ── RecordingPermissionDenied ────────────────────────────────────
+            (A::RecordingPermissionDenied, L::No) => "Mikrofontilgang nektet — åpne Systeminnstillinger og gi tilgang",
+            (A::RecordingPermissionDenied, L::En) => "Microphone access denied — open System Settings and grant access",
+            (A::RecordingPermissionDenied, L::De) => "Mikrofonzugriff verweigert — öffnen Sie die Systemeinstellungen und erteilen Sie den Zugriff",
+            (A::RecordingPermissionDenied, L::Sv) => "Mikrofonåtkomst nekad — öppna Systeminställningar och ge åtkomst",
+            (A::RecordingPermissionDenied, L::Da) => "Mikrofonadgang nægtet — åbn Systemindstillinger og giv adgang",
+            (A::RecordingPermissionDenied, L::Pl) => "Odmowa dostępu do mikrofonu — otwórz Ustawienia systemu i udziel dostępu",
+            (A::RecordingPermissionDenied, L::Fr) => "Accès au microphone refusé — ouvrez les Réglages système et accordez l’accès",
+            // ── RecordingDeviceBusy ──────────────────────────────────────────
+            (A::RecordingDeviceBusy, L::No) => "Lydenheten er i bruk av et annet program",
+            (A::RecordingDeviceBusy, L::En) => "The audio device is in use by another application",
+            (A::RecordingDeviceBusy, L::De) => "Das Audiogerät wird von einem anderen Programm verwendet",
+            (A::RecordingDeviceBusy, L::Sv) => "Ljudenheten används av ett annat program",
+            (A::RecordingDeviceBusy, L::Da) => "Lydenheden bruges af et andet program",
+            (A::RecordingDeviceBusy, L::Pl) => "Urządzenie audio jest używane przez inną aplikację",
+            (A::RecordingDeviceBusy, L::Fr) => "Le périphérique audio est déjà utilisé par une autre application",
+            // ── RecordingDeviceError ─────────────────────────────────────────
+            (A::RecordingDeviceError, L::No) => "Feil ved åpning av lydenhet — prøv å koble til på nytt",
+            (A::RecordingDeviceError, L::En) => "Error opening the audio device — try reconnecting it",
+            (A::RecordingDeviceError, L::De) => "Fehler beim Öffnen des Audiogeräts — versuchen Sie, es erneut anzuschließen",
+            (A::RecordingDeviceError, L::Sv) => "Fel vid öppning av ljudenheten — försök att ansluta den på nytt",
+            (A::RecordingDeviceError, L::Da) => "Fejl ved åbning af lydenheden — prøv at tilslutte den igen",
+            (A::RecordingDeviceError, L::Pl) => "Błąd otwarcia urządzenia audio — spróbuj podłączyć je ponownie",
+            (A::RecordingDeviceError, L::Fr) => "Erreur à l’ouverture du périphérique audio — essayez de le rebrancher",
+            // ── RecordingDeviceDisconnected ──────────────────────────────────
+            (A::RecordingDeviceDisconnected, L::No) => "Lydenheten ble koblet fra under opptak — sjekk tilkoblingen",
+            (A::RecordingDeviceDisconnected, L::En) => "The audio device was disconnected during recording — check the connection",
+            (A::RecordingDeviceDisconnected, L::De) => "Das Audiogerät wurde während der Aufnahme getrennt — Verbindung prüfen",
+            (A::RecordingDeviceDisconnected, L::Sv) => "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen",
+            (A::RecordingDeviceDisconnected, L::Da) => "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen",
+            (A::RecordingDeviceDisconnected, L::Pl) => "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie",
+            (A::RecordingDeviceDisconnected, L::Fr) => "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion",
+            // ── RecordingEngineExited ────────────────────────────────────────
+            (A::RecordingEngineExited, L::No) => "Opptaksmotoren stoppet uventet — lyden fram til da er lagret. Start et nytt opptak, og kjør Diagnose hvis det gjentar seg.",
+            (A::RecordingEngineExited, L::En) => "The recording engine stopped unexpectedly — the audio up to that point is saved. Start a new recording, and run Diagnose if it happens again.",
+            (A::RecordingEngineExited, L::De) => "Die Aufnahme-Engine hat unerwartet gestoppt — der Ton bis dahin ist gespeichert. Starten Sie eine neue Aufnahme, und führen Sie die Diagnose aus, wenn es sich wiederholt.",
+            (A::RecordingEngineExited, L::Sv) => "Inspelningsmotorn stoppade oväntat — ljudet fram till dess är sparat. Starta en ny inspelning, och kör Diagnos om det upprepas.",
+            (A::RecordingEngineExited, L::Da) => "Optagelsesmotoren stoppede uventet — lyden frem til da er gemt. Start en ny optagelse, og kør Diagnose, hvis det gentager sig.",
+            (A::RecordingEngineExited, L::Pl) => "Silnik nagrywania zatrzymał się nieoczekiwanie — dźwięk do tego momentu jest zapisany. Rozpocznij nowe nagranie i uruchom Diagnostykę, jeśli to się powtórzy.",
+            (A::RecordingEngineExited, L::Fr) => "Le moteur d’enregistrement s’est arrêté de façon inattendue — le son jusqu’à ce moment est sauvegardé. Démarrez un nouvel enregistrement, et lancez le Diagnostic si cela se répète.",
+            // ── RecordingVideoCapture ────────────────────────────────────────
+            (A::RecordingVideoCapture, L::No) => "Kameraet leverte ikke bilde — lyden ble lagret og ligger i biblioteket. Sjekk kameratilkoblingen før du tar opp med video igjen.",
+            (A::RecordingVideoCapture, L::En) => "The camera delivered no picture — the audio was saved and is in the library. Check the camera connection before recording with video again.",
+            (A::RecordingVideoCapture, L::De) => "Die Kamera lieferte kein Bild — der Ton wurde gespeichert und liegt in der Bibliothek. Prüfen Sie die Kameraverbindung, bevor Sie wieder mit Video aufnehmen.",
+            (A::RecordingVideoCapture, L::Sv) => "Kameran levererade ingen bild — ljudet sparades och ligger i biblioteket. Kontrollera kameraanslutningen innan du spelar in med video igen.",
+            (A::RecordingVideoCapture, L::Da) => "Kameraet leverede ikke noget billede — lyden blev gemt og ligger i biblioteket. Tjek kameraforbindelsen, før du optager med video igen.",
+            (A::RecordingVideoCapture, L::Pl) => "Kamera nie dała obrazu — dźwięk został zapisany i jest w bibliotece. Sprawdź połączenie kamery, zanim znów nagrasz z wideo.",
+            (A::RecordingVideoCapture, L::Fr) => "La caméra n’a pas fourni d’image — le son a été sauvegardé et se trouve dans la bibliothèque. Vérifiez la connexion de la caméra avant d’enregistrer à nouveau avec la vidéo.",
+            // ── RecordingCameraFormat ────────────────────────────────────────
+            (A::RecordingCameraFormat, L::No) => "Kameraet støtter ikke valgt bilderate eller oppløsning — velg en annen videoinnstilling og prøv igjen.",
+            (A::RecordingCameraFormat, L::En) => "The camera does not support the chosen frame rate or resolution — pick another video setting and try again.",
+            (A::RecordingCameraFormat, L::De) => "Die Kamera unterstützt die gewählte Bildrate oder Auflösung nicht — wählen Sie eine andere Videoeinstellung und versuchen Sie es erneut.",
+            (A::RecordingCameraFormat, L::Sv) => "Kameran stöder inte vald bildfrekvens eller upplösning — välj en annan videoinställning och försök igen.",
+            (A::RecordingCameraFormat, L::Da) => "Kameraet understøtter ikke den valgte billedhastighed eller opløsning — vælg en anden videoindstilling, og prøv igen.",
+            (A::RecordingCameraFormat, L::Pl) => "Kamera nie obsługuje wybranej liczby klatek lub rozdzielczości — wybierz inne ustawienie wideo i spróbuj ponownie.",
+            (A::RecordingCameraFormat, L::Fr) => "La caméra ne prend pas en charge la fréquence d’images ou la résolution choisie — choisissez un autre réglage vidéo et réessayez.",
+            // ── RecordingCameraPermission ────────────────────────────────────
+            (A::RecordingCameraPermission, L::No) => "Kameratilgang nektet — åpne Systeminnstillinger og gi appen tilgang til kameraet",
+            (A::RecordingCameraPermission, L::En) => "Camera access denied — open System Settings and give the app access to the camera",
+            (A::RecordingCameraPermission, L::De) => "Kamerazugriff verweigert — öffnen Sie die Systemeinstellungen und geben Sie der App Zugriff auf die Kamera",
+            (A::RecordingCameraPermission, L::Sv) => "Kameraåtkomst nekad — öppna Systeminställningar och ge appen åtkomst till kameran",
+            (A::RecordingCameraPermission, L::Da) => "Adgang til kameraet nægtet — åbn Systemindstillinger, og giv appen adgang til kameraet",
+            (A::RecordingCameraPermission, L::Pl) => "Odmowa dostępu do kamery — otwórz Ustawienia systemowe i przyznaj aplikacji dostęp do kamery",
+            (A::RecordingCameraPermission, L::Fr) => "Accès à la caméra refusé — ouvrez Réglages Système et donnez à l’app l’accès à la caméra",
+            // ── RecordingCameraBusy ──────────────────────────────────────────
+            (A::RecordingCameraBusy, L::No) => "Kameraet er i bruk av et annet program — lukk det (Teams, Zoom) og prøv igjen",
+            (A::RecordingCameraBusy, L::En) => "The camera is in use by another program — close it (Teams, Zoom) and try again",
+            (A::RecordingCameraBusy, L::De) => "Die Kamera wird von einem anderen Programm verwendet — schließen Sie es (Teams, Zoom) und versuchen Sie es erneut",
+            (A::RecordingCameraBusy, L::Sv) => "Kameran används av ett annat program — stäng det (Teams, Zoom) och försök igen",
+            (A::RecordingCameraBusy, L::Da) => "Kameraet bruges af et andet program — luk det (Teams, Zoom), og prøv igen",
+            (A::RecordingCameraBusy, L::Pl) => "Kamera jest używana przez inny program — zamknij go (Teams, Zoom) i spróbuj ponownie",
+            (A::RecordingCameraBusy, L::Fr) => "La caméra est utilisée par un autre programme — fermez-le (Teams, Zoom) et réessayez",
+            // ── RecordingMux ─────────────────────────────────────────────────
+            (A::RecordingMux, L::No) => "Lyd og bilde kunne ikke settes sammen — begge råfilene er beholdt i lagringsmappen, så ingenting er tapt.",
+            (A::RecordingMux, L::En) => "Audio and video could not be combined — both raw files were kept in the save folder, so nothing is lost.",
+            (A::RecordingMux, L::De) => "Ton und Bild konnten nicht zusammengesetzt werden — beide Rohdateien sind im Speicherordner erhalten, es ist also nichts verloren.",
+            (A::RecordingMux, L::Sv) => "Ljud och bild kunde inte sättas ihop — båda råfilerna har behållits i lagringsmappen, så ingenting är förlorat.",
+            (A::RecordingMux, L::Da) => "Lyd og billede kunne ikke sættes sammen — begge råfiler er beholdt i lagringsmappen, så ingenting er tabt.",
+            (A::RecordingMux, L::Pl) => "Nie udało się złożyć dźwięku i obrazu — oba pliki źródłowe zostały zachowane w folderze zapisu, więc nic nie zginęło.",
+            (A::RecordingMux, L::Fr) => "Le son et l’image n’ont pas pu être assemblés — les deux fichiers bruts sont conservés dans le dossier d’enregistrement, donc rien n’est perdu.",
+            // ── RecordingFailedUnknown ───────────────────────────────────────
+            (A::RecordingFailedUnknown, L::No) => "Noe gikk galt under opptak — sjekk at lydenhet og lagringsmappe er klare",
+            (A::RecordingFailedUnknown, L::En) => "Something went wrong during recording — check that the audio device and save folder are ready",
+            (A::RecordingFailedUnknown, L::De) => "Bei der Aufnahme ist etwas schiefgelaufen — prüfen Sie, ob Audiogerät und Speicherordner bereit sind",
+            (A::RecordingFailedUnknown, L::Sv) => "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo",
+            (A::RecordingFailedUnknown, L::Da) => "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
+            (A::RecordingFailedUnknown, L::Pl) => "Coś poszło nie tak podczas nagrywania — sprawdź, czy urządzenie audio i folder zapisu są gotowe",
+            (A::RecordingFailedUnknown, L::Fr) => "Un problème est survenu pendant l’enregistrement — vérifiez que le périphérique audio et le dossier d’enregistrement sont prêts",
             // ── TakeSilence ───────────────────────────────────────────────────
             (A::TakeSilence, L::No) => {
                 "Opptaket er stille — sjekk at lyden kommer fram til SundayRec."
@@ -980,7 +1150,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            34,
+            46,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -1108,6 +1278,88 @@ mod tests {
         assert_eq!(
             AlertText::ScheduledSkippedBusy.text(Lang::from_code(None)),
             AlertText::ScheduledSkippedBusy.text(Lang::No)
+        );
+    }
+
+    #[test]
+    fn recording_failures_say_what_the_window_says() {
+        // The seam this catalog shares with the renderer: the same failure, the
+        // same words, on the desktop notification and in the error banner. Two
+        // hand-kept copies drift; this reads the renderer's catalogue and makes
+        // a drift on either side a failing test.
+        let catalogues = [
+            (Lang::No, include_str!("../../../legacy/locales/no.json")),
+            (Lang::En, include_str!("../../../legacy/locales/en.json")),
+            (Lang::De, include_str!("../../../legacy/locales/de.json")),
+            (Lang::Sv, include_str!("../../../legacy/locales/sv.json")),
+            (Lang::Da, include_str!("../../../legacy/locales/da.json")),
+            (Lang::Pl, include_str!("../../../legacy/locales/pl.json")),
+            (Lang::Fr, include_str!("../../../legacy/locales/fr.json")),
+        ];
+        let pairs = [
+            (AlertText::RecordingDeviceNotFound, "errorDeviceNotFound"),
+            (AlertText::RecordingPermissionDenied, "errorPermission"),
+            (AlertText::RecordingDeviceBusy, "errorNotReadable"),
+            (AlertText::RecordingDeviceError, "errorDeviceError"),
+            (
+                AlertText::RecordingDeviceDisconnected,
+                "errorDeviceDisconnected",
+            ),
+            (AlertText::RecordingEngineExited, "errorEngineExited"),
+            (AlertText::RecordingVideoCapture, "errorVideoCapture"),
+            (AlertText::RecordingCameraFormat, "errorCameraFormat"),
+            (
+                AlertText::RecordingCameraPermission,
+                "errorCameraPermission",
+            ),
+            (AlertText::RecordingCameraBusy, "errorCameraBusy"),
+            (AlertText::RecordingMux, "errorMux"),
+            (AlertText::RecordingFailedUnknown, "errorUnknown"),
+        ];
+        for (lang, raw) in catalogues {
+            let json: serde_json::Value = serde_json::from_str(raw).expect("locale parses");
+            for (alert, key) in pairs {
+                let want = json["recording"][key]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{lang:?}: recording.{key} is missing"));
+                assert_eq!(
+                    alert.template(lang),
+                    want,
+                    "{alert:?}/{lang:?} ≠ recording.{key}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_raw_text_code_the_engine_emits_has_its_own_sentence() {
+        // The codes that reach `recording://error` with diagnostics as their
+        // message (engine.rs, cpal_capture.rs, two_process.rs, the native
+        // capture's writer). Falling through to the generic sentence would be
+        // honest but vague; each of these has a specific one.
+        for code in [
+            "device_not_found",
+            "device_permission_denied",
+            "device_busy",
+            "device_error",
+            "device_disconnected",
+            "disk_full",
+            "ffmpeg_exited",
+            "video_capture_failed",
+            "camera_format_unsupported",
+            "camera_permission_denied",
+            "camera_busy",
+            "mux_failed",
+        ] {
+            assert_ne!(
+                AlertText::for_recording_code(code),
+                AlertText::RecordingFailedUnknown,
+                "{code} has no sentence of its own"
+            );
+        }
+        assert_eq!(
+            AlertText::for_recording_code("something_new"),
+            AlertText::RecordingFailedUnknown
         );
     }
 

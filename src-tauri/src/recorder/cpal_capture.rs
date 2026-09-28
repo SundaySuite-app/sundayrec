@@ -402,7 +402,7 @@ mod imp {
     use sundayrec_core::capture::{build_cpal_pipe_audio_args, build_cpal_pipe_video_args};
     use sundayrec_core::device_match::FfmpegDevice;
     use sundayrec_core::recorder::RecorderState;
-    use tauri::{AppHandle, Emitter};
+    use tauri::Emitter;
 
     use super::{
         finalize_video_capture, history_row, plan_video_capture, writer_task, CpalHostKind,
@@ -414,8 +414,8 @@ mod imp {
     use crate::media::ffmpeg::spawn_ffmpeg;
     use crate::recorder::context::SessionContext;
     use crate::recorder::engine::{
-        extract_separate_audio, now_ms, RecordingEvent, RecordingFinished, RecordingLevels,
-        ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT,
+        emit_failure, extract_separate_audio, now_ms, RecordingFinished, RecordingLevels,
+        FINISHED_EVENT, LEVELS_EVENT,
     };
     use crate::recorder::native_capture::stream::{
         build_input_stream_any, find_device, open_host, ring_capacity, StreamSink,
@@ -829,13 +829,13 @@ mod imp {
                 msg = err_rx.recv() => {
                     let reason = msg.unwrap_or_else(|| "audio device error".into());
                     tracing::warn!(%reason, "recorder: cpal — device error, finalising");
-                    emit_error(&app, "device_disconnected", &reason);
+                    emit_failure(&app, "device_disconnected", &reason);
                     break;
                 }
                 status = child.wait() => {
                     tracing::warn!(?status, "recorder: cpal — ffmpeg exited unexpectedly");
                     let t = stderr_tail::snapshot(&tail);
-                    emit_error(&app, "ffmpeg_exited", t.lines().last().unwrap_or("ffmpeg stopped"));
+                    emit_failure(&app, "ffmpeg_exited", t.lines().last().unwrap_or("ffmpeg stopped"));
                     break;
                 }
             }
@@ -924,17 +924,6 @@ mod imp {
         let Some(c) = capture else { return };
         let _ = tokio::fs::remove_file(&c.capture_path).await;
         let _ = tokio::fs::remove_dir(&c.cap_dir).await;
-    }
-
-    /// Emit a classified error to the renderer (mirrors `engine::emit_error`).
-    fn emit_error(app: &AppHandle, code: &str, message: &str) {
-        let _ = app.emit(
-            ERROR_EVENT,
-            RecordingEvent {
-                code: code.to_string(),
-                message: message.to_string(),
-            },
-        );
     }
 
     /// Best-effort history row for the finished file (None pool / DB error = no-op).

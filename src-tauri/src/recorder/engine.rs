@@ -1550,7 +1550,7 @@ async fn run_session(
                         }
                         Err(e) => {
                             tracing::error!("recorder: split respawn failed: {e}");
-                            emit_error(&ctx.app, "device_error", &e.to_string());
+                            emit_failure(&ctx.app, "device_error", &e.to_string());
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // A failing exit keeps the manifest either way (only the
                             // clean stop deletes it), so the verdict is moot here.
@@ -1640,7 +1640,7 @@ async fn run_session(
                                     emit_state(RecorderState::Stopped, 0)
                                 }
                                 Err(e) => {
-                                    emit_error(&ctx.app, "device_error", &e.to_string());
+                                    emit_failure(&ctx.app, "device_error", &e.to_string());
                                     emit_state(RecorderState::Failed, 0);
                                 }
                             }
@@ -1826,7 +1826,7 @@ async fn run_session(
                                                         c = c2;
                                                     }
                                                     Err(e) => {
-                                                        emit_error(
+                                                        emit_failure(
                                                             &ctx.app,
                                                             "device_error",
                                                             &e.to_string(),
@@ -1881,7 +1881,7 @@ async fn run_session(
                                                 degraded_for_ms = next_degraded;
                                             }
                                             RecoveryDecision::GiveUp => {
-                                                emit_error(
+                                                emit_failure(
                                                     &ctx.app,
                                                     "device_disconnected",
                                                     &e.to_string(),
@@ -2611,7 +2611,7 @@ async fn run_segment(
                         // transient one goes out as a warning so the UI keeps
                         // the overlay up while the reconnect policy retries.
                         if sundayrec_core::recorder::is_fatal_reconnect_error(code) {
-                            emit_error(app, error_code_str(code), &line);
+                            emit_failure(app, error_code_str(code), &line);
                         } else {
                             emit_warning(app, error_code_str(code), &line);
                         }
@@ -2961,6 +2961,29 @@ pub(crate) fn emit_error(app: &AppHandle, code: &str, message: &str) {
     // last classified error to disk so that tool can explain, in plain Norwegian,
     // what stopped the recording last time (it can't see our in-process events).
     skriv_siste_feil_til_disk(app, code, message);
+}
+
+/// A terminal failure whose only words are diagnostics — the last ffmpeg
+/// stderr line, a Rust `io::Error`, a camera classifier's tag.
+///
+/// Those words used to be the event's `message`, and the native notification
+/// shows the message verbatim: a volunteer in Polish got «Input/output error»
+/// on the desktop. The event now carries the SENTENCE for the code, in the
+/// volunteer's language ([`AlertText::for_recording_code`], the renderer's own
+/// wording); the diagnostics go where diagnostics are read — the log, and
+/// Lydhjelp's `last-error.json`, which wants "the code + a stderr snippet".
+///
+/// Use [`emit_error`] when the message already IS a localized sentence.
+pub(crate) fn emit_failure(app: &AppHandle, code: &str, detail: &str) {
+    tracing::error!(code, %detail, "recorder: terminal failure");
+    let _ = app.emit(
+        ERROR_EVENT,
+        RecordingEvent {
+            code: code.to_string(),
+            message: AlertText::for_recording_code(code).text(crate::ui_lang::current()),
+        },
+    );
+    skriv_siste_feil_til_disk(app, code, detail);
 }
 
 /// Emit a classified NON-terminal error (the session continues — the reconnect

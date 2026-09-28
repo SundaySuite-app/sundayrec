@@ -486,8 +486,19 @@ impl SegmentSignals for NativeSegment {
 /// recording buffer. Without this the loop could not be run at all off a GUI
 /// thread — an `AppHandle` cannot be constructed in a unit test.
 pub(crate) trait EventSink {
-    /// `recording://error` — classified, terminal for this segment.
+    /// `recording://error` — classified, terminal for this segment. `message`
+    /// is already a sentence for the volunteer.
     fn error(&self, code: &str, message: &str);
+    /// `recording://error` for a failure whose only words are diagnostics:
+    /// the event carries the localized sentence for `code`, `detail` goes to
+    /// the log (see [`crate::recorder::engine::emit_failure`]).
+    fn failure(&self, code: &str, detail: &str) {
+        tracing::error!(code, %detail, "recorder: native capture — terminal failure");
+        self.error(
+            code,
+            &AlertText::for_recording_code(code).text(crate::ui_lang::current()),
+        );
+    }
     /// `recording://warning` — classified, the session continues.
     fn warning(&self, code: &str, message: &str);
     /// `recording://started` — the first block reached disk.
@@ -531,6 +542,9 @@ pub(crate) struct AppEventSink<'a> {
 impl EventSink for AppEventSink<'_> {
     fn error(&self, code: &str, message: &str) {
         emit_error(self.app, code, message);
+    }
+    fn failure(&self, code: &str, detail: &str) {
+        crate::recorder::engine::emit_failure(self.app, code, detail);
     }
     fn warning(&self, code: &str, message: &str) {
         emit_warning(self.app, code, message);
@@ -733,7 +747,7 @@ where
                         // recovery policy just made — the ffmpeg twin does the same.
                         let code_str = error_code_str(verdict.code);
                         if verdict.fatal {
-                            sink.error(code_str, &message);
+                            sink.failure(code_str, &message);
                         } else {
                             sink.warning(code_str, &message);
                         }
