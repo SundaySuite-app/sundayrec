@@ -489,6 +489,28 @@ pub fn background_wake_log_action(
     }
 }
 
+/// Whether a failed *background* wake reschedule should also tell the operator
+/// with a native notification — and under which key, so the shell can say it
+/// once per launch per kind.
+///
+/// The log line ([`background_wake_log_action`]) is for whoever debugs; this is
+/// for the volunteer, who otherwise learns that the machine was never going to
+/// wake from a missing recording. `None` for success and for the two reasons
+/// the operator cannot act on from a notification: `unsupported` (no wake
+/// mechanism on this platform — nothing to fix) and `cancelled` (only an
+/// interactive prompt can be cancelled, and this pass never prompts).
+pub fn wake_failure_notice_key(ok: bool, reason: Option<&str>) -> Option<&'static str> {
+    if ok {
+        return None;
+    }
+    match reason.and_then(WakeErrorReason::from_wire) {
+        Some(WakeErrorReason::Unsupported | WakeErrorReason::Cancelled) => None,
+        Some(r) => Some(r.as_str()),
+        // Unclassified — a real failure nobody has triaged.
+        None => Some("error"),
+    }
+}
+
 /// Why a *successful* wake reschedule armed nothing at all.
 ///
 /// `ok: true, count: 0` is the same answer for "the schedule is empty", "the
@@ -1482,5 +1504,31 @@ Timer set by [SYSTEM\\TaskScheduler] expires at 5:30:00 PM on 5/31/2026.
         // an upcoming concert is a perfectly ordinary armed set.
         assert_eq!(wake_idle_reason(true, 3), None);
         assert_eq!(wake_idle_reason(false, 1), None);
+    }
+
+    #[test]
+    fn a_wake_that_cannot_be_armed_is_told_to_the_operator() {
+        assert_eq!(wake_failure_notice_key(true, None), None);
+        assert_eq!(
+            wake_failure_notice_key(false, Some("permission")),
+            Some("permission")
+        );
+        assert_eq!(
+            wake_failure_notice_key(false, Some("disabled")),
+            Some("disabled")
+        );
+        assert_eq!(wake_failure_notice_key(false, Some("error")), Some("error"));
+        assert_eq!(
+            wake_failure_notice_key(false, Some("something new")),
+            Some("error"),
+            "an unclassified reason is a real failure"
+        );
+        assert_eq!(wake_failure_notice_key(false, None), Some("error"));
+    }
+
+    #[test]
+    fn nothing_the_operator_cannot_act_on_becomes_a_notification() {
+        assert_eq!(wake_failure_notice_key(false, Some("unsupported")), None);
+        assert_eq!(wake_failure_notice_key(false, Some("cancelled")), None);
     }
 }

@@ -27,6 +27,8 @@
  * `answered`. Fasiten står fast: bare `done` teller som besvart.
  */
 
+import type { NotificationPermission } from "@legacy/bindings/NotificationPermission";
+
 import type { LevelWord } from "../../audio/level-words";
 import type { Settings } from "../../state/settings";
 
@@ -53,7 +55,8 @@ export type Answer =
   | { key: "quality"; format: QualityId }
   | { key: "qualityCustom"; format: string; bitrate: string }
   | { key: "church"; name: string }
-  | { key: "onMachine" };
+  | { key: "onMachine" }
+  | { key: "notificationsOff" };
 
 /** Linja under svaret: hvorfor det holder, eller hva som mangler. */
 export type Detail =
@@ -65,7 +68,9 @@ export type Detail =
   | { key: "qualityDesc"; format: QualityId }
   | { key: "qualityCustomDesc" }
   | { key: "language"; language: string }
-  | { key: "onMachineDesc" };
+  | { key: "onMachineDesc" }
+  | { key: "onMachineUnverifiedDesc" }
+  | { key: "notificationsOffDesc" };
 
 /** Kanalparet en flerkanals enhet tar opp fra. 1-indeksert — brukeren teller
  *  fra 1, miksebordet er merket fra 1, og bare koden teller fra 0. */
@@ -99,6 +104,12 @@ export interface DecisionFacts {
   diskFreeBytes: number | null;
   /** Minutter opptak det er plass til, eller `null`. */
   roomMinutes: number | null;
+  /**
+   * Viser OS-et SundayRecs varsler? `null` = ikke spurt ennå; `"unknown"` =
+   * plattformen kan ikke svare (macOS i dag). Valgfri så en kallsted som ikke
+   * har spurt, leses som «ikke spurt».
+   */
+  notificationPermission?: NotificationPermission | null;
   /**
    * Språket appen FAKTISK rendrer i (`app/i18n`s `locale`), ikke det som står
    * i `settings.language`.
@@ -295,8 +306,10 @@ export function decideChurch(facts: DecisionFacts): Decision {
  *
  * Den som står ved maskinen. Et opptak som feiler, en planlagt start som ikke
  * kommer i gang og et planlagt opptak som aldri ble gjort gir alltid et
- * systemvarsel på opptaksmaskinen, og ingen innstilling kan slå det av — så
- * spørsmålet er besvart i hver installasjon, og kortet sier hvordan.
+ * systemvarsel på opptaksmaskinen, og ingen innstilling i appen kan slå det
+ * av. Men operativsystemet kan: står varsler av for SundayRec i Windows, ser
+ * ingen dem. Så kortet følger det OS-et svarer (`notificationPermission`) —
+ * grønt når varslene vises, gult når de er slått av.
  *
  * Det var annerledes da appen kunne sende e-post: kortet ble grønt bare når en
  * e-post faktisk kunne komme fram. E-postvarslene er fjernet (oppsettet var for
@@ -306,13 +319,36 @@ export function decideChurch(facts: DecisionFacts): Decision {
  * varsler — et varsel som er slått av i macOS/Windows er et varsel ingen ser.
  * Det er en egen runde; til da er svaret det appen selv kan stå inne for.
  */
-export function decideNotify(_facts: DecisionFacts): Decision {
-  return decision(
-    "notify",
-    "done",
-    { key: "onMachine" },
-    { key: "onMachineDesc" },
-  );
+export function decideNotify(facts: DecisionFacts): Decision {
+  switch (facts.notificationPermission ?? null) {
+    case "granted":
+      return decision(
+        "notify",
+        "done",
+        { key: "onMachine" },
+        { key: "onMachineDesc" },
+      );
+    case "denied":
+      // Et varsel ingen ser, er ingen beskjed. Gult, med veien til å rette det.
+      return decision(
+        "notify",
+        "todo",
+        { key: "notificationsOff" },
+        { key: "notificationsOffDesc" },
+      );
+    case "unknown":
+      // Plattformen kan ikke si det (macOS i dag). Appen varsler, og kortet sier
+      // hvordan man ser selv at varslene kommer fram — et svar, ikke gult.
+      return decision(
+        "notify",
+        "done",
+        { key: "onMachine" },
+        { key: "onMachineUnverifiedDesc" },
+      );
+    case null:
+      // Ikke spurt ennå: ingen påstand i noen retning.
+      return decision("notify", "unknown", { key: "onMachine" }, null);
+  }
 }
 
 /** Alle fem, i rekkefølge. Nummeret på kortet er indeksen + 1. */
@@ -337,7 +373,10 @@ export function decisionsFor(facts: DecisionFacts): Decision[] {
  * Så: «Sett opp» bare når det bokstavelig talt ikke står et svar.
  */
 export function needsSetUp(decision: Decision): boolean {
-  return decision.answer.key === "notSetUp";
+  return (
+    decision.answer.key === "notSetUp" ||
+    decision.answer.key === "notificationsOff"
+  );
 }
 
 /** Hvor mange av de fem som faktisk er besvart. */

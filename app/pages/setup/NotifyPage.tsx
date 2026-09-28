@@ -17,15 +17,23 @@
  * Den gjelder bare «startet»/«avsluttet» — feilvarslene står alltid på.
  */
 
+import { useEffect } from "preact/hooks";
+
 import { t, tf } from "../../i18n";
 import { usePatch } from "../../settings/use-patch";
 import { useSetting } from "../../settings/use-setting";
+import {
+  notificationPermission,
+  refreshNotificationPermission,
+} from "../../state/notification-permission";
 import { settings } from "../../state/settings";
+import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { Gate } from "../../ui/Gate/Gate";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Select } from "../../ui/Select/Select";
 import { Toggle } from "../../ui/Toggle/Toggle";
+import { toast } from "../../ui/toast";
 import { autoRecordOn } from "./schedule-core";
 import { SubPage } from "./SubPage";
 
@@ -48,8 +56,71 @@ export function NotifyPage() {
   // beskjed om noe som ikke skal skje.
   const autoOn = autoRecordOn(s);
 
+  // ── Viser OS-et varslene? ──────────────────────────────────────────────────
+  // Hver feil appen melder, er et systemvarsel. Er de slått av for SundayRec i
+  // Windows, ser ingen dem — så raden sier det og peker på bryteren. Der
+  // plattformen ikke lar oss vite det (macOS i dag), er testvarselet svaret.
+  const permission = notificationPermission.value;
+  useEffect(() => {
+    void refreshNotificationPermission();
+  }, []);
+
+  async function sendTest(): Promise<void> {
+    if (!(await window.api.notificationSendTest())) {
+      toast("error", t("app.setup.notify.testFailed"));
+      return;
+    }
+    // Sendt er ikke det samme som vist: står varsler av, sier teksten det.
+    toast(
+      "success",
+      permission === "denied"
+        ? t("app.setup.notify.testSentDenied")
+        : t("app.setup.notify.testSent"),
+    );
+  }
+
+  async function openSettings(): Promise<void> {
+    if (!(await window.api.notificationOpenSettings())) {
+      toast("error", t("app.setup.notify.openSettingsFailed"));
+    }
+  }
+
   return (
     <SubPage lede={t("app.setup.notify.lede")} testId="setup-notify">
+      <Card testId="notify-permission-card">
+        <SettingRow
+          label={t("app.setup.notify.permission")}
+          description={
+            permission === "granted"
+              ? t("app.setup.notify.permissionGranted")
+              : permission === "denied"
+                ? t("app.setup.notify.permissionDenied")
+                : t("app.setup.notify.permissionUnknown")
+          }
+          error={
+            permission === "denied"
+              ? t("app.setup.notify.permissionDeniedError")
+              : null
+          }
+          testId="notify-permission"
+        >
+          <Button
+            variant="ghost"
+            testId="notify-send-test"
+            onClick={() => void sendTest()}
+          >
+            {t("app.setup.notify.sendTest")}
+          </Button>
+          <Button
+            variant={permission === "denied" ? "primary" : "ghost"}
+            testId="notify-open-settings"
+            onClick={() => void openSettings()}
+          >
+            {t("app.setup.notify.openSettings")}
+          </Button>
+        </SettingRow>
+      </Card>
+
       <Card testId="notify-card">
         <SettingRow
           label={t("app.setup.notify.os")}

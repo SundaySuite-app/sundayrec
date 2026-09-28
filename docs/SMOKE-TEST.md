@@ -578,6 +578,47 @@ one thing left to check here:
 
 ---
 
+## 8b. Notifications on the machine [HW] (no feature)
+
+Every failure SundayRec reports is a native OS notification (§8), so these
+steps prove the operator actually sees them. Run on a signed Mac build AND on
+Windows.
+
+1. **Is the OS showing them?** Opptak → «Hvem får beskjed hvis noe går galt?» →
+   the «Varsler i systemet» row.
+   - **Windows, notifications on:** «Slått på — SundayRec kan si fra her.», the
+     card is not yellow. Turn notifications off for SundayRec (Settings →
+     System → Notifications), click back into the app.
+   - **Expected:** the card turns yellow («Varsler er slått av», «Sett opp»),
+     the row says «Slått av for SundayRec.», and «Åpne innstillinger» opens the
+     Windows notification settings.
+   - **macOS:** the row says it cannot be read on this computer — the
+     permission is not queried on macOS yet (`docs/VARSLING.md`). «Åpne
+     innstillinger» opens System Settings → Notifications.
+   - VERIFIED-BY: src-tauri/src/notify/permission.rs::windows_is_on_unless_a_switch_says_off
+   - VERIFIED-BY: e2e/control-room.spec.ts::varsler slått av i OS-et gjør kortet gult, og peker på bryteren
+2. **«Send testvarsel»** shows a notification titled SundayRec.
+3. **During a take, with the window hidden or behind another app:** unplug
+   the USB mixer. **Expected:** ONE notification «Lydkilden forsvant …». Plug
+   it in, unplug again — no second one this take. With the window in focus,
+   only the banner shows. Same once-per-take rule for silence, missing sound
+   and low disk.
+   - VERIFIED-BY: crates/sundayrec-core/src/notify.rs::a_take_alert_reaches_the_os_only_when_nobody_is_looking
+   - VERIFIED-BY: src-tauri/src/notify/take.rs::a_new_take_lets_every_kind_be_said_again
+4. **Silent start failures are no longer silent:**
+   - a scheduled stop with nothing recording says nothing;
+   - a wake that cannot be armed (e.g. a Mac where `pmset` needs admin) raises
+     «SundayRec får ikke satt opp vekking …» once per launch;
+   - a service missed while the machine was off for up to a week is reported
+     once when it is next opened;
+   - a late start whose options cannot be built (e.g. a missing save folder)
+     raises the late-start failure notification.
+   - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_stop_with_nothing_recording_is_not_announced
+   - VERIFIED-BY: crates/sundayrec-core/src/wake.rs::a_wake_that_cannot_be_armed_is_told_to_the_operator
+   - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::missed_check_looks_back_a_week_and_no_further
+
+---
+
 ## 9. Menubar tray [GUI] — `tray` (IN DEFAULT)
 
 The tray menu-model (localized items, actions, tooltip, icon precedence) is

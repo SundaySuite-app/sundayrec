@@ -58,8 +58,15 @@ pub const DEFAULT_WINDOW_MS: i64 = 5 * 60_000;
 pub const MISSED_WINDOW_MS: i64 = 60 * 60_000;
 
 /// How far back a missed-check looks for slots/specials that never ran (ms).
-/// 24 h — older than that is too stale to surface. (`MISSED_LOG_WINDOW_MS`.)
-pub const MISSED_LOG_WINDOW_MS: i64 = 24 * 60 * 60_000;
+///
+/// 7 days. The Electron build (and this one until runde 2 of `docs/VARSLING.md`)
+/// looked back 24 h, so a machine that was switched off from Sunday until
+/// Tuesday never said a word about the service it missed. A week covers the
+/// ordinary case — the machine is next opened some day before the following
+/// Sunday — and the `notify_seen` ledger keeps each occurrence to ONE
+/// notification however many launches rediscover it (its retention,
+/// `notify::seen::SEEN_RETENTION_MS` in the shell, is 8 days for exactly this).
+pub const MISSED_LOG_WINDOW_MS: i64 = 7 * 24 * 60 * 60_000;
 
 /// A history entry within ±this of an expected start "covers" it, so we don't
 /// double-log a missed recording (ms). 30 min — the Electron `historyCovers`.
@@ -1410,11 +1417,14 @@ mod tests {
     }
 
     #[test]
-    fn missed_recordings_ignores_occurrences_older_than_24h() {
+    fn missed_recordings_look_back_seven_days_and_no_further() {
         let slots = vec![sunday_slot()];
-        // now = Monday 14:00, two days after Sunday 11:00 → > 24 h old → ignored.
+        // now = Tuesday 14:00. Sunday 7 June (two days back) is reported;
+        // Sunday 31 May (nine days back) is outside the window.
         let now = dt("2026-06-09 14:00");
-        assert!(missed_recordings(&slots, &[], now, &[], &[], &HashSet::new()).is_empty());
+        let missed = missed_recordings(&slots, &[], now, &[], &[], &HashSet::new());
+        assert_eq!(missed.len(), 1);
+        assert_eq!(missed[0].when, dt("2026-06-07 11:00"));
     }
 
     // ── A4: one pass, one start ─────────────────────────────────────────────

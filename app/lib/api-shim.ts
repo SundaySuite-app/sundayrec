@@ -993,6 +993,34 @@ const api: Record<string, unknown> = {
   noticeEmailRemovedDismiss: async () =>
     call<void>("notice_email_removed_dismiss", undefined, undefined),
 
+  // ── OS notifications ────────────────────────────────────────────────────
+  //
+  // A failed read is "unknown", not "granted": a card that turns green because
+  // the question could not be asked would be the one lie this card exists to
+  // avoid.
+  notificationPermission: async () =>
+    call<
+      import("../../legacy/bindings/NotificationPermission").NotificationPermission
+    >("notification_permission", undefined, "unknown"),
+  notificationSendTest: async () => {
+    try {
+      await invoke("notification_send_test");
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] notification_send_test failed", e);
+      return false;
+    }
+  },
+  notificationOpenSettings: async () => {
+    try {
+      await invoke("notification_open_settings");
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] notification_open_settings failed", e);
+      return false;
+    }
+  },
+
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
     (await call<{ version?: string }>("app_info", undefined, {})).version ??

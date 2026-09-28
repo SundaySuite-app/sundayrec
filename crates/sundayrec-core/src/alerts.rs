@@ -137,6 +137,23 @@ pub enum AlertText {
     RecordingDiskFull,
     /// The finished file was missing, empty or undecodable.
     RecordingEmptyOutput,
+
+    // ── During a take (only while the window is not in focus) ───────────────
+    /// The silence watcher tripped: nothing is reaching the recording.
+    TakeSilence,
+    /// The quality alarm: the take has far less audio than it should.
+    TakeQuality,
+    /// The input device dropped out and the engine is reconnecting.
+    TakeReconnecting,
+    /// Free space fell below the graduated warning threshold. `{gb}`
+    TakeDiskLow,
+
+    // ── Wake timers and the notification test ───────────────────────────────
+    /// The background wake reschedule failed: the machine may sleep through
+    /// the next recording.
+    WakeNotArmed,
+    /// «Send testvarsel» on the notify page.
+    TestNotification,
 }
 
 impl AlertText {
@@ -172,6 +189,12 @@ impl AlertText {
         AlertText::RecordingStartTimeoutMic,
         AlertText::RecordingDiskFull,
         AlertText::RecordingEmptyOutput,
+        AlertText::TakeSilence,
+        AlertText::TakeQuality,
+        AlertText::TakeReconnecting,
+        AlertText::TakeDiskLow,
+        AlertText::WakeNotArmed,
+        AlertText::TestNotification,
     ];
 
     /// The placeholder names this variant's templates carry, without braces.
@@ -186,7 +209,7 @@ impl AlertText {
             | AlertText::ScheduledPrepareFailed
             | AlertText::ScheduledLateStartFailed => &["detail"],
             AlertText::Reminder => &["min"],
-            AlertText::PreflightDiskLow => &["gb"],
+            AlertText::PreflightDiskLow | AlertText::TakeDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
             _ => &[],
@@ -756,6 +779,144 @@ impl AlertText {
             (A::RecordingEmptyOutput, L::Fr) => {
                 "L'enregistrement était vide ou endommagé — aucun fichier n'a été enregistré."
             }
+
+            // ── TakeSilence ───────────────────────────────────────────────────
+            (A::TakeSilence, L::No) => {
+                "Opptaket er stille — sjekk at lyden kommer fram til SundayRec."
+            }
+            (A::TakeSilence, L::En) => {
+                "The recording is silent — check that sound is reaching SundayRec."
+            }
+            (A::TakeSilence, L::De) => {
+                "Die Aufnahme ist still — prüfe, ob der Ton bei SundayRec ankommt."
+            }
+            (A::TakeSilence, L::Sv) => {
+                "Inspelningen är tyst — kontrollera att ljudet når SundayRec."
+            }
+            (A::TakeSilence, L::Da) => {
+                "Optagelsen er stille — tjek at lyden når frem til SundayRec."
+            }
+            (A::TakeSilence, L::Pl) => {
+                "Nagranie jest ciche — sprawdź, czy dźwięk dociera do SundayRec."
+            }
+            (A::TakeSilence, L::Fr) => {
+                "L'enregistrement est silencieux — vérifiez que le son arrive bien à SundayRec."
+            }
+
+            // ── TakeQuality ───────────────────────────────────────────────────
+            (A::TakeQuality, L::No) => {
+                "Opptaket mangler lyd — åpne SundayRec og se hva som skjer."
+            }
+            (A::TakeQuality, L::En) => {
+                "The recording is missing sound — open SundayRec and check what is happening."
+            }
+            (A::TakeQuality, L::De) => {
+                "Der Aufnahme fehlt Ton — öffne SundayRec und prüfe, was passiert."
+            }
+            (A::TakeQuality, L::Sv) => {
+                "Inspelningen saknar ljud — öppna SundayRec och se vad som händer."
+            }
+            (A::TakeQuality, L::Da) => {
+                "Optagelsen mangler lyd — åbn SundayRec og se, hvad der sker."
+            }
+            (A::TakeQuality, L::Pl) => {
+                "W nagraniu brakuje dźwięku — otwórz SundayRec i sprawdź, co się dzieje."
+            }
+            (A::TakeQuality, L::Fr) => {
+                "Il manque du son dans l'enregistrement — ouvrez SundayRec pour voir ce qui se passe."
+            }
+
+            // ── TakeReconnecting ──────────────────────────────────────────────
+            (A::TakeReconnecting, L::No) => {
+                "Lydkilden forsvant — SundayRec prøver å koble til igjen."
+            }
+            (A::TakeReconnecting, L::En) => {
+                "The audio source disappeared — SundayRec is trying to reconnect."
+            }
+            (A::TakeReconnecting, L::De) => {
+                "Die Tonquelle ist verschwunden — SundayRec versucht, sich neu zu verbinden."
+            }
+            (A::TakeReconnecting, L::Sv) => {
+                "Ljudkällan försvann — SundayRec försöker ansluta igen."
+            }
+            (A::TakeReconnecting, L::Da) => {
+                "Lydkilden forsvandt — SundayRec prøver at forbinde igen."
+            }
+            (A::TakeReconnecting, L::Pl) => {
+                "Źródło dźwięku zniknęło — SundayRec próbuje połączyć się ponownie."
+            }
+            (A::TakeReconnecting, L::Fr) => {
+                "La source audio a disparu — SundayRec tente de se reconnecter."
+            }
+
+            // ── TakeDiskLow ───────────────────────────────────────────────────
+            (A::TakeDiskLow, L::No) => {
+                "Lite plass på disken — {gb} GB igjen. Opptaket stopper når disken er full."
+            }
+            (A::TakeDiskLow, L::En) => {
+                "Low disk space — {gb} GB left. The recording stops when the disk is full."
+            }
+            (A::TakeDiskLow, L::De) => {
+                "Wenig Speicherplatz — noch {gb} GB. Die Aufnahme stoppt, wenn die Festplatte voll ist."
+            }
+            (A::TakeDiskLow, L::Sv) => {
+                "Lite diskutrymme — {gb} GB kvar. Inspelningen stoppar när disken är full."
+            }
+            (A::TakeDiskLow, L::Da) => {
+                "Lidt diskplads — {gb} GB tilbage. Optagelsen stopper, når disken er fuld."
+            }
+            (A::TakeDiskLow, L::Pl) => {
+                "Mało miejsca na dysku — zostało {gb} GB. Nagranie zatrzyma się, gdy dysk się zapełni."
+            }
+            (A::TakeDiskLow, L::Fr) => {
+                "Espace disque faible — il reste {gb} Go. L'enregistrement s'arrête quand le disque est plein."
+            }
+
+            // ── WakeNotArmed ──────────────────────────────────────────────────
+            (A::WakeNotArmed, L::No) => {
+                "SundayRec får ikke satt opp vekking før neste opptak. La maskinen stå på."
+            }
+            (A::WakeNotArmed, L::En) => {
+                "SundayRec can't set up a wake-up before the next recording. Leave the computer on."
+            }
+            (A::WakeNotArmed, L::De) => {
+                "SundayRec kann vor der nächsten Aufnahme kein Aufwecken einrichten. Lass den Computer eingeschaltet."
+            }
+            (A::WakeNotArmed, L::Sv) => {
+                "SundayRec kan inte ställa in väckning före nästa inspelning. Låt datorn vara på."
+            }
+            (A::WakeNotArmed, L::Da) => {
+                "SundayRec kan ikke sætte vækning op før næste optagelse. Lad computeren være tændt."
+            }
+            (A::WakeNotArmed, L::Pl) => {
+                "SundayRec nie może ustawić wybudzenia przed następnym nagraniem. Zostaw komputer włączony."
+            }
+            (A::WakeNotArmed, L::Fr) => {
+                "SundayRec ne peut pas programmer le réveil avant le prochain enregistrement. Laissez l'ordinateur allumé."
+            }
+
+            // ── TestNotification ──────────────────────────────────────────────
+            (A::TestNotification, L::No) => {
+                "Dette er et testvarsel. Slik sier SundayRec fra hvis noe går galt."
+            }
+            (A::TestNotification, L::En) => {
+                "This is a test notification. This is how SundayRec tells you if something goes wrong."
+            }
+            (A::TestNotification, L::De) => {
+                "Dies ist eine Testbenachrichtigung. So meldet sich SundayRec, wenn etwas schiefgeht."
+            }
+            (A::TestNotification, L::Sv) => {
+                "Det här är en testavisering. Så säger SundayRec till om något går fel."
+            }
+            (A::TestNotification, L::Da) => {
+                "Dette er en testnotifikation. Sådan siger SundayRec til, hvis noget går galt."
+            }
+            (A::TestNotification, L::Pl) => {
+                "To jest powiadomienie testowe. Tak SundayRec daje znać, gdy coś pójdzie nie tak."
+            }
+            (A::TestNotification, L::Fr) => {
+                "Ceci est une notification de test. C'est ainsi que SundayRec vous prévient en cas de problème."
+            }
         }
     }
 
@@ -819,7 +980,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            28,
+            34,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();

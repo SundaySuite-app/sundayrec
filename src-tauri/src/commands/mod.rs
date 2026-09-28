@@ -14,6 +14,8 @@ pub mod haptics;
 // directory they can touch is computed in-process (see the module docs).
 pub mod logs;
 pub mod media;
+// OS notifications: permission, test, settings page. No path.
+pub mod notification;
 // One-time notices (the "e-mail alerts were removed" banner). No path.
 pub mod notice;
 pub mod path_guard;

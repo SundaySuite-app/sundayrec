@@ -160,6 +160,15 @@ declare global {
       noticeEmailRemovedPending: () => Promise<boolean>;
       /** The banner was read: never show it again. */
       noticeEmailRemovedDismiss: () => Promise<void>;
+      /** Whether the OS shows SundayRec's notifications. `"unknown"` when the
+       *  platform cannot tell (macOS today) and on an IPC failure. */
+      notificationPermission: () => Promise<
+        import("../../legacy/bindings/NotificationPermission").NotificationPermission
+      >;
+      /** Show a test notification. `false` when the command failed. */
+      notificationSendTest: () => Promise<boolean>;
+      /** Open the OS notification settings. `false` when it could not. */
+      notificationOpenSettings: () => Promise<boolean>;
       getAppVersion: () => Promise<string>;
       checkForUpdates: () => Promise<void>;
       installUpdate: () => void;

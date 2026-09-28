@@ -291,6 +291,11 @@ export const BOOT_FIXTURES: Fixtures = {
   // out of every spec that is not about it.
   notice_email_removed_pending: false,
   notice_email_removed_dismiss: VOID,
+  // Varsler er slått på i OS-et: kortet «Hvem får beskjed?» er grønt i
+  // hver spec som ikke handler om det motsatte.
+  notification_permission: "granted",
+  notification_send_test: VOID,
+  notification_open_settings: VOID,
   get_launch_at_login: false,
   // `needsPrompt: false` matters: a `true` here floats the one-time consent card
   // over every other screen and every other spec's assertions.

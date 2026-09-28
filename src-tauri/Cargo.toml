@@ -243,6 +243,9 @@ tauri-plugin-updater = { version = "2", optional = true }
 # block in `src/power.rs`. It is a kernel32 call taking one integer, so the
 # feature pulls in no further module.
 #
+# `Win32_System_Registry`: `RegGetValueW` for `notify::permission` — whether
+# Windows shows SundayRec's notifications is two DWORDs under HKCU.
+#
 # `Win32_System_Com`: `CoInitializeEx` for `audio::com_anchor`, the thread that
 # keeps cpal's process-wide WASAPI device enumerator in a COM apartment that
 # never ends (see that module for the use-after-free it prevents).
@@ -253,6 +256,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Com",
     "Win32_System_JobObjects",
     "Win32_System_Power",
+    "Win32_System_Registry",
     "Win32_System_Threading",
 ] }
 
