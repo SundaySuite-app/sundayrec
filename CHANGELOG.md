@@ -3,10 +3,12 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Uutgitt — «Innhold» og «Legg ut»
+## v0.22.0 — «Innhold», «Legg ut» og e-postvarsler ut
 
 Prekenen ut på SoundCloud (eller YouTube, Spotify eller menighetens egen side)
-med færre steg. Appen laster fortsatt ikke opp noe selv.
+med færre steg. Appen laster fortsatt ikke opp noe selv. v0.21.0 ble aldri
+utgitt som egen versjon, så denne utgivelsen tar også med at e-postvarslene er
+fjernet (se v0.21.0 under).
 
 - **«Innhold» i eksporten.** Tittel, taler og beskrivelse skrives inn før
   eksporten og følger fila som tagger, sammen med menighetsnavnet og datoen.
@@ -21,6 +23,8 @@ med færre steg. Appen laster fortsatt ikke opp noe selv.
   «Legg ut» brukes per kanal — aldri lenken eller teksten.
 
 ## v0.21.0 — e-postvarsler er ute
+
+Aldri utgitt som egen versjon — endringene kom ut med v0.22.0.
 
 Feil varsles nå på selve opptaksmaskinen, og ingen andre steder.
 
