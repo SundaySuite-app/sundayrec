@@ -3,9 +3,12 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Uutgitt
+## v0.23.0 — varslene på maskinen
 
-### Varslene på maskinen
+Feil varsles på selve opptaksmaskinen, og nå kan du se at varslene faktisk
+kommer fram. v0.22.0 ble aldri utgitt som egen versjon, så denne utgivelsen tar
+også med «Innhold» og «Legg ut» i eksporten og at e-postvarslene er fjernet (se
+v0.22.0 og v0.21.0 under).
 
 - **Ser du varslene?** Varsel-siden viser om systemet slipper gjennom
   SundayRecs varsler, med knappene «Send testvarsel» og «Åpne innstillinger».
@@ -22,6 +25,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 - **«Planlagt opptak avsluttet»** vises bare når noe faktisk ble tatt opp.
 
 ## v0.22.0 — «Innhold», «Legg ut» og e-postvarsler ut
+
+Aldri utgitt som egen versjon — endringene kom ut med v0.23.0.
 
 Prekenen ut på SoundCloud (eller YouTube, Spotify eller menighetens egen side)
 med færre steg. Appen laster fortsatt ikke opp noe selv. v0.21.0 ble aldri
@@ -42,7 +47,7 @@ fjernet (se v0.21.0 under).
 
 ## v0.21.0 — e-postvarsler er ute
 
-Aldri utgitt som egen versjon — endringene kom ut med v0.22.0.
+Aldri utgitt som egen versjon — endringene kom ut med v0.23.0.
 
 Feil varsles nå på selve opptaksmaskinen, og ingen andre steder.
 
