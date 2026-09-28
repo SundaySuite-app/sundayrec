@@ -1,9 +1,9 @@
 /**
  * Gate — «denne delen kan ikke gjøre noe nå, og her er hvorfor».
  *
- * SundayRec kan sendes ut uten bakenden en flate trenger: e-postsending ligger
- * bak en cargo-feature, og en build uten den har ingen sendevei uansett hva
- * brukeren skriver. Fram til `feature-gate-core` fantes så en slik flate ut
+ * SundayRec kan sendes ut uten bakenden en flate trenger, eller med en flate
+ * som ikke er satt opp ennå (e-postvarslene var det første eksemplet; de er
+ * fjernet). Fram til `feature-gate-core` fantes så en slik flate ut
  * NØYAKTIG som en som virket — med en «Send test» som rapporterte en feil den
  * fant på selv. En frivillig kan ikke skille «du har satt det opp feil» fra
  * «dette finnes ikke i denne versjonen», og bruker lørdagskvelden på å prøve.

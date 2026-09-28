@@ -51,9 +51,9 @@ export interface ControlCardProps {
   /**
    * Linja under svaret: hvorfor det holder, eller hva som mangler.
    *
-   * Ikke pynt. Et gult kort som bare sier «Ingen ennå» kritiserer uten å si hva
-   * det koster; «Ingen får e-post — maskinen varsler bare den som sitter ved
-   * den» er den setningen som gjør at noen faktisk gjør noe med det.
+   * Ikke pynt. Et gult kort som bare sier «Ikke valgt» kritiserer uten å si
+   * hva det koster; setningen under er den som gjør at noen faktisk gjør noe
+   * med det.
    */
   detail?: string | null;
   tone?: ControlCardTone;

@@ -58,6 +58,16 @@ describe("docs-truth", () => {
     expect(readDoc("PRIVACY.md")).not.toContain("Sunday-konto");
   });
 
+  it("PRIVACY.md lover ikke lenger e-post når et opptak feiler (e-postvarslene er fjernet)", () => {
+    const text = readDoc("PRIVACY.md");
+    expect(text).not.toContain("du kan få e-post");
+    expect(text).not.toContain("E-postoppsett");
+  });
+
+  it("README.md lister ikke `email` blant standard-featurene (fjernet med e-postvarslene)", () => {
+    expect(readDoc("README.md")).not.toMatch(/`updater`, `email`/);
+  });
+
   it("CONTRIBUTING.md påstår ikke lenger at appen transkriberer (fjernet i R2)", () => {
     expect(readDoc("CONTRIBUTING.md")).not.toContain("transcribes");
   });

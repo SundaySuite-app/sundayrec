@@ -1,6 +1,6 @@
 [package]
 name = "sundayrec"
-version = "0.20.0"
+version = "0.21.0"
 description = "Recording for church services — part of the Sunday suite (Tauri 2 rebuild of the Electron app)"
 authors = ["Richard Fossland"]
 license = "MIT"
@@ -14,29 +14,24 @@ name = "sundayrec_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # Optional Electron-parity seams (PU-1/2…). Each gates its impure I/O over the
-# unit-tested `sundayrec-core` decisions. The SHIPPED set (editor/tray/updater/
-# email) is in `default` below; `asio` and `vad` stay OFF until their hardware
+# unit-tested `sundayrec-core` decisions. The SHIPPED set (editor/tray/updater)
+# is in `default` below; `asio` and `vad` stay OFF until their hardware
 # path is proven. The headless CI gate builds both `default` and
 # `--no-default-features` so every seam keeps compiling.
 [features]
-# The non-destructive editor (R1) AND the email alerter (PU-1) ship in the
-# default build so the Rediger screen and "send meg e-post når opptaket feiler"
-# work out of the box. `editor` adds no native dep (ffmpeg is a sidecar). It
-# runs real ffmpeg (HARDWARE-UNVERIFIED). Build with `--no-default-features`
-# and it returns `feature_disabled`.
+# The non-destructive editor (R1) ships in the default build so the Rediger
+# screen works out of the box. `editor` adds no native dep (ffmpeg is a
+# sidecar). It runs real ffmpeg (HARDWARE-UNVERIFIED). Build with
+# `--no-default-features` and it returns `feature_disabled`.
 #
 # (v0.14: the `streaming`, `ndi` and `bridge` features were REMOVED together
 # with the Direkte page and its seams — SundayRec is a recording app. v0.15:
 # `whisper` — transcription via whisper-rs/libwhisper, the ONLY C/C++ toolchain
 # dependency the build had — left with the content cluster. The workspace is
-# pure Rust + the ffmpeg sidecar again.)
-default = ["editor", "tray", "updater", "email"]
-# PU-1: SMTP error+test alerts. Pulls `lettre` for the SMTP transport — ~6
-# small pure-Rust crates, no native dep. NOW IN `default` AND in both release feature lists
-# (.github/workflows/release.yml): an unattended volunteer operator finding out
-# by email that Sunday's recording died is the single highest-value alert the
-# app has, and it shipped in no release while this stayed default-off.
-email = ["dep:lettre"]
+# pure Rust + the ffmpeg sidecar again. The `email` feature — the SMTP
+# alerter, `lettre` — was removed together with the SundaySuite e-mail relay:
+# failures are told on the machine, natively.)
+default = ["editor", "tray", "updater"]
 # PU-2: native menubar tray.
 tray = ["tauri/tray-icon"]
 # (The `publish` feature — podcast RSS — left with the sharing cluster, as did
@@ -200,7 +195,7 @@ fs4 = "1.1"
 # reqwest is just the wire.
 # reqwest 0.13 med `rustls-no-provider`, IKKE `rustls`. 0.13 sin `rustls`-feature
 # drar inn aws-lc (en C-avhengighet) som ANDRE kryptoleverandør ved siden av
-# `ring`, som tauri-plugin-updater og lettre allerede har kompilert inn. Med
+# `ring`, som tauri-plugin-updater allerede har kompilert inn. Med
 # `rustls-no-provider` må leverandøren installeres i prosessen før første
 # klient, ellers får reqwest panikk — `util::http_client()` gjør det
 # (`ensure_rustls_provider`), med samme grep som updateren selv bruker. Røttene
@@ -217,29 +212,15 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 # ── Optional Electron-parity seam deps (feature-gated, see [features]; some ──
 # ── are pulled in by `default` via tray/updater) ─────────────────────────────
-# PU-1 SMTP transport. rustls (no system OpenSSL), tokio runtime; pulled only
-# when the `email` feature is on (`optional = true`).
-lettre = { version = "0.11", default-features = false, features = [
-    "tokio1-rustls-tls",
-    "smtp-transport",
-    "builder",
-], optional = true }
 # Launch-at-login (OS login item) so scheduled recordings actually fire after a
 # reboot. Always compiled — auto-start is core to the unattended-recorder use case.
 tauri-plugin-autostart = "2"
-# SHA-256. Two callers, both of which need it in EVERY build:
-#   - the e-mail relay hashes its confirmation/unsubscribe tokens, so only the
-#     digest ever reaches the endpoint (`commands/notify_relay.rs`);
+# SHA-256. Two callers:
+#   - the missed-recording ledger hashes a slot's label into its `notify_seen`
+#     key (`notify::MissedSlot::seen_key`) — every build;
 #   - `--features vad` re-verifies the embedded model's bytes at load time.
-# It used to be `optional = true` behind `vad`; the relay is featureless (it is
-# HTTP, not SMTP), so the dependency is now unconditional. Already in the tree
-# via `keyring` either way.
+# Already in the tree via `keyring` either way.
 sha2 = "0.11"
-# The OS CSPRNG, for the relay's 32-byte tokens. Directly, rather than through
-# `rand`: the only thing asked of it is "fill this buffer from the system", and
-# a token minted from anything weaker would look exactly like a real one while
-# being guessable. Already in the tree via `uuid`.
-getrandom = "0.4"
 # E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
 # no system onnxruntime to ship or find. Only pulled under `--features vad`.
 tract-onnx = { version = "0.23.4", optional = true }

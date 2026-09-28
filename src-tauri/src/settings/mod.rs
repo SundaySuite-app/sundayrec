@@ -15,6 +15,9 @@ use sundayrec_core::settings::Settings;
 use crate::db::store;
 use crate::error::AppResult;
 
+/// The one-time clean-up after e-mail alerts were removed (run from `setup`).
+pub mod email_cleanup;
+
 /// The `app_setting` key the whole settings blob lives under.
 pub const SETTINGS_KEY: &str = "settings";
 
@@ -29,7 +32,7 @@ pub const SETTINGS_KEY: &str = "settings";
 /// language, and this is the funnel every settings read already goes through —
 /// the scheduler's supervisor pass, every failure dispatch, every command. A
 /// caller who has the `Settings` in hand should keep using
-/// `MailLang::from_code(settings.language.as_deref())` directly; see
+/// `Lang::from_code(settings.language.as_deref())` directly; see
 /// `ui_lang`'s module docs for which two places may not.
 pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
     let raw = store::get_setting(pool, SETTINGS_KEY).await?;

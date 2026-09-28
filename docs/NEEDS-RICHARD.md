@@ -1,10 +1,11 @@
 # Needs Richard — Electron-parity seams (PU-1…R7)
 
 The pure decision logic for these features is ported into `sundayrec-core` and
-fully unit-tested; the impure seams sit behind cargo features. **Four of them
-are in `default`** — `editor`, `tray`, `updater` and `email` — so the
-Rediger-screen, the tray, auto-update and failure e-mail all ship in a normal
-build. Scheduler/wake are always compiled. (v0.14: `streaming`, `ndi` and
+fully unit-tested; the impure seams sit behind cargo features. **Three of them
+are in `default`** — `editor`, `tray` and `updater` — so the Rediger-screen,
+the tray and auto-update all ship in a normal build. (`email`, the fourth, was
+REMOVED with e-mail alerts: failures are told by a native notification on the
+machine — see PU-1.) Scheduler/wake are always compiled. (v0.14: `streaming`, `ndi` and
 `bridge` were REMOVED together with the Direkte page; R1 «Frivilligen først»
 2026-08-23 removed the sharing cluster — cloud backup, podcast RSS + `publish`,
 the chat webhook, the Gmail transport, the Sunday-suite integrations +
@@ -78,25 +79,19 @@ only remaining release blocker is **notarization** (item 3).
 The per-feature seam detail follows below; this checklist is the release-gating
 subset.
 
-## PU-1 — Email alerts (`email`, now in `default`)
+## ~~PU-1 — Email alerts (`email`)~~ — **FJERNET**
 
-- **✅ The feature ships.** `email` joined `default` (and both release feature
-  lists) in 2026-08. Before that it was in no published build: an unattended
-  volunteer operator could configure e-mail alerts in the UI and get nothing,
-  forever.
-- **✅ The keychain write path exists.** `email_set_smtp_password` /
-  `email_has_smtp_password` / `email_clear_smtp_password` are wired to the
-  **Oppsett → Avansert → «E-postserver (SMTP)»** card. The SMTP password is
-  still intentionally NOT
-  in the settings bag — it lives in the OS keychain, and a stored password takes
-  precedence over anything typed into the field. `email_smtp_from` lets the
-  From: address differ from the account.
-- **SMTP credentials.** SMTP is the one transport (the Gmail-API path left
-  with cloud backup in R1): a host, port, user and app-password.
-- **👤 Deliverability check (rig).** Confirm a real "✓ email works" message
-  arrives from **Test e-post**, that a killed recording produces a failure
-  e-mail, and that the throttle suppresses a 2nd identical alert within 10 min
-  (smoke §8).
+E-postvarslene er fjernet — både SMTP-varsleren (`email`-featuren, `lettre`,
+passordet i nøkkelringen) og SundaySuite-reléet (`notify.sundaysuite.app`,
+kvitteringen). Oppsettet var for tungvint for en frivillig, og appen sender
+ikke lenger noe ut av maskinen for å melde en feil: et systemvarsel på
+opptaksmaskinen er kanalen, og ingen innstilling slår det av. En oppdatert
+installasjon sletter SMTP-passordet én gang og viser en engangsbeskjed til dem
+som hadde e-post slått på (smoke §8).
+
+- **👤 Gjenstår for Richard:** rive relé-rutene i `sunday-telemetry`
+  (`notify.sundaysuite.app`) og slette de lagrede adressene der — etter at en
+  versjon uten e-post er ute og flåten har oppdatert.
 
 ## PU-2 — Tray (`--features tray`) — deep links REMOVED in R1
 
@@ -453,9 +448,8 @@ re-discovering these bullets one at a time.
 
 ### Keys & secrets
 
-- **SMTP credentials** (`--features email`, SMTP path): host/port/user +
-  app-password. The password is stored in the OS keychain, never the settings
-  bag; the host/port/user now have a UI (R7).
+- ~~**SMTP credentials**~~ — gone with e-mail alerts (PU-1). An upgraded
+  install deletes the stored password once.
 - **Anthropic API key**: NOT consumed by SundayRec — the AI sermon companion
   (the one seam that read it, from the keychain slot `companion.llm_api_key`)
   left in R2. A key stored there by an earlier build is left alone, like the
@@ -604,4 +598,5 @@ kuraterte subsettet i `syncBackendRecordingSettings` er utvidet deretter.
 `e2e/integrations.spec.ts`); se `docs/archive/COMMAND_AUDIT_2026-08.md` §4.2, som nå
 er merket løst. HTTP-sidene forblir nettverks-uverifiserte til riggtest.
 **(R1 «Frivilligen først» 2026-08-23: hele avsnittet over er historikk —
-cloud, webhook og integrasjonene er FJERNET; bare e-post-stien består.)**
+cloud, webhook og integrasjonene er FJERNET; bare e-post-stien besto — og
+den er også fjernet siden, se PU-1.)**

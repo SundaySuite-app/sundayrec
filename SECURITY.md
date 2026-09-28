@@ -55,11 +55,13 @@ Trust boundaries the app has to defend at:
 - **Media files and their sidecars** — recordings, intro/outro clips, the
   `.meta`/`.cuts-draft`/`.feedback` JSON — paths and content that ultimately
   come from outside the process (a picked file, an imported recording).
-- **User-configured endpoints** — the SMTP host the operator types in, which
-  can point anywhere, including the local network.
 - (The `sundayrec://` deep-link scheme, the chat webhook and the integration
-  API endpoints were removed in R1 of «Frivilligen først» — fewer boundaries
-  to defend.)
+  API endpoints were removed in R1 of «Frivilligen først», and the SMTP host
+  the operator typed in went with e-mail alerts after that — fewer boundaries
+  to defend. The app no longer talks to any endpoint the user configures.
+  «Legg ut»'s own-page link is no exception: the app never fetches it, it
+  hands it to the system browser after vetting — see the «Legg ut» bullet
+  below.)
 - **The update feed** — a **first-party Cloudflare Worker** at
   `https://updates.sundaysuite.app/v1/update/{stable|beta}`, which the
   auto-updater polls, plus the signed artifact it downloads and installs.
@@ -120,12 +122,13 @@ So a future auditor doesn't have to re-derive these from scratch:
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.
-- **OS keychain for credentials.** The SMTP password is stored via the
-  OS-native credential store
-  (macOS Keychain / Windows Credential Manager through the `keyring` crate;
-  `src-tauri/src/secrets/`) — never in plaintext settings files. (E1.6 closed
-  a legacy gap where the SMTP password had leaked into a plaintext
-  localStorage blob before this seam existed.)
+- **No stored credentials.** The last secret the app kept — the SMTP password,
+  in the OS-native credential store (macOS Keychain / Windows Credential
+  Manager through the `keyring` crate; `src-tauri/src/secrets/`) — went with
+  e-mail alerts. An upgraded install deletes it once, and only where its
+  settings show SMTP was configured (`settings::email_cleanup`). (E1.6 had
+  earlier closed a legacy gap where that password leaked into a plaintext
+  localStorage blob.)
 - **Strict CSP, no unsafe-inline scripts.** `script-src 'self'` with no
   `unsafe-inline`/`unsafe-eval`; `style-src` allows `unsafe-inline` for CSS
   only. Duplicated between `tauri.conf.json` and the renderer's `index.html`

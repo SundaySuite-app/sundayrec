@@ -13,9 +13,8 @@ import {
 // Avansert — the rows P1b added, and the two seams they close.
 //
 // New in P1b (no legacy counterpart). What only this tier can see is the seam:
-// that «Ta opp automatisk» off keeps the TIME, that a configured SMTP server
-// actually opens the gate on question 5, and that the recording rows write the
-// keys the Rust engine reads.
+// that «Ta opp automatisk» off keeps the TIME, and that the recording rows
+// write the keys the Rust engine reads.
 
 test.describe("«Ta opp automatisk» av beholder tiden", () => {
   test("av skriver flagget og lar `slots` stå — i payloaden OG i basen", async ({
@@ -93,139 +92,6 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
     await expect
       .poll(async () => (await storedSettings(page)).slots)
       .toHaveLength(2);
-  });
-});
-
-test.describe("e-postserveren åpner porten på spørsmål 5", () => {
-  test("en konfigurert SMTP-server gjør bryteren brukbar", async ({ page }) => {
-    // The gate on question 5 says «Sett opp under Avansert». This is the proof
-    // that doing so actually opens it — the two screens are one seam, and a
-    // gate that never opens is worse than no gate.
-    // Nothing is configured: question 5's gate is shut, and says why.
-    await boot(page, {
-      fixtures: {
-        ...BOOT_FIXTURES,
-        email_status: { featureBuilt: true },
-        email_has_smtp_password: false,
-      },
-      settings: SETTLED_SETTINGS,
-      goto: "settings:sharing",
-    });
-    await expect(page.getByTestId("notify-email-gate")).toHaveAttribute(
-      "data-gate",
-      "unconfigured",
-    );
-
-    // Configure it — host + user in settings, password in the keychain.
-    await boot(page, {
-      fixtures: {
-        ...BOOT_FIXTURES,
-        email_status: { featureBuilt: true },
-        email_has_smtp_password: true,
-      },
-      settings: {
-        ...SETTLED_SETTINGS,
-        emailSmtp: "smtp.kirke.no",
-        emailSmtpUser: "varsler@kirke.no",
-      },
-      goto: "settings:sharing",
-    });
-
-    // The gate is open: no banner, and the toggle is reachable.
-    const gate = page.getByTestId("notify-email-gate");
-    await expect(gate).toHaveAttribute("data-gate", "ok");
-    await expect(gate.getByTestId("notify-email-gate-banner")).toHaveCount(0);
-    await expect(
-      gate.getByTestId("notify-email-gate-content"),
-    ).not.toHaveAttribute("inert", "");
-  });
-
-  test("SMTP-feltene lagres eksplisitt, og passordet aldri i innstillingene", async ({
-    page,
-  }) => {
-    await boot(page, {
-      fixtures: {
-        ...BOOT_FIXTURES,
-        email_status: { featureBuilt: true },
-        email_has_smtp_password: false,
-        email_set_smtp_password: fn(
-          "(args) => { (window.__E2E_KEYCHAIN__ ||= []).push(args.password); return true; }",
-        ),
-      },
-      settings: SETTLED_SETTINGS,
-      goto: "settings:general",
-    });
-
-    await page.getByTestId("adv-smtp-host-control-input").fill("smtp.kirke.no");
-    await page
-      .getByTestId("adv-smtp-user-control-input")
-      .fill("varsler@kirke.no");
-    await page.getByTestId("adv-smtp-save").click();
-
-    await expect
-      .poll(async () => (await storedSettings(page)).emailSmtp)
-      .toBe("smtp.kirke.no");
-
-    // The password goes to the keychain command, and NOWHERE near the blob.
-    await page
-      .getByTestId("adv-smtp-password-control-input")
-      .fill("hemmelig123");
-    await page.getByTestId("adv-smtp-password-save").click();
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_KEYCHAIN__))
-      .toEqual(["hemmelig123"]);
-
-    const stored = await storedSettings(page);
-    expect(JSON.stringify(stored)).not.toContain("hemmelig123");
-    // And the field clears itself — it is never read back.
-    await expect(
-      page.getByTestId("adv-smtp-password-control-input"),
-    ).toHaveValue("");
-
-    // …and with nothing stored, «Fjern» is not on screen at all. A remove
-    // button beside «Ingen lagret» is a door to an empty room — legacy did
-    // not render one, and neither do we (V1/PR3).
-    await expect(page.getByTestId("adv-smtp-password-clear")).toHaveCount(0);
-  });
-
-  test("«Fjern» kaller sletteKOMMANDOEN, ikke en lagring av ingenting", async ({
-    page,
-  }) => {
-    // The seam V1/PR3 closed. The button used to send `emailSetSmtpPassword
-    // (undefined)` and lean on the backend's blank-means-clear branch: the
-    // right bytes were deleted, but a REMOVAL travelled as a SAVE, so a failed
-    // keychain delete surfaced under the word «lagret» and
-    // `email_clear_smtp_password` — written for exactly this — had no caller.
-    await boot(page, {
-      fixtures: {
-        ...BOOT_FIXTURES,
-        email_status: { featureBuilt: true },
-        email_has_smtp_password: true,
-        email_set_smtp_password: fn(
-          "() => { (window.__E2E_KEYCHAIN__ ||= []).push('SET'); return true; }",
-        ),
-        email_clear_smtp_password: fn(
-          "() => { (window.__E2E_KEYCHAIN__ ||= []).push('CLEAR'); return true; }",
-        ),
-      },
-      settings: {
-        ...SETTLED_SETTINGS,
-        emailSmtp: "smtp.kirke.no",
-        emailSmtpUser: "varsler@kirke.no",
-      },
-      goto: "settings:general",
-    });
-
-    // A password IS stored, so the button exists.
-    await page.getByTestId("adv-smtp-password-clear").click();
-
-    // The dedicated command — and NOT the set-path.
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__E2E_KEYCHAIN__))
-      .toEqual(["CLEAR"]);
-
-    // The receipt the volunteer reads afterwards.
-    await expect(page.getByTestId("toast-host")).toContainText("fjernet");
   });
 });
 
@@ -448,7 +314,7 @@ test.describe("«Test vekking» — F1-R3/W6", () => {
     await page.getByTestId("adv-wake-clear").click();
 
     // Den DEDIKERTE kommandoen — ikke en optimistisk UI-tømming som aldri
-    // nådde bakenden (samme skjøte som SMTP-«Fjern» lukket i V1/PR3).
+    // nådde bakenden.
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_WAKE_CLEAR__))
       .toEqual(["CLEAR"]);

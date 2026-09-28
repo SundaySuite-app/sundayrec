@@ -9,15 +9,13 @@ pub mod audio;
 pub mod db;
 pub mod diagnostics;
 pub mod editor;
-pub mod email;
 pub mod haptics;
 // E2.3 — reveal the log folder / copy its tail. Neither takes a path: the only
 // directory they can touch is computed in-process (see the module docs).
 pub mod logs;
 pub mod media;
-// The e-mail relay (A2) — enrol, resend, unsubscribe, test, report. Featureless
-// (it is HTTP, not SMTP) and takes no path: see the module docs.
-pub mod notify_relay;
+// One-time notices (the "e-mail alerts were removed" banner). No path.
+pub mod notice;
 pub mod path_guard;
 // «Legg ut» — open the chosen upload page. Takes nothing from the renderer;
 // the URL comes from the stored setting via `sundayrec_core::publish`.

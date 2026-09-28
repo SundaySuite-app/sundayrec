@@ -337,8 +337,6 @@ const HEALTHY: Fixtures = {
     knownIssues: ["macArmNoPowerOn"],
     recommendations: ["macKeepAsleep", "macDisableStandby", "macStayPluggedIn"],
   } satisfies WakeCapabilities,
-  email_status: { featureBuilt: true },
-  email_has_smtp_password: false,
 };
 
 /** Innstillinger is the same surface every time; only the settings differ. */
@@ -539,7 +537,7 @@ export const SCENES: Scene[] = [
     state: "«Varsling» foldet ut",
     recipe: "`?goto=settings:sharing` → anker `notify`",
     boot: {
-      fixtures: { ...BASE, ...DEVICES, email_status: { featureBuilt: true } },
+      fixtures: { ...BASE, ...DEVICES },
       settings: CHOSEN,
       goto: "settings:sharing",
     },
@@ -1267,43 +1265,6 @@ export const SCENES: Scene[] = [
     },
   },
   {
-    id: "innstillinger--smtp-uten-passord",
-    page: "Innstillinger",
-    state: "Varsling på e-post — ingen SMTP satt opp ennå",
-    recipe: "`email_has_smtp_password: false`, tomme SMTP-felter",
-    boot: settingsScene({
-      ...CHOSEN,
-      emailSmtp: "",
-      emailSmtpUser: "",
-      emailSmtpFrom: "",
-    }),
-    wait: "advanced-smtp",
-    act: async (page) => {
-      await page.getByTestId("advanced-smtp").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
-    id: "innstillinger--smtp-med-passord",
-    page: "Innstillinger",
-    state: "Varsling på e-post — passordet ligger i nøkkelringen",
-    recipe: "`email_has_smtp_password: true` + utfylte SMTP-felter",
-    boot: settingsScene(
-      {
-        ...CHOSEN,
-        emailSmtp: "smtp.kirke.no",
-        emailSmtpUser: "varsler@kirke.no",
-        emailSmtpFrom: "opptak@kirke.no",
-      },
-      { ...HEALTHY, email_has_smtp_password: true },
-    ),
-    wait: "advanced-smtp",
-    act: async (page) => {
-      await page.getByTestId("advanced-smtp").scrollIntoViewIfNeeded();
-    },
-    full: true,
-  },
-  {
     id: "innstillinger--tidsplan",
     page: "Innstillinger",
     state: "Tidsplanen — to faste tider, ett spesialopptak, vekking",
@@ -1614,7 +1575,7 @@ export const SCENES: Scene[] = [
     state: "Steg 5 av 5 — hvem skal få beskjed?",
     recipe: "«Fortsett uten lyd», så fire steg fram",
     boot: {
-      fixtures: { ...FIRST_RUN_FIXTURES, email_status: { featureBuilt: true } },
+      fixtures: FIRST_RUN_FIXTURES,
       settings: FIRST_RUN_SETTINGS,
     },
     wait: "first-run",

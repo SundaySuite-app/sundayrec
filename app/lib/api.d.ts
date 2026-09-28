@@ -155,29 +155,11 @@ declare global {
       openFolder: (p: string) => Promise<boolean>;
       /** Reveal a file in Finder/Explorer. Same contract as `openFolder`. */
       revealFile: (p: string) => Promise<boolean>;
-      /** Store the SMTP password in the OS keychain (undefined/'' clears it).
-       *  Resolves true when a password is now stored. Rejects on a keychain
-       *  failure — the caller must show it, not swallow it. */
-      emailSetSmtpPassword: (password?: string) => Promise<boolean>;
-      /** Remove the stored SMTP password from the OS keychain. A missing entry
-       *  is success. Rejects on a keychain failure, like the write. */
-      emailClearSmtpPassword: () => Promise<boolean>;
-      /** Whether an SMTP password is stored. The secret never crosses back. */
-      emailHasSmtpPassword: () => Promise<boolean>;
-      /** Whether this build can send e-mail at all — read BEFORE offering a
-       *  «Send test» (see feature-gate). */
-      emailStatus: () => Promise<
-        import("../../legacy/bindings/EmailStatus").EmailStatus
-      >;
-      testEmail: (params: {
-        recipient: string;
-        language?: string;
-        host?: string;
-        port?: number;
-        user?: string;
-        pass?: string;
-        from?: string;
-      }) => Promise<{ ok: boolean; error?: string }>;
+      /** Whether the one-time «E-postvarsler er fjernet» banner should show.
+       *  `false` on an IPC failure. */
+      noticeEmailRemovedPending: () => Promise<boolean>;
+      /** The banner was read: never show it again. */
+      noticeEmailRemovedDismiss: () => Promise<void>;
       getAppVersion: () => Promise<string>;
       checkForUpdates: () => Promise<void>;
       installUpdate: () => void;
@@ -393,40 +375,6 @@ declare global {
       /** "Slett mine data", the local half: retires the install id. Resolves
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>;
-      // ── The e-mail relay (A2) — the light way to the same alerts ─────────
-      // No page calls these yet; A5 builds the panel on top of them. They are
-      // declared now so the five commands have a real door from the day they
-      // are registered — see the api-shim block for why.
-      /** The local subscription record plus whether this build has an
-       *  endpoint at all. Never carries a token or a sub id. */
-      relayStatus: () => Promise<
-        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-      >;
-      /** Enrol an address: queues the confirmation mail and records the
-       *  subscription as `pending`. Nothing is SENT from this call — the
-       *  outbox delivers it. Rejects with `relay_invalid_address` /
-       *  `relay_no_endpoint`, which the caller renders via `errorCode()`. */
-      relaySubscribe: (
-        address: string,
-      ) => Promise<
-        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-      >;
-      /** "Send it again" — a NEW confirmation token and a new queued mail.
-       *  The endpoint has a ten-minute cooldown of its own; hitting it costs a
-       *  wait, never the sign-up. */
-      relayResend: () => Promise<
-        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-      >;
-      /** Ask the endpoint to forget the address. The returned status still
-       *  shows a subscription: it IS still subscribed until the queued
-       *  request has actually left. */
-      relayUnsubscribe: () => Promise<
-        import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-      >;
-      /** Queue the localized "e-post virker" message. Requires a CONFIRMED
-       *  subscription — rejects with `relay_not_confirmed` otherwise, rather
-       *  than queueing something the gate would silently refuse. */
-      relaySendTest: () => Promise<{ ok: boolean; error?: string }>;
     };
     appVersion?: string;
   }

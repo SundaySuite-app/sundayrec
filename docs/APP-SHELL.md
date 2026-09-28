@@ -360,9 +360,9 @@ Two deliberate differences from `legacy/renderer/ui/bind-setting.ts`:
   the stored value itself. There is nothing to re-sync, and therefore nothing to
   forget.
 
-`useDraftForm(read, write)` is the explicit-save exception, for the two places
-where a half-typed value is actively harmful (the schedule slot editor, the one
-alert e-mail address). There a failed save does **not** revert: that is something
+`useDraftForm(read, write)` is the explicit-save exception, for the place where
+a half-typed value is actively harmful: the schedule slot editor. (The alert
+e-mail address was the other, until e-mail alerts were removed.) There a failed save does **not** revert: that is something
 the user typed, and throwing it away because a disk write failed punishes the
 user for the app's problem.
 
@@ -882,8 +882,8 @@ lagring — akkurat som legacy `selectDevice` gjør:
 - **kameravalget** (`videoDeviceName` + `videoDeviceIndex`),
 - **OS-varselet** (`notifyStart` + `notifyStop` bak ÉN bryter).
 
-`useDraftForm` er de to stedene et halvskrevet felt er aktivt skadelig:
-varsel-adressen og den ukentlige tiden.
+`useDraftForm` er stedet et halvskrevet felt er aktivt skadelig: den ukentlige
+tiden. (Varsel-adressen var det andre, til e-postvarslene ble fjernet.)
 
 ⚠️ `scheduler_reschedule` kalles ALDRI fra en side: `window.api.saveSettings`
 gjør det selv etter hver skrivning. Det samme gjelder OS-innloggingselementet
@@ -908,6 +908,9 @@ penere.
   kommer ingenting fram uansett hva som står i adressefeltet. Bryteren står
   derfor bak en `Gate` som sier det, og gaten er trygg her fordi SMTP-feltene
   bor under Avansert — `feature-gate-core` advarer mot det motsatte.
+  **(Senere: e-postvarslene er fjernet helt — både SMTP og reléet som kom etter
+  denne setningen. Kortet svarer nå «På maskinen», og systemvarselet på
+  opptaksmaskinen er kanalen.)**
 - **«Varsel på maskinen … Alltid på.»** Ved siden av en bryter som kan slås av.
   Teksten sier nå hva bryteren gjør.
 
@@ -967,7 +970,7 @@ andre.
 |                      | før (`legacy/renderer`)                                  | nå (`app/`)                                       |
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------- |
 | Avansert             | spredt over Lyd, Filer, Deling og System                 | én liste, ett ord per rad (`AdvancedPage.tsx`)    |
-| E-postserver (SMTP)  | `<details>` inne i kortet gaten selv slo av              | eget kort på Avansert — gaten på 5.3 åpner det    |
+| E-postserver (SMTP)  | `<details>` inne i kortet gaten selv slo av              | fjernet med e-postvarslene                        |
 | Tidsplan, avansert   | månedskalender + dagsdetalj + vekke-diagnosekort (23 kt) | to lister og én setning (`advanced/ScheduleCard`) |
 | Første gang          | 521 linjer veiviser med sine egne skjermer               | de fem ekte skjermene i sekvens (`FirstRun.tsx`)  |
 | Diagnostikk-samtykke | steg 5 av 6 i veiviseren                                 | ett kort på OPPTAK (`ui/ConsentCard`)             |
@@ -3313,8 +3316,9 @@ ikke utenom.
 35 Rust-kommandoer gikk fra nåbar til unåbar ved byttet. Alle er bevisste, alle
 er listet med grunn i baseline-committen og i `docs/SMOKE-TEST.md` under «Flater
 som ikke finnes lenger». Seks er hentet tilbake siden: `recording_preview_frame`
-(D2/PR2), diagnosens tre (V1/PR2), `email_clear_smtp_password` (V1/PR3) og
-`recordings_prune` (retensjonsrunden, eierbeslutning 2026-08-31).
+(D2/PR2), diagnosens tre (V1/PR2), `email_clear_smtp_password` (V1/PR3 — og
+fjernet igjen med e-postvarslene) og `recordings_prune` (retensjonsrunden,
+eierbeslutning 2026-08-31).
 
 ### ✅ V1/PR3: restansen er GJORT OPP, ikke bare telt
 

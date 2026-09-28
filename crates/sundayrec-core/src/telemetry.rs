@@ -945,7 +945,6 @@ pub struct CounterReport {
 ///   - `saveFolder` / `editorIntroPath` / `editorOutroPath` — filesystem paths.
 ///   - `churchName` / `responsiblePerson` — the two fields that would deanonymise
 ///     an install outright.
-///   - `emailAddress` / `emailSmtp*` — addresses and endpoints.
 ///   - `slots` / `specialRecordings` — user-authored labels and a congregation's
 ///     weekly rhythm. Only their COUNTS travel.
 ///
@@ -1707,7 +1706,6 @@ mod tests {
             save_folder: Some("/Users/kari/Menigheten/Opptak".into()),
             church_name: "Nordstrand menighet".into(),
             responsible_person: "Kari Nordmann".into(),
-            email_address: "kari@menighet.no".into(),
             editor_intro_path: Some("/Users/kari/intro.wav".into()),
             ..Default::default()
         });
@@ -2206,8 +2204,6 @@ mod tests {
     /// is rejected with `unscrubbed_path` — a 400, which this client drops
     /// without retrying. **The two must be changed together.** If you loosen
     /// this mirror, loosen the Worker; if you tighten the Worker, tighten this.
-    /// (The relay's copy of the same mirror lives in
-    /// `email::tests::WORKER_ABSOLUTE_PATH_RE`, over the rendered mail bodies.)
     ///
     /// This is the seam that had no test, which is why the bug survived: both
     /// repos were internally consistent and disagreed at the boundary, so every
@@ -2620,21 +2616,16 @@ mod tests {
         }
     }
 
-    /// A4 (the e-mail relay): `email_receipt_enabled` and the rest of the relay
-    /// state (`notify.relay` in the `app_setting` bag — address, tokens,
-    /// confirmation timestamps) must NEVER reach `WireSettings`. Same
-    /// reasoning as `update_channel` — see the doc comment on `auto_update`
-    /// above (telemetry.rs:975-978): a subscription is per-machine identity
-    /// state, not a diagnostic fact worth reporting, and `from_settings`'s
-    /// allow-list already excludes it BY CONSTRUCTION (nobody wrote a line for
-    /// it) — this test is what keeps that true on purpose rather than by
-    /// accident.
+    /// `WireSettings` is a fixed, explicit projection — `from_settings`'s
+    /// allow-list excludes per-machine identity state BY CONSTRUCTION (nobody
+    /// wrote a line for it), and this test is what keeps that true on purpose
+    /// rather than by accident.
     ///
-    /// The field count is the sharper half of the pin: a relay field renamed
-    /// to dodge the substring check below would still trip this, because
-    /// `WireSettings` has carried exactly 22 keys since before the relay
-    /// existed and `from_settings` is a fixed, explicit projection — nothing
-    /// grows it silently.
+    /// Written when the e-mail relay (A4) put a subscription — address, tokens,
+    /// confirmation timestamps — beside the settings. The relay is gone; the
+    /// pin stays, because the field count is the sharper half: a field renamed
+    /// to dodge the substring check below would still trip it. `WireSettings`
+    /// has carried exactly 22 keys, and nothing grows it silently.
     #[test]
     fn wire_settings_carries_no_relay_field_and_the_key_count_stays_22() {
         let json = serde_json::to_value(WireSettings::default()).expect("serialise");

@@ -982,70 +982,16 @@ const api: Record<string, unknown> = {
     }
   },
 
-  // ── Email ───────────────────────────────────────────────────────────────
+  // ── One-time notices ──────────────────────────────────────────────────
   //
-  // `testEmail` was an `async () => ({ ok: false })` stub: every click produced
-  // a fabricated "sending failed" no matter what the user had configured. The
-  // command exists and is registered (commands/email.rs), so it is wired — and
-  // the panel asks `emailStatus` FIRST and disables the button when there is no
-  // send path, instead of inventing a failure. `email_send_test` needs
-  // `--features email` and returns a clear `feature_disabled` error otherwise,
-  // which `emailStatus.featureBuilt` predicts so we never provoke it.
-  emailStatus: async () =>
-    call<{ featureBuilt: boolean }>("email_status", undefined, {
-      featureBuilt: false,
-    }),
-  testEmail: async (params: {
-    recipient: string;
-    language?: string;
-    host?: string;
-    port?: number;
-    user?: string;
-    pass?: string;
-    from?: string;
-  }) => {
-    try {
-      await invoke("email_send_test", {
-        recipient: params.recipient,
-        language: params.language,
-        host: params.host,
-        port: params.port,
-        user: params.user,
-        pass: params.pass,
-        from: params.from,
-      });
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: ipcErrText(e) };
-    }
-  },
-
-  // The keychain write path — the SMTP password's ONLY home (it is not a
-  // `Settings` field, so it can never ride a settings save into the store; the
-  // Electron-era cleartext copies were purged in E1.6 and the whole legacy blob
-  // is removed by the R4 migration). `email_set_smtp_password` puts it in the
-  // OS keychain; passing
-  // undefined/"" clears it. Resolves true when a password is now stored.
-  // NOT wrapped in `call`: a keychain write that fails must be visible to the
-  // caller (it shows an error toast), not silently swallowed into `false`.
-  emailSetSmtpPassword: async (password?: string) =>
-    (await invoke<boolean>("email_set_smtp_password", {
-      password: password && password.length > 0 ? password : null,
-    })) as boolean,
-  // Wipe the stored password. `email_set_smtp_password(null)` reaches the same
-  // `secrets::delete`, and that IS what «Fjern» used to call — which left the
-  // dedicated command dark and the intent ambiguous at the seam: a clear read
-  // as "a save of nothing", so a keychain failure surfaced under the word
-  // «lagret» and the set-path's blank-means-clear branch became the only
-  // exercised way to remove a credential. Now the button says what it does.
-  // NOT wrapped in `call` — same reason as the write: a keychain delete that
-  // fails must reach the caller's error toast, never a silent `false`.
-  emailClearSmtpPassword: async () =>
-    (await invoke<boolean>("email_clear_smtp_password")) as boolean,
-  // Whether a password is stored — drives the "(lagret)" state. The secret
-  // itself never crosses into the webview.
-  emailHasSmtpPassword: async () =>
-    call<boolean>("email_has_smtp_password", undefined, false),
+  // «E-postvarsler er fjernet». The backend marks it pending at startup for a
+  // volunteer who had e-mail alerts on (`settings::email_cleanup`). A failed
+  // read is `false`: a banner that fails to appear costs nothing, a banner
+  // that could not be dismissed would stand forever.
+  noticeEmailRemovedPending: async () =>
+    call<boolean>("notice_email_removed_pending", undefined, false),
+  noticeEmailRemovedDismiss: async () =>
+    call<void>("notice_email_removed_dismiss", undefined, undefined),
 
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
@@ -1256,59 +1202,6 @@ const api: Record<string, unknown> = {
     } catch (e) {
       console.warn("[api-shim] telemetry_regenerate_install_id failed", e);
       return false;
-    }
-  },
-
-  // ── The e-mail relay (A2) ───────────────────────────────────────────────
-  //
-  // Five doors for five commands that are registered but not yet used by any
-  // page — A5 builds the panel on top of them. They are here NOW rather than
-  // with that panel because of what the alternative costs: the reachability
-  // gate would otherwise record five newly-registered commands as unreachable
-  // and want each one classified as deliberately dark, which is a claim
-  // nobody would mean. A thin, typed, honest door is the truthful version of
-  // "this is wired, the screen comes next" — and it is what A5 will call.
-  //
-  // The fallbacks are pessimistic on purpose, exactly as the telemetry block
-  // above argues: a failed read must never look like a working subscription.
-  // `relayStatus` falls back to "no endpoint, nothing enrolled", which renders
-  // as the panel's own empty state.
-  relayStatus: async () =>
-    call<
-      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-    >("relay_status", undefined, {
-      endpointBuilt: false,
-      state: null,
-      address: null,
-      enrolledAt: null,
-      confirmedAt: null,
-      queued: 0,
-    }),
-  // The three mutations are NOT wrapped in `call`: each is a button press with
-  // a granular error the panel has to show (`relay_invalid_address`,
-  // `relay_no_endpoint`, `relay_not_confirmed` — all extractable by
-  // `errorCode()`). Swallowing one into a fallback status would tell the user
-  // their address was accepted when it was refused.
-  relaySubscribe: async (address: string) =>
-    await invoke<
-      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-    >("relay_subscribe", { address }),
-  relayResend: async () =>
-    await invoke<
-      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-    >("relay_resend"),
-  relayUnsubscribe: async () =>
-    await invoke<
-      import("../../legacy/bindings/RelaySubscriptionStatus").RelaySubscriptionStatus
-    >("relay_unsubscribe"),
-  // Shaped like `testEmail` above, and for the same reason: the button reports
-  // its own outcome inline rather than throwing at the page.
-  relaySendTest: async () => {
-    try {
-      await invoke("relay_send_test");
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: ipcErrText(e) };
     }
   },
 

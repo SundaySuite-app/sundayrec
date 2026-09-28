@@ -214,9 +214,9 @@ pub(crate) fn http_client() -> reqwest::Client {
 ///
 /// reqwest runs on `rustls-no-provider` (see Cargo.toml), and in that mode it
 /// PANICS on `Client::builder().build()` when no provider is installed — it does
-/// not pick one from the compiled-in features. tauri-plugin-updater and lettre
-/// each install ring the same way right before they build a client, but nothing
-/// guarantees either has run before our first request, so we do it ourselves.
+/// not pick one from the compiled-in features. tauri-plugin-updater installs
+/// ring the same way right before it builds a client, but nothing guarantees it
+/// has run before our first request, so we do it ourselves.
 /// Idempotent: a provider that is already installed (ours or theirs) wins.
 pub(crate) fn ensure_rustls_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {

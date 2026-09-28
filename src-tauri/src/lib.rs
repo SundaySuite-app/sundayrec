@@ -30,11 +30,6 @@ pub mod diagnostics;
 // `editor` feature is in `default` (the Rediger screen ships); building with
 // `--no-default-features` keeps the DTOs + `feature_disabled` stubs compiling.
 pub mod editor;
-// PU-1 email alerts — the `email` feature, now IN `default` and in both release
-// feature lists. The pure templates/throttle/MIME live in
-// `sundayrec_core::email`; this seam sends.
-#[cfg(feature = "email")]
-pub mod email;
 pub mod error;
 // E2.3 observability — the rotating file log under `<app-local-data>/logs`
 // (F2-W10 moved it off the roaming `<app-data>` dir). Until it,
@@ -44,10 +39,8 @@ pub mod error;
 pub mod logfile;
 pub mod media;
 // The notification dispatch seam — ONE place a failure reaches the operator
-// (native + e-mail) and one place a degradation reaches the screen.
-// Featureless: the `email` leg compiles out cleanly under
-// `--no-default-features` and the routing matrix degrades to native only.
-// The matrix itself is the unit-tested `sundayrec_core::notify`.
+// (a native OS notification) and one place a degradation reaches the screen.
+// The decisions behind it are the unit-tested `sundayrec_core::notify`.
 pub mod notify;
 pub mod platform;
 // F2-W5 — keep-awake blocks. `sundayrec_core::wake::should_block` has decided
@@ -224,13 +217,6 @@ pub fn run() {
         // start/stop/reminder/preflight events (Fase 5). Started in setup once
         // the db pool is managed.
         .manage(scheduler::SchedulerEngine::new())
-        // A3: the one scheduled run in flight, stamped by the scheduler after a
-        // successful start and consumed by `notify::dispatch_receipt`. It is the
-        // only thing that can tell a recording somebody pressed Start for from
-        // one that ran while the building was empty — the recorder itself has no
-        // idea which button began the take, and teaching it would mean editing
-        // the capture path for a reporting reason.
-        .manage(scheduler::ScheduledRunMarker::new())
         // The wake engine schedules OS wake-from-sleep timers (pmset on macOS,
         // an in-process SetWaitableTimer on Windows)
         // for upcoming recordings + dedups repeated reschedules (Fase 5.2).
@@ -250,15 +236,6 @@ pub fn run() {
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
         .manage(editor::ExportEngine::new());
-
-    // PU-1: ONE alert throttle window for the whole process lifetime. The gate
-    // (10 min per recipient+error pair) is what stops a flapping device from
-    // mailing the operator forty times; it existed, tested, in the core and was
-    // never MANAGED, so nothing could reach it. `notify::dispatch_failure` reads
-    // it through managed state. Feature-gated because the whole `email` module
-    // is — a `--no-default-features` build has no gate and plans no e-mail leg.
-    #[cfg(feature = "email")]
-    let builder = builder.manage(email::AlertGateState::default());
 
     // P3b: replace tauri's default macOS menu with the same menu, one item
     // rewired — Quit. Off macOS tauri installs no menu at all, and adding one
@@ -313,6 +290,16 @@ pub fn run() {
                         sundayrec_core::telemetry::telemetry_path(&db_path)
                     )
                 })?;
+
+            // E-mail alerts were removed. Clear what an upgraded install still
+            // carries — BEFORE anything below can save the settings, because the
+            // first save erases the only evidence (see `settings::email_cleanup`).
+            // The database half is quick and runs here; the keychain half runs
+            // in the background so an OS prompt can never hold up launch.
+            match tauri::async_runtime::block_on(settings::email_cleanup::run(&pool)) {
+                Ok(plan) => settings::email_cleanup::forget_smtp_password_in_background(plan),
+                Err(e) => tracing::warn!("settings: the e-mail clean-up failed: {e}"),
+            }
 
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch
@@ -412,11 +399,11 @@ pub fn run() {
                 .start(app.handle().clone());
 
             // Subscribe the notification dispatcher to the recorder's terminal
-            // error event. Until now that event reached the tray badge and the
+            // error event. Until then that event reached the tray badge and the
             // renderer and stopped there: an unattended failure produced no
-            // native notification and no e-mail, which is precisely the case
-            // those two channels exist for. Observational (`listen`),
-            // so no recorder code is touched — see `notify::wire_failure_sources`.
+            // native notification, which is precisely the case it exists for.
+            // Observational (`listen`), so no recorder code is touched — see
+            // `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
             // Give the handle-less seams somewhere to raise a warning. The
@@ -425,23 +412,18 @@ pub fn run() {
             // hears about it instead of just the log file.
             notify::arm_detached(app.handle().clone());
 
-            // …and the e-mail relay's pump, beside it. `maybe_spawn` starts
-            // NOTHING unless this machine has a subscription record: an install
-            // that never enrolled an address has no task, no connection pool and
-            // nothing that could resolve a hostname. When there is one, this is
-            // what delivers the messages that were queued while the app was
-            // closed — a failure alert written on Sunday evening on a machine
-            // that then lost its network reaches the inbox on Monday morning,
-            // instead of waiting for somebody to open the settings panel.
+            // Sweep the "already said this" ledger behind the missed-recording
+            // notice. The trim used to live in the e-mail relay's pump, so on a
+            // machine without a relay subscription it never ran at all.
             {
                 let handle = app.handle().clone();
                 crash::watch_handle(
-                    "notify::relay::startup",
+                    "notify::seen::trim",
                     tauri::async_runtime::spawn(async move {
                         let Some(db) = handle.try_state::<db::Db>() else {
                             return;
                         };
-                        notify::relay::sender::maybe_spawn(&handle, &db.pool).await;
+                        notify::seen::trim_at_startup(&db.pool, util::now_ms()).await;
                     }),
                 );
             }
@@ -611,21 +593,9 @@ pub fn run() {
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,
             commands::editor::editor_master_cancel,
-            // PU-1 email alerts (status + keychain pure; send gated by `email`).
-            commands::email::email_status,
-            commands::email::email_send_test,
-            commands::email::email_clear_smtp_password,
-            commands::email::email_set_smtp_password,
-            commands::email::email_has_smtp_password,
-            // The e-mail relay (A2) — the light way to the same alerts: an
-            // address and a confirmation click instead of an SMTP host and an
-            // app password. Featureless (HTTP, not SMTP). Nothing is sent from
-            // these calls; they queue a row and ring the pump's doorbell.
-            commands::notify_relay::relay_status,
-            commands::notify_relay::relay_subscribe,
-            commands::notify_relay::relay_resend,
-            commands::notify_relay::relay_unsubscribe,
-            commands::notify_relay::relay_send_test,
+            // The one-time "e-mail alerts were removed" banner.
+            commands::notice::notice_email_removed_pending,
+            commands::notice::notice_email_removed_dismiss,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,

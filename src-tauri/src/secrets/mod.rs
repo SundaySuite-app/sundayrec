@@ -2,24 +2,30 @@
 //! the `keyring` crate — NEVER plaintext files. Replaces Electron's
 //! `safeStorage`.
 //!
-//! The SMTP password is written here (until v0.15 the AI companion's Anthropic
-//! key was too); Phase 0 established the seam and the resolution precedence so the rest of
-//! the app has one place to reach for a credential.
+//! Nothing WRITES a secret any more. The last live slot was the SMTP password
+//! of the e-mail alerter, and e-mail alerts were removed; the module stays for
+//! one job — `settings::email_cleanup` deletes that password once, on a machine
+//! whose settings show SMTP was configured. When that clean-up has shipped in a
+//! couple of releases, this module and the `keyring` dependency can go.
 //!
 //! ## Retired slots
 //!
 //! Earlier builds also wrote OAuth refresh tokens for Google Drive
 //! (`oauth.google_drive`), YouTube (`oauth.youtube`) and Gmail (`oauth.gmail`),
 //! a SundaySong API key (`integrations.song_api_key`), RTMP stream keys
-//! (`stream.key`, `stream.key.{destId}`) and — until v0.15 — the AI sermon
-//! companion's Anthropic API key (`companion.llm_api_key`). Those features are
-//! gone (cloud backup, podcast publishing, the Gmail mail transport, the
-//! Sunday-suite integrations, live streaming, the companion), so nothing reads
-//! or writes the slots any more — but the
-//! entries may still sit in users' keychains. They are left alone on purpose:
-//! keyring cannot enumerate accounts, and a startup sweep could block launch on
-//! a locked-keychain authorization prompt. The strings above are the contract
-//! for anyone who ever wants to clean them up by hand.
+//! (`stream.key`, `stream.key.{destId}`), the AI sermon companion's Anthropic
+//! API key (`companion.llm_api_key`, until v0.15) and the SMTP password
+//! (`email.smtp_password`). Those features are gone (cloud backup, podcast
+//! publishing, the Gmail mail transport, the Sunday-suite integrations, live
+//! streaming, the companion, e-mail alerts), so nothing reads or writes the
+//! slots any more — but the entries may still sit in users' keychains. They are
+//! left alone on purpose, with ONE exception: keyring cannot enumerate
+//! accounts, and a startup sweep could block launch on a locked-keychain
+//! authorization prompt. The exception is `email.smtp_password`, which the
+//! owner asked to be cleaned up, and which is deleted only where the settings
+//! prove it was set — off the startup path, so a prompt can never hold launch.
+//! The strings above are the contract for anyone who ever wants to clean the
+//! others up by hand.
 
 use keyring::Entry;
 
@@ -39,8 +45,8 @@ pub enum SecretProvider {
     /// one provider the round-trip test below can safely write and delete
     /// (see "Retired slots" in the module docs for the others).
     StreamKey,
-    /// SMTP password for the email-alert mailer (never persisted in settings;
-    /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
+    /// RETIRED — the SMTP password of the removed e-mail alerter. Only
+    /// `settings::email_cleanup` touches it, to delete it.
     SmtpPassword,
 }
 

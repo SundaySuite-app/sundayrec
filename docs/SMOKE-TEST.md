@@ -85,7 +85,7 @@ guard that would otherwise fail in silence:
 | Tidsplan (month calendar + day detail)           | **Opptak › «Ta opp automatisk»**, and the gear › Avansert for the rest                    |
 | Innstillinger → System (log, profile, telemetry) | **the gear › Avansert**                                                                   |
 | Oppdateringer / Oppdateringskanal                | **the gear › Avansert › Oppdateringer**                                                   |
-| E-postserver (SMTP), inside the alerts card      | **the gear › Avansert › «E-postserver (SMTP)»**                                           |
+| E-postserver (SMTP), inside the alerts card      | **removed** with e-mail alerts — see «Flater som ikke finnes lenger»                      |
 | Rediger, three tabs (Klipp / Lyd / Innhold)      | **Redigering**, two STEPS (Klipp → Lyd) — the third became a destination                  |
 | The export MODAL                                 | **Eksportering**, the third destination — no modal, and no step 3                         |
 | «Åpne fil…» in the editor's empty state          | **Redigering**'s head, always — and dropping a file anywhere on the page does the same    |
@@ -148,14 +148,14 @@ gate is green: the full Rust test suite (`cargo test --workspace`) + a **vitest*
 frontend suite (pure logic like the editor cut-history state machine; grows as
 more pure logic is extracted) + clippy `-D warnings`. Every feature also compiles
 in isolation — `cargo build -p sundayrec --features <flag>` for
-`email`/`tray`/`editor`/`updater`. (Since R2 «Frivilligen først» the
+`tray`/`editor`/`updater`. (Since R2 «Frivilligen først» the
 workspace has no C/C++ toolchain dependency: `whisper` is gone.)
 
 ⚠️ **Which of these are actually in the shipping build.** `src-tauri/Cargo.toml`
-sets `default = ["editor", "tray", "updater", "email"]`,
-so **all four are ON in a plain `npm run tauri dev` / `cargo build` and in every
+sets `default = ["editor", "tray", "updater"]`,
+so **all three are ON in a plain `npm run tauri dev` / `cargo build` and in every
 release**. The `--features <flag>` lines below them are redundant, not
-prerequisites, and a `feature_disabled` response from any of those four is a BUG
+prerequisites, and a `feature_disabled` response from any of those three is a BUG
 to report — not the expected result. Only `asio`/`vad` are genuinely
 default-off and need an explicit `--features`. To exercise a disabled path
 deliberately, build with `--no-default-features`. (v0.14: `streaming`/`ndi`/
@@ -167,7 +167,8 @@ SMTP-only and §9's deep links are gone. R2 «Frivilligen først» 2026-08-23:
 whisper transcription (§10b), the AI companion + chapters (§12 step 9 and the
 chapter half of the editor), the learning cards (§R7 settings completeness, step 2)
 and the Video tab's quality knobs (§12 step 4c) followed; §6b is a metadata
-search only.)
+search only. The `email` feature — the SMTP alerter — was removed together
+with the SundaySuite e-mail relay; §8 is a stub.)
 
 ---
 
@@ -538,65 +539,42 @@ resolve.
 
 ---
 
-## 8. Email alerts [NET] — `email` (IN DEFAULT)
+## 8. ~~Email alerts~~ — REMOVED
 
-The error/test mailer is in the **`default` feature set**, so the shipping build
-and a plain `npm run tauri dev` both have it and pull the SMTP dep (`lettre`).
-The localized templates (7 langs) and the throttle/dedup gate are unit-tested
-in `sundayrec-core::email`; the **send** is NETWORK-UNVERIFIED. SMTP is the ONE
-transport (the Gmail-API path left with cloud backup in R1 «Frivilligen
-først»). Nothing extra to build — just run the app:
+E-mail alerts left the app: both the SMTP alerter (the `email` cargo feature,
+`lettre`, the password in the OS keychain) and the SundaySuite e-mail relay
+(`notify.sundaysuite.app`, the outbox in `notify_outbox`, the «kvittering» when
+a scheduled recording finished). The setup was too heavy for a volunteer, and
+SundayRec no longer sends anything off the machine to report a failure.
 
-```bash
-npm run tauri dev   # drive the "E-postvarsler" disclosure
-# SMTP needs a host/port/credentials.
-```
+What tells the operator now is the **native OS notification** on the recording
+machine: a recording that dies, a scheduled start that fails, and a scheduled
+recording that never happened always raise one, and no setting silences them
+(§11). The «Hvem får beskjed hvis noe går galt?» card on Opptak answers «På
+maskinen».
 
-Two screens drive this since fase B, and the split is deliberate — D2 only moved
-where each one is reached from. **Opptak → the «Hvem får beskjed hvis noe går
-galt?» card** («Sett opp» when nobody is set, «Endre» otherwise) is the
-volunteer's half: one toggle, one address, one **«Send en test»**. **The gear →
-Avansert → «E-postserver (SMTP)»** is the technical half: host · port · user ·
-from, and the password (which goes to the OS keychain, never into the settings
-bag).
+The section number stays so cross-references still resolve.
 
-The toggle on the volunteer screen sits behind a **Gate** that says «Krever en
-e-postserver (SMTP). Sett opp under Avansert.» when no transport is configured —
-because the canvas's «E-posten sendes via SundaySuite» is not true: there is no
-such relay, and without the congregation's own SMTP server nothing arrives no
-matter what is in the address field. `email_status` is read up-front (works in
-every build) to show whether this binary has the `email` feature at all, and
-`email_send_test` carries the recipient and the chosen language.
-In the **default build** `email_status` reports the feature present and
-`email_send_test` really sends — a `feature_disabled` here means something is
-wrong, not that the build is normal. (The "ikke bygd inn" hint only appears in a
-`--no-default-features` build.) The SMTP password is never persisted — it travels
-with the request and is dropped.
+**Upgrading an install that had e-mail set up** (v0.20.x → this build) is the
+one thing left to check here:
 
-The card's gate + block-reason logic and the send dispatch (recipient +
-language on the request):
-
-- VERIFIED-BY: e2e/system-support.spec.ts::a build without the email feature gates the card and says so
-- VERIFIED-BY: e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated
-- VERIFIED-BY: e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport
-
-1. **SMTP test message.** Under **Avansert → «E-postserver (SMTP)»** configure a
-   host (587 STARTTLS or 465 implicit TLS) and save the password to the
-   keychain; then under **«Hvem får beskjed hvis noe går galt?»** enter the
-   address, save it, and press **«Send en test»**. (Pressing test before saving
-   an address says so — «Skriv inn en adresse og trykk Lagre først.» — rather
-   than sending to nobody.)
-   - **Expected:** `lettre` connects + delivers a "✓ SundayRec — e-post
-     fungerer" message; HTML + plaintext parts both present in the received
-     mail.
-2. **Error alert throttle.** Trigger two identical recording errors within
-   10 minutes.
-   - **Expected:** only the first mails; the second is suppressed by the core
-     `AlertGate` (10-min window per `(recipient, message)`).
-
-> [NET] The SMTP handshake is compiled into every default build but never run
-> against a real server in the gate — se markøren i §8-innledningen («the
-> **send** is …»).
+1. On a machine where v0.20.x had SMTP configured and «E-post hvis noe går
+   galt» switched ON, install this build and open it.
+   - **Expected:** Opptak shows ONE banner, «E-postvarsler er fjernet», with
+     «Den er grei». Pressing it removes the banner, and it does not come back
+     on the next launch.
+   - **Expected:** the keychain entry `no.sundayrec.app` / `email.smtp_password`
+     is gone (Keychain Access on macOS, Credential Manager on Windows). No
+     keychain prompt blocks launch — the deletion runs in the background.
+   - **Expected:** every other setting survived (church name, reminder, the
+     notification toggle, the schedule).
+   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::an_upgraded_install_is_cleaned_once_and_keeps_everything_else
+   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::the_keychain_is_asked_only_when_a_server_was_configured
+   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_removed_email_fields_imports_cleanly
+   - VERIFIED-BY: e2e/record.spec.ts::e-postvarslene er borte: beskjeden står til den er lest, og så aldri mer
+2. On a machine that never switched e-mail alerts on, the same upgrade shows
+   NO banner and touches no keychain entry.
+   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::default_email_fields_are_rewritten_but_touch_neither_keychain_nor_banner
 
 ---
 
@@ -1266,29 +1244,24 @@ store:
 
 R7 closed the gap between the Electron `store.ts` `Settings` and the Tauri model:
 church profile (`churchName`/`responsiblePerson`), notification toggles
-(`notifyStart`/`notifyStop`), and email config (`emailOnError`/`emailAddress`/
-`emailSmtp`/`emailSmtpPort`/`emailSmtpUser` — the SMTP **password** stays in the
-OS keychain via the `email` seam, never in the settings bag) plus the editor
-intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
-1..=65535) in `sundayrec-core::settings`.
+(`notifyStart`/`notifyStop`) plus the editor intro/outro paths. (The e-mail
+config R7 also added is gone with e-mail alerts, §8.) All carry defaults +
+validation in `sundayrec-core::settings`.
 
-1. Walk **the gear → «Hvilken kirke?»** (name + language), the **«Hvem får
-   beskjed hvis noe går galt?»** card on Opptak (the OS toggle, the address) and
-   **the gear → Avansert → «E-postserver (SMTP)»** (host · port · user · from).
+1. Walk **the gear → «Hvilken kirke?»** (name + language) and the **«Hvem får
+   beskjed hvis noe går galt?»** card on Opptak (the OS toggle, the reminder).
    The church profile is deliberately the ONE question that did not move into
    the control room: it is set once, not five minutes before a service.
    - **Expected:** every field round-trips through `settings_save` (debounced)
-     into SQLite and survives a relaunch; the port clamps to 1..=65535.
+     into SQLite and survives a relaunch.
    - **Expected:** a save that FAILS rolls the control back to what is actually
      stored and toasts about it. The old shell left the new value standing, so
      the screen claimed one thing while sqlite held another and the change
-     "disappeared" at the next launch. The two exceptions are deliberate: the
-     alert address and the weekly time are explicit-save fields, and there a
-     failed write does NOT throw away what you typed.
-   - The church-profile round-trip (debounced save → storage → reload) and the
-     port clamp:
+     "disappeared" at the next launch. The one exception is deliberate: the
+     weekly time is an explicit-save field, and there a failed write does NOT
+     throw away what you typed.
+   - The church-profile round-trip (debounced save → storage → reload):
    - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
-   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::validate_clamps_smtp_port
    - Since R4 there is no curated subset to drop a key from: `settings_save`
      carries the FULL object in one vocabulary, boot only reads, and a field
      written is a field read back (the #113/#115 class ends structurally):
@@ -1354,8 +1327,8 @@ vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
    real stop, at the length a real service runs, on the hardware this church
    actually uses (not a laptop mic standing in for the mixer).
 4. Exercise whatever else this release changed for real, not just launch it —
-   an editor change gets an edit, an
-   email-alert change gets left running long enough to prove it fires (or
+   an editor change gets an edit, a
+   notification change gets left running long enough to prove it fires (or
    correctly doesn't).
 
 **After the service**
@@ -1479,6 +1452,7 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 | **«+30 min» / «Avbryt auto-stopp»** on the overlay                       | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **The stereo / mono / «Miks L+R» channel-mode picker**                   | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so.                                                                                                                                                                                                                                                                                                                                                           |
 | ~~⚠️ **Automatic deletion of old recordings** (NOT a removal — a SEAM)~~ | **WIRED** after the owner decision 2026-08-31: retention MOVES recordings older than `autoDeleteDays` into the Papirkurv — exactly what both UI texts always promised — and the trash's own 30-day purge is the delete, so the full window is n + 30 days. `recordings_prune` routes through `crate::trash` (a source ratchet forbids a hard delete from returning), the pass runs at boot + every 12 h (`initRetention` in `app/main.tsx`), and a pass that moved something says so in a toast with «Vis papirkurven». The first pass after updating can move everything that piled up while the promise was broken — that is the toast's whole job. |
+| **E-mail alerts** (SMTP card, address + test, relay, receipt)            | the native OS notification on the recording machine — always on for failures, the answer on «Hvem får beskjed hvis noe går galt?» (§8, §11). An upgraded install clears the SMTP password and says once what changed.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **The editor's keyboard-shortcut legend**                                | the shortcuts the legend described are not all rebuilt; the sermon handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Claims this runbook used to point at a test for, and no longer can
@@ -1505,3 +1479,11 @@ the new specs quote the old titles VERBATIM in comments explaining why they were
 not carried over — and the gate matched anywhere in the file. It matches inside a
 `test(…)` / `it(…)` / `describe(…)` title now, which is what a VERIFIED-BY
 pointer always meant.
+
+E-mail alerts (§8) took four more with them. They pinned a surface that no
+longer exists, and there is nothing to re-point them at:
+
+- `e2e/system-support.spec.ts::a build without the email feature gates the card and says so`
+- `e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated`
+- `e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport`
+- `crates/sundayrec-core/src/settings.rs::validate_clamps_smtp_port`

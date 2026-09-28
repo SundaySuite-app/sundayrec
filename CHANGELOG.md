@@ -20,6 +20,35 @@ med færre steg. Appen laster fortsatt ikke opp noe selv.
 - **Anonym bruksstatistikk**, for dem som har slått den på, teller hvor ofte
   «Legg ut» brukes per kanal — aldri lenken eller teksten.
 
+## v0.21.0 — e-postvarsler er ute
+
+Feil varsles nå på selve opptaksmaskinen, og ingen andre steder.
+
+### E-postvarsler er fjernet
+
+SundayRec sender ikke lenger e-post når noe går galt. Oppsettet — egen
+e-postserver med app-passord, eller påmelding med bekreftelseslenke — var for
+tungvint for en frivillig, og appen skal ikke sende noe ut av maskinen for å
+melde en feil. Beskjeden kommer i stedet der noen faktisk kan gjøre noe med
+den: som et varsel på selve opptaksmaskinen.
+
+- **Feil varsles alltid på maskinen.** Et opptak som stopper med feil, et
+  planlagt opptak som ikke kommer i gang og et planlagt opptak som aldri ble
+  gjort gir et systemvarsel, og ingen innstilling slår det av. Bryteren «Varsel
+  på maskinen» gjelder bare meldingene om at et planlagt opptak startet og
+  stoppet, og teksten under den sier nå akkurat det.
+- **«Hvem får beskjed hvis noe går galt?»** svarer «På maskinen» og er ikke
+  lenger gul.
+- **Borte:** e-postbryteren og adressefeltet med «Send en test», kortet
+  «E-postserver (SMTP)» under Avansert, påmeldingen til SundaySuites
+  e-posttjeneste og kvitteringen når et planlagt opptak var ferdig.
+- **Ved oppdatering** rydder appen etter seg én gang: e-postinnstillingene
+  fjernes, det lagrede e-postpassordet slettes fra maskinens nøkkelring (bare
+  der en e-postserver var satt opp), og køen og påmeldingen til
+  e-posttjenesten slettes fra databasen. Hadde du e-postvarsel slått på, viser
+  Opptak-siden én gang «E-postvarsler er fjernet». Alle andre innstillinger
+  beholdes.
+
 ## v0.20.0 — FFmpeg 9 og rammeverk-runden
 
 Rammeverk-runden for desktop-appene (19.09). Motoren under opptak og eksport er

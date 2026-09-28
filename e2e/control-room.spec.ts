@@ -130,42 +130,36 @@ test.describe("kortene folder ut den ekte skjermen", () => {
     page,
   }) => {
     await boot(page, {
-      fixtures: {
-        ...FIXTURES,
-        email_status: { featureBuilt: true },
-        email_has_smtp_password: true,
-      },
-      settings: {
-        ...CHOSEN,
-        emailOnError: false,
-        emailAddress: "lyd@brynmenighet.no",
-        emailSmtp: "smtp.kirken.no",
-        emailSmtpUser: "opptak@kirken.no",
-      },
+      fixtures: FIXTURES,
+      settings: { ...CHOSEN, notifyStart: true, notifyStop: true },
       goto: "home",
     });
 
-    // Ubesvart ⇒ gul, med setningen som sier hva det koster.
+    // Alltid besvart: feil varsles på maskinen uansett innstilling, så kortet
+    // er nøytralt og sier hvor beskjeden havner.
     await expect(page.getByTestId("control-notify")).toHaveAttribute(
       "data-tone",
-      "warn",
+      "neutral",
     );
     await expect(page.getByTestId("control-notify-summary")).toHaveText(
-      "Ingen ennå",
+      "På maskinen",
     );
 
     await page.getByTestId("control-notify-expand").click();
-    await page.getByTestId("notify-email-control-input").click();
-    await expect(page.getByTestId("notify-email-receipt")).toHaveText(
-      "Lagret ✓",
-    );
+    await page.getByTestId("notify-os-control-input").click();
+    await expect(page.getByTestId("notify-os-receipt")).toHaveText("Lagret ✓");
+    // Én bryter, to nøkler.
     await expect
-      .poll(async () => (await storedSettings(page)).emailOnError)
-      .toBe(true);
+      .poll(async () => {
+        const stored = await storedSettings(page);
+        return [stored.notifyStart, stored.notifyStop];
+      })
+      .toEqual([false, false]);
 
-    // …og kortraden er enig med basen, uten et skjermbytte.
+    // …og kortraden står fast: start-/stopp-meldingene er av, men feil varsles
+    // fortsatt på maskinen.
     await expect(page.getByTestId("control-notify-summary")).toHaveText(
-      "lyd@brynmenighet.no",
+      "På maskinen",
     );
     await expect(page.getByTestId("control-notify")).toHaveAttribute(
       "data-tone",
