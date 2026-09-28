@@ -29,9 +29,13 @@ use tauri::{AppHandle, Emitter, Listener};
 use sundayrec_core::notify::{BackendWarning, FailureSource};
 
 pub mod disk;
+/// Whether the OS actually shows SundayRec's notifications.
+pub mod permission;
 /// The durable "already said this" ledger (`notify_seen`) behind the
 /// missed-recording notice.
 pub mod seen;
+/// Native notifications during a take, when nobody is looking at the app.
+pub mod take;
 
 pub use sundayrec_core::notify::code;
 
@@ -178,6 +182,10 @@ pub fn wire_failure_sources(app: &AppHandle) {
 
     // The graduated low-disk observer rides on the same observational seam.
     disk::wire(app);
+
+    // Silence, missing sound and a dropped input — natively, when the window
+    // is not in view (see `take`).
+    take::wire(app);
 
     tracing::info!("notify: failure dispatch wired to {ERROR_EVENT}");
 }

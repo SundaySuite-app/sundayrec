@@ -61,7 +61,7 @@ use sundayrec_core::schedule::{
     MISSED_WINDOW_MS,
 };
 use sundayrec_core::settings::Settings;
-use sundayrec_core::wake::{background_wake_log_action, should_block};
+use sundayrec_core::wake::{background_wake_log_action, should_block, wake_failure_notice_key};
 
 use crate::db::Db;
 use crate::error::AppResult;
@@ -313,6 +313,18 @@ async fn supervisor(
                 if action.counts() {
                     QUIET_WAKE_REPORTS.fetch_add(1, Ordering::Relaxed);
                 }
+                // …and the operator, once per launch per kind. The log answers
+                // "was the wake ever armed?" for whoever debugs; this is the
+                // volunteer's only chance to hear it before the service.
+                if let Some(key) = wake_failure_notice_key(res.ok, res.reason.as_deref()) {
+                    if first_wake_notice(key) {
+                        notify_user(
+                            &app,
+                            APP_TITLE,
+                            &AlertText::WakeNotArmed.text(lang_of(&settings)),
+                        );
+                    }
+                }
             }
         }
 
@@ -496,13 +508,18 @@ async fn fire(
             }
         }
         ScheduledEventKind::Stop => {
-            app.state::<RecorderEngine>().stop();
-            tracing::info!("scheduler: stop fired");
+            let engine = app.state::<RecorderEngine>();
+            // Read BEFORE the stop: a scheduled stop with nothing recording
+            // (the start failed, or someone already pressed Stop) used to say
+            // «Planlagt opptak avsluttet» about a recording that never ran.
+            let was_active = engine.current_state().is_active();
+            engine.stop();
+            tracing::info!(was_active, "scheduler: stop fired");
             // R3-H: «Varsel på PC når opptak avsluttes». Fires when the
             // scheduled stop is DISPATCHED (finalisation continues in the
             // engine); a stop that later fails to finalise reaches the operator
             // through the failure dispatch, which is never gated.
-            if should_notify(SchedulerNotice::StoppedScheduled, settings) {
+            if stopped_notice_due(was_active, settings) {
                 notify_user(
                     app,
                     APP_TITLE,
@@ -682,7 +699,18 @@ pub async fn check_missed(
                     );
                 }
             }
-            Err(e) => tracing::error!("scheduler: could not build opts for late-start: {e}"),
+            Err(e) => {
+                tracing::error!("scheduler: could not build opts for late-start: {e}");
+                // This trigger is in `triggered_keys`, so the missed report
+                // below will NOT claim it — without this dispatch a late start
+                // that could not even be prepared was said nowhere at all.
+                dispatch_scheduler_failure(
+                    app,
+                    "scheduled_late_start_failed",
+                    AlertText::ScheduledLateStartFailed
+                        .fill(lang_of(&settings), &[("detail", &e.to_string())]),
+                );
+            }
         }
     }
 
@@ -979,6 +1007,31 @@ fn should_notify(notice: SchedulerNotice, settings: &Settings) -> bool {
     }
 }
 
+/// Whether the «Planlagt opptak avsluttet» notice is due for a scheduled stop.
+///
+/// Only when something was actually recording when the stop fired — and then
+/// still only if the operator's `notify_stop` toggle allows it.
+fn stopped_notice_due(was_active: bool, settings: &Settings) -> bool {
+    was_active && should_notify(SchedulerNotice::StoppedScheduled, settings)
+}
+
+/// The wake-failure kinds already told to the operator in this process.
+static WAKE_NOTICES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+/// `true` the first time `key` is seen in this process — the once-per-launch
+/// gate for [`AlertText::WakeNotArmed`]. The supervisor re-runs on every
+/// settings change and timer, and a permission problem does not go away
+/// between passes.
+fn first_wake_notice(key: &'static str) -> bool {
+    let mut seen = lock_recover(&WAKE_NOTICES);
+    if seen.contains(&key) {
+        false
+    } else {
+        seen.push(key);
+        true
+    }
+}
+
 /// A scheduled recording did not happen. Routes the sentence through the one
 /// failure dispatch, which shows it as a native notification no setting can
 /// silence.
@@ -1048,6 +1101,29 @@ mod tests {
         assert!(should_notify(SchedulerNotice::SkippedBusy, &s));
         assert!(should_notify(SchedulerNotice::PreflightFinding, &s));
         assert!(should_notify(SchedulerNotice::Reminder, &s));
+    }
+
+    #[test]
+    fn a_stop_with_nothing_recording_is_not_announced() {
+        let on = Settings::default();
+        assert!(stopped_notice_due(true, &on));
+        assert!(
+            !stopped_notice_due(false, &on),
+            "«Planlagt opptak avsluttet» about a recording that never ran"
+        );
+        let off = Settings {
+            notify_stop: false,
+            ..Settings::default()
+        };
+        assert!(!stopped_notice_due(true, &off), "the toggle still decides");
+    }
+
+    #[test]
+    fn a_wake_failure_is_told_once_per_kind() {
+        // Process-wide state: use keys no other test touches.
+        assert!(first_wake_notice("test-kind-a"));
+        assert!(!first_wake_notice("test-kind-a"));
+        assert!(first_wake_notice("test-kind-b"));
     }
 
     #[test]
@@ -1479,12 +1555,19 @@ mod tests {
     }
 
     #[test]
-    fn missed_check_ignores_an_occurrence_older_than_24h() {
-        // Last Sunday's slot, checked the FOLLOWING Sunday before its start: older
-        // than the 24 h log window → not reported (avoids week-old noise).
-        let now = dt("2026-06-14 10:00");
-        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &[], &HashSet::new());
-        assert!(missed.is_empty(), "older than 24h → not logged");
+    fn missed_check_looks_back_a_week_and_no_further() {
+        // A machine switched off from Sunday to Wednesday used to say nothing:
+        // the window was 24 h. It is 7 days now — Sunday 11:00 is reported on
+        // Wednesday…
+        let wednesday = dt("2026-06-10 09:00");
+        let missed = missed_recordings(&[sunday_slot()], &[], wednesday, &[], &[], &HashSet::new());
+        assert_eq!(missed.len(), 1, "three days old → still reported");
+        // …but an occurrence older than a week is not, so a machine that was
+        // off for a month does not open with a month of notifications. The
+        // special on the 1st is 9 days old on the 10th.
+        let old_special = special("2026-06-01", "19:00", "21:00", "Konsert");
+        let missed = missed_recordings(&[], &[old_special], wednesday, &[], &[], &HashSet::new());
+        assert!(missed.is_empty(), "older than a week → not reported");
     }
 
     // ── A4: 11:20, a slot AND a special ─────────────────────────────────────

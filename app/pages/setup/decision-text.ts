@@ -64,6 +64,8 @@ export function answerText(answer: Answer): string {
       return answer.name;
     case "onMachine":
       return t("app.setup.onMachine");
+    case "notificationsOff":
+      return t("app.setup.notificationsOff");
   }
 }
 
@@ -100,5 +102,9 @@ export function detailText(detail: Detail | null): string | null {
       });
     case "onMachineDesc":
       return t("app.setup.notify.onMachineDesc");
+    case "onMachineUnverifiedDesc":
+      return t("app.setup.notify.onMachineUnverifiedDesc");
+    case "notificationsOffDesc":
+      return t("app.setup.notify.notificationsOffDesc");
   }
 }

@@ -226,6 +226,42 @@ pub fn should_warn_low_disk(free_bytes: u64, video_active: bool, already_warned:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//   Native notifications during a take
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The degradations during a recording that also reach the OS notification
+/// centre — not only the in-app banner — when nobody is looking at the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TakeAlert {
+    /// The silence watcher tripped (`recording://silence`).
+    Silence,
+    /// The quality alarm: the take has far less audio than it should
+    /// (`recording://quality`).
+    Quality,
+    /// The input dropped out and the engine is reconnecting
+    /// (`recording://reconnecting`).
+    Reconnecting,
+    /// Free space fell below the graduated warning threshold.
+    DiskLow,
+}
+
+/// Whether THIS degradation should also raise a native notification.
+///
+/// Two conditions, both deliberate:
+///
+///   - **Not while the window has focus.** An operator who is looking at
+///     SundayRec already sees the banner; a toast on top of it is the same
+///     news twice. Hidden, minimised or behind another app is exactly when the
+///     banner is invisible and the notification is the only way to hear it.
+///   - **Once per take per kind.** A device that flaps, or a silence that comes
+///     and goes during a long prayer, must not produce a stream of toasts.
+///     `already_sent` is reset when a new take starts, not when the condition
+///     clears.
+pub fn should_native_during_take(window_focused: bool, already_sent: bool) -> bool {
+    !window_focused && !already_sent
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //   "Have we already said this?"
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -308,6 +344,23 @@ mod tests {
         // 3 GB is fine for audio but not for video.
         assert!(!should_warn_low_disk(3 * gb, false, false));
         assert!(should_warn_low_disk(3 * gb, true, false));
+    }
+
+    // ── Native during a take ─────────────────────────────────────────────────
+
+    #[test]
+    fn a_take_alert_reaches_the_os_only_when_nobody_is_looking() {
+        assert!(should_native_during_take(false, false));
+        assert!(
+            !should_native_during_take(true, false),
+            "the banner is on screen — no second copy"
+        );
+    }
+
+    #[test]
+    fn a_take_alert_is_said_once_per_take() {
+        assert!(!should_native_during_take(false, true));
+        assert!(!should_native_during_take(true, true));
     }
 
     // ── Seen ledger ──────────────────────────────────────────────────────────

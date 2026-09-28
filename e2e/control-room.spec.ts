@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   boot,
+  fn,
   BOOT_FIXTURES,
   SETTLED_SETTINGS,
   storedSettings,
@@ -164,6 +165,54 @@ test.describe("kortene folder ut den ekte skjermen", () => {
     await expect(page.getByTestId("control-notify")).toHaveAttribute(
       "data-tone",
       "neutral",
+    );
+  });
+
+  test("varsler slått av i OS-et gjør kortet gult, og peker på bryteren", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        notification_permission: "denied",
+        notification_open_settings: fn(`() => {
+          window.__E2E_OPENED__ = (window.__E2E_OPENED__ ?? 0) + 1;
+        }`),
+        notification_send_test: fn(`() => {
+          window.__E2E_TESTED__ = (window.__E2E_TESTED__ ?? 0) + 1;
+        }`),
+      },
+      settings: CHOSEN,
+      goto: "home",
+    });
+
+    await expect(page.getByTestId("control-notify")).toHaveAttribute(
+      "data-tone",
+      "warn",
+    );
+    await expect(page.getByTestId("control-notify-summary")).toHaveText(
+      "Varsler er slått av",
+    );
+    await expect(page.getByTestId("control-notify-expand")).toHaveText(
+      "Sett opp",
+    );
+
+    await page.getByTestId("control-notify-expand").click();
+    await expect(page.getByTestId("notify-permission")).toContainText(
+      "Slått av for SundayRec.",
+    );
+    await page.getByTestId("notify-open-settings").click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_OPENED__))
+      .toBe(1);
+
+    // Sendt er ikke det samme som vist — teksten sier det.
+    await page.getByTestId("notify-send-test").click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_TESTED__))
+      .toBe(1);
+    await expect(page.getByTestId("toast-host")).toContainText(
+      "varsler er slått av",
     );
   });
 

@@ -267,20 +267,46 @@ describe("4 — Hvilken kirke?", () => {
 });
 
 describe("5 — Hvem får beskjed?", () => {
-  it("fabrikkfersk ⇒ den som står ved maskinen, og det er et svar", () => {
-    // Feilvarselet på maskinen kan ikke slås av, så spørsmålet er besvart i
-    // hver installasjon. E-postvarslene som en gang gjorde kortet gult er
-    // fjernet.
-    const d = decideNotify(facts());
+  it("varsler slått på i OS-et ⇒ den som står ved maskinen, besvart", () => {
+    const d = decideNotify(facts({ notificationPermission: "granted" }));
     expect(d.answered).toBe(true);
     expect(d.status).toBe<DecisionStatus>("done");
     expect(d.answer).toEqual({ key: "onMachine" });
     expect(d.detail).toEqual({ key: "onMachineDesc" });
+    expect(needsSetUp(d)).toBe(false);
+  });
+
+  it("varsler slått av i OS-et ⇒ gult, og «Sett opp»", () => {
+    // Et feilvarsel ingen ser, er ingen beskjed.
+    const d = decideNotify(facts({ notificationPermission: "denied" }));
+    expect(d.answered).toBe(false);
+    expect(d.status).toBe<DecisionStatus>("todo");
+    expect(d.answer).toEqual({ key: "notificationsOff" });
+    expect(d.detail).toEqual({ key: "notificationsOffDesc" });
+    expect(needsSetUp(d)).toBe(true);
+  });
+
+  it("plattformen kan ikke svare ⇒ besvart, med testvarselet som bevis", () => {
+    // macOS i dag. Appen varsler; kortet sier hvordan man ser det selv.
+    const d = decideNotify(facts({ notificationPermission: "unknown" }));
+    expect(d.answered).toBe(true);
+    expect(d.answer).toEqual({ key: "onMachine" });
+    expect(d.detail).toEqual({ key: "onMachineUnverifiedDesc" });
+  });
+
+  it("ikke spurt ennå ⇒ ingen påstand i noen retning", () => {
+    const d = decideNotify(facts());
+    expect(d.status).toBe<DecisionStatus>("unknown");
+    expect(d.answered).toBe(false);
+    expect(needsSetUp(d)).toBe(false);
   });
 
   it("start-/stopp-bryteren endrer ikke svaret — feil varsles uansett", () => {
     const d = decideNotify(
-      withSettings({ notifyStart: false, notifyStop: false }),
+      withSettings(
+        { notifyStart: false, notifyStop: false },
+        { notificationPermission: "granted" },
+      ),
     );
     expect(d.answered).toBe(true);
     expect(d.answer).toEqual({ key: "onMachine" });
@@ -289,7 +315,13 @@ describe("5 — Hvem får beskjed?", () => {
 
 describe("de fem sammen", () => {
   it("en fabrikkfersk app har svart på nøyaktig TO — kvalitet og varsling", () => {
-    const all = decisionsFor(facts({ devices: [], diskFreeBytes: null }));
+    const all = decisionsFor(
+      facts({
+        devices: [],
+        diskFreeBytes: null,
+        notificationPermission: "granted",
+      }),
+    );
     expect(all.map((d) => d.id)).toEqual([
       "sound",
       "folder",
@@ -315,6 +347,7 @@ describe("de fem sammen", () => {
           devices: [X32],
           diskFreeBytes: 412_000_000_000,
           roomMinutes: 18_000,
+          notificationPermission: "granted",
         },
       ),
     );
@@ -325,7 +358,9 @@ describe("de fem sammen", () => {
 describe("needsSetUp — «Sett opp» eller «Endre»", () => {
   it("«Sett opp» bare når det ikke står et svar", () => {
     expect(needsSetUp(decideFolder(facts()))).toBe(true);
-    expect(needsSetUp(decideNotify(facts()))).toBe(false);
+    expect(
+      needsSetUp(decideNotify(facts({ notificationPermission: "granted" }))),
+    ).toBe(false);
   });
 
   it("en mappe uten diskssvar er noe man ENDRER, ikke setter opp", () => {

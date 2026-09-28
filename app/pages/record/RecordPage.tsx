@@ -130,6 +130,10 @@ import {
   emailRemovedNotice,
   loadEmailRemovedNotice,
 } from "../../state/email-removed";
+import {
+  notificationPermission,
+  refreshNotificationPermission,
+} from "../../state/notification-permission";
 import { prerollActive } from "../../state/preroll";
 import {
   dismissMissed,
@@ -206,6 +210,8 @@ export function RecordPage() {
     void runSilentPreflightOnce();
     // Likeså engangsbeskjeden om at e-postvarslene er fjernet.
     void loadEmailRemovedNotice();
+    // Viser OS-et varslene? Kortet «Hvem får beskjed?» følger svaret.
+    void refreshNotificationPermission();
   }, []);
 
   // Ankeret: fold ut kortet, rull dit, og puls når man KOM hit. Rekkefølgen er
@@ -529,6 +535,7 @@ function ControlStack({
       devices: audioDevices.value,
       diskFreeBytes: diskFreeBytes.value,
       roomMinutes: currentRoomMinutes(),
+      notificationPermission: notificationPermission.value,
       locale: locale.value,
       // Ingen måler i en kompaktrad: kortet sier hva som er VALGT, og
       // hørselstesten står i venstrekolonnen.

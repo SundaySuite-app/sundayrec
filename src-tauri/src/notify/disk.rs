@@ -151,6 +151,8 @@ async fn observe(
                     ))
                     .param("freeBytes", free.to_string()),
             );
+            // …and natively, when nobody is looking at the app (`take`).
+            crate::notify::take::raise(&app, sundayrec_core::notify::TakeAlert::DiskLow, Some(gb));
         }
     }
 }

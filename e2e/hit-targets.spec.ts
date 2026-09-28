@@ -286,13 +286,13 @@ test.describe("treffflater", () => {
     // (`::after` er −8 px fra padding-boksen; kanten spiser 1 av dem.)
     await page.getByTestId("control-notify-expand").click();
     await expect(page.getByTestId("setup-notify")).toBeVisible();
-    // Kroppen har én bryter (varsel på maskinen). E-postbryteren og
-    // «Test»-knappen ved siden av den er borte med e-postvarslene.
-    // Én ghost-knapp: kilde-kortets «Endre».
+    // Kroppen har én bryter (varsel på maskinen). Tre ghost-knapper:
+    // kilde-kortets «Endre», og «Send testvarsel» og «Åpne innstillinger» på
+    // raden som sier om OS-et viser varslene (begge ghost når de er slått på).
     await assertHitTargets(page, "record/notify", {
       toggles: 3,
       expands: 3,
-      ghosts: 1,
+      ghosts: 3,
     });
   });
 

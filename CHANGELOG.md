@@ -3,6 +3,24 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Uutgitt
+
+### Varslene på maskinen
+
+- **Ser du varslene?** Varsel-siden viser om systemet slipper gjennom
+  SundayRecs varsler, med knappene «Send testvarsel» og «Åpne innstillinger».
+  På Windows blir kortet «Hvem får beskjed hvis noe går galt?» gult når varsler
+  er slått av for SundayRec. På Mac kan ikke appen lese det ennå — der er
+  testvarselet måten å sjekke på.
+- **Under opptaket:** stillhet, manglende lyd, en lydkilde som faller ut og
+  lite plass på disken gir nå også et varsel på skjermen når SundayRec-vinduet
+  ikke er foran — én gang per opptak for hver type.
+- **Ingen stille startfeil:** SundayRec sier nå fra når vekkingen før et
+  planlagt opptak ikke kan settes opp, og når et forsinket opptak ikke kunne
+  forberedes. Et planlagt opptak som ble gått glipp av meldes selv om maskinen
+  har vært av i opptil en uke (før: ett døgn).
+- **«Planlagt opptak avsluttet»** vises bare når noe faktisk ble tatt opp.
+
 ## v0.21.0 — e-postvarsler er ute
 
 Feil varsles nå på selve opptaksmaskinen, og ingen andre steder.

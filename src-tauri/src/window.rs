@@ -122,6 +122,18 @@ pub fn note_window_shown() {
     NOTICE_PENDING.store(false, Ordering::SeqCst);
 }
 
+/// Whether the operator can see SundayRec right now: the main window is
+/// visible, not minimised, and has focus. Any failed read counts as "not in
+/// view" — the caller uses this to decide whether a banner alone is enough, and
+/// when in doubt the notification is the safer side.
+pub fn main_window_in_view<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    app.get_webview_window(MAIN_LABEL).is_some_and(|w| {
+        w.is_visible().unwrap_or(false)
+            && !w.is_minimized().unwrap_or(true)
+            && w.is_focused().unwrap_or(false)
+    })
+}
+
 /// Show + focus the main window. THE one way back from a hidden window, so every
 /// caller also re-arms the notification.
 pub fn show_main<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {

@@ -73,6 +73,10 @@ import {
   diskFreeBytes,
   refreshDiskSpace,
 } from "../../state/disk";
+import {
+  notificationPermission,
+  refreshNotificationPermission,
+} from "../../state/notification-permission";
 import { isRecording } from "../../state/recording";
 import {
   patchSettings,
@@ -189,6 +193,7 @@ export function FirstRun() {
   useEffect(() => {
     void loadAudioDevices();
     void refreshDiskSpace();
+    void refreshNotificationPermission();
   }, []);
 
   // Porten lytter bare på steg 1, og bare når en enhet FINNES å lytte på.
@@ -381,6 +386,7 @@ function Checklist() {
     devices: audioDevices.value,
     diskFreeBytes: diskFreeBytes.value,
     roomMinutes: currentRoomMinutes(),
+    notificationPermission: notificationPermission.value,
     locale: locale.value,
     // Fortsatt ingen måler på selve sjekklisten: den er et sammendrag, ikke en
     // test. Hørselstesten står inne i lyd-kortet, der den alltid har stått.
