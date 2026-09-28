@@ -58,7 +58,10 @@ Trust boundaries the app has to defend at:
 - (The `sundayrec://` deep-link scheme, the chat webhook and the integration
   API endpoints were removed in R1 of «Frivilligen først», and the SMTP host
   the operator typed in went with e-mail alerts after that — fewer boundaries
-  to defend. The app no longer talks to any endpoint the user configures.)
+  to defend. The app no longer talks to any endpoint the user configures.
+  «Legg ut»'s own-page link is no exception: the app never fetches it, it
+  hands it to the system browser after vetting — see the «Legg ut» bullet
+  below.)
 - **The update feed** — a **first-party Cloudflare Worker** at
   `https://updates.sundaysuite.app/v1/update/{stable|beta}`, which the
   auto-updater polls, plus the signed artifact it downloads and installs.
@@ -140,6 +143,15 @@ So a future auditor doesn't have to re-derive these from scratch:
   dependency. The Google Drive/YouTube/Gmail OAuth client that followed the
   same pattern left with cloud backup in R1 of «Frivilligen først». SundayRec
   now holds no OAuth client and mints no token.
+- **«Legg ut» opens one page, never one the webview names.** The export
+  receipt's button calls `publish_open_upload_page`, which takes no argument:
+  it reads the stored channel and asks `sundayrec_core::publish::upload_page_url`,
+  which answers with a fixed `https://` address (SoundCloud, YouTube, Spotify
+  for Creators) or the church's own link after `custom_upload_url` has vetted
+  it (`https://` only, no userinfo, one line, at most 2048 characters). The
+  `opener` capability did not widen for it, and nothing is uploaded — the
+  volunteer drags the file in, logged in to the church's own account in their
+  own browser.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

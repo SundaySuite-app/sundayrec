@@ -411,3 +411,201 @@ test.describe("eksportering", () => {
     await expect(page.getByTestId("library-row")).toHaveCount(1);
   });
 });
+
+// «Innhold» — tittel, taler og beskrivelse, fra feltene til fila og tilbake.
+//
+// Bakenden har tatt imot alle tre siden P2b; det skallet aldri gjorde var å
+// SENDE dem. Journeyene under beviser de tre leddene utenfra: feltene når
+// eksportforespørselen, tittelen blir navnet forhåndsvisningen lover, og
+// innholdet lagres ved opptaket og kommer tilbake neste gang det åpnes.
+
+/** Fanger `editor_write_sidecar`-kallene, så en test kan se hva som ble lagret. */
+const CAPTURE_WRITES: Fixtures = {
+  editor_write_sidecar: fn(`(args) => {
+    (window.__E2E_WRITES__ ||= []).push(args);
+    return true;
+  }`),
+};
+
+type SidecarWrite = { mediaPath: string; sidecar: string; value: unknown };
+
+test.describe("eksportering — innhold", () => {
+  test("feltene følger eksporten, og tittelen blir filnavnet", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN: fjern `metadata: {…}` fra `buildExportRequest`-kallet i
+    // `runExport` (`app/editor/export.ts`) — slik det sto fram til nå — og
+    // forespørselen bærer `title: null` igjen. Den første assertionen på
+    // `request` går rød.
+    await boot(page, {
+      fixtures: editorFixtures({ ...LIBRARY, ...CAPTURE_WRITES }),
+      settings: { ...SETTLED_SETTINGS, churchName: "Sentrumskirken" },
+      goto: "editor",
+    });
+    await page.evaluate(
+      (f) =>
+        (
+          window as unknown as { openEditorWithFile: (p: string) => void }
+        ).openEditorWithFile(f),
+      FILE,
+    );
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+    await page.getByTestId("nav-export").click();
+
+    // Uten tittel lover forhåndsvisningen navnet fila alltid har fått.
+    const preview = page.getByTestId("editor-export-preview");
+    await expect(preview).toContainText("2026-08-02 Gudstjeneste_redigert.mp3");
+
+    await page.getByTestId("export-title").fill("Den gode hyrde");
+    await page.getByTestId("export-speaker").fill("Kari Nordmann");
+    await page
+      .getByTestId("export-description")
+      .fill("Joh 10,1–10\nPreken fra høsttakkefesten");
+
+    // Opptaket ble åpnet utenfor biblioteket (ingen `startedAt`), så navnet
+    // er tittelen alene — uten en dato vi ikke vet.
+    await expect(preview).toContainText("Den gode hyrde.mp3");
+    await expect(preview).not.toContainText("_redigert");
+
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+
+    const request = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(request.title).toBe("Den gode hyrde");
+    expect(request.speaker).toBe("Kari Nordmann");
+    expect(request.description).toBe("Joh 10,1–10\nPreken fra høsttakkefesten");
+    // Menighetsnavnet blir `album`-taggen; datoen er ukjent her.
+    expect(request.album).toBe("Sentrumskirken");
+    expect(request.date).toBeNull();
+
+    // …og innholdet ble lagt igjen ved OPPTAKET, i dets `.meta.json`.
+    const writes = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_WRITES__?: SidecarWrite[] })
+          .__E2E_WRITES__ ?? [],
+    );
+    const meta = writes.filter((w) => w.sidecar === "meta");
+    expect(meta).toHaveLength(1);
+    expect(meta[0]?.mediaPath).toBe(FILE);
+    expect(meta[0]?.value).toEqual({
+      title: "Den gode hyrde",
+      speaker: "Kari Nordmann",
+      description: "Joh 10,1–10\nPreken fra høsttakkefesten",
+    });
+  });
+
+  test("et opptak fra biblioteket får datoen foran tittelen", async ({
+    page,
+  }) => {
+    await openExport(page);
+    // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
+    await page.getByTestId("export-last-open").click();
+    await expect(page.getByTestId("editor-export")).toBeVisible();
+
+    // Datoen regnes i LOKAL tid, slik opptakets eget filnavn gjør — så
+    // fasiten regnes i nettleserens egen tidssone, ikke i testens.
+    const date = await page.evaluate((ms) => {
+      const d = new Date(ms);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }, 1_751_700_000_000);
+
+    await page.getByTestId("export-title").fill("Kveldsmøte om nåde");
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      `${date} Kveldsmøte om nåde.mp3`,
+    );
+
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const request = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(request.date).toBe(date);
+  });
+
+  test("det som ble lagret sist, står i feltene neste gang", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN: fjern `await loadExportContent(…)` fra `openFileNow`
+    // (`app/editor/loader.ts`) og feltene står tomme.
+    await openThenExport(page, {
+      editor_read_sidecar: fn(`(args) =>
+        args.sidecar === "meta"
+          ? { title: "Lagret tittel", speaker: "Ola", description: "Fra sist", chapters: [] }
+          : null`),
+    });
+    await expect(page.getByTestId("export-title")).toHaveValue("Lagret tittel");
+    await expect(page.getByTestId("export-speaker")).toHaveValue("Ola");
+    await expect(page.getByTestId("export-description")).toHaveValue(
+      "Fra sist",
+    );
+  });
+
+  test("på en helligdag foreslås dagens navn som tittel", async ({ page }) => {
+    await openExport(page, {
+      editor_church_day_name: fn(`(args) => {
+        (window.__E2E_DAY_ASKED__ ||= []).push(args.date);
+        return "1. påskedag";
+      }`),
+    });
+    // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
+    await page.getByTestId("export-last-open").click();
+    await expect(page.getByTestId("export-title")).toHaveValue("1. påskedag");
+    // Spurt med opptakets egen dato, som `YYYY-MM-DD`.
+    const asked = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_DAY_ASKED__?: string[] })
+          .__E2E_DAY_ASKED__ ?? [],
+    );
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test("en vanlig søndag får ingen tittel, og fila heter som før", async ({
+    page,
+  }) => {
+    // `editor_church_day_name` svarer `null` (fiksturens standard): appen vet
+    // ikke hva prekenen het, og gjetter ikke.
+    await openExport(page);
+    // Bibliotekets ene opptak står som «Siste opptak»-kortet, med sin egen dato.
+    await page.getByTestId("export-last-open").click();
+    await expect(page.getByTestId("editor-export")).toBeVisible();
+    await expect(page.getByTestId("export-title")).toHaveValue("");
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "Kveldsmøte_redigert.mp3",
+    );
+  });
+
+  test("tomt innhold etterlater ingen sidevogn — og visker ut en gammel", async ({
+    page,
+  }) => {
+    await openThenExport(page, CAPTURE_WRITES);
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+
+    const writes = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_WRITES__?: SidecarWrite[] })
+          .__E2E_WRITES__ ?? [],
+    );
+    expect(writes.filter((w) => w.sidecar === "meta")).toHaveLength(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __E2E_DELETED_SIDECARS__?: string[] })
+              .__E2E_DELETED_SIDECARS__ ?? [],
+        ),
+      )
+      .toContain("meta");
+  });
+});

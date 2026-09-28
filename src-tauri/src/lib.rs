@@ -585,6 +585,10 @@ pub fn run() {
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
+            commands::editor::editor_church_day_name,
+            // «Legg ut»: the receipt's button. No argument — the URL comes
+            // from the stored setting (see commands/publish.rs).
+            commands::publish::publish_open_upload_page,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,

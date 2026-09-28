@@ -1136,6 +1136,21 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
+  // «Legg ut»: open the church's chosen upload page. No argument on purpose —
+  // the backend reads the stored channel and vets any custom link, so no URL
+  // ever crosses from the webview to the OS opener. Three answers, because the
+  // receipt says three different things: opened, nothing to open (channel
+  // off, or a link that did not pass), or the OS refused.
+  publishOpenUploadPage: async (): Promise<"opened" | "nothing" | "failed"> => {
+    try {
+      return (await invoke<boolean>("publish_open_upload_page"))
+        ? "opened"
+        : "nothing";
+    } catch (e) {
+      console.warn("[api-shim] publish_open_upload_page failed", e);
+      return "failed";
+    }
+  },
   logsReveal: async () => {
     try {
       await invoke("logs_reveal");
@@ -1477,6 +1492,24 @@ const api: Record<string, unknown> = {
   editorCancelExport: async () =>
     call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
+  editorChurchDayName: async (date: string) =>
+    call<string | null>("editor_church_day_name", { date }, null),
+  // «Innhold» lives in the recording's `.meta.json` — the sidecar kind the
+  // Electron editor kept title/speaker/description in, and one that already
+  // travels with the recording through the papirkurv.
+  editorReadContent: async (fp: string) =>
+    call("editor_read_sidecar", { mediaPath: fp, sidecar: "meta" }, null),
+  editorSaveContent: async (
+    fp: string,
+    content: { title: string; speaker: string; description: string },
+  ) =>
+    call(
+      "editor_write_sidecar",
+      { mediaPath: fp, sidecar: "meta", value: content },
+      false,
+    ),
+  editorDeleteContent: async (fp: string) =>
+    call("editor_delete_sidecar", { mediaPath: fp, sidecar: "meta" }, false),
   editorReadCutsDraft: async (fp: string) =>
     call("editor_read_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, null),
   // The old main wrapped the cut array as { cuts, ts }; preserve that so the

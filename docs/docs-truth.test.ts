@@ -159,4 +159,29 @@ describe("docs-truth", () => {
     expect(text).toContain("opens the screen in place, in the row");
     expect(text).not.toMatch(/checklist[^.]*takes you to the control room/i);
   });
+
+  // «Legg ut» (2026-09): FRIVILLIG.md fikk en seksjon om å legge ut prekenen,
+  // og den hviler på to ting som begge kan bli usanne i stillhet. Den ene er
+  // løftet — appen laster fortsatt ikke opp noe selv — som den gamle «Viktig:
+  // sikkerhetskopi er IKKE en funksjon»-seksjonen også gir. Den andre er
+  // stien til innstillingen: «Innstillinger → Avansert → Legg ut» er TRE
+  // navn fra katalogen, og et omdøpt kort gjør en frivillig-veiledning feil
+  // uten at en eneste test merker det. Så stien leses av katalogen her.
+  it("FRIVILLIG.md: «Legg ut» laster ikke opp noe, og stien til innstillingen heter det katalogen kaller den", () => {
+    const text = readDoc("docs/FRIVILLIG.md").replace(/\s+/g, " ");
+    expect(text).toContain("SundayRec laster ikke opp noe selv");
+    expect(text).toContain("SundayRec laster ikke opp noe sted");
+    const no = JSON.parse(readDoc("legacy/locales/no.json")) as {
+      app: {
+        page: { setup: string };
+        setup: { advanced: { title: string; publishTitle: string } };
+      };
+    };
+    const path = [
+      no.app.page.setup,
+      no.app.setup.advanced.title,
+      no.app.setup.advanced.publishTitle,
+    ].join(" → ");
+    expect(text).toContain(`**${path}**`);
+  });
 });

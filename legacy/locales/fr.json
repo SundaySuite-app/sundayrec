@@ -419,7 +419,28 @@
           "onBattery": "sur batterie"
         },
         "audioTech": "Technologie audio",
-        "diagnoseReportWhere": "Collez le rapport dans un ticket GitHub, ou envoyez-le à dev@sundaysuite.app."
+        "diagnoseReportWhere": "Collez le rapport dans un ticket GitHub, ou envoyez-le à dev@sundaysuite.app.",
+        "publishTitle": "Publication",
+        "publishDesc": "Après un export, l’app peut ouvrir la page sur laquelle vous publiez, avec le titre et la description prêts à copier. SundayRec n’envoie rien lui-même.",
+        "publishWhere": "Où publiez-vous ?",
+        "publishChannelName": {
+          "custom": "Votre propre page",
+          "none": "Aucune"
+        },
+        "publishChannelDesc": {
+          "soundcloud": "Souvent aussi votre flux de podcast (RSS)",
+          "youtube": "Envoi dans YouTube Studio",
+          "spotify": "Podcast dans Spotify for Creators",
+          "custom": "Par exemple WordPress ou votre hébergeur de podcast",
+          "none": "Le récapitulatif n’affiche que le fichier"
+        },
+        "publishUrl": "Lien vers la page d’envoi",
+        "publishUrlDesc": "Doit commencer par https://",
+        "publishUrlNotHttps": "Le lien doit commencer par https://",
+        "publishUrlInvalid": "Cela ne ressemble pas à une adresse web",
+        "publishTemplate": "Description type",
+        "publishTemplateDesc": "Remplie à l’export, où elle peut être modifiée. {title}, {speaker}, {date} et {church} sont remplacés.",
+        "publishTemplatePlaceholder": "Sermon de {church}, {date}. Orateur : {speaker}."
       }
     },
     "diagnose": {
@@ -715,7 +736,25 @@
       "prepare": "Préparer",
       "pickTitle": "Ou choisissez un autre enregistrement",
       "emptyDesc": "Enregistrez d’abord quelque chose, ou ouvrez un fichier de cet ordinateur.",
-      "use": "Choisir"
+      "use": "Choisir",
+      "content": "Contenu",
+      "contentTitle": "Titre",
+      "contentTitlePlaceholder": "Par exemple « Le bon berger »",
+      "contentSpeaker": "Orateur",
+      "contentSpeakerPlaceholder": "Qui a parlé ?",
+      "contentDescription": "Description",
+      "contentDescriptionPlaceholder": "Passage biblique, thème ou une ligne sur l’église",
+      "contentHint": "Tout est facultatif. Avec un titre, le fichier porte ce nom – c’est ce que SoundCloud et les sites similaires proposent lors de l’envoi.",
+      "publishTitle": "Publier sur {channel}",
+      "publishTitleCustom": "Publier",
+      "publishOpen": "Ouvrir {channel}",
+      "publishOpenCustom": "Ouvrir la page d’envoi",
+      "publishHint": "Faites glisser le fichier sur la page qui s’ouvre, puis collez le titre et la description.",
+      "publishCopy": "Copier",
+      "publishCopied": "Copié",
+      "publishCopyFailed": "Impossible de copier. Sélectionnez le texte et copiez-le vous-même.",
+      "publishNothing": "Aucun lien https valide dans Réglages → Avancé ; rien n’a été ouvert.",
+      "publishFailed": "Impossible d’ouvrir la page. Ouvrez-la vous-même dans le navigateur."
     },
     "span": {
       "hours": "{h} h",

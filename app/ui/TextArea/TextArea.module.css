@@ -1,0 +1,26 @@
+/* Samme drakt som `TextField` — kant, radius, flate og skrift — bare bredere
+   og med høyde, fordi fritekst trenger plass å stå i. */
+.input {
+  padding: 10px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  /* 240 px nederst: i en SettingRow står feltet i en `auto`-kolonne, og uten
+     et gulv ville det krympet til textareaens egne 20 tegn. */
+  min-width: min(240px, 100%);
+  width: 100%;
+  max-width: 560px;
+  resize: vertical;
+}
+
+.input::placeholder {
+  color: var(--ink-3);
+}
+
+.input:disabled {
+  opacity: 0.45;
+}
