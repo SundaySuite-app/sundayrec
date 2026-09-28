@@ -264,7 +264,7 @@ specialRecordings: Array<SpecialRecording>,
  */
 churchName: string, 
 /**
- * Person responsible for recordings (shown in diagnostics + email alerts).
+ * Person responsible for recordings (shown in diagnostics).
  * Empty string = unset (Electron `responsiblePerson: ''`).
  */
 responsiblePerson: string, 
@@ -276,67 +276,6 @@ notifyStart: boolean,
  * Fire a native notification when a recording stops? Default true.
  */
 notifyStop: boolean, 
-/**
- * Send an email when a recording fails / a scheduled one is missed?
- *
- * Both halves of that sentence are TRUE as of A3, and only one of them was
- * before. The failure half has been wired since P; the missed half was a
- * promise this field made and nothing kept — `check_missed` decided what
- * had been missed, emitted an event to a renderer that might not be
- * running, and sent nothing. It now routes through the same dispatch, so
- * the mail goes out over whichever pipe the machine has: a configured SMTP
- * server if there is one, the SundaySuite relay otherwise
- * (`crate::notify::plan_failure`).
- *
- * ONE switch for both pipes, deliberately. "Send me an e-mail when a
- * recording fails" is the question the volunteer answered; which transport
- * carries it is not a second question they should have to answer.
- */
-emailOnError: boolean, 
-/**
- * Recipient address for alert emails. Empty = unset (Electron `''`).
- */
-emailAddress: string, 
-/**
- * SMTP host. Blank = no transport at all (the Gmail-OAuth alternative left
- * with the cloud-backup OAuth client). Electron `emailSmtp`.
- */
-emailSmtp: string, 
-/**
- * SMTP port. Valid 1..=65535, default 587. Electron `emailSmtpPort: 587`.
- */
-emailSmtpPort: number, 
-/**
- * SMTP username. Empty = unset (Electron `emailSmtpUser: ''`). The PASSWORD
- * is intentionally absent — it is stored in the OS keychain by the `email`
- * seam, never persisted to the settings bag.
- */
-emailSmtpUser: string, 
-/**
- * Explicit envelope/`From:` address for alert mail. Empty = derive it, which
- * is what every pre-existing config does: the renderer used to synthesise
- * `emailSmtpUser || recipient` client-side. Providers increasingly reject a
- * `From:` that isn't the authenticated identity (or a verified alias), and
- * the login username is not always a mailbox — SendGrid wants `apikey`,
- * Fastmail/Migadu use `user@domain` handles — so the address has to be
- * settable on its own. The derivation stays as the fallback (see
- * `commands::email::resolve_from_address`) so old configs keep working
- * untouched.
- */
-emailSmtpFrom: string, 
-/**
- * Send a receipt e-mail via the relay when a PLANNED (scheduled)
- * recording finishes? Default off. Independent of `email_on_error` and
- * the SMTP fields above: the receipt travels through
- * `sunday-telemetry`'s relay (`notify.sundaysuite.app`), never through
- * SMTP, and is gated in the UI on a CONFIRMED relay subscription (A5) —
- * this field only remembers whether the toggle is on. Deliberately kept
- * out of `WireSettings`, matching the `updateChannel` precedent
- * (`telemetry.rs:975-978`): the relay subscription record
- * (`notify.relay` in the `app_setting` bag) is per-machine state, not a
- * diagnostic fact worth reporting.
- */
-emailReceiptEnabled: boolean, 
 /**
  * Path to an intro clip prepended on export, or `None`. Electron used
  * `undefined`; we keep it `Option` so an unset value stays absent.

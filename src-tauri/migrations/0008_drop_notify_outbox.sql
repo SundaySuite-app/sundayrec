@@ -1,0 +1,26 @@
+-- SundayRec migration 0008 — drop the retired e-mail relay's outbox
+--
+-- `notify_outbox` (0006) was the client half of the SundaySuite e-mail relay:
+-- rendered alert mails waiting to be posted to `notify.sundaysuite.app`. E-mail
+-- alerts were removed — the relay and the SMTP alerter both — and SundayRec now
+-- tells a failure on the machine, natively, and nowhere else. Nothing reads or
+-- writes the outbox any more, so it goes, the same way 0007 dropped the cloud
+-- upload queue: sqlx replays every migration file against a fresh database, so
+-- 0006's `create table` cannot be deleted retroactively, and this DROP is how a
+-- migrated history removes a table instead.
+--
+-- Its three indexes (`idx_notify_outbox_dedup`, `_due`, `_age`) go with it —
+-- SQLite drops an index when its table is dropped. Nothing else in the schema
+-- references it.
+--
+-- `notify_seen`, created beside it in 0006, STAYS: the missed-recording
+-- notification uses it so the same unrecorded Sunday is announced once, not on
+-- every launch (`src-tauri/src/notify/seen.rs`).
+--
+-- The relay's local subscription record lived in the `app_setting` bag under
+-- `notify.relay` (address, confirmation state, the unsubscribe token). With
+-- nothing left to read it, it is deleted here too.
+--
+-- Both statements are idempotent.
+drop table if exists notify_outbox;
+delete from app_setting where key = 'notify.relay';

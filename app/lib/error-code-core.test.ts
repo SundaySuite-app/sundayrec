@@ -2,9 +2,8 @@
 //
 // Rust leads every branchable error message with a stable snake code
 // (`"<category>: <code>[: prose]"`); `errorCode()` is the ONE extractor call
-// sites branch on. These cases pin the exact wire strings the Rust side
-// produces today — including the `no_config_smtp_host` seam whose Rust half is
-// pinned by `commands/email.rs::the_smtp_host_error_leads_with_the_stable_code`.
+// sites branch on. These cases pin the shape of the wire strings the Rust side
+// produces.
 
 import { describe, expect, it } from "vitest";
 import { errorCode } from "./error-code-core";
@@ -29,14 +28,7 @@ describe("errorCode", () => {
     );
   });
 
-  it("matches the exact smtp-host wire message (the general-page seam)", () => {
-    // The Rust side (commands/email.rs) pins the same literal; if either half
-    // moves without the other, one of the two tests fails.
-    expect(
-      errorCode("validation: no_config_smtp_host: smtp host missing"),
-    ).toBe("no_config_smtp_host");
-    // The OTHER no_config variants still resolve to their shared prefix code.
-    expect(errorCode("validation: no_config: smtp from")).toBe("no_config");
+  it("resolves a code with prose after it to the code alone", () => {
     expect(errorCode("validation: no_config: save folder not set")).toBe(
       "no_config",
     );

@@ -27,7 +27,6 @@ function facts(over: Partial<DecisionFacts> = {}): DecisionFacts {
     devices: [],
     diskFreeBytes: null,
     roomMinutes: null,
-    emailTransport: null,
     locale: "no",
     vuWord: null,
     ...over,
@@ -127,9 +126,10 @@ describe("stabelens beslutningsrader", () => {
     const rows = decisionRows(decisionsFor(facts()));
     const folder = rows.find((r) => r.id === "folder")!;
     const notify = rows.find((r) => r.id === "notify")!;
-    // Ingen mappe, og ingen som får beskjed: begge er ubesvart.
+    // Ingen mappe: ubesvart. Varslingen svarer alltid «på maskinen» — feil
+    // varsles der uansett innstilling — så den er noe man ENDRER.
     expect(folder.needsSetUp).toBe(true);
-    expect(notify.needsSetUp).toBe(true);
+    expect(notify.needsSetUp).toBe(false);
     // Kvaliteten har alltid et svar — standarden ER et svar.
     expect(rows.find((r) => r.id === "quality")!.needsSetUp).toBe(false);
   });

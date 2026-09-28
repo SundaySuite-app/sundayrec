@@ -38,8 +38,7 @@ pub const FORCED_SPLIT_DELIVERABLE_BYTES: u64 = 3_758_096_384; // 3.5 GiB
 /// the WHOLE chain reachable in seconds with real capture bytes crossing a real
 /// boundary.
 ///
-/// Both halves of the guard are load-bearing, following the
-/// `SUNDAYREC_SMTP_PLAINTEXT_TEST` precedent:
+/// Both halves of the guard are load-bearing:
 /// - the env var makes it explicit and off by default, and
 /// - `cfg!(debug_assertions)` folds it to a constant `false` in a SHIPPED build,
 ///   so no environment variable can make a released app chop a service into

@@ -59,7 +59,7 @@ test.describe("appen uten Direkte", () => {
     await expect(page.getByTestId("nav-live")).toHaveCount(0);
 
     // 2. Spørsmål 5 rendrer — utfoldet i kortet dyplenken navnga — med
-    //    e-postvarslene, men UTEN stream-destinasjons-kortet og
+    //    varselet på maskinen, men UTEN stream-destinasjons-kortet og
     //    kvalitetsvelgeren.
     await expect(page.getByTestId("setup-notify")).toBeVisible();
     await expect(page.getByTestId("notify-card")).toBeVisible();

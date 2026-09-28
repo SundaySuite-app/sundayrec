@@ -577,6 +577,37 @@ test.describe("bannerne på opptakssiden", () => {
     );
     await expect(page.getByTestId("setup-folder")).toBeVisible();
   });
+
+  test("e-postvarslene er borte: beskjeden står til den er lest, og så aldri mer", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        // Bakenden la beskjeden klar ved oppstart fordi e-postvarsel VAR på
+        // (`settings::email_cleanup`). «OK» skal nå bakenden, ikke bare
+        // skjermen — ellers står banneret der igjen ved neste oppstart.
+        notice_email_removed_pending: true,
+        notice_email_removed_dismiss: fn(`() => {
+          window.__E2E_NOTICE_DISMISSED__ =
+            (window.__E2E_NOTICE_DISMISSED__ ?? 0) + 1;
+        }`),
+      },
+      settings: CHOSEN,
+      goto: "home",
+    });
+
+    const banner = page.getByTestId("banner-email-removed");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("E-postvarsler er fjernet");
+    await expect(banner).toContainText("et varsel på skjermen");
+
+    await page.getByTestId("banner-email-removed-ok").click();
+    await expect(banner).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_NOTICE_DISMISSED__))
+      .toBe(1);
+  });
 });
 
 test.describe("bakendens egne advarsler (backend://warning)", () => {

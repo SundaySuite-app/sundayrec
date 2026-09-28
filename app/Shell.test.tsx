@@ -374,8 +374,6 @@ describe("Shell", () => {
       saveFolder: "/Users/x/SundayRec",
       format: "mp3",
       churchName: "",
-      emailOnError: false,
-      emailAddress: "",
     });
     const html = render(<Shell />);
     // Kilden i venstrekolonnen, og de fem i stabelen til høyre. De to
@@ -392,10 +390,12 @@ describe("Shell", () => {
     }
     // Svaret som gjelder nå, ikke innstillingens navn.
     expect(html).toContain("/Users/x/SundayRec");
-    // Ubesvart ⇒ gul. Den gule raden er hele grunnen til at noen oppdager den
-    // tomme innstillingen før en søndag.
-    expect(html).toMatch(/data-testid="control-notify"[^>]*data-tone="warn"/);
-    expect(html).toContain("Ingen ennå");
+    // Varslingen er alltid besvart — feil varsles på maskinen uansett — så
+    // kortet er ikke gult, og svaret står der.
+    expect(html).not.toMatch(
+      /data-testid="control-notify"[^>]*data-tone="warn"/,
+    );
+    expect(html).toContain("På maskinen");
     // …og hvert kort er lukket til noen ber om noe annet.
     expect(html).toMatch(
       /data-testid="control-folder"[^>]*data-expanded="false"/,

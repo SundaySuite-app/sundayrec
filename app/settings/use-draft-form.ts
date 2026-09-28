@@ -6,8 +6,9 @@
  *
  *   • slot-redigereren i tidsplanen — «søndag 10:0» er en tid appen ville
  *     armet en vekking på
- *   • den ene e-postadressen feilvarsler går til — «post@» er en adresse
- *     ingenting kommer fram til, og du oppdager det den dagen opptaket feiler
+ *
+ * (Adressen e-postvarslene gikk til var det andre — «post@» er en adresse
+ * ingenting kommer fram til. E-postvarslene er fjernet.)
  *
  * De er bordede kort med Lagre/Avbryt, ikke auto-anvend-kontroller. Forskjellen
  * fra legacy er at «Avbryt» her FAKTISK angrer: utkastet er en egen kopi som

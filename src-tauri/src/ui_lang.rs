@@ -6,7 +6,7 @@
 //! Most of the shell can just read it: [`crate::notify::dispatch_failure`],
 //! [`crate::scheduler`] and the relay all have a loaded
 //! [`Settings`](sundayrec_core::settings::Settings) in hand, and
-//! `MailLang::from_code(settings.language.as_deref())` is the honest, freshest
+//! `Lang::from_code(settings.language.as_deref())` is the honest, freshest
 //! source. Those sites keep doing exactly that — this module is not for them.
 //!
 //! It is for the two places where a settings read is not available or not
@@ -27,7 +27,7 @@
 //! settings and whenever the renderer pushes a language change, read with one
 //! relaxed load. That is a cache of a fact, not a second source of truth — and
 //! the fallback when nothing has written it yet is Norwegian, the same fallback
-//! `MailLang::from_code(None)` and `window::ui_lang` already use.
+//! `Lang::from_code(None)` and `window::ui_lang` already use.
 //!
 //! ## Staleness, honestly
 //!
@@ -41,37 +41,34 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use sundayrec_core::email::MailLang;
+use sundayrec_core::lang::Lang;
 
-/// The cached UI language, as an index into [`MailLang::ALL`]. `0` is
-/// `MailLang::No`, which is also the value before anything has been loaded.
+/// The cached UI language, as an index into [`Lang::ALL`]. `0` is
+/// `Lang::No`, which is also the value before anything has been loaded.
 static UI_LANG: AtomicU8 = AtomicU8::new(0);
 
-/// The index `lang` occupies in [`MailLang::ALL`].
+/// The index `lang` occupies in [`Lang::ALL`].
 ///
 /// A `match` and not `ALL.iter().position(…)`: the compiler then refuses to
 /// build if a language is ever added without a slot here, which is the same
 /// promise [`sundayrec_core::alerts`]'s exhaustive catalog makes.
-fn index_of(lang: MailLang) -> u8 {
+fn index_of(lang: Lang) -> u8 {
     match lang {
-        MailLang::No => 0,
-        MailLang::En => 1,
-        MailLang::De => 2,
-        MailLang::Sv => 3,
-        MailLang::Da => 4,
-        MailLang::Pl => 5,
-        MailLang::Fr => 6,
+        Lang::No => 0,
+        Lang::En => 1,
+        Lang::De => 2,
+        Lang::Sv => 3,
+        Lang::Da => 4,
+        Lang::Pl => 5,
+        Lang::Fr => 6,
     }
 }
 
 /// The inverse. An index that is not a language (impossible through
 /// [`set`], but the atomic is a `u8` and this is a fallback path) reads as
 /// Norwegian rather than panicking — an alert must still go out.
-fn from_index(i: u8) -> MailLang {
-    MailLang::ALL
-        .get(i as usize)
-        .copied()
-        .unwrap_or(MailLang::No)
+fn from_index(i: u8) -> Lang {
+    Lang::ALL.get(i as usize).copied().unwrap_or(Lang::No)
 }
 
 /// Read a language out of `cell`. Separated from [`current`] so the whole
@@ -83,28 +80,28 @@ fn from_index(i: u8) -> MailLang {
 /// database. A test that asserted on the global would be a flake waiting for a
 /// busy machine, so the tests below own their cell and the two public functions
 /// are one-liners over the static.
-fn read(cell: &AtomicU8) -> MailLang {
+fn read(cell: &AtomicU8) -> Lang {
     from_index(cell.load(Ordering::Relaxed))
 }
 
 /// Write a language into `cell`.
-fn store(cell: &AtomicU8, lang: MailLang) {
+fn store(cell: &AtomicU8, lang: Lang) {
     cell.store(index_of(lang), Ordering::Relaxed);
 }
 
-/// Resolve a settings code into `cell`, by the same [`MailLang::from_code`]
+/// Resolve a settings code into `cell`, by the same [`Lang::from_code`]
 /// every other caller uses.
 fn note_into(cell: &AtomicU8, code: Option<&str>) {
-    store(cell, MailLang::from_code(code));
+    store(cell, Lang::from_code(code));
 }
 
 /// The language the next native notification / alert body should be written in.
-pub fn current() -> MailLang {
+pub fn current() -> Lang {
     read(&UI_LANG)
 }
 
 /// Remember `lang` as the current UI language.
-pub fn set(lang: MailLang) {
+pub fn set(lang: Lang) {
     store(&UI_LANG, lang);
 }
 
@@ -122,20 +119,20 @@ mod tests {
 
     #[test]
     fn every_language_round_trips_through_the_index() {
-        for &lang in MailLang::ALL {
+        for &lang in Lang::ALL {
             assert_eq!(from_index(index_of(lang)), lang, "{lang:?}");
         }
         // …and the indices are distinct, so two languages cannot share a slot.
         let mut seen = std::collections::HashSet::new();
-        for &lang in MailLang::ALL {
+        for &lang in Lang::ALL {
             assert!(seen.insert(index_of(lang)), "{lang:?} shares an index");
         }
     }
 
     #[test]
     fn an_index_that_is_not_a_language_reads_as_norwegian() {
-        assert_eq!(from_index(200), MailLang::No);
-        assert_eq!(from_index(MailLang::ALL.len() as u8), MailLang::No);
+        assert_eq!(from_index(200), Lang::No);
+        assert_eq!(from_index(Lang::ALL.len() as u8), Lang::No);
     }
 
     #[test]
@@ -143,13 +140,13 @@ mod tests {
         // The value before anybody has loaded settings — a notification fired
         // in the first second of a launch is Norwegian, not a panic and not an
         // empty string.
-        assert_eq!(read(&AtomicU8::new(0)), MailLang::No);
+        assert_eq!(read(&AtomicU8::new(0)), Lang::No);
     }
 
     #[test]
     fn the_cell_remembers_every_language() {
         let cell = AtomicU8::new(0);
-        for &lang in MailLang::ALL {
+        for &lang in Lang::ALL {
             store(&cell, lang);
             assert_eq!(read(&cell), lang, "{lang:?} did not survive the cell");
         }
@@ -158,16 +155,16 @@ mod tests {
     #[test]
     fn a_settings_code_resolves_the_way_the_mails_do() {
         let cell = AtomicU8::new(0);
-        for &lang in MailLang::ALL {
+        for &lang in Lang::ALL {
             note_into(&cell, Some(lang.as_code()));
             assert_eq!(read(&cell), lang, "{:?} round trip", lang.as_code());
         }
         // An unknown code and "follow the OS" both mean Norwegian, exactly like
-        // `MailLang::from_code` — the fallback the whole module rests on.
+        // `Lang::from_code` — the fallback the whole module rests on.
         for code in [Some("xx"), Some(""), None] {
-            store(&cell, MailLang::Pl);
+            store(&cell, Lang::Pl);
             note_into(&cell, code);
-            assert_eq!(read(&cell), MailLang::No, "{code:?}");
+            assert_eq!(read(&cell), Lang::No, "{code:?}");
         }
     }
 }

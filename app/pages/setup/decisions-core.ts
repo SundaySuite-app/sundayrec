@@ -27,8 +27,6 @@
  * `answered`. Fasiten står fast: bare `done` teller som besvart.
  */
 
-import type { EmailFacts, GateStatus } from "@lib/ui/feature-gate-core";
-
 import type { LevelWord } from "../../audio/level-words";
 import type { Settings } from "../../state/settings";
 
@@ -55,8 +53,7 @@ export type Answer =
   | { key: "quality"; format: QualityId }
   | { key: "qualityCustom"; format: string; bitrate: string }
   | { key: "church"; name: string }
-  | { key: "nobody" }
-  | { key: "email"; address: string };
+  | { key: "onMachine" };
 
 /** Linja under svaret: hvorfor det holder, eller hva som mangler. */
 export type Detail =
@@ -68,8 +65,7 @@ export type Detail =
   | { key: "qualityDesc"; format: QualityId }
   | { key: "qualityCustomDesc" }
   | { key: "language"; language: string }
-  | { key: "nobodyDesc" }
-  | { key: "emailDesc" };
+  | { key: "onMachineDesc" };
 
 /** Kanalparet en flerkanals enhet tar opp fra. 1-indeksert — brukeren teller
  *  fra 1, miksebordet er merket fra 1, og bare koden teller fra 0. */
@@ -103,12 +99,6 @@ export interface DecisionFacts {
   diskFreeBytes: number | null;
   /** Minutter opptak det er plass til, eller `null`. */
   roomMinutes: number | null;
-  /**
-   * Finnes det en vei ut for en e-post? (`hasEmailTransport` — bygget med
-   * e-postfeaturen, SMTP-vert og brukernavn utfylt, passord i nøkkelringen.)
-   * `null` = ikke lest ennå.
-   */
-  emailTransport: boolean | null;
   /**
    * Språket appen FAKTISK rendrer i (`app/i18n`s `locale`), ikke det som står
    * i `settings.language`.
@@ -303,62 +293,26 @@ export function decideChurch(facts: DecisionFacts): Decision {
 /**
  * 5 — Hvem får beskjed hvis noe går galt?
  *
- * ## Hvorfor bryteren alene ikke er nok
+ * Den som står ved maskinen. Et opptak som feiler, en planlagt start som ikke
+ * kommer i gang og et planlagt opptak som aldri ble gjort gir alltid et
+ * systemvarsel på opptaksmaskinen, og ingen innstilling kan slå det av — så
+ * spørsmålet er besvart i hver installasjon, og kortet sier hvordan.
  *
- * `notifyStart`/`notifyStop` varsler PÅ MASKINEN. Det er ekte og nyttig, men
- * det svarer ikke på spørsmålet kortet stiller: hvis opptaket stopper klokka
- * 11:42 og ingen sitter ved maskinen, får ingen vite det. Så kortet er besvart
- * bare når en e-post faktisk kan komme fram — adresse, bryter PÅ, og en
- * sendevei som finnes.
+ * Det var annerledes da appen kunne sende e-post: kortet ble grønt bare når en
+ * e-post faktisk kunne komme fram. E-postvarslene er fjernet (oppsettet var for
+ * tungvint for en frivillig), og da er det systemvarselet som er svaret.
  *
- * ## Hvorfor det ikke finnes et «bare varsel på maskinen»-svar
- *
- * Det ville krevd en ny innstillingsnøkkel i Rust for å huske valget, og en
- * nøkkel legges ikke til fordi et kort gjerne vil bli grønt. Uten et sted å
- * lagre valget ville kortet blitt «ferdig» av noe ingen kan lese tilbake ved
- * neste oppstart. Så det står som `todo`, og teksten sier sant: ingen får
- * e-post, maskinen varsler bare den som sitter ved den.
+ * Senere skal kortet også se om operativsystemet faktisk VISER SundayRecs
+ * varsler — et varsel som er slått av i macOS/Windows er et varsel ingen ser.
+ * Det er en egen runde; til da er svaret det appen selv kan stå inne for.
  */
-export function decideNotify(facts: DecisionFacts): Decision {
-  const address = (facts.settings.emailAddress ?? "").trim();
-  const on = facts.settings.emailOnError === true;
-
-  if (facts.emailTransport === null && on && address) {
-    // Alt brukeren kan se er på plass; om det finnes en sendevei vet vi ikke
-    // ennå. Ingen påstand i noen retning.
-    return decision("notify", "unknown", { key: "email", address }, null);
-  }
-  if (on && address && facts.emailTransport === true) {
-    return decision(
-      "notify",
-      "done",
-      { key: "email", address },
-      { key: "emailDesc" },
-    );
-  }
-  return decision("notify", "todo", { key: "nobody" }, { key: "nobodyDesc" });
-}
-
-/**
- * Hva e-postbryteren på spørsmål 5 har lov til å gjøre.
- *
- * TRE utfall, ikke to. `emailGateStatus` i `@lib/ui/feature-gate-core` svarer
- * bare på det første — og skriver ned hvorfor: den brukes på et kort som HAR
- * SMTP-feltene i seg, og en gate som slår av sine egne oppsettsfelter kan aldri
- * konfigureres. Her bor SMTP-feltene under Avansert, på en annen skjerm, så
- * mellomtilstanden er både trygg og den mest nyttige: «det finnes en sendevei i
- * denne utgaven, men ingen server er satt opp — og her er hvor du gjør det».
- *
- * `null` (ikke lest ennå) er `ok`: en bryter som er inert i det halvsekundet
- * det tar å spørre bakenden er en bryter som ikke tar imot det første klikket.
- */
-export function notifyGateStatus(facts: EmailFacts | null): GateStatus {
-  if (facts === null) return "ok";
-  if (!facts.featureBuilt) return "unavailable";
-  if (!facts.smtpConfigured || !facts.smtpPasswordAvailable) {
-    return "unconfigured";
-  }
-  return "ok";
+export function decideNotify(_facts: DecisionFacts): Decision {
+  return decision(
+    "notify",
+    "done",
+    { key: "onMachine" },
+    { key: "onMachineDesc" },
+  );
 }
 
 /** Alle fem, i rekkefølge. Nummeret på kortet er indeksen + 1. */
@@ -383,7 +337,7 @@ export function decisionsFor(facts: DecisionFacts): Decision[] {
  * Så: «Sett opp» bare når det bokstavelig talt ikke står et svar.
  */
 export function needsSetUp(decision: Decision): boolean {
-  return decision.answer.key === "notSetUp" || decision.answer.key === "nobody";
+  return decision.answer.key === "notSetUp";
 }
 
 /** Hvor mange av de fem som faktisk er besvart. */

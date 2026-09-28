@@ -22,15 +22,16 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 
 Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
 finalize, reconnect/split/pre-roll), an editor (cut plan, mastering presets,
-export), an e-mail alert when a take fails, OS wake-from-sleep scheduling, and
-a menubar/tray. Most of that is in the **default** build; only the subsystems
+export), a native notification on the machine when a take fails, OS
+wake-from-sleep scheduling, and a menubar/tray. Most of that is in the **default** build; only the subsystems
 that need an absent SDK or an owner decision are behind default-off cargo
 features (see Architecture below). SundayRec is deliberately a RECORDING app:
 live streaming (the old Direkte page, RTMP/NDI/overlays) was removed in v0.14,
 the sharing cluster (cloud backup, podcast RSS, chat webhook, Sunday-suite
 hand-offs, cover art, the review queue) in R1 of «Frivilligen først», and the
 content cluster (whisper transcription, the AI sermon companion, chapter
-detection, the learning cards) in R2 — churches that stream have OBS and
+detection, the learning cards) in R2, and e-mail alerts (the SMTP alerter
+and the SundaySuite relay) after that — churches that stream have OBS and
 friends, the file on disk is the hand-off, and transcripts/summaries are
 better served by tools built for them; this app's job is the take that
 survives the Sunday, and the four jobs around it: record · edit · mix/master ·
@@ -49,7 +50,7 @@ export.
   keyring, SQLite (sqlx), tracing. Impure paths that need a device/network/GUI
   are annotated `HARDWARE/NETWORK/GUI-UNVERIFIED` and covered by
   `docs/SMOKE-TEST.md`. Subsystems are cargo features; `default` is
-  `editor`, `tray`, `updater`, `email`. Default-OFF and opt-in: `asio`,
+  `editor`, `tray`, `updater`. Default-OFF and opt-in: `asio`,
   `vad`. `src-tauri/Cargo.toml`'s `[features]` block is the authority — it
   explains why each one sits where it does. Since R2 the workspace has **no
   C/C++ toolchain dependency** (whisper-rs/libwhisper was the only one): a

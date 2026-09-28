@@ -62,10 +62,8 @@ export function answerText(answer: Answer): string {
       });
     case "church":
       return answer.name;
-    case "nobody":
-      return t("app.setup.nobodyYet");
-    case "email":
-      return answer.address;
+    case "onMachine":
+      return t("app.setup.onMachine");
   }
 }
 
@@ -100,9 +98,7 @@ export function detailText(detail: Detail | null): string | null {
       return tf("app.setup.church.language", {
         language: tDyn("app.language", detail.language),
       });
-    case "nobodyDesc":
-      return t("app.setup.notify.nobodyDesc");
-    case "emailDesc":
-      return t("app.setup.notify.emailDesc");
+    case "onMachineDesc":
+      return t("app.setup.notify.onMachineDesc");
   }
 }

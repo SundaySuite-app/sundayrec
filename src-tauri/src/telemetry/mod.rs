@@ -993,7 +993,6 @@ mod tests {
                 save_folder: Some("/Users/kari/Menigheten/Opptak".into()),
                 church_name: "Nordstrand menighet".into(),
                 responsible_person: "Kari Nordmann".into(),
-                email_address: "kari@menighet.no".into(),
                 ..Default::default()
             },
         )

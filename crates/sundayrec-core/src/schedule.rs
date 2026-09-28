@@ -784,9 +784,9 @@ pub struct MissedRecording {
 /// recovery, which has to concat the fragments first — minutes of ffmpeg for a
 /// three-hour service. The missed-check runs at startup too, from its own task,
 /// and asked the database a question recovery had not finished answering. The
-/// answer was "nothing recorded on Sunday", and with the A3 relay behind it that
-/// answer becomes a native notification and an e-mail to a volunteer whose
-/// recording is, in fact, being salvaged in the next process over.
+/// answer was "nothing recorded on Sunday", and that answer becomes a native
+/// notification telling a volunteer their recording was lost while it is, in
+/// fact, being salvaged in the next process over.
 ///
 /// `covered` is the evidence recovery has not written down yet: one window per
 /// unfinalised manifest still on disk. Waiting for recovery to finish instead

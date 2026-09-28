@@ -167,15 +167,15 @@ test.describe("første gang", () => {
   }) => {
     // Atlasets funn (§3e): dagens veiviser sier «Alt er klart!» til en app som
     // ikke kan ta opp. Her er den siste skjermen de samme fem beslutningene,
-    // med de samme tre tilstandene — og «Hvem får beskjed?» er gul, fordi
-    // ingen får det.
+    // med de samme tre tilstandene — og «Hvor havner opptakene?» er gul, fordi
+    // ingen mappe er valgt.
     await boot(page, {
       fixtures: FIRST_RUN_FIXTURES,
       settings: {
         onboardingDone: false,
         deviceId: "x32",
         deviceName: "Behringer X32",
-        saveFolder: "/Users/test/Opptak",
+        saveFolder: null,
         churchName: "Bryn menighet",
       },
     });
@@ -190,15 +190,23 @@ test.describe("første gang", () => {
       5,
     );
 
-    const notify = page.getByTestId("first-run-row-notify");
-    await expect(notify).toHaveAttribute("data-status", "todo");
-    await expect(page.getByTestId("first-run-row-notify-detail")).toHaveText(
-      "Ikke satt opp — ingen får beskjed hvis et opptak feiler.",
+    const folder = page.getByTestId("first-run-row-folder");
+    await expect(folder).toHaveAttribute("data-status", "todo");
+    await expect(page.getByTestId("first-run-row-folder-detail")).toHaveText(
+      "Velg en mappe på denne maskinen. Uten den kan ikke appen ta opp.",
     );
-    // …and the answered ones are done, so «gul» means something.
+    // …and the answered ones are done, so «gul» means something. «Hvem får
+    // beskjed?» er alltid besvart: feil varsles på maskinen uansett.
     await expect(page.getByTestId("first-run-row-church")).toHaveAttribute(
       "data-status",
       "done",
+    );
+    await expect(page.getByTestId("first-run-row-notify")).toHaveAttribute(
+      "data-status",
+      "done",
+    );
+    await expect(page.getByTestId("first-run-row-notify-detail")).toHaveText(
+      "Feil varsles alltid her, uansett innstilling.",
     );
     // Ingen «Alt er klart!» noe sted på skjermen.
     await expect(page.getByTestId("main")).not.toContainText("Alt er klart!");

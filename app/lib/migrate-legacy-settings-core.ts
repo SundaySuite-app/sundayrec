@@ -34,8 +34,10 @@
  *   - `useUnifiedRecorder` → dead (hard-coded true since the A/V-sync choice
  *     was removed)
  *   - `integrations` → dropped (the Sunday-suite integrations were removed)
- *   - `emailSmtpPass`/`emailSmtpPassEnc`/`emailSmtpPassSet` → the OS keychain;
+ *   - `emailSmtpPass`/`emailSmtpPassEnc`/`emailSmtpPassSet` → never migrated;
  *     secrets never enter the settings store (E1.6's purge, subsumed)
+ *   - `emailOnError`/`emailAddress`/`emailSmtp*` → dropped (e-mail alerts were
+ *     removed; failures are told on the machine, natively)
  *
  * The impure half (read localStorage, invoke `settings_import`, remove the
  * key, flag) lives in api-shim.ts — see `migrateLegacySettingsOnce`.
@@ -226,13 +228,8 @@ export function mapLegacyBlob(raw: string): Dict | null {
   // removed with the sharing cluster — the whitelist mapper never copies
   // them, so an old blob imports cleanly without them.)
 
-  // Email (never the password — keychain only).
-  put("emailOnError", bool(s.emailOnError));
-  put("emailAddress", str(s.emailAddress));
-  put("emailSmtp", str(s.emailSmtp));
-  put("emailSmtpPort", int(s.emailSmtpPort, 1, 65_535));
-  put("emailSmtpUser", str(s.emailSmtpUser));
-  put("emailSmtpFrom", str(s.emailSmtpFrom));
+  // (email*: e-mail alerts were removed — the whitelist mapper no longer
+  // copies them, so an old blob imports cleanly without them.)
 
   // Editor
   put("askOpenEditor", bool(s.askOpenEditor));

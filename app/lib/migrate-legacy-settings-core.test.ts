@@ -234,6 +234,13 @@ describe("mapLegacyBlob", () => {
       "emailSmtpPass",
       "emailSmtpPassEnc",
       "emailSmtpPassSet",
+      // E-mail alerts were removed — none of their fields cross either.
+      "emailOnError",
+      "emailAddress",
+      "emailSmtp",
+      "emailSmtpPort",
+      "emailSmtpUser",
+      "emailSmtpFrom",
       "recordingHistory",
       "wakeFailureHistory",
       "reviewQueue",

@@ -32,9 +32,11 @@ samtykket:
 
 - **Oppdateringssjekken**, som er beskrevet i sitt eget avsnitt rett under.
 
-At appen ellers sender ting over nett, gjør den selvsagt: du kan få e-post
-når et opptak feiler. Det går dit **du** har bestemt, når du har bedt om det,
-og aldri innom oss. Denne erklæringen handler ikke om det.
+Varsler sendes heller ikke ut av maskinen. Når et opptak feiler, sier
+SundayRec fra med et varsel på selve maskinen — ikke på e-post, og ikke via
+oss. (Tidligere versjoner kunne sende e-post, over menighetens egen
+e-postserver eller via en SundaySuite-tjeneste. Begge deler er fjernet, og en
+oppdatert app sletter det lagrede e-postpassordet fra maskinen.)
 
 ---
 
@@ -265,7 +267,7 @@ og etter det står bare dagstall igjen.
 
 Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Kirke- eller
 menighetsnavn. Navnet du har gitt et opptak. Navnet på mikseren eller lydkortet
-ditt. Mappen du lagrer i. E-postoppsett. Navnene på de planlagte opptakene
+ditt. Mappen du lagrer i. Navnene på de planlagte opptakene
 dine, og klokkeslettene de er satt opp til.
 
 For alt dette er det ikke bare filtrert bort i etterkant — dataformatet har rett

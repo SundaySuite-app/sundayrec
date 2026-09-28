@@ -287,8 +287,10 @@ export const BOOT_FIXTURES: Fixtures = {
   recordings_list: [],
   trash_list: [],
   list_audio_devices: [],
-  email_status: { featureBuilt: false },
-  email_has_smtp_password: false,
+  // The one-time «E-postvarsler er fjernet» banner: not pending, so it stays
+  // out of every spec that is not about it.
+  notice_email_removed_pending: false,
+  notice_email_removed_dismiss: VOID,
   get_launch_at_login: false,
   // `needsPrompt: false` matters: a `true` here floats the one-time consent card
   // over every other screen and every other spec's assertions.
