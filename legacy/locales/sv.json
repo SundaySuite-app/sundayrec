@@ -405,7 +405,28 @@
           "onBattery": "gick på batteri"
         },
         "audioTech": "Ljudteknik",
-        "diagnoseReportWhere": "Klistra in rapporten i ett GitHub-issue, eller skicka den till dev@sundaysuite.app."
+        "diagnoseReportWhere": "Klistra in rapporten i ett GitHub-issue, eller skicka den till dev@sundaysuite.app.",
+        "publishTitle": "Publicering",
+        "publishDesc": "Efter en export kan appen öppna sidan ni laddar upp på, med titel och beskrivning redo att kopieras. SundayRec laddar inte upp något själv.",
+        "publishWhere": "Var lägger ni upp?",
+        "publishChannelName": {
+          "custom": "Egen sida",
+          "none": "Ingen"
+        },
+        "publishChannelDesc": {
+          "soundcloud": "Ofta även er podcast (RSS)",
+          "youtube": "Uppladdning i YouTube Studio",
+          "spotify": "Podcast i Spotify for Creators",
+          "custom": "Till exempel WordPress eller er podcastvärd",
+          "none": "Kvittot visar bara filen"
+        },
+        "publishUrl": "Länk till uppladdningssidan",
+        "publishUrlDesc": "Måste börja med https://",
+        "publishUrlNotHttps": "Länken måste börja med https://",
+        "publishUrlInvalid": "Det här ser inte ut som en webbadress",
+        "publishTemplate": "Fast beskrivning",
+        "publishTemplateDesc": "Fylls i vid export, där den kan ändras. {title}, {speaker}, {date} och {church} byts ut.",
+        "publishTemplatePlaceholder": "Predikan från {church}, {date}. Talare: {speaker}."
       }
     },
     "diagnose": {
@@ -701,7 +722,25 @@
       "prepare": "Gör klar",
       "pickTitle": "Eller välj en annan inspelning",
       "emptyDesc": "Spela in något först, eller öppna en fil från datorn.",
-      "use": "Välj"
+      "use": "Välj",
+      "content": "Innehåll",
+      "contentTitle": "Titel",
+      "contentTitlePlaceholder": "Till exempel ”Den gode herden”",
+      "contentSpeaker": "Talare",
+      "contentSpeakerPlaceholder": "Vem talade?",
+      "contentDescription": "Beskrivning",
+      "contentDescriptionPlaceholder": "Bibeltext, tema eller en rad om församlingen",
+      "contentHint": "Allt är valfritt. Skriver du en titel får filen den som namn – det är det SoundCloud och liknande föreslår när du laddar upp.",
+      "publishTitle": "Lägg upp på {channel}",
+      "publishTitleCustom": "Lägg upp",
+      "publishOpen": "Öppna {channel}",
+      "publishOpenCustom": "Öppna uppladdningssidan",
+      "publishHint": "Dra filen till sidan som öppnas och klistra in titel och beskrivning.",
+      "publishCopy": "Kopiera",
+      "publishCopied": "Kopierad",
+      "publishCopyFailed": "Kunde inte kopiera. Markera texten och kopiera den själv.",
+      "publishNothing": "Det finns ingen giltig https-länk under Inställningar → Avancerat, så inget öppnades.",
+      "publishFailed": "Kunde inte öppna sidan. Öppna den själv i webbläsaren."
     },
     "span": {
       "hours": "{h} tim",

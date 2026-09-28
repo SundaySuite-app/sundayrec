@@ -115,7 +115,13 @@ const DOC = "docs/SMOKE-TEST.md";
 // test scheduling/cancelling, its failure sentence citing `wakeArmWord`'s own
 // catalogue, the recording guard on the test button, and the failure log
 // rendering + clearing.
-const MIN_POINTERS = 65;
+//
+// 65 → 80 in «Legg ut» (2026-09): the export's «Innhold» (the tags, the titled
+// file name and the `.meta.json` round trip) and the receipt's «Legg ut» panel
+// added ten claims, each pinned to an e2e journey or a shared-vector test. The
+// floor is raised to the full count, which also covers the five pointers
+// earlier rounds added without raising it.
+const MIN_POINTERS = 80;
 
 // ── 1. Claim lines, and which of them parse ─────────────────────────────────
 

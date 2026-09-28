@@ -15,10 +15,17 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 import { isRecording } from "../state/recording";
+import { settings } from "../state/settings";
 import {
   cancelExport,
+  currentDescription,
+  descriptionFollowsTemplate,
+  editDescription,
+  exportDescription,
   exportedBytes,
+  exportedContent,
   exportedFolder,
   exportedPath,
   exportedSeconds,
@@ -26,7 +33,10 @@ import {
   exportFailed,
   exporting,
   exportPhase,
+  exportSpeaker,
+  exportTitle,
   exportWasCancelled,
+  loadExportContent,
   resetExport,
   runExport,
 } from "./export";
@@ -47,17 +57,34 @@ function deferred<T>(): {
 }
 
 let deletedDrafts: string[];
+let exportRequests: Record<string, unknown>[];
+let savedContent: Array<{ path: string; content: unknown }>;
+let deletedContent: string[];
 
 /** `window.api`-stubben. `exportResult` er hva `editorExportFile` svarer
  *  med — kontrollert av testen, ikke av denne funksjonen. */
 function installFakeApi(exportResult: Promise<unknown>): void {
   deletedDrafts = [];
+  exportRequests = [];
+  savedContent = [];
+  deletedContent = [];
   (globalThis as unknown as { window: unknown }).window = {
     api: {
-      editorExportFile: () => exportResult,
+      editorExportFile: (params: Record<string, unknown>) => {
+        exportRequests.push(params);
+        return exportResult;
+      },
       editorDeleteCutsDraft: (path: string) => {
         deletedDrafts.push(path);
         return Promise.resolve();
+      },
+      editorSaveContent: (path: string, content: unknown) => {
+        savedContent.push({ path, content });
+        return Promise.resolve(true);
+      },
+      editorDeleteContent: (path: string) => {
+        deletedContent.push(path);
+        return Promise.resolve(true);
       },
     },
   };
@@ -353,5 +380,187 @@ describe("runExport — én om gangen", () => {
     expect(exportFailed.value).toBe(true);
     expect(exportErrorText.value).toBe("errRecordingInProgress");
     expect(exportWasCancelled.value).toBe(false);
+  });
+});
+
+/**
+ * «Innhold» — det som sendes, og det som blir liggende ved opptaket.
+ *
+ * Feltene fantes i `EditorExportRequest` siden P2b; skallet sendte dem aldri.
+ */
+describe("runExport — innholdet", () => {
+  it("sender tittel, taler og beskrivelse trimmet, med dato og menighet", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+    E.startedAtMs = new Date(2026, 8, 27, 11, 0).getTime();
+    exportTitle.value = "  Den gode hyrde ";
+    exportSpeaker.value = "Kari";
+    exportDescription.value = "Joh 10\n";
+
+    await runExport(120, 1_000_000);
+
+    const metadata = exportRequests[0]?.metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject({
+      title: "Den gode hyrde",
+      speaker: "Kari",
+      description: "Joh 10",
+      date: "2026-09-27",
+    });
+    // Kvitteringen leser øyeblikksbildet, ikke feltene.
+    expect(exportedContent.value).toEqual({
+      title: "Den gode hyrde",
+      speaker: "Kari",
+      description: "Joh 10",
+    });
+  });
+
+  it("lagrer innholdet ved OPPTAKET når eksporten lykkes", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+    exportTitle.value = "Tittel";
+
+    await runExport(120, 1_000_000);
+    await Promise.resolve();
+
+    expect(savedContent).toEqual([
+      {
+        path: "/Opptak/2026-08-23.flac",
+        content: { title: "Tittel", speaker: "", description: "" },
+      },
+    ]);
+    expect(deletedContent).toEqual([]);
+  });
+
+  it("tomt innhold sletter sidevogna i stedet for å skrive en tom en", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+
+    await runExport(120, 1_000_000);
+    await Promise.resolve();
+
+    expect(savedContent).toEqual([]);
+    expect(deletedContent).toEqual(["/Opptak/2026-08-23.flac"]);
+  });
+
+  it("en sidevogn som ikke lar seg skrive, velter ikke kvitteringen", async () => {
+    // MUTASJONSPRØVEN: kall `window.api.editorSaveContent` direkte i
+    // `runExport` i stedet for gjennom `keepContent`, og et kast FØR noe
+    // løfte finnes (en eldre shim uten metoden) river kvitteringen med seg.
+    (globalThis as unknown as { window: unknown }).window = {
+      api: {
+        editorExportFile: () =>
+          Promise.resolve({ ok: true, outputPath: "/ut.mp3" }),
+        editorDeleteCutsDraft: () => Promise.resolve(),
+        editorSaveContent: () => {
+          throw new Error("ingen slik kommando");
+        },
+      },
+    };
+    exportTitle.value = "Tittel";
+
+    await runExport(120, 1_000_000);
+
+    expect(exportedPath.value).toBe("/ut.mp3");
+    expect(exportFailed.value).toBe(false);
+  });
+
+  it("en mislykket eksport lagrer ingenting", async () => {
+    installFakeApi(Promise.resolve({ ok: false, error: "disk_full" }));
+    exportTitle.value = "Tittel";
+
+    await runExport(120, 1_000_000);
+    await Promise.resolve();
+
+    expect(savedContent).toEqual([]);
+    expect(deletedContent).toEqual([]);
+    expect(exportedContent.value).toBeNull();
+  });
+});
+
+/**
+ * Den faste beskrivelsen fra Oppsett — fylt inn LIVE til noen skriver selv.
+ */
+describe("beskrivelsesmalen i «Innhold»", () => {
+  const TEMPLATE = "«{tittel}» — {taler}, {kirke}.";
+
+  beforeEach(() => {
+    settings.value = {
+      ...SETTINGS_DEFAULTS,
+      churchName: "Sentrumskirken",
+      publishDescriptionTemplate: TEMPLATE,
+    };
+  });
+
+  afterEach(() => {
+    settings.value = { ...SETTINGS_DEFAULTS };
+  });
+
+  it("følger tittel og taler mens de skrives", () => {
+    exportTitle.value = "Nåde";
+    expect(currentDescription()).toBe("«Nåde» — , Sentrumskirken.");
+    exportSpeaker.value = "Ola";
+    expect(currentDescription()).toBe("«Nåde» — Ola, Sentrumskirken.");
+  });
+
+  it("slutter å følge malen i det noen skriver i beskrivelsen", () => {
+    exportTitle.value = "Nåde";
+    editDescription("Min egen tekst");
+    exportTitle.value = "Noe annet";
+    expect(descriptionFollowsTemplate.value).toBe(false);
+    expect(currentDescription()).toBe("Min egen tekst");
+  });
+
+  it("uten mal er beskrivelsen bare det som er skrevet", () => {
+    settings.value = { ...SETTINGS_DEFAULTS, publishDescriptionTemplate: "" };
+    exportDescription.value = "Fritekst";
+    expect(currentDescription()).toBe("Fritekst");
+  });
+
+  it("det som sendes, er den utfylte malen", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+    exportTitle.value = "Nåde";
+    exportSpeaker.value = "Ola";
+
+    await runExport(120, 1_000_000);
+
+    const metadata = exportRequests[0]?.metadata as Record<string, unknown>;
+    expect(metadata.description).toBe("«Nåde» — Ola, Sentrumskirken.");
+  });
+
+  it("en lagret beskrivelse vinner over malen — også om malen er endret siden", async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      api: {
+        editorReadContent: () =>
+          Promise.resolve({
+            title: "Lagret",
+            speaker: "",
+            description: "Slik den ble sendt",
+          }),
+        editorChurchDayName: () => Promise.resolve(null),
+      },
+    };
+    await loadExportContent(E.filePath, null, E.loadSeq);
+    expect(descriptionFollowsTemplate.value).toBe(false);
+    expect(currentDescription()).toBe("Slik den ble sendt");
+  });
+
+  it("en lagret, men TOM beskrivelse gir malen plass", async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      api: {
+        editorReadContent: () =>
+          Promise.resolve({
+            title: "Bare tittel",
+            speaker: "",
+            description: "",
+          }),
+        editorChurchDayName: () => Promise.resolve(null),
+      },
+    };
+    await loadExportContent(E.filePath, null, E.loadSeq);
+    expect(descriptionFollowsTemplate.value).toBe(true);
+    expect(currentDescription()).toBe("«Bare tittel» — , Sentrumskirken.");
+  });
+
+  it("en ny fil følger malen igjen", () => {
+    editDescription("Min egen tekst");
+    resetExport();
+    expect(descriptionFollowsTemplate.value).toBe(true);
   });
 });

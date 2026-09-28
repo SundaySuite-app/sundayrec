@@ -405,7 +405,28 @@
           "onBattery": "running on battery"
         },
         "audioTech": "Audio technology",
-        "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app."
+        "diagnoseReportWhere": "Paste the report into a GitHub issue, or send it to dev@sundaysuite.app.",
+        "publishTitle": "Publishing",
+        "publishDesc": "After an export the app can open the page you upload to, with the title and description ready to copy. SundayRec does not upload anything itself.",
+        "publishWhere": "Where do you publish?",
+        "publishChannelName": {
+          "custom": "Your own page",
+          "none": "None"
+        },
+        "publishChannelDesc": {
+          "soundcloud": "Often your podcast feed (RSS) too",
+          "youtube": "Upload in YouTube Studio",
+          "spotify": "Podcast in Spotify for Creators",
+          "custom": "For example WordPress or your podcast host",
+          "none": "The receipt shows only the file"
+        },
+        "publishUrl": "Link to the upload page",
+        "publishUrlDesc": "Must start with https://",
+        "publishUrlNotHttps": "The link must start with https://",
+        "publishUrlInvalid": "This does not look like a web address",
+        "publishTemplate": "Standard description",
+        "publishTemplateDesc": "Filled in on export, where it can be changed. {title}, {speaker}, {date} and {church} are replaced.",
+        "publishTemplatePlaceholder": "Sermon from {church}, {date}. Speaker: {speaker}."
       }
     },
     "diagnose": {
@@ -701,7 +722,25 @@
       "prepare": "Get it ready",
       "pickTitle": "Or choose another recording",
       "emptyDesc": "Record something first, or open a file from this machine.",
-      "use": "Choose"
+      "use": "Choose",
+      "content": "Content",
+      "contentTitle": "Title",
+      "contentTitlePlaceholder": "For example “The Good Shepherd”",
+      "contentSpeaker": "Speaker",
+      "contentSpeakerPlaceholder": "Who spoke?",
+      "contentDescription": "Description",
+      "contentDescriptionPlaceholder": "Bible passage, theme or a line about the church",
+      "contentHint": "All optional. If you write a title, the file is named after it — that is what SoundCloud and similar sites suggest when you upload.",
+      "publishTitle": "Publish on {channel}",
+      "publishTitleCustom": "Publish",
+      "publishOpen": "Open {channel}",
+      "publishOpenCustom": "Open the upload page",
+      "publishHint": "Drag the file onto the page that opens, then paste the title and description.",
+      "publishCopy": "Copy",
+      "publishCopied": "Copied",
+      "publishCopyFailed": "Could not copy. Select the text and copy it yourself.",
+      "publishNothing": "There is no valid https link under Settings → Advanced, so nothing was opened.",
+      "publishFailed": "Could not open the page. Open it in your browser yourself."
     },
     "span": {
       "hours": "{h} h",

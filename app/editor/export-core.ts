@@ -122,21 +122,141 @@ export function megabytes(bytes: number | null): number | null {
 /**
  * Navnet eksporten kommer til å få.
  *
- * ⚠️ Dette er en FORUTSIGELSE, ikke en beslutning. Bakenden eier navnet:
- * `<stem>_redigert.<ext>` i mappen, og `collision_free_path` legger på `_2`,
- * `_3` … hvis det allerede ligger en fil der. Vi kan ikke vite om det gjør det,
- * så kvitteringen etter eksporten viser stien bakenden faktisk svarte med — den
- * er fasiten, denne er forhåndsvisningen.
+ * ⚠️ Dette er en FORUTSIGELSE, ikke en beslutning. Bakenden eier navnet
+ * (`sundayrec_core::editor::export_stem`), og `collision_free_path` legger på
+ * `_2`, `_3` … hvis det allerede ligger en fil der. Vi kan ikke vite om det gjør
+ * det, så kvitteringen etter eksporten viser stien bakenden faktisk svarte med
+ * — den er fasiten, denne er forhåndsvisningen.
  *
- * Canvasens «2026-08-23 Gudstjeneste – preken.mp3» ble IKKE bygget: `_redigert`
- * er sant uansett hva brukeren gjorde, og «– preken» ville vært en påstand om
- * innholdet i en fil der brukeren kanskje trykket «Behold alt».
+ * Uten tittel: `<stem>_redigert.<ext>`, som alltid. Med tittel:
+ * `<YYYY-MM-DD> <tittel>.<ext>` — navnet et opplastingsskjema (SoundCloud og
+ * de andre) foreslår som episodens tittel og adresse. Canvasens
+ * «2026-08-23 Gudstjeneste – preken.mp3» ble ikke bygget fordi «– preken» ville
+ * vært APPENS påstand om innholdet; en tittel er brukerens egne ord, og da er
+ * navnet ingen gjetning.
  */
-export function predictedOutputName(inputPath: string, ext: string): string {
+export function predictedOutputName(
+  inputPath: string,
+  ext: string,
+  title: string | null = null,
+  date: string | null = null,
+): string {
   const name = inputPath.split(/[/\\]/).pop() ?? inputPath;
   const dot = name.lastIndexOf(".");
   const stem = dot > 0 ? name.slice(0, dot) : name;
-  return `${stem}_redigert.${ext}`;
+  return `${exportStem(stem, title, date)}.${ext}`;
+}
+
+/** Lengste tittel, i tegn, et filnavn får bære. Samme tall som
+ *  `EXPORT_TITLE_MAX_CHARS` i kjernen. */
+export const EXPORT_TITLE_MAX_CHARS = 100;
+
+/** Windows' reserverte enhetsnavn — `WIN_RESERVED` i `filename.rs`. */
+const WIN_RESERVED = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+  ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`),
+]);
+
+/**
+ * Speilet av `export_stem` i kjernen, tegn for tegn.
+ *
+ * Begge leser vektorene i `crates/sundayrec-core/tests/fixtures/export-stem.json`
+ * (`export-core.test.ts` her, `export_stem_matches_the_shared_vectors` der), så
+ * forhåndsvisningen og fila ikke kan gli fra hverandre uten at en test går rød.
+ * Tegn telles som Unicode-kodepunkter (`Array.from`), fordi Rusts `chars()`
+ * gjør det — `.length` ville talt en emoji som to.
+ */
+export function exportStem(
+  sourceStem: string,
+  title: string | null,
+  date: string | null,
+): string {
+  const untitled = `${sourceStem}_redigert`;
+  if (title === null) return untitled;
+  const cleaned = cleanTitle(title);
+  if (cleaned.replace(/[. ]+$/u, "") === "") return untitled;
+  const d = date?.trim() ?? "";
+  return sanitizeFilename(isIsoDate(d) ? `${d} ${cleaned}` : cleaned);
+}
+
+function cleanTitle(title: string): string {
+  const spaced = Array.from(title)
+    .map((c) => (/[\p{Cc}\p{White_Space}]/u.test(c) ? " " : c))
+    .join("");
+  const collapsed = spaced.split(" ").filter(Boolean).join(" ");
+  return Array.from(collapsed)
+    .slice(0, EXPORT_TITLE_MAX_CHARS)
+    .join("")
+    .replace(/ +$/u, "");
+}
+
+/** `sanitize_filename` i `filename.rs`, portet. */
+function sanitizeFilename(name: string): string {
+  let safe = name.replace(/[/\\:*?"<>|]/gu, "_").trim();
+  safe = safe.replace(/[. ]+$/u, "");
+  // ASCII-only, som `eq_ignore_ascii_case`: `toUpperCase` alene gjør «ı» til «I».
+  const ascii = safe.replace(/[a-z]/gu, (c) => c.toUpperCase());
+  if (WIN_RESERVED.has(ascii)) safe = `_${safe}`;
+  return safe === "" ? "opptak" : safe;
+}
+
+/** Nøyaktig `YYYY-MM-DD`, og en dato som finnes. */
+export function isIsoDate(d: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(d)) return false;
+  const [y, m, day] = d.split("-").map(Number) as [number, number, number];
+  const probe = new Date(Date.UTC(y, m - 1, day));
+  return (
+    probe.getUTCFullYear() === y &&
+    probe.getUTCMonth() === m - 1 &&
+    probe.getUTCDate() === day
+  );
+}
+
+/**
+ * Opptaksdatoen som `YYYY-MM-DD` i LOKAL tid, eller `null` når vi ikke vet
+ * når opptaket startet (en fil åpnet utenfra biblioteket).
+ *
+ * Lokal og ikke UTC: en gudstjeneste kl. 00:30 hører til den dagen menigheten
+ * var i kirken, og opptakets eget filnavn (`local_date_str` i kjernen) regner
+ * på samme måte.
+ */
+export function localIsoDate(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** «Innhold» slik det lagres i opptakets `.meta.json`. */
+export interface ExportContent {
+  title: string;
+  speaker: string;
+  description: string;
+}
+
+/**
+ * Les `.meta.json` tolerant: tre strenger, og alt annet ignoreres.
+ *
+ * Sidevogna kan være skrevet av en eldre versjon (Electron la `chapters` der)
+ * eller redigert for hånd, og en fil vi ikke forstår er ikke en grunn til å
+ * ikke åpne opptaket. `null` når det ikke er noe å hente.
+ */
+export function parseSavedContent(value: unknown): ExportContent | null {
+  if (!value || typeof value !== "object") return null;
+  const o = value as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const content = {
+    title: str(o.title),
+    speaker: str(o.speaker),
+    description: str(o.description),
+  };
+  return content.title || content.speaker || content.description
+    ? content
+    : null;
 }
 
 /** Mappen «Samme mappe som opptaket» peker på: opptakets egen. */

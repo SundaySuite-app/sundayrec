@@ -93,6 +93,31 @@ Lukker du hele appen mens den tar opp, fortsetter opptaket i bakgrunnen (se
 etter ikonet i menylinjen/systemstatusfeltet) — men ikke gjør det med vilje;
 la appen stå åpen til opptaket er stoppet og lagret.
 
+## Legge ut prekenen (SoundCloud o.l.)
+
+SundayRec laster ikke opp noe selv, men gjør fila og teksten klar, så du
+bare drar fila inn på siden menigheten bruker.
+
+1. Åpne opptaket i **Redigering**. Vil dere bare ha prekenen, trykk
+   **«Behold bare prekenen»**. Det gir et kortere spor, og en gratiskonto på
+   SoundCloud har bare rundt **3 timer opplasting totalt**.
+2. Gå videre til **Eksportering**. Under **Innhold** skriver du **tittel**,
+   **taler** og eventuelt en **beskrivelse**. Alt er valgfritt, men med
+   tittel får fila navnet `2026-09-27 Tittel.mp3`, som er det SoundCloud
+   foreslår som tittel. Har menigheten lagt inn en fast beskrivelse, står den
+   der allerede.
+3. Trykk **«Eksporter»**. Når kvitteringen kommer, står panelet
+   **«Legg ut på SoundCloud»** under den:
+   - **«Åpne SoundCloud»** åpner opplastingssiden i nettleseren.
+   - **«Vis i Finder»** viser fila. Dra den inn på siden.
+   - **«Kopier»** ved tittel og beskrivelse legger teksten på
+     utklippstavla, én om gangen. Lim den inn i feltene på siden.
+
+Hvilken side knappen åpner (SoundCloud, YouTube, Spotify for Creators eller
+en egen lenke), og den faste beskrivelsen, settes én gang under
+**Innstillinger → Avansert → Legg ut**. Innloggingen på SoundCloud er
+menighetens egen, i nettleseren. Appen kjenner ikke passordet.
+
 ## Når noe ser feil ut
 
 Appen viser en **stripe øverst** når noe trenger oppmerksomhet, og den blir

@@ -59,6 +59,7 @@ import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
 import { DiagnoseRow } from "./advanced/DiagnoseRow";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
+import { PublishCard } from "./advanced/PublishCard";
 import { currentOs } from "../../state/platform-core";
 import { ScheduleCard } from "./advanced/ScheduleCard";
 import { TelemetryRow } from "./advanced/TelemetryRow";
@@ -158,6 +159,7 @@ export function AdvancedPage() {
         <DiagnoseRow />
       </Card>
 
+      <PublishCard />
       <ScheduleCard />
       <AsioAttribution />
     </SubPage>

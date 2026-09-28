@@ -273,6 +273,19 @@ declare global {
       editorAutoProcess: (
         filePath: string,
       ) => Promise<EditorAutoProcess | null>;
+      /** The liturgical day on a `YYYY-MM-DD` date («1. påskedag»), or null
+       *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
+      editorChurchDayName: (date: string) => Promise<string | null>;
+      /** The recording's saved «Innhold» (`<stem>.meta.json`), raw — parse it
+       *  with `parseSavedContent`. Null when there is none. */
+      editorReadContent: (filePath: string) => Promise<unknown>;
+      /** Save «Innhold» beside the recording. Resolves to whether it stuck. */
+      editorSaveContent: (
+        filePath: string,
+        content: { title: string; speaker: string; description: string },
+      ) => Promise<boolean>;
+      /** Remove the saved «Innhold» — an export with every field empty. */
+      editorDeleteContent: (filePath: string) => Promise<boolean>;
       editorReadCutsDraft: (filePath: string) => Promise<unknown>;
       editorSaveCutsDraft: (filePath: string, cuts: unknown) => Promise<void>;
       editorDeleteCutsDraft: (filePath: string) => Promise<void>;
@@ -321,6 +334,10 @@ declare global {
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —
        *  resolves to whether the OS actually opened something. */
+      /** «Legg ut»: open the upload page for the stored channel. `nothing` =
+       *  the channel is off or the custom link did not pass; `failed` = the
+       *  OS would not open it. Never rejects. */
+      publishOpenUploadPage: () => Promise<"opened" | "nothing" | "failed">;
       logsReveal: () => Promise<boolean>;
       /** The tail of the live log file, clamped server-side to 512 KB
        *  regardless of `maxBytes`. Empty string means nothing logged yet. */

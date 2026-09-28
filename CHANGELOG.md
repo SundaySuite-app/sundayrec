@@ -3,6 +3,23 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Uutgitt — «Innhold» og «Legg ut»
+
+Prekenen ut på SoundCloud (eller YouTube, Spotify eller menighetens egen side)
+med færre steg. Appen laster fortsatt ikke opp noe selv.
+
+- **«Innhold» i eksporten.** Tittel, taler og beskrivelse skrives inn før
+  eksporten og følger fila som tagger, sammen med menighetsnavnet og datoen.
+  Med tittel heter fila `2026-09-27 Tittel.mp3`, som er det SoundCloud og
+  lignende foreslår som tittel. Uten tittel heter den som før. Innholdet
+  huskes ved opptaket til neste gang, og på en helligdag foreslås dagens navn.
+- **«Legg ut» på kvitteringen.** Tittel og beskrivelse med hver sin
+  «Kopier», og en knapp som åpner opplastingssiden i nettleseren.
+- **Innstillinger → Avansert → Legg ut.** Velg kanal (SoundCloud er standard)
+  og skriv en fast beskrivelse med `{tittel}`, `{taler}`, `{dato}` og `{kirke}`.
+- **Anonym bruksstatistikk**, for dem som har slått den på, teller hvor ofte
+  «Legg ut» brukes per kanal — aldri lenken eller teksten.
+
 ## v0.21.0 — e-postvarsler er ute
 
 Feil varsles nå på selve opptaksmaskinen, og ingen andre steder.

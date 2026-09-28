@@ -91,6 +91,26 @@
   color: var(--ink);
 }
 
+/* «Innhold»: tre felter under hverandre, etikett over felt. Ingen kort
+   rundt — det er et spørsmål på siden, som format og mappe, ikke en innstilling. */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.fieldLabel {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
 /* Forutsigelsen til venstre, den store knappen til høyre — nederst, fordi det
    er der man er ferdig med å lese. */
 .exportBar {
@@ -145,4 +165,36 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── «Legg ut» ─────────────────────────────────────────────────────────── */
+
+/* Teksten til venstre, «Kopier» til høyre — én rad per felt skjemaet har. */
+.copyRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+}
+
+.copyGrow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.copyText {
+  color: var(--ink);
+  font-size: var(--fs-body);
+  overflow-wrap: anywhere;
+}
+
+/* Beskrivelsen beholder linjeskiftene sine — det er dem som limes inn. */
+.copyTextBlock {
+  color: var(--ink);
+  font-size: var(--fs-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

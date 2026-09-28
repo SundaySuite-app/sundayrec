@@ -57,6 +57,17 @@ speaker: string | null,
  */
 description: string | null, 
 /**
+ * Optional church name (FFMETADATA `album`) — `settings.churchName`, so an
+ * episode is filed under the congregation wherever the tags are read.
+ */
+album: string | null, 
+/**
+ * Optional service date as `YYYY-MM-DD` (FFMETADATA `date`). Also the
+ * prefix of a titled export's file name — see
+ * `sundayrec_core::editor::export_stem`.
+ */
+date: string | null, 
+/**
  * One-click vocal-chain preset id (`voice-light|voice-podcast|
  * voice-noisy-room`). Resolved server-side; ignored when `processing` is set.
  */

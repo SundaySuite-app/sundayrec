@@ -220,6 +220,15 @@ pub struct EditorExportRequest {
     /// Optional description (FFMETADATA `comment`).
     #[serde(default)]
     pub description: Option<String>,
+    /// Optional church name (FFMETADATA `album`) — `settings.churchName`, so an
+    /// episode is filed under the congregation wherever the tags are read.
+    #[serde(default)]
+    pub album: Option<String>,
+    /// Optional service date as `YYYY-MM-DD` (FFMETADATA `date`). Also the
+    /// prefix of a titled export's file name — see
+    /// `sundayrec_core::editor::export_stem`.
+    #[serde(default)]
+    pub date: Option<String>,
     /// One-click vocal-chain preset id (`voice-light|voice-podcast|
     /// voice-noisy-room`). Resolved server-side; ignored when `processing` is set.
     #[serde(default)]
@@ -2804,7 +2813,7 @@ where
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
         collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
-        ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
+        export_stem, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
         video_export_estimated_bytes, video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
@@ -2895,7 +2904,10 @@ where
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "redigert".into());
     let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
-    let out_stem = format!("{base}_redigert");
+    // `<base>_redigert` without a title, `<YYYY-MM-DD> <title>` with one — the
+    // name an upload form offers as the episode's title. The renderer's
+    // preview (`predictedOutputName`) reads the same fixture as the core.
+    let out_stem = export_stem(&base, req.title.as_deref(), req.date.as_deref());
     let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
 
     //     F2-11: the recorder has had a low-disk guard since day one; the
@@ -3144,6 +3156,8 @@ where
         title: req.title.clone(),
         speaker: req.speaker.clone(),
         description: req.description.clone(),
+        album: req.album.clone(),
+        date: req.date.clone(),
         chapters: Vec::new(),
     };
     // Write the `;FFMETADATA1` sidecar to a temp file ffmpeg reads as an extra
@@ -3879,6 +3893,8 @@ mod tests {
             title: None,
             speaker: None,
             description: None,
+            album: None,
+            date: None,
             vocal_chain_preset: None,
             processing: None,
             channel_repair: None,
@@ -5440,6 +5456,8 @@ mod tests {
                 title: Some("Søndag".into()),
                 speaker: None,
                 description: None,
+                album: None,
+                date: None,
                 vocal_chain_preset: None,
                 processing: None,
                 channel_repair: None,
@@ -5477,6 +5495,8 @@ mod tests {
                 title: None,
                 speaker: None,
                 description: None,
+                album: None,
+                date: None,
                 vocal_chain_preset: None,
                 processing: None,
                 channel_repair: None,
@@ -5912,11 +5932,14 @@ mod tests {
                 "the default destination must write beside the source; got {}",
                 written.display()
             );
+            // `cut_to_mp3_request` carries the title «Søndag» and no date, so
+            // the delivered name is the title (`export_stem`), not
+            // `source_redigert` — the name an upload form will offer.
             assert_eq!(
                 written
                     .file_name()
                     .map(|f| f.to_string_lossy().into_owned()),
-                Some("source_redigert.mp3".to_string())
+                Some("Søndag.mp3".to_string())
             );
             assert!(std::fs::metadata(written).unwrap().len() > 0);
             assert_monotonic(&ticks);
