@@ -3,7 +3,9 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Uutgitt
+## v0.21.0 — e-postvarsler er ute
+
+Feil varsles nå på selve opptaksmaskinen, og ingen andre steder.
 
 ### E-postvarsler er fjernet
 
