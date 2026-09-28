@@ -31,7 +31,7 @@ Det finnes INGEN andre filer du må få overført — repoet er komplett.
 
 ## 1. Les disse først (full kontekst — du har ikke samtalehistorikken)
 
-- `docs/NATT-AUDIT-2026-06-07.md` — oversikt over ALT som ble gjort (diagnose-verktøy,
+- `docs/archive/NATT-AUDIT-2026-06-07.md` — oversikt over ALT som ble gjort (diagnose-verktøy,
   bugfikser, cloud, effektivitet) + hva som gjenstår.
 - `docs/BUILD_ASIO.md` — NØYAKTIG byggeoppsett for ASIO (SDK, env-variabler).
 - `docs/ASIO-TEST-MATRIX.md` — testmatrise for WASAPI/ASIO/fallback.

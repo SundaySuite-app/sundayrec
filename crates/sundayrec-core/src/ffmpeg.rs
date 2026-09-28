@@ -99,7 +99,7 @@ const _: () = assert!(LEVELS_BATCH_SAMPLES >= 1024);
 ///   SILENTLY — the measured 15–56 % sample loss of the 2026-07-31 rig incident.
 ///   4800 samples = 10 prints/s at 48 kHz, 20/s at 96 kHz — plenty for a meter
 ///   the UI eases at 60 fps, and ~50× less stderr than before. (This is fix "A5"
-///   deferred in docs/NATT-LYD-VU-PREKEN-2026-06-14.md, now landed.)
+///   deferred in docs/archive/NATT-LYD-VU-PREKEN-2026-06-14.md, now landed.)
 /// - `metadata=1` makes astats publish the measurements as frame metadata.
 /// - `reset=1` re-measures every (batched) frame — the batch IS the peak window
 ///   (~0.05–0.1 s), so meter attack semantics match the old `reset=5` on ~20 ms

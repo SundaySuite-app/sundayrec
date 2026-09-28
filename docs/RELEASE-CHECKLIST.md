@@ -288,6 +288,10 @@ the only action that makes a v0.11.0+ install able to see the release at all.
       **tag** on each channel; this is what proves both channels are
       actually serving the right **bytes**.
 
+- [ ] **Read `docs/PLAN.md` through** and update its date: remove what this
+      release finished, add what it left open (with its source document). The
+      plan page is only worth trusting if every release touches it.
+
 > If a promoted release turns out to be bad after all, see `ROLLBACK.md`.
 > Short version: pausing a channel stops NEW updates — it does not undo one
 > that already happened. The only way back for an install that already
