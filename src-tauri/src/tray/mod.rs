@@ -308,10 +308,12 @@ pub fn wire_state_sources<R: Runtime>(app: &AppHandle<R>) {
         let live = state_is_live(st);
         update(&h, |s| {
             s.is_recording = live;
-            // A take that starts clears the previous session's error; a failed
-            // one raises it. A clean stop leaves the flag as it is.
+            // A take that starts clears the previous session's error — and a
+            // missed schedule, which a live take has just made old news; a
+            // failed one raises the error. A clean stop leaves both as they are.
             if live {
                 s.has_error = false;
+                s.schedule_missed = false;
             } else if st == "failed" {
                 s.has_error = true;
             }
@@ -325,6 +327,25 @@ pub fn wire_state_sources<R: Runtime>(app: &AppHandle<R>) {
             s.is_recording = false;
             s.has_error = true;
         });
+    });
+
+    // A scheduled recording did not happen: the sweep found one unrecorded
+    // (payload: a non-empty list), or the scheduler could not start/prepare
+    // one. Both used to reach only the native notification — a volunteer who
+    // dismissed it, or was not there to see it, found a menu bar saying
+    // «Klar».
+    let h = app.clone();
+    app.listen(crate::scheduler::MISSED_EVENT, move |ev| {
+        let any = serde_json::from_str::<Vec<serde_json::Value>>(ev.payload())
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
+        if any {
+            update(&h, |s| s.schedule_missed = true);
+        }
+    });
+    let h = app.clone();
+    app.listen(crate::scheduler::FAILURE_EVENT, move |_| {
+        update(&h, |s| s.schedule_missed = true);
     });
 
     // The scheduler recomputed the nearest future start (payload: a zone-less

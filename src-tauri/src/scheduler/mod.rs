@@ -103,6 +103,10 @@ static QUIET_WAKE_REPORTS: AtomicU32 = AtomicU32::new(0);
 pub const NEXT_EVENT: &str = "scheduler://next";
 /// Emitted when [`check_missed`] finds scheduled recordings that never ran.
 pub const MISSED_EVENT: &str = "scheduler://missed";
+/// Emitted when a scheduled recording could not be started or prepared —
+/// payload is the stable failure code. The native notification is said once;
+/// this is what keeps the menu-bar icon amber afterwards.
+pub const FAILURE_EVENT: &str = "scheduler://failure";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //   Engine (Tauri-managed state)
@@ -1039,6 +1043,9 @@ fn first_wake_notice(key: &'static str) -> bool {
 /// `code` is the stable machine code, logged with the dispatch; `message` is
 /// the localized sentence, passed through verbatim.
 fn dispatch_scheduler_failure(app: &AppHandle, code: &str, message: String) {
+    if let Err(e) = app.emit(FAILURE_EVENT, code) {
+        tracing::warn!("scheduler: could not emit {FAILURE_EVENT}: {e}");
+    }
     crate::notify::dispatch_failure(
         app,
         crate::notify::FailureCtx::now(

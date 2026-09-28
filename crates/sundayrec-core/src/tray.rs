@@ -20,6 +20,11 @@ use crate::lang::Lang;
 pub struct TrayState {
     pub is_recording: bool,
     pub has_error: bool,
+    /// A scheduled recording did not happen: the scheduler could not start or
+    /// prepare it, or the missed-recording sweep found it unrecorded. The native
+    /// notification says so once; this keeps it visible on the menu bar until
+    /// the next take goes live, for whoever opens the lid on Monday.
+    pub schedule_missed: bool,
     /// Pre-formatted short label of the next recording (e.g. "Sun 11:00"), or
     /// `None`. Wall-clock formatting is a shell concern; the core just places it.
     pub next_recording_label: Option<String>,
@@ -80,7 +85,7 @@ pub enum TrayIcon {
 pub fn icon_for(state: &TrayState) -> TrayIcon {
     if state.is_recording {
         TrayIcon::Recording
-    } else if state.has_error {
+    } else if state.has_error || state.schedule_missed {
         TrayIcon::Error
     } else {
         TrayIcon::Idle
@@ -179,18 +184,22 @@ pub fn tooltip(state: &TrayState, lang: Lang) -> String {
 pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
     let mut items = Vec::new();
 
-    // Status row — clickable (show window) only on error.
-    let status_label = if state.is_recording {
-        recording_label(lang)
+    // Status row — clickable (show window) only when something is wrong. A
+    // failed take outranks a missed schedule: it is the more recent news, and
+    // the window it opens shows both.
+    let (status_label, attention) = if state.is_recording {
+        (recording_label(lang), false)
     } else if state.has_error {
-        error_label(lang)
+        (error_label(lang), true)
+    } else if state.schedule_missed {
+        (schedule_missed_label(lang), true)
     } else {
-        ready_label(lang)
+        (ready_label(lang), false)
     };
     items.push(TrayItem::item(
         status_label,
         TrayAction::ShowOnError,
-        state.has_error,
+        attention,
     ));
 
     // Next-recording info line (only when not recording and known).
@@ -264,6 +273,17 @@ fn error_label(l: Lang) -> &'static str {
         Lang::Da => "⚠️ Fejl — klik for detaljer",
         Lang::Pl => "⚠️ Błąd — kliknij po szczegóły",
         Lang::Fr => "⚠️ Erreur — cliquez pour détails",
+    }
+}
+fn schedule_missed_label(l: Lang) -> &'static str {
+    match l {
+        Lang::No => "⚠️ Planlagt opptak ble ikke tatt — klikk for detaljer",
+        Lang::En => "⚠️ A scheduled recording did not run — click for details",
+        Lang::De => "⚠️ Geplante Aufnahme lief nicht — klicken für Details",
+        Lang::Sv => "⚠️ Schemalagd inspelning kördes inte — klicka för detaljer",
+        Lang::Da => "⚠️ Planlagt optagelse kørte ikke — klik for detaljer",
+        Lang::Pl => "⚠️ Zaplanowane nagranie się nie odbyło — kliknij po szczegóły",
+        Lang::Fr => "⚠️ Un enregistrement planifié n'a pas eu lieu — cliquez pour détails",
     }
 }
 fn ready_label(l: Lang) -> &'static str {
@@ -548,6 +568,65 @@ mod tests {
             with_next,
             "SundayRec — running in background\nNext recording: Sun 11:00"
         );
+    }
+
+    #[test]
+    fn a_missed_schedule_badges_the_icon_and_opens_the_window() {
+        let state = TrayState {
+            schedule_missed: true,
+            ..Default::default()
+        };
+        let menu = build_menu(&state, Lang::En);
+        assert_eq!(
+            menu[0],
+            TrayItem::Item {
+                label: "⚠️ A scheduled recording did not run — click for details".into(),
+                action: TrayAction::ShowOnError,
+                enabled: true,
+            }
+        );
+        assert_eq!(icon_for(&state), TrayIcon::Error);
+    }
+
+    #[test]
+    fn a_failed_take_outranks_a_missed_schedule_and_recording_outranks_both() {
+        let both = TrayState {
+            has_error: true,
+            schedule_missed: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            build_menu(&both, Lang::En)[0],
+            TrayItem::item(
+                "⚠️ Error — click for details",
+                TrayAction::ShowOnError,
+                true
+            )
+        );
+        let live = TrayState {
+            is_recording: true,
+            schedule_missed: true,
+            ..Default::default()
+        };
+        assert_eq!(icon_for(&live), TrayIcon::Recording);
+        assert_eq!(
+            build_menu(&live, Lang::No)[0],
+            TrayItem::item("🔴 Tar opp…", TrayAction::ShowOnError, false)
+        );
+    }
+
+    #[test]
+    fn the_missed_row_is_translated_in_all_seven_languages() {
+        let rows: std::collections::HashSet<_> = Lang::ALL
+            .iter()
+            .map(|&l| schedule_missed_label(l))
+            .collect();
+        // Sv and Da are allowed to share words with No elsewhere in this file;
+        // this sentence differs in all seven.
+        assert_eq!(rows.len(), Lang::ALL.len());
+        for row in rows {
+            assert!(row.starts_with("⚠️ "), "{row}");
+        }
     }
 
     #[test]
