@@ -71,7 +71,7 @@
 //!
 //! ## The other half of the contract (stated here so it is one story)
 //!
-//!   - **Data controller: "Sunday Suite".**
+//!   - **Data controller: "SundaySuite".**
 //!   - **Fully anonymous.** [`TelemetryPayload::install_id`] is a random UUID v7
 //!     minted on the machine, never derived from hardware, e-mail, church name or
 //!     a Sunday Account, and never linked to one. Regenerating it (the app's

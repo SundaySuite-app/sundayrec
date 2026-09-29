@@ -1080,7 +1080,7 @@
   },
   "onboarding": {
     "promptTitle": "Anonyme Diagnosedaten teilen?",
-    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → Erweitert antworten.",
+    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an SundaySuite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → Erweitert antworten.",
     "rePromptTitle": "Wir fragen noch einmal nach",
     "rePromptDesc": "Sie haben dies bereits beantwortet, aber wir fragen erneut, weil sich erweitert hat, was gegebenenfalls geteilt wird: Ihre Korrekturen im Editor können jetzt auch ungefähr angeben, wie weit ein automatischer Vorschlag verschoben wurde — zum Beispiel „30–60 Sekunden früher“ — und nicht nur, dass er verschoben wurde. Der Text selbst wird nie gesendet. Ihre frühere Antwort wurde nicht übernommen, weder als Ja noch als Nein, und es wird nichts gesendet, bevor Sie hier antworten."
   },

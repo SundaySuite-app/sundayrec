@@ -26,7 +26,7 @@ Resten av dokumentet forklarer detaljene, og hvorfor du kan etterprøve dem.
 Den gjelder **kun** den valgfrie diagnostikk- og bruksstatistikk-funksjonen,
 som du finner under **Oppsett → Avansert → «Del anonym diagnostikk»**.
 
-Resten av SundayRec sender aldri noe **til Sunday Suite** av seg selv, uansett
+Resten av SundayRec sender aldri noe **til SundaySuite** av seg selv, uansett
 hva du svarer her. Det finnes ett unntak, og det styres ikke av dette
 samtykket:
 
@@ -43,7 +43,7 @@ oppdatert app sletter det lagrede e-postpassordet fra maskinen.)
 ## Oppdateringssjekk — ikke en del av diagnostikken
 
 SundayRec sjekker med jevne mellomrom om det finnes en nyere versjon, mot
-Sunday Suites egen server (`updates.sundaysuite.app`). Tidligere versjoner
+SundaySuites egen server (`updates.sundaysuite.app`). Tidligere versjoner
 spurte GitHub direkte om dette; fra og med denne versjonen spør appen oss i
 stedet.
 
@@ -84,7 +84,7 @@ trykker «Se etter oppdateringer nå», for da er det du som har bedt om det.
 
 ## Behandlingsansvarlig og kontakt
 
-**Sunday Suite** er behandlingsansvarlig for dataene som samles inn hvis du
+**SundaySuite** er behandlingsansvarlig for dataene som samles inn hvis du
 slår på anonym diagnostikk.
 
 Spørsmål om personvern, innsyn eller sletting kan rettes til
@@ -311,7 +311,7 @@ i hvordan SundayRec fungerer.
 
 ## Hvor lagres dataene, og hvor lenge?
 
-Hos Sunday Suites egen infrastruktur (Cloudflare, med databehandling i EU).
+Hos SundaySuites egen infrastruktur (Cloudflare, med databehandling i EU).
 
 **Rådata — altså enkeltrapporter — slettes automatisk etter 90 dager.** Etter
 det finnes kun irreversibelt aggregerte statistikker igjen: tall som ikke lenger

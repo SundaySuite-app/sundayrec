@@ -1080,7 +1080,7 @@
   },
   "onboarding": {
     "promptTitle": "Share anonymous diagnostics?",
-    "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → Advanced.",
+    "promptDesc": "SundayRec can send anonymous error and usage statistics to SundaySuite to improve the app. Optional, and you can answer any time under Settings → Advanced.",
     "rePromptTitle": "We are asking you again",
     "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
   },

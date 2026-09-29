@@ -1080,7 +1080,7 @@
   },
   "onboarding": {
     "promptTitle": "Partager des diagnostics anonymes ?",
-    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Avancé.",
+    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à SundaySuite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Réglages → Avancé.",
     "rePromptTitle": "Nous vous reposons la question",
     "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
   },

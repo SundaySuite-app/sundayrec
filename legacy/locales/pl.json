@@ -1098,7 +1098,7 @@
   },
   "onboarding": {
     "promptTitle": "Udostępniać anonimową diagnostykę?",
-    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → Zaawansowane.",
+    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do SundaySuite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → Zaawansowane.",
     "rePromptTitle": "Pytamy jeszcze raz",
     "rePromptDesc": "Odpowiadałeś już na to pytanie, ale zadajemy je ponownie, ponieważ zakres tego, co ewentualnie jest udostępniane, został rozszerzony: Twoje korekty w edytorze mogą teraz również podawać, o ile mniej więcej przesunięto automatyczną propozycję — na przykład „30–60 sekund wcześniej” — a nie tylko to, że została przesunięta. Sam tekst nigdy nie jest wysyłany. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj."
   },

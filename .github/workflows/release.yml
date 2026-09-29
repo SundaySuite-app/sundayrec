@@ -292,7 +292,7 @@ jobs:
           # warning never to change it.
           #
           # Since Etappe 7 the updater no longer reads `/releases/latest` at
-          # all: installed clients ask the Sunday Suite update feed
+          # all: installed clients ask the SundaySuite update feed
           # (`https://updates.sundaysuite.app/v1/update/{stable|beta}` — a
           # different host from the telemetry admin API on purpose, see
           # PRIVACY.md), which serves only a tag that an owner has EXPLICITLY

@@ -1080,7 +1080,7 @@
   },
   "onboarding": {
     "promptTitle": "Dela anonym diagnostik?",
-    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → Avancerat.",
+    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till SundaySuite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → Avancerat.",
     "rePromptTitle": "Vi frågar dig igen",
     "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
   },

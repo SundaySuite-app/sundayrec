@@ -1080,7 +1080,7 @@
   },
   "onboarding": {
     "promptTitle": "Dele anonym diagnostik?",
-    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → Avanceret.",
+    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til SundaySuite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → Avanceret.",
     "rePromptTitle": "Vi spørger dig igen",
     "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her."
   },
