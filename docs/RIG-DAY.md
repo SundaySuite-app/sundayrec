@@ -84,6 +84,18 @@ faktisk skal se nå — sist.
       testens `Test`-oppføring), eller feiler stille. Svaret avgjør om den
       gamle, delte-eier-modellen noensinne var trygg på denne maskinen.
       Noter resultatet i `docs/NEEDS-RICHARD.md`.
+- [ ] **(e, varsling — runde 3) Et tapt opptak sier fra tre steder.** Med
+      «Vekk maskinen fra dvale» PÅ: legg inn en slot 5 minutter fram, avslutt
+      SundayRec, og start den igjen godt over en time etter slot-starten.
+      **Forventet ETTER (runde 3, `docs/VARSLING.md`):** (1) ett systemvarsel
+      med slot-navnet og tiden på appens språk («Planlagt opptak ble ikke
+      gjort: Ukentlig opptak (…) (søn. 11:00).», ikke en ISO-streng); bytt
+      språk og start på nytt — varselet skal IKKE komme igjen. (2) Menylinja
+      har gult merke og statusraden «Planlagt opptak ble ikke tatt — klikk for
+      detaljer» til neste opptak starter. (3) Avansert → Vekkehistorikk har én
+      linje «<dag dato klokke> — Gikk glipp av en planlagt vekking». Gjenta med
+      vekking AV: varsel og menylinje som over, men ingen ny linje i
+      vekkehistorikken.
 - [ ] **(g) #111 — lyttetest med ulik inngangsgain.** Ta opp 3–4 korte klipp
       av den samme typen lyd (tale er nok) med tydelig ulik inngangsgain —
       stille, normal, kraftig. Lytt gjennom dem, og se spesielt etter om tale

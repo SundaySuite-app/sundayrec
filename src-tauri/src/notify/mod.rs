@@ -56,8 +56,24 @@ pub struct MissedSlot {
     /// ISO-like local start (`YYYY-MM-DDTHH:MM:SS`) — the machine's clock, and
     /// half of the durable `notify_seen` key.
     pub at: String,
-    /// The schedule's own name for the slot ("Ukentlig opptak (11:00–13:00)").
+    /// The schedule's CANONICAL name for the slot ("Ukentlig opptak
+    /// (11:00–13:00)") — Norwegian and frozen, because it is the other half of
+    /// the key. Never shown to anyone who reads another language.
     pub label: String,
+    /// What the slot was — the notification's words are built from this
+    /// ([`sundayrec_core::alerts::missed_label`]), in the volunteer's language.
+    pub kind: sundayrec_core::schedule::MissedKind,
+}
+
+impl MissedSlot {
+    /// The slot as the missed-recording sweep found it.
+    pub fn from_missed(m: &sundayrec_core::schedule::MissedRecording) -> Self {
+        Self {
+            at: m.when.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            label: m.label.clone(),
+            kind: m.kind.clone(),
+        }
+    }
 }
 
 impl MissedSlot {
@@ -313,6 +329,9 @@ mod tests {
         let slot = MissedSlot {
             at: "2026-09-06T11:00:00".into(),
             label: "Bryllup Kari og Ola".into(),
+            kind: sundayrec_core::schedule::MissedKind::Special {
+                name: Some("Bryllup Kari og Ola".into()),
+            },
         };
         let key = slot.seen_key();
         assert!(

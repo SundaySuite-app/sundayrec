@@ -735,9 +735,21 @@ function formatClock(iso: string): string {
   });
 }
 
-/** Én logglinje: «10:52 — Testvekking lyktes». */
+/** Dag, dato og klokkeslett: loggen holder nå tapte søndager ved siden av
+ *  dagens tester, og «11:00» alene sier ikke hvilken søndag. */
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(locale.value, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Én logglinje: «søn. 6. sep., 11:00 — Gikk glipp av en planlagt vekking». */
 function wakeHistoryLine(entry: WakeFailureEntry): string {
-  const time = formatClock(entry.scheduledAt);
+  const time = formatWhen(entry.scheduledAt);
   const reason = entry.reason
     ? ` (${wakeHistoryReasonWord(entry.reason)})`
     : "";

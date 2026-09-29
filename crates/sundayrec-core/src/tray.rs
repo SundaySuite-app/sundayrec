@@ -12,32 +12,7 @@
 //! command/event — so the menu's *shape* is unit-tested and the GUI layer is a
 //! dumb projection.
 
-/// The seven UI languages, matching `tray.ts` `TRAY_LABELS`. Unknown codes fall
-/// back to Norwegian (the Electron default).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrayLang {
-    No,
-    En,
-    De,
-    Sv,
-    Da,
-    Pl,
-    Fr,
-}
-
-impl TrayLang {
-    pub fn from_code(code: Option<&str>) -> Self {
-        match code.unwrap_or("no") {
-            "en" => TrayLang::En,
-            "de" => TrayLang::De,
-            "sv" => TrayLang::Sv,
-            "da" => TrayLang::Da,
-            "pl" => TrayLang::Pl,
-            "fr" => TrayLang::Fr,
-            _ => TrayLang::No,
-        }
-    }
-}
+use crate::lang::Lang;
 
 /// The live recorder/scheduler facts the menu reflects. Mirrors the module-level
 /// mutable state in `tray.ts` (`isRecording`, `hasError`, `nextRecording`).
@@ -45,6 +20,11 @@ impl TrayLang {
 pub struct TrayState {
     pub is_recording: bool,
     pub has_error: bool,
+    /// A scheduled recording did not happen: the scheduler could not start or
+    /// prepare it, or the missed-recording sweep found it unrecorded. The native
+    /// notification says so once; this keeps it visible on the menu bar until
+    /// the next take goes live, for whoever opens the lid on Monday.
+    pub schedule_missed: bool,
     /// Pre-formatted short label of the next recording (e.g. "Sun 11:00"), or
     /// `None`. Wall-clock formatting is a shell concern; the core just places it.
     pub next_recording_label: Option<String>,
@@ -105,7 +85,7 @@ pub enum TrayIcon {
 pub fn icon_for(state: &TrayState) -> TrayIcon {
     if state.is_recording {
         TrayIcon::Recording
-    } else if state.has_error {
+    } else if state.has_error || state.schedule_missed {
         TrayIcon::Error
     } else {
         TrayIcon::Idle
@@ -174,15 +154,15 @@ pub fn with_status_badge(rgba: &[u8], width: u32, height: u32, badge: [u8; 3]) -
 
 /// The tooltip text. Mirrors `tray.ts` `updateTooltip`: a base line plus, when a
 /// next recording is known, a "Neste opptak: <label>" line.
-pub fn tooltip(state: &TrayState, lang: TrayLang) -> String {
+pub fn tooltip(state: &TrayState, lang: Lang) -> String {
     let base = match lang {
-        TrayLang::No => "SundayRec — kjører i bakgrunnen",
-        TrayLang::En => "SundayRec — running in background",
-        TrayLang::De => "SundayRec — läuft im Hintergrund",
-        TrayLang::Sv => "SundayRec — körs i bakgrunden",
-        TrayLang::Da => "SundayRec — kører i baggrunden",
-        TrayLang::Pl => "SundayRec — działa w tle",
-        TrayLang::Fr => "SundayRec — s'exécute en arrière-plan",
+        Lang::No => "SundayRec — kjører i bakgrunnen",
+        Lang::En => "SundayRec — running in background",
+        Lang::De => "SundayRec — läuft im Hintergrund",
+        Lang::Sv => "SundayRec — körs i bakgrunden",
+        Lang::Da => "SundayRec — kører i baggrunden",
+        Lang::Pl => "SundayRec — działa w tle",
+        Lang::Fr => "SundayRec — s'exécute en arrière-plan",
     };
     match &state.next_recording_label {
         Some(next) => format!("{base}\n{}: {next}", next_label(lang)),
@@ -201,21 +181,25 @@ pub fn tooltip(state: &TrayState, lang: TrayLang) -> String {
 /// diagnostics item it read as a confusing near-duplicate, so the tray drops it
 /// — the in-app preflight button still exists. `RunPreflight` stays as an action
 /// for that path.)
-pub fn build_menu(state: &TrayState, lang: TrayLang) -> Vec<TrayItem> {
+pub fn build_menu(state: &TrayState, lang: Lang) -> Vec<TrayItem> {
     let mut items = Vec::new();
 
-    // Status row — clickable (show window) only on error.
-    let status_label = if state.is_recording {
-        recording_label(lang)
+    // Status row — clickable (show window) only when something is wrong. A
+    // failed take outranks a missed schedule: it is the more recent news, and
+    // the window it opens shows both.
+    let (status_label, attention) = if state.is_recording {
+        (recording_label(lang), false)
     } else if state.has_error {
-        error_label(lang)
+        (error_label(lang), true)
+    } else if state.schedule_missed {
+        (schedule_missed_label(lang), true)
     } else {
-        ready_label(lang)
+        (ready_label(lang), false)
     };
     items.push(TrayItem::item(
         status_label,
         TrayAction::ShowOnError,
-        state.has_error,
+        attention,
     ));
 
     // Next-recording info line (only when not recording and known).
@@ -269,114 +253,125 @@ pub fn build_menu(state: &TrayState, lang: TrayLang) -> Vec<TrayItem> {
 
 // ── localized labels (ported verbatim from tray.ts) ─────────────────────────
 
-fn recording_label(l: TrayLang) -> &'static str {
+fn recording_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "🔴 Tar opp…",
-        TrayLang::En => "🔴 Recording…",
-        TrayLang::De => "🔴 Aufnahme…",
-        TrayLang::Sv => "🔴 Spelar in…",
-        TrayLang::Da => "🔴 Optager…",
-        TrayLang::Pl => "🔴 Nagrywa…",
-        TrayLang::Fr => "🔴 Enregistrement…",
+        Lang::No => "🔴 Tar opp…",
+        Lang::En => "🔴 Recording…",
+        Lang::De => "🔴 Aufnahme…",
+        Lang::Sv => "🔴 Spelar in…",
+        Lang::Da => "🔴 Optager…",
+        Lang::Pl => "🔴 Nagrywa…",
+        Lang::Fr => "🔴 Enregistrement…",
     }
 }
-fn error_label(l: TrayLang) -> &'static str {
+fn error_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "⚠️ Feil — klikk for detaljer",
-        TrayLang::En => "⚠️ Error — click for details",
-        TrayLang::De => "⚠️ Fehler — klicken für Details",
-        TrayLang::Sv => "⚠️ Fel — klicka för detaljer",
-        TrayLang::Da => "⚠️ Fejl — klik for detaljer",
-        TrayLang::Pl => "⚠️ Błąd — kliknij po szczegóły",
-        TrayLang::Fr => "⚠️ Erreur — cliquez pour détails",
+        Lang::No => "⚠️ Feil — klikk for detaljer",
+        Lang::En => "⚠️ Error — click for details",
+        Lang::De => "⚠️ Fehler — klicken für Details",
+        Lang::Sv => "⚠️ Fel — klicka för detaljer",
+        Lang::Da => "⚠️ Fejl — klik for detaljer",
+        Lang::Pl => "⚠️ Błąd — kliknij po szczegóły",
+        Lang::Fr => "⚠️ Erreur — cliquez pour détails",
     }
 }
-fn ready_label(l: TrayLang) -> &'static str {
+fn schedule_missed_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "✅ Klar",
-        TrayLang::En => "✅ Ready",
-        TrayLang::De => "✅ Bereit",
-        TrayLang::Sv => "✅ Klar",
-        TrayLang::Da => "✅ Klar",
-        TrayLang::Pl => "✅ Gotowy",
-        TrayLang::Fr => "✅ Prêt",
+        Lang::No => "⚠️ Planlagt opptak ble ikke tatt — klikk for detaljer",
+        Lang::En => "⚠️ A scheduled recording did not run — click for details",
+        Lang::De => "⚠️ Geplante Aufnahme lief nicht — klicken für Details",
+        Lang::Sv => "⚠️ Schemalagd inspelning kördes inte — klicka för detaljer",
+        Lang::Da => "⚠️ Planlagt optagelse kørte ikke — klik for detaljer",
+        Lang::Pl => "⚠️ Zaplanowane nagranie się nie odbyło — kliknij po szczegóły",
+        Lang::Fr => "⚠️ Un enregistrement planifié n'a pas eu lieu — cliquez pour détails",
     }
 }
-fn open_label(l: TrayLang) -> &'static str {
+fn ready_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Åpne SundayRec",
-        TrayLang::En => "Open SundayRec",
-        TrayLang::De => "SundayRec öffnen",
-        TrayLang::Sv => "Öppna SundayRec",
-        TrayLang::Da => "Åbn SundayRec",
-        TrayLang::Pl => "Otwórz SundayRec",
-        TrayLang::Fr => "Ouvrir SundayRec",
+        Lang::No => "✅ Klar",
+        Lang::En => "✅ Ready",
+        Lang::De => "✅ Bereit",
+        Lang::Sv => "✅ Klar",
+        Lang::Da => "✅ Klar",
+        Lang::Pl => "✅ Gotowy",
+        Lang::Fr => "✅ Prêt",
     }
 }
-fn stop_label(l: TrayLang) -> &'static str {
+fn open_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Stopp opptak",
-        TrayLang::En => "Stop recording",
-        TrayLang::De => "Aufnahme stoppen",
-        TrayLang::Sv => "Stoppa inspelning",
-        TrayLang::Da => "Stop optagelse",
-        TrayLang::Pl => "Zatrzymaj nagrywanie",
-        TrayLang::Fr => "Arrêter l'enregistrement",
+        Lang::No => "Åpne SundayRec",
+        Lang::En => "Open SundayRec",
+        Lang::De => "SundayRec öffnen",
+        Lang::Sv => "Öppna SundayRec",
+        Lang::Da => "Åbn SundayRec",
+        Lang::Pl => "Otwórz SundayRec",
+        Lang::Fr => "Ouvrir SundayRec",
     }
 }
-fn start_label(l: TrayLang) -> &'static str {
+fn stop_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Start opptak nå",
-        TrayLang::En => "Start recording now",
-        TrayLang::De => "Aufnahme starten",
-        TrayLang::Sv => "Starta inspelning nu",
-        TrayLang::Da => "Start optagelse nu",
-        TrayLang::Pl => "Rozpocznij nagrywanie",
-        TrayLang::Fr => "Démarrer un enregistrement",
+        Lang::No => "Stopp opptak",
+        Lang::En => "Stop recording",
+        Lang::De => "Aufnahme stoppen",
+        Lang::Sv => "Stoppa inspelning",
+        Lang::Da => "Stop optagelse",
+        Lang::Pl => "Zatrzymaj nagrywanie",
+        Lang::Fr => "Arrêter l'enregistrement",
     }
 }
-fn quit_label(l: TrayLang) -> &'static str {
+fn start_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Avslutt",
-        TrayLang::En => "Quit",
-        TrayLang::De => "Beenden",
-        TrayLang::Sv => "Avsluta",
-        TrayLang::Da => "Afslut",
-        TrayLang::Pl => "Wyjdź",
-        TrayLang::Fr => "Quitter",
+        Lang::No => "Start opptak nå",
+        Lang::En => "Start recording now",
+        Lang::De => "Aufnahme starten",
+        Lang::Sv => "Starta inspelning nu",
+        Lang::Da => "Start optagelse nu",
+        Lang::Pl => "Rozpocznij nagrywanie",
+        Lang::Fr => "Démarrer un enregistrement",
     }
 }
-fn diagnose_label(l: TrayLang) -> &'static str {
+fn quit_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Diagnoser system…",
-        TrayLang::En => "Run diagnostics…",
-        TrayLang::De => "Diagnose starten…",
-        TrayLang::Sv => "Kör diagnostik…",
-        TrayLang::Da => "Kør diagnostik…",
-        TrayLang::Pl => "Uruchom diagnostykę…",
-        TrayLang::Fr => "Lancer le diagnostic…",
+        Lang::No => "Avslutt",
+        Lang::En => "Quit",
+        Lang::De => "Beenden",
+        Lang::Sv => "Avsluta",
+        Lang::Da => "Afslut",
+        Lang::Pl => "Wyjdź",
+        Lang::Fr => "Quitter",
     }
 }
-fn open_folder_label(l: TrayLang) -> &'static str {
+fn diagnose_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Åpne lagringsmappe",
-        TrayLang::En => "Open recordings folder",
-        TrayLang::De => "Aufnahmeordner öffnen",
-        TrayLang::Sv => "Öppna inspelningsmapp",
-        TrayLang::Da => "Åbn optagelsesmappe",
-        TrayLang::Pl => "Otwórz folder nagrań",
-        TrayLang::Fr => "Ouvrir le dossier des enregistrements",
+        Lang::No => "Diagnoser system…",
+        Lang::En => "Run diagnostics…",
+        Lang::De => "Diagnose starten…",
+        Lang::Sv => "Kör diagnostik…",
+        Lang::Da => "Kør diagnostik…",
+        Lang::Pl => "Uruchom diagnostykę…",
+        Lang::Fr => "Lancer le diagnostic…",
     }
 }
-fn next_label(l: TrayLang) -> &'static str {
+fn open_folder_label(l: Lang) -> &'static str {
     match l {
-        TrayLang::No => "Neste opptak",
-        TrayLang::En => "Next recording",
-        TrayLang::De => "Nächste Aufnahme",
-        TrayLang::Sv => "Nästa inspelning",
-        TrayLang::Da => "Næste optagelse",
-        TrayLang::Pl => "Następne nagranie",
-        TrayLang::Fr => "Prochain enregistrement",
+        Lang::No => "Åpne lagringsmappe",
+        Lang::En => "Open recordings folder",
+        Lang::De => "Aufnahmeordner öffnen",
+        Lang::Sv => "Öppna inspelningsmapp",
+        Lang::Da => "Åbn optagelsesmappe",
+        Lang::Pl => "Otwórz folder nagrań",
+        Lang::Fr => "Ouvrir le dossier des enregistrements",
+    }
+}
+fn next_label(l: Lang) -> &'static str {
+    match l {
+        Lang::No => "Neste opptak",
+        Lang::En => "Next recording",
+        Lang::De => "Nächste Aufnahme",
+        Lang::Sv => "Nästa inspelning",
+        Lang::Da => "Næste optagelse",
+        Lang::Pl => "Następne nagranie",
+        Lang::Fr => "Prochain enregistrement",
     }
 }
 
@@ -416,15 +411,15 @@ const WEEKDAYS: [[&str; 7]; 7] = [
     ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
 ];
 
-fn lang_row(lang: TrayLang) -> usize {
+fn lang_row(lang: Lang) -> usize {
     match lang {
-        TrayLang::No => 0,
-        TrayLang::En => 1,
-        TrayLang::De => 2,
-        TrayLang::Sv => 3,
-        TrayLang::Da => 4,
-        TrayLang::Pl => 5,
-        TrayLang::Fr => 6,
+        Lang::No => 0,
+        Lang::En => 1,
+        Lang::De => 2,
+        Lang::Sv => 3,
+        Lang::Da => 4,
+        Lang::Pl => 5,
+        Lang::Fr => 6,
     }
 }
 
@@ -432,7 +427,7 @@ fn lang_row(lang: TrayLang) -> usize {
 /// into the short menu label [`TrayState::next_recording_label`] carries — e.g.
 /// `søn. 11:00`. Returns `None` for a null/unparseable payload so the info row
 /// simply disappears rather than showing a raw timestamp. Pure → unit-tested.
-pub fn format_next_label(iso: Option<&str>, lang: TrayLang) -> Option<String> {
+pub fn format_next_label(iso: Option<&str>, lang: Lang) -> Option<String> {
     use chrono::{Datelike, NaiveDateTime, Timelike};
     let raw = iso?.trim();
     if raw.is_empty() {
@@ -461,7 +456,7 @@ mod tests {
 
     #[test]
     fn idle_menu_offers_start() {
-        let menu = build_menu(&TrayState::default(), TrayLang::En);
+        let menu = build_menu(&TrayState::default(), Lang::En);
         let acts = actions(&menu);
         assert!(acts.contains(&TrayAction::StartRecording));
         assert!(!acts.contains(&TrayAction::StopRecording));
@@ -480,7 +475,7 @@ mod tests {
     fn tray_exposes_one_system_action_diagnostics_not_preflight() {
         // The status row + diagnostics cover "is the system OK?"; the old quick
         // preflight item was a confusing near-duplicate, so the tray drops it.
-        let acts = actions(&build_menu(&TrayState::default(), TrayLang::No));
+        let acts = actions(&build_menu(&TrayState::default(), Lang::No));
         assert!(acts.contains(&TrayAction::RunDiagnostics));
         assert!(
             !acts.contains(&TrayAction::RunPreflight),
@@ -495,7 +490,7 @@ mod tests {
             next_recording_label: Some("Sun 11:00".into()),
             ..Default::default()
         };
-        let menu = build_menu(&state, TrayLang::No);
+        let menu = build_menu(&state, Lang::No);
         let acts = actions(&menu);
         assert!(acts.contains(&TrayAction::StopRecording));
         assert!(!acts.contains(&TrayAction::StartRecording));
@@ -513,7 +508,7 @@ mod tests {
             has_error: true,
             ..Default::default()
         };
-        let menu = build_menu(&state, TrayLang::En);
+        let menu = build_menu(&state, Lang::En);
         assert_eq!(
             menu[0],
             TrayItem::Item {
@@ -531,7 +526,7 @@ mod tests {
             next_recording_label: Some("Sun 11:00".into()),
             ..Default::default()
         };
-        let menu = build_menu(&state, TrayLang::En);
+        let menu = build_menu(&state, Lang::En);
         let info = menu.iter().find_map(|i| match i {
             TrayItem::Item {
                 label,
@@ -545,7 +540,7 @@ mod tests {
 
     #[test]
     fn menu_always_ends_with_quit() {
-        for lang in [TrayLang::No, TrayLang::Fr, TrayLang::Pl] {
+        for lang in [Lang::No, Lang::Fr, Lang::Pl] {
             let menu = build_menu(&TrayState::default(), lang);
             let last = menu.last().unwrap();
             assert!(matches!(
@@ -560,14 +555,14 @@ mod tests {
 
     #[test]
     fn tooltip_appends_next_recording_when_known() {
-        let bare = tooltip(&TrayState::default(), TrayLang::En);
+        let bare = tooltip(&TrayState::default(), Lang::En);
         assert_eq!(bare, "SundayRec — running in background");
         let with_next = tooltip(
             &TrayState {
                 next_recording_label: Some("Sun 11:00".into()),
                 ..Default::default()
             },
-            TrayLang::En,
+            Lang::En,
         );
         assert_eq!(
             with_next,
@@ -576,10 +571,62 @@ mod tests {
     }
 
     #[test]
-    fn lang_defaults_to_norwegian() {
-        assert_eq!(TrayLang::from_code(None), TrayLang::No);
-        assert_eq!(TrayLang::from_code(Some("zz")), TrayLang::No);
-        assert_eq!(TrayLang::from_code(Some("de")), TrayLang::De);
+    fn a_missed_schedule_badges_the_icon_and_opens_the_window() {
+        let state = TrayState {
+            schedule_missed: true,
+            ..Default::default()
+        };
+        let menu = build_menu(&state, Lang::En);
+        assert_eq!(
+            menu[0],
+            TrayItem::Item {
+                label: "⚠️ A scheduled recording did not run — click for details".into(),
+                action: TrayAction::ShowOnError,
+                enabled: true,
+            }
+        );
+        assert_eq!(icon_for(&state), TrayIcon::Error);
+    }
+
+    #[test]
+    fn a_failed_take_outranks_a_missed_schedule_and_recording_outranks_both() {
+        let both = TrayState {
+            has_error: true,
+            schedule_missed: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            build_menu(&both, Lang::En)[0],
+            TrayItem::item(
+                "⚠️ Error — click for details",
+                TrayAction::ShowOnError,
+                true
+            )
+        );
+        let live = TrayState {
+            is_recording: true,
+            schedule_missed: true,
+            ..Default::default()
+        };
+        assert_eq!(icon_for(&live), TrayIcon::Recording);
+        assert_eq!(
+            build_menu(&live, Lang::No)[0],
+            TrayItem::item("🔴 Tar opp…", TrayAction::ShowOnError, false)
+        );
+    }
+
+    #[test]
+    fn the_missed_row_is_translated_in_all_seven_languages() {
+        let rows: std::collections::HashSet<_> = Lang::ALL
+            .iter()
+            .map(|&l| schedule_missed_label(l))
+            .collect();
+        // Sv and Da are allowed to share words with No elsewhere in this file;
+        // this sentence differs in all seven.
+        assert_eq!(rows.len(), Lang::ALL.len());
+        for row in rows {
+            assert!(row.starts_with("⚠️ "), "{row}");
+        }
     }
 
     #[test]
@@ -599,7 +646,7 @@ mod tests {
 
     #[test]
     fn a_full_session_walks_start_stop_error_and_queue() {
-        let lang = TrayLang::No;
+        let lang = Lang::No;
         let mut state = TrayState {
             next_recording_label: Some("søn. 11:00".into()),
             ..Default::default()
@@ -660,8 +707,8 @@ mod tests {
             ..Default::default()
         };
         let without = TrayState::default();
-        let a = build_menu(&with, TrayLang::No);
-        let b = build_menu(&without, TrayLang::No);
+        let a = build_menu(&with, Lang::No);
+        let b = build_menu(&without, Lang::No);
         assert_eq!(a.len(), b.len() + 1);
         assert_eq!(
             actions(&b)
@@ -678,8 +725,8 @@ mod tests {
             next_recording_label: Some("Sun 11:00".into()),
             ..Default::default()
         };
-        let no = build_menu(&state, TrayLang::No);
-        let fr = build_menu(&state, TrayLang::Fr);
+        let no = build_menu(&state, Lang::No);
+        let fr = build_menu(&state, Lang::Fr);
         // Same SHAPE, different words — a language switch must be a pure relabel.
         assert_eq!(actions(&no), actions(&fr));
         assert_ne!(no, fr);
@@ -726,31 +773,28 @@ mod tests {
     fn next_label_formats_weekday_and_time_per_language() {
         // 2026-08-09 is a Sunday.
         assert_eq!(
-            format_next_label(Some("2026-08-09T11:00:00"), TrayLang::No).as_deref(),
+            format_next_label(Some("2026-08-09T11:00:00"), Lang::No).as_deref(),
             Some("søn. 11:00")
         );
         assert_eq!(
-            format_next_label(Some("2026-08-09T11:00:00"), TrayLang::En).as_deref(),
+            format_next_label(Some("2026-08-09T11:00:00"), Lang::En).as_deref(),
             Some("Sun 11:00")
         );
         // A Wednesday evening, single-digit hour padded.
         assert_eq!(
-            format_next_label(Some("2026-08-05T09:05:00"), TrayLang::Fr).as_deref(),
+            format_next_label(Some("2026-08-05T09:05:00"), Lang::Fr).as_deref(),
             Some("mer. 09:05")
         );
     }
 
     #[test]
     fn next_label_is_none_for_nothing_scheduled_or_garbage() {
-        assert_eq!(format_next_label(None, TrayLang::No), None);
-        assert_eq!(format_next_label(Some(""), TrayLang::No), None);
-        assert_eq!(format_next_label(Some("   "), TrayLang::No), None);
-        assert_eq!(format_next_label(Some("not-a-date"), TrayLang::No), None);
+        assert_eq!(format_next_label(None, Lang::No), None);
+        assert_eq!(format_next_label(Some(""), Lang::No), None);
+        assert_eq!(format_next_label(Some("   "), Lang::No), None);
+        assert_eq!(format_next_label(Some("not-a-date"), Lang::No), None);
         // A raw timestamp in the menu would be worse than no row at all.
-        assert_eq!(
-            format_next_label(Some("2026-13-45T99:99"), TrayLang::No),
-            None
-        );
+        assert_eq!(format_next_label(Some("2026-13-45T99:99"), Lang::No), None);
     }
 
     /// The catalogue is COMPLETE — the same demand `build_menu`'s labels are
@@ -759,13 +803,13 @@ mod tests {
     #[test]
     fn every_language_has_seven_distinct_weekday_abbreviations() {
         for lang in [
-            TrayLang::No,
-            TrayLang::En,
-            TrayLang::De,
-            TrayLang::Sv,
-            TrayLang::Da,
-            TrayLang::Pl,
-            TrayLang::Fr,
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
         ] {
             let row = &WEEKDAYS[lang_row(lang)];
             assert!(row.iter().all(|d| !d.trim().is_empty()), "{lang:?}");
@@ -774,13 +818,13 @@ mod tests {
         }
         // Every row is reachable: no two languages share one.
         let rows: std::collections::HashSet<_> = [
-            TrayLang::No,
-            TrayLang::En,
-            TrayLang::De,
-            TrayLang::Sv,
-            TrayLang::Da,
-            TrayLang::Pl,
-            TrayLang::Fr,
+            Lang::No,
+            Lang::En,
+            Lang::De,
+            Lang::Sv,
+            Lang::Da,
+            Lang::Pl,
+            Lang::Fr,
         ]
         .iter()
         .map(|l| lang_row(*l))

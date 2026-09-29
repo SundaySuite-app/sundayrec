@@ -53,18 +53,41 @@ Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
   den speiler NSUserNotification-veien pluginen viser varsler gjennom. Spike på
   ekte Mac først; til da er svaret `unknown` + testvarselet.
 
+## ✅ Runde 3 — «Senere»-lista (2026-09-28)
+
+- **Feil under opptak varsles med setningen, ikke ffmpeg-linja.**
+  `AlertText::for_recording_code` gir hver feilkode vinduets egen setning
+  (`recording.error*` i `legacy/locales`) på sju språk; testen
+  `recording_failures_say_what_the_window_says` feiler hvis de to katalogene
+  sprikker. `engine::emit_failure` sender setningen og legger detaljen i loggen
+  og i Lydhjelps `last-error.json`.
+- **Tapt opptak på brukerens språk.** Navnet bygges fra `MissedKind`
+  (`alerts::missed_label`), tiden som menyens ukedag + klokkeslett. Nøkkelen i
+  `notify_seen` er uendret (tid + det kanoniske norske navnet), så ingen får
+  høre om samme søndag to ganger når språket byttes.
+- **Vekkehistorikken skrives.** Et tapt opptak logges én gang, og bare når
+  «Vekk maskinen fra dvale» er på. Lista viser dag og dato.
+- **Menylinja sier fra.** Planleggerfeil (`scheduler://failure`) og tapte
+  opptak gir gult ikon og statusraden «Planlagt opptak ble ikke tatt» til neste
+  opptak går live.
+- **`TrayLang` er borte**; menyen og vinduet bruker `lang::Lang`.
+
+Verifisering på rigg: `docs/RIG-DAY.md` (tapt opptak med vekking på, og
+menylinja etterpå).
+
 ## Senere
 
-- Oversette rå engelske/ffmpeg-feiltekster som havner i systemvarsler
-  (`recorder/engine.rs`, `two_process.rs`, `cpal_capture.rs`).
-- Varselet om tapt opptak: slot-navnet er alltid norsk (det inngår i
-  ledger-nøkkelen) og tidspunktet er en rå ISO-streng.
-- `wake_failure`-tabellen skrives aldri, så «Vekkehistorikk» er alltid tom.
-- Menylinje-ikonet viser verken planleggerfeil eller tapte opptak.
-- `TrayLang` og `lang::Lang` er to like enumer.
-- Fjerne `secrets`-modulen og `keyring` når e-postoppryddingen har vært med i
-  to utgivelser.
-- `sunday-telemetry`: rive `notify.sundaysuite.app` og slette lagrede adresser
-  når flåten har oppdatert.
-- Varsel til mobil (ntfy/Pushover) er et eget prosjekt, hvis det noen gang
+Hvert punkt har en betingelse for når det kan tas.
+
+- **Testvekkingens resultat** (`test_ok`/`test_fail`) måles ikke. Det krever et
+  signal for at maskinen våknet, og Tauri har ikke det. Dommen
+  (`classify_test_wake_delta`) er klar. _Når:_ en strømovervåker finnes (egen
+  spike, maskinvare).
+- **Fjerne `secrets`-modulen og `keyring`.** _Når:_ e-postoppryddingen har vært
+  med i to utgivelser. v0.23.0 var den første, så tidligst i utgivelsen etter
+  neste.
+- **`sunday-telemetry`: rive `notify.sundaysuite.app`** og slette lagrede
+  adresser. _Når:_ flåten har oppdatert til v0.23.0 eller nyere (se
+  telemetri-oversikten). Eierens oppgave (`docs/NEEDS-RICHARD.md`).
+- **Varsel til mobil** (ntfy/Pushover) er et eget prosjekt, hvis det noen gang
   blir aktuelt.

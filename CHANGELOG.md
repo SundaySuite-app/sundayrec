@@ -3,6 +3,23 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Uutgitt
+
+### Varslene sier det tydeligere
+
+- **Feil under opptak på ditt språk:** når et opptak stopper med feil, viser
+  varselet på skjermen den samme setningen som appen selv — ikke en teknisk
+  linje fra opptaksmotoren.
+- **Tapt opptak:** varselet sier hva slags opptak det var og når, på appens
+  språk (for eksempel «Weekly recording (11:00–13:00) (Sun 11:00)»). Du får
+  fortsatt bare høre om hvert tapte opptak én gang, også om du bytter språk.
+- **Menylinja sier fra:** når et planlagt opptak ikke ble tatt, blir
+  SundayRec-ikonet i menylinja gult med linja «Planlagt opptak ble ikke tatt —
+  klikk for detaljer», til neste opptak starter.
+- **Vekkehistorikken fylles:** under Avansert → Test vekking vises nå planlagte
+  opptak som ble gått glipp av mens «Vekk maskinen fra dvale» var på, med dag
+  og dato.
+
 ## v0.23.0 — varslene på maskinen
 
 Feil varsles på selve opptaksmaskinen, og nå kan du se at varslene faktisk

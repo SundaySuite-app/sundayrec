@@ -768,13 +768,29 @@ fn windows_cover(windows: &[CoveredWindow], when: NaiveDateTime) -> bool {
 }
 
 /// A scheduled recording that the missed-check determined never ran and is too
-/// stale to late-start — the engine logs it to history + the wake-failure ring.
+/// stale to late-start — the shell tells the operator natively and, when a wake
+/// was supposed to get the machine up for it, logs it to the wake-failure ring.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissedRecording {
     /// The expected (wall-clock) start time.
     pub when: NaiveDateTime,
-    /// Human-readable label for the history row.
+    /// The CANONICAL label — Norwegian, frozen. Hashed into the durable
+    /// `notify_seen` key that makes the missed notice fire once, so it must not
+    /// follow the UI language (see `sundayrec_core::alerts`'s header). What a
+    /// person reads is built from [`Self::kind`] instead.
     pub label: String,
+    /// What the occurrence was, for wording it in the volunteer's language
+    /// (`alerts::missed_label`).
+    pub kind: MissedKind,
+}
+
+/// What a [`MissedRecording`] was — the facts its sentence is built from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MissedKind {
+    /// A weekly slot, by its own start/stop (`"11:00"`, `"13:00"`).
+    Weekly { start: String, stop: String },
+    /// A dated special recording; `None` when it was never given a name.
+    Special { name: Option<String> },
 }
 
 /// Decide which slots/specials in the last 24 h should be logged as *missed*:
@@ -841,6 +857,10 @@ pub fn missed_recordings(
             out.push(MissedRecording {
                 when: candidate,
                 label: format!("Ukentlig opptak ({}–{})", slot.start, slot.stop),
+                kind: MissedKind::Weekly {
+                    start: slot.start.clone(),
+                    stop: slot.stop.clone(),
+                },
             });
         }
     }
@@ -865,12 +885,19 @@ pub fn missed_recordings(
         if windows_cover(covered, start) {
             continue;
         }
-        let label = if sp.name.trim().is_empty() {
-            "Spesialopptak".to_string()
-        } else {
+        let named = !sp.name.trim().is_empty();
+        let label = if named {
             sp.name.clone()
+        } else {
+            "Spesialopptak".to_string()
         };
-        out.push(MissedRecording { when: start, label });
+        out.push(MissedRecording {
+            when: start,
+            label,
+            kind: MissedKind::Special {
+                name: named.then(|| sp.name.clone()),
+            },
+        });
     }
 
     out

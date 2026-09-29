@@ -51,13 +51,12 @@ use sundayrec_core::two_process::{
     av_offset_decision, build_audio_capture_args, build_mux_args, build_video_capture_args,
     CameraFailure,
 };
-use tauri::{AppHandle, Emitter};
 
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::ffprobe_path;
 use crate::recorder::context::SessionContext;
-use crate::recorder::engine::{now_ms, sleep_opt, stop_and_wait_bounded, ERROR_EVENT};
+use crate::recorder::engine::{emit_failure, now_ms, sleep_opt, stop_and_wait_bounded};
 
 /// Hard limit on the mux ffmpeg run. A `-c:v copy` mux of even a multi-hour
 /// service is fast (audio re-encode dominates and is still real-time-ish);
@@ -321,7 +320,7 @@ pub(crate) async fn run_two_process_session(
             "recorder: two-process video capture failed: {}",
             failure.as_str()
         );
-        emit_error(&app, code, failure.as_str());
+        emit_failure(&app, code, failure.as_str());
         write_history(&pool, &audio_temp, &audio, started_ms, now_ms()).await;
         return Ok(());
     }
@@ -352,7 +351,7 @@ pub(crate) async fn run_two_process_session(
             // (it carries the picture; the audio temp sits beside it for manual
             // recovery).
             tracing::error!("recorder: two-process mux failed, keeping temps: {e}");
-            emit_error(&app, "mux_failed", &e.to_string());
+            emit_failure(&app, "mux_failed", &e.to_string());
             video_temp.clone()
         }
     };
@@ -452,17 +451,6 @@ async fn spawn_owned(args: &[String]) -> AppResult<tokio::process::Child> {
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
-}
-
-/// Emit a classified error to the renderer. Mirrors `engine::emit_error`.
-fn emit_error(app: &AppHandle, code: &str, message: &str) {
-    let _ = app.emit(
-        ERROR_EVENT,
-        crate::recorder::engine::RecordingEvent {
-            code: code.to_string(),
-            message: message.to_string(),
-        },
-    );
 }
 
 /// [`CameraFailure`] → the stable code the renderer localises on.

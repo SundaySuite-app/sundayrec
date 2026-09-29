@@ -3,8 +3,8 @@
   "generatedAt": "2026-09-06T20:02:21.670Z",
   "allowlist": {
     "crates/sundayrec-core/src/alerts.rs": "SJU-SPRÅKS-KATALOG. Den norske armen er én sjuendedel av et sett kompilatoren krever komplett — `(AlertText, Lang)`-matchen er uttømmende, så en variant KAN ikke legges til på norsk alene. Å telle den her ville felt gaten for å ha gjort det riktige: å legge til et nytt varsel på alle sju språk. Katalogens egne tester holder den ærlig (ikke-tom, sju ulike, plassholder-paritet).",
-    "crates/sundayrec-core/src/tray.rs": "SJU-SPRÅKS-KATALOG (menymodellen, `(item, TrayLang)`-matcher, og siden F2-I18N-R2 også ukedags-forkortelsene `format_next_label` setter). Samme grunn: `WEEKDAYS` er sju rader kompilatoren og testene krever komplette, og «søn.» er én sjuendedel av et sett — ikke en norsk setning som slapp unna. Tabellen sto i `src-tauri/src/tray/mod.rs` og talte som strønorsk der; én flate, én katalog.",
-    "crates/sundayrec-core/src/window.rs": "SJU-SPRÅKS-KATALOG (skjult-vindu- og avslutt-varslene, `(reason, TrayLang)`-matcher). Samme grunn.",
+    "crates/sundayrec-core/src/tray.rs": "SJU-SPRÅKS-KATALOG (menymodellen, `(item, Lang)`-matcher, og siden F2-I18N-R2 også ukedags-forkortelsene `format_next_label` setter). Samme grunn: `WEEKDAYS` er sju rader kompilatoren og testene krever komplette, og «søn.» er én sjuendedel av et sett — ikke en norsk setning som slapp unna. Tabellen sto i `src-tauri/src/tray/mod.rs` og talte som strønorsk der; én flate, én katalog.",
+    "crates/sundayrec-core/src/window.rs": "SJU-SPRÅKS-KATALOG (skjult-vindu- og avslutt-varslene, `(reason, Lang)`-matcher). Samme grunn.",
     "crates/sundayrec-core/src/church_calendar.rs": "Helligdagsnavnene er DATA, ikke setninger. «Skjærtorsdag» er navnet på en rad i den norske kirkeåret-tabellen — det er ikke noe å oversette, og modulhodet sier det rett ut: kalenderen ER norsk. Kommer det en tysk kalender, får den sin egen tabell."
   },
   "total": 0,
