@@ -4,7 +4,7 @@
 // error here instead of silently drifting. Only types whose generated shape is
 // field-for-field identical to the old hand-written one are re-exported; the
 // rest below stay hand-written until the Rust side matches (e.g. `?` vs
-// `| null` optionality — see docs/BACKLOG-AUDIT-2026-07-07.md).
+// `| null` optionality — see docs/archive/BACKLOG-AUDIT-2026-07-07.md).
 import type { ChannelMode } from '../bindings/ChannelMode'
 import type { FileFormat } from '../bindings/FileFormat'
 import type { FilenamePattern } from '../bindings/FilenamePattern'

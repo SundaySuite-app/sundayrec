@@ -1,5 +1,8 @@
 # Natt-audit + diagnose-verktøy — 2026-06-07
 
+> **Arkivert 2026-09-28:** øktrapport. Det som var åpent herfra er enten gjort
+> eller ført inn i `docs/PLAN.md`.
+
 Stor-scope gjennomgang av SundayRec: svakheter, bugs og effektivitet, pluss et
 samlet diagnose-verktøy med feilkode-system. Alt under er committet på
 `feat/windows-asio` og gate-grønt på mac (`npm run check` exit 0). Windows-only

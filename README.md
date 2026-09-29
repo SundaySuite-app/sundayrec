@@ -80,12 +80,13 @@ export.
   `legacy/locales/`, and the `types`/`shared` trees. `app/` reaches all of it
   through the `@legacy/*` alias. Generated code and data, in other words — the
   Electron vanilla-TS renderer that used to live here is gone entirely.
-- **`docs/`** — living docs: migration plan (`MIGRATION-TAURI2.md`), hardware
-  smoke tests (`SMOKE-TEST.md`), a one-day hands-on rig checklist
-  (`RIG-DAY.md`), the volunteer-facing operating guide (`FRIVILLIG.md`,
-  Norwegian), the account/key checklist (`NEEDS-RICHARD.md`), and an
-  improvement-backlog snapshot from 2026-07-07 (`BACKLOG-AUDIT-2026-07-07.md`).
-  Superseded snapshots live in `docs/archive/`.
+- **`docs/`** — start at [`docs/README.md`](docs/README.md), the map of every
+  document, and [`docs/PLAN.md`](docs/PLAN.md), the one register of what is
+  left to do and whose it is. Beside them: hardware smoke tests
+  (`SMOKE-TEST.md`), a one-day rig checklist (`RIG-DAY.md`), the
+  volunteer-facing guide (`FRIVILLIG.md`, Norwegian), the owner's checklist
+  (`NEEDS-RICHARD.md`) and the release runbooks. Session reports and
+  superseded snapshots live in `docs/archive/`.
 
 The original Electron app remains the **behavioural specification**, not a
 template. See [`docs/MIGRATION-TAURI2.md`](docs/MIGRATION-TAURI2.md) for the

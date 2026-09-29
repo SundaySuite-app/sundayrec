@@ -1,5 +1,16 @@
 # Audit-backlog — 2026-07-07
 
+> **Arkivert og triagert 2026-09-28.** Fortsatt åpne — og ført inn i
+> `docs/PLAN.md`: #2 (`opener:allow-open-path`), #12 (dele `engine.rs`, nå
+> ≈4 800 linjer), #14 (`tokio` «full»), #17 (Intel/universal Mac-bygg).
+> Gjort: #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
+> `path_ratchet` på stiflatene), #7 (én stub igjen), #8 (`call()` viser
+> feilene), #13 (`cpal_capture.rs` har tester; `media/preview.rs` finnes
+> ikke), #16. Foreldet — koden eller funksjonen er borte: #4 (typene som
+> gjensto hører til fjernede funksjoner), #5, #6, #9, #10, #11 (den gamle
+> rendereren og `reference/`), #15 (sky/OAuth fjernet), #18 (erstattet av
+> `docs/NEEDS-RICHARD.md`). Resten under er ordrett.
+
 Gjenværende funn fra full-auditen 2026-07-07 (Rust-backend, frontend,
 prosjekthelse) som IKKE ble tatt i forbedringsrunden på branchen
 `claude/sundayrec-audit-improvements-0dy4fa`. Det som BLE fikset der: editor-IPC

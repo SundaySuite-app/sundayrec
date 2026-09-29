@@ -953,7 +953,7 @@ mod tests {
     fn every_preset_makeup_is_written_in_db() {
         // F2-C-A: the whole app calls this value dB — the mixer slider says dB,
         // the DTO field is `comp_makeup_db`, the tuning notes in
-        // docs/NATT-LYD-VU-PREKEN say "makeup 3→2" meaning decibels. ffmpeg
+        // docs/archive/NATT-LYD-VU-PREKEN say "makeup 3→2" meaning decibels. ffmpeg
         // reads a bare number as a linear factor in [1, 64], so a bare `2` is
         // +6.02 dB and a bare `0.5` is not quiet — it is an "out of range"
         // ERROR that kills the export. Every `makeup=` we ship must therefore

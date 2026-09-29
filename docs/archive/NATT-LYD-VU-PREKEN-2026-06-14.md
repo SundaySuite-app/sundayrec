@@ -1,5 +1,8 @@
 # Natt-økt 2026-06-14: lydkvalitet, VU-respons, preken-auto-kutt
 
+> **Arkivert 2026-09-28:** øktrapport. Det som var åpent herfra er enten gjort
+> eller ført inn i `docs/PLAN.md`.
+
 Richard rapporterte fire ting på nyeste versjon: (1) hakkete opptakslyd, (2)
 editor-lyd virker overkomprimert, (3) ønsket «analyser → foreslå preken →
 godkjenn → kutt bort resten (all musikk)», (4) VU/«uv-signal» henger langt bak
