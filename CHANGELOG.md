@@ -3,9 +3,10 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Uutgitt
+## v0.24.0 — varslene sier det tydeligere
 
-### Varslene sier det tydeligere
+Varslene sier hva som skjedde på ditt språk, og SundayRec-ikonet i menylinja
+viser når et planlagt opptak ikke ble tatt.
 
 - **Feil under opptak på ditt språk:** når et opptak stopper med feil, viser
   varselet på skjermen den samme setningen som appen selv — ikke en teknisk
