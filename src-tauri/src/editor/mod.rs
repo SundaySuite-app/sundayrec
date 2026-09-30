@@ -1063,6 +1063,14 @@ pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
 /// Best-effort: a settings or history read that fails simply narrows the sweep.
 /// Returns how many files were removed.
 pub async fn startup_sweep(pool: &sqlx::SqlitePool) -> usize {
+    startup_sweep_in(pool, std::env::temp_dir()).await
+}
+
+/// [`startup_sweep`] with the temp dir named. The OS temp dir is shared with
+/// every other process on the machine — the installed app, another test run —
+/// so a test that sweeps the real one counts whatever preview happens to be
+/// mid-render there. That made the sweep test fail at random.
+async fn startup_sweep_in(pool: &sqlx::SqlitePool, temp_dir: std::path::PathBuf) -> usize {
     let mut folders: Vec<String> = Vec::new();
     if let Ok(settings) = crate::settings::load(pool).await {
         if let Some(save) = settings.save_folder {
@@ -1081,7 +1089,7 @@ pub async fn startup_sweep(pool: &sqlx::SqlitePool) -> usize {
     // sweep rides in the same blocking task: same lifecycle, same best-effort
     // contract, one log line.
     let removed = tokio::task::spawn_blocking(move || {
-        cleanup_temp_files(&folders) + cleanup_preview_temp_files(&std::env::temp_dir())
+        cleanup_temp_files(&folders) + cleanup_preview_temp_files(&temp_dir)
     })
     .await
     .unwrap_or(0);
@@ -4532,7 +4540,10 @@ mod tests {
         .await
         .unwrap();
 
-        let removed = startup_sweep(&pool).await;
+        // A private temp dir: the real one is shared with every process on the
+        // machine, and its preview sweep would count their files too.
+        let temp = tempfile::tempdir().expect("temp dir");
+        let removed = startup_sweep_in(&pool, temp.path().to_path_buf()).await;
         assert_eq!(removed, 4, "two leftovers in each of the two known folders");
         for d in [save.path(), elsewhere.path()] {
             assert!(d.join("service.mp3").exists(), "the recording survives");

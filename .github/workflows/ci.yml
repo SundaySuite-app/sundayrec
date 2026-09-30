@@ -173,9 +173,8 @@ jobs:
         run: npm run smoke-verified
 
       # The Rust suite is deliberately device-INDEPENDENT (device enumeration
-      # tolerates zero devices; the cpal/ffmpeg streams are not opened in tests;
-      # the keychain test skips when no keychain is reachable) so it passes on a
-      # headless runner. Hardware capture/preview is validated manually — see
+      # tolerates zero devices; the cpal/ffmpeg streams are not opened in tests)
+      # so it passes on a headless runner. Hardware capture/preview is validated manually — see
       # docs/MIGRATION-TAURI2.md, Phase 0/3 hardware matrix.
       - name: Rust fmt / clippy / tests
         working-directory: src-tauri

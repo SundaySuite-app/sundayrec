@@ -3,6 +3,14 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Uutgitt
+
+- **SundayRec bruker ikke lenger maskinens nøkkelring.** Appen lagrer ingen
+  passord, og har ikke gjort det siden e-postvarslene ble fjernet. Oppgraderer
+  du rett fra v0.22.0 eller eldre, kan et gammelt e-postpassord ligge igjen i
+  nøkkelringen; ingenting leser det, og du kan slette det der om du vil
+  (Nøkkelringtilgang → søk «sundayrec»).
+
 ## v0.24.0 — varslene sier det tydeligere
 
 Varslene sier hva som skjedde på ditt språk, og SundayRec-ikonet i menylinja

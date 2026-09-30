@@ -169,11 +169,6 @@ sqlx = { version = "0.9", default-features = false, features = [
 # timestamp index.
 uuid = { version = "1", features = ["v4", "v7"] }
 
-# OS-native secret storage. Replaces Electron's `safeStorage` — OAuth tokens and
-# stream keys live in the macOS Keychain / Windows Credential Manager, never in
-# a plaintext file.
-keyring = { version = "3", features = ["apple-native", "windows-native"] }
-
 # Type generation for the frontend (run with `cargo test export_bindings`).
 ts-rs = { version = "12", features = ["serde-compat"] }
 
@@ -219,7 +214,6 @@ tauri-plugin-autostart = "2"
 #   - the missed-recording ledger hashes a slot's label into its `notify_seen`
 #     key (`notify::MissedSlot::seen_key`) — every build;
 #   - `--features vad` re-verifies the embedded model's bytes at load time.
-# Already in the tree via `keyring` either way.
 sha2 = "0.11"
 # E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
 # no system onnxruntime to ship or find. Only pulled under `--features vad`.
