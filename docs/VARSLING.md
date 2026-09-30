@@ -75,6 +75,16 @@ Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
 Verifisering på rigg: `docs/RIG-DAY.md` (tapt opptak med vekking på, og
 menylinja etterpå).
 
+## ✅ Runde 4 — `secrets` og `keyring` ut (v0.25.0)
+
+E-postoppryddingen var med i v0.23.0 og v0.24.0, som slettet SMTP-passordet fra
+nøkkelringen én gang. Nå er `secrets`-modulen og `keyring`-avhengigheten borte,
+og appen rører ikke nøkkelringen i det hele tatt. `settings::email_cleanup`
+rydder fortsatt innstillingene og viser beskjeden én gang. En installasjon som
+hopper rett fra v0.22.0 eller eldre, beholder passordet ulest i nøkkelringen,
+som de andre pensjonerte oppføringene; lista over dem står i modulhodet til
+`settings::email_cleanup`.
+
 ## Senere
 
 Hvert punkt har en betingelse for når det kan tas.
@@ -83,9 +93,6 @@ Hvert punkt har en betingelse for når det kan tas.
   signal for at maskinen våknet, og Tauri har ikke det. Dommen
   (`classify_test_wake_delta`) er klar. _Når:_ en strømovervåker finnes (egen
   spike, maskinvare).
-- **Fjerne `secrets`-modulen og `keyring`.** _Når:_ e-postoppryddingen har vært
-  med i to utgivelser. v0.23.0 var den første, så tidligst i utgivelsen etter
-  neste.
 - **`sunday-telemetry`: rive `notify.sundaysuite.app`** og slette lagrede
   adresser. _Når:_ flåten har oppdatert til v0.23.0 eller nyere (se
   telemetri-oversikten). Eierens oppgave (`docs/NEEDS-RICHARD.md`).

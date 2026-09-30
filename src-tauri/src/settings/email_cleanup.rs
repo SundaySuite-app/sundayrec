@@ -9,7 +9,6 @@
 //!   - the e-mail keys in the settings blob (`emailOnError`, `emailAddress`,
 //!     `emailSmtp*`, `emailReceiptEnabled`). The typed [`Settings`] already
 //!     ignores them; rewriting the blob makes them actually go away;
-//!   - the SMTP password in the OS keychain (`email.smtp_password`);
 //!   - the relay's outbox and subscription record — those two are dropped by
 //!     migration `0008_drop_notify_outbox.sql`, not here;
 //!   - and, for a volunteer who had e-mail alerts switched ON, a pending notice
@@ -27,13 +26,22 @@
 //! Idempotent without a flag of its own: once the blob is rewritten there are
 //! no e-mail keys left, and the next launch finds nothing to do.
 //!
-//! ## The keychain is touched only when there is something there
+//! ## The keychain is no longer touched
 //!
-//! `secrets`' module docs explain why retired slots were left alone until now: a
-//! keychain call can block on an OS authorization prompt. So the deletion runs
-//! ONLY on a machine whose settings name an SMTP server or user (a machine that
-//! never set SMTP up has no password stored), and it runs in the background —
-//! a prompt, if one ever appears, can never hold up launch.
+//! v0.23.0 and v0.24.0 also deleted the SMTP password from the OS keychain,
+//! once, where the settings showed SMTP had been configured. From v0.25.0 the
+//! `secrets` module and the `keyring` dependency are gone, so an install that
+//! jumps straight from v0.22.0 or older keeps that entry — unread by anything,
+//! exactly like the other retired slots below, which were always left alone
+//! (keyring cannot enumerate accounts, and a keychain call can block launch on
+//! an OS authorization prompt).
+//!
+//! The retired entries, all under the service `no.sundayrec.app` — the storage
+//! contract for anyone who wants to remove them by hand (Keychain Access /
+//! Credential Manager, search «sundayrec»): `email.smtp_password`,
+//! `oauth.google_drive`, `oauth.youtube`, `oauth.gmail`,
+//! `integrations.song_api_key`, `stream.key`, `stream.key.{destId}` and
+//! `companion.llm_api_key`.
 
 use sqlx::SqlitePool;
 
@@ -67,9 +75,6 @@ pub const RETIRED_KEYS: &[&str] = &[
 pub struct CleanupPlan {
     /// The blob still carries e-mail keys: rewrite it without them.
     pub rewrite_settings: bool,
-    /// An SMTP server or user was configured, so a password may sit in the
-    /// keychain: delete it.
-    pub forget_smtp_password: bool,
     /// E-mail alerts were switched ON: tell the volunteer they are gone.
     pub notify_removed: bool,
 }
@@ -86,20 +91,13 @@ pub fn plan(raw: Option<&str>) -> CleanupPlan {
     else {
         return CleanupPlan::default();
     };
-    let non_blank = |key: &str| {
-        obj.get(key)
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.trim().is_empty())
-    };
     CleanupPlan {
         rewrite_settings: RETIRED_KEYS.iter().any(|k| obj.contains_key(*k)),
-        forget_smtp_password: non_blank("emailSmtp") || non_blank("emailSmtpUser"),
         notify_removed: obj.get("emailOnError").and_then(|v| v.as_bool()) == Some(true),
     }
 }
 
-/// Clear the leftovers in the DATABASE and return the plan, so the caller can
-/// do the keychain half off the startup path (see the module docs).
+/// Clear the leftovers in the database and return the plan that was carried out.
 ///
 /// Order matters: the notice is written BEFORE the blob is rewritten. If the
 /// process dies between the two, the next launch still finds the e-mail keys and
@@ -116,47 +114,10 @@ pub async fn run(pool: &SqlitePool) -> AppResult<CleanupPlan> {
         super::save(pool, settings).await?;
         tracing::info!(
             notice = plan.notify_removed,
-            smtp = plan.forget_smtp_password,
             "settings: removed the retired e-mail alert fields"
         );
     }
     Ok(plan)
-}
-
-/// Delete the retired SMTP password when `plan` says one may exist. The
-/// `delete` seam is injected so the decision is testable without a real
-/// keychain (whose calls can block on an OS prompt in a headless run).
-pub fn forget_smtp_password_with(
-    plan: CleanupPlan,
-    delete: impl FnOnce() -> AppResult<()>,
-) -> bool {
-    if !plan.forget_smtp_password {
-        return false;
-    }
-    match delete() {
-        Ok(()) => {
-            tracing::info!("settings: removed the retired SMTP password from the keychain");
-            true
-        }
-        Err(e) => {
-            tracing::warn!("settings: could not remove the retired SMTP password: {e}");
-            false
-        }
-    }
-}
-
-/// The production keychain half of the clean-up: [`forget_smtp_password_with`]
-/// over the real `secrets::delete`, on a blocking thread so a keychain prompt
-/// can never stall the async runtime or startup.
-pub fn forget_smtp_password_in_background(plan: CleanupPlan) {
-    if !plan.forget_smtp_password {
-        return;
-    }
-    tauri::async_runtime::spawn_blocking(move || {
-        forget_smtp_password_with(plan, || {
-            crate::secrets::delete(crate::secrets::SecretProvider::SmtpPassword)
-        });
-    });
 }
 
 /// Whether the "e-mail alerts were removed" banner should show.
@@ -172,7 +133,6 @@ pub async fn dismiss_notice(pool: &SqlitePool) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
 
     async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -209,31 +169,29 @@ mod tests {
     }"#;
 
     #[test]
-    fn a_church_with_smtp_and_alerts_on_gets_all_three() {
+    fn a_church_with_smtp_and_alerts_on_gets_both() {
         assert_eq!(
             plan(Some(SMTP_ON)),
             CleanupPlan {
                 rewrite_settings: true,
-                forget_smtp_password: true,
                 notify_removed: true,
             }
         );
     }
 
     #[test]
-    fn default_email_fields_are_rewritten_but_touch_neither_keychain_nor_banner() {
+    fn default_email_fields_are_rewritten_without_a_banner() {
         assert_eq!(
             plan(Some(DEFAULTS_ONLY)),
             CleanupPlan {
                 rewrite_settings: true,
-                forget_smtp_password: false,
                 notify_removed: false,
             }
         );
     }
 
     #[test]
-    fn a_relay_user_without_smtp_is_told_but_the_keychain_is_left_alone() {
+    fn a_relay_user_without_smtp_is_told() {
         // The relay needed no SMTP host — one switch drove both pipes, so the
         // switch alone decides the notice.
         let relay_only = r#"{"emailOnError": true, "emailAddress": "vakt@kirka.no"}"#;
@@ -241,18 +199,9 @@ mod tests {
             plan(Some(relay_only)),
             CleanupPlan {
                 rewrite_settings: true,
-                forget_smtp_password: false,
                 notify_removed: true,
             }
         );
-    }
-
-    #[test]
-    fn a_whitespace_host_is_not_a_configured_server() {
-        let blank = r#"{"emailSmtp": "   ", "emailSmtpUser": ""}"#;
-        assert!(!plan(Some(blank)).forget_smtp_password);
-        let user_only = r#"{"emailSmtpUser": "vakt"}"#;
-        assert!(plan(Some(user_only)).forget_smtp_password);
     }
 
     #[test]
@@ -271,7 +220,7 @@ mod tests {
             .unwrap();
 
         let first = run(&pool).await.unwrap();
-        assert!(first.rewrite_settings && first.notify_removed && first.forget_smtp_password);
+        assert!(first.rewrite_settings && first.notify_removed);
 
         // The blob no longer carries a single e-mail key…
         let raw = store::get_setting(&pool, SETTINGS_KEY)
@@ -313,31 +262,5 @@ mod tests {
                 .is_none(),
             "a clean-up with nothing to do writes nothing"
         );
-    }
-
-    #[test]
-    fn the_keychain_is_asked_only_when_a_server_was_configured() {
-        let called = Cell::new(false);
-        let cleared = forget_smtp_password_with(plan(Some(DEFAULTS_ONLY)), || {
-            called.set(true);
-            Ok(())
-        });
-        assert!(!cleared);
-        assert!(!called.get(), "no SMTP host → no keychain call at all");
-
-        let cleared = forget_smtp_password_with(plan(Some(SMTP_ON)), || {
-            called.set(true);
-            Ok(())
-        });
-        assert!(cleared);
-        assert!(called.get());
-    }
-
-    #[test]
-    fn a_keychain_that_refuses_is_logged_not_fatal() {
-        let cleared = forget_smtp_password_with(plan(Some(SMTP_ON)), || {
-            Err(crate::error::AppError::Internal("locked".into()))
-        });
-        assert!(!cleared);
     }
 }

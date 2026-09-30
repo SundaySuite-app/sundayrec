@@ -55,7 +55,6 @@ pub mod recorder;
 // Documents default" question goes through here (7 divergent copies before).
 pub mod save_folder;
 pub mod scheduler;
-pub mod secrets;
 pub mod settings;
 // E6.1 soak / long-run harness — the answer to "the product's workload is a
 // 60–180 minute unattended take and nothing automated exceeds 60 seconds".
@@ -294,11 +293,8 @@ pub fn run() {
             // E-mail alerts were removed. Clear what an upgraded install still
             // carries — BEFORE anything below can save the settings, because the
             // first save erases the only evidence (see `settings::email_cleanup`).
-            // The database half is quick and runs here; the keychain half runs
-            // in the background so an OS prompt can never hold up launch.
-            match tauri::async_runtime::block_on(settings::email_cleanup::run(&pool)) {
-                Ok(plan) => settings::email_cleanup::forget_smtp_password_in_background(plan),
-                Err(e) => tracing::warn!("settings: the e-mail clean-up failed: {e}"),
+            if let Err(e) = tauri::async_runtime::block_on(settings::email_cleanup::run(&pool)) {
+                tracing::warn!("settings: the e-mail clean-up failed: {e}");
             }
 
             // Orphan hygiene (unix; Windows is covered by the Job Object above).

@@ -122,11 +122,12 @@ So a future auditor doesn't have to re-derive these from scratch:
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.
-- **No stored credentials.** The last secret the app kept — the SMTP password,
-  in the OS-native credential store (macOS Keychain / Windows Credential
-  Manager through the `keyring` crate; `src-tauri/src/secrets/`) — went with
-  e-mail alerts. An upgraded install deletes it once, and only where its
-  settings show SMTP was configured (`settings::email_cleanup`). (E1.6 had
+- **No stored credentials, and no keychain access.** The last secret the app
+  kept — the SMTP password, in the OS-native credential store — went with
+  e-mail alerts. v0.23.0 and v0.24.0 deleted it once on upgrade; from v0.25.0
+  the `keyring` crate and the `secrets` module are gone and the app never
+  touches the keychain. Retired entries an older build left behind are listed
+  in `src-tauri/src/settings/email_cleanup.rs` for manual removal. (E1.6 had
   earlier closed a legacy gap where that password leaked into a plaintext
   localStorage blob.)
 - **Strict CSP, no unsafe-inline scripts.** `script-src 'self'` with no

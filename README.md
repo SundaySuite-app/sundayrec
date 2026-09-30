@@ -50,7 +50,7 @@ export.
   arguments, device parsers, error classification, silence/watchdog logic) —
   rebuilt cleanly, not copied.
 - **`src-tauri`** — the thin Tauri 2 shell: commands, events, processes,
-  keyring, SQLite (sqlx), tracing. Impure paths that need a device/network/GUI
+  SQLite (sqlx), tracing. Impure paths that need a device/network/GUI
   are annotated `HARDWARE/NETWORK/GUI-UNVERIFIED` and covered by
   `docs/SMOKE-TEST.md`. Subsystems are cargo features; `default` is
   `editor`, `tray`, `updater`. Default-OFF and opt-in: `asio`,

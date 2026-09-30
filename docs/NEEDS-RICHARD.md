@@ -318,8 +318,9 @@ re-discovering these bullets one at a time.
 
 ### Keys & secrets
 
-- ~~**SMTP credentials**~~ — gone with e-mail alerts (PU-1). An upgraded
-  install deletes the stored password once.
+- ~~**SMTP credentials**~~ — gone with e-mail alerts (PU-1). v0.23.0/v0.24.0
+  deleted the stored password once on upgrade; from v0.25.0 the app has no
+  keychain access at all (`keyring` removed).
 - **Anthropic API key**: NOT consumed by SundayRec — the AI sermon companion
   (the one seam that read it, from the keychain slot `companion.llm_api_key`)
   left in R2. A key stored there by an earlier build is left alone, like the

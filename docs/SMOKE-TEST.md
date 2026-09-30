@@ -563,18 +563,20 @@ one thing left to check here:
    - **Expected:** Opptak shows ONE banner, «E-postvarsler er fjernet», with
      «Den er grei». Pressing it removes the banner, and it does not come back
      on the next launch.
-   - **Expected:** the keychain entry `no.sundayrec.app` / `email.smtp_password`
-     is gone (Keychain Access on macOS, Credential Manager on Windows). No
-     keychain prompt blocks launch — the deletion runs in the background.
+   - **Expected (since v0.25.0):** no keychain prompt at all — the app no
+     longer touches the keychain. The entry `no.sundayrec.app` /
+     `email.smtp_password` is deleted only by v0.23.0/v0.24.0; an install that
+     skipped both keeps it, unread, like the other retired entries listed in
+     `settings::email_cleanup` (remove it by hand in Keychain Access /
+     Credential Manager if wanted).
    - **Expected:** every other setting survived (church name, reminder, the
      notification toggle, the schedule).
    - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::an_upgraded_install_is_cleaned_once_and_keeps_everything_else
-   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::the_keychain_is_asked_only_when_a_server_was_configured
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_removed_email_fields_imports_cleanly
    - VERIFIED-BY: e2e/record.spec.ts::e-postvarslene er borte: beskjeden står til den er lest, og så aldri mer
 2. On a machine that never switched e-mail alerts on, the same upgrade shows
-   NO banner and touches no keychain entry.
-   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::default_email_fields_are_rewritten_but_touch_neither_keychain_nor_banner
+   NO banner.
+   - VERIFIED-BY: src-tauri/src/settings/email_cleanup.rs::default_email_fields_are_rewritten_without_a_banner
 
 ---
 

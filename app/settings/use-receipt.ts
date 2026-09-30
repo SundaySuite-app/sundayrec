@@ -24,7 +24,7 @@
  * Den lagrer ingenting og vet ingenting om innstillinger. Den holder ETT ord og
  * en timer. Skrivningen hører hjemme i `useSetting` (én nøkkel) eller
  * `usePatch` (flere nøkler); denne hooken er det de to — og de få ekte
- * særtilfellene, som en nøkkelring-skrivning — sier ifra gjennom.
+ * særtilfellene — sier ifra gjennom.
  */
 
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
