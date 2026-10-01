@@ -146,8 +146,8 @@ base64 = "0.23"
 # encoding cleanly. `std::process` only gives us a blocking `wait()`/`output()`.
 #
 # Only the features production code actually uses are listed here: `process`,
-# `fs`, `io-util`, `sync`, `time`, plus `rt` (spawn / spawn_blocking /
-# new_current_thread) and `macros` (`select!`, `join!`, `pin!`). `full` is not
+# `fs`, `io-util`, `sync`, `time`, plus `rt` (spawn / spawn_blocking) and
+# `macros` (`select!`, `join!`). `full` is not
 # used on purpose — it would also pull in `signal`, `io-std`, `parking_lot` and
 # `rt-multi-thread`/`net`, none of which the app calls. The test-only features
 # (`test-util`, `rt-multi-thread`, `net`) live under `[dev-dependencies]` below.

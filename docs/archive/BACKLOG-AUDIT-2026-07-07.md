@@ -2,8 +2,8 @@
 
 > **Arkivert og triagert 2026-09-28.** Fortsatt åpne — og ført inn i
 > `docs/PLAN.md`: #2 (`opener:allow-open-path`), #12 (dele `engine.rs`, nå
-> ≈4 800 linjer), #14 (`tokio` «full»), #17 (Intel/universal Mac-bygg).
-> Gjort: #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
+> ≈4 800 linjer), #17 (Intel/universal Mac-bygg).
+> Gjort: #14 (`tokio` med bare funksjonene som brukes, #301), #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
 > `path_ratchet` på stiflatene), #7 (én stub igjen), #8 (`call()` viser
 > feilene), #13 (`cpal_capture.rs` har tester; `media/preview.rs` finnes
 > ikke), #16. Foreldet — koden eller funksjonen er borte: #4 (typene som
@@ -89,7 +89,7 @@ sjekksum-rammeverk for ffmpeg/ASIO, ts-rs-bindings-adopsjon
 13. **Tester for `recorder/cpal_capture.rs` (759 linjer)** — WASAPI/ASIO
     PCM-capture-stien er eneste store utestede produksjonsmodul. Også
     `media/preview.rs` (1404 linjer) mangler tester.
-14. **`tokio = { features = ["full"] }`** i `src-tauri` — smalere featuresett
+14. **Gjort (#301).** **`tokio = { features = ["full"] }`** i `src-tauri` — smalere featuresett
     kutter kompileringstid og binærstørrelse.
 15. **Strukturerte feil i `secrets/mod.rs`/`cloud/oauth_flow.rs`** — keychain-
     feil flates i dag til `AppError::Internal(String)`.
