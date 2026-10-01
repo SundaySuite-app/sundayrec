@@ -910,6 +910,110 @@ fn history_covers(history: &[NaiveDateTime], when: NaiveDateTime) -> bool {
         .any(|&h| (h - when).num_milliseconds().abs() < HISTORY_COVER_MS)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   Special device override
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A special recording may name its own capture device (a wedding on a USB mic
+// while the weekly service records from the mixer). The special stores the id
+// the renderer's device picker uses; the recorder opens devices by NAME. These
+// are the pure halves of turning one into the other — the enumeration itself
+// and the operator warning live in the `src-tauri` scheduler.
+//
+// The Sunday-critical rule is the shape of every function below: a weekly slot,
+// or a special WITHOUT a device, never reaches any of this beyond
+// [`special_device_wanted`] answering `None`, so its recording is composed from
+// exactly the settings it always was.
+
+/// The device a trigger wants on top of the global settings: the special's own
+/// `device_id`, when the trigger is a special that has a non-blank one.
+///
+/// `None` for every weekly slot, for a special without a device (the renderer
+/// wrote `deviceId: null` for years), for a blank one, and for an index that
+/// points past the list — the global device in all four cases.
+pub fn special_device_wanted(specials: &[SpecialRecording], kind: TriggerKind) -> Option<&str> {
+    match kind {
+        TriggerKind::Slot(_) => None,
+        TriggerKind::Special(i) => specials
+            .get(i)
+            .and_then(|sp| sp.device_id.as_deref())
+            .filter(|id| !id.trim().is_empty()),
+    }
+}
+
+/// What a special recording records from, decided against the inputs that are
+/// enumerated right now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpecialDevice {
+    /// No device of its own: the global settings decide, unchanged.
+    Global,
+    /// Its device is present. `id` is the picker id (what `device_channels` is
+    /// keyed by), `name` what the recorder opens.
+    Use { id: String, name: String },
+    /// It asked for a device nothing answers to. The caller records on the
+    /// global device instead — and says so.
+    Missing { wanted: String },
+}
+
+/// Resolve a special's stored device against the enumerated inputs, given as
+/// `(id, name)` pairs in the picker's id space.
+///
+/// Match on the id first — that is what the picker stored — then on the name,
+/// for a profile that carries a backend name instead of a picker id. Both
+/// matches are EXACT. The recorder's own lookup is fuzzy (substring, word
+/// overlap) because a stored label from an older build may not be the OS name;
+/// here a fuzzy hit would be a silent guess at a DIFFERENT device, while a miss
+/// costs a recording on the usual device plus a warning that names the one that
+/// was not there. The second is the one an operator can act on.
+pub fn resolve_special_device(wanted: Option<&str>, inputs: &[(String, String)]) -> SpecialDevice {
+    let Some(wanted) = wanted.filter(|w| !w.trim().is_empty()) else {
+        return SpecialDevice::Global;
+    };
+    let hit = inputs
+        .iter()
+        .find(|(id, _)| id == wanted)
+        .or_else(|| inputs.iter().find(|(_, name)| name == wanted));
+    match hit {
+        Some((id, name)) => SpecialDevice::Use {
+            id: id.clone(),
+            name: name.clone(),
+        },
+        None => SpecialDevice::Missing {
+            wanted: wanted.to_string(),
+        },
+    }
+}
+
+/// The settings a special with its own (present) device records with: the
+/// global settings, pointed at that device.
+///
+/// `device_id` + `device_name` follow the device, and [`Settings::validate`]
+/// then derives the channel pair from `device_channels[id]` — the pair the
+/// operator chose for THAT device in the device picker, or default routing when
+/// it has none. One case `validate` leaves alone on purpose (an EMPTY map keeps
+/// the flat pair, for profiles older than the map) is closed here: switching to
+/// a different device whose pair nobody chose must not inherit the global
+/// device's channels — channel 16/17 of a mixer means nothing on a USB mic.
+///
+/// Everything else — format, folder, silence, split, video — stays the global
+/// settings'. A special changes WHERE the sound comes from, nothing more.
+pub fn settings_for_special_device(
+    global: &crate::settings::Settings,
+    id: &str,
+    name: &str,
+) -> crate::settings::Settings {
+    let mut s = global.clone();
+    let switching = s.device_id.as_deref() != Some(id);
+    s.device_id = Some(id.to_string());
+    s.device_name = Some(name.to_string());
+    if switching && !s.device_channels.contains_key(id) {
+        s.input_channel_l = None;
+        s.input_channel_r = None;
+    }
+    s.validate();
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1729,5 +1833,266 @@ mod tests {
         assert_eq!(s.start, "11:00");
         assert_eq!(s.stop, "12:00");
         assert_eq!(s.max, None);
+    }
+
+    // ── Special device override ─────────────────────────────────────────────
+
+    fn special_with(device_id: Option<&str>) -> SpecialRecording {
+        SpecialRecording {
+            id: None,
+            date: "2026-12-24".into(),
+            name: "Julekonsert".into(),
+            start: "16:00".into(),
+            stop: "17:30".into(),
+            device_id: device_id.map(str::to_string),
+        }
+    }
+
+    /// The picker-id space the scheduler hands over: host devices by name,
+    /// ASIO devices with the renderer's `asio::` prefix.
+    fn inputs() -> Vec<(String, String)> {
+        [
+            ("asio::Focusrite USB ASIO", "Focusrite USB ASIO"),
+            ("Behringer X32", "Behringer X32"),
+            ("Rode NT-USB", "Rode NT-USB"),
+        ]
+        .iter()
+        .map(|(id, name)| (id.to_string(), name.to_string()))
+        .collect()
+    }
+
+    #[test]
+    fn only_a_special_with_a_non_blank_device_wants_one() {
+        let specials = vec![
+            special_with(None),
+            special_with(Some("")),
+            special_with(Some("   ")),
+            special_with(Some("Rode NT-USB")),
+        ];
+        // A weekly slot NEVER wants a device — whatever the specials say.
+        for i in 0..specials.len() {
+            assert_eq!(special_device_wanted(&specials, TriggerKind::Slot(i)), None);
+        }
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(0)),
+            None
+        );
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(1)),
+            None
+        );
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(2)),
+            None
+        );
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(3)),
+            Some("Rode NT-USB")
+        );
+        // An index past the list is the global device, not a panic.
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(9)),
+            None
+        );
+    }
+
+    #[test]
+    fn the_renderers_special_json_reaches_the_resolver_intact() {
+        // Byte-for-byte what `withSpecial` (app/pages/setup/advanced/
+        // specials-core.ts) writes — the picker id, `asio::` prefix and all,
+        // and `null` for «Samme som vanlig opptak».
+        let specials: Vec<SpecialRecording> = serde_json::from_str(
+            r#"[
+                {"id":null,"date":"2099-06-20","name":"Bryllup","start":"14:00",
+                 "stop":"15:30","deviceId":"asio::Focusrite USB ASIO"},
+                {"id":null,"date":"2099-06-21","name":"Konsert","start":"19:00",
+                 "stop":"20:30","deviceId":null}
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(0)),
+            Some("asio::Focusrite USB ASIO")
+        );
+        assert_eq!(
+            special_device_wanted(&specials, TriggerKind::Special(1)),
+            None
+        );
+        assert_eq!(
+            resolve_special_device(
+                special_device_wanted(&specials, TriggerKind::Special(0)),
+                &inputs()
+            ),
+            SpecialDevice::Use {
+                id: "asio::Focusrite USB ASIO".into(),
+                name: "Focusrite USB ASIO".into()
+            }
+        );
+        // …and back out again unchanged, so a settings save does not lose it.
+        let back = serde_json::to_value(&specials[0]).unwrap();
+        assert_eq!(back["deviceId"], "asio::Focusrite USB ASIO");
+    }
+
+    #[test]
+    fn resolve_special_device_table() {
+        let list = inputs();
+        let cases: Vec<(Option<&str>, SpecialDevice)> = vec![
+            // No device of its own → the global settings, untouched.
+            (None, SpecialDevice::Global),
+            (Some(""), SpecialDevice::Global),
+            (Some("  "), SpecialDevice::Global),
+            // The picker id, exactly — host device.
+            (
+                Some("Rode NT-USB"),
+                SpecialDevice::Use {
+                    id: "Rode NT-USB".into(),
+                    name: "Rode NT-USB".into(),
+                },
+            ),
+            // The picker id, exactly — ASIO device: the id keeps its prefix
+            // (it keys `device_channels`), the name is what the recorder opens.
+            (
+                Some("asio::Focusrite USB ASIO"),
+                SpecialDevice::Use {
+                    id: "asio::Focusrite USB ASIO".into(),
+                    name: "Focusrite USB ASIO".into(),
+                },
+            ),
+            // Name-only match: a profile that stored the backend name of an
+            // ASIO device rather than the picker id still finds it.
+            (
+                Some("Focusrite USB ASIO"),
+                SpecialDevice::Use {
+                    id: "asio::Focusrite USB ASIO".into(),
+                    name: "Focusrite USB ASIO".into(),
+                },
+            ),
+            // Not there → Missing, carrying what was asked for.
+            (
+                Some("Zoom H6"),
+                SpecialDevice::Missing {
+                    wanted: "Zoom H6".into(),
+                },
+            ),
+            // Exact means exact: no fuzzy hit on a different device.
+            (
+                Some("Behringer"),
+                SpecialDevice::Missing {
+                    wanted: "Behringer".into(),
+                },
+            ),
+            (
+                Some("rode nt-usb"),
+                SpecialDevice::Missing {
+                    wanted: "rode nt-usb".into(),
+                },
+            ),
+        ];
+        for (wanted, expected) in cases {
+            assert_eq!(
+                resolve_special_device(wanted, &list),
+                expected,
+                "wanted = {wanted:?}"
+            );
+        }
+        // An empty enumeration answers Missing, never Use.
+        assert_eq!(
+            resolve_special_device(Some("Behringer X32"), &[]),
+            SpecialDevice::Missing {
+                wanted: "Behringer X32".into()
+            }
+        );
+    }
+
+    #[test]
+    fn the_id_wins_over_a_name_that_happens_to_match_another_entry() {
+        // Contrived, but it pins the ORDER: the stored id is the operator's
+        // choice; a name match is only the fallback.
+        let list = vec![
+            ("Mic A".to_string(), "Mic B".to_string()),
+            ("Mic B".to_string(), "Mic B (2)".to_string()),
+        ];
+        assert_eq!(
+            resolve_special_device(Some("Mic B"), &list),
+            SpecialDevice::Use {
+                id: "Mic B".into(),
+                name: "Mic B (2)".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_special_device_carries_its_own_channel_pair() {
+        use crate::settings::{DeviceChannels, Settings};
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            "Behringer X32".to_string(),
+            DeviceChannels {
+                channel_l: 16,
+                channel_r: 17,
+            },
+        );
+        map.insert(
+            "asio::Focusrite USB ASIO".to_string(),
+            DeviceChannels {
+                channel_l: 2,
+                channel_r: 3,
+            },
+        );
+        let global = Settings {
+            device_id: Some("Behringer X32".into()),
+            device_name: Some("Behringer X32".into()),
+            device_channels: map,
+            ..Settings::default()
+        }
+        .validated();
+        assert_eq!(
+            (global.input_channel_l, global.input_channel_r),
+            (Some(16), Some(17))
+        );
+
+        // A device with its own pair → that pair.
+        let s =
+            settings_for_special_device(&global, "asio::Focusrite USB ASIO", "Focusrite USB ASIO");
+        assert_eq!(s.device_id.as_deref(), Some("asio::Focusrite USB ASIO"));
+        assert_eq!(s.device_name.as_deref(), Some("Focusrite USB ASIO"));
+        assert_eq!((s.input_channel_l, s.input_channel_r), (Some(2), Some(3)));
+
+        // A device nobody chose a pair for → default routing, not 16/17.
+        let s = settings_for_special_device(&global, "Rode NT-USB", "Rode NT-USB");
+        assert_eq!((s.input_channel_l, s.input_channel_r), (None, None));
+
+        // Everything that is not the device stays the global settings'.
+        assert_eq!(
+            Settings {
+                device_id: global.device_id.clone(),
+                device_name: global.device_name.clone(),
+                input_channel_l: global.input_channel_l,
+                input_channel_r: global.input_channel_r,
+                ..s
+            },
+            global
+        );
+    }
+
+    #[test]
+    fn an_old_profile_without_a_channel_map_does_not_leak_its_pair_to_another_device() {
+        use crate::settings::Settings;
+        // An empty map keeps the flat pair (profiles older than the map) —
+        // `validate` alone would hand the mixer's 16/17 to the USB mic.
+        let global = Settings {
+            device_id: Some("Behringer X32".into()),
+            device_name: Some("Behringer X32".into()),
+            input_channel_l: Some(16),
+            input_channel_r: Some(17),
+            ..Settings::default()
+        }
+        .validated();
+        let other = settings_for_special_device(&global, "Rode NT-USB", "Rode NT-USB");
+        assert_eq!((other.input_channel_l, other.input_channel_r), (None, None));
+
+        // …while naming the SAME device the global settings use changes nothing.
+        let same = settings_for_special_device(&global, "Behringer X32", "Behringer X32");
+        assert_eq!(same, global);
     }
 }

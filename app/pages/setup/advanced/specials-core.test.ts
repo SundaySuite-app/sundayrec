@@ -3,11 +3,17 @@ import { describe, expect, it } from "vitest";
 import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 import type { SpecialRecording } from "@legacy/bindings/SpecialRecording";
 
+import { mapLegacyBlob } from "@lib/migrate-legacy-settings-core";
 import {
   checkSpecial,
+  deviceDisplayName,
   isoDate,
+  SAME_AS_USUAL,
   slotDay,
   slotRows,
+  specialDeviceFact,
+  specialDeviceId,
+  specialDeviceOptions,
   specialRows,
   testWakeWord,
   wakeArmWord,
@@ -229,4 +235,140 @@ describe("testWakeWord", () => {
       expect(testWakeWord(result)).toBe(word);
     },
   );
+});
+
+// ── Spesialopptakets egen lydenhet ──────────────────────────────────────────
+
+/** Enhetslista slik `toDeviceOptions` gir den: ASIO med prefiks. */
+const DEVICES = [
+  { id: "asio::Focusrite USB ASIO", name: "Focusrite USB ASIO" },
+  { id: "Behringer X32", name: "Behringer X32" },
+  { id: "Rode NT-USB", name: "Rode NT-USB" },
+];
+
+describe("a special's own audio device", () => {
+  it("«Samme som vanlig opptak» is null, never an empty string", () => {
+    expect(specialDeviceId(SAME_AS_USUAL)).toBeNull();
+    expect(specialDeviceId("   ")).toBeNull();
+    expect(specialDeviceId(null)).toBeNull();
+    expect(specialDeviceId(undefined)).toBeNull();
+    expect(specialDeviceId("Rode NT-USB")).toBe("Rode NT-USB");
+  });
+
+  it("adds with the chosen device — and with null when none was chosen", () => {
+    const draft = {
+      name: "Bryllup",
+      date: "2026-12-24",
+      start: "16:00",
+      minutes: 60,
+    };
+    expect(withSpecial([], draft, "Gudstjeneste")[0].deviceId).toBeNull();
+    expect(
+      withSpecial([], { ...draft, deviceId: SAME_AS_USUAL }, "Gudstjeneste")[0]
+        .deviceId,
+    ).toBeNull();
+    expect(
+      withSpecial(
+        [],
+        { ...draft, deviceId: "asio::Focusrite USB ASIO" },
+        "Gudstjeneste",
+      )[0].deviceId,
+    ).toBe("asio::Focusrite USB ASIO");
+  });
+
+  it("round-trips UI → sanitize → core JSON → UI", () => {
+    // UI: two specials, one on its own device, one on the usual one.
+    const ui = withSpecial(
+      withSpecial(
+        [],
+        {
+          name: "Bryllup",
+          date: "2099-06-20",
+          start: "14:00",
+          minutes: 90,
+          deviceId: "asio::Focusrite USB ASIO",
+        },
+        "Gudstjeneste",
+      ),
+      { name: "Konsert", date: "2099-06-21", start: "19:00", minutes: 90 },
+      "Gudstjeneste",
+    );
+
+    // sanitize: the one-shot import path must not drop the device.
+    const sanitized = mapLegacyBlob(JSON.stringify({ specialRecordings: ui }))!
+      .specialRecordings as SpecialRecording[];
+    expect(sanitized).toEqual(ui);
+
+    // core JSON: the exact `SpecialRecording` binding shape — `deviceId`,
+    // camelCase, `null` for "same as usual" — survives a serialise/parse.
+    const core = JSON.parse(JSON.stringify(sanitized)) as SpecialRecording[];
+    expect(Object.keys(core[0]).sort()).toEqual(
+      ["date", "deviceId", "id", "name", "start", "stop"].sort(),
+    );
+    expect(core[0].deviceId).toBe("asio::Focusrite USB ASIO");
+    expect(core[1].deviceId).toBeNull();
+
+    // UI again: the rows say which device, by the name on the box.
+    const rows = specialRows(core, "2099-01-01");
+    expect(
+      rows.map((r) => specialDeviceFact(r.value.deviceId, DEVICES)),
+    ).toEqual([{ name: "Focusrite USB ASIO", present: true }, null]);
+  });
+
+  it("sanitize turns a blank or non-string device into null", () => {
+    const out = mapLegacyBlob(
+      JSON.stringify({
+        specialRecordings: [
+          { date: "2099-01-01", name: "a", deviceId: "  " },
+          { date: "2099-01-02", name: "b", deviceId: 42 },
+          { date: "2099-01-03", name: "c" },
+        ],
+      }),
+    )!.specialRecordings as SpecialRecording[];
+    expect(out.map((r) => r.deviceId)).toEqual([null, null, null]);
+  });
+
+  it("offers each device once, and keeps a chosen one that is unplugged", () => {
+    expect(specialDeviceOptions(DEVICES, null)).toEqual([
+      { value: "asio::Focusrite USB ASIO", label: "Focusrite USB ASIO" },
+      { value: "Behringer X32", label: "Behringer X32" },
+      { value: "Rode NT-USB", label: "Rode NT-USB" },
+    ]);
+    // Two identical USB cards: same name, same id → one option.
+    expect(
+      specialDeviceOptions(
+        [
+          { id: "USB Audio CODEC", name: "USB Audio CODEC" },
+          { id: "USB Audio CODEC", name: "USB Audio CODEC" },
+        ],
+        null,
+      ),
+    ).toHaveLength(1);
+    // Chosen, then unplugged: the box must still show what will be saved.
+    expect(
+      specialDeviceOptions([], "asio::Zoom H6").map((o) => o.label),
+    ).toEqual(["Zoom H6"]);
+    // Not read yet → nothing to offer but what is chosen.
+    expect(specialDeviceOptions(null, null)).toEqual([]);
+  });
+
+  it("says when a special's device is not connected — and not before it knows", () => {
+    expect(specialDeviceFact(null, DEVICES)).toBeNull();
+    expect(specialDeviceFact("Rode NT-USB", DEVICES)).toEqual({
+      name: "Rode NT-USB",
+      present: true,
+    });
+    expect(specialDeviceFact("asio::Zoom H6", DEVICES)).toEqual({
+      name: "Zoom H6",
+      present: false,
+    });
+    expect(specialDeviceFact("asio::Zoom H6", null)).toEqual({
+      name: "Zoom H6",
+      present: null,
+    });
+    expect(deviceDisplayName("asio::Focusrite USB ASIO")).toBe(
+      "Focusrite USB ASIO",
+    );
+    expect(deviceDisplayName("Rode NT-USB")).toBe("Rode NT-USB");
+  });
 });

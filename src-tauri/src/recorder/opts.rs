@@ -39,7 +39,33 @@ pub(crate) fn build_opts(
     video_override: Option<bool>,
 ) -> AppResult<RecordingOpts> {
     let folder = crate::save_folder::resolve(app, settings.save_folder.as_deref())?;
-    std::fs::create_dir_all(&folder)?;
+    build_opts_in(
+        &folder,
+        settings,
+        custom_name,
+        max_minutes,
+        video_override,
+        Local::now().naive_local(),
+    )
+}
+
+/// [`build_opts`] with the two things it reads from outside the settings —
+/// the resolved save folder and the clock — passed in.
+///
+/// Split out (and nothing else changed) so the scheduler can PROVE that a
+/// weekly slot, or a special without its own device, composes byte-identical
+/// opts after the special-device override landed: the proof needs the same
+/// composition twice over the same folder and the same `now`, and an
+/// [`AppHandle`] cannot be had in a unit test.
+pub(crate) fn build_opts_in(
+    folder: &std::path::Path,
+    settings: &Settings,
+    custom_name: Option<&str>,
+    max_minutes: u32,
+    video_override: Option<bool>,
+    now: chrono::NaiveDateTime,
+) -> AppResult<RecordingOpts> {
+    std::fs::create_dir_all(folder)?;
 
     // Video is on when the user wants it (override, else the setting) AND a camera
     // is actually configured. When video is on the main file MUST be a video
@@ -65,7 +91,7 @@ pub(crate) fn build_opts(
         // church-calendar name not ported yet → falls back to "gudstjeneste".
         church_name: None,
         split_timestamp: None,
-        now: Local::now().naive_local(),
+        now,
     });
     let output_path = folder.join(fname).to_string_lossy().into_owned();
     // Never overwrite a same-day recording: bump to `_2`, `_3`, … if the chosen

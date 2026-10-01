@@ -115,6 +115,12 @@ export interface SpecialDraft {
   /** `HH:MM`. */
   start: string;
   minutes: number;
+  /**
+   * Opptakets EGEN lydenhet — id-en fra den samme enhetslista som den vanlige
+   * lydvelgeren (`toDeviceOptions`), så `asio::`-prefikset følger med.
+   * Fraværende, `null` eller tom = «Samme som vanlig opptak».
+   */
+  deviceId?: string | null;
 }
 
 /** Hvorfor et utkast ikke kan legges til, eller `null`. */
@@ -152,9 +158,99 @@ export function withSpecial(
       name: draft.name.trim() || fallbackName,
       start: draft.start,
       stop: stopFor(draft.start, draft.minutes),
-      deviceId: null,
+      deviceId: specialDeviceId(draft.deviceId),
     },
   ];
+}
+
+// ── Spesialopptakets egen lydenhet ──────────────────────────────────────────
+//
+// Et spesialopptak kan ta opp fra et annet lydkort enn det vanlige (bryllupet
+// på en USB-mikrofon, mens gudstjenesten går fra mikseren). Det LAGREDE er en
+// id fra den samme lista den vanlige lydvelgeren bruker; planleggeren slår den
+// opp mot enhetene som finnes i det opptaket starter, og tar opp fra den
+// vanlige enheten — med et varsel — hvis den ikke er der
+// (`src-tauri/src/scheduler/mod.rs`, `start_settings`).
+//
+// `null` er «Samme som vanlig opptak», og det er ikke en tom streng: et
+// spesialopptak uten egen enhet skal se ut nøyaktig slik alle spesialopptak
+// har sett ut før, fordi bakenden da ikke rører noe som helst.
+
+/** Velgerens verdi for «Samme som vanlig opptak». */
+export const SAME_AS_USUAL = "";
+
+/** Velgerens verdi → det som lagres. Tom/blank = `null`. */
+export function specialDeviceId(
+  value: string | null | undefined,
+): string | null {
+  const v = value ?? "";
+  return v.trim() === "" ? null : v;
+}
+
+/** ASIO-enheters id-prefiks i lydvelgeren (`state/devices.ts`). */
+const ASIO_PREFIX = "asio::";
+
+/** Navnet en frivillig kjenner enheten på: `asio::` er en id-detalj. */
+export function deviceDisplayName(id: string): string {
+  return id.startsWith(ASIO_PREFIX) ? id.slice(ASIO_PREFIX.length) : id;
+}
+
+/** Det enhetsvalget trenger av en lydinngang. */
+export interface DeviceChoiceOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * Enhetene i velgeren — UTEN «Samme som vanlig opptak», som kallstedet setter
+ * først fordi etiketten står i katalogen.
+ *
+ * Én rad per id: to like USB-kort har samme navn og dermed samme id, og to
+ * `<option>` med samme verdi er to valg som betyr det samme. Et valgt id som
+ * ikke finnes i lista (kortet ble trukket ut etter at det ble valgt) beholdes,
+ * med visningsnavnet — ellers viser boksen et annet valg enn det som lagres.
+ */
+export function specialDeviceOptions(
+  devices: readonly DeviceChoiceOption[] | null,
+  selected: string | null | undefined,
+): Array<{ value: string; label: string }> {
+  const out: Array<{ value: string; label: string }> = [];
+  const seen = new Set<string>();
+  for (const d of devices ?? []) {
+    if (seen.has(d.id) || d.id.trim() === "") continue;
+    seen.add(d.id);
+    out.push({ value: d.id, label: d.name });
+  }
+  const chosen = specialDeviceId(selected);
+  if (chosen !== null && !seen.has(chosen)) {
+    out.push({ value: chosen, label: deviceDisplayName(chosen) });
+  }
+  return out;
+}
+
+/** Det en rad i lista sier om opptakets egen enhet. */
+export interface SpecialDeviceFact {
+  /** Navnet på enheten. */
+  name: string;
+  /**
+   * Finnes den i enhetslista NÅ? `null` = lista er ikke lest ennå, og det er
+   * ikke bevis for at den mangler.
+   */
+  present: boolean | null;
+}
+
+/** `null` = opptaket bruker den vanlige enheten, og raden sier ingenting. */
+export function specialDeviceFact(
+  deviceId: string | null | undefined,
+  devices: readonly DeviceChoiceOption[] | null,
+): SpecialDeviceFact | null {
+  const id = specialDeviceId(deviceId);
+  if (id === null) return null;
+  if (devices === null) return { name: deviceDisplayName(id), present: null };
+  const hit = devices.find((d) => d.id === id);
+  return hit
+    ? { name: hit.name, present: true }
+    : { name: deviceDisplayName(id), present: false };
 }
 
 /** Hva `wake_capabilities` betyr for den ene setningen raden viser. */

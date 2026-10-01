@@ -102,6 +102,11 @@ pub enum AlertText {
     PreflightCameraDenied,
     /// Preflight body: the save folder is inside a OneDrive-synced tree (F2-W9).
     PreflightSaveFolderSynced,
+    /// Preflight body: a ONE-OFF recording's own audio device is not connected
+    /// — `PreflightDeviceMissing` for the device the special chose rather than
+    /// the one in settings, named, because that is the one to go and find.
+    /// `{device}`
+    PreflightSpecialDeviceMissing,
     /// A scheduled recording started (governed by `notify_start`).
     ScheduledStarted,
     /// A scheduled recording was stopped by the schedule (governed by
@@ -118,6 +123,9 @@ pub enum AlertText {
     ScheduledPrepareFailed,
     /// The late-start net's recovery attempt failed too. `{detail}`
     ScheduledLateStartFailed,
+    /// A special recording's own audio device was not available at its start,
+    /// so it is recording on the usual (global) device instead. `{device}`
+    ScheduledSpecialDeviceFallback,
     /// The pre-service reminder. `{min}`
     Reminder,
     /// Exactly one scheduled occurrence was never recorded. `{label}` `{at}`
@@ -206,6 +214,7 @@ impl AlertText {
         AlertText::PreflightMicDenied,
         AlertText::PreflightCameraDenied,
         AlertText::PreflightSaveFolderSynced,
+        AlertText::PreflightSpecialDeviceMissing,
         AlertText::ScheduledStarted,
         AlertText::ScheduledStopped,
         AlertText::ScheduledSkippedBusy,
@@ -213,6 +222,7 @@ impl AlertText {
         AlertText::ScheduledStartTimeout,
         AlertText::ScheduledPrepareFailed,
         AlertText::ScheduledLateStartFailed,
+        AlertText::ScheduledSpecialDeviceFallback,
         AlertText::Reminder,
         AlertText::MissedOne,
         AlertText::MissedMany,
@@ -289,6 +299,8 @@ impl AlertText {
             | AlertText::ScheduledPrepareFailed
             | AlertText::ScheduledLateStartFailed => &["detail"],
             AlertText::Reminder => &["min"],
+            AlertText::ScheduledSpecialDeviceFallback
+            | AlertText::PreflightSpecialDeviceMissing => &["device"],
             AlertText::PreflightDiskLow | AlertText::TakeDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
@@ -689,6 +701,77 @@ impl AlertText {
             }
             (A::ScheduledLateStartFailed, L::Fr) => {
                 "Le démarrage tardif de l'enregistrement programmé a échoué : {detail}"
+            }
+
+            // ── PreflightSpecialDeviceMissing ───────────────────────────────
+            // Half an hour before a one-off recording on its own device. Says
+            // what will happen if nobody acts, in the same words the start's
+            // fallback notice uses.
+            (A::PreflightSpecialDeviceMissing, L::No) => {
+                "Lydenheten «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke \
+                 til før start, tas opptaket fra den vanlige lydenheten."
+            }
+            (A::PreflightSpecialDeviceMissing, L::En) => {
+                "The audio device \"{device}\" for the one-off recording is not connected. If \
+                 it is not connected before the start, the usual audio device is used."
+            }
+            (A::PreflightSpecialDeviceMissing, L::De) => {
+                "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. \
+                 Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät \
+                 verwendet."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Sv) => {
+                "Ljudenheten ”{device}” för den enstaka inspelningen är inte ansluten. Ansluts \
+                 den inte före start, används den vanliga ljudenheten."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Da) => {
+                "Lydenheden »{device}« til enkeltoptagelsen er ikke tilsluttet. Bliver den ikke \
+                 tilsluttet før start, bruges den sædvanlige lydenhed."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Pl) => {
+                "Urządzenie audio „{device}” dla nagrania jednorazowego nie jest podłączone. \
+                 Jeśli nie zostanie podłączone przed rozpoczęciem, zostanie użyte zwykłe \
+                 urządzenie audio."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Fr) => {
+                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'est pas \
+                 connecté. S'il n'est pas connecté avant le début, le périphérique audio \
+                 habituel sera utilisé."
+            }
+
+            // ── ScheduledSpecialDeviceFallback ──────────────────────────────
+            // The recording DID start — on the usual device. The sentence says
+            // both halves, so nobody goes looking for a lost recording, and
+            // names the device that was not there, so somebody can go and find
+            // it before the next one. The one-off terms match the renderer's
+            // `app.setup.advanced.specialsTitle` in each language.
+            (A::ScheduledSpecialDeviceFallback, L::No) => {
+                "Lydenheten «{device}» for spesialopptaket var ikke tilgjengelig — opptaket \
+                 bruker den vanlige lydenheten i stedet."
+            }
+            (A::ScheduledSpecialDeviceFallback, L::En) => {
+                "The audio device \"{device}\" for the one-off recording was not available — \
+                 recording from the usual audio device instead."
+            }
+            (A::ScheduledSpecialDeviceFallback, L::De) => {
+                "Das Audiogerät „{device}“ für die einmalige Aufnahme war nicht verfügbar — \
+                 die Aufnahme verwendet stattdessen das übliche Audiogerät."
+            }
+            (A::ScheduledSpecialDeviceFallback, L::Sv) => {
+                "Ljudenheten ”{device}” för den enstaka inspelningen var inte tillgänglig — \
+                 inspelningen använder den vanliga ljudenheten i stället."
+            }
+            (A::ScheduledSpecialDeviceFallback, L::Da) => {
+                "Lydenheden »{device}« til enkeltoptagelsen var ikke tilgængelig — \
+                 optagelsen bruger den sædvanlige lydenhed i stedet."
+            }
+            (A::ScheduledSpecialDeviceFallback, L::Pl) => {
+                "Urządzenie audio „{device}” dla nagrania jednorazowego było niedostępne — \
+                 nagranie korzysta zamiast tego ze zwykłego urządzenia audio."
+            }
+            (A::ScheduledSpecialDeviceFallback, L::Fr) => {
+                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'était pas \
+                 disponible — l'enregistrement utilise le périphérique audio habituel."
             }
 
             // ── Reminder ────────────────────────────────────────────────────
@@ -1190,7 +1273,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            48,
+            50,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -1469,6 +1552,34 @@ mod tests {
         // …and the slot LABEL is deliberately not translated — see the module
         // header: it is hashed into the durable `notify_seen` key.
         assert!(s.contains("Ukentlig opptak (11:00–13:00)"));
+    }
+
+    #[test]
+    fn the_special_device_fallback_names_the_missing_device_in_every_language() {
+        // The operator needs WHICH device to go and find — a sentence that lost
+        // the name in translation is "something was not available", which
+        // nobody can act on before the next one-off recording.
+        for &lang in Lang::ALL {
+            let s =
+                AlertText::ScheduledSpecialDeviceFallback.fill(lang, &[("device", "Rode NT-USB")]);
+            assert!(s.contains("Rode NT-USB"), "{lang:?}: {s}");
+        }
+        assert_eq!(
+            AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Rode NT-USB")]),
+            "Lydenheten «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
+             bruker den vanlige lydenheten i stedet."
+        );
+    }
+
+    #[test]
+    fn the_special_device_preflight_names_the_device_not_the_settings() {
+        for &lang in Lang::ALL {
+            let s = AlertText::PreflightSpecialDeviceMissing.fill(lang, &[("device", "Zoom H6")]);
+            assert!(s.contains("Zoom H6"), "{lang:?}: {s}");
+            assert_ne!(s, AlertText::PreflightDeviceMissing.text(lang));
+        }
+        let no = AlertText::PreflightSpecialDeviceMissing.fill(Lang::No, &[("device", "Zoom H6")]);
+        assert!(!no.contains("innstillingene"), "{no}");
     }
 
     #[test]

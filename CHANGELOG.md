@@ -15,6 +15,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   du rett fra v0.22.0 eller eldre, kan et gammelt e-postpassord ligge igjen i
   nøkkelringen; ingenting leser det, og du kan slette det der om du vil
   (Nøkkelringtilgang → søk «sundayrec»).
+- **Spesialopptak kan ha sitt eget lydkort.** Når du legger inn et
+  spesialopptak (Avansert → «Flere tider og spesialopptak»), kan du velge en
+  annen lydenhet enn den vanlige — for eksempel en USB-mikrofon til et
+  bryllup. Er den ikke koblet til når opptaket starter, tas det opp fra den
+  vanlige lydenheten i stedet, og du får et varsel om det. Faste ukentlige
+  opptak tar opp akkurat som før.
 
 ## v0.24.0 — varslene sier det tydeligere
 

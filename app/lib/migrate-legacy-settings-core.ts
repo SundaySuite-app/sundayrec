@@ -109,6 +109,13 @@ function sanitizeSpecials(v: unknown): Dict[] {
         name: typeof o.name === "string" ? o.name : "",
         start: typeof o.start === "string" ? o.start : "10:00",
         stop: typeof o.stop === "string" ? o.stop : "12:00",
+        // The special's own capture device (a picker id, `asio::` prefix and
+        // all). Kept, not dropped: dropping it would silently move a wedding
+        // back onto the mixer. Blank → null, which is "same as usual".
+        deviceId:
+          typeof o.deviceId === "string" && o.deviceId.trim() !== ""
+            ? o.deviceId
+            : null,
       };
     });
 }
