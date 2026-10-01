@@ -26,7 +26,7 @@ før stabil.
   bryllup. Er den ikke koblet til når opptaket starter, tas det opp fra den
   vanlige lydenheten i stedet, og du får et varsel om det. Faste ukentlige
   opptak tar opp akkurat som før.
-- **Opptaksmotoren er delt opp innvendig.** Den største fila i appen er delt i
+- **Opptaksmotoren er delt opp innvendig.** Opptaksmotorens største fil er delt i
   mindre deler uten at noe er endret i hva den gjør. Merker du noe uvanlig med
   et opptak i denne betaen, si fra.
 

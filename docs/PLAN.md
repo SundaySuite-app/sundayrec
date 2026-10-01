@@ -55,9 +55,10 @@ rig. Nytt fra v0.23.0: at «Legg ut» faktisk åpner nettleseren (SMOKE-TEST
 §«Legg ut»). Nytt fra v0.24.0: tapt opptak i varsel, menylinje og
 vekkehistorikk (RIG-DAY «(e, varsling — runde 3)»). Nytt fra v0.25.0: at
 opptaksmotoren oppfører seg som før etter oppdelingen (RIG-DAY a, c, h og
-w6), «Åpne opptaksmappen» og «Vis i Finder/Utforsker» på Mac og Windows
+w6), «Åpne opptaksmappen» og «Vis i Finder» på Mac og Windows
 (SMOKE-TEST), og spesialopptak med eget lydkort, også reserven når det
-mangler (RIG-DAY «(c, fortsettelse)», punkt 1–4). **Stabil v0.25.0** først
+mangler (RIG-DAY «(c, fortsettelse) Spesialopptak med eget lydkort», inkludert
+Windows-punkt 1–4). **Stabil v0.25.0** først
 etter riggdagen og én ekte søndag på beta.
 
 ## Ikke planlagt

@@ -541,9 +541,11 @@ function renderCompanion(summary, history = null) {
  *
  *   - the summary's correction rows come from `event_corrections`, which is raw
  *     and purged at the retention cutoff. Everything older survives only in
- *     `agg_corrections`, which `GET /v1/admin/history` serves; when that read
- *     fails, the report says so and the folded days take a
- *     `wrangler d1 execute` session against the database;
+ *     `agg_corrections`, which `GET /v1/admin/history` serves (live since
+ *     sunday-telemetry #15, Worker version `9bbe00e2`, 2026-10-01). A 404
+ *     there means the Worker predates the route (or was rolled back past it);
+ *     the report then says so, and the folded days take a `wrangler d1
+ *     execute` session against the database;
  *   - a correction row carries no install id (by design — migration 0004), so
  *     nothing here can tell forty corrections from one church apart from four
  *     each from ten. The sign test above assumes they are independent, and that
@@ -568,9 +570,11 @@ function renderWindowNote(summary, history = null) {
       }. Older corrections live`,
     );
     lines.push(
-      "    on in agg_corrections; the /v1/admin/history route that serves them did not",
+      "    on in agg_corrections; the /v1/admin/history route that serves them answered",
     );
-    lines.push("    answer this run — retry, or read them with wrangler d1.");
+    lines.push(
+      "    404 (this Worker predates it) — read them with wrangler d1.",
+    );
   }
   lines.push(
     "  • No install id on a correction row (migration 0004). Forty corrections from",

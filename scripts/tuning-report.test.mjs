@@ -396,8 +396,8 @@ describe("the folded history", () => {
       bar: BAR,
       generatedAt: "2026-08-08T00:00:00.000Z",
     });
-    expect(text).toContain("did not");
-    expect(text).toContain("answer this run");
+    expect(text).toContain("answered");
+    expect(text).toContain("404 (this Worker predates it)");
     expect(text).toContain("wrangler d1");
     expect(text).not.toContain("+ /v1/admin/history");
   });
