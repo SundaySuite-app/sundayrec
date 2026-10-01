@@ -1,10 +1,10 @@
 # Audit-backlog — 2026-07-07
 
 > **Arkivert og triagert 2026-09-28.** Fortsatt åpne — og ført inn i
-> `docs/PLAN.md`: #12 (dele `engine.rs`, nå ≈4 800 linjer), #17
-> (Intel/universal Mac-bygg).
+> `docs/PLAN.md`: #17 (Intel/universal Mac-bygg).
 > Gjort: #2 (ingen `opener:`-tillatelse i nettvisningen; åpne/vise går via
-> Rust-kommandoer, #302), #14 (`tokio` med bare funksjonene som brukes, #301), #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
+> Rust-kommandoer, #302), #12 (`engine.rs` delt i fasade + sju moduler, bare
+> flytting, #304), #14 (`tokio` med bare funksjonene som brukes, #301), #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
 > `path_ratchet` på stiflatene), #7 (én stub igjen), #8 (`call()` viser
 > feilene), #13 (`cpal_capture.rs` har tester; `media/preview.rs` finnes
 > ikke), #16. Foreldet — koden eller funksjonen er borte: #4 (typene som
@@ -85,7 +85,7 @@ sjekksum-rammeverk for ffmpeg/ASIO, ts-rs-bindings-adopsjon
 
 ## Rust
 
-12. **Splitt `recorder/engine.rs` (3049 linjer)** i supervisor / progress-
+12. **Gjort (#304).** **Splitt `recorder/engine.rs` (3049 linjer)** i supervisor / progress-
     payloads / stderr-parsing. Størst enkeltfil i repoet.
 13. **Tester for `recorder/cpal_capture.rs` (759 linjer)** — WASAPI/ASIO
     PCM-capture-stien er eneste store utestede produksjonsmodul. Også
