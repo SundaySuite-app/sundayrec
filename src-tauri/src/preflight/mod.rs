@@ -93,6 +93,18 @@ async fn device_present(configured: Option<&str>) -> bool {
     find_best_device_match(&inventory.audio_inputs, name).is_some()
 }
 
+/// Which audio device a preflight run checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PreflightDevice {
+    /// The device in settings, looked up in the enumeration the recorder uses
+    /// ([`device_present`]). Every caller, until specials could name their own.
+    Settings,
+    /// A device the caller has already resolved — the scheduler, for a special
+    /// recording with its own device, which has just enumerated the inputs the
+    /// start will choose from. Its name, and whether it is there.
+    Resolved { name: String, present: bool },
+}
+
 /// A preflight run with the raw facts kept, for callers that need to act on a
 /// specific one rather than on the rendered findings list.
 pub struct PreflightOutcome {
@@ -113,9 +125,13 @@ pub struct PreflightOutcome {
 ///
 /// macOS mic/camera permission is NOT probed here — see the module docs
 /// (deferred to Fase 5). An empty `findings` means "alt klart".
+///
+/// `device` says which audio device the device check is about; see
+/// [`PreflightDevice`].
 pub async fn run_preflight_detailed(
     pool: &SqlitePool,
     documents_dir: Option<&std::path::Path>,
+    device: PreflightDevice,
 ) -> PreflightOutcome {
     let settings = settings::load(pool).await.unwrap_or_default();
 
@@ -141,12 +157,19 @@ pub async fn run_preflight_detailed(
         Err(_) => (false, None, false),
     };
 
-    let device_name = settings
-        .device_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|n| !n.is_empty())
-        .map(str::to_string);
+    let (device_name, device_present) = match device {
+        PreflightDevice::Settings => {
+            let name = settings
+                .device_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_string);
+            let present = device_present(name.as_deref()).await;
+            (name, present)
+        }
+        PreflightDevice::Resolved { name, present } => (Some(name), present),
+    };
 
     let facts = PreflightFacts {
         ffmpeg_missing,
@@ -156,7 +179,7 @@ pub async fn run_preflight_detailed(
         // macOS permission probe deferred to Fase 5 — see module docs.
         mic_denied: false,
         cam_denied: false,
-        device_present: device_present(device_name.as_deref()).await,
+        device_present,
         save_folder_onedrive: onedrive,
     };
 
@@ -172,7 +195,9 @@ pub async fn run_preflight(
     pool: &SqlitePool,
     documents_dir: Option<&std::path::Path>,
 ) -> Vec<PreflightFinding> {
-    run_preflight_detailed(pool, documents_dir).await.findings
+    run_preflight_detailed(pool, documents_dir, PreflightDevice::Settings)
+        .await
+        .findings
 }
 
 #[cfg(test)]

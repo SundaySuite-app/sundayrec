@@ -50,6 +50,7 @@ import {
   settings,
 } from "../../../state/settings";
 import { useReceipt } from "../../../settings/use-receipt";
+import { audioDevices, loadAudioDevices } from "../../../state/devices";
 import { refreshWakeAfterReschedule } from "../../../state/next-recording";
 import { isRecording } from "../../../state/recording";
 import { BoundToggle } from "../../../ui/Bound/Bound";
@@ -69,8 +70,11 @@ import styles from "../setup.module.css";
 import {
   checkSpecial,
   isoDate,
+  SAME_AS_USUAL,
   slotDay,
   slotRows,
+  specialDeviceFact,
+  specialDeviceOptions,
   specialRows,
   testWakeWord,
   wakeArmWord,
@@ -241,6 +245,7 @@ const SPECIAL_DEFAULT_MINUTES = 90;
 
 function Specials() {
   const s = settings.value;
+  const devices = audioDevices.value;
   const today = isoDate(new Date());
   const rows = specialRows(s.specialRecordings, today);
   const [draft, setDraft] = useState<SpecialDraft>({
@@ -248,9 +253,19 @@ function Specials() {
     date: "",
     start: "19:00",
     minutes: SPECIAL_DEFAULT_MINUTES,
+    deviceId: null,
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Enhetsvelgeren bruker DEN SAMME lista som lydvelgeren (`list_audio_devices`
+  // via shimmen). Er den ikke lest ennå, leses den her — men aldri midt i et
+  // opptak: en enumerering kan åpne driverne opptaket står og bruker.
+  useEffect(() => {
+    if (audioDevices.peek() === null && !isRecording.peek()) {
+      void loadAudioDevices();
+    }
+  }, []);
 
   async function add(): Promise<void> {
     const issue = checkSpecial(draft, today);
@@ -276,7 +291,7 @@ function Specials() {
         },
         { specialRecordings: s.specialRecordings },
       );
-      if (ok) setDraft({ ...draft, name: "", date: "" });
+      if (ok) setDraft({ ...draft, name: "", date: "", deviceId: null });
     } finally {
       setBusy(false);
     }
@@ -305,11 +320,7 @@ function Specials() {
         <SettingRow
           key={`${row.index}-${row.value.date}`}
           label={row.value.name}
-          description={tf("app.setup.advanced.specialRow", {
-            date: row.value.date,
-            start: row.value.start,
-            stop: row.value.stop,
-          })}
+          description={specialRowText(row.value, devices)}
           testId={`adv-special-${row.index}`}
         >
           <Button
@@ -324,6 +335,7 @@ function Specials() {
 
       <SettingRow
         label={t("app.setup.advanced.specialAdd")}
+        description={t("app.setup.advanced.specialDeviceHint")}
         error={error}
         testId="adv-special-add"
       >
@@ -372,6 +384,24 @@ function Specials() {
               onChange={(next) => setDraft({ ...draft, minutes: Number(next) })}
               testId="adv-special-add-duration"
             />
+            <Select
+              value={draft.deviceId ?? SAME_AS_USUAL}
+              options={[
+                {
+                  value: SAME_AS_USUAL,
+                  label: t("app.setup.advanced.specialDeviceSame"),
+                },
+                ...specialDeviceOptions(devices, draft.deviceId),
+              ]}
+              onChange={(next) =>
+                setDraft({
+                  ...draft,
+                  deviceId: next === SAME_AS_USUAL ? null : next,
+                })
+              }
+              describedBy={ids.describedBy}
+              testId="adv-special-add-device"
+            />
             <Button
               variant="secondary"
               busy={busy}
@@ -385,6 +415,31 @@ function Specials() {
       </SettingRow>
     </>
   );
+}
+
+/**
+ * Radens beskrivelse: dato og tid — og, når opptaket har sin EGEN lydenhet,
+ * hvilken, og om den er koblet til nå. Uten egen enhet er setningen den samme
+ * som før, fordi ingenting er annerledes.
+ */
+function specialRowText(
+  special: {
+    date: string;
+    start: string;
+    stop: string;
+    deviceId: string | null;
+  },
+  devices: Parameters<typeof specialDeviceFact>[1],
+): string {
+  const when = { date: special.date, start: special.start, stop: special.stop };
+  const fact = specialDeviceFact(special.deviceId, devices);
+  if (fact === null) return tf("app.setup.advanced.specialRow", when);
+  const withDevice = { ...when, device: fact.name };
+  // «Ikke tilkoblet» bare når lista ER lest og enheten ikke står i den — en
+  // liste som ikke er lest ennå er ikke bevis for at den mangler.
+  return fact.present === false
+    ? tf("app.setup.advanced.specialRowDeviceMissing", withDevice)
+    : tf("app.setup.advanced.specialRowDevice", withDevice);
 }
 
 /**

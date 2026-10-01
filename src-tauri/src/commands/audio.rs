@@ -62,13 +62,34 @@ use crate::error::AppResult;
 /// driver; the merge/dedup logic is pure + unit-tested.
 #[tauri::command]
 pub async fn list_audio_devices() -> AppResult<Vec<TaggedAudioInput>> {
-    tokio::task::spawn_blocking(|| {
-        let asio = list_asio_devices();
-        let host = enumerate_inputs()?;
-        Ok(merge_audio_inputs(asio, &host.inputs))
-    })
-    .await
-    .map_err(|e| crate::error::AppError::Audio(format!("device enumeration task failed: {e}")))?
+    tokio::task::spawn_blocking(|| enumerate_tagged_inputs(true))
+        .await
+        .map_err(|e| {
+            crate::error::AppError::Audio(format!("device enumeration task failed: {e}"))
+        })?
+}
+
+/// The body of [`list_audio_devices`], for a caller that is not the picker —
+/// the scheduler resolving a special recording's own device.
+///
+/// BLOCKING: run it on a blocking thread. The host half goes through
+/// [`enumerate_inputs`], i.e. the COM-anchored cpal path
+/// ([`crate::audio::com_anchor`]) every other enumeration uses.
+///
+/// `include_asio` is the one difference from the command: `false` skips
+/// [`list_asio_devices`] — the call that LOADS every installed ASIO driver
+/// (memoised, but a sweep when the memo is cold). A caller that already knows
+/// it is looking for a plain WASAPI/Core Audio device must not pay for that
+/// sweep at the start of a service (rig item w14). The picker passes `true`
+/// and is byte-for-byte what it was.
+pub(crate) fn enumerate_tagged_inputs(include_asio: bool) -> AppResult<Vec<TaggedAudioInput>> {
+    let asio = if include_asio {
+        list_asio_devices()
+    } else {
+        Vec::new()
+    };
+    let host = enumerate_inputs()?;
+    Ok(merge_audio_inputs(asio, &host.inputs))
 }
 
 /// Enumerate the capture devices ffmpeg can see (audio + video), for the F2.1

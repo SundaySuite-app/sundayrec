@@ -33,10 +33,15 @@
 //!   notifies once per occurrence (the `notify_seen` ledger) and, when a wake
 //!   was due, logs them to the wake-failure ring — but the `recording` table
 //!   has no `status` column, so a missed Sunday never appears in the library.
-//! - **Special device override.** `SpecialRecording.device_id` is a stored id, but
-//!   the recorder matches by NAME; mapping id→name needs the device list. Until
-//!   then a special uses the global `device_name`. (Tracked in `docs/PLAN.md`.)
+//! - **Special device override — no hot-plug, no own channel picker.** A special
+//!   with its own `device_id` is resolved against the device list at the moment
+//!   it STARTS ([`start_settings`]), and records on the global device with a
+//!   warning when that device is not there. A device plugged in a minute after
+//!   the start is not picked up mid-take, and the special records with the
+//!   channel pair the device picker holds for that device (or default routing)
+//!   — there is no per-special channel, format or folder.
 
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
@@ -52,13 +57,15 @@ use sundayrec_core::alerts::AlertText;
 use sundayrec_core::lang::Lang;
 use sundayrec_core::schedule::{
     active_within, capped_supervisor_sleep_ms, late_start_choice, missed_recordings,
-    next_recording, prune_specials, scheduled_max_minutes, supervisor_should_fire, upcoming_dates,
-    upcoming_events, CoveredWindow, ScheduledEvent, ScheduledEventKind, TriggerKind,
-    MISSED_WINDOW_MS,
+    next_recording, prune_specials, resolve_special_device, scheduled_max_minutes,
+    settings_for_special_device, special_device_wanted, supervisor_should_fire, upcoming_dates,
+    upcoming_events, CoveredWindow, ScheduledEvent, ScheduledEventKind, SpecialDevice,
+    SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
 };
 use sundayrec_core::settings::Settings;
 use sundayrec_core::wake::{background_wake_log_action, should_block, wake_failure_notice_key};
 
+use crate::audio::asio::{AudioBackendKind, TaggedAudioInput};
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::notify::APP_TITLE;
@@ -404,16 +411,7 @@ async fn fire(
                 tracing::warn!(
                     "scheduler: a recording is already active — skipping the scheduled start"
                 );
-                // ALWAYS fires — a skipped scheduled start is a problem report:
-                // should_notify pins SkippedBusy on regardless of the
-                // notify_start/notify_stop comfort toggles.
-                if should_notify(SchedulerNotice::SkippedBusy, settings) {
-                    notify_user(
-                        app,
-                        APP_TITLE,
-                        &AlertText::ScheduledSkippedBusy.text(lang_of(settings)),
-                    );
-                }
+                notify_skipped_busy(app, settings);
                 return;
             }
             let (custom_name, slot_max) = match ev.source {
@@ -434,9 +432,21 @@ async fn fire(
             // backstop, so even a missed Stop event can't leave it recording until
             // the disk fills.
             let max_minutes = scheduled_max_minutes(slot_max);
+            // A special with its own device records from it — or, when it is not
+            // there, from the global device with a warning. Everything else is
+            // `settings` itself, untouched (`start_settings`).
+            let Some(rec_settings) = start_settings(app, settings, specials, ev.source).await
+            else {
+                tracing::warn!(
+                    "scheduler: a recording became active while the special's device was \
+                     resolved — skipping the scheduled start"
+                );
+                notify_skipped_busy(app, settings);
+                return;
+            };
             match crate::recorder::opts::build_opts(
                 app,
-                settings,
+                &rec_settings,
                 custom_name.as_deref(),
                 max_minutes,
                 None,
@@ -540,8 +550,286 @@ async fn fire(
             }
         }
         ScheduledEventKind::Preflight => {
-            run_scheduled_preflight(app, pool, settings).await;
+            run_scheduled_preflight(app, pool, settings, specials, ev.source).await;
         }
+    }
+}
+
+/// «Planlagt opptak hoppet over» — a scheduled start found the recorder busy.
+///
+/// ALWAYS fires — a skipped scheduled start is a problem report: should_notify
+/// pins SkippedBusy on regardless of the notify_start/notify_stop comfort
+/// toggles.
+fn notify_skipped_busy(app: &AppHandle, settings: &Settings) {
+    if should_notify(SchedulerNotice::SkippedBusy, settings) {
+        notify_user(
+            app,
+            APP_TITLE,
+            &AlertText::ScheduledSkippedBusy.text(lang_of(settings)),
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//   Special device override
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A special recording may name its own capture device. The decision is the
+// core's (`special_device_wanted` → `resolve_special_device` →
+// `settings_for_special_device`); this is the shell around it: enumerate the
+// inputs, bounded, only when a special actually asks — and tell the operator
+// when it could not have what it asked for.
+//
+// ## The Sunday invariant
+//
+// A weekly slot, and a special WITHOUT a device, must record exactly as before:
+// no enumeration, no await that does anything, no `validate()`, the SAME
+// `Settings` reference handed to `build_opts`. [`choose_device`] answers
+// `Global` for them before it touches anything, and the golden tests below
+// serialise the composed `RecordingOpts` both ways and compare the bytes.
+
+/// How long a scheduled start waits for the device list before a special gives
+/// up on its own device and records on the global one.
+///
+/// Short on purpose: `fire()` is the supervisor, and a supervisor parked on a
+/// wedged driver misses every later recording. Five seconds covers a WASAPI
+/// enumeration with room to spare; a cold ASIO sweep (which loads every
+/// installed driver) is the one that might not fit, and is a rig item.
+const SPECIAL_DEVICE_ENUM_TIMEOUT: StdDuration = StdDuration::from_secs(5);
+
+/// The renderer's picker-id prefix for an ASIO device
+/// (`app/state/devices.ts::toDeviceOptions`). A special's `deviceId` is written
+/// from that picker, so it is resolved in the same id space — which is also
+/// the space `device_channels` is keyed in.
+const ASIO_PICKER_PREFIX: &str = "asio::";
+
+/// Enumerated inputs → `(picker id, name)`, the shape the core resolves on.
+/// ASIO devices get the picker's prefix; host devices keep their backend id
+/// (which is their name).
+fn picker_inputs(list: &[TaggedAudioInput]) -> Vec<(String, String)> {
+    list.iter()
+        .map(|d| {
+            let id = if d.backend == AudioBackendKind::Asio {
+                format!("{ASIO_PICKER_PREFIX}{}", d.name)
+            } else {
+                d.id.clone()
+            };
+            (id, d.name.clone())
+        })
+        .collect()
+}
+
+/// Whether resolving `wanted` needs the ASIO half of the enumeration.
+///
+/// Only an id the picker gave an ASIO device asks for it. Every other id is a
+/// WASAPI/Core Audio device, and a special recording on one must never load
+/// every installed ASIO driver at the start of a service (rig item w14) — not
+/// even when the device turns out to be missing.
+fn wants_asio(wanted: &str) -> bool {
+    wanted.starts_with(ASIO_PICKER_PREFIX)
+}
+
+/// The device as the operator knows it, for the warning: the picker prefix is
+/// an id detail, not part of the name on the box.
+fn device_display_name(wanted: &str) -> &str {
+    wanted.strip_prefix(ASIO_PICKER_PREFIX).unwrap_or(wanted)
+}
+
+/// The real enumeration — BLOCKING, run inside [`choose_device`]'s
+/// `spawn_blocking`. The picker's own body (`list_audio_devices`), COM-anchored
+/// like every other cpal enumeration, with the ASIO sweep only when the special
+/// names an ASIO device.
+fn enumerate_special_inputs(wanted: String) -> AppResult<Vec<(String, String)>> {
+    let list = crate::commands::audio::enumerate_tagged_inputs(wants_asio(&wanted))?;
+    Ok(picker_inputs(&list))
+}
+
+/// Why a special's own device was not used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FallbackReason {
+    /// Enumerated, and nothing answers to it.
+    Missing,
+    /// The enumeration did not answer within [`SPECIAL_DEVICE_ENUM_TIMEOUT`].
+    Timeout,
+    /// The enumeration failed (or its task panicked).
+    Error(String),
+}
+
+/// What a scheduled start records with.
+#[derive(Debug)]
+enum DeviceChoice {
+    /// The global settings, untouched — every weekly slot, and every special
+    /// without a device of its own.
+    Global,
+    /// The special's own device is there: the global settings pointed at it.
+    Special(Box<Settings>),
+    /// The special asked for a device it cannot have: record on the global
+    /// device, and say so.
+    Fallback {
+        wanted: String,
+        reason: FallbackReason,
+    },
+}
+
+impl DeviceChoice {
+    /// The settings `build_opts` composes from. `Global` and `Fallback` hand
+    /// back the global settings BY REFERENCE — not a copy, not re-validated.
+    fn record_with(self, global: &Settings) -> Cow<'_, Settings> {
+        match self {
+            DeviceChoice::Global | DeviceChoice::Fallback { .. } => Cow::Borrowed(global),
+            DeviceChoice::Special(s) => Cow::Owned(*s),
+        }
+    }
+}
+
+/// THE decision both start paths share — `fire()` and `check_missed`'s late
+/// start — with the blocking enumeration injected so the tests can count it.
+///
+/// Answers `Global` without calling `enumerate` (and without awaiting anything)
+/// unless the trigger is a special with a non-blank `device_id`. Only then does
+/// it enumerate, on a blocking thread, bounded by `limit`; a timeout leaves
+/// that thread to finish on its own — it cannot be cancelled, and it must not
+/// hold the supervisor.
+async fn choose_device<F>(
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    kind: TriggerKind,
+    enumerate: F,
+    limit: StdDuration,
+) -> DeviceChoice
+where
+    F: FnOnce(String) -> AppResult<Vec<(String, String)>> + Send + 'static,
+{
+    let Some(wanted) = special_device_wanted(specials, kind).map(str::to_string) else {
+        return DeviceChoice::Global;
+    };
+    let arg = wanted.clone();
+    let inputs = match tokio::time::timeout(
+        limit,
+        tokio::task::spawn_blocking(move || enumerate(arg)),
+    )
+    .await
+    {
+        Ok(Ok(Ok(inputs))) => inputs,
+        Ok(Ok(Err(e))) => {
+            return DeviceChoice::Fallback {
+                wanted,
+                reason: FallbackReason::Error(e.to_string()),
+            }
+        }
+        Ok(Err(join)) => {
+            return DeviceChoice::Fallback {
+                wanted,
+                reason: FallbackReason::Error(join.to_string()),
+            }
+        }
+        Err(_) => {
+            return DeviceChoice::Fallback {
+                wanted,
+                reason: FallbackReason::Timeout,
+            }
+        }
+    };
+    match resolve_special_device(Some(&wanted), &inputs) {
+        // Unreachable — `wanted` is non-blank — but total: the global device.
+        SpecialDevice::Global => DeviceChoice::Global,
+        SpecialDevice::Use { id, name } => {
+            DeviceChoice::Special(Box::new(settings_for_special_device(settings, &id, &name)))
+        }
+        SpecialDevice::Missing { wanted } => DeviceChoice::Fallback {
+            wanted,
+            reason: FallbackReason::Missing,
+        },
+    }
+}
+
+/// The settings a scheduled start records with — what `fire()` and
+/// `check_missed` both call, so the two start paths cannot disagree about the
+/// device.
+///
+/// `None` means "do not start": a recording became active while a special's
+/// device was being looked up. Only that path awaits anything, so only that
+/// path re-reads the engine — the reading the caller took before is stale the
+/// moment an await has passed (F1 finding A4), and `RecorderEngine::start`
+/// would stop whatever is running.
+///
+/// A fallback is said HERE, after that re-read, so a start that is then
+/// skipped does not also announce a device switch that never happened.
+async fn start_settings<'a>(
+    app: &AppHandle,
+    settings: &'a Settings,
+    specials: &[SpecialRecording],
+    kind: TriggerKind,
+) -> Option<Cow<'a, Settings>> {
+    let choice = choose_device(
+        settings,
+        specials,
+        kind,
+        enumerate_special_inputs,
+        SPECIAL_DEVICE_ENUM_TIMEOUT,
+    )
+    .await;
+    if matches!(choice, DeviceChoice::Global) {
+        return Some(Cow::Borrowed(settings));
+    }
+    if app.state::<RecorderEngine>().current_state().is_active() {
+        return None;
+    }
+    match &choice {
+        DeviceChoice::Global => {}
+        DeviceChoice::Special(s) => tracing::info!(
+            device = s.device_name.as_deref().unwrap_or_default(),
+            "scheduler: special recording uses its own audio device"
+        ),
+        DeviceChoice::Fallback { wanted, reason } => {
+            let device = device_display_name(wanted);
+            tracing::warn!(
+                device,
+                ?reason,
+                "scheduler: the special recording's own audio device is unavailable — \
+                 recording on the global device instead"
+            );
+            // ALWAYS fires (pinned in `should_notify`): the recording runs, but
+            // from a device somebody did not choose for it.
+            if should_notify(SchedulerNotice::SpecialDeviceFallback, settings) {
+                notify_user(
+                    app,
+                    APP_TITLE,
+                    &AlertText::ScheduledSpecialDeviceFallback
+                        .fill(lang_of(settings), &[("device", device)]),
+                );
+            }
+        }
+    }
+    Some(choice.record_with(settings))
+}
+
+/// What the scheduled preflight checks for a trigger's device, from the same
+/// [`choose_device`] decision the start will make.
+///
+/// - `Global` → the settings device, exactly as before.
+/// - `Special` → the special's device; it was just enumerated, so it is there.
+/// - `Fallback(Missing)` → the special's device, NOT there: the volunteer hears
+///   it half an hour early, with the device's name.
+/// - `Fallback(Timeout | Error)` → we could not tell. The start falls back to
+///   the global device if that repeats, so the global device is what is worth
+///   checking — never a "missing" claim we cannot back.
+fn preflight_device_for(choice: &DeviceChoice) -> crate::preflight::PreflightDevice {
+    use crate::preflight::PreflightDevice;
+    match choice {
+        DeviceChoice::Global => PreflightDevice::Settings,
+        DeviceChoice::Special(s) => PreflightDevice::Resolved {
+            name: s.device_name.clone().unwrap_or_default(),
+            present: true,
+        },
+        DeviceChoice::Fallback {
+            wanted,
+            reason: FallbackReason::Missing,
+        } => PreflightDevice::Resolved {
+            name: device_display_name(wanted).to_string(),
+            present: false,
+        },
+        DeviceChoice::Fallback { .. } => PreflightDevice::Settings,
     }
 }
 
@@ -549,10 +837,29 @@ async fn fire(
 //   Preflight + missed-check
 // ─────────────────────────────────────────────────────────────────────────────
 
-async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool, settings: &Settings) {
+async fn run_scheduled_preflight(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    kind: TriggerKind,
+) {
     use sundayrec_core::preflight::PreflightSeverity;
     let documents = crate::save_folder::documents_dir(app);
-    let outcome = crate::preflight::run_preflight_detailed(pool, documents.as_deref()).await;
+    // The device the START will use: a special with its own device is checked
+    // against that device, through the same decision `fire()` makes.
+    let device = preflight_device_for(
+        &choose_device(
+            settings,
+            specials,
+            kind,
+            enumerate_special_inputs,
+            SPECIAL_DEVICE_ENUM_TIMEOUT,
+        )
+        .await,
+    );
+    let outcome =
+        crate::preflight::run_preflight_detailed(pool, documents.as_deref(), device).await;
     let findings = outcome.findings;
     let errors: Vec<_> = findings
         .iter()
@@ -670,27 +977,49 @@ pub async fn check_missed(
             ),
             TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
         };
-        match crate::recorder::opts::build_opts(
-            app,
-            &settings,
-            custom_name.as_deref(),
-            max_minutes,
-            None,
-        ) {
-            Ok(opts) => {
-                let engine = app.state::<RecorderEngine>();
-                let late = engine
-                    .start(app.clone(), Some(pool.clone()), opts, None)
-                    .await;
-                if late.is_ok() {
-                    crate::telemetry::counters::count(
-                        sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
-                    );
+        // The same device decision `fire()` makes (`start_settings`). `None`:
+        // something started recording while a special's device was looked up —
+        // the trigger still counts as handled, and nothing is clobbered.
+        match start_settings(app, &settings, specials, t.kind).await {
+            None => tracing::warn!(
+                "scheduler: a recording became active while the special's device was \
+                 resolved — no late start"
+            ),
+            Some(rec_settings) => match crate::recorder::opts::build_opts(
+                app,
+                &rec_settings,
+                custom_name.as_deref(),
+                max_minutes,
+                None,
+            ) {
+                Ok(opts) => {
+                    let engine = app.state::<RecorderEngine>();
+                    let late = engine
+                        .start(app.clone(), Some(pool.clone()), opts, None)
+                        .await;
+                    if late.is_ok() {
+                        crate::telemetry::counters::count(
+                            sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
+                        );
+                    }
+                    if let Err(e) = late {
+                        tracing::error!("scheduler: late-start of missed recording failed: {e}");
+                        // The recovery attempt for an already-missed recording
+                        // just failed too — the operator hears it natively.
+                        dispatch_scheduler_failure(
+                            app,
+                            "scheduled_late_start_failed",
+                            AlertText::ScheduledLateStartFailed
+                                .fill(lang_of(&settings), &[("detail", &e.to_string())]),
+                        );
+                    }
                 }
-                if let Err(e) = late {
-                    tracing::error!("scheduler: late-start of missed recording failed: {e}");
-                    // The recovery attempt for an already-missed recording just
-                    // failed too — the operator hears it natively.
+                Err(e) => {
+                    tracing::error!("scheduler: could not build opts for late-start: {e}");
+                    // This trigger is in `triggered_keys`, so the missed report
+                    // below will NOT claim it — without this dispatch a late
+                    // start that could not even be prepared was said nowhere at
+                    // all.
                     dispatch_scheduler_failure(
                         app,
                         "scheduled_late_start_failed",
@@ -698,19 +1027,7 @@ pub async fn check_missed(
                             .fill(lang_of(&settings), &[("detail", &e.to_string())]),
                     );
                 }
-            }
-            Err(e) => {
-                tracing::error!("scheduler: could not build opts for late-start: {e}");
-                // This trigger is in `triggered_keys`, so the missed report
-                // below will NOT claim it — without this dispatch a late start
-                // that could not even be prepared was said nowhere at all.
-                dispatch_scheduler_failure(
-                    app,
-                    "scheduled_late_start_failed",
-                    AlertText::ScheduledLateStartFailed
-                        .fill(lang_of(&settings), &[("detail", &e.to_string())]),
-                );
-            }
+            },
         }
     }
 
@@ -1041,6 +1358,9 @@ enum SchedulerNotice {
     Reminder,
     /// A scheduled-preflight ERROR finding («sjekk før opptak»).
     PreflightFinding,
+    /// A special recording's own device was unavailable at its start, so it
+    /// records on the global device.
+    SpecialDeviceFallback,
 }
 
 /// Whether the operator's «Varsle når opptak starter/stopper» toggles
@@ -1059,7 +1379,8 @@ fn should_notify(notice: SchedulerNotice, settings: &Settings) -> bool {
         SchedulerNotice::StoppedScheduled => settings.notify_stop,
         SchedulerNotice::SkippedBusy
         | SchedulerNotice::Reminder
-        | SchedulerNotice::PreflightFinding => true,
+        | SchedulerNotice::PreflightFinding
+        | SchedulerNotice::SpecialDeviceFallback => true,
     }
 }
 
@@ -1160,6 +1481,7 @@ mod tests {
         assert!(should_notify(SchedulerNotice::SkippedBusy, &s));
         assert!(should_notify(SchedulerNotice::PreflightFinding, &s));
         assert!(should_notify(SchedulerNotice::Reminder, &s));
+        assert!(should_notify(SchedulerNotice::SpecialDeviceFallback, &s));
     }
 
     #[test]
@@ -2108,6 +2430,463 @@ mod tests {
                 .is_none(),
             "a filtered occurrence must not be recorded as reported — a stamp \
              here is permanent, and would silence a genuine bom for good"
+        );
+    }
+
+    // ── Special device override ─────────────────────────────────────────────
+    //
+    // `choose_device` is the decision `start_settings` makes for BOTH start
+    // paths, with the blocking enumeration injected. The engine re-read and the
+    // notification around it need an `AppHandle`; the device decision does not.
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// A frozen clock for the composition, so two calls name the same file.
+    fn sunday_eleven() -> NaiveDateTime {
+        dt("2026-06-07 11:00")
+    }
+
+    /// A profile with something for `validate()` and the channel map to bite
+    /// on: an out-of-range flat pair (`validate` would clamp it) and a channel
+    /// map with no entry for the selected device (`validate` would clear the
+    /// pair). If the slot path ever re-validated, or pointed itself at a
+    /// device, the composed opts would change — which is what the golden tests
+    /// are there to see.
+    fn golden_settings(save: &std::path::Path) -> Settings {
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            "asio::Focusrite USB ASIO".to_string(),
+            sundayrec_core::settings::DeviceChannels {
+                channel_l: 2,
+                channel_r: 3,
+            },
+        );
+        Settings {
+            save_folder: Some(save.to_string_lossy().into_owned()),
+            device_id: Some("Behringer X32".into()),
+            device_name: Some("Behringer X32".into()),
+            device_channels: map,
+            input_channel_l: Some(99),
+            input_channel_r: Some(-5),
+            slots: vec![sunday_slot()],
+            ..Settings::default()
+        }
+    }
+
+    /// An enumerator that counts its calls in `calls` and answers with
+    /// `inputs`.
+    fn counting(
+        calls: &Arc<AtomicUsize>,
+        inputs: Vec<(String, String)>,
+    ) -> impl FnOnce(String) -> AppResult<Vec<(String, String)>> + Send + 'static {
+        let seen = Arc::clone(calls);
+        move |_wanted: String| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(inputs)
+        }
+    }
+
+    fn present_inputs() -> Vec<(String, String)> {
+        [
+            ("asio::Focusrite USB ASIO", "Focusrite USB ASIO"),
+            ("Behringer X32", "Behringer X32"),
+            ("Rode NT-USB", "Rode NT-USB"),
+        ]
+        .iter()
+        .map(|(id, name)| (id.to_string(), name.to_string()))
+        .collect()
+    }
+
+    fn special_on(device: Option<&str>) -> SpecialRecording {
+        SpecialRecording {
+            device_id: device.map(str::to_string),
+            ..special("2026-06-07", "11:00", "12:00", "Konfirmasjon")
+        }
+    }
+
+    /// What `fire()` composed BEFORE the override existed: `build_opts` over
+    /// the global settings, as they were loaded.
+    fn old_path_json(
+        folder: &std::path::Path,
+        settings: &Settings,
+        custom_name: Option<&str>,
+        max: u32,
+    ) -> Vec<u8> {
+        let opts = crate::recorder::opts::build_opts_in(
+            folder,
+            settings,
+            custom_name,
+            max,
+            None,
+            sunday_eleven(),
+        )
+        .expect("old path composes");
+        serde_json::to_vec(&opts).unwrap()
+    }
+
+    /// What `fire()` composes NOW: the device decision, then `build_opts`
+    /// over whatever it hands back.
+    async fn new_path_json(
+        folder: &std::path::Path,
+        settings: &Settings,
+        specials: &[SpecialRecording],
+        kind: TriggerKind,
+        custom_name: Option<&str>,
+        max: u32,
+        inputs: Vec<(String, String)>,
+    ) -> (Vec<u8>, usize) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let enumerate = counting(&calls, inputs);
+        let choice = choose_device(
+            settings,
+            specials,
+            kind,
+            enumerate,
+            StdDuration::from_secs(5),
+        )
+        .await;
+        let rec = choice.record_with(settings);
+        let opts = crate::recorder::opts::build_opts_in(
+            folder,
+            &rec,
+            custom_name,
+            max,
+            None,
+            sunday_eleven(),
+        )
+        .expect("new path composes");
+        (
+            serde_json::to_vec(&opts).unwrap(),
+            calls.load(Ordering::SeqCst),
+        )
+    }
+
+    /// THE Sunday invariant: a weekly slot composes byte-identical opts, and
+    /// enumerates nothing — even when a special in the same profile has a
+    /// device of its own (Slot(0) and Special(0) are different zeros).
+    #[tokio::test]
+    async fn golden_a_weekly_slot_records_exactly_as_before() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = golden_settings(save.path());
+        let specials = vec![special_on(Some("Rode NT-USB"))];
+        let max = scheduled_max_minutes(0);
+
+        let old = old_path_json(save.path(), &settings, None, max);
+        let (new, calls) = new_path_json(
+            save.path(),
+            &settings,
+            &specials,
+            TriggerKind::Slot(0),
+            None,
+            max,
+            present_inputs(),
+        )
+        .await;
+        assert_eq!(
+            String::from_utf8(new).unwrap(),
+            String::from_utf8(old).unwrap(),
+            "a weekly slot's RecordingOpts must be byte-identical to the pre-override path"
+        );
+        assert_eq!(calls, 0, "a weekly slot must never enumerate devices");
+    }
+
+    /// …and so does a special WITHOUT a device: `null` (every special the
+    /// renderer ever wrote before this change), an empty string, blanks.
+    #[tokio::test]
+    async fn golden_a_special_without_a_device_records_exactly_as_before() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = golden_settings(save.path());
+        let max = scheduled_max_minutes(0);
+        for device in [None, Some(""), Some("   ")] {
+            let specials = vec![special_on(device)];
+            let old = old_path_json(save.path(), &settings, Some("Konfirmasjon"), max);
+            let (new, calls) = new_path_json(
+                save.path(),
+                &settings,
+                &specials,
+                TriggerKind::Special(0),
+                Some("Konfirmasjon"),
+                max,
+                present_inputs(),
+            )
+            .await;
+            assert_eq!(
+                String::from_utf8(new).unwrap(),
+                String::from_utf8(old).unwrap(),
+                "device = {device:?}: the opts must be byte-identical"
+            );
+            assert_eq!(calls, 0, "device = {device:?}: nothing to enumerate for");
+        }
+    }
+
+    /// A special whose device IS there records from it — the name the engine
+    /// opens, and the channel pair the picker holds for THAT device.
+    #[tokio::test]
+    async fn a_special_with_a_present_device_records_from_it() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = golden_settings(save.path());
+        let specials = vec![special_on(Some("asio::Focusrite USB ASIO"))];
+        let calls = Arc::new(AtomicUsize::new(0));
+        let enumerate = counting(&calls, present_inputs());
+        let choice = choose_device(
+            &settings,
+            &specials,
+            TriggerKind::Special(0),
+            enumerate,
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "enumerated exactly once");
+        assert!(matches!(choice, DeviceChoice::Special(_)), "{choice:?}");
+        let rec = choice.record_with(&settings);
+        let opts = crate::recorder::opts::build_opts_in(
+            save.path(),
+            &rec,
+            Some("Konfirmasjon"),
+            scheduled_max_minutes(0),
+            None,
+            sunday_eleven(),
+        )
+        .unwrap();
+        assert_eq!(opts.audio_device_name, "Focusrite USB ASIO");
+        assert_eq!(
+            (opts.input_channel_l, opts.input_channel_r),
+            (Some(2), Some(3))
+        );
+
+        // Only the device moved: the rest of the opts are the global ones.
+        let global = crate::recorder::opts::build_opts_in(
+            save.path(),
+            &settings,
+            Some("Konfirmasjon"),
+            scheduled_max_minutes(0),
+            None,
+            sunday_eleven(),
+        )
+        .unwrap();
+        assert_eq!(opts.output_path, global.output_path);
+        assert_eq!(opts.channel_mode, global.channel_mode);
+        assert_eq!(opts.manual_max_minutes, global.manual_max_minutes);
+        assert_eq!(opts.separate_audio_format, global.separate_audio_format);
+    }
+
+    /// The fallback IS the global recording, byte for byte — and it says so.
+    #[tokio::test]
+    async fn a_missing_special_device_falls_back_to_exactly_the_global_recording() {
+        let save = tempfile::tempdir().unwrap();
+        let settings = golden_settings(save.path());
+        let specials = vec![special_on(Some("Zoom H6"))];
+        let max = scheduled_max_minutes(0);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let enumerate = counting(&calls, present_inputs());
+        let choice = choose_device(
+            &settings,
+            &specials,
+            TriggerKind::Special(0),
+            enumerate,
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        match &choice {
+            DeviceChoice::Fallback { wanted, reason } => {
+                assert_eq!(wanted, "Zoom H6");
+                assert_eq!(*reason, FallbackReason::Missing);
+            }
+            other => panic!("expected a fallback, got {other:?}"),
+        }
+        let rec = choice.record_with(&settings);
+        assert!(
+            matches!(rec, Cow::Borrowed(_)),
+            "the global settings, not a copy"
+        );
+        let new = crate::recorder::opts::build_opts_in(
+            save.path(),
+            &rec,
+            Some("Konfirmasjon"),
+            max,
+            None,
+            sunday_eleven(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&new).unwrap(),
+            String::from_utf8(old_path_json(
+                save.path(),
+                &settings,
+                Some("Konfirmasjon"),
+                max
+            ))
+            .unwrap()
+        );
+    }
+
+    /// A wedged enumeration must not hold the supervisor: past the bound, the
+    /// start goes ahead on the global device.
+    #[tokio::test]
+    async fn a_slow_enumeration_falls_back_instead_of_holding_the_start() {
+        let settings = Settings::default();
+        let specials = vec![special_on(Some("Rode NT-USB"))];
+        let started = std::time::Instant::now();
+        let choice = choose_device(
+            &settings,
+            &specials,
+            TriggerKind::Special(0),
+            |_wanted: String| {
+                std::thread::sleep(StdDuration::from_millis(400));
+                Ok(present_inputs())
+            },
+            StdDuration::from_millis(20),
+        )
+        .await;
+        assert!(
+            started.elapsed() < StdDuration::from_millis(350),
+            "the bound, not the enumeration, decided when to go on"
+        );
+        assert!(matches!(
+            choice,
+            DeviceChoice::Fallback {
+                reason: FallbackReason::Timeout,
+                ..
+            }
+        ));
+        assert!(matches!(choice.record_with(&settings), Cow::Borrowed(_)));
+    }
+
+    #[tokio::test]
+    async fn a_failed_enumeration_falls_back_too() {
+        let settings = Settings::default();
+        let specials = vec![special_on(Some("Rode NT-USB"))];
+        let choice = choose_device(
+            &settings,
+            &specials,
+            TriggerKind::Special(0),
+            |_wanted: String| Err(crate::error::AppError::Audio("no host".into())),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert!(
+            matches!(
+                &choice,
+                DeviceChoice::Fallback {
+                    reason: FallbackReason::Error(_),
+                    ..
+                }
+            ),
+            "{choice:?}"
+        );
+    }
+
+    #[test]
+    fn picker_ids_follow_the_renderer() {
+        // `app/state/devices.ts::toDeviceOptions`: ASIO → `asio::<name>`, host
+        // devices their backend id. A special's `deviceId` was written from
+        // that picker, so this is the space it is resolved in.
+        let tagged = |id: &str, backend| TaggedAudioInput {
+            id: id.into(),
+            name: id.into(),
+            backend,
+            input_channels: 2,
+            sample_rates: vec![48_000],
+            is_default: false,
+        };
+        let list = vec![
+            tagged("Focusrite USB ASIO", AudioBackendKind::Asio),
+            tagged("Mikrofon (Realtek)", AudioBackendKind::Wasapi),
+            tagged("MacBook Pro Microphone", AudioBackendKind::CoreAudio),
+        ];
+        assert_eq!(
+            picker_inputs(&list),
+            vec![
+                (
+                    "asio::Focusrite USB ASIO".to_string(),
+                    "Focusrite USB ASIO".to_string()
+                ),
+                (
+                    "Mikrofon (Realtek)".to_string(),
+                    "Mikrofon (Realtek)".to_string()
+                ),
+                (
+                    "MacBook Pro Microphone".to_string(),
+                    "MacBook Pro Microphone".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_an_asio_picker_id_asks_for_the_asio_sweep() {
+        // w14: a plain WASAPI device — present or missing — never loads the
+        // installed ASIO drivers.
+        assert!(wants_asio("asio::Focusrite USB ASIO"));
+        assert!(!wants_asio("Mikrofon (Realtek)"));
+        assert!(!wants_asio("Focusrite USB ASIO"));
+        assert!(!wants_asio(""));
+        assert_eq!(
+            device_display_name("asio::Focusrite USB ASIO"),
+            "Focusrite USB ASIO"
+        );
+        assert_eq!(device_display_name("Rode NT-USB"), "Rode NT-USB");
+    }
+
+    #[test]
+    fn the_preflight_checks_the_device_the_start_will_use() {
+        use crate::preflight::PreflightDevice;
+        assert_eq!(
+            preflight_device_for(&DeviceChoice::Global),
+            PreflightDevice::Settings
+        );
+        let special = DeviceChoice::Special(Box::new(Settings {
+            device_name: Some("Rode NT-USB".into()),
+            ..Settings::default()
+        }));
+        assert_eq!(
+            preflight_device_for(&special),
+            PreflightDevice::Resolved {
+                name: "Rode NT-USB".into(),
+                present: true
+            }
+        );
+        // Missing → said half an hour early, with the name on the box.
+        assert_eq!(
+            preflight_device_for(&DeviceChoice::Fallback {
+                wanted: "asio::Focusrite USB ASIO".into(),
+                reason: FallbackReason::Missing,
+            }),
+            PreflightDevice::Resolved {
+                name: "Focusrite USB ASIO".into(),
+                present: false
+            }
+        );
+        // Could not tell → no "missing" claim; check what the start falls back to.
+        for reason in [FallbackReason::Timeout, FallbackReason::Error("x".into())] {
+            assert_eq!(
+                preflight_device_for(&DeviceChoice::Fallback {
+                    wanted: "Rode NT-USB".into(),
+                    reason,
+                }),
+                PreflightDevice::Settings
+            );
+        }
+    }
+
+    #[test]
+    fn the_fallback_warning_is_never_silenced_and_speaks_the_settings_language() {
+        let pl = Settings {
+            language: Some("pl".into()),
+            notify_start: false,
+            notify_stop: false,
+            ..Settings::default()
+        };
+        assert!(should_notify(SchedulerNotice::SpecialDeviceFallback, &pl));
+        let body = AlertText::ScheduledSpecialDeviceFallback.fill(
+            lang_of(&pl),
+            &[("device", device_display_name("asio::Zoom H6"))],
+        );
+        assert!(body.contains("„Zoom H6”"), "{body}");
+        assert_ne!(
+            body,
+            AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Zoom H6")])
         );
     }
 }

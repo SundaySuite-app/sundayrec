@@ -50,6 +50,37 @@ faktisk skal se nå — sist.
       faste ukentlige tiden OG et spesialopptak til å begynne i samme minutt.
       **Forventet:** appen starter ÉTT opptak, ikke to som kjemper om samme
       enhet.
+- [ ] **(c, fortsettelse) Spesialopptak med eget lydkort.** La den vanlige
+      lydenheten (Lyd-siden) være mikseren, og koble i tillegg til en
+      USB-mikrofon. Gearikonet → Avansert → «Flere tider og spesialopptak»:
+      legg inn et spesialopptak et par minutter fram, og velg USB-mikrofonen
+      i den nye enhetsvelgeren (ikke «Samme som vanlig opptak»). Raden viser
+      dato · tid · mikrofonens navn.
+      **Forventet:** opptaket starter av seg selv og tar opp fra
+      USB-mikrofonen (VU-en følger mikrofonen, ikke mikseren), med
+      kanalparet Lyd-siden har for DEN enheten (standard 1/2 hvis du aldri
+      valgte et) — ikke mikserens par. Neste ukentlige opptak tar fortsatt
+      opp fra mikseren.
+      **Deretter — trekk den ut:** legg inn et nytt spesialopptak på
+      USB-mikrofonen, og trekk ut mikrofonen før det starter.
+      **Forventet:** ved start tar appen opp fra mikseren — opptaket GÅR —
+      og et systemvarsel sier «Lydenheten «‹navn›» for spesialopptaket var
+      ikke tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.»
+      Varselet kommer også med «Varsle når opptak starter» slått av. Raden
+      i lista viser «(ikke tilkoblet nå)» mens mikrofonen er ute. (Legger du
+      det inn mer enn 30 min fram, skal også sjekken før opptak — en
+      halvtime før start — si at lydenheten med mikrofonens navn ikke er
+      tilkoblet.)
+      **På Windows-boksen i tillegg** (enhetslista leses inne i den
+      planlagte starten, med 5 s tak): 1) Med en ASIO-driver installert og
+      en WASAPI-mikrofon valgt på spesialopptaket skal ingen
+      ASIO-driverpanel poppe opp ved start, heller ikke når mikrofonen er
+      trukket ut (samme regel som w14). 2) Med en ASIO-enhet valgt på
+      spesialopptaket starter det på ASIO (diagnose:
+      `set_audio_engine: asio`) — og loggen har INGEN linje «own audio
+      device is unavailable» med `reason=Timeout` (det ville betydd at
+      ASIO-sveipet tok over 5 s, og at opptaket falt tilbake til mikseren). 3) Ingen krasj i den planlagte
+      starten (enumereringen går gjennom COM-ankeret, #282).
 - [ ] **(d) WAL-sjekk på en ekte database.** Kjør appen mot en KOPI av en
       ekte `sundayrec.sqlite` (ikke en tom testdatabase) og ta opp normalt.
       **Forventet:** `sundayrec.sqlite-wal` og `sundayrec.sqlite-shm` finnes

@@ -853,6 +853,57 @@ privileges` prompt — has no caller in the new shell, so a Mac that needs
 > confirmed on a Mac/Windows box. The `SetWaitableTimer` call itself does not even
 > compile on macOS — CI's `windows-check` lane is what proves it builds.
 
+## 11b. Special recording with its own audio device [HW] (no feature)
+
+**The gear → Avansert → «Flere tider og spesialopptak» → Spesialopptak → «Legg
+til»** has a device select: «Samme som vanlig opptak» (the default, stored as
+`deviceId: null`) and then the same device list the Lyd page shows
+(`list_audio_devices`, ASIO devices as `asio::<name>`). A listed special with a
+device of its own says so in its row (`… · <device>`, `(ikke tilkoblet nå)`
+while that device is not in the list).
+
+At the START (`fire()`, and the late-start net in `check_missed`), the
+scheduler resolves that id against the inputs enumerated right then
+(`start_settings`), bounded at 5 s. Present → the recording opens that device,
+with the channel pair the Lyd page holds for it (default routing if none).
+Missing, timed out or failed → the recording runs on the global device and an
+always-on native notification («Lydenheten «…» for spesialopptaket var ikke
+tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.») says so. The
+30-minute preflight checks the special's device through the same decision.
+
+The Sunday invariant — a weekly slot, or a special without a device, composes
+byte-identical `RecordingOpts` and enumerates nothing — and the decision table
+are covered without hardware:
+
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::golden_a_weekly_slot_records_exactly_as_before
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::golden_a_special_without_a_device_records_exactly_as_before
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_special_with_a_present_device_records_from_it
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_missing_special_device_falls_back_to_exactly_the_global_recording
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_slow_enumeration_falls_back_instead_of_holding_the_start
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::only_an_asio_picker_id_asks_for_the_asio_sweep
+- VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::resolve_special_device_table
+- VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::a_special_device_carries_its_own_channel_pair
+- VERIFIED-BY: app/pages/setup/advanced/specials-core.test.ts::round-trips UI → sanitize → core JSON → UI
+
+What is left for the rig (also `docs/RIG-DAY.md`, Mac item «(c, fortsettelse)
+Spesialopptak med eget lydkort»):
+
+1. Global device = the mixer; add a special a few minutes ahead on a USB mic.
+   - **Expected:** it starts unattended on the USB mic (the VU follows the
+     mic), with the mic's own channel pair; the next weekly slot still records
+     from the mixer.
+2. Same again, but unplug the USB mic before the start.
+   - **Expected:** the recording starts on the mixer, and the notification
+     above names the mic — also with «Varsle når opptak starter» off.
+3. **Windows:** a WASAPI mic on the special with an ASIO driver installed →
+   no ASIO driver panel at the start, plugged in or not (w14). An ASIO device
+   on the special → the take runs on ASIO (`set_audio_engine: asio`), and the
+   log has no `reason=Timeout` fallback line.
+
+> [HW] The enumeration inside the scheduled start (cpal/WASAPI through the COM
+> anchor, and a cold ASIO sweep against the 5 s bound) only runs for real on a
+> rig.
+
 ---
 
 ## 12. Non-destructive editor [HW] — `editor` (IN DEFAULT)
