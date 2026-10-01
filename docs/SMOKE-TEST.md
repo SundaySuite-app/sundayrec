@@ -876,6 +876,11 @@ missing — but it only claims a miss it has ESTABLISHED: while a recording runs
 an ASIO special — asio-sys loads one driver per process), or when the
 enumeration came back empty or failed, it checks the global device as before.
 
+**Known gap (review of #303):** the Record page's own preflight row still shows
+the generic «Lydenheten som er valgt i innstillingene er ikke tilkoblet.» when it
+is the special's device that is missing; the native alert and the banner name
+the device.
+
 The Sunday invariant — a weekly slot, or a special without a device, composes
 byte-identical `RecordingOpts` and enumerates nothing — and the decision table
 are covered without hardware:
