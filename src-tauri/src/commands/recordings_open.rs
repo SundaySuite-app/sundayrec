@@ -80,28 +80,47 @@ use crate::error::{AppError, AppResult};
 /// limit in a process that runs for weeks.
 const DELIVERED_EXPORTS_MAX: usize = 256;
 
-/// Directory extensions macOS treats as an application, a plug-in or an
-/// installer package. `open` on one runs or installs something instead of
-/// showing a folder.
+/// Directory extensions macOS treats as a package: an application, a plug-in
+/// or an installer — `open` on one runs or installs something instead of
+/// showing a folder — or a document package LaunchServices hands to an app
+/// (Automator, Script Editor, Xcode, Photos …), which at worst starts that
+/// app. Checked with `NSWorkspace isFilePackageAtPath`; the `Info.plist`
+/// check in [`looks_like_package`] catches code bundles not listed here.
 const PACKAGE_EXTENSIONS: &[&str] = &[
+    "action",
     "app",
     "appex",
     "bundle",
     "component",
+    "definition",
     "dext",
+    "download",
     "framework",
     "kext",
     "mdimporter",
+    "menu",
     "mpkg",
+    "musiclibrary",
+    "osax",
+    "photoslibrary",
     "pkg",
+    "playground",
     "plugin",
     "prefpane",
     "qlgenerator",
+    "rtfd",
     "saver",
+    "scptd",
+    "service",
+    "sparsebundle",
     "systemextension",
+    "tvlibrary",
     "vst",
     "vst3",
     "workflow",
+    "xcarchive",
+    "xcodeproj",
+    "xcworkspace",
     "xpc",
 ];
 
@@ -317,7 +336,9 @@ async fn reveal_target(
     if delivered.contains(&target) {
         return Ok((target, RevealGrant::DeliveredExport));
     }
-    if let (Some(root), Some(canonical)) = (root, target.to_str()) {
+    // A relative save folder would be resolved against the process working
+    // directory — the same reason `openable_folder` refuses one.
+    if let (Some(root), Some(canonical)) = (root.filter(|r| r.is_absolute()), target.to_str()) {
         if path_guard::checked_under_root(canonical, root).is_ok() {
             return Ok((target, RevealGrant::UnderRecordingsRoot));
         }
@@ -744,7 +765,11 @@ mod tests {
         assert!(!root.exists(), "opening must not create the folder");
         std::fs::create_dir_all(&root).unwrap();
         let opened = openable_folder(&root).unwrap();
-        assert_eq!(Path::new(&opened), root.canonicalize().unwrap().as_path());
+        // The file manager gets the plain form: on Windows `canonicalize`
+        // answers `\\?\C:\…`, which Explorer does not open.
+        assert!(!opened.starts_with(r"\\?\"), "{opened}");
+        let canonical = root.canonicalize().unwrap();
+        assert_eq!(opened, strip_verbatim(canonical.to_str().unwrap()));
     }
 
     #[test]
@@ -801,26 +826,87 @@ mod tests {
         // again. `reveal_item_in_dir` has no scope at all and `open_path`'s
         // scope was never configured — route the need through a Rust command
         // in this module (which decides what may be shown) instead.
-        let json = include_str!("../../capabilities/default.json");
-        let cap: serde_json::Value =
-            serde_json::from_str(json).expect("capabilities/default.json must be valid JSON");
-        let permissions = cap["permissions"]
-            .as_array()
-            .expect("capabilities/default.json must have a permissions array");
-        assert!(
-            permissions.len() > 3,
-            "the permissions list looks empty — is the tripwire reading the right file?"
-        );
-        for p in permissions {
-            let id = p
-                .as_str()
-                .or_else(|| p["identifier"].as_str())
-                .expect("a permission is a string or an object with an identifier");
-            assert!(
-                !id.starts_with("opener:"),
-                "capabilities/default.json grants `{id}` to the webview"
-            );
+        fn opener_grants(origin: &str, cap: &serde_json::Value) -> Vec<String> {
+            let permissions = cap["permissions"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{origin} must have a permissions array"));
+            permissions
+                .iter()
+                .map(|p| {
+                    p.as_str()
+                        .or_else(|| p["identifier"].as_str())
+                        .expect("a permission is a string or an object with an identifier")
+                        .to_string()
+                })
+                .filter(|id| id.starts_with("opener:"))
+                .map(|id| format!("{origin} grants `{id}` to the webview"))
+                .collect()
         }
+
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut grants = Vec::new();
+        let mut files = 0;
+        // Every capability file — Tauri loads the whole folder, not only
+        // default.json.
+        for entry in std::fs::read_dir(manifest.join("capabilities")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let json = std::fs::read_to_string(&path).unwrap();
+            let cap: serde_json::Value = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{} must be valid JSON: {e}", path.display()));
+            grants.extend(opener_grants(&path.display().to_string(), &cap));
+            files += 1;
+        }
+        assert!(
+            files >= 1,
+            "no capability files found — is the tripwire reading the right folder?"
+        );
+        // …and capabilities written inline in tauri.conf.json.
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        if let Some(inline) = conf["app"]["security"]["capabilities"].as_array() {
+            for cap in inline.iter().filter(|c| c.is_object()) {
+                grants.extend(opener_grants("tauri.conf.json", cap));
+            }
+        }
+        assert!(grants.is_empty(), "{grants:#?}");
+    }
+
+    #[tokio::test]
+    async fn a_relative_path_is_refused_even_when_it_lands_on_a_granted_file() {
+        // Pins `checked_input_file` as the policy's first step: without it a
+        // relative path is resolved against the working directory and then
+        // matched like any other. (Tests run with the crate folder as cwd.)
+        let (pool, _dir) = world().await;
+        let delivered = DeliveredExports::new();
+        delivered.record(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("Cargo.toml")
+                .to_str()
+                .unwrap(),
+        );
+        assert_code(
+            reveal_target("Cargo.toml", &delivered, None, &pool).await,
+            "reveal_invalid_path",
+        );
+    }
+
+    #[tokio::test]
+    async fn a_relative_recordings_root_grants_nothing() {
+        let (pool, _dir) = world().await;
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert_code(
+            reveal_target(
+                file.to_str().unwrap(),
+                &DeliveredExports::new(),
+                Some(Path::new(".")),
+                &pool,
+            )
+            .await,
+            "reveal_not_allowed",
+        );
     }
 
     #[test]

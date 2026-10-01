@@ -161,7 +161,8 @@ So a future auditor doesn't have to re-derive these from scratch:
   let any page reveal any path and silently refused every folder open). Every
   open/reveal now goes through a Rust command that decides what may be shown:
   `recordings_open_folder` takes no argument and opens only the resolved
-  recordings folder (never a bundle/package, which `open` would launch);
+  recordings folder (never an app/plug-in/installer bundle, which `open` would
+  launch, nor a known document package that would start an app);
   `recordings_reveal` only _reveals_ (never opens) an existing file that is
   inside the recordings folder, known to the recording history, or an export
   delivered in this session — compared as canonical paths, and refused with an
