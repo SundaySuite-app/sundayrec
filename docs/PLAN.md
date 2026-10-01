@@ -25,6 +25,7 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 | Dele `recorder/engine.rs` (≈4 800 linjer) i supervisor / progress / stderr-tolking                                                           | Fritt, men rør ikke opptaksstien uten riggtest etterpå | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #12 |
 | `tokio = { features = ["full"] }` → bare det som brukes                                                                                      | Fritt                                                  | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #14 |
 | Spesialopptak med eget lydkort: `SpecialRecording.device_id` er en id, opptakeren matcher på navn                                            | Fritt                                                  | `src-tauri/src/scheduler/mod.rs` (modulhodet)                    |
+| Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe                                                  | Fritt                                                  | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1                         |
 
 ## Spike / maskinvare først
 

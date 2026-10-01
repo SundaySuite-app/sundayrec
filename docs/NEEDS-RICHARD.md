@@ -185,12 +185,13 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
   panel could only export the whole file. Of its four items, two are done (the
   cut UI, export progress + cancel), one is half done and half dropped on
   purpose (the atomic swap is in, the in-place replace is gone), and one has no
-  source and is parked (chapters). Nothing here is still open.
+  source and is parked (chapters). One small gap is left, in the atomic swap
+  (below), and it is tracked in [`PLAN.md`](PLAN.md).
   - ~~**Cut-region timeline UI.**~~ **DONE.** Drag-to-mark on the waveform
     (`app/editor/canvas-input.ts`, drawn by `WaveformHost.tsx`), a cut list with
     a remove button per region (`EditorPage.tsx`), undo/redo and an unsaved-
     draft sidecar that survives a crash (`app/editor/cuts.ts`). Export sends
-    `cutRegions` (`app/editor/export.ts`); `editor_export` hands them to the
+    `cutRegions` (`app/editor/export.ts`); `editor::export` hands them to the
     core's `build_keeps` (`src-tauri/src/editor/mod.rs`). `e2e/editor.spec.ts`
     covers the list, the remove button and a draft coming back on reopen.
   - ~~**Export progress events + cancel.**~~ **DONE.** `editor_export` streams
@@ -205,22 +206,28 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
     `src-tauri/src/editor/mod.rs`). An aborted render never leaves a
     half-written file under the final name: a drop guard (`TempRender`)
     removes the temp, and the startup sweep (`editor::startup_sweep`, started
-    from `src-tauri/src/lib.rs`) reaps what a hard crash leaves behind.
+    from `src-tauri/src/lib.rs`) reaps what a hard crash leaves behind in the
+    save folder and the library's folders. **Gap:** it does not look in a
+    hand-picked export folder (`pickExportFolder`) or beside a file opened from
+    outside the library, so a power cut mid-export can leave a
+    `.__editor_tmp.` file there.
   - **Replace-mode (overwrite the original) — dropped on purpose.** The Tauri
     editor never overwrites a recording: every export is a NEW file (the
-    module header of `sundayrec-core::editor` says so). The Electron
-    `saveEdited`/`safeReplaceFile` layer, with its FORCE_WAV refusal and
-    atomic-replace plan, was removed once the audit found no callers outside
-    its own tests, so there is nothing left to port. The delivered name is
+    module header of `sundayrec-core::editor` says so). The Rust port of the
+    Electron `saveEdited`/`safeReplaceFile` layer (`resolve_save_ext` and
+    friends, with its FORCE_WAV refusal and atomic-replace plan) was removed in
+    #70 once the audit found no callers outside its own tests, so there is
+    nothing left to port. The delivered name is
     `export_stem`: `<source>_redigert` when the export has no title,
-    `<YYYY-MM-DD> <title>` when it has one.
+    `<YYYY-MM-DD> <title>` when it has one (just `<title>` when the date is
+    unknown).
   - **Chapter metadata on export — no source; moved to "Ikke planlagt" in
     [`PLAN.md`](PLAN.md).** The core still builds the `;FFMETADATA1` chapter
     sidecar (`ffmetadata`, `metadata_args`, kept + tested), but since v0.15
     nothing produces chapters — the transcript-driven detector left with the
     content cluster, and `chapters` is gone from `EditorExportRequest` — so
     the export hands the core an empty list (`chapters: Vec::new()` in
-    `editor_export`). A future chapter source only has to fill that list.
+    `editor::export`). A future chapter source only has to fill that list.
 
 ## E2 — Observability: crash ring, log file, capture/video probes (no feature flag)
 
