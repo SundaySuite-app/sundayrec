@@ -5,6 +5,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **«Åpne opptaksmappen» i menylinja åpner faktisk mappa.** Før gjorde den
+  ingenting, uten å si fra. Nå åpner den opptaksmappa — også når du ikke har
+  valgt noen (da er det «SundayRec» i Dokumenter) — og sier fra hvis mappa ikke
+  finnes ennå. «Vis i Finder» går via appen og viser bare opptak og eksporter
+  du har laget.
 - **SundayRec bruker ikke lenger maskinens nøkkelring.** Appen lagrer ingen
   passord, og har ikke gjort det siden e-postvarslene ble fjernet. Oppgraderer
   du rett fra v0.22.0 eller eldre, kan et gammelt e-postpassord ligge igjen i
