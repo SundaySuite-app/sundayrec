@@ -246,11 +246,17 @@ Two places where the text and the storage are worth reading carefully together:
 /v1/admin/summary`'s correction query reads `event_corrections` only.
   Everything older survives as day totals in `agg_corrections`, served by `GET
 /v1/admin/history` — a route the tool reads and folds in automatically, so a
-  ritual run a season late still sees the whole corpus. The split is exact (the
-  fold and the raw delete share one `db.batch()`), so summary + history is
-  all-time with no overlap. On a Worker that predates the route the tool gets a
-  404 and SAYS it is reading less than exists, with the `wrangler d1 execute`
-  fallback named in the output.
+  ritual run a season late still sees the whole corpus. Raw and folded never
+  overlap — the nightly purge folds a batch and deletes it in one `db.batch()`
+  (one D1 transaction, `src/purge.ts` in `sunday-telemetry`) — so summary +
+  history never counts a correction twice. It is "never both", not "never
+  neither": `DELETE /v1/apps/:app/install/:id` (the remote half of "slett
+  dataene mine") removes an install's raw rows WITHOUT folding them, so
+  corrections still inside the 90 days when that install was deleted are in
+  neither table, and all-time can sit slightly below what was once reported.
+  On a Worker that predates the route the tool gets a 404 and SAYS it is
+  reading less than exists, with the `wrangler d1 execute` fallback named in
+  the output.
 - **`app_version` on an aggregate row is the REPORTING build**, not necessarily
   the build whose proposal was corrected (migration 0004 says so out loud). The
   local `TrimAdjustment` carries the right one; the wire does not, to avoid

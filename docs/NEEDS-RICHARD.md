@@ -180,27 +180,47 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
   (ffmpeg is a sidecar; WAV/PCM parsed by hand). All five runs are
   HARDWARE-UNVERIFIED — they need real media (smoke §12). Build proven to
   compile with `cargo build -p sundayrec --features editor`.
-- **Deferred to a later editor phase (parity gaps, not bugs):**
-  - **Cut-region timeline UI.** The R1 panel exports the _whole_ file
-    (`cutRegions: []`) — it proves the full IPC surface end-to-end. The
-    drag-to-mark cut UI + waveform-overlaid timeline (the Electron
-    `renderer/pages/editor/*`) is the renderer work for the next phase; the
-    backend already accepts `cutRegions` and the core plans the keeps.
-  - **Chapter metadata on export.** The core still builds the `;FFMETADATA1`
-    chapter sidecar (`ffmetadata`, `metadata_args`, kept + tested), but since
-    R2 nothing produces chapters — the transcript-driven detector and the
-    chapter list left with the content cluster — so the export hands it an
-    empty list. A future chapter source only has to fill that list.
-  - **Replace-mode + atomic swap.** R1 exports a new `*_redigert.<fmt>` file
-    only. The Electron `saveEdited`/`safeReplaceFile` in-place replace (with the
-    `.__editor_tmp`/`.__editor_bak` crash-recovery sweep) + the FORCE_WAV
-    replace refusal (`resolve_save_ext` is already tested in core) is the next
-    increment.
+- **The Electron-parity list, checked against the code (2026-10-01).** This
+  used to be a "deferred to a later editor phase" list, written when the R1
+  panel could only export the whole file. Of its four items, two are done (the
+  cut UI, export progress + cancel), one is half done and half dropped on
+  purpose (the atomic swap is in, the in-place replace is gone), and one has no
+  source and is parked (chapters). Nothing here is still open.
+  - ~~**Cut-region timeline UI.**~~ **DONE.** Drag-to-mark on the waveform
+    (`app/editor/canvas-input.ts`, drawn by `WaveformHost.tsx`), a cut list with
+    a remove button per region (`EditorPage.tsx`), undo/redo and an unsaved-
+    draft sidecar that survives a crash (`app/editor/cuts.ts`). Export sends
+    `cutRegions` (`app/editor/export.ts`); `editor_export` hands them to the
+    core's `build_keeps` (`src-tauri/src/editor/mod.rs`). `e2e/editor.spec.ts`
+    covers the list, the remove button and a draft coming back on reopen.
   - ~~**Export progress events + cancel.**~~ **DONE.** `editor_export` streams
     `time=` progress as `editor://export-progress`, `editor_cancel_export` is a
     real cancel handle, and the 2026-08 progress round put a monotone
     percentage + an ETA on the bar (`export_timeout_ms` is still the tested
     kill-timer).
+  - ~~**Atomic swap.**~~ **DONE for exports.** Every export renders into
+    `<name>.__editor_tmp.<ext>` beside its destination and is renamed onto its
+    collision-free name only once ffmpeg has exited zero (`editor_tmp_path` in
+    `crates/sundayrec-core/src/editor.rs`, the rename in step 7 of
+    `src-tauri/src/editor/mod.rs`). An aborted render never leaves a
+    half-written file under the final name: a drop guard (`TempRender`)
+    removes the temp, and the startup sweep (`editor::startup_sweep`, started
+    from `src-tauri/src/lib.rs`) reaps what a hard crash leaves behind.
+  - **Replace-mode (overwrite the original) — dropped on purpose.** The Tauri
+    editor never overwrites a recording: every export is a NEW file (the
+    module header of `sundayrec-core::editor` says so). The Electron
+    `saveEdited`/`safeReplaceFile` layer, with its FORCE_WAV refusal and
+    atomic-replace plan, was removed once the audit found no callers outside
+    its own tests, so there is nothing left to port. The delivered name is
+    `export_stem`: `<source>_redigert` when the export has no title,
+    `<YYYY-MM-DD> <title>` when it has one.
+  - **Chapter metadata on export — no source; moved to "Ikke planlagt" in
+    [`PLAN.md`](PLAN.md).** The core still builds the `;FFMETADATA1` chapter
+    sidecar (`ffmetadata`, `metadata_args`, kept + tested), but since v0.15
+    nothing produces chapters — the transcript-driven detector left with the
+    content cluster, and `chapters` is gone from `EditorExportRequest` — so
+    the export hands the core an empty list (`chapters: Vec::new()` in
+    `editor_export`). A future chapter source only has to fill that list.
 
 ## E2 — Observability: crash ring, log file, capture/video probes (no feature flag)
 

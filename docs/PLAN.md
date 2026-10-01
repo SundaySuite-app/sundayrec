@@ -25,7 +25,6 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 | Dele `recorder/engine.rs` (≈4 800 linjer) i supervisor / progress / stderr-tolking                                                           | Fritt, men rør ikke opptaksstien uten riggtest etterpå | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #12 |
 | `tokio = { features = ["full"] }` → bare det som brukes                                                                                      | Fritt                                                  | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #14 |
 | Spesialopptak med eget lydkort: `SpecialRecording.device_id` er en id, opptakeren matcher på navn                                            | Fritt                                                  | `src-tauri/src/scheduler/mod.rs` (modulhodet)                    |
-| Gå gjennom R1-seksjonens «utsatte» editor-liste mot dagens editor (skrevet før editor-fanene; trolig delvis gjort)                           | Fritt                                                  | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1                         |
 
 ## Spike / maskinvare først
 
@@ -59,5 +58,9 @@ vekkehistorikk (RIG-DAY «(e, varsling — runde 3)»).
 
 ## Ikke planlagt
 
-Nevnt, bevisst ikke tatt: varsel til mobil (ntfy/Pushover) —
-[VARSLING.md](VARSLING.md) §Senere.
+Nevnt, bevisst ikke tatt:
+
+- Varsel til mobil (ntfy/Pushover) — [VARSLING.md](VARSLING.md) §Senere.
+- Kapitler i eksporten (ingen kilde siden v0.15) —
+  [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1. Kjernen kan fortsatt skrive dem;
+  en framtidig kapittelkilde trenger bare å fylle lista.
