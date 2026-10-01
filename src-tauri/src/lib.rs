@@ -191,7 +191,16 @@ pub fn run() {
         window::show_main(app);
     }));
     let builder = builder
-        .plugin(tauri_plugin_opener::init())
+        // The opener is used from RUST only (`recordings_open`, `logs_reveal`,
+        // `publish_open_upload_page`, `notification_open_settings`): the webview
+        // holds no `opener:` permission. The default build would also inject a
+        // script that turns `<a target="_blank">` clicks into
+        // `plugin:opener|open_url` calls; the app has no such links, so it is off.
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
@@ -234,7 +243,10 @@ pub fn run() {
         // The export engine holds the ONE in-flight render so
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
-        .manage(editor::ExportEngine::new());
+        .manage(editor::ExportEngine::new())
+        // The exports `editor_export` delivered this session — one of the three
+        // things «Vis i Finder» (`recordings_reveal`) may show.
+        .manage(commands::recordings_open::DeliveredExports::new());
 
     // P3b: replace tauri's default macOS menu with the same menu, one item
     // rewired — Quit. Off macOS tauri installs no menu at all, and adding one
@@ -558,6 +570,11 @@ pub fn run() {
             // takes a path (see commands/logs.rs for why that IS the guard).
             commands::logs::logs_reveal,
             commands::logs::logs_tail,
+            // The tray's «Åpne opptaksmappen» (no argument) and «Vis i Finder»
+            // (path_guard + delivered export / recordings root / known
+            // recording). The webview has no opener permission of its own.
+            commands::recordings_open::recordings_open_folder,
+            commands::recordings_open::recordings_reveal,
             // Trackpad haptics (macOS Force Touch; no-op elsewhere). The editor
             // fires subtle, throttled taps on snap / limit / marker-crossing.
             commands::haptics::haptic_perform,

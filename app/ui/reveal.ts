@@ -21,6 +21,15 @@
  * — `revealResult` er formen alle fire deler; `reveal(path)` er den ene,
  * vanlige spesialiseringen tre av de fire stedene faktisk trenger.
  *
+ * ## Hva bakenden godtar
+ *
+ * `window.api.revealFile` er Rust-kommandoen `recordings_reveal`, ikke
+ * opener-pluginen: webviewet har ingen `opener:`-tillatelse. Bakenden viser
+ * bare et opptak (i opptaksmappa, eller et historikken kjenner) eller en
+ * eksport fra denne økta, og bare en fil som finnes. Alt annet er `false` —
+ * og dermed den samme toasten her. Stien sendes ORDRETT: bakendens første
+ * sjekk er et eksakt treff mot historikkraden den kom fra.
+ *
  * ## Hvorfor `app/ui/`, ikke `app/lib/ui/`
  *
  * `app/lib/` er den porterte inventaren: den har et HÅNDHEVET ESLint-forbud

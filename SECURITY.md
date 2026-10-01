@@ -150,9 +150,24 @@ So a future auditor doesn't have to re-derive these from scratch:
   which answers with a fixed `https://` address (SoundCloud, YouTube, Spotify
   for Creators) or the church's own link after `custom_upload_url` has vetted
   it (`https://` only, no userinfo, one line, at most 2048 characters). The
-  `opener` capability did not widen for it, and nothing is uploaded — the
-  volunteer drags the file in, logged in to the church's own account in their
-  own browser.
+  webview holds no `opener` permission at all (next bullet), and nothing is
+  uploaded — the volunteer drags the file in, logged in to the church's own
+  account in their own browser.
+- **The webview cannot reach the OS opener.** `capabilities/default.json`
+  grants no `opener:` permission, and a Rust test
+  (`commands::recordings_open::tests::the_webview_holds_no_opener_permission`)
+  fails if one comes back. The plugin's `reveal_item_in_dir` has no scope check
+  at all, and its `open_path` scope was never configured (so the old grant both
+  let any page reveal any path and silently refused every folder open). Every
+  open/reveal now goes through a Rust command that decides what may be shown:
+  `recordings_open_folder` takes no argument and opens only the resolved
+  recordings folder (never an app/plug-in/installer bundle, which `open` would
+  launch, nor a known document package that would start an app);
+  `recordings_reveal` only _reveals_ (never opens) an existing file that is
+  inside the recordings folder, known to the recording history, or an export
+  delivered in this session — compared as canonical paths, and refused with an
+  error that does not echo the path. The plugin's injected `<a target=_blank>`
+  click handler is switched off (`open_js_links_on_click(false)`).
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

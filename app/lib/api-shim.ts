@@ -35,7 +35,6 @@ import {
   open as openDialog,
   save as saveDialog,
 } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
@@ -326,6 +325,28 @@ async function call<T>(
       );
     }
     return fallback;
+  }
+}
+
+/** A command that DOES something and answers nothing (reveal a file), as a
+ *  boolean: `true` = done, `false` = refused or failed.
+ *
+ *  Goes through `invoke` — the fixture seam — and records a failure in the same
+ *  ring `call` fills, so the diagnose panel sees a refused reveal too. Unlike
+ *  `call` it does NOT toast: its caller owns the sentence (`app/ui/reveal.ts`
+ *  says «Fant ikke fila på disken.»), and `call`'s generic «Noe i bakgrunnen
+ *  svarte ikke …» would stack a second, vaguer toast on top of it. */
+async function quietAction(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    await invoke<unknown>(cmd, args);
+    return true;
+  } catch (e) {
+    console.warn(`[api-shim] ${cmd} failed`, e);
+    recordFailure(ipcFailures, cmd, ipcErrText(e), Date.now());
+    return false;
   }
 }
 
@@ -963,24 +984,26 @@ const api: Record<string, unknown> = {
     >("run_preflight", undefined, []),
   }),
 
-  // ── File dialogs / shell (Tauri dialog + opener plugins) ────────────────
+  // ── File dialogs / the OS file manager ─────────────────────────────────
+  //
+  // The webview holds NO `opener:` permission: the plugin's reveal had no scope
+  // at all, and its open_path had a scope nobody configured, so the tray's
+  // «Åpne opptaksmappen» was refused on every click (and the refusal swallowed
+  // here). Both now go through Rust commands that decide what may be shown —
+  // see `src-tauri/src/commands/recordings_open.rs`.
   pickFolder: async () => pickPath({ directory: true }),
-  openFolder: async (p: string) => {
-    try {
-      await openPath(p);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  revealFile: async (p: string) => {
-    try {
-      await revealItemInDir(p);
-      return true;
-    } catch {
-      return false;
-    }
-  },
+  // No argument: the backend resolves the recordings folder itself (the
+  // configured one, or `<Documents>/SundayRec` — the old call was skipped when
+  // no folder was configured, which is the default). Through `call`, so a
+  // failure is recorded AND toasted: the tray has no screen of its own to say
+  // it on. `()` arrives as `null`; only the fallback is `false`.
+  openFolder: async () =>
+    (await call<null | false>("recordings_open_folder", undefined, false)) !==
+    false,
+  // The path is passed through VERBATIM: the backend's first check is an
+  // exact match against the history row the renderer got it from.
+  revealFile: async (p: string) =>
+    quietAction("recordings_reveal", { path: p }),
 
   // ── One-time notices ──────────────────────────────────────────────────
   //

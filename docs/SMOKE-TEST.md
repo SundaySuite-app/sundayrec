@@ -484,8 +484,20 @@ lenger».
    - **Expected:** an existing note (written by an older build) still shows on
      its row.
 2. Use **«Vis i Finder»** on the row.
-   - **Expected:** the OS file manager opens at the recording (via the `opener`
-     plugin — capability `opener:allow-open-path` is granted).
+   - **Expected:** the OS file manager opens with the recording selected. This
+     goes through the Rust command `recordings_reveal` — the webview holds no
+     `opener:` permission — which only shows a file inside the recordings
+     folder, one the history knows, or an export made in this session.
+   - Change the save folder (Opptak → «Hvor skal opptakene?») to another folder
+     and press **«Vis i Finder»** on a row recorded BEFORE the change.
+     **Expected:** it is still shown (the history knows it).
+   - Export a recording to a folder OUTSIDE the recordings folder (Redigering →
+     Eksporter → «Velg mappe…», e.g. the Desktop), then press **«Vis i
+     Finder»** on the receipt. **Expected:** the exported file is shown.
+     Restart the app: the receipt is gone, and nothing else can reveal that
+     export any more — that is the policy, not a bug.
+   - On a missing file (delete one by hand in Finder, then press its row's
+     button) **Expected:** the toast «Fant ikke fila på disken.», not silence.
 3. Press **«Slett»** on a row.
    - **Expected:** no question — the row moves to the trash and a toast offers
      **«Angre»**. Delete is undoable, so asking first would be a question with
@@ -667,7 +679,14 @@ three assumptions that have each failed separately.
      chose would be the same lie, just in a different place.
 5. Click **Åpne opptaksmappen**.
    - **Expected:** the folder opens AND the app lands on **Redigering**, so you
-     also see the recordings you just asked to see.
+     also see the recordings you just asked to see. The folder is resolved by
+     the Rust command `recordings_open_folder` (no argument from the webview):
+     the chosen save folder, or `Documents/SundayRec` when none is chosen —
+     which is the default, and was the case the old renderer-side call skipped.
+   - With NO save folder chosen and no `Documents/SundayRec` yet (a fresh
+     install that has never recorded) **Expected:** nothing opens, nothing is
+     created, and a toast says something did not answer
+     (`recordings_open_folder`). Before this fix the click did nothing at all.
 6. There is no preflight row to click (step 1). If you want the answers a
    preflight would give you, open the **«Hvilken lyd?»** card on Opptak — that
    is where they live now.

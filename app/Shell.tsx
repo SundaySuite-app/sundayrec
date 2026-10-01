@@ -231,8 +231,10 @@ function useTrayFolder(): void {
   useEffect(() => {
     if (armed !== "open-recordings-folder") return;
     consumePendingAction();
-    const folder = (settings.peek().saveFolder ?? "").trim();
-    if (folder) void window.api.openFolder(folder);
+    // Ingen sti herfra: bakenden finner mappa selv (den valgte, eller
+    // `<Dokumenter>/SundayRec`). Før hoppet dette over kallet når ingen mappe
+    // var valgt — som er standarden — og en feil ble svelget; nå toastes den.
+    void window.api.openFolder();
   }, [armed]);
 }
 

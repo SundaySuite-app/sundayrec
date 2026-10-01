@@ -1,9 +1,10 @@
 # Audit-backlog — 2026-07-07
 
 > **Arkivert og triagert 2026-09-28.** Fortsatt åpne — og ført inn i
-> `docs/PLAN.md`: #2 (`opener:allow-open-path`), #12 (dele `engine.rs`, nå
-> ≈4 800 linjer), #17 (Intel/universal Mac-bygg).
-> Gjort: #14 (`tokio` med bare funksjonene som brukes, #301), #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
+> `docs/PLAN.md`: #12 (dele `engine.rs`, nå ≈4 800 linjer), #17
+> (Intel/universal Mac-bygg).
+> Gjort: #2 (ingen `opener:`-tillatelse i nettvisningen; åpne/vise går via
+> Rust-kommandoer, #302), #14 (`tokio` med bare funksjonene som brukes, #301), #1 (sjekksummer pinnet, ASIO-pinnen håndheves), #3 (`path_guard` +
 > `path_ratchet` på stiflatene), #7 (én stub igjen), #8 (`call()` viser
 > feilene), #13 (`cpal_capture.rs` har tester; `media/preview.rs` finnes
 > ikke), #16. Foreldet — koden eller funksjonen er borte: #4 (typene som
@@ -27,7 +28,7 @@ sjekksum-rammeverk for ffmpeg/ASIO, ts-rs-bindings-adopsjon
    fylles fra en betrodd kjøring (kjør `npm run ffmpeg` på hver
    release-plattform og kopiér hashen; ASIO-steget printer zip-hashen i
    Actions-loggen). Før pinning er verifiseringen kun varslende.
-2. **`opener:allow-open-path`-capability** (`src-tauri/capabilities/default.json`)
+2. **Gjort (#302).** **`opener:allow-open-path`-capability** (`src-tauri/capabilities/default.json`)
    lar en kompromittert webview åpne vilkårlige lokale stier. Vurder å scope
    eller erstatte med en kommando som kun åpner lagringsmappen/opptak.
 3. **Path-scoping på øvrige IPC-flater.** `commands/editor.rs` er nå guardet

@@ -148,12 +148,16 @@ declare global {
       prerollStatus?: () => Promise<{ active: boolean }>;
       runPreflight: () => Promise<{ findings: PreflightFinding[] }>;
       pickFolder: () => Promise<string | null>;
-      /** Open a folder in the OS file manager. Resolves FALSE when the
-       *  opener refused — the shim catches, so the boolean is the only place
-       *  the difference survives (it answered `boolean` all along; the type
-       *  said `void`). */
-      openFolder: (p: string) => Promise<boolean>;
-      /** Reveal a file in Finder/Explorer. Same contract as `openFolder`. */
+      /** Open the RECORDINGS folder in the OS file manager
+       *  (`recordings_open_folder`). Takes no path: the backend resolves the
+       *  folder itself, the configured one or `<Documents>/SundayRec`.
+       *  Resolves FALSE when it could not (no such folder yet, or the OS
+       *  refused); the failure is also toasted and kept in the IPC ring. */
+      openFolder: () => Promise<boolean>;
+      /** Reveal ONE file in Finder/Explorer (`recordings_reveal`). Only a
+       *  recording (inside the recordings folder, or one the history knows)
+       *  or an export made in this session is shown. Resolves FALSE on any
+       *  refusal or failure, without toasting — the caller says it. */
       revealFile: (p: string) => Promise<boolean>;
       /** Whether the one-time «E-postvarsler er fjernet» banner should show.
        *  `false` on an IPC failure. */

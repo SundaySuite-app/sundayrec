@@ -1564,8 +1564,16 @@ duration_ms, byte_size, created_at, note` og ikke noe mer. Et merke som gjettes
 `pendingAction` er et signal, ikke et syntetisk klikk. `RecordPage` plukker opp
 de tre som hører hjemme der (`start-recording`, `stop-recording`,
 `run-preflight`), og `Shell` plukker opp den ene som ikke hører til noen side
-(`open-recordings-folder` → `window.api.openFolder`). En handling ingen flate
-kjenner blir stående i signalet i stedet for å bli spist.
+(`open-recordings-folder` → `window.api.openFolder()` → Rust-kommandoen
+`recordings_open_folder`). En handling ingen flate kjenner blir stående i
+signalet i stedet for å bli spist.
+
+`openFolder()` tar INGEN sti: bakenden finner opptaksmappa selv (den valgte,
+eller `<Dokumenter>/SundayRec`). Før sendte skallet `settings.saveFolder` og
+hoppet over kallet når den var tom — som er standarden — og kallet gikk rett på
+opener-pluginens `open_path`, som nektet hver gang (ingen sti-scope var
+konfigurert) uten at noen fikk vite det. Nå har webviewet ingen
+`opener:`-tillatelse i det hele tatt, og en feil toastes via `call()`.
 
 ⚠️ `start-recording` fra menylinjen starter bare når en kilde ER valgt.
 Ruteren navigerer til OPPTAK uansett, og kortet der sier hvorfor ingenting
@@ -1578,6 +1586,12 @@ samme løgnen, bare et annet sted.
 `Promise<boolean>` hele tiden (den fanger og returnerer `false`). Rettet til
 `boolean`, så «Vis i Finder» kan si fra når fila ikke ble funnet i stedet for
 stille ikke å gjøre noe. Type-only; ingen oppførsel er endret.
+
+(Senere: `openFolder` tar ikke lenger noen sti, og begge går gjennom
+Rust-kommandoer — `recordings_open_folder` og `recordings_reveal` — i stedet
+for opener-pluginen. `recordings_reveal` viser bare et opptak eller en eksport
+fra denne økta; se `src-tauri/src/commands/recordings_open.rs`. Svaret er
+fortsatt `boolean`.)
 
 ## e2e
 
