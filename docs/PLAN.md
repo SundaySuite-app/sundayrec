@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-09-29, ved v0.24.0 (stabil og beta)._
+_Sist gått gjennom: 2026-10-01, ved v0.25.0-beta.1 (beta)._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
@@ -19,9 +19,11 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
-| Punkt                                                                                       | Betingelse / når | Kilde                                    |
-| ------------------------------------------------------------------------------------------- | ---------------- | ---------------------------------------- |
-| Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe | Fritt            | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1 |
+| Punkt                                                                                                                                                                                                  | Betingelse / når | Kilde                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | ------------------------------------------------ |
+| Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe                                                                                                            | Fritt            | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1         |
+| Opener-rester fra review av #302: tripwiren leser bare toppnivå-`*.json`, pakkelista er ikke uttømmende, `save_folder` lagres uvalidert, «Vis i Finder» kanoniserer historikkrader i en async-kommando | Fritt            | [SECURITY.md](../SECURITY.md) (opener-avsnittet) |
+| Forhåndssjekk-raden på Opptak-sida navngir ikke spesialopptakets manglende lydenhet (varselet og banneret gjør det)                                                                                    | Fritt            | [SMOKE-TEST.md](SMOKE-TEST.md) §11b              |
 
 ## Spike / maskinvare først
 
@@ -51,7 +53,12 @@ Alt her står som avkryssingspunkter i [`docs/RIG-DAY.md`](RIG-DAY.md) — én
 rigg-bevis og hvorfor: [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §A real recording
 rig. Nytt fra v0.23.0: at «Legg ut» faktisk åpner nettleseren (SMOKE-TEST
 §«Legg ut»). Nytt fra v0.24.0: tapt opptak i varsel, menylinje og
-vekkehistorikk (RIG-DAY «(e, varsling — runde 3)»).
+vekkehistorikk (RIG-DAY «(e, varsling — runde 3)»). Nytt fra v0.25.0: at
+opptaksmotoren oppfører seg som før etter oppdelingen (RIG-DAY a, c, h og
+w6), «Åpne opptaksmappen» og «Vis i Finder/Utforsker» på Mac og Windows
+(SMOKE-TEST), og spesialopptak med eget lydkort, også reserven når det
+mangler (RIG-DAY «(c, fortsettelse)», punkt 1–4). **Stabil v0.25.0** først
+etter riggdagen og én ekte søndag på beta.
 
 ## Ikke planlagt
 

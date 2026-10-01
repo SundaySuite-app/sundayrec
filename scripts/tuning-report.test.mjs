@@ -396,8 +396,8 @@ describe("the folded history", () => {
       bar: BAR,
       generatedAt: "2026-08-08T00:00:00.000Z",
     });
-    expect(text).toContain("is not");
-    expect(text).toContain("deployed on this Worker yet");
+    expect(text).toContain("did not");
+    expect(text).toContain("answer this run");
     expect(text).toContain("wrangler d1");
     expect(text).not.toContain("+ /v1/admin/history");
   });
@@ -449,12 +449,12 @@ describe("the folded history", () => {
     // history, never rendered as if a constant could move on them.
     const summary = {
       ...emptySummary,
-      companionOutcomes: [{ kind: "title", outcome: "kept", n: 3 }],
+      companionOutcomes: [{ kind: "title", outcome: "accepted", n: 3 }],
     };
     const history = {
       corrections: { rows: [], byVersion: [], span: { days: 0 } },
       companion: {
-        rows: [{ kind: "title", outcome: "kept", total: 7 }],
+        rows: [{ kind: "title", outcome: "accepted", total: 7 }],
         span: { days: 5, total: 7 },
       },
     };
@@ -467,7 +467,7 @@ describe("the folded history", () => {
     });
     expect(text).toContain("COMPANION SUGGESTIONS — NOT COLLECTED since v0.15");
     expect(text).toContain("10 historical outcome(s)");
-    expect(text).not.toContain("kept 3");
+    expect(text).not.toContain("accepted 3");
 
     const none = renderReport({
       summary: emptySummary,

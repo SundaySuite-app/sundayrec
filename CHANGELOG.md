@@ -3,7 +3,12 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Uutgitt
+## v0.25.0-beta.1 — eget lydkort for spesialopptak, til beta-ringen
+
+Spesialopptak kan ta opp fra sitt eget lydkort, og «Åpne opptaksmappen» virker.
+Kommer først til beta-ringen, fordi opptaksmotoren også er delt opp innvendig:
+ingenting skal oppføre seg annerledes, men det skal bevises på en ekte søndag
+før stabil.
 
 - **«Åpne opptaksmappen» i menylinja åpner faktisk mappa.** Før gjorde den
   ingenting, uten å si fra. Nå åpner den opptaksmappa — også når du ikke har
@@ -21,6 +26,9 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   bryllup. Er den ikke koblet til når opptaket starter, tas det opp fra den
   vanlige lydenheten i stedet, og du får et varsel om det. Faste ukentlige
   opptak tar opp akkurat som før.
+- **Opptaksmotoren er delt opp innvendig.** Den største fila i appen er delt i
+  mindre deler uten at noe er endret i hva den gjør. Merker du noe uvanlig med
+  et opptak i denne betaen, si fra.
 
 ## v0.24.0 — varslene sier det tydeligere
 

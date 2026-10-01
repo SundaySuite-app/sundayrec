@@ -168,6 +168,14 @@ So a future auditor doesn't have to re-derive these from scratch:
   delivered in this session — compared as canonical paths, and refused with an
   error that does not echo the path. The plugin's injected `<a target=_blank>`
   click handler is switched off (`open_js_links_on_click(false)`).
+  Known gaps from the review of #302 (2026-10-01), none of them a launch
+  route: the tripwire reads only top-level `capabilities/*.json`, while Tauri
+  also loads `**/*` in toml/json5; the package list is not exhaustive (editor
+  documents such as `.key`/`.pages`/`.logicx` still open their app — the
+  `Info.plist` check stops code bundles); grant 2 trusts `save_folder`, which
+  the renderer stores unvalidated, so a compromised renderer can widen what
+  may be _revealed_ (never opened); a reveal miss canonicalises every history
+  row inside the async command.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.
