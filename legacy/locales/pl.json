@@ -368,6 +368,7 @@
         "specialNeedsDate": "Najpierw wybierz datę.",
         "specialPast": "Ta data już minęła — nagranie się nie rozpocznie.",
         "specialDeviceSame": "Tak jak zwykłe nagranie",
+        "specialDevice": "Urządzenie audio dla tego nagrania",
         "specialDeviceHint": "Wybierz osobne urządzenie audio, jeśli to nagranie ma pochodzić z innej karty dźwiękowej. Jeśli nie będzie podłączone w chwili rozpoczęcia nagrania, zostanie użyte zwykłe — i otrzymasz powiadomienie.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (obecnie niepodłączone)",

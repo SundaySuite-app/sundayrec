@@ -79,8 +79,19 @@ faktisk skal se nå — sist.
       spesialopptaket starter det på ASIO (diagnose:
       `set_audio_engine: asio`) — og loggen har INGEN linje «own audio
       device is unavailable» med `reason=Timeout` (det ville betydd at
-      ASIO-sveipet tok over 5 s, og at opptaket falt tilbake til mikseren). 3) Ingen krasj i den planlagte
-      starten (enumereringen går gjennom COM-ankeret, #282).
+      ASIO-sveipet tok over 5 s, og at opptaket falt tilbake til mikseren). 3) Ingen krasj i den planlagte starten (enumereringen går gjennom
+      COM-ankeret, #282). 4) **ASIO til ASIO:** la den vanlige lydenheten
+      være et ASIO-grensesnitt, og legg spesialopptaket på et ANNET
+      ASIO-grensesnitt. Ha Opptak-siden åpen med VU-en i gang (eller
+      forhåndsopptaket på) når det starter. **Forventet:** asio-sys laster
+      bare ÉN ASIO-driver per prosess, så det andre grensesnittet ser ut som
+      borte mens det første holdes — opptaket tar opp fra det VANLIGE
+      ASIO-grensesnittet, og varselet om at spesialopptakets lydenhet ikke
+      var tilgjengelig kommer. Sjekken før opptak (en halvtime før, mens VU
+      eller forhåndsopptak holder driveren) skal derimot IKKE si at
+      spesialopptakets enhet mangler — den sjekker den vanlige enheten,
+      fordi «mangler» ikke kan fastslås da. Noter om varselet kom, og om
+      opptaket faktisk gikk på det vanlige grensesnittet.
 - [ ] **(d) WAL-sjekk på en ekte database.** Kjør appen mot en KOPI av en
       ekte `sundayrec.sqlite` (ikke en tom testdatabase) og ta opp normalt.
       **Forventet:** `sundayrec.sqlite-wal` og `sundayrec.sqlite-shm` finnes

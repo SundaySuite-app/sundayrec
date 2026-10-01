@@ -362,6 +362,7 @@
         "specialNeedsDate": "Choisissez d’abord une date.",
         "specialPast": "La date est passée — aucun enregistrement ne démarrera.",
         "specialDeviceSame": "Comme l’enregistrement habituel",
+        "specialDevice": "Périphérique audio pour cet enregistrement",
         "specialDeviceHint": "Choisissez un périphérique audio propre si cet enregistrement doit venir d’une autre carte son. S’il n’est pas connecté au démarrage de l’enregistrement, le périphérique habituel est utilisé — et vous êtes prévenu.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (non connecté actuellement)",

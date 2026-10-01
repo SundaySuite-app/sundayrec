@@ -362,6 +362,7 @@
         "specialNeedsDate": "Välj ett datum först.",
         "specialPast": "Datumet har passerat — ingen inspelning kommer att starta.",
         "specialDeviceSame": "Samma som den vanliga inspelningen",
+        "specialDevice": "Ljudenhet för inspelningen",
         "specialDeviceHint": "Välj en egen ljudenhet om inspelningen ska komma från ett annat ljudkort. Är den inte ansluten när inspelningen startar används den vanliga — och du får besked.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (inte ansluten nu)",

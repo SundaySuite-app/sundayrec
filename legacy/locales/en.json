@@ -362,6 +362,7 @@
         "specialNeedsDate": "Choose a date first.",
         "specialPast": "That date has passed — a recording will not start.",
         "specialDeviceSame": "Same as the usual recording",
+        "specialDevice": "Audio device for this recording",
         "specialDeviceHint": "Choose an audio device of its own if this recording should come from a different sound card. If it is not connected when the recording starts, the usual one is used — and you are told.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (not connected now)",

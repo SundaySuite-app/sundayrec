@@ -649,6 +649,11 @@ fn enumerate_special_inputs(wanted: String) -> AppResult<Vec<(String, String)>> 
 enum FallbackReason {
     /// Enumerated, and nothing answers to it.
     Missing,
+    /// The enumeration answered with NO inputs at all. On a machine that
+    /// manifestly has a microphone that is a probe that failed, not proof
+    /// that the special's device is gone (`preflight::device_present` reads an
+    /// empty list the same way).
+    NothingEnumerated,
     /// The enumeration did not answer within [`SPECIAL_DEVICE_ENUM_TIMEOUT`].
     Timeout,
     /// The enumeration failed (or its task panicked).
@@ -730,6 +735,12 @@ where
             }
         }
     };
+    if inputs.is_empty() {
+        return DeviceChoice::Fallback {
+            wanted,
+            reason: FallbackReason::NothingEnumerated,
+        };
+    }
     match resolve_special_device(Some(&wanted), &inputs) {
         // Unreachable — `wanted` is non-blank — but total: the global device.
         SpecialDevice::Global => DeviceChoice::Global,
@@ -769,39 +780,165 @@ async fn start_settings<'a>(
         SPECIAL_DEVICE_ENUM_TIMEOUT,
     )
     .await;
-    if matches!(choice, DeviceChoice::Global) {
-        return Some(Cow::Borrowed(settings));
-    }
-    if app.state::<RecorderEngine>().current_state().is_active() {
-        return None;
-    }
-    match &choice {
-        DeviceChoice::Global => {}
-        DeviceChoice::Special(s) => tracing::info!(
-            device = s.device_name.as_deref().unwrap_or_default(),
-            "scheduler: special recording uses its own audio device"
-        ),
-        DeviceChoice::Fallback { wanted, reason } => {
-            let device = device_display_name(wanted);
-            tracing::warn!(
-                device,
-                ?reason,
-                "scheduler: the special recording's own audio device is unavailable — \
-                 recording on the global device instead"
-            );
-            // ALWAYS fires (pinned in `should_notify`): the recording runs, but
-            // from a device somebody did not choose for it.
-            if should_notify(SchedulerNotice::SpecialDeviceFallback, settings) {
-                notify_user(
-                    app,
-                    APP_TITLE,
-                    &AlertText::ScheduledSpecialDeviceFallback
-                        .fill(lang_of(settings), &[("device", device)]),
+    match plan_start(settings, choice, || {
+        app.state::<RecorderEngine>().current_state().is_active()
+    }) {
+        None => None,
+        Some(StartPlan {
+            settings: rec,
+            own_device,
+            fallback,
+        }) => {
+            if let Some(device) = own_device {
+                tracing::info!(
+                    device,
+                    "scheduler: special recording uses its own audio device"
                 );
             }
+            if let Some((wanted, reason)) = fallback {
+                let device = device_display_name(&wanted);
+                tracing::warn!(
+                    device,
+                    ?reason,
+                    "scheduler: the special recording's own audio device is unavailable — \
+                     recording on the global device instead"
+                );
+                // ALWAYS fires (pinned in `should_notify`): the recording runs,
+                // but from a device somebody did not choose for it.
+                if should_notify(SchedulerNotice::SpecialDeviceFallback, settings) {
+                    notify_user(
+                        app,
+                        APP_TITLE,
+                        &AlertText::ScheduledSpecialDeviceFallback
+                            .fill(lang_of(settings), &[("device", device)]),
+                    );
+                }
+            }
+            Some(rec)
         }
     }
-    Some(choice.record_with(settings))
+}
+
+/// What [`start_settings`] does with a [`DeviceChoice`] — the pure half, and
+/// the ONE function that hands `build_opts` its settings on both start paths.
+#[derive(Debug)]
+struct StartPlan<'a> {
+    /// What the recording is composed from.
+    settings: Cow<'a, Settings>,
+    /// The special's own device when it is used (for the log).
+    own_device: Option<String>,
+    /// The device that could not be used, and why (for the warning).
+    fallback: Option<(String, FallbackReason)>,
+}
+
+/// Turn a device choice into a start plan — `None` when a recording became
+/// active while a special's device was being looked up: do not start.
+///
+/// `engine_active` is the FRESH
+/// engine reading, asked for ONLY when a special's device was looked up — the
+/// only path that awaited anything, and so the only one whose earlier reading
+/// is stale (F1 finding A4). A weekly slot never reads it here, exactly as
+/// before.
+///
+/// This is what the golden tests run: whatever `fire()` and `check_missed`
+/// hand `build_opts` comes out of this function and nowhere else.
+fn plan_start<'a>(
+    settings: &'a Settings,
+    choice: DeviceChoice,
+    engine_active: impl FnOnce() -> bool,
+) -> Option<StartPlan<'a>> {
+    let (own_device, fallback) = match &choice {
+        DeviceChoice::Global => (None, None),
+        DeviceChoice::Special(s) => (s.device_name.clone(), None),
+        DeviceChoice::Fallback { wanted, reason } => (None, Some((wanted.clone(), reason.clone()))),
+    };
+    if !matches!(choice, DeviceChoice::Global) && engine_active() {
+        return None;
+    }
+    Some(StartPlan {
+        settings: choice.record_with(settings),
+        own_device,
+        fallback,
+    })
+}
+
+/// Who holds an audio input right now. Decides whether the scheduled
+/// preflight may enumerate for a special's own device at all.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct MicHolders {
+    /// A recording is running or still finalising (`Stopping` holds the
+    /// device too — the same reading `start_vu` uses).
+    recording: bool,
+    /// The pre-roll buffer is running.
+    preroll: bool,
+    /// The VU meter is running.
+    vu: bool,
+}
+
+fn mic_holders(app: &AppHandle) -> MicHolders {
+    let state = app.state::<RecorderEngine>().current_state();
+    MicHolders {
+        recording: state.is_active() || state == sundayrec_core::recorder::RecorderState::Stopping,
+        preroll: app
+            .try_state::<crate::recorder::preroll::PrerollEngine>()
+            .is_some_and(|p| p.is_active()),
+        vu: app
+            .try_state::<crate::audio::vu::VuEngine>()
+            .is_some_and(|v| v.is_running()),
+    }
+}
+
+/// May the preflight enumerate for `wanted` right now?
+///
+/// The preflight's device check obeys the asymmetry `preflight::device_present`
+/// is built on: it may only ever claim ABSENCE it has established, because a
+/// false «not connected» half an hour before a service sends a volunteer
+/// hunting for a cable that is plugged in. Two states make a special's
+/// "missing" unprovable, so the check falls back to the global device:
+///
+/// - **A recording is running.** Never enumerate under a live take — and a
+///   preflight at 11:45 for a 12:15 special lands squarely in the 11:00
+///   service.
+/// - **The pre-roll or the VU meter holds a device, and the special is ASIO.**
+///   asio-sys loads ONE ASIO driver per process: while it holds the global
+///   interface's driver, a second ASIO interface enumerates as absent.
+fn preflight_may_enumerate(wanted: &str, holders: MicHolders) -> bool {
+    if holders.recording {
+        return false;
+    }
+    !(wants_asio(wanted) && (holders.preroll || holders.vu))
+}
+
+/// The device the scheduled preflight checks, with who-holds-the-mic and the
+/// enumeration injected so the tests can drive both.
+///
+/// A weekly slot or a special without a device: the settings device, as
+/// before — nothing is read. Otherwise [`preflight_may_enumerate`] is asked
+/// BEFORE the enumeration (never enumerate while recording) and again AFTER it
+/// (a take that started meanwhile makes the answer unprovable too).
+async fn preflight_device<F>(
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    kind: TriggerKind,
+    holders: impl Fn() -> MicHolders,
+    enumerate: F,
+    limit: StdDuration,
+) -> crate::preflight::PreflightDevice
+where
+    F: FnOnce(String) -> AppResult<Vec<(String, String)>> + Send + 'static,
+{
+    use crate::preflight::PreflightDevice;
+    let Some(wanted) = special_device_wanted(specials, kind) else {
+        return PreflightDevice::Settings;
+    };
+    if !preflight_may_enumerate(wanted, holders()) {
+        return PreflightDevice::Settings;
+    }
+    let choice = choose_device(settings, specials, kind, enumerate, limit).await;
+    if !preflight_may_enumerate(wanted, holders()) {
+        return PreflightDevice::Settings;
+    }
+    preflight_device_for(&choice)
 }
 
 /// What the scheduled preflight checks for a trigger's device, from the same
@@ -811,9 +948,9 @@ async fn start_settings<'a>(
 /// - `Special` → the special's device; it was just enumerated, so it is there.
 /// - `Fallback(Missing)` → the special's device, NOT there: the volunteer hears
 ///   it half an hour early, with the device's name.
-/// - `Fallback(Timeout | Error)` → we could not tell. The start falls back to
-///   the global device if that repeats, so the global device is what is worth
-///   checking — never a "missing" claim we cannot back.
+/// - `Fallback(NothingEnumerated | Timeout | Error)` → we could not tell. The
+///   start falls back to the global device if that repeats, so the global
+///   device is what is worth checking — never a "missing" claim we cannot back.
 fn preflight_device_for(choice: &DeviceChoice) -> crate::preflight::PreflightDevice {
     use crate::preflight::PreflightDevice;
     match choice {
@@ -847,17 +984,26 @@ async fn run_scheduled_preflight(
     use sundayrec_core::preflight::PreflightSeverity;
     let documents = crate::save_folder::documents_dir(app);
     // The device the START will use: a special with its own device is checked
-    // against that device, through the same decision `fire()` makes.
-    let device = preflight_device_for(
-        &choose_device(
-            settings,
-            specials,
-            kind,
-            enumerate_special_inputs,
-            SPECIAL_DEVICE_ENUM_TIMEOUT,
-        )
-        .await,
-    );
+    // against that device, through the same decision `fire()` makes — unless
+    // that check could only cry wolf (`preflight_may_enumerate`).
+    let device = preflight_device(
+        settings,
+        specials,
+        kind,
+        || mic_holders(app),
+        enumerate_special_inputs,
+        SPECIAL_DEVICE_ENUM_TIMEOUT,
+    )
+    .await;
+    // The special's device, when THAT is what is missing — so the sentence
+    // names it instead of pointing at the settings device.
+    let special_missing = match &device {
+        crate::preflight::PreflightDevice::Resolved {
+            name,
+            present: false,
+        } => Some(name.clone()),
+        _ => None,
+    };
     let outcome =
         crate::preflight::run_preflight_detailed(pool, documents.as_deref(), device).await;
     let findings = outcome.findings;
@@ -878,18 +1024,7 @@ async fn run_scheduled_preflight(
             // built; the scheduler never sees those, so in practice this is
             // the total-function branch and not a fallback anybody hits.
             let lang = lang_of(settings);
-            let body = match first.code {
-                Some(code) => {
-                    let vars: Vec<(&str, &str)> = code
-                        .alert()
-                        .params()
-                        .iter()
-                        .map(|p| (*p, first.params.get(*p).map(String::as_str).unwrap_or("?")))
-                        .collect();
-                    code.alert().fill(lang, &vars)
-                }
-                None => first.message.clone(),
-            };
+            let body = preflight_notification_body(first, lang, special_missing.as_deref());
             notify_user(app, &AlertText::PreflightTitle.text(lang), &body);
         }
     }
@@ -912,6 +1047,34 @@ async fn run_scheduled_preflight(
     }
 
     let _ = app.emit("scheduler://preflight", &findings);
+}
+
+/// The native preflight sentence for the first ERROR finding.
+///
+/// `special_missing` is the special's own device when THAT is the device the
+/// check found missing: the generic sentence points at «the device selected in
+/// settings», which is the wrong device to go and look for.
+fn preflight_notification_body(
+    first: &sundayrec_core::preflight::PreflightFinding,
+    lang: Lang,
+    special_missing: Option<&str>,
+) -> String {
+    use sundayrec_core::preflight::PreflightCode;
+    match (first.code, special_missing) {
+        (Some(PreflightCode::DeviceMissing), Some(device)) => {
+            AlertText::PreflightSpecialDeviceMissing.fill(lang, &[("device", device)])
+        }
+        (Some(code), _) => {
+            let vars: Vec<(&str, &str)> = code
+                .alert()
+                .params()
+                .iter()
+                .map(|p| (*p, first.params.get(*p).map(String::as_str).unwrap_or("?")))
+                .collect();
+            code.alert().fill(lang, &vars)
+        }
+        (None, _) => first.message.clone(),
+    }
 }
 
 /// A missed scheduled recording, surfaced to the UI.
@@ -2524,8 +2687,20 @@ mod tests {
         serde_json::to_vec(&opts).unwrap()
     }
 
-    /// What `fire()` composes NOW: the device decision, then `build_opts`
-    /// over whatever it hands back.
+    /// The settings a plan records with; panics on `SkipBusy`.
+    fn recorded<'a>(plan: Option<StartPlan<'a>>) -> Cow<'a, Settings> {
+        plan.expect("expected a start, got a skip").settings
+    }
+
+    /// The engine reading a weekly slot (or a special without a device) must
+    /// never ask for: those paths did not read it here before the override.
+    fn never_read() -> bool {
+        panic!("the Global path must not re-read the engine")
+    }
+
+    /// What `fire()` composes NOW: `choose_device`, then `plan_start` — the
+    /// pure half of `start_settings`, the one function that hands `build_opts`
+    /// its settings on both start paths — then `build_opts` over the result.
     async fn new_path_json(
         folder: &std::path::Path,
         settings: &Settings,
@@ -2545,7 +2720,7 @@ mod tests {
             StdDuration::from_secs(5),
         )
         .await;
-        let rec = choice.record_with(settings);
+        let rec = recorded(plan_start(settings, choice, never_read));
         let opts = crate::recorder::opts::build_opts_in(
             folder,
             &rec,
@@ -2638,7 +2813,7 @@ mod tests {
         .await;
         assert_eq!(calls.load(Ordering::SeqCst), 1, "enumerated exactly once");
         assert!(matches!(choice, DeviceChoice::Special(_)), "{choice:?}");
-        let rec = choice.record_with(&settings);
+        let rec = recorded(plan_start(&settings, choice, || false));
         let opts = crate::recorder::opts::build_opts_in(
             save.path(),
             &rec,
@@ -2695,7 +2870,16 @@ mod tests {
             }
             other => panic!("expected a fallback, got {other:?}"),
         }
-        let rec = choice.record_with(&settings);
+        let plan = plan_start(&settings, choice, || false);
+        assert_eq!(
+            plan.as_ref()
+                .expect("an idle engine must start")
+                .fallback
+                .as_ref(),
+            Some(&("Zoom H6".to_string(), FallbackReason::Missing)),
+            "the warning names the device that was not there"
+        );
+        let rec = recorded(plan);
         assert!(
             matches!(rec, Cow::Borrowed(_)),
             "the global settings, not a copy"
@@ -2750,7 +2934,10 @@ mod tests {
                 ..
             }
         ));
-        assert!(matches!(choice.record_with(&settings), Cow::Borrowed(_)));
+        assert!(matches!(
+            recorded(plan_start(&settings, choice, || false)),
+            Cow::Borrowed(_)
+        ));
     }
 
     #[tokio::test]
@@ -2859,7 +3046,11 @@ mod tests {
             }
         );
         // Could not tell → no "missing" claim; check what the start falls back to.
-        for reason in [FallbackReason::Timeout, FallbackReason::Error("x".into())] {
+        for reason in [
+            FallbackReason::NothingEnumerated,
+            FallbackReason::Timeout,
+            FallbackReason::Error("x".into()),
+        ] {
             assert_eq!(
                 preflight_device_for(&DeviceChoice::Fallback {
                     wanted: "Rode NT-USB".into(),
@@ -2888,5 +3079,243 @@ mod tests {
             body,
             AlertText::ScheduledSpecialDeviceFallback.fill(Lang::No, &[("device", "Zoom H6")])
         );
+    }
+
+    // ── S1: the special's preflight may only claim absence it established ──
+
+    fn idle() -> MicHolders {
+        MicHolders::default()
+    }
+
+    #[tokio::test]
+    async fn a_live_recording_means_no_special_enumeration_and_no_missing_claim() {
+        // 11:45, the 11:00 service is recording, a 12:15 special on its own
+        // device is due its preflight. Enumerating now would poke the drivers
+        // under the take — and on an ASIO rig could not even see the device.
+        use crate::preflight::PreflightDevice;
+        let specials = vec![special_on(Some("Zoom H6"))];
+        let calls = Arc::new(AtomicUsize::new(0));
+        let device = preflight_device(
+            &Settings::default(),
+            &specials,
+            TriggerKind::Special(0),
+            || MicHolders {
+                recording: true,
+                ..MicHolders::default()
+            },
+            counting(&calls, present_inputs()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "never enumerate while recording"
+        );
+        assert_eq!(
+            device,
+            PreflightDevice::Settings,
+            "the global check, as before — no «missing» for the special"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_take_that_starts_during_the_enumeration_voids_the_verdict() {
+        use crate::preflight::PreflightDevice;
+        let specials = vec![special_on(Some("Zoom H6"))];
+        let calls = Arc::new(AtomicUsize::new(0));
+        let reads = AtomicUsize::new(0);
+        let device = preflight_device(
+            &Settings::default(),
+            &specials,
+            TriggerKind::Special(0),
+            // Idle before the enumeration, recording after it.
+            || MicHolders {
+                recording: reads.fetch_add(1, Ordering::SeqCst) > 0,
+                ..MicHolders::default()
+            },
+            counting(&calls, present_inputs()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(device, PreflightDevice::Settings);
+    }
+
+    #[tokio::test]
+    async fn an_asio_special_is_not_checked_while_another_asio_driver_may_be_held() {
+        // asio-sys loads ONE driver per process: with the pre-roll or the VU
+        // on the global interface, a second ASIO interface enumerates absent.
+        use crate::preflight::PreflightDevice;
+        let asio = vec![special_on(Some("asio::Zoom H6 ASIO"))];
+        for holders in [
+            MicHolders {
+                vu: true,
+                ..MicHolders::default()
+            },
+            MicHolders {
+                preroll: true,
+                ..MicHolders::default()
+            },
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let device = preflight_device(
+                &Settings::default(),
+                &asio,
+                TriggerKind::Special(0),
+                || holders,
+                counting(&calls, present_inputs()),
+                StdDuration::from_secs(5),
+            )
+            .await;
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "{holders:?}");
+            assert_eq!(device, PreflightDevice::Settings, "{holders:?}");
+        }
+
+        // A WASAPI/Core Audio special is unaffected by a running VU: shared
+        // mode lists every endpoint, so a miss there IS established.
+        let host = vec![special_on(Some("Zoom H6"))];
+        let calls = Arc::new(AtomicUsize::new(0));
+        let device = preflight_device(
+            &Settings::default(),
+            &host,
+            TriggerKind::Special(0),
+            || MicHolders {
+                vu: true,
+                ..MicHolders::default()
+            },
+            counting(&calls, present_inputs()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            device,
+            PreflightDevice::Resolved {
+                name: "Zoom H6".into(),
+                present: false
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_enumeration_is_not_a_missing_device() {
+        use crate::preflight::PreflightDevice;
+        let specials = vec![special_on(Some("Rode NT-USB"))];
+        let calls = Arc::new(AtomicUsize::new(0));
+        let device = preflight_device(
+            &Settings::default(),
+            &specials,
+            TriggerKind::Special(0),
+            idle,
+            counting(&calls, Vec::new()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(device, PreflightDevice::Settings);
+
+        // The START still falls back — it cannot find the device either — but
+        // for the honest reason.
+        let choice = choose_device(
+            &Settings::default(),
+            &specials,
+            TriggerKind::Special(0),
+            |_wanted: String| Ok(Vec::new()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert!(
+            matches!(
+                choice,
+                DeviceChoice::Fallback {
+                    reason: FallbackReason::NothingEnumerated,
+                    ..
+                }
+            ),
+            "{choice:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_established_miss_with_nobody_on_the_mic_is_said_by_name() {
+        use crate::preflight::PreflightDevice;
+        let specials = vec![special_on(Some("asio::Zoom H6 ASIO"))];
+        let device = preflight_device(
+            &Settings::default(),
+            &specials,
+            TriggerKind::Special(0),
+            idle,
+            |_wanted: String| Ok(present_inputs()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(
+            device,
+            PreflightDevice::Resolved {
+                name: "Zoom H6 ASIO".into(),
+                present: false
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_slot_preflight_reads_nothing_new() {
+        // The weekly slot's preflight is the settings check, exactly as
+        // before: no holders read, no enumeration.
+        use crate::preflight::PreflightDevice;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let device = preflight_device(
+            &Settings::default(),
+            &[special_on(Some("Zoom H6"))],
+            TriggerKind::Slot(0),
+            || panic!("a slot's preflight must not read who holds the mic"),
+            counting(&calls, present_inputs()),
+            StdDuration::from_secs(5),
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(device, PreflightDevice::Settings);
+    }
+
+    #[test]
+    fn the_missing_special_preflight_names_the_device() {
+        use sundayrec_core::preflight::{
+            PreflightCategory, PreflightCode, PreflightFinding, PreflightSeverity,
+        };
+        let finding = PreflightFinding {
+            severity: PreflightSeverity::Error,
+            category: PreflightCategory::Device,
+            code: Some(PreflightCode::DeviceMissing),
+            message: PreflightCode::DeviceMissing.as_str().to_string(),
+            params: Default::default(),
+        };
+        let special = preflight_notification_body(&finding, Lang::No, Some("Zoom H6"));
+        assert!(special.contains("«Zoom H6»"), "{special}");
+        assert!(!special.contains("innstillingene"), "{special}");
+        // The global device's miss keeps the sentence it always had.
+        assert_eq!(
+            preflight_notification_body(&finding, Lang::No, None),
+            AlertText::PreflightDeviceMissing.text(Lang::No)
+        );
+    }
+
+    // ── S2: the plan both start paths take ───────────────────────────────────
+
+    #[test]
+    fn a_special_that_found_the_engine_busy_after_its_lookup_does_not_start() {
+        let settings = Settings::default();
+        let special = DeviceChoice::Special(Box::default());
+        assert!(plan_start(&settings, special, || true).is_none());
+        let fallback = DeviceChoice::Fallback {
+            wanted: "Zoom H6".into(),
+            reason: FallbackReason::Missing,
+        };
+        assert!(plan_start(&settings, fallback, || true).is_none());
+        // Global never asks — `never_read` would panic.
+        assert!(matches!(
+            recorded(plan_start(&settings, DeviceChoice::Global, never_read)),
+            Cow::Borrowed(_)
+        ));
     }
 }

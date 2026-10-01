@@ -36,7 +36,7 @@
  * `specials-core.ts`.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useId, useState } from "preact/hooks";
 
 import type { TestWakeResult } from "@legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "@legacy/bindings/WakeFailureEntry";
@@ -257,6 +257,10 @@ function Specials() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Enhetsvelgerens tilgjengelige navn. Raden heter «Legg til», og det første
+  // valget («Samme som vanlig opptak») sier ikke hva boksen ER — en
+  // skjermleser trenger «Lydenhet for opptaket».
+  const deviceLabelId = useId();
 
   // Enhetsvelgeren bruker DEN SAMME lista som lydvelgeren (`list_audio_devices`
   // via shimmen). Er den ikke lest ennå, leses den her — men aldri midt i et
@@ -384,6 +388,11 @@ function Specials() {
               onChange={(next) => setDraft({ ...draft, minutes: Number(next) })}
               testId="adv-special-add-duration"
             />
+            {/* `hidden` og likevel navnet: en `aria-labelledby`-referanse
+                til et skjult element teller med i det tilgjengelige navnet. */}
+            <span id={deviceLabelId} hidden>
+              {t("app.setup.advanced.specialDevice")}
+            </span>
             <Select
               value={draft.deviceId ?? SAME_AS_USUAL}
               options={[
@@ -399,6 +408,7 @@ function Specials() {
                   deviceId: next === SAME_AS_USUAL ? null : next,
                 })
               }
+              labelId={deviceLabelId}
               describedBy={ids.describedBy}
               testId="adv-special-add-device"
             />

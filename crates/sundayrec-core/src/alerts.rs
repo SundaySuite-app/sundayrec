@@ -102,6 +102,11 @@ pub enum AlertText {
     PreflightCameraDenied,
     /// Preflight body: the save folder is inside a OneDrive-synced tree (F2-W9).
     PreflightSaveFolderSynced,
+    /// Preflight body: a ONE-OFF recording's own audio device is not connected
+    /// — `PreflightDeviceMissing` for the device the special chose rather than
+    /// the one in settings, named, because that is the one to go and find.
+    /// `{device}`
+    PreflightSpecialDeviceMissing,
     /// A scheduled recording started (governed by `notify_start`).
     ScheduledStarted,
     /// A scheduled recording was stopped by the schedule (governed by
@@ -209,6 +214,7 @@ impl AlertText {
         AlertText::PreflightMicDenied,
         AlertText::PreflightCameraDenied,
         AlertText::PreflightSaveFolderSynced,
+        AlertText::PreflightSpecialDeviceMissing,
         AlertText::ScheduledStarted,
         AlertText::ScheduledStopped,
         AlertText::ScheduledSkippedBusy,
@@ -293,7 +299,8 @@ impl AlertText {
             | AlertText::ScheduledPrepareFailed
             | AlertText::ScheduledLateStartFailed => &["detail"],
             AlertText::Reminder => &["min"],
-            AlertText::ScheduledSpecialDeviceFallback => &["device"],
+            AlertText::ScheduledSpecialDeviceFallback
+            | AlertText::PreflightSpecialDeviceMissing => &["device"],
             AlertText::PreflightDiskLow | AlertText::TakeDiskLow => &["gb"],
             AlertText::MissedOne => &["label", "at"],
             AlertText::MissedMany => &["count", "label", "at"],
@@ -694,6 +701,42 @@ impl AlertText {
             }
             (A::ScheduledLateStartFailed, L::Fr) => {
                 "Le démarrage tardif de l'enregistrement programmé a échoué : {detail}"
+            }
+
+            // ── PreflightSpecialDeviceMissing ───────────────────────────────
+            // Half an hour before a one-off recording on its own device. Says
+            // what will happen if nobody acts, in the same words the start's
+            // fallback notice uses.
+            (A::PreflightSpecialDeviceMissing, L::No) => {
+                "Lydenheten «{device}» for spesialopptaket er ikke tilkoblet. Kobles den ikke \
+                 til før start, tas opptaket fra den vanlige lydenheten."
+            }
+            (A::PreflightSpecialDeviceMissing, L::En) => {
+                "The audio device \"{device}\" for the one-off recording is not connected. If \
+                 it is not connected before the start, the usual audio device is used."
+            }
+            (A::PreflightSpecialDeviceMissing, L::De) => {
+                "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. \
+                 Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät \
+                 verwendet."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Sv) => {
+                "Ljudenheten ”{device}” för den enstaka inspelningen är inte ansluten. Ansluts \
+                 den inte före start, används den vanliga ljudenheten."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Da) => {
+                "Lydenheden »{device}« til enkeltoptagelsen er ikke tilsluttet. Bliver den ikke \
+                 tilsluttet før start, bruges den sædvanlige lydenhed."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Pl) => {
+                "Urządzenie audio „{device}” dla nagrania jednorazowego nie jest podłączone. \
+                 Jeśli nie zostanie podłączone przed rozpoczęciem, zostanie użyte zwykłe \
+                 urządzenie audio."
+            }
+            (A::PreflightSpecialDeviceMissing, L::Fr) => {
+                "Le périphérique audio « {device} » de l'enregistrement ponctuel n'est pas \
+                 connecté. S'il n'est pas connecté avant le début, le périphérique audio \
+                 habituel sera utilisé."
             }
 
             // ── ScheduledSpecialDeviceFallback ──────────────────────────────
@@ -1230,7 +1273,7 @@ mod tests {
         // when you add a variant, and read the two lists beside each other.
         assert_eq!(
             AlertText::ALL.len(),
-            49,
+            50,
             "AlertText::ALL is out of step with the enum"
         );
         let mut seen = std::collections::HashSet::new();
@@ -1526,6 +1569,17 @@ mod tests {
             "Lydenheten «Rode NT-USB» for spesialopptaket var ikke tilgjengelig — opptaket \
              bruker den vanlige lydenheten i stedet."
         );
+    }
+
+    #[test]
+    fn the_special_device_preflight_names_the_device_not_the_settings() {
+        for &lang in Lang::ALL {
+            let s = AlertText::PreflightSpecialDeviceMissing.fill(lang, &[("device", "Zoom H6")]);
+            assert!(s.contains("Zoom H6"), "{lang:?}: {s}");
+            assert_ne!(s, AlertText::PreflightDeviceMissing.text(lang));
+        }
+        let no = AlertText::PreflightSpecialDeviceMissing.fill(Lang::No, &[("device", "Zoom H6")]);
+        assert!(!no.contains("innstillingene"), "{no}");
     }
 
     #[test]

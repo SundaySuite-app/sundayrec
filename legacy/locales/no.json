@@ -362,6 +362,7 @@
         "specialNeedsDate": "Velg en dato først.",
         "specialPast": "Datoen er passert — et opptak vil ikke starte.",
         "specialDeviceSame": "Samme som vanlig opptak",
+        "specialDevice": "Lydenhet for opptaket",
         "specialDeviceHint": "Velg en egen lydenhet om opptaket skal tas fra et annet lydkort. Er den ikke koblet til når opptaket starter, tas det opp fra den vanlige — og du får beskjed.",
         "specialRowDevice": "{date} · {start}–{stop} · {device}",
         "specialRowDeviceMissing": "{date} · {start}–{stop} · {device} (ikke tilkoblet nå)",

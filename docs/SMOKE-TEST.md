@@ -869,7 +869,12 @@ with the channel pair the Lyd page holds for it (default routing if none).
 Missing, timed out or failed → the recording runs on the global device and an
 always-on native notification («Lydenheten «…» for spesialopptaket var ikke
 tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.») says so. The
-30-minute preflight checks the special's device through the same decision.
+30-minute preflight checks the special's device through the same decision, and
+names it («Lydenheten «…» for spesialopptaket er ikke tilkoblet. …») when it is
+missing — but it only claims a miss it has ESTABLISHED: while a recording runs
+(no enumeration at all), while the pre-roll or VU may hold an ASIO driver (for
+an ASIO special — asio-sys loads one driver per process), or when the
+enumeration came back empty or failed, it checks the global device as before.
 
 The Sunday invariant — a weekly slot, or a special without a device, composes
 byte-identical `RecordingOpts` and enumerates nothing — and the decision table
@@ -881,6 +886,9 @@ are covered without hardware:
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_missing_special_device_falls_back_to_exactly_the_global_recording
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_slow_enumeration_falls_back_instead_of_holding_the_start
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::only_an_asio_picker_id_asks_for_the_asio_sweep
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_live_recording_means_no_special_enumeration_and_no_missing_claim
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_asio_special_is_not_checked_while_another_asio_driver_may_be_held
+- VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_empty_enumeration_is_not_a_missing_device
 - VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::resolve_special_device_table
 - VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::a_special_device_carries_its_own_channel_pair
 - VERIFIED-BY: app/pages/setup/advanced/specials-core.test.ts::round-trips UI → sanitize → core JSON → UI
@@ -898,7 +906,10 @@ Spesialopptak med eget lydkort»):
 3. **Windows:** a WASAPI mic on the special with an ASIO driver installed →
    no ASIO driver panel at the start, plugged in or not (w14). An ASIO device
    on the special → the take runs on ASIO (`set_audio_engine: asio`), and the
-   log has no `reason=Timeout` fallback line.
+   log has no `reason=Timeout` fallback line. A special on a SECOND ASIO
+   interface while the global ASIO device is held (Record-page VU or pre-roll
+   open) → falls back to the global interface with the warning, and its
+   preflight does not claim the device is missing.
 
 > [HW] The enumeration inside the scheduled start (cpal/WASAPI through the COM
 > anchor, and a cold ASIO sweep against the 5 s bound) only runs for real on a
