@@ -872,8 +872,8 @@ mod tests {
     fn both_capture_paths_consult_the_riff_cap_guard() {
         for (name, src) in [
             (
-                "recorder/engine.rs (ffmpeg capture)",
-                include_str!("engine.rs"),
+                "recorder/engine/supervisor.rs (ffmpeg capture)",
+                include_str!("engine/supervisor.rs"),
             ),
             (
                 "recorder/native_capture/segment.rs (native capture)",

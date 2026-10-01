@@ -70,14 +70,14 @@ const EXEMPT: &[(&str, &str, &str)] = &[
         "AppError::Recording → UI; names the two files of a failed finalize rename",
     ),
     (
-        "recorder/engine.rs",
+        "recorder/engine/supervisor.rs",
         "kunne ikke opprette opptaksmappe",
         "AppError::Recording over the ready-channel → UI; the operator must see WHICH folder failed",
     ),
     (
         "recorder/cpal_capture.rs",
         "kunne ikke opprette opptaksmappe",
-        "the Windows cpal video path's twin of the engine.rs site above — same message, same \
+        "the Windows cpal video path's twin of the engine/supervisor.rs site above — same message, same \
          ready-channel, same reason (F2-W4 gave that path the decoupled capture folder too)",
     ),
     (
@@ -119,7 +119,7 @@ fn context_of(lines: &[&str], i: usize) -> String {
 /// Cut `text` down to its production prefix: everything before the first
 /// `#[cfg(test)]`/`#![cfg(test)]` that gates a MODULE (the attribute's next
 /// non-empty, non-comment, non-attribute line declares a `mod`). A
-/// `#[cfg(test)]` on a single item (engine.rs has one) does not cut — only the
+/// `#[cfg(test)]` on a single item (engine/reader.rs has one) does not cut — only the
 /// item's own line would wrongly survive, and no flagged pattern sits on an
 /// attribute line.
 fn production_prefix(lines: &[&str]) -> usize {

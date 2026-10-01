@@ -19,10 +19,9 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
-| Punkt                                                                                       | Betingelse / når                                       | Kilde                                                            |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| Dele `recorder/engine.rs` (≈4 800 linjer) i supervisor / progress / stderr-tolking          | Fritt, men rør ikke opptaksstien uten riggtest etterpå | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #12 |
-| Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe | Fritt                                                  | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1                         |
+| Punkt                                                                                       | Betingelse / når | Kilde                                    |
+| ------------------------------------------------------------------------------------------- | ---------------- | ---------------------------------------- |
+| Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe | Fritt            | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1 |
 
 ## Spike / maskinvare først
 
