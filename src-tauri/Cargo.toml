@@ -144,10 +144,19 @@ base64 = "0.23"
 # stderr/stdout line-by-line in real time (parsing `size=`/`silence_*` progress)
 # while the process keeps running, and to send a graceful `q` on stdin to stop
 # encoding cleanly. `std::process` only gives us a blocking `wait()`/`output()`.
-# `test-util` powers the `#[tokio::test(start_paused = true)]` time-paused unit
-# tests (worker/preroll timeouts). It used to ride in via a transitive dev path;
-# declared explicitly so the test gate stays green independent of the lock graph.
-tokio = { version = "1", features = ["full", "test-util"] }
+#
+# Only the features production code actually uses are listed here: `process`,
+# `fs`, `io-util`, `sync`, `time`, plus `rt` (spawn / spawn_blocking /
+# new_current_thread) and `macros` (`select!`, `join!`, `pin!`). `full` is not
+# used on purpose — it would also pull in `signal`, `io-std`, `parking_lot` and
+# `rt-multi-thread`/`net`, none of which the app calls. The test-only features
+# (`test-util`, `rt-multi-thread`, `net`) live under `[dev-dependencies]` below.
+# In practice tauri (`rt-multi-thread`) and reqwest/sqlx (`net`) already unify
+# those two into the normal build, so they are not a size win — they are listed
+# under dev only so the tests state what they themselves need. `test-util` is
+# the one that must never ship: it adds the pausable clock to the production
+# runtime (`full` + `test-util` used to put it there).
+tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
 thiserror = "2"
 # Wall-clock → local civil time for the scheduler shell. The pure decisions live
 # in `sundayrec-core::schedule` (clock-free); this crate owns `Local::now()` and
@@ -277,3 +286,12 @@ objc2 = { version = "0.6", default-features = false, features = ["std"] }
 [dev-dependencies]
 # Throwaway temp databases for the storage tests — no app, no device.
 tempfile = "3"
+# Test-only tokio features, on top of the ones in `[dependencies]`:
+#  - `test-util`: `#[tokio::test(start_paused = true)]` time-paused unit tests
+#    (worker/preroll/segment/device-watch timeouts). Declared explicitly so the
+#    test gate stays green independent of the lock graph. Dev-only: cargo does
+#    not unify dev-dependency features into a normal `cargo build`.
+#  - `rt-multi-thread`: `#[tokio::test(flavor = "multi_thread")]` and
+#    `Runtime::new()` in the unit tests.
+#  - `net`: the `TcpListener` stub server in the telemetry sender tests.
+tokio = { version = "1", features = ["test-util", "rt-multi-thread", "net"] }
