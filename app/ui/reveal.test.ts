@@ -71,4 +71,24 @@ describe("reveal", () => {
     await reveal("/opptak/gudstjeneste.mp3");
     expect(toasts.value).toHaveLength(0);
   });
+
+  it("sender stien ORDRETT — bakenden slår den opp eksakt i historikken", async () => {
+    const seen: string[] = [];
+    withFakeApi(async (p) => {
+      seen.push(p);
+      return true;
+    });
+    const path = "/Users/kantor/Documents/SundayRec/Søndag 4. okt 11.00.mp3";
+    await reveal(path);
+    expect(seen).toEqual([path]);
+  });
+
+  it("toaster også når bakenden nekter fordi fila verken er et opptak eller en eksport", async () => {
+    // `recordings_reveal` sier nei til en sti utenfor policyen; shimmen gjør
+    // det om til `false`, og for den frivillige er det samme setning.
+    withFakeApi(async () => false);
+    await reveal("/etc/hosts");
+    expect(toasts.value).toHaveLength(1);
+    expect(toasts.value[0]?.msg).toBe("Fant ikke fila på disken.");
+  });
 });

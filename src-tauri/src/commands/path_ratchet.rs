@@ -62,6 +62,9 @@ const GUARDED: &[&str] = &[
     // ── E1.2 ─────────────────────────────────────────────────────────────────
     "settings_export_to_file",
     "settings_import_from_file",
+    // ── «Vis i Finder»: the webview lost `opener:allow-reveal-item-in-dir` ────
+    // checked_input_file + delivered export / recordings root / known recording.
+    "recordings_reveal",
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process

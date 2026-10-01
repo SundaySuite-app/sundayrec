@@ -311,6 +311,7 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 pub async fn editor_export(
     app: tauri::AppHandle,
     engine: State<'_, ExportEngine>,
+    delivered: State<'_, super::recordings_open::DeliveredExports>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
@@ -339,6 +340,10 @@ pub async fn editor_export(
     // full disk, a missing input — as if it had been delivered, inflating the
     // number against the very question the counter exists to answer.
     crate::telemetry::counters::count(export_counter_for_format(&request.format));
+    // The receipt's «Vis i Finder» may show this file even when it was saved
+    // outside the recordings folder — and only because the engine delivered it
+    // (see `commands::recordings_open`).
+    delivered.record(&result.output_path);
     Ok(result)
 }
 

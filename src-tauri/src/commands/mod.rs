@@ -27,6 +27,10 @@ pub mod publish;
 // Compiled out of every non-test build by its own inner `#![cfg(test)]`.
 mod path_ratchet;
 pub mod recorder;
+// The tray's «Åpne opptaksmappen» and «Vis i Finder»: the webview holds no
+// `opener:` permission, so these two decide what may be shown. Only
+// `recordings_reveal` takes a path (path_guard + three grants, see the module).
+pub mod recordings_open;
 pub mod scheduler;
 pub mod settings;
 // E3 — opt-in telemetry: consent, deletion, counters, and the "show me exactly
