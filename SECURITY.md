@@ -175,8 +175,13 @@ So a future auditor doesn't have to re-derive these from scratch:
   vetted before it is stored (`settings_save`; a profile import keeps the
   stored folder instead): absolute, outside the protected home folders, not a
   package, and not the file-system root, the home folder or a folder above it.
-  Both commands do their filesystem checks off the async runtime. The plugin's
-  injected `<a target=_blank>` click handler is switched off
+  Paths are compared through one key that also folds macOS' firmlink spelling
+  (`/System/Volumes/Data/Users/…` is `/Users/…`) and case where the file
+  system ignores it, and — on macOS and Linux — by file identity (device and
+  inode) wherever the file exists; the protected-folder check every path guard
+  shares (`path_guard::deny_sensitive_under`) uses the same pair. Both commands,
+  and the save-folder vet, do their filesystem checks off the async runtime.
+  The plugin's injected `<a target=_blank>` click handler is switched off
   (`open_js_links_on_click(false)`).
   What remains after the follow-up to the review of #302 (2026-10-02), none of
   it running code from the folder: a save folder stored before the vet existed
@@ -185,9 +190,19 @@ So a future auditor doesn't have to re-derive these from scratch:
   _revealed_), though the tray will not open it if it is a package; a NEW
   folder that does not exist yet can only be judged by its extension (the OS
   has nothing to look at until the recorder creates it — the tray asks the OS
-  again before opening it); and a network share that stops answering still
-  leaves the click waiting until the OS gives up, now on a blocking-pool
-  thread rather than a runtime worker.
+  again before opening it); Windows has no identity check, so a second
+  spelling of a local file that canonicalisation does not unify (a loopback
+  network path) is compared by name only; and a network share that stops
+  answering still leaves the click waiting until the OS gives up, now on a
+  blocking-pool thread rather than a runtime worker.
+  A related gap that predates #302, found in its review: `settings_export_to_file`
+  writes to a path the renderer passes rather than one a dialog opened by Rust
+  returned, and its guard (`checked_path`) judges that path only up to its
+  deepest existing folder and only against the protected list — so a
+  compromised renderer could create or overwrite other files the user can
+  write. The firmlink fold above does close the `/System/Volumes/Data`
+  spelling of the protected folders for that guard too; the real fix (Rust
+  opens the dialog) is a high-priority row in `docs/PLAN.md`.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

@@ -107,9 +107,19 @@ pub async fn save_from_renderer(
         stored.save_folder.as_deref(),
         incoming.save_folder.as_deref(),
     ) {
-        vet(folder)?;
+        vet_off_runtime(vet, folder).await?;
     }
     save(pool, incoming).await
+}
+
+/// Run `vet` on the blocking pool ([`crate::util::off_runtime`]): it
+/// canonicalises and stats the folder and its ancestors, and asks AppKit about
+/// packages — and the folder may be on a share that does not answer. The
+/// commands calling this are async; inline, that wait would hold a runtime
+/// worker thread.
+async fn vet_off_runtime(vet: FolderVet, folder: &str) -> AppResult<()> {
+    let folder = folder.to_owned();
+    crate::util::off_runtime(move || vet(&folder)).await?
 }
 
 /// Reset to the defaults, persisting them, and return the defaults.
@@ -142,7 +152,7 @@ pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<
     if let Some(folder) =
         new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
     {
-        if let Err(e) = vet(folder) {
+        if let Err(e) = vet_off_runtime(vet, folder).await {
             tracing::warn!(code = %e, "an imported save folder was refused; the stored one is kept");
             merged.save_folder = stored.save_folder;
         }
@@ -196,6 +206,37 @@ mod tests {
             save_folder: folder.map(str::to_string),
             ..Default::default()
         }
+    }
+
+    /// The thread each call of [`record_thread`] ran on — for the test below
+    /// only (a `FolderVet` is a plain `fn`, so it has nowhere else to put it).
+    static VET_THREADS: std::sync::Mutex<Vec<std::thread::ThreadId>> =
+        std::sync::Mutex::new(Vec::new());
+
+    fn record_thread(_: &str) -> AppResult<()> {
+        VET_THREADS
+            .lock()
+            .unwrap()
+            .push(std::thread::current().id());
+        Err(AppError::Validation("save_folder_test: refused".into()))
+    }
+
+    #[tokio::test]
+    async fn the_folder_vet_never_runs_on_the_async_runtime() {
+        // `#[tokio::test]` is a single-threaded runtime on THIS thread, so a
+        // vet that ran inline would record this thread's id. It stats and
+        // canonicalises a folder that may be on a share that does not answer.
+        let (pool, _d) = temp_pool().await;
+        let me = std::thread::current().id();
+        save_from_renderer(&pool, with_folder(Some("/Volumes/A")), record_thread)
+            .await
+            .unwrap_err();
+        import(&pool, r#"{ "saveFolder": "/Volumes/B" }"#, record_thread)
+            .await
+            .unwrap();
+        let threads = VET_THREADS.lock().unwrap().clone();
+        assert_eq!(threads.len(), 2, "the vet was asked twice");
+        assert!(threads.iter().all(|t| *t != me), "{threads:?} vs {me:?}");
     }
 
     #[test]

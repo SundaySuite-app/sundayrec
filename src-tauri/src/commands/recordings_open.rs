@@ -97,9 +97,10 @@ use std::sync::{Mutex, PoisonError};
 use sqlx::SqlitePool;
 use tauri::State;
 
-use super::path_guard;
+use super::path_guard::{self, compare_key, strip_verbatim};
 use crate::db::{store, Db};
 use crate::error::{AppError, AppResult};
+use crate::util::off_runtime;
 
 /// How many delivered exports one session remembers. A session that exports
 /// more than this simply loses the oldest «Vis i Finder» grants (the receipt
@@ -171,10 +172,6 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
     "xpc",
 ];
 
-/// Whether this build's comparisons fold case. Windows' and macOS' default
-/// file systems are case-insensitive; Linux' are not.
-const FOLD_CASE: bool = cfg!(any(windows, target_os = "macos"));
-
 /// Export outputs the export engine delivered in this session — grant 1 of
 /// [`recordings_reveal`]'s policy. Managed state; filled ONLY by
 /// `commands::editor::editor_export` after `editor::export` succeeded, so
@@ -239,42 +236,6 @@ fn not_allowed() -> AppError {
     )
 }
 
-/// Fold Windows' verbatim prefixes away: `\\?\C:\x` → `C:\x` and
-/// `\\?\UNC\server\share\x` → `\\server\share\x`. `std::fs::canonicalize`
-/// returns the verbatim form on Windows; the file manager and a path typed by a
-/// person use the plain one. Pure string work, so it is tested on every OS.
-fn strip_verbatim(s: &str) -> String {
-    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{rest}");
-    }
-    if let Some(rest) = s.strip_prefix(r"\\?\") {
-        let b = rest.as_bytes();
-        if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
-            return rest.to_string();
-        }
-    }
-    s.to_string()
-}
-
-/// The form every equality comparison in this module is made in. `canonical`
-/// must already be canonical; this adds the verbatim fold and, where the
-/// default file system is case-insensitive, lower-casing. A path that is not
-/// valid UTF-8 is compared byte-for-byte rather than lossily, so two different
-/// names can never fold into one key.
-fn compare_key(canonical: &Path) -> PathBuf {
-    match canonical.to_str() {
-        Some(s) => {
-            let plain = strip_verbatim(s);
-            PathBuf::from(if FOLD_CASE {
-                plain.to_lowercase()
-            } else {
-                plain
-            })
-        }
-        None => canonical.to_path_buf(),
-    }
-}
-
 /// Whether `dir` is something macOS would launch or install rather than show:
 /// a package by the OS' own judgement (macOS only), a listed package extension,
 /// or the `Info.plist` every application/plug-in bundle carries
@@ -326,7 +287,13 @@ fn os_says_package(dir: &Path) -> bool {
     let Some(path) = dir.to_str() else {
         return false;
     };
-    NSWorkspace::sharedWorkspace().isFilePackageAtPath(&NSString::from_str(path))
+    // An explicit pool: this runs on a tokio blocking-pool thread, which has
+    // no run loop draining one. Whatever AppKit autoreleases inside the call
+    // (LaunchServices lookups do) would otherwise wait for the thread to end —
+    // and a pool thread that keeps getting work can live a long time.
+    objc2::rc::autoreleasepool(|_| {
+        NSWorkspace::sharedWorkspace().isFilePackageAtPath(&NSString::from_str(path))
+    })
 }
 
 /// Windows and Linux have no packages: a folder is a folder, and Explorer or
@@ -335,19 +302,6 @@ fn os_says_package(dir: &Path) -> bool {
 #[cfg(not(target_os = "macos"))]
 fn os_says_package(_dir: &Path) -> bool {
     false
-}
-
-/// Run filesystem work on tokio's blocking pool — see «No filesystem call on
-/// the async runtime» in the module docs. A closure that panics is a refusal
-/// with a code, not a crash of the command.
-async fn off_runtime<T, F>(work: F) -> AppResult<T>
-where
-    T: Send + 'static,
-    F: FnOnce() -> T + Send + 'static,
-{
-    tokio::task::spawn_blocking(work).await.map_err(|_| {
-        AppError::Internal("file_check_failed: a file system check did not complete".into())
-    })
 }
 
 fn save_folder_invalid() -> AppError {
@@ -365,14 +319,19 @@ fn save_folder_invalid() -> AppError {
 /// the path it WILL be: [`path_guard::resolved_with_missing_tail`]. Refused,
 /// with a code and never the path:
 ///
-/// - `save_folder_invalid` — relative, carrying `..`, unresolvable, or an
-///   existing FILE;
+/// - `save_folder_invalid` — relative, carrying `..`, unresolvable (also a
+///   component that exists but does not resolve: a dangling link, macOS'
+///   `/.vol/…`), or an existing FILE;
 /// - `save_folder_protected` — inside `~/.ssh` & co
-///   ([`path_guard::SENSITIVE_HOME_SUBPATHS`]), compared case-insensitively
+///   ([`path_guard::deny_sensitive_under`]): by comparison key — case-folded
 ///   where the file system is, because a folder the recorder creates as
-///   `~/.AWS` IS `~/.aws` there;
+///   `~/.AWS` IS `~/.aws` there, and with macOS' firmlink spelling
+///   (`/System/Volumes/Data/Users/…`) folded — and by file identity for what
+///   exists;
 /// - `save_folder_too_broad` — the filesystem root, the home folder, or a
-///   folder above the home folder (which includes `C:\` and `C:\Users`);
+///   folder above the home folder (which includes `C:\` and `C:\Users`, and
+///   `/System/Volumes/Data` on macOS), by key and by identity
+///   ([`path_guard::holds_home`]);
 /// - `save_folder_is_a_package` — [`looks_like_package`].
 ///
 /// ## Why «too broad», and why not stricter
@@ -402,20 +361,19 @@ fn vet_save_folder_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
     if would_be.exists() && !would_be.is_dir() {
         return Err(save_folder_invalid());
     }
-    let key = compare_key(&would_be);
     let home = home.map(|h| h.canonicalize().unwrap_or_else(|_| h.to_path_buf()));
+    // Both by comparison key and by identity — see «Comparing two spellings of
+    // one file» in `path_guard`: `/System/Volumes/Data/Users/kari/.ssh` is
+    // `~/.ssh` on macOS, and `canonicalize` does not say so.
     if let Some(home) = home.as_deref() {
-        if path_guard::SENSITIVE_HOME_SUBPATHS
-            .iter()
-            .any(|sub| key.starts_with(compare_key(&home.join(sub))))
-        {
+        if path_guard::deny_sensitive_under(&would_be, home).is_err() {
             return Err(AppError::Validation(
                 "save_folder_protected: the recordings folder is inside a protected folder".into(),
             ));
         }
     }
-    let is_unix_root = cfg!(unix) && would_be.parent().is_none();
-    let holds_home = home.is_some_and(|h| compare_key(&h).starts_with(&key));
+    let is_unix_root = cfg!(unix) && compare_key(&would_be).parent().is_none();
+    let holds_home = home.is_some_and(|h| path_guard::holds_home(&would_be, &h));
     if is_unix_root || holds_home {
         return Err(AppError::Validation(
             "save_folder_too_broad: the recordings folder cannot be the file system root, the home folder or a folder above it"
@@ -913,31 +871,6 @@ mod tests {
         }
     }
 
-    // ── comparison keys ──────────────────────────────────────────────────────
-
-    #[test]
-    fn verbatim_prefixes_fold_to_the_plain_spelling() {
-        assert_eq!(strip_verbatim(r"\\?\C:\Users\a\x.mp3"), r"C:\Users\a\x.mp3");
-        assert_eq!(
-            strip_verbatim(r"\\?\UNC\nas\opptak\x.mp3"),
-            r"\\nas\opptak\x.mp3"
-        );
-        // A verbatim path that is not a drive path is left alone rather than
-        // guessed at (a volume GUID path has no plain spelling).
-        assert_eq!(
-            strip_verbatim(r"\\?\Volume{0000}\x.mp3"),
-            r"\\?\Volume{0000}\x.mp3"
-        );
-        assert_eq!(strip_verbatim("/Users/a/x.mp3"), "/Users/a/x.mp3");
-    }
-
-    #[test]
-    fn keys_fold_case_exactly_where_the_file_system_does() {
-        let upper = compare_key(Path::new("/Users/A/SundayRec/X.mp3"));
-        let lower = compare_key(Path::new("/users/a/sundayrec/x.mp3"));
-        assert_eq!(upper == lower, FOLD_CASE);
-    }
-
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn macos_var_and_private_var_are_the_same_file() {
@@ -1207,7 +1140,7 @@ mod tests {
             vet(&home.join(".config").join("gh").join("x"), &home),
             "save_folder_protected",
         );
-        if FOLD_CASE {
+        if path_guard::FOLD_CASE {
             // `~/.AWS` created on a case-insensitive disk IS `~/.aws`.
             assert_refused(
                 vet(&home.join(".AWS").join("x"), &home),
@@ -1217,6 +1150,100 @@ mod tests {
         }
         // A sibling that merely shares the prefix is fine.
         vet(&home.join(".sshfs").join("Opptak"), &home).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_macos_firmlink_spellings_of_home_and_its_secrets_are_refused() {
+        // The four probes from the review of #308, against the REAL home (read
+        // only: the vet creates nothing). `/Users` is a firmlink, so each has
+        // a second spelling below `/System/Volumes/Data` that `canonicalize`
+        // leaves as given.
+        let home = path_guard::home_dir().unwrap().canonicalize().unwrap();
+        let rest = home
+            .to_str()
+            .unwrap()
+            .strip_prefix("/Users/")
+            .expect("a macOS home lives under /Users");
+        let probes = [
+            (
+                format!("/System/Volumes/Data/Users/{rest}/.ssh"),
+                "save_folder_protected",
+            ),
+            (
+                format!("/System/Volumes/Data/Users/{rest}/.ssh/Opptak"),
+                "save_folder_protected",
+            ),
+            (
+                format!("/System/Volumes/Data/Users/{rest}"),
+                "save_folder_too_broad",
+            ),
+            ("/System/Volumes/Data".to_string(), "save_folder_too_broad"),
+            (
+                "/System/Volumes/Data/Users".to_string(),
+                "save_folder_too_broad",
+            ),
+        ];
+        for (raw, code) in probes {
+            assert_refused(vet_new_save_folder(&raw), code);
+        }
+        // The documents folder under the same spelling is a normal choice.
+        vet_new_save_folder(&format!(
+            "/System/Volumes/Data/Users/{rest}/Documents/SundayRec"
+        ))
+        .unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_firmlink_spelling_of_a_fake_home_is_judged_like_the_plain_one() {
+        // The same, against a fake home in the temp dir (under the `/private`
+        // firmlink), including a protected folder that does NOT exist yet —
+        // there identity has nothing to compare, and the fold carries it.
+        let (_dir, home) = fake_home();
+        let home = home.canonicalize().unwrap();
+        let data = |p: &Path| PathBuf::from(format!("/System/Volumes/Data{}", p.to_str().unwrap()));
+        assert_refused(
+            vet(&data(&home.join(".ssh")), &home),
+            "save_folder_protected",
+        );
+        assert_refused(
+            vet(&data(&home.join(".aws").join("Opptak")), &home),
+            "save_folder_protected",
+        );
+        assert_refused(vet(&data(&home), &home), "save_folder_too_broad");
+        assert_refused(
+            vet(&data(home.parent().unwrap()), &home),
+            "save_folder_too_broad",
+        );
+        vet(&data(&home.join("Documents").join("SundayRec")), &home).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_volfs_spelling_of_a_protected_folder_is_refused() {
+        // `/.vol/<dev>/<ino>` names any folder by inode, and `realpath`
+        // refuses it — so it must not be taken for a missing tail.
+        use std::os::unix::fs::MetadataExt;
+        let (_dir, home) = fake_home();
+        let meta = std::fs::metadata(home.join(".ssh")).unwrap();
+        let volfs = PathBuf::from(format!("/.vol/{}/{}", meta.dev(), meta.ino()));
+        assert!(
+            volfs.symlink_metadata().is_ok(),
+            "the premise: /.vol resolves"
+        );
+        assert_refused(vet(&volfs.join("Opptak"), &home), "save_folder_invalid");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_link_in_a_new_save_folder_is_refused() {
+        // The recorder's `create_dir_all` would follow the link; the vet would
+        // have judged the link's own name.
+        let (_dir, home) = fake_home();
+        let link = home.join("Documents").join("Opptak");
+        std::os::unix::fs::symlink(home.join(".aws"), &link).unwrap();
+        assert_refused(vet(&link.join("2026"), &home), "save_folder_invalid");
     }
 
     #[test]
@@ -1338,6 +1365,12 @@ mod tests {
     // an extension it does not know (`json5`, `yaml` …) or content that is not
     // a capability — is a FINDING, not a skip. Only OS litter Tauri can never
     // load is passed over.
+    //
+    // Two more capability sources exist that no file scan can see: a config
+    // MERGED in at build time (the `TAURI_CONFIG` environment variable, or
+    // `tauri build --config`/`-c`), and a capability ADDED at run time (the
+    // `Manager` method for it, fed by the capability builder). Neither is used
+    // today; `no_capability_source_hides_from_the_tripwire` keeps it so.
 
     /// File names the OS drops into any folder (Finder, Explorer). None has a
     /// capability extension, so the loader skips them too.
@@ -1581,6 +1614,87 @@ permissions = ["opener:allow-reveal-item-in-dir"]
             "{findings:#?}"
         );
         assert_eq!(findings.len(), 6, "{findings:#?}");
+    }
+
+    /// Every file below `dir` with one of `exts` (lower-case, no dot).
+    fn files_with(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries {
+            let path = entry.expect("a directory entry").path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name == "node_modules" || name == "target" {
+                continue;
+            }
+            if path.is_dir() {
+                files_with(&path, exts, out);
+            } else if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| exts.contains(&e.to_ascii_lowercase().as_str()))
+            {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn no_capability_source_hides_from_the_tripwire() {
+        // If this fails, someone merged config in at build time or granted a
+        // capability at run time — both invisible to
+        // `the_webview_holds_no_opener_permission`. Teach that tripwire to read
+        // the new source before relaxing this one. (The needles are spelled in
+        // two halves so this file does not match itself.)
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo = manifest.parent().expect("the repo root");
+        let config_env = concat!("TAURI_", "CONFIG");
+        let runtime_grants = [
+            concat!("add_", "capability"),
+            concat!("Capability", "Builder"),
+        ];
+
+        // Build plumbing: workflows, npm scripts, release scripts, build.rs.
+        let mut plumbing = vec![repo.join("package.json"), manifest.join("build.rs")];
+        files_with(&repo.join(".github"), &["yml", "yaml"], &mut plumbing);
+        files_with(
+            &repo.join("scripts"),
+            &["mjs", "js", "cjs", "ts", "sh"],
+            &mut plumbing,
+        );
+        assert!(
+            plumbing.len() > 5,
+            "the scan found almost nothing: {plumbing:?}"
+        );
+        let mut findings = Vec::new();
+        for file in &plumbing {
+            let text = std::fs::read_to_string(file).unwrap_or_default();
+            for (n, line) in text.lines().enumerate() {
+                let at = format!("{}:{}", file.display(), n + 1);
+                if line.contains(config_env) {
+                    findings.push(format!("{at}: sets {config_env}"));
+                }
+                if line.contains("--config")
+                    || (line.contains("tauri") && line.split_whitespace().any(|w| w == "-c"))
+                {
+                    findings.push(format!("{at}: merges config into the build"));
+                }
+            }
+        }
+
+        // The app's own code: no capability added at run time.
+        let mut sources = Vec::new();
+        files_with(&manifest.join("src"), &["rs"], &mut sources);
+        assert!(sources.len() > 50, "the scan found almost nothing");
+        for file in &sources {
+            let text = std::fs::read_to_string(file).unwrap();
+            for needle in runtime_grants {
+                if text.contains(needle) {
+                    findings.push(format!("{}: uses {needle}", file.display()));
+                }
+            }
+        }
+        assert!(findings.is_empty(), "{findings:#?}");
     }
 
     #[test]
