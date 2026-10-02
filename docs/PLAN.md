@@ -23,7 +23,6 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | ------------------------------------------------ |
 | Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe                                                                                                            | Fritt            | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1         |
 | Opener-rester fra review av #302: tripwiren leser bare toppnivå-`*.json`, pakkelista er ikke uttømmende, `save_folder` lagres uvalidert, «Vis i Finder» kanoniserer historikkrader i en async-kommando | Fritt            | [SECURITY.md](../SECURITY.md) (opener-avsnittet) |
-| Forhåndssjekk-raden på Opptak-sida navngir ikke spesialopptakets manglende lydenhet (varselet og banneret gjør det)                                                                                    | Fritt            | [SMOKE-TEST.md](SMOKE-TEST.md) §11b              |
 
 ## Spike / maskinvare først
 

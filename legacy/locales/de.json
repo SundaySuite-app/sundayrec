@@ -797,7 +797,8 @@
       "diskLow": "Nur {gb} GB frei auf dem Speicherlaufwerk — vielleicht nicht genug für eine ganze Aufnahme.",
       "micDenied": "Der Mikrofonzugriff ist nicht erteilt. Öffnen Sie Systemeinstellungen → Datenschutz → Mikrofon.",
       "cameraDenied": "Der Kamerazugriff ist nicht erteilt.",
-      "saveFolderSynced": "Der Speicherordner wird von „OneDrive“ synchronisiert, was eine laufende Aufnahme beeinträchtigen kann."
+      "saveFolderSynced": "Der Speicherordner wird von „OneDrive“ synchronisiert, was eine laufende Aufnahme beeinträchtigen kann.",
+      "specialDeviceMissing": "Das Audiogerät „{device}“ für die einmalige Aufnahme ist nicht angeschlossen. Wird es bis zum Start nicht angeschlossen, wird das übliche Audiogerät verwendet."
     },
     "preflightErrors": {
       "one": "{n} Fehler muss vor der Aufnahme behoben werden",

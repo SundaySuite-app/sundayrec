@@ -29,7 +29,7 @@
 use sqlx::SqlitePool;
 use sundayrec_core::device_match::find_best_device_match;
 use sundayrec_core::preflight::{
-    assemble_findings, looks_like_onedrive, video_active, PreflightFacts, PreflightFinding,
+    assemble_findings_for, looks_like_onedrive, video_active, PreflightFacts, PreflightFinding,
 };
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
@@ -102,6 +102,11 @@ pub enum PreflightDevice {
     /// A device the caller has already resolved — the scheduler, for a special
     /// recording with its own device, which has just enumerated the inputs the
     /// start will choose from. Its name, and whether it is there.
+    ///
+    /// When it is NOT there the finding names it
+    /// ([`PreflightCode::SpecialDeviceMissing`](sundayrec_core::preflight::PreflightCode::SpecialDeviceMissing),
+    /// `params.device`): this is the special's own device, and the settings
+    /// device the generic finding points at is the wrong one to go and find.
     Resolved { name: String, present: bool },
 }
 
@@ -157,7 +162,11 @@ pub async fn run_preflight_detailed(
         Err(_) => (false, None, false),
     };
 
-    let (device_name, device_present) = match device {
+    // `special_device` is set ONLY for a resolved device — the scheduler's
+    // special. The settings device (every weekly slot, every special without a
+    // device of its own, every command-side caller) leaves it `None`, so its
+    // finding is the generic one it always was.
+    let (device_name, device_present, special_device) = match device {
         PreflightDevice::Settings => {
             let name = settings
                 .device_name
@@ -166,9 +175,9 @@ pub async fn run_preflight_detailed(
                 .filter(|n| !n.is_empty())
                 .map(str::to_string);
             let present = device_present(name.as_deref()).await;
-            (name, present)
+            (name, present, None)
         }
-        PreflightDevice::Resolved { name, present } => (Some(name), present),
+        PreflightDevice::Resolved { name, present } => (Some(name.clone()), present, Some(name)),
     };
 
     let facts = PreflightFacts {
@@ -184,7 +193,7 @@ pub async fn run_preflight_detailed(
     };
 
     PreflightOutcome {
-        findings: assemble_findings(facts),
+        findings: assemble_findings_for(facts, special_device.as_deref()),
         facts,
         device_name,
     }
@@ -231,5 +240,74 @@ mod tests {
         let bytes = free_bytes(dir.path());
         assert!(bytes.is_some());
         assert!(bytes.unwrap() > 0);
+    }
+
+    // ── which device the finding names ───────────────────────────────────────
+    //
+    // `run_preflight_detailed` is the one place a scheduler decision
+    // (`PreflightDevice`) becomes a finding on the wire, so the "named only for
+    // a special" rule is pinned HERE, through the real function and a real
+    // (empty) settings database. The sidecar and the save folder are whatever
+    // the test box has — every assertion below is about the DEVICE findings
+    // only, which is all this layer decides.
+
+    use sundayrec_core::preflight::PreflightCode;
+
+    async fn device_findings(device: PreflightDevice) -> Vec<PreflightFinding> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = crate::db::store::open_pool(&dir.path().join("test.sqlite"))
+            .await
+            .expect("open_pool");
+        run_preflight_detailed(&pool, Some(dir.path()), device)
+            .await
+            .findings
+            .into_iter()
+            .filter(|f| {
+                matches!(
+                    f.code,
+                    Some(PreflightCode::DeviceMissing | PreflightCode::SpecialDeviceMissing)
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_missing_resolved_device_is_named_on_its_finding() {
+        let findings = device_findings(PreflightDevice::Resolved {
+            name: "Zoom H6".into(),
+            present: false,
+        })
+        .await;
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].code, Some(PreflightCode::SpecialDeviceMissing));
+        assert_eq!(
+            findings[0].params.get("device").map(String::as_str),
+            Some("Zoom H6")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_present_resolved_device_raises_no_device_finding() {
+        let findings = device_findings(PreflightDevice::Resolved {
+            name: "Zoom H6".into(),
+            present: true,
+        })
+        .await;
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    /// The settings device — a weekly slot, and a special without a device of
+    /// its own — never produces the named finding. With nothing configured
+    /// there is nothing to be missing at all, which is the Sunday path.
+    #[tokio::test]
+    async fn the_settings_device_never_produces_the_named_finding() {
+        let findings = device_findings(PreflightDevice::Settings).await;
+        assert!(
+            findings
+                .iter()
+                .all(|f| f.code != Some(PreflightCode::SpecialDeviceMissing)),
+            "{findings:?}"
+        );
+        assert!(findings.is_empty(), "{findings:?}");
     }
 }

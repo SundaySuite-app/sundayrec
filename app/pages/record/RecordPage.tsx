@@ -112,6 +112,7 @@ import { SoundPage } from "../setup/SoundPage";
 import { useEmbedded } from "../setup/SubPage";
 import { autoExpandable, decisionRows, isControlId } from "./control-core";
 import type { ControlId } from "./control-core";
+import { preflightText } from "./preflight-text";
 import {
   banners,
   dismissBanner,
@@ -1256,23 +1257,6 @@ function RecordBanners() {
       ) : null}
     </div>
   );
-}
-
-/**
- * Ett funn, som setning (F2-I18N-R2).
- *
- * `PreflightFinding.message` er motorens EGEN formulering — engelsk siden
- * F2-I18N-R2, fordi Rust-prosa er en reserve og ikke appens stemme. Den vises
- * bare for et funn UTEN kode, og det er nøyaktig de tre `buildHealthFindings`
- * lager selv: de er allerede skrevet på brukerens språk der.
- *
- * Har funnet en kode, er katalogen fasiten. `{gb}` fylles med motorens egne
- * `params` — tallet er et FAKTUM målt i det øyeblikket sjekken kjørte, og
- * skallets egen diskmåling er en annen måling til en annen tid.
- */
-function preflightText(f: PreflightFinding): string {
-  if (!f.code) return f.message;
-  return interpolate(tDyn("status.preflightCode", f.code), f.params);
 }
 
 /** «{n} feil må rettes før opptaket» / «{n} ting å se på». Katalognøklene er

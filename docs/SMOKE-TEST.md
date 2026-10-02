@@ -871,15 +871,14 @@ always-on native notification («Lydenheten «…» for spesialopptaket var ikke
 tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.») says so. The
 30-minute preflight checks the special's device through the same decision, and
 names it («Lydenheten «…» for spesialopptaket er ikke tilkoblet. …») when it is
-missing — but it only claims a miss it has ESTABLISHED: while a recording runs
-(no enumeration at all), while the pre-roll or VU may hold an ASIO driver (for
-an ASIO special — asio-sys loads one driver per process), or when the
-enumeration came back empty or failed, it checks the global device as before.
-
-**Known gap (review of #303):** the Record page's own preflight row still shows
-the generic «Lydenheten som er valgt i innstillingene er ikke tilkoblet.» when it
-is the special's device that is missing; the native alert and the banner name
-the device.
+missing — in the native alert, in the banner AND in the Record page's own
+preflight row, which look up the same finding code (`specialDeviceMissing`,
+the name carried as `params.device`). A missing GLOBAL device keeps the generic
+«Lydenheten som er valgt i innstillingene er ikke tilkoblet.» — but it only
+claims a miss it has ESTABLISHED: while a recording runs (no enumeration at
+all), while the pre-roll or VU may hold an ASIO driver (for an ASIO special —
+asio-sys loads one driver per process), or when the enumeration came back empty
+or failed, it checks the global device as before.
 
 The Sunday invariant — a weekly slot, or a special without a device, composes
 byte-identical `RecordingOpts` and enumerates nothing — and the decision table
@@ -894,6 +893,11 @@ are covered without hardware:
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_live_recording_means_no_special_enumeration_and_no_missing_claim
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_asio_special_is_not_checked_while_another_asio_driver_may_be_held
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_empty_enumeration_is_not_a_missing_device
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::a_missing_special_device_is_a_named_finding
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_global_device_finding_is_untouched_by_the_named_variant
+- VERIFIED-BY: src-tauri/src/preflight/mod.rs::a_missing_resolved_device_is_named_on_its_finding
+- VERIFIED-BY: app/pages/record/preflight-text.test.ts::navngir spesialopptakets enhet, med samme ord som OS-varselet
+- VERIFIED-BY: app/pages/record/preflight-text.test.ts::den globale enheten beholder akkurat den teksten den alltid har hatt
 - VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::resolve_special_device_table
 - VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::a_special_device_carries_its_own_channel_pair
 - VERIFIED-BY: app/pages/setup/advanced/specials-core.test.ts::round-trips UI → sanitize → core JSON → UI

@@ -39,7 +39,8 @@
  * F2-W9 ga det første funnet en stabil `code` og oversatte det HER, ved
  * mottak, med én `if` i `localizeBackendFinding`. F2-I18N-R2 ga hvert eneste
  * bakend-funn en `PreflightCode`, og flyttet oppslaget til der raden TEGNES
- * (`preflightText` i `RecordPage`, mot `status.preflightCode.<kode>`).
+ * (`preflightText` i `pages/record/preflight-text.ts`, mot
+ * `status.preflightCode.<kode>`).
  *
  * Det er ikke bare ryddigere — det fikser ⚠️-en over for bakendens halvdel: en
  * oversettelse gjort ved mottak fryser språket den hadde da, så en frivillig

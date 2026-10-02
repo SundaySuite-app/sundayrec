@@ -3,6 +3,14 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Uutgitt
+
+- **Forhåndssjekken på Opptak-siden sier hvilket lydkort som mangler.** Når et
+  spesialopptak skal ta opp fra sitt eget lydkort og det ikke er koblet til,
+  navngir raden nå lydkortet («Lydenheten «Zoom H6» for spesialopptaket er ikke
+  tilkoblet …») — som varselet allerede gjorde — i stedet for å peke på
+  lydenheten i innstillingene. Faste ukentlige opptak sier det samme som før.
+
 ## v0.25.0-beta.1 — eget lydkort for spesialopptak, til beta-ringen
 
 Spesialopptak kan ta opp fra sitt eget lydkort, og «Åpne opptaksmappen» virker.

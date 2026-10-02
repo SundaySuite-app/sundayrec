@@ -995,15 +995,9 @@ async fn run_scheduled_preflight(
         SPECIAL_DEVICE_ENUM_TIMEOUT,
     )
     .await;
-    // The special's device, when THAT is what is missing — so the sentence
-    // names it instead of pointing at the settings device.
-    let special_missing = match &device {
-        crate::preflight::PreflightDevice::Resolved {
-            name,
-            present: false,
-        } => Some(name.clone()),
-        _ => None,
-    };
+    // When it is the special's device that is missing, the finding itself says
+    // so — `SpecialDeviceMissing`, carrying the device's name — and the
+    // notification below and the Record page's card both read it from there.
     let outcome =
         crate::preflight::run_preflight_detailed(pool, documents.as_deref(), device).await;
     let findings = outcome.findings;
@@ -1024,7 +1018,7 @@ async fn run_scheduled_preflight(
             // built; the scheduler never sees those, so in practice this is
             // the total-function branch and not a fallback anybody hits.
             let lang = lang_of(settings);
-            let body = preflight_notification_body(first, lang, special_missing.as_deref());
+            let body = preflight_notification_body(first, lang);
             notify_user(app, &AlertText::PreflightTitle.text(lang), &body);
         }
     }
@@ -1051,20 +1045,18 @@ async fn run_scheduled_preflight(
 
 /// The native preflight sentence for the first ERROR finding.
 ///
-/// `special_missing` is the special's own device when THAT is the device the
-/// check found missing: the generic sentence points at «the device selected in
-/// settings», which is the wrong device to go and look for.
+/// Every sentence comes from the finding's own code and params — including the
+/// one that names a special's device (`PreflightCode::SpecialDeviceMissing`,
+/// `{device}`): the generic `DeviceMissing` points at «the device selected in
+/// settings», which is the wrong device to go and look for. That is also what
+/// makes this sentence and the Record page's card agree: both look the same
+/// code up.
 fn preflight_notification_body(
     first: &sundayrec_core::preflight::PreflightFinding,
     lang: Lang,
-    special_missing: Option<&str>,
 ) -> String {
-    use sundayrec_core::preflight::PreflightCode;
-    match (first.code, special_missing) {
-        (Some(PreflightCode::DeviceMissing), Some(device)) => {
-            AlertText::PreflightSpecialDeviceMissing.fill(lang, &[("device", device)])
-        }
-        (Some(code), _) => {
+    match first.code {
+        Some(code) => {
             let vars: Vec<(&str, &str)> = code
                 .alert()
                 .params()
@@ -1073,7 +1065,7 @@ fn preflight_notification_body(
                 .collect();
             code.alert().fill(lang, &vars)
         }
-        (None, _) => first.message.clone(),
+        None => first.message.clone(),
     }
 }
 
@@ -3280,22 +3272,31 @@ mod tests {
 
     #[test]
     fn the_missing_special_preflight_names_the_device() {
-        use sundayrec_core::preflight::{
-            PreflightCategory, PreflightCode, PreflightFinding, PreflightSeverity,
+        use sundayrec_core::preflight::{assemble_findings_for, PreflightFacts};
+        // Everything fine except the device — the facts the scheduler's run
+        // reaches `assemble_findings_for` with.
+        let facts = PreflightFacts {
+            ffmpeg_missing: false,
+            folder_writable: true,
+            free_bytes: None,
+            video_active: false,
+            mic_denied: false,
+            cam_denied: false,
+            device_present: false,
+            save_folder_onedrive: false,
         };
-        let finding = PreflightFinding {
-            severity: PreflightSeverity::Error,
-            category: PreflightCategory::Device,
-            code: Some(PreflightCode::DeviceMissing),
-            message: PreflightCode::DeviceMissing.as_str().to_string(),
-            params: Default::default(),
-        };
-        let special = preflight_notification_body(&finding, Lang::No, Some("Zoom H6"));
-        assert!(special.contains("«Zoom H6»"), "{special}");
-        assert!(!special.contains("innstillingene"), "{special}");
-        // The global device's miss keeps the sentence it always had.
+        let special = &assemble_findings_for(facts, Some("Zoom H6"))[0];
+        let body = preflight_notification_body(special, Lang::No);
+        assert!(body.contains("«Zoom H6»"), "{body}");
+        assert!(!body.contains("innstillingene"), "{body}");
         assert_eq!(
-            preflight_notification_body(&finding, Lang::No, None),
+            body,
+            AlertText::PreflightSpecialDeviceMissing.fill(Lang::No, &[("device", "Zoom H6")])
+        );
+        // The global device's miss keeps the sentence it always had.
+        let global = &assemble_findings_for(facts, None)[0];
+        assert_eq!(
+            preflight_notification_body(global, Lang::No),
             AlertText::PreflightDeviceMissing.text(Lang::No)
         );
     }

@@ -797,7 +797,8 @@
       "diskLow": "Only {gb} GB free on the save disk — perhaps not enough for a whole recording.",
       "micDenied": "Microphone access has not been granted. Open System Settings → Privacy → Microphone.",
       "cameraDenied": "Camera access has not been granted.",
-      "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress."
+      "saveFolderSynced": "The save folder is synced by “OneDrive”, which can interfere with a recording in progress.",
+      "specialDeviceMissing": "The audio device “{device}” for the one-off recording is not connected. If it is not connected before the start, the usual audio device is used."
     },
     "preflightErrors": {
       "one": "{n} error to fix before the recording",

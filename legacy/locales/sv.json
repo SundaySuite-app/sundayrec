@@ -797,7 +797,8 @@
       "diskLow": "Bara {gb} GB ledigt på lagringsdisken — kanske inte nog för en hel inspelning.",
       "micDenied": "Mikrofonåtkomst har inte getts. Öppna Systeminställningar → Integritet → Mikrofon.",
       "cameraDenied": "Kameraåtkomst har inte getts.",
-      "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning."
+      "saveFolderSynced": "Lagringsmappen synkroniseras av ”OneDrive”, vilket kan störa en pågående inspelning.",
+      "specialDeviceMissing": "Ljudenheten ”{device}” för den enstaka inspelningen är inte ansluten. Ansluts den inte före start, används den vanliga ljudenheten."
     },
     "preflightErrors": {
       "one": "{n} fel måste åtgärdas före inspelningen",
