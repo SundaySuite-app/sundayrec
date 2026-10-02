@@ -803,7 +803,8 @@
       "diskLow": "Tylko {gb} GB wolnego miejsca na dysku zapisu — być może za mało na całe nagranie.",
       "micDenied": "Nie przyznano dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność → Mikrofon.",
       "cameraDenied": "Nie przyznano dostępu do kamery.",
-      "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie."
+      "saveFolderSynced": "Folder zapisu jest synchronizowany przez „OneDrive”, co może zakłócić trwające nagranie.",
+      "specialDeviceMissing": "Urządzenie audio „{device}” dla nagrania jednorazowego nie jest podłączone. Jeśli nie zostanie podłączone przed rozpoczęciem, zostanie użyte zwykłe urządzenie audio."
     },
     "preflightErrors": {
       "one": "{n} błąd do naprawienia przed nagraniem",

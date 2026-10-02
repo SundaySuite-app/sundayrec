@@ -29,7 +29,7 @@
 use sqlx::SqlitePool;
 use sundayrec_core::device_match::find_best_device_match;
 use sundayrec_core::preflight::{
-    assemble_findings, looks_like_onedrive, video_active, PreflightFacts, PreflightFinding,
+    assemble_findings_for, looks_like_onedrive, video_active, PreflightFacts, PreflightFinding,
 };
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
@@ -102,7 +102,54 @@ pub enum PreflightDevice {
     /// A device the caller has already resolved — the scheduler, for a special
     /// recording with its own device, which has just enumerated the inputs the
     /// start will choose from. Its name, and whether it is there.
+    ///
+    /// When it is NOT there the finding names it
+    /// ([`PreflightCode::SpecialDeviceMissing`](sundayrec_core::preflight::PreflightCode::SpecialDeviceMissing),
+    /// `params.device`): this is the special's own device, and the settings
+    /// device the generic finding points at is the wrong one to go and find.
     Resolved { name: String, present: bool },
+}
+
+/// What a preflight run's device check is about — [`device_target`]'s answer.
+#[derive(Debug, PartialEq, Eq)]
+struct DeviceTarget {
+    /// The device that was checked, when there is one. The scheduler puts it in
+    /// the `device_missing` warning so the operator knows what to go and find.
+    name: Option<String>,
+    /// Whether it is already KNOWN to be there. `None` = not looked up yet, which
+    /// is the settings device: [`device_present`] enumerates for it.
+    present: Option<bool>,
+    /// The device to NAME in the finding, and ONLY a one-off recording's own —
+    /// [`PreflightDevice::Resolved`]. `None` for the settings device, so its
+    /// finding stays the generic one it always was: a weekly slot (and a special
+    /// without a device of its own) must never be told «… for spesialopptaket …»
+    /// about a device that is not a special's. It is only READ when the device is
+    /// missing; a present one raises no finding either way.
+    special: Option<String>,
+}
+
+/// Decide [`DeviceTarget`] from the caller's [`PreflightDevice`] and the device
+/// named in settings (`settings_name`, as stored — trimmed here).
+///
+/// Pure, with the settings name as an INPUT, so a test can hold the Sunday
+/// invariant to account: even with a device configured in settings, the settings
+/// path names nothing as a special's.
+fn device_target(device: PreflightDevice, settings_name: Option<&str>) -> DeviceTarget {
+    match device {
+        PreflightDevice::Settings => DeviceTarget {
+            name: settings_name
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_string),
+            present: None,
+            special: None,
+        },
+        PreflightDevice::Resolved { name, present } => DeviceTarget {
+            name: Some(name.clone()),
+            present: Some(present),
+            special: Some(name),
+        },
+    }
 }
 
 /// A preflight run with the raw facts kept, for callers that need to act on a
@@ -157,19 +204,17 @@ pub async fn run_preflight_detailed(
         Err(_) => (false, None, false),
     };
 
-    let (device_name, device_present) = match device {
-        PreflightDevice::Settings => {
-            let name = settings
-                .device_name
-                .as_deref()
-                .map(str::trim)
-                .filter(|n| !n.is_empty())
-                .map(str::to_string);
-            let present = device_present(name.as_deref()).await;
-            (name, present)
-        }
-        PreflightDevice::Resolved { name, present } => (Some(name), present),
+    // Which device the check is about, and whether to NAME it — decided by a
+    // pure function (`device_target`) so the Sunday invariant is pinned where it
+    // lives: the settings device never carries a name to say.
+    let target = device_target(device, settings.device_name.as_deref());
+    let device_present = match target.present {
+        Some(present) => present,
+        // The settings device: look it up in the enumeration the recorder uses.
+        None => device_present(target.name.as_deref()).await,
     };
+    let device_name = target.name;
+    let special_device = target.special;
 
     let facts = PreflightFacts {
         ffmpeg_missing,
@@ -184,7 +229,7 @@ pub async fn run_preflight_detailed(
     };
 
     PreflightOutcome {
-        findings: assemble_findings(facts),
+        findings: assemble_findings_for(facts, special_device.as_deref()),
         facts,
         device_name,
     }
@@ -231,5 +276,134 @@ mod tests {
         let bytes = free_bytes(dir.path());
         assert!(bytes.is_some());
         assert!(bytes.unwrap() > 0);
+    }
+
+    // ── which device the finding names ───────────────────────────────────────
+    //
+    // `run_preflight_detailed` is the one place a scheduler decision
+    // (`PreflightDevice`) becomes a finding on the wire. The rule «named only
+    // for a special» lives in `device_target` and is table-tested there, with a
+    // device CONFIGURED in settings (an empty test database cannot show the
+    // settings arm leaking a name). The async tests run the real function over a
+    // real (empty) settings database; the sidecar and the save folder are
+    // whatever the test box has, so every assertion is about the DEVICE findings
+    // only, which is all this layer decides.
+
+    use sundayrec_core::preflight::PreflightCode;
+
+    async fn device_findings(device: PreflightDevice) -> Vec<PreflightFinding> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = crate::db::store::open_pool(&dir.path().join("test.sqlite"))
+            .await
+            .expect("open_pool");
+        run_preflight_detailed(&pool, Some(dir.path()), device)
+            .await
+            .findings
+            .into_iter()
+            .filter(|f| {
+                matches!(
+                    f.code,
+                    Some(PreflightCode::DeviceMissing | PreflightCode::SpecialDeviceMissing)
+                )
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_missing_resolved_device_is_named_on_its_finding() {
+        let findings = device_findings(PreflightDevice::Resolved {
+            name: "Zoom H6".into(),
+            present: false,
+        })
+        .await;
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].code, Some(PreflightCode::SpecialDeviceMissing));
+        assert_eq!(
+            findings[0].params.get("device").map(String::as_str),
+            Some("Zoom H6")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_present_resolved_device_raises_no_device_finding() {
+        let findings = device_findings(PreflightDevice::Resolved {
+            name: "Zoom H6".into(),
+            present: true,
+        })
+        .await;
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    /// With nothing configured there is nothing to be missing — the Sunday path,
+    /// end to end through the real function. (What pins that the settings device
+    /// never gets NAMED when one IS configured is the table below: the enumeration
+    /// this would need is whatever the test box has.)
+    #[tokio::test]
+    async fn with_no_device_configured_the_settings_path_raises_no_device_finding() {
+        let findings = device_findings(PreflightDevice::Settings).await;
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    /// THE Sunday invariant, at the layer that decides it: a device named in
+    /// settings is checked and reported, but never NAMED as a special's — a
+    /// weekly slot's miss must keep saying «Lydenheten som er valgt i
+    /// innstillingene …», not «… for spesialopptaket …». The settings name is an
+    /// input here on purpose: with the test database's empty settings the
+    /// mutation «the Settings arm passes its name through as `special`» is
+    /// invisible.
+    #[test]
+    fn the_settings_device_is_checked_but_never_named_as_a_specials() {
+        for configured in [Some("Behringer X32"), Some("  Zoom H6  ")] {
+            let t = device_target(PreflightDevice::Settings, configured);
+            assert_eq!(t.special, None, "{configured:?}");
+            // Not looked up yet — `device_present` answers for it.
+            assert_eq!(t.present, None, "{configured:?}");
+            // …but it IS the device that is checked, trimmed.
+            assert_eq!(t.name.as_deref(), configured.map(str::trim));
+        }
+        // Nothing, or only blanks, configured: nothing to check, nothing to name.
+        for none in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                device_target(PreflightDevice::Settings, none),
+                DeviceTarget {
+                    name: None,
+                    present: None,
+                    special: None
+                },
+                "{none:?}"
+            );
+        }
+    }
+
+    /// A resolved device is the special's own: already decided, and named — and
+    /// the global device in settings (whatever it is) does not leak in.
+    #[test]
+    fn a_resolved_device_is_named_and_already_decided() {
+        let missing = device_target(
+            PreflightDevice::Resolved {
+                name: "Zoom H6".into(),
+                present: false,
+            },
+            Some("Behringer X32"),
+        );
+        assert_eq!(
+            missing,
+            DeviceTarget {
+                name: Some("Zoom H6".into()),
+                present: Some(false),
+                special: Some("Zoom H6".into()),
+            }
+        );
+        let present = device_target(
+            PreflightDevice::Resolved {
+                name: "Zoom H6".into(),
+                present: true,
+            },
+            None,
+        );
+        // Present: never looked up again, and (being present) raises no finding
+        // for the name to appear in.
+        assert_eq!(present.present, Some(true));
+        assert_eq!(present.name.as_deref(), Some("Zoom H6"));
     }
 }

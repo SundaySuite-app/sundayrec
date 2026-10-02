@@ -797,7 +797,8 @@
       "diskLow": "Kun {gb} GB ledig på lagringsdisken — måske ikke nok til en hel optagelse.",
       "micDenied": "Der er ikke givet adgang til mikrofonen. Åbn Systemindstillinger → Anonymitet → Mikrofon.",
       "cameraDenied": "Der er ikke givet adgang til kameraet.",
-      "saveFolderSynced": "Lagringsmappen synkroniseres af »OneDrive«, hvilket kan forstyrre en igangværende optagelse."
+      "saveFolderSynced": "Lagringsmappen synkroniseres af »OneDrive«, hvilket kan forstyrre en igangværende optagelse.",
+      "specialDeviceMissing": "Lydenheden »{device}« til enkeltoptagelsen er ikke tilsluttet. Bliver den ikke tilsluttet før start, bruges den sædvanlige lydenhed."
     },
     "preflightErrors": {
       "one": "{n} fejl skal rettes før optagelsen",

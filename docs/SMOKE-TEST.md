@@ -870,16 +870,23 @@ Missing, timed out or failed → the recording runs on the global device and an
 always-on native notification («Lydenheten «…» for spesialopptaket var ikke
 tilgjengelig — opptaket bruker den vanlige lydenheten i stedet.») says so. The
 30-minute preflight checks the special's device through the same decision, and
-names it («Lydenheten «…» for spesialopptaket er ikke tilkoblet. …») when it is
-missing — but it only claims a miss it has ESTABLISHED: while a recording runs
-(no enumeration at all), while the pre-roll or VU may hold an ASIO driver (for
-an ASIO special — asio-sys loads one driver per process), or when the
-enumeration came back empty or failed, it checks the global device as before.
+names it when it is missing — but it only claims a miss it has ESTABLISHED: while
+a recording runs (no enumeration at all), while the pre-roll or VU may hold an
+ASIO driver (for an ASIO special — asio-sys loads one driver per process), or
+when the enumeration came back empty or failed, it checks the global device as
+before.
 
-**Known gap (review of #303):** the Record page's own preflight row still shows
-the generic «Lydenheten som er valgt i innstillingene er ikke tilkoblet.» when it
-is the special's device that is missing; the native alert and the banner name
-the device.
+The named sentence («Lydenheten «…» for spesialopptaket er ikke tilkoblet. …»)
+is the finding code `specialDeviceMissing`, with the name carried as
+`params.device`, and exactly two surfaces use it: the always-on native
+notification and the Record page's own preflight row. Each looks the code up in
+its own catalogue (`AlertText` / `status.preflightCode`); a Rust test holds the
+two to the same words in all seven languages. The `device_missing` warning
+banner is a separate surface with its own sentence («Lydenheten «…» er ikke
+tilkoblet.»), which names the device too. A missing GLOBAL device (a weekly
+slot, or a special without a device of its own) keeps the generic «Lydenheten
+som er valgt i innstillingene er ikke tilkoblet.» on the notification and on the
+row.
 
 The Sunday invariant — a weekly slot, or a special without a device, composes
 byte-identical `RecordingOpts` and enumerates nothing — and the decision table
@@ -894,6 +901,13 @@ are covered without hardware:
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::a_live_recording_means_no_special_enumeration_and_no_missing_claim
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_asio_special_is_not_checked_while_another_asio_driver_may_be_held
 - VERIFIED-BY: src-tauri/src/scheduler/mod.rs::an_empty_enumeration_is_not_a_missing_device
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::a_missing_special_device_is_a_named_finding
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_global_device_finding_is_untouched_by_the_named_variant
+- VERIFIED-BY: src-tauri/src/preflight/mod.rs::a_missing_resolved_device_is_named_on_its_finding
+- VERIFIED-BY: src-tauri/src/preflight/mod.rs::the_settings_device_is_checked_but_never_named_as_a_specials
+- VERIFIED-BY: crates/sundayrec-core/src/preflight.rs::the_card_and_the_notification_say_the_same_words
+- VERIFIED-BY: app/pages/record/preflight-text.test.ts::navngir spesialopptakets enhet, med samme ord som OS-varselet
+- VERIFIED-BY: app/pages/record/preflight-text.test.ts::den globale enheten beholder akkurat den teksten den alltid har hatt
 - VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::resolve_special_device_table
 - VERIFIED-BY: crates/sundayrec-core/src/schedule.rs::a_special_device_carries_its_own_channel_pair
 - VERIFIED-BY: app/pages/setup/advanced/specials-core.test.ts::round-trips UI → sanitize → core JSON → UI

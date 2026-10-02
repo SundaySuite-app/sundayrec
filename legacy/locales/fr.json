@@ -797,7 +797,8 @@
       "diskLow": "Seulement {gb} Go libres sur le disque d’enregistrement — peut-être pas assez pour un enregistrement entier.",
       "micDenied": "L’accès au microphone n’est pas accordé. Ouvrez Réglages Système → Confidentialité → Microphone.",
       "cameraDenied": "L’accès à la caméra n’est pas accordé.",
-      "saveFolderSynced": "Le dossier d’enregistrement est synchronisé par « OneDrive », ce qui peut perturber un enregistrement en cours."
+      "saveFolderSynced": "Le dossier d’enregistrement est synchronisé par « OneDrive », ce qui peut perturber un enregistrement en cours.",
+      "specialDeviceMissing": "Le périphérique audio « {device} » de l’enregistrement ponctuel n’est pas connecté. S’il n’est pas connecté avant le début, le périphérique audio habituel sera utilisé."
     },
     "preflightErrors": {
       "one": "{n} erreur à corriger avant l’enregistrement",

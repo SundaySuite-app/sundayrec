@@ -23,7 +23,7 @@ code: PreflightCode | null,
  */
 message: string, 
 /**
- * Interpolation values for the localised sentence (`{gb}`). Same shape and
- * same reason as [`crate::notify::BackendWarning::params`].
+ * Interpolation values for the localised sentence (`{gb}`, `{device}`).
+ * Same shape and same reason as [`crate::notify::BackendWarning::params`].
  */
 params: { [key in string]: string }, };

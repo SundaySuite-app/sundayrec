@@ -247,4 +247,67 @@ test.describe("engine codes render as catalogue sentences", () => {
       "Nur 0.4 GB frei auf dem Speicherlaufwerk",
     );
   });
+
+  // Gapet fra review av #303: planleggeren sjekket spesialopptakets egen
+  // lydenhet og navnga den i OS-varselet, men raden på OPPTAK sa «Lydenheten som
+  // er valgt i innstillingene …» om en enhet ingen hadde valgt der. Funnet
+  // bærer nå en egen kode med navnet i `params.device`.
+  //
+  // To tester og ikke én: `boot()` legger til et init-skript per kall, og en
+  // andre `boot()` på samme side ville latt det første kjøre med.
+  const missingDevice = (code: string, params: Record<string, string>) => ({
+    severity: "error",
+    category: "device",
+    code,
+    // Motorens engelske reserve — skal IKKE vises for en kode katalogen kjenner.
+    message: "English reserve",
+    params,
+  });
+  const bootWithFinding = (
+    page: Parameters<typeof boot>[0],
+    finding: ReturnType<typeof missingDevice>,
+  ) =>
+    boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        media_permissions: { microphone: "authorized", camera: "authorized" },
+        ffmpeg_health: { available: true, version: "7.1", path: "/x/ffmpeg" },
+        // ⚠️ `run_preflight` svarer med `Vec<PreflightFinding>` DIREKTE.
+        run_preflight: [finding],
+      },
+      settings: { ...SETTLED_SETTINGS, language: "no" },
+      goto: "home",
+    });
+
+  test("a special recording's missing device is named on the preflight row", async ({
+    page,
+  }) => {
+    await bootWithFinding(
+      page,
+      missingDevice("specialDeviceMissing", { device: "Zoom H6" }),
+    );
+    const banner = page.getByTestId("banner-preflight");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText(
+      "Lydenheten «Zoom H6» for spesialopptaket er ikke tilkoblet. " +
+        "Kobles den ikke til før start, tas opptaket fra den vanlige lydenheten.",
+    );
+    // MUTASJONSPRØVEN: slå opp `deviceMissing` for begge kodene i `preflightText`,
+    // og linja over blir rød; la `specialDeviceMissing` falle ut av katalogen,
+    // og enhetstesten i `app/pages/record/preflight-text.test.ts` gjør det.
+    await expect(banner).not.toContainText("valgt i innstillingene");
+    await expect(banner).not.toContainText("English reserve");
+  });
+
+  test("the global device's missing finding keeps the sentence it always had", async ({
+    page,
+  }) => {
+    await bootWithFinding(page, missingDevice("deviceMissing", {}));
+    const banner = page.getByTestId("banner-preflight");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText(
+      "Lydenheten som er valgt i innstillingene er ikke tilkoblet.",
+    );
+    await expect(banner).not.toContainText("spesialopptaket");
+  });
 });
