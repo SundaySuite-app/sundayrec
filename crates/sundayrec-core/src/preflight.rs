@@ -388,8 +388,12 @@ pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
 /// own and generic (the settings device) otherwise.
 ///
 /// A blank name is not a name: «Lydenheten «» for spesialopptaket …» would send
-/// a volunteer looking for nothing, so it falls back to the generic finding —
-/// which is at least true.
+/// a volunteer looking for nothing, so it falls back to the generic finding.
+/// That sentence points at the device in SETTINGS, which is not necessarily the
+/// one that is missing — so this is a guard for a case that should not occur
+/// (a special's device id is never blank: `asio::<name>` or a picker id, and the
+/// scheduler only asks for a special's device when one is set), not a claim that
+/// the generic sentence is right for it.
 fn device_missing_finding(special_device: Option<&str>) -> PreflightFinding {
     match special_device {
         Some(name) if !name.trim().is_empty() => PreflightFinding::error(
@@ -406,9 +410,10 @@ fn device_missing_finding(special_device: Option<&str>) -> PreflightFinding {
 ///
 /// Only the device-missing finding differs — it becomes
 /// [`PreflightCode::SpecialDeviceMissing`], carrying the name as the `device`
-/// param, so the Record page's card says WHICH device to go and find, in the
-/// same words as the native notification (both look the code up). Same place in
-/// the list, same severity and category. `None` is [`assemble_findings`]
+/// param, so the Record page's card says WHICH device to go and find. Both
+/// surfaces look the code up in their own catalogue, and
+/// `the_card_and_the_notification_say_the_same_words` holds the two catalogues
+/// to the same words. Same place in the list, same severity and category. `None` is [`assemble_findings`]
 /// exactly: a weekly slot, and a special without a device of its own, emit
 /// byte-identical findings to before.
 pub fn assemble_findings_for(
@@ -1055,5 +1060,53 @@ mod tests {
         let text = code.alert().fill(crate::lang::Lang::No, &vars);
         assert!(text.contains("«Zoom H6»"), "{text}");
         assert!(!text.contains("innstillingene"), "{text}");
+    }
+
+    /// The card (`legacy/locales/*.json`, `status.preflightCode.<code>`) and the
+    /// native notification ([`AlertText`]) are TWO catalogues for one code, and
+    /// nothing but this test makes them agree. Seven languages, the same words:
+    /// a drift on either side is a failing test, not a volunteer who reads one
+    /// sentence on the Record page and another in the notification.
+    ///
+    /// Compared up to the quote and apostrophe GLYPHS: the catalogue is typeset
+    /// (“…”, ’) where the notification is plain text ("…", '), and that is the
+    /// only difference allowed. Only the two device codes — the ones whose
+    /// wording the named finding is about; the other codes' sentences
+    /// legitimately differ in typography beyond the glyphs (e.g. the OneDrive
+    /// quotes) and are not this test's claim.
+    #[test]
+    fn the_card_and_the_notification_say_the_same_words() {
+        use crate::lang::Lang;
+        let catalogues = [
+            (Lang::No, include_str!("../../../legacy/locales/no.json")),
+            (Lang::En, include_str!("../../../legacy/locales/en.json")),
+            (Lang::De, include_str!("../../../legacy/locales/de.json")),
+            (Lang::Sv, include_str!("../../../legacy/locales/sv.json")),
+            (Lang::Da, include_str!("../../../legacy/locales/da.json")),
+            (Lang::Pl, include_str!("../../../legacy/locales/pl.json")),
+            (Lang::Fr, include_str!("../../../legacy/locales/fr.json")),
+        ];
+        let glyphs = |s: &str| {
+            s.replace(['\u{201C}', '\u{201D}'], "\"")
+                .replace('\u{2019}', "'")
+        };
+        let pairs = [
+            (PreflightCode::DeviceMissing, "deviceMissing"),
+            (PreflightCode::SpecialDeviceMissing, "specialDeviceMissing"),
+        ];
+        assert_eq!(catalogues.len(), Lang::ALL.len(), "a language is missing");
+        for (lang, raw) in catalogues {
+            let json: serde_json::Value = serde_json::from_str(raw).expect("locale parses");
+            for (code, key) in pairs {
+                let card = json["status"]["preflightCode"][key]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{lang:?}: status.preflightCode.{key} is missing"));
+                assert_eq!(
+                    glyphs(code.alert().template(lang)),
+                    glyphs(card),
+                    "{code:?}/{lang:?}: the notification and the card disagree"
+                );
+            }
+        }
     }
 }

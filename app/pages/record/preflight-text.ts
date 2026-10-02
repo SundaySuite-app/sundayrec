@@ -30,9 +30,11 @@ import { interpolate } from "../../state/backend-warning";
  * FEIL enhet å lete etter når det er spesialopptakets egen som mangler.
  * Planleggeren sender da `specialDeviceMissing`, med enhetens navn som DATA i
  * `params.device` — samme kode slås opp i OS-varselet
- * (`AlertText::PreflightSpecialDeviceMissing`), med de samme ordene, så de to
- * flatene ikke kan si to ting. Navnet leses aldri ut av `message`: en kode skal
- * slås opp, ikke en setning parses.
+ * (`AlertText::PreflightSpecialDeviceMissing`). De to katalogene er to kopier av
+ * én setning, og det som holder dem til de samme ordene på alle sju språk er
+ * Rust-testen `the_card_and_the_notification_say_the_same_words`
+ * (`sundayrec-core`), ikke dette oppslaget. Navnet leses aldri ut av `message`:
+ * en kode skal slås opp, ikke en setning parses.
  */
 export function preflightText(f: PreflightFinding): string {
   if (!f.code) return f.message;

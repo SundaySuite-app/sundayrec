@@ -1048,9 +1048,11 @@ async fn run_scheduled_preflight(
 /// Every sentence comes from the finding's own code and params — including the
 /// one that names a special's device (`PreflightCode::SpecialDeviceMissing`,
 /// `{device}`): the generic `DeviceMissing` points at «the device selected in
-/// settings», which is the wrong device to go and look for. That is also what
-/// makes this sentence and the Record page's card agree: both look the same
-/// code up.
+/// settings», which is the wrong device to go and look for. The Record page's
+/// card looks the same code up in its own catalogue, and
+/// `the_card_and_the_notification_say_the_same_words` (`sundayrec-core`) holds
+/// the two to the same words. (The `device_missing` warning banner is a
+/// separate surface with its own code and sentence — it is not this one.)
 fn preflight_notification_body(
     first: &sundayrec_core::preflight::PreflightFinding,
     lang: Lang,
