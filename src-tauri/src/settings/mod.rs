@@ -5,7 +5,9 @@
 //! [`SETTINGS_KEY`]. This replaces the Electron `electron-store` JSON blob; the
 //! per-field defaults, validation (clamping) and partial-JSON merge all live in
 //! `sundayrec-core` (and carry the tests). This module only reads/writes that
-//! one row and threads the core's `from_json_merged` → `validate` pipeline.
+//! one row and threads the core's `from_json_merged` → `validate` pipeline —
+//! plus the one rule a RENDERER write is held to: a new save folder must pass
+//! the vet the command hands in ([`save_from_renderer`], [`import`]).
 
 use std::path::Path;
 
@@ -66,6 +68,50 @@ pub async fn save(pool: &SqlitePool, mut settings: Settings) -> AppResult<Settin
     Ok(settings)
 }
 
+/// How a save folder in a RENDERER write is judged. The app passes
+/// `commands::recordings_open::vet_new_save_folder`; injected so this module
+/// keeps no opinion about paths, and so its tests can hold the stored-or-new
+/// rule apart from the file system.
+pub type FolderVet = fn(&str) -> AppResult<()>;
+
+/// The save folder a renderer write ASKS FOR — `None` when it asks for nothing
+/// new: the folder is the one already stored, or blank/absent (the default,
+/// `<Documents>/SundayRec`, which is the resolver's choice and not the
+/// renderer's).
+///
+/// ⚠️ "already stored" is the whole Sunday invariant. The renderer sends the
+/// FULL settings object on every save, so a stored folder the vet would refuse
+/// today — chosen before the vet existed — rides along on every language
+/// change. Judging it would fail every save that installation makes, and the
+/// only way out would be to drop the folder it records into. So it is never
+/// judged, never repaired on load, and keeps recording exactly where it did.
+fn new_folder_asked_for<'a>(stored: Option<&str>, incoming: Option<&'a str>) -> Option<&'a str> {
+    let asked = incoming.filter(|f| !f.trim().is_empty())?;
+    (Some(asked) != stored).then_some(asked)
+}
+
+/// `settings_save` from the renderer: [`save`], but a NEW save folder must
+/// pass `vet` first — refused with the vet's error code, nothing written. See
+/// [`new_folder_asked_for`] for what counts as new.
+///
+/// The backend's own writers (the scheduler's prune, `reset`) call [`save`]
+/// directly: they write back what they loaded, and the folder in it is the
+/// stored one.
+pub async fn save_from_renderer(
+    pool: &SqlitePool,
+    incoming: Settings,
+    vet: FolderVet,
+) -> AppResult<Settings> {
+    let stored = load(pool).await?;
+    if let Some(folder) = new_folder_asked_for(
+        stored.save_folder.as_deref(),
+        incoming.save_folder.as_deref(),
+    ) {
+        vet(folder)?;
+    }
+    save(pool, incoming).await
+}
+
 /// Reset to the defaults, persisting them, and return the defaults.
 pub async fn reset(pool: &SqlitePool) -> AppResult<Settings> {
     save(pool, Settings::default()).await
@@ -81,8 +127,26 @@ pub async fn export(pool: &SqlitePool) -> AppResult<String> {
 /// validate, persist, and return the stored value. Mirrors the Electron
 /// `importProfile` resilience — a partial or unknown-field blob is accepted,
 /// missing fields take their defaults.
-pub async fn import(pool: &SqlitePool, json: &str) -> AppResult<Settings> {
-    let merged = Settings::from_json_merged(json);
+///
+/// An import is a renderer write too (a profile file, or the one-shot
+/// localStorage hand-over in `app/lib/migrate-legacy-settings.ts`), so a NEW
+/// save folder in it must pass `vet`. Unlike [`save_from_renderer`] a refusal
+/// does not fail the import: the folder this machine already has is KEPT and
+/// the rest is imported. A profile carries the folder of the machine it was
+/// exported on — another user name, another OS — and the settings worth
+/// carrying (the schedule, the sound) should not be lost to it; nor should a
+/// machine stop recording where it does today because of a file it read.
+pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<Settings> {
+    let stored = load(pool).await?;
+    let mut merged = Settings::from_json_merged(json);
+    if let Some(folder) =
+        new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
+    {
+        if let Err(e) = vet(folder) {
+            tracing::warn!(code = %e, "an imported save folder was refused; the stored one is kept");
+            merged.save_folder = stored.save_folder;
+        }
+    }
     save(pool, merged).await
 }
 
@@ -101,15 +165,135 @@ pub async fn export_to_path(pool: &SqlitePool, path: &Path) -> AppResult<()> {
 /// source through the native open dialog (F1.3). A read failure surfaces as
 /// [`AppError::Io`](crate::error::AppError::Io); malformed-but-readable JSON is
 /// tolerated by the merge (unknown/missing fields take their defaults).
-pub async fn import_from_path(pool: &SqlitePool, path: &Path) -> AppResult<Settings> {
+pub async fn import_from_path(
+    pool: &SqlitePool,
+    path: &Path,
+    vet: FolderVet,
+) -> AppResult<Settings> {
     let json = std::fs::read_to_string(path)?;
-    import(pool, &json).await
+    import(pool, &json, vet).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::AppError;
     use sundayrec_core::settings::{ChannelMode, FileFormat, SampleRate};
+
+    /// A vet with no opinion — for the tests about everything but the folder.
+    fn accept_any(_: &str) -> AppResult<()> {
+        Ok(())
+    }
+
+    /// A vet that refuses every folder it is asked about, so a test can see
+    /// exactly WHEN it is asked.
+    fn refuse_all(_: &str) -> AppResult<()> {
+        Err(AppError::Validation("save_folder_test: refused".into()))
+    }
+
+    fn with_folder(folder: Option<&str>) -> Settings {
+        Settings {
+            save_folder: folder.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn only_a_changed_non_blank_folder_is_asked_for() {
+        let stored = Some("/Users/kantor");
+        assert_eq!(new_folder_asked_for(stored, Some("/Users/kantor")), None);
+        assert_eq!(new_folder_asked_for(stored, None), None);
+        assert_eq!(new_folder_asked_for(stored, Some("  ")), None);
+        assert_eq!(new_folder_asked_for(None, None), None);
+        assert_eq!(
+            new_folder_asked_for(stored, Some("/Volumes/Rig")),
+            Some("/Volumes/Rig")
+        );
+        assert_eq!(new_folder_asked_for(None, Some("rel")), Some("rel"));
+    }
+
+    #[tokio::test]
+    async fn a_new_folder_from_the_renderer_is_vetted_and_a_refusal_writes_nothing() {
+        let (pool, _d) = temp_pool().await;
+        save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
+            .await
+            .unwrap();
+        let err = save_from_renderer(
+            &pool,
+            Settings {
+                language: Some("en".into()),
+                ..with_folder(Some("/Users/kantor"))
+            },
+            refuse_all,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("save_folder_test"), "{err}");
+        // Nothing of the refused write landed — not the folder, not the rest.
+        let after = load(&pool).await.unwrap();
+        assert_eq!(after.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+        assert_eq!(after.language, None);
+    }
+
+    #[tokio::test]
+    async fn a_stored_folder_is_never_judged_again_and_the_default_is_always_allowed() {
+        // The Sunday invariant: a folder stored before the vet existed rides
+        // along on every full-object save and must not fail it.
+        let (pool, _d) = temp_pool().await;
+        save(&pool, with_folder(Some("/Users/kantor")))
+            .await
+            .unwrap();
+        let saved = save_from_renderer(
+            &pool,
+            Settings {
+                language: Some("en".into()),
+                ..with_folder(Some("/Users/kantor"))
+            },
+            refuse_all,
+        )
+        .await
+        .unwrap();
+        assert_eq!(saved.save_folder.as_deref(), Some("/Users/kantor"));
+        assert_eq!(load(&pool).await.unwrap().language.as_deref(), Some("en"));
+        // Back to the default (blank or absent) is not a folder choice.
+        for back in [None, Some(""), Some("  ")] {
+            save_from_renderer(&pool, with_folder(back), refuse_all)
+                .await
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn an_import_keeps_the_stored_folder_when_its_own_is_refused() {
+        let (pool, _d) = temp_pool().await;
+        save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
+            .await
+            .unwrap();
+        let imported = import(
+            &pool,
+            r#"{ "language": "de", "saveFolder": "D:\\Opptak" }"#,
+            refuse_all,
+        )
+        .await
+        .unwrap();
+        assert_eq!(imported.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+        assert_eq!(imported.language.as_deref(), Some("de"));
+        assert_eq!(load(&pool).await.unwrap(), imported);
+        // …and an import carrying the stored folder is not judged at all.
+        let same = import(
+            &pool,
+            r#"{ "language": "sv", "saveFolder": "/Volumes/Rig/Opptak" }"#,
+            refuse_all,
+        )
+        .await
+        .unwrap();
+        assert_eq!(same.language.as_deref(), Some("sv"));
+        // An accepted new folder is taken.
+        let moved = import(&pool, r#"{ "saveFolder": "/Volumes/Ny" }"#, accept_any)
+            .await
+            .unwrap();
+        assert_eq!(moved.save_folder.as_deref(), Some("/Volumes/Ny"));
+    }
 
     /// A pool over a temp-dir database file, fully migrated.
     async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
@@ -205,7 +389,7 @@ mod tests {
 
         // Fresh database — import the exported JSON.
         let (pool2, _d2) = temp_pool().await;
-        let imported = import(&pool2, &json).await.unwrap();
+        let imported = import(&pool2, &json, accept_any).await.unwrap();
         assert_eq!(imported, s);
         assert_eq!(load(&pool2).await.unwrap(), s);
     }
@@ -213,7 +397,9 @@ mod tests {
     #[tokio::test]
     async fn import_accepts_partial_json() {
         let (pool, _d) = temp_pool().await;
-        let imported = import(&pool, r#"{ "language": "fr" }"#).await.unwrap();
+        let imported = import(&pool, r#"{ "language": "fr" }"#, accept_any)
+            .await
+            .unwrap();
         assert_eq!(imported.language, Some("fr".to_string()));
         assert_eq!(imported.silence_timeout_minutes, 5);
     }
@@ -240,7 +426,7 @@ mod tests {
 
         // Fresh database — import the file back.
         let (pool2, _d2) = temp_pool().await;
-        let imported = import_from_path(&pool2, &file).await.unwrap();
+        let imported = import_from_path(&pool2, &file, accept_any).await.unwrap();
         assert_eq!(imported, s);
         assert_eq!(load(&pool2).await.unwrap(), s);
     }
@@ -250,7 +436,9 @@ mod tests {
         let (pool, _d) = temp_pool().await;
         let dir = tempfile::tempdir().expect("tempdir");
         let missing = dir.path().join("does-not-exist.json");
-        let err = import_from_path(&pool, &missing).await.unwrap_err();
+        let err = import_from_path(&pool, &missing, accept_any)
+            .await
+            .unwrap_err();
         assert_eq!(err.code(), "io");
     }
 
@@ -295,7 +483,7 @@ mod tests {
         let (pool, _d) = temp_pool().await;
         // A blank/whitespace blob isn't valid JSON; the merge tolerates it and
         // yields the defaults (mirrors the Electron importProfile resilience).
-        let imported = import(&pool, "   \n  ").await.unwrap();
+        let imported = import(&pool, "   \n  ", accept_any).await.unwrap();
         assert_eq!(imported, Settings::default());
         assert_eq!(load(&pool).await.unwrap(), Settings::default());
     }
@@ -304,9 +492,13 @@ mod tests {
     async fn import_clamps_out_of_range_values_before_persisting() {
         let (pool, _d) = temp_pool().await;
         // An imported blob with an out-of-range numeric is clamped on the way in.
-        let imported = import(&pool, r#"{ "silenceThreshold": 9000, "splitMinutes": -1 }"#)
-            .await
-            .unwrap();
+        let imported = import(
+            &pool,
+            r#"{ "silenceThreshold": 9000, "splitMinutes": -1 }"#,
+            accept_any,
+        )
+        .await
+        .unwrap();
         assert_eq!(imported.silence_threshold, 0);
         assert_eq!(imported.split_minutes, 0);
         // The persisted value is the clamped one, not the raw import.

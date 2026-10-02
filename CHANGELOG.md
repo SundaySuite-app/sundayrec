@@ -18,6 +18,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   er satt i da, ryddes den ved en senere oppstart når pinnen er på plass.
   Ferdige eksporter og opptak røres aldri, og heller ikke fila til en eksport
   som allerede er i gang.
+- **Opptaksmappen må være en vanlig mappe.** Velger du en ny opptaksmappe,
+  sier appen fra og forklarer hvorfor hvis den ikke kan brukes: en app, et
+  prosjekt som Keynote eller Logic lagrer som en mappe, selve hjemmemappen
+  eller roten av disken. Mappen du allerede tar opp i, beholdes som før. Og
+  finnes ikke opptaksmappen ennå når du trykker «Åpne opptaksmappen», sier
+  appen nettopp det.
 
 ## v0.25.0-beta.1 — eget lydkort for spesialopptak, til beta-ringen
 

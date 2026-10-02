@@ -156,27 +156,38 @@ So a future auditor doesn't have to re-derive these from scratch:
 - **The webview cannot reach the OS opener.** `capabilities/default.json`
   grants no `opener:` permission, and a Rust test
   (`commands::recordings_open::tests::the_webview_holds_no_opener_permission`)
-  fails if one comes back. The plugin's `reveal_item_in_dir` has no scope check
-  at all, and its `open_path` scope was never configured (so the old grant both
-  let any page reveal any path and silently refused every folder open). Every
-  open/reveal now goes through a Rust command that decides what may be shown:
-  `recordings_open_folder` takes no argument and opens only the resolved
-  recordings folder (never an app/plug-in/installer bundle, which `open` would
-  launch, nor a known document package that would start an app);
+  fails if one comes back — in any file Tauri loads capabilities from (the
+  whole `capabilities/` tree, nested folders and `.toml` included) or inline in
+  any app config file — and fails on any such file it cannot read, so a new
+  format cannot slip past it. The plugin's `reveal_item_in_dir` has no scope
+  check at all, and its `open_path` scope was never configured (so the old
+  grant both let any page reveal any path and silently refused every folder
+  open). Every open/reveal now goes through a Rust command that decides what
+  may be shown: `recordings_open_folder` takes no argument and opens only the
+  resolved recordings folder, and never a package — on macOS anything the OS
+  itself calls one (`NSWorkspace isFilePackageAtPath`: apps, installers,
+  plug-ins, and the document packages installed apps declare, such as
+  `.key`/`.logicx`), on every OS an extension list and an `Info.plist` check;
   `recordings_reveal` only _reveals_ (never opens) an existing file that is
   inside the recordings folder, known to the recording history, or an export
   delivered in this session — compared as canonical paths, and refused with an
-  error that does not echo the path. The plugin's injected `<a target=_blank>`
-  click handler is switched off (`open_js_links_on_click(false)`).
-  Known gaps from the review of #302 (2026-10-01), none of them running code
-  from the folder: the tripwire reads only top-level `capabilities/*.json`,
-  while Tauri also loads nested and `.toml` capability files; the package list
-  is not exhaustive (editor documents such as `.key`/`.pages`/`.logicx` would
-  start their app — the `Info.plist` check stops code bundles); `save_folder`
-  is stored unvalidated, so a compromised renderer picks the folder the tray
-  opens (with the gap above: an editor package, which starts that editor) and
-  widens grant 2 (what may be _revealed_); a reveal miss canonicalises every
-  history row inside the async command.
+  error that does not echo the path. A NEW save folder from the renderer is
+  vetted before it is stored (`settings_save`; a profile import keeps the
+  stored folder instead): absolute, outside the protected home folders, not a
+  package, and not the file-system root, the home folder or a folder above it.
+  Both commands do their filesystem checks off the async runtime. The plugin's
+  injected `<a target=_blank>` click handler is switched off
+  (`open_js_links_on_click(false)`).
+  What remains after the follow-up to the review of #302 (2026-10-02), none of
+  it running code from the folder: a save folder stored before the vet existed
+  is never re-judged — on purpose, so an installation goes on recording where
+  it always did — so one planted earlier still decides grant 2 (what may be
+  _revealed_), though the tray will not open it if it is a package; a NEW
+  folder that does not exist yet can only be judged by its extension (the OS
+  has nothing to look at until the recorder creates it — the tray asks the OS
+  again before opening it); and a network share that stops answering still
+  leaves the click waiting until the OS gives up, now on a blocking-pool
+  thread rather than a runtime worker.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

@@ -148,7 +148,11 @@
         "space": "{gb} GB ledig · plads til {hours} t",
         "unknownSpace": "Vi ved ikke, hvor meget plads der er tilbage her.",
         "none": "Optagelserne har ikke noget sted at ligge",
-        "noneDesc": "Vælg en mappe på denne computer. Uden den kan appen ikke optage."
+        "noneDesc": "Vælg en mappe på denne computer. Uden den kan appen ikke optage.",
+        "refusedPackage": "Den mappe er en app eller en pakke (som et Keynote- eller Logic-projekt), ikke en almindelig mappe. Vælg en anden mappe.",
+        "refusedTooBroad": "Vælg en mappe inde i din hjemmemappe, for eksempel »SundayRec« i Dokumenter – ikke selve hjemmemappen eller roden af disken.",
+        "refusedProtected": "Den mappe er beskyttet og kan ikke bruges til optagelser. Vælg en anden mappe.",
+        "refusedInvalid": "Den mappe kan ikke bruges til optagelser. Vælg en anden mappe."
       },
       "qualityLede": "Højere kvalitet giver større filer. De fleste bliver stående på God.",
       "qDesc": {
@@ -871,7 +875,8 @@
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet.",
     "ipcFailed": "Noget i baggrunden svarede ikke, så denne visning kan være ufuldstændig.",
     "settingsLoadFailed": "Kunne ikke læse indstillingerne — viser standardindstillinger. Ændringer du foretager nu kan gå tabt.",
-    "settingsMigrationCorrupt": "Indstillingerne fra den forrige version kunne ikke læses — appen starter med standardindstillinger."
+    "settingsMigrationCorrupt": "Indstillingerne fra den forrige version kunne ikke læses — appen starter med standardindstillinger.",
+    "recordingsFolderMissing": "Optagelsesmappen findes ikke endnu. Den oprettes, når den første optagelse starter. Ligger den på en ekstern disk, så tjek, at disken er tilsluttet."
   },
   "editor": {
     "title": "Rediger lydfil",

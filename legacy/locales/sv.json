@@ -148,7 +148,11 @@
         "space": "{gb} GB ledigt · plats för {hours} tim",
         "unknownSpace": "Vi vet inte hur mycket utrymme som finns kvar här.",
         "none": "Inspelningarna har ingenstans att ta vägen",
-        "noneDesc": "Välj en mapp på den här datorn. Utan den kan appen inte spela in."
+        "noneDesc": "Välj en mapp på den här datorn. Utan den kan appen inte spela in.",
+        "refusedPackage": "Den mappen är en app eller ett paket (som ett Keynote- eller Logic-projekt), inte en vanlig mapp. Välj en annan mapp.",
+        "refusedTooBroad": "Välj en mapp i hemmappen, till exempel ”SundayRec” i Dokument – inte själva hemmappen eller roten på disken.",
+        "refusedProtected": "Den mappen är skyddad och kan inte användas för inspelningar. Välj en annan mapp.",
+        "refusedInvalid": "Den mappen kan inte användas för inspelningar. Välj en annan mapp."
       },
       "qualityLede": "Högre kvalitet ger större filer. De flesta blir kvar på Bra.",
       "qDesc": {
@@ -871,7 +875,8 @@
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet.",
     "ipcFailed": "Något i bakgrunden svarade inte, så den här vyn kan vara ofullständig.",
     "settingsLoadFailed": "Kunde inte läsa inställningarna — visar standardinställningar. Ändringar du gör nu kan gå förlorade.",
-    "settingsMigrationCorrupt": "Inställningarna från föregående version kunde inte läsas — appen startar med standardinställningar."
+    "settingsMigrationCorrupt": "Inställningarna från föregående version kunde inte läsas — appen startar med standardinställningar.",
+    "recordingsFolderMissing": "Inspelningsmappen finns inte än. Den skapas när den första inspelningen startar. Ligger den på en extern disk, kontrollera att disken är ansluten."
   },
   "editor": {
     "title": "Redigera ljudfil",

@@ -269,13 +269,20 @@ windows-sys = { version = "0.61", features = [
 # here only so the macOS command can name them; `dispatch2` hops the one-shot tap
 # onto the main thread. macOS-gated so no other platform pulls AppKit bindings.
 [target.'cfg(target_os = "macos")'.dependencies]
+# `NSWorkspace` (+ `objc2-foundation`'s `NSString`): `isFilePackageAtPath:`, the
+# OS' own «is this folder a package?» for the opener (`commands::recordings_open`).
+# Both features were already compiled in through Tauri's own AppKit use — named
+# here so this crate does not depend on someone else's feature list. No new
+# crate, no Cargo.lock change.
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "NSHapticFeedback",
     "NSResponder",
+    "NSWorkspace",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "NSString",
 ] }
 dispatch2 = { version = "0.3", default-features = false, features = ["std"] }
 # Raw Objective-C messaging for the AVFoundation camera/mic authorization query
@@ -295,3 +302,7 @@ tempfile = "3"
 #    `Runtime::new()` in the unit tests.
 #  - `net`: the `TcpListener` stub server in the telemetry sender tests.
 tokio = { version = "1", features = ["test-util", "rt-multi-thread", "net"] }
+# The opener tripwire (`commands::recordings_open::tests`) parses `.toml`
+# capability files the way tauri-utils does — the same `toml` 1.x tauri-utils
+# already resolves to in Cargo.lock (no new crate). Dev-only: nothing ships it.
+toml = { version = "1.1", default-features = false, features = ["parse", "serde", "std"] }

@@ -38,6 +38,7 @@ import { useCallback, useRef, useState } from "preact/hooks";
 
 import { t } from "../i18n";
 import {
+  lastSaveFailureCode,
   patchSettings,
   saveSettingsDebounced,
   settings,
@@ -66,6 +67,13 @@ export interface PatchOpts {
    * står lagret; oppgi den bare der «endret» betyr noe annet enn feltlikhet.
    */
   changed?: boolean;
+  /**
+   * En setning for en avvisning med KODE (`lastSaveFailureCode`), eller
+   * `null` for den vanlige «Kunne ikke lagre innstillingen». For valg
+   * bakenden kan avvise etter en regel — opptaksmappa — der den frivillige
+   * må få vite hvorfor for å kunne velge noe annet.
+   */
+  failedMessage?: (code: string) => string | null;
 }
 
 export interface UsePatchResult {
@@ -119,7 +127,9 @@ export function usePatch(): UsePatchResult {
           persist: () => saveSettingsDebounced(PATCH_SAVE_MS),
           revert: () => patchSettings(before),
           toast: (kind, msg) => showToast(kind, msg),
-          saveFailedMessage: () => t("general.saveFailed"),
+          saveFailedMessage: () =>
+            opts.failedMessage?.(lastSaveFailureCode()) ??
+            t("general.saveFailed"),
           after: opts.after,
           onReceipt: show,
         });

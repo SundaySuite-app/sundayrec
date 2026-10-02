@@ -491,6 +491,16 @@ lenger».
    - Change the save folder (Opptak → «Hvor skal opptakene?») to another folder
      and press **«Vis i Finder»** on a row recorded BEFORE the change.
      **Expected:** it is still shown (the history knows it).
+   - In «Hvor skal opptakene?», choose your HOME folder itself (the one named
+     after you). **Expected:** the folder shown does not change, and the toast
+     says to choose a folder inside it, such as «SundayRec» in Dokumenter — not
+     just «Kunne ikke lagre innstillingen». (An app or a Keynote/Logic project
+     is refused the same way, but the native picker rarely lets you pick one;
+     the check is there for a webview that does not use the picker.) A folder
+     chosen BEFORE this version is never questioned: on an upgraded machine
+     whose folder would now be refused, recording goes on exactly as before.
+   - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::koden fra et avvist settings_save når fram til setningen
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
    - Export a recording to a folder OUTSIDE the recordings folder (Redigering →
      Eksporter → «Velg mappe…», e.g. the Desktop), then press **«Vis i
      Finder»** on the receipt. **Expected:** the exported file is shown.
@@ -685,8 +695,11 @@ three assumptions that have each failed separately.
      which is the default, and was the case the old renderer-side call skipped.
    - With NO save folder chosen and no `Documents/SundayRec` yet (a fresh
      install that has never recorded) **Expected:** nothing opens, nothing is
-     created, and a toast says something did not answer
-     (`recordings_open_folder`). Before this fix the click did nothing at all.
+     created, and the toast says the recordings folder does not exist yet, that
+     the first recording creates it, and to check the disk if it is an external
+     one. (v0.25.0-beta.1 said only that something did not answer; before that
+     the click did nothing at all.)
+   - VERIFIED-BY: app/lib/api-shim-files.test.ts::en mappe som ikke finnes ennå, sies med vanlige ord — og huskes
 6. There is no preflight row to click (step 1). If you want the answers a
    preflight would give you, open the **«Hvilken lyd?»** card on Opptak — that
    is where they live now.

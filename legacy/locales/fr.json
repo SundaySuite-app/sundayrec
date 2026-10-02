@@ -148,7 +148,11 @@
         "space": "{gb} Go libres · place pour {hours} h",
         "unknownSpace": "Nous ne savons pas combien d’espace il reste ici.",
         "none": "Les enregistrements n’ont nulle part où aller",
-        "noneDesc": "Choisissez un dossier sur cet ordinateur. Sans lui, l’application ne peut pas enregistrer."
+        "noneDesc": "Choisissez un dossier sur cet ordinateur. Sans lui, l’application ne peut pas enregistrer.",
+        "refusedPackage": "Ce dossier est une app ou un paquet (comme un projet Keynote ou Logic), pas un dossier ordinaire. Choisissez un autre dossier.",
+        "refusedTooBroad": "Choisissez un dossier à l’intérieur de votre dossier personnel, par exemple « SundayRec » dans Documents – pas le dossier personnel lui-même ni la racine du disque.",
+        "refusedProtected": "Ce dossier est protégé et ne peut pas servir aux enregistrements. Choisissez un autre dossier.",
+        "refusedInvalid": "Ce dossier ne peut pas servir aux enregistrements. Choisissez un autre dossier."
       },
       "qualityLede": "Une qualité plus élevée donne des fichiers plus gros. La plupart des gens restent sur Bonne.",
       "qDesc": {
@@ -871,7 +875,8 @@
     "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application.",
     "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet.",
     "settingsLoadFailed": "Impossible de lire les réglages — affichage des valeurs par défaut. Les modifications effectuées maintenant peuvent être perdues.",
-    "settingsMigrationCorrupt": "Les réglages de la version précédente n’ont pas pu être lus — l’application démarre avec les valeurs par défaut."
+    "settingsMigrationCorrupt": "Les réglages de la version précédente n’ont pas pu être lus — l’application démarre avec les valeurs par défaut.",
+    "recordingsFolderMissing": "Le dossier des enregistrements n’existe pas encore. Il est créé au démarrage du premier enregistrement. S’il se trouve sur un disque externe, vérifiez que le disque est branché."
   },
   "editor": {
     "title": "Éditer le fichier audio",

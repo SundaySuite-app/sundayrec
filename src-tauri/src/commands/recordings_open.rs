@@ -35,10 +35,23 @@
 //! created: a folder that does not exist yet is an error, not a side effect.
 //!
 //! `open_path` on a DIRECTORY is only harmless while the directory is a plain
-//! folder. On macOS, `open` on an application bundle LAUNCHES it, and on an
-//! installer or plug-in package starts installing it — and the save folder is a
-//! settings value the renderer can write. So a folder that looks like a bundle
-//! is refused ([`looks_like_package`]).
+//! folder. On macOS, `open` on an application bundle LAUNCHES it, on an
+//! installer or plug-in package starts installing it, and on a document package
+//! (`.key`, `.logicx`, `.fcpbundle` …) starts the app that owns it — and the
+//! save folder is a settings value the renderer writes. So a folder that is a
+//! package is refused ([`looks_like_package`]): on macOS by asking the OS the
+//! question `open` itself asks, everywhere by an extension list and the
+//! `Info.plist` every code bundle carries.
+//!
+//! ## The save folder the renderer may store
+//!
+//! The recordings root decides what the tray opens and what grant 2 below may
+//! reveal, so a NEW value from the renderer is vetted before it is stored
+//! ([`vet_new_save_folder`], called through `crate::settings`): absolute and
+//! `..`-free, outside the protected home folders, not a package, and not the
+//! filesystem root, the home folder or a folder above it. A value already
+//! stored is never re-judged — an installation that records into it today
+//! must go on doing so (see `crate::settings::save_from_renderer`).
 //!
 //! ## `recordings_reveal` — path policy
 //!
@@ -54,15 +67,29 @@
 //! 3. a recording the history knows (`recording` table) — a recording made
 //!    before the save folder was changed.
 //!
-//! Every comparison is made between CANONICAL paths (symlinks and `..`
-//! resolved, which is also what turns macOS' `/var/…` into `/private/var/…`),
-//! further normalised by [`compare_key`] for the Windows verbatim/UNC prefixes
-//! and for case. What is revealed is the canonical path that was checked, never
-//! the renderer's string.
+//! The target is canonicalised first (symlinks and `..` resolved, which is
+//! also what turns macOS' `/var/…` into `/private/var/…`). Grants 1 and 2
+//! compare CANONICAL paths, further normalised by [`compare_key`] for the
+//! Windows verbatim/UNC prefixes and for case. Grant 3 first looks the
+//! renderer's RAW string up in the history — the renderer passes a row's
+//! `file_path` back verbatim, so this exact match is the normal hit — and only
+//! on a miss compares canonical keys row by row. The raw match grants nothing a
+//! canonical one would not (it names the same stored row, and the same string
+//! canonicalises to the same file), and what is revealed is always the
+//! canonical target vetted first, never the renderer's string.
 //!
 //! Reveal never opens or runs anything — it selects the item in a file-manager
 //! window — so "show" is the only verb on offer here. Error messages are
 //! English codes and never carry the path.
+//!
+//! ## No filesystem call on the async runtime
+//!
+//! Every canonicalise and stat both commands make runs on
+//! `tokio::task::spawn_blocking` ([`off_runtime`]). A save folder, a clicked
+//! file or a history row can sit on a network share that has stopped
+//! answering, and the OS may take minutes to give up on it; run inline, that
+//! wait would hold one of the runtime's few worker threads — and with them
+//! every other command — instead of one blocking-pool thread.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -83,25 +110,43 @@ const DELIVERED_EXPORTS_MAX: usize = 256;
 /// Directory extensions macOS treats as a package: an application, a plug-in
 /// or an installer — `open` on one runs or installs something instead of
 /// showing a folder — or a document package LaunchServices hands to an app
-/// (Automator, Script Editor, Xcode, Photos …), which at worst starts that
-/// app. Checked with `NSWorkspace isFilePackageAtPath`; the `Info.plist`
-/// check in [`looks_like_package`] catches code bundles not listed here.
+/// (Keynote, Logic, Final Cut, Xcode, Photos …), which at worst starts that
+/// app.
+///
+/// This list is the FLOOR, not the answer. It cannot be exhaustive — every
+/// installed app can declare package types of its own — so on macOS
+/// [`looks_like_package`] also asks the OS ([`os_says_package`]). The list
+/// still earns its place: it is all Windows and Linux have, and it is the only
+/// thing that can judge a folder that does not exist YET (a new save folder
+/// the recorder will create — and LaunchServices judges a created folder by its
+/// extension). The `Info.plist` check catches code bundles not listed here.
 const PACKAGE_EXTENSIONS: &[&str] = &[
     "action",
     "app",
     "appex",
+    "band",
     "bundle",
     "component",
     "definition",
     "dext",
+    "docset",
     "download",
+    "dsym",
+    "fcpbundle",
     "framework",
+    "imovielibrary",
     "kext",
+    "key",
+    "logicx",
     "mdimporter",
     "menu",
+    "mlpackage",
     "mpkg",
     "musiclibrary",
+    "nib",
+    "numbers",
     "osax",
+    "pages",
     "photoslibrary",
     "pkg",
     "playground",
@@ -113,6 +158,7 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
     "scptd",
     "service",
     "sparsebundle",
+    "swiftpm",
     "systemextension",
     "tvlibrary",
     "vst",
@@ -120,6 +166,7 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
     "workflow",
     "xcarchive",
     "xcodeproj",
+    "xcresult",
     "xcworkspace",
     "xpc",
 ];
@@ -229,16 +276,158 @@ fn compare_key(canonical: &Path) -> PathBuf {
 }
 
 /// Whether `dir` is something macOS would launch or install rather than show:
-/// a bundle extension, or the `Info.plist` every application/plug-in bundle
-/// carries (`Contents/Info.plist`, or a flat bundle's `Info.plist`).
-fn looks_like_package(dir: &Path) -> bool {
-    let by_extension = dir
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| PACKAGE_EXTENSIONS.iter().any(|p| p.eq_ignore_ascii_case(e)));
-    by_extension
+/// a package by the OS' own judgement (macOS only), a listed package extension,
+/// or the `Info.plist` every application/plug-in bundle carries
+/// (`Contents/Info.plist`, or a flat bundle's `Info.plist`). Any one is enough.
+pub(crate) fn looks_like_package(dir: &Path) -> bool {
+    has_package_extension(dir)
         || dir.join("Contents").join("Info.plist").exists()
         || dir.join("Info.plist").exists()
+        || os_says_package(dir)
+}
+
+/// The floor: a [`PACKAGE_EXTENSIONS`] extension, in any case. Pure — it is
+/// what still answers for a folder that does not exist yet.
+fn has_package_extension(dir: &Path) -> bool {
+    dir.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| PACKAGE_EXTENSIONS.iter().any(|p| p.eq_ignore_ascii_case(e)))
+}
+
+/// macOS' own answer to «is this folder a package?» —
+/// `-[NSWorkspace isFilePackageAtPath:]`, the LaunchServices judgement Finder
+/// and `open` act on. It knows what no list can: every package type an
+/// INSTALLED app declares (a `.key` only starts Keynote where Keynote is
+/// installed — and that is exactly where this answers yes), and a folder whose
+/// bundle bit is set, whatever its name. It answers `false` for a path that
+/// does not exist, which is why [`PACKAGE_EXTENSIONS`] stays as the floor.
+///
+/// Called off the main thread on purpose: `objc2-app-kit` hands out
+/// `NSWorkspace::sharedWorkspace()` without a `MainThreadMarker` because the SDK
+/// does not mark `NSWorkspace` main-thread-only (the haptics command, whose
+/// class IS, has to take one). And it is filesystem work, so it runs where the
+/// rest does: inside [`off_runtime`].
+///
+/// Only an existing DIRECTORY is asked about: a package is one, and for a path
+/// that does not exist AppKit logs an error line (NSCocoaErrorDomain 260) on
+/// every call before answering `false` — noise in the log of every save of a
+/// folder the recorder has not created yet. A name that is not valid Unicode
+/// cannot be handed to the OS and answers `false` too; neither caller ever has
+/// one (`openable_folder` refuses such a folder, and a stored save folder is a
+/// `String`).
+#[cfg(target_os = "macos")]
+fn os_says_package(dir: &Path) -> bool {
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::NSString;
+
+    if !dir.is_dir() {
+        return false;
+    }
+    let Some(path) = dir.to_str() else {
+        return false;
+    };
+    NSWorkspace::sharedWorkspace().isFilePackageAtPath(&NSString::from_str(path))
+}
+
+/// Windows and Linux have no packages: a folder is a folder, and Explorer or
+/// the file manager shows it. The extension list and `Info.plist` check still
+/// apply there (a save folder can sit on a disk a Mac also uses).
+#[cfg(not(target_os = "macos"))]
+fn os_says_package(_dir: &Path) -> bool {
+    false
+}
+
+/// Run filesystem work on tokio's blocking pool — see «No filesystem call on
+/// the async runtime» in the module docs. A closure that panics is a refusal
+/// with a code, not a crash of the command.
+async fn off_runtime<T, F>(work: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tokio::task::spawn_blocking(work).await.map_err(|_| {
+        AppError::Internal("file_check_failed: a file system check did not complete".into())
+    })
+}
+
+fn save_folder_invalid() -> AppError {
+    AppError::Validation(
+        "save_folder_invalid: the recordings folder must be an absolute path to a folder, without '..'"
+            .into(),
+    )
+}
+
+/// Vet a save folder the RENDERER asks to store. `crate::settings` calls this
+/// only for a value that differs from the stored one — a stored value is never
+/// re-judged here.
+///
+/// The folder may not exist yet (the recorder creates it), so it is judged as
+/// the path it WILL be: [`path_guard::resolved_with_missing_tail`]. Refused,
+/// with a code and never the path:
+///
+/// - `save_folder_invalid` — relative, carrying `..`, unresolvable, or an
+///   existing FILE;
+/// - `save_folder_protected` — inside `~/.ssh` & co
+///   ([`path_guard::SENSITIVE_HOME_SUBPATHS`]), compared case-insensitively
+///   where the file system is, because a folder the recorder creates as
+///   `~/.AWS` IS `~/.aws` there;
+/// - `save_folder_too_broad` — the filesystem root, the home folder, or a
+///   folder above the home folder (which includes `C:\` and `C:\Users`);
+/// - `save_folder_is_a_package` — [`looks_like_package`].
+///
+/// ## Why «too broad», and why not stricter
+///
+/// The home folder works as a recordings folder — but then grant 2 lets the
+/// webview reveal every file in it, and the tray opens it; `/` and `C:\` are
+/// the same at machine scale, and the recorder could not even write there
+/// (macOS' root is a read-only system volume; Windows denies a standard user
+/// files in `C:\`). The native picker that sets the folder has a «New folder»
+/// button, and the default is `Documents/SundayRec`, so the rule costs a
+/// volunteer one click at most. A blanket «no roots» rule WOULD be too strict:
+/// a USB stick's `E:\` or a NAS share's root is a realistic choice on Windows,
+/// so only the root that holds the home folder is refused there; on macOS and
+/// Linux, mounted disks live below `/Volumes` or `/media` and are untouched.
+pub(crate) fn vet_new_save_folder(raw: &str) -> AppResult<()> {
+    vet_save_folder_for_home(raw, path_guard::home_dir().as_deref())
+}
+
+/// [`vet_new_save_folder`] with the home folder passed in, so the tests can
+/// give it one without touching the process environment other tests read.
+fn vet_save_folder_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
+    let path = Path::new(raw);
+    if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err(save_folder_invalid());
+    }
+    let would_be = path_guard::resolved_with_missing_tail(path).ok_or_else(save_folder_invalid)?;
+    if would_be.exists() && !would_be.is_dir() {
+        return Err(save_folder_invalid());
+    }
+    let key = compare_key(&would_be);
+    let home = home.map(|h| h.canonicalize().unwrap_or_else(|_| h.to_path_buf()));
+    if let Some(home) = home.as_deref() {
+        if path_guard::SENSITIVE_HOME_SUBPATHS
+            .iter()
+            .any(|sub| key.starts_with(compare_key(&home.join(sub))))
+        {
+            return Err(AppError::Validation(
+                "save_folder_protected: the recordings folder is inside a protected folder".into(),
+            ));
+        }
+    }
+    let is_unix_root = cfg!(unix) && would_be.parent().is_none();
+    let holds_home = home.is_some_and(|h| compare_key(&h).starts_with(&key));
+    if is_unix_root || holds_home {
+        return Err(AppError::Validation(
+            "save_folder_too_broad: the recordings folder cannot be the file system root, the home folder or a folder above it"
+                .into(),
+        ));
+    }
+    if looks_like_package(&would_be) {
+        return Err(AppError::Validation(
+            "save_folder_is_a_package: the recordings folder is an application or package".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// The recordings folder as the string handed to the opener: canonical, an
@@ -298,26 +487,41 @@ fn openable_folder(root: &Path) -> AppResult<String> {
 /// renderer passes `file_path` back verbatim, so this is the normal hit), then
 /// by canonical key, for a row stored under another spelling of the same file.
 async fn is_known_recording(pool: &SqlitePool, raw: &str, target: &Path) -> AppResult<bool> {
+    is_known_recording_with(pool, raw, target, Path::canonicalize).await
+}
+
+/// [`is_known_recording`] with the canonicaliser passed in — the seam
+/// `tests::the_history_scan_leaves_the_runtime_free` uses to stall one row.
+///
+/// The miss path canonicalises EVERY row, and a row can name a file on a share
+/// that no longer answers (an old recording on the church's NAS). So the scan
+/// runs in [`off_runtime`]; the two database reads before it stay async.
+async fn is_known_recording_with<C>(
+    pool: &SqlitePool,
+    raw: &str,
+    target: &Path,
+    canonicalize: C,
+) -> AppResult<bool>
+where
+    C: Fn(&Path) -> std::io::Result<PathBuf> + Send + 'static,
+{
     if store::recording_exists_for_path(pool, raw).await? {
         return Ok(true);
     }
     let key = compare_key(target);
     let rows = store::list_recordings(pool).await?;
-    Ok(rows.iter().any(|row| {
-        Path::new(&row.file_path)
-            .canonicalize()
-            .is_ok_and(|c| compare_key(&c) == key)
-    }))
+    off_runtime(move || {
+        rows.iter().any(|row| {
+            canonicalize(Path::new(&row.file_path)).is_ok_and(|c| compare_key(&c) == key)
+        })
+    })
+    .await
 }
 
-/// The whole reveal policy, minus fetching its inputs: returns the canonical
-/// file to reveal and the grant that allowed it. Cheapest grant first.
-async fn reveal_target(
-    raw: &str,
-    delivered: &DeliveredExports,
-    root: Option<&Path>,
-    pool: &SqlitePool,
-) -> AppResult<(PathBuf, RevealGrant)> {
+/// The clicked path as the canonical file it names: absolute, `..`-free, an
+/// existing regular file outside the protected home folders. Filesystem work —
+/// [`reveal_target`] runs it in [`off_runtime`].
+fn vetted_target(raw: &str) -> AppResult<PathBuf> {
     path_guard::checked_input_file(raw).map_err(|_| invalid_file())?;
     // The renderer only ever sends paths it was given (a history row, an
     // export result), and none of those carries `..`. Canonicalisation would
@@ -332,14 +536,37 @@ async fn reveal_target(
     if !target.is_file() {
         return Err(invalid_file());
     }
+    Ok(target)
+}
+
+/// Grant 2: the canonical `target` lies inside `root`. Filesystem work (the
+/// root is canonicalised) — run in [`off_runtime`].
+fn is_under_root(target: &Path, root: &Path) -> bool {
+    // A relative save folder would be resolved against the process working
+    // directory — the same reason `openable_folder` refuses one.
+    root.is_absolute()
+        && target
+            .to_str()
+            .is_some_and(|canonical| path_guard::checked_under_root(canonical, root).is_ok())
+}
+
+/// The whole reveal policy, minus fetching its inputs: returns the canonical
+/// file to reveal and the grant that allowed it. Cheapest grant first.
+async fn reveal_target(
+    raw: &str,
+    delivered: &DeliveredExports,
+    root: Option<&Path>,
+    pool: &SqlitePool,
+) -> AppResult<(PathBuf, RevealGrant)> {
+    let owned = raw.to_owned();
+    let target = off_runtime(move || vetted_target(&owned)).await??;
 
     if delivered.contains(&target) {
         return Ok((target, RevealGrant::DeliveredExport));
     }
-    // A relative save folder would be resolved against the process working
-    // directory — the same reason `openable_folder` refuses one.
-    if let (Some(root), Some(canonical)) = (root.filter(|r| r.is_absolute()), target.to_str()) {
-        if path_guard::checked_under_root(canonical, root).is_ok() {
+    if let Some(root) = root {
+        let (t, r) = (target.clone(), root.to_path_buf());
+        if off_runtime(move || is_under_root(&t, &r)).await? {
             return Ok((target, RevealGrant::UnderRecordingsRoot));
         }
     }
@@ -356,7 +583,7 @@ pub async fn recordings_open_folder(app: tauri::AppHandle, db: State<'_, Db>) ->
     use tauri_plugin_opener::OpenerExt;
 
     let root = path_guard::recordings_root(&app, &db).await?;
-    let folder = openable_folder(&root)?;
+    let folder = off_runtime(move || openable_folder(&root)).await??;
     app.opener().open_path(folder, None::<&str>).map_err(|e| {
         tracing::warn!(error = %e, "the OS refused to open the recordings folder");
         AppError::Internal(
@@ -818,60 +1045,575 @@ mod tests {
         }
     }
 
+    /// The review of #302 named these: each starts Keynote, Pages, Numbers,
+    /// Logic, GarageBand, Final Cut, Xcode or iMovie where that app is
+    /// installed.
+    const REVIEWED_DOCUMENT_PACKAGES: &[&str] = &[
+        "Preken.key",
+        "Program.pages",
+        "Regnskap.numbers",
+        "Gudstjeneste.logicx",
+        "Kor.band",
+        "Video.fcpbundle",
+        "Modell.mlpackage",
+        "Vindu.nib",
+        "Film.imovielibrary",
+    ];
+
+    #[test]
+    fn the_extension_floor_names_the_reviewed_document_packages() {
+        // Pure, so it holds on every OS whatever is installed — the OS query
+        // on THIS Mac would mask a gap in the list wherever Keynote & co are.
+        for name in REVIEWED_DOCUMENT_PACKAGES {
+            assert!(has_package_extension(Path::new(name)), "{name}");
+            let upper = name.to_uppercase();
+            assert!(has_package_extension(Path::new(&upper)), "{upper}");
+        }
+        for name in ["Opptak", "Opptak 2026.10", "Søndag 4. okt", "x.mp3"] {
+            assert!(!has_package_extension(Path::new(name)), "{name}");
+        }
+    }
+
+    #[test]
+    fn document_packages_that_start_their_app_are_never_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in REVIEWED_DOCUMENT_PACKAGES {
+            let package = dir.path().join(name);
+            std::fs::create_dir_all(&package).unwrap();
+            match openable_folder(&package) {
+                Err(AppError::Validation(msg)) => {
+                    assert!(
+                        msg.starts_with("recordings_folder_is_a_package"),
+                        "{name}: {msg}"
+                    )
+                }
+                other => panic!("{name}: expected a package refusal, got {other:?}"),
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_is_asked_about_packages_no_list_can_name() {
+        // A folder with no extension and no Info.plist, whose bundle bit is set
+        // (`kHasBundle`, 0x2000 in the Finder flags at byte 8 of
+        // `com.apple.FinderInfo`). LaunchServices calls it a package — `open`
+        // would hand it to an app — and only the OS query can know.
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("Opptak");
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(
+            !looks_like_package(&folder),
+            "a plain folder is not a package"
+        );
+        let mut finder_info = [0u8; 32];
+        finder_info[8] = 0x20;
+        let hex: String = finder_info.iter().map(|b| format!("{b:02x}")).collect();
+        let status = std::process::Command::new("/usr/bin/xattr")
+            .args(["-wx", "com.apple.FinderInfo", &hex])
+            .arg(&folder)
+            .status()
+            .expect("xattr runs");
+        assert!(status.success());
+        assert!(folder.extension().is_none() && !folder.join("Info.plist").exists());
+        assert!(
+            os_says_package(&folder),
+            "LaunchServices must call it a package"
+        );
+        match openable_folder(&folder) {
+            Err(AppError::Validation(msg)) => {
+                assert!(msg.starts_with("recordings_folder_is_a_package"), "{msg}")
+            }
+            other => panic!("expected a package refusal, got {other:?}"),
+        }
+    }
+
+    // ── the save folder the renderer may store ──────────────────────────────
+
+    /// A fake home with the protected `.ssh` present (and `.aws` absent), so
+    /// the rule is tested without touching the process' own `HOME`.
+    fn fake_home() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("kantor");
+        std::fs::create_dir_all(home.join(".ssh")).unwrap();
+        std::fs::create_dir_all(home.join("Documents")).unwrap();
+        (dir, home)
+    }
+
+    fn vet(raw: &Path, home: &Path) -> AppResult<()> {
+        vet_save_folder_for_home(raw.to_str().unwrap(), Some(home))
+    }
+
+    fn assert_refused(result: AppResult<()>, code: &str) {
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(msg.starts_with(code), "expected `{code}`, got `{msg}`")
+            }
+            other => panic!("expected Validation({code}), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_normal_save_folder_and_an_external_disk_are_accepted() {
+        let (dir, home) = fake_home();
+        // The default's shape, before and after the recorder created it.
+        let default = home.join("Documents").join("SundayRec");
+        vet(&default, &home).unwrap();
+        std::fs::create_dir_all(&default).unwrap();
+        vet(&default, &home).unwrap();
+        // Documents itself, and the Desktop: plain folders inside the home.
+        vet(&home.join("Documents"), &home).unwrap();
+        vet(&home.join("Desktop").join("Opptak"), &home).unwrap();
+        // A disk outside the home, mounted or not yet.
+        let stick = dir.path().join("Volumes").join("USB-PINNE");
+        std::fs::create_dir_all(&stick).unwrap();
+        vet(&stick, &home).unwrap();
+        vet(&stick.join("Opptak 2026"), &home).unwrap();
+        // A mount point below `/Volumes`, whether or not it is plugged in.
+        #[cfg(unix)]
+        vet(Path::new("/Volumes/SundayRec-test-stick/Opptak"), &home).unwrap();
+    }
+
+    #[test]
+    fn a_relative_or_dotdot_save_folder_or_a_file_is_refused() {
+        let (_dir, home) = fake_home();
+        for raw in ["SundayRec", "./SundayRec", ""] {
+            assert_refused(
+                vet_save_folder_for_home(raw, Some(&home)),
+                "save_folder_invalid",
+            );
+        }
+        let escape = home.join("Documents").join("..").join(".ssh");
+        assert_refused(vet(&escape, &home), "save_folder_invalid");
+        let file = PathBuf::from(touch(&home.join("Documents").join("notat.txt")));
+        assert_refused(vet(&file, &home), "save_folder_invalid");
+    }
+
+    #[test]
+    fn a_save_folder_in_a_protected_home_folder_is_refused() {
+        let (_dir, home) = fake_home();
+        // Existing (`.ssh`) and not yet existing (`.aws`): the recorder would
+        // create the missing part, so the path is judged as it WILL be.
+        assert_refused(vet(&home.join(".ssh"), &home), "save_folder_protected");
+        assert_refused(
+            vet(&home.join(".ssh").join("Opptak"), &home),
+            "save_folder_protected",
+        );
+        assert_refused(
+            vet(&home.join(".aws").join("Opptak"), &home),
+            "save_folder_protected",
+        );
+        assert_refused(
+            vet(&home.join(".config").join("gh").join("x"), &home),
+            "save_folder_protected",
+        );
+        if FOLD_CASE {
+            // `~/.AWS` created on a case-insensitive disk IS `~/.aws`.
+            assert_refused(
+                vet(&home.join(".AWS").join("x"), &home),
+                "save_folder_protected",
+            );
+            assert_refused(vet(&home.join(".SSH"), &home), "save_folder_protected");
+        }
+        // A sibling that merely shares the prefix is fine.
+        vet(&home.join(".sshfs").join("Opptak"), &home).unwrap();
+    }
+
+    #[test]
+    fn the_root_the_home_folder_and_its_parents_are_too_broad() {
+        let (dir, home) = fake_home();
+        assert_refused(vet(&home, &home), "save_folder_too_broad");
+        assert_refused(vet(home.parent().unwrap(), &home), "save_folder_too_broad");
+        assert_refused(vet(dir.path(), &home), "save_folder_too_broad");
+        #[cfg(unix)]
+        {
+            assert_refused(vet(Path::new("/"), &home), "save_folder_too_broad");
+            // Without a known home, the root is still refused.
+            assert_refused(vet_save_folder_for_home("/", None), "save_folder_too_broad");
+        }
+        // Every ancestor of the home, up to its root (`/`, or `C:\` on Windows).
+        let mut up = home.canonicalize().unwrap();
+        while let Some(parent) = up.parent() {
+            assert_refused(vet(parent, &home), "save_folder_too_broad");
+            up = parent.to_path_buf();
+        }
+    }
+
+    #[test]
+    fn a_package_save_folder_is_refused_existing_or_not() {
+        let (_dir, home) = fake_home();
+        let docs = home.join("Documents");
+        // Not created yet: only the extension can tell — and the recorder
+        // would create a Keynote package.
+        for name in ["Opptak.key", "Opptak.app", "Opptak.logicx", "Opptak.PKG"] {
+            assert_refused(vet(&docs.join(name), &home), "save_folder_is_a_package");
+        }
+        // Existing, extension-less, with a bundle's layout.
+        let disguised = docs.join("Opptak");
+        touch(&disguised.join("Contents").join("Info.plist"));
+        assert_refused(vet(&disguised, &home), "save_folder_is_a_package");
+    }
+
+    #[test]
+    fn a_save_folder_refusal_never_names_the_folder() {
+        let (_dir, home) = fake_home();
+        for raw in [
+            home.join(".ssh").join("kirkevalg"),
+            home.clone(),
+            home.join("Documents").join("kirkevalg.key"),
+            PathBuf::from("kirkevalg"),
+        ] {
+            let err = vet(&raw, &home).unwrap_err().to_string();
+            assert!(
+                !err.contains("kirkevalg") && !err.contains("kantor"),
+                "{err}"
+            );
+        }
+    }
+
+    // ── the history scan stays off the runtime ───────────────────────────────
+
+    #[tokio::test]
+    async fn the_history_scan_leaves_the_runtime_free() {
+        // One row stored under another spelling (so the raw lookup misses and
+        // the canonical scan runs), and a canonicaliser that STALLS — the way a
+        // stat on a share that stopped answering does — until a task on this
+        // same single-threaded runtime lets it go. If the scan ran on the
+        // runtime thread, that task could never run: the wait times out, the
+        // row never matches, and the grant is lost.
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (pool, dir) = world().await;
+        let real = touch(&dir.path().join("NAS").join("service.wav"));
+        let other_spelling = dir.path().join("NAS").join(".").join("service.wav");
+        insert_recording(&pool, row(other_spelling.to_str().unwrap()))
+            .await
+            .unwrap();
+        let target = Path::new(&real).canonicalize().unwrap();
+
+        let (started_tx, started_rx) = mpsc::channel::<()>();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        let release = tokio::spawn(async move {
+            loop {
+                if started_rx.try_recv().is_ok() {
+                    let _ = go_tx.send(());
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
+        let stalling = move |p: &Path| {
+            let _ = started_tx.send(());
+            go_rx
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| std::io::Error::other("the share never answered"))?;
+            p.canonicalize()
+        };
+        let known = is_known_recording_with(&pool, &real, &target, stalling)
+            .await
+            .unwrap();
+        assert!(known, "the scan blocked the runtime that had to release it");
+        release.await.unwrap();
+    }
+
     // ── the capability tripwire ──────────────────────────────────────────────
+
+    // What the tripwire reads, and why it reads more than the loader does.
+    //
+    // tauri-build 2.x (`tauri_build::acl`, 2.6.3) loads
+    // `parse_capabilities("./capabilities/**/*")`: RECURSIVELY, dot-files
+    // included (glob's `*` matches a leading dot), keeping files whose
+    // extension is exactly `json` or `toml` — plus `json5` under tauri-utils'
+    // `config-json5` feature, which is off in this build (no `json5` crate in
+    // Cargo.lock) — and skipping files directly inside a folder named
+    // `schemas`. Each file is ONE capability, a LIST of them, or
+    // `{ "capabilities": [...] }`. Capabilities can also be written inline in
+    // the app config, which the platform files (`tauri.macos.conf.json` …,
+    // `Tauri.toml`, the `json5` variants) merge into.
+    //
+    // The tripwire is stricter in three places, each so that a change to the
+    // loader cannot turn it silently green: it reads `schemas/` folders too,
+    // it compares extensions case-insensitively, and a file it cannot read —
+    // an extension it does not know (`json5`, `yaml` …) or content that is not
+    // a capability — is a FINDING, not a skip. Only OS litter Tauri can never
+    // load is passed over.
+
+    /// File names the OS drops into any folder (Finder, Explorer). None has a
+    /// capability extension, so the loader skips them too.
+    const OS_LITTER: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
+
+    /// Every `opener:` permission in one parsed capability file — a single
+    /// capability, a list, or a named list — or why it is not one.
+    fn opener_grants_in_file(
+        origin: &str,
+        file: &serde_json::Value,
+    ) -> Result<Vec<String>, String> {
+        let capabilities: Vec<&serde_json::Value> = match file {
+            serde_json::Value::Array(list) => list.iter().collect(),
+            serde_json::Value::Object(map) if map.contains_key("capabilities") => map
+                ["capabilities"]
+                .as_array()
+                .ok_or_else(|| format!("{origin}: `capabilities` is not a list"))?
+                .iter()
+                .collect(),
+            serde_json::Value::Object(_) => vec![file],
+            _ => {
+                return Err(format!(
+                    "{origin}: not a capability, a list or a named list"
+                ))
+            }
+        };
+        let mut grants = Vec::new();
+        for cap in capabilities {
+            grants.extend(opener_grants_in_capability(origin, cap)?);
+        }
+        Ok(grants)
+    }
+
+    /// Every `opener:` permission one capability grants.
+    fn opener_grants_in_capability(
+        origin: &str,
+        cap: &serde_json::Value,
+    ) -> Result<Vec<String>, String> {
+        let permissions = cap["permissions"]
+            .as_array()
+            .ok_or_else(|| format!("{origin}: a capability without a `permissions` list"))?;
+        let mut grants = Vec::new();
+        for p in permissions {
+            let id = p
+                .as_str()
+                .or_else(|| p["identifier"].as_str())
+                .ok_or_else(|| {
+                    format!("{origin}: a permission that is neither a string nor has an identifier")
+                })?;
+            if id.trim().to_ascii_lowercase().starts_with("opener:") {
+                grants.push(format!("{origin} grants `{id}` to the webview"));
+            }
+        }
+        Ok(grants)
+    }
+
+    /// Parse one file the way the loader would, by extension; anything else
+    /// is a finding.
+    fn parse_capability_source(path: &Path) -> Result<serde_json::Value, String> {
+        let origin = path.display();
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("{origin}: unreadable: {e}"))?;
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("json") => serde_json::from_str(&text).map_err(|e| format!("{origin}: {e}")),
+            Some("toml") => toml::from_str(&text).map_err(|e| format!("{origin}: {e}")),
+            _ => Err(format!(
+                "{origin}: the tripwire cannot read this format — teach it, or keep \
+                 capability files to .json/.toml"
+            )),
+        }
+    }
+
+    /// Scan a capabilities folder: how many files were read, and every
+    /// finding (an `opener:` grant, or a file that could not be read as a
+    /// capability).
+    fn scan_capability_dir(dir: &Path) -> (usize, Vec<String>) {
+        fn walk(dir: &Path, files: &mut usize, findings: &mut Vec<String>) {
+            let entries = match std::fs::read_dir(dir) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    findings.push(format!("{}: unreadable folder: {e}", dir.display()));
+                    return;
+                }
+            };
+            for entry in entries {
+                let path = entry.expect("a directory entry").path();
+                if path.is_dir() {
+                    walk(&path, files, findings);
+                    continue;
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if OS_LITTER.contains(&name) {
+                    continue;
+                }
+                *files += 1;
+                let origin = path.display().to_string();
+                match parse_capability_source(&path)
+                    .and_then(|value| opener_grants_in_file(&origin, &value))
+                {
+                    Ok(grants) => findings.extend(grants),
+                    Err(why) => findings.push(why),
+                }
+            }
+        }
+        let (mut files, mut findings) = (0, Vec::new());
+        walk(dir, &mut files, &mut findings);
+        (files, findings)
+    }
+
+    /// Inline capabilities in the app config and the platform files merged
+    /// into it: every `tauri*.conf.*` / `Tauri*.toml` beside the manifest.
+    fn scan_app_configs(dir: &Path) -> (usize, Vec<String>) {
+        let (mut files, mut findings) = (0, Vec::new());
+        for entry in std::fs::read_dir(dir).expect("the manifest folder") {
+            let path = entry.expect("a directory entry").path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let lower = name.to_ascii_lowercase();
+            let is_config = path.is_file()
+                && ((lower.starts_with("tauri.") && lower.contains(".conf."))
+                    || (lower.starts_with("tauri.") && lower.ends_with(".toml")));
+            if !is_config {
+                continue;
+            }
+            files += 1;
+            let origin = path.display().to_string();
+            let conf = match parse_capability_source(&path) {
+                Ok(conf) => conf,
+                Err(why) => {
+                    findings.push(why);
+                    continue;
+                }
+            };
+            let Some(inline) = conf["app"]["security"]["capabilities"].as_array() else {
+                continue;
+            };
+            // A string entry names a capability FILE (scanned above); only an
+            // object is an inline capability.
+            for cap in inline.iter().filter(|c| c.is_object()) {
+                match opener_grants_in_capability(&origin, cap) {
+                    Ok(grants) => findings.extend(grants),
+                    Err(why) => findings.push(why),
+                }
+            }
+        }
+        (files, findings)
+    }
 
     #[test]
     fn the_webview_holds_no_opener_permission() {
         // If this fails, a change gave the main window an `opener:` permission
-        // again. `reveal_item_in_dir` has no scope at all and `open_path`'s
-        // scope was never configured — route the need through a Rust command
-        // in this module (which decides what may be shown) instead.
-        fn opener_grants(origin: &str, cap: &serde_json::Value) -> Vec<String> {
-            let permissions = cap["permissions"]
-                .as_array()
-                .unwrap_or_else(|| panic!("{origin} must have a permissions array"));
-            permissions
-                .iter()
-                .map(|p| {
-                    p.as_str()
-                        .or_else(|| p["identifier"].as_str())
-                        .expect("a permission is a string or an object with an identifier")
-                        .to_string()
-                })
-                .filter(|id| id.starts_with("opener:"))
-                .map(|id| format!("{origin} grants `{id}` to the webview"))
-                .collect()
-        }
-
+        // again (or added a capability file the tripwire cannot read).
+        // `reveal_item_in_dir` has no scope at all and `open_path`'s scope was
+        // never configured — route the need through a Rust command in this
+        // module (which decides what may be shown) instead.
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut grants = Vec::new();
-        let mut files = 0;
-        // Every capability file — Tauri loads the whole folder, not only
-        // default.json.
-        for entry in std::fs::read_dir(manifest.join("capabilities")).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            let json = std::fs::read_to_string(&path).unwrap();
-            let cap: serde_json::Value = serde_json::from_str(&json)
-                .unwrap_or_else(|e| panic!("{} must be valid JSON: {e}", path.display()));
-            grants.extend(opener_grants(&path.display().to_string(), &cap));
-            files += 1;
-        }
+        let (cap_files, mut findings) = scan_capability_dir(&manifest.join("capabilities"));
         assert!(
-            files >= 1,
+            cap_files >= 1,
             "no capability files found — is the tripwire reading the right folder?"
         );
-        // …and capabilities written inline in tauri.conf.json.
-        let conf: serde_json::Value =
-            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
-        if let Some(inline) = conf["app"]["security"]["capabilities"].as_array() {
-            for cap in inline.iter().filter(|c| c.is_object()) {
-                grants.extend(opener_grants("tauri.conf.json", cap));
-            }
-        }
-        assert!(grants.is_empty(), "{grants:#?}");
+        let (conf_files, conf_findings) = scan_app_configs(manifest);
+        assert!(
+            conf_files >= 1,
+            "no tauri.conf.json found — is the tripwire reading the right folder?"
+        );
+        findings.extend(conf_findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
+    fn the_tripwire_sees_nested_toml_and_unreadable_capability_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let caps = dir.path().join("capabilities");
+        let write = |rel: &str, body: &str| {
+            let path = caps.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        // A clean top-level file, as the real folder has: no finding.
+        write(
+            "default.json",
+            r#"{ "identifier": "default", "windows": ["main"], "permissions": ["core:default"] }"#,
+        );
+        assert_eq!(scan_capability_dir(&caps), (1, vec![]));
+
+        // Nested JSON — the old tripwire only listed the top level.
+        write(
+            "windows/main/reveal.json",
+            r#"{ "identifier": "reveal", "windows": ["main"],
+                 "permissions": [{ "identifier": "opener:allow-reveal-item-in-dir" }] }"#,
+        );
+        // TOML, as a named list — the old tripwire skipped every non-json file.
+        write(
+            "extra/opener.toml",
+            r#"
+[[capabilities]]
+identifier = "sneaky"
+windows = ["main"]
+permissions = ["opener:allow-reveal-item-in-dir"]
+"#,
+        );
+        // A top-level LIST, hidden — glob's `*` matches dot-files, so Tauri loads it.
+        write(
+            ".list.json",
+            r#"[{ "identifier": "l", "windows": ["main"], "permissions": ["opener:default"] }]"#,
+        );
+        // Formats the tripwire cannot read are findings, not skips.
+        write(
+            "future.json5",
+            "{ identifier: 'x', permissions: ['opener:default'] }",
+        );
+        write("broken.json", "{ not json");
+        write("not-a-capability.toml", "answer = 42\n");
+        // OS litter is passed over.
+        write(".DS_Store", "\0\0\0\x01Bud1");
+
+        let (files, findings) = scan_capability_dir(&caps);
+        assert_eq!(files, 7, "{findings:#?}");
+        let has = |needle: &str| findings.iter().any(|f| f.contains(needle));
+        assert!(
+            has("reveal.json grants `opener:allow-reveal-item-in-dir`"),
+            "{findings:#?}"
+        );
+        assert!(
+            has("opener.toml grants `opener:allow-reveal-item-in-dir`"),
+            "{findings:#?}"
+        );
+        assert!(has(".list.json grants `opener:default`"), "{findings:#?}");
+        assert!(
+            has("future.json5: the tripwire cannot read this format"),
+            "{findings:#?}"
+        );
+        assert!(has("broken.json: "), "{findings:#?}");
+        assert!(
+            has("not-a-capability.toml: a capability without"),
+            "{findings:#?}"
+        );
+        assert_eq!(findings.len(), 6, "{findings:#?}");
+    }
+
+    #[test]
+    fn the_tripwire_reads_inline_capabilities_in_every_app_config() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("tauri.conf.json"),
+            r#"{ "app": { "security": { "capabilities": ["default"] } } }"#,
+        )
+        .unwrap();
+        assert_eq!(scan_app_configs(dir.path()), (1, vec![]));
+        // A platform file merged into the config, with an inline capability.
+        std::fs::write(
+            dir.path().join("tauri.macos.conf.json"),
+            r#"{ "app": { "security": { "capabilities": [
+                 { "identifier": "mac", "permissions": ["opener:allow-open-path"] } ] } } }"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("tauri.windows.conf.json5"), "{}").unwrap();
+        let (files, findings) = scan_app_configs(dir.path());
+        assert_eq!(files, 3, "{findings:#?}");
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.contains("tauri.macos.conf.json grants `opener:allow-open-path`")),
+            "{findings:#?}"
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.contains("tauri.windows.conf.json5: the tripwire cannot read")),
+            "{findings:#?}"
+        );
     }
 
     #[tokio::test]

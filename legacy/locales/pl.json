@@ -150,7 +150,11 @@
         "space": "{gb} GB wolne · miejsce na {hours} godz.",
         "unknownSpace": "Nie wiemy, ile miejsca tu zostało.",
         "none": "Nagrania nie mają gdzie trafić",
-        "noneDesc": "Wybierz folder na tym komputerze. Bez niego aplikacja nie może nagrywać."
+        "noneDesc": "Wybierz folder na tym komputerze. Bez niego aplikacja nie może nagrywać.",
+        "refusedPackage": "Ten folder to aplikacja lub pakiet (np. projekt Keynote lub Logic), a nie zwykły folder. Wybierz inny folder.",
+        "refusedTooBroad": "Wybierz folder wewnątrz folderu domowego, na przykład „SundayRec” w Dokumentach – nie sam folder domowy ani katalog główny dysku.",
+        "refusedProtected": "Ten folder jest chroniony i nie może służyć do nagrań. Wybierz inny folder.",
+        "refusedInvalid": "Tego folderu nie można użyć do nagrań. Wybierz inny folder."
       },
       "qualityLede": "Wyższa jakość to większe pliki. Większość zostaje przy Dobrej.",
       "qDesc": {
@@ -889,7 +893,8 @@
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
     "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny.",
     "settingsLoadFailed": "Nie można odczytać ustawień — wyświetlane są ustawienia domyślne. Wprowadzone teraz zmiany mogą zostać utracone.",
-    "settingsMigrationCorrupt": "Nie można odczytać ustawień z poprzedniej wersji — aplikacja uruchamia się z ustawieniami domyślnymi."
+    "settingsMigrationCorrupt": "Nie można odczytać ustawień z poprzedniej wersji — aplikacja uruchamia się z ustawieniami domyślnymi.",
+    "recordingsFolderMissing": "Folder nagrań jeszcze nie istnieje. Zostanie utworzony, gdy rozpocznie się pierwsze nagranie. Jeśli znajduje się na dysku zewnętrznym, sprawdź, czy dysk jest podłączony."
   },
   "editor": {
     "title": "Edytuj plik audio",

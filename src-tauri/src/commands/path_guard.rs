@@ -41,9 +41,14 @@ use std::path::{Component, Path, PathBuf};
 
 /// Home-relative locations an IPC path must never resolve into. Mirrors the
 /// `assetProtocol.scope.deny` list in `tauri.conf.json` — keep the two in sync.
-const SENSITIVE_HOME_SUBPATHS: &[&str] = &[".ssh", ".aws", ".gnupg", ".netrc", ".config/gh"];
+/// Also the list `recordings_open::vet_new_save_folder` keeps the recordings
+/// folder out of.
+pub(crate) const SENSITIVE_HOME_SUBPATHS: &[&str] =
+    &[".ssh", ".aws", ".gnupg", ".netrc", ".config/gh"];
 
-fn home_dir() -> Option<PathBuf> {
+/// The user's home directory as the environment names it (`HOME`, or
+/// `USERPROFILE` on Windows), not canonicalised.
+pub(crate) fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
@@ -137,6 +142,34 @@ fn deepest_existing_canonical(path: &Path, raw: &str) -> AppResult<PathBuf> {
                 }
             },
         }
+    }
+}
+
+/// Where `path` WILL resolve once its missing tail has been created: the
+/// deepest EXISTING ancestor canonicalised, with the components below it
+/// appended as written. `None` when not even a root resolves (a drive or share
+/// that is not there).
+///
+/// [`deepest_existing_canonical`] stops at the ancestor, which is enough for a
+/// prefix check against a folder that exists — but not for a deny list whose
+/// entries may not exist YET: with no `~/.aws`, `~/.aws/opptak` resolves only
+/// as far as `~`, and the folder the recorder would then create is `~/.aws`.
+/// Appending the tail is sound only for an absolute, `..`-free path (the caller
+/// checks both): a component that does not exist cannot be a symlink, so the
+/// tail can only go DEEPER than the ancestor it hangs from.
+pub(crate) fn resolved_with_missing_tail(path: &Path) -> Option<PathBuf> {
+    let mut probe = path;
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(canonical) = probe.canonicalize() {
+            let mut resolved = canonical;
+            for part in tail.iter().rev() {
+                resolved.push(part);
+            }
+            return Some(resolved);
+        }
+        tail.push(probe.file_name()?);
+        probe = probe.parent()?;
     }
 }
 
@@ -246,6 +279,40 @@ mod tests {
     fn nonexistent_target_with_existing_ancestor_passes() {
         let path = std::env::temp_dir().join("sundayrec-path-guard-test/new-dir/out.mp3");
         checked_path(path.to_str().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_missing_tail_is_appended_to_the_canonical_ancestor() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("Documents");
+        std::fs::create_dir_all(&existing).unwrap();
+        let canonical = existing.canonicalize().unwrap();
+        // Existing: the canonical path itself.
+        assert_eq!(
+            resolved_with_missing_tail(&existing),
+            Some(canonical.clone())
+        );
+        // Missing: the canonical ancestor plus the tail as written — not just
+        // the ancestor, which is what `deepest_existing_canonical` answers.
+        let missing = existing.join("SundayRec").join("2026");
+        assert_eq!(
+            resolved_with_missing_tail(&missing),
+            Some(canonical.join("SundayRec").join("2026"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_tail_hangs_from_where_a_symlink_points() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert_eq!(
+            resolved_with_missing_tail(&link.join("new")),
+            Some(real.canonicalize().unwrap().join("new"))
+        );
     }
 
     #[test]
