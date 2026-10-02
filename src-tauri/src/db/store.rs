@@ -8,6 +8,21 @@
 //!
 //! One database file for the app (settings + recording history). The schema
 //! lives in `migrations/` and is applied by [`open_pool`].
+//!
+//! ## ⚠️ A new migration locks out a downgrade
+//!
+//! [`open_pool`] runs `sqlx::migrate!()` as it comes, and that refuses to start
+//! on a database carrying a migration the running binary does not know
+//! (`VersionMissing`). So the first build that ships a migration `0009` is a
+//! one-way door: a beta tester who goes back to the stable ring — or anyone
+//! who reinstalls an older version — gets an app that cannot open its own
+//! database, and setup fails before a window appears. Up to `0008` every ring
+//! knows every migration, so it has never bitten. Decide before the next
+//! migration whether `open_pool` should tolerate a newer database
+//! (`Migrator::set_ignore_missing(true)`, with what that means for a schema the
+//! old build does not understand) — `docs/PLAN.md` tracks it. Until then, a
+//! table that can live without a migration should: the export journal creates
+//! its own at runtime for exactly this reason (`editor::export_journal`).
 
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

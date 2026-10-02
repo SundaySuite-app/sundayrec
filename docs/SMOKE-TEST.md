@@ -1099,6 +1099,19 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      the «Maskinvare-koding» toggle — it guarded nothing). If VideoToolbox
      refuses, the log shows a warning and the export completes in software
      anyway — a failed hardware render must never cost the user the export.
+     5d. **A power cut mid-export, to a folder you picked.** Pick a destination
+     that is neither the save folder nor a recording's folder (a USB stick is
+     the real case), start a long export, and pull the power — or force-quit —
+     mid-render.
+   - **Expected:** a few seconds after the next launch, the half-written
+     `<navn>.__editor_tmp.<fmt>` in that folder is gone, and nothing else in
+     the folder is touched. Launch once WITHOUT the stick first: the file is
+     then removed on the first later launch that can see it. The file system
+     half is automated; the real power cut is not:
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::a_power_cut_mid_export_is_reaped_from_a_picked_folder_on_the_next_launch_or_skips
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_never_deletes_a_journalled_path_that_is_not_a_render_temp
+   - VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_does_not_follow_a_journalled_symlink_or_touch_a_directory
+   - VERIFIED-BY: src-tauri/src/editor/export_journal.rs::a_temp_whose_folder_is_not_there_keeps_its_row_until_it_is_old
 6. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
    editor (or reselect another recording) then reselect the same recording.
    - **Expected:** the cut rows are back — restored **silently** from the
@@ -1149,10 +1162,10 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: e2e/telemetry-preview.spec.ts::the one-time consent card asks, and a decline is recorded as a real answer
 
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
-> `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they
-> compile and run in the default build and ARE exercised in the gate (real
-> tempdir round-trips). Only the ffmpeg-driven probe/preview/apply need real
-> media — se [HW]-markøren i §12-innledningen.
+> `__editor_tmp`/`__editor_bak` startup sweep (export journal included) are
+> **fs, not ffmpeg** — they compile and run in the default build and ARE
+> exercised in the gate (real tempdir round-trips). Only the ffmpeg-driven
+> probe/preview/apply need real media — se [HW]-markøren i §12-innledningen.
 
 > [HW] The ffprobe/decode/measure/render runs only execute against real media —
 > never in the gate (samme markør). The core argv-building, filter-graph,

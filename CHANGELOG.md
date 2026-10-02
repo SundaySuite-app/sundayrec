@@ -10,6 +10,14 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   navngir raden nå lydkortet («Lydenheten «Zoom H6» for spesialopptaket er ikke
   tilkoblet …») — som varselet allerede gjorde — i stedet for å peke på
   lydenheten i innstillingene. Faste ukentlige opptak sier det samme som før.
+- **Strømbrudd midt i en eksport etterlater ikke lenger en halvferdig fil.**
+  Før kunne den bli liggende for godt hvis du hadde valgt en egen mappe for
+  eksporten, eller hvis opptaket du redigerte var åpnet fra utenfor
+  biblioteket. Nå noterer SundayRec hvor eksporten skriver, og fjerner den
+  halvferdige fila neste gang appen starter. Står den på en minnepinne som ikke
+  er satt i da, ryddes den ved en senere oppstart når pinnen er på plass.
+  Ferdige eksporter og opptak røres aldri, og heller ikke fila til en eksport
+  som allerede er i gang.
 
 ## v0.25.0-beta.1 — eget lydkort for spesialopptak, til beta-ringen
 
