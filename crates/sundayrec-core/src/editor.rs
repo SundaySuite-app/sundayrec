@@ -985,6 +985,46 @@ pub fn editor_tmp_path(dir: &str, base: &str, ext: &str) -> String {
     join(dir, &format!("{base}{EDITOR_TMP_SUFFIX}.{ext}"))
 }
 
+/// Whether `path` is — character for character — something [`editor_tmp_path`]
+/// returns for some directory, a non-empty stem, and a format
+/// [`is_supported_export_format`] accepts.
+///
+/// The gate in front of the export journal's startup sweep (F2-4b). That sweep
+/// deletes a file at a path READ BACK FROM A DATABASE ROW, anywhere on the
+/// disk, so it must not trust the row: a row is only a claim that a render
+/// temp lived there. This re-derives the claim instead — split at the last
+/// `/` (the separator `join` always writes), split the name at the last
+/// `.__editor_tmp.`, and rebuild the path from the pieces with the very
+/// function the export used. Anything that does not come back identical is
+/// not a temp this app could have written, and is left alone.
+///
+/// Deliberately narrower than [`is_editor_temp_name`], which also matches the
+/// `.__editor_tmp` / `.__editor_bak` suffixes of the sidecar and mastering
+/// saves: those are only ever reaped by the folder scan, in folders the app
+/// was told about. Everything this accepts, that predicate accepts too.
+///
+/// Pure string policy, like the rest of this module — whether the path is
+/// absolute, and what is actually on the disk there, is the shell's to check.
+pub fn is_editor_render_tmp_path(path: &str) -> bool {
+    let Some(slash) = path.rfind('/') else {
+        return false;
+    };
+    // The directory keeps its trailing slash: `join` trims a trailing separator
+    // and writes exactly one, so `/` (the root) and `/rec/` both round-trip.
+    let (dir, name) = path.split_at(slash + 1);
+    let marker = format!("{EDITOR_TMP_SUFFIX}.");
+    let Some((base, ext)) = name.rsplit_once(marker.as_str()) else {
+        return false;
+    };
+    !base.is_empty()
+        // A backslash in the NAME would be a Windows separator the split above
+        // did not see. No stem the export builds carries one; refuse rather
+        // than guess which half of it is the directory.
+        && !base.contains('\\')
+        && is_supported_export_format(ext)
+        && editor_tmp_path(dir, base, ext) == path
+}
+
 // ── Export disk guard (F2-11) ─────────────────────────────────────────────────
 
 /// Free space an export wants ON TOP of the file it is about to write: 256 MB.
@@ -2995,6 +3035,69 @@ mod tests {
             assert!(
                 is_editor_temp_name(name),
                 "the sweep must recognise its own render temp: {name}"
+            );
+        }
+    }
+
+    // ── F2-4b: the journal sweep's shape gate ────────────────────────────────
+
+    #[test]
+    fn every_temp_the_export_renders_into_passes_the_journal_gate() {
+        // The journal sweep only deletes what this accepts, so a temp it
+        // refused would be litter forever — the very gap the journal closes.
+        for dir in [
+            "/rec",
+            "/rec/",
+            "/",
+            "/Volumes/USB pinne/Eksport",
+            r"C:\Users\x\Music",
+        ] {
+            for (base, ext) in [
+                ("service_redigert", "mp3"),
+                ("2026-09-06 Preken «Nåde»", "mp4"),
+                ("møte_redigert", "flac"),
+                ("a.__editor_tmp.b", "wav"),
+            ] {
+                let tmp = editor_tmp_path(dir, base, ext);
+                assert!(
+                    is_editor_render_tmp_path(&tmp),
+                    "the gate must accept the export's own temp: {tmp}"
+                );
+                // …and the gate is never WIDER than the folder sweep's predicate.
+                let name = tmp.rsplit('/').next().expect("a file name");
+                assert!(is_editor_temp_name(name), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_journal_gate_refuses_what_the_export_never_writes() {
+        for path in [
+            // A recording, and a DELIVERED export — the files the user keeps.
+            "/rec/service.mp3",
+            "/rec/service_redigert.mp3",
+            // The sidecar/mastering temp shapes: the folder scan's business only.
+            "/rec/service.mp3.__editor_tmp",
+            "/rec/service.mp3.__editor_bak",
+            // The marker with nothing on one side of it.
+            "/rec/.__editor_tmp.mp3",
+            "/rec/service.__editor_tmp.",
+            // An extension the export cannot produce.
+            "/rec/service.__editor_tmp.exe",
+            "/rec/service.__editor_tmp.MP3",
+            "/rec/service.__editor_tmp.mp3.bak",
+            // No directory at all: a relative name would resolve against the cwd.
+            "service.__editor_tmp.mp3",
+            // A doubled separator `join` would never have written.
+            "/rec//service.__editor_tmp.mp3",
+            // A Windows separator hiding inside the "name".
+            r"C:\rec\service.__editor_tmp.mp3",
+            "/rec/sub\\service.__editor_tmp.mp3",
+            "",
+        ] {
+            assert!(
+                !is_editor_render_tmp_path(path),
+                "the gate must refuse a path the export never renders into: {path:?}"
             );
         }
     }

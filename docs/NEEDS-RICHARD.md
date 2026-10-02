@@ -185,8 +185,8 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
   panel could only export the whole file. Of its four items, two are done (the
   cut UI, export progress + cancel), one is half done and half dropped on
   purpose (the atomic swap is in, the in-place replace is gone), and one has no
-  source and is parked (chapters). One small gap is left, in the atomic swap
-  (below), and it is tracked in [`PLAN.md`](PLAN.md).
+  source and is parked (chapters). The one small gap that was left, in the
+  atomic swap (below), is closed too (#PRNUM).
   - ~~**Cut-region timeline UI.**~~ **DONE.** Drag-to-mark on the waveform
     (`app/editor/canvas-input.ts`, drawn by `WaveformHost.tsx`), a cut list with
     a remove button per region (`EditorPage.tsx`), undo/redo and an unsaved-
@@ -207,10 +207,20 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
     half-written file under the final name: a drop guard (`TempRender`)
     removes the temp, and the startup sweep (`editor::startup_sweep`, started
     from `src-tauri/src/lib.rs`) reaps what a hard crash leaves behind in the
-    save folder and the library's folders. **Gap:** it does not look in a
+    save folder and the library's folders. ~~**Gap:** it does not look in a
     hand-picked export folder (`pickExportFolder`) or beside a file opened from
     outside the library, so a power cut mid-export can leave a
-    `.__editor_tmp.` file there.
+    `.__editor_tmp.` file there.~~ **DONE (#PRNUM).** The export writes the
+    temp's exact path into the app database (`export_temp`, migration 0009)
+    before ffmpeg starts, and drops the row once the temp has been renamed or
+    removed. A row that survives to the next launch is a render that never
+    finished, and the startup sweep reaps the file it names wherever that is
+    (`src-tauri/src/editor/export_journal.rs`). It deletes only a regular file
+    whose path is exactly one `editor_tmp_path` could have built — never a
+    symlink, a directory or anything else a row might name — and never the
+    temp of an export that is already running again. A row whose folder is not
+    there (an unplugged USB stick) waits up to 30 days for a launch that can
+    see it. The folder scan stays, for crashes from before the journal.
   - **Replace-mode (overwrite the original) — dropped on purpose.** The Tauri
     editor never overwrites a recording: every export is a NEW file (the
     module header of `sundayrec-core::editor` says so). The Rust port of the

@@ -353,6 +353,11 @@ pub fn run() {
                 crash::watch_handle("test::deliberate_panic", panic_task);
             }
 
+            // F2-4b: the export journals its render temp here before ffmpeg
+            // starts, so a crash mid-export leaves a row the startup sweep can
+            // follow to a folder it would never scan.
+            app.state::<editor::ExportEngine>()
+                .attach_journal(pool.clone());
             app.manage(db::Db::new(pool));
 
             // DIAGNOSTIC SEAM: `SUNDAYREC_TEST_RELAUNCH=1` fires the updater's
@@ -450,7 +455,9 @@ pub fn run() {
             //     only by an `editor_cleanup_temp_files` Tauri command with ZERO
             //     callers (deleted in V1/PR3; THIS sweep is the whole cleanup
             //     now), so a crashed export left a full-size copy of the
-            //     service on disk forever.
+            //     service on disk forever. Beside recordings is not the only
+            //     place an export writes: a crashed render in a hand-picked
+            //     folder is found through the export journal (F2-4b) instead.
             // Background + best-effort: this is hygiene, not a startup
             // dependency, and it must never delay the window appearing.
             {
@@ -464,7 +471,8 @@ pub fn run() {
                         let Some(db) = sweep_handle.try_state::<db::Db>() else {
                             return;
                         };
-                        let edits = editor::startup_sweep(&db.pool).await;
+                        let engine = sweep_handle.state::<editor::ExportEngine>();
+                        let edits = editor::startup_sweep(&db.pool, &engine).await;
                         if bench + edits > 0 {
                             tracing::info!(
                                 bench,

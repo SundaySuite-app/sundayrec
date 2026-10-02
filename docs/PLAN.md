@@ -21,7 +21,6 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 | Punkt                                                                                                                                                                                                  | Betingelse / når | Kilde                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- | ------------------------------------------------ |
-| Oppstartssweepen rydder ikke `.__editor_tmp.` etter krasj under eksport til selvvalgt mappe                                                                                                            | Fritt            | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1         |
 | Opener-rester fra review av #302: tripwiren leser bare toppnivå-`*.json`, pakkelista er ikke uttømmende, `save_folder` lagres uvalidert, «Vis i Finder» kanoniserer historikkrader i en async-kommando | Fritt            | [SECURITY.md](../SECURITY.md) (opener-avsnittet) |
 
 ## Spike / maskinvare først
