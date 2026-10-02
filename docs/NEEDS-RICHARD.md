@@ -186,7 +186,7 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
   cut UI, export progress + cancel), one is half done and half dropped on
   purpose (the atomic swap is in, the in-place replace is gone), and one has no
   source and is parked (chapters). The one small gap that was left, in the
-  atomic swap (below), is closed too (#PRNUM).
+  atomic swap (below), is closed too (#307).
   - ~~**Cut-region timeline UI.**~~ **DONE.** Drag-to-mark on the waveform
     (`app/editor/canvas-input.ts`, drawn by `WaveformHost.tsx`), a cut list with
     a remove button per region (`EditorPage.tsx`), undo/redo and an unsaved-
@@ -210,7 +210,7 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
     save folder and the library's folders. ~~**Gap:** it does not look in a
     hand-picked export folder (`pickExportFolder`) or beside a file opened from
     outside the library, so a power cut mid-export can leave a
-    `.__editor_tmp.` file there.~~ **DONE (#PRNUM).** The export writes the
+    `.__editor_tmp.` file there.~~ **DONE (#307).** The export writes the
     temp's exact path into the app database (`export_temp`, migration 0009)
     before ffmpeg starts, and drops the row once the temp has been renamed or
     removed. A row that survives to the next launch is a render that never
