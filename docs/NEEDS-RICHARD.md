@@ -211,16 +211,23 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
     hand-picked export folder (`pickExportFolder`) or beside a file opened from
     outside the library, so a power cut mid-export can leave a
     `.__editor_tmp.` file there.~~ **DONE (#307).** The export writes the
-    temp's exact path into the app database (`export_temp`, migration 0009)
+    temp's exact path into the app database (table `export_temp`, created at
+    runtime — not a migration, so a downgrade to an older stable still starts)
     before ffmpeg starts, and drops the row once the temp has been renamed or
     removed. A row that survives to the next launch is a render that never
     finished, and the startup sweep reaps the file it names wherever that is
     (`src-tauri/src/editor/export_journal.rs`). It deletes only a regular file
     whose path is exactly one `editor_tmp_path` could have built — never a
-    symlink, a directory or anything else a row might name — and never the
-    temp of an export that is already running again. A row whose folder is not
-    there (an unplugged USB stick) waits up to 30 days for a launch that can
-    see it. The folder scan stays, for crashes from before the journal.
+    symlink, a directory or anything else a row might name. Neither the
+    journal nor the old folder scan deletes a file with the name of the temp
+    an export is rendering into at that moment (before, the folder scan could
+    delete a live render in the save folder and fail that export). A row whose
+    folder is not there (an unplugged USB stick) waits up to 30 days for a
+    launch that can see it. The folder scan stays, for crashes from before
+    the journal. One limit: the row is as durable as the database's other
+    writes (WAL, `synchronous=NORMAL`), so a power cut seconds after the
+    export started can still lose it — and then that one temp is litter, as
+    before.
   - **Replace-mode (overwrite the original) — dropped on purpose.** The Tauri
     editor never overwrites a recording: every export is a NEW file (the
     module header of `sundayrec-core::editor` says so). The Rust port of the

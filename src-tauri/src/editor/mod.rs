@@ -1066,11 +1066,17 @@ pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
 /// for that one export, or beside a file opened from outside the library — so
 /// the folder scan is followed by the export journal (F2-4b): every render temp
 /// a crashed export wrote down before ffmpeg started, reaped wherever it is,
-/// and only if it still is exactly that (see `export_journal`). `engine` is the
-/// app's export engine, so the temp of an export that is ALREADY running again
-/// by the time this background task gets there is left alone. The folder scan
-/// stays as it was: it is what cleans up after a crash from before the journal
+/// and only if it still is exactly that (see `export_journal`). The folder
+/// scan stays: it is what cleans up after a crash from before the journal
 /// existed.
+///
+/// `engine` is the app's export engine. This runs in the background, and a
+/// volunteer can be exporting again before it gets anywhere — into the save
+/// folder, under the same deterministic temp name a crashed render left there.
+/// NEITHER half deletes a file with the name of the temp the running export
+/// renders into ([`RenderInFlight`](export_journal::RenderInFlight)); before
+/// that guard the folder scan did, and the export failed with "export produced
+/// no output file".
 ///
 /// Best-effort: a settings or history read that fails simply narrows the sweep.
 /// Returns how many files were removed.
@@ -1104,8 +1110,9 @@ async fn startup_sweep_in(
     // Blocking readdir/unlink off the async runtime. The mastering-preview
     // sweep rides in the same blocking task: same lifecycle, same best-effort
     // contract, one log line.
+    let in_flight = engine.render_temp.clone();
     let scanned = tokio::task::spawn_blocking(move || {
-        cleanup_temp_files(&folders) + cleanup_preview_temp_files(&temp_dir)
+        cleanup_temp_files(&folders, &in_flight) + cleanup_preview_temp_files(&temp_dir)
     })
     .await
     .unwrap_or(0);
@@ -1148,7 +1155,11 @@ pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
 /// returning how many were deleted. Mirrors `cleanupEditorTempFiles`: the core
 /// de-dups + the predicate decides what to unlink; this layer does the readdir/
 /// unlink (best-effort, never throws). Non-existent dirs are skipped.
-pub fn cleanup_temp_files(folders: &[String]) -> usize {
+///
+/// Except the temp an export is rendering into right now (`in_flight`), asked
+/// by NAME under the lock the export claims it with: these folders are
+/// canonicalised, so their paths need not be spelled like the export's.
+fn cleanup_temp_files(folders: &[String], in_flight: &export_journal::RenderInFlight) -> usize {
     use sundayrec_core::editor::{dedupe_cleanup_dirs, is_editor_temp_name};
     let dirs = dedupe_cleanup_dirs(folders, |s| {
         std::fs::canonicalize(s)
@@ -1162,7 +1173,13 @@ pub fn cleanup_temp_files(folders: &[String]) -> usize {
         };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if is_editor_temp_name(&name) && std::fs::remove_file(entry.path()).is_ok() {
+            if !is_editor_temp_name(&name) {
+                continue;
+            }
+            let unlinked = in_flight
+                .unless_claimed_name(&name, || std::fs::remove_file(entry.path()).is_ok())
+                .unwrap_or(false);
+            if unlinked {
                 removed += 1;
             }
         }
@@ -1428,7 +1445,8 @@ impl Drop for ExportSlot<'_> {
 /// [`RenderInFlight`](export_journal::RenderInFlight), so the startup sweep —
 /// which runs in the background and can meet a fresh export of the same
 /// recording at the same deterministic path — never deletes a render that is
-/// still being written. The claim is released only after the file is gone.
+/// still being written: not through a journal row, and not through the folder
+/// scan. The claim is released only after the file is gone.
 #[cfg(feature = "editor")]
 struct TempRender {
     /// `None` once the file has been delivered (renamed) — nothing to reap.
@@ -1504,9 +1522,11 @@ impl ExportEngine {
     }
 
     /// Write the render temp into the journal — BEFORE ffmpeg can create it,
-    /// which is the whole point: a power cut after this line leaves a row that
-    /// names the file. Best-effort (see `export_journal::record`): no journal
-    /// attached, or a write that fails, and the export renders anyway.
+    /// which is the whole point: a crash after this line leaves a row that
+    /// names the file. (A power cut, too, once the commit has reached the disk
+    /// — the database runs `synchronous=NORMAL`; see `export_journal`.)
+    /// Best-effort (see `export_journal::record`): no journal attached, or a
+    /// write that fails, and the export renders anyway.
     #[cfg(feature = "editor")]
     async fn journal_render_temp(&self, path: &str) {
         let Some(pool) = self.journal.get() else {
@@ -3440,11 +3460,11 @@ where
     // dozen times, and a cleanup line at the bottom would be reached by none of
     // them; the same reason `ExportSlot` is RAII rather than an `end()` call.
     let mut render = TempRender::armed(engine, &tmp_path);
-    // …and the one way out no `Drop` can catch — a power cut, a force quit —
-    // is covered by writing the path down FIRST (F2-4b). The startup sweep's
-    // folder scan only reaches the save folder and the library's folders; a
-    // hand-picked export folder, or the folder of a file opened from outside
-    // the library, is reached through this row and nothing else.
+    // …and the ways out no `Drop` can catch — a force quit, a crash, a power
+    // cut — are covered by writing the path down FIRST (F2-4b). The startup
+    // sweep's folder scan only reaches the save folder and the library's
+    // folders; a hand-picked export folder, or the folder of a file opened
+    // from outside the library, is reached through this row and nothing else.
     engine.journal_render_temp(&tmp_path).await;
     let mut result = run_export_ffmpeg(
         engine,
@@ -4587,7 +4607,10 @@ mod tests {
         std::fs::write(d.join("service.mp3.__editor_tmp"), b"x").unwrap();
         std::fs::write(d.join("service.mp3.__editor_bak"), b"x").unwrap();
         std::fs::write(d.join("clip.__editor_tmp.mp4"), b"x").unwrap();
-        let removed = cleanup_temp_files(&[d.to_string_lossy().into_owned()]);
+        let removed = cleanup_temp_files(
+            &[d.to_string_lossy().into_owned()],
+            &export_journal::RenderInFlight::default(),
+        );
         assert_eq!(removed, 3);
         assert!(d.join("service.mp3").exists());
         assert!(!d.join("service.mp3.__editor_tmp").exists());
@@ -4710,8 +4733,13 @@ mod tests {
         (pool, db_dir)
     }
 
-    /// The paths in `pool`'s export journal, oldest first.
+    /// The paths in `pool`'s export journal, oldest first. (Creates the
+    /// runtime table first, so a journal nothing was ever written to reads as
+    /// empty rather than as "no such table".)
     async fn journalled_paths(pool: &sqlx::SqlitePool) -> Vec<String> {
+        export_journal::ensure_table(pool)
+            .await
+            .expect("the export journal's table");
         export_journal::oldest(pool, 1_000)
             .await
             .expect("read the export journal")
@@ -4763,6 +4791,114 @@ mod tests {
             startup_sweep_in(&pool, &ExportEngine::new(), os_temp.path().to_path_buf()).await;
         assert_eq!(removed, 0);
         assert!(journalled_paths(&pool).await.is_empty());
+    }
+
+    /// The folder scan runs in the background at startup, and an export into
+    /// the save folder can already be rendering under the same deterministic
+    /// temp name a crashed render left there. Before the in-flight guard
+    /// reached the folder scan, the scan deleted the live render, and the
+    /// export failed with "export produced no output file" (macOS; on Windows
+    /// an open file cannot be deleted).
+    ///
+    /// The mutation proof aims here: drop the `unless_claimed_name` around the
+    /// scan's `remove_file` and the claimed temp is gone.
+    #[tokio::test]
+    async fn the_folder_scan_spares_the_temp_a_running_export_renders_into() {
+        let (pool, _db) = journal_pool().await;
+        let save = tempfile::tempdir().expect("save folder");
+        let mut settings = crate::settings::load(&pool).await.unwrap();
+        settings.save_folder = Some(save.path().to_string_lossy().into_owned());
+        crate::settings::save(&pool, settings).await.unwrap();
+
+        let live = render_temp_in(save.path(), "service_redigert", "mp3");
+        std::fs::write(&live, b"being written").unwrap();
+        // Litter beside it, which the scan must still take.
+        std::fs::write(save.path().join("service.mp3.__editor_bak"), b"x").unwrap();
+
+        // The export claims the path as IT spells the folder — here with a `.`
+        // in it, standing in for `/var/…` against the scan's canonical
+        // `/private/var/…` (which a macOS temp dir already differs by).
+        let engine = ExportEngine::new();
+        engine.render_temp.claim(&render_temp_in(
+            &save.path().join("."),
+            "service_redigert",
+            "mp3",
+        ));
+
+        let os_temp = tempfile::tempdir().expect("private temp dir");
+        let removed = startup_sweep_in(&pool, &engine, os_temp.path().to_path_buf()).await;
+        assert_eq!(removed, 1, "the backup, and not the live render");
+        assert_eq!(
+            std::fs::read(&live).ok().as_deref(),
+            Some(&b"being written"[..]),
+            "the folder scan must not delete a render that is being written"
+        );
+        assert!(!save.path().join("service.mp3.__editor_bak").exists());
+
+        // Once the export has let go, the same file is ordinary litter.
+        engine.render_temp.release();
+        let removed = startup_sweep_in(&pool, &engine, os_temp.path().to_path_buf()).await;
+        assert_eq!(removed, 1);
+        assert!(!std::path::Path::new(&live).exists());
+    }
+
+    /// The claim that keeps both sweeps away from a render in flight is taken
+    /// by `TempRender::armed` and given back only once the guard has dropped —
+    /// AFTER the file it removes is gone. (The real-ffmpeg half of this is in
+    /// `export_cancel_leaves_no_half_file_or_skips`.)
+    #[cfg(feature = "editor")]
+    #[test]
+    fn temp_render_claims_its_path_until_it_drops() {
+        let picked = tempfile::tempdir().expect("hand-picked export folder");
+        let temp = render_temp_in(picked.path(), "service_redigert", "mp3");
+        std::fs::write(&temp, b"half").unwrap();
+        let engine = ExportEngine::new();
+        let name = "service_redigert.__editor_tmp.mp3";
+
+        let render = TempRender::armed(&engine, &temp);
+        assert!(engine.render_temp.is_claimed_name(name));
+        drop(render);
+        assert!(!engine.render_temp.is_claimed_name(name));
+        assert!(
+            !std::path::Path::new(&temp).exists(),
+            "and the file is gone"
+        );
+
+        // A delivered render gives the claim back too.
+        let mut render = TempRender::armed(&engine, &temp);
+        render.delivered();
+        assert!(engine.render_temp.is_claimed_name(name));
+        drop(render);
+        assert!(!engine.render_temp.is_claimed_name(name));
+    }
+
+    /// `TempRender` could not remove the temp — on Windows a file the killed
+    /// ffmpeg still holds open, or a permission error. The export's clean-up
+    /// must then KEEP the row: it is the only thing that leads the next launch
+    /// to a temp in a hand-picked folder.
+    #[cfg(feature = "editor")]
+    #[tokio::test]
+    async fn a_temp_still_on_disk_after_the_export_keeps_its_journal_row() {
+        let (pool, _db) = journal_pool().await;
+        let picked = tempfile::tempdir().expect("hand-picked export folder");
+        let engine = ExportEngine::new();
+        engine.attach_journal(pool.clone());
+
+        let stuck = render_temp_in(picked.path(), "service_redigert", "mp3");
+        std::fs::write(&stuck, b"could not be removed").unwrap();
+        engine.journal_render_temp(&stuck).await;
+        engine.forget_render_temp().await;
+        assert_eq!(
+            journalled_paths(&pool).await,
+            vec![stuck.clone()],
+            "a temp still on disk keeps its row for the startup sweep"
+        );
+
+        // The ordinary case beside it: the temp is gone, so its row goes too.
+        let gone = render_temp_in(picked.path(), "annen_redigert", "mp3");
+        engine.journal_render_temp(&gone).await;
+        engine.forget_render_temp().await;
+        assert_eq!(journalled_paths(&pool).await, vec![stuck]);
     }
 
     /// The row is a claim, never an instruction: a path that is not exactly a
@@ -6981,7 +7117,12 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let (pool, db_dir) = rt.block_on(journal_pool());
             engine.attach_journal(pool.clone());
-            let (err, journalled_mid_render) = {
+            let temp = sundayrec_core::editor::editor_tmp_path(
+                &dir.path().to_string_lossy(),
+                "long_redigert",
+                "flac",
+            );
+            let (err, (journalled_mid_render, swept, journalled_after_sweep, temp_survived)) = {
                 let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe {
@@ -6994,6 +7135,7 @@ mod tests {
                     let engine = Arc::clone(&engine);
                     let dir = dir.path().to_path_buf();
                     let db_path = db_dir.path().join("t.sqlite");
+                    let temp = temp.clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
                         for _ in 0..600 {
@@ -7010,15 +7152,26 @@ mod tests {
                             }
                             std::thread::sleep(std::time::Duration::from_millis(25));
                         }
-                        // What a launch right now would find in the journal.
-                        let journalled = rt.block_on(async {
+                        // What a launch right now would find in the journal — and
+                        // what this process's own background sweep, landing now,
+                        // would do about it: nothing, the render is in flight.
+                        let mid_render = rt.block_on(async {
                             let second = crate::db::store::open_pool(&db_path)
                                 .await
                                 .expect("a second connection to the app database");
-                            journalled_paths(&second).await
+                            let before = journalled_paths(&second).await;
+                            let swept = export_journal::sweep(
+                                &second,
+                                engine.render_temp.clone(),
+                                crate::util::now_ms(),
+                            )
+                            .await;
+                            let after = journalled_paths(&second).await;
+                            let survived = std::path::Path::new(&temp).exists();
+                            (before, swept, after, survived)
                         });
                         let _ = rt.block_on(cancel_export(&engine));
-                        journalled
+                        mid_render
                     })
                 };
                 let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
@@ -7042,12 +7195,17 @@ mod tests {
             );
             assert_eq!(
                 journalled_mid_render,
-                vec![sundayrec_core::editor::editor_tmp_path(
-                    &dir.path().to_string_lossy(),
-                    "long_redigert",
-                    "flac"
-                )],
+                vec![temp.clone()],
                 "the temp must be in the journal while ffmpeg is writing it"
+            );
+            // The claim `TempRender::armed` takes is what stops a sweep from
+            // deleting a render in flight — remove it and these fail.
+            assert_eq!(swept, 0, "a sweep mid-render must delete nothing");
+            assert!(temp_survived, "the live render survives a sweep");
+            assert_eq!(
+                journalled_after_sweep,
+                vec![temp.clone()],
+                "and so does its row"
             );
             assert!(
                 rt.block_on(journalled_paths(&pool)).is_empty(),

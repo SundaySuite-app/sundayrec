@@ -19,6 +19,25 @@
 //! row still there at the next launch is therefore a render that never
 //! finished, and [`sweep`] reaps exactly the file it names — wherever it is.
 //!
+//! How durable the row is: as durable as every other write to the app
+//! database, which runs WAL with `synchronous=NORMAL` (`db::store::open_pool`).
+//! That survives the app crashing or being force-quit outright. A power cut
+//! can still lose the last commits that had not reached the disk yet — and if
+//! this row is one of them, the next launch simply does not know about the
+//! temp: the behaviour from before this journal existed, never worse.
+//!
+//! ## Why the table is not a migration
+//!
+//! `export_temp` is created at runtime ([`ensure_table`], `CREATE TABLE IF NOT
+//! EXISTS`) the first time the export or the sweep needs it — deliberately not
+//! as a `migrations/` file. `open_pool` runs `sqlx::migrate!()`, which refuses
+//! to start on a database that has a migration the binary does not know. A
+//! beta tester who went back to the stable build would then find SundayRec
+//! unable to open its own database at all, over a table that is empty
+//! whenever no export is running. An extra table an older build has never
+//! heard of, by contrast, costs that build nothing. (The general question —
+//! should `open_pool` tolerate a newer database? — is open in `docs/PLAN.md`.)
+//!
 //! ## What the sweep will and will not delete
 //!
 //! It deletes a file at a path read back from a database row, anywhere on the
@@ -34,11 +53,13 @@
 //!    touched — and `remove_file` unlinks a name, never a link's target, so
 //!    even a file swapped for a symlink between the two calls costs only the
 //!    link;
-//! 3. it is not the temp the running export in THIS process is rendering into
-//!    ([`RenderInFlight`]) — checked again under the same lock the export
-//!    takes to claim it, with the unlink inside, so the two cannot interleave.
-//!    (Only the unlink: the `stat` before it can hang on a dead network share,
-//!    and an export waiting to claim its path must not hang with it.)
+//! 3. its file NAME is not the name of the temp an export in THIS process is
+//!    rendering into ([`RenderInFlight`]) — checked first, and again under the
+//!    same lock the export takes to claim it, with the unlink inside, so the
+//!    two cannot interleave. (Only the unlink: the `stat` before it can hang on
+//!    a dead network share, and an export waiting to claim its path must not
+//!    hang with it.) By name and not by path on purpose — see
+//!    [`RenderInFlight`].
 //!
 //! Anything else is left exactly where it is, and its row is dropped so the
 //! question is never asked again — unless the temp is in use, or its folder
@@ -90,13 +111,25 @@ pub const SWEEP_MAX_ROWS: i64 = 32;
 pub const UNREACHABLE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// The render temp the running export owns, shared between the
-/// [`ExportEngine`](super::ExportEngine) and the startup sweep.
+/// [`ExportEngine`](super::ExportEngine) and BOTH halves of the startup sweep
+/// — this journal and the folder scan.
 ///
 /// The temp name is deterministic (see `editor_tmp_path`), so a render that
 /// crashed and the next export of the same recording to the same folder use the
 /// SAME path. The sweep runs in the background at startup; a volunteer who
 /// reopens that recording and exports again within those seconds must not have
-/// the new render deleted out from under ffmpeg because an old row named it.
+/// the new render deleted out from under ffmpeg — by an old row that names it,
+/// or by the folder scan finding it in the save folder. (That second one is not
+/// hypothetical: on macOS the export then fails with "export produced no output
+/// file", because ffmpeg went on writing into a file that no longer had a name.)
+///
+/// The sweeps ask by file NAME, not by path. The folder scan's paths are
+/// canonicalised (`/private/var/…` for `/var/…` on macOS, `\\?\C:\…` on
+/// Windows) and a journal row may spell the same folder differently from the
+/// export that is running now, so a path comparison can miss the very file it
+/// is meant to protect. A name match is deliberately over-cautious: while an
+/// export runs, a leftover temp with the same name in some OTHER folder is
+/// spared too, and reaped on a later launch.
 #[derive(Clone, Default)]
 pub struct RenderInFlight(Arc<Mutex<Option<String>>>);
 
@@ -113,24 +146,53 @@ impl RenderInFlight {
         *lock_recover(&self.0) = None;
     }
 
-    /// Whether `path` is the temp an export is rendering into right now.
-    fn is_claimed(&self, path: &str) -> bool {
-        lock_recover(&self.0).as_deref() == Some(path)
+    /// Whether a file called `name` is the temp an export is rendering into
+    /// right now.
+    pub(super) fn is_claimed_name(&self, name: &str) -> bool {
+        claimed_name(&lock_recover(&self.0)) == Some(name)
     }
 
-    /// Run `f` unless `path` is the temp an export is rendering into right now
-    /// (`None` then). `f` runs UNDER the lock [`claim`](Self::claim) takes, so
-    /// an export cannot claim the path between this check and what `f` does to
-    /// the file — it waits for the one unlink, and then renders into a clean
-    /// path. Keep `f` to that one unlink: whatever it does, a starting export
-    /// waits for.
-    fn unless_claimed<T>(&self, path: &str, f: impl FnOnce() -> T) -> Option<T> {
+    /// Run `f` unless a file called `name` is the temp an export is rendering
+    /// into right now (`None` then). `f` runs UNDER the lock
+    /// [`claim`](Self::claim) takes, so an export cannot claim the path between
+    /// this check and what `f` does to the file — it waits for the one unlink,
+    /// and then renders into a clean path. Keep `f` to that one unlink:
+    /// whatever it does, a starting export waits for.
+    pub(super) fn unless_claimed_name<T>(&self, name: &str, f: impl FnOnce() -> T) -> Option<T> {
         let claimed = lock_recover(&self.0);
-        if claimed.as_deref() == Some(path) {
+        if claimed_name(&claimed) == Some(name) {
             return None;
         }
         Some(f())
     }
+}
+
+/// The file name of a claimed temp path: everything after the last `/`, the
+/// separator `editor_tmp_path` always writes (a Windows folder before it keeps
+/// its backslashes). Only `/`: on macOS and Linux a backslash is an ordinary
+/// character in a file name, so splitting on it could miss a real match.
+fn claimed_name(claimed: &Option<String>) -> Option<&str> {
+    claimed.as_deref().and_then(|p| p.rsplit('/').next())
+}
+
+/// The table, if it is not there yet. See "Why the table is not a migration"
+/// in the module docs. `id` (UUID v7) and not `path` is the key: the temp name
+/// is deterministic, so a crashed render and the next export of the same
+/// recording share a path, and each must be able to drop ITS row without
+/// touching the other's. Local only, like `recording.file_path`; nothing but
+/// the export and the startup sweep reads it.
+pub(super) async fn ensure_table(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS export_temp (
+           id         TEXT PRIMARY KEY NOT NULL,
+           path       TEXT NOT NULL,
+           created_at INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_export_temp_age ON export_temp (created_at);",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// One journal row: a temp an export said it was about to render into.
@@ -144,20 +206,27 @@ pub(super) struct JournalRow {
 /// Journal `path` as the temp an export is about to render into. Returns the
 /// row's id, for [`forget`].
 ///
-/// Never an error: a failed write is logged and answered `None`, and the export
-/// renders anyway — without a row, a crash in an unswept folder leaves litter,
-/// which is what happened before this journal existed; an export refused over
-/// it would be the worse bug. A write that outlives [`JOURNAL_WRITE_BUDGET`]
-/// still answers its id: the insert may land after all, and [`forget`] should
-/// then find it.
+/// Creates the table first if this is the first export ever journalled.
+///
+/// Never an error: a failed write — or a failed create — is logged and answered
+/// `None`, and the export renders anyway. Without a row, a crash in an unswept
+/// folder leaves litter, which is what happened before this journal existed;
+/// an export refused over it would be the worse bug. A write that outlives
+/// [`JOURNAL_WRITE_BUDGET`] still answers its id: the insert may land after
+/// all, and [`forget`] should then find it.
 #[cfg(any(feature = "editor", test))]
 pub(super) async fn record(pool: &SqlitePool, path: &str, now_ms: i64) -> Option<String> {
     let id = crate::db::store::new_id();
-    let insert = sqlx::query("INSERT INTO export_temp (id, path, created_at) VALUES (?1, ?2, ?3)")
-        .bind(&id)
-        .bind(path)
-        .bind(now_ms)
-        .execute(pool);
+    let insert = async {
+        ensure_table(pool).await?;
+        sqlx::query("INSERT INTO export_temp (id, path, created_at) VALUES (?1, ?2, ?3)")
+            .bind(&id)
+            .bind(path)
+            .bind(now_ms)
+            .execute(pool)
+            .await?;
+        AppResult::Ok(())
+    };
     match tokio::time::timeout(JOURNAL_WRITE_BUDGET, insert).await {
         Ok(Ok(_)) => Some(id),
         Ok(Err(e)) => {
@@ -258,9 +327,11 @@ pub(super) fn reap(path: &str, in_flight: &RenderInFlight) -> Reap {
     if !is_render_temp_path(path) {
         return Reap::Refused;
     }
+    // The shape check above guarantees a `/` and a name after it.
+    let name = path.rsplit('/').next().unwrap_or(path);
     // Condition 3, first pass: a temp that is being written is not even
     // looked at, and its row stays for the export to forget.
-    if in_flight.is_claimed(path) {
+    if in_flight.is_claimed_name(name) {
         return Reap::InUse;
     }
     let p = Path::new(path);
@@ -272,7 +343,7 @@ pub(super) fn reap(path: &str, in_flight: &RenderInFlight) -> Reap {
     match std::fs::symlink_metadata(p) {
         // Condition 3 again, and the unlink, under the lock `claim` takes.
         Ok(meta) if meta.file_type().is_file() => in_flight
-            .unless_claimed(path, || unlink(p))
+            .unless_claimed_name(name, || unlink(p))
             .unwrap_or(Reap::InUse),
         // A symlink, a directory, a fifo… wearing a temp's name. The export
         // never makes one of those, so this is not a temp, whatever it is.
@@ -319,6 +390,12 @@ fn unlink(path: &Path) -> Reap {
 /// could not run is a launch that tries again next time. Never logs a path:
 /// the count is what a support log needs.
 pub async fn sweep(pool: &SqlitePool, in_flight: RenderInFlight, now_ms: i64) -> usize {
+    // An install that has never exported (or a database an older build last
+    // opened) has no table yet; creating it here keeps the read below simple.
+    if let Err(e) = ensure_table(pool).await {
+        tracing::warn!(error = %e, "startup: could not open the export journal");
+        return 0;
+    }
     let rows = match oldest(pool, SWEEP_MAX_ROWS).await {
         Ok(rows) if rows.is_empty() => return 0,
         Ok(rows) => rows,
@@ -434,26 +511,38 @@ mod tests {
     }
 
     #[test]
-    fn the_unlink_runs_only_for_a_path_no_export_has_claimed() {
+    fn the_unlink_runs_only_for_a_name_no_export_has_claimed() {
         // The second, locked look — the one that closes the window between the
-        // sweep's first look and the unlink.
+        // sweep's first look and the unlink. Asked by NAME: the folder in the
+        // claim is spelled however the export spelled it.
         let in_flight = RenderInFlight::default();
-        in_flight.claim("/rec/a.__editor_tmp.mp3");
+        in_flight.claim(r"C:\Users\x\Music/a.__editor_tmp.mp3");
+        assert!(in_flight.is_claimed_name("a.__editor_tmp.mp3"));
         let mut ran = false;
         assert_eq!(
-            in_flight.unless_claimed("/rec/a.__editor_tmp.mp3", || ran = true),
+            in_flight.unless_claimed_name("a.__editor_tmp.mp3", || ran = true),
             None
         );
-        assert!(!ran, "nothing may be done to a path an export has claimed");
+        assert!(!ran, "nothing may be done to a temp an export has claimed");
         assert_eq!(
-            in_flight.unless_claimed("/rec/b.__editor_tmp.mp3", || 1),
+            in_flight.unless_claimed_name("b.__editor_tmp.mp3", || 1),
             Some(1)
         );
         in_flight.release();
+        assert!(!in_flight.is_claimed_name("a.__editor_tmp.mp3"));
         assert_eq!(
-            in_flight.unless_claimed("/rec/a.__editor_tmp.mp3", || 2),
+            in_flight.unless_claimed_name("a.__editor_tmp.mp3", || 2),
             Some(2)
         );
+    }
+
+    #[tokio::test]
+    async fn a_database_that_never_journalled_is_swept_quietly() {
+        // A fresh install, or a database an older build last opened: no table
+        // yet. The sweep creates it and finds nothing — no error, no panic.
+        let (pool, _d) = temp_pool().await;
+        assert_eq!(sweep(&pool, RenderInFlight::default(), 1).await, 0);
+        assert!(paths_in_journal(&pool).await.is_empty());
     }
 
     #[tokio::test]
@@ -510,8 +599,15 @@ mod tests {
         std::fs::write(&path, b"being written").unwrap();
         record(&pool, &path, 1).await.expect("row");
 
+        // The running export spelled the SAME folder differently from the row
+        // (canonicalisation, a trailing `.`, `/private/var` for `/var`): the
+        // check must still see it.
         let in_flight = RenderInFlight::default();
-        in_flight.claim(&path);
+        in_flight.claim(&tmp_in(
+            &folder.path().join("."),
+            "service_redigert",
+            "flac",
+        ));
         assert_eq!(sweep(&pool, in_flight.clone(), 2).await, 0);
         assert!(Path::new(&path).exists(), "the running render survives");
         assert_eq!(paths_in_journal(&pool).await, vec![path.clone()]);

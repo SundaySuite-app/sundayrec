@@ -1021,6 +1021,11 @@ pub fn is_editor_render_tmp_path(path: &str) -> bool {
         // did not see. No stem the export builds carries one; refuse rather
         // than guess which half of it is the directory.
         && !base.contains('\\')
+        // A colon in a name on NTFS addresses an alternate data stream of
+        // ANOTHER file (`a:b.__editor_tmp.mp3` is stream `b…` of `a`). A titled
+        // stem goes through `sanitize_filename`, which maps `:` away; refuse
+        // the rest.
+        && !base.contains(':')
         && is_supported_export_format(ext)
         && editor_tmp_path(dir, base, ext) == path
 }
@@ -3093,6 +3098,8 @@ mod tests {
             // A Windows separator hiding inside the "name".
             r"C:\rec\service.__editor_tmp.mp3",
             "/rec/sub\\service.__editor_tmp.mp3",
+            // An NTFS alternate data stream of a file called `service`.
+            r"C:\rec/service:x.__editor_tmp.mp3",
             "",
         ] {
             assert!(

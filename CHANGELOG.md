@@ -16,7 +16,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   biblioteket. Nå noterer SundayRec hvor eksporten skriver, og fjerner den
   halvferdige fila neste gang appen starter. Står den på en minnepinne som ikke
   er satt i da, ryddes den ved en senere oppstart når pinnen er på plass.
-  Ferdige eksporter og opptak røres aldri.
+  Ferdige eksporter og opptak røres aldri, og heller ikke fila til en eksport
+  som allerede er i gang.
 
 ## v0.25.0-beta.1 — eget lydkort for spesialopptak, til beta-ringen
 
