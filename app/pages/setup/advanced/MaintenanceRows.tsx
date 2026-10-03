@@ -13,7 +13,10 @@ import { confirmDialog } from "../../../ui/dialog";
 import { revealResult } from "../../../ui/reveal";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
 import { toast } from "../../../ui/toast";
-import { runExport, runImport } from "./profile-core";
+import { oneAtATime, runExport, runImport } from "./profile-core";
+
+/** Ett profilvindu om gangen, for begge knappene (se `oneAtATime`). */
+const oneProfileDialog = oneAtATime();
 
 /** Legacy ber om 200 kB; serveren klamrer uansett til 512 kB. */
 const LOG_TAIL_BYTES = 200 * 1024;
@@ -119,9 +122,15 @@ export function ProfileRow() {
     if (outcome.kind === "done") {
       toast("success", t("app.setup.advanced.imported"));
     } else if (outcome.kind === "failed") {
+      // En fil som ikke er en profil — eller er alt for stor — har sin egen
+      // setning: «Ingenting ble endret» er det viktigste å få vite da.
       toast(
         "error",
-        tf("app.setup.advanced.importFailed", { err: outcome.err }),
+        outcome.refusal === "notProfile"
+          ? t("app.setup.advanced.importNotProfile")
+          : outcome.refusal === "tooLarge"
+            ? t("app.setup.advanced.importTooLarge")
+            : tf("app.setup.advanced.importFailed", { err: outcome.err }),
       );
     }
   }
@@ -135,14 +144,14 @@ export function ProfileRow() {
       <Button
         variant="ghost"
         testId="adv-profile-export"
-        onClick={() => void exportProfile()}
+        onClick={() => void oneProfileDialog(exportProfile)}
       >
         {t("app.setup.advanced.export")}
       </Button>
       <Button
         variant="ghost"
         testId="adv-profile-import"
-        onClick={() => void importProfile()}
+        onClick={() => void oneProfileDialog(importProfile)}
       >
         {t("app.setup.advanced.import")}
       </Button>

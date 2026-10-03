@@ -240,7 +240,10 @@ So a future auditor doesn't have to re-derive these from scratch:
   dialog answers still meets the `UserChosenWrite`/`UserChosenRead` guard
   (absolute, no `..`, not in a protected folder) as defence in depth, and an
   imported profile's save folder still meets the save-folder vet (refused, the
-  stored folder is kept). `commands::path_ratchet` (`REPLACED`) fails if a
+  stored folder is kept). The import reads at most 1 MiB, refuses a file that
+  is not a settings profile (`profile_not_settings`) without writing anything,
+  and lays the profile over the stored settings rather than over the defaults
+  — a wrong file used to reset everything, the schedule included. `commands::path_ratchet` (`REPLACED`) fails if a
   path-taking twin of either command comes back, or if one of them grows a
   path parameter.
   What remains under the same rule: other commands still take a path from the

@@ -103,13 +103,16 @@ pub async fn settings_export_profile(window: tauri::Window, db: State<'_, Db>) -
 }
 
 /// Import a settings profile the operator picks in a native OPEN dialog this
-/// command opens: merge over defaults, validate, persist, and return the
-/// stored value — or `None` when the operator cancelled and nothing changed.
+/// command opens: lay its fields over the stored settings, validate, persist,
+/// and return the stored value — or `None` when the operator cancelled and
+/// nothing changed. A file that is not a settings profile is refused
+/// (`profile_not_settings`, `profile_too_large`) and changes nothing.
 ///
 /// **Takes no path** — see the module docs. The picked file still meets
 /// [`PathPolicy::UserChosenRead`] before it is read, and a NEW save folder in
 /// it meets [`vet_new_save_folder`]: refused, the stored one is kept and the
-/// rest is imported ([`settings::import`]).
+/// rest is imported. What a profile never takes away (the save folder, the
+/// schedule) is in [`settings::import_profile`].
 ///
 /// The dialog and the import are one step here, so the renderer asks
 /// «Importere innstillinger?» BEFORE calling this, not between the two.
@@ -141,9 +144,11 @@ pub(crate) async fn export_profile_to(
 }
 
 /// [`settings_import_profile`] once its dialog has answered: a cancel (`None`)
-/// changes nothing; a picked file is guarded, read and imported through
-/// [`settings::import`] — the same merge, validation and save-folder rule as
-/// every other import.
+/// changes nothing; a picked file is guarded, read (at most
+/// [`MAX_PROFILE_BYTES`]) and laid over the stored settings by
+/// [`settings::import_profile`] — which refuses a file that is not a settings
+/// profile without writing anything, and never takes the save folder or the
+/// schedule away.
 pub(crate) async fn import_profile_from(
     pool: &SqlitePool,
     picked: Option<PathBuf>,
@@ -152,9 +157,16 @@ pub(crate) async fn import_profile_from(
     let Some(path) = picked else {
         return Ok(None);
     };
-    let json = crate::util::off_runtime(move || read_profile(&path)).await??;
-    settings::import(pool, &json, vet).await.map(Some)
+    let text = crate::util::off_runtime(move || read_profile(&path)).await??;
+    settings::import_profile(pool, &text, vet).await.map(Some)
 }
+
+/// The most a profile file may weigh. An exported profile is a few kilobytes
+/// (the special recordings are pruned a week after they end), so a mebibyte is
+/// generous — and the open dialog's «all files» filter means a 2 GB recording
+/// is one mis-click away. Read through `take`, so a bigger file costs this many
+/// bytes and not its whole size in memory before it is refused.
+const MAX_PROFILE_BYTES: u64 = 1024 * 1024;
 
 /// The blocking half of the export, run on the blocking pool
 /// ([`crate::util::off_runtime`]): the guard canonicalises the picked folder
@@ -166,10 +178,25 @@ fn write_profile(path: &Path, json: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// The blocking half of the import — see [`write_profile`].
+/// The blocking half of the import — see [`write_profile`]. Refuses a file
+/// over [`MAX_PROFILE_BYTES`] (`profile_too_large`) and one that is not text
+/// (`profile_not_settings`), both before the settings are touched.
 fn read_profile(path: &Path) -> AppResult<String> {
+    use std::io::Read;
+
     path_guard::check(picked_str(path)?, PathPolicy::UserChosenRead)?;
-    Ok(std::fs::read_to_string(path)?)
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_PROFILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_PROFILE_BYTES {
+        return Err(AppError::Validation(format!(
+            "profile_too_large: a settings profile is at most {} KiB",
+            MAX_PROFILE_BYTES / 1024
+        )));
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| AppError::Validation("profile_not_settings: the file is not text".into()))
 }
 
 /// The picked path as the string `path_guard` judges. A name that is not valid
@@ -202,9 +229,10 @@ async fn dialog_lang(pool: &SqlitePool) -> AppResult<Lang> {
 /// an existing file; that answer is the operator's.
 ///
 /// The callback form, awaited, and not the plugin's `blocking_save_file`: the
-/// plugin shows the dialog on the main thread either way (AppKit and Win32
-/// require it), and the blocking twin would park a runtime worker for as long
-/// as the operator looks for the USB stick.
+/// plugin hands the dialog to the main thread either way (`run_on_main_thread`
+/// — AppKit requires it, and it keeps the dialog on the event loop that owns
+/// the parent window everywhere else), and the blocking twin would park a
+/// runtime worker for as long as the operator looks for the USB stick.
 async fn ask_where_to_save(window: &tauri::Window, lang: Lang) -> AppResult<Option<PathBuf>> {
     let (tx, rx) = oneshot::channel();
     window
@@ -224,8 +252,10 @@ async fn ask_where_to_save(window: &tauri::Window, lang: Lang) -> AppResult<Opti
 
 /// Ask which profile to import: a native OPEN dialog over `window` with the
 /// profile filter first, and «all files» second so a profile saved without the
-/// `.json` ending can still be picked (its content is validated by the merge
-/// either way). Awaited for the reason [`ask_where_to_save`] gives.
+/// `.json` ending can still be picked (its content is checked either way).
+/// Windows and Linux show the two as a named choice; macOS' panel (rfd) takes
+/// one merged list of extensions and shows no names at all. Awaited for the
+/// reason [`ask_where_to_save`] gives.
 async fn ask_which_to_open(window: &tauri::Window, lang: Lang) -> AppResult<Option<PathBuf>> {
     let (tx, rx) = oneshot::channel();
     let dialog = window.dialog().file();
@@ -567,11 +597,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_picked_profile_is_imported_stored_and_returned() {
-        // The round trip the feature exists for: export on one machine, import
-        // on the other.
+        // The round trip the feature exists for: the church PC exports, the
+        // second machine imports — the schedule, the special recording, the
+        // folder and the sound all arrive.
         let dir = tempfile::tempdir().unwrap();
         let first = pool_in(&machine(dir.path(), "a")).await;
-        let exported = settings::save(&first, distinctive()).await.unwrap();
+        let exported = settings::save(&first, church_machine(dir.path()))
+            .await
+            .unwrap();
         let file = dir.path().join("profil.json");
         export_profile_to(&first, Some(file.clone())).await.unwrap();
 
@@ -582,6 +615,211 @@ mod tests {
 
         assert_eq!(imported.as_ref(), Some(&exported));
         assert_eq!(settings::load(&second).await.unwrap(), exported);
+    }
+
+    // ── S1: a wrong file must not wipe the church PC ────────────────────────
+
+    /// The church PC on Saturday evening: a save folder, a language, a weekly
+    /// schedule and a special recording ahead — everything a wrong file must
+    /// not take away.
+    fn church_machine(dir: &Path) -> Settings {
+        use sundayrec_core::schedule::{ScheduleSlot, SpecialRecording};
+        Settings {
+            language: Some("sv".into()),
+            save_folder: Some(dir.join("Opptak").to_str().unwrap().to_string()),
+            silence_threshold: -40,
+            slots: vec![ScheduleSlot {
+                days: vec![6],
+                start: "11:00".into(),
+                stop: "12:30".into(),
+                max: None,
+            }],
+            special_recordings: vec![SpecialRecording {
+                id: Some("konsert".into()),
+                date: (chrono::Local::now().date_naive() + chrono::Duration::days(30))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+                name: "Konsert".into(),
+                start: "19:00".into(),
+                stop: "21:00".into(),
+                device_id: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// A pool holding [`church_machine`], and what it stored.
+    async fn church_pool(dir: &Path) -> (sqlx::SqlitePool, Settings) {
+        let pool = pool_in(dir).await;
+        let stored = settings::save(&pool, church_machine(dir)).await.unwrap();
+        assert!(!stored.slots.is_empty() && !stored.special_recordings.is_empty());
+        (pool, stored)
+    }
+
+    /// Write `content` to `name` under `dir` and import it.
+    async fn import_bytes(
+        pool: &sqlx::SqlitePool,
+        dir: &Path,
+        name: &str,
+        content: &[u8],
+    ) -> AppResult<Option<Settings>> {
+        let file = dir.join(name);
+        std::fs::write(&file, content).unwrap();
+        import_profile_from(pool, Some(file), accept_any).await
+    }
+
+    fn assert_refused(result: AppResult<Option<Settings>>, code: &str, what: &str) {
+        match result {
+            Err(AppError::Validation(msg)) => {
+                assert!(
+                    msg.starts_with(code),
+                    "{what}: expected `{code}`, got `{msg}`"
+                )
+            }
+            other => panic!("{what}: expected Validation({code}), got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_file_that_is_not_a_settings_profile_is_refused_and_changes_nothing() {
+        // Before: every one of these merged to the full DEFAULTS — the folder,
+        // the language and the schedule gone, and «Innstillingene ble
+        // importert.» on the screen.
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, stored) = church_pool(dir.path()).await;
+        let wrong: [(&str, &[u8]); 7] = [
+            ("opptak.mp3", b"\xff\xfb\x90\x64\x00 not text at all"),
+            ("notater.txt", "Husk: mikrofon 2 er ustabil".as_bytes()),
+            ("liste.json", b"[1, 2, 3]"),
+            ("tall.json", b"42"),
+            ("tom.json", b"{}"),
+            (
+                "package.json",
+                br#"{ "name": "sundayrec", "version": "0.25.0" }"#,
+            ),
+            ("bare-feil.json", br#"{ "channels": "quadrophonic" }"#),
+        ];
+        for (name, content) in wrong {
+            assert_refused(
+                import_bytes(&pool, dir.path(), name, content).await,
+                "profile_not_settings",
+                name,
+            );
+        }
+        assert_eq!(
+            settings::load(&pool).await.unwrap(),
+            stored,
+            "a refused file writes nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_over_the_cap_is_refused_and_one_at_the_cap_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, stored) = church_pool(dir.path()).await;
+        let cap = MAX_PROFILE_BYTES as usize;
+        // A VALID profile, padded: the cap is about size, not about content.
+        let padded = |len: usize| {
+            let head = r#"{ "language": "en", "churchName": ""#;
+            let tail = r#"" }"#;
+            format!("{head}{}{tail}", "x".repeat(len - head.len() - tail.len()))
+        };
+
+        assert_refused(
+            import_bytes(&pool, dir.path(), "stor.json", padded(cap + 1).as_bytes()).await,
+            "profile_too_large",
+            "one byte over the cap",
+        );
+        assert_eq!(settings::load(&pool).await.unwrap(), stored);
+
+        let at_cap = import_bytes(&pool, dir.path(), "akkurat.json", padded(cap).as_bytes())
+            .await
+            .unwrap()
+            .expect("a file of exactly the cap is read");
+        assert_eq!(at_cap.language.as_deref(), Some("en"));
+    }
+
+    #[tokio::test]
+    async fn a_profile_without_a_save_folder_keeps_this_machines() {
+        // Absent, null (the exporting machine used the default) and blank all
+        // mean «no folder chosen» — never «stop recording where you do today».
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, stored) = church_pool(dir.path()).await;
+        for (i, profile) in [
+            r#"{ "language": "en" }"#,
+            r#"{ "language": "da", "saveFolder": null }"#,
+            r#"{ "language": "de", "saveFolder": "   " }"#,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let imported =
+                import_bytes(&pool, dir.path(), &format!("p{i}.json"), profile.as_bytes())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(imported.save_folder, stored.save_folder, "{profile}");
+        }
+        // …and only what the file named changed.
+        let after = settings::load(&pool).await.unwrap();
+        assert_eq!(after.language.as_deref(), Some("de"));
+        assert_eq!(after.silence_threshold, stored.silence_threshold);
+    }
+
+    #[tokio::test]
+    async fn a_profile_without_a_schedule_keeps_this_machines() {
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, stored) = church_pool(dir.path()).await;
+
+        // A hand-trimmed profile that names no schedule at all.
+        let imported = import_bytes(&pool, dir.path(), "kort.json", br#"{ "language": "en" }"#)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(imported.slots, stored.slots);
+        assert_eq!(imported.special_recordings, stored.special_recordings);
+
+        // The case that matters: a FULL export from a laptop that was never set
+        // up — every key present, both lists empty. Its other settings are
+        // taken; the church PC's schedule is not emptied by it.
+        let laptop_dir = tempfile::tempdir().unwrap();
+        let laptop = pool_in(laptop_dir.path()).await;
+        let blank = laptop_dir.path().join("fra-laptopen.json");
+        export_profile_to(&laptop, Some(blank.clone()))
+            .await
+            .unwrap();
+        let imported = import_profile_from(&pool, Some(blank), accept_any)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(imported.slots, stored.slots, "the weekly schedule stays");
+        assert_eq!(imported.special_recordings, stored.special_recordings);
+        assert_eq!(imported.save_folder, stored.save_folder, "and the folder");
+        assert_eq!(
+            imported.silence_threshold,
+            Settings::default().silence_threshold,
+            "the laptop's own values ARE taken"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_profile_with_a_schedule_replaces_this_machines() {
+        // Carrying the schedule to the other machine is what the feature is for.
+        let dir = tempfile::tempdir().unwrap();
+        let (pool, stored) = church_pool(dir.path()).await;
+        let imported = import_bytes(
+            &pool,
+            dir.path(),
+            "onsdag.json",
+            br#"{ "slots": [ { "days": [2], "start": "19:00", "stop": "20:30" } ] }"#,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(imported.slots.len(), 1);
+        assert_eq!(imported.slots[0].days, vec![2]);
+        assert_ne!(imported.slots, stored.slots);
+        assert_eq!(imported.language, stored.language, "nothing else moved");
     }
 
     #[tokio::test]

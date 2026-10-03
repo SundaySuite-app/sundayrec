@@ -991,24 +991,31 @@ fn every_guarded_command_still_exists_and_calls_a_guard() {
 }
 
 /// The body of `tauri::generate_handler![…]` in `src/lib.rs` — what the webview
-/// can actually invoke. Comments stripped line by line, so a note that names a
-/// retired command is not mistaken for its registration.
+/// can actually invoke. Comments are stripped line by line BEFORE the closing
+/// `]` is looked for, so a note that names a retired command is not mistaken
+/// for its registration, and a `[…]` in a note does not end the block early.
 fn registered_handler_block() -> String {
     let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
     let src = std::fs::read_to_string(&lib)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", lib.display()));
-    let start = src
-        .find("tauri::generate_handler![")
-        .expect("lib.rs has a generate_handler![…] block");
-    let end = start
-        + src[start..]
-            .find(']')
-            .expect("the generate_handler![…] block closes");
-    src[start..end]
-        .lines()
-        .map(|l| l.split("//").next().unwrap_or_default())
-        .collect::<Vec<_>>()
-        .join("\n")
+    handler_block_of(&src).expect("lib.rs has a closed generate_handler![…] block")
+}
+
+/// [`registered_handler_block`] over a given source, so the reader can be held
+/// to a fixture.
+fn handler_block_of(src: &str) -> Option<String> {
+    const OPEN: &str = "tauri::generate_handler![";
+    let start = src.find(OPEN)? + OPEN.len();
+    let mut block = Vec::new();
+    for line in src[start..].lines() {
+        let code = line.split("//").next().unwrap_or_default();
+        if let Some(end) = code.find(']') {
+            block.push(&code[..end]);
+            return Some(block.join("\n"));
+        }
+        block.push(code);
+    }
+    None
 }
 
 #[test]
@@ -1041,11 +1048,49 @@ fn replaced_commands_stay_replaced() {
              the dialog Rust opens decides the file — not the webview.",
             successor.path_params.join(", ")
         );
+        // Stricter than "no path-shaped NAME": the name detector over-matches
+        // on purpose but cannot know every spelling — `file_name`, `target`,
+        // `name` would all slip through it and still let the webview steer the
+        // file. A successor takes NOTHING the webview sends: only what Tauri
+        // injects ([`is_injected`]).
+        let sent: Vec<String> = successor
+            .params
+            .iter()
+            .filter(|(_, ty)| !is_injected(ty))
+            .map(|(n, ty)| format!("{n}: {ty}"))
+            .collect();
+        assert!(
+            sent.is_empty(),
+            "`{new}` takes parameter(s) from the webview ({}). A REPLACED \
+             successor may only take what Tauri injects (State, Window, \
+             AppHandle …): the file is the dialog's answer, and nothing the \
+             webview sends may shape it.",
+            sent.join(", ")
+        );
         assert!(
             handler.contains(&format!("::{new},")),
             "`{new}` is not registered in generate_handler!"
         );
     }
+}
+
+#[test]
+fn the_handler_reader_holds_to_its_fixture() {
+    // A `]` inside a comment must not end the block, and a commented-out
+    // registration is not a registration.
+    let src = r#"
+        .invoke_handler(tauri::generate_handler![
+            // see [the audit] for why
+            commands::a::one,
+            // commands::a::retired,
+            commands::a::two, // trailing [note]
+        ])
+    "#;
+    let block = handler_block_of(src).expect("the fixture block closes");
+    assert!(block.contains("commands::a::one,"));
+    assert!(block.contains("commands::a::two,"));
+    assert!(!block.contains("retired"));
+    assert!(handler_block_of("no handler here").is_none());
 }
 
 #[test]

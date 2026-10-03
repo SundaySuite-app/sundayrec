@@ -1479,15 +1479,26 @@ validation in `sundayrec-core::settings`.
 3. **The profile's save/open window is the app's own (A1).** Click
    **Eksporter**, then **Importer** (answer «Ja, importer»).
    - **Expected:** each opens the OS window over the app — the save window
-     proposing `sundayrec-innstillinger.json`, the open window with
-     «Innstillingsprofil (JSON)» and «Alle filer» in the app's language.
-     Cancelling either says nothing and changes nothing; saving says
-     «Innstillingene ble eksportert.», importing «Innstillingene ble
-     importert.» and the screens show the imported values at once.
+     proposing `sundayrec-innstillinger.json`. Cancelling either says nothing
+     and changes nothing; saving says «Innstillingene ble eksportert.»,
+     importing «Innstillingene ble importert.» and the screens show the
+     imported values at once.
+   - **Expected (Windows):** the filter names are in the app's language —
+     «Innstillingsprofil (JSON)» in the save window, that and «Alle filer» in
+     the open window. **macOS** shows no filter names at all (its panel takes
+     one list of extensions): the save window keeps the `.json` ending and the
+     open window offers `.json` files.
    - **Expected:** the import's question comes BEFORE the open window — «Avbryt»
-     there opens no window at all.
+     there opens no window at all — and a double-click on either button opens
+     one window, not two.
    - **Expected:** a profile from another machine whose save folder this one
-     cannot use is imported without it: the recordings folder stays as it was.
+     cannot use, or that has none, is imported without it: the recordings
+     folder stays as it was. A profile with an empty schedule leaves this
+     machine's schedule and special recordings in place.
+   - **Expected:** picking a file that is not a profile (a recording, a text
+     file, `{}`) says «Filen er ikke en innstillingsprofil fra SundayRec, eller
+     den er skadet. Ingenting ble endret.» — and nothing is: folder, language
+     and schedule as before. A file over 1 MiB says it is too large.
    - Neither command takes a path from the webview; the window is opened in
      Rust and only its answer is written or read:
    - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::replaced_commands_stay_replaced
@@ -1500,9 +1511,17 @@ validation in `sundayrec-core::settings`.
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_profile_is_imported_stored_and_returned
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::an_imported_profile_keeps_the_stored_folder_when_the_real_vet_refuses_its_own
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_guard_still_judges_a_picked_destination
-   - The question before the window, and a quiet cancel:
+   - A wrong file changes nothing; a profile never takes the folder or the schedule away:
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_file_that_is_not_a_settings_profile_is_refused_and_changes_nothing
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_file_over_the_cap_is_refused_and_one_at_the_cap_is_read
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_without_a_save_folder_keeps_this_machines
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_without_a_schedule_keeps_this_machines
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::an_unreadable_field_costs_that_field_not_the_import
+   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::får sin egen setning, og ingenting leses inn
+   - The question before the window, a quiet cancel, one window at a time:
    - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et nei på spørsmålet åpner ikke noe vindu
    - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et avbrutt vindu er stille og leser ingenting inn
+   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et dobbeltklikk åpner ikke et vindu nummer to mens det første står
    - The OS window itself (parented, filter names, the replace-question) needs
      the real app. // GUI-UNVERIFIED
 

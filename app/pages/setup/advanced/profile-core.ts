@@ -23,11 +23,64 @@
  * kom spørsmålet mellom fila og importen; nå er vinduet og importen ett steg i
  * Rust, og det finnes ikke noe «mellom» å spørre i. Derfor spør
  * {@link runImport} før den ber om vinduet — et nei åpner ingenting.
+ *
+ * ## En fil som ikke er en profil, sier det med egne ord
+ *
+ * Bakenden avviser en fil som ikke er en innstillingsprofil
+ * (`profile_not_settings`) eller som er alt for stor (`profile_too_large`) —
+ * uten å endre noe. Før ble en feil valgt fil stille til STANDARDINNSTILLINGENE:
+ * opptaksmappe, språk og tidsplan borte, og toasten sa «importert». De to
+ * kodene får hver sin setning ({@link refusalOf}); alt annet får den generelle
+ * med bakendens egne ord.
  */
+
+import { errorCode } from "@lib/error-code-core";
+
+/** De to avvisningene som har sin egen setning i kortet. */
+export type ProfileRefusal = "notProfile" | "tooLarge";
 
 /** Hvordan en eksport eller import endte — kortet gjør det om til en toast. */
 export type ProfileOutcome =
-  { kind: "cancelled" } | { kind: "done" } | { kind: "failed"; err: string };
+  | { kind: "cancelled" }
+  | { kind: "done" }
+  | { kind: "failed"; err: string; refusal: ProfileRefusal | null };
+
+/** Den stabile koden bak en avvisning, som kortets egen setning — eller
+ *  `null` når den ikke har noen. */
+export function refusalOf(err: unknown): ProfileRefusal | null {
+  switch (errorCode(err)) {
+    case "profile_not_settings":
+      return "notProfile";
+    case "profile_too_large":
+      return "tooLarge";
+    default:
+      return null;
+  }
+}
+
+function failed(err: unknown): ProfileOutcome {
+  return { kind: "failed", err: errText(err), refusal: refusalOf(err) };
+}
+
+/**
+ * Ett profilvindu om gangen. Et dobbeltklikk på «Eksporter» eller
+ * «Importer» ba før om to native vinduer etter hverandre; nå gjør det andre
+ * trykket ingenting så lenge det første pågår — spørsmålet før importen
+ * medregnet. Én port for begge knappene: to vinduer samtidig er like
+ * forvirrende uansett hvilke to det er.
+ */
+export function oneAtATime(): (task: () => Promise<void>) => Promise<void> {
+  let busy = false;
+  return async (task) => {
+    if (busy) return;
+    busy = true;
+    try {
+      await task();
+    } finally {
+      busy = false;
+    }
+  };
+}
 
 /**
  * Eksporten: be Rust åpne lagre-vinduet og skrive fila. `false` fra bakenden
@@ -39,7 +92,7 @@ export async function runExport(
   try {
     return (await exportProfile()) ? { kind: "done" } : { kind: "cancelled" };
   } catch (err) {
-    return { kind: "failed", err: errText(err) };
+    return failed(err);
   }
 }
 
@@ -69,7 +122,7 @@ export async function runImport(deps: ImportDeps): Promise<ProfileOutcome> {
     await deps.rehydrate();
     return { kind: "done" };
   } catch (err) {
-    return { kind: "failed", err: errText(err) };
+    return failed(err);
   }
 }
 

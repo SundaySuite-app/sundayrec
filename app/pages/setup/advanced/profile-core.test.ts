@@ -9,9 +9,20 @@
  * ber om vinduet — et nei skal ikke åpne noe.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
-import { errText, runExport, runImport } from "./profile-core";
+import {
+  errText,
+  oneAtATime,
+  refusalOf,
+  runExport,
+  runImport,
+} from "./profile-core";
+
+const ROOT = join(import.meta.dirname, "../../../..");
 
 /** Slik Rusts `AppError` kommer over grensen: et objekt, ikke en `Error`. */
 const appError = {
@@ -32,6 +43,7 @@ describe("runExport", () => {
     expect(await runExport(() => Promise.reject(appError))).toEqual({
       kind: "failed",
       err: appError.message,
+      refusal: null,
     });
   });
 });
@@ -79,6 +91,7 @@ describe("runImport", () => {
     expect(await runImport(deps)).toEqual({
       kind: "failed",
       err: appError.message,
+      refusal: null,
     });
     expect(deps.rehydrate).not.toHaveBeenCalled();
   });
@@ -95,5 +108,75 @@ describe("errText", () => {
     );
     // Bare en kode er fortsatt bedre enn «[object Object]».
     expect(errText({ code: "io" })).toBe("io");
+  });
+});
+
+describe("en fil som ikke er en profil", () => {
+  const notProfile = {
+    code: "validation",
+    message: "validation: profile_not_settings: the file is not a JSON object",
+  };
+  const tooLarge = {
+    code: "validation",
+    message:
+      "validation: profile_too_large: a settings profile is at most 1024 KiB",
+  };
+
+  it("får sin egen setning, og ingenting leses inn", async () => {
+    const deps = {
+      confirm: async () => true,
+      importProfile: () => Promise.reject(notProfile),
+      rehydrate: vi.fn(async () => {}),
+    };
+    expect(await runImport(deps)).toMatchObject({
+      kind: "failed",
+      refusal: "notProfile",
+    });
+    expect(deps.rehydrate).not.toHaveBeenCalled();
+    expect(refusalOf(tooLarge)).toBe("tooLarge");
+    expect(refusalOf({ code: "io", message: "io error: denied" })).toBeNull();
+  });
+
+  it("kodene kortet bygger på, sendes fortsatt av Rust", () => {
+    // Skjøten: en omdøpt kode i Rust ville gjort setningen generell igjen,
+    // stille — med «Kunne ikke importere: validation: …» på skjermen.
+    const rust =
+      readFileSync(join(ROOT, "src-tauri/src/settings/mod.rs"), "utf8") +
+      readFileSync(join(ROOT, "src-tauri/src/commands/settings.rs"), "utf8");
+    expect(rust).toContain('"profile_not_settings: ');
+    expect(rust).toContain('"profile_too_large: ');
+  });
+});
+
+describe("oneAtATime", () => {
+  it("et dobbeltklikk åpner ikke et vindu nummer to mens det første står", async () => {
+    const gate = oneAtATime();
+    let release: () => void = () => {};
+    const task = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          release = r;
+        }),
+    );
+    const first = gate(task);
+    await gate(task); // det andre trykket: ingenting
+    expect(task).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+    // Ferdig — nå kan det åpnes igjen.
+    const again = gate(task);
+    expect(task).toHaveBeenCalledTimes(2);
+    release();
+    await again;
+  });
+
+  it("en oppgave som feiler, låser ikke knappene for godt", async () => {
+    const gate = oneAtATime();
+    await expect(
+      gate(() => Promise.reject(new Error("vinduet feilet"))),
+    ).rejects.toThrow();
+    const task = vi.fn(async () => {});
+    await gate(task);
+    expect(task).toHaveBeenCalledTimes(1);
   });
 });
