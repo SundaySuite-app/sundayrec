@@ -353,11 +353,25 @@ hatch.
      is off AND says why («Start er sperret til lyden er valgt…») — it is
      `aria-disabled`, so a keyboard user can still reach it to hear the reason.
      A grey button with no explanation is the failure this replaced.
-   - The start seam (`plan_recording_opts` + `start_recording`, once each), and
-     the refusal path where the engine says no and the operator gets the
-     localized reason on a screen that stays put:
+   - The start seam (`start_recording`, once), and the refusal path where the
+     engine says no and the operator gets the localized reason on a screen
+     that stays put:
    - VERIFIED-BY: e2e/recorder.spec.ts::manual start flips the app into the recording overlay
    - VERIFIED-BY: e2e/recorder.spec.ts::a start the engine refuses keeps the modal open and says why
+   - The page sends a name, a cap and the video toggle — **never a path**.
+     Since security finding E1 the recording's folder and file name are
+     planned in Rust, from the profile, and a path smuggled into the request
+     goes nowhere:
+   - VERIFIED-BY: e2e/record.spec.ts::kilden er valgt og til stede: Start kaller start_recording én gang — uten sti
+   - VERIFIED-BY: app/lib/api-shim-record.test.ts::sender aldri en sti — heller ikke når noen gir shimmen en
+   - VERIFIED-BY: src-tauri/src/commands/recorder.rs::a_renderer_supplied_path_never_reaches_the_engine
+   - …and the file still lands exactly where, and as, it did before that fix:
+     the opts reaching the engine are byte-identical to what the old
+     plan-then-start round trip delivered, for default and Norwegian names,
+     a cap, video on/off, Core Audio / ASIO / WASAPI devices, a special with
+     its own sound card in the profile, and a same-day `_2` collision:
+   - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_matches_what_main_planned
+   - VERIFIED-BY: src-tauri/src/commands/recorder.rs::golden_manual_start_equals_the_old_plan_then_start_round_trip
 2. Let it run ~30 seconds, talking so the silence-watcher does **not** fire.
 3. Stop the recording.
    - **Expected:** the confirmation is the way round it should be — **«Fortsett
@@ -377,6 +391,9 @@ hatch.
 4. Confirm the file exists on disk at the path shown — **«Vis i Finder»** on
    the receipt card is the shortest way, and it says so honestly («Fant ikke
    fila på disken.») if the file is not where the row claims.
+   - **Expected:** in the save folder from Oppsett, named by the profile's
+     filename pattern — the same folder and name a build from before
+     security finding E1 gave (RIG-DAY «(e1)» / «(we1)»).
 
 **Also worth doing once, because it is the promise the window makes:** start a
 recording and then close the window with the red button. The recording must

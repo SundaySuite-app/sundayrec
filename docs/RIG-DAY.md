@@ -176,6 +176,18 @@ faktisk skal se nå — sist.
       etterpå. Dette er også den økten som gir de ærlige tallene til
       RELEASE-CHECKLIST.md §6a (Dropp/xruns/IPC-overbelastning) hvis noe i
       opptaksmotoren er endret siden sist.
+- [ ] **(e1) Manuelt opptak fra Opptak-sida lagres som før (navn/mappe).**
+      Noter opptaksmappa (mappe-kortet) og filnavnmønsteret, trykk «Start
+      opptak» på Opptak-sida, ta opp ~20 s og stopp. Gjenta én gang med
+      videobryteren på og et kamera valgt.
+      **Forventet FØR fiksen:** fila havnet i opptaksmappa med navnet
+      mønsteret gir — men stien kom fra nettvisningen, og en kompromittert
+      side kunne pekt den hvor som helst.
+      **Forventet ETTER (sikkerhetsfunn E1):** nøyaktig samme mappe og samme
+      navn som før (`_2` på et nytt opptak samme dag), og `.mp4` i samme
+      mappe for videoopptaket; «Vis i Finder» på kvitteringen viser fila.
+      Utstien planlegges nå i Rust — et avvik her er et funn mot E1, ikke mot
+      opptaksmotoren.
 
 ## Windows-boksen
 
@@ -305,6 +317,13 @@ faktisk skal se nå — sist.
       inn et ASIO-grensesnitt mens appen står åpen, vent over 30 s, åpne
       velgeren igjen — det skal dukke opp; kjør diagnose og den ser det med
       én gang (den dropper 30 s-memoet først).
+
+- [ ] **(we1) Det samme på Windows: manuelt opptak lagres som før
+      (navn/mappe).** Som (e1) på Mac-boksen, med en WASAPI-enhet og — har
+      riggen en — én gang med en ASIO-enhet.
+      **Forventet ETTER (sikkerhetsfunn E1):** fila i opptaksmappa (standard
+      `Dokumenter\SundayRec`) med samme navn som før, `_2` på et nytt opptak
+      samme dag; «Vis i Utforsker» på kvitteringen viser den.
 
 _(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/

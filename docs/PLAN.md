@@ -19,10 +19,10 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
-| Punkt                                                                                                                                                          | Betingelse / når | Kilde                                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ----------------------------------------------------- |
-| **Høy prioritet:** `settings_export_to_file` (og andre kommandoer som skriver til en sti fra nettvisningen) bør få destinasjonen fra en dialog Rust selv åpner | Fritt            | [SECURITY.md](../SECURITY.md) (opener-avsnittet)      |
-| Neste sqlx-migrasjon stenger nedgradering (eldre stabil starter ikke på en nyere database): avgjør `ignore_missing(true)` i `open_pool` før den lages          | Fritt            | [store.rs](../src-tauri/src/db/store.rs) (modulhodet) |
+| Punkt                                                                                                                                                                             | Betingelse / når | Kilde                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ----------------------------------------------------- |
+| **Høy prioritet:** `settings_export_to_file` og `editor_export` (`output_folder`) bør få destinasjonen fra en dialog Rust selv åpner (opptakets utsti planlegges allerede i Rust) | Fritt            | [SECURITY.md](../SECURITY.md) (opener-avsnittet)      |
+| Neste sqlx-migrasjon stenger nedgradering (eldre stabil starter ikke på en nyere database): avgjør `ignore_missing(true)` i `open_pool` før den lages                             | Fritt            | [store.rs](../src-tauri/src/db/store.rs) (modulhodet) |
 
 ## Spike / maskinvare først
 

@@ -1,6 +1,12 @@
 //! Composing [`RecordingOpts`] from the persisted [`Settings`] — the ONE place
 //! a recording's save folder, filename and formats are decided, shared by the
-//! manual path (`commands::recorder::plan_recording_opts`) and the scheduler.
+//! manual path (`commands::recorder::plan_manual_in`, behind
+//! `start_recording`) and the scheduler.
+//! `RecordingOpts` are not `Deserialize`, so the renderer cannot hand the
+//! engine a set of its own (security finding E1 — see
+//! `recorder/engine/payloads.rs`); outside this module only in-process tools
+//! (the test recording and its capture bench) build them, for their own temp
+//! files.
 //!
 //! It lived in `scheduler/mod.rs` until v0.15, which made the manual recording
 //! path depend on the scheduler module for something that has nothing to do
@@ -28,7 +34,9 @@ use crate::recorder::engine::RecordingOpts;
 /// setting says so); the scheduler passes the slot's name and its stop-derived
 /// cap. `video_override` is the Home video toggle (local UI state, not
 /// persisted) — `None` means "the setting decides", which is the scheduler's
-/// case.
+/// case. (The manual path calls [`build_opts_in`] itself, with this function's
+/// own folder + clock lines, so its request mapping lives in one tested place;
+/// see `commands::recorder::plan_manual`.)
 pub(crate) fn build_opts(
     app: &AppHandle,
     settings: &Settings,

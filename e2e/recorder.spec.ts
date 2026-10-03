@@ -21,9 +21,11 @@ import {
 //     name follows the pattern the profile already has. So «the modal» in the
 //     second title is now the record PAGE — it is what stays put and shows the
 //     reason when the engine refuses.
-//   - The DOM is testids, not ids. The `__E2E_CALLS__` counters are verbatim:
-//     they are the seam, and the seam did not move — `startRecordingNow` still
-//     means `plan_recording_opts` then `start_recording`, once each.
+//   - The DOM is testids, not ids. The `__E2E_CALLS__` counters are the seam.
+//     It moved once, on purpose: `startRecordingNow` used to mean
+//     `plan_recording_opts` then `start_recording`, and since security finding
+//     E1 it is `start_recording` alone — Rust plans the output path itself,
+//     so the renderer never holds one to send back (see `record.spec.ts`).
 //   - Start is BLOCKED until a source is chosen, so these settings choose one.
 //     That is the behaviour change the whole set is about; `record.spec.ts`
 //     owns proving it.
@@ -47,11 +49,6 @@ const RECORDER_FIXTURES: Fixtures = {
       isDefault: true,
     },
   ],
-  plan_recording_opts: fn(`() => {
-    (window.__E2E_CALLS__ ||= {}).plan_recording_opts =
-      ((window.__E2E_CALLS__.plan_recording_opts || 0) + 1);
-    return { planned: true };
-  }`),
   start_recording: fn(`() => {
     (window.__E2E_CALLS__ ||= {}).start_recording =
       ((window.__E2E_CALLS__.start_recording || 0) + 1);
@@ -88,13 +85,13 @@ test.describe("recorder", () => {
     await startFromHome(page);
 
     // The app IS recording as far as the operator can tell, and the start went
-    // through the one real start path (plan + start, once each).
+    // through the one real start path (`start_recording`, once — the plan is
+    // Rust's own since E1, so there is no separate plan call to count).
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_CALLS__))
       .toEqual(
         expect.objectContaining({
-          plan_recording_opts: 1,
           start_recording: 1,
         }),
       );

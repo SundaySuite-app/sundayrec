@@ -45,6 +45,7 @@ import type { WakeResult } from "../../legacy/bindings/WakeResult";
 import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { RecordingRow } from "../../legacy/bindings/RecordingRow";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
+import type { ManualStartRequest } from "../../legacy/bindings/ManualStartRequest";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import { toEditorExportRequest } from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
@@ -841,23 +842,36 @@ const api: Record<string, unknown> = {
   // get_disk_space returns { freeBytes } (camelCase) — exactly what home.ts reads.
   getDiskSpace: async () =>
     call("get_disk_space", undefined, { freeBytes: null, totalBytes: null }),
-  // Recording: the old renderer builds a full (old-shape) RecordingOpts, but the
-  // Rust recorder wants its own RecordingOpts. plan_recording_opts builds the
-  // correct one from the persisted settings (the same sqlite store the renderer
-  // reads/writes since R4); we only forward customName/maxMinutes/video here.
+  // Recording: ONE call, carrying only what the renderer decides — a name, a
+  // cap, the video toggle. Rust plans everything else (folder, file name,
+  // format, device, channels) from the persisted settings, through the same
+  // composition the scheduler uses.
+  //
+  // ⚠️ Never the recording's opts, and never a path. Until the fix for
+  // security finding E1 this asked `plan_recording_opts` for the full opts and
+  // handed them straight back to `start_recording` — so the file the recorder
+  // wrote was whatever string came over IPC, and a compromised page could
+  // have pointed a recording at a login item. `start_recording` now takes a
+  // `ManualStartRequest`, which has no field a path could land in, and plans
+  // for itself (`src-tauri/src/commands/recorder.rs`); its golden tests prove
+  // the engine gets byte-identical opts to the old round trip. The exact body
+  // sent here is pinned by `api-shim-record.test.ts` and, from the Rust side,
+  // by `the_shims_payload_is_the_request`.
   startRecordingNow: async (opts: unknown) => {
     const o = (opts ?? {}) as {
       customName?: string;
       maxMinutes?: number;
       videoEnabled?: boolean;
     };
+    // The same three values, with the same coercions, the old
+    // `plan_recording_opts` call sent.
+    const request: ManualStartRequest = {
+      customName: o.customName || null,
+      maxMinutes: o.maxMinutes ?? null,
+      video: !!o.videoEnabled,
+    };
     try {
-      const planned = await invoke("plan_recording_opts", {
-        customName: o.customName || null,
-        maxMinutes: o.maxMinutes ?? null,
-        video: !!o.videoEnabled,
-      });
-      await invoke("start_recording", { opts: planned });
+      await invoke("start_recording", { request });
       return { ok: true };
     } catch (e) {
       // AppError serializes to {code,message} (NOT an Error), so the old
