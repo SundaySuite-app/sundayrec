@@ -65,6 +65,7 @@ import {
   type FixtureMap,
 } from "./fixtures-core";
 import { createNotifierSlot, type ShimNotifier } from "./shim-notifier-core";
+import { errorCode } from "./error-code-core";
 import { parseGoto } from "./goto-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
@@ -306,11 +307,18 @@ const ipcFailures = createIpcFailureState();
  *     second outage.
  *
  *  The ring is filled unconditionally either way — the diagnose panel wants the
- *  pattern, not whichever failure happened to win the rate limit. */
+ *  pattern, not whichever failure happened to win the rate limit.
+ *
+ *  `explain` lets a caller say what a KNOWN refusal means in words: given the
+ *  rejection, it returns the toast text, or `null` for the generic sentence. A
+ *  command that answered with a reason did not fail to answer, and «Noe i
+ *  bakgrunnen svarte ikke» would be the wrong thing to say about it. Same
+ *  guards, same rate limit — only the sentence changes. */
 async function call<T>(
   cmd: string,
   args: Record<string, unknown> | undefined,
   fallback: T,
+  explain?: (e: unknown) => string | null,
 ): Promise<T> {
   try {
     return (await invoke<T>(cmd, args)) as T;
@@ -321,7 +329,8 @@ async function call<T>(
       const n = notifier.current();
       n.toast(
         "error",
-        `${n.t("error.ipcFailed", "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig.")} (${cmd})`,
+        explain?.(e) ??
+          `${n.t("error.ipcFailed", "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig.")} (${cmd})`,
       );
     }
     return fallback;
@@ -997,9 +1006,25 @@ const api: Record<string, unknown> = {
   // no folder was configured, which is the default). Through `call`, so a
   // failure is recorded AND toasted: the tray has no screen of its own to say
   // it on. `()` arrives as `null`; only the fallback is `false`.
+  //
+  // A folder that does not exist yet is the ordinary first-run case (the
+  // recorder creates it on the first recording) or a disk that is not plugged
+  // in — said in those words, not as «something did not answer».
   openFolder: async () =>
-    (await call<null | false>("recordings_open_folder", undefined, false)) !==
-    false,
+    (await call<null | false>(
+      "recordings_open_folder",
+      undefined,
+      false,
+      (e) =>
+        errorCode(e) === "recordings_folder_missing"
+          ? notifier
+              .current()
+              .t(
+                "error.recordingsFolderMissing",
+                "Opptaksmappen finnes ikke ennå. Den lages når det første opptaket starter. Ligger den på en ekstern disk, må du sjekke at disken er koblet til.",
+              )
+          : null,
+    )) !== false,
   // The path is passed through VERBATIM: the backend's first check is an
   // exact match against the history row the renderer got it from.
   revealFile: async (p: string) =>

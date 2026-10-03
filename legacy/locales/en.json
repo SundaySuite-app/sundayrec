@@ -148,7 +148,11 @@
         "space": "{gb} GB free · room for {hours} h",
         "unknownSpace": "We don’t know how much space is left here.",
         "none": "Recordings have nowhere to go",
-        "noneDesc": "Choose a folder on this computer. Without it the app can’t record."
+        "noneDesc": "Choose a folder on this computer. Without it the app can’t record.",
+        "refusedPackage": "That folder is an app or a package (like a Keynote or Logic project), not an ordinary folder. Choose another folder.",
+        "refusedTooBroad": "Choose a folder inside your home folder, for example “SundayRec” in Documents – not the home folder itself or the root of the disk.",
+        "refusedProtected": "That folder is protected and can’t be used for recordings. Choose another folder.",
+        "refusedInvalid": "That folder can’t be used for recordings. Choose another folder."
       },
       "qualityLede": "Higher quality means bigger files. Most people stay on Good.",
       "qDesc": {
@@ -871,7 +875,8 @@
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
     "ipcFailed": "Something in the background did not respond, so this view may be incomplete.",
     "settingsLoadFailed": "Could not read the settings — showing defaults. Changes you make now may be lost.",
-    "settingsMigrationCorrupt": "The settings from the previous version could not be read — the app starts with defaults."
+    "settingsMigrationCorrupt": "The settings from the previous version could not be read — the app starts with defaults.",
+    "recordingsFolderMissing": "The recordings folder doesn’t exist yet. It is created when the first recording starts. If it is on an external disk, check that the disk is connected."
   },
   "editor": {
     "title": "Edit audio file",

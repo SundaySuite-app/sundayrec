@@ -31,6 +31,7 @@
  */
 
 import { signal } from "@preact/signals";
+import { errorCode } from "@lib/error-code-core";
 import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 import { SAVE_COALESCE_MS } from "@lib/ui/bind-setting-core";
 
@@ -149,17 +150,39 @@ let timer: SaveTimerState = IDLE_SAVE_TIMER;
 let handle: ReturnType<typeof setTimeout> | null = null;
 let pending: Promise<boolean> | null = null;
 let settle: ((ok: boolean) => void) | null = null;
+/** Koden bakenden avviste SIST skrivning med — `""` etter en som landet. */
+let lastFailureCode = "";
 
 async function write(): Promise<boolean> {
   try {
-    return !!(await window.api.saveSettings(payloadFor(settings.value)));
+    const ok = !!(await window.api.saveSettings(payloadFor(settings.value)));
+    lastFailureCode = "";
+    return ok;
   } catch (err) {
     // Et avvist `settings_save` reiser hele veien (R3-B). `false` her er det
     // `useSetting` reverterer på — verdien i UI skal ikke bli stående som om
     // den ble lagret.
     console.warn("[settings] save failed", err);
+    lastFailureCode = errorCode(err);
     return false;
   }
+}
+
+/**
+ * Hvorfor den siste lagringen ble avvist, som bakendens stabile kode
+ * (`save_folder_too_broad` …) — `""` når den landet, eller når feilen ikke
+ * bar noen kode.
+ *
+ * `saveSettingsDebounced` svarer bare `true`/`false`, og det er riktig for
+ * nesten alle: «Kunne ikke lagre innstillingen» er hele sannheten når basen er
+ * låst. Men opptaksmappa avvises av en REGEL (`vet_new_save_folder` i
+ * `src-tauri/src/commands/recordings_open.rs`), og da må den frivillige få vite
+ * hvilken — ellers velger hen den samme mappa igjen. Lest synkront rett etter
+ * at promisen er løst; ingen ny skrivning kan lande imellom, for den trenger
+ * en hel IPC-runde.
+ */
+export function lastSaveFailureCode(): string {
+  return lastFailureCode;
 }
 
 function resolvePending(ok: boolean): void {

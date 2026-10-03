@@ -148,7 +148,11 @@
         "space": "{gb} GB frei · Platz für {hours} Std.",
         "unknownSpace": "Wir wissen nicht, wie viel Platz hier noch frei ist.",
         "none": "Die Aufnahmen haben keinen Platz",
-        "noneDesc": "Wählen Sie einen Ordner auf diesem Computer. Ohne ihn kann die App nicht aufnehmen."
+        "noneDesc": "Wählen Sie einen Ordner auf diesem Computer. Ohne ihn kann die App nicht aufnehmen.",
+        "refusedPackage": "Dieser Ordner ist eine App oder ein Paket (etwa ein Keynote- oder Logic-Projekt), kein gewöhnlicher Ordner. Wählen Sie einen anderen Ordner.",
+        "refusedTooBroad": "Wählen Sie einen Ordner innerhalb Ihres Benutzerordners, zum Beispiel „SundayRec“ in Dokumente – nicht den Benutzerordner selbst oder das Stammverzeichnis des Laufwerks.",
+        "refusedProtected": "Dieser Ordner ist geschützt und kann nicht für Aufnahmen verwendet werden. Wählen Sie einen anderen Ordner.",
+        "refusedInvalid": "Dieser Ordner kann nicht für Aufnahmen verwendet werden. Wählen Sie einen anderen Ordner."
       },
       "qualityLede": "Höhere Qualität bedeutet größere Dateien. Die meisten bleiben bei Gut.",
       "qDesc": {
@@ -871,7 +875,8 @@
     "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu.",
     "ipcFailed": "Etwas im Hintergrund hat nicht geantwortet, daher ist diese Ansicht möglicherweise unvollständig.",
     "settingsLoadFailed": "Die Einstellungen konnten nicht gelesen werden — es werden Standardwerte angezeigt. Änderungen können verloren gehen.",
-    "settingsMigrationCorrupt": "Die Einstellungen der vorherigen Version konnten nicht gelesen werden — die App startet mit Standardwerten."
+    "settingsMigrationCorrupt": "Die Einstellungen der vorherigen Version konnten nicht gelesen werden — die App startet mit Standardwerten.",
+    "recordingsFolderMissing": "Der Aufnahmeordner existiert noch nicht. Er wird angelegt, sobald die erste Aufnahme startet. Liegt er auf einem externen Laufwerk, prüfen Sie, ob das Laufwerk angeschlossen ist."
   },
   "editor": {
     "title": "Audiodatei bearbeiten",

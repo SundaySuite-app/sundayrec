@@ -233,6 +233,28 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Run blocking work — a `canonicalize`, a stat, a vet that does both — on
+/// tokio's blocking pool instead of an async worker thread.
+///
+/// A path can sit on a network share that has stopped answering, and the OS
+/// may take minutes to give up on it. Inline in an async command, that wait
+/// holds one of the runtime's few worker threads — and with them every other
+/// command — instead of one blocking-pool thread. Used by the opener commands
+/// (`commands::recordings_open`) and by the save-folder vet in
+/// `crate::settings`. A closure that panics becomes an error with a code, not a
+/// crash of the command.
+pub(crate) async fn off_runtime<T, F>(work: F) -> crate::error::AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tokio::task::spawn_blocking(work).await.map_err(|_| {
+        crate::error::AppError::Internal(
+            "file_check_failed: a file system check did not complete".into(),
+        )
+    })
+}
+
 /// Lock a [`Mutex`], recovering its inner value if a previous holder panicked
 /// rather than propagating the poison.
 ///

@@ -13,7 +13,8 @@
  *   • `revealFile(p)` sender stien ORDRETT: bakendens første sjekk er et
  *     eksakt treff mot historikkraden stien kom fra.
  *   • Et nei blir `false` — og havner i IPC-ringen diagnosepanelet leser.
- *     `openFolder` toaster selv (menylinja har ingen flate å si det på);
+ *     `openFolder` toaster selv (menylinja har ingen flate å si det på) — og
+ *     en mappe som ikke finnes ennå, med egne ord, ikke «svarte ikke»;
  *     `revealFile` gjør det ikke (`app/ui/reveal.ts` sier sin egen setning, og
  *     to toaster for ett klikk er én for mye).
  *   • Ingenting i `app/` eller `legacy/` når opener-pluginen direkte.
@@ -60,6 +61,12 @@ type Api = {
 
 let api: Api;
 const toasts: Array<{ kind: string; msg: string }> = [];
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+/** Fasiten for toastene: shimmen oversetter med den ekte katalogen. */
+const NO = JSON.parse(
+  readFileSync(join(repoRoot, "legacy/locales/no.json"), "utf8"),
+) as { error: { recordingsFolderMissing: string; ipcFailed: string } };
 
 beforeAll(async () => {
   const store = new Map<string, string>();
@@ -126,7 +133,10 @@ describe("openFolder", () => {
     expect(toasts).toEqual([]);
   });
 
-  it("svarer false, toaster og husker feilen når bakenden sier nei", async () => {
+  it("en mappe som ikke finnes ennå, sies med vanlige ord — og huskes", async () => {
+    // Det vanlige førstegangstilfellet (opptakeren lager mappa ved første
+    // opptak), eller en ekstern disk som ikke står i. Kommandoen SVARTE, med
+    // en grunn — «Noe i bakgrunnen svarte ikke» ville vært feil å si.
     ipc.answers.set("recordings_open_folder", () =>
       Promise.reject({
         code: "validation",
@@ -137,11 +147,41 @@ describe("openFolder", () => {
     expect(await api.openFolder()).toBe(false);
     expect(toasts).toHaveLength(1);
     expect(toasts[0]?.kind).toBe("error");
-    expect(toasts[0]?.msg).toContain("recordings_open_folder");
+    expect(toasts[0]?.msg).toBe(NO.error.recordingsFolderMissing);
     expect(api.getRecentIpcFailures()[0]).toMatchObject({
       cmd: "recordings_open_folder",
       error: expect.stringContaining("recordings_folder_missing"),
     });
+  });
+
+  it("et annet nei får den generelle setningen med kommandonavnet", async () => {
+    // Forbi duplikatvinduet: én toast per kommando per minutt.
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 10 * 60_000);
+    try {
+      ipc.answers.set("recordings_open_folder", () =>
+        Promise.reject({
+          code: "validation",
+          message:
+            "validation: recordings_folder_is_a_package: the recordings folder is an application or package and is not opened",
+        }),
+      );
+      expect(await api.openFolder()).toBe(false);
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0]?.msg).toContain(NO.error.ipcFailed);
+      expect(toasts[0]?.msg).toContain("(recordings_open_folder)");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("koden toasten bygger på, sendes fortsatt av Rust", () => {
+    // Skjøten: en omdøpt kode i Rust ville gjort toasten over generell igjen,
+    // stille.
+    const rust = readFileSync(
+      join(repoRoot, "src-tauri/src/commands/recordings_open.rs"),
+      "utf8",
+    );
+    expect(rust).toContain('"recordings_folder_missing: ');
   });
 });
 

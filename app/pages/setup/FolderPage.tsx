@@ -18,6 +18,13 @@
  * `window.api.pickFolder` åpner OS-ets egen mappevelger. Det er ikke bare
  * hyggeligere enn å skrive en sti: dialogen ER autorisasjonen — bakenden
  * håndhever at appen bare skriver til steder brukeren faktisk har pekt på.
+ *
+ * ## Når bakenden sier nei
+ *
+ * En NY mappe sjekkes før den lagres: ikke en app eller pakke, ikke roten av
+ * disken eller selve hjemmemappa, ikke `~/.ssh` og slike. Avvisningen ruller
+ * valget tilbake som enhver feilet lagring, og toasten sier hvorfor
+ * (`folder-refusal.ts`). En mappe som allerede står lagret, sjekkes aldri.
  */
 
 import { useState } from "preact/hooks";
@@ -34,6 +41,7 @@ import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { Receipt } from "../../ui/Receipt/Receipt";
+import { folderRefusalMessage } from "./folder-refusal";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
 
@@ -59,6 +67,9 @@ export function FolderPage() {
           // Ny disk, nytt tall: plassen på den gamle mappen sier ingenting om
           // den nye, og «plass til 300 t» må ikke bli stående fra forrige valg.
           after: () => refreshDiskSpace(),
+          // Bakenden kan si nei til mappa (en app, roten av disken …) — da
+          // sier toasten hvorfor, ikke bare at det ikke ble lagret.
+          failedMessage: folderRefusalMessage,
         },
       );
     } finally {
