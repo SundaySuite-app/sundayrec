@@ -1,5 +1,6 @@
-//! The ts-rs payload types the engine puts on the IPC wire (and takes as
-//! [`RecordingOpts`]). Split out of `engine.rs`; see the parent module docs.
+//! The ts-rs payload types the engine puts on the IPC wire, and the
+//! [`RecordingOpts`] it is started with (which never comes FROM the wire — see
+//! the type). Split out of `engine.rs`; see the parent module docs.
 
 use serde::{Deserialize, Serialize};
 use sundayrec_core::levels::ChannelLevels;
@@ -24,7 +25,20 @@ pub struct RecordingFinished {
 }
 
 /// Options for [`RecorderEngine::start`].
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+///
+/// Minted in Rust ONLY — by `recorder::opts::build_opts_in`, for the
+/// scheduler and for a manual start alike — and never deserialized from the
+/// renderer. That is why this type is `Serialize` (the read-only preview,
+/// `plan_recording_opts`, returns it) but deliberately NOT `Deserialize`:
+/// every `#[tauri::command]` parameter must be `Deserialize`, so without it
+/// no command can take these opts, and `output_path` — the file the engine
+/// creates its folder for, captures into and finalises over — cannot come
+/// from the webview. Until the fix for finding E1 `start_recording` took
+/// exactly this struct, and with it a raw renderer string as the place to
+/// write. A compile-time assertion beside the struct (in
+/// `recorder/engine/payloads.rs`) turns re-adding the derive into a build
+/// error.
+#[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "RecordingOpts.ts")]
 pub struct RecordingOpts {
     /// Stored microphone/mixer name to fuzzy-match against the enumerated audio
@@ -73,11 +87,9 @@ pub struct RecordingOpts {
     pub separate_audio_format: String,
     /// Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
     /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
-    #[serde(default)]
     pub classic_directshow: bool,
     /// Escape hatch: force the legacy ffmpeg audio capture (avfoundation) instead
     /// of the native cpal engine. Default `false`. See `Settings::classic_ffmpeg_audio`.
-    #[serde(default)]
     pub classic_ffmpeg_audio: bool,
     /// The camera INPUT mode the recorder probed at start (a size + framerate the
     /// device actually advertises). NOT sent by the frontend — it's resolved
@@ -87,6 +99,26 @@ pub struct RecordingOpts {
     #[ts(skip)]
     pub video_input: Option<sundayrec_core::capture::VideoCaptureMode>,
 }
+
+// `RecordingOpts` must NOT be `Deserialize` (see its doc comment): this does
+// not compile if it is.
+//
+// The trick `static_assertions::assert_not_impl_any!` uses, written out so the
+// crate does not grow a dependency for one line. Every type gets
+// `AmbiguousIfDeserialize<()>`; a type that is ALSO `DeserializeOwned` gets
+// `AmbiguousIfDeserialize<Invalid>` as well, and then `<_>` below has two
+// candidates and type inference gives up — a compile error that names this
+// line. A plain `T: !Deserialize` bound does not exist in stable Rust.
+const _: fn() = || {
+    trait AmbiguousIfDeserialize<A> {
+        fn some_item() {}
+    }
+    impl<T: ?Sized> AmbiguousIfDeserialize<()> for T {}
+    #[allow(dead_code)]
+    struct Invalid;
+    impl<T: serde::de::DeserializeOwned> AmbiguousIfDeserialize<Invalid> for T {}
+    let _ = <RecordingOpts as AmbiguousIfDeserialize<_>>::some_item;
+};
 
 /// A progress heartbeat sent to the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
@@ -201,8 +233,11 @@ mod tests {
         assert_eq!(lv.peak_db_right, Some(-7.0));
     }
 
+    /// The wire shape `plan_recording_opts` answers with (the preview). There
+    /// is no way BACK any more — `RecordingOpts` is not `Deserialize` (see the
+    /// type) — so this pins the one direction that is left.
     #[test]
-    fn recording_opts_serde_round_trips() {
+    fn recording_opts_serialises_with_snake_case_keys() {
         let o = RecordingOpts {
             audio_device_name: "Soundcraft USB Audio".into(),
             video_device_name: Some("Logitech BRIO".into()),
@@ -228,12 +263,12 @@ mod tests {
         // The wire shape is the struct's default snake_case keys (no rename_all).
         assert!(json.contains("\"audio_device_name\""), "got: {json}");
         assert!(json.contains("\"manual_max_minutes\""), "got: {json}");
-        let back: RecordingOpts = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.audio_device_name, o.audio_device_name);
-        assert_eq!(back.video_device_name, o.video_device_name);
-        assert_eq!(back.silence_threshold_db, o.silence_threshold_db);
-        assert_eq!(back.split_minutes, o.split_minutes);
-        assert_eq!(back.manual_max_minutes, o.manual_max_minutes);
+        assert!(
+            json.contains("\"output_path\":\"/tmp/rec.mp4\""),
+            "got: {json}"
+        );
+        // The probed camera mode is server-side state, never on the wire.
+        assert!(!json.contains("video_input"), "got: {json}");
     }
 
     #[test]

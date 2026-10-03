@@ -111,7 +111,28 @@ So a future auditor doesn't have to re-derive these from scratch:
   `..`-free, canonicalized, checked against protected home directories and,
   where applicable, rooted under the configured save folder) before they
   reach the filesystem or ffmpeg. A test ratchet (E1.3) keeps commands that
-  take a path from silently launching without going through it.
+  take a path from silently launching without going through it — a path
+  PARAMETER, and since finding E1 also a path-shaped FIELD of a struct a
+  command takes (`commands/path_ratchet.rs`, `PATH_FIELDS`), which is where
+  the recorder's output path used to hide.
+- **The recording's output location is always computed in Rust.**
+  `start_recording` takes a `ManualStartRequest` — the take's name, an
+  auto-stop cap and the video toggle — and nothing else from the webview. The
+  save folder, the file name, the format and the separate-audio sidecar's
+  extension are planned in Rust from the persisted settings, by the same
+  composition the scheduler uses (`recorder::opts::build_opts_in`); the name
+  is sanitised into a single file NAME, separators and all. Until finding E1
+  the renderer asked `plan_recording_opts` for the full `RecordingOpts` and
+  handed them straight back, so `output_path` was a raw IPC string the
+  recorder created folders for and wrote into — any path the user can write
+  to, for a compromised page. `RecordingOpts` is now not `Deserialize`
+  (a compile-time assertion in `recorder/engine/payloads.rs`), so no command
+  can take it again; golden tests in `commands/recorder.rs` pin that every
+  legitimate manual start hands the engine byte-identical opts to before, and
+  that a path smuggled into the request goes nowhere. What is left of this
+  surface is the save folder itself: the renderer still chooses it
+  (`settings_save`), vetted as described in the opener bullet below — so a
+  compromised page can pick the folder, but not the file name or extension.
 - **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output

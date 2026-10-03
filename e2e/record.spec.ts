@@ -40,16 +40,25 @@ const BUILT_IN = device({
   isDefault: true,
 });
 
-/** The three start/stop spies, verbatim from `recorder.spec.ts`. */
+/**
+ * The start/stop spies. `start_recording` also keeps what it was SENT: the
+ * page must hand Rust a name, a cap and the video toggle — never a path
+ * (security finding E1; Rust plans where the file goes).
+ *
+ * `plan_recording_opts` is spied only to prove it is NOT called any more —
+ * the start used to ask it for the full opts and send them straight back,
+ * which is how a renderer string became the recording's output path.
+ */
 const CALL_SPIES: Fixtures = {
   plan_recording_opts: fn(`() => {
     (window.__E2E_CALLS__ ||= {}).plan_recording_opts =
       ((window.__E2E_CALLS__.plan_recording_opts || 0) + 1);
     return { planned: true };
   }`),
-  start_recording: fn(`() => {
+  start_recording: fn(`(args) => {
     (window.__E2E_CALLS__ ||= {}).start_recording =
       ((window.__E2E_CALLS__.start_recording || 0) + 1);
+    (window.__E2E_START_ARGS__ ||= []).push(args);
     return null;
   }`),
   stop_recording: fn(`() => {
@@ -88,6 +97,16 @@ async function calls(page: Page): Promise<Record<string, number>> {
     () => ((window as any).__E2E_CALLS__ ?? {}) as Record<string, number>,
   );
 }
+
+/** What each `start_recording` call was sent, in order. */
+async function startArgs(page: Page): Promise<unknown[]> {
+  return page.evaluate(
+    () => ((window as any).__E2E_START_ARGS__ ?? []) as unknown[],
+  );
+}
+
+/** One start, and only the one command: the plan is Rust's now. */
+const STARTED_ONCE = { start_recording: 1 };
 
 test.describe("opptak — de tre kilde-tilstandene", () => {
   test("ingen kilde valgt: Start er sperret MED en grunn, og kaller ingenting", async ({
@@ -163,7 +182,7 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
     await expect(page.getByTestId("record-source")).toBeVisible();
   });
 
-  test("kilden er valgt og til stede: Start går gjennom plan + start, én gang hver", async ({
+  test("kilden er valgt og til stede: Start kaller start_recording én gang — uten sti", async ({
     page,
   }) => {
     await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
@@ -173,15 +192,15 @@ test.describe("opptak — de tre kilde-tilstandene", () => {
     );
     await page.getByTestId("record-start").click();
 
-    await expect
-      .poll(() => calls(page))
-      .toEqual(
-        expect.objectContaining({
-          plan_recording_opts: 1,
-          start_recording: 1,
-        }),
-      );
+    await expect.poll(() => calls(page)).toEqual(STARTED_ONCE);
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    // Sikkerhetsfunn E1: sida sender navn, maks lengde og video — aldri en
+    // sti. Hvor fila havner, planlegger Rust selv fra den lagrede profilen.
+    // Mutasjonsprøven: send `plan_recording_opts`-svaret videre igjen, og
+    // både tellerne over og denne linja blir røde.
+    expect(await startArgs(page)).toEqual([
+      { request: { customName: null, maxMinutes: null, video: false } },
+    ]);
   });
 });
 
@@ -1227,12 +1246,14 @@ test.describe("kamera-preview på Opptak", () => {
     await boot(page, {
       fixtures: {
         ...CAMERA_FIXTURES,
+        // Spied so a plan call would show up in the order — it must not.
         plan_recording_opts: fn(`() => {
           (window.__E2E_ORDER__ ||= []).push("plan_recording_opts");
           return { planned: true };
         }`),
-        start_recording: fn(`() => {
+        start_recording: fn(`(args) => {
           (window.__E2E_ORDER__ ||= []).push("start_recording");
+          (window.__E2E_START_ARGS__ ||= []).push(args);
           return null;
         }`),
       },
@@ -1255,7 +1276,12 @@ test.describe("kamera-preview på Opptak", () => {
               []) as string[],
         ),
       )
-      .toEqual(["preview-stop", "plan_recording_opts", "start_recording"]);
+      .toEqual(["preview-stop", "start_recording"]);
+    // The camera's NAME is a Setup decision Rust reads from the profile; the
+    // page sends only the toggle (and still no path).
+    expect(await startArgs(page)).toEqual([
+      { request: { customName: null, maxMinutes: null, video: true } },
+    ]);
   });
 
   test("motoren sa nei: kamerabildet kommer tilbake", async ({ page }) => {
@@ -1375,28 +1401,14 @@ test.describe("F2-T3: tastatursnarveier på Opptak", () => {
     // frivillig lener seg mot mellomromstasten uten å ha klikket noe først.
     await page.keyboard.press("Space");
 
-    await expect
-      .poll(() => calls(page))
-      .toEqual(
-        expect.objectContaining({
-          plan_recording_opts: 1,
-          start_recording: 1,
-        }),
-      );
+    await expect.poll(() => calls(page)).toEqual(STARTED_ONCE);
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
   });
 
   test("R starter opptaket akkurat som Space", async ({ page }) => {
     await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
     await page.keyboard.press("r");
-    await expect
-      .poll(() => calls(page))
-      .toEqual(
-        expect.objectContaining({
-          plan_recording_opts: 1,
-          start_recording: 1,
-        }),
-      );
+    await expect.poll(() => calls(page)).toEqual(STARTED_ONCE);
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
   });
 

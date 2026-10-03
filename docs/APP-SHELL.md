@@ -1597,9 +1597,12 @@ fortsatt `boolean`.)
 
 `e2e/{recorder,no-live-surface}.spec.ts` er kopier med **hver test-tittel
 uendret**, fordi `docs/SMOKE-TEST.md` peker på dem som `sti::tittel`.
-`__E2E_CALLS__`-tellerne er ordrette: sømmen flyttet seg ikke —
-`startRecordingNow` betyr fortsatt `plan_recording_opts` og så
+`__E2E_CALLS__`-tellerne er ordrette: sømmen flyttet seg ikke i byttet —
+`startRecordingNow` betydde fortsatt `plan_recording_opts` og så
 `start_recording`, én gang hver. Legacy-filene står urørt og grønne.
+(Sømmen flyttet seg ETTERPÅ, med vilje: siden sikkerhetsfunn E1 er
+`startRecordingNow` bare `start_recording`, med navn, maks lengde og video —
+Rust planlegger stien selv. Se `app/lib/api-shim-record.test.ts`.)
 
 «the modal» i den andre tittelen er nå opptakssiden selv: `#modal-manual` er
 borte (eiervalg), og det som «blir stående og sier hvorfor» er siden med
@@ -2840,9 +2843,9 @@ sagt fra. `resumeCameraPreview()` kalles i `finally` når ingen økt ble startet
 
 Mutasjonsbevist: fjern `releaseCameraPreview()` fra `handleStart` →
 `e2e/record.spec.ts::⚠️ previewen slipper kameraet FØR start_recording` blir rød,
-og rekkefølgen snur fra `["preview-stop", "plan_recording_opts",
-"start_recording"]` til `["plan_recording_opts", "start_recording",
-"preview-stop"]`.
+og rekkefølgen snur fra `["preview-stop", "start_recording"]` til
+`["start_recording", "preview-stop"]`. (Før sikkerhetsfunn E1 sto
+`plan_recording_opts` mellom dem; den kalles ikke lenger fra start-stien.)
 
 Restarten venter `PREVIEW_RESTART_MS` (legacys 3 s): motoren slipper kameraet
 ETTER at den er ferdig med å skrive, ikke når overlegget forsvinner.
@@ -2895,7 +2898,9 @@ opptaksmappe ble aldri rørt, og **ingen TCC-dialog ble utløst** —
 
 > ⚠️ **Tabellen under er et HISTORISK ØYEBLIKKSBILDE — v0.16.0-beta.2s dag.**
 > De fire første radene er om en skinne som ikke finnes lenger, og
-> `nav-*`-antallet er **fire** nå, ikke tre. Kameraradene gjelder fortsatt.
+> `nav-*`-antallet er **fire** nå, ikke tre. Kameraradene gjelder fortsatt —
+> bortsett fra at overleveringen i dag er `["preview-stop", "start_recording"]`:
+> `plan_recording_opts` falt ut av start-stien med sikkerhetsfunn E1.
 > D3s egen måltabell står i §D3 «Målt i en ekte WKWebView», rett under denne.
 
 | målt                                  | verdi                                                         |
@@ -3447,6 +3452,13 @@ møter den. (`recordings_prune` sto her til retensjonsrunden koblet den opp;
   vekkingen faktisk feiler.
 - **Kirurgi utsatt:** mastring-kvartetten (over).
 - **Eiervalg:** `settings_reset`, `recording_update_note`.
+- **En forhåndsvisning uten skjerm:** `plan_recording_opts`. Start-stien
+  kalte den til sikkerhetsfunn E1 og sendte svaret rett tilbake til
+  `start_recording` — slik ble en streng fra webviewet opptakets utsti. Nå
+  planlegger `start_recording` selv (samme `plan_manual`, samme sammensetning),
+  og ingen flate har vist «Lagres som …» siden #156. Beholdt som døra en
+  framtidig forhåndsvisning bruker; fordi den og starten går gjennom den samme
+  funksjonen, kan de ikke være uenige om hvor fila havner.
 - (Historisk: `recordings_prune` stoppet sin egen sletting i V1/PR3 og er siden
   koblet opp — retensjonsrunden 2026-08-31. `list_video_devices` sto her til
   V1-halen slettet den. `recording_status` sto her til F2-T1 (#236) slettet

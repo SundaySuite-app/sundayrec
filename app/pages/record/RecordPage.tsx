@@ -241,11 +241,12 @@ export function RecordPage() {
   /**
    * Start.
    *
-   * Nøyaktig samme to kall som legacy, i samme rekkefølge og gjennom den samme
-   * shimmen: `startRecordingNow` → `plan_recording_opts` → `start_recording`.
-   * Bare de tre feltene shimmen faktisk videresender settes; ALT annet
-   * (mappe, format, kanaler, kamera-navn) plukker `plan_recording_opts` opp
-   * fra den lagrede profilen, som er den ene sannheten siden R4.
+   * Gjennom shimmen: `startRecordingNow` → `start_recording`, ett kall. Bare
+   * de tre feltene shimmen faktisk videresender settes; ALT annet (mappe,
+   * filnavn, format, kanaler, kamera-navn) planlegger Rust selv fra den
+   * lagrede profilen, som er den ene sannheten siden R4. Sida sender aldri en
+   * sti — hvor opptaket havner, avgjøres i Rust (sikkerhetsfunn E1; før gikk
+   * planen hit og tilbake via `plan_recording_opts`, med samme resultat).
    *
    * Ingen `#modal-manual`: kilde, kamera og filnavn er Oppsett-beslutninger
    * (eiervalg, canvas sett 2). Derfor heller ikke `customName` — filnavnet

@@ -40,11 +40,6 @@ const DEVICES = [
 
 /** Start-knappen sin ene ekte observabel: nådde den motoren? */
 const START_SPY: Fixtures = {
-  plan_recording_opts: fn(`() => {
-    (window.__E2E_CALLS__ ||= {}).plan_recording_opts =
-      ((window.__E2E_CALLS__.plan_recording_opts || 0) + 1);
-    return { planned: true };
-  }`),
   start_recording: fn(`() => {
     (window.__E2E_CALLS__ ||= {}).start_recording =
       ((window.__E2E_CALLS__.start_recording || 0) + 1);

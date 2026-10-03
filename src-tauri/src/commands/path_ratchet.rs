@@ -34,6 +34,27 @@
 //! (parameters are split at paren depth zero). It does NOT try to understand
 //! types — a parameter is judged by its NAME, because that is what a reviewer
 //! judges it by too.
+//!
+//! ## One level down: path-shaped FIELDS (finding E1)
+//!
+//! Judging parameters by name had a blind spot exactly one struct deep.
+//! `start_recording(opts: RecordingOpts)` took the recording's `output_path`
+//! straight from the renderer — the engine created that folder and wrote the
+//! capture there — and the ratchet passed it, because `opts` is not a
+//! path-shaped NAME. So the ratchet now also opens every struct a command
+//! takes: for each parameter whose type names a struct defined in this crate
+//! or in `sundayrec-core`, every field (and the fields of structs nested in
+//! it) is judged by the same name rule, plus [`PATH_BEARING_FIELDS`] — names
+//! that do not look like paths but become PART of one. Each hit must be listed
+//! in [`PATH_FIELDS`], either guarded (with the guard's name, which must
+//! appear in the command's own body — the same lexical rule as [`GUARDED`]) or
+//! exempt with a reason. Tauri's injected parameters (`State`, `AppHandle`,
+//! windows, channels) are not renderer input and are skipped.
+//!
+//! `start_recording` itself now takes a `ManualStartRequest` with no path in
+//! it, and `RecordingOpts` is not `Deserialize` at all — so no command can
+//! take it back. [`start_recording_takes_nothing_that_names_a_place`] pins
+//! the first; `recorder::engine::payloads` pins the second at compile time.
 
 #![cfg(test)]
 
@@ -72,12 +93,96 @@ const GUARDED: &[&str] = &[
 /// hole waiting to be found.
 const EXEMPT: &[(&str, &str)] = &[];
 
+/// How a path-shaped FIELD on a command's struct parameter is handled.
+#[derive(Debug, Clone, Copy)]
+enum FieldHandling {
+    /// Validated before use by the named function, which must appear in the
+    /// command's own body (lexically — a guard one call further away is a
+    /// guard a refactor can drop without anything noticing).
+    Guarded(&'static str),
+    /// Not a path this command acts on. The reason is mandatory.
+    Exempt(&'static str),
+}
+
+use FieldHandling::{Exempt, Guarded};
+
+/// Every path-shaped field reachable through a command's struct parameters,
+/// as `(command, "Struct.field", handling)`. See the module docs, «One level
+/// down». A new field, or a new command taking an old struct, is a failing
+/// test until it is listed here.
+const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
+    // ── editor_export: guarded by its own E5.3 helper, which runs a
+    //    path_guard policy on each of these (see `check_export_paths`). The
+    //    NEXT step for the output folder — Rust choosing the destination
+    //    through its own dialog, as `docs/PLAN.md` asks — is a later PR; this
+    //    list only records what guards them today.
+    (
+        "editor_export",
+        "EditorExportRequest.input_path",
+        Guarded("check_export_paths(&request)"),
+    ),
+    (
+        "editor_export",
+        "EditorExportRequest.output_folder",
+        Guarded("check_export_paths(&request)"),
+    ),
+    (
+        "editor_export",
+        "EditorExportRequest.intro_path",
+        Guarded("check_export_paths(&request)"),
+    ),
+    (
+        "editor_export",
+        "EditorExportRequest.outro_path",
+        Guarded("check_export_paths(&request)"),
+    ),
+    // ── editor_master_preview: the source the preview renders from.
+    (
+        "editor_master_preview",
+        "EditorMasterPreviewRequest.input_path",
+        Guarded("path_guard::checked_input_file(&request.input_path)"),
+    ),
+    // ── settings_save: the persisted profile.
+    (
+        "settings_save",
+        "Settings.save_folder",
+        Guarded("vet_new_save_folder"),
+    ),
+    (
+        "settings_save",
+        "Settings.editor_intro_path",
+        Exempt(
+            "stored, never opened here: the editor sends it back as \
+             EditorExportRequest.intro_path, which check_export_paths guards",
+        ),
+    ),
+    (
+        "settings_save",
+        "Settings.editor_outro_path",
+        Exempt(
+            "stored, never opened here: the editor sends it back as \
+             EditorExportRequest.outro_path, which check_export_paths guards",
+        ),
+    ),
+];
+
+/// Field names that do not LOOK like paths but become part of one, so they
+/// are judged as paths too. `separate_audio_format` is the sidecar's file
+/// extension: `finalize.rs` joins `{stem}.{separate_audio_format}` beside the
+/// recording, so a renderer that chose it could have walked the sidecar out of
+/// the folder with an "extension" holding separators. It reaches the engine
+/// only inside `RecordingOpts`, which no command can take any more — this is
+/// the tripwire for the day a struct with it becomes a parameter again.
+const PATH_BEARING_FIELDS: &[&str] = &["separate_audio_format"];
+
 /// One `#[tauri::command]` found in the sources.
 #[derive(Debug)]
 struct Command {
     name: String,
     file: String,
     path_params: Vec<String>,
+    /// Every parameter as `(name, type)`, for the field-level check.
+    params: Vec<(String, String)>,
     /// The source from this command's `fn` line up to the next command (or EOF).
     /// Used only as a cross-check that a GUARDED entry really does call a guard.
     segment: String,
@@ -111,25 +216,51 @@ fn split_params(body: &str) -> Vec<String> {
     out
 }
 
-/// The parameter names of a signature, `self` and pattern noise excluded.
-fn param_names(signature: &str) -> Vec<String> {
+/// The parameters of a signature as `(name, type)`, `self` and pattern noise
+/// excluded.
+fn params(signature: &str) -> Vec<(String, String)> {
     let Some(open) = signature.find('(') else {
         return Vec::new();
     };
-    let Some(close) = signature.rfind(')') else {
+    // The parameter list's OWN closing paren — not the last `)` in the
+    // signature, which may belong to a tuple in the return type.
+    let mut depth = 0i32;
+    let mut close = None;
+    for (i, ch) in signature[open..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(open + i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(close) = close else {
         return Vec::new();
     };
     split_params(&signature[open + 1..close])
         .into_iter()
         .filter_map(|p| {
             let p = p.trim();
-            let (name, _ty) = p.split_once(':')?;
+            let (name, ty) = p.split_once(':')?;
             let name = name.trim();
             if name.is_empty() || name == "self" || name.contains(char::is_whitespace) {
                 return None;
             }
-            Some(name.to_string())
+            Some((name.to_string(), ty.trim().to_string()))
         })
+        .collect()
+}
+
+/// The parameter names of a signature, `self` and pattern noise excluded.
+fn param_names(signature: &str) -> Vec<String> {
+    params(signature)
+        .into_iter()
+        .map(|(name, _)| name)
         .collect()
 }
 
@@ -190,6 +321,7 @@ fn parse_file(file: &str, source: &str) -> Vec<Command> {
             name,
             file: file.to_string(),
             path_params,
+            params: params(&signature),
             segment,
         });
     }
@@ -230,6 +362,397 @@ fn all_commands() -> Vec<Command> {
             parse_file(&name, &src)
         })
         .collect()
+}
+
+// ── One level down: struct fields ───────────────────────────────────────────
+
+/// Struct name → its named fields as `(field, type)`. Same-named structs in
+/// different modules are MERGED: over-matching costs a line in a list, and a
+/// false negative is the hole this exists to close.
+type StructFields = std::collections::BTreeMap<String, Vec<(String, String)>>;
+
+/// Whether a FIELD name is path-shaped: the parameter rule, plus the names in
+/// [`PATH_BEARING_FIELDS`] that become part of a path without looking like one.
+fn is_path_like_field(name: &str) -> bool {
+    is_path_like(name) || PATH_BEARING_FIELDS.contains(&name)
+}
+
+/// Is `s` a plain Rust identifier?
+fn is_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Parse every braced `struct` in `source` into `out`.
+///
+/// Line-based, like the command parser, and tolerant of the same things:
+/// doc-comments and `//` lines (skipped — a `{when}` in a doc comment must not
+/// move the brace count), attributes (skipped, multi-line ones included —
+/// `#[serde(\n default = …,\n)]` exists), visibility, generics. Tuple and
+/// unit structs carry no field NAMES, so they are not entered.
+fn parse_structs(source: &str, out: &mut StructFields) {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let t = lines[i].trim_start();
+        let decl = t
+            .strip_prefix("pub(crate) ")
+            .or_else(|| t.strip_prefix("pub(super) "))
+            .or_else(|| t.strip_prefix("pub "))
+            .unwrap_or(t);
+        let Some(rest) = decl.strip_prefix("struct ") else {
+            i += 1;
+            continue;
+        };
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() || !lines[i].contains('{') || lines[i].contains(';') {
+            i += 1;
+            continue;
+        }
+        // The body: everything until the brace that opened on this line
+        // closes, minus comment and attribute lines.
+        let mut body = String::new();
+        let mut depth = lines[i].matches('{').count() as i32 - lines[i].matches('}').count() as i32;
+        let mut attr_depth = 0i32;
+        i += 1;
+        while i < lines.len() && depth > 0 {
+            let l = lines[i].trim_start();
+            if attr_depth > 0 || l.starts_with("#[") {
+                attr_depth += l.matches('[').count() as i32 - l.matches(']').count() as i32;
+                i += 1;
+                continue;
+            }
+            if l.starts_with("//") {
+                i += 1;
+                continue;
+            }
+            depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+            if depth > 0 {
+                body.push_str(l);
+                body.push('\n');
+            }
+            i += 1;
+        }
+        let fields = out.entry(name).or_default();
+        for piece in split_params(&body) {
+            let Some((lhs, ty)) = piece.split_once(':') else {
+                continue;
+            };
+            // `pub(crate) name` / `pub name` / `name` → `name`.
+            let Some(field) = lhs.split_whitespace().last() else {
+                continue;
+            };
+            if is_ident(field) {
+                fields.push((field.to_string(), ty.trim().to_string()));
+            }
+        }
+    }
+}
+
+/// Every `.rs` file under `dir`, recursively, sorted.
+fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.filter_map(Result::ok) {
+        let p = e.path();
+        if p.is_dir() {
+            rust_files(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
+    }
+}
+
+/// The structs a command parameter can name: this crate's and the core's.
+fn all_structs() -> StructFields {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    rust_files(&manifest.join("src"), &mut files);
+    rust_files(&manifest.join("../crates/sundayrec-core/src"), &mut files);
+    files.sort();
+    let mut out = StructFields::new();
+    for f in &files {
+        // This file holds fixture structs for the parser's own tests.
+        if f.file_name().is_some_and(|n| n == "path_ratchet.rs") {
+            continue;
+        }
+        parse_structs(&std::fs::read_to_string(f).unwrap_or_default(), &mut out);
+    }
+    out
+}
+
+/// Parameters Tauri INJECTS rather than deserialising from the renderer.
+fn is_injected(ty: &str) -> bool {
+    [
+        "State<",
+        "AppHandle",
+        "Window",
+        "Webview",
+        "Channel<",
+        "ipc::Request",
+    ]
+    .iter()
+    .any(|t| ty.contains(t))
+}
+
+/// The identifiers in a type (`Option<Vec<EditorCutRegion>>` → `Option`,
+/// `Vec`, `EditorCutRegion`).
+fn type_idents(ty: &str) -> impl Iterator<Item = &str> {
+    ty.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|s| is_ident(s))
+}
+
+/// Path-shaped fields reachable from `ty`, as `Struct.field`, walking into
+/// nested structs (each struct once, so a cycle cannot loop).
+fn path_fields_of(
+    ty: &str,
+    structs: &StructFields,
+    seen: &mut BTreeSet<String>,
+    out: &mut Vec<String>,
+) {
+    for ident in type_idents(ty) {
+        let Some(fields) = structs.get(ident) else {
+            continue;
+        };
+        if !seen.insert(ident.to_string()) {
+            continue;
+        }
+        for (field, fty) in fields {
+            if is_path_like_field(field) {
+                out.push(format!("{ident}.{field}"));
+            }
+            path_fields_of(fty, structs, seen, out);
+        }
+    }
+}
+
+/// Every `(command, "Struct.field")` the field-level rule flags.
+fn field_findings(commands: &[Command], structs: &StructFields) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for cmd in commands {
+        for (_, ty) in cmd.params.iter().filter(|(_, ty)| !is_injected(ty)) {
+            let mut fields = Vec::new();
+            path_fields_of(ty, structs, &mut BTreeSet::new(), &mut fields);
+            out.extend(fields.into_iter().map(|f| (cmd.name.clone(), f)));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[test]
+fn the_struct_parser_actually_finds_fields() {
+    // Same reason as the command floor: a parser that matched nothing would
+    // make every field assertion below a no-op.
+    let structs = all_structs();
+    assert!(
+        structs.len() > 100,
+        "only {} structs parsed — the field parser is broken",
+        structs.len()
+    );
+    let names = |s: &str| -> Vec<String> {
+        structs
+            .get(s)
+            .unwrap_or_else(|| panic!("{s} was not parsed"))
+            .iter()
+            .map(|(f, _)| f.clone())
+            .collect()
+    };
+    // A request across two files, the core's settings (with its multi-line
+    // `#[serde(…)]` attribute), and the engine's opts.
+    assert!(names("EditorExportRequest").contains(&"output_folder".to_string()));
+    let settings = names("Settings");
+    assert!(settings.contains(&"save_folder".to_string()));
+    assert!(settings.contains(&"update_channel".to_string()));
+    assert!(settings.contains(&"ask_open_editor".to_string()));
+    assert!(names("RecordingOpts").contains(&"output_path".to_string()));
+    assert_eq!(
+        names("ManualStartRequest"),
+        vec!["custom_name", "max_minutes", "video"],
+        "the manual start request must carry exactly the three values the \
+         renderer decides — nothing that names a place"
+    );
+}
+
+#[test]
+fn every_path_shaped_field_on_a_command_parameter_is_classified() {
+    let findings = field_findings(&all_commands(), &all_structs());
+    let unclassified: Vec<String> = findings
+        .iter()
+        .filter(|(cmd, field)| !PATH_FIELDS.iter().any(|(c, f, _)| c == cmd && f == field))
+        .map(|(cmd, field)| format!("  {cmd} — {field}"))
+        .collect();
+    assert!(
+        unclassified.is_empty(),
+        "\n\
+         ────────────────────────────────────────────────────────────────────\n\
+         A #[tauri::command] takes a struct with a path-shaped FIELD that has\n\
+         not been classified. This is finding E1's shape: `start_recording`\n\
+         took `opts: RecordingOpts`, and `opts.output_path` — one field down —\n\
+         decided where the recorder wrote, straight from the renderer.\n\
+         \n\
+         {}\n\
+         \n\
+         Do ONE of these:\n\
+         \n\
+         1. KEEP THE PATH IN RUST (the best answer): take only the values the\n\
+            renderer really decides, and compute the path server-side — the\n\
+            way `start_recording` takes a `ManualStartRequest` now.\n\
+         \n\
+         2. GUARD IT: run the path_guard policy on the field in the command\n\
+            (or in a helper the command calls by name) and add\n\
+            `(command, \"Struct.field\", Guarded(\"<helper>\"))` to PATH_FIELDS.\n\
+         \n\
+         3. EXEMPT IT, if the field is not a path this command acts on, with\n\
+            `Exempt(\"<a real reason>\")`.\n\
+         ────────────────────────────────────────────────────────────────────",
+        unclassified.join("\n")
+    );
+}
+
+#[test]
+fn every_classified_field_still_exists_and_its_guard_is_called() {
+    let commands = all_commands();
+    let findings = field_findings(&commands, &all_structs());
+    for (cmd, field, handling) in PATH_FIELDS {
+        assert!(
+            findings.iter().any(|(c, f)| c == cmd && f == field),
+            "PATH_FIELDS lists `{cmd}` / `{field}`, but that command no longer \
+             takes a struct with that field — remove the stale entry"
+        );
+        match handling {
+            Guarded(guard) => {
+                let segment = &commands
+                    .iter()
+                    .find(|c| &c.name == cmd)
+                    .expect("findings came from this command")
+                    .segment;
+                assert!(
+                    segment.contains(guard),
+                    "`{cmd}` lists `{field}` as guarded by `{guard}`, but its \
+                     body never calls it"
+                );
+            }
+            Exempt(reason) => assert!(
+                reason.trim().len() >= 20,
+                "the exemption for `{cmd}` / `{field}` needs a real reason"
+            ),
+        }
+    }
+    let mut keys: Vec<(&str, &str)> = PATH_FIELDS.iter().map(|(c, f, _)| (*c, *f)).collect();
+    keys.sort();
+    let before = keys.len();
+    keys.dedup();
+    assert_eq!(keys.len(), before, "PATH_FIELDS has duplicates");
+}
+
+/// The fix for E1, pinned from the outside: `start_recording`'s parameters
+/// are Tauri's injected handles plus ONE request, and that request has no
+/// path-shaped field. Put `opts: RecordingOpts` back and this — and the
+/// field rule above, and the compile-time check on `RecordingOpts` — fail.
+#[test]
+fn start_recording_takes_nothing_that_names_a_place() {
+    let commands = all_commands();
+    let start = commands
+        .iter()
+        .find(|c| c.name == "start_recording")
+        .expect("start_recording was not parsed");
+    let renderer_params: Vec<&(String, String)> = start
+        .params
+        .iter()
+        .filter(|(_, ty)| !is_injected(ty))
+        .collect();
+    assert_eq!(
+        renderer_params,
+        vec![&("request".to_string(), "ManualStartRequest".to_string())],
+        "start_recording must take only a ManualStartRequest from the renderer"
+    );
+    assert!(start.path_params.is_empty());
+    let structs = all_structs();
+    let mut fields = Vec::new();
+    path_fields_of(
+        "ManualStartRequest",
+        &structs,
+        &mut BTreeSet::new(),
+        &mut fields,
+    );
+    assert!(fields.is_empty(), "{fields:?}");
+    // …and nothing in the field list may claim otherwise.
+    assert!(!PATH_FIELDS.iter().any(|(c, _, _)| *c == "start_recording"));
+}
+
+#[test]
+fn the_field_detector_would_have_caught_finding_e1() {
+    // The shape main shipped until the fix, as a fixture: the old command and
+    // the old struct. Both the output path and the sidecar extension must be
+    // flagged — and an injected `State<'_, Settings>` must NOT drag the
+    // settings' own `save_folder` in with it.
+    let cmd_src = r#"
+#[tauri::command]
+pub async fn start_recording(
+    app: AppHandle,
+    db: State<'_, Db>,
+    cfg: State<'_, Fixture>,
+    opts: RecordingOpts,
+) -> AppResult<()> {
+    Ok(())
+}
+"#;
+    let struct_src = r#"
+/// Doc with braces {when} that must not move the count.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "RecordingOpts.ts")]
+pub struct RecordingOpts {
+    /// Stored microphone name.
+    pub audio_device_name: String,
+    pub output_path: String,
+    #[serde(
+        default,
+        rename = "x"
+    )]
+    pub separate_audio_format: String,
+    pub nested: Option<Inner>,
+}
+
+pub(crate) struct Inner {
+    temp_dir: PathBuf,
+}
+
+pub struct Fixture {
+    pub save_folder: Option<String>,
+}
+
+pub struct Tuple(String);
+"#;
+    let commands = parse_file("fixture.rs", cmd_src);
+    let mut structs = StructFields::new();
+    parse_structs(struct_src, &mut structs);
+    assert!(
+        !structs.contains_key("Tuple"),
+        "a tuple struct has no field names"
+    );
+    assert_eq!(
+        field_findings(&commands, &structs),
+        vec![
+            ("start_recording".to_string(), "Inner.temp_dir".to_string()),
+            (
+                "start_recording".to_string(),
+                "RecordingOpts.output_path".to_string()
+            ),
+            (
+                "start_recording".to_string(),
+                "RecordingOpts.separate_audio_format".to_string()
+            ),
+        ]
+    );
 }
 
 #[test]

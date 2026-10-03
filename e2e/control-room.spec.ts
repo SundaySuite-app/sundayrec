@@ -395,7 +395,6 @@ test.describe("VU-regelen med et utfoldet kilde-kort", () => {
     await boot(page, {
       fixtures: {
         ...FIXTURES,
-        plan_recording_opts: { planned: true },
         start_recording: null,
       },
       settings: CHOSEN,

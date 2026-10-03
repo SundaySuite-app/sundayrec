@@ -3,6 +3,19 @@ import type { ChannelMode } from "./ChannelMode";
 
 /**
  * Options for [`RecorderEngine::start`].
+ *
+ * Minted in Rust ONLY — by `recorder::opts::build_opts_in`, for the
+ * scheduler and for a manual start alike — and never deserialized from the
+ * renderer. That is why this type is `Serialize` (the read-only preview,
+ * `plan_recording_opts`, returns it) but deliberately NOT `Deserialize`:
+ * every `#[tauri::command]` parameter must be `Deserialize`, so without it
+ * no command can take these opts, and `output_path` — the file the engine
+ * creates its folder for, captures into and finalises over — cannot come
+ * from the webview. Until the fix for finding E1 `start_recording` took
+ * exactly this struct, and with it a raw renderer string as the place to
+ * write. A compile-time assertion beside the struct (in
+ * `recorder/engine/payloads.rs`) turns re-adding the derive into a build
+ * error.
  */
 export type RecordingOpts = { 
 /**
