@@ -56,6 +56,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 type Api = {
   openFolder: () => Promise<boolean>;
   revealFile: (p: string) => Promise<boolean>;
+  settingsExportProfile: () => Promise<boolean>;
+  settingsImportProfile: () => Promise<unknown>;
   getRecentIpcFailures: () => Array<{ cmd: string; error: string }>;
 };
 
@@ -209,6 +211,58 @@ describe("revealFile", () => {
       cmd: "recordings_reveal",
       error: expect.stringContaining("reveal_not_allowed"),
     });
+  });
+});
+
+describe("innstillingsprofilen — Rust åpner vinduet, ingen sti sendes (A1)", () => {
+  // Før valgte webviewet fila i sitt eget vindu og sendte STIEN; et
+  // kompromittert webview kunne sendt en hvilken som helst sti uten å vise noe
+  // vindu. Nå åpner kommandoen selv lagre-/åpne-vinduet, og shimmen sender
+  // INGENTING — det er hele poenget, og det denne blokka pinner.
+
+  it("eksporten sender ingen argumenter, og et avbrutt vindu er false", async () => {
+    ipc.answers.set("settings_export_profile", async () => false);
+    expect(await api.settingsExportProfile()).toBe(false);
+    ipc.answers.set("settings_export_profile", async () => true);
+    expect(await api.settingsExportProfile()).toBe(true);
+    expect(callsTo("settings_export_profile")).toEqual([
+      { cmd: "settings_export_profile", args: undefined },
+      { cmd: "settings_export_profile", args: undefined },
+    ]);
+  });
+
+  it("importen sender ingen argumenter, og et avbrutt vindu er null", async () => {
+    ipc.answers.set("settings_import_profile", async () => null);
+    expect(await api.settingsImportProfile()).toBeNull();
+    expect(callsTo("settings_import_profile")).toEqual([
+      { cmd: "settings_import_profile", args: undefined },
+    ]);
+  });
+
+  it("en avvisning når kortet, som den er — kortet sier selv hva som gikk galt", async () => {
+    const refusal = {
+      code: "io",
+      message: "io error: Permission denied (os error 13)",
+    };
+    ipc.answers.set("settings_export_profile", () => Promise.reject(refusal));
+    await expect(api.settingsExportProfile()).rejects.toEqual(refusal);
+    // Ingen ekstra toast fra shimmen: kortet viser sin egen.
+    expect(toasts).toEqual([]);
+  });
+
+  it("de gamle sti-kommandoene og webviewets egne profilvinduer er borte", () => {
+    const shim = readFileSync(join(repoRoot, "app/lib/api-shim.ts"), "utf8");
+    for (const gone of [
+      "settings_export_to_file",
+      "settings_import_from_file",
+      "pickSettingsFile",
+      "pickSavePath",
+    ]) {
+      expect(shim).not.toContain(gone);
+    }
+    expect(
+      (api as unknown as Record<string, unknown>).pickSavePath,
+    ).toBeUndefined();
   });
 });
 

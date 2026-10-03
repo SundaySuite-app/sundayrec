@@ -9,8 +9,6 @@
 //! plus the one rule a RENDERER write is held to: a new save folder must pass
 //! the vet the command hands in ([`save_from_renderer`], [`import`]).
 
-use std::path::Path;
-
 use sqlx::SqlitePool;
 use sundayrec_core::settings::Settings;
 
@@ -127,7 +125,9 @@ pub async fn reset(pool: &SqlitePool) -> AppResult<Settings> {
     save(pool, Settings::default()).await
 }
 
-/// Export the current (validated) settings as pretty-printed JSON.
+/// Export the current (validated) settings as pretty-printed JSON. The file it
+/// becomes is `commands::settings`' business: the dialog Rust opens, the guard
+/// and the write all live there, next to each other (finding A1).
 pub async fn export(pool: &SqlitePool) -> AppResult<String> {
     let settings = load(pool).await?;
     Ok(serde_json::to_string_pretty(&settings)?)
@@ -138,14 +138,15 @@ pub async fn export(pool: &SqlitePool) -> AppResult<String> {
 /// `importProfile` resilience — a partial or unknown-field blob is accepted,
 /// missing fields take their defaults.
 ///
-/// An import is a renderer write too (a profile file, or the one-shot
-/// localStorage hand-over in `app/lib/migrate-legacy-settings.ts`), so a NEW
-/// save folder in it must pass `vet`. Unlike [`save_from_renderer`] a refusal
-/// does not fail the import: the folder this machine already has is KEPT and
-/// the rest is imported. A profile carries the folder of the machine it was
-/// exported on — another user name, another OS — and the settings worth
-/// carrying (the schedule, the sound) should not be lost to it; nor should a
-/// machine stop recording where it does today because of a file it read.
+/// Its one caller is the one-shot localStorage hand-over
+/// (`app/lib/migrate-legacy-settings.ts`, via `settings_import`), which runs
+/// on an install that has stored nothing yet. A profile FILE goes through
+/// [`import_profile`], which merges over what IS stored instead — see there
+/// for why the two differ.
+///
+/// The hand-over is a renderer write too, so a NEW save folder in it must pass
+/// `vet`. Unlike [`save_from_renderer`] a refusal does not fail the import: the
+/// folder this machine already has is KEPT and the rest is imported.
 pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<Settings> {
     let stored = load(pool).await?;
     let mut merged = Settings::from_json_merged(json);
@@ -160,28 +161,111 @@ pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<
     save(pool, merged).await
 }
 
-/// Export the current settings as pretty JSON and write them to `path`. The
-/// renderer picks the destination through the native save dialog (F1.3); this
-/// thin wrapper only does the file I/O so the dialog plumbing stays in JS.
-/// An I/O failure surfaces as [`AppError::Io`](crate::error::AppError::Io).
-pub async fn export_to_path(pool: &SqlitePool, path: &Path) -> AppResult<()> {
-    let json = export(pool).await?;
-    std::fs::write(path, json)?;
-    Ok(())
+/// Import a settings PROFILE — a file the operator picked — onto this machine:
+/// the file's settings replace the ones stored here, field by field, and what
+/// the file does not carry stays as it is. Returns the stored value.
+///
+/// ## Why not [`import`]'s merge-over-defaults
+///
+/// [`import`] rebuilds the whole object from the blob and the DEFAULTS. That
+/// is right for the hand-over, which runs before anything is stored, and wrong
+/// for a file picked on a machine that has been recording for a year: any file
+/// that is not a settings object — a recording, a PDF, a `package.json` picked
+/// by mistake — merged to the full defaults (`from_json_merged` falls back to
+/// them), so the save folder, the language and the SCHEDULE were wiped, and the
+/// toast said «Innstillingene ble importert». A real profile that merely
+/// omitted a field reset that field the same way. So a profile is laid over
+/// the STORED settings instead ([`overlay_profile`]), and a file that names
+/// none of them is refused with `profile_not_settings`, nothing written.
+///
+/// ## Three things a profile never takes away
+///
+/// - **The save folder.** A NEW folder must pass `vet`; refused, the stored one
+///   is kept (#308). A blank or absent one is not a choice either: the
+///   exporting machine simply had none set, and this one must not stop
+///   recording where it does today because of a file it read.
+/// - **The weekly schedule** (`slots`) and **the special recordings**. An
+///   EMPTY list in the file keeps this machine's. An exported profile always
+///   carries both keys, so "the file has a schedule key" would not protect the
+///   case that matters — a profile exported from a laptop that was never set
+///   up, imported on the church PC on Saturday evening. A schedule is cleared
+///   in the schedule card, where the operator can see it go, not by a file.
+///   (A non-empty list does replace the stored one: carrying the schedule to
+///   the second machine is what the feature is for.)
+pub async fn import_profile(pool: &SqlitePool, text: &str, vet: FolderVet) -> AppResult<Settings> {
+    let stored = load(pool).await?;
+    let mut merged = overlay_profile(&stored, text)?;
+
+    let asked = new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
+        .map(str::to_owned);
+    match asked {
+        None => merged.save_folder = stored.save_folder.clone(),
+        Some(folder) => {
+            if let Err(e) = vet_off_runtime(vet, &folder).await {
+                tracing::warn!(code = %e, "a profile's save folder was refused; the stored one is kept");
+                merged.save_folder = stored.save_folder.clone();
+            }
+        }
+    }
+    if merged.slots.is_empty() {
+        merged.slots = stored.slots;
+    }
+    if merged.special_recordings.is_empty() {
+        merged.special_recordings = stored.special_recordings;
+    }
+    save(pool, merged).await
 }
 
-/// Read a settings JSON file from `path` and import it (merge over defaults →
-/// validate → persist), returning the stored value. The renderer picks the
-/// source through the native open dialog (F1.3). A read failure surfaces as
-/// [`AppError::Io`](crate::error::AppError::Io); malformed-but-readable JSON is
-/// tolerated by the merge (unknown/missing fields take their defaults).
-pub async fn import_from_path(
-    pool: &SqlitePool,
-    path: &Path,
-    vet: FolderVet,
-) -> AppResult<Settings> {
-    let json = std::fs::read_to_string(path)?;
-    import(pool, &json, vet).await
+/// Lay a profile file's fields over `stored`, ONE FIELD AT A TIME: each known
+/// key the file carries replaces the stored value if the result still reads as
+/// [`Settings`], and is skipped (the stored value kept) if it does not. So one
+/// value an older or newer version wrote differently — an enum variant that no
+/// longer exists — costs that field, not the import, and never the rest of the
+/// settings. Unknown keys (fields an older version had, or keys that were never
+/// ours) are ignored.
+///
+/// Refused with `profile_not_settings` — the stable code the renderer
+/// translates — when the text is not a JSON object, or when not one known
+/// field in it could be read: that is not a profile, whatever its name says.
+/// "At least one known field" is deliberately the whole shape check. Because
+/// a file can only change the fields it names, a stricter test (a minimum
+/// count, a marker key) would buy no safety, and it would refuse the
+/// hand-trimmed profile a helper sends with just the schedule in it.
+pub(crate) fn overlay_profile(stored: &Settings, text: &str) -> AppResult<Settings> {
+    use serde::Deserialize;
+    use serde_json::Value;
+
+    let not_settings =
+        |why: &str| crate::error::AppError::Validation(format!("profile_not_settings: {why}"));
+    let Ok(Value::Object(file)) = serde_json::from_str::<Value>(text) else {
+        return Err(not_settings("the file is not a JSON object"));
+    };
+    let mut merged = serde_json::to_value(stored)?;
+    let mut applied = 0usize;
+    let mut skipped = Vec::new();
+    for (key, value) in file {
+        // `Settings` serialises every field, so the stored object's keys ARE
+        // the known keys.
+        if merged.get(&key).is_none() {
+            continue;
+        }
+        let mut trial = merged.clone();
+        trial[&key] = value;
+        if Settings::deserialize(&trial).is_ok() {
+            merged = trial;
+            applied += 1;
+        } else {
+            skipped.push(key);
+        }
+    }
+    if applied == 0 {
+        return Err(not_settings("no setting in the file could be read"));
+    }
+    if !skipped.is_empty() {
+        // Field NAMES only — never a value from the file.
+        tracing::warn!(fields = ?skipped, "a profile's unreadable fields were skipped; this machine's values are kept");
+    }
+    Ok(Settings::deserialize(&merged)?)
 }
 
 #[cfg(test)]
@@ -336,6 +420,68 @@ mod tests {
         assert_eq!(moved.save_folder.as_deref(), Some("/Volumes/Ny"));
     }
 
+    // ── overlay_profile: a profile is laid over what is stored ──────────────
+
+    fn stored_mono_sv() -> Settings {
+        Settings {
+            language: Some("sv".into()),
+            channels: ChannelMode::MonoMix,
+            silence_threshold: -40,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_profile_changes_only_the_fields_it_names() {
+        let stored = stored_mono_sv();
+        let merged = overlay_profile(&stored, r#"{ "language": "en" }"#).unwrap();
+        assert_eq!(
+            merged,
+            Settings {
+                language: Some("en".into()),
+                ..stored
+            }
+        );
+    }
+
+    #[test]
+    fn an_unreadable_field_costs_that_field_not_the_import() {
+        // One value another version wrote differently: that field keeps this
+        // machine's value, the rest of the file is still taken.
+        let stored = stored_mono_sv();
+        let merged = overlay_profile(
+            &stored,
+            r#"{ "channels": "quadrophonic", "language": "en", "silenceThreshold": "loud" }"#,
+        )
+        .unwrap();
+        assert_eq!(merged.channels, ChannelMode::MonoMix);
+        assert_eq!(merged.silence_threshold, -40);
+        assert_eq!(merged.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn unknown_keys_are_ignored_and_a_file_of_only_unknown_keys_is_not_a_profile() {
+        let stored = stored_mono_sv();
+        // `hasLaunched` left in v0.15; an old profile still carries it.
+        let merged =
+            overlay_profile(&stored, r#"{ "hasLaunched": true, "language": "de" }"#).unwrap();
+        assert_eq!(merged.language.as_deref(), Some("de"));
+        for text in [
+            r#"{ "hasLaunched": true }"#,
+            "{}",
+            "[]",
+            "null",
+            "",
+            "not json",
+        ] {
+            let err = overlay_profile(&stored, text).unwrap_err();
+            assert!(
+                err.to_string().contains("profile_not_settings"),
+                "{text:?}: {err}"
+            );
+        }
+    }
+
     /// A pool over a temp-dir database file, fully migrated.
     async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -443,44 +589,6 @@ mod tests {
             .unwrap();
         assert_eq!(imported.language, Some("fr".to_string()));
         assert_eq!(imported.silence_timeout_minutes, 5);
-    }
-
-    #[tokio::test]
-    async fn export_to_path_then_import_from_path_round_trips() {
-        let (pool, _d) = temp_pool().await;
-        let s = Settings {
-            language: Some("de".to_string()),
-            format: FileFormat::Flac,
-            silence_threshold: -40,
-            ..Default::default()
-        };
-        save(&pool, s.clone()).await.unwrap();
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let file = dir.path().join("settings.json");
-        export_to_path(&pool, &file).await.unwrap();
-
-        // The file is real, pretty JSON.
-        let on_disk = std::fs::read_to_string(&file).unwrap();
-        assert!(on_disk.contains("\"language\""));
-        assert!(on_disk.contains('\n'), "expected pretty (multi-line) JSON");
-
-        // Fresh database — import the file back.
-        let (pool2, _d2) = temp_pool().await;
-        let imported = import_from_path(&pool2, &file, accept_any).await.unwrap();
-        assert_eq!(imported, s);
-        assert_eq!(load(&pool2).await.unwrap(), s);
-    }
-
-    #[tokio::test]
-    async fn import_from_path_errors_on_missing_file() {
-        let (pool, _d) = temp_pool().await;
-        let dir = tempfile::tempdir().expect("tempdir");
-        let missing = dir.path().join("does-not-exist.json");
-        let err = import_from_path(&pool, &missing, accept_any)
-            .await
-            .unwrap_err();
-        assert_eq!(err.code(), "io");
     }
 
     #[tokio::test]
@@ -639,29 +747,5 @@ mod tests {
             vec![future],
             "the persisted list is the pruned one"
         );
-    }
-
-    #[tokio::test]
-    async fn export_to_path_overwrites_an_existing_file() {
-        let (pool, _d) = temp_pool().await;
-        let dir = tempfile::tempdir().expect("tempdir");
-        let file = dir.path().join("settings.json");
-        // Pre-seed the destination with stale content.
-        std::fs::write(&file, "STALE CONTENT THAT MUST BE REPLACED").unwrap();
-
-        save(
-            &pool,
-            Settings {
-                language: Some("sv".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        export_to_path(&pool, &file).await.unwrap();
-
-        let on_disk = std::fs::read_to_string(&file).unwrap();
-        assert!(!on_disk.contains("STALE"), "stale content must be gone");
-        assert!(on_disk.contains("\"sv\""), "fresh export written");
     }
 }
