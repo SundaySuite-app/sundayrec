@@ -569,8 +569,10 @@ pub fn run() {
             commands::settings::settings_save,
             commands::settings::settings_reset,
             commands::settings::settings_import,
-            commands::settings::settings_export_to_file,
-            commands::settings::settings_import_from_file,
+            // The profile file: Rust opens the save/open dialog itself, so no
+            // path crosses from the webview (finding A1; commands/settings.rs).
+            commands::settings::settings_export_profile,
+            commands::settings::settings_import_profile,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
             // E2.3 — the log the operator can actually hand to support. Neither

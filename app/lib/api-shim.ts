@@ -31,10 +31,7 @@ import {
   isTauri,
 } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import {
-  open as openDialog,
-  save as saveDialog,
-} from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n";
 import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
@@ -743,41 +740,21 @@ const api: Record<string, unknown> = {
     void syncLaunchAtLogin(s);
     return true;
   },
-  // ── Settings profile (F1.3, wired in R4) ────────────────────────────────
-  // Export/import the whole (validated) settings object as a JSON file. The
-  // native dialogs are the path authorisation; the backend re-checks with its
-  // UserChosenWrite/Read path policies. WRITES both — rejections travel
-  // (R3-B) so the card can say what actually went wrong.
-  settingsExportToFile: async (path: string) =>
-    invoke<void>("settings_export_to_file", { path }),
-  // Returns the stored (merged + validated) settings so the caller can
-  // rehydrate the UI without a second round-trip.
-  settingsImportFromFile: async (path: string) =>
-    invoke<Settings>("settings_import_from_file", { path }),
-  /** JSON-profile open picker for the import button. Cancel → null.
-   *
-   * The filter NAMES go through the shim's own `t` hook (F1-I18N-T): they are
-   * OS-native dialog chrome, not app UI, so nothing in `app/` renders them —
-   * without the hook an English-language user would still see Norwegian
-   * labels in their file picker. */
-  pickSettingsFile: async () => {
-    const n = notifier.current();
-    return pickPath({
-      filters: [
-        {
-          name: n.t(
-            "app.dialog.filter.settingsProfile",
-            "Innstillingsprofil (JSON)",
-          ),
-          extensions: ["json"],
-        },
-        {
-          name: n.t("app.dialog.filter.allFiles", "Alle filer"),
-          extensions: ["*"],
-        },
-      ],
-    });
-  },
+  // ── Settings profile (F1.3, wired in R4; the dialog moved to Rust in A1) ─
+  // Export/import the whole (validated) settings object as a JSON file.
+  // NEITHER TAKES A PATH: each command opens the native save/open dialog in
+  // Rust and touches only the file that dialog answered, so a webview cannot
+  // point the write somewhere the operator never chose
+  // (src-tauri/src/commands/settings.rs). The dialog's filter names are
+  // Rust's too, in the stored UI language. WRITES both — rejections travel
+  // (R3-B) so the card can say what actually went wrong; a cancelled dialog is
+  // an answer, not a rejection.
+  /** `true` = written, `false` = the operator cancelled the save dialog. */
+  settingsExportProfile: async () => invoke<boolean>("settings_export_profile"),
+  /** The stored (merged + validated) settings after the import, or `null`
+   *  when the operator cancelled the open dialog. */
+  settingsImportProfile: async () =>
+    invoke<Settings | null>("settings_import_profile"),
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
@@ -1512,8 +1489,10 @@ const api: Record<string, unknown> = {
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks
   // file://). Sync — convertFileSrc returns a string.
   toAssetUrl: (path: string) => toAssetUrl(path),
-  // F1-I18N-T: filter names through the shim's `t` hook, same reasoning as
-  // `pickSettingsFile` above — an OS dialog, never rendered by `app/` itself.
+  // F1-I18N-T: filter names go through the shim's own `t` hook: they are
+  // OS-native dialog chrome, not app UI, so nothing in `app/` renders them —
+  // without the hook an English-language user would still see Norwegian
+  // labels in their file picker.
   editorPickFile: async () => {
     const n = notifier.current();
     return pickPath({
@@ -1685,28 +1664,6 @@ const api: Record<string, unknown> = {
     }),
 
   registerTrustedPath: async () => true,
-
-  // Native "save as" picker (the dialog plugin's counterpart to `pickPath`).
-  // A cancel yields null — never throws, same contract as the open pickers.
-  pickSavePath: async (opts: {
-    defaultPath?: string;
-    name?: string;
-    extensions?: string[];
-  }) => {
-    try {
-      const res = await saveDialog({
-        defaultPath: opts.defaultPath,
-        filters:
-          opts.extensions && opts.name
-            ? [{ name: opts.name, extensions: opts.extensions }]
-            : undefined,
-      });
-      return typeof res === "string" ? res : null;
-    } catch (e) {
-      console.warn("[api-shim] save dialog failed", e);
-      return null;
-    }
-  },
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
 

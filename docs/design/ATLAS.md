@@ -711,10 +711,11 @@ derfor litt annerledes ut enn i den ekte appen, og ingen av dem er feil i appen:
   editor-scenene. Lydfila finnes ikke — `convertFileSrc` gir en `asset://`-URL
   ingen nettleser kan laste. Bølgeform, segmenter, kutt og eksport tegnes fra
   fixturer og er ekte.
-- **Native OS-dialoger er ikke fotografert.** «Velg mappe», «Åpne fil…»,
-  eksport-destinasjon og innstillingsprofil-import/-eksport går gjennom
-  `@tauri-apps/plugin-dialog`, som ingen fixtur kan stå i stedet for. De er
-  markert som egne trinn i flytene i §3.
+- **Native OS-dialoger er ikke fotografert.** «Velg mappe», «Åpne fil…» og
+  eksport-destinasjon går gjennom `@tauri-apps/plugin-dialog`, og
+  innstillingsprofilens import/eksport åpner vinduet fra Rust — ingen fixtur
+  kan stå i stedet for noen av dem. De er markert som egne trinn i flytene i
+  §3.
 - **Kameraforhåndsvisningen er tom.** Selve bildet kommer fra `getUserMedia` i
   webviewen; scenen `home--video-pa` viser rammen og kortene, ikke et videobilde.
 - **Atlaset ser Windows.** Playwrights `devices["Desktop Chrome"]` sender en

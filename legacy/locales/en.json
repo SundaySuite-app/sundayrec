@@ -33,7 +33,6 @@
       "cancel": "Cancel",
       "close": "Close",
       "filter": {
-        "settingsProfile": "Settings profile (JSON)",
         "allFiles": "All files",
         "allMedia": "All supported media",
         "audio": "Audio",

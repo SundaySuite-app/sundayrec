@@ -33,7 +33,6 @@
       "cancel": "Annuller",
       "close": "Luk",
       "filter": {
-        "settingsProfile": "Indstillingsprofil (JSON)",
         "allFiles": "Alle filer",
         "allMedia": "Alle understøttede medier",
         "audio": "Lyd",

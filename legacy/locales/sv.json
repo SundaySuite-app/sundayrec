@@ -33,7 +33,6 @@
       "cancel": "Avbryt",
       "close": "Stäng",
       "filter": {
-        "settingsProfile": "Inställningsprofil (JSON)",
         "allFiles": "Alla filer",
         "allMedia": "Alla medier som stöds",
         "audio": "Ljud",

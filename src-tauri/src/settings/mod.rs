@@ -9,8 +9,6 @@
 //! plus the one rule a RENDERER write is held to: a new save folder must pass
 //! the vet the command hands in ([`save_from_renderer`], [`import`]).
 
-use std::path::Path;
-
 use sqlx::SqlitePool;
 use sundayrec_core::settings::Settings;
 
@@ -127,7 +125,9 @@ pub async fn reset(pool: &SqlitePool) -> AppResult<Settings> {
     save(pool, Settings::default()).await
 }
 
-/// Export the current (validated) settings as pretty-printed JSON.
+/// Export the current (validated) settings as pretty-printed JSON. The file it
+/// becomes is `commands::settings`' business: the dialog Rust opens, the guard
+/// and the write all live there, next to each other (finding A1).
 pub async fn export(pool: &SqlitePool) -> AppResult<String> {
     let settings = load(pool).await?;
     Ok(serde_json::to_string_pretty(&settings)?)
@@ -158,30 +158,6 @@ pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<
         }
     }
     save(pool, merged).await
-}
-
-/// Export the current settings as pretty JSON and write them to `path`. The
-/// renderer picks the destination through the native save dialog (F1.3); this
-/// thin wrapper only does the file I/O so the dialog plumbing stays in JS.
-/// An I/O failure surfaces as [`AppError::Io`](crate::error::AppError::Io).
-pub async fn export_to_path(pool: &SqlitePool, path: &Path) -> AppResult<()> {
-    let json = export(pool).await?;
-    std::fs::write(path, json)?;
-    Ok(())
-}
-
-/// Read a settings JSON file from `path` and import it (merge over defaults →
-/// validate → persist), returning the stored value. The renderer picks the
-/// source through the native open dialog (F1.3). A read failure surfaces as
-/// [`AppError::Io`](crate::error::AppError::Io); malformed-but-readable JSON is
-/// tolerated by the merge (unknown/missing fields take their defaults).
-pub async fn import_from_path(
-    pool: &SqlitePool,
-    path: &Path,
-    vet: FolderVet,
-) -> AppResult<Settings> {
-    let json = std::fs::read_to_string(path)?;
-    import(pool, &json, vet).await
 }
 
 #[cfg(test)]
@@ -446,44 +422,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn export_to_path_then_import_from_path_round_trips() {
-        let (pool, _d) = temp_pool().await;
-        let s = Settings {
-            language: Some("de".to_string()),
-            format: FileFormat::Flac,
-            silence_threshold: -40,
-            ..Default::default()
-        };
-        save(&pool, s.clone()).await.unwrap();
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let file = dir.path().join("settings.json");
-        export_to_path(&pool, &file).await.unwrap();
-
-        // The file is real, pretty JSON.
-        let on_disk = std::fs::read_to_string(&file).unwrap();
-        assert!(on_disk.contains("\"language\""));
-        assert!(on_disk.contains('\n'), "expected pretty (multi-line) JSON");
-
-        // Fresh database — import the file back.
-        let (pool2, _d2) = temp_pool().await;
-        let imported = import_from_path(&pool2, &file, accept_any).await.unwrap();
-        assert_eq!(imported, s);
-        assert_eq!(load(&pool2).await.unwrap(), s);
-    }
-
-    #[tokio::test]
-    async fn import_from_path_errors_on_missing_file() {
-        let (pool, _d) = temp_pool().await;
-        let dir = tempfile::tempdir().expect("tempdir");
-        let missing = dir.path().join("does-not-exist.json");
-        let err = import_from_path(&pool, &missing, accept_any)
-            .await
-            .unwrap_err();
-        assert_eq!(err.code(), "io");
-    }
-
-    #[tokio::test]
     async fn save_overwrites_the_prior_blob_rather_than_appending() {
         let (pool, _d) = temp_pool().await;
         save(
@@ -639,29 +577,5 @@ mod tests {
             vec![future],
             "the persisted list is the pruned one"
         );
-    }
-
-    #[tokio::test]
-    async fn export_to_path_overwrites_an_existing_file() {
-        let (pool, _d) = temp_pool().await;
-        let dir = tempfile::tempdir().expect("tempdir");
-        let file = dir.path().join("settings.json");
-        // Pre-seed the destination with stale content.
-        std::fs::write(&file, "STALE CONTENT THAT MUST BE REPLACED").unwrap();
-
-        save(
-            &pool,
-            Settings {
-                language: Some("sv".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        export_to_path(&pool, &file).await.unwrap();
-
-        let on_disk = std::fs::read_to_string(&file).unwrap();
-        assert!(!on_disk.contains("STALE"), "stale content must be gone");
-        assert!(on_disk.contains("\"sv\""), "fresh export written");
     }
 }

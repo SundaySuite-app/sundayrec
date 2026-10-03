@@ -84,12 +84,25 @@ const GUARDED: &[&str] = &[
     "editor_sermon_pick",
     // ── Papirkurv ────────────────────────────────────────────────────────────
     "trash_move",
-    // ── E1.2 ─────────────────────────────────────────────────────────────────
-    "settings_export_to_file",
-    "settings_import_from_file",
     // ── «Vis i Finder»: the webview lost `opener:allow-reveal-item-in-dir` ────
     // checked_input_file + delivered export / recordings root / known recording.
     "recordings_reveal",
+];
+
+/// Path-taking commands that were not guarded but REPLACED: the webview no
+/// longer names the path at all, because the successor opens the native dialog
+/// itself and acts only on what that dialog answered (finding A1 — SECURITY.md:
+/// «a settings file's location comes from a dialog Rust opens»).
+///
+/// Strictly stronger than a guard, and therefore easy to undo by accident: a
+/// later "convenience" overload that takes the path again would sail through
+/// the GUARDED list with a guard call and reopen the hole. So
+/// [`replaced_commands_stay_replaced`] holds both halves — the old name is gone
+/// from the sources AND from `generate_handler!`, and the successor is
+/// registered and has no path-shaped parameter.
+const REPLACED: &[(&str, &str)] = &[
+    ("settings_export_to_file", "settings_export_profile"),
+    ("settings_import_from_file", "settings_import_profile"),
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
@@ -888,7 +901,7 @@ fn the_parser_actually_finds_commands() {
     );
     for known in [
         "editor_peaks",
-        "settings_export_to_file",
+        "settings_export_profile",
         "editor_read_sidecar",
     ] {
         assert!(
@@ -973,6 +986,64 @@ fn every_guarded_command_still_exists_and_calls_a_guard() {
             cmd.segment.contains("path_guard"),
             "`{name}` is listed as GUARDED but its body never mentions \
              path_guard. Either call the guard or move it to EXEMPT with a reason."
+        );
+    }
+}
+
+/// The body of `tauri::generate_handler![…]` in `src/lib.rs` — what the webview
+/// can actually invoke. Comments stripped line by line, so a note that names a
+/// retired command is not mistaken for its registration.
+fn registered_handler_block() -> String {
+    let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+    let src = std::fs::read_to_string(&lib)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", lib.display()));
+    let start = src
+        .find("tauri::generate_handler![")
+        .expect("lib.rs has a generate_handler![…] block");
+    let end = start
+        + src[start..]
+            .find(']')
+            .expect("the generate_handler![…] block closes");
+    src[start..end]
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn replaced_commands_stay_replaced() {
+    let commands = all_commands();
+    let handler = registered_handler_block();
+    // Did it read anything? A block that parsed empty would pass every
+    // "is not registered" below vacuously.
+    assert!(
+        handler.contains("commands::settings::settings_get"),
+        "the generate_handler! block was not found or not read"
+    );
+    for (old, new) in REPLACED {
+        assert!(
+            !commands.iter().any(|c| c.name == *old),
+            "`{old}` is back as a #[tauri::command]. It was REPLACED by `{new}`, \
+             which opens the dialog in Rust so the webview never names the path \
+             (finding A1). Do not restore a path-taking twin."
+        );
+        assert!(
+            !handler.contains(old),
+            "`{old}` is registered in generate_handler! again — see REPLACED"
+        );
+        let Some(successor) = commands.iter().find(|c| c.name == *new) else {
+            panic!("REPLACED names `{new}`, but no such #[tauri::command] exists");
+        };
+        assert!(
+            successor.path_params.is_empty(),
+            "`{new}` takes a path-shaped parameter ({}). Its whole point is that \
+             the dialog Rust opens decides the file — not the webview.",
+            successor.path_params.join(", ")
+        );
+        assert!(
+            handler.contains(&format!("::{new},")),
+            "`{new}` is not registered in generate_handler!"
         );
     }
 }

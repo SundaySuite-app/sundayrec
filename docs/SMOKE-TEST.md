@@ -1476,6 +1476,35 @@ validation in `sundayrec-core::settings`.
      …») because it is the one settings action that is not undoable.
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
    - VERIFIED-BY: app/lib/migrate-legacy-settings-core.test.ts::drops the v0.15 dead settings fields tolerantly — the rest imports cleanly
+3. **The profile's save/open window is the app's own (A1).** Click
+   **Eksporter**, then **Importer** (answer «Ja, importer»).
+   - **Expected:** each opens the OS window over the app — the save window
+     proposing `sundayrec-innstillinger.json`, the open window with
+     «Innstillingsprofil (JSON)» and «Alle filer» in the app's language.
+     Cancelling either says nothing and changes nothing; saving says
+     «Innstillingene ble eksportert.», importing «Innstillingene ble
+     importert.» and the screens show the imported values at once.
+   - **Expected:** the import's question comes BEFORE the open window — «Avbryt»
+     there opens no window at all.
+   - **Expected:** a profile from another machine whose save folder this one
+     cannot use is imported without it: the recordings folder stays as it was.
+   - Neither command takes a path from the webview; the window is opened in
+     Rust and only its answer is written or read:
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::replaced_commands_stay_replaced
+   - VERIFIED-BY: app/lib/api-shim-files.test.ts::eksporten sender ingen argumenter, og et avbrutt vindu er false
+   - VERIFIED-BY: app/lib/api-shim-files.test.ts::importen sender ingen argumenter, og et avbrutt vindu er null
+   - A cancel writes nothing / changes nothing, a pick gets the JSON or is imported, and the picked path still meets the guard:
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_export_writes_nothing_and_says_so
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_destination_gets_the_settings_as_pretty_json
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_import_changes_nothing
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_profile_is_imported_stored_and_returned
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::an_imported_profile_keeps_the_stored_folder_when_the_real_vet_refuses_its_own
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_guard_still_judges_a_picked_destination
+   - The question before the window, and a quiet cancel:
+   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et nei på spørsmålet åpner ikke noe vindu
+   - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et avbrutt vindu er stille og leser ingenting inn
+   - The OS window itself (parented, filter names, the replace-question) needs
+     the real app. // GUI-UNVERIFIED
 
 ---
 

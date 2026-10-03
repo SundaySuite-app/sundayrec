@@ -85,14 +85,15 @@ declare global {
     api: {
       getSettings: () => Promise<Settings>;
       saveSettings: (s: Settings) => Promise<boolean>;
-      /** Write the whole (validated) settings object to a user-chosen JSON
-       *  file. Rejects on failure — the profile card shows the reason. */
-      settingsExportToFile: (path: string) => Promise<void>;
-      /** Import a settings JSON file (merge-over-defaults + validate) and
-       *  return the stored result. Rejects on failure. */
-      settingsImportFromFile: (path: string) => Promise<Settings>;
-      /** Open-dialog picker for a settings-profile JSON. Cancel → null. */
-      pickSettingsFile: () => Promise<string | null>;
+      /** Write the whole (validated) settings object to a JSON file the
+       *  operator picks in a save dialog RUST opens — no path crosses from
+       *  here. `true` = written, `false` = cancelled. Rejects on failure — the
+       *  profile card shows the reason. */
+      settingsExportProfile: () => Promise<boolean>;
+      /** Import a settings JSON file the operator picks in an open dialog
+       *  RUST opens (merge-over-defaults + validate) and return the stored
+       *  result, or `null` when cancelled. Rejects on failure. */
+      settingsImportProfile: () => Promise<Settings | null>;
       getNextRecording: () => Promise<{ date: string } | null>;
       getHistory: () => Promise<unknown[]>;
       deleteHistoryEntry: (ts: number) => Promise<void>;
@@ -310,12 +311,6 @@ declare global {
       startVu: (deviceName: string | null) => Promise<number>;
       stopVu: () => Promise<void>;
       registerTrustedPath: (filePath: string) => Promise<boolean>;
-      /** Native "save as" picker — returns the chosen path, or null on cancel. */
-      pickSavePath: (opts: {
-        defaultPath?: string;
-        name?: string;
-        extensions?: string[];
-      }) => Promise<string | null>;
       /** The cameras ffmpeg can see. REJECTS when the read failed — an empty
        *  list means "no cameras", and the two must not look alike. */
       listVideoDevices: () => Promise<{ name: string; index: number }[]>;
