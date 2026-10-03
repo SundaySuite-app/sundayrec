@@ -18,8 +18,9 @@
  * was one field down.
  *
  * Now the renderer sends only the three things that were ever ITS to decide
- * (the very three `plan_recording_opts` always took), and Rust plans the rest
- * with the same composition as before (`plan_manual_in`). That the opts
+ * (the very three `plan_recording_opts` took; that command is gone too), and
+ * Rust plans the rest with the same composition as before
+ * (`plan_manual_in`). That the opts
  * reaching the engine are byte-identical to what the old round trip
  * delivered, for every legitimate start, is the `golden_manual_*` tests in
  * `src-tauri/src/commands/recorder.rs`.
@@ -40,8 +41,9 @@ export type ManualStartRequest = {
  */
 customName: string | null, 
 /**
- * Auto-stop after this many minutes; `None`/`0` = the setting decides
- * (off unless it says otherwise).
+ * Auto-stop after this many minutes; `None` or `0` = no auto-stop. No
+ * setting is read for it here — the page passes the profile's
+ * `manualMaxMinutes` itself.
  */
 maxMinutes: number | null, 
 /**

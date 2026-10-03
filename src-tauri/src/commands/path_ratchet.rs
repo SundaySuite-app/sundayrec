@@ -46,15 +46,19 @@
 //! or in `sundayrec-core`, every field (and the fields of structs nested in
 //! it) is judged by the same name rule, plus [`PATH_BEARING_FIELDS`] — names
 //! that do not look like paths but become PART of one. Each hit must be listed
-//! in [`PATH_FIELDS`], either guarded (with the guard's name, which must
-//! appear in the command's own body — the same lexical rule as [`GUARDED`]) or
-//! exempt with a reason. Tauri's injected parameters (`State`, `AppHandle`,
-//! windows, channels) are not renderer input and are skipped.
+//! in [`PATH_FIELDS`]: guarded (with the guard's name, which must appear in
+//! the command's own body — the same lexical rule as [`GUARDED`]), sanitised
+//! into a single path component (with the sanitiser and the test that proves
+//! it), or exempt with a reason. Tauri's injected parameters (`State`,
+//! `AppHandle`, windows, channels — matched by exact type name, see
+//! [`is_injected`]) are not renderer input and are skipped.
 //!
-//! `start_recording` itself now takes a `ManualStartRequest` with no path in
-//! it, and `RecordingOpts` is not `Deserialize` at all — so no command can
-//! take it back. [`start_recording_takes_nothing_that_names_a_place`] pins
-//! the first; `recorder::engine::payloads` pins the second at compile time.
+//! `start_recording` itself now takes a `ManualStartRequest`: no path, and
+//! ONE string that still ends up in one — `custom_name`, the file-name stem —
+//! which the field list states explicitly as sanitised. `RecordingOpts` is not
+//! `Deserialize` at all, so no command can take it back.
+//! [`start_recording_takes_nothing_that_names_a_place`] pins the first;
+//! `recorder::engine::payloads` pins the second at compile time.
 
 #![cfg(test)]
 
@@ -100,17 +104,39 @@ enum FieldHandling {
     /// command's own body (lexically — a guard one call further away is a
     /// guard a refactor can drop without anything noticing).
     Guarded(&'static str),
+    /// A renderer string that DOES end up in a path, but only after `into`
+    /// has reduced it to a single path component (no separators, so it cannot
+    /// leave the folder it is joined onto). `into` must be a function in the
+    /// sources and `proof` a test that feeds the field hostile input and
+    /// checks where the result lands — stricter than [`Exempt`], whose reason
+    /// nothing checks.
+    Sanitised {
+        into: &'static str,
+        proof: &'static str,
+    },
     /// Not a path this command acts on. The reason is mandatory.
     Exempt(&'static str),
 }
 
-use FieldHandling::{Exempt, Guarded};
+use FieldHandling::{Exempt, Guarded, Sanitised};
 
 /// Every path-shaped field reachable through a command's struct parameters,
 /// as `(command, "Struct.field", handling)`. See the module docs, «One level
 /// down». A new field, or a new command taking an old struct, is a failing
 /// test until it is listed here.
 const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
+    // ── start_recording: the take's name becomes the file-name STEM
+    //    (`<name>_<date>.<ext>`), joined onto a save folder Rust resolved.
+    //    `build_filename` runs it through `sanitize_filename` first, so it is
+    //    one path component whatever the renderer sent.
+    (
+        "start_recording",
+        "ManualStartRequest.custom_name",
+        Sanitised {
+            into: "sanitize_filename",
+            proof: "a_hostile_custom_name_stays_a_file_name_in_the_save_folder",
+        },
+    ),
     // ── editor_export: guarded by its own E5.3 helper, which runs a
     //    path_guard policy on each of these (see `check_export_paths`). The
     //    NEXT step for the output folder — Rust choosing the destination
@@ -167,13 +193,19 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
 ];
 
 /// Field names that do not LOOK like paths but become part of one, so they
-/// are judged as paths too. `separate_audio_format` is the sidecar's file
-/// extension: `finalize.rs` joins `{stem}.{separate_audio_format}` beside the
-/// recording, so a renderer that chose it could have walked the sidecar out of
-/// the folder with an "extension" holding separators. It reaches the engine
-/// only inside `RecordingOpts`, which no command can take any more — this is
-/// the tripwire for the day a struct with it becomes a parameter again.
-const PATH_BEARING_FIELDS: &[&str] = &["separate_audio_format"];
+/// are judged as paths too.
+///
+/// - `separate_audio_format` is the sidecar's file extension: `finalize.rs`
+///   joins `{stem}.{separate_audio_format}` beside the recording, so a
+///   renderer that chose it could have walked the sidecar out of the folder
+///   with an "extension" holding separators. It reaches the engine only
+///   inside `RecordingOpts`, which no command can take any more — this is the
+///   tripwire for the day a struct with it becomes a parameter again.
+/// - `custom_name` is a recording's file-name stem. It IS a parameter field
+///   today (`ManualStartRequest`), so it is listed in [`PATH_FIELDS`] as
+///   sanitised — the ratchet says out loud that one renderer string reaches
+///   the output path, instead of passing it because of its name.
+const PATH_BEARING_FIELDS: &[&str] = &["separate_audio_format", "custom_name"];
 
 /// One `#[tauri::command]` found in the sources.
 #[derive(Debug)]
@@ -489,17 +521,20 @@ fn all_structs() -> StructFields {
 }
 
 /// Parameters Tauri INJECTS rather than deserialising from the renderer.
+///
+/// Judged by the type's own NAME — the last path segment before any generics
+/// (`tauri::State<'_, Db>` → `State`) — and never by substring: a future
+/// `EditorWindowRequest` or `StateImport` is renderer input, and a substring
+/// match would have skipped it silently. `Request` counts only as
+/// `tauri::ipc::Request` (a crate struct could well be called `Request`).
 fn is_injected(ty: &str) -> bool {
-    [
-        "State<",
-        "AppHandle",
-        "Window",
-        "Webview",
-        "Channel<",
-        "ipc::Request",
-    ]
-    .iter()
-    .any(|t| ty.contains(t))
+    let head = ty.trim().split('<').next().unwrap_or_default().trim();
+    let name = head.rsplit("::").next().unwrap_or(head);
+    match name {
+        "State" | "AppHandle" | "Window" | "WebviewWindow" | "Webview" | "Channel" => true,
+        "Request" => head.ends_with("ipc::Request"),
+        _ => false,
+    }
 }
 
 /// The identifiers in a type (`Option<Vec<EditorCutRegion>>` → `Option`,
@@ -641,6 +676,18 @@ fn every_classified_field_still_exists_and_its_guard_is_called() {
                      body never calls it"
                 );
             }
+            Sanitised { into, proof } => {
+                assert!(
+                    source_defines_fn(into),
+                    "`{cmd}` lists `{field}` as sanitised by `{into}`, but no \
+                     such function exists any more"
+                );
+                assert!(
+                    source_defines_fn(proof),
+                    "`{cmd}` lists `{field}` as sanitised, proven by `{proof}` \
+                     — but that test no longer exists"
+                );
+            }
             Exempt(reason) => assert!(
                 reason.trim().len() >= 20,
                 "the exemption for `{cmd}` / `{field}` needs a real reason"
@@ -654,10 +701,27 @@ fn every_classified_field_still_exists_and_its_guard_is_called() {
     assert_eq!(keys.len(), before, "PATH_FIELDS has duplicates");
 }
 
+/// Whether `fn <name>(` appears in this crate's or the core's sources.
+fn source_defines_fn(name: &str) -> bool {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    rust_files(&manifest.join("src"), &mut files);
+    rust_files(&manifest.join("../crates/sundayrec-core/src"), &mut files);
+    let needle = format!("fn {name}(");
+    files.iter().any(|f| {
+        std::fs::read_to_string(f)
+            .unwrap_or_default()
+            .contains(&needle)
+    })
+}
+
 /// The fix for E1, pinned from the outside: `start_recording`'s parameters
-/// are Tauri's injected handles plus ONE request, and that request has no
-/// path-shaped field. Put `opts: RecordingOpts` back and this — and the
-/// field rule above, and the compile-time check on `RecordingOpts` — fail.
+/// are Tauri's injected handles plus ONE request, and nothing in that request
+/// names a place. Its one string that reaches the output path —
+/// `custom_name`, the file-name stem — is the request's only path-bearing
+/// field, and the field list says it is sanitised, not guarded or waved
+/// through. Put `opts: RecordingOpts` back and this — and the field rule
+/// above, and the compile-time check on `RecordingOpts` — fail.
 #[test]
 fn start_recording_takes_nothing_that_names_a_place() {
     let commands = all_commands();
@@ -684,9 +748,59 @@ fn start_recording_takes_nothing_that_names_a_place() {
         &mut BTreeSet::new(),
         &mut fields,
     );
-    assert!(fields.is_empty(), "{fields:?}");
-    // …and nothing in the field list may claim otherwise.
-    assert!(!PATH_FIELDS.iter().any(|(c, _, _)| *c == "start_recording"));
+    assert_eq!(
+        fields,
+        vec!["ManualStartRequest.custom_name".to_string()],
+        "the name is the only renderer string allowed to reach the path"
+    );
+    // No field is even NAMED like a path…
+    assert!(
+        structs["ManualStartRequest"]
+            .iter()
+            .all(|(f, _)| !is_path_like(f)),
+        "{:?}",
+        structs["ManualStartRequest"]
+    );
+    // …and the name is listed as SANITISED — not guarded, not exempt.
+    let listed: Vec<&FieldHandling> = PATH_FIELDS
+        .iter()
+        .filter(|(c, _, _)| *c == "start_recording")
+        .map(|(_, _, h)| h)
+        .collect();
+    assert!(
+        matches!(listed.as_slice(), [Sanitised { .. }]),
+        "start_recording's field list must be exactly the sanitised name: {listed:?}"
+    );
+}
+
+#[test]
+fn injected_parameters_are_matched_by_type_name_not_substring() {
+    for ty in [
+        "State<'_, Db>",
+        "tauri::State<'_, RecorderEngine>",
+        "AppHandle",
+        "tauri::AppHandle",
+        "AppHandle<R>",
+        "tauri::Window",
+        "WebviewWindow",
+        "tauri::Webview",
+        "tauri::ipc::Channel<EditorExportProgress>",
+        "tauri::ipc::Request<'_>",
+    ] {
+        assert!(is_injected(ty), "{ty} is injected by Tauri");
+    }
+    for ty in [
+        "EditorWindowRequest",
+        "WindowState",
+        "AppHandleConfig",
+        "StateImport",
+        "ManualStartRequest",
+        "Request",
+        "crate::editor::EditorSermonPickRequest",
+        "Option<String>",
+    ] {
+        assert!(!is_injected(ty), "{ty} is renderer input, not injected");
+    }
 }
 
 #[test]

@@ -126,8 +126,9 @@ pub async fn recording_preview_frame() -> Option<String> {
 /// was one field down.
 ///
 /// Now the renderer sends only the three things that were ever ITS to decide
-/// (the very three `plan_recording_opts` always took), and Rust plans the rest
-/// with the same composition as before (`plan_manual_in`). That the opts
+/// (the very three `plan_recording_opts` took; that command is gone too), and
+/// Rust plans the rest with the same composition as before
+/// (`plan_manual_in`). That the opts
 /// reaching the engine are byte-identical to what the old round trip
 /// delivered, for every legitimate start, is the `golden_manual_*` tests in
 /// `src-tauri/src/commands/recorder.rs`.
@@ -147,8 +148,9 @@ pub struct ManualStartRequest {
     /// the profile's filename pattern. Never a path: `build_filename`
     /// sanitises it into one file NAME (separators become `_`).
     pub custom_name: Option<String>,
-    /// Auto-stop after this many minutes; `None`/`0` = the setting decides
-    /// (off unless it says otherwise).
+    /// Auto-stop after this many minutes; `None` or `0` = no auto-stop. No
+    /// setting is read for it here — the page passes the profile's
+    /// `manualMaxMinutes` itself.
     pub max_minutes: Option<u32>,
     /// The Home video toggle (local UI state, not persisted); `None` = the
     /// persisted `video_enabled` decides. A manual video recording lands as
@@ -158,7 +160,7 @@ pub struct ManualStartRequest {
 
 /// The ONE mapping from a [`ManualStartRequest`] to the recording's opts.
 ///
-/// Exactly the composition `plan_recording_opts` has always used — the same
+/// Exactly the composition the old `plan_recording_opts` used — the same
 /// `build_opts_in` the scheduler goes through, with the request's three
 /// values in the three slots and `max_minutes` defaulting to 0 — but with the
 /// save folder and the clock passed IN, like `build_opts_in` itself, so the
@@ -180,7 +182,7 @@ pub(crate) fn plan_manual_in(
 }
 
 /// [`plan_manual_in`] over the persisted settings, the resolved save folder
-/// and the wall clock — what both manual commands run.
+/// and the wall clock — what `start_recording` runs.
 ///
 /// The folder + clock lines are `recorder::opts::build_opts`' own two, copied
 /// rather than called so the request→opts mapping lives ONCE, in the tested
@@ -198,27 +200,13 @@ async fn plan_manual(
     plan_manual_in(&folder, &s, request, chrono::Local::now().naive_local())
 }
 
-/// Plan the full [`RecordingOpts`] for a manual "Start opptak nå" from the
-/// persisted settings — the SAME save-folder + liturgical-filename + audio
-/// processing logic the scheduler uses, so a manually-started recording lands
-/// in the right folder with the right name.
-///
-/// A preview (it creates the save folder, as planning always has, and writes
-/// nothing else): `start_recording` does not take what this returns any
-/// more — it plans for itself from the same [`ManualStartRequest`], through
-/// the same [`plan_manual`], so a preview and the start it previews cannot
-/// disagree about where the file goes. No screen calls this today (the old
-/// «Lagres som …» line left with the legacy renderer in #156); it stays as the
-/// door a future preview uses, and sits in the reachability baseline's
-/// `unreachable` list until one does.
-#[tauri::command]
-pub async fn plan_recording_opts(
-    app: AppHandle,
-    db: State<'_, Db>,
-    request: ManualStartRequest,
-) -> AppResult<RecordingOpts> {
-    plan_manual(&app, &db.pool, &request).await
-}
+// `plan_recording_opts` — the command that planned these opts FOR the renderer
+// to send back — was deleted with finding E1's review follow-up. It had no
+// caller since the «Lagres som …» line left with the legacy renderer (#156),
+// it created the save folder and handed the webview the full opts, and a
+// preview cannot promise the start will agree with it anyway: the minute, the
+// date, a same-day `_2` and the settings can all change between the two. A
+// future preview should be a fresh, narrower read — not this door re-opened.
 
 /// How long the device is left alone between the last other owner letting go and
 /// the capture engine opening it.
@@ -844,10 +832,10 @@ mod tests {
         /// What `plan` answers with when there is no `planner`.
         planned: RecordingOpts,
         /// Plan FOR REAL — `plan_manual_in` over this folder and profile, at
-        /// [`golden_now`] — instead of answering `planned`. What the E1 tests
-        /// use, so the opts the engine receives are the production
+        /// this frozen clock — instead of answering `planned`. What the E1
+        /// tests use, so the opts the engine receives are the production
         /// composition's, not a canned value.
-        planner: Option<(std::path::PathBuf, Settings)>,
+        planner: Option<(std::path::PathBuf, Settings, chrono::NaiveDateTime)>,
         plan_fails: bool,
         pre_roll_seconds: i32,
         settings_fail: bool,
@@ -909,9 +897,7 @@ mod tests {
                 return Err(crate::error::AppError::Validation("no_save_folder".into()));
             }
             match &self.planner {
-                Some((folder, settings)) => {
-                    plan_manual_in(folder, settings, &request, golden_now())
-                }
+                Some((folder, settings, now)) => plan_manual_in(folder, settings, &request, *now),
                 None => Ok(self.planned.clone()),
             }
         }
@@ -1169,9 +1155,17 @@ mod tests {
         DeviceChannels, FileFormat, FilenamePattern, SampleRate, Settings,
     };
 
-    /// A frozen clock, so two plans name the same file. A Sunday.
+    /// The frozen clock most cases plan at, so two plans name the same file.
+    /// A Sunday the church calendar has no name for (so the `church` pattern
+    /// falls back to «gudstjeneste»).
+    const GOLDEN_SUNDAY: &str = "2026-06-07 11:00";
+
+    fn at(when: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(when, "%Y-%m-%d %H:%M").unwrap()
+    }
+
     fn golden_now() -> chrono::NaiveDateTime {
-        chrono::NaiveDateTime::parse_from_str("2026-06-07 11:00", "%Y-%m-%d %H:%M").unwrap()
+        at(GOLDEN_SUNDAY)
     }
 
     /// Core Audio, the built-in mic, everything else the defaults.
@@ -1283,13 +1277,14 @@ mod tests {
     type Profile = fn(&std::path::Path) -> Settings;
 
     /// One representative manual start: a profile, the three request values,
-    /// and whether a same-named file is already on disk.
+    /// the clock it plans at, and whether a same-named file is already on disk.
     struct GoldenCase {
         name: &'static str,
         profile: Profile,
         custom_name: Option<&'static str>,
         max_minutes: Option<u32>,
         video: Option<bool>,
+        now: &'static str,
         collides: bool,
     }
 
@@ -1316,6 +1311,7 @@ mod tests {
             custom_name,
             max_minutes,
             video,
+            now: GOLDEN_SUNDAY,
             collides: false,
         }
     }
@@ -1338,6 +1334,18 @@ mod tests {
             Some(false),
         ),
         case("kirkeaar-navn", profile_church, None, None, Some(false)),
+        // …and on a day the church calendar DOES name: the liturgical branch
+        // of `build_filename`, with a Norwegian character in the result.
+        GoldenCase {
+            now: "2026-03-29 11:00",
+            ..case(
+                "kirkeaar-palmesondag",
+                profile_church,
+                None,
+                None,
+                Some(false),
+            )
+        },
         case("qu5-flerkanal", profile_qu5, None, Some(120), Some(false)),
         case("asio-focusrite", profile_asio, None, None, Some(false)),
         case(
@@ -1392,9 +1400,11 @@ mod tests {
     /// What `plan_recording_opts` answered on origin/main (4036a1a8), BEFORE
     /// this change, for each [`GOLDEN_CASES`] row: main's own mapping —
     /// `build_opts_in(folder, &s, custom_name.as_deref(),
-    /// max_minutes.unwrap_or(0), video, now)` — run over the same profiles,
-    /// clock and a fresh temp folder, serialised, and pasted here verbatim
-    /// (the folder written as `<save>/` so the bytes hold on every machine).
+    /// max_minutes.unwrap_or(0), video, now)` — run ON THAT COMMIT over the
+    /// same profiles, clock and a fresh temp folder, serialised, and pasted
+    /// here verbatim (the folder written as `<save>/` so the bytes hold on
+    /// every machine). The palm-Sunday row was added in review, captured the
+    /// same way on the same commit.
     /// Those JSON bytes are exactly what the renderer got back and sent on to
     /// `start_recording`, which deserialised them with a derive that mirrored
     /// this serialisation field for field (`video_input` is `serde(skip)` and
@@ -1419,6 +1429,10 @@ mod tests {
         (
             "kirkeaar-navn",
             r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/gudstjeneste_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+        ),
+        (
+            "kirkeaar-palmesondag",
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/palmesøndag_2026-03-29.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
         ),
         (
             "qu5-flerkanal",
@@ -1477,15 +1491,16 @@ mod tests {
         serde_json::to_string(&o).unwrap()
     }
 
-    /// main's `plan_recording_opts` body, verbatim but for the two inputs
-    /// `build_opts` reads from outside the settings (folder, clock) — the
-    /// "before" every golden test below is held against.
+    /// main's `plan_recording_opts` body (the command is gone now), verbatim
+    /// but for the two inputs `build_opts` reads from outside the settings —
+    /// folder and clock — which are passed in.
     fn old_plan_recording_opts(
         folder: &std::path::Path,
         settings: &Settings,
         custom_name: Option<String>,
         max_minutes: Option<u32>,
         video: Option<bool>,
+        now: chrono::NaiveDateTime,
     ) -> RecordingOpts {
         crate::recorder::opts::build_opts_in(
             folder,
@@ -1493,20 +1508,22 @@ mod tests {
             custom_name.as_deref(),
             max_minutes.unwrap_or(0),
             video,
-            golden_now(),
+            now,
         )
         .expect("the old planner composes")
     }
 
     /// Run `request` through the REAL start choreography, planning for real
-    /// over `folder` + `settings`, and return what the engine was handed.
+    /// over `folder` + `settings` at `now`, and return what the engine was
+    /// handed.
     async fn engine_opts_for(
         folder: &std::path::Path,
         settings: &Settings,
         request: ManualStartRequest,
+        now: chrono::NaiveDateTime,
     ) -> RecordingOpts {
         let deps = MockDeps {
-            planner: Some((folder.to_path_buf(), settings.clone())),
+            planner: Some((folder.to_path_buf(), settings.clone(), now)),
             ..MockDeps::new()
         };
         run(&deps, request).await.expect("the start should succeed");
@@ -1526,6 +1543,7 @@ mod tests {
                 case.custom_name.map(str::to_string),
                 case.max_minutes,
                 case.video,
+                at(case.now),
             );
             std::fs::write(&first.output_path, b"").unwrap();
         }
@@ -1544,7 +1562,7 @@ mod tests {
         for (case, (name, want)) in GOLDEN_CASES.iter().zip(GOLDEN_FROM_MAIN) {
             assert_eq!(case.name, *name, "the two tables are out of step");
             let (save, settings) = folder_for(case);
-            let got = engine_opts_for(save.path(), &settings, case.request()).await;
+            let got = engine_opts_for(save.path(), &settings, case.request(), at(case.now)).await;
             assert_eq!(
                 normalized_json(save.path(), &got),
                 *want,
@@ -1553,10 +1571,12 @@ mod tests {
         }
     }
 
-    /// …and against the old ROUND TRIP, live, in full (no normalisation, and
-    /// `Debug` too, which also sees the `serde(skip)` field): what the engine
-    /// gets now is what `start_recording` got when the renderer echoed
-    /// `plan_recording_opts` back.
+    /// …and against main's mapping re-run here (`old_plan_recording_opts`, a
+    /// verbatim copy of the old command's body). The anchor is the pasted
+    /// JSON above; this adds what its normalisation hides — the real folder,
+    /// unnormalised — and `Debug`, which also sees the `serde(skip)` field.
+    /// What the engine gets now is what `start_recording` got when the
+    /// renderer echoed `plan_recording_opts` back.
     #[tokio::test(start_paused = true)]
     async fn golden_manual_start_equals_the_old_plan_then_start_round_trip() {
         for case in GOLDEN_CASES {
@@ -1567,8 +1587,9 @@ mod tests {
                 case.custom_name.map(str::to_string),
                 case.max_minutes,
                 case.video,
+                at(case.now),
             );
-            let new = engine_opts_for(save.path(), &settings, case.request()).await;
+            let new = engine_opts_for(save.path(), &settings, case.request(), at(case.now)).await;
             assert_eq!(
                 serde_json::to_string(&new).unwrap(),
                 serde_json::to_string(&old).unwrap(),
@@ -1581,26 +1602,6 @@ mod tests {
                 "{}: Debug",
                 case.name
             );
-        }
-    }
-
-    /// The preview and the start cannot disagree: `plan_recording_opts` and
-    /// `start_recording` both run `plan_manual`, whose testable half is
-    /// `plan_manual_in` — the same function the engine's opts came from above.
-    #[test]
-    fn golden_the_preview_plans_what_the_start_records() {
-        for case in GOLDEN_CASES {
-            let (save, settings) = folder_for(case);
-            let preview =
-                plan_manual_in(save.path(), &settings, &case.request(), golden_now()).unwrap();
-            let old = old_plan_recording_opts(
-                save.path(),
-                &settings,
-                case.custom_name.map(str::to_string),
-                case.max_minutes,
-                case.video,
-            );
-            assert_eq!(format!("{preview:?}"), format!("{old:?}"), "{}", case.name);
         }
     }
 
@@ -1697,7 +1698,7 @@ mod tests {
                     serde_json::from_value(payload.clone()).expect("a stray key is not an error");
                 assert_eq!(request, benign, "{payload}");
 
-                let got = engine_opts_for(save.path(), &settings, request).await;
+                let got = engine_opts_for(save.path(), &settings, request, golden_now()).await;
                 assert_eq!(
                     std::path::Path::new(&got.output_path).parent(),
                     Some(save.path()),
@@ -1737,6 +1738,7 @@ mod tests {
                     custom_name: Some(name.into()),
                     ..page_request()
                 },
+                golden_now(),
             )
             .await;
             let out = std::path::Path::new(&got.output_path);

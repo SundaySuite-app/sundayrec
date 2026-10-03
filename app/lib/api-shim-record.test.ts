@@ -17,7 +17,7 @@
  *     video } }` — de samme tre verdiene, med de samme omformingene, som det
  *     gamle `plan_recording_opts`-kallet sendte;
  *   • ingen nøkkel noe sted i argumentene som ser ut som en sti;
- *   • `plan_recording_opts` kalles ikke lenger;
+ *   • `plan_recording_opts` kalles ikke (kommandoen er slettet i Rust);
  *   • et nei fra motoren blir `{ ok: false, error }` med den samme teksten som
  *     før, så Opptak-sida viser den samme toasten.
  *

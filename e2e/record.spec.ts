@@ -45,9 +45,10 @@ const BUILT_IN = device({
  * page must hand Rust a name, a cap and the video toggle — never a path
  * (security finding E1; Rust plans where the file goes).
  *
- * `plan_recording_opts` is spied only to prove it is NOT called any more —
- * the start used to ask it for the full opts and send them straight back,
- * which is how a renderer string became the recording's output path.
+ * `plan_recording_opts` is spied only so a regression that calls it shows up
+ * in the counts — the command is deleted. The start used to ask it for the
+ * full opts and send them straight back, which is how a renderer string
+ * became the recording's output path.
  */
 const CALL_SPIES: Fixtures = {
   plan_recording_opts: fn(`() => {

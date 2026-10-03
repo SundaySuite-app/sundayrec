@@ -1,7 +1,7 @@
 //! Composing [`RecordingOpts`] from the persisted [`Settings`] — the ONE place
 //! a recording's save folder, filename and formats are decided, shared by the
-//! manual path (`commands::recorder::plan_manual_in`, behind both
-//! `start_recording` and the `plan_recording_opts` preview) and the scheduler.
+//! manual path (`commands::recorder::plan_manual_in`, behind
+//! `start_recording`) and the scheduler.
 //! `RecordingOpts` are not `Deserialize`, so the renderer cannot hand the
 //! engine a set of its own (security finding E1 — see
 //! `recorder/engine/payloads.rs`); outside this module only in-process tools

@@ -120,19 +120,28 @@ So a future auditor doesn't have to re-derive these from scratch:
   auto-stop cap and the video toggle — and nothing else from the webview. The
   save folder, the file name, the format and the separate-audio sidecar's
   extension are planned in Rust from the persisted settings, by the same
-  composition the scheduler uses (`recorder::opts::build_opts_in`); the name
-  is sanitised into a single file NAME, separators and all. Until finding E1
-  the renderer asked `plan_recording_opts` for the full `RecordingOpts` and
-  handed them straight back, so `output_path` was a raw IPC string the
-  recorder created folders for and wrote into — any path the user can write
-  to, for a compromised page. `RecordingOpts` is now not `Deserialize`
-  (a compile-time assertion in `recorder/engine/payloads.rs`), so no command
-  can take it again; golden tests in `commands/recorder.rs` pin that every
-  legitimate manual start hands the engine byte-identical opts to before, and
-  that a path smuggled into the request goes nowhere. What is left of this
-  surface is the save folder itself: the renderer still chooses it
-  (`settings_save`), vetted as described in the opener bullet below — so a
-  compromised page can pick the folder, but not the file name or extension.
+  composition the scheduler uses (`recorder::opts::build_opts_in`). Until
+  finding E1 the renderer asked `plan_recording_opts` (since deleted) for the
+  full `RecordingOpts` and handed them straight back, so `output_path` was a
+  raw IPC string the recorder created folders for and wrote into — any path
+  the user can write to, for a compromised page. `RecordingOpts` is now not
+  `Deserialize` (a compile-time assertion in `recorder/engine/payloads.rs`),
+  so no command can take it again; golden tests in `commands/recorder.rs` pin
+  that every legitimate manual start hands the engine byte-identical opts to
+  before, and that a path smuggled into the request goes nowhere.
+  What a compromised page can still decide, precisely: the **folder**
+  (`settings_save` stores it, vetted as described in the opener bullet
+  below); the **file-name stem**, through `customName` — reduced to a single
+  path component by `sanitize_filename` (`/ \ : * ? " < > |` become `_`,
+  surrounding blanks and trailing dots are trimmed, Windows device names are
+  prefixed), after which Rust appends `_<YYYY-MM-DD>.<ext>`, and `_2`, `_3`, …
+  if that name is taken, so nothing is overwritten; and the **extension**,
+  only from the closed set the stored format and the video toggle allow
+  (`mp3`, `wav`, `flac`, `aac`, or `mp4` with a camera). Not a path, and not
+  any other extension. (The stem is not otherwise restricted: control
+  characters, bidirectional-override characters and over-long names pass
+  `sanitize_filename` unchanged. That function also names scheduled
+  recordings, so hardening it is a separate change, not part of the E1 fix.)
 - **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output

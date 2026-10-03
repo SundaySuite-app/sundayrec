@@ -27,19 +27,21 @@ pub struct RecordingFinished {
 /// Options for [`RecorderEngine::start`].
 ///
 /// Minted in Rust ONLY — by `recorder::opts::build_opts_in`, for the
-/// scheduler and for a manual start alike — and never deserialized from the
-/// renderer. That is why this type is `Serialize` (the read-only preview,
-/// `plan_recording_opts`, returns it) but deliberately NOT `Deserialize`:
-/// every `#[tauri::command]` parameter must be `Deserialize`, so without it
-/// no command can take these opts, and `output_path` — the file the engine
-/// creates its folder for, captures into and finalises over — cannot come
-/// from the webview. Until the fix for finding E1 `start_recording` took
-/// exactly this struct, and with it a raw renderer string as the place to
-/// write. A compile-time assertion beside the struct (in
-/// `recorder/engine/payloads.rs`) turns re-adding the derive into a build
-/// error.
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "RecordingOpts.ts")]
+/// scheduler and for a manual start alike — and it never crosses the IPC
+/// boundary in either direction any more (so no ts-rs binding either).
+///
+/// Deliberately NOT `Deserialize`: every `#[tauri::command]` parameter must
+/// be `Deserialize`, so without it no command can take these opts, and
+/// `output_path` — the file the engine creates its folder for, captures into
+/// and finalises over — cannot come from the webview. Until the fix for
+/// finding E1 `start_recording` took exactly this struct, and with it a raw
+/// renderer string as the place to write. The compile-time assertion right
+/// below the struct turns re-adding the derive into a build error.
+///
+/// Still `Serialize`, for one reader: the golden tests in
+/// `commands/recorder.rs` compare its JSON with the bytes main's renderer
+/// used to receive and echo back, captured before the fix.
+#[derive(Debug, Clone, Serialize)]
 pub struct RecordingOpts {
     /// Stored microphone/mixer name to fuzzy-match against the enumerated audio
     /// devices. Empty → first/default device.
@@ -96,7 +98,6 @@ pub struct RecordingOpts {
     /// server-side so avfoundation doesn't reject an unsupported size/rate. `None`
     /// → audio-only, or the probe yielded nothing (legacy 720p guess).
     #[serde(skip)]
-    #[ts(skip)]
     pub video_input: Option<sundayrec_core::capture::VideoCaptureMode>,
 }
 
@@ -233,9 +234,9 @@ mod tests {
         assert_eq!(lv.peak_db_right, Some(-7.0));
     }
 
-    /// The wire shape `plan_recording_opts` answers with (the preview). There
-    /// is no way BACK any more — `RecordingOpts` is not `Deserialize` (see the
-    /// type) — so this pins the one direction that is left.
+    /// The JSON shape the golden tests compare (the one main's renderer used to
+    /// receive from `plan_recording_opts` and echo back). There is no way BACK
+    /// any more — `RecordingOpts` is not `Deserialize` (see the type).
     #[test]
     fn recording_opts_serialises_with_snake_case_keys() {
         let o = RecordingOpts {
