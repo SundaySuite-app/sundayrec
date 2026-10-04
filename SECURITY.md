@@ -142,6 +142,38 @@ So a future auditor doesn't have to re-derive these from scratch:
   characters, bidirectional-override characters and over-long names pass
   `sanitize_filename` unchanged. That function also names scheduled
   recordings, so hardening it is a separate change, not part of the E1 fix.)
+- **A user-chosen location comes from a dialog Rust opens; the webview holds
+  it only as a token.** The rule: when the operator picks a file or folder,
+  the native dialog is opened by the process, never by the webview — a path
+  the webview sends is only a claim that a dialog was shown, and with no
+  per-command ACL a compromised webview can send any path with no dialog at
+  all. Where the pick and its use are one step (the settings profile, below),
+  the command simply acts on the dialog's answer. Where they are separate
+  clicks, Rust keeps the picked place and hands the webview an opaque session
+  token for it
+  (`commands/chosen_paths.rs`, `ChosenPaths`): a random v4 UUID minted only
+  after the dialog Rust opened answered and the answer passed `path_guard`,
+  kept in memory for this session only (a restart forgets every token),
+  bounded (64, oldest evicted), typed (a folder token never resolves where a
+  file is asked for), and RE-VALIDATED when used — the place must still exist,
+  still be that kind, still canonicalise to the very place that was picked (a
+  folder swapped for a symlink since then is not that folder), and still pass
+  `path_guard`. The webview is shown the place's last component only. Finding
+  A2 is closed this way: the editor's export folder used to be
+  `editor_export`'s `output_folder`, the answer of a folder picker the webview
+  opened — so ffmpeg rendered into any folder the user can write to that the
+  protected-folder list did not name. `editor_pick_output_folder` now opens
+  the picker in Rust and answers with a token and the folder's name, and
+  `editor_export` takes only `output_folder_token`: none = next to the source
+  (resolved exactly as before, pinned by a golden test), an unknown token is
+  refused (`export_folder_unknown`), a folder gone since the pick
+  (`export_folder_missing`) or refused by the guard (`export_folder_refused`)
+  too. An old-shape `outputFolder` is an unknown key serde ignores — that
+  export lands next to its source. Unlike the plugin's own `open` command, the
+  Rust picker does not widen the `asset://` scope to the picked folder.
+  `commands::path_ratchet` judges a place-shaped name plus `_token` as a path
+  field, and holds it to a `Token` entry naming the resolver the command must
+  call and the test that feeds it a forged token.
 - **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output
@@ -251,11 +283,11 @@ So a future auditor doesn't have to re-derive these from scratch:
   path-taking twin of either command comes back, or if one of them grows a
   path parameter.
   What remains under the same rule: other commands still take a path from the
-  webview and are held only by a path guard — the editor's export folder
-  (`editor_export`'s `output_folder`, picked in the webview's own dialog), the
-  editor's open file and its sidecars (`editor_*`) and the papirkurv
-  (`trash_move`). (The recording's output path is already Rust's — finding
-  E1, above.) Each is a separate change; the row is in `docs/PLAN.md`. The webview's `dialog:` permissions stay until the last of
+  webview and are held only by a path guard — the editor's open file and its
+  sidecars (`editor_*`) and the papirkurv (`trash_move`). (The recording's
+  output path is already Rust's — finding E1, above — and the editor's export
+  folder is a token for a folder Rust's own dialog answered — finding A2,
+  above.) Each is a separate change; the row is in `docs/PLAN.md`. The webview's `dialog:` permissions stay until the last of
   them has moved; nothing in it opens a SAVE dialog any more.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every

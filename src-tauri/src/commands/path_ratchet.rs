@@ -59,6 +59,18 @@
 //! `Deserialize` at all, so no command can take it back.
 //! [`start_recording_takes_nothing_that_names_a_place`] pins the first;
 //! `recorder::engine::payloads` pins the second at compile time.
+//!
+//! ## Tokens that stand for a place (finding A2)
+//!
+//! A place the operator picked in a dialog Rust opened is handed to the
+//! webview as an opaque session token (`commands::chosen_paths`), and comes
+//! back as one — `editor_export`'s `output_folder_token`. A token is not a
+//! path, but it DECIDES one, so a field named like a place plus `_token` is
+//! judged here too ([`is_path_like_field`]) and must be listed as
+//! [`FieldHandling::Token`]: the resolver that turns it back into the place —
+//! called in the command's own body, like a guard — and the test that feeds it
+//! a forged token. [`editor_export_names_its_folder_only_by_token`] pins the
+//! A2 fix from the outside.
 
 #![cfg(test)]
 
@@ -127,11 +139,21 @@ enum FieldHandling {
         into: &'static str,
         proof: &'static str,
     },
+    /// Not a path, but an opaque session token for a place the operator
+    /// picked in a dialog Rust opened (`commands::chosen_paths`). The webview
+    /// can only hand back a token it was given. `resolver` turns it into the
+    /// place and re-validates it, and must appear in the command's own body
+    /// (lexically, like [`Guarded`]); `proof` is a test that hands the
+    /// resolver a made-up token and checks it is refused.
+    Token {
+        resolver: &'static str,
+        proof: &'static str,
+    },
     /// Not a path this command acts on. The reason is mandatory.
     Exempt(&'static str),
 }
 
-use FieldHandling::{Exempt, Guarded, Sanitised};
+use FieldHandling::{Exempt, Guarded, Sanitised, Token};
 
 /// Every path-shaped field reachable through a command's struct parameters,
 /// as `(command, "Struct.field", handling)`. See the module docs, «One level
@@ -150,11 +172,12 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_hostile_custom_name_stays_a_file_name_in_the_save_folder",
         },
     ),
-    // ── editor_export: guarded by its own E5.3 helper, which runs a
-    //    path_guard policy on each of these (see `check_export_paths`). The
-    //    NEXT step for the output folder — Rust choosing the destination
-    //    through its own dialog, as `docs/PLAN.md` asks — is a later PR; this
-    //    list only records what guards them today.
+    // ── editor_export: the source and the jingles are guarded by its own
+    //    E5.3 helper, which runs a path_guard policy on each (see
+    //    `check_export_paths`). The DESTINATION is no longer a path (A2): the
+    //    old `output_folder` is gone, and the request names a folder only by
+    //    the token `editor_pick_output_folder` minted after the native dialog
+    //    RUST opened answered.
     (
         "editor_export",
         "EditorExportRequest.input_path",
@@ -162,8 +185,11 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
     ),
     (
         "editor_export",
-        "EditorExportRequest.output_folder",
-        Guarded("check_export_paths(&request)"),
+        "EditorExportRequest.output_folder_token",
+        Token {
+            resolver: "resolve_export_folder(&chosen",
+            proof: "a_made_up_or_foreign_token_is_refused_with_its_own_code",
+        },
     ),
     (
         "editor_export",
@@ -416,10 +442,15 @@ fn all_commands() -> Vec<Command> {
 /// false negative is the hole this exists to close.
 type StructFields = std::collections::BTreeMap<String, Vec<(String, String)>>;
 
-/// Whether a FIELD name is path-shaped: the parameter rule, plus the names in
-/// [`PATH_BEARING_FIELDS`] that become part of a path without looking like one.
+/// Whether a FIELD name is path-shaped: the parameter rule, the names in
+/// [`PATH_BEARING_FIELDS`] that become part of a path without looking like
+/// one, and a TOKEN for a place — a path-shaped name plus `_token`
+/// (`output_folder_token`). A token decides where the command acts as surely
+/// as the path it stands for, so it is held to a list too (A2).
 fn is_path_like_field(name: &str) -> bool {
-    is_path_like(name) || PATH_BEARING_FIELDS.contains(&name)
+    is_path_like(name)
+        || PATH_BEARING_FIELDS.contains(&name)
+        || name.strip_suffix("_token").is_some_and(is_path_like)
 }
 
 /// Is `s` a plain Rust identifier?
@@ -616,7 +647,7 @@ fn the_struct_parser_actually_finds_fields() {
     };
     // A request across two files, the core's settings (with its multi-line
     // `#[serde(…)]` attribute), and the engine's opts.
-    assert!(names("EditorExportRequest").contains(&"output_folder".to_string()));
+    assert!(names("EditorExportRequest").contains(&"output_folder_token".to_string()));
     let settings = names("Settings");
     assert!(settings.contains(&"save_folder".to_string()));
     assert!(settings.contains(&"update_channel".to_string()));
@@ -701,6 +732,23 @@ fn every_classified_field_still_exists_and_its_guard_is_called() {
                      — but that test no longer exists"
                 );
             }
+            Token { resolver, proof } => {
+                let segment = &commands
+                    .iter()
+                    .find(|c| &c.name == cmd)
+                    .expect("findings came from this command")
+                    .segment;
+                assert!(
+                    segment.contains(resolver),
+                    "`{cmd}` lists `{field}` as a token resolved by `{resolver}`, \
+                     but its body never calls it"
+                );
+                assert!(
+                    source_defines_fn(proof),
+                    "`{cmd}` lists `{field}` as a token, proven by `{proof}` — \
+                     but that test no longer exists"
+                );
+            }
             Exempt(reason) => assert!(
                 reason.trim().len() >= 20,
                 "the exemption for `{cmd}` / `{field}` needs a real reason"
@@ -783,6 +831,60 @@ fn start_recording_takes_nothing_that_names_a_place() {
     assert!(
         matches!(listed.as_slice(), [Sanitised { .. }]),
         "start_recording's field list must be exactly the sanitised name: {listed:?}"
+    );
+}
+
+/// The fix for A2, pinned from the outside: `editor_export`'s request names
+/// its destination ONLY by a token. No field of the request is named like a
+/// folder any more — `output_folder` is gone, and a new `export_dir` or
+/// `target_folder` would fail here before it failed review — the one
+/// place-shaped field left besides the guarded source and jingles is
+/// `output_folder_token`, listed as a TOKEN (not guarded, not exempt), and the
+/// command that mints those tokens takes nothing from the webview at all.
+#[test]
+fn editor_export_names_its_folder_only_by_token() {
+    let commands = all_commands();
+    let structs = all_structs();
+    let fields = &structs["EditorExportRequest"];
+    let folder_like: Vec<&str> = fields
+        .iter()
+        .map(|(f, _)| f.as_str())
+        .filter(|f| {
+            let f = f.to_ascii_lowercase();
+            f.contains("folder") || f.contains("dir") || f.contains("dest")
+        })
+        .collect();
+    assert_eq!(
+        folder_like,
+        vec!["output_folder_token"],
+        "the export request may name its folder only by a token"
+    );
+    let listed: Vec<&FieldHandling> = PATH_FIELDS
+        .iter()
+        .filter(|(c, f, _)| {
+            *c == "editor_export" && *f == "EditorExportRequest.output_folder_token"
+        })
+        .map(|(_, _, h)| h)
+        .collect();
+    assert!(
+        matches!(listed.as_slice(), [Token { .. }]),
+        "output_folder_token must be listed as a Token: {listed:?}"
+    );
+
+    let pick = commands
+        .iter()
+        .find(|c| c.name == "editor_pick_output_folder")
+        .expect("editor_pick_output_folder was not parsed");
+    let sent: Vec<&(String, String)> = pick
+        .params
+        .iter()
+        .filter(|(_, ty)| !is_injected(ty))
+        .collect();
+    assert!(
+        sent.is_empty(),
+        "editor_pick_output_folder takes {sent:?} from the webview — the folder is \
+         the answer of the dialog Rust opens, and nothing the webview sends may \
+         shape it"
     );
 }
 
@@ -1145,6 +1247,14 @@ fn the_detector_matches_the_names_a_reviewer_would_flag() {
         "id", "service", "job_id", "language", "format", "data", "url",
     ] {
         assert!(!is_path_like(name), "{name} must not be detected as a path");
+    }
+    // One level down, a TOKEN for a place is judged as the place (A2) — and a
+    // token for something else is not.
+    for name in ["output_folder_token", "intro_file_token", "save_dir_token"] {
+        assert!(is_path_like_field(name), "{name} stands for a place");
+    }
+    for name in ["job_token", "token", "session_token", "csrf_token"] {
+        assert!(!is_path_like_field(name), "{name} is not a place");
     }
 }
 

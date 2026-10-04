@@ -209,6 +209,33 @@ describe("feilkodene", () => {
     );
   });
 
+  // A2: mappen fra «Velg mappe …» er en lapp Rust slår opp. Rust-siden pinner
+  // de samme kodene mot denne tabellen i
+  // `every_export_folder_refusal_has_a_sentence_in_the_renderer`.
+  it("mappelappen har tre setninger: velg på nytt, borte, avvist", () => {
+    expect(
+      exportErrorKey(
+        "validation: export_folder_unknown: this session has no export folder by that token",
+      ),
+    ).toBe("errExportFolderPickAgain");
+    // Velgeren som lukket seg uten svar betyr det samme for den som sitter der.
+    expect(
+      exportErrorKey(
+        "internal: dialog_failed: the dialog closed without answering",
+      ),
+    ).toBe("errExportFolderPickAgain");
+    expect(
+      exportErrorKey(
+        "validation: export_folder_missing: the chosen folder is no longer there",
+      ),
+    ).toBe("errExportFolderMissing");
+    expect(
+      exportErrorKey(
+        "validation: export_folder_refused: that folder cannot take an export",
+      ),
+    ).toBe("errExportFolderRefused");
+  });
+
   it("en ukjent kode gir ingenting, ikke en råstreng", () => {
     expect(exportErrorKey("internal: noe_helt_nytt")).toBeNull();
     expect(exportErrorKey(undefined)).toBeNull();

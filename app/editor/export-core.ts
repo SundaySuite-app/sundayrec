@@ -308,6 +308,13 @@ export function folderLabel(folder: string): string {
  * bare den første kommer i tid til å være til nytte — derfor har de hver sin
  * setning.
  *
+ * `export_folder_*` er mappen fra «Velg mappe …» (A2, se
+ * `commands::editor::resolve_export_folder`): en lapp Rust ikke kjenner
+ * (`unknown` — og `dialog_failed`, velgeren som lukket seg uten svar: begge
+ * betyr «velg den på nytt»), en mappe som ikke er der lenger (`missing` — den
+ * frakoblede minnepinnen) og en mappe vakten avviser (`refused`). De kommer
+ * både fra eksporten og fra selve valget (`pickExportFolder`).
+ *
  * Matches på den STABILE ledende koden (`errorCode`, R3-C): `AppError`
  * serialiseres som «<kategori>: <kode>[: detalj]». Fallback-søket under bruker
  * `includes`, men KUN for kodene som har et mellomrom i seg — fraser som
@@ -331,6 +338,10 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["invalid_format", "errInvalidFormat"],
   ["export_already_running", "errExportAlreadyRunning"],
   ["disk_low_for_export", "errDiskLowForExport"],
+  ["export_folder_unknown", "errExportFolderPickAgain"],
+  ["dialog_failed", "errExportFolderPickAgain"],
+  ["export_folder_missing", "errExportFolderMissing"],
+  ["export_folder_refused", "errExportFolderRefused"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],
 ];

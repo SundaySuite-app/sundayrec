@@ -15,10 +15,21 @@ export type EditorExportRequest = { inputPath: string, cutRegions: Array<EditorC
  */
 format: string, 
 /**
- * Folder to write into; the seam renders through a temp file there and
- * picks the collision-free name only once the render succeeded (F2-4).
+ * WHERE the export goes, as the webview may say it: `None` = «Samme mappe
+ * som opptaket» (next to the source, the default), or the session token
+ * `editor_pick_output_folder` minted when the operator picked a folder in
+ * a dialog RUST opened. Never a path — see `commands::chosen_paths`.
+ *
+ * Until finding A2 this was `output_folder: String`, the path the
+ * webview's own folder picker answered, and a compromised webview could
+ * put any folder there with no dialog at all. An old-shape payload's
+ * `outputFolder` is now an unknown key, which serde ignores: it lands
+ * nowhere, and that export goes next to its source.
+ *
+ * The command layer resolves the token into an [`ExportFolder`] and hands
+ * it to [`export`] separately, so the seam never sees the token either.
  */
-outputFolder: string, 
+outputFolderToken: string | null, 
 /**
  * Output bitrate (kbps) for lossy formats; `None` uses the codec default.
  */

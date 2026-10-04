@@ -246,7 +246,10 @@ pub fn run() {
         .manage(editor::ExportEngine::new())
         // The exports `editor_export` delivered this session — one of the three
         // things «Vis i Finder» (`recordings_reveal`) may show.
-        .manage(commands::recordings_open::DeliveredExports::new());
+        .manage(commands::recordings_open::DeliveredExports::new())
+        // Folders the operator picked in a dialog Rust opened, by session token
+        // — the only way an export can name a folder (A2, commands/chosen_paths.rs).
+        .manage(commands::chosen_paths::ChosenPaths::new());
 
     // P3b: replace tauri's default macOS menu with the same menu, one item
     // rewired — Quit. Off macOS tauri installs no menu at all, and adding one
@@ -599,6 +602,9 @@ pub fn run() {
             commands::editor::editor_mastering_analyze,
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
+            // «Velg mappe …»: Rust opens the folder picker and answers with a
+            // token, never a path the webview could have made up (A2).
+            commands::editor::editor_pick_output_folder,
             // P1 parity: sidecar persistence, stream probe, inline guard,
             // temp-file cleanup, and the mastering preview/cancel flow.
             // (`editor_master_apply` closed F2-C-E T10 — never called from

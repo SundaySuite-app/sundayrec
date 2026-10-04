@@ -623,9 +623,10 @@ test.describe("editor", () => {
     expect((await exportPayloads(page))[0]).toMatchObject({
       masterPreset: "speech-clear",
       format: "mp3",
-      // «» = «Samme mappe som opptaket», som bakenden løser opp til kildens
-      // egen mappe. ALLTID en streng — aldri undefined, aldri en `mode`.
-      outputFolder: "",
+      // `null` = «Samme mappe som opptaket», som bakenden løser opp til
+      // kildens egen mappe. ALLTID med — aldri undefined, aldri en sti (A2),
+      // aldri en `mode`.
+      outputFolderToken: null,
       bitrate: 256,
     });
     // Ingen stemmekjede, og ingen mikser: profilen er ETT preset. To kjeder

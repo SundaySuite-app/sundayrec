@@ -17,13 +17,17 @@
 //! its own tests, so they were left alone rather than wrapped for the sake of
 //! symmetry.
 
+use std::path::PathBuf;
+
+use super::chosen_paths::{self, ChosenError, ChosenKind, ChosenPaths, ChosenPlace};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
     EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar,
-    ExportEngine, MasterEngine,
+    ExportEngine, ExportFolder, MasterEngine,
 };
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+use crate::util::off_runtime;
 use tauri::{Emitter, State};
 
 /// Minimum wall time between two decode-progress emits, per operation.
@@ -258,19 +262,22 @@ pub async fn editor_mastering_analyze(
     editor::mastering_analyze(&input_path, &preset_id).await
 }
 
-/// Run every path guard an export request is subject to.
+/// Run every path guard an export request is subject to: the source, and the
+/// intro/outro clips. (Extracted in E5.3, so the guards are tests rather than
+/// a live `AppHandle` away.)
 ///
-/// Extracted (E5.3) because the one clause that is NOT a guard is the important
-/// one: an EMPTY `output_folder` is the export modal's default destination
-/// ("Samme mappe") and means "next to the source" — the seam resolves it.
-/// Guarding it as a path was the whole out-of-the-box export failure:
-/// `require_absolute` rejected `''` with "path must be absolute" before ffmpeg
-/// ever ran. That exemption is now a test rather than an `if`.
+/// The destination is NOT here any more, because it is no longer a path. Until
+/// finding A2 the request carried `output_folder`, the answer of a folder
+/// picker the WEBVIEW opened, and this guarded it with `checked_path` — which
+/// judges a folder only against the protected home folders, so a compromised
+/// webview could render into any other folder the user can write to, no
+/// dialog needed. (Its one exemption, the empty string meaning «Samme mappe»,
+/// was itself a shipped bug once: guarding `''` as a path broke every default
+/// export.) Now the request names a folder only by a token
+/// [`editor_pick_output_folder`] minted, and [`resolve_export_folder`] turns
+/// it into a folder; «Samme mappe» is simply no token.
 fn check_export_paths(request: &EditorExportRequest) -> AppResult<()> {
     super::path_guard::checked_input_file(&request.input_path)?;
-    if !request.output_folder.is_empty() {
-        super::path_guard::checked_path(&request.output_folder)?;
-    }
     for clip in [&request.intro_path, &request.outro_path]
         .into_iter()
         .flatten()
@@ -278,6 +285,98 @@ fn check_export_paths(request: &EditorExportRequest) -> AppResult<()> {
         super::path_guard::checked_input_file(clip)?;
     }
     Ok(())
+}
+
+/// The sentence-carrying error for a picked export folder that cannot be used.
+/// Codes, never the path: the renderer maps each to its own line
+/// (`app/editor/export-core.ts`, `EXPORT_ERROR_KEYS`).
+fn export_folder_error(why: ChosenError) -> AppError {
+    AppError::Validation(
+        match why {
+            ChosenError::Unknown => {
+                "export_folder_unknown: this session has no export folder by that token"
+            }
+            ChosenError::Gone => "export_folder_missing: the chosen folder is no longer there",
+            ChosenError::Refused => "export_folder_refused: that folder cannot take an export",
+        }
+        .into(),
+    )
+}
+
+/// The folder an export goes into, from the request's token.
+///
+/// No token is «Samme mappe som opptaket» — [`ExportFolder::BesideSource`],
+/// which the seam resolves next to the source exactly as it did when the
+/// webview sent `""`. A token must be one [`editor_pick_output_folder`] minted
+/// in THIS session (`export_folder_unknown` otherwise — a made-up one, one
+/// from before a restart, one for a file), and its folder must still be there,
+/// still a folder, still the folder that was picked and still pass
+/// `path_guard` (`export_folder_missing` / `export_folder_refused`). The checks
+/// run off the async runtime: the folder may be a USB stick or a share.
+async fn resolve_export_folder(
+    chosen: &ChosenPaths,
+    token: Option<&str>,
+) -> AppResult<ExportFolder> {
+    let Some(token) = token else {
+        return Ok(ExportFolder::BesideSource);
+    };
+    let minted = chosen
+        .lookup(token, ChosenKind::Folder)
+        .map_err(export_folder_error)?;
+    let folder = off_runtime(move || chosen_paths::revalidate(&minted, ChosenKind::Folder))
+        .await?
+        .map_err(export_folder_error)?;
+    let plain = chosen_paths::plain_string(&folder)
+        .ok_or_else(|| export_folder_error(ChosenError::Refused))?;
+    Ok(ExportFolder::Picked(plain))
+}
+
+/// «Velg mappe …» on the export page: open the native folder picker FROM RUST
+/// and answer with a token for the folder the operator picked, plus the name
+/// to show — or `null` when they cancelled.
+///
+/// **Takes nothing from the webview** (finding A2). The webview used to open
+/// this picker itself and send the answer back as `output_folder`; with no
+/// per-command ACL, a compromised webview could send any folder with no dialog
+/// at all. Now the only folders an export can name are ones a dialog THIS
+/// process opened answered, and the webview holds them as opaque tokens
+/// (`commands::chosen_paths`) — it never even sees the full path, only the
+/// folder's own name, which is what the page showed before.
+///
+/// The picked folder must exist, be a folder and pass `path_guard`
+/// (`export_folder_missing` / `export_folder_refused`) before a token is
+/// minted, and is checked again when an export uses it.
+#[tauri::command]
+pub async fn editor_pick_output_folder(
+    window: tauri::Window,
+    chosen: State<'_, ChosenPaths>,
+) -> AppResult<Option<ChosenPlace>> {
+    let picked = chosen_paths::ask_for_folder(&window).await?;
+    choose_output_folder(&chosen, picked).await
+}
+
+/// [`editor_pick_output_folder`] once its dialog has answered: a cancel
+/// (`None`) mints nothing; a picked folder is vetted (off the runtime) and gets
+/// a token. Split from the command so the tests can play the dialog — the one
+/// part no test can run.
+pub(crate) async fn choose_output_folder(
+    chosen: &ChosenPaths,
+    picked: Option<PathBuf>,
+) -> AppResult<Option<ChosenPlace>> {
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let folder = off_runtime(move || chosen_paths::vet(&picked, ChosenKind::Folder))
+        .await?
+        .map_err(export_folder_error)?;
+    let plain = chosen_paths::plain_string(&folder)
+        .ok_or_else(|| export_folder_error(ChosenError::Refused))?;
+    let display_name = chosen_paths::display_name(&plain);
+    let token = chosen.mint(ChosenKind::Folder, folder);
+    Ok(Some(ChosenPlace {
+        token,
+        display_name,
+    }))
 }
 
 /// Which counter a delivered export increments.
@@ -307,20 +406,27 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 /// here so it cannot be walked around by another caller of the same seam; the
 /// `in_flight` field on `ExportEngine` documents what two exports on one engine
 /// actually do to each other's files.
+///
+/// WHERE (A2): next to the source, or into the folder behind
+/// `output_folder_token` — see [`resolve_export_folder`]. The request carries
+/// no path that decides where ffmpeg writes.
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
     engine: State<'_, ExportEngine>,
     delivered: State<'_, super::recordings_open::DeliveredExports>,
+    chosen: State<'_, ChosenPaths>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
+    let folder = resolve_export_folder(&chosen, request.output_folder_token.as_deref()).await?;
     // v0.15: hardware video encode is automatic — hardware first where the
     // platform has it, software on a failed render (the `editorHwEncode`
     // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
     let result = editor::export(
         &engine,
         &request,
+        &folder,
         editor::HW_ENCODE_FIRST,
         move |pct, phase| {
             let _ = app.emit(
@@ -636,13 +742,13 @@ mod tests {
         }
     }
 
-    fn request(input: &str, folder: &str) -> EditorExportRequest {
+    fn request(input: &str) -> EditorExportRequest {
         serde_json::from_value(serde_json::json!({
             "inputPath": input,
             "cutRegions": [],
             "duration": 60.0,
             "format": "mp3",
-            "outputFolder": folder,
+            "outputFolderToken": null,
             "bitrate": null,
             "bitDepth": null,
             "masterPreset": null,
@@ -654,31 +760,21 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_output_folder_is_allowed_it_means_next_to_the_source() {
-        // THE regression this guards: "Samme mappe" is the export modal's
-        // DEFAULT, and guarding '' as a path made `require_absolute` reject it
-        // with "path must be absolute" before ffmpeg ever ran — i.e. export was
-        // broken out of the box.
+    fn the_default_export_passes_the_guards() {
+        // The E5.3 regression, in its new shape: «Samme mappe» is the export
+        // page's DEFAULT, and once guarding '' as a path made
+        // `require_absolute` refuse every default export before ffmpeg ran.
+        // There is no folder string left to guard; no token must pass.
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("take.mp3");
         std::fs::write(&src, b"x").unwrap();
-        check_export_paths(&request(src.to_str().unwrap(), ""))
-            .expect("an empty output folder must pass the guard");
-    }
-
-    #[test]
-    fn a_non_empty_output_folder_is_still_guarded() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("take.mp3");
-        std::fs::write(&src, b"x").unwrap();
-        let err = check_export_paths(&request(src.to_str().unwrap(), "relative/out"))
-            .expect_err("a relative output folder must be refused");
-        assert!(err.to_string().contains("absolute"), "got {err}");
+        check_export_paths(&request(src.to_str().unwrap()))
+            .expect("a default export must pass the guards");
     }
 
     #[test]
     fn a_missing_input_file_is_refused_before_anything_else() {
-        let err = check_export_paths(&request(missing_absolute_path(), ""))
+        let err = check_export_paths(&request(missing_absolute_path()))
             .expect_err("a non-existent input must be refused");
         assert!(err.to_string().contains("cannot resolve path"), "got {err}");
     }
@@ -689,16 +785,328 @@ mod tests {
         let src = dir.path().join("take.mp3");
         std::fs::write(&src, b"x").unwrap();
 
-        let mut req = request(src.to_str().unwrap(), "");
+        let mut req = request(src.to_str().unwrap());
         req.intro_path = Some(missing_absolute_path().into());
         check_export_paths(&req).expect_err("a bogus intro must be refused");
 
-        let mut req = request(src.to_str().unwrap(), "");
+        let mut req = request(src.to_str().unwrap());
         req.outro_path = Some(missing_absolute_path().into());
         check_export_paths(&req).expect_err("a bogus outro must be refused");
 
         // …and `None` for both is the normal case, which must still pass.
-        check_export_paths(&request(src.to_str().unwrap(), "")).expect("no clips must pass");
+        check_export_paths(&request(src.to_str().unwrap())).expect("no clips must pass");
+    }
+
+    // ── The export folder: a dialog Rust opens, a token the webview holds (A2)
+    //
+    // The native dialog cannot run in a test, so these call the half the
+    // command hands the dialog's answer to — `None` for a cancel, a folder for
+    // a pick — and the half `editor_export` resolves the token with, which is
+    // everything either command does around the dialog.
+
+    /// A folder of its own under `dir`, and its canonical path as the plain
+    /// string the seam is handed (macOS' `/var` is `/private/var`).
+    fn picked_folder(dir: &std::path::Path, name: &str) -> (PathBuf, String) {
+        let folder = dir.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let canonical = folder.canonicalize().unwrap();
+        let plain = chosen_paths::plain_string(&canonical).unwrap();
+        (folder, plain)
+    }
+
+    /// The leading code of a refusal, for the assertions below.
+    fn code_of(result: AppResult<ExportFolder>) -> String {
+        match result {
+            Err(AppError::Validation(msg)) => msg.split(':').next().unwrap_or_default().into(),
+            other => panic!("expected a Validation refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn every_export_folder_refusal_has_a_sentence_in_the_renderer() {
+        // Two sides of one seam: these codes are born here, and the export
+        // page turns them into a sentence through `EXPORT_ERROR_KEYS`. A code
+        // only one side knows is a volunteer reading «Eksporten stoppet» about
+        // a USB stick that was pulled out. `dialog_failed` comes from the
+        // picker itself (`chosen_paths::dialog_answer`).
+        let table = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/editor/export-core.ts"),
+        )
+        .unwrap();
+        let mut codes: Vec<String> = [
+            ChosenError::Unknown,
+            ChosenError::Gone,
+            ChosenError::Refused,
+        ]
+        .into_iter()
+        .map(|why| {
+            let msg = export_folder_error(why).to_string();
+            let code = msg
+                .strip_prefix("validation: ")
+                .and_then(|rest| rest.split(':').next())
+                .unwrap_or_default()
+                .to_string();
+            assert!(!msg.contains('/'), "no path in a refusal: {msg}");
+            code
+        })
+        .collect();
+        codes.push("dialog_failed".into());
+        for code in &codes {
+            assert!(
+                table.contains(&format!("[\"{code}\", \"err")),
+                "`{code}` has no sentence in app/editor/export-core.ts"
+            );
+        }
+        codes.sort();
+        codes.dedup();
+        assert_eq!(codes.len(), 4, "each refusal has its own code: {codes:?}");
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_pick_mints_nothing() {
+        let store = ChosenPaths::new();
+        assert_eq!(choose_output_folder(&store, None).await.unwrap(), None);
+        assert_eq!(
+            code_of(resolve_export_folder(&store, Some("")).await),
+            "export_folder_unknown",
+            "and there is nothing a later export could name"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_picked_folder_round_trips_as_a_token_and_shows_only_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let (folder, plain) = picked_folder(dir.path(), "Til kontoret");
+        let store = ChosenPaths::new();
+
+        let place = choose_output_folder(&store, Some(folder))
+            .await
+            .unwrap()
+            .expect("a pick is answered with a place");
+
+        assert_eq!(place.display_name, "Til kontoret");
+        assert!(
+            !place.token.contains("Til kontoret") && !place.display_name.contains('/'),
+            "the webview gets a token and a name, never the path: {place:?}"
+        );
+        assert_eq!(
+            resolve_export_folder(&store, Some(&place.token))
+                .await
+                .unwrap(),
+            ExportFolder::Picked(plain),
+            "the token stands for the folder that was picked"
+        );
+        // A second export with the same token («Eksporter i annet format»)
+        // goes to the same folder: a token is not used up.
+        assert!(resolve_export_folder(&store, Some(&place.token))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_made_up_or_foreign_token_is_refused_with_its_own_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let (folder, plain) = picked_folder(dir.path(), "Eksport");
+        let store = ChosenPaths::new();
+        let real = choose_output_folder(&store, Some(folder))
+            .await
+            .unwrap()
+            .unwrap()
+            .token;
+
+        // Made up, a path where the token goes — the old wire value — a
+        // traversal, and a token minted for a FILE.
+        let file = dir.path().join("opptak.mp3");
+        std::fs::write(&file, b"x").unwrap();
+        let file_token = store.mint(ChosenKind::File, file.canonicalize().unwrap());
+        for forged in [
+            "00000000-0000-0000-0000-000000000000",
+            plain.as_str(),
+            "../../.ssh",
+            file_token.as_str(),
+        ] {
+            assert_eq!(
+                code_of(resolve_export_folder(&store, Some(forged)).await),
+                "export_folder_unknown",
+                "{forged:?}"
+            );
+        }
+        assert_eq!(
+            code_of(resolve_export_folder(&ChosenPaths::new(), Some(&real)).await),
+            "export_folder_unknown",
+            "a token means nothing to a session that did not mint it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_token_to_a_folder_deleted_since_the_pick_is_refused() {
+        // The USB stick pulled out between «Velg mappe …» and «Eksporter».
+        let dir = tempfile::tempdir().unwrap();
+        let (folder, _) = picked_folder(dir.path(), "USB-PINNE");
+        let store = ChosenPaths::new();
+        let token = choose_output_folder(&store, Some(folder.clone()))
+            .await
+            .unwrap()
+            .unwrap()
+            .token;
+
+        std::fs::remove_dir(&folder).unwrap();
+
+        assert_eq!(
+            code_of(resolve_export_folder(&store, Some(&token)).await),
+            "export_folder_missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pick_that_is_not_a_folder_mints_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("opptak.mp3");
+        std::fs::write(&file, b"x").unwrap();
+        let store = ChosenPaths::new();
+        for picked in [file, dir.path().join("finnes-ikke")] {
+            match choose_output_folder(&store, Some(picked.clone())).await {
+                Err(AppError::Validation(msg)) => {
+                    assert!(msg.starts_with("export_folder_missing"), "{msg}")
+                }
+                other => panic!("{picked:?}: expected export_folder_missing, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn no_token_is_the_folder_next_to_the_source() {
+        assert_eq!(
+            resolve_export_folder(&ChosenPaths::new(), None)
+                .await
+                .unwrap(),
+            ExportFolder::BesideSource
+        );
+    }
+
+    /// Where a request lands, the way `editor_export` decides it: the token
+    /// resolved against `store`, then the seam's own planner. Returns the
+    /// render temp and the final name in an empty folder — every path the
+    /// export writes.
+    async fn planned(store: &ChosenPaths, req: &EditorExportRequest) -> (String, String) {
+        use sundayrec_core::editor::{collision_free_path, editor_tmp_path};
+        let folder = resolve_export_folder(store, req.output_folder_token.as_deref())
+            .await
+            .expect("the folder resolves");
+        let (dir, stem) = editor::export_target(req, &folder);
+        (
+            editor_tmp_path(&dir, &stem, &req.format),
+            collision_free_path(&dir, &stem, &req.format, |_| false),
+        )
+    }
+
+    /// What the seam planned BEFORE A2 for a «Samme mappe» export, frozen:
+    /// `resolve_output_dir(&req.output_folder, &req.input_path)` with the `""`
+    /// the page sent, and the same stem. The golden reference the new planner
+    /// is held to.
+    fn planned_before_a2(req: &EditorExportRequest) -> (String, String) {
+        use sundayrec_core::editor::{
+            collision_free_path, editor_tmp_path, export_stem, resolve_output_dir,
+        };
+        let base = std::path::Path::new(&req.input_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "redigert".into());
+        let out_dir = resolve_output_dir("", &req.input_path);
+        let out_stem = export_stem(&base, req.title.as_deref(), req.date.as_deref());
+        (
+            editor_tmp_path(&out_dir, &out_stem, &req.format),
+            collision_free_path(&out_dir, &out_stem, &req.format, |_| false),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_same_folder_export_lands_exactly_where_it_did_before() {
+        // Representative sources (a library recording, a USB stick, a file at
+        // a root, spaces and Norwegian letters, a video), each untitled and
+        // titled — the two stems an export can have.
+        let mut sources = vec![
+            "/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste.mp3".to_string(),
+            "/Volumes/USB-PINNE/opptak.wav".to_string(),
+            "/opptak.flac".to_string(),
+            "/Users/kari/Skrivebord/Søndag i Østre kirke – høymesse.m4a".to_string(),
+            "/Users/kari/Movies/gudstjeneste.mp4".to_string(),
+        ];
+        if cfg!(windows) {
+            sources.push(r"C:\Users\kari\Documents\SundayRec\opptak.mp3".into());
+            sources.push(r"\\server\share\Opptak\opptak.wav".into());
+        }
+        let store = ChosenPaths::new();
+        for src in &sources {
+            for (title, format) in [(None, "mp3"), (Some("Påskedag"), "wav")] {
+                let mut req = request(src);
+                req.format = format.into();
+                req.title = title.map(Into::into);
+                req.date = Some("2027-03-28".into());
+                assert_eq!(
+                    planned(&store, &req).await,
+                    planned_before_a2(&req),
+                    "{src} / {title:?}"
+                );
+            }
+        }
+        // …and two pinned literally, so the reference itself cannot drift.
+        let mut req = request("/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste.mp3");
+        assert_eq!(
+            planned(&store, &req).await,
+            (
+                "/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste_redigert.__editor_tmp.mp3"
+                    .to_string(),
+                "/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste_redigert.mp3".to_string()
+            )
+        );
+        req.title = Some("Påskedag".into());
+        req.date = Some("2027-03-28".into());
+        assert_eq!(
+            planned(&store, &req).await.1,
+            "/Users/kari/Documents/SundayRec/2027-03-28 Påskedag.mp3"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_path_in_the_old_field_goes_nowhere() {
+        // An old-shape payload — or a compromised webview trying the field
+        // that used to decide the folder. serde ignores the unknown key, so
+        // the export goes next to its source, not into the folder it named.
+        let dir = tempfile::tempdir().unwrap();
+        let (_, elsewhere) = picked_folder(dir.path(), "Startup");
+        let src = "/Users/kari/Documents/SundayRec/opptak.mp3";
+        let mut payload = serde_json::to_value(request(src)).unwrap();
+        let fields = payload.as_object_mut().unwrap();
+        fields.remove("outputFolderToken");
+        fields.insert("outputFolder".into(), elsewhere.clone().into());
+        let req: EditorExportRequest = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(req.output_folder_token, None);
+        let (tmp, out) = planned(&ChosenPaths::new(), &req).await;
+        assert_eq!((tmp.clone(), out.clone()), planned_before_a2(&req));
+        assert!(
+            !tmp.contains(&elsewhere) && !out.contains(&elsewhere),
+            "{out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_picked_folder_export_lands_in_that_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let (folder, plain) = picked_folder(dir.path(), "Eksport");
+        let store = ChosenPaths::new();
+        let token = choose_output_folder(&store, Some(folder))
+            .await
+            .unwrap()
+            .unwrap()
+            .token;
+        let mut req = request("/Users/kari/Documents/SundayRec/opptak.mp3");
+        req.output_folder_token = Some(token);
+
+        let (tmp, out) = planned(&store, &req).await;
+        assert_eq!(tmp, format!("{plain}/opptak_redigert.__editor_tmp.mp3"));
+        assert_eq!(out, format!("{plain}/opptak_redigert.mp3"));
     }
 
     /// The generic sidecar commands must not be a second door into the file

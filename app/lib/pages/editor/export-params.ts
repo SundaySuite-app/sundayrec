@@ -4,10 +4,13 @@
 // unit test without a DOM, an `E` state object, or the IPC shim. Two things
 // here are load-bearing and were regressions before:
 //
-//   1. `outputFolder` is ALWAYS a string. The default destination pill ("Samme
-//      mappe") never picks a folder, so it sends '' — which the backend reads
-//      as "next to the source file". Sending `undefined` instead put the shim's
-//      `?? ''` fallback in charge of a decision that belongs here.
+//   1. The destination is NEVER a path (finding A2). It is
+//      `outputFolderToken`: `null` for the default pill ("Samme mappe", which
+//      the backend reads as "next to the source file"), or the opaque token
+//      Rust minted when the operator picked a folder in the dialog RUST opened
+//      (`editor_pick_output_folder`). Always present, never `undefined`, so the
+//      shim's fallback is not in charge of a decision that belongs here — the
+//      lesson of the old `outputFolder: ''`, which this replaced.
 //   2. There is NO `mode` field. The old 'new' | 'replace' | 'folder' mode was
 //      dropped by the shim and never implemented in Rust, so "Erstatt original"
 //      silently behaved like "ny fil". The pill is gone; so is the field.
@@ -90,8 +93,9 @@ export interface ExportRequestInput {
   inputPath: string;
   cutRegions: readonly ExportCutRegion[];
   duration: number;
-  /** '' = "Samme mappe" (the default). A picked folder is an absolute path. */
-  outputFolder: string;
+  /** `null` = "Samme mappe" (the default). A picked folder is Rust's token
+   *  for it — never a path. */
+  outputFolderToken: string | null;
   /** Audio container (`mp3|wav|flac|aac`) — audio exports only. */
   format?: string;
   /** Audio bitrate in kbps — lossy audio formats only. */
@@ -130,9 +134,10 @@ export function buildExportRequest(
     inputPath: input.inputPath,
     cutRegions: input.cutRegions,
     duration: input.duration,
-    // Always a string: '' means "same folder as the source", which the backend
-    // resolves. Never `undefined`, never a `mode`.
-    outputFolder: input.outputFolder ?? "",
+    // Always present: `null` means "same folder as the source", which the
+    // backend resolves; a token is a folder Rust's own dialog answered. Never
+    // `undefined`, never a path, never a `mode`.
+    outputFolderToken: input.outputFolderToken ?? null,
     gainDb: input.gainDb ? input.gainDb : undefined,
     introPath: orUndefined(input.introPath),
     outroPath: orUndefined(input.outroPath),
@@ -200,7 +205,7 @@ export function toEditorExportRequest(
       kind === "video"
         ? (o.videoFormat as string) || "mp4"
         : ((o.outputFormat ?? o.format ?? "mp3") as string),
-    outputFolder: (o.outputFolder ?? "") as string,
+    outputFolderToken: (o.outputFolderToken ?? null) as string | null,
     bitrate:
       kind === "video" ? null : ((o.outputBitrate ?? null) as number | null),
     bitDepth:
