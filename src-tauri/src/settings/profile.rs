@@ -139,8 +139,6 @@ pub const SHARED: &[&str] = &[
     "prerollEnabled",
     "reminderMinutes",
     "protectRecording",
-    "churchName",
-    "responsiblePerson",
     "publishTarget",
     "publishCustomUrl",
     "publishDescriptionTemplate",
@@ -153,6 +151,8 @@ pub const SHARED: &[&str] = &[
 /// [`never_take_away`]. (`specialRecordings` also has a machine-local part:
 /// each entry's `deviceId`, see [`without_special_devices`].)
 pub const ONE_WAY: &[&str] = &[
+    "churchName",
+    "responsiblePerson",
     "autoDeleteDays",
     "autoRecordEnabled",
     "slots",
@@ -280,7 +280,18 @@ pub(crate) fn overlay_profile(stored: &Settings, text: &str) -> AppResult<Settin
 /// - **Automatic deletion** (`autoDeleteDays`, the only setting that moves
 ///   recordings — retention puts them in the papirkurv): see
 ///   [`retention_after_import`].
+/// - **The church's name and the responsible person**: a BLANK one in the file
+///   keeps this machine's. They still travel — a second machine for the same
+///   church wants them — but a profile from a machine that was never set up
+///   must not wipe them (the church name is in every recording's file name).
+///   A name is cleared in Generelt, where the operator sees it go.
 fn never_take_away(stored: &Settings, merged: &mut Settings) {
+    if merged.church_name.trim().is_empty() {
+        merged.church_name = stored.church_name.clone();
+    }
+    if merged.responsible_person.trim().is_empty() {
+        merged.responsible_person = stored.responsible_person.clone();
+    }
     if merged.slots.is_empty() {
         merged.slots = stored.slots.clone();
     }
@@ -645,6 +656,25 @@ mod tests {
             Settings::default().silence_threshold
         );
         assert_eq!(merged.publish_target, PublishTarget::default());
+    }
+
+    #[test]
+    fn a_blank_name_in_the_file_keeps_this_machines_and_a_filled_one_replaces_it() {
+        let mut church = church_pc();
+        church.church_name = "Grace Church".into();
+        church.responsible_person = "Kari".into();
+        // A profile from a machine that was never set up: blank (or only
+        // spaces) leaves both as they are…
+        let blank = r#"{ "churchName": "", "responsiblePerson": "  ", "language": "nb" }"#;
+        let merged = overlay_profile(&church, blank).unwrap();
+        assert_eq!(merged.church_name, "Grace Church");
+        assert_eq!(merged.responsible_person, "Kari");
+        // …while a filled one is carried: that is what the profile is for.
+        let filled =
+            r#"{ "churchName": "Hope Chapel", "responsiblePerson": "Ola", "language": "nb" }"#;
+        let merged = overlay_profile(&church, filled).unwrap();
+        assert_eq!(merged.church_name, "Hope Chapel");
+        assert_eq!(merged.responsible_person, "Ola");
     }
 
     #[test]
