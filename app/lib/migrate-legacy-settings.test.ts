@@ -8,7 +8,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
+import {
+  migrateLegacySettingsOnce,
+  RETRY_MARK,
+} from "./migrate-legacy-settings";
 import {
   LEGACY_MIGRATED_FLAG,
   LEGACY_SETTINGS_KEY,
@@ -83,5 +86,33 @@ describe("migrateLegacySettingsOnce — the answer of settings_import", () => {
     });
     expect(storage.data.get(LEGACY_SETTINGS_KEY)).toBe(BLOB);
     expect(storage.data.has(LEGACY_MIGRATED_FLAG)).toBe(false);
+    expect(storage.data.get(RETRY_MARK)).toBe("1");
+  });
+
+  it("says so when an earlier boot's failed import found the hand-over closed", async () => {
+    // Boot 1: the import fails, the blob is kept — and Rust closes the
+    // hand-over at that boot's first settings_get all the same.
+    await migrateLegacySettingsOnce({
+      invoke: vi.fn(async () => {
+        throw new Error("database error: database is locked");
+      }) as never,
+      onCorruptBlob: () => {},
+    });
+    // Boot 2: Rust answers «already handed over» — but it never was.
+    const onCorruptBlob = vi.fn();
+    await migrateLegacySettingsOnce({
+      invoke: vi.fn(async () => {
+        throw {
+          code: "validation",
+          message:
+            "validation: settings_import_done: the settings hand-over from the old installation has already happened",
+        };
+      }) as never,
+      onCorruptBlob,
+    });
+    expect(onCorruptBlob).toHaveBeenCalledTimes(1);
+    expect(storage.data.has(LEGACY_SETTINGS_KEY)).toBe(false);
+    expect(storage.data.has(RETRY_MARK)).toBe(false);
+    expect(storage.data.get(LEGACY_MIGRATED_FLAG)).toBe("1");
   });
 });
