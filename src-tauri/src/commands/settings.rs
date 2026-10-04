@@ -127,6 +127,118 @@ pub async fn settings_import_profile(
     import_profile_from(&db.pool, picked).await
 }
 
+/// Which of the editor's two jingles a command is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Clip {
+    Intro,
+    Outro,
+}
+
+/// Pick the intro clip the export prepends: a native open dialog this command
+/// opens, filtered to audio. The picked file must be a file, outside the
+/// protected folders (`clip_missing` / `clip_refused`); it is stored as the
+/// intro and the stored settings come back — or `None` when the operator
+/// cancelled and nothing changed.
+///
+/// **Takes no path** (finding A2): a clip is a file the export reads, and the
+/// settings are the only place it is kept. `settings_save` ignores whatever
+/// the renderer says about it, so this dialog is the only way in.
+#[tauri::command]
+pub async fn settings_pick_editor_intro(
+    window: tauri::Window,
+    db: State<'_, Db>,
+) -> AppResult<Option<Settings>> {
+    pick_clip(&window, &db.pool, Clip::Intro).await
+}
+
+/// [`settings_pick_editor_intro`] for the outro clip.
+#[tauri::command]
+pub async fn settings_pick_editor_outro(
+    window: tauri::Window,
+    db: State<'_, Db>,
+) -> AppResult<Option<Settings>> {
+    pick_clip(&window, &db.pool, Clip::Outro).await
+}
+
+/// Forget the intro clip: exports go without one until another is picked.
+#[tauri::command]
+pub async fn settings_clear_editor_intro(db: State<'_, Db>) -> AppResult<Settings> {
+    store_clip(&db.pool, Clip::Intro, None).await
+}
+
+/// Forget the outro clip.
+#[tauri::command]
+pub async fn settings_clear_editor_outro(db: State<'_, Db>) -> AppResult<Settings> {
+    store_clip(&db.pool, Clip::Outro, None).await
+}
+
+/// The dialog half of [`settings_pick_editor_intro`]/`_outro`.
+async fn pick_clip(
+    window: &tauri::Window,
+    pool: &SqlitePool,
+    which: Clip,
+) -> AppResult<Option<Settings>> {
+    let lang = dialog_lang(pool).await?;
+    let audio = super::media_filters::audio_filter_name(lang);
+    let picked = super::chosen_paths::ask_for_file(
+        window,
+        &[
+            (audio, super::media_filters::AUDIO_EXT),
+            (all_files_name(lang), &["*"]),
+        ],
+    )
+    .await?;
+    choose_clip(pool, which, picked).await
+}
+
+/// [`pick_clip`] once its dialog has answered: a cancel (`None`) changes
+/// nothing; a picked file is vetted as a file (off the runtime) and stored.
+/// Split from the command so the tests can play the dialog.
+pub(crate) async fn choose_clip(
+    pool: &SqlitePool,
+    which: Clip,
+    picked: Option<PathBuf>,
+) -> AppResult<Option<Settings>> {
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let vetted = crate::util::off_runtime(move || {
+        super::chosen_paths::vet(&picked, super::chosen_paths::ChosenKind::File)
+    })
+    .await?
+    .map_err(clip_error)?;
+    let plain = super::chosen_paths::plain_string(vetted.place())
+        .ok_or_else(|| clip_error(super::chosen_paths::ChosenError::Refused))?;
+    store_clip(pool, which, Some(plain)).await.map(Some)
+}
+
+/// Write one clip into the STORED settings and nothing else — the load/save
+/// pair the backend's own writers use, not the renderer's `save_from_renderer`
+/// (which would keep the old clip, by design).
+async fn store_clip(pool: &SqlitePool, which: Clip, clip: Option<String>) -> AppResult<Settings> {
+    let mut stored = settings::load(pool).await?;
+    match which {
+        Clip::Intro => stored.editor_intro_path = clip,
+        Clip::Outro => stored.editor_outro_path = clip,
+    }
+    settings::save(pool, stored).await
+}
+
+/// The sentence-carrying error for a picked clip that cannot be kept. Codes,
+/// never the path.
+fn clip_error(why: super::chosen_paths::ChosenError) -> AppError {
+    use super::chosen_paths::ChosenError;
+    AppError::Validation(
+        match why {
+            ChosenError::Refused => "clip_refused: that file cannot be used as an intro or outro",
+            ChosenError::Unknown | ChosenError::Gone => {
+                "clip_missing: the picked file is no longer there"
+            }
+        }
+        .into(),
+    )
+}
+
 /// [`settings_export_profile`] once its dialog has answered: a cancel (`None`)
 /// writes nothing; a picked path is guarded, then gets the JSON. Split from
 /// the command so the tests can play the dialog — the one part no test can run.
@@ -218,7 +330,7 @@ const PROFILE_FILE_NAME: &str = "sundayrec-innstillinger.json";
 
 /// The language the dialog's filter names are in: the stored UI language, read
 /// the way a command with the pool in hand reads it (see `crate::ui_lang`).
-async fn dialog_lang(pool: &SqlitePool) -> AppResult<Lang> {
+pub(super) async fn dialog_lang(pool: &SqlitePool) -> AppResult<Lang> {
     Ok(Lang::from_code(
         settings::load(pool).await?.language.as_deref(),
     ))
@@ -293,10 +405,10 @@ fn profile_filter_name(lang: Lang) -> &'static str {
     }
 }
 
-/// «All files», in the UI language. The renderer says the same phrase from its
-/// own catalogue (`app.dialog.filter.allFiles`) in the editor's open dialog;
-/// `the_all_files_name_is_the_renderers_phrase` holds the two together.
-fn all_files_name(lang: Lang) -> &'static str {
+/// «All files», in the UI language — the profile dialog's second filter and the
+/// editor's open dialog's last one (`commands::editor`). Both dialogs are Rust's
+/// now, so the phrase lives here and not in the renderer's catalogue.
+pub(super) fn all_files_name(lang: Lang) -> &'static str {
     match lang {
         Lang::No => "Alle filer",
         Lang::En => "All files",
@@ -929,6 +1041,66 @@ mod tests {
         assert_eq!(settings::load(&pool).await.unwrap(), stored);
     }
 
+    // ── The editor's intro/outro clips: a dialog Rust opens (A2) ─────────────
+
+    #[tokio::test]
+    async fn a_cancelled_clip_pick_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        assert_eq!(choose_clip(&pool, Clip::Intro, None).await.unwrap(), None);
+        assert_eq!(settings::load(&pool).await.unwrap().editor_intro_path, None);
+    }
+
+    #[tokio::test]
+    async fn a_picked_clip_is_stored_canonical_and_clearing_forgets_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let clip = dir.path().join("intro.wav");
+        std::fs::write(&clip, b"x").unwrap();
+        let canonical =
+            super::super::chosen_paths::plain_string(&clip.canonicalize().unwrap()).unwrap();
+
+        let stored = choose_clip(&pool, Clip::Intro, Some(clip.clone()))
+            .await
+            .unwrap()
+            .expect("a pick answers with the stored settings");
+        assert_eq!(
+            stored.editor_intro_path.as_deref(),
+            Some(canonical.as_str())
+        );
+        assert_eq!(
+            stored.editor_outro_path, None,
+            "the other clip is untouched"
+        );
+        assert_eq!(
+            settings::load(&pool)
+                .await
+                .unwrap()
+                .editor_intro_path
+                .as_deref(),
+            Some(canonical.as_str())
+        );
+
+        let cleared = store_clip(&pool, Clip::Intro, None).await.unwrap();
+        assert_eq!(cleared.editor_intro_path, None);
+        assert_eq!(settings::load(&pool).await.unwrap().editor_intro_path, None);
+    }
+
+    #[tokio::test]
+    async fn a_pick_that_is_not_a_file_stores_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        for picked in [dir.path().to_path_buf(), dir.path().join("finnes-ikke.wav")] {
+            match choose_clip(&pool, Clip::Outro, Some(picked.clone())).await {
+                Err(AppError::Validation(msg)) => {
+                    assert!(msg.starts_with("clip_missing"), "{picked:?}: {msg}")
+                }
+                other => panic!("{picked:?}: expected clip_missing, got {other:?}"),
+            }
+        }
+        assert_eq!(settings::load(&pool).await.unwrap().editor_outro_path, None);
+    }
+
     #[test]
     fn every_language_names_the_profile_filter() {
         for lang in Lang::ALL {
@@ -942,23 +1114,5 @@ mod tests {
         // The Norwegian names, as the renderer's catalogue had them.
         assert_eq!(profile_filter_name(Lang::No), "Innstillingsprofil (JSON)");
         assert_eq!(all_files_name(Lang::No), "Alle filer");
-    }
-
-    #[test]
-    fn the_all_files_name_is_the_renderers_phrase() {
-        // The editor's open dialog (renderer) and the profile dialog (here)
-        // show the same filter; a reworded catalogue entry must not leave the
-        // two disagreeing in one language.
-        let locales = Path::new(env!("CARGO_MANIFEST_DIR")).join("../legacy/locales");
-        for lang in Lang::ALL {
-            let file = locales.join(format!("{}.json", lang.as_code()));
-            let catalogue: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-            assert_eq!(
-                catalogue["app"]["dialog"]["filter"]["allFiles"].as_str(),
-                Some(all_files_name(*lang)),
-                "{lang:?}"
-            );
-        }
     }
 }

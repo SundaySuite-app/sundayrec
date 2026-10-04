@@ -576,6 +576,12 @@ pub fn run() {
             // path crosses from the webview (finding A1; commands/settings.rs).
             commands::settings::settings_export_profile,
             commands::settings::settings_import_profile,
+            // The editor's intro/outro clips: a Rust dialog sets them, and
+            // `settings_save` keeps whatever is stored (A2).
+            commands::settings::settings_pick_editor_intro,
+            commands::settings::settings_pick_editor_outro,
+            commands::settings::settings_clear_editor_intro,
+            commands::settings::settings_clear_editor_outro,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
             // E2.3 — the log the operator can actually hand to support. Neither
@@ -594,7 +600,10 @@ pub fn run() {
             commands::editor::editor_load_recording,
             commands::editor::editor_peaks,
             commands::editor::editor_extract_playback_proxy,
-            commands::editor::editor_allow_asset_path,
+            // A recording enters the editor by a token Rust mints (A2): the
+            // picker it opens, a history row's id, or a drop on the window.
+            commands::editor::editor_open_recording,
+            commands::editor::editor_open_known,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
             commands::editor::editor_diagnose_channels,

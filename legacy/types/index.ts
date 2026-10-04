@@ -38,6 +38,12 @@ export interface CutRegion {
 }
 
 export interface RecordingEntry {
+  /**
+   * The history row's id (`recording.id`). The editor opens a library/history
+   * recording BY this (`editor_open_known`): the webview names the row, the
+   * database holds the path (A2).
+   */
+  id?: string
   date: string
   startTime: string
   duration: string

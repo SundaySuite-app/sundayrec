@@ -2,7 +2,12 @@
 
 /**
  * A windowed mastering-preview request — render `[startSec, startSec+durationSec]`
- * of `inputPath` through the preset's single-pass chain to a temp mp3 the
+ * of the source through the preset's single-pass chain to a temp mp3 the
  * renderer can `<audio>`-play A/B against the original. Mirrors `master-preview`.
  */
-export type EditorMasterPreviewRequest = { inputPath: string, presetId: string, startSec: number, durationSec: number, };
+export type EditorMasterPreviewRequest = { 
+/**
+ * The recording to preview, as the File token that stands for it — never a
+ * path; the command resolves it and hands [`master_preview`] the place.
+ */
+sourceToken: string, presetId: string, startSec: number, durationSec: number, };

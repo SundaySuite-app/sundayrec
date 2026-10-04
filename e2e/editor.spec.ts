@@ -15,6 +15,9 @@ import {
   EXPORT_HELD,
   EXPORTED,
   FILE,
+  OPENED,
+  OTHER_RECORDING_ID,
+  RECORDING_ID,
 } from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
@@ -73,9 +76,9 @@ async function openEditor(page: Page, over: Fixtures = {}) {
   await page.evaluate(
     (f) =>
       (
-        window as unknown as { openEditorWithFile: (p: string) => void }
-      ).openEditorWithFile(f),
-    FILE,
+        window as unknown as { openEditorWithRecording: (id: string) => void }
+      ).openEditorWithRecording(f),
+    RECORDING_ID,
   );
   await expect(page.getByTestId("editor")).toHaveAttribute(
     "data-state",
@@ -753,7 +756,8 @@ test.describe("editor", () => {
       .poll(() => previewRequests(page).then((r) => r.length))
       .toBeGreaterThan(0);
     expect((await previewRequests(page))[0]).toMatchObject({
-      inputPath: FILE,
+      // A2: opptaket er lappen Rust ga det, ikke en sti.
+      sourceToken: OPENED.token,
       // Det SAMME presettet eksporten kommer til å bruke — ellers er «Etter»
       // en lyd fila aldri får.
       presetId: "speech-clear",
@@ -1077,13 +1081,12 @@ test.describe("editor", () => {
     await page.getByTestId("editor-export-go").click();
     await expect(page.getByTestId("editor-exporting")).toBeVisible();
 
-    const other = "/Users/test/Opptak/2026-07-05 Kveldsmøte.mp3";
     await page.evaluate(
       (f) =>
         (
-          window as unknown as { openEditorWithFile: (p: string) => void }
-        ).openEditorWithFile(f),
-      other,
+          window as unknown as { openEditorWithRecording: (id: string) => void }
+        ).openEditorWithRecording(f),
+      OTHER_RECORDING_ID,
     );
 
     await expect(page.getByTestId("dialog-title")).toContainText(

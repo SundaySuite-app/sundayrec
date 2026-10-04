@@ -16,19 +16,55 @@
 //! commands really are one-line delegations to `crate::editor`, which carries
 //! its own tests, so they were left alone rather than wrapped for the sake of
 //! symmetry.
+//!
+//! ## A2 (second half): the recording is a token, never a path
+//!
+//! The app has no per-command ACL, so a compromised webview can call any
+//! command here with any arguments. Until PR-C the commands below took
+//! `input_path`/`media_path` for the recording and trusted `path_guard` to
+//! judge it — which it can only do against the protected home folders. So the
+//! webview could point ffprobe/ffmpeg at ANY readable file, and `editor_export`
+//! at any file as its source.
+//!
+//! Now a recording enters the editor in exactly three ways, and each mints a
+//! File token ([`chosen_paths`]) for a file RUST decided on:
+//!
+//!   - [`editor_open_recording`] — the file picker, opened from Rust;
+//!   - [`editor_open_known`] — a library/history row, by the row's id (the
+//!     database holds the path, and only Rust's recorder writes it);
+//!   - a drop on the window ([`note_drop`]) — caught by the process, not
+//!     reported by the webview.
+//!
+//! Every command that works on the recording takes that token (`source_token`)
+//! and resolves it with [`resolve_source`] — type-checked as a File, looked up,
+//! and re-validated at the moment of use. The intro/outro clips are not sent at
+//! all: the request says `use_intro`/`use_outro`, and Rust reads the clip from
+//! the saved settings.
+//!
+//! The opening commands also answer with the canonical path, for display and for
+//! the sidecar commands (`media_path`) that PR-D converts. No command that
+//! reads or renders the recording accepts it back.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+use sqlx::SqlitePool;
+use sundayrec_core::lang::Lang;
+use ts_rs::TS;
 
 use super::chosen_paths::{self, ChosenError, ChosenKind, ChosenPaths, ChosenPlace};
+use super::media_filters::{media_filter_names, AUDIO_EXT, VIDEO_EXT};
+use crate::db::{store, Db};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
     EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar,
-    ExportEngine, ExportFolder, MasterEngine,
+    ExportEngine, ExportFolder, MasterEngine, ResolvedExport,
 };
 use crate::error::{AppError, AppResult};
+use crate::settings;
 use crate::util::off_runtime;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 /// Minimum wall time between two decode-progress emits, per operation.
 ///
@@ -83,13 +119,262 @@ fn decode_progress(
     }
 }
 
+// ── Opening a recording: three doors, one token (A2) ─────────────────────────
+
+/// A recording the editor opened: the token every later command names it by,
+/// and what the page shows and plays.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export, export_to = "OpenedRecording.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedRecording {
+    /// Opaque, random, session-scoped — the File token. Hand it back; never
+    /// parse it.
+    pub token: String,
+    /// The file's own name («2026-08-02 Gudstjeneste.mp3»), for the heading.
+    pub name: String,
+    /// The canonical path, plain: what `<audio src>` plays (`asset://`) and what
+    /// the sidecar commands (`editor_read_sidecar` & co., PR-D) still take.
+    /// NOT accepted by anything that reads or renders the recording — those
+    /// take `token` and nothing else.
+    pub path: String,
+}
+
+/// What the drop handler tells the page: the recording that was dropped, or why
+/// it cannot be opened, and where on the window it landed (physical pixels, as
+/// the OS gave them) so the page can aim the drop at the zone under the cursor.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export, export_to = "DroppedRecording.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedRecording {
+    pub opened: Option<OpenedRecording>,
+    /// The leading `source_*` code when `opened` is none.
+    pub error: Option<String>,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// The event [`note_drop`] answers a drop with.
+pub const FILE_DROPPED_EVENT: &str = "editor://file-dropped";
+
+/// The sentence-carrying error for a recording that cannot be used. Codes,
+/// never the path — the loader maps `source_missing` to «Fant ikke fila» and
+/// the others to its generic «Kunne ikke åpne opptaket» (`app/editor/loader-core.ts`).
+fn source_error(why: ChosenError) -> AppError {
+    AppError::Validation(
+        match why {
+            ChosenError::Unknown => "source_unknown: this session has no recording by that token",
+            ChosenError::Gone => "source_missing: the recording is no longer there",
+            ChosenError::Refused => "source_refused: that file cannot be opened in the editor",
+        }
+        .into(),
+    )
+}
+
+/// The recording a `source_token` stands for, as the plain string the seam and
+/// ffmpeg take. The ONE way a command turns the webview's token into the
+/// file it works on: [`ChosenPaths::resolve`] looks it up as a FILE token
+/// (a folder token, a made-up one, one from before a restart is
+/// `source_unknown`) and re-validates the file — still there, still a file,
+/// still the file that was opened, still passing `path_guard`
+/// (`source_missing` / `source_refused`). Runs off the async runtime: the file
+/// may be on a USB stick or a share.
+async fn resolve_source(chosen: &ChosenPaths, token: &str) -> AppResult<String> {
+    let store = chosen.clone();
+    let token = token.to_string();
+    let place = off_runtime(move || store.resolve(&token, ChosenKind::File))
+        .await?
+        .map_err(source_error)?;
+    chosen_paths::plain_string(&place).ok_or_else(|| source_error(ChosenError::Refused))
+}
+
+/// The one door a file enters the editor by: vet the place as a FILE (off the
+/// runtime), open the webview's `asset://` scope to exactly that canonical file
+/// through `grant`, and mint its token. A place that does not vet mints
+/// nothing and grants nothing; a grant that fails mints nothing.
+///
+/// `grant` is the caller's (it owns the `AppHandle`), so the tests can see WHICH
+/// path the webview was given.
+pub(crate) async fn open_source<G>(
+    chosen: &ChosenPaths,
+    place: PathBuf,
+    grant: G,
+) -> AppResult<OpenedRecording>
+where
+    G: FnOnce(&Path) -> AppResult<()>,
+{
+    let vetted = off_runtime(move || chosen_paths::vet(&place, ChosenKind::File))
+        .await?
+        .map_err(source_error)?;
+    let plain = chosen_paths::plain_string(vetted.place())
+        .ok_or_else(|| source_error(ChosenError::Refused))?;
+    editor::allow_asset_path(&plain, grant)?;
+    let name = chosen_paths::display_name(&plain);
+    let token = chosen.mint(vetted);
+    Ok(OpenedRecording {
+        token,
+        name,
+        path: plain,
+    })
+}
+
+/// The grant [`open_source`] is given in the app: widen the webview's `asset://`
+/// scope to the one file. It is the ONLY way a file becomes playable: the
+/// static `assetProtocol.scope.allow` in `tauri.conf.json` is empty (only its
+/// `deny` list stays), so a folder is never open to the page, and a recording
+/// on an external volume plays for the same reason one in `~/Documents` does.
+///
+/// Generic over the runtime so the test can hand it a mock app's scope: what the
+/// webview is allowed to read afterwards is tauri's own answer
+/// (`Scope::is_allowed`), not this function's account of what it asked for.
+fn grant_asset_file<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> impl FnOnce(&Path) -> AppResult<()> + '_ {
+    move |file| {
+        app.asset_protocol_scope()
+            .allow_file(file)
+            .map_err(|e| AppError::Internal(format!("asset scope allow: {e}")))
+    }
+}
+
+/// «Åpne fil …»: open the native file picker FROM RUST, over every audio and
+/// video format the editor can read, and answer with a token for the file the
+/// operator picked — or `null` when they cancelled.
+///
+/// **Takes nothing from the webview** (finding A2). The webview used to open
+/// this picker itself and send the answer back as `input_path` to every command
+/// below; with no per-command ACL it could send any file with no dialog at all.
+/// The picked file must exist, be a file and pass `path_guard`
+/// (`source_missing` / `source_refused`) before a token is minted, and is
+/// checked again whenever a command uses it.
+#[tauri::command]
+pub async fn editor_open_recording(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    db: State<'_, Db>,
+    chosen: State<'_, ChosenPaths>,
+) -> AppResult<Option<OpenedRecording>> {
+    let lang = Lang::from_code(settings::load(&db.pool).await?.language.as_deref());
+    let (all_media, audio, video) = media_filter_names(lang);
+    let every: Vec<&str> = AUDIO_EXT.iter().chain(VIDEO_EXT).copied().collect();
+    let picked = chosen_paths::ask_for_file(
+        &window,
+        &[
+            (all_media, &every),
+            (audio, AUDIO_EXT),
+            (video, VIDEO_EXT),
+            (super::settings::all_files_name(lang), &["*"]),
+        ],
+    )
+    .await?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    open_source(&chosen, picked, grant_asset_file(&app))
+        .await
+        .map(Some)
+}
+
+/// Open a recording the app already KNOWS: the library's and history's rows, the
+/// «Rediger» button on the finished recording. The webview names the history
+/// ROW; the database holds the file. Rows are written by the recorder, and by
+/// startup recovery of an interrupted session — which reads only a manifest the
+/// recorder itself named and puts every file in it through `path_guard`
+/// (`recorder::recovery`) before a row is written.
+/// An id with no row is `source_unknown`; the file behind a row that has gone
+/// (trashed, deleted by hand) is `source_missing`.
+#[tauri::command]
+pub async fn editor_open_known(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    chosen: State<'_, ChosenPaths>,
+    recording_id: String,
+) -> AppResult<OpenedRecording> {
+    open_known(&db.pool, &chosen, &recording_id, grant_asset_file(&app)).await
+}
+
+/// [`editor_open_known`] with the grant passed in, so a test can see what the
+/// webview was given.
+pub(crate) async fn open_known<G>(
+    pool: &SqlitePool,
+    chosen: &ChosenPaths,
+    recording_id: &str,
+    grant: G,
+) -> AppResult<OpenedRecording>
+where
+    G: FnOnce(&Path) -> AppResult<()>,
+{
+    let file = store::recording_file_path(pool, recording_id)
+        .await?
+        .ok_or_else(|| source_error(ChosenError::Unknown))?;
+    open_source(chosen, PathBuf::from(file), grant).await
+}
+
+/// A file dropped on the window — the third door. Called from the window's own
+/// event handler (`window::on_event`): the OS told the PROCESS about the drop,
+/// so the path never passed through the webview. The first file is opened like a
+/// picked one and the page is told with [`FILE_DROPPED_EVENT`]; the page used to
+/// get the path from the drag-drop event and send it back, which is the shape
+/// A2 closes.
+pub fn note_drop(window: &tauri::Window, event: &tauri::DragDropEvent) {
+    let tauri::DragDropEvent::Drop { paths, position } = event else {
+        return;
+    };
+    let Some(first) = paths.first().cloned() else {
+        return;
+    };
+    let (x, y) = (position.x, position.y);
+    let window = window.clone();
+    tauri::async_runtime::spawn(async move {
+        let app = window.app_handle().clone();
+        let chosen = app.state::<ChosenPaths>().inner().clone();
+        let dropped = dropped_recording(&chosen, first, (x, y), grant_asset_file(&app)).await;
+        let _ = window.emit(FILE_DROPPED_EVENT, dropped);
+    });
+}
+
+/// [`note_drop`] once the OS has handed over the dropped file: opened like a
+/// picked one, or the code that says why not.
+pub(crate) async fn dropped_recording<G>(
+    chosen: &ChosenPaths,
+    file: PathBuf,
+    at: (f64, f64),
+    grant: G,
+) -> DroppedRecording
+where
+    G: FnOnce(&Path) -> AppResult<()>,
+{
+    let (opened, error) = match open_source(chosen, file, grant).await {
+        Ok(opened) => (Some(opened), None),
+        Err(e) => (None, Some(leading_code(&e))),
+    };
+    DroppedRecording {
+        opened,
+        error,
+        x: at.0,
+        y: at.1,
+    }
+}
+
+/// The leading code of a refusal (`source_missing: …` → `source_missing`);
+/// whatever else an error says is not for the page.
+fn leading_code(e: &AppError) -> String {
+    let text = e.to_string();
+    let rest = text
+        .split_once(": ")
+        .map_or(text.as_str(), |(_, rest)| rest);
+    rest.split(':').next().unwrap_or_default().to_string()
+}
+
 /// Probe a recording's duration/streams for the editor's first paint.
 #[tauri::command]
-pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaInfo> {
-    super::path_guard::checked_input_file(&input_path)?;
+pub async fn editor_load_recording(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+) -> AppResult<EditorMediaInfo> {
+    let source = resolve_source(&chosen, &source_token).await?;
     // The editor's entry point: loading a recording IS opening the editor.
     crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::EditorOpened);
-    editor::load_recording(&input_path).await
+    editor::load_recording(&source).await
 }
 
 /// Decode the audio to a renderer waveform (peaks + sample rate). Streamed and
@@ -97,40 +382,35 @@ pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaI
 /// also why the `editor://peaks-progress` ticks stop arriving instantly on a
 /// warm open: there is no decode to report.
 #[tauri::command]
-pub async fn editor_peaks(app: tauri::AppHandle, input_path: String) -> AppResult<EditorPeaks> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::peaks(&input_path, decode_progress(app, "editor://peaks-progress")).await
+pub async fn editor_peaks(
+    app: tauri::AppHandle,
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+) -> AppResult<EditorPeaks> {
+    let source = resolve_source(&chosen, &source_token).await?;
+    editor::peaks(&source, decode_progress(app, "editor://peaks-progress")).await
 }
 
 /// Transcode a large/exotic recording to a seekable stereo AAC proxy for
 /// full-fidelity playback; returns the temp-file path the renderer streams via
 /// `asset://` (an `<audio>` element). Export still runs on the original, so
-/// quality is untouched. HARDWARE-UNVERIFIED.
+/// quality is untouched. The proxy is a file RUST just made in the temp folder,
+/// so the asset scope is widened to it here, not by a path the webview names.
+/// HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_extract_playback_proxy(
     app: tauri::AppHandle,
-    input_path: String,
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
 ) -> AppResult<String> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::extract_playback_proxy(&input_path, decode_progress(app, "editor://proxy-progress"))
-        .await
-}
-
-/// Widen the webview's `asset://` scope to ONE media file so the editor can put
-/// it in an `<audio>`/`<video>` `src`. The static scope globs in
-/// `tauri.conf.json` cover the standard user folders only — a recording on an
-/// external volume matches none of them and would fail to load with no visible
-/// reason. The path goes through the same `path_guard` as every other editor
-/// command first, so the renderer can never widen the scope into `~/.ssh` & co.
-#[tauri::command]
-pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult<()> {
-    super::path_guard::checked_input_file(&path)?;
-    editor::allow_asset_path(&path, |p| {
-        use tauri::Manager;
-        app.asset_protocol_scope()
-            .allow_file(p)
-            .map_err(|e| crate::error::AppError::Internal(format!("asset scope allow: {e}")))
-    })
+    let source = resolve_source(&chosen, &source_token).await?;
+    let proxy = editor::extract_playback_proxy(
+        &source,
+        decode_progress(app.clone(), "editor://proxy-progress"),
+    )
+    .await?;
+    editor::allow_asset_path(&proxy, grant_asset_file(&app))?;
+    Ok(proxy)
 }
 
 /// Content-detect timeline segments (silence/speech/music + promoted sermon).
@@ -140,18 +420,19 @@ pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult
 #[tauri::command]
 pub async fn editor_segments(
     app: tauri::AppHandle,
-    input_path: String,
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
     force: Option<bool>,
 ) -> AppResult<Vec<EditorSegment>> {
-    super::path_guard::checked_input_file(&input_path)?;
+    let source = resolve_source(&chosen, &source_token).await?;
     let (segments, analysis) = editor::segments(
-        &input_path,
+        &source,
         force.unwrap_or(false),
         decode_progress(app.clone(), "editor://analysis-progress"),
     )
     .await?;
     if let Some(detection) = analysis {
-        shadow_the_analysis(&app, &input_path, &detection);
+        shadow_the_analysis(&app, &source, &detection);
     }
     Ok(segments)
 }
@@ -239,52 +520,34 @@ pub fn editor_master_presets() -> AppResult<Vec<crate::editor::EditorMasterPrese
 /// motoren nå ville gjort de oversatte nøklene til søppel og betalt for
 /// halvparten av jobben to ganger.
 #[tauri::command]
-pub async fn editor_diagnose_channels(input_path: String) -> AppResult<EditorChannelDiagnosis> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::diagnose_channels(&input_path).await
+pub async fn editor_diagnose_channels(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+) -> AppResult<EditorChannelDiagnosis> {
+    let source = resolve_source(&chosen, &source_token).await?;
+    editor::diagnose_channels(&source).await
 }
 
 /// One-click "auto-improve": diagnose channels + recommend the full best-result
 /// processing setup (channel repair + podcast vocal chain + clear mastering).
 #[tauri::command]
-pub async fn editor_auto_process(input_path: String) -> AppResult<EditorAutoProcess> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::auto_process(&input_path).await
+pub async fn editor_auto_process(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+) -> AppResult<EditorAutoProcess> {
+    let source = resolve_source(&chosen, &source_token).await?;
+    editor::auto_process(&source).await
 }
 
 /// Measure the recording's loudness against a mastering preset (pass 1 only).
 #[tauri::command]
 pub async fn editor_mastering_analyze(
-    input_path: String,
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
     preset_id: String,
 ) -> AppResult<EditorLoudness> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::mastering_analyze(&input_path, &preset_id).await
-}
-
-/// Run every path guard an export request is subject to: the source, and the
-/// intro/outro clips. (Extracted in E5.3, so the guards are tests rather than
-/// a live `AppHandle` away.)
-///
-/// The destination is NOT here any more, because it is no longer a path. Until
-/// finding A2 the request carried `output_folder`, the answer of a folder
-/// picker the WEBVIEW opened, and this guarded it with `checked_path` — which
-/// judges a folder only against the protected home folders, so a compromised
-/// webview could render into any other folder the user can write to, no
-/// dialog needed. (Its one exemption, the empty string meaning «Samme mappe»,
-/// was itself a shipped bug once: guarding `''` as a path broke every default
-/// export.) Now the request names a folder only by a token
-/// [`editor_pick_output_folder`] minted, and [`resolve_export_folder`] turns
-/// it into a folder; «Samme mappe» is simply no token.
-fn check_export_paths(request: &EditorExportRequest) -> AppResult<()> {
-    super::path_guard::checked_input_file(&request.input_path)?;
-    for clip in [&request.intro_path, &request.outro_path]
-        .into_iter()
-        .flatten()
-    {
-        super::path_guard::checked_input_file(clip)?;
-    }
-    Ok(())
+    let source = resolve_source(&chosen, &source_token).await?;
+    editor::mastering_analyze(&source, &preset_id).await
 }
 
 /// The sentence-carrying error for a picked export folder that cannot be used.
@@ -332,25 +595,96 @@ async fn resolve_export_folder(
     Ok(ExportFolder::Picked(plain))
 }
 
-/// The part of `editor_export` that decides WHERE: resolve the request's token
-/// into the folder, and hand THAT — never the token, never anything the
-/// request carries — to `seam`, the render. Split from the command so a test
-/// can stand in for the render and see exactly what folder it is given
-/// (`the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent`).
+/// The sentence-carrying error for a saved intro/outro clip that cannot be
+/// used any more: moved, deleted, or in a protected folder. One code for all
+/// three — the page cannot do anything different for them, and nothing in it
+/// picks a clip (see `settings_pick_editor_intro`).
+fn export_clip_error() -> AppError {
+    AppError::Validation(
+        "export_clip_unusable: the saved intro or outro clip cannot be used".into(),
+    )
+}
+
+/// The intro and outro clips an export splices in: the ones in the SAVED
+/// settings, and only when the request asks for them (`use_intro`/`use_outro`).
+/// Never a path from the request — it has none (A2).
+///
+/// A clip that is asked for but not stored is no clip (the same as unchecked); a
+/// clip that is stored but no longer passes — [`chosen_paths::vet`] as a file:
+/// there, a file, outside the protected folders — is `export_clip_unusable`,
+/// not a silently shorter export. Runs off the async runtime: a clip can live
+/// on a share.
+async fn resolve_clips(
+    pool: &SqlitePool,
+    request: &EditorExportRequest,
+) -> AppResult<(Option<String>, Option<String>)> {
+    if !request.use_intro && !request.use_outro {
+        return Ok((None, None));
+    }
+    let stored = settings::load(pool).await?;
+    let wanted = |used: bool, saved: Option<String>| {
+        saved
+            .filter(|p| used && !p.trim().is_empty())
+            .map(PathBuf::from)
+    };
+    let (intro, outro) = (
+        wanted(request.use_intro, stored.editor_intro_path),
+        wanted(request.use_outro, stored.editor_outro_path),
+    );
+    off_runtime(move || {
+        let vet = |clip: Option<PathBuf>| -> AppResult<Option<String>> {
+            let Some(clip) = clip else { return Ok(None) };
+            let vetted =
+                chosen_paths::vet(&clip, ChosenKind::File).map_err(|_| export_clip_error())?;
+            chosen_paths::plain_string(vetted.place())
+                .map(Some)
+                .ok_or_else(export_clip_error)
+        };
+        Ok((vet(intro)?, vet(outro)?))
+    })
+    .await?
+}
+
+/// Every PLACE an export reads or writes, from the request's tokens and the
+/// saved settings: the recording ([`resolve_source`]), the folder
+/// ([`resolve_export_folder`]) and the jingles ([`resolve_clips`]). Each
+/// refusal comes back as its own code before anything is rendered.
+async fn resolve_export(
+    chosen: &ChosenPaths,
+    pool: &SqlitePool,
+    request: &EditorExportRequest,
+) -> AppResult<ResolvedExport> {
+    let source = resolve_source(chosen, &request.source_token).await?;
+    let folder = resolve_export_folder(chosen, request.output_folder_token.as_deref()).await?;
+    let (intro, outro) = resolve_clips(pool, request).await?;
+    Ok(ResolvedExport {
+        source,
+        intro,
+        outro,
+        folder,
+    })
+}
+
+/// The part of `editor_export` that decides WHERE: resolve the request's tokens
+/// into the places ([`resolve_export`]), and hand THOSE — never a token, never
+/// anything the request carries — to `seam`, the render. Split from the command
+/// so a test can stand in for the render and see exactly what it is given
+/// (`the_export_is_handed_the_resolved_places_and_nothing_the_webview_sent`).
 ///
 /// A token that does not resolve means `seam` is never called: nothing is
-/// rendered into a folder that was not checked.
+/// rendered from a file or into a folder that was not checked.
 async fn run_export<T, F, Fut>(
     chosen: &ChosenPaths,
+    pool: &SqlitePool,
     request: &EditorExportRequest,
     seam: F,
 ) -> AppResult<T>
 where
-    F: FnOnce(ExportFolder) -> Fut,
+    F: FnOnce(ResolvedExport) -> Fut,
     Fut: std::future::Future<Output = AppResult<T>>,
 {
-    let folder = resolve_export_folder(chosen, request.output_folder_token.as_deref()).await?;
-    seam(folder).await
+    let resolved = resolve_export(chosen, pool, request).await?;
+    seam(resolved).await
 }
 
 /// «Velg mappe …» on the export page: open the native folder picker FROM RUST
@@ -429,29 +763,30 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 /// `in_flight` field on `ExportEngine` documents what two exports on one engine
 /// actually do to each other's files.
 ///
-/// WHERE (A2): next to the source, or into the folder behind
-/// `output_folder_token` — see [`resolve_export_folder`]. The request carries
-/// no path that decides where ffmpeg writes.
+/// WHAT and WHERE (A2): the recording behind `source_token`, next to it or into
+/// the folder behind `output_folder_token`, with the saved jingles when
+/// `use_intro`/`use_outro` ask for them — see [`resolve_export`]. The request
+/// carries no path that decides what ffmpeg reads or where it writes.
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
     engine: State<'_, ExportEngine>,
     delivered: State<'_, super::recordings_open::DeliveredExports>,
     chosen: State<'_, ChosenPaths>,
+    db: State<'_, Db>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
-    check_export_paths(&request)?;
     // v0.15: hardware video encode is automatic — hardware first where the
     // platform has it, software on a failed render (the `editorHwEncode`
     // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
     //
-    // The seam is given the folder `run_export` resolved, and only that.
+    // The seam is given the places `run_export` resolved, and only those.
     let (engine, request_ref) = (&*engine, &request);
-    let result = run_export(&chosen, request_ref, |folder| async move {
+    let result = run_export(&chosen, &db.pool, request_ref, |resolved| async move {
         editor::export(
             engine,
             request_ref,
-            &folder,
+            &resolved,
             editor::HW_ENCODE_FIRST,
             move |pct, phase| {
                 let _ = app.emit(
@@ -607,7 +942,7 @@ pub fn editor_sermon_pick(
 //                     ut: «et eget `editor_probe_streams` ville vært en ny
 //                     ffprobe for et svar vi har»).
 //   - read_file     → avspilling går på `asset://` gjennom
-//                     `editor_allow_asset_path`; ingen leser en hel opptaksfil
+//                     `editor_open_*` (som åpner `asset://` for fila); ingen leser en hel opptaksfil
 //                     inn i webviewet lenger.
 //   - cleanup_temp  → den AUTOMATISKE `editor::startup_sweep` (E6.5) kjører i
 //                     `lib.rs`-oppsettet på hver oppstart.
@@ -619,13 +954,20 @@ pub fn editor_sermon_pick(
 // risikoen som fikk mastering-kvartetten (b4) til å bli stående. Det som lukkes
 // her er IPC-flaten. Å åpne en dør igjen er én `#[tauri::command]`-innpakning.
 
-/// Render a windowed single-pass mastering preview to a temp mp3.
+/// Render a windowed single-pass mastering preview to a temp mp3 of the
+/// recording behind `request.source_token`.
 #[tauri::command]
 pub async fn editor_master_preview(
+    app: tauri::AppHandle,
+    chosen: State<'_, ChosenPaths>,
     request: EditorMasterPreviewRequest,
 ) -> AppResult<EditorMasterPreviewResult> {
-    super::path_guard::checked_input_file(&request.input_path)?;
-    editor::master_preview(&request).await
+    let source = resolve_source(&chosen, &request.source_token).await?;
+    let preview = editor::master_preview(&request, &source).await?;
+    // The preview is a temp file Rust just rendered; the webview plays it over
+    // `asset://`, so the scope is widened to it here.
+    editor::allow_asset_path(&preview.preview_path, grant_asset_file(&app))?;
+    Ok(preview)
 }
 
 // `editor_master_apply` (the `#[tauri::command]` wrapper around
@@ -648,6 +990,94 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     use sundayrec_core::telemetry::CounterName;
+    // `mock_app` is not built on Windows (see Cargo.toml: the `test` feature
+    // there leaves the lib test binary unloadable), so neither is what uses it.
+    #[cfg(not(windows))]
+    use tauri::Manager;
+
+    // ── The asset grant: one file, in tauri's own scope ──────────────────────
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_asset_grant_opens_the_one_file_and_nothing_beside_it() {
+        // Against a real (mock-runtime) app and its REAL asset scope, asking
+        // tauri what the webview may read afterwards. A grant that widened to
+        // the file's folder (`allow_directory(parent, true)`) would answer yes
+        // for the neighbour and the subfolder below.
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().canonicalize().unwrap();
+        let played = folder.join("gudstjeneste.wav");
+        let neighbour = folder.join("hemmelig.wav");
+        let below = folder.join("under");
+        std::fs::create_dir_all(&below).unwrap();
+        let deeper = below.join("dypere.wav");
+        for f in [&played, &neighbour, &deeper] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        let scope = handle.asset_protocol_scope();
+        assert!(
+            !scope.is_allowed(&played),
+            "nothing is open before the grant"
+        );
+
+        grant_asset_file(handle)(&played).expect("the grant is made");
+
+        assert!(scope.is_allowed(&played), "the file itself plays");
+        assert!(!scope.is_allowed(&neighbour), "its neighbour does not");
+        assert!(
+            !scope.is_allowed(&deeper),
+            "nor does anything below the folder"
+        );
+        assert!(
+            !scope.is_allowed(&folder),
+            "and the folder itself is not open"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn two_grants_open_two_files_and_no_more() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().canonicalize().unwrap();
+        let (a, b, c) = (
+            folder.join("a.wav"),
+            folder.join("b.wav"),
+            folder.join("c.wav"),
+        );
+        for f in [&a, &b, &c] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        grant_asset_file(handle)(&a).unwrap();
+        grant_asset_file(handle)(&b).unwrap();
+        let scope = handle.asset_protocol_scope();
+        assert!(scope.is_allowed(&a) && scope.is_allowed(&b));
+        assert!(!scope.is_allowed(&c));
+    }
+
+    #[test]
+    fn the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list() {
+        // `grant_asset_file` is only worth testing as the ONLY grant if nothing
+        // is open before it: a glob here would make every file in a user folder
+        // readable from the page without Rust having been asked.
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let scope = &conf["app"]["security"]["assetProtocol"]["scope"];
+        assert_eq!(conf["app"]["security"]["assetProtocol"]["enable"], true);
+        assert_eq!(
+            scope["allow"].as_array().map(Vec::len),
+            Some(0),
+            "assetProtocol.scope.allow must stay empty: files are granted one at a time \
+             by `grant_asset_file`, see SECURITY.md"
+        );
+        assert!(
+            scope["deny"].as_array().is_some_and(|d| !d.is_empty()),
+            "the deny list stays (it is also pinned against path_guard's list)"
+        );
+    }
 
     // ── The liturgical-day lookup behind the «Innhold» title ─────────────────
 
@@ -748,12 +1178,16 @@ mod tests {
         }
     }
 
-    // ── The export path guards ───────────────────────────────────────────────
+    // ── The export's places: tokens in, resolved places out (A2) ─────────────
+    //
+    // The native dialogs cannot run in a test, so these call the half each
+    // command hands the dialog's answer to: `None` for a cancel, a place for a
+    // pick — the half `editor_export` resolves the tokens with is everything
+    // either command does around the dialog.
 
     /// A syntactically absolute path that (almost certainly) does not exist —
-    /// for exercising the "missing file" branch of `path_guard::checked_input_file`,
-    /// which must get PAST `require_absolute` to reach its `canonicalize()`
-    /// error.
+    /// for exercising the "missing file" branch of the vet, which must get PAST
+    /// `require_absolute` to reach its `canonicalize()` error.
     ///
     /// F2-W7: a bare `/definitely/not/here.mp3` literal is absolute on
     /// Unix but NOT on Windows (`Path::is_absolute()` there requires a
@@ -769,9 +1203,9 @@ mod tests {
         }
     }
 
-    fn request(input: &str) -> EditorExportRequest {
+    fn request(source_token: &str) -> EditorExportRequest {
         serde_json::from_value(serde_json::json!({
-            "inputPath": input,
+            "sourceToken": source_token,
             "cutRegions": [],
             "duration": 60.0,
             "format": "mp3",
@@ -779,61 +1213,449 @@ mod tests {
             "bitrate": null,
             "bitDepth": null,
             "masterPreset": null,
-            "introPath": null,
-            "outroPath": null,
+            "useIntro": false,
+            "useOutro": false,
             "gainDb": null,
         }))
         .expect("the export request literal must stay in sync with the struct")
     }
 
+    /// A migrated database in a temp dir.
+    async fn pool_in(dir: &Path) -> SqlitePool {
+        crate::db::store::open_pool(&dir.join("test.sqlite"))
+            .await
+            .expect("open_pool")
+    }
+
+    /// A file of its own under `dir`, with its canonical path as the plain
+    /// string the seam is handed (macOS' `/var` is `/private/var`).
+    fn recording(dir: &Path, name: &str) -> (PathBuf, String) {
+        let file = dir.join(name);
+        std::fs::write(&file, b"x").unwrap();
+        let plain = chosen_paths::plain_string(&file.canonicalize().unwrap()).unwrap();
+        (file, plain)
+    }
+
+    /// Open `file` the way a picked file opens, granting nothing.
+    async fn opened(store: &ChosenPaths, file: &Path) -> OpenedRecording {
+        open_source(store, file.to_path_buf(), |_| Ok(()))
+            .await
+            .expect("the file opens")
+    }
+
+    /// The leading code of a refusal, for the assertions below.
+    fn code_of<T: std::fmt::Debug>(result: AppResult<T>) -> String {
+        match result {
+            Err(AppError::Validation(msg)) => msg.split(':').next().unwrap_or_default().into(),
+            other => panic!("expected a Validation refusal, got {other:?}"),
+        }
+    }
+
+    // ── The recording: three doors, one token ────────────────────────────────
+
+    #[tokio::test]
+    async fn a_picked_recording_round_trips_as_a_token_and_shows_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let (file, plain) = recording(dir.path(), "2026-08-02 Gudstjeneste.mp3");
+        let store = ChosenPaths::new();
+
+        let open = opened(&store, &file).await;
+
+        assert_eq!(open.name, "2026-08-02 Gudstjeneste.mp3");
+        assert_eq!(open.path, plain, "the canonical path, for playback");
+        assert!(
+            !open.token.contains("Gudstjeneste") && !open.token.contains('/'),
+            "the token says nothing about the place: {open:?}"
+        );
+        assert_eq!(resolve_source(&store, &open.token).await.unwrap(), plain);
+        // Every later command names it by the same token: it is not used up.
+        assert!(resolve_source(&store, &open.token).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn the_webview_is_granted_exactly_the_canonical_file_it_opened() {
+        // The grant widens `asset://` to ONE file. It must be the file that was
+        // vetted — the canonical place — and not the spelling the dialog (or a
+        // symlink) gave, and never anything else.
+        let dir = tempfile::tempdir().unwrap();
+        let (file, plain) = recording(dir.path(), "opptak.mp3");
+        let (_, decoy) = recording(dir.path(), "annen-fil.mp3");
+        let store = ChosenPaths::new();
+        let granted = std::sync::Mutex::new(Vec::<PathBuf>::new());
+
+        open_source(&store, file.clone(), |p| {
+            granted.lock().unwrap().push(p.to_path_buf());
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(*granted.lock().unwrap(), vec![PathBuf::from(&plain)]);
+        assert_ne!(granted.lock().unwrap()[0], PathBuf::from(decoy));
+        #[cfg(unix)]
+        {
+            // A symlink picks the file it points at, and that is what is granted.
+            let alias = dir.path().join("snarvei.mp3");
+            std::os::unix::fs::symlink(&file, &alias).unwrap();
+            granted.lock().unwrap().clear();
+            open_source(&store, alias, |p| {
+                granted.lock().unwrap().push(p.to_path_buf());
+                Ok(())
+            })
+            .await
+            .unwrap();
+            assert_eq!(*granted.lock().unwrap(), vec![PathBuf::from(&plain)]);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_place_that_does_not_vet_grants_and_mints_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChosenPaths::new();
+        let ran = std::sync::atomic::AtomicBool::new(false);
+        // A folder, and a file that is not there.
+        for picked in [
+            dir.path().to_path_buf(),
+            dir.path().join("finnes-ikke.mp3"),
+            PathBuf::from(missing_absolute_path()),
+        ] {
+            let result = open_source(&store, picked.clone(), |_| {
+                ran.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await;
+            assert_eq!(code_of(result), "source_missing", "{picked:?}");
+        }
+        assert!(
+            !ran.load(std::sync::atomic::Ordering::SeqCst),
+            "the webview was granted a place that never vetted"
+        );
+        // …and a grant that fails mints no token.
+        let (file, _) = recording(dir.path(), "opptak.mp3");
+        let failing = open_source(&store, file, |_| {
+            Err(AppError::Internal("asset scope allow: no".into()))
+        })
+        .await;
+        assert!(failing.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_made_up_or_foreign_source_token_is_refused_with_its_own_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let (file, plain) = recording(dir.path(), "opptak.mp3");
+        let store = ChosenPaths::new();
+        let real = opened(&store, &file).await.token;
+
+        // Made up, a path where the token goes — the old wire value — a
+        // traversal, and a token minted for a FOLDER.
+        let folder = dir.path().join("Eksport");
+        std::fs::create_dir_all(&folder).unwrap();
+        let folder_token =
+            store.mint(chosen_paths::vet(&folder, ChosenKind::Folder).expect("a folder vets"));
+        for forged in [
+            "00000000-0000-0000-0000-000000000000",
+            plain.as_str(),
+            "../../.ssh",
+            "",
+            folder_token.as_str(),
+        ] {
+            assert_eq!(
+                code_of(resolve_source(&store, forged).await),
+                "source_unknown",
+                "{forged:?}"
+            );
+        }
+        assert_eq!(
+            code_of(resolve_source(&ChosenPaths::new(), &real).await),
+            "source_unknown",
+            "a token means nothing to a session that did not mint it"
+        );
+        // …and the reverse: a File token is no folder.
+        assert_eq!(
+            code_of(resolve_export_folder(&store, Some(&real)).await),
+            "export_folder_unknown"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_token_to_a_recording_gone_since_the_open_is_refused() {
+        // Moved to the papirkurv between «Åpne» and the next command.
+        let dir = tempfile::tempdir().unwrap();
+        let (file, _) = recording(dir.path(), "opptak.mp3");
+        let store = ChosenPaths::new();
+        let token = opened(&store, &file).await.token;
+
+        std::fs::remove_file(&file).unwrap();
+
+        assert_eq!(
+            code_of(resolve_source(&store, &token).await),
+            "source_missing"
+        );
+    }
+
     #[test]
-    fn the_default_export_passes_the_guards() {
+    fn every_source_refusal_has_a_sentence_in_the_renderer() {
+        // Two sides of one seam: these codes are born here, and the page turns
+        // them into a sentence — the export page through `EXPORT_ERROR_KEYS`,
+        // the loader through `isMissingFileFailure` (`source_missing` is
+        // «Fant ikke fila»; the others are its generic «Kunne ikke åpne»).
+        let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/editor");
+        let export = std::fs::read_to_string(app.join("export-core.ts")).unwrap();
+        let loader = std::fs::read_to_string(app.join("loader-core.ts")).unwrap();
+        let mut codes = Vec::new();
+        for why in [
+            ChosenError::Unknown,
+            ChosenError::Gone,
+            ChosenError::Refused,
+        ] {
+            let msg = source_error(why).to_string();
+            assert!(!msg.contains('/'), "no path in a refusal: {msg}");
+            let code = leading_code(&source_error(why));
+            assert!(
+                export.contains(&format!("[\"{code}\", \"err")),
+                "`{code}` has no sentence in app/editor/export-core.ts"
+            );
+            codes.push(code);
+        }
+        let clip = leading_code(&export_clip_error());
+        assert!(
+            export.contains(&format!("[\"{clip}\", \"err")),
+            "`{clip}` has no sentence in app/editor/export-core.ts"
+        );
+        assert!(
+            loader.contains("source_missing"),
+            "the loader does not know `source_missing` from an unreadable file"
+        );
+        codes.push(clip);
+        codes.sort();
+        codes.dedup();
+        assert_eq!(codes.len(), 4, "each refusal has its own code: {codes:?}");
+    }
+
+    // ── A library or history row opens by its id ─────────────────────────────
+
+    /// A history row for `file`, and the id the webview would name it by.
+    async fn history_row(pool: &SqlitePool, file: &str) -> String {
+        crate::db::store::insert_recording(
+            pool,
+            crate::db::store::RecordingRow {
+                id: String::new(),
+                file_path: file.to_string(),
+                device_name: None,
+                started_at: 1.0,
+                duration_ms: None,
+                byte_size: None,
+                created_at: 0.0,
+                note: None,
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    #[tokio::test]
+    async fn a_history_row_opens_by_its_id_and_the_webview_is_granted_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let (file, plain) = recording(dir.path(), "2026-08-02 Gudstjeneste.mp3");
+        let id = history_row(&pool, file.to_str().unwrap()).await;
+        let store = ChosenPaths::new();
+        let granted = std::sync::Mutex::new(Vec::<PathBuf>::new());
+
+        let open = open_known(&pool, &store, &id, |p| {
+            granted.lock().unwrap().push(p.to_path_buf());
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(open.path, plain);
+        assert_eq!(*granted.lock().unwrap(), vec![PathBuf::from(&plain)]);
+        assert_eq!(resolve_source(&store, &open.token).await.unwrap(), plain);
+    }
+
+    #[tokio::test]
+    async fn an_id_with_no_row_is_unknown_and_a_path_is_no_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let (file, plain) = recording(dir.path(), "opptak.mp3");
+        // The file exists and is NOT in the history: only a row opens a file by
+        // name, so neither a made-up id nor the file's own path gets in.
+        let store = ChosenPaths::new();
+        let ran = std::sync::atomic::AtomicBool::new(false);
+        for forged in ["nope", "", plain.as_str(), file.to_str().unwrap()] {
+            let result = open_known(&pool, &store, forged, |_| {
+                ran.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await;
+            assert_eq!(code_of(result), "source_unknown", "{forged:?}");
+        }
+        assert!(!ran.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_history_row_whose_file_has_gone_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let (file, _) = recording(dir.path(), "opptak.mp3");
+        let id = history_row(&pool, file.to_str().unwrap()).await;
+        std::fs::remove_file(&file).unwrap();
+
+        let result = open_known(&pool, &ChosenPaths::new(), &id, |_| Ok(())).await;
+
+        assert_eq!(code_of(result), "source_missing");
+    }
+
+    // ── A drop on the window ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn a_dropped_file_opens_like_a_picked_one_and_carries_where_it_landed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (file, plain) = recording(dir.path(), "opptak.mp3");
+        let store = ChosenPaths::new();
+        let granted = std::sync::Mutex::new(Vec::<PathBuf>::new());
+
+        let dropped = dropped_recording(&store, file, (120.0, 340.5), |p| {
+            granted.lock().unwrap().push(p.to_path_buf());
+            Ok(())
+        })
+        .await;
+
+        let open = dropped.opened.expect("a file opens");
+        assert_eq!((dropped.error, dropped.x, dropped.y), (None, 120.0, 340.5));
+        assert_eq!(resolve_source(&store, &open.token).await.unwrap(), plain);
+        assert_eq!(*granted.lock().unwrap(), vec![PathBuf::from(plain)]);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_folder_says_why_it_did_not_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let dropped = dropped_recording(&ChosenPaths::new(), dir.path().into(), (1.0, 2.0), |_| {
+            Ok(())
+        })
+        .await;
+        assert_eq!(dropped.opened, None);
+        assert_eq!(dropped.error.as_deref(), Some("source_missing"));
+    }
+
+    // ── The export's places ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn a_default_export_resolves_its_source_and_goes_next_to_it() {
         // The E5.3 regression, in its new shape: «Samme mappe» is the export
         // page's DEFAULT, and once guarding '' as a path made
         // `require_absolute` refuse every default export before ffmpeg ran.
         // There is no folder string left to guard; no token must pass.
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("take.mp3");
-        std::fs::write(&src, b"x").unwrap();
-        check_export_paths(&request(src.to_str().unwrap()))
-            .expect("a default export must pass the guards");
+        let pool = pool_in(dir.path()).await;
+        let (file, plain) = recording(dir.path(), "take.mp3");
+        let store = ChosenPaths::new();
+        let token = opened(&store, &file).await.token;
+
+        let resolved = resolve_export(&store, &pool, &request(&token))
+            .await
+            .expect("a default export must resolve");
+
+        assert_eq!(
+            resolved,
+            ResolvedExport {
+                source: plain,
+                intro: None,
+                outro: None,
+                folder: ExportFolder::BesideSource,
+            }
+        );
     }
 
-    #[test]
-    fn a_missing_input_file_is_refused_before_anything_else() {
-        let err = check_export_paths(&request(missing_absolute_path()))
-            .expect_err("a non-existent input must be refused");
-        assert!(err.to_string().contains("cannot resolve path"), "got {err}");
-    }
-
-    #[test]
-    fn intro_and_outro_clips_are_guarded_too() {
+    #[tokio::test]
+    async fn an_export_of_a_recording_that_is_not_open_is_refused_before_anything_else() {
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("take.mp3");
-        std::fs::write(&src, b"x").unwrap();
-
-        let mut req = request(src.to_str().unwrap());
-        req.intro_path = Some(missing_absolute_path().into());
-        check_export_paths(&req).expect_err("a bogus intro must be refused");
-
-        let mut req = request(src.to_str().unwrap());
-        req.outro_path = Some(missing_absolute_path().into());
-        check_export_paths(&req).expect_err("a bogus outro must be refused");
-
-        // …and `None` for both is the normal case, which must still pass.
-        check_export_paths(&request(src.to_str().unwrap())).expect("no clips must pass");
+        let pool = pool_in(dir.path()).await;
+        let store = ChosenPaths::new();
+        // A made-up token, and the old wire value: the file's own path.
+        let (_, plain) = recording(dir.path(), "take.mp3");
+        for forged in ["00000000-0000-0000-0000-000000000000", plain.as_str()] {
+            assert_eq!(
+                code_of(resolve_export(&store, &pool, &request(forged)).await),
+                "source_unknown",
+                "{forged:?}"
+            );
+        }
     }
 
-    // ── The export folder: a dialog Rust opens, a token the webview holds (A2)
-    //
-    // The native dialog cannot run in a test, so these call the half the
-    // command hands the dialog's answer to — `None` for a cancel, a folder for
-    // a pick — and the half `editor_export` resolves the token with, which is
-    // everything either command does around the dialog.
+    #[tokio::test]
+    async fn an_old_shape_payload_names_no_source() {
+        // `inputPath` is no field any more: serde ignores the key, and without
+        // a token the request does not even parse. A compromised webview
+        // trying the field that used to decide what ffmpeg reads gets nothing.
+        let mut payload = serde_json::to_value(request("t")).unwrap();
+        let fields = payload.as_object_mut().unwrap();
+        fields.remove("sourceToken");
+        fields.insert("inputPath".into(), "/etc/hosts".into());
+        fields.insert("introPath".into(), "/etc/hosts".into());
+        assert!(serde_json::from_value::<EditorExportRequest>(payload).is_err());
+    }
+
+    // ── The jingles: a switch in the request, a path only in the settings ────
+
+    #[tokio::test]
+    async fn use_intro_reads_the_saved_clip_and_revalidates_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let (intro, intro_plain) = recording(dir.path(), "intro.wav");
+        let (outro, _) = recording(dir.path(), "outro.wav");
+        let mut stored = settings::load(&pool).await.unwrap();
+        stored.editor_intro_path = Some(intro.to_str().unwrap().into());
+        stored.editor_outro_path = Some(outro.to_str().unwrap().into());
+        settings::save(&pool, stored).await.unwrap();
+        let store = ChosenPaths::new();
+        let (src, _) = recording(dir.path(), "take.mp3");
+        let token = opened(&store, &src).await.token;
+
+        // Off by default: the stored clips are not spliced in unasked.
+        let mut req = request(&token);
+        let resolved = resolve_export(&store, &pool, &req).await.unwrap();
+        assert_eq!((resolved.intro, resolved.outro), (None, None));
+
+        // Asked for: the clip comes from the settings, canonical.
+        req.use_intro = true;
+        let resolved = resolve_export(&store, &pool, &req).await.unwrap();
+        assert_eq!(resolved.intro, Some(intro_plain));
+        assert_eq!(resolved.outro, None, "the outro was not asked for");
+
+        // The clip is checked again NOW: deleted since it was picked, it is
+        // refused — not a silently shorter export.
+        std::fs::remove_file(&intro).unwrap();
+        assert_eq!(
+            code_of(resolve_export(&store, &pool, &req).await),
+            "export_clip_unusable"
+        );
+        // …and an unused clip that is gone is nobody's business.
+        req.use_intro = false;
+        assert!(resolve_export(&store, &pool, &req).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn use_intro_with_no_saved_clip_is_no_intro() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let (src, _) = recording(dir.path(), "take.mp3");
+        let store = ChosenPaths::new();
+        let token = opened(&store, &src).await.token;
+        let mut req = request(&token);
+        req.use_intro = true;
+        req.use_outro = true;
+        let resolved = resolve_export(&store, &pool, &req).await.unwrap();
+        assert_eq!((resolved.intro, resolved.outro), (None, None));
+    }
+
+    // ── Where an export lands ────────────────────────────────────────────────
 
     /// A folder of its own under `dir`, and its canonical path as the plain
     /// string the seam is handed (macOS' `/var` is `/private/var`).
-    fn picked_folder(dir: &std::path::Path, name: &str) -> (PathBuf, String) {
+    fn picked_folder(dir: &Path, name: &str) -> (PathBuf, String) {
         let folder = dir.join(name);
         std::fs::create_dir_all(&folder).unwrap();
         let canonical = folder.canonicalize().unwrap();
@@ -841,12 +1663,10 @@ mod tests {
         (folder, plain)
     }
 
-    /// The leading code of a refusal, for the assertions below.
-    fn code_of(result: AppResult<ExportFolder>) -> String {
-        match result {
-            Err(AppError::Validation(msg)) => msg.split(':').next().unwrap_or_default().into(),
-            other => panic!("expected a Validation refusal, got {other:?}"),
-        }
+    /// The folder half of [`resolve_export`], for the tests that are only about
+    /// the folder.
+    async fn folder_of(store: &ChosenPaths, token: Option<&str>) -> AppResult<ExportFolder> {
+        resolve_export_folder(store, token).await
     }
 
     #[test]
@@ -894,7 +1714,7 @@ mod tests {
         let store = ChosenPaths::new();
         assert_eq!(choose_output_folder(&store, None).await.unwrap(), None);
         assert_eq!(
-            code_of(resolve_export_folder(&store, Some("")).await),
+            code_of(folder_of(&store, Some("")).await),
             "export_folder_unknown",
             "and there is nothing a later export could name"
         );
@@ -917,17 +1737,13 @@ mod tests {
             "the webview gets a token and a name, never the path: {place:?}"
         );
         assert_eq!(
-            resolve_export_folder(&store, Some(&place.token))
-                .await
-                .unwrap(),
+            folder_of(&store, Some(&place.token)).await.unwrap(),
             ExportFolder::Picked(plain),
             "the token stands for the folder that was picked"
         );
         // A second export with the same token («Eksporter i annet format»)
         // goes to the same folder: a token is not used up.
-        assert!(resolve_export_folder(&store, Some(&place.token))
-            .await
-            .is_ok());
+        assert!(folder_of(&store, Some(&place.token)).await.is_ok());
     }
 
     #[tokio::test]
@@ -943,10 +1759,8 @@ mod tests {
 
         // Made up, a path where the token goes — the old wire value — a
         // traversal, and a token minted for a FILE.
-        let file = dir.path().join("opptak.mp3");
-        std::fs::write(&file, b"x").unwrap();
-        let file_token =
-            store.mint(chosen_paths::vet(&file, ChosenKind::File).expect("a file vets as a file"));
+        let (file, _) = recording(dir.path(), "opptak.mp3");
+        let file_token = opened(&store, &file).await.token;
         for forged in [
             "00000000-0000-0000-0000-000000000000",
             plain.as_str(),
@@ -954,13 +1768,13 @@ mod tests {
             file_token.as_str(),
         ] {
             assert_eq!(
-                code_of(resolve_export_folder(&store, Some(forged)).await),
+                code_of(folder_of(&store, Some(forged)).await),
                 "export_folder_unknown",
                 "{forged:?}"
             );
         }
         assert_eq!(
-            code_of(resolve_export_folder(&ChosenPaths::new(), Some(&real)).await),
+            code_of(folder_of(&ChosenPaths::new(), Some(&real)).await),
             "export_folder_unknown",
             "a token means nothing to a session that did not mint it"
         );
@@ -981,7 +1795,7 @@ mod tests {
         std::fs::remove_dir(&folder).unwrap();
 
         assert_eq!(
-            code_of(resolve_export_folder(&store, Some(&token)).await),
+            code_of(folder_of(&store, Some(&token)).await),
             "export_folder_missing"
         );
     }
@@ -989,8 +1803,7 @@ mod tests {
     #[tokio::test]
     async fn a_pick_that_is_not_a_folder_mints_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("opptak.mp3");
-        std::fs::write(&file, b"x").unwrap();
+        let (file, _) = recording(dir.path(), "opptak.mp3");
         let store = ChosenPaths::new();
         for picked in [file, dir.path().join("finnes-ikke")] {
             match choose_output_folder(&store, Some(picked.clone())).await {
@@ -1005,23 +1818,29 @@ mod tests {
     #[tokio::test]
     async fn no_token_is_the_folder_next_to_the_source() {
         assert_eq!(
-            resolve_export_folder(&ChosenPaths::new(), None)
-                .await
-                .unwrap(),
+            folder_of(&ChosenPaths::new(), None).await.unwrap(),
             ExportFolder::BesideSource
         );
     }
 
-    /// Where a request lands, the way `editor_export` decides it: the token
+    /// Where a request lands, the way `editor_export` decides it: the tokens
     /// resolved against `store`, then the seam's own planner. Returns the
     /// render temp and the final name in an empty folder — every path the
     /// export writes.
-    async fn planned(store: &ChosenPaths, req: &EditorExportRequest) -> (String, String) {
-        use sundayrec_core::editor::{collision_free_path, editor_tmp_path};
-        let folder = resolve_export_folder(store, req.output_folder_token.as_deref())
+    async fn planned(
+        store: &ChosenPaths,
+        pool: &SqlitePool,
+        req: &EditorExportRequest,
+    ) -> (String, String) {
+        let resolved = resolve_export(store, pool, req)
             .await
-            .expect("the folder resolves");
-        let (dir, stem) = editor::export_target(req, &folder);
+            .expect("the places resolve");
+        planned_for(req, &resolved)
+    }
+
+    fn planned_for(req: &EditorExportRequest, resolved: &ResolvedExport) -> (String, String) {
+        use sundayrec_core::editor::{collision_free_path, editor_tmp_path};
+        let (dir, stem) = editor::export_target(req, resolved);
         (
             editor_tmp_path(&dir, &stem, &req.format),
             collision_free_path(&dir, &stem, &req.format, |_| false),
@@ -1029,18 +1848,18 @@ mod tests {
     }
 
     /// What the seam planned BEFORE A2 for a «Samme mappe» export, frozen:
-    /// `resolve_output_dir(&req.output_folder, &req.input_path)` with the `""`
-    /// the page sent, and the same stem. The golden reference the new planner
-    /// is held to.
-    fn planned_before_a2(req: &EditorExportRequest) -> (String, String) {
+    /// `resolve_output_dir(&req.output_folder, &req.input_path)` with the
+    /// `""` the page sent, and the same stem. The golden reference the new
+    /// planner is held to, for a source path as the webview used to send it.
+    fn planned_before_a2(source: &str, req: &EditorExportRequest) -> (String, String) {
         use sundayrec_core::editor::{
             collision_free_path, editor_tmp_path, export_stem, resolve_output_dir,
         };
-        let base = std::path::Path::new(&req.input_path)
+        let base = std::path::Path::new(source)
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "redigert".into());
-        let out_dir = resolve_output_dir("", &req.input_path);
+        let out_dir = resolve_output_dir("", source);
         let out_stem = export_stem(&base, req.title.as_deref(), req.date.as_deref());
         (
             editor_tmp_path(&out_dir, &out_stem, &req.format),
@@ -1048,8 +1867,17 @@ mod tests {
         )
     }
 
-    #[tokio::test]
-    async fn a_same_folder_export_lands_exactly_where_it_did_before() {
+    fn beside(source: &str) -> ResolvedExport {
+        ResolvedExport {
+            source: source.into(),
+            intro: None,
+            outro: None,
+            folder: ExportFolder::BesideSource,
+        }
+    }
+
+    #[test]
+    fn a_same_folder_export_lands_exactly_where_it_did_before() {
         // Representative sources (a library recording, a USB stick, a file at
         // a root, spaces and Norwegian letters, a video), each untitled and
         // titled — the two stems an export can have.
@@ -1064,24 +1892,24 @@ mod tests {
             sources.push(r"C:\Users\kari\Documents\SundayRec\opptak.mp3".into());
             sources.push(r"\\server\share\Opptak\opptak.wav".into());
         }
-        let store = ChosenPaths::new();
         for src in &sources {
             for (title, format) in [(None, "mp3"), (Some("Påskedag"), "wav")] {
-                let mut req = request(src);
+                let mut req = request("t");
                 req.format = format.into();
                 req.title = title.map(Into::into);
                 req.date = Some("2027-03-28".into());
                 assert_eq!(
-                    planned(&store, &req).await,
-                    planned_before_a2(&req),
+                    planned_for(&req, &beside(src)),
+                    planned_before_a2(src, &req),
                     "{src} / {title:?}"
                 );
             }
         }
         // …and two pinned literally, so the reference itself cannot drift.
-        let mut req = request("/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste.mp3");
+        let src = "/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste.mp3";
+        let mut req = request("t");
         assert_eq!(
-            planned(&store, &req).await,
+            planned_for(&req, &beside(src)),
             (
                 "/Users/kari/Documents/SundayRec/2026-08-02 Gudstjeneste_redigert.__editor_tmp.mp3"
                     .to_string(),
@@ -1091,28 +1919,62 @@ mod tests {
         req.title = Some("Påskedag".into());
         req.date = Some("2027-03-28".into());
         assert_eq!(
-            planned(&store, &req).await.1,
+            planned_for(&req, &beside(src)).1,
             "/Users/kari/Documents/SundayRec/2027-03-28 Påskedag.mp3"
         );
     }
 
     #[tokio::test]
-    async fn a_path_in_the_old_field_goes_nowhere() {
+    async fn the_same_file_exports_to_the_same_place_through_a_token_as_by_its_path() {
+        // The golden test, end to end: for ONE source file, the export the
+        // token resolves to lands where the pre-A2 planner put the export of
+        // that file's path. (The canonical spelling is the one compared: macOS'
+        // `/var` is `/private/var`, the same folder either way.)
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let (file, plain) = recording(dir.path(), "Søndag i Østre kirke – høymesse.m4a");
+        let store = ChosenPaths::new();
+        let token = opened(&store, &file).await.token;
+        for (title, format) in [(None, "mp3"), (Some("Påskedag"), "wav")] {
+            let mut req = request(&token);
+            req.format = format.into();
+            req.title = title.map(Into::into);
+            req.date = Some("2027-03-28".into());
+            assert_eq!(
+                planned(&store, &pool, &req).await,
+                planned_before_a2(&plain, &req),
+                "{title:?}"
+            );
+        }
+        // And the folder it lands in is the source's own.
+        let req = request(&token);
+        let (_, out) = planned(&store, &pool, &req).await;
+        assert_eq!(
+            Path::new(&out).parent().unwrap().canonicalize().unwrap(),
+            file.parent().unwrap().canonicalize().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_path_in_the_old_folder_field_goes_nowhere() {
         // An old-shape payload — or a compromised webview trying the field
         // that used to decide the folder. serde ignores the unknown key, so
         // the export goes next to its source, not into the folder it named.
         let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
         let (_, elsewhere) = picked_folder(dir.path(), "Startup");
-        let src = "/Users/kari/Documents/SundayRec/opptak.mp3";
-        let mut payload = serde_json::to_value(request(src)).unwrap();
+        let (file, plain) = recording(dir.path(), "opptak.mp3");
+        let store = ChosenPaths::new();
+        let token = opened(&store, &file).await.token;
+        let mut payload = serde_json::to_value(request(&token)).unwrap();
         let fields = payload.as_object_mut().unwrap();
         fields.remove("outputFolderToken");
         fields.insert("outputFolder".into(), elsewhere.clone().into());
         let req: EditorExportRequest = serde_json::from_value(payload).unwrap();
 
         assert_eq!(req.output_folder_token, None);
-        let (tmp, out) = planned(&ChosenPaths::new(), &req).await;
-        assert_eq!((tmp.clone(), out.clone()), planned_before_a2(&req));
+        let (tmp, out) = planned(&store, &pool, &req).await;
+        assert_eq!((tmp.clone(), out.clone()), planned_before_a2(&plain, &req));
         assert!(
             !tmp.contains(&elsewhere) && !out.contains(&elsewhere),
             "{out}"
@@ -1122,30 +1984,33 @@ mod tests {
     #[tokio::test]
     async fn a_picked_folder_export_lands_in_that_folder() {
         let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
         let (folder, plain) = picked_folder(dir.path(), "Eksport");
+        let (file, _) = recording(dir.path(), "opptak.mp3");
         let store = ChosenPaths::new();
         let token = choose_output_folder(&store, Some(folder))
             .await
             .unwrap()
             .unwrap()
             .token;
-        let mut req = request("/Users/kari/Documents/SundayRec/opptak.mp3");
+        let mut req = request(&opened(&store, &file).await.token);
         req.output_folder_token = Some(token);
 
-        let (tmp, out) = planned(&store, &req).await;
+        let (tmp, out) = planned(&store, &pool, &req).await;
         assert_eq!(tmp, format!("{plain}/opptak_redigert.__editor_tmp.mp3"));
         assert_eq!(out, format!("{plain}/opptak_redigert.mp3"));
     }
 
     /// What the seam was handed, for [`run_export`]'s tests: records the
-    /// folder it is called with, and answers like a finished render.
-    async fn folder_given_to_the_seam(
+    /// places it is called with, and answers like a finished render.
+    async fn places_given_to_the_seam(
         store: &ChosenPaths,
+        pool: &SqlitePool,
         req: &EditorExportRequest,
-    ) -> (AppResult<()>, Option<ExportFolder>) {
+    ) -> (AppResult<()>, Option<ResolvedExport>) {
         let seen = std::sync::Mutex::new(None);
-        let ran = run_export(store, req, |folder| {
-            *seen.lock().unwrap() = Some(folder);
+        let ran = run_export(store, pool, req, |resolved| {
+            *seen.lock().unwrap() = Some(resolved);
             async { Ok(()) }
         })
         .await;
@@ -1153,58 +2018,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent() {
-        // M3c: what `editor_export` gives the render is what the token
-        // RESOLVED to — the canonical folder, re-validated — and not the
-        // token itself, not a path, not the source's folder.
+    async fn the_export_is_handed_the_resolved_places_and_nothing_the_webview_sent() {
+        // M3c: what `editor_export` gives the render is what the tokens
+        // RESOLVED to — the canonical source and folder, re-validated — and not
+        // a token, not a path, not the source's folder.
         let dir = tempfile::tempdir().unwrap();
-        let (folder, plain) = picked_folder(dir.path(), "Eksport");
+        let pool = pool_in(dir.path()).await;
+        let (folder, plain_folder) = picked_folder(dir.path(), "Eksport");
         let (_, decoy) = picked_folder(dir.path(), "Et annet sted");
+        let (file, plain_source) = recording(dir.path(), "opptak.mp3");
+        let (_, decoy_source) = recording(dir.path(), "en-annen.mp3");
         let store = ChosenPaths::new();
-        let token = choose_output_folder(&store, Some(folder))
+        let folder_token = choose_output_folder(&store, Some(folder))
             .await
             .unwrap()
             .unwrap()
             .token;
-        let mut req = request("/Users/kari/Documents/SundayRec/opptak.mp3");
-        req.output_folder_token = Some(token.clone());
+        let source_token = opened(&store, &file).await.token;
+        let mut req = request(&source_token);
+        req.output_folder_token = Some(folder_token.clone());
 
-        let (ran, given) = folder_given_to_the_seam(&store, &req).await;
+        let (ran, given) = places_given_to_the_seam(&store, &pool, &req).await;
         ran.unwrap();
 
-        assert_eq!(given, Some(ExportFolder::Picked(plain.clone())));
-        assert_ne!(given, Some(ExportFolder::Picked(token)), "not the token");
-        assert_ne!(given, Some(ExportFolder::Picked(decoy)));
+        let given = given.expect("the seam was called");
+        assert_eq!(given.source, plain_source);
+        assert_eq!(given.folder, ExportFolder::Picked(plain_folder.clone()));
+        assert_ne!(given.source, source_token, "not the token");
+        assert_ne!(given.source, decoy_source);
         assert_ne!(
-            given,
-            Some(ExportFolder::BesideSource),
+            given.folder,
+            ExportFolder::Picked(folder_token),
+            "not the token"
+        );
+        assert_ne!(given.folder, ExportFolder::Picked(decoy));
+        assert_ne!(
+            given.folder,
+            ExportFolder::BesideSource,
             "not the source's folder"
         );
 
         // No token: next to the source, and only then.
         req.output_folder_token = None;
-        let (ran, given) = folder_given_to_the_seam(&store, &req).await;
+        let (ran, given) = places_given_to_the_seam(&store, &pool, &req).await;
         ran.unwrap();
-        assert_eq!(given, Some(ExportFolder::BesideSource));
+        assert_eq!(given.unwrap().folder, ExportFolder::BesideSource);
     }
 
     #[tokio::test]
     async fn a_token_that_does_not_resolve_never_reaches_the_seam() {
         let dir = tempfile::tempdir().unwrap();
-        let (_, plain) = picked_folder(dir.path(), "Eksport");
+        let pool = pool_in(dir.path()).await;
+        let (_, plain_folder) = picked_folder(dir.path(), "Eksport");
+        let (file, plain_source) = recording(dir.path(), "opptak.mp3");
         let store = ChosenPaths::new();
-        let mut req = request("/Users/kari/Documents/SundayRec/opptak.mp3");
-        // A path where the token goes, and a made-up token: both refused, and
-        // the render is never called.
-        for forged in [plain.as_str(), "00000000-0000-0000-0000-000000000000"] {
+        let real = opened(&store, &file).await.token;
+        let made_up = "00000000-0000-0000-0000-000000000000";
+
+        // A path or a made-up token where the SOURCE goes…
+        for forged in [plain_source.as_str(), made_up] {
+            let (ran, given) = places_given_to_the_seam(&store, &pool, &request(forged)).await;
+            assert_eq!(code_of(ran), "source_unknown", "{forged:?}");
+            assert_eq!(given, None, "{forged:?} reached the seam");
+        }
+        // …and where the FOLDER goes: both refused, the render never called.
+        for forged in [plain_folder.as_str(), made_up] {
+            let mut req = request(&real);
             req.output_folder_token = Some(forged.to_string());
-            let (ran, given) = folder_given_to_the_seam(&store, &req).await;
-            match ran {
-                Err(AppError::Validation(msg)) => {
-                    assert!(msg.starts_with("export_folder_unknown"), "{msg}")
-                }
-                other => panic!("{forged:?}: expected export_folder_unknown, got {other:?}"),
-            }
+            let (ran, given) = places_given_to_the_seam(&store, &pool, &req).await;
+            assert_eq!(code_of(ran), "export_folder_unknown", "{forged:?}");
             assert_eq!(given, None, "{forged:?} reached the seam");
         }
     }

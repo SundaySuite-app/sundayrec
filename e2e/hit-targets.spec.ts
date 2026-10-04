@@ -7,7 +7,7 @@ import {
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
-import { editorFixtures, FILE } from "./editor-fixtures";
+import { editorFixtures, RECORDING_ID } from "./editor-fixtures";
 
 // TREFFFLATENE (V1/E4) — at bryteren og utfoldingsknappen kan TREFFES, og at
 // ingen av dem stjeler naboens klikk.
@@ -415,9 +415,9 @@ test.describe("treffflater", () => {
     await page.evaluate(
       (f) =>
         (
-          window as unknown as { openEditorWithFile: (p: string) => void }
-        ).openEditorWithFile(f),
-      FILE,
+          window as unknown as { openEditorWithRecording: (id: string) => void }
+        ).openEditorWithRecording(f),
+      RECORDING_ID,
     );
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",

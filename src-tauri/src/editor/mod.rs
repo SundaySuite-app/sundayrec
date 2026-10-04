@@ -20,7 +20,8 @@
 //! ## What this seam does NOT do: feed playback
 //!
 //! The renderer plays the ORIGINAL recording through a media element on
-//! `asset://` ([`allow_asset_path`] widens the scope to the one file). Nothing
+//! `asset://` ([`allow_asset_path`] widens the scope to the one file, when the
+//! command layer opens it). Nothing
 //! here decodes audio *for playback*: [`extract_playback_proxy`] is a LAST
 //! resort for containers the webview has no decoder for, and [`peaks`] decodes
 //! only to 100 buckets/second for the waveform — streamed on a pipe and cached
@@ -188,7 +189,16 @@ pub struct EditorCutRegion {
 #[ts(export, export_to = "EditorExportRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportRequest {
-    pub input_path: String,
+    /// The recording to export, as the webview may say it: the File token
+    /// [`editor_open_recording`]/`editor_open_known` minted (or the drop
+    /// handler did) for it — never a path. The command layer resolves it into
+    /// [`ResolvedExport::source`] and hands the seam that, separately.
+    ///
+    /// Until finding A2 (PR-C) this was `input_path`, a string the webview
+    /// chose: with no per-command ACL a compromised webview could point the
+    /// render at any readable file. An old-shape payload's `inputPath` is now
+    /// an unknown key serde ignores — and the missing token refuses it.
+    pub source_token: String,
     pub cut_regions: Vec<EditorCutRegion>,
     pub duration: f64,
     /// Output container: `mp3|aac|wav|flac|mp4`.
@@ -214,10 +224,15 @@ pub struct EditorExportRequest {
     pub bit_depth: Option<u8>,
     /// Optional mastering preset id (a two-pass loudnorm chain is applied first).
     pub master_preset: Option<String>,
-    /// Optional intro clip prepended to the audio on export (non-mp4 only).
-    pub intro_path: Option<String>,
-    /// Optional outro clip appended to the audio on export (non-mp4 only).
-    pub outro_path: Option<String>,
+    /// Prepend the stored intro clip (`settings.editorIntroPath`) to the audio
+    /// on export (non-mp4 only). A switch, not a path: Rust reads the clip from
+    /// the saved settings and re-validates it, so the webview cannot name a file
+    /// to splice in. No stored clip means no intro, whatever this says.
+    #[serde(default)]
+    pub use_intro: bool,
+    /// The same for the stored outro clip (`settings.editorOutroPath`).
+    #[serde(default)]
+    pub use_outro: bool,
     /// Optional peak-normalization gain (dB) applied as a `volume` filter — what
     /// the editor's "Normalize" button computes. `None`/`0` is a no-op.
     pub gain_db: Option<f64>,
@@ -278,7 +293,26 @@ pub enum ExportFolder {
     Picked(String),
 }
 
-/// Where an export of `req` into `folder` lands: the directory, and the
+/// Everything an export reads or writes that is a PLACE, as the command layer
+/// resolved it — and the only thing [`export`] gets those from.
+///
+/// Not deserialisable, on purpose: no command can take one from the webview.
+/// `commands::editor::editor_export` builds it from the request's tokens —
+/// the source from `source_token` (a File token), the folder from
+/// `output_folder_token`, the jingles from the SAVED settings after
+/// `use_intro`/`use_outro` — every one re-validated at the moment of use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedExport {
+    /// The recording: canonical, a plain string (no Windows verbatim prefix).
+    pub(crate) source: String,
+    /// The intro clip to prepend, when asked for and stored.
+    pub(crate) intro: Option<String>,
+    /// The outro clip to append, when asked for and stored.
+    pub(crate) outro: Option<String>,
+    pub(crate) folder: ExportFolder,
+}
+
+/// Where an export of `req` into `inputs.folder` lands: the directory, and the
 /// file-name stem it gets there. Every path [`export`] writes is built from
 /// these two — the render temp now (`editor_tmp_path`), the collision-free
 /// final name once the render succeeded (`collision_free_path`).
@@ -295,15 +329,18 @@ pub enum ExportFolder {
 /// canonical path from a dialog has no stray blanks to trim; its last
 /// character is part of the folder's name.
 #[cfg_attr(not(feature = "editor"), allow(dead_code))]
-pub(crate) fn export_target(req: &EditorExportRequest, folder: &ExportFolder) -> (String, String) {
+pub(crate) fn export_target(
+    req: &EditorExportRequest,
+    inputs: &ResolvedExport,
+) -> (String, String) {
     use sundayrec_core::editor::{export_stem, resolve_output_dir};
 
-    let base = Path::new(&req.input_path)
+    let base = Path::new(&inputs.source)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "redigert".into());
-    let out_dir = match folder {
-        ExportFolder::BesideSource => resolve_output_dir("", &req.input_path),
+    let out_dir = match &inputs.folder {
+        ExportFolder::BesideSource => resolve_output_dir("", &inputs.source),
         ExportFolder::Picked(dir) => dir.clone(),
     };
     // `<base>_redigert` without a title, `<YYYY-MM-DD> <title>` with one — the
@@ -1254,13 +1291,15 @@ fn cleanup_temp_files(folders: &[String], in_flight: &export_journal::RenderInFl
 // ── Mastering preview / apply DTOs + engine (P1 parity) ──────────────────────────
 
 /// A windowed mastering-preview request — render `[startSec, startSec+durationSec]`
-/// of `inputPath` through the preset's single-pass chain to a temp mp3 the
+/// of the source through the preset's single-pass chain to a temp mp3 the
 /// renderer can `<audio>`-play A/B against the original. Mirrors `master-preview`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "EditorMasterPreviewRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewRequest {
-    pub input_path: String,
+    /// The recording to preview, as the File token that stands for it — never a
+    /// path; the command resolves it and hands [`master_preview`] the place.
+    pub source_token: String,
     pub preset_id: String,
     pub start_sec: f64,
     pub duration_sec: f64,
@@ -1711,6 +1750,7 @@ pub async fn probe_streams(_input_path: &str) -> AppResult<EditorStreamInfo> {
 #[cfg(not(feature = "editor"))]
 pub async fn master_preview(
     _req: &EditorMasterPreviewRequest,
+    _input_path: &str,
 ) -> AppResult<EditorMasterPreviewResult> {
     disabled("masterPreview")
 }
@@ -1832,7 +1872,7 @@ pub const HW_ENCODE_FIRST: bool = true;
 pub async fn export<F>(
     _engine: &ExportEngine,
     _req: &EditorExportRequest,
-    _folder: &ExportFolder,
+    _inputs: &ResolvedExport,
     _hw_first: bool,
     _on_progress: F,
 ) -> AppResult<EditorExportResult>
@@ -2689,13 +2729,14 @@ pub async fn probe_streams(input_path: &str) -> AppResult<EditorStreamInfo> {
 #[cfg(feature = "editor")]
 pub async fn master_preview(
     req: &EditorMasterPreviewRequest,
+    input_path: &str,
 ) -> AppResult<EditorMasterPreviewResult> {
     use sundayrec_core::mastering::{
         clamp_preview_duration, clamp_preview_start, get_preset_by_id, preview_args,
         PREVIEW_TEMP_PREFIX,
     };
 
-    if !std::path::Path::new(&req.input_path).exists() {
+    if !std::path::Path::new(input_path).exists() {
         return Err(AppError::Validation("file_not_found".into()));
     }
     let preset = get_preset_by_id(&req.preset_id)
@@ -2707,7 +2748,7 @@ pub async fn master_preview(
         uuid::Uuid::now_v7().simple()
     ));
     let out_str = out_path.to_string_lossy().into_owned();
-    let args = preview_args(&req.input_path, &preset, start, dur, &out_str);
+    let args = preview_args(input_path, &preset, start, dur, &out_str);
     // A preview renders one clamped window (seconds of media), so the floor is
     // the whole budget — no probe needed just to time a 15-second render.
     let timeout = sundayrec_core::editor::editor_op_timeout(None);
@@ -3007,7 +3048,7 @@ fn build_pre_filters(
 pub async fn export<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
-    folder: &ExportFolder,
+    inputs: &ResolvedExport,
     hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
@@ -3026,7 +3067,7 @@ where
     // long-lived managed state, the flag is per-export.
     engine.reset_cancel();
 
-    let result = export_claimed(engine, req, folder, hw_first, on_progress).await;
+    let result = export_claimed(engine, req, inputs, hw_first, on_progress).await;
     engine.forget_render_temp().await;
     result
 }
@@ -3038,7 +3079,7 @@ where
 async fn export_claimed<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
-    folder: &ExportFolder,
+    inputs: &ResolvedExport,
     hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
@@ -3057,7 +3098,7 @@ where
         parse_normalization_mode, plan_pass2,
     };
 
-    if !Path::new(&req.input_path).exists() {
+    if !Path::new(&inputs.source).exists() {
         return Err(AppError::Validation("file_not_found".into()));
     }
     if !(req.duration.is_finite() && req.duration > 0.0) {
@@ -3113,7 +3154,7 @@ where
     //     rule `output_sample_rate` already states for lossy targets:
     //     min(source, 48 kHz), snapped to a rate AAC accepts.
     bail_if_cancelled(engine)?;
-    let probed = load_recording(&req.input_path).await.ok();
+    let probed = load_recording(&inputs.source).await.ok();
     let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
 
     // 1c. WHERE it lands, and whether there is room for it.
@@ -3129,7 +3170,7 @@ where
     //     The folder is the command layer's resolved `ExportFolder` — next to
     //     the source, or a folder a dialog Rust opened answered (A2); see
     //     `export_target`, which also names the file.
-    let (out_dir, out_stem) = export_target(req, folder);
+    let (out_dir, out_stem) = export_target(req, inputs);
     let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
 
     //     F2-11: the recorder has had a low-disk guard since day one; the
@@ -3152,7 +3193,7 @@ where
     //     be made is never invented in order to refuse (see
     //     `export_disk_is_low`).
     let estimated_bytes = if is_video {
-        std::fs::metadata(&req.input_path)
+        std::fs::metadata(&inputs.source)
             .ok()
             .and_then(|m| video_export_estimated_bytes(m.len(), kept_duration, req.duration))
     } else {
@@ -3284,7 +3325,7 @@ where
             "-nostdin".into(),
             "-hide_banner".into(),
             "-i".into(),
-            req.input_path.clone(),
+            inputs.source.clone(),
             "-filter_complex".into(),
             fc,
             "-map".into(),
@@ -3355,12 +3396,12 @@ where
     //    so the mp4 video path ignores them). The intro is ffmpeg input 0, the
     //    main file the next input, the outro the one after that — the order the
     //    core's filter graph expects.
-    let intro = req
-        .intro_path
+    let intro = inputs
+        .intro
         .as_deref()
         .filter(|p| !is_video && Path::new(p).exists());
-    let outro = req
-        .outro_path
+    let outro = inputs
+        .outro
         .as_deref()
         .filter(|p| !is_video && Path::new(p).exists());
     let has_intro = intro.is_some();
@@ -3417,7 +3458,7 @@ where
     bail_if_cancelled(engine)?;
     let want_hw = is_video && hw_first && cfg!(target_os = "macos");
     let hw_bitrate_kbps = if want_hw {
-        let (w, h) = probe_video_size(&req.input_path)
+        let (w, h) = probe_video_size(&inputs.source)
             .await
             .unwrap_or((1920, 1080));
         sundayrec_core::editor::default_video_bitrate_kbps(w, h)
@@ -3435,7 +3476,7 @@ where
         if let Some(p) = intro {
             args.extend(["-i".into(), p.to_string()]);
         }
-        args.extend(["-i".into(), req.input_path.clone()]);
+        args.extend(["-i".into(), inputs.source.clone()]);
         if let Some(p) = outro {
             args.extend(["-i".into(), p.to_string()]);
         }
@@ -4107,7 +4148,7 @@ mod tests {
             .to_string()
             .contains("feature_disabled"));
         let req = EditorExportRequest {
-            input_path: "/x.mp4".into(),
+            source_token: "t".into(),
             cut_regions: vec![],
             duration: 10.0,
             format: "mp3".into(),
@@ -4115,8 +4156,8 @@ mod tests {
             bitrate: None,
             bit_depth: None,
             master_preset: None,
-            intro_path: None,
-            outro_path: None,
+            use_intro: false,
+            use_outro: false,
             gain_db: None,
             title: None,
             speaker: None,
@@ -4129,8 +4170,13 @@ mod tests {
             video_codec: None,
         };
         let engine = ExportEngine::new();
-        let folder = ExportFolder::Picked("/tmp".into());
-        assert!(export(&engine, &req, &folder, false, |_, _| {})
+        let inputs = ResolvedExport {
+            source: "/x.mp4".into(),
+            intro: None,
+            outro: None,
+            folder: ExportFolder::Picked("/tmp".into()),
+        };
+        assert!(export(&engine, &req, &inputs, false, |_, _| {})
             .await
             .unwrap_err()
             .to_string()
@@ -4210,12 +4256,12 @@ mod tests {
             .to_string()
             .contains("feature_disabled"));
         let prev = EditorMasterPreviewRequest {
-            input_path: "/x.mp4".into(),
+            source_token: "t".into(),
             preset_id: "speech-clear".into(),
             start_sec: 0.0,
             duration_sec: 15.0,
         };
-        assert!(master_preview(&prev)
+        assert!(master_preview(&prev, "/x.mp4")
             .await
             .unwrap_err()
             .to_string()
@@ -5074,7 +5120,7 @@ mod tests {
         let engine = ExportEngine::new();
         engine.attach_journal(pool.clone());
         let req = EditorExportRequest {
-            input_path: src.to_string_lossy().into_owned(),
+            source_token: "t".into(),
             cut_regions: Vec::new(),
             duration: 2.0,
             format: "mp3".into(),
@@ -5082,8 +5128,8 @@ mod tests {
             bitrate: None,
             bit_depth: None,
             master_preset: None,
-            intro_path: None,
-            outro_path: None,
+            use_intro: false,
+            use_outro: false,
             gain_db: None,
             title: None,
             speaker: None,
@@ -5102,8 +5148,13 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", &missing);
                 std::env::set_var("SUNDAYREC_FFPROBE", &missing);
             }
-            let folder = ExportFolder::Picked(picked.path().to_string_lossy().into_owned());
-            let result = rt.block_on(export(&engine, &req, &folder, false, |_, _| {}));
+            let inputs = ResolvedExport {
+                source: src.to_string_lossy().into_owned(),
+                intro: None,
+                outro: None,
+                folder: ExportFolder::Picked(picked.path().to_string_lossy().into_owned()),
+            };
+            let result = rt.block_on(export(&engine, &req, &inputs, false, |_, _| {}));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -6009,12 +6060,13 @@ mod tests {
             );
         }
 
-        /// A request and the folder the command layer resolved for it — the
-        /// two things `editor_export` hands the seam. Derefs to the request,
-        /// so a test tunes its knobs (`case.master_preset = …`) as before.
+        /// A request and the places the command layer resolved for it (the
+        /// source, the jingles, the folder) — the two things `editor_export`
+        /// hands the seam. Derefs to the request, so a test tunes its knobs
+        /// (`case.master_preset = …`) as before.
         pub(super) struct ExportCase {
             pub(super) req: EditorExportRequest,
-            pub(super) folder: ExportFolder,
+            pub(super) inputs: ResolvedExport,
         }
 
         impl std::ops::Deref for ExportCase {
@@ -6045,7 +6097,7 @@ mod tests {
         /// FFMETADATA input) is exercised on every real export.
         fn cut_to_mp3_request(input_path: String, output_folder: &str) -> ExportCase {
             let req = EditorExportRequest {
-                input_path,
+                source_token: "t".into(),
                 cut_regions: vec![EditorCutRegion {
                     start: 0.75,
                     end: 1.25,
@@ -6056,8 +6108,8 @@ mod tests {
                 bitrate: Some(128),
                 bit_depth: None,
                 master_preset: None,
-                intro_path: None,
-                outro_path: None,
+                use_intro: false,
+                use_outro: false,
                 gain_db: None,
                 title: Some("Søndag".into()),
                 speaker: None,
@@ -6071,7 +6123,12 @@ mod tests {
             };
             ExportCase {
                 req,
-                folder: folder_of(output_folder),
+                inputs: ResolvedExport {
+                    source: input_path,
+                    intro: None,
+                    outro: None,
+                    folder: folder_of(output_folder),
+                },
             }
         }
 
@@ -6085,7 +6142,7 @@ mod tests {
             duration: f64,
         ) -> ExportCase {
             let req = EditorExportRequest {
-                input_path: input_path.to_string(),
+                source_token: "t".into(),
                 cut_regions: cuts
                     .iter()
                     .map(|(start, end)| EditorCutRegion {
@@ -6099,8 +6156,8 @@ mod tests {
                 bitrate: None,
                 bit_depth: None,
                 master_preset: None,
-                intro_path: None,
-                outro_path: None,
+                use_intro: false,
+                use_outro: false,
                 gain_db: None,
                 title: None,
                 speaker: None,
@@ -6114,7 +6171,12 @@ mod tests {
             };
             ExportCase {
                 req,
-                folder: folder_of(output_folder),
+                inputs: ResolvedExport {
+                    source: input_path.to_string(),
+                    intro: None,
+                    outro: None,
+                    folder: folder_of(output_folder),
+                },
             }
         }
 
@@ -6330,7 +6392,7 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
                 std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
             }
-            let r = rt.block_on(export(&engine, req, &req.folder, false, on_progress));
+            let r = rt.block_on(export(&engine, req, &req.inputs, false, on_progress));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -6426,7 +6488,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&engine, &req, &req.folder, false, on_progress));
+                let result = rt.block_on(export(&engine, &req, &req.inputs, false, on_progress));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 result.expect("editor export should succeed against the lavfi source")
             };
@@ -6534,7 +6596,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&engine, &req, &req.folder, false, on_progress));
+                let result = rt.block_on(export(&engine, &req, &req.inputs, false, on_progress));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 result.expect("an export with the default destination must succeed")
             };
@@ -7135,7 +7197,7 @@ mod tests {
                     // 1 ms — even a spawn takes longer than that.
                     std::env::set_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE", "1");
                 }
-                let result = rt.block_on(export(&engine, &req, &req.folder, false, |_, _| {}));
+                let result = rt.block_on(export(&engine, &req, &req.inputs, false, |_, _| {}));
                 unsafe {
                     std::env::remove_var("SUNDAYREC_FFMPEG");
                     std::env::remove_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE");
@@ -7277,7 +7339,7 @@ mod tests {
                         mid_render
                     })
                 };
-                let result = rt.block_on(export(&engine, &req, &req.folder, false, |_, _| {}));
+                let result = rt.block_on(export(&engine, &req, &req.inputs, false, |_, _| {}));
                 let journalled = canceller.join().expect("the canceller thread");
                 unsafe {
                     std::env::remove_var("SUNDAYREC_FFMPEG");
@@ -7422,7 +7484,7 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
                 std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
             }
-            let r = rt.block_on(export(engine, req, &req.folder, false, |_, _| {}));
+            let r = rt.block_on(export(engine, req, &req.inputs, false, |_, _| {}));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -7551,7 +7613,7 @@ mod tests {
                 unsafe {
                     std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
                 }
-                let mut render = Box::pin(export(&engine, &req, &req.folder, false, |_, _| {}));
+                let mut render = Box::pin(export(&engine, &req, &req.inputs, false, |_, _| {}));
                 let wrote_something = || {
                     std::fs::metadata(&temp)
                         .map(|m| m.len() > 0)
@@ -8098,7 +8160,7 @@ mod tests {
                         std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
                         std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
                     }
-                    let r = rt.block_on(export(&engine, &req, &req.folder, false, |_, _| {}));
+                    let r = rt.block_on(export(&engine, &req, &req.inputs, false, |_, _| {}));
                     unsafe {
                         std::env::remove_var("SUNDAYREC_FFMPEG");
                         std::env::remove_var("SUNDAYREC_FFPROBE");

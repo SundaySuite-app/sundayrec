@@ -227,15 +227,9 @@ fn lex(src: &str, blank_literals: bool) -> String {
 /// [`crate::commands::path_guard`]. The policy each one applies is documented on
 /// the command itself; see the table in the `path_guard` module docs.
 const GUARDED: &[&str] = &[
-    // ── R1 editor: every ffmpeg/fs entry point ──────────────────────────────
-    "editor_load_recording",
-    "editor_peaks",
-    "editor_extract_playback_proxy",
-    "editor_allow_asset_path",
-    "editor_segments",
-    "editor_diagnose_channels",
-    "editor_auto_process",
-    "editor_mastering_analyze",
+    // ── R1 editor: the sidecar and sermon-pick commands. (The commands that
+    //    read or render the recording left this list in PR-C: they take a File
+    //    token now, see PARAM_TOKENS. Their sidecars are PR-D.) ───────────────
     "editor_read_sidecar",
     "editor_write_sidecar",
     "editor_delete_sidecar",
@@ -262,6 +256,12 @@ const GUARDED: &[&str] = &[
 const REPLACED: &[(&str, &str)] = &[
     ("settings_export_to_file", "settings_export_profile"),
     ("settings_import_from_file", "settings_import_profile"),
+    // The webview widened its own `asset://` scope to any file it named (behind
+    // `path_guard`). Now the scope grows only when RUST opens a recording — the
+    // picker, or a drop on the window — and the other way in, a history row's
+    // id (`editor_open_known`), is pinned by
+    // `editor_open_known_takes_only_a_history_row_id`.
+    ("editor_allow_asset_path", "editor_open_recording"),
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
@@ -298,11 +298,26 @@ enum FieldHandling {
         resolver: &'static str,
         proof: &'static str,
     },
+    /// A field the webview can still SEND (it is part of the wire struct) but
+    /// whose value the command never uses: `by` overwrites it with what is
+    /// stored before anything is saved, and `proof` is a test that sends a
+    /// different value and sees the stored one survive. Both must exist in the
+    /// sources. (`settings_save`'s intro/outro clips: a file the export reads
+    /// is not the webview's to name.)
+    Overwritten {
+        by: &'static str,
+        proof: &'static str,
+    },
     /// Not a path this command acts on. The reason is mandatory.
+    ///
+    /// Nothing is exempt today (the intro/outro clips, the last two, became
+    /// [`Overwritten`] in PR-C) — the variant stays for the next field that is
+    /// genuinely not a place, and its check (`every_classified_field_…`) with it.
+    #[allow(dead_code)]
     Exempt(&'static str),
 }
 
-use FieldHandling::{Exempt, Guarded, Sanitised, Token};
+use FieldHandling::{Exempt, Guarded, Overwritten, Sanitised, Token};
 
 /// Every path-shaped field reachable through a command's struct parameters,
 /// as `(command, "Struct.field", handling)`. See the module docs, «One level
@@ -321,16 +336,21 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_hostile_custom_name_stays_a_file_name_in_the_save_folder",
         },
     ),
-    // ── editor_export: the source and the jingles are guarded by its own
-    //    E5.3 helper, which runs a path_guard policy on each (see
-    //    `check_export_paths`). The DESTINATION is no longer a path (A2): the
-    //    old `output_folder` is gone, and the request names a folder only by
-    //    the token `editor_pick_output_folder` minted after the native dialog
-    //    RUST opened answered.
+    // ── editor_export: what ffmpeg reads and where it writes are TOKENS (A2).
+    //    The destination: the old `output_folder` is gone, and the request names
+    //    a folder only by the token `editor_pick_output_folder` minted after the
+    //    native dialog RUST opened answered. The source: the old `input_path` is
+    //    gone too (PR-C), and the request names the recording only by the File
+    //    token `editor_open_recording`/`editor_open_known`/the drop handler
+    //    minted. The jingles are not in the request at all — `use_intro` and
+    //    `use_outro` are switches, and the clips come from the saved settings.
     (
         "editor_export",
-        "EditorExportRequest.input_path",
-        Guarded("check_export_paths(&request)"),
+        "EditorExportRequest.source_token",
+        Token {
+            resolver: "run_export(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
     ),
     (
         "editor_export",
@@ -340,21 +360,14 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_made_up_or_foreign_token_is_refused_with_its_own_code",
         },
     ),
-    (
-        "editor_export",
-        "EditorExportRequest.intro_path",
-        Guarded("check_export_paths(&request)"),
-    ),
-    (
-        "editor_export",
-        "EditorExportRequest.outro_path",
-        Guarded("check_export_paths(&request)"),
-    ),
     // ── editor_master_preview: the source the preview renders from.
     (
         "editor_master_preview",
-        "EditorMasterPreviewRequest.input_path",
-        Guarded("path_guard::checked_input_file(&request.input_path)"),
+        "EditorMasterPreviewRequest.source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
     ),
     // ── settings_save: the persisted profile.
     (
@@ -362,32 +375,106 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
         "Settings.save_folder",
         Guarded("vet_new_save_folder"),
     ),
+    // The clips are a file the export reads, so the webview may not name them:
+    // `settings_save` keeps the stored values whatever it sends, and the only
+    // ways to change them are the Rust dialogs `settings_pick_editor_intro`/
+    // `_outro` (and the clears).
     (
         "settings_save",
         "Settings.editor_intro_path",
-        Exempt(
-            "stored, never opened here: the editor sends it back as \
-             EditorExportRequest.intro_path, which check_export_paths guards",
-        ),
+        Overwritten {
+            by: "keep_stored_clips",
+            proof: "settings_save_keeps_the_stored_intro_and_outro",
+        },
     ),
     (
         "settings_save",
         "Settings.editor_outro_path",
-        Exempt(
-            "stored, never opened here: the editor sends it back as \
-             EditorExportRequest.outro_path, which check_export_paths guards",
-        ),
+        Overwritten {
+            by: "keep_stored_clips",
+            proof: "settings_save_keeps_the_stored_intro_and_outro",
+        },
     ),
 ];
 
-/// Every `#[tauri::command]` PARAMETER that is a token for a place
-/// ([`is_token_param`]), as `(command, parameter, Token { … })`. The shape
-/// [`PATH_FIELDS`] gives a token field, for a token the command takes
-/// directly. Empty today: the one token the webview sends, the export
-/// folder's, rides inside `EditorExportRequest`. A new command taking one — the
-/// next PR's `editor_open_recording` takes a File token — is a failing test
-/// until it is listed here.
-const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[];
+/// Every `#[tauri::command]` PARAMETER named `*_token` ([`is_token_param`]), as
+/// `(command, parameter, Token { … })`. The shape [`PATH_FIELDS`] gives a token
+/// field, for a token the command takes directly: here the File token of the
+/// recording every editor command works on (`source_token`, A2/PR-C). A new
+/// command taking one is a failing test until it is listed here — or, for a
+/// token that is NOT a place, in [`NOT_PLACE_TOKENS`] with the reason.
+const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
+    (
+        "editor_load_recording",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
+        "editor_peaks",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
+        "editor_extract_playback_proxy",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
+        "editor_segments",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
+        "editor_diagnose_channels",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
+        "editor_auto_process",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
+        "editor_mastering_analyze",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+];
+
+/// `*_token` parameters that are NOT a token for a place, as `(command,
+/// parameter, reason)`. [`is_token_param`] matches EVERY `_token` name — a token
+/// is exactly as good as a path for deciding where a command acts, and a name
+/// rule that guessed which tokens count (it used to ask for a path-shaped word
+/// in front of `_token`, which `source_token` is not) is how one slips by. So
+/// a token that is not a place says so here.
+const NOT_PLACE_TOKENS: &[(&str, &str, &str)] = &[(
+    "get_camera_capabilities",
+    "device_token",
+    "the camera's id as ffmpeg's device list names it (`avfoundation` index or \
+     `dshow` name), handed to the camera probe as a device argument — it names \
+     hardware, not a file or a folder",
+)];
 
 /// Field names that do not LOOK like paths but become part of one, so they
 /// are judged as paths too.
@@ -426,15 +513,13 @@ fn is_path_like(name: &str) -> bool {
     n.contains("path") || n.ends_with("folder") || n.ends_with("dir") || n.ends_with("file")
 }
 
-/// Whether a command PARAMETER is a token for a place: a path-shaped name plus
-/// `_token` — the same rule [`is_path_like_field`] applies to a request's
-/// fields (`device_token` is not a place; `output_folder_token` is). Judged by
-/// name, like everything here, and over-matching costs a line in
-/// [`PARAM_TOKENS`].
+/// Whether a command PARAMETER is a token: any name ending `_token` — the same
+/// rule [`is_path_like_field`] applies to a request's fields. Every one must be
+/// listed in [`PARAM_TOKENS`] (a place) or [`NOT_PLACE_TOKENS`] (with the
+/// reason): the earlier rule, a path-shaped word in front of `_token`, let
+/// `source_token` through unlisted. Over-matching costs a line in a list.
 fn is_token_param(name: &str) -> bool {
-    name.trim_start_matches('_')
-        .strip_suffix("_token")
-        .is_some_and(is_path_like)
+    name.trim_start_matches('_').ends_with("_token")
 }
 
 /// Split a parameter list body at commas that sit at depth zero, so
@@ -512,8 +597,14 @@ fn param_names(signature: &str) -> Vec<String> {
 /// The source is read with its comments stripped ([`strip_comments`]): what a
 /// command's segment «calls» is what it calls, not what a comment says.
 fn parse_file(file: &str, source: &str) -> Vec<Command> {
-    let source = strip_comments(source);
-    let lines: Vec<&str> = source.lines().collect();
+    let stripped = strip_comments(source);
+    let lines: Vec<&str> = stripped.lines().collect();
+    // What a command's segment «calls» is read from CODE ONLY: comments gone
+    // (S4) and the contents of string literals blanked, so `let _unused =
+    // "check_export_paths(&request)";` is not a call to it (S4a). Same lexer,
+    // same newlines — the line numbers line up with `lines`.
+    let code = code_only(source);
+    let code_lines: Vec<&str> = code.lines().collect();
     // Where each command's attribute sits, so a segment can end at the next one.
     let attr_lines: Vec<usize> = lines
         .iter()
@@ -567,7 +658,7 @@ fn parse_file(file: &str, source: &str) -> Vec<Command> {
             .filter(|n| is_token_param(n))
             .collect();
         let segment_end = attr_lines.get(nth + 1).copied().unwrap_or(lines.len());
-        let segment = lines[end.min(segment_end)..segment_end].join("\n");
+        let segment = code_lines[end.min(segment_end)..segment_end].join("\n");
         commands.push(Command {
             name,
             file: file.to_string(),
@@ -625,13 +716,11 @@ type StructFields = std::collections::BTreeMap<String, Vec<(String, String)>>;
 
 /// Whether a FIELD name is path-shaped: the parameter rule, the names in
 /// [`PATH_BEARING_FIELDS`] that become part of a path without looking like
-/// one, and a TOKEN for a place — a path-shaped name plus `_token`
-/// (`output_folder_token`). A token decides where the command acts as surely
-/// as the path it stands for, so it is held to a list too (A2).
+/// one, and any TOKEN (`output_folder_token`, `source_token`). A token decides
+/// where the command acts as surely as the path it stands for, so it is held to
+/// a list too (A2) — every `_token`, not only the path-shaped ones.
 fn is_path_like_field(name: &str) -> bool {
-    is_path_like(name)
-        || PATH_BEARING_FIELDS.contains(&name)
-        || name.strip_suffix("_token").is_some_and(is_path_like)
+    is_path_like(name) || PATH_BEARING_FIELDS.contains(&name) || name.ends_with("_token")
 }
 
 /// Is `s` a plain Rust identifier?
@@ -923,6 +1012,18 @@ fn every_classified_field_still_exists_and_its_guard_is_called() {
                     panic!("`{cmd}` lists `{field}` as a token: {problem}");
                 }
             }
+            Overwritten { by, proof } => {
+                assert!(
+                    source_defines_fn(by),
+                    "`{cmd}` lists `{field}` as overwritten by `{by}`, but no such \
+                     function exists any more"
+                );
+                assert!(
+                    source_defines_fn(proof),
+                    "`{cmd}` lists `{field}` as overwritten, proven by `{proof}` — but \
+                     that test no longer exists"
+                );
+            }
             Exempt(reason) => assert!(
                 reason.trim().len() >= 20,
                 "the exemption for `{cmd}` / `{field}` needs a real reason"
@@ -1069,6 +1170,11 @@ fn unclassified_token_params(
             cmd.token_params
                 .iter()
                 .filter(|p| !listed.iter().any(|(c, l, _)| *c == cmd.name && l == p))
+                .filter(|p| {
+                    !NOT_PLACE_TOKENS
+                        .iter()
+                        .any(|(c, l, _)| *c == cmd.name && l == p)
+                })
                 .map(|p| format!("{} — {p}", cmd.name))
         })
         .collect()
@@ -1310,8 +1416,14 @@ fn the_parser_actually_finds_commands() {
         );
     }
     // …and that it reads the SIGNATURE, not just the name.
+    let sidecar = commands
+        .iter()
+        .find(|c| c.name == "editor_read_sidecar")
+        .unwrap();
+    assert_eq!(sidecar.path_params, vec!["media_path".to_string()]);
     let peaks = commands.iter().find(|c| c.name == "editor_peaks").unwrap();
-    assert_eq!(peaks.path_params, vec!["input_path".to_string()]);
+    assert!(peaks.path_params.is_empty());
+    assert_eq!(peaks.token_params, vec!["source_token".to_string()]);
 }
 
 #[test]
@@ -1540,13 +1652,20 @@ fn the_detector_matches_the_names_a_reviewer_would_flag() {
     ] {
         assert!(!is_path_like(name), "{name} must not be detected as a path");
     }
-    // One level down, a TOKEN for a place is judged as the place (A2) — and a
-    // token for something else is not.
-    for name in ["output_folder_token", "intro_file_token", "save_dir_token"] {
-        assert!(is_path_like_field(name), "{name} stands for a place");
+    // One level down, EVERY token is judged as a place (A2, widened in PR-C: a
+    // `source_token` has no path-shaped word in front of it and slipped by) —
+    // a bare `token` is not a name for anything.
+    for name in [
+        "output_folder_token",
+        "intro_file_token",
+        "save_dir_token",
+        "source_token",
+        "job_token",
+    ] {
+        assert!(is_path_like_field(name), "{name} is a token");
     }
-    for name in ["job_token", "token", "session_token", "csrf_token"] {
-        assert!(!is_path_like_field(name), "{name} is not a place");
+    for name in ["token", "tokens", "tokenizer"] {
+        assert!(!is_path_like_field(name), "{name} is not a token");
     }
 }
 
@@ -1635,14 +1754,15 @@ fn every_listed_token_parameter_exists_and_is_resolved() {
 
 #[test]
 fn an_unlisted_token_parameter_is_found() {
-    // The shape the next PR brings: a command taking its token directly. Not
-    // listed → the ratchet names it; listed → it does not.
+    // The shape of a command taking its token directly. Not listed → the
+    // ratchet names it; listed → it does not. EVERY `_token` counts, a
+    // `source_token` as much as a `recording_file_token`.
     let src = r#"
 #[tauri::command]
 pub async fn editor_open_recording(
     chosen: State<'_, ChosenPaths>,
     recording_file_token: String,
-    job_token: String,
+    source_token: String,
 ) -> AppResult<()> {
     Ok(())
 }
@@ -1650,12 +1770,18 @@ pub async fn editor_open_recording(
     let commands = parse_file("fixture.rs", src);
     assert_eq!(
         commands[0].token_params,
-        vec!["recording_file_token".to_string()],
-        "a token for a place; `job_token` is not one"
+        vec![
+            "recording_file_token".to_string(),
+            "source_token".to_string()
+        ],
+        "every `_token` is a token parameter"
     );
     assert_eq!(
         unclassified_token_params(&commands, &[]),
-        vec!["editor_open_recording — recording_file_token".to_string()],
+        vec![
+            "editor_open_recording — recording_file_token".to_string(),
+            "editor_open_recording — source_token".to_string()
+        ],
         "an unlisted token parameter must be reported"
     );
     let listed = [(
@@ -1666,21 +1792,50 @@ pub async fn editor_open_recording(
             proof: "y",
         },
     )];
-    assert!(unclassified_token_params(&commands, &listed).is_empty());
+    assert_eq!(
+        unclassified_token_params(&commands, &listed),
+        vec!["editor_open_recording — source_token".to_string()]
+    );
 }
 
 #[test]
-fn the_token_parameter_rule_matches_places_and_not_other_tokens() {
+fn the_token_parameter_rule_matches_every_token() {
     for name in [
         "output_folder_token",
         "_recording_file_token",
         "save_dir_token",
         "media_path_token",
+        "source_token",
+        "device_token",
+        "job_token",
     ] {
-        assert!(is_token_param(name), "{name} stands for a place");
+        assert!(is_token_param(name), "{name} is a token");
     }
-    for name in ["device_token", "token", "job_token", "csrf_token", "folder"] {
-        assert!(!is_token_param(name), "{name} is not a place token");
+    for name in ["token", "folder", "tokenizer", "source"] {
+        assert!(!is_token_param(name), "{name} is not a token");
+    }
+}
+
+#[test]
+fn every_token_that_is_not_a_place_says_why_and_still_exists() {
+    let commands = all_commands();
+    for (cmd, param, reason) in NOT_PLACE_TOKENS {
+        let Some(command) = commands.iter().find(|c| &c.name == cmd) else {
+            panic!("NOT_PLACE_TOKENS lists `{cmd}`, which no longer exists — remove the entry");
+        };
+        assert!(
+            command.token_params.iter().any(|p| p == param),
+            "NOT_PLACE_TOKENS lists `{cmd}` / `{param}`, but that command no longer \
+             takes it — remove the stale entry"
+        );
+        assert!(
+            reason.trim().len() >= 20,
+            "`{cmd}` / `{param}` needs a real reason"
+        );
+        assert!(
+            !PARAM_TOKENS.iter().any(|(c, p, _)| c == cmd && p == param),
+            "`{cmd}` / `{param}` is both a place token and not one"
+        );
     }
 }
 
@@ -1829,4 +1984,888 @@ pub async fn editor_export(chosen: State<'_, ChosenPaths>) -> AppResult<()> {
     let problem =
         token_problem(cmd, "run_export(&chosen", "gone", &reaching).expect("the proof must exist");
     assert!(problem.contains("no longer exists"), "{problem}");
+}
+
+// ── PR-C: literals are not calls, the source is a token, a mint has a dialog ──
+
+/// S4a: a guard named only in a STRING LITERAL must not count. The segment is
+/// read as code with its literals blanked, so `let _unused =
+/// "check_export_paths(&request)";` — which the comment-stripper alone left
+/// standing — is not a call to it. (The review of #311 built exactly this
+/// mutant: the guarded entry stayed green over an unguarded command.)
+#[test]
+fn a_guard_named_only_in_a_string_literal_does_not_count() {
+    let src = r##"
+#[tauri::command]
+pub async fn editor_export(request: R) -> AppResult<()> {
+    let _unused = "check_export_paths(&request)";
+    let _raw = r#"run_export(&chosen, &request)"#;
+    let _ch = ';';
+    render(&request).await
+}
+
+#[tauri::command]
+pub async fn editor_other(request: R) -> AppResult<()> {
+    check_export_paths(&request)?;
+    Ok(())
+}
+"##;
+    let commands = parse_file("fixture.rs", src);
+    let (mutant, real) = (&commands[0], &commands[1]);
+    for named in ["check_export_paths(&request)", "run_export(&chosen"] {
+        assert!(
+            !mutant.segment.contains(named),
+            "a literal is not a call to `{named}`: {:?}",
+            mutant.segment
+        );
+    }
+    assert!(real.segment.contains("check_export_paths(&request)"));
+    // And through the same check the real lists use: the Guarded field entry
+    // would fail on the mutant and pass on the real one.
+    assert!(!mutant.segment.contains("check_export_paths(&request)"));
+}
+
+/// The literal is blanked in the token check too: a resolver named only in a
+/// string fails `token_problem` like one named only in a comment.
+#[test]
+fn a_resolver_named_only_in_a_string_literal_fails_the_token_check() {
+    let sources = vec![code_only(
+        r#"
+async fn run_export() { s.resolve(&t, ChosenKind::File); }
+async fn a_forged_token_is_refused() {}
+"#,
+    )];
+    let mutant = &parse_file(
+        "fixture.rs",
+        r#"
+#[tauri::command]
+pub async fn editor_export(chosen: State<'_, ChosenPaths>) -> AppResult<()> {
+    let _unused = "run_export(&chosen)";
+    render().await
+}
+"#,
+    )[0];
+    let problem = token_problem(
+        mutant,
+        "run_export(&chosen",
+        "a_forged_token_is_refused",
+        &sources,
+    )
+    .expect("a literal is not a call");
+    assert!(problem.contains("never calls the resolver"), "{problem}");
+}
+
+/// The fix for A2's second half, pinned from the outside: the export request
+/// and the preview request name the recording ONLY by a token. No field of
+/// either is named like a path, a file or a source besides `source_token` —
+/// `input_path` and the jingle paths are gone, and a new `media_file` or
+/// `intro_path` would fail here before it failed review.
+#[test]
+fn the_requests_name_the_recording_only_by_token() {
+    let structs = all_structs();
+    for request in ["EditorExportRequest", "EditorMasterPreviewRequest"] {
+        let named: Vec<&str> = structs[request]
+            .iter()
+            .map(|(f, _)| f.as_str())
+            .filter(|f| {
+                let f = f.to_ascii_lowercase();
+                f.contains("path")
+                    || f.contains("file")
+                    || f.contains("source")
+                    || f.contains("input")
+                    || f.contains("intro")
+                    || f.contains("outro")
+                    || f.contains("clip")
+            })
+            .collect();
+        let allowed: &[&str] = if request == "EditorExportRequest" {
+            // The two switches: Rust reads the clips from the saved settings.
+            &["source_token", "use_intro", "use_outro"]
+        } else {
+            &["source_token"]
+        };
+        assert_eq!(named, allowed, "{request} may name a place only by a token");
+    }
+    // The opening commands take nothing a place could ride in on.
+    let commands = all_commands();
+    let open = commands
+        .iter()
+        .find(|c| c.name == "editor_open_recording")
+        .expect("editor_open_recording was not parsed");
+    assert!(
+        open.params.iter().all(|(_, ty)| is_injected(ty)),
+        "editor_open_recording takes {:?} from the webview",
+        open.params
+    );
+}
+
+/// `editor_open_known` is the one opening command the webview sends something
+/// to, and what it sends is a history ROW'S ID — the database decides the file.
+/// Not path-shaped, not a token, and not allowed to become either: the lookup is
+/// by id (`recording_file_path`), and a second parameter would be a second way
+/// to say where.
+#[test]
+fn editor_open_known_takes_only_a_history_row_id() {
+    let commands = all_commands();
+    let known = commands
+        .iter()
+        .find(|c| c.name == "editor_open_known")
+        .expect("editor_open_known was not parsed");
+    let sent: Vec<&(String, String)> = known
+        .params
+        .iter()
+        .filter(|(_, ty)| !is_injected(ty))
+        .collect();
+    assert_eq!(
+        sent,
+        vec![&("recording_id".to_string(), "String".to_string())],
+        "editor_open_known takes a row id and nothing else"
+    );
+    assert!(known.path_params.is_empty() && known.token_params.is_empty());
+    assert!(
+        known.segment.contains("open_known("),
+        "its body is the database lookup: {:?}",
+        known.segment
+    );
+}
+
+// ── A mint needs a dialog, a database row or the OS ──────────────────────────
+
+/// The CLOSED list of functions that may hold `.mint(` in production code, and
+/// why each one may. A token stands for a place the OPERATOR chose, so a new
+/// way to make one is a decision a person makes here, with a sentence, not a
+/// thing a lexical anchor waves through (review of #313: a command that CALLED
+/// `recording_file_path(` and ignored the answer passed the old anchor check
+/// while minting a token for whatever the webview sent).
+///
+/// A function on this list is only half of it: every door INTO one is on
+/// [`MINT_DOORS`], with the evidence that the place it is handed is one Rust
+/// obtained.
+const MINTERS: &[(&str, &str)] = &[
+    (
+        "open_source",
+        "the one door a file enters the editor by: vets the place as a file, \
+         opens `asset://` to exactly it and mints its token. Takes a place, \
+         never decides one — what hands it a place is on MINT_DOORS.",
+    ),
+    (
+        "choose_output_folder",
+        "mints the token for the export folder `editor_pick_output_folder` \
+         picked in a dialog Rust opened; a cancel mints nothing.",
+    ),
+];
+
+/// How a door proves the place it hands a minter is one Rust obtained.
+enum Evidence {
+    /// The argument is bound from `source` in the caller's own body — the dialog's
+    /// answer, the database's row — and from nothing else. Checked structurally
+    /// by [`bound_only_from`]: an unused call to the source does not pass it.
+    Flows { source: &'static str },
+    /// The caller is the OS' own event handler: its body names `anchor`, the
+    /// event the OS reported to the process.
+    Os { anchor: &'static str },
+    /// The caller only forwards its parameter; ITS callers are rows of their own.
+    Forwards,
+}
+
+/// `(callee, caller, evidence, why)`: every function that may call a minter (or
+/// a function that forwards to one), and what makes the place it passes one the
+/// webview did not name. A call to a minter from a function not on this list is
+/// a violation, whatever else the function does.
+const MINT_DOORS: &[(&str, &str, Evidence, &str)] = &[
+    (
+        "open_source",
+        "editor_open_recording",
+        Evidence::Flows {
+            source: "ask_for_file(",
+        },
+        "The open-file dialog: the file picker Rust opens; the place is its answer.",
+    ),
+    (
+        "open_source",
+        "open_known",
+        Evidence::Flows {
+            source: "recording_file_path(",
+        },
+        "A history row: the webview sends a row id, the database holds the file.",
+    ),
+    (
+        "open_source",
+        "dropped_recording",
+        Evidence::Forwards,
+        "Opens the dropped file like a picked one; only `note_drop` calls it.",
+    ),
+    (
+        "dropped_recording",
+        "note_drop",
+        Evidence::Os {
+            anchor: "DragDropEvent::Drop",
+        },
+        "The window's own drop handler: the OS reported the drop to the process, \
+         and the path never reaches the page.",
+    ),
+    (
+        "choose_output_folder",
+        "editor_pick_output_folder",
+        Evidence::Flows {
+            source: "ask_for_folder(",
+        },
+        "The folder picker Rust opens; the place is its answer.",
+    ),
+];
+
+/// `src` with every `#[cfg(test)] mod … { … }` removed (the tests mint freely).
+/// Works on [`code_only`] text, so braces in literals and comments are gone.
+fn without_test_modules(src: &str) -> String {
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(at) = rest.find("#[cfg(test)]") {
+        out.push_str(&rest[..at]);
+        let after = &rest[at..];
+        let Some(open) = after.find('{') else {
+            rest = "";
+            break;
+        };
+        // Only a `mod` is cut; any other `#[cfg(test)]` item keeps its text.
+        if !after[..open].contains("mod ") {
+            out.push_str(&after[..open]);
+            rest = &after[open..];
+            continue;
+        }
+        let mut depth = 0i32;
+        let mut end = after.len();
+        for (i, ch) in after[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = open + i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Every `fn name … { body }` in `src` (code-only text), with its body. A
+/// declaration without a body (`fn f();`) is skipped.
+fn fn_bodies(src: &str) -> Vec<(String, String)> {
+    let is_ident_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = src[from..].find("fn ") {
+        let at = from + rel;
+        from = at + 3;
+        if src[..at].chars().next_back().is_some_and(is_ident_char) {
+            continue;
+        }
+        let name: String = src[at + 3..]
+            .chars()
+            .take_while(|c| is_ident_char(*c))
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        // The body opens at the first `{` that comes before a `;` outside the
+        // parameter list.
+        let after = &src[at + 3 + name.len()..];
+        let mut paren = 0i32;
+        let mut open = None;
+        for (i, ch) in after.char_indices() {
+            match ch {
+                '(' => paren += 1,
+                ')' => paren -= 1,
+                ';' if paren == 0 => break,
+                '{' if paren == 0 => {
+                    open = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let Some(open) = open else { continue };
+        let mut depth = 0i32;
+        for (i, ch) in after[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        out.push((name.clone(), after[open + 1..open + i].to_string()));
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// The whole-word occurrence of `word` in `hay`.
+fn contains_word(hay: &str, word: &str) -> bool {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    hay.match_indices(word).any(|(at, _)| {
+        !hay[..at].chars().next_back().is_some_and(is_ident)
+            && !hay[at + word.len()..].chars().next().is_some_and(is_ident)
+    })
+}
+
+/// The right-hand sides of every `let` in `body` whose pattern binds `ident`
+/// (`let ident =`, `let Some(ident) = …`), each up to its closing `;`.
+fn bindings_of(body: &str, ident: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (at, _) in body.match_indices("let ") {
+        if body[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            continue;
+        }
+        let rest = &body[at + 4..];
+        let Some(eq) = rest.find('=') else { continue };
+        if !contains_word(&rest[..eq], ident) {
+            continue;
+        }
+        let mut depth = 0i32;
+        let mut end = rest.len();
+        for (i, ch) in rest[eq + 1..].char_indices() {
+            match ch {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                ';' if depth <= 0 => {
+                    end = eq + 1 + i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        out.push(rest[eq + 1..end].to_string());
+    }
+    out
+}
+
+/// Whether `ident` comes from `source` and nothing else: it is bound at least
+/// once, and EVERY `let` that binds it takes its value from a statement that
+/// holds the `source` call or from `ident` itself (`let Some(picked) = picked
+/// else …`). A `let _ = source(…)` followed by `let place = <something else>`
+/// binds `place` to nothing the source said.
+fn bound_only_from(body: &str, ident: &str, source: &str) -> bool {
+    let rhs = bindings_of(body, ident);
+    !rhs.is_empty()
+        && rhs
+            .iter()
+            .all(|r| r.contains(source) || contains_word(r, ident))
+}
+
+/// The place argument (the second one) a call to `callee` is handed in `body`:
+/// `place`, or `PathBuf::from(place)`. `None` for any other shape — a door that
+/// builds its place in the call is not one this check can vouch for.
+fn place_argument(body: &str, callee: &str) -> Option<String> {
+    let arg = call_args(body, callee)?.get(1)?.clone();
+    let inner = arg
+        .strip_prefix("PathBuf::from(")
+        .and_then(|a| a.strip_suffix(')'))
+        .unwrap_or(&arg)
+        .trim()
+        .to_string();
+    let is_ident =
+        !inner.is_empty() && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    is_ident.then_some(inner)
+}
+
+/// What is wrong with how `sources` mint tokens, against the closed lists:
+///
+/// 1. `.mint(` appears only inside a [`MINTERS`] function, and every one of
+///    them is still there;
+/// 2. a call to a minter — or to a function that forwards to one — is made only
+///    by a [`MINT_DOORS`] caller, and every row is still true (the caller exists
+///    and calls the callee);
+/// 3. each door's evidence holds: the place it hands over is bound from the
+///    dialog or the row and from nothing else (`Flows`), is the OS' own drop
+///    (`Os`), or is forwarded by a function whose own callers are rows
+///    (`Forwards`).
+fn mint_violations(sources: &[String]) -> Vec<String> {
+    let fns: Vec<(String, String)> = sources
+        .iter()
+        .flat_map(|src| fn_bodies(&without_test_modules(src)))
+        .collect();
+    let body_of = |name: &str| fns.iter().find(|(n, _)| n == name).map(|(_, b)| b.as_str());
+    let mut bad = Vec::new();
+
+    // 1. The closed list of functions that hold `.mint(`.
+    for (name, body) in &fns {
+        if body.contains(".mint(") && !MINTERS.iter().any(|(m, _)| m == name) {
+            bad.push(format!(
+                "`{name}` mints a token and is not on MINTERS — a new way to make \
+                 a token is decided there, with a reason"
+            ));
+        }
+    }
+    for (minter, why) in MINTERS {
+        if why.trim().is_empty() {
+            bad.push(format!("MINTERS: `{minter}` has no reason"));
+        }
+        if !body_of(minter).is_some_and(|b| b.contains(".mint(")) {
+            bad.push(format!("MINTERS lists `{minter}`, which no longer mints"));
+        }
+    }
+
+    // 2. Who may call a minter (or a forwarder).
+    let callees: BTreeSet<&str> = MINT_DOORS.iter().map(|(callee, ..)| *callee).collect();
+    for (name, body) in &fns {
+        for callee in called_names(body)
+            .iter()
+            .filter(|c| callees.contains(c.as_str()))
+        {
+            if name != callee
+                && !MINT_DOORS
+                    .iter()
+                    .any(|(c, caller, ..)| c == callee && caller == name)
+            {
+                bad.push(format!(
+                    "`{name}` calls `{callee}` and is not a door on MINT_DOORS"
+                ));
+            }
+        }
+    }
+
+    // 3. Every row is still true, and its evidence holds.
+    for (callee, caller, evidence, why) in MINT_DOORS {
+        if why.trim().is_empty() {
+            bad.push(format!("MINT_DOORS: `{caller}` → `{callee}` has no reason"));
+        }
+        let Some(body) = body_of(caller) else {
+            bad.push(format!("MINT_DOORS lists `{caller}`, which is gone"));
+            continue;
+        };
+        if !called_names(body).contains(*callee) {
+            bad.push(format!("MINT_DOORS: `{caller}` no longer calls `{callee}`"));
+            continue;
+        }
+        match evidence {
+            Evidence::Flows { source } => match place_argument(body, callee) {
+                None => bad.push(format!(
+                    "`{caller}` does not hand `{callee}` a plain place variable"
+                )),
+                Some(place) if !bound_only_from(body, &place, source) => bad.push(format!(
+                    "`{caller}` hands `{callee}` `{place}`, which does not come from \
+                     `{source}` alone"
+                )),
+                Some(_) => {}
+            },
+            Evidence::Os { anchor } => {
+                if !body.contains(anchor) {
+                    bad.push(format!("`{caller}` has no `{anchor}` behind its call"));
+                }
+            }
+            Evidence::Forwards => {
+                if !MINT_DOORS.iter().any(|(c, ..)| c == caller) {
+                    bad.push(format!(
+                        "`{caller}` forwards a place but its own callers are not on MINT_DOORS"
+                    ));
+                }
+            }
+        }
+    }
+    bad.sort();
+    bad.dedup();
+    bad
+}
+
+/// The crate's sources as code only, test modules and this file excluded.
+fn production_code() -> Vec<String> {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    rust_files(&manifest.join("src"), &mut files);
+    files.sort();
+    files
+        .iter()
+        .filter(|f| f.file_name().is_some_and(|n| n != "path_ratchet.rs"))
+        .map(|f| code_only(&std::fs::read_to_string(f).unwrap_or_default()))
+        .collect()
+}
+
+#[test]
+fn every_token_is_minted_by_a_listed_function_behind_a_listed_door() {
+    let sources = production_code();
+    // Did it find the mints at all? A reader that saw none would pass vacuously.
+    let minting: Vec<String> = sources
+        .iter()
+        .flat_map(|src| fn_bodies(&without_test_modules(src)))
+        .filter(|(_, body)| body.contains(".mint("))
+        .map(|(name, _)| name)
+        .collect();
+    for (known, _) in MINTERS {
+        assert!(
+            minting.iter().any(|n| n == known),
+            "the mint reader did not find `{known}` ({minting:?})"
+        );
+    }
+    assert_eq!(
+        mint_violations(&sources),
+        Vec::<String>::new(),
+        "\n\
+         ────────────────────────────────────────────────────────────────────\n\
+         A token (`ChosenPaths::mint`) is made outside MINTERS, or a minter is\n\
+         reached from outside MINT_DOORS, or a door's place no longer comes from\n\
+         a dialog Rust opened, a history row or the OS' own drop. A token stands\n\
+         for a place the OPERATOR chose; minting one from something the webview\n\
+         sent turns the token store into the path parameter it replaced (A2).\n\
+         Adding a way in is a decision: put it on the list, with its reason.\n\
+         ────────────────────────────────────────────────────────────────────"
+    );
+}
+
+/// The real doors, as the fixtures' starting point: the ratchet must pass them,
+/// and every mutant below is one edit away from them.
+const REAL_DOORS: &str = r#"
+pub async fn editor_open_recording(window: Window, chosen: State<'_, ChosenPaths>) -> AppResult<Option<OpenedRecording>> {
+    let picked = chosen_paths::ask_for_file(&window, &[]).await?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    open_source(&chosen, picked, grant_asset_file(&app)).await.map(Some)
+}
+pub async fn open_known(pool: &SqlitePool, chosen: &ChosenPaths, recording_id: &str, grant: G) -> AppResult<OpenedRecording> {
+    let file = store::recording_file_path(pool, recording_id)
+        .await?
+        .ok_or_else(|| source_error(ChosenError::Unknown))?;
+    open_source(chosen, PathBuf::from(file), grant).await
+}
+pub fn note_drop(window: &Window, event: &DragDropEvent) {
+    let DragDropEvent::Drop { paths, position } = event else { return };
+    let Some(first) = paths.first().cloned() else { return };
+    let _ = dropped_recording(&chosen, first, (0.0, 0.0), grant);
+}
+pub async fn dropped_recording(chosen: &ChosenPaths, file: PathBuf, at: (f64, f64), grant: G) -> DroppedRecording {
+    match open_source(chosen, file, grant).await { _ => todo() }
+}
+pub async fn open_source(chosen: &ChosenPaths, place: PathBuf, grant: G) -> AppResult<OpenedRecording> {
+    let vetted = vet(&place).await?;
+    let token = chosen.mint(vetted);
+    Ok(token)
+}
+pub async fn editor_pick_output_folder(window: Window, chosen: State<'_, ChosenPaths>) -> AppResult<Option<ChosenPlace>> {
+    let picked = chosen_paths::ask_for_folder(&window).await?;
+    choose_output_folder(&chosen, picked).await
+}
+pub(crate) async fn choose_output_folder(chosen: &ChosenPaths, picked: Option<PathBuf>) -> AppResult<Option<ChosenPlace>> {
+    let Some(picked) = picked else { return Ok(None) };
+    let token = chosen.mint(vet(&picked).await?);
+    Ok(Some(token))
+}
+"#;
+
+/// [`REAL_DOORS`] with `from` replaced by `to` — exactly once, so a mutant that
+/// stops matching the fixture fails loudly instead of testing nothing.
+fn mutated(from: &str, to: &str) -> String {
+    assert_eq!(
+        REAL_DOORS.matches(from).count(),
+        1,
+        "mutation site {from:?}"
+    );
+    code_only(&REAL_DOORS.replace(from, to))
+}
+
+#[test]
+fn the_real_doors_pass_the_mint_ratchet() {
+    assert_eq!(
+        mint_violations(&[code_only(REAL_DOORS)]),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_command_that_mints_a_path_from_the_webview_is_found() {
+    // The shape A2 closes, as a fixture: a command that takes a path, vets it
+    // (so `mint` accepts it) and mints a token — no dialog anywhere. The vet
+    // proves the path is a file; it proves nothing about who chose it.
+    let bad = format!(
+        "{REAL_DOORS}\n{}",
+        r#"
+#[tauri::command]
+pub async fn editor_register_recording(chosen: State<'_, ChosenPaths>, path: String) -> AppResult<String> {
+    let vetted = chosen_paths::vet(&PathBuf::from(path), ChosenKind::File)?;
+    Ok(chosen.mint(vetted))
+}
+"#
+    );
+    let found = mint_violations(&[code_only(&bad)]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("`editor_register_recording` mints a token"));
+
+    // The same mint, split into a helper, called by a command: the helper is
+    // not on the list, and neither is the command's call to `open_source`.
+    let split_bad = format!(
+        "{REAL_DOORS}\n{}",
+        r#"
+async fn remember(chosen: &ChosenPaths, p: PathBuf) -> String {
+    chosen.mint(vet(&p).unwrap())
+}
+#[tauri::command]
+pub async fn editor_register_recording(chosen: State<'_, ChosenPaths>, path: String) -> String {
+    remember(&chosen, PathBuf::from(path)).await
+}
+"#
+    );
+    let found = mint_violations(&[code_only(&split_bad)]);
+    assert!(
+        found.iter().any(|f| f.contains("`remember` mints a token")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_command_that_reaches_a_minter_without_being_a_door_is_found() {
+    // No `.mint(` of its own — it hands the webview's string to `open_source`.
+    let bad = format!(
+        "{REAL_DOORS}\n{}",
+        r#"
+#[tauri::command]
+pub async fn editor_open_path(chosen: State<'_, ChosenPaths>, path: String) -> AppResult<OpenedRecording> {
+    open_source(&chosen, PathBuf::from(path), grant).await
+}
+"#
+    );
+    assert_eq!(
+        mint_violations(&[code_only(&bad)]),
+        vec!["`editor_open_path` calls `open_source` and is not a door on MINT_DOORS"]
+    );
+}
+
+#[test]
+fn a_row_lookup_whose_answer_is_ignored_does_not_anchor_a_mint() {
+    // The mutant of the review of #313: the command CALLS `recording_file_path(`
+    // — the old lexical anchor — and then mints for something else.
+
+    // (a) in a new function: not on the list.
+    let new_fn = format!(
+        "{REAL_DOORS}\n{}",
+        r#"
+pub async fn editor_open_by_name(pool: &SqlitePool, chosen: &ChosenPaths, id: String, path: String) -> String {
+    let _ = store::recording_file_path(pool, &id).await;
+    chosen.mint(vet(&PathBuf::from(path)).unwrap())
+}
+"#
+    );
+    let found = mint_violations(&[code_only(&new_fn)]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`editor_open_by_name` mints a token")),
+        "{found:?}"
+    );
+
+    // (b) in the real door, no `.mint(` of its own: the row is read and dropped,
+    // the place is the webview's.
+    let in_door = mutated(
+        "let file = store::recording_file_path(pool, recording_id)",
+        "let _unused = store::recording_file_path(pool, recording_id)",
+    );
+    let found = mint_violations(&[in_door]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`open_known` hands `open_source` `file`")),
+        "{found:?}"
+    );
+
+    // (c) the row is kept, then the place is swapped for something else.
+    let swapped = mutated(
+        "open_source(chosen, PathBuf::from(file), grant).await\n}",
+        "let file = recording_id.to_string();\n    open_source(chosen, PathBuf::from(file), grant).await\n}",
+    );
+    let found = mint_violations(&[swapped]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`open_known` hands `open_source` `file`")),
+        "{found:?}"
+    );
+
+    // (d) the id itself is handed over.
+    let by_id = mutated(
+        "open_source(chosen, PathBuf::from(file), grant).await\n}",
+        "let _ = file;\n    open_source(chosen, PathBuf::from(recording_id), grant).await\n}",
+    );
+    let found = mint_violations(&[by_id]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`open_known` hands `open_source` `recording_id`")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_dialog_whose_answer_is_ignored_does_not_anchor_a_mint_either() {
+    let ignored = mutated(
+        "let picked = chosen_paths::ask_for_file(&window, &[]).await?;",
+        "let _ = chosen_paths::ask_for_file(&window, &[]).await?;\n    let picked = PathBuf::from(typed_path);",
+    );
+    let found = mint_violations(&[ignored]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`editor_open_recording` hands `open_source` `picked`")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_stale_or_reasonless_list_entry_is_found() {
+    // A door that no longer calls its minter, or a minter that no longer mints,
+    // is a list that has stopped describing the code.
+    let gone = mutated(
+        "let token = chosen.mint(vetted);",
+        "let token = vetted.token();",
+    );
+    let found = mint_violations(&[gone]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("MINTERS lists `open_source`, which no longer mints")),
+        "{found:?}"
+    );
+}
+
+// ── editor_export hands the seam what run_export resolved ────────────────────
+
+/// The top-level arguments of the first call to `name(` in `body` (code-only
+/// text), each trimmed. `None` if there is no such call.
+fn call_args(body: &str, name: &str) -> Option<Vec<String>> {
+    let at = body.find(&format!("{name}("))? + name.len();
+    let mut depth = 0i32;
+    let mut args = vec![String::new()];
+    for ch in body[at..].chars() {
+        match ch {
+            '(' | '[' | '{' => {
+                depth += 1;
+                if depth == 1 {
+                    continue;
+                }
+            }
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            ',' if depth == 1 => {
+                args.push(String::new());
+                continue;
+            }
+            _ => {}
+        }
+        args.last_mut()?.push(ch);
+    }
+    Some(args.into_iter().map(|a| a.trim().to_string()).collect())
+}
+
+/// What is wrong with an `editor_export` body, if anything: the seam
+/// (`editor::export(`) must be handed the closure's `&resolved` — the places
+/// `run_export` resolved — as its third argument, and the body must not build
+/// a folder or a `ResolvedExport` of its own. M3c's text check, made
+/// structural: the test that runs the render with a stand-in sees what
+/// `run_export` passes the closure, and cannot see that the command then
+/// ignored it.
+fn export_hands_the_resolved_places(body: &str) -> Option<String> {
+    let Some(args) = call_args(body, "editor::export") else {
+        return Some("it never calls `editor::export(`".into());
+    };
+    if args.get(2).map(String::as_str) != Some("&resolved") {
+        return Some(format!(
+            "`editor::export` is not handed `&resolved` as its third argument ({args:?})"
+        ));
+    }
+    if !body.contains("|resolved|") {
+        return Some("`resolved` is not the closure `run_export` passes the places to".into());
+    }
+    for forged in ["ExportFolder", "ResolvedExport"] {
+        if body.contains(forged) {
+            return Some(format!(
+                "the command names `{forged}` itself — it may only forward what \
+                 `run_export` resolved"
+            ));
+        }
+    }
+    None
+}
+
+#[test]
+fn editor_export_hands_the_seam_the_resolved_places() {
+    let sources = production_code();
+    let body = fn_body(&sources, "editor_export").expect("editor_export has a body");
+    assert_eq!(export_hands_the_resolved_places(&body), None);
+}
+
+/// M3c2: the mutants the review of #311 built. `&folder` swapped for
+/// `&ExportFolder::BesideSource` with `let _ = &folder;` kept (so the unused
+/// variable, and every text check for the name, stays quiet), the same in this
+/// design's names, the argument named only in a literal, and a `ResolvedExport`
+/// built in the command.
+#[test]
+fn an_export_that_ignores_the_resolved_places_is_found() {
+    let real = code_only(
+        r#"
+    let result = run_export(&chosen, &db.pool, request_ref, |resolved| async move {
+        editor::export(engine, request_ref, &resolved, editor::HW_ENCODE_FIRST, progress).await
+    })
+    .await?;
+"#,
+    );
+    assert_eq!(export_hands_the_resolved_places(&real), None);
+
+    for (what, mutant) in [
+        (
+            "BesideSource for the folder, `let _ =` keeping the name quiet",
+            r#"
+    let result = run_export(&chosen, &db.pool, request_ref, |resolved| async move {
+        let _ = &resolved;
+        editor::export(engine, request_ref, &ExportFolder::BesideSource, HW, progress).await
+    }).await?;"#,
+        ),
+        (
+            "a ResolvedExport built in the command",
+            r#"
+    let result = run_export(&chosen, &db.pool, request_ref, |resolved| async move {
+        let _ = &resolved;
+        editor::export(engine, request_ref, &ResolvedExport { source: s, intro: None, outro: None, folder: f }, HW, progress).await
+    }).await?;"#,
+        ),
+        (
+            "the argument only in a string literal",
+            r#"
+    let result = run_export(&chosen, &db.pool, request_ref, |resolved| async move {
+        let _unused = "&resolved";
+        editor::export(engine, request_ref, &other, HW, progress).await
+    }).await?;"#,
+        ),
+        (
+            "the seam called with the request's own folder",
+            r#"
+    let result = run_export(&chosen, &db.pool, request_ref, |resolved| async move {
+        let _ = &resolved;
+        editor::export(engine, request_ref, &request_ref.out, HW, progress).await
+    }).await?;"#,
+        ),
+        (
+            "no run_export closure at all",
+            r#"
+    let result = editor::export(engine, request_ref, &resolved, HW, progress).await?;"#,
+        ),
+    ] {
+        assert!(
+            export_hands_the_resolved_places(&code_only(mutant)).is_some(),
+            "not caught: {what}"
+        );
+    }
 }

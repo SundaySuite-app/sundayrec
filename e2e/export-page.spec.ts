@@ -14,6 +14,7 @@ import {
   exportOkMastered,
   EXPORT_HELD,
   FILE,
+  RECORDING_ID,
 } from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
@@ -70,9 +71,9 @@ async function openThenExport(page: Page, over: Fixtures = {}): Promise<void> {
   await page.evaluate(
     (f) =>
       (
-        window as unknown as { openEditorWithFile: (p: string) => void }
-      ).openEditorWithFile(f),
-    FILE,
+        window as unknown as { openEditorWithRecording: (id: string) => void }
+      ).openEditorWithRecording(f),
+    RECORDING_ID,
   );
   await expect(page.getByTestId("editor")).toHaveAttribute(
     "data-state",
@@ -445,9 +446,9 @@ test.describe("eksportering — innhold", () => {
     await page.evaluate(
       (f) =>
         (
-          window as unknown as { openEditorWithFile: (p: string) => void }
-        ).openEditorWithFile(f),
-      FILE,
+          window as unknown as { openEditorWithRecording: (id: string) => void }
+        ).openEditorWithRecording(f),
+      RECORDING_ID,
     );
     await expect(page.getByTestId("editor")).toHaveAttribute(
       "data-state",

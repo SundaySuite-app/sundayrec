@@ -31,13 +31,7 @@
     "dialog": {
       "confirm": "Continue",
       "cancel": "Cancel",
-      "close": "Close",
-      "filter": {
-        "allFiles": "All files",
-        "allMedia": "All supported media",
-        "audio": "Audio",
-        "video": "Video"
-      }
+      "close": "Close"
     },
     "vu": {
       "hear": "We hear sound",
@@ -1004,6 +998,9 @@
     "errExportFolderPickAgain": "Choose the export folder again with “Choose folder…”.",
     "errExportFolderMissing": "The folder you chose is no longer there — is the disk disconnected? Reconnect it, or pick another folder with “Choose folder…”.",
     "errExportFolderRefused": "That folder cannot be used for an export. Pick another folder with “Choose folder…”.",
+    "errSourceUnknown": "The recording is no longer open. Open it again and export once more.",
+    "errSourceRefused": "That recording cannot be opened in the editor (it is in a protected folder). Open another file.",
+    "errExportClipUnusable": "The intro or outro sound is gone or cannot be used. Pick it again, or export without it.",
     "errRecordingInProgress": "A recording is in progress. Wait until it has finished before you export.",
     "errPathNotAbsolute": "Invalid folder or file path. Choose the destination folder again.",
     "metaDesc": "DESCRIPTION",

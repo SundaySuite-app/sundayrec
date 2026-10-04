@@ -19,6 +19,11 @@ afterEach(() => {
 describe("forgetMovedPath", () => {
   it("«sist redigert» forsvinner når dens fil er blant de flyttede stiene", () => {
     lastEdited.value = {
+      opened: {
+        token: "t",
+        path: "/Opptak/2026-08-23.flac",
+        name: "2026-08-23.flac",
+      },
       path: "/Opptak/2026-08-23.flac",
       fileName: "2026-08-23.flac",
       startedAtMs: null,
@@ -29,6 +34,11 @@ describe("forgetMovedPath", () => {
 
   it("en ANNEN fil i papirkurven rører ikke «sist redigert»", () => {
     const edited = {
+      opened: {
+        token: "t",
+        path: "/Opptak/2026-08-23.flac",
+        name: "2026-08-23.flac",
+      },
       path: "/Opptak/2026-08-23.flac",
       fileName: "2026-08-23.flac",
       startedAtMs: null,
@@ -46,6 +56,11 @@ describe("forgetMovedPath", () => {
 
   it("en tom liste med flyttede stier lar «sist redigert» stå", () => {
     const edited = {
+      opened: {
+        token: "t",
+        path: "/Opptak/2026-08-23.flac",
+        name: "2026-08-23.flac",
+      },
       path: "/Opptak/2026-08-23.flac",
       fileName: "2026-08-23.flac",
       startedAtMs: null,

@@ -31,13 +31,7 @@
     "dialog": {
       "confirm": "Fortsett",
       "cancel": "Avbryt",
-      "close": "Lukk",
-      "filter": {
-        "allFiles": "Alle filer",
-        "allMedia": "Alle støttede medier",
-        "audio": "Lyd",
-        "video": "Video"
-      }
+      "close": "Lukk"
     },
     "vu": {
       "hear": "Vi hører lyd",
@@ -1004,6 +998,9 @@
     "errExportFolderPickAgain": "Velg eksportmappen på nytt med «Velg mappe…».",
     "errExportFolderMissing": "Mappen du valgte, finnes ikke lenger — er disken frakoblet? Koble den til igjen, eller velg en annen mappe med «Velg mappe…».",
     "errExportFolderRefused": "Den mappen kan ikke brukes til eksport. Velg en annen mappe med «Velg mappe…».",
+    "errSourceUnknown": "Opptaket er ikke åpent lenger. Åpne det på nytt, og eksporter igjen.",
+    "errSourceRefused": "Det opptaket kan ikke åpnes i redigeringen (det ligger i en beskyttet mappe). Åpne en annen fil.",
+    "errExportClipUnusable": "Intro- eller outro-lyden finnes ikke lenger eller kan ikke brukes. Velg den på nytt, eller eksporter uten.",
     "errRecordingInProgress": "Det pågår et opptak nå. Vent til opptaket er ferdig før du eksporterer.",
     "errPathNotAbsolute": "Ugyldig mappe eller filbane. Velg destinasjonsmappen på nytt.",
     "metaDesc": "BESKRIVELSE",

@@ -183,17 +183,82 @@ So a future auditor doesn't have to re-derive these from scratch:
   and the test that feeds it a forged token. Its lexical rules read the source
   with comments stripped, so a comment that names a guard cannot make a command
   look guarded.
-  **What A2 does NOT close, so nobody reads it as more than it is:** the
-  export's SOURCE and the intro/outro jingles are still paths from the
-  webview — `EditorExportRequest.input_path`, `intro_path` and `outro_path`,
-  held only by `path_guard` (`check_export_paths`). And «ved siden av kilden»
-  (`ExportFolder::BesideSource`, no token) is still DERIVED from `input_path`:
-  the export lands in the folder of whatever source path the webview sent, so
-  a compromised webview that names any readable audio file also chooses that
-  file's folder as the destination. Both close in the next change (PR-C):
-  `editor_open_recording` opens the file dialog in Rust and answers with a
-  File token, and the export takes that token instead of `input_path`,
-  `intro_path` and `outro_path`.
+  **A2, second half (the recording): closed.** The editor's recording used to
+  be a path the webview sent to every `editor_*` command (`input_path`) and to
+  the export (`EditorExportRequest.input_path`, `intro_path`, `outro_path`),
+  held only by `path_guard` — so a compromised webview could point ffprobe and
+  ffmpeg at any readable file, and, because «ved siden av kilden»
+  (`ExportFolder::BesideSource`) is derived from the source, choose that file's
+  folder as the destination. Now a recording enters the editor by exactly three
+  doors, and each mints a File token for a file Rust decided on:
+  `editor_open_recording` (the open dialog, opened in Rust — it takes no
+  argument), `editor_open_known` (a history row, by the ROW'S id: the database
+  holds the path; rows are written by the recorder and by startup recovery,
+  which reads a manifest only if it is named the way the recorder names its own
+  (`<session_id>.json`, one function for both) and the id is what the recorder
+  makes — its start time in ms: 1–20 ASCII digits, so no sidecar name such as
+  `<stem>.meta.json` written through `editor_write_sidecar` can ever carry its
+  own matching id — and puts every file in it, the
+  pre-roll clip and the row's final path through `path_guard::checked_input_file`
+  first. A manifest that fails the name or the guard gets no row and nothing in
+  it is deleted: it is warned about once and renamed `<name>.refused`, so it
+  neither warns at every start nor counts as a recording in flight in the
+  scheduler's missed-recording check (`pending_windows_in` applies the same
+  name rule). It is never deleted, so a later version or support can fetch it.
+  Pinned by the tests in `recorder::recovery`), and a file dropped on the
+  window (the process catches the drop itself, `window::on_event` →
+  `editor::note_drop`, and tells the page with `editor://file-dropped` — the
+  path of a drop never reaches the page). `editor_load_recording`,
+  `editor_peaks`, `editor_extract_playback_proxy`, `editor_segments`,
+  `editor_diagnose_channels`, `editor_auto_process`, `editor_mastering_analyze`,
+  `editor_master_preview` and `editor_export` take `source_token` and nothing
+  else, and resolve it with `resolve_source` (`ChosenPaths::resolve(token,
+File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
+  the RESOLVED source. The intro and outro clips are not in the request at all:
+  `use_intro`/`use_outro` are switches, Rust reads the clip from the SAVED
+  settings and vets it again at use (`export_clip_unusable`), and
+  `settings_save` (and the localStorage hand-over) keeps the stored clips
+  whatever the webview sends — they change only through `settings_pick_editor_intro`/
+  `_outro`, which open a dialog in Rust, and the clears. The refusals have codes
+  and no paths: `source_unknown`, `source_missing`, `source_refused`. Old-shape
+  payloads fail closed: `inputPath` is an unknown key and the missing token
+  refuses the request.
+  **D2, the webview's own `asset://` scope: closed.** `editor_allow_asset_path`
+  let the webview widen its own asset scope to any file `path_guard` let
+  through, which made every readable file playable (and so readable) from the
+  page. It is gone (`REPLACED` by `editor_open_recording`): the scope grows by
+  one file only when RUST opens a recording — the vetted canonical place, and
+  nothing else — and for the temp files Rust itself renders (the playback proxy,
+  the mastering preview). The static `assetProtocol.scope.allow` in
+  `tauri.conf.json` is **empty** (the protocol stays enabled, and its `deny`
+  list of protected home folders stays): the only things the page plays are the
+  opened recording (`loader.ts`), the proxy Rust renders for it (`loader.ts`)
+  and the master preview Rust renders (`sound.ts`), and each is granted per
+  file by `grant_asset_file`; no `<img>`/`<video>` loads from `asset://` (the
+  camera preview is `data:`/`getUserMedia`). The old `$DOCUMENT`/`$DOWNLOAD`/
+  `$VIDEO`/`$AUDIO`/`$DESKTOP`/`$APPDATA`/`$APPLOCALDATA`/`$TEMP` globs made
+  everything in those folders readable from the page, including the app's own
+  database and recovery folder, whatever Rust had been asked. Pinned by
+  `editor::tests::the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list`,
+  and `grant_asset_file` itself against tauri's own scope
+  (`the_asset_grant_opens_the_one_file_and_nothing_beside_it`: a grant widened
+  to the file's folder fails it). New code that plays a file from `asset://`
+  must be granted the same way, or it will not play. `commands::path_ratchet`
+  pins the rest, from the outside: every `*_token` parameter or field is
+  classified (a place token with
+  its resolver and a forged-token proof, or a non-place with the reason — the
+  old rule asked for a path-shaped word in front of `_token`, which
+  `source_token` is not); a guard counts only as CODE in a command's body, not as
+  a comment or a string literal that names it; `.mint(` may only appear in a
+  CLOSED list of functions (`MINTERS`, each with its reason: `open_source`,
+  `choose_output_folder`), which may only be reached through a closed list of
+  doors (`MINT_DOORS`: the open dialog, the history row, the window's own drop
+  handler, the folder dialog), and a door's place must be bound from the
+  dialog's answer or the row's path and from nothing else — merely CALLING
+  `recording_file_path(` or a dialog no longer anchors a mint (a command that
+  mints from something the webview sent is a failing test); and `editor_export`
+  must hand the seam the places `run_export` resolved, with no `ExportFolder`
+  or `ResolvedExport` of its own.
 - **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output
@@ -302,15 +367,19 @@ So a future auditor doesn't have to re-derive these from scratch:
   — a wrong file used to reset everything, the schedule included. `commands::path_ratchet` (`REPLACED`) fails if a
   path-taking twin of either command comes back, or if one of them grows a
   path parameter.
-  What remains under the same rule: other commands still take a path from the
-  webview and are held only by a path guard — the editor's open file and its
-  sidecars (`editor_*`), the export's source and jingles (`input_path`,
-  `intro_path`, `outro_path`, and with them the «ved siden av kilden»
-  destination) and the papirkurv (`trash_move`). (The recording's output path
-  is already Rust's — finding E1, above — and the editor's PICKED export folder
-  is a token for a folder Rust's own dialog answered — finding A2, above.) Each
-  is a separate change; the row is in `docs/PLAN.md`. The webview's `dialog:` permissions stay until the last of
-  them has moved; nothing in it opens a SAVE dialog any more.
+  What remains under the same rule: a few commands still take a path from the
+  webview and are held only by a path guard — the editor's sidecars and sermon
+  pick (`editor_read_sidecar`, `editor_write_sidecar`, `editor_delete_sidecar`,
+  `editor_record_sermon_pick`, `editor_sermon_pick`, all `media_path`),
+  `recordings_reveal` and the papirkurv (`trash_move`). (The recording's output
+  path is already Rust's — finding E1, above — the editor's PICKED export folder
+  is a token for a folder Rust's own dialog answered, and the recording and its
+  jingles are tokens and settings — finding A2, above.) The last change is the
+  row in `docs/PLAN.md`. The webview's `dialog:` permissions stay until it has
+  moved: the setup page's save-folder picker (`window.api.pickFolder`, which
+  `settings_save` then vets as a new save folder) still opens its dialog in
+  JavaScript. Nothing in the webview opens a dialog for a recording, a clip or
+  an export folder any more, and nothing opens a SAVE dialog.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

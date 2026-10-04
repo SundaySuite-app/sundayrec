@@ -69,11 +69,11 @@ export function fn(source: string): unknown {
 
 /**
  * A fixture that answers with `undefined` — the many void commands
- * (`settings_save`, `stop_vu`, `editor_allow_asset_path`, …).
+ * (`settings_save`, `stop_vu`, `editor_cancel_export`, …).
  *
  * Needed because a bare `undefined` does not survive the `addInitScript`
  * argument boundary: Playwright's serialiser DROPS undefined-valued object
- * properties, so `{ editor_allow_asset_path: undefined }` arrives as `{}` and
+ * properties, so `{ stop_vu: undefined }` arrives as `{}` and
  * the command falls through to a live invoke that then throws. That failure is
  * silent and looks like a hung screen, so it gets an explicit sentinel.
  */

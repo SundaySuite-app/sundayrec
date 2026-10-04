@@ -236,6 +236,31 @@ describe("feilkodene", () => {
     ).toBe("errExportFolderRefused");
   });
 
+  // A2 (PR-C): opptaket og jinglene er lapper/innstillinger, ikke stier. Rust
+  // pinner kodene mot tabellen i `every_source_refusal_has_a_sentence_in_the_renderer`.
+  it("opptakslappen har setninger: åpne på nytt, borte, avvist — og jingelen", () => {
+    expect(
+      exportErrorKey(
+        "validation: source_unknown: this session has no recording by that token",
+      ),
+    ).toBe("errSourceUnknown");
+    expect(
+      exportErrorKey(
+        "validation: source_missing: the recording is no longer there",
+      ),
+    ).toBe("errFileNotFound");
+    expect(
+      exportErrorKey(
+        "validation: source_refused: that file cannot be opened in the editor",
+      ),
+    ).toBe("errSourceRefused");
+    expect(
+      exportErrorKey(
+        "validation: export_clip_unusable: the saved intro or outro clip cannot be used",
+      ),
+    ).toBe("errExportClipUnusable");
+  });
+
   it("en ukjent kode gir ingenting, ikke en råstreng", () => {
     expect(exportErrorKey("internal: noe_helt_nytt")).toBeNull();
     expect(exportErrorKey(undefined)).toBeNull();

@@ -15,6 +15,19 @@ describe("isMissingFileFailure", () => {
     expect(isMissingFileFailure("validation: file_not_found")).toBe(true);
   });
 
+  it("kjenner source_missing: lappen peker på en fil som er borte (A2)", () => {
+    expect(
+      isMissingFileFailure(
+        "validation: source_missing: the recording is no longer there",
+      ),
+    ).toBe(true);
+    // De to andre lappe-kodene er IKKE «borte»: ukjent lapp og avvist fil har
+    // sine egne ord, og her havner de i den generelle «Kunne ikke åpne».
+    for (const code of ["source_unknown", "source_refused"]) {
+      expect(isMissingFileFailure(`validation: ${code}: x`)).toBe(false);
+    }
+  });
+
   it("en genuint ulesbar/ustøttet fil er IKKE en manglende fil", () => {
     expect(
       isMissingFileFailure(

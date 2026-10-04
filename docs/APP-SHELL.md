@@ -2096,8 +2096,10 @@ OG en ekte bar fra bakendens egne tikk (`editor-peaks-progress`,
 
 ## Inngangene
 
-- **`window.openEditorWithFile(path, seekToSec?)`** — samme kontrakt, samme
-  signatur, samme `declare global` som legacy. `e2e/editor.spec.ts` og
+- **`window.openEditorWithRecording(recordingId, seekToSec?)`** — het
+  `openEditorWithFile(path, seekToSec?)` til A2: en global som åpner en sti
+  er nettopp formen som er lukket, så den tar nå en RAD-ID fra historikken
+  (`editor_open_known`; databasen vet fila). `e2e/editor.spec.ts` og
   atlas-scenene åpner editoren gjennom den. Installeres i `main.tsx` ved siden
   av `showPage`, fordi den hører til samme klasse: noe UTENFOR treet hviler på
   at den finnes.

@@ -148,7 +148,11 @@ import {
   isRecording,
   markSessionStarted,
 } from "../../state/recording";
-import { lastRecording, loadRecordingCount } from "../../state/recordings";
+import {
+  lastRecording,
+  loadRecordingCount,
+  recordings,
+} from "../../state/recordings";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -1004,6 +1008,27 @@ function LastRecordingCard() {
  * med `block: "center"` — nettleserens egen fokus-scroll retter seg bare inn
  * mot nærmeste kant, og ville flyttet kortet vekk fra midten igjen.
  */
+/**
+ * «Rediger» på kvitteringen. Opptaket åpnes ved sin RAD i historikken (A2: Rust
+ * vet fila, siden sender ingen sti) — og raden kan mangle et øyeblikk etter at
+ * opptaket ble ferdig, før `loadRecordingCount()` har lest den. Så: finn den i
+ * lista, les lista på nytt hvis den ikke står der, og åpne. Finnes den fortsatt
+ * ikke, sier Rediger «Kunne ikke åpne opptaket» i stedet for å tie.
+ */
+async function editFinished(
+  path: string,
+  startedAtMs: number | null,
+): Promise<void> {
+  const idOf = (): string | undefined =>
+    recordings.peek()?.find((r) => r.path === path)?.id;
+  let id = idOf();
+  if (!id) {
+    await loadRecordingCount();
+    id = idOf();
+  }
+  openInEditor(id, startedAtMs, basename(path));
+}
+
 function Done() {
   const finished = finishedRecording.value;
   const rows = lastRecording.value;
@@ -1054,7 +1079,7 @@ function Done() {
           variant="primary"
           testId="record-done-edit"
           onClick={() =>
-            openInEditor(
+            void editFinished(
               finished.path,
               row?.startedAt ?? row?.timestamp ?? null,
             )

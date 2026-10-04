@@ -150,7 +150,7 @@ render(<Overlays />, overlayHost);
 installGlobalNavigation((id) => navigateFromShim(id));
 installTrayNavigation();
 installErrorHandlers();
-// `window.openEditorWithFile` — samme kontrakt som legacy-skallet, og
+// `window.openEditorWithRecording` (rad-id, ikke sti — A2), og
 // `e2e/editor.spec.ts` + atlas-scenene åpner editoren gjennom den. Her, ved
 // siden av `showPage`, fordi den hører til samme klasse: noe UTENFOR treet
 // hviler på at den finnes.

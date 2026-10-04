@@ -31,6 +31,7 @@
  * `editor.preparingPlayback`) og finnes derfor allerede i alle sju språk.
  */
 
+import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
 import { routePlayback } from "@lib/pages/editor/play-regions";
 
 import { cancelDraftSave, resetHistoryMirror, restoreDraftCuts } from "./cuts";
@@ -122,7 +123,7 @@ export interface OpenContext {
   /**
    * Sekundet spillehodet skal stå på når fila er ferdig lastet.
    *
-   * `window.openEditorWithFile(path, seekToSec)` har alltid tatt imot det, og
+   * `window.openEditorWithRecording(id, seekToSec)` tar imot det (før A2: `openEditorWithFile(path, seekToSec)`), og
    * kontrakten er derfor ikke ny. Det brukes ETTER lastingen, aldri under:
    * legacy hadde en `CustomEvent`-vei som var kappløpsutsatt fordi `loadFile`
    * nullstiller posisjonen underveis.
@@ -169,10 +170,29 @@ function closeFileNow(): void {
   loadState.value = "idle";
 }
 
+/**
+ * Hvordan et opptak kommer inn i editoren (A2). ALDRI med en sti webviewen har
+ * funnet på: Rust har enten åpnet velgeren (eller fanget slippet) og gitt oss en
+ * lapp, eller vi navngir en rad i historikken og lar databasen si hvilken fil
+ * det er.
+ */
+export type OpenSource =
+  /** En rad fra biblioteket/historikken/«Rediger»-knappen. `name` er bare
+   *  overskriften mens vi venter på Rust. */
+  | { kind: "known"; recordingId: string; name?: string }
+  /** Velgeren, et slipp, eller en tidligere åpning («Sist redigert»). */
+  | { kind: "opened"; opened: OpenedRecording }
+  /** Velgeren svarte med en feil: vis den som en mislykket åpning. */
+  | { kind: "refused"; error: string };
+
 /** Den native åpne-dialogen. `null` = avbrutt, og da skjer ingenting. */
 export async function pickAndOpen(): Promise<void> {
-  const picked = await window.api.editorPickFile();
-  if (picked) void openFile(picked);
+  const picked = await window.api.editorOpenRecording();
+  if (!picked.ok) {
+    void openFile({ kind: "refused", error: picked.error });
+    return;
+  }
+  if (picked.opened) void openFile({ kind: "opened", opened: picked.opened });
 }
 
 /**
@@ -185,21 +205,41 @@ export async function pickAndOpen(): Promise<void> {
  * gang går ingen tur innom mikrotask-køen, og oppstarten er den samme som før.
  */
 export function openFile(
-  path: string,
+  source: OpenSource,
   context: OpenContext = {},
 ): Promise<void> {
-  if (exporting.peek()) return askThenOpen(path, context);
-  return openFileNow(path, context);
+  if (exporting.peek()) return askThenOpen(source, context);
+  return openFileNow(source, context);
 }
 
 /** Den sjeldne veien: spør først, åpne bare hvis eksporten fikk dø. */
-async function askThenOpen(path: string, context: OpenContext): Promise<void> {
+async function askThenOpen(
+  source: OpenSource,
+  context: OpenContext,
+): Promise<void> {
   if (!(await confirmAbandonExport())) return;
-  await openFileNow(path, context);
+  await openFileNow(source, context);
+}
+
+/** Opptaket er åpnet i Rust: lappen og stien er nå kjent, og alt under
+ *  bruker dem. Sett på `E` og speilene i ÉN bevegelse. */
+function adopt(opened: OpenedRecording): void {
+  E.filePath = opened.path;
+  E.sourceToken = opened.token;
+  E.fileName = opened.name;
+  filePath.value = E.filePath;
+  fileName.value = E.fileName;
+}
+
+/** Åpningen feilet før lasteren fikk en fil: samme feilvisning som en fil som
+ *  ikke lot seg lese, med «Fant ikke fila» når Rust sa `source_missing`. */
+function failOpen(missing: boolean): void {
+  loadState.value = "error";
+  loadError.value = missing ? "not_found" : "unreadable";
 }
 
 async function openFileNow(
-  path: string,
+  source: OpenSource,
   context: OpenContext = {},
 ): Promise<void> {
   const seq = ++E.loadSeq;
@@ -214,16 +254,37 @@ async function openFileNow(
   resetFileState();
   resetHistoryMirror();
 
-  E.filePath = path;
-  E.fileName = basename(path);
+  if (source.kind === "opened") adopt(source.opened);
+  else if (source.kind === "known") {
+    E.fileName = source.name ?? "";
+    fileName.value = E.fileName;
+  }
   E.startedAtMs = context.startedAtMs ?? null;
-  filePath.value = E.filePath;
-  fileName.value = E.fileName;
   startedAtMs.value = E.startedAtMs;
   loadState.value = "loading";
   loadPhase.value = null;
   loadProgress.value = null;
   loadError.value = null;
+
+  if (source.kind === "refused") {
+    failOpen(isMissingFileFailure(source.error));
+    return;
+  }
+  if (source.kind === "known") {
+    // Raden navngis, databasen vet fila. `null` = Rust sa nei, og grunnen
+    // ligger i ringen (`lastFailureLooksLikeMissingFile`).
+    const opened = await window.api.editorOpenKnown(source.recordingId);
+    if (seq !== E.loadSeq) return;
+    if (!opened) {
+      failOpen(lastFailureLooksLikeMissingFile("editor_open_known"));
+      return;
+    }
+    adopt(opened);
+  }
+  // Fra nå av er stien bare til visning, avspilling og sidevognene; lappen er
+  // det Rust-kommandoene får.
+  const path = E.filePath;
+  const token = E.sourceToken;
 
   const ext = extensionOf(path);
 
@@ -239,7 +300,7 @@ async function openFileNow(
   // cannot tell "moved to the trash" apart from "genuinely unreadable".
   let notFound = false;
   try {
-    const info = await window.api.editorLoadRecording(path);
+    const info = await window.api.editorLoadRecording(token);
     if (info && Number.isFinite(info.durationSec) && info.durationSec > 0) {
       seconds = info.durationSec;
     }
@@ -261,11 +322,11 @@ async function openFileNow(
   const el = ensurePlayerEl();
   let watching: Promise<boolean> | null = null;
   if (routeForEditor(ext) === "proxy") {
-    await attachProxy(path, seq);
+    await attachProxy(token, seq);
     if (seq !== E.loadSeq) return;
   } else {
-    await window.api.editorAllowAssetPath(path);
-    if (seq !== E.loadSeq) return;
+    // Webviewens `asset://`-omfang ble utvidet til akkurat denne fila av Rust,
+    // da den ble åpnet — ingenting å be om her.
     setPlaybackSource("original");
     el.src = window.api.toAssetUrl(path);
     el.load();
@@ -279,7 +340,7 @@ async function openFileNow(
   const peaks = await withPhase(
     "analyzingWaveform",
     "editor-peaks-progress",
-    window.api.editorExtractAudioPeaks(path),
+    window.api.editorExtractAudioPeaks(token),
   );
   if (seq !== E.loadSeq) return;
   if (peaks && Array.isArray(peaks.peaks) && peaks.peaks.length > 0) {
@@ -357,6 +418,7 @@ async function openFileNow(
   // lot seg lese. Se `lastEdited` i `model.ts` for hvorfor den overlever
   // lukkingen.
   lastEdited.value = {
+    opened: { token, path, name: E.fileName },
     path: E.filePath,
     fileName: E.fileName,
     startedAtMs: E.startedAtMs,
@@ -364,7 +426,7 @@ async function openFileNow(
   if (typeof context.seekToSec === "number") seekTo(context.seekToSec);
   scheduleDraw();
 
-  if (watching) void watchOriginal(watching, path, seq);
+  if (watching) void watchOriginal(watching, token, seq);
 
   // Analysen kjører alltid ved åpning, men etter første maling: den er nok en
   // full ffmpeg-passering over opptaket, og å starte den før arbeidsflaten er
@@ -390,12 +452,12 @@ async function openFileNow(
  */
 async function watchOriginal(
   ready: Promise<boolean>,
-  path: string,
+  token: string,
   seq: number,
 ): Promise<void> {
   const ok = await ready;
   if (seq !== E.loadSeq || ok || E.playbackSource !== "original") return;
-  await attachProxy(path, seq);
+  await attachProxy(token, seq);
 }
 
 /**
@@ -405,13 +467,13 @@ async function watchOriginal(
  * tatt, eller originalen nektet å åpne. Den koster en full omkoding (et minutt
  * eller mer på en gudstjeneste), så den tas aldri på spekulasjon.
  */
-async function attachProxy(path: string, seq: number): Promise<boolean> {
+async function attachProxy(token: string, seq: number): Promise<boolean> {
   let proxy: string | null;
   try {
     proxy = await withPhase(
       "preparingPlayback",
       "editor-proxy-progress",
-      window.api.editorExtractPlaybackProxy(path),
+      window.api.editorExtractPlaybackProxy(token),
     );
   } catch {
     proxy = null;
@@ -424,8 +486,7 @@ async function attachProxy(path: string, seq: number): Promise<boolean> {
     return false;
   }
 
-  await window.api.editorAllowAssetPath(proxy);
-  if (seq !== E.loadSeq) return false;
+  // Mellomfila er laget av Rust, som også har åpnet `asset://` for den.
   const el = ensurePlayerEl();
   el.src = window.api.toAssetUrl(proxy);
   el.load();

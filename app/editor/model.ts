@@ -41,6 +41,7 @@
 
 import { signal } from "@preact/signals";
 import type { EditorSegment } from "@legacy/bindings/EditorSegment";
+import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
 import type { Cut } from "@lib/pages/editor/state";
 
 export type { Cut };
@@ -96,8 +97,13 @@ export type PlaybackSource = "original" | "proxy" | "none";
 // ── Den muterbare sannheten ─────────────────────────────────────────────────
 
 export const E = {
-  /** Stien til opptaket som er åpent. Tom = ingen. */
+  /** Stien til opptaket som er åpent. Tom = ingen. Bare til visning, avspilling
+   *  og sidevognene (`media_path`, PR-D) — ingen kommando som LESER eller
+   *  RENDRER opptaket tar den imot. */
   filePath: "",
+  /** Lappen Rust ga opptaket da det ble åpnet (`OpenedRecording.token`). Det
+   *  eneste som peker ut opptaket for `editor_*`-kommandoene (A2). Tom = ingen. */
+  sourceToken: "",
   /** Filnavnet, avledet én gang ved åpning. */
   fileName: "",
   /** Millisekundet opptaket startet, når biblioteket kjente raden. */
@@ -227,6 +233,9 @@ export const dragWindow = signal<Range | null>(null);
 
 /** Nok om et opptak til å kunne åpne det igjen, og til å kunne navngi det. */
 export interface LastEdited {
+  /** Åpningen som ga lappen — «Gjør klar» åpner den igjen uten å spørre Rust om
+   *  noe nytt (lappen lever til appen lukkes). */
+  opened: OpenedRecording;
   path: string;
   fileName: string;
   /** Millisekundet gudstjenesten begynte, når den som åpnet fila visste det. */
@@ -323,6 +332,7 @@ export function clearDirty(): void {
  */
 export function resetFileState(): void {
   E.filePath = "";
+  E.sourceToken = "";
   E.fileName = "";
   E.startedAtMs = null;
   E.duration = 0;

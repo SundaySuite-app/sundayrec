@@ -9,7 +9,19 @@ import type { EditorProcessing } from "./EditorProcessing";
  * subset of the Electron `EditorExportParams` the editor UI sent (mp4 video
  * re-encode aside).
  */
-export type EditorExportRequest = { inputPath: string, cutRegions: Array<EditorCutRegion>, duration: number, 
+export type EditorExportRequest = { 
+/**
+ * The recording to export, as the webview may say it: the File token
+ * [`editor_open_recording`]/`editor_open_known` minted (or the drop
+ * handler did) for it — never a path. The command layer resolves it into
+ * [`ResolvedExport::source`] and hands the seam that, separately.
+ *
+ * Until finding A2 (PR-C) this was `input_path`, a string the webview
+ * chose: with no per-command ACL a compromised webview could point the
+ * render at any readable file. An old-shape payload's `inputPath` is now
+ * an unknown key serde ignores — and the missing token refuses it.
+ */
+sourceToken: string, cutRegions: Array<EditorCutRegion>, duration: number, 
 /**
  * Output container: `mp3|aac|wav|flac|mp4`.
  */
@@ -43,13 +55,16 @@ bitDepth: number | null,
  */
 masterPreset: string | null, 
 /**
- * Optional intro clip prepended to the audio on export (non-mp4 only).
+ * Prepend the stored intro clip (`settings.editorIntroPath`) to the audio
+ * on export (non-mp4 only). A switch, not a path: Rust reads the clip from
+ * the saved settings and re-validates it, so the webview cannot name a file
+ * to splice in. No stored clip means no intro, whatever this says.
  */
-introPath: string | null, 
+useIntro: boolean, 
 /**
- * Optional outro clip appended to the audio on export (non-mp4 only).
+ * The same for the stored outro clip (`settings.editorOutroPath`).
  */
-outroPath: string | null, 
+useOutro: boolean, 
 /**
  * Optional peak-normalization gain (dB) applied as a `volume` filter — what
  * the editor's "Normalize" button computes. `None`/`0` is a no-op.

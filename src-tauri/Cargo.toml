@@ -306,3 +306,19 @@ tokio = { version = "1", features = ["test-util", "rt-multi-thread", "net"] }
 # capability files the way tauri-utils does — the same `toml` 1.x tauri-utils
 # already resolves to in Cargo.lock (no new crate). Dev-only: nothing ships it.
 toml = { version = "1.1", default-features = false, features = ["parse", "serde", "std"] }
+
+# `tauri::test::mock_app()`: a real app with the mock runtime, so the test of
+# `commands::editor::grant_asset_file` runs against tauri's own asset scope
+# instead of a stand-in that would agree with whatever the code did. Dev-only.
+#
+# NOT on Windows. With the `test` feature the lib TEST binary links tauri's
+# native UI stack, whose entry points need the comctl32 v6 side-by-side
+# manifest. Only the app's own build embeds that manifest, so the test binary
+# gets comctl32 v5 and dies at load with 0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND
+# — before a single test runs, which turned ALL lib tests red on Windows CI
+# (fadac099 ran 1054 there; this dev-dependency is what broke it). Gating the
+# dependency, and the two `mock_app` tests in `commands::editor::tests`, keeps
+# every other lib test running on Windows; the grant is platform-independent
+# and stays proven on macOS and Linux.
+[target.'cfg(not(windows))'.dev-dependencies]
+tauri = { version = "2", features = ["test"] }
