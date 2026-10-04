@@ -284,10 +284,15 @@ fn never_take_away(stored: &Settings, merged: &mut Settings) {
     if merged.slots.is_empty() {
         merged.slots = stored.slots.clone();
     }
-    if merged.special_recordings.is_empty() {
+    if merged.special_recordings.is_empty()
+        || merged.special_recordings == stored.special_recordings
+    {
+        // Nothing (new) from the file: this machine's specials stay exactly as
+        // they are, devices included — even an older entry without an `id`.
         merged.special_recordings = stored.special_recordings.clone();
+    } else {
+        without_special_devices(stored, merged);
     }
-    without_special_devices(stored, merged);
     merged.auto_record_enabled |= stored.auto_record_enabled;
     merged.auto_delete_days =
         retention_after_import(stored.auto_delete_days, merged.auto_delete_days);
@@ -554,6 +559,18 @@ mod tests {
         let kept =
             overlay_profile(&here, r#"{ "specialRecordings": [], "language": "en" }"#).unwrap();
         assert_eq!(kept.special_recordings, here.special_recordings);
+        // An older special without an `id` keeps its card when the file says
+        // nothing about specials, or gives an empty list.
+        let mut old_here = church_pc();
+        old_here.special_recordings[0].id = None;
+        old_here.special_recordings[0].device_id = Some("zoom-h6".into());
+        for file in [r#"{ "language": "en" }"#, r#"{ "specialRecordings": [] }"#] {
+            let kept = overlay_profile(&old_here, file).unwrap();
+            assert_eq!(
+                kept.special_recordings, old_here.special_recordings,
+                "{file}"
+            );
+        }
     }
 
     #[test]
