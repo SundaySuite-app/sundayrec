@@ -347,9 +347,10 @@ faktisk skal se nå — sist.
       `%LOCALAPPDATA%\SundayRec`, ikke `Program Files`. 2) **Uten WebView2:** på en maskin der WebView2 ikke finnes (eldre
       Windows 10 / ren VM), én gang MED og én gang UTEN nett. **Forventet:**
       med nett installeres WebView2 av den innebygde bootstrapperen uten at
-      noe lastes ned først; uten nett vet vi ikke — `embedBootstrapper` trenger
-      fortsatt nett for selve runtimen (`NEEDS-RICHARD.md`), og svaret avgjør om
-      eier vil ha `offlineInstaller`. 3) **MSI → NSIS:** installer en eldre `.msi` (v0.25.0, som administrator),
+      noe lastes ned først; uten nett ventes det å feile — `embedBootstrapper` trenger
+      fortsatt nett for selve runtimen, og eier har valgt bort
+      `offlineInstaller` (+127 MB på hver oppdatering; `NEEDS-RICHARD.md`).
+      Bevis det, men en feil uten nett er ikke et funn. 3) **MSI → NSIS:** installer en eldre `.msi` (v0.25.0, som administrator),
       og la appen oppdatere seg til en utgivelse der `-msi`-nøkkelen er med:
       **Forventet:** `.msi` oppdaterer over seg selv (UAC som før), én
       installasjon. Test deretter, med `-msi`-nøkkelen fjernet fra en

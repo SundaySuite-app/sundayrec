@@ -255,7 +255,8 @@ minimum bar is what v0.12.0 actually met:
 - [ ] **Hver Windows-installasjon har WebView2-bootstrapperen innebygd**
       (`bundle.windows.webviewInstallMode: embedBootstrapper`, ~1,8 MB større).
       Merk at den fortsatt trenger nettilgang for å hente selve runtimen —
-      bare `offlineInstaller` gjør ikke det. Se `docs/NEEDS-RICHARD.md`
+      bare `offlineInstaller` gjør ikke det, og den er bevisst valgt bort
+      (+127 MB på hver oppdatering). Se `docs/NEEDS-RICHARD.md`
       §«Eierbeslutninger fra F2».
 
 ### 5b. Pin the Windows ffmpeg hash (one-off, only if an entry is missing)
