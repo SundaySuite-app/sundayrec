@@ -218,10 +218,17 @@ where
 }
 
 /// The grant [`open_source`] is given in the app: widen the webview's `asset://`
-/// scope to the one file. The static globs in `tauri.conf.json` cover the
-/// standard user folders only — a recording on an external volume matches none
-/// of them and would fail to play with no visible reason.
-fn grant_asset_file(app: &tauri::AppHandle) -> impl FnOnce(&Path) -> AppResult<()> + '_ {
+/// scope to the one file. It is the ONLY way a file becomes playable: the
+/// static `assetProtocol.scope.allow` in `tauri.conf.json` is empty (only its
+/// `deny` list stays), so a folder is never open to the page, and a recording
+/// on an external volume plays for the same reason one in `~/Documents` does.
+///
+/// Generic over the runtime so the test can hand it a mock app's scope: what the
+/// webview is allowed to read afterwards is tauri's own answer
+/// (`Scope::is_allowed`), not this function's account of what it asked for.
+fn grant_asset_file<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> impl FnOnce(&Path) -> AppResult<()> + '_ {
     move |file| {
         app.asset_protocol_scope()
             .allow_file(file)
@@ -269,7 +276,10 @@ pub async fn editor_open_recording(
 
 /// Open a recording the app already KNOWS: the library's and history's rows, the
 /// «Rediger» button on the finished recording. The webview names the history
-/// ROW; the database holds the file, and only Rust's recorder ever writes a row.
+/// ROW; the database holds the file. Rows are written by the recorder, and by
+/// startup recovery of an interrupted session — which reads only a manifest the
+/// recorder itself named and puts every file in it through `path_guard`
+/// (`recorder::recovery`) before a row is written.
 /// An id with no row is `source_unknown`; the file behind a row that has gone
 /// (trashed, deleted by hand) is `source_missing`.
 #[tauri::command]
@@ -980,6 +990,89 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     use sundayrec_core::telemetry::CounterName;
+    use tauri::Manager;
+
+    // ── The asset grant: one file, in tauri's own scope ──────────────────────
+
+    #[test]
+    fn the_asset_grant_opens_the_one_file_and_nothing_beside_it() {
+        // Against a real (mock-runtime) app and its REAL asset scope, asking
+        // tauri what the webview may read afterwards. A grant that widened to
+        // the file's folder (`allow_directory(parent, true)`) would answer yes
+        // for the neighbour and the subfolder below.
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().canonicalize().unwrap();
+        let played = folder.join("gudstjeneste.wav");
+        let neighbour = folder.join("hemmelig.wav");
+        let below = folder.join("under");
+        std::fs::create_dir_all(&below).unwrap();
+        let deeper = below.join("dypere.wav");
+        for f in [&played, &neighbour, &deeper] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        let scope = handle.asset_protocol_scope();
+        assert!(
+            !scope.is_allowed(&played),
+            "nothing is open before the grant"
+        );
+
+        grant_asset_file(handle)(&played).expect("the grant is made");
+
+        assert!(scope.is_allowed(&played), "the file itself plays");
+        assert!(!scope.is_allowed(&neighbour), "its neighbour does not");
+        assert!(
+            !scope.is_allowed(&deeper),
+            "nor does anything below the folder"
+        );
+        assert!(
+            !scope.is_allowed(&folder),
+            "and the folder itself is not open"
+        );
+    }
+
+    #[test]
+    fn two_grants_open_two_files_and_no_more() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().canonicalize().unwrap();
+        let (a, b, c) = (
+            folder.join("a.wav"),
+            folder.join("b.wav"),
+            folder.join("c.wav"),
+        );
+        for f in [&a, &b, &c] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        grant_asset_file(handle)(&a).unwrap();
+        grant_asset_file(handle)(&b).unwrap();
+        let scope = handle.asset_protocol_scope();
+        assert!(scope.is_allowed(&a) && scope.is_allowed(&b));
+        assert!(!scope.is_allowed(&c));
+    }
+
+    #[test]
+    fn the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list() {
+        // `grant_asset_file` is only worth testing as the ONLY grant if nothing
+        // is open before it: a glob here would make every file in a user folder
+        // readable from the page without Rust having been asked.
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let scope = &conf["app"]["security"]["assetProtocol"]["scope"];
+        assert_eq!(conf["app"]["security"]["assetProtocol"]["enable"], true);
+        assert_eq!(
+            scope["allow"].as_array().map(Vec::len),
+            Some(0),
+            "assetProtocol.scope.allow must stay empty: files are granted one at a time \
+             by `grant_asset_file`, see SECURITY.md"
+        );
+        assert!(
+            scope["deny"].as_array().is_some_and(|d| !d.is_empty()),
+            "the deny list stays (it is also pinned against path_guard's list)"
+        );
+    }
 
     // ── The liturgical-day lookup behind the «Innhold» title ─────────────────
 

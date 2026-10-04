@@ -27,16 +27,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": [
-            "$DOCUMENT/**",
-            "$DOWNLOAD/**",
-            "$VIDEO/**",
-            "$AUDIO/**",
-            "$DESKTOP/**",
-            "$APPDATA/**",
-            "$APPLOCALDATA/**",
-            "$TEMP/**"
-          ],
+          "allow": [],
           "deny": [
             "$HOME/.ssh/**",
             "$HOME/.aws/**",

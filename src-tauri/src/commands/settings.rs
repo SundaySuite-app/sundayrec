@@ -1057,7 +1057,8 @@ mod tests {
         let pool = pool_in(dir.path()).await;
         let clip = dir.path().join("intro.wav");
         std::fs::write(&clip, b"x").unwrap();
-        let canonical = clip.canonicalize().unwrap().to_string_lossy().into_owned();
+        let canonical =
+            super::super::chosen_paths::plain_string(&clip.canonicalize().unwrap()).unwrap();
 
         let stored = choose_clip(&pool, Clip::Intro, Some(clip.clone()))
             .await

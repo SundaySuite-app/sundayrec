@@ -302,6 +302,10 @@ tempfile = "3"
 #    `Runtime::new()` in the unit tests.
 #  - `net`: the `TcpListener` stub server in the telemetry sender tests.
 tokio = { version = "1", features = ["test-util", "rt-multi-thread", "net"] }
+# `tauri::test::mock_app()`: a real app with the mock runtime, so the test of
+# `commands::editor::grant_asset_file` runs against tauri's own asset scope
+# instead of a stand-in that would agree with whatever the code did. Dev-only.
+tauri = { version = "2", features = ["test"] }
 # The opener tripwire (`commands::recordings_open::tests`) parses `.toml`
 # capability files the way tauri-utils does — the same `toml` 1.x tauri-utils
 # already resolves to in Cargo.lock (no new crate). Dev-only: nothing ships it.

@@ -2131,18 +2131,87 @@ fn editor_open_known_takes_only_a_history_row_id() {
 
 // ── A mint needs a dialog, a database row or the OS ──────────────────────────
 
-/// What lets a function mint a token: it asks a dialog RUST opened
-/// (`ask_for_folder`/`ask_for_file`, the plugin's `pick_file`/`pick_folder`),
-/// it reads a history row (`recording_file_path` — the database, written only
-/// by the recorder), or it is the window's own drop handler (a
-/// `DragDropEvent::Drop` the OS reported to the process). Anything else minting
-/// a token is minting one for a place the webview named.
-const MINT_ANCHORS: &[&str] = &[
-    "ask_for_",
-    ".pick_file(",
-    ".pick_folder(",
-    "recording_file_path(",
-    "DragDropEvent::Drop",
+/// The CLOSED list of functions that may hold `.mint(` in production code, and
+/// why each one may. A token stands for a place the OPERATOR chose, so a new
+/// way to make one is a decision a person makes here, with a sentence, not a
+/// thing a lexical anchor waves through (review of #313: a command that CALLED
+/// `recording_file_path(` and ignored the answer passed the old anchor check
+/// while minting a token for whatever the webview sent).
+///
+/// A function on this list is only half of it: every door INTO one is on
+/// [`MINT_DOORS`], with the evidence that the place it is handed is one Rust
+/// obtained.
+const MINTERS: &[(&str, &str)] = &[
+    (
+        "open_source",
+        "the one door a file enters the editor by: vets the place as a file, \
+         opens `asset://` to exactly it and mints its token. Takes a place, \
+         never decides one — what hands it a place is on MINT_DOORS.",
+    ),
+    (
+        "choose_output_folder",
+        "mints the token for the export folder `editor_pick_output_folder` \
+         picked in a dialog Rust opened; a cancel mints nothing.",
+    ),
+];
+
+/// How a door proves the place it hands a minter is one Rust obtained.
+enum Evidence {
+    /// The argument is bound from `source` in the caller's own body — the dialog's
+    /// answer, the database's row — and from nothing else. Checked structurally
+    /// by [`bound_only_from`]: an unused call to the source does not pass it.
+    Flows { source: &'static str },
+    /// The caller is the OS' own event handler: its body names `anchor`, the
+    /// event the OS reported to the process.
+    Os { anchor: &'static str },
+    /// The caller only forwards its parameter; ITS callers are rows of their own.
+    Forwards,
+}
+
+/// `(callee, caller, evidence, why)`: every function that may call a minter (or
+/// a function that forwards to one), and what makes the place it passes one the
+/// webview did not name. A call to a minter from a function not on this list is
+/// a violation, whatever else the function does.
+const MINT_DOORS: &[(&str, &str, Evidence, &str)] = &[
+    (
+        "open_source",
+        "editor_open_recording",
+        Evidence::Flows {
+            source: "ask_for_file(",
+        },
+        "The open-file dialog: the file picker Rust opens; the place is its answer.",
+    ),
+    (
+        "open_source",
+        "open_known",
+        Evidence::Flows {
+            source: "recording_file_path(",
+        },
+        "A history row: the webview sends a row id, the database holds the file.",
+    ),
+    (
+        "open_source",
+        "dropped_recording",
+        Evidence::Forwards,
+        "Opens the dropped file like a picked one; only `note_drop` calls it.",
+    ),
+    (
+        "dropped_recording",
+        "note_drop",
+        Evidence::Os {
+            anchor: "DragDropEvent::Drop",
+        },
+        "The window's own drop handler: the OS reported the drop to the process, \
+         and the path never reaches the page.",
+    ),
+    (
+        "choose_output_folder",
+        "editor_pick_output_folder",
+        Evidence::Flows {
+            source: "ask_for_folder(",
+        },
+        "The folder picker Rust opens; the place is its answer.",
+    ),
 ];
 
 /// `src` with every `#[cfg(test)] mod … { … }` removed (the tests mint freely).
@@ -2239,49 +2308,173 @@ fn fn_bodies(src: &str) -> Vec<(String, String)> {
     out
 }
 
-/// The functions in `sources` that call `.mint(` without a dialog, a history
-/// row or a drop behind them — see [`MINT_ANCHORS`]. A function is ANCHORED
-/// when its own body holds an anchor, or when it has callers and EVERY caller is
-/// anchored (the minting is usually split from the dialog so a test can play the
-/// dialog: `choose_output_folder` mints, `editor_pick_output_folder` asks). A
-/// command with an unanchored mint has no caller to lean on and fails: it mints
-/// a token for whatever the webview sent.
-fn unanchored_mints(sources: &[String]) -> Vec<String> {
+/// The whole-word occurrence of `word` in `hay`.
+fn contains_word(hay: &str, word: &str) -> bool {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    hay.match_indices(word).any(|(at, _)| {
+        !hay[..at].chars().next_back().is_some_and(is_ident)
+            && !hay[at + word.len()..].chars().next().is_some_and(is_ident)
+    })
+}
+
+/// The right-hand sides of every `let` in `body` whose pattern binds `ident`
+/// (`let ident =`, `let Some(ident) = …`), each up to its closing `;`.
+fn bindings_of(body: &str, ident: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (at, _) in body.match_indices("let ") {
+        if body[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            continue;
+        }
+        let rest = &body[at + 4..];
+        let Some(eq) = rest.find('=') else { continue };
+        if !contains_word(&rest[..eq], ident) {
+            continue;
+        }
+        let mut depth = 0i32;
+        let mut end = rest.len();
+        for (i, ch) in rest[eq + 1..].char_indices() {
+            match ch {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                ';' if depth <= 0 => {
+                    end = eq + 1 + i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        out.push(rest[eq + 1..end].to_string());
+    }
+    out
+}
+
+/// Whether `ident` comes from `source` and nothing else: it is bound at least
+/// once, and EVERY `let` that binds it takes its value from a statement that
+/// holds the `source` call or from `ident` itself (`let Some(picked) = picked
+/// else …`). A `let _ = source(…)` followed by `let place = <something else>`
+/// binds `place` to nothing the source said.
+fn bound_only_from(body: &str, ident: &str, source: &str) -> bool {
+    let rhs = bindings_of(body, ident);
+    !rhs.is_empty()
+        && rhs
+            .iter()
+            .all(|r| r.contains(source) || contains_word(r, ident))
+}
+
+/// The place argument (the second one) a call to `callee` is handed in `body`:
+/// `place`, or `PathBuf::from(place)`. `None` for any other shape — a door that
+/// builds its place in the call is not one this check can vouch for.
+fn place_argument(body: &str, callee: &str) -> Option<String> {
+    let arg = call_args(body, callee)?.get(1)?.clone();
+    let inner = arg
+        .strip_prefix("PathBuf::from(")
+        .and_then(|a| a.strip_suffix(')'))
+        .unwrap_or(&arg)
+        .trim()
+        .to_string();
+    let is_ident =
+        !inner.is_empty() && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    is_ident.then_some(inner)
+}
+
+/// What is wrong with how `sources` mint tokens, against the closed lists:
+///
+/// 1. `.mint(` appears only inside a [`MINTERS`] function, and every one of
+///    them is still there;
+/// 2. a call to a minter — or to a function that forwards to one — is made only
+///    by a [`MINT_DOORS`] caller, and every row is still true (the caller exists
+///    and calls the callee);
+/// 3. each door's evidence holds: the place it hands over is bound from the
+///    dialog or the row and from nothing else (`Flows`), is the OS' own drop
+///    (`Os`), or is forwarded by a function whose own callers are rows
+///    (`Forwards`).
+fn mint_violations(sources: &[String]) -> Vec<String> {
     let fns: Vec<(String, String)> = sources
         .iter()
         .flat_map(|src| fn_bodies(&without_test_modules(src)))
         .collect();
-    fn anchored(
-        fns: &[(String, String)],
-        name: &str,
-        depth: usize,
-        seen: &mut BTreeSet<String>,
-    ) -> bool {
-        let Some((_, body)) = fns.iter().find(|(n, _)| n == name) else {
-            return false;
-        };
-        if MINT_ANCHORS.iter().any(|a| body.contains(a)) {
-            return true;
+    let body_of = |name: &str| fns.iter().find(|(n, _)| n == name).map(|(_, b)| b.as_str());
+    let mut bad = Vec::new();
+
+    // 1. The closed list of functions that hold `.mint(`.
+    for (name, body) in &fns {
+        if body.contains(".mint(") && !MINTERS.iter().any(|(m, _)| m == name) {
+            bad.push(format!(
+                "`{name}` mints a token and is not on MINTERS — a new way to make \
+                 a token is decided there, with a reason"
+            ));
         }
-        if depth == 0 || !seen.insert(name.to_string()) {
-            return false;
-        }
-        let callers: Vec<&str> = fns
-            .iter()
-            .filter(|(n, b)| n != name && called_names(b).contains(name))
-            .map(|(n, _)| n.as_str())
-            .collect();
-        !callers.is_empty()
-            && callers
-                .iter()
-                .all(|c| anchored(fns, c, depth - 1, &mut seen.clone()))
     }
-    let mut bad: Vec<String> = fns
-        .iter()
-        .filter(|(_, body)| body.contains(".mint("))
-        .map(|(name, _)| name.clone())
-        .filter(|name| !anchored(&fns, name, 4, &mut BTreeSet::new()))
-        .collect();
+    for (minter, why) in MINTERS {
+        if why.trim().is_empty() {
+            bad.push(format!("MINTERS: `{minter}` has no reason"));
+        }
+        if !body_of(minter).is_some_and(|b| b.contains(".mint(")) {
+            bad.push(format!("MINTERS lists `{minter}`, which no longer mints"));
+        }
+    }
+
+    // 2. Who may call a minter (or a forwarder).
+    let callees: BTreeSet<&str> = MINT_DOORS.iter().map(|(callee, ..)| *callee).collect();
+    for (name, body) in &fns {
+        for callee in called_names(body)
+            .iter()
+            .filter(|c| callees.contains(c.as_str()))
+        {
+            if name != callee
+                && !MINT_DOORS
+                    .iter()
+                    .any(|(c, caller, ..)| c == callee && caller == name)
+            {
+                bad.push(format!(
+                    "`{name}` calls `{callee}` and is not a door on MINT_DOORS"
+                ));
+            }
+        }
+    }
+
+    // 3. Every row is still true, and its evidence holds.
+    for (callee, caller, evidence, why) in MINT_DOORS {
+        if why.trim().is_empty() {
+            bad.push(format!("MINT_DOORS: `{caller}` → `{callee}` has no reason"));
+        }
+        let Some(body) = body_of(caller) else {
+            bad.push(format!("MINT_DOORS lists `{caller}`, which is gone"));
+            continue;
+        };
+        if !called_names(body).contains(*callee) {
+            bad.push(format!("MINT_DOORS: `{caller}` no longer calls `{callee}`"));
+            continue;
+        }
+        match evidence {
+            Evidence::Flows { source } => match place_argument(body, callee) {
+                None => bad.push(format!(
+                    "`{caller}` does not hand `{callee}` a plain place variable"
+                )),
+                Some(place) if !bound_only_from(body, &place, source) => bad.push(format!(
+                    "`{caller}` hands `{callee}` `{place}`, which does not come from \
+                     `{source}` alone"
+                )),
+                Some(_) => {}
+            },
+            Evidence::Os { anchor } => {
+                if !body.contains(anchor) {
+                    bad.push(format!("`{caller}` has no `{anchor}` behind its call"));
+                }
+            }
+            Evidence::Forwards => {
+                if !MINT_DOORS.iter().any(|(c, ..)| c == caller) {
+                    bad.push(format!(
+                        "`{caller}` forwards a place but its own callers are not on MINT_DOORS"
+                    ));
+                }
+            }
+        }
+    }
     bad.sort();
     bad.dedup();
     bad
@@ -2301,7 +2494,7 @@ fn production_code() -> Vec<String> {
 }
 
 #[test]
-fn every_token_is_minted_behind_a_dialog_a_row_or_a_drop() {
+fn every_token_is_minted_by_a_listed_function_behind_a_listed_door() {
     let sources = production_code();
     // Did it find the mints at all? A reader that saw none would pass vacuously.
     let minting: Vec<String> = sources
@@ -2310,22 +2503,83 @@ fn every_token_is_minted_behind_a_dialog_a_row_or_a_drop() {
         .filter(|(_, body)| body.contains(".mint("))
         .map(|(name, _)| name)
         .collect();
-    for known in ["choose_output_folder", "open_source"] {
+    for (known, _) in MINTERS {
         assert!(
             minting.iter().any(|n| n == known),
             "the mint reader did not find `{known}` ({minting:?})"
         );
     }
     assert_eq!(
-        unanchored_mints(&sources),
+        mint_violations(&sources),
         Vec::<String>::new(),
         "\n\
          ────────────────────────────────────────────────────────────────────\n\
-         A function mints a token (`ChosenPaths::mint`) with no dialog Rust\n\
-         opened, no history row and no OS drop behind it. A token stands for a\n\
-         place the OPERATOR chose; minting one from something the webview sent\n\
-         turns the token store into the path parameter it replaced (A2).\n\
+         A token (`ChosenPaths::mint`) is made outside MINTERS, or a minter is\n\
+         reached from outside MINT_DOORS, or a door's place no longer comes from\n\
+         a dialog Rust opened, a history row or the OS' own drop. A token stands\n\
+         for a place the OPERATOR chose; minting one from something the webview\n\
+         sent turns the token store into the path parameter it replaced (A2).\n\
+         Adding a way in is a decision: put it on the list, with its reason.\n\
          ────────────────────────────────────────────────────────────────────"
+    );
+}
+
+/// The real doors, as the fixtures' starting point: the ratchet must pass them,
+/// and every mutant below is one edit away from them.
+const REAL_DOORS: &str = r#"
+pub async fn editor_open_recording(window: Window, chosen: State<'_, ChosenPaths>) -> AppResult<Option<OpenedRecording>> {
+    let picked = chosen_paths::ask_for_file(&window, &[]).await?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    open_source(&chosen, picked, grant_asset_file(&app)).await.map(Some)
+}
+pub async fn open_known(pool: &SqlitePool, chosen: &ChosenPaths, recording_id: &str, grant: G) -> AppResult<OpenedRecording> {
+    let file = store::recording_file_path(pool, recording_id)
+        .await?
+        .ok_or_else(|| source_error(ChosenError::Unknown))?;
+    open_source(chosen, PathBuf::from(file), grant).await
+}
+pub fn note_drop(window: &Window, event: &DragDropEvent) {
+    let DragDropEvent::Drop { paths, position } = event else { return };
+    let Some(first) = paths.first().cloned() else { return };
+    let _ = dropped_recording(&chosen, first, (0.0, 0.0), grant);
+}
+pub async fn dropped_recording(chosen: &ChosenPaths, file: PathBuf, at: (f64, f64), grant: G) -> DroppedRecording {
+    match open_source(chosen, file, grant).await { _ => todo() }
+}
+pub async fn open_source(chosen: &ChosenPaths, place: PathBuf, grant: G) -> AppResult<OpenedRecording> {
+    let vetted = vet(&place).await?;
+    let token = chosen.mint(vetted);
+    Ok(token)
+}
+pub async fn editor_pick_output_folder(window: Window, chosen: State<'_, ChosenPaths>) -> AppResult<Option<ChosenPlace>> {
+    let picked = chosen_paths::ask_for_folder(&window).await?;
+    choose_output_folder(&chosen, picked).await
+}
+pub(crate) async fn choose_output_folder(chosen: &ChosenPaths, picked: Option<PathBuf>) -> AppResult<Option<ChosenPlace>> {
+    let Some(picked) = picked else { return Ok(None) };
+    let token = chosen.mint(vet(&picked).await?);
+    Ok(Some(token))
+}
+"#;
+
+/// [`REAL_DOORS`] with `from` replaced by `to` — exactly once, so a mutant that
+/// stops matching the fixture fails loudly instead of testing nothing.
+fn mutated(from: &str, to: &str) -> String {
+    assert_eq!(
+        REAL_DOORS.matches(from).count(),
+        1,
+        "mutation site {from:?}"
+    );
+    code_only(&REAL_DOORS.replace(from, to))
+}
+
+#[test]
+fn the_real_doors_pass_the_mint_ratchet() {
+    assert_eq!(
+        mint_violations(&[code_only(REAL_DOORS)]),
+        Vec::<String>::new()
     );
 }
 
@@ -2334,73 +2588,153 @@ fn a_command_that_mints_a_path_from_the_webview_is_found() {
     // The shape A2 closes, as a fixture: a command that takes a path, vets it
     // (so `mint` accepts it) and mints a token — no dialog anywhere. The vet
     // proves the path is a file; it proves nothing about who chose it.
-    let bad = code_only(
+    let bad = format!(
+        "{REAL_DOORS}\n{}",
         r#"
 #[tauri::command]
-pub async fn editor_register_recording(
-    chosen: State<'_, ChosenPaths>,
-    path: String,
-) -> AppResult<String> {
+pub async fn editor_register_recording(chosen: State<'_, ChosenPaths>, path: String) -> AppResult<String> {
     let vetted = chosen_paths::vet(&PathBuf::from(path), ChosenKind::File)?;
     Ok(chosen.mint(vetted))
 }
-"#,
+"#
     );
-    assert_eq!(unanchored_mints(&[bad]), vec!["editor_register_recording"]);
+    let found = mint_violations(&[code_only(&bad)]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("`editor_register_recording` mints a token"));
 
-    // The same mint, split into a helper, called by a command with NO dialog.
-    let split_bad = code_only(
+    // The same mint, split into a helper, called by a command: the helper is
+    // not on the list, and neither is the command's call to `open_source`.
+    let split_bad = format!(
+        "{REAL_DOORS}\n{}",
         r#"
 async fn remember(chosen: &ChosenPaths, p: PathBuf) -> String {
-    chosen.mint(vet(&p, ChosenKind::File).unwrap())
+    chosen.mint(vet(&p).unwrap())
 }
 #[tauri::command]
 pub async fn editor_register_recording(chosen: State<'_, ChosenPaths>, path: String) -> String {
     remember(&chosen, PathBuf::from(path)).await
 }
-"#,
+"#
     );
-    assert_eq!(unanchored_mints(&[split_bad]), vec!["remember"]);
-
-    // One anchored caller is not enough when another is not.
-    let one_good_one_bad = code_only(
-        r#"
-fn remember(chosen: &ChosenPaths, p: PathBuf) -> String { chosen.mint(vet(&p).unwrap()) }
-async fn editor_open(chosen: &ChosenPaths) { let p = ask_for_file(w).await; remember(chosen, p); }
-async fn editor_register(chosen: &ChosenPaths, path: String) { remember(chosen, path.into()); }
-"#,
+    let found = mint_violations(&[code_only(&split_bad)]);
+    assert!(
+        found.iter().any(|f| f.contains("`remember` mints a token")),
+        "{found:?}"
     );
-    assert_eq!(unanchored_mints(&[one_good_one_bad]), vec!["remember"]);
 }
 
 #[test]
-fn a_mint_behind_a_dialog_a_row_or_a_drop_passes() {
-    let good = code_only(
+fn a_command_that_reaches_a_minter_without_being_a_door_is_found() {
+    // No `.mint(` of its own — it hands the webview's string to `open_source`.
+    let bad = format!(
+        "{REAL_DOORS}\n{}",
         r#"
-async fn choose(chosen: &ChosenPaths, picked: Option<PathBuf>) -> String {
-    chosen.mint(vet(&picked.unwrap()).unwrap())
-}
 #[tauri::command]
-pub async fn editor_pick(window: Window, chosen: State<'_, ChosenPaths>) -> String {
-    let picked = ask_for_folder(&window).await.unwrap();
-    choose(&chosen, picked).await
+pub async fn editor_open_path(chosen: State<'_, ChosenPaths>, path: String) -> AppResult<OpenedRecording> {
+    open_source(&chosen, PathBuf::from(path), grant).await
 }
-pub async fn open_known(pool: &Pool, chosen: &ChosenPaths, id: &str) -> String {
-    let file = store::recording_file_path(pool, id).await.unwrap().unwrap();
-    chosen.mint(vet(&file.into()).unwrap())
-}
-pub fn note_drop(window: &Window, event: &DragDropEvent) {
-    let DragDropEvent::Drop { paths, .. } = event else { return };
-    let _ = mint_dropped(paths);
-}
-fn mint_dropped(chosen: &ChosenPaths, p: PathBuf) -> String { chosen.mint(vet(&p).unwrap()) }
-#[cfg(test)]
-mod tests {
-    fn a_test_mints_freely(chosen: &ChosenPaths) { chosen.mint(vetted); }
-}
-"#,
+"#
     );
-    assert_eq!(unanchored_mints(&[good]), Vec::<String>::new());
+    assert_eq!(
+        mint_violations(&[code_only(&bad)]),
+        vec!["`editor_open_path` calls `open_source` and is not a door on MINT_DOORS"]
+    );
+}
+
+#[test]
+fn a_row_lookup_whose_answer_is_ignored_does_not_anchor_a_mint() {
+    // The mutant of the review of #313: the command CALLS `recording_file_path(`
+    // — the old lexical anchor — and then mints for something else.
+
+    // (a) in a new function: not on the list.
+    let new_fn = format!(
+        "{REAL_DOORS}\n{}",
+        r#"
+pub async fn editor_open_by_name(pool: &SqlitePool, chosen: &ChosenPaths, id: String, path: String) -> String {
+    let _ = store::recording_file_path(pool, &id).await;
+    chosen.mint(vet(&PathBuf::from(path)).unwrap())
+}
+"#
+    );
+    let found = mint_violations(&[code_only(&new_fn)]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`editor_open_by_name` mints a token")),
+        "{found:?}"
+    );
+
+    // (b) in the real door, no `.mint(` of its own: the row is read and dropped,
+    // the place is the webview's.
+    let in_door = mutated(
+        "let file = store::recording_file_path(pool, recording_id)",
+        "let _unused = store::recording_file_path(pool, recording_id)",
+    );
+    let found = mint_violations(&[in_door]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`open_known` hands `open_source` `file`")),
+        "{found:?}"
+    );
+
+    // (c) the row is kept, then the place is swapped for something else.
+    let swapped = mutated(
+        "open_source(chosen, PathBuf::from(file), grant).await\n}",
+        "let file = recording_id.to_string();\n    open_source(chosen, PathBuf::from(file), grant).await\n}",
+    );
+    let found = mint_violations(&[swapped]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`open_known` hands `open_source` `file`")),
+        "{found:?}"
+    );
+
+    // (d) the id itself is handed over.
+    let by_id = mutated(
+        "open_source(chosen, PathBuf::from(file), grant).await\n}",
+        "let _ = file;\n    open_source(chosen, PathBuf::from(recording_id), grant).await\n}",
+    );
+    let found = mint_violations(&[by_id]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`open_known` hands `open_source` `recording_id`")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_dialog_whose_answer_is_ignored_does_not_anchor_a_mint_either() {
+    let ignored = mutated(
+        "let picked = chosen_paths::ask_for_file(&window, &[]).await?;",
+        "let _ = chosen_paths::ask_for_file(&window, &[]).await?;\n    let picked = PathBuf::from(typed_path);",
+    );
+    let found = mint_violations(&[ignored]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("`editor_open_recording` hands `open_source` `picked`")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_stale_or_reasonless_list_entry_is_found() {
+    // A door that no longer calls its minter, or a minter that no longer mints,
+    // is a list that has stopped describing the code.
+    let gone = mutated(
+        "let token = chosen.mint(vetted);",
+        "let token = vetted.token();",
+    );
+    let found = mint_violations(&[gone]);
+    assert!(
+        found
+            .iter()
+            .any(|f| f.contains("MINTERS lists `open_source`, which no longer mints")),
+        "{found:?}"
+    );
 }
 
 // ── editor_export hands the seam what run_export resolved ────────────────────

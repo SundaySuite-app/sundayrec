@@ -21,6 +21,7 @@ use tauri::{AppHandle, Manager};
 
 use sundayrec_core::recovery::{recoverable_deliverables, SessionManifest};
 
+use crate::commands::path_guard;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
 
@@ -31,8 +32,31 @@ fn manifest_dir(app: &AppHandle) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// The file name a session's manifest has in [`manifest_dir`]. The ONE place
+/// the name is made: [`manifest_path`] writes it, and the startup scan reads
+/// back only a file that carries exactly this name for the `session_id` inside
+/// it (see [`is_the_recorders_own_name`]).
+pub(crate) fn manifest_file_name(session_id: &str) -> String {
+    format!("{session_id}.json")
+}
+
 fn manifest_path(app: &AppHandle, session_id: &str) -> Option<PathBuf> {
-    Some(manifest_dir(app)?.join(format!("{session_id}.json")))
+    Some(manifest_dir(app)?.join(manifest_file_name(session_id)))
+}
+
+/// Is `path` named the way the recorder names the manifest of
+/// `manifest.session_id`?
+///
+/// The recovery folder is the one place a startup scan turns a file's CONTENT
+/// into a history row, and the app data folder is a folder the webview's
+/// sidecar commands can write into. A manifest that was not written by
+/// [`write_manifest`] is, at best, litter and, at worst, a forged list of files
+/// to finish and delete. The recorder always writes `<session_id>.json`, so
+/// anything under another name — or whose `session_id` is a path, not an id —
+/// is not ours and is not read as a recording.
+fn is_the_recorders_own_name(path: &Path, manifest: &SessionManifest) -> bool {
+    path.file_name().and_then(|n| n.to_str())
+        == Some(manifest_file_name(&manifest.session_id).as_str())
 }
 
 /// Write / overwrite the session manifest atomically (temp + rename), through
@@ -168,7 +192,41 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
     let Some(dir) = manifest_dir(&app) else {
         return 0;
     };
-    let mut entries = match tokio::fs::read_dir(&dir).await {
+    scan_recovery_dir(Some(&app), &pool, &dir, ScanPolicy::production()).await
+}
+
+/// What a scan is allowed to vary — only ever varied by the tests.
+pub(crate) struct ScanPolicy {
+    /// The live-writer probe, which costs its whole window
+    /// ([`WRITER_PROBE_WINDOW`]) per manifest with a fragment on disk.
+    /// Production always asks for it; tests that are not about it do not wait.
+    pub probe_writers: bool,
+    /// The home folder the path guard protects (`~/.ssh` …), passed in for the
+    /// same reason `path_guard::checked_input_file_for_home` takes it: a test
+    /// can give it a home with a protected folder without touching the process
+    /// environment other tests read.
+    pub home: Option<PathBuf>,
+}
+
+impl ScanPolicy {
+    pub(crate) fn production() -> Self {
+        Self {
+            probe_writers: true,
+            home: path_guard::home_dir(),
+        }
+    }
+}
+
+/// The loop of [`scan_and_recover`] against a plain directory — the loop the
+/// tests drive, not a copy of it. `app` is only the warning's way out.
+pub(crate) async fn scan_recovery_dir(
+    app: Option<&AppHandle>,
+    pool: &SqlitePool,
+    dir: &Path,
+    policy: ScanPolicy,
+) -> usize {
+    let home = policy.home.as_deref();
+    let mut entries = match tokio::fs::read_dir(dir).await {
         Ok(e) => e,
         Err(_) => return 0,
     };
@@ -183,28 +241,65 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
         };
         match SessionManifest::from_json(&body) {
             Ok(manifest) => {
+                // Only a file the recorder itself could have written is read as
+                // a recording. Nothing is deleted: a manifest under a foreign
+                // name is not ours to clear either, and the operator can look.
+                if !is_the_recorders_own_name(&path, &manifest) {
+                    tracing::warn!(
+                        file = %path.display(),
+                        "recovery: manifest is not named after its own session — not the recorder's, ignored"
+                    );
+                    warn_recovery_skipped(
+                        app,
+                        "foreign_manifest",
+                        &path.to_string_lossy(),
+                        "A file in the recovery folder was not written by the recorder and was \
+                         ignored.",
+                    );
+                    continue;
+                }
+                // A file the guard refuses a person is refused here too, and the
+                // WHOLE session is left exactly as it is: no row, no fragment
+                // touched, no manifest cleared. A recorder never writes one.
+                if let Some(refused) = refused_by_the_guard(&manifest, home) {
+                    tracing::warn!(
+                        session = %manifest.session_id,
+                        file = %refused,
+                        "recovery: the manifest names a file the path guard refuses — nothing recovered, nothing deleted"
+                    );
+                    warn_recovery_skipped(
+                        app,
+                        "path_refused",
+                        &refused,
+                        "An interrupted recording was not recovered — a file in its record is in \
+                         a protected place.",
+                    );
+                    continue;
+                }
                 // A fragment that GROWS between two size samples has a live
                 // writer (an orphaned capture the platform sweep couldn't stop,
                 // or an external process). Recovering now would concatenate —
                 // then delete — a file underneath that writer, so leave the
                 // manifest for the next launch instead. (2026-07-31: recovery
                 // "salvaged" a file an orphan kept appending to for 12 min.)
-                if let Some(busy) = still_being_written(&manifest).await {
-                    tracing::warn!(
-                        session = %manifest.session_id,
-                        fragment = %busy,
-                        "recovery: fragment still growing — a writer is alive; skipping this session for now"
-                    );
-                    warn_recovery_skipped(
-                        Some(&app),
-                        "still_writing",
-                        &busy,
-                        "An interrupted recording could not be recovered yet — another process \
-                         is still writing to the file. Trying again at the next start.",
-                    );
-                    continue;
+                if policy.probe_writers {
+                    if let Some(busy) = still_being_written(&manifest).await {
+                        tracing::warn!(
+                            session = %manifest.session_id,
+                            fragment = %busy,
+                            "recovery: fragment still growing — a writer is alive; skipping this session for now"
+                        );
+                        warn_recovery_skipped(
+                            app,
+                            "still_writing",
+                            &busy,
+                            "An interrupted recording could not be recovered yet — another process \
+                             is still writing to the file. Trying again at the next start.",
+                        );
+                        continue;
+                    }
                 }
-                recovered += recover_session(Some(&app), &pool, &manifest).await;
+                recovered += recover_session_for_home(app, pool, &manifest, home).await;
                 // Clean up the manifest + any leftover pre-roll clip.
                 //
                 // ⚠️ ORDER: the history rows are written FIRST (inside
@@ -214,8 +309,12 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
                 // Deleting the manifest before finalising would re-open the false
                 // "was not recorded" alert this ordering closes.
                 let _ = tokio::fs::remove_file(&path).await;
+                // The clip is deleted only if the guard would let a person open
+                // it: a manifest's word alone does not name a file to remove.
                 if let Some(clip) = &manifest.preroll_clip_path {
-                    let _ = tokio::fs::remove_file(clip).await;
+                    if path_guard::checked_input_file_for_home(clip, home).is_ok() {
+                        let _ = tokio::fs::remove_file(clip).await;
+                    }
                 }
                 // Decoupled capture: drop the now-orphaned per-session capture
                 // folder — best-effort, only removes it if EMPTY.
@@ -238,7 +337,7 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
             Err(e) => {
                 tracing::warn!(file = %path.display(), "recovery: corrupt manifest, deleting: {e}");
                 warn_recovery_skipped(
-                    Some(&app),
+                    app,
                     "corrupt_manifest",
                     &path.to_string_lossy(),
                     "An interrupted recording could not be recovered — the session's own \
@@ -379,15 +478,97 @@ pub(crate) async fn still_being_written(manifest: &SessionManifest) -> Option<St
     None
 }
 
-/// Finalise one orphaned session's surviving deliverables into history rows.
+/// The first file of `dm` the path guard refuses, if any: the primary and every
+/// fragment. The caller has already kept only the fragments that exist, so a
+/// refusal is the guard's, not a missing file's.
+fn refused_by_the_guard_in(
+    dm: &sundayrec_core::recovery::DeliverableManifest,
+    home: Option<&Path>,
+) -> Option<String> {
+    std::iter::once(&dm.primary_path)
+        .chain(&dm.fragments)
+        .find(|f| path_guard::checked_input_file_for_home(f, home).is_err())
+        .cloned()
+}
+
+/// The delivery folder of a decoupled capture, if the guard refuses it. It is
+/// where the finished file is WRITTEN (and so the folder of the history row), a
+/// path the manifest names like any other, and it need not exist yet.
+fn refused_delivery_dir(manifest: &SessionManifest, home: Option<&Path>) -> Option<String> {
+    let dir = &manifest.delivery_encode.as_ref()?.delivery_dir;
+    path_guard::checked_path_for_home(dir, home)
+        .is_err()
+        .then(|| dir.clone())
+}
+
+/// The first file or folder of `manifest` that the path guard refuses, if any.
+fn refused_by_the_guard(manifest: &SessionManifest, home: Option<&Path>) -> Option<String> {
+    refused_delivery_dir(manifest, home).or_else(|| {
+        recoverable_deliverables(manifest, |p| Path::new(p).exists())
+            .iter()
+            .find_map(|dm| refused_by_the_guard_in(dm, home))
+    })
+}
+
+/// Finalise one orphaned session's surviving deliverables into history rows,
+/// against the real home folder. The scan goes through
+/// [`recover_session_for_home`] with the home it was given, so this is what the
+/// tests that are not about the guard call.
+#[cfg(test)]
 pub(crate) async fn recover_session(
     app: Option<&AppHandle>,
     pool: &SqlitePool,
     manifest: &SessionManifest,
 ) -> usize {
+    recover_session_for_home(app, pool, manifest, path_guard::home_dir().as_deref()).await
+}
+
+/// Finalise one orphaned session's surviving deliverables into history rows,
+/// with the path guard's home folder passed in.
+async fn recover_session_for_home(
+    app: Option<&AppHandle>,
+    pool: &SqlitePool,
+    manifest: &SessionManifest,
+    home: Option<&Path>,
+) -> usize {
+    if let Some(refused) = refused_delivery_dir(manifest, home) {
+        tracing::warn!(
+            session = %manifest.session_id,
+            folder = %refused,
+            "recovery: the delivery folder is refused by the path guard, nothing recovered"
+        );
+        warn_recovery_skipped(
+            app,
+            "path_refused",
+            &refused,
+            "An interrupted recording was not recovered — its delivery folder is in a \
+             protected place.",
+        );
+        return 0;
+    }
     let recoverable = recoverable_deliverables(manifest, |p| Path::new(p).exists());
     let mut count = 0usize;
     for (index, dm) in recoverable.iter().enumerate() {
+        // The guard, BEFORE anything is finished: finishing a deliverable
+        // concatenates its fragments over the primary and then deletes them,
+        // and the row it ends in is a path the editor will open. None of that
+        // may start from a file the guard would refuse a person. Refused means
+        // skipped and logged — nothing is deleted, the manifest's own files stay.
+        if let Some(refused) = refused_by_the_guard_in(dm, home) {
+            tracing::warn!(
+                deliverable = %dm.primary_path,
+                file = %refused,
+                "recovery: a file in the manifest is refused by the path guard, skipping the deliverable"
+            );
+            warn_recovery_skipped(
+                app,
+                "path_refused",
+                &dm.primary_path,
+                "An interrupted recording was not recovered — a file in its record is in a \
+                 protected place.",
+            );
+            continue;
+        }
         let deliverable = dm.to_deliverable();
         // The pre-roll clip is prepended only to the first deliverable, and only
         // if it still exists.
@@ -396,6 +577,9 @@ pub(crate) async fn recover_session(
                 .preroll_clip_path
                 .as_deref()
                 .filter(|p| Path::new(p).exists())
+                // A clip the guard refuses is not prepended either: its bytes
+                // would end up inside a recording a person can play and share.
+                .filter(|p| path_guard::checked_input_file_for_home(p, home).is_ok())
         } else {
             None
         };
@@ -827,43 +1011,26 @@ mod tests {
         assert!(pending_windows_in(&recovery.path().join("nope")).is_empty());
     }
 
-    /// Mirror of `scan_and_recover`'s manifest read → parse → cleanup loop, exercised
-    /// directly against a real recovery directory (the production fn needs an
-    /// `AppHandle` only to LOCATE that directory; the loop body is what matters).
+    /// The production loop ([`scan_recovery_dir`]) against a real recovery
+    /// directory, minus the live-writer probe (its own tests wait that out).
     async fn scan_dir(pool: &SqlitePool, dir: &Path) -> usize {
-        let mut entries = tokio::fs::read_dir(dir).await.unwrap();
-        let mut recovered = 0usize;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            let Ok(body) = tokio::fs::read_to_string(&path).await else {
-                continue;
-            };
-            match SessionManifest::from_json(&body) {
-                Ok(manifest) => {
-                    recovered += recover_session(None, pool, &manifest).await;
-                    let _ = tokio::fs::remove_file(&path).await;
-                    if let Some(clip) = &manifest.preroll_clip_path {
-                        let _ = tokio::fs::remove_file(clip).await;
-                    }
-                    if manifest.delivery_encode.is_some() {
-                        if let Some(cap_dir) = manifest
-                            .deliverables
-                            .first()
-                            .and_then(|d| Path::new(&d.primary_path).parent())
-                        {
-                            let _ = tokio::fs::remove_dir(cap_dir).await;
-                        }
-                    }
-                }
-                Err(_) => {
-                    let _ = tokio::fs::remove_file(&path).await;
-                }
-            }
-        }
-        recovered
+        scan_recovery_dir(
+            None,
+            pool,
+            dir,
+            ScanPolicy {
+                probe_writers: false,
+                home: path_guard::home_dir(),
+            },
+        )
+        .await
+    }
+
+    /// Put `m` in `dir` under the name the recorder gives it, and return where.
+    async fn write_recorders_manifest(dir: &Path, m: &SessionManifest) -> PathBuf {
+        let file = dir.join(manifest_file_name(&m.session_id));
+        tokio::fs::write(&file, m.to_json().unwrap()).await.unwrap();
+        file
     }
 
     #[tokio::test]
@@ -876,10 +1043,7 @@ mod tests {
         let m = manifest_in(rec.path());
         write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
         write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
-        let manifest_file = recovery.path().join("session.json");
-        tokio::fs::write(&manifest_file, m.to_json().unwrap())
-            .await
-            .unwrap();
+        let manifest_file = write_recorders_manifest(recovery.path(), &m).await;
 
         let recovered = scan_dir(&pool, recovery.path()).await;
         assert_eq!(recovered, 2);
@@ -913,10 +1077,7 @@ mod tests {
         // A manifest whose fragments are all MISSING (no files written) is pure
         // litter: nothing recovers, and the manifest is still cleaned up.
         let m = manifest_in(rec.path());
-        let manifest_file = recovery.path().join("orphan.json");
-        tokio::fs::write(&manifest_file, m.to_json().unwrap())
-            .await
-            .unwrap();
+        let manifest_file = write_recorders_manifest(recovery.path(), &m).await;
 
         let recovered = scan_dir(&pool, recovery.path()).await;
         assert_eq!(recovered, 0);
@@ -933,6 +1094,193 @@ mod tests {
 
         assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
         assert!(stray.exists(), "non-json files are left untouched");
+    }
+
+    // ── A manifest only the recorder could have written (PR #313 review) ────
+
+    /// A home folder with a protected `.ssh` in it, the way the path guard's own
+    /// tests give it one, and a fragment of a manifest that lives there.
+    fn home_with_a_fragment_in_ssh() -> (tempfile::TempDir, SessionManifest, PathBuf) {
+        let home = tempfile::tempdir().unwrap();
+        let ssh = home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let m = manifest_in(&ssh);
+        let kept = PathBuf::from(&m.deliverables[0].primary_path);
+        (home, m, kept)
+    }
+
+    async fn scan_with_home(pool: &SqlitePool, dir: &Path, home: &Path) -> usize {
+        scan_recovery_dir(
+            None,
+            pool,
+            dir,
+            ScanPolicy {
+                probe_writers: false,
+                home: Some(home.to_path_buf()),
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_manifest_under_a_name_the_recorder_does_not_write_gives_no_row() {
+        // The forgery PR #313 closes: the webview could write any file into the
+        // app data folder, so a «recovery» manifest named by someone else —
+        // pointing at a real file — must not become a row the editor opens.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let forged = recovery.path().join("min-egen-manifest.json");
+        tokio::fs::write(&forged, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert!(
+            forged.exists(),
+            "a file that is not ours is not ours to delete"
+        );
+        assert!(Path::new(&m.deliverables[0].primary_path).exists());
+        assert!(Path::new(&m.deliverables[1].primary_path).exists());
+    }
+
+    #[tokio::test]
+    async fn a_manifest_whose_session_id_is_a_path_is_not_the_recorders_either() {
+        // `<session_id>.json` for an id that climbs out of the folder is a name
+        // no recorder produces (it names a session by its start time).
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        m.session_id = "../../hentet".into();
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        let file = recovery.path().join("hentet.json");
+        tokio::fs::write(&file, m.to_json().unwrap()).await.unwrap();
+
+        assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_manifest_named_for_its_own_session_still_recovers_after_a_crash() {
+        // The Sunday that matters: the recorder's own name, the recorder's own
+        // folder — exactly the case the new rule must leave alone.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        m.session_id = "1786179600000".into();
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        let file = write_recorders_manifest(recovery.path(), &m).await;
+        assert_eq!(file.file_name().unwrap(), "1786179600000.json");
+
+        assert_eq!(scan_dir(&pool, recovery.path()).await, 1);
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 1);
+        assert!(!file.exists());
+    }
+
+    #[tokio::test]
+    async fn a_manifest_that_names_a_protected_file_gives_no_row_and_deletes_nothing() {
+        // The right name is not enough: the file it points at goes through the
+        // same guard a person's pick does. Nothing is finished, nothing is
+        // deleted — not the file, not the manifest.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let (home, m, protected) = home_with_a_fragment_in_ssh();
+        write_fragment(&protected).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let file = write_recorders_manifest(recovery.path(), &m).await;
+
+        assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert!(protected.exists());
+        assert!(Path::new(&m.deliverables[1].primary_path).exists());
+        assert!(
+            file.exists(),
+            "the refused manifest is left for a person to look at"
+        );
+    }
+
+    #[tokio::test]
+    async fn recover_session_refuses_a_protected_deliverable_but_not_its_neighbour() {
+        // The row is the path `editor_open_known` will open, so the guard sits
+        // in `recover_session` itself, not only in the scan that calls it.
+        let (pool, _db) = temp_pool().await;
+        let home = tempfile::tempdir().unwrap();
+        let ssh = home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        let secret = ssh.join("id_ed25519");
+        m.deliverables[0].primary_path = secret.to_string_lossy().into_owned();
+        m.deliverables[0].fragments = vec![m.deliverables[0].primary_path.clone()];
+        write_fragment(&secret).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+
+        let n = recover_session_for_home(None, &pool, &m, Some(home.path())).await;
+        assert_eq!(n, 1, "only the ordinary deliverable becomes a row");
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].file_path, m.deliverables[1].primary_path);
+        assert!(secret.exists(), "and the protected file is left as it was");
+    }
+
+    #[tokio::test]
+    async fn a_manifest_that_delivers_into_a_protected_folder_gives_no_row_and_writes_nothing() {
+        // The finished file is written to the manifest's delivery folder, and the
+        // row points there: a folder is a path the guard judges like a file.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let ssh = home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let mut m = manifest_in(rec.path());
+        m.delivery_encode = Some(decoupled_encode_spec(&ssh));
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        let file = write_recorders_manifest(recovery.path(), &m).await;
+
+        assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
+        assert_eq!(
+            recover_session_for_home(None, &pool, &m, Some(home.path())).await,
+            0
+        );
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert_eq!(
+            std::fs::read_dir(&ssh).unwrap().count(),
+            0,
+            "nothing written there"
+        );
+        assert!(file.exists(), "the refused manifest is left alone");
+    }
+
+    #[tokio::test]
+    async fn a_pre_roll_clip_the_guard_refuses_is_not_deleted_by_recovery() {
+        // Recovery deletes the pre-roll clip it prepended. A manifest's word
+        // alone does not name a file to delete.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let ssh = home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let clip = ssh.join("id_ed25519");
+        write_fragment(&clip).await;
+        let mut m = manifest_in(rec.path());
+        m.preroll_clip_path = Some(clip.to_string_lossy().into_owned());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        let file = write_recorders_manifest(recovery.path(), &m).await;
+
+        let _ = scan_with_home(&pool, recovery.path(), home.path()).await;
+        assert!(clip.exists());
+        assert!(
+            !file.exists(),
+            "the recorder's own manifest is still cleared"
+        );
     }
 
     fn decoupled_encode_spec(delivery_dir: &Path) -> AudioEncodeManifest {
@@ -999,10 +1347,7 @@ mod tests {
         let (m, cap_dir) = interrupted_cpal_video_session(save_dir.path());
         let capture = m.deliverables[0].primary_path.clone();
         write_fragment(Path::new(&capture)).await;
-        let manifest_file = recovery.path().join("1786179600000.json");
-        tokio::fs::write(&manifest_file, m.to_json().unwrap())
-            .await
-            .unwrap();
+        let manifest_file = write_recorders_manifest(recovery.path(), &m).await;
 
         let recovered = scan_dir(&pool, recovery.path()).await;
         assert_eq!(recovered, 1, "the interrupted video session is recovered");
@@ -1070,10 +1415,7 @@ mod tests {
 
         let mut m = manifest_in(&cap_dir); // fragments point into cap_dir, absent on disk
         m.delivery_encode = Some(decoupled_encode_spec(save_dir.path()));
-        let manifest_file = recovery.path().join("session.json");
-        tokio::fs::write(&manifest_file, m.to_json().unwrap())
-            .await
-            .unwrap();
+        write_recorders_manifest(recovery.path(), &m).await;
 
         let recovered = scan_dir(&pool, recovery.path()).await;
         assert_eq!(recovered, 0, "no surviving fragments to recover");
@@ -1096,10 +1438,7 @@ mod tests {
 
         let mut m = manifest_in(&cap_dir);
         m.delivery_encode = Some(decoupled_encode_spec(save_dir.path()));
-        let manifest_file = recovery.path().join("session.json");
-        tokio::fs::write(&manifest_file, m.to_json().unwrap())
-            .await
-            .unwrap();
+        write_recorders_manifest(recovery.path(), &m).await;
 
         let _ = scan_dir(&pool, recovery.path()).await;
         assert!(
@@ -1121,10 +1460,7 @@ mod tests {
         let m = manifest_in(rec.path()); // delivery_encode: None by default
         write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
         write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
-        let manifest_file = recovery.path().join("session.json");
-        tokio::fs::write(&manifest_file, m.to_json().unwrap())
-            .await
-            .unwrap();
+        write_recorders_manifest(recovery.path(), &m).await;
 
         let recovered = scan_dir(&pool, recovery.path()).await;
         assert_eq!(recovered, 2);

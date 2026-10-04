@@ -1224,7 +1224,12 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - The ratchet holds the shape from the outside:
    - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::the_requests_name_the_recording_only_by_token
    - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_open_known_takes_only_a_history_row_id
-   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_token_is_minted_behind_a_dialog_a_row_or_a_drop
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_token_is_minted_by_a_listed_function_behind_a_listed_door
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_row_lookup_whose_answer_is_ignored_does_not_anchor_a_mint
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_asset_grant_opens_the_one_file_and_nothing_beside_it
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list
+   - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::a_manifest_under_a_name_the_recorder_does_not_write_gives_no_row
+   - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::a_manifest_that_names_a_protected_file_gives_no_row_and_deletes_nothing
    - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_command_that_mints_a_path_from_the_webview_is_found
    - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_hands_the_seam_the_resolved_places
    - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::an_export_that_ignores_the_resolved_places_is_found

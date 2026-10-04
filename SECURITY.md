@@ -193,7 +193,12 @@ So a future auditor doesn't have to re-derive these from scratch:
   doors, and each mints a File token for a file Rust decided on:
   `editor_open_recording` (the open dialog, opened in Rust — it takes no
   argument), `editor_open_known` (a history row, by the ROW'S id: the database
-  holds the path, and only the recorder writes rows), and a file dropped on the
+  holds the path; rows are written by the recorder and by startup recovery,
+  which reads a manifest only if it is named the way the recorder names its own
+  (`<session_id>.json`, one function for both) and puts every file in it, the
+  pre-roll clip and the row's final path through `path_guard::checked_input_file`
+  first — a manifest that fails either is left untouched, with no row and
+  nothing deleted), and a file dropped on the
   window (the process catches the drop itself, `window::on_event` →
   `editor::note_drop`, and tells the page with `editor://file-dropped` — the
   path of a drop never reaches the page). `editor_load_recording`,
@@ -217,16 +222,36 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   page. It is gone (`REPLACED` by `editor_open_recording`): the scope grows by
   one file only when RUST opens a recording — the vetted canonical place, and
   nothing else — and for the temp files Rust itself renders (the playback proxy,
-  the mastering preview). `commands::path_ratchet` pins the rest, from the
-  outside: every `*_token` parameter or field is classified (a place token with
+  the mastering preview). The static `assetProtocol.scope.allow` in
+  `tauri.conf.json` is **empty** (the protocol stays enabled, and its `deny`
+  list of protected home folders stays): the only things the page plays are the
+  opened recording (`loader.ts`), the proxy Rust renders for it (`loader.ts`)
+  and the master preview Rust renders (`sound.ts`), and each is granted per
+  file by `grant_asset_file`; no `<img>`/`<video>` loads from `asset://` (the
+  camera preview is `data:`/`getUserMedia`). The old `$DOCUMENT`/`$DOWNLOAD`/
+  `$VIDEO`/`$AUDIO`/`$DESKTOP`/`$APPDATA`/`$APPLOCALDATA`/`$TEMP` globs made
+  everything in those folders readable from the page, including the app's own
+  database and recovery folder, whatever Rust had been asked. Pinned by
+  `editor::tests::the_static_asset_scope_allows_no_folder_and_keeps_its_deny_list`,
+  and `grant_asset_file` itself against tauri's own scope
+  (`the_asset_grant_opens_the_one_file_and_nothing_beside_it`: a grant widened
+  to the file's folder fails it). New code that plays a file from `asset://`
+  must be granted the same way, or it will not play. `commands::path_ratchet`
+  pins the rest, from the outside: every `*_token` parameter or field is
+  classified (a place token with
   its resolver and a forged-token proof, or a non-place with the reason — the
   old rule asked for a path-shaped word in front of `_token`, which
   `source_token` is not); a guard counts only as CODE in a command's body, not as
-  a comment or a string literal that names it; `.mint(` may only be reached
-  through a function that asks a Rust dialog, reads a history row, or is the
-  window's own drop handler (a command that mints from something the webview
-  sent is a failing test); and `editor_export` must hand the seam the places
-  `run_export` resolved, with no `ExportFolder` or `ResolvedExport` of its own.
+  a comment or a string literal that names it; `.mint(` may only appear in a
+  CLOSED list of functions (`MINTERS`, each with its reason: `open_source`,
+  `choose_output_folder`), which may only be reached through a closed list of
+  doors (`MINT_DOORS`: the open dialog, the history row, the window's own drop
+  handler, the folder dialog), and a door's place must be bound from the
+  dialog's answer or the row's path and from nothing else — merely CALLING
+  `recording_file_path(` or a dialog no longer anchors a mint (a command that
+  mints from something the webview sent is a failing test); and `editor_export`
+  must hand the seam the places `run_export` resolved, with no `ExportFolder`
+  or `ResolvedExport` of its own.
 - **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output
