@@ -17,8 +17,9 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 - **En innstillingsprofil rører ikke maskinens eget oppsett.** Lydenheten og
   kanalene, kameraet, opptaksmappen og «Start automatisk med maskinen» blir
   som de er på maskinen du importerer til — de er ikke lenger med i profilen.
-  En import slår heller aldri på automatisk sletting av opptak eller gjør
-  tiden kortere. Før kunne en profil fra en maskin som aldri var satt opp, få
+  Det samme gjelder lydkortet et spesialopptak har valgt selv: det følger
+  ikke med profilen. En import slår heller aldri på automatisk sletting av
+  opptak eller gjør tiden kortere. Før kunne en profil fra en maskin som aldri var satt opp, få
   kirke-PC-en til å ta opp fra feil lydenhet og ikke starte etter en omstart.
 - **Forhåndssjekken på Opptak-siden sier hvilket lydkort som mangler.** Når et
   spesialopptak skal ta opp fra sitt eget lydkort og det ikke er koblet til,

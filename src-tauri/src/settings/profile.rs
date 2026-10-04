@@ -119,6 +119,46 @@ pub const MACHINE_LOCAL: &[&str] = &[
     "updateChannel",
 ];
 
+/// Settings that describe the church's WAY of recording — they travel in a
+/// profile, both ways. Together with [`MACHINE_LOCAL`] and [`ONE_WAY`] this is
+/// every `Settings` key exactly once; `every_settings_field_is_classified`
+/// fails the day somebody adds a field and does not say which it is (a new
+/// path, device, identity or consent switch must NOT land here by default).
+pub const SHARED: &[&str] = &[
+    "language",
+    "keepSeparateAudio",
+    "format",
+    "bitrate",
+    "filenamePattern",
+    "stopOnSilence",
+    "silenceThreshold",
+    "silenceTimeoutMinutes",
+    "splitMinutes",
+    "manualMaxMinutes",
+    "preRollSeconds",
+    "prerollEnabled",
+    "reminderMinutes",
+    "protectRecording",
+    "churchName",
+    "responsiblePerson",
+    "publishTarget",
+    "publishCustomUrl",
+    "publishDescriptionTemplate",
+    "notifyStart",
+    "notifyStop",
+    "askOpenEditor",
+];
+
+/// Carried, but an import may only move them one way — see
+/// [`never_take_away`]. (`specialRecordings` also has a machine-local part:
+/// each entry's `deviceId`, see [`without_special_devices`].)
+pub const ONE_WAY: &[&str] = &[
+    "autoDeleteDays",
+    "autoRecordEnabled",
+    "slots",
+    "specialRecordings",
+];
+
 /// A strict reading of one field's value: `true` = it is what the field holds.
 type StrictCheck = fn(&Value) -> bool;
 
@@ -143,6 +183,15 @@ fn profile_json(settings: &Settings) -> AppResult<String> {
     if let Value::Object(fields) = &mut value {
         for key in MACHINE_LOCAL {
             fields.remove(*key);
+        }
+        // The nested half of the machine-local line: a special recording's own
+        // sound card is this machine's too.
+        if let Some(Value::Array(specials)) = fields.get_mut("specialRecordings") {
+            for special in specials {
+                if let Value::Object(special) = special {
+                    special.remove("deviceId");
+                }
+            }
         }
     }
     Ok(serde_json::to_string_pretty(&value)?)
@@ -238,9 +287,35 @@ fn never_take_away(stored: &Settings, merged: &mut Settings) {
     if merged.special_recordings.is_empty() {
         merged.special_recordings = stored.special_recordings.clone();
     }
+    without_special_devices(stored, merged);
     merged.auto_record_enabled |= stored.auto_record_enabled;
     merged.auto_delete_days =
         retention_after_import(stored.auto_delete_days, merged.auto_delete_days);
+}
+
+/// A special recording's `deviceId` is a sound card on the machine that wrote
+/// the profile (a picker id such as `BuiltInMicrophoneDevice` is the SAME on
+/// every Mac, so it could match a different card here and record a concert
+/// from the wrong one). The rule, deliberately the simplest that cannot hit
+/// another card: a special in the file never brings a device of its own. It
+/// keeps THIS machine's choice only when a stored special has the same
+/// non-blank `id` (the same concert, already set up here — its device is
+/// whatever the operator chose on this machine); every other special gets
+/// `None` and records on the global device, which is the machine's own.
+fn without_special_devices(stored: &Settings, merged: &mut Settings) {
+    for special in &mut merged.special_recordings {
+        special.device_id = special
+            .id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .and_then(|id| {
+                stored
+                    .special_recordings
+                    .iter()
+                    .find(|own| own.id.as_deref() == Some(id))
+            })
+            .and_then(|own| own.device_id.clone());
+    }
 }
 
 /// The automatic-deletion age (days, `0` = off) after an import: the file may
@@ -261,7 +336,9 @@ fn retention_after_import(stored: i32, from_file: i32) -> i32 {
 mod tests {
     use super::*;
     use sundayrec_core::schedule::{ScheduleSlot, SpecialRecording};
-    use sundayrec_core::settings::{ChannelMode, DeviceChannels, FileFormat, SampleRate};
+    use sundayrec_core::settings::{
+        ChannelMode, DeviceChannels, FileFormat, SampleRate, UpdateChannel,
+    };
 
     /// The church PC on Saturday evening: everything [`MACHINE_LOCAL`] set to
     /// something no default is, plus a schedule, a special recording, a
@@ -285,13 +362,17 @@ mod tests {
             input_channel_r: Some(17),
             channels: ChannelMode::MonoL,
             sample_rate_mode: SampleRate::R48000,
+            classic_directshow: true,
             classic_ffmpeg_audio: true,
+            classic_ffmpeg_preroll: true,
             video_enabled: true,
             video_device_name: Some("Logitech BRIO".into()),
             video_device_index: Some(1),
             video_flip: true,
             save_folder: Some("/Volumes/Kirke/Opptak".into()),
             editor_intro_path: Some("/Users/kirke/Musikk/intro.mp3".into()),
+            editor_outro_path: Some("/Users/kirke/Musikk/outro.mp3".into()),
+            update_channel: UpdateChannel::Beta,
             launch_at_login: true,
             wake_from_sleep: false,
             auto_update: false,
@@ -350,6 +431,129 @@ mod tests {
             );
             assert!(!MACHINE_LOCAL.contains(key), "`{key}` is both");
         }
+    }
+
+    #[test]
+    fn every_settings_field_is_classified() {
+        // The ratchet: a new `Settings` field is a failing test until it is
+        // put in exactly one of the three lists.
+        let all: std::collections::BTreeSet<String> = serde_json::to_value(Settings::default())
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        let mut listed = Vec::new();
+        for list in [MACHINE_LOCAL, SHARED, ONE_WAY] {
+            listed.extend(list.iter().map(|k| k.to_string()));
+        }
+        let unique: std::collections::BTreeSet<String> = listed.iter().cloned().collect();
+        assert_eq!(unique.len(), listed.len(), "a key is in more than one list");
+        let unclassified: Vec<_> = all.difference(&unique).collect();
+        let unknown: Vec<_> = unique.difference(&all).collect();
+        assert!(
+            unclassified.is_empty() && unknown.is_empty(),
+            "add each new Settings field to MACHINE_LOCAL, SHARED or ONE_WAY. \
+             unclassified: {unclassified:?}; not a Settings field: {unknown:?}"
+        );
+    }
+
+    #[test]
+    fn the_machine_local_line_is_pinned() {
+        // The behavioural tests below read `MACHINE_LOCAL` itself, so moving a
+        // key out of it (into SHARED, say) would move the tests with it. This
+        // one does not: the list is spelled out, and changing the line of
+        // what never travels is an edit in two places on purpose.
+        let mut expected = vec![
+            "deviceId",
+            "deviceName",
+            "deviceChannels",
+            "inputChannelL",
+            "inputChannelR",
+            "channels",
+            "sampleRateMode",
+            "classicDirectshow",
+            "classicFfmpegAudio",
+            "classicFfmpegPreroll",
+            "videoEnabled",
+            "videoDeviceName",
+            "videoDeviceIndex",
+            "videoFlip",
+            "saveFolder",
+            "editorIntroPath",
+            "editorOutroPath",
+            "launchAtLogin",
+            "wakeFromSleep",
+            "onboardingDone",
+            "autoUpdate",
+            "updateChannel",
+        ];
+        let mut actual = MACHINE_LOCAL.to_vec();
+        expected.sort_unstable();
+        actual.sort_unstable();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn the_church_pc_fixture_sets_every_machine_local_field_off_its_default() {
+        // Without this a `MACHINE_LOCAL` entry nobody exercises can be deleted
+        // and every test stays green: stored == file == default.
+        let church = machine_local_values(&church_pc());
+        let default = machine_local_values(&Settings::default());
+        for key in MACHINE_LOCAL {
+            assert_ne!(
+                church[*key], default[*key],
+                "`{key}` is at its default in church_pc()"
+            );
+        }
+    }
+
+    #[test]
+    fn a_special_recordings_sound_card_is_not_carried_either_way() {
+        let mut church = church_pc();
+        church.special_recordings[0].device_id = Some("BuiltInMicrophoneDevice".into());
+        // Out: not in the file.
+        let text = profile_json(&church).unwrap();
+        assert!(!text.contains("BuiltInMicrophoneDevice"), "exported");
+        // In: a file that DOES carry one (a profile written before this
+        // change) gives it to no special…
+        let old_file = serde_json::to_string(&serde_json::json!({
+            "specialRecordings": [
+                { "id": "ny", "date": "2099-12-24", "name": "Julekonsert",
+                  "start": "19:00", "stop": "21:00", "deviceId": "BuiltInMicrophoneDevice" },
+                { "date": "2099-12-25", "name": "Uten id",
+                  "start": "19:00", "stop": "21:00", "deviceId": "BuiltInMicrophoneDevice" },
+                { "id": "  ", "date": "2099-12-26", "name": "Blank id",
+                  "start": "19:00", "stop": "21:00", "deviceId": "BuiltInMicrophoneDevice" },
+            ]
+        }))
+        .unwrap();
+        let merged = overlay_profile(&church_pc(), &old_file).unwrap();
+        assert_eq!(merged.special_recordings.len(), 3);
+        for sp in &merged.special_recordings {
+            assert_eq!(sp.device_id, None, "{}", sp.name);
+        }
+        // …except that the same concert, already set up HERE, keeps the card
+        // this machine's operator chose for it — not the file's.
+        let mut here = church_pc();
+        here.special_recordings[0].device_id = Some("zoom-h6".into());
+        let same = serde_json::to_string(&serde_json::json!({
+            "specialRecordings": [
+                { "id": "konsert", "date": "2099-12-24", "name": "Julekonsert",
+                  "start": "19:00", "stop": "21:00", "deviceId": "BuiltInMicrophoneDevice" },
+            ]
+        }))
+        .unwrap();
+        let merged = overlay_profile(&here, &same).unwrap();
+        assert_eq!(
+            merged.special_recordings[0].device_id.as_deref(),
+            Some("zoom-h6")
+        );
+        // And an empty list keeps this machine's specials, devices included.
+        let kept =
+            overlay_profile(&here, r#"{ "specialRecordings": [], "language": "en" }"#).unwrap();
+        assert_eq!(kept.special_recordings, here.special_recordings);
     }
 
     #[test]

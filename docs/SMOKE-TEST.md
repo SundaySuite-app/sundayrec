@@ -1498,7 +1498,9 @@ validation in `sundayrec-core::settings`.
      folder and «Start automatisk med maskinen» as they were (after a reboot
      SundayRec still starts). Automatic deletion is never switched on or made
      shorter by an import. A profile with an empty schedule leaves this
-     machine's schedule and special recordings in place.
+     machine's schedule and special recordings in place. A special recording's
+     own sound card is not in the exported file and is not taken from an
+     imported one.
    - **Expected:** picking a file that is not a profile (a recording, a text
      file, `{}`) says «Filen er ikke en innstillingsprofil fra SundayRec, eller
      den er skadet. Ingenting ble endret.» — and nothing is: folder, language
@@ -1529,6 +1531,11 @@ validation in `sundayrec-core::settings`.
    - VERIFIED-BY: src-tauri/src/settings/profile.rs::retention_can_be_switched_off_or_lengthened_never_on_or_shortened
    - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_weekly_plan_can_be_armed_never_disarmed
    - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_export_leaves_this_machine_out
+   - A special recording's own sound card does not travel, and no setting goes unclassified:
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_special_recordings_sound_card_is_not_carried_either_way
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::every_settings_field_is_classified
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_machine_local_line_is_pinned
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_church_pc_fixture_sets_every_machine_local_field_off_its_default
    - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::får sin egen setning, og ingenting leses inn
    - The question before the window, a quiet cancel, one window at a time:
    - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et nei på spørsmålet åpner ikke noe vindu
