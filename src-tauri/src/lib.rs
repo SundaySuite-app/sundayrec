@@ -15,6 +15,7 @@
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
+pub mod appdata;
 pub mod audio;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
@@ -271,10 +272,38 @@ pub fn run() {
             // Open the app database (settings + recording history) once and
             // share it as managed state. Lives under the OS app-data dir so it
             // survives reinstalls and isn't tied to the executable location.
-            let db_dir = app
+            //
+            // F-W10: on Windows the database moves ONCE from the ROAMING
+            // app-data dir to the LOCAL one, here, before the pool opens (see
+            // `appdata` for the procedure and why the old file stays). A failed
+            // move falls back to Roaming for this session — never to an empty
+            // database. Off Windows `resolve` touches nothing: `db_dir` is the
+            // same path it always was.
+            let roaming_dir = app
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("resolving app data dir: {e}"))?;
+            // Not resolving the local dir is astronomically rare (the same
+            // failure class `roaming_dir` just ruled out) and must not stop the
+            // app starting: the same path twice means «nothing to move».
+            let local_dir = app.path().app_local_data_dir().unwrap_or_else(|e| {
+                tracing::warn!(
+                    "resolving local app-data dir failed ({e}); the app-data dir stays where it was"
+                );
+                roaming_dir.clone()
+            });
+            let data_choice = tauri::async_runtime::block_on(appdata::resolve(
+                &roaming_dir,
+                &local_dir,
+                cfg!(windows),
+            ));
+            let db_dir = data_choice.active.clone();
+            let move_failed = matches!(data_choice.outcome, appdata::Outcome::FellBack { .. });
+            if move_failed {
+                // The crash hook was armed on the Local dir before this ran.
+                crash::repoint(db_dir.join("crashes"));
+            }
+            appdata::install(data_choice);
             // A setup error becomes a PANIC message (tauri: "Failed to setup
             // app: {e}"), which the crash ring persists and telemetry ships —
             // so the path goes into the LOCAL log only and the error message is
@@ -389,23 +418,11 @@ pub fn run() {
             // Windows roaming profile or a mis-pointed OneDrive sync can lock
             // while it is still growing (see `looks_like_onedrive`, F2-W9's
             // save-folder half of the same problem). Whatever a previous
-            // version left under the old path is moved once, best-effort; a
-            // resolution failure (astronomically rare — the same class of
-            // failure `db_dir` above already ruled out) just keeps the old
-            // roaming location rather than losing pre-roll altogether.
-            let tmp_dir = match app.path().app_local_data_dir() {
-                Ok(local_dir) => {
-                    let new_tmp_dir = local_dir.join("tmp");
-                    util::move_once_best_effort(&db_dir.join("tmp"), &new_tmp_dir);
-                    new_tmp_dir
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "resolving local app-data dir failed ({e}); pre-roll stays under the roaming app-data dir"
-                    );
-                    db_dir.join("tmp")
-                }
-            };
+            // version left under the old path is moved once, best-effort.
+            let tmp_dir = local_dir.join("tmp");
+            if local_dir != roaming_dir {
+                util::move_once_best_effort(&roaming_dir.join("tmp"), &tmp_dir);
+            }
             app.manage(recorder::preroll::PrerollEngine::new(tmp_dir));
 
             // Launch the scheduler supervisor now that the db pool + recorder
@@ -440,6 +457,44 @@ pub fn run() {
                             return;
                         };
                         notify::seen::trim_at_startup(&db.pool, util::now_ms()).await;
+                    }),
+                );
+            }
+
+            // F-W10: a database move that fell back says so ONCE — a banner,
+            // after the window has had time to open (a warning emitted during
+            // `setup` reaches nobody). «Once» is a settings claim in the very
+            // database that stayed in use, so every later start with the same
+            // problem is quiet in the UI and loud only in the log.
+            if move_failed {
+                let handle = app.handle().clone();
+                crash::watch_handle(
+                    "appdata::move_warning",
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                        let Some(db) = handle.try_state::<db::Db>() else {
+                            return;
+                        };
+                        let first_time = db::store::claim_setting(
+                            &db.pool,
+                            "appdata_move_failed_warned",
+                            "1",
+                        )
+                        .await
+                        .unwrap_or(false);
+                        if first_time {
+                            notify::warn(
+                                &handle,
+                                sundayrec_core::notify::BackendWarning::warn(
+                                    sundayrec_core::notify::code::DATA_DIR_MOVE_FAILED,
+                                )
+                                .msg(
+                                    "SundayRec fikk ikke flyttet historikken og innstillingene til den \
+                                     nye mappen og bruker den gamle denne gangen. Ingenting er slettet. \
+                                     Start programmet om igjen; hjelper det ikke, ta kontakt.",
+                                ),
+                            );
+                        }
                     }),
                 );
             }

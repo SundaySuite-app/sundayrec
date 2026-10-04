@@ -164,7 +164,6 @@ pub(super) fn finalize_session_telemetry(
         duration_loss_pct, facts_from_recording, selftest_verdict, SelfTestVerdict,
         DURATION_LOSS_FAIL_PCT,
     };
-    use tauri::Manager;
 
     let final_state = *lock_recover(final_state);
 
@@ -209,7 +208,7 @@ pub(super) fn finalize_session_telemetry(
         let _ = app.emit(QUALITY_EVENT, &report);
     }
 
-    let Ok(dir) = app.path().app_data_dir() else {
+    let Ok(dir) = crate::appdata::dir(app) else {
         return;
     };
     // Blocking fs I/O off the async caller (the terminal emit_state funnel runs

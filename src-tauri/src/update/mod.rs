@@ -515,9 +515,8 @@ pub async fn download(app: &AppHandle, engine: &UpdateEngine) -> AppResult<Updat
 /// exit.
 #[cfg(feature = "updater")]
 fn relaunch_log<R: tauri::Runtime>(app: &tauri::AppHandle<R>, msg: &str) {
-    use tauri::Manager;
     tracing::info!("update-relaunch: {msg}");
-    let Ok(dir) = app.path().app_data_dir() else {
+    let Ok(dir) = crate::appdata::dir(app) else {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);

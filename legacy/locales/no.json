@@ -1143,6 +1143,7 @@
     "recoverySkipped": "Et avbrutt opptak kunne ikke gjenopprettes helt: {file}",
     "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
-    "trashManifestUnreadable": "Papirkurvens innhold kunne ikke leses. Filene ligger der fortsatt, men appen vet ikke lenger hvor de kom fra."
+    "trashManifestUnreadable": "Papirkurvens innhold kunne ikke leses. Filene ligger der fortsatt, men appen vet ikke lenger hvor de kom fra.",
+    "dataDirMoveFailed": "Historikken og innstillingene ble ikke flyttet til den nye mappen. Appen bruker den gamle denne gangen, og ingenting er slettet. Start appen på nytt; hjelper det ikke, ta kontakt."
   }
 }

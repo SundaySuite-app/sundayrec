@@ -89,8 +89,7 @@ pub(crate) fn emit_warning(app: &AppHandle, code: &str, message: &str) {
 /// `<app_data_dir>/last-error.json` (atomic temp+rename). Never fails the
 /// recorder — any I/O error is logged and swallowed.
 fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
-    use tauri::Manager;
-    let Ok(dir) = app.path().app_data_dir() else {
+    let Ok(dir) = crate::appdata::dir(app) else {
         return;
     };
     // Keep the file small — the diagnostic only needs the code + a stderr snippet.
