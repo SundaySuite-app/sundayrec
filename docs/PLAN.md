@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-10-01, ved v0.25.0-beta.1 (beta)._
+_Sist gått gjennom: 2026-10-04, ved v0.25.0 (stabil og beta)._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
@@ -56,8 +56,12 @@ opptaksmotoren oppfører seg som før etter oppdelingen (RIG-DAY a, c, h og
 w6), «Åpne opptaksmappen» og «Vis i Finder» på Mac og Windows
 (SMOKE-TEST), og spesialopptak med eget lydkort, også reserven når det
 mangler (RIG-DAY «(c, fortsettelse) Spesialopptak med eget lydkort», inkludert
-Windows-punkt 1–4). **Stabil v0.25.0** først
-etter riggdagen og én ekte søndag på beta.
+Windows-punkt 1–4), og etter sikkerhetsrunden (#309–#315): avspilling og
+forhåndslytting i redigeringen (asset-tilgang per fil), krasjgjenoppretting på
+Mac og Windows, valg av opptaksmappe ved første oppstart, oppgradering fra
+v0.24.0, og «Vis i Finder» på opptaks- og eksportkvitteringen. **v0.25.0 gikk
+rett til stabil 2026-10-04 etter eiers ordre** (RELEASE-CHECKLIST §5, slik
+v0.12.0) — riggpunktene over er derfor etterkontroll av det flåten alt har.
 
 ## Ikke planlagt
 
