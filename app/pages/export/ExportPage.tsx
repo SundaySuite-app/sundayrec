@@ -396,7 +396,12 @@ function Choices() {
     exportTitle.value,
     localIsoDate(startedAtMs.value),
   );
-  const folder = exportFolder.value || folderOf(E.filePath);
+  // Navnet som vises: den valgte mappens (Rust sender bare navnet, aldri
+  // stien — A2), eller opptakets egen mappe.
+  const picked = exportFolder.value;
+  const folderName = picked
+    ? picked.displayName
+    : folderLabel(folderOf(E.filePath));
 
   const formats: RadioOption[] = EXPORT_FORMATS.map((id) => ({
     value: id,
@@ -415,9 +420,7 @@ function Choices() {
     {
       value: "pick",
       title: t("app.editor.pickFolder"),
-      description: exportFolder.value
-        ? folderLabel(exportFolder.value)
-        : t("app.editor.pickFolderDesc"),
+      description: picked ? picked.displayName : t("app.editor.pickFolderDesc"),
     },
   ];
 
@@ -444,11 +447,11 @@ function Choices() {
       <span class={styles.label}>{t("app.editor.exWhere")}</span>
       <RadioCards
         testId="editor-dest"
-        value={exportFolder.value ? "pick" : "same"}
+        value={picked ? "pick" : "same"}
         options={destinations}
         columns={2}
         onChange={(next) => {
-          if (next === "same") exportFolder.value = "";
+          if (next === "same") exportFolder.value = null;
           else void pickExportFolder();
         }}
       />
@@ -477,11 +480,7 @@ function Choices() {
 
       <div class={styles.exportBar}>
         <span data-testid="editor-export-preview" class={styles.hint}>
-          {[
-            name,
-            mb === null ? "" : tf("app.editor.about", { mb }),
-            folderLabel(folder),
-          ]
+          {[name, mb === null ? "" : tf("app.editor.about", { mb }), folderName]
             .filter(Boolean)
             .join(DOT)}
         </span>

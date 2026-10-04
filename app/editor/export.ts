@@ -3,10 +3,24 @@
  *
  * Nyttelasten bygges av `buildExportRequest` fra
  * `@lib/pages/editor/export-params` — uendret, importert, allerede
- * enhetstestet. To ting der er lærepenger noen har betalt for:
- * `outputFolder` er ALLTID en streng («» = ved siden av kilden, som bakenden
- * løser opp), og det finnes ikke noe `mode`-felt, fordi «Erstatt original»
- * stille oppførte seg som «ny fil» i årevis.
+ * enhetstestet. To ting der er lærepenger noen har betalt for: det finnes
+ * ikke noe `mode`-felt, fordi «Erstatt original» stille oppførte seg som «ny
+ * fil» i årevis — og mappen er ALDRI en sti herfra (funn A2).
+ *
+ * ## Mappen er en lapp fra Rust, ikke en sti
+ *
+ * «Velg mappe …» åpner mappevelgeren i RUST (`editor_pick_output_folder`), og
+ * svaret hit er en ugjennomsiktig LAPP (`token`) og mappens navn — aldri
+ * stien. Eksporten sender lappen tilbake (`outputFolderToken`), og Rust slår
+ * opp og sjekker mappen på nytt i det øyeblikket den brukes. Før sendte
+ * skallet stien velgeren svarte, og et kompromittert webview kunne sende en
+ * hvilken som helst mappe uten at noen valgte den. `null` = «Samme mappe som
+ * opptaket», som bakenden løser opp akkurat som før.
+ *
+ * Ingenting av dette lagres: lappen gjelder bare denne økten (Rust glemmer
+ * den ved omstart), og valget nullstilles uansett når en ny fil åpnes
+ * (`resetExport`). Det finnes ingen «sist brukte mappe» å gjenoppta, så ingen
+ * sti trengs tilbake til Rust.
  *
  * ## Fremdriften er bakendens egen
  *
@@ -35,6 +49,7 @@ import { buildExportRequest } from "@lib/pages/editor/export-params";
 import { createEtaEstimator } from "@lib/ui/progress-core";
 import type { EditorExportProgress } from "@legacy/bindings/EditorExportProgress";
 import type { EditorExportLoudness } from "@legacy/bindings/EditorExportLoudness";
+import type { ChosenPlace } from "@legacy/bindings/ChosenPlace";
 
 import { locale } from "../i18n";
 import { isRecording } from "../state/recording";
@@ -67,8 +82,11 @@ import { soundExportFields } from "./sound-profiles";
 // ── Valgene ─────────────────────────────────────────────────────────────────
 
 export const exportFormat = signal<ExportFormat>(DEFAULT_EXPORT_FORMAT);
-/** «» = «Samme mappe som opptaket». En valgt mappe er en absolutt sti. */
-export const exportFolder = signal("");
+/**
+ * `null` = «Samme mappe som opptaket». En valgt mappe er Rusts lapp for den og
+ * navnet som vises — aldri stien (se filhodet).
+ */
+export const exportFolder = signal<ChosenPlace | null>(null);
 /** «Ta med video (MP4)». Bare synlig når kilden HAR et videospor. */
 export const includeVideo = signal(false);
 
@@ -230,7 +248,7 @@ export function resetExport(): void {
   // Enhver kjøring som fortsatt henger i en `await` er foreldreløs herfra.
   runSeq += 1;
   exportFormat.value = DEFAULT_EXPORT_FORMAT;
-  exportFolder.value = "";
+  exportFolder.value = null;
   includeVideo.value = false;
   exportTitle.value = "";
   exportSpeaker.value = "";
@@ -328,10 +346,29 @@ async function keepContent(
   }
 }
 
-/** «Velg mappe …». Et avbrutt valg lar det forrige stå. */
+/**
+ * «Velg mappe …». Et avbrutt valg lar det forrige stå.
+ *
+ * Velgeren er Rusts egen; svaret er en lapp og et navn (filhodet). En mappe
+ * Rust ikke godtar (en beskyttet mappe, en som forsvant mens vinduet sto
+ * åpent) blir en setning i det samme feltet som eksportens egne feil — og det
+ * forrige valget blir stående, så ingenting bytter mål i det stille. Et
+ * vellykket valg tar bort en feil som sto der: en ny mappe er svaret på den.
+ */
 export async function pickExportFolder(): Promise<void> {
-  const picked = await window.api.editorPickOutputFolder();
-  if (picked) exportFolder.value = picked;
+  const answer = await window.api.editorPickOutputFolder();
+  if (!answer.ok) {
+    exportWasCancelled.value = false;
+    exportErrorText.value = exportErrorKey(answer.error);
+    exportFailed.value = true;
+    console.warn("[export] mappevalget ble avvist:", answer.error);
+    return;
+  }
+  if (!answer.folder) return;
+  exportFolder.value = answer.folder;
+  exportErrorText.value = null;
+  exportWasCancelled.value = false;
+  exportFailed.value = false;
 }
 
 /** Legg kvitteringen bort og kom tilbake til valgene, med dem stående. */
@@ -490,7 +527,7 @@ export async function runExport(
     inputPath,
     cutRegions: E.cuts,
     duration: E.duration,
-    outputFolder: exportFolder.value,
+    outputFolderToken: exportFolder.value?.token ?? null,
     format: exportFormat.value,
     bitrate: bitrateKbps(settings.value.bitrate),
     videoFormat: VIDEO_FORMAT,
@@ -568,8 +605,10 @@ export async function runExport(
 
   if (result.ok && result.outputPath) {
     exportedPath.value = result.outputPath;
-    exportedFolder.value =
-      exportFolder.value || result.outputPath.replace(/[/\\][^/\\]*$/, "");
+    // Mappen fila FAKTISK havnet i — stien bakenden svarte med, som også er
+    // den «Vis i Finder» viser. For en valgt mappe er det den samme mappen
+    // lappen sto for (Rust bygger stien av den), så navnet er det samme.
+    exportedFolder.value = result.outputPath.replace(/[/\\][^/\\]*$/, "");
     exportedSeconds.value = keptSeconds;
     exportedBytes.value = video ? null : estimate;
     exportedLoudness.value = result.loudness ?? null;

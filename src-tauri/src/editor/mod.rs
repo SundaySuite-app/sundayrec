@@ -193,9 +193,21 @@ pub struct EditorExportRequest {
     pub duration: f64,
     /// Output container: `mp3|aac|wav|flac|mp4`.
     pub format: String,
-    /// Folder to write into; the seam renders through a temp file there and
-    /// picks the collision-free name only once the render succeeded (F2-4).
-    pub output_folder: String,
+    /// WHERE the export goes, as the webview may say it: `None` = «Samme mappe
+    /// som opptaket» (next to the source, the default), or the session token
+    /// `editor_pick_output_folder` minted when the operator picked a folder in
+    /// a dialog RUST opened. Never a path — see `commands::chosen_paths`.
+    ///
+    /// Until finding A2 this was `output_folder: String`, the path the
+    /// webview's own folder picker answered, and a compromised webview could
+    /// put any folder there with no dialog at all. An old-shape payload's
+    /// `outputFolder` is now an unknown key, which serde ignores: it lands
+    /// nowhere, and that export goes next to its source.
+    ///
+    /// The command layer resolves the token into an [`ExportFolder`] and hands
+    /// it to [`export`] separately, so the seam never sees the token either.
+    #[serde(default)]
+    pub output_folder_token: Option<String>,
     /// Output bitrate (kbps) for lossy formats; `None` uses the codec default.
     pub bitrate: Option<u32>,
     /// WAV bit depth (16/24); ignored for non-WAV.
@@ -247,6 +259,58 @@ pub struct EditorExportRequest {
     /// for ~half the size). Ignored for audio formats.
     #[serde(default)]
     pub video_codec: Option<String>,
+}
+
+/// The folder an export is written into, as the command layer resolved it.
+///
+/// Not deserialisable, on purpose: no command can take one from the webview.
+/// `commands::editor::editor_export` builds it from the request's
+/// `output_folder_token` — `None` becomes [`ExportFolder::BesideSource`], a
+/// token becomes [`ExportFolder::Picked`] only after
+/// `commands::chosen_paths` has looked it up and re-validated the folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportFolder {
+    /// «Samme mappe som opptaket» — the source file's own folder, derived from
+    /// `input_path` exactly as it always was ([`export_target`]).
+    BesideSource,
+    /// A folder the operator picked in a dialog Rust opened: canonical,
+    /// existing, guarded, as a plain string (no Windows verbatim prefix).
+    Picked(String),
+}
+
+/// Where an export of `req` into `folder` lands: the directory, and the
+/// file-name stem it gets there. Every path [`export`] writes is built from
+/// these two — the render temp now (`editor_tmp_path`), the collision-free
+/// final name once the render succeeded (`collision_free_path`).
+///
+/// Extracted from `export_claimed` when the folder stopped being a request
+/// field (finding A2), so the one thing that change must NOT move — where a
+/// «Samme mappe» export lands — is a golden test rather than a promise:
+/// [`ExportFolder::BesideSource`] goes through `resolve_output_dir` with the
+/// empty folder, exactly the call the seam made when the webview sent `""`.
+///
+/// A picked folder is used as given. The old path went through
+/// `resolve_output_dir` too, which TRIMS it — harmless for every name but one
+/// ending in a space, which it silently turned into a different folder. A
+/// canonical path from a dialog has no stray blanks to trim; its last
+/// character is part of the folder's name.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
+pub(crate) fn export_target(req: &EditorExportRequest, folder: &ExportFolder) -> (String, String) {
+    use sundayrec_core::editor::{export_stem, resolve_output_dir};
+
+    let base = Path::new(&req.input_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "redigert".into());
+    let out_dir = match folder {
+        ExportFolder::BesideSource => resolve_output_dir("", &req.input_path),
+        ExportFolder::Picked(dir) => dir.clone(),
+    };
+    // `<base>_redigert` without a title, `<YYYY-MM-DD> <title>` with one — the
+    // name an upload form offers as the episode's title. The renderer's
+    // preview (`predictedOutputName`) reads the same fixture as the core.
+    let out_stem = export_stem(&base, req.title.as_deref(), req.date.as_deref());
+    (out_dir, out_stem)
 }
 
 /// How to repair the channel layout (mirror of
@@ -1768,6 +1832,7 @@ pub const HW_ENCODE_FIRST: bool = true;
 pub async fn export<F>(
     _engine: &ExportEngine,
     _req: &EditorExportRequest,
+    _folder: &ExportFolder,
     _hw_first: bool,
     _on_progress: F,
 ) -> AppResult<EditorExportResult>
@@ -2942,6 +3007,7 @@ fn build_pre_filters(
 pub async fn export<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
+    folder: &ExportFolder,
     hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
@@ -2960,7 +3026,7 @@ where
     // long-lived managed state, the flag is per-export.
     engine.reset_cancel();
 
-    let result = export_claimed(engine, req, hw_first, on_progress).await;
+    let result = export_claimed(engine, req, folder, hw_first, on_progress).await;
     engine.forget_render_temp().await;
     result
 }
@@ -2972,6 +3038,7 @@ where
 async fn export_claimed<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
+    folder: &ExportFolder,
     hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
@@ -2982,8 +3049,8 @@ where
     use sundayrec_core::editor::{
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
         collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
-        export_stem, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
-        video_export_estimated_bytes, video_filter_complex, CutRegion, RecordingMetadata,
+        ffmetadata, is_simple_audio_export, metadata_args, video_export_estimated_bytes,
+        video_filter_complex, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
@@ -3058,15 +3125,11 @@ where
     //     complaint. The file inside the folder is picked twice — a temp name
     //     now (for ffmpeg to render into) and the collision-free FINAL name only
     //     once the render exits zero, in step 7. See `editor_tmp_path`.
-    let base = Path::new(&req.input_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "redigert".into());
-    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
-    // `<base>_redigert` without a title, `<YYYY-MM-DD> <title>` with one — the
-    // name an upload form offers as the episode's title. The renderer's
-    // preview (`predictedOutputName`) reads the same fixture as the core.
-    let out_stem = export_stem(&base, req.title.as_deref(), req.date.as_deref());
+    //
+    //     The folder is the command layer's resolved `ExportFolder` — next to
+    //     the source, or a folder a dialog Rust opened answered (A2); see
+    //     `export_target`, which also names the file.
+    let (out_dir, out_stem) = export_target(req, folder);
     let tmp_path = editor_tmp_path(&out_dir, &out_stem, fmt);
 
     //     F2-11: the recorder has had a low-disk guard since day one; the
@@ -4048,7 +4111,7 @@ mod tests {
             cut_regions: vec![],
             duration: 10.0,
             format: "mp3".into(),
-            output_folder: "/tmp".into(),
+            output_folder_token: None,
             bitrate: None,
             bit_depth: None,
             master_preset: None,
@@ -4066,7 +4129,8 @@ mod tests {
             video_codec: None,
         };
         let engine = ExportEngine::new();
-        assert!(export(&engine, &req, false, |_, _| {})
+        let folder = ExportFolder::Picked("/tmp".into());
+        assert!(export(&engine, &req, &folder, false, |_, _| {})
             .await
             .unwrap_err()
             .to_string()
@@ -5014,7 +5078,7 @@ mod tests {
             cut_regions: Vec::new(),
             duration: 2.0,
             format: "mp3".into(),
-            output_folder: picked.path().to_string_lossy().into_owned(),
+            output_folder_token: None,
             bitrate: None,
             bit_depth: None,
             master_preset: None,
@@ -5038,7 +5102,8 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", &missing);
                 std::env::set_var("SUNDAYREC_FFPROBE", &missing);
             }
-            let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
+            let folder = ExportFolder::Picked(picked.path().to_string_lossy().into_owned());
+            let result = rt.block_on(export(&engine, &req, &folder, false, |_, _| {}));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -5944,12 +6009,42 @@ mod tests {
             );
         }
 
+        /// A request and the folder the command layer resolved for it — the
+        /// two things `editor_export` hands the seam. Derefs to the request,
+        /// so a test tunes its knobs (`case.master_preset = …`) as before.
+        pub(super) struct ExportCase {
+            pub(super) req: EditorExportRequest,
+            pub(super) folder: ExportFolder,
+        }
+
+        impl std::ops::Deref for ExportCase {
+            type Target = EditorExportRequest;
+            fn deref(&self) -> &EditorExportRequest {
+                &self.req
+            }
+        }
+
+        impl std::ops::DerefMut for ExportCase {
+            fn deref_mut(&mut self) -> &mut EditorExportRequest {
+                &mut self.req
+            }
+        }
+
+        /// `""` is the «Samme mappe» default; anything else a picked folder.
+        fn folder_of(output_folder: &str) -> ExportFolder {
+            if output_folder.is_empty() {
+                ExportFolder::BesideSource
+            } else {
+                ExportFolder::Picked(output_folder.to_string())
+            }
+        }
+
         /// An export request for `input_path` into `output_folder` (pass `""`
         /// for the "Samme mappe" default), cutting the middle 0.5 s out. Carries
         /// a title so the zero-chapter metadata path (tags via `-metadata`, no
         /// FFMETADATA input) is exercised on every real export.
-        fn cut_to_mp3_request(input_path: String, output_folder: &str) -> EditorExportRequest {
-            EditorExportRequest {
+        fn cut_to_mp3_request(input_path: String, output_folder: &str) -> ExportCase {
+            let req = EditorExportRequest {
                 input_path,
                 cut_regions: vec![EditorCutRegion {
                     start: 0.75,
@@ -5957,7 +6052,7 @@ mod tests {
                 }],
                 duration: 2.0,
                 format: "mp3".into(),
-                output_folder: output_folder.to_string(),
+                output_folder_token: None,
                 bitrate: Some(128),
                 bit_depth: None,
                 master_preset: None,
@@ -5973,6 +6068,10 @@ mod tests {
                 processing: None,
                 channel_repair: None,
                 video_codec: None,
+            };
+            ExportCase {
+                req,
+                folder: folder_of(output_folder),
             }
         }
 
@@ -5984,8 +6083,8 @@ mod tests {
             format: &str,
             cuts: &[(f64, f64)],
             duration: f64,
-        ) -> EditorExportRequest {
-            EditorExportRequest {
+        ) -> ExportCase {
+            let req = EditorExportRequest {
                 input_path: input_path.to_string(),
                 cut_regions: cuts
                     .iter()
@@ -5996,7 +6095,7 @@ mod tests {
                     .collect(),
                 duration,
                 format: format.to_string(),
-                output_folder: output_folder.to_string(),
+                output_folder_token: None,
                 bitrate: None,
                 bit_depth: None,
                 master_preset: None,
@@ -6012,6 +6111,10 @@ mod tests {
                 processing: None,
                 channel_repair: None,
                 video_codec: None,
+            };
+            ExportCase {
+                req,
+                folder: folder_of(output_folder),
             }
         }
 
@@ -6216,7 +6319,7 @@ mod tests {
         fn run_export_blocking(
             ffmpeg: &std::path::Path,
             ffprobe: &std::path::Path,
-            req: &EditorExportRequest,
+            req: &ExportCase,
         ) -> (AppResult<EditorExportResult>, Ticks) {
             let engine = ExportEngine::new();
             let (ticks, on_progress) = sink();
@@ -6227,7 +6330,7 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
                 std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
             }
-            let r = rt.block_on(export(&engine, req, false, on_progress));
+            let r = rt.block_on(export(&engine, req, &req.folder, false, on_progress));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -6323,7 +6426,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&engine, &req, false, on_progress));
+                let result = rt.block_on(export(&engine, &req, &req.folder, false, on_progress));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 result.expect("editor export should succeed against the lavfi source")
             };
@@ -6431,7 +6534,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&engine, &req, false, on_progress));
+                let result = rt.block_on(export(&engine, &req, &req.folder, false, on_progress));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 result.expect("an export with the default destination must succeed")
             };
@@ -7032,7 +7135,7 @@ mod tests {
                     // 1 ms — even a spawn takes longer than that.
                     std::env::set_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE", "1");
                 }
-                let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                let result = rt.block_on(export(&engine, &req, &req.folder, false, |_, _| {}));
                 unsafe {
                     std::env::remove_var("SUNDAYREC_FFMPEG");
                     std::env::remove_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE");
@@ -7174,7 +7277,7 @@ mod tests {
                         mid_render
                     })
                 };
-                let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                let result = rt.block_on(export(&engine, &req, &req.folder, false, |_, _| {}));
                 let journalled = canceller.join().expect("the canceller thread");
                 unsafe {
                     std::env::remove_var("SUNDAYREC_FFMPEG");
@@ -7311,7 +7414,7 @@ mod tests {
             ffprobe: &std::path::Path,
             rt: &tokio::runtime::Runtime,
             engine: &ExportEngine,
-            req: &EditorExportRequest,
+            req: &ExportCase,
         ) -> AppResult<EditorExportResult> {
             let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             // SAFETY: serialised by ENV_LOCK; removed before releasing it.
@@ -7319,7 +7422,7 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
                 std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
             }
-            let r = rt.block_on(export(engine, req, false, |_, _| {}));
+            let r = rt.block_on(export(engine, req, &req.folder, false, |_, _| {}));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -7448,7 +7551,7 @@ mod tests {
                 unsafe {
                     std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
                 }
-                let mut render = Box::pin(export(&engine, &req, false, |_, _| {}));
+                let mut render = Box::pin(export(&engine, &req, &req.folder, false, |_, _| {}));
                 let wrote_something = || {
                     std::fs::metadata(&temp)
                         .map(|m| m.len() > 0)
@@ -7995,7 +8098,7 @@ mod tests {
                         std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
                         std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
                     }
-                    let r = rt.block_on(export(&engine, &req, false, |_, _| {}));
+                    let r = rt.block_on(export(&engine, &req, &req.folder, false, |_, _| {}));
                     unsafe {
                         std::env::remove_var("SUNDAYREC_FFMPEG");
                         std::env::remove_var("SUNDAYREC_FFPROBE");

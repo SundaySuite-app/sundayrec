@@ -1142,6 +1142,43 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_never_deletes_a_journalled_path_that_is_not_a_render_temp
    - VERIFIED-BY: src-tauri/src/editor/mod.rs::startup_sweep_does_not_follow_a_journalled_symlink_or_touch_a_directory
    - VERIFIED-BY: src-tauri/src/editor/export_journal.rs::a_temp_whose_folder_is_not_there_keeps_its_row_until_it_is_old
+     5e. **«Velg mappe …» is the app's own window (A2).** On Eksportering, choose
+     **«Velg mappe …»**, pick a folder (make a new one in the window too), and
+     export; then pick a USB stick, pull it out, and press **Eksporter**.
+   - **Expected:** the OS folder window opens over the app, as before, and can
+     create a folder. The card and the line over the button show the picked
+     folder's NAME («Skrivebord»), the file lands in that folder, and «Vis i
+     Finder» shows it. Cancelling the window leaves the choice as it was.
+   - **Expected:** with the stick pulled out, the export does not start and the
+     page says «Mappen du valgte, finnes ikke lenger — er disken frakoblet? …»;
+     the choice stays on the stick (nothing silently switches to «Samme
+     mappe»). Picking another folder takes the sentence away.
+   - **Expected:** «Samme mappe som opptaket» still writes next to the source,
+     with the same name as before.
+   - The webview never names the folder — Rust opens the window, the page holds
+     a token, and the token is checked again when the export uses it:
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_names_its_folder_only_by_token
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_folder_round_trips_as_a_token_and_shows_only_its_name
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_token_is_refused_with_its_own_code
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_folder_deleted_since_the_pick_is_refused
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_cancelled_pick_mints_nothing
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_path_in_the_old_field_goes_nowhere
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::resolving_refuses_a_folder_swapped_for_a_symlink_elsewhere
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_store_is_bounded_and_evicts_the_oldest_first
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::a_minted_token_resolves_to_its_place_and_only_as_its_kind
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_same_place_again_reuses_its_token
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_vet_refuses_a_protected_folder_and_a_file_in_one
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent
+   - «Samme mappe» lands exactly where it did before:
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_same_folder_export_lands_exactly_where_it_did_before
+   - The page: the name shown, the token sent, a cancel, a refusal with its own sentence:
+   - VERIFIED-BY: e2e/export-page.spec.ts::en valgt mappe er en lapp fra Rust: navnet vises, lappen sendes
+   - VERIFIED-BY: e2e/export-page.spec.ts::et avbrutt mappevalg lar «Samme mappe» stå, og ingen lapp sendes
+   - VERIFIED-BY: e2e/export-page.spec.ts::en mappe som er borte når eksporten starter, sier det med egne ord
+   - VERIFIED-BY: app/editor/export.test.ts::en mappe Rust avviser blir en setning, og målet bytter ikke i det stille
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_export_folder_refusal_has_a_sentence_in_the_renderer
+   - The OS folder window itself (parented over the app, «Ny mappe», the
+     folder it answers) needs the real app. // GUI-UNVERIFIED
 6. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
    editor (or reselect another recording) then reselect the same recording.
    - **Expected:** the cut rows are back — restored **silently** from the

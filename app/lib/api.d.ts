@@ -49,6 +49,7 @@ import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
+import type { ChosenPlace } from "../../legacy/bindings/ChosenPlace";
 
 /** `editor_export`'s wrapped result — `editorCall` (`api-shim.ts`) always adds
  *  `ok`, and only adds `error` on failure; `outputPath` is the real
@@ -260,7 +261,13 @@ declare global {
       editorExportFile: (params: unknown) => Promise<EditorExportOutcome>;
       /** Kill the in-flight export render; resolves to whether one was running. */
       editorCancelExport: () => Promise<boolean>;
-      editorPickOutputFolder: () => Promise<string | null>;
+      /** «Velg mappe …»: RUST opens the folder picker and answers with an
+       *  opaque token for the folder plus its name to show — never the path
+       *  (finding A2). `folder: null` = the operator cancelled; `ok: false`
+       *  carries the backend's error text (`export_folder_*`). */
+      editorPickOutputFolder: () => Promise<
+        { ok: true; folder: ChosenPlace | null } | { ok: false; error: string }
+      >;
       // The generated binding, not a hand-written twin — see `Suggestion` in
       // pages/editor/state.ts for what the twin cost us.
       editorDetectSegments: (

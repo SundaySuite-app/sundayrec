@@ -6,6 +6,9 @@
 
 pub mod app;
 pub mod audio;
+// A2 — places the operator picked in a native dialog RUST opened, held for the
+// webview as opaque session tokens (the editor's export folder). No path in.
+pub mod chosen_paths;
 pub mod db;
 pub mod diagnostics;
 pub mod editor;

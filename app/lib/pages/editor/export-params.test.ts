@@ -17,7 +17,7 @@ const base: ExportRequestInput = {
   inputPath: "/Users/x/Opptak/gudstjeneste.mp4",
   cutRegions: [{ start: 10, end: 20 }],
   duration: 3600,
-  outputFolder: "",
+  outputFolderToken: null,
   format: "mp3",
   bitrate: 256,
   bitDepth: 16,
@@ -25,21 +25,27 @@ const base: ExportRequestInput = {
 };
 
 describe("buildExportRequest", () => {
-  it("passes the empty default destination through as an empty string", () => {
-    // "Samme mappe" is the default pill and never picks a folder. '' is a real
-    // instruction to the backend ("next to the source"), not a missing value —
-    // sending undefined would leave the decision to the shim's fallback.
+  it("sends the default destination as an explicit null token", () => {
+    // "Samme mappe" is the default pill and never picks a folder. `null` is a
+    // real instruction to the backend ("next to the source"), not a missing
+    // value — sending undefined would leave the decision to the shim's
+    // fallback.
     const params = buildExportRequest(base);
-    expect(params.outputFolder).toBe("");
-    expect("outputFolder" in params).toBe(true);
+    expect(params.outputFolderToken).toBeNull();
+    expect("outputFolderToken" in params).toBe(true);
   });
 
-  it("passes a picked folder through untouched", () => {
+  it("passes a picked folder's token through untouched — and no path at all", () => {
+    // A2: the folder is the token Rust minted for the dialog's answer. The
+    // field that used to carry the picked PATH must not come back.
     const params = buildExportRequest({
       ...base,
-      outputFolder: "/Users/x/Skrivebord",
+      outputFolderToken: "7d3c9a1e-0b4f-4f6e-9a7e-2f1c3b5d6e8f",
     });
-    expect(params.outputFolder).toBe("/Users/x/Skrivebord");
+    expect(params.outputFolderToken).toBe(
+      "7d3c9a1e-0b4f-4f6e-9a7e-2f1c3b5d6e8f",
+    );
+    expect("outputFolder" in params).toBe(false);
   });
 
   it("never sends a mode field", () => {
@@ -165,7 +171,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       cutRegions: [{ start: 10, end: 20 }],
       duration: 3600,
       format: "mp3",
-      outputFolder: "",
+      outputFolderToken: null,
       bitrate: 256,
       bitDepth: 16,
       masterPreset: null,
@@ -199,7 +205,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       cutRegions: [{ start: 10, end: 20 }],
       duration: 3600,
       format: "mov",
-      outputFolder: "",
+      outputFolderToken: null,
       bitrate: null,
       bitDepth: null,
       masterPreset: null,
@@ -216,6 +222,23 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       channelRepair: null,
       videoCodec: "h265",
     } satisfies EditorExportRequest);
+  });
+
+  it("carries the folder token to the wire, and never a path someone slipped in", () => {
+    const picked = toEditorExportRequest(
+      "audio",
+      buildExportRequest({ ...base, outputFolderToken: "tok-skrivebord" }),
+    );
+    expect(picked.outputFolderToken).toBe("tok-skrivebord");
+    // An old-shaped param object with the PATH field the backend used to read
+    // (A2): the mapping does not carry it, so it cannot reach `editor_export`
+    // — and Rust would ignore the key if it did.
+    const legacy = toEditorExportRequest("audio", {
+      ...buildExportRequest(base),
+      outputFolder: "/Users/x/Library/LaunchAgents",
+    });
+    expect(legacy.outputFolderToken).toBeNull();
+    expect("outputFolder" in legacy).toBe(false);
   });
 
   it("carries album and date from the metadata — «Innhold»'s church name and service date", () => {

@@ -585,6 +585,98 @@ test.describe("eksportering — innhold", () => {
     );
   });
 
+  // A2: «Velg mappe …» åpnes av RUST (`editor_pick_output_folder`), og svaret
+  // hit er en lapp og et navn — aldri stien. Det som bevises utenfra: siden
+  // viser navnet der den før viste mappens siste ledd, eksporten sender
+  // LAPPEN, og feltet som før bar stien er borte fra nyttelasten.
+  test("en valgt mappe er en lapp fra Rust: navnet vises, lappen sendes", async ({
+    page,
+  }) => {
+    await openThenExport(page, {
+      editor_pick_output_folder: fn(`(args) => {
+        (window.__E2E_PICKS__ ||= []).push(args ?? null);
+        return { token: "tok-skrivebord", displayName: "Skrivebord" };
+      }`),
+    });
+
+    await page.getByTestId("editor-dest-row-pick").click();
+    await expect(page.getByTestId("editor-dest-row-pick")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    await expect(page.getByTestId("editor-dest-row-pick")).toContainText(
+      "Skrivebord",
+    );
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "Skrivebord",
+    );
+    // Velgeren får INGENTING fra siden å styre etter.
+    const picks = await page.evaluate(
+      () => (window as unknown as { __E2E_PICKS__: unknown[] }).__E2E_PICKS__,
+    );
+    expect(picks).toEqual([null]);
+
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(sent.outputFolderToken).toBe("tok-skrivebord");
+    expect("outputFolder" in sent).toBe(false);
+  });
+
+  test("et avbrutt mappevalg lar «Samme mappe» stå, og ingen lapp sendes", async ({
+    page,
+  }) => {
+    await openThenExport(page, { editor_pick_output_folder: null });
+
+    await page.getByTestId("editor-dest-row-pick").click();
+    await expect(page.getByTestId("editor-dest-row-same")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const sent = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_EXPORTS__: Record<string, unknown>[] })
+          .__E2E_EXPORTS__[0],
+    );
+    expect(sent.outputFolderToken).toBeNull();
+  });
+
+  test("en mappe som er borte når eksporten starter, sier det med egne ord", async ({
+    page,
+  }) => {
+    await openThenExport(page, {
+      editor_pick_output_folder: {
+        token: "tok-usb",
+        displayName: "USB-PINNE",
+      },
+      editor_export: fn(`() => {
+        throw { code: "validation", message: "validation: export_folder_missing: the chosen folder is no longer there" };
+      }`),
+    });
+
+    await page.getByTestId("editor-dest-row-pick").click();
+    await expect(page.getByTestId("editor-dest-row-pick")).toContainText(
+      "USB-PINNE",
+    );
+    await page.getByTestId("editor-export-go").click();
+
+    await expect(page.getByTestId("editor-export-error")).toContainText(
+      "Mappen du valgte, finnes ikke lenger",
+    );
+    // Valget står: målet bytter ikke til «Samme mappe» i det stille.
+    await expect(page.getByTestId("editor-dest-row-pick")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+  });
+
   test("tomt innhold etterlater ingen sidevogn — og visker ut en gammel", async ({
     page,
   }) => {

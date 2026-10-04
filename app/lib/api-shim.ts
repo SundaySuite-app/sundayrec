@@ -44,6 +44,7 @@ import type { RecordingRow } from "../../legacy/bindings/RecordingRow";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { ManualStartRequest } from "../../legacy/bindings/ManualStartRequest";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
+import type { ChosenPlace } from "../../legacy/bindings/ChosenPlace";
 import { toEditorExportRequest } from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
@@ -1532,7 +1533,24 @@ const api: Record<string, unknown> = {
   // button did nothing and a 90-minute render was unkillable.)
   editorCancelExport: async () =>
     call("editor_cancel_export", undefined, false),
-  editorPickOutputFolder: async () => pickPath({ directory: true }),
+  // «Velg mappe …» (A2): RUST opens the native folder picker — no argument,
+  // no path back. The answer is an opaque session token for the picked folder
+  // plus its name to show; `editor_export` takes the token
+  // (`outputFolderToken`) and resolves it in Rust, so the webview can no
+  // longer name a destination the operator never picked
+  // (src-tauri/src/commands/chosen_paths.rs). Never throws: a refusal travels
+  // as `{ ok: false, error }` so the export page can say which one it was.
+  editorPickOutputFolder: async () => {
+    try {
+      const folder = await invoke<ChosenPlace | null>(
+        "editor_pick_output_folder",
+      );
+      return { ok: true, folder: folder ?? null };
+    } catch (e) {
+      console.warn("[api-shim] editor_pick_output_folder failed", e);
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
   editorChurchDayName: async (date: string) =>
     call<string | null>("editor_church_day_name", { date }, null),
   // «Innhold» lives in the recording's `.meta.json` — the sidecar kind the

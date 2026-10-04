@@ -21,6 +21,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   ikke med profilen. En import slår heller aldri på automatisk sletting av
   opptak eller gjør tiden kortere. Før kunne en profil fra en maskin som aldri var satt opp, få
   kirke-PC-en til å ta opp fra feil lydenhet og ikke starte etter en omstart.
+- **«Velg mappe …» på Eksportering åpnes nå av appen selv.** Vinduet ser ut
+  som før, men bare en mappe du faktisk har valgt i det kan få eksporten — et
+  sikkerhetstiltak. Er mappen borte når du trykker Eksporter (en minnepinne
+  som er tatt ut), sier appen det og ber deg velge på nytt, i stedet for en
+  generell feilmelding.
 - **Forhåndssjekken på Opptak-siden sier hvilket lydkort som mangler.** Når et
   spesialopptak skal ta opp fra sitt eget lydkort og det ikke er koblet til,
   navngir raden nå lydkortet («Lydenheten «Zoom H6» for spesialopptaket er ikke

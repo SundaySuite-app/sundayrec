@@ -36,7 +36,9 @@ import {
   exportSpeaker,
   exportTitle,
   exportWasCancelled,
+  exportFolder,
   loadExportContent,
+  pickExportFolder,
   resetExport,
   runExport,
 } from "./export";
@@ -380,6 +382,109 @@ describe("runExport — én om gangen", () => {
     expect(exportFailed.value).toBe(true);
     expect(exportErrorText.value).toBe("errRecordingInProgress");
     expect(exportWasCancelled.value).toBe(false);
+  });
+});
+
+/**
+ * «Velg mappe …» (A2): Rust åpner velgeren og svarer med en LAPP og et navn.
+ * Skallet holder lappen, viser navnet, og sender lappen — aldri en sti.
+ */
+describe("mappen er en lapp fra Rust", () => {
+  /** Svaret `editor_pick_output_folder` gir denne gangen. */
+  function answerPick(answer: unknown): void {
+    (
+      window as unknown as { api: Record<string, unknown> }
+    ).api.editorPickOutputFolder = () => Promise.resolve(answer);
+  }
+
+  const PICKED = { token: "7d3c9a1e-tok", displayName: "Skrivebord" };
+
+  it("et valg gir lappen og navnet, og eksporten sender lappen — ingen sti", async () => {
+    installFakeApi(
+      Promise.resolve({ ok: true, outputPath: "/Users/k/Skrivebord/ut.mp3" }),
+    );
+    answerPick({ ok: true, folder: PICKED });
+
+    await pickExportFolder();
+    expect(exportFolder.value).toEqual(PICKED);
+
+    await runExport(120, 1_000_000);
+    expect(exportRequests[0]?.outputFolderToken).toBe("7d3c9a1e-tok");
+    expect("outputFolder" in (exportRequests[0] ?? {})).toBe(false);
+    // Kvitteringens mappe er der fila faktisk havnet.
+    expect(exportedFolder.value).toBe("/Users/k/Skrivebord");
+  });
+
+  it("«Samme mappe» sender ingen lapp", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/Opptak/ut.mp3" }));
+
+    await runExport(120, 1_000_000);
+
+    expect(exportRequests[0]?.outputFolderToken).toBeNull();
+    expect(exportedFolder.value).toBe("/Opptak");
+  });
+
+  it("et avbrutt valg lar det forrige stå", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+    answerPick({ ok: true, folder: PICKED });
+    await pickExportFolder();
+
+    answerPick({ ok: true, folder: null });
+    await pickExportFolder();
+
+    expect(exportFolder.value).toEqual(PICKED);
+    expect(exportFailed.value).toBe(false);
+  });
+
+  it("en mappe Rust avviser blir en setning, og målet bytter ikke i det stille", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+    answerPick({ ok: true, folder: PICKED });
+    await pickExportFolder();
+
+    answerPick({
+      ok: false,
+      error:
+        "validation: export_folder_refused: that folder cannot take an export",
+    });
+    await pickExportFolder();
+
+    expect(exportErrorText.value).toBe("errExportFolderRefused");
+    expect(exportFailed.value).toBe(true);
+    expect(exportFolder.value).toEqual(PICKED);
+  });
+
+  it("et vellykket valg tar bort feilen som sto der", async () => {
+    installFakeApi(
+      Promise.resolve({
+        ok: false,
+        error:
+          "validation: export_folder_missing: the chosen folder is no longer there",
+      }),
+    );
+    answerPick({ ok: true, folder: PICKED });
+    await pickExportFolder();
+    await runExport(120, 1_000_000);
+    expect(exportErrorText.value).toBe("errExportFolderMissing");
+
+    answerPick({
+      ok: true,
+      folder: { token: "ny-lapp", displayName: "USB-PINNE" },
+    });
+    await pickExportFolder();
+
+    expect(exportFailed.value).toBe(false);
+    expect(exportErrorText.value).toBeNull();
+    expect(exportFolder.value?.displayName).toBe("USB-PINNE");
+  });
+
+  it("en ny fil glemmer valget", async () => {
+    installFakeApi(Promise.resolve({ ok: true, outputPath: "/ut.mp3" }));
+    answerPick({ ok: true, folder: PICKED });
+    await pickExportFolder();
+
+    resetExport();
+
+    expect(exportFolder.value).toBeNull();
   });
 });
 

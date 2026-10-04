@@ -43,9 +43,10 @@ use sqlx::SqlitePool;
 use sundayrec_core::lang::Lang;
 use sundayrec_core::settings::Settings;
 use tauri::State;
-use tauri_plugin_dialog::{DialogExt, FilePath};
+use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
+use super::chosen_paths::dialog_answer;
 use super::path_guard::{self, PathPolicy};
 use super::recordings_open::vet_new_save_folder;
 use crate::db::Db;
@@ -246,7 +247,7 @@ async fn ask_where_to_save(window: &tauri::Window, lang: Lang) -> AppResult<Opti
             // then there is nobody left to tell.
             let _ = tx.send(answer);
         });
-    picked_path(rx.await)
+    dialog_answer(rx.await, PROFILE_DIALOG_FAILED)
 }
 
 /// Ask which profile to import: a native OPEN dialog over `window` with the
@@ -268,30 +269,13 @@ async fn ask_which_to_open(window: &tauri::Window, lang: Lang) -> AppResult<Opti
         .pick_file(move |answer| {
             let _ = tx.send(answer);
         });
-    picked_path(rx.await)
+    dialog_answer(rx.await, PROFILE_DIALOG_FAILED)
 }
 
-/// What a dialog's answer means here: `None` is a cancel, a path is the
-/// operator's pick — and a dialog that went away WITHOUT answering is an error.
-/// The plugin drops its callback when it cannot reach the main thread (the app
-/// is quitting); a silent «cancelled» would make an export that never happened
-/// look like one nobody asked for.
-fn picked_path(
-    answer: Result<Option<FilePath>, oneshot::error::RecvError>,
-) -> AppResult<Option<PathBuf>> {
-    match answer {
-        Ok(None) => Ok(None),
-        Ok(Some(file)) => file.simplified().into_path().map(Some).map_err(|_| {
-            AppError::Internal(
-                "profile_dialog_failed: the dialog answered with something that is not a local file"
-                    .into(),
-            )
-        }),
-        Err(_) => Err(AppError::Internal(
-            "profile_dialog_failed: the file dialog closed without answering".into(),
-        )),
-    }
-}
+/// The code a profile dialog that closed without answering fails with. The
+/// answer itself is `commands::chosen_paths::dialog_answer`, shared with the
+/// export folder's picker.
+const PROFILE_DIALOG_FAILED: &str = "profile_dialog_failed";
 
 /// The profile filter's name, in the UI language. It moved here from the
 /// renderer's catalogue (`app.dialog.filter.settingsProfile`) together with the
@@ -943,26 +927,6 @@ mod tests {
             );
         }
         assert_eq!(settings::load(&pool).await.unwrap(), stored);
-    }
-
-    #[test]
-    fn a_dialog_answer_is_a_pick_a_cancel_or_an_error() {
-        assert_eq!(picked_path(Ok(None)).unwrap(), None, "cancel");
-        let pick = std::env::temp_dir().join("profil.json");
-        assert_eq!(
-            picked_path(Ok(Some(FilePath::Path(pick.clone())))).unwrap(),
-            Some(pick),
-            "a pick is the path, as picked"
-        );
-        // A dialog that went away without answering is NOT a quiet cancel.
-        let (tx, rx) = oneshot::channel::<Option<FilePath>>();
-        drop(tx);
-        match picked_path(rx.blocking_recv()) {
-            Err(AppError::Internal(msg)) => {
-                assert!(msg.starts_with("profile_dialog_failed"), "{msg}")
-            }
-            other => panic!("expected profile_dialog_failed, got {other:?}"),
-        }
     }
 
     #[test]
