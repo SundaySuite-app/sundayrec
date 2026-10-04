@@ -345,7 +345,7 @@
         "export": "Eksportuj",
         "import": "Importuj",
         "importTitle": "Zaimportować ustawienia?",
-        "importBody": "To zastąpi ustawienia na tym komputerze zawartością wybranego pliku. Nagrania, biblioteka i hasła pozostaną nietknięte.",
+        "importBody": "To zastąpi ustawienia na tym komputerze zawartością wybranego pliku. Urządzenie audio, kamera, folder nagrań i „Uruchamiaj razem z komputerem” pozostaną takie jak tutaj. Nagrania, biblioteka i hasła pozostaną nietknięte.",
         "importConfirm": "Tak, importuj",
         "exported": "Ustawienia zostały wyeksportowane.",
         "exportFailed": "Nie udało się wyeksportować ustawień: {err}",

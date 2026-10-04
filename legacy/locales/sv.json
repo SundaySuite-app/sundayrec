@@ -339,7 +339,7 @@
         "export": "Exportera",
         "import": "Importera",
         "importTitle": "Importera inställningar?",
-        "importBody": "Det här ersätter inställningarna på den här datorn med innehållet i filen du väljer. Inspelningar, biblioteket och lösenord rörs inte.",
+        "importBody": "Det här ersätter inställningarna på den här datorn med innehållet i filen du väljer. Ljudenhet, kamera, inspelningsmapp och ”Starta automatiskt med datorn” förblir som de är här. Inspelningar, biblioteket och lösenord rörs inte.",
         "importConfirm": "Ja, importera",
         "exported": "Inställningarna exporterades.",
         "exportFailed": "Kunde inte exportera inställningarna: {err}",

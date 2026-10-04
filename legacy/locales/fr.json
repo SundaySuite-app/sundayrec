@@ -339,7 +339,7 @@
         "export": "Exporter",
         "import": "Importer",
         "importTitle": "Importer les réglages ?",
-        "importBody": "Cela remplace les réglages de cet ordinateur par le contenu du fichier que vous choisissez. Les enregistrements, la bibliothèque et les mots de passe ne sont pas touchés.",
+        "importBody": "Cela remplace les réglages de cet ordinateur par le contenu du fichier que vous choisissez. Le périphérique audio, la caméra, le dossier des enregistrements et « Lancer automatiquement avec l’ordinateur » restent tels qu’ils sont ici. Les enregistrements, la bibliothèque et les mots de passe ne sont pas touchés.",
         "importConfirm": "Oui, importer",
         "exported": "Les réglages ont été exportés.",
         "exportFailed": "Impossible d’exporter les réglages : {err}",

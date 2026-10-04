@@ -339,7 +339,7 @@
         "export": "Exportieren",
         "import": "Importieren",
         "importTitle": "Einstellungen importieren?",
-        "importBody": "Das ersetzt die Einstellungen auf diesem Computer durch den Inhalt der Datei, die Sie auswählen. Aufnahmen, die Bibliothek und Passwörter bleiben unberührt.",
+        "importBody": "Das ersetzt die Einstellungen auf diesem Computer durch den Inhalt der Datei, die Sie auswählen. Audiogerät, Kamera, Aufnahmeordner und „Automatisch mit dem Computer starten“ bleiben, wie sie hier sind. Aufnahmen, die Bibliothek und Passwörter bleiben unberührt.",
         "importConfirm": "Ja, importieren",
         "exported": "Die Einstellungen wurden exportiert.",
         "exportFailed": "Die Einstellungen konnten nicht exportiert werden: {err}",

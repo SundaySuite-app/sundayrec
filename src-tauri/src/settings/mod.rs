@@ -18,6 +18,10 @@ use crate::error::AppResult;
 /// The one-time clean-up after e-mail alerts were removed (run from `setup`).
 pub mod email_cleanup;
 
+/// What a settings profile file carries, and what it never does.
+pub mod profile;
+pub use profile::{export_profile, import_profile};
+
 /// The `app_setting` key the whole settings blob lives under.
 pub const SETTINGS_KEY: &str = "settings";
 
@@ -125,14 +129,6 @@ pub async fn reset(pool: &SqlitePool) -> AppResult<Settings> {
     save(pool, Settings::default()).await
 }
 
-/// Export the current (validated) settings as pretty-printed JSON. The file it
-/// becomes is `commands::settings`' business: the dialog Rust opens, the guard
-/// and the write all live there, next to each other (finding A1).
-pub async fn export(pool: &SqlitePool) -> AppResult<String> {
-    let settings = load(pool).await?;
-    Ok(serde_json::to_string_pretty(&settings)?)
-}
-
 /// Import a (possibly partial/older) settings JSON: merge over defaults,
 /// validate, persist, and return the stored value. Mirrors the Electron
 /// `importProfile` resilience — a partial or unknown-field blob is accepted,
@@ -141,8 +137,8 @@ pub async fn export(pool: &SqlitePool) -> AppResult<String> {
 /// Its one caller is the one-shot localStorage hand-over
 /// (`app/lib/migrate-legacy-settings.ts`, via `settings_import`), which runs
 /// on an install that has stored nothing yet. A profile FILE goes through
-/// [`import_profile`], which merges over what IS stored instead — see there
-/// for why the two differ.
+/// [`import_profile`], which lays the file over what IS stored instead — see
+/// the [`profile`] module for why the two differ.
 ///
 /// The hand-over is a renderer write too, so a NEW save folder in it must pass
 /// `vet`. Unlike [`save_from_renderer`] a refusal does not fail the import: the
@@ -159,113 +155,6 @@ pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<
         }
     }
     save(pool, merged).await
-}
-
-/// Import a settings PROFILE — a file the operator picked — onto this machine:
-/// the file's settings replace the ones stored here, field by field, and what
-/// the file does not carry stays as it is. Returns the stored value.
-///
-/// ## Why not [`import`]'s merge-over-defaults
-///
-/// [`import`] rebuilds the whole object from the blob and the DEFAULTS. That
-/// is right for the hand-over, which runs before anything is stored, and wrong
-/// for a file picked on a machine that has been recording for a year: any file
-/// that is not a settings object — a recording, a PDF, a `package.json` picked
-/// by mistake — merged to the full defaults (`from_json_merged` falls back to
-/// them), so the save folder, the language and the SCHEDULE were wiped, and the
-/// toast said «Innstillingene ble importert». A real profile that merely
-/// omitted a field reset that field the same way. So a profile is laid over
-/// the STORED settings instead ([`overlay_profile`]), and a file that names
-/// none of them is refused with `profile_not_settings`, nothing written.
-///
-/// ## Three things a profile never takes away
-///
-/// - **The save folder.** A NEW folder must pass `vet`; refused, the stored one
-///   is kept (#308). A blank or absent one is not a choice either: the
-///   exporting machine simply had none set, and this one must not stop
-///   recording where it does today because of a file it read.
-/// - **The weekly schedule** (`slots`) and **the special recordings**. An
-///   EMPTY list in the file keeps this machine's. An exported profile always
-///   carries both keys, so "the file has a schedule key" would not protect the
-///   case that matters — a profile exported from a laptop that was never set
-///   up, imported on the church PC on Saturday evening. A schedule is cleared
-///   in the schedule card, where the operator can see it go, not by a file.
-///   (A non-empty list does replace the stored one: carrying the schedule to
-///   the second machine is what the feature is for.)
-pub async fn import_profile(pool: &SqlitePool, text: &str, vet: FolderVet) -> AppResult<Settings> {
-    let stored = load(pool).await?;
-    let mut merged = overlay_profile(&stored, text)?;
-
-    let asked = new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
-        .map(str::to_owned);
-    match asked {
-        None => merged.save_folder = stored.save_folder.clone(),
-        Some(folder) => {
-            if let Err(e) = vet_off_runtime(vet, &folder).await {
-                tracing::warn!(code = %e, "a profile's save folder was refused; the stored one is kept");
-                merged.save_folder = stored.save_folder.clone();
-            }
-        }
-    }
-    if merged.slots.is_empty() {
-        merged.slots = stored.slots;
-    }
-    if merged.special_recordings.is_empty() {
-        merged.special_recordings = stored.special_recordings;
-    }
-    save(pool, merged).await
-}
-
-/// Lay a profile file's fields over `stored`, ONE FIELD AT A TIME: each known
-/// key the file carries replaces the stored value if the result still reads as
-/// [`Settings`], and is skipped (the stored value kept) if it does not. So one
-/// value an older or newer version wrote differently — an enum variant that no
-/// longer exists — costs that field, not the import, and never the rest of the
-/// settings. Unknown keys (fields an older version had, or keys that were never
-/// ours) are ignored.
-///
-/// Refused with `profile_not_settings` — the stable code the renderer
-/// translates — when the text is not a JSON object, or when not one known
-/// field in it could be read: that is not a profile, whatever its name says.
-/// "At least one known field" is deliberately the whole shape check. Because
-/// a file can only change the fields it names, a stricter test (a minimum
-/// count, a marker key) would buy no safety, and it would refuse the
-/// hand-trimmed profile a helper sends with just the schedule in it.
-pub(crate) fn overlay_profile(stored: &Settings, text: &str) -> AppResult<Settings> {
-    use serde::Deserialize;
-    use serde_json::Value;
-
-    let not_settings =
-        |why: &str| crate::error::AppError::Validation(format!("profile_not_settings: {why}"));
-    let Ok(Value::Object(file)) = serde_json::from_str::<Value>(text) else {
-        return Err(not_settings("the file is not a JSON object"));
-    };
-    let mut merged = serde_json::to_value(stored)?;
-    let mut applied = 0usize;
-    let mut skipped = Vec::new();
-    for (key, value) in file {
-        // `Settings` serialises every field, so the stored object's keys ARE
-        // the known keys.
-        if merged.get(&key).is_none() {
-            continue;
-        }
-        let mut trial = merged.clone();
-        trial[&key] = value;
-        if Settings::deserialize(&trial).is_ok() {
-            merged = trial;
-            applied += 1;
-        } else {
-            skipped.push(key);
-        }
-    }
-    if applied == 0 {
-        return Err(not_settings("no setting in the file could be read"));
-    }
-    if !skipped.is_empty() {
-        // Field NAMES only — never a value from the file.
-        tracing::warn!(fields = ?skipped, "a profile's unreadable fields were skipped; this machine's values are kept");
-    }
-    Ok(Settings::deserialize(&merged)?)
 }
 
 #[cfg(test)]
@@ -420,68 +309,6 @@ mod tests {
         assert_eq!(moved.save_folder.as_deref(), Some("/Volumes/Ny"));
     }
 
-    // ── overlay_profile: a profile is laid over what is stored ──────────────
-
-    fn stored_mono_sv() -> Settings {
-        Settings {
-            language: Some("sv".into()),
-            channels: ChannelMode::MonoMix,
-            silence_threshold: -40,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn a_profile_changes_only_the_fields_it_names() {
-        let stored = stored_mono_sv();
-        let merged = overlay_profile(&stored, r#"{ "language": "en" }"#).unwrap();
-        assert_eq!(
-            merged,
-            Settings {
-                language: Some("en".into()),
-                ..stored
-            }
-        );
-    }
-
-    #[test]
-    fn an_unreadable_field_costs_that_field_not_the_import() {
-        // One value another version wrote differently: that field keeps this
-        // machine's value, the rest of the file is still taken.
-        let stored = stored_mono_sv();
-        let merged = overlay_profile(
-            &stored,
-            r#"{ "channels": "quadrophonic", "language": "en", "silenceThreshold": "loud" }"#,
-        )
-        .unwrap();
-        assert_eq!(merged.channels, ChannelMode::MonoMix);
-        assert_eq!(merged.silence_threshold, -40);
-        assert_eq!(merged.language.as_deref(), Some("en"));
-    }
-
-    #[test]
-    fn unknown_keys_are_ignored_and_a_file_of_only_unknown_keys_is_not_a_profile() {
-        let stored = stored_mono_sv();
-        // `hasLaunched` left in v0.15; an old profile still carries it.
-        let merged =
-            overlay_profile(&stored, r#"{ "hasLaunched": true, "language": "de" }"#).unwrap();
-        assert_eq!(merged.language.as_deref(), Some("de"));
-        for text in [
-            r#"{ "hasLaunched": true }"#,
-            "{}",
-            "[]",
-            "null",
-            "",
-            "not json",
-        ] {
-            let err = overlay_profile(&stored, text).unwrap_err();
-            assert!(
-                err.to_string().contains("profile_not_settings"),
-                "{text:?}: {err}"
-            );
-        }
-    }
-
     /// A pool over a temp-dir database file, fully migrated.
     async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -571,7 +398,7 @@ mod tests {
         };
         save(&pool, s.clone()).await.unwrap();
 
-        let json = export(&pool).await.unwrap();
+        let json = export_profile(&pool).await.unwrap();
         assert!(json.contains("\"language\""));
 
         // Fresh database — import the exported JSON.
