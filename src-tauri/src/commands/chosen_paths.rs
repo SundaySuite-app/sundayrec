@@ -42,8 +42,10 @@
 //! - **Session-scoped.** The map lives in memory: a restart forgets every
 //!   token, so a token can never outlive the operator's own sense of «I picked
 //!   that folder just now». Nothing is persisted.
-//! - **Bounded** ([`CHOSEN_PATHS_MAX`]), oldest evicted first, so a process
-//!   that runs for weeks cannot grow it without limit. Picking the same place again reuses its token and makes it
+//! - **Bounded** ([`CHOSEN_PATHS_MAX`]), least recently USED evicted first, so a
+//!   process that runs for weeks cannot grow it without limit. Minting a place
+//!   and resolving its token both make it the newest, so what is in use stays and
+//!   what was picked once and forgotten goes. Picking the same place again reuses its token and makes it
 //!   the newest — «the same place» being the exact canonical path, not a
 //!   case-folded spelling of it (two folders that differ only in case are two
 //!   folders on a case-sensitive disk).
@@ -236,7 +238,37 @@ impl ChosenPaths {
         home: Option<&Path>,
     ) -> Result<PathBuf, ChosenError> {
         let minted = self.lookup(token, kind)?;
-        revalidate(&minted, kind, home)
+        let place = revalidate(&minted, kind, home)?;
+        // A token that was just USED is the newest, so a long session evicts
+        // the places nobody asks for any more — not the export folder the
+        // operator has been exporting into since the morning. Only a place that
+        // passed the check counts as used: a token that keeps failing does not
+        // stay alive by being asked for.
+        self.touch(token, kind);
+        Ok(place)
+    }
+
+    /// How many places the store holds — for the tests that must see that a
+    /// refusal minted nothing.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.chosen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    /// Move `token` to the back of the store — the newest, the last to be
+    /// evicted. The eviction takes the front ([`ChosenPaths::mint`]).
+    fn touch(&self, token: &str, kind: ChosenKind) {
+        let mut chosen = self.chosen.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(i) = chosen
+            .iter()
+            .position(|c| c.kind == kind && c.token == token)
+        {
+            let used = chosen.remove(i);
+            chosen.push(used);
+        }
     }
 
     /// The place `token` was minted for, as it was minted — NOT checked. Private
@@ -282,6 +314,11 @@ pub(crate) fn vet_for_home(
         return Err(ChosenError::Gone);
     }
     let plain = plain_string(&canonical).ok_or(ChosenError::Refused)?;
+    // The plain spelling is what ffmpeg and the file manager get, so it must
+    // name the very place that was vetted — see [`plain_names_the_same_place`].
+    if !plain_names_the_same_place(&canonical, &plain, |p| p.canonicalize()) {
+        return Err(ChosenError::Refused);
+    }
     let guarded = match kind {
         ChosenKind::Folder => path_guard::checked_path_for_home(&plain, home),
         ChosenKind::File | ChosenKind::Export => {
@@ -321,6 +358,28 @@ fn revalidate(
 /// ffmpeg and the file manager expect.
 pub fn plain_string(canonical: &Path) -> Option<String> {
     canonical.to_str().map(strip_verbatim)
+}
+
+/// Whether the plain spelling of `canonical` ([`plain_string`]) names the very
+/// place that was canonicalised: `canon` of the plain path must give `canonical`
+/// back. Win32 path parsing drops trailing dots and spaces, so the verbatim
+/// `\\?\C:\Opptak\setup.exe.` (a name only the verbatim form can spell) and its
+/// plain `C:\Opptak\setup.exe` are two different things — and a place handed to
+/// ffmpeg or the file manager in the plain form would be the wrong one. When the
+/// two spellings differ and do not meet, the place is refused: there is no plain
+/// name for it, and a verbatim one is not what the seams take. When stripping
+/// changed nothing (everywhere but Windows) there is nothing to check.
+/// `canon` is `canonicalize` in production, and a stand-in in the test that
+/// plays Windows on any OS (`openable_folder` makes the same check).
+fn plain_names_the_same_place(
+    canonical: &Path,
+    plain: &str,
+    canon: impl Fn(&Path) -> std::io::Result<PathBuf>,
+) -> bool {
+    if canonical.to_str() == Some(plain) {
+        return true;
+    }
+    canon(Path::new(plain)).is_ok_and(|again| again == canonical)
 }
 
 /// The name the page shows for a place: its last component («Skrivebord») —
@@ -560,6 +619,77 @@ mod tests {
         };
         assert_ne!(store.mint(upper), store.mint(lower));
         assert_eq!(store.chosen.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn the_token_that_was_used_last_survives_the_eviction_not_the_one_minted_last() {
+        // Evicting by AGE would drop the export folder the operator has been
+        // exporting into all morning, and keep one picked once a minute ago.
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChosenPaths::new();
+        let place = |n: &str| folder(dir.path(), n);
+        let first = mint_for(&store, &place("f0"), ChosenKind::Folder);
+        let second = mint_for(&store, &place("f1"), ChosenKind::Folder);
+        for i in 2..CHOSEN_PATHS_MAX {
+            mint_for(&store, &place(&format!("f{i}")), ChosenKind::Folder);
+        }
+        assert_eq!(store.chosen.lock().unwrap().len(), CHOSEN_PATHS_MAX);
+        // The oldest is USED now, so it is the newest.
+        assert!(resolve_plain(&store, &first, ChosenKind::Folder).is_ok());
+        // One more place: the store is full, and the front goes — `second`.
+        mint_for(&store, &place("one-more"), ChosenKind::Folder);
+        assert_eq!(
+            resolve_plain(&store, &second, ChosenKind::Folder),
+            Err(ChosenError::Unknown),
+            "the least recently USED place was evicted"
+        );
+        assert!(
+            resolve_plain(&store, &first, ChosenKind::Folder).is_ok(),
+            "the oldest minted, but just used, stays"
+        );
+    }
+
+    #[test]
+    fn a_token_that_fails_its_check_is_not_refreshed_by_being_asked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChosenPaths::new();
+        let gone = folder(dir.path(), "borte");
+        let token = mint_for(&store, &gone, ChosenKind::Folder);
+        mint_for(&store, &folder(dir.path(), "annen"), ChosenKind::Folder);
+        std::fs::remove_dir(&gone).unwrap();
+        assert_eq!(
+            resolve_plain(&store, &token, ChosenKind::Folder),
+            Err(ChosenError::Gone)
+        );
+        assert_eq!(
+            store.chosen.lock().unwrap()[0].token,
+            token,
+            "a failed resolve leaves the order alone"
+        );
+    }
+
+    #[test]
+    fn a_plain_spelling_that_names_another_place_is_refused() {
+        // Windows, played on any OS: the verbatim name ends in a dot, which the
+        // plain spelling loses — so the plain path is a different file.
+        let verbatim = Path::new(r"\\?\C:\Opptak\setup.exe.");
+        let plain = strip_verbatim(verbatim.to_str().unwrap());
+        assert_eq!(plain, r"C:\Opptak\setup.exe.");
+        let elsewhere = |_: &Path| Ok(PathBuf::from(r"\\?\C:\Opptak\setup.exe"));
+        assert!(!plain_names_the_same_place(verbatim, &plain, elsewhere));
+        // …a plain path that is not there at all …
+        let missing = |_: &Path| Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+        assert!(!plain_names_the_same_place(verbatim, &plain, missing));
+        // …the ordinary case, where it comes back to the same place …
+        let same = |_: &Path| Ok(PathBuf::from(r"\\?\C:\Opptak\setup.exe."));
+        assert!(plain_names_the_same_place(verbatim, &plain, same));
+        // …and a path stripping changed nothing about is not even asked.
+        let never = |_: &Path| -> std::io::Result<PathBuf> { panic!("nothing to check") };
+        assert!(plain_names_the_same_place(
+            Path::new("/Users/kari/Opptak"),
+            "/Users/kari/Opptak",
+            never
+        ));
     }
 
     #[test]

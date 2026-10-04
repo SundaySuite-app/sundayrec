@@ -145,6 +145,7 @@
         "refusedPackage": "That folder is an app or a package (like a Keynote or Logic project), not an ordinary folder. Choose another folder.",
         "refusedTooBroad": "Choose a folder inside your home folder, for example “SundayRec” in Documents – not the home folder itself or the root of the disk.",
         "refusedProtected": "That folder is protected and can’t be used for recordings. Choose another folder.",
+        "refusedAppData": "That folder is the app’s own data folder, or is inside it, and can’t be used for recordings. Choose another folder.",
         "refusedInvalid": "That folder can’t be used for recordings. Choose another folder."
       },
       "qualityLede": "Higher quality means bigger files. Most people stay on Good.",

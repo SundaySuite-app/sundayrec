@@ -145,6 +145,7 @@
         "refusedPackage": "Den mappen är en app eller ett paket (som ett Keynote- eller Logic-projekt), inte en vanlig mapp. Välj en annan mapp.",
         "refusedTooBroad": "Välj en mapp i hemmappen, till exempel ”SundayRec” i Dokument – inte själva hemmappen eller roten på disken.",
         "refusedProtected": "Den mappen är skyddad och kan inte användas för inspelningar. Välj en annan mapp.",
+        "refusedAppData": "Den mappen är appens egen datamapp, eller ligger i den, och kan inte användas för inspelningar. Välj en annan mapp.",
         "refusedInvalid": "Den mappen kan inte användas för inspelningar. Välj en annan mapp."
       },
       "qualityLede": "Högre kvalitet ger större filer. De flesta blir kvar på Bra.",

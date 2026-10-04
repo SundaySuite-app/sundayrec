@@ -148,11 +148,7 @@ import {
   isRecording,
   markSessionStarted,
 } from "../../state/recording";
-import {
-  lastRecording,
-  loadRecordingCount,
-  recordings,
-} from "../../state/recordings";
+import { lastRecording, loadRecordingCount } from "../../state/recordings";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -172,7 +168,7 @@ import {
   resumeCameraPreview,
 } from "../../ui/CameraPreview/ownership";
 import { alertDialog } from "../../ui/dialog";
-import { reveal, revealResult } from "../../ui/reveal";
+import { reveal } from "../../ui/reveal";
 import { toast } from "../../ui/toast";
 import { spanText } from "./span-text";
 import { confirmAndStop } from "./stop";
@@ -1009,45 +1005,19 @@ function LastRecordingCard() {
  * mot nærmeste kant, og ville flyttet kortet vekk fra midten igjen.
  */
 /**
- * «Rediger» på kvitteringen. Opptaket åpnes ved sin RAD i historikken (A2: Rust
- * vet fila, siden sender ingen sti) — og raden kan mangle et øyeblikk etter at
- * opptaket ble ferdig, før `loadRecordingCount()` har lest den. Så: finn den i
- * lista, les lista på nytt hvis den ikke står der, og åpne. Finnes den fortsatt
- * ikke, sier Rediger «Kunne ikke åpne opptaket» i stedet for å tie.
+ * Raden kvitteringens «Rediger» og «Vis i Finder» handler på — den EKTE veien
+ * inn i begge, som navngir en rad og aldri en sti (A2, B-familien). Rust skrev
+ * raden rett før `recording://finished` og la id-en i hendelsen; at den ikke
+ * er der betyr at raden ikke ble skrevet, og da finnes ingenting å handle på.
+ * Som reserve (en hendelse uten id) kan historikken ha lest raden inn mens
+ * kvitteringen sto: samme fil, samme rad. Aldri en søk på stien etterpå.
  */
-async function editFinished(
-  path: string,
-  startedAtMs: number | null,
-): Promise<void> {
-  openInEditor(await rowIdFor(path), startedAtMs, basename(path));
-}
-
-/**
- * Historikkradens id for opptaket som nettopp ble ferdig — den EKTE veien inn i
- * «Rediger» og «Vis i Finder», som begge navngir en rad og aldri en sti (A2,
- * B-familien). Radens fil kjenner Rust; stien her er bare det `recording-
- * finished`-hendelsen sa, og brukes til å finne raden i lista.
- */
-async function rowIdFor(path: string): Promise<string | undefined> {
-  const idOf = (): string | undefined =>
-    recordings.peek()?.find((r) => r.path === path)?.id;
-  let id = idOf();
-  if (!id) {
-    await loadRecordingCount();
-    id = idOf();
-  }
-  return id;
-}
-
-/** «Vis i Finder» på kvitteringen: raden først, så Rust. Finnes ingen rad,
- *  er det ingenting å vise — og knappen sier det, i stedet for å tie. */
-async function revealFinished(path: string): Promise<void> {
-  const id = await rowIdFor(path);
-  if (!id) {
-    await revealResult(false, t("app.done.revealFailed"));
-    return;
-  }
-  await reveal(id);
+function finishedRowId(
+  finished: { path: string; recordingId: string | null },
+  loaded: { path?: string; id?: string | null } | null | undefined,
+): string | null {
+  if (finished.recordingId) return finished.recordingId;
+  return loaded?.path === finished.path ? (loaded.id ?? null) : null;
 }
 
 function Done() {
@@ -1077,6 +1047,7 @@ function Done() {
   if (!finished) return null;
 
   const row = rows?.path === finished.path ? rows : null;
+  const rowId = finishedRowId(finished, rows);
   // Se `LastRecordingCard`: 0 er «ukjent», ikke «null sekunder».
   const span = spanOfSeconds(row?.durationSec || null);
   const size = formatBytes(row?.fileSizeBytes ?? null, locale.value);
@@ -1096,13 +1067,20 @@ function Done() {
         {row?.filename ?? basename(finished.path)}
       </div>
       <div class={styles.row}>
+        {/*
+          Uten rad finnes ingenting å åpne eller vise, og knappene sier det
+          (som i biblioteket) i stedet for å lukke seg uten et ord.
+        */}
         <Button
           variant="primary"
+          disabled={!rowId}
+          disabledReason={t("app.done.revealFailed")}
           testId="record-done-edit"
           onClick={() =>
-            void editFinished(
-              finished.path,
+            openInEditor(
+              rowId ?? undefined,
               row?.startedAt ?? row?.timestamp ?? null,
+              basename(finished.path),
             )
           }
         >
@@ -1110,8 +1088,10 @@ function Done() {
         </Button>
         <Button
           variant="secondary"
+          disabled={!rowId}
+          disabledReason={t("app.done.revealFailed")}
           testId="record-done-reveal"
-          onClick={() => void revealFinished(finished.path)}
+          onClick={() => void reveal(rowId)}
         >
           {t("app.done.show")}
         </Button>

@@ -12,4 +12,12 @@ file_path: string,
 /**
  * Whether it is a video (mp4) recording.
  */
-has_video: boolean, };
+has_video: boolean, 
+/**
+ * The id of the recording's history row, written by the recorder just
+ * before this event. The receipt's «Rediger» and «Vis i Finder» name a ROW,
+ * never a path, so the page needs this and nothing else to act; `None` only
+ * when the row could not be written or read, and the receipt then says so
+ * instead of offering buttons that cannot work.
+ */
+recording_id: string | null, };

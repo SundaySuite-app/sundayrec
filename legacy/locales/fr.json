@@ -145,6 +145,7 @@
         "refusedPackage": "Ce dossier est une app ou un paquet (comme un projet Keynote ou Logic), pas un dossier ordinaire. Choisissez un autre dossier.",
         "refusedTooBroad": "Choisissez un dossier à l’intérieur de votre dossier personnel, par exemple « SundayRec » dans Documents – pas le dossier personnel lui-même ni la racine du disque.",
         "refusedProtected": "Ce dossier est protégé et ne peut pas servir aux enregistrements. Choisissez un autre dossier.",
+        "refusedAppData": "Ce dossier est le dossier de données de l’application, ou se trouve à l’intérieur, et ne peut pas servir aux enregistrements. Choisissez un autre dossier.",
         "refusedInvalid": "Ce dossier ne peut pas servir aux enregistrements. Choisissez un autre dossier."
       },
       "qualityLede": "Une qualité plus élevée donne des fichiers plus gros. La plupart des gens restent sur Bonne.",

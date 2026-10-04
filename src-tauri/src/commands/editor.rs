@@ -205,9 +205,45 @@ pub(crate) async fn open_source<G>(
 where
     G: FnOnce(&Path) -> AppResult<()>,
 {
+    open_vetted_source(chosen, place, grant, false).await
+}
+
+/// Whether `place` ends in an extension the editor's open dialog offers
+/// ([`AUDIO_EXT`], [`VIDEO_EXT`]) — compared without regard to case, as a file
+/// manager shows `OPPTAK.MP3`.
+fn has_media_extension(place: &Path) -> bool {
+    place
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|e| AUDIO_EXT.iter().chain(VIDEO_EXT).any(|m| *m == e))
+}
+
+/// [`open_source`], and `only_media`: a place that is not an audio or video file
+/// by its name is refused (`source_refused`) AFTER it has been vetted and
+/// BEFORE the webview's `asset://` scope is widened to it or a token is minted.
+///
+/// The drop handler asks for it. A file the operator PICKS has been looked for
+/// in a dialog that says what it offers (and whose «all files» filter is a
+/// deliberate choice), but a drop is anything the OS was handed — and a dropped
+/// `.cmd` or key file would otherwise become readable by the page through
+/// `asset://`. The name is judged on the CANONICAL file, so a `take.mp3` that is
+/// a link to a file that is not media is not media.
+async fn open_vetted_source<G>(
+    chosen: &ChosenPaths,
+    place: PathBuf,
+    grant: G,
+    only_media: bool,
+) -> AppResult<OpenedRecording>
+where
+    G: FnOnce(&Path) -> AppResult<()>,
+{
     let vetted = off_runtime(move || chosen_paths::vet(&place, ChosenKind::File))
         .await?
         .map_err(source_error)?;
+    if only_media && !has_media_extension(vetted.place()) {
+        return Err(source_error(ChosenError::Refused));
+    }
     let plain = chosen_paths::plain_string(vetted.place())
         .ok_or_else(|| source_error(ChosenError::Refused))?;
     editor::allow_asset_path(&plain, grant)?;
@@ -346,7 +382,7 @@ pub(crate) async fn dropped_recording<G>(
 where
     G: FnOnce(&Path) -> AppResult<()>,
 {
-    let (opened, error) = match open_source(chosen, file, grant).await {
+    let (opened, error) = match open_vetted_source(chosen, file, grant, true).await {
         Ok(opened) => (Some(opened), None),
         Err(e) => (None, Some(leading_code(&e))),
     };
@@ -1705,6 +1741,46 @@ mod tests {
         assert_eq!((dropped.error, dropped.x, dropped.y), (None, 120.0, 340.5));
         assert_eq!(resolve_source(&store, &open.token).await.unwrap(), plain);
         assert_eq!(*granted.lock().unwrap(), vec![PathBuf::from(plain)]);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_file_that_is_not_media_gets_no_scope_and_no_token() {
+        // The mutant: a `.txt` (or a `.cmd`, or a key file) dropped on the
+        // window. It must neither be made readable to the page through
+        // `asset://` nor be given a token — and a media file named in capitals
+        // still opens.
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChosenPaths::new();
+        let granted = std::sync::Mutex::new(Vec::<PathBuf>::new());
+        let grant = |p: &Path| {
+            granted.lock().unwrap().push(p.to_path_buf());
+            Ok(())
+        };
+        for name in ["notater.txt", "start.cmd", "id_ed25519", "opptak.mp3.txt"] {
+            let (file, _) = recording(dir.path(), name);
+            let dropped = dropped_recording(&store, file, (1.0, 2.0), grant).await;
+            assert_eq!(dropped.opened, None, "{name}");
+            assert_eq!(dropped.error.as_deref(), Some("source_refused"), "{name}");
+        }
+        assert!(granted.lock().unwrap().is_empty(), "no scope was widened");
+        assert_eq!(store.len(), 0, "no token was minted");
+
+        let (loud, _) = recording(dir.path(), "OPPTAK.MP3");
+        let dropped = dropped_recording(&store, loud, (1.0, 2.0), grant).await;
+        assert!(dropped.opened.is_some(), "{:?}", dropped.error);
+        assert_eq!(granted.lock().unwrap().len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_dropped_media_name_that_links_to_a_non_media_file_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (target, _) = recording(dir.path(), "hemmelig.txt");
+        let link = dir.path().join("opptak.mp3");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let store = ChosenPaths::new();
+        let dropped = dropped_recording(&store, link, (0.0, 0.0), |_| panic!("no grant")).await;
+        assert_eq!(dropped.error.as_deref(), Some("source_refused"));
     }
 
     #[tokio::test]

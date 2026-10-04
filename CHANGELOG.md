@@ -5,6 +5,24 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Overføringen av innstillinger fra en gammel installasjon skjer nå bare én
+  gang, og appen holder selv tellingen.** Oppgraderer du fra den gamle appen,
+  tas opptaksmappen og resten med som før. Men nettvisningen kan ikke lenger be
+  om overføringen på nytt for å flytte opptaksmappen, og en mappe som ikke finnes,
+  ikke kan skrives til, eller er appens egen datamappe, blir ikke opptaksmappe.
+  Står en slik mappe i de gamle innstillingene, beholdes mappen du har, og resten
+  tas med. Et sikkerhetstiltak.
+- **Nettvisningen kan ikke lenger be oppdateringsmodulen om å hente en eldre
+  versjon.** Oppdateringer virker som før — «Se etter oppdateringer nå» og
+  installasjonen går gjennom appen selv — men tillatelsen nettvisningen hadde til
+  å styre modulen er fjernet. Et sikkerhetstiltak.
+- **Kvittering etter opptaket: «Rediger» og «Vis i Finder» virker også når
+  historikken er treg, og er av med en forklaring når opptaket ikke fikk noen
+  rad.** Opptaket sier selv hvilken rad det har, i stedet for at siden leter
+  etter den på filstien.
+- **En fil du slipper på vinduet åpnes bare hvis den er lyd eller video.** En
+  tekstfil, et skript eller en nøkkelfil som slippes der, åpnes ikke og blir ikke
+  gjort lesbar for siden. Et sikkerhetstiltak.
 - **Gjenoppretting etter krasj leser bare det opptakeren selv har skrevet.**
   Et opptak som ble avbrutt gjenopprettes som før. Men en fil i
   gjenopprettingsmappen som ikke er skrevet av opptakeren — eller som peker på

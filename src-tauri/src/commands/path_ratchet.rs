@@ -426,6 +426,18 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "settings_save_keeps_the_stored_intro_and_outro",
         },
     ),
+    // `publish_target` is flagged by the place-NAME rule («target»): it is an
+    // enum naming a publishing CHANNEL (SoundCloud, the church's own page, none),
+    // not a place on this machine. The one URL it can select is stored as typed
+    // and vetted every time it is opened (`publish::custom_upload_url`).
+    (
+        "settings_save",
+        "Settings.publish_target",
+        Exempt(
+            "an enum naming a publishing channel, not a file or a folder; the custom \
+             link is vetted when opened (`publish::custom_upload_url`)",
+        ),
+    ),
 ];
 
 /// Every `#[tauri::command]` PARAMETER named `*_token` ([`is_token_param`]), as
@@ -591,10 +603,50 @@ struct Command {
     segment: String,
 }
 
+/// Names that stand for a place without saying «path», «folder», «dir» or
+/// «file»: where a copy goes, what it is made from, where something lives. A
+/// new command called `export_to(dest: String)` has to be classified like
+/// `export_to(dest_path: String)`; the name «dest» was the only difference.
+/// Matched whole, or as the last word of a snake_case name (`log_dest`,
+/// `media_source`).
+const PLACE_NAMES: &[&str] = &[
+    "dest",
+    "destination",
+    "target",
+    "src",
+    "source",
+    "location",
+    "uri",
+    "dir",
+];
+
+/// Types that ARE a filesystem path, whatever the parameter is called: a
+/// `blob: PathBuf` is a place the webview named, and the name is the one thing
+/// the caller of a ratchet that judged only names could choose. Found as an
+/// identifier anywhere in the type, so `&Path`, `Option<PathBuf>` and
+/// `Vec<OsString>` count.
+const PATH_TYPES: &[&str] = &["PathBuf", "Path", "OsString", "OsStr"];
+
 /// Whether a parameter NAME looks like a filesystem path.
 fn is_path_like(name: &str) -> bool {
     let n = name.trim_start_matches('_').to_ascii_lowercase();
-    n.contains("path") || n.ends_with("folder") || n.ends_with("dir") || n.ends_with("file")
+    n.contains("path")
+        || n.ends_with("folder")
+        || n.ends_with("dir")
+        || n.ends_with("file")
+        || is_place_name(&n)
+}
+
+/// Whether a lowercased name is one of [`PLACE_NAMES`], whole or as its last word.
+fn is_place_name(n: &str) -> bool {
+    PLACE_NAMES
+        .iter()
+        .any(|p| n == *p || n.ends_with(&format!("_{p}")))
+}
+
+/// Whether a parameter or field TYPE is a filesystem path — see [`PATH_TYPES`].
+fn is_path_type(ty: &str) -> bool {
+    type_idents(ty).any(|i| PATH_TYPES.contains(&i))
 }
 
 /// Whether a command PARAMETER is a token: any name ending `_token` — the same
@@ -733,9 +785,11 @@ fn parse_file(file: &str, source: &str) -> Vec<Command> {
         if name.is_empty() {
             continue;
         }
-        let path_params: Vec<String> = param_names(&signature)
+        // By NAME, and by TYPE: a `PathBuf` is a path whatever it is called.
+        let path_params: Vec<String> = params(&signature)
             .into_iter()
-            .filter(|n| is_path_like(n))
+            .filter(|(n, ty)| is_path_like(n) || (is_path_type(ty) && !is_injected(ty)))
+            .map(|(n, _)| n)
             .collect();
         let token_params: Vec<String> = param_names(&signature)
             .into_iter()
@@ -959,7 +1013,7 @@ fn path_fields_of(
             continue;
         }
         for (field, fty) in fields {
-            if is_path_like_field(field) {
+            if is_path_like_field(field) || is_path_type(fty) {
                 out.push(format!("{ident}.{field}"));
             }
             path_fields_of(fty, structs, seen, out);
@@ -1215,6 +1269,505 @@ fn reaches_store(
     called_names(&body)
         .iter()
         .any(|callee| reaches_store(sources, callee, depth - 1, seen))
+}
+
+// ── A string that is parsed into a struct with a place in it (S1) ───────────
+
+/// Commands that take a `String`/`Value` and parse it into [`Settings`] (or a
+/// struct with a path-shaped field) — as `(command, parameter, struct, reason)`.
+///
+/// The ratchet above judges a command by what its parameters are NAMED and what
+/// they are TYPED. A `blob: String` that the command then deserialises into
+/// `Settings` is neither: no name says «place», no type is a path, and the
+/// folder arrives inside the JSON. That is exactly how `settings_import` took a
+/// save folder from the webview (#314, B1). So the shape is held to a CLOSED
+/// list: a command that parses a place-carrying struct out of a string is a
+/// decision somebody defends here, with the reason it cannot name a place that
+/// matters.
+const PARSED_PLACE_STRUCTS: &[(&str, &str, &str, &str)] = &[(
+    "settings_import",
+    "json",
+    "Settings",
+    "the localStorage hand-over of an old installation, ONCE: Rust counts it \
+     (`legacy_import_done`, claimed in the transaction that writes the settings, \
+     and closed by the first `settings_get`), clips are never carried \
+     (`keep_stored_clips`), and a save folder in it must pass \
+     `vet_handover_save_folder` (exists, writable, not protected, not the app's \
+     own data) or the stored one stays. Proofs: \
+     `a_second_hand_over_cannot_move_the_recordings_folder`, \
+     `a_save_folder_in_the_apps_own_data_folder_is_refused`",
+)];
+
+/// The functions that turn text into a typed value. `from_json_merged` is
+/// `Settings`' own door.
+const PARSERS: &[&str] = &[
+    "from_json_merged",
+    "from_str",
+    "from_value",
+    "from_slice",
+    "from_reader",
+    "from_json",
+];
+
+/// Parameter types that carry text or bytes a command may parse.
+const TEXT_TYPES: &[&str] = &["String", "str", "Value", "RawValue", "u8"];
+
+fn is_text_type(ty: &str) -> bool {
+    type_idents(ty).any(|i| TEXT_TYPES.contains(&i))
+}
+
+/// The structs a string must not be parsed into unreviewed: `Settings`, and every
+/// struct with a path-shaped field (a name, a type or a token).
+fn place_structs(structs: &StructFields) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = ["Settings".to_string()].into();
+    for (name, fields) in structs {
+        if fields
+            .iter()
+            .any(|(f, ty)| is_path_like_field(f) || is_path_type(ty))
+        {
+            out.insert(name.clone());
+        }
+    }
+    out
+}
+
+/// Whether `word` occurs in `text` as a whole identifier.
+fn has_word(text: &str, word: &str) -> bool {
+    type_idents(text).any(|i| i == word)
+}
+
+/// Every definition of `fn name` in `sources`, as `(signature, body)` — all of
+/// them, not the first: `import` or `load` is defined in more than one place,
+/// and following the wrong one would hide the parse.
+fn fn_defs(sources: &[String], name: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for src in sources {
+        for needle in [format!("fn {name}("), format!("fn {name}<")] {
+            let mut from = 0;
+            while let Some(rel) = src[from..].find(&needle) {
+                let at = from + rel;
+                from = at + needle.len();
+                if src[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                {
+                    continue;
+                }
+                // The signature ends at the first `{` (a body) or `;` (a trait
+                // method without one) outside the parameter list.
+                let mut depth = 0i32;
+                let mut end = None;
+                for (i, ch) in src[at..].char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        '{' | ';' if depth == 0 => {
+                            end = Some((at + i, ch));
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                let Some((open, ch)) = end else { continue };
+                if ch != '{' {
+                    continue;
+                }
+                let mut depth = 0i32;
+                for (i, c) in src[open..].char_indices() {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                out.push((
+                                    src[at..open].to_string(),
+                                    src[open + 1..open + i].to_string(),
+                                ));
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The text of the call `name(…)` that starts at byte `at` of `body` — its
+/// argument list, without the outer parentheses.
+fn args_text(body: &str, at: usize) -> Option<&str> {
+    let open = at + body[at..].find('(')?;
+    let mut depth = 0i32;
+    for (i, ch) in body[open..].char_indices() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&body[open + 1..open + i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Every `name(` call in `body` as `(name, byte offset of the name)`.
+fn calls_in(body: &str) -> Vec<(String, usize)> {
+    let chars: Vec<(usize, char)> = body.char_indices().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let (start, ch) = chars[i];
+        if ch.is_ascii_alphabetic() || ch == '_' {
+            let mut j = i;
+            while j < chars.len() && (chars[j].1.is_ascii_alphanumeric() || chars[j].1 == '_') {
+                j += 1;
+            }
+            let end = chars.get(j).map_or(body.len(), |c| c.0);
+            // A turbofish (`from_str::<Settings>(`) sits between name and paren.
+            let rest = &body[end..];
+            let after = if let Some(t) = rest.strip_prefix("::<") {
+                let mut d = 1;
+                let mut k = 0;
+                for (n, c) in t.char_indices() {
+                    match c {
+                        '<' => d += 1,
+                        '>' => {
+                            d -= 1;
+                            if d == 0 {
+                                k = n + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                &t[k..]
+            } else {
+                rest
+            };
+            if after.starts_with('(') {
+                out.push((body[start..end].to_string(), start));
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// What is parsed out of `tainted` into a place struct somewhere down the calls
+/// from this body — a few levels, following the value into the functions it is
+/// handed to (`import(pool, json, vet)` → `merged_for_handover(…, json, …)` →
+/// `Settings::from_json_merged(json)`), and through `let` bindings. A parse of
+/// something ELSE (`settings::load` reading the database's own copy) is not
+/// reached: only a call whose arguments hold a tainted name counts.
+fn parses_place_struct(
+    sources: &[String],
+    place: &BTreeSet<String>,
+    signature: &str,
+    body: &str,
+    tainted: BTreeSet<String>,
+    depth: usize,
+    seen: &mut BTreeSet<String>,
+) -> Option<String> {
+    if depth == 0 || tainted.is_empty() {
+        return None;
+    }
+    let mentions =
+        |text: &str, tainted: &BTreeSet<String>| tainted.iter().any(|t| has_word(text, t));
+
+    // `let x = <something tainted>;` taints `x`, to a fixpoint.
+    let mut tainted = tainted;
+    for _ in 0..3 {
+        for stmt in body.split(';') {
+            let t = stmt.trim_start();
+            let Some(rest) = t.strip_prefix("let ") else {
+                continue;
+            };
+            let Some((lhs, rhs)) = rest.split_once('=') else {
+                continue;
+            };
+            let name = lhs
+                .trim_start_matches("mut ")
+                .split([':', ' '])
+                .next()
+                .unwrap_or_default();
+            if is_ident(name) && mentions(rhs, &tainted) {
+                tainted.insert(name.to_string());
+            }
+        }
+    }
+
+    let returns = signature.split("->").nth(1).unwrap_or_default();
+    for (callee, at) in calls_in(body) {
+        let Some(args) = args_text(body, at) else {
+            continue;
+        };
+        if !mentions(args, &tainted) {
+            continue;
+        }
+        if PARSERS.contains(&callee.as_str()) {
+            // What it parses INTO: this statement (a path or a binding's type
+            // before the call), a turbofish after the name, or — as the tail of
+            // a function — the type the function returns.
+            let stmt_start = body[..at].rfind([';', '{', '}']).map_or(0, |i| i + 1);
+            let before = &body[stmt_start..at];
+            let name_end = at + callee.len();
+            let turbofish = body[name_end..]
+                .strip_prefix("::<")
+                .map(|t| t.split('>').next().unwrap_or_default())
+                .unwrap_or_default();
+            for st in place {
+                if has_word(before, st) || has_word(turbofish, st) || has_word(returns, st) {
+                    return Some(st.clone());
+                }
+            }
+            continue;
+        }
+        // Follow the value into the callee, by the position it is passed in.
+        let arg_list = split_params(args);
+        for (i, arg) in arg_list.iter().enumerate() {
+            if !mentions(arg, &tainted) {
+                continue;
+            }
+            if !seen.insert(format!("{callee}#{i}")) {
+                continue;
+            }
+            for (sig, def) in fn_defs(sources, &callee) {
+                let Some((param, _)) = params(&sig).into_iter().nth(i) else {
+                    continue;
+                };
+                let inner: BTreeSet<String> = [param.trim_start_matches('_').to_string()].into();
+                if let Some(found) =
+                    parses_place_struct(sources, place, &sig, &def, inner, depth - 1, seen)
+                {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Every `(command, parameter, struct)` where a text parameter of a command is
+/// parsed into a place struct.
+fn text_parsed_into_place_structs(
+    commands: &[Command],
+    sources: &[String],
+    place: &BTreeSet<String>,
+) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for cmd in commands {
+        for (param, _) in cmd
+            .params
+            .iter()
+            .filter(|(_, ty)| !is_injected(ty) && is_text_type(ty))
+        {
+            let tainted: BTreeSet<String> = [param.trim_start_matches('_').to_string()].into();
+            for (sig, body) in fn_defs(sources, &cmd.name) {
+                if let Some(st) = parses_place_struct(
+                    sources,
+                    place,
+                    &sig,
+                    &body,
+                    tainted.clone(),
+                    5,
+                    &mut BTreeSet::new(),
+                ) {
+                    out.push((cmd.name.clone(), param.clone(), st));
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[test]
+fn every_command_that_parses_a_string_into_settings_is_on_the_closed_list() {
+    let structs = all_structs();
+    let found =
+        text_parsed_into_place_structs(&all_commands(), &crate_code(), &place_structs(&structs));
+    let unlisted: Vec<String> = found
+        .iter()
+        .filter(|(c, p, st)| {
+            !PARSED_PLACE_STRUCTS
+                .iter()
+                .any(|(lc, lp, ls, _)| lc == c && lp == p && ls == st)
+        })
+        .map(|(c, p, st)| format!("  {c}({p}) → {st}"))
+        .collect();
+    assert!(
+        unlisted.is_empty(),
+        "\n\
+         ────────────────────────────────────────────────────────────────────\n\
+         A #[tauri::command] takes text (a String, a JSON value) and parses it\n\
+         into a struct that carries a place — `Settings` has the save folder.\n\
+         The ratchet judges parameters by NAME and TYPE, and neither says\n\
+         «place» here: the folder rides inside the JSON. That is how\n\
+         `settings_import` let the webview name the recordings folder (#314, B1).\n\
+         \n\
+         {}\n\
+         \n\
+         Take a typed request that names no place, or add the command to\n\
+         PARSED_PLACE_STRUCTS with the reason the place in it cannot be used\n\
+         against the user. «It is vetted» is not a reason; say what stops it\n\
+         being used twice, or without a dialog.\n\
+         ────────────────────────────────────────────────────────────────────",
+        unlisted.join("\n")
+    );
+}
+
+#[test]
+fn every_listed_string_parser_still_parses_and_says_why() {
+    let structs = all_structs();
+    let found =
+        text_parsed_into_place_structs(&all_commands(), &crate_code(), &place_structs(&structs));
+    for (cmd, param, st, reason) in PARSED_PLACE_STRUCTS {
+        assert!(
+            found
+                .iter()
+                .any(|(c, p, s)| c == cmd && p == param && s == st),
+            "PARSED_PLACE_STRUCTS lists `{cmd}({param})` → {st}, but no command parses that \
+             any more — remove the stale entry"
+        );
+        assert!(
+            reason.trim().len() >= 40,
+            "the entry for `{cmd}` needs a real reason"
+        );
+        // Every proof test it names exists.
+        for proof in reason.split('`').skip(1).step_by(2) {
+            let name = proof.trim_end_matches("()");
+            if name.starts_with("a_") {
+                assert!(
+                    source_defines_fn(name),
+                    "`{cmd}`'s reason names the proof `{name}`, which no longer exists"
+                );
+            }
+        }
+    }
+}
+
+/// Fixtures for the detector: the command source, and the shapes it must find.
+fn parsed_in_fixture(src: &str) -> Vec<(String, String, String)> {
+    let place: BTreeSet<String> = ["Settings".to_string()].into();
+    text_parsed_into_place_structs(&parse_file("fixture.rs", src), &[code_only(src)], &place)
+}
+
+#[test]
+fn a_new_command_that_parses_a_string_into_settings_is_found() {
+    // The mutant: `blob: String` parsed to `Settings`, in each shape it can take.
+    let direct = r#"
+#[tauri::command]
+pub async fn settings_restore(blob: String) -> AppResult<()> {
+    let s = serde_json::from_str::<Settings>(&blob)?;
+    Ok(())
+}
+"#;
+    let annotated = r#"
+#[tauri::command]
+pub async fn settings_restore(blob: String) -> AppResult<()> {
+    let s: Settings = serde_json::from_str(&blob)?;
+    Ok(())
+}
+"#;
+    let merged = r#"
+#[tauri::command]
+pub async fn settings_restore(blob: String) -> AppResult<()> {
+    let s = Settings::from_json_merged(&blob);
+    Ok(())
+}
+"#;
+    // Through a helper, and through a `let` that renames the value on the way.
+    let helper = r#"
+#[tauri::command]
+pub async fn settings_restore(blob: String) -> AppResult<()> {
+    let text = blob.trim().to_string();
+    apply(&pool, &text).await
+}
+async fn apply(pool: &Pool, raw: &str) -> AppResult<()> {
+    let s = Settings::from_json_merged(raw);
+    Ok(())
+}
+"#;
+    // As a `serde_json::Value`, parsed in two steps; the second step only
+    // finds it because the first one's binding is followed.
+    let value = r#"
+#[tauri::command]
+pub async fn settings_restore(blob: serde_json::Value) -> AppResult<()> {
+    let v = blob.clone();
+    let s = serde_json::from_value::<Settings>(v)?;
+    Ok(())
+}
+"#;
+    // The type only in the function's return type.
+    let tail = r#"
+#[tauri::command]
+pub async fn settings_restore(blob: String) -> AppResult<Settings> {
+    parse(&blob)
+}
+fn parse(raw: &str) -> AppResult<Settings> {
+    serde_json::from_str(raw).map_err(Into::into)
+}
+"#;
+    for (shape, src) in [
+        ("direct", direct),
+        ("annotated", annotated),
+        ("from_json_merged", merged),
+        ("helper", helper),
+        ("value", value),
+        ("return type", tail),
+    ] {
+        let found = parsed_in_fixture(src);
+        assert_eq!(
+            found.len(),
+            1,
+            "the `{shape}` shape must be found: {found:?}"
+        );
+        assert_eq!(found[0].0, "settings_restore");
+        assert_eq!(found[0].2, "Settings");
+    }
+}
+
+#[test]
+fn a_string_that_is_not_what_gets_parsed_into_settings_is_not_found() {
+    // A language code next to a read of the database's own copy of the
+    // settings (which IS parsed from a string — by `load`, not from the
+    // parameter); a parse into a type with no place in it; and the fixture's
+    // old command with no text parameter at all.
+    let other_value = r#"
+#[tauri::command]
+pub async fn set_language(lang: String, db: State<'_, Db>) -> AppResult<()> {
+    let s = load(&db.pool).await?;
+    Ok(())
+}
+async fn load(pool: &Pool) -> AppResult<Settings> {
+    let raw = get(pool).await?;
+    Ok(Settings::from_json_merged(&raw))
+}
+"#;
+    let other_type = r#"
+#[tauri::command]
+pub async fn note_text(blob: String) -> AppResult<()> {
+    let n: Note = serde_json::from_str(&blob)?;
+    Ok(())
+}
+"#;
+    let typed = r#"
+#[tauri::command]
+pub async fn settings_save(settings: Settings) -> AppResult<()> { Ok(()) }
+"#;
+    for src in [other_value, other_type, typed] {
+        assert_eq!(parsed_in_fixture(src), vec![], "{src}");
+    }
 }
 
 /// What is wrong with a Token entry, if anything: the resolver is not called
@@ -1758,6 +2311,81 @@ fn the_detector_matches_the_names_a_reviewer_would_flag() {
 }
 
 #[test]
+fn a_command_taking_a_path_type_is_found_whatever_the_parameter_is_called() {
+    // The mutant: `dest: PathBuf` in a new command. The old rule judged only
+    // the NAME («dest» says nothing), so it passed; the type is the proof.
+    for ty in [
+        "PathBuf",
+        "&Path",
+        "&std::path::Path",
+        "Option<PathBuf>",
+        "Vec<PathBuf>",
+        "OsString",
+        "&OsStr",
+    ] {
+        let src = format!(
+            "#[tauri::command]\npub async fn export_copy(blob: {ty}) -> AppResult<()> {{ Ok(()) }}\n"
+        );
+        let found = parse_file("fixture.rs", &src);
+        assert_eq!(
+            found[0].path_params,
+            vec!["blob".to_string()],
+            "a parameter typed `{ty}` must be classified"
+        );
+    }
+    // …and the very command of the mutant, by name and by type at once.
+    let src =
+        "#[tauri::command]\npub async fn export_copy(dest: PathBuf) -> AppResult<()> { Ok(()) }\n";
+    assert_eq!(
+        parse_file("fixture.rs", src)[0].path_params,
+        vec!["dest".to_string()]
+    );
+    // Tauri's own handles are not renderer input, whatever they are typed.
+    let src = "#[tauri::command]\npub async fn ping(window: tauri::Window, db: State<'_, Db>, n: u32) -> AppResult<()> { Ok(()) }\n";
+    assert!(parse_file("fixture.rs", src)[0].path_params.is_empty());
+}
+
+#[test]
+fn the_place_names_are_found_whole_or_as_a_last_word_and_the_non_paths_stay_clear() {
+    for name in [
+        "dest",
+        "_dest",
+        "destination",
+        "target",
+        "src",
+        "source",
+        "location",
+        "uri",
+        "dir",
+        "log_dest",
+        "media_source",
+        "export_target",
+        "DEST",
+    ] {
+        assert!(is_path_like(name), "{name} must be classified as a place");
+    }
+    // The names that exist today and are NOT places must not turn up as
+    // ones: a token is judged by its own rule (`NOT_PLACE_TOKENS` carries
+    // `device_token`), and a word that merely CONTAINS a place name is not it.
+    for name in [
+        "device_token",
+        "source_token_id",
+        "targeted",
+        "resource",
+        "sourcing",
+        "directory_entries",
+        "urls",
+        "id",
+        "lang",
+    ] {
+        assert!(
+            !is_path_like(name),
+            "{name} must not be classified as a place"
+        );
+    }
+}
+
+#[test]
 fn the_parser_survives_the_shapes_real_source_has() {
     // Doc-comments and extra attributes between the marker and the fn, a
     // multi-line signature, and a generic type carrying its own commas.
@@ -2231,10 +2859,11 @@ fn editor_open_known_takes_only_a_history_row_id() {
 /// obtained.
 const MINTERS: &[(&str, &str)] = &[
     (
-        "open_source",
-        "the one door a file enters the editor by: vets the place as a file, \
-         opens `asset://` to exactly it and mints its token. Takes a place, \
-         never decides one — what hands it a place is on MINT_DOORS.",
+        "open_vetted_source",
+        "the one door a file enters the editor by: vets the place as a file \
+         (and, for a drop, as audio or video by its canonical name), opens \
+         `asset://` to exactly it and mints its token. Takes a place, never \
+         decides one — what hands it a place is on MINT_DOORS.",
     ),
     (
         "choose_output_folder",
@@ -2268,6 +2897,20 @@ enum Evidence {
 /// a violation, whatever else the function does.
 const MINT_DOORS: &[(&str, &str, Evidence, &str)] = &[
     (
+        "open_vetted_source",
+        "open_source",
+        Evidence::Forwards,
+        "The picked-file and history-row entry: passes its place on with no \
+         media rule (a picked file chose its own dialog filter).",
+    ),
+    (
+        "open_vetted_source",
+        "dropped_recording",
+        Evidence::Forwards,
+        "Opens the dropped file like a picked one, but only if it is audio or \
+         video by name; only `note_drop` calls it.",
+    ),
+    (
         "open_source",
         "editor_open_recording",
         Evidence::Flows {
@@ -2282,12 +2925,6 @@ const MINT_DOORS: &[(&str, &str, Evidence, &str)] = &[
             source: "recording_file_path(",
         },
         "A history row: the webview sends a row id, the database holds the file.",
-    ),
-    (
-        "open_source",
-        "dropped_recording",
-        Evidence::Forwards,
-        "Opens the dropped file like a picked one; only `note_drop` calls it.",
     ),
     (
         "dropped_recording",
@@ -2649,9 +3286,12 @@ pub fn note_drop(window: &Window, event: &DragDropEvent) {
     let _ = dropped_recording(&chosen, first, (0.0, 0.0), grant);
 }
 pub async fn dropped_recording(chosen: &ChosenPaths, file: PathBuf, at: (f64, f64), grant: G) -> DroppedRecording {
-    match open_source(chosen, file, grant).await { _ => todo() }
+    match open_vetted_source(chosen, file, grant, true).await { _ => todo() }
 }
 pub async fn open_source(chosen: &ChosenPaths, place: PathBuf, grant: G) -> AppResult<OpenedRecording> {
+    open_vetted_source(chosen, place, grant, false).await
+}
+async fn open_vetted_source(chosen: &ChosenPaths, place: PathBuf, grant: G, only_media: bool) -> AppResult<OpenedRecording> {
     let vetted = vet(&place).await?;
     let token = chosen.mint(vetted);
     Ok(token)
@@ -2865,7 +3505,7 @@ fn a_stale_or_reasonless_list_entry_is_found() {
     assert!(
         found
             .iter()
-            .any(|f| f.contains("MINTERS lists `open_source`, which no longer mints")),
+            .any(|f| f.contains("MINTERS lists `open_vetted_source`, which no longer mints")),
         "{found:?}"
     );
 }

@@ -48,15 +48,22 @@ use tokio::sync::oneshot;
 
 use super::chosen_paths::dialog_answer;
 use super::path_guard::{self, PathPolicy};
-use super::recordings_open::vet_new_save_folder;
+use super::recordings_open::{vet_handover_save_folder, vet_new_save_folder};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::settings;
 
 /// Load the current settings (defaults if never saved), validated.
+///
+/// Also the moment the localStorage hand-over closes
+/// ([`settings::close_legacy_import`]): the page reads its settings only after
+/// its own migration has run, so a hand-over that was due has happened — and
+/// `settings_import` is refused from here on.
 #[tauri::command]
 pub async fn settings_get(db: State<'_, Db>) -> AppResult<Settings> {
-    settings::load(&db.pool).await
+    let loaded = settings::load(&db.pool).await?;
+    settings::close_legacy_import(&db.pool).await;
+    Ok(loaded)
 }
 
 /// Validate, persist and return the given settings.
@@ -117,17 +124,21 @@ pub async fn settings_reset(db: State<'_, Db>) -> AppResult<Settings> {
     settings::reset(&db.pool).await
 }
 
-/// Import a (possibly partial/older) settings JSON: merge over defaults,
-/// validate, persist, and return the stored value. A new save folder that
-/// [`vet_new_save_folder`] refuses is not imported — the stored one is kept
-/// (see [`settings::import`]).
+/// Import the settings of the OLD installation, once: merge the JSON over
+/// defaults, validate, persist, and return the stored value. A second call is
+/// refused with `settings_import_done` and writes nothing — see
+/// [`settings::import`] for why Rust keeps that count and not the webview.
+///
+/// A save folder in the JSON that [`vet_handover_save_folder`] refuses (missing,
+/// not writable, the app's own data folder, a protected folder …) is not
+/// imported — the stored one is kept.
 ///
 /// Takes the JSON, not a file: its one caller is the localStorage hand-over in
 /// `app/lib/migrate-legacy-settings.ts`. A profile FILE goes through
 /// [`settings_import_profile`].
 #[tauri::command]
 pub async fn settings_import(db: State<'_, Db>, json: String) -> AppResult<Settings> {
-    settings::import(&db.pool, &json, vet_new_save_folder).await
+    settings::import(&db.pool, &json, vet_handover_save_folder).await
 }
 
 /// Export the current settings as pretty JSON to a file the operator picks in
@@ -549,6 +560,109 @@ mod tests {
             Path::new(&opts.output_path).parent(),
             Some(legacy.as_path())
         );
+    }
+
+    /// The `settings_import` command's body: the hand-over with the REAL vet.
+    async fn hand_over(pool: &sqlx::SqlitePool, json: serde_json::Value) -> AppResult<Settings> {
+        settings::import(pool, &json.to_string(), vet_handover_save_folder).await
+    }
+
+    fn assert_hand_over_closed(result: AppResult<Settings>) {
+        let err = result.expect_err("the hand-over should be closed");
+        assert!(
+            err.to_string().contains(settings::IMPORT_DONE_CODE),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_first_hand_over_from_an_old_installation_carries_its_folder() {
+        // An upgrade must go on recording where the old installation did: a
+        // real folder, that exists and can be written to, passes the real vet.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let old = dir.path().join("Opptak");
+        std::fs::create_dir_all(&old).unwrap();
+        let old_str = old.to_str().unwrap();
+
+        let taken = hand_over(
+            &pool,
+            serde_json::json!({ "saveFolder": old_str, "language": "sv" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(taken.save_folder.as_deref(), Some(old_str));
+        assert_eq!(taken.language.as_deref(), Some("sv"));
+        assert_eq!(settings::load(&pool).await.unwrap(), taken);
+    }
+
+    #[tokio::test]
+    async fn a_second_hand_over_cannot_move_the_recordings_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let old = dir.path().join("Opptak");
+        let other = dir.path().join("Annen");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let first = hand_over(
+            &pool,
+            serde_json::json!({ "saveFolder": old.to_str().unwrap() }),
+        )
+        .await
+        .unwrap();
+
+        // A perfectly good folder, vetted and writable — and still refused.
+        assert_hand_over_closed(
+            hand_over(
+                &pool,
+                serde_json::json!({ "saveFolder": other.to_str().unwrap() }),
+            )
+            .await,
+        );
+        assert_eq!(settings::load(&pool).await.unwrap(), first);
+    }
+
+    #[tokio::test]
+    async fn the_page_reading_its_settings_closes_the_hand_over() {
+        // `settings_get`'s body, as the command runs it: read, then close.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let loaded = settings::load(&pool).await.unwrap();
+        settings::close_legacy_import(&pool).await;
+        assert_hand_over_closed(
+            hand_over(
+                &pool,
+                serde_json::json!({ "saveFolder": dir.path().to_str().unwrap() }),
+            )
+            .await,
+        );
+        assert_eq!(settings::load(&pool).await.unwrap(), loaded);
+    }
+
+    #[tokio::test]
+    async fn a_hand_over_naming_a_folder_that_is_gone_keeps_the_stored_folder_and_takes_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let stored_folder = dir.path().join("Opptak");
+        std::fs::create_dir_all(&stored_folder).unwrap();
+        let stored = Settings {
+            save_folder: Some(stored_folder.to_str().unwrap().to_string()),
+            ..Default::default()
+        };
+        settings::save(&pool, stored).await.unwrap();
+        let gone = dir.path().join("Disk-ute").join("Opptak");
+        let taken = hand_over(
+            &pool,
+            serde_json::json!({ "saveFolder": gone.to_str().unwrap(), "language": "sv" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            taken.save_folder.as_deref(),
+            stored_folder.to_str(),
+            "the stored folder stays"
+        );
+        assert_eq!(taken.language.as_deref(), Some("sv"));
     }
 
     /// [`choose_save_folder`] for a picked path, as the `Settings` it stored.

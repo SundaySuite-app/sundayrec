@@ -568,13 +568,13 @@ pub(super) async fn run_session(
                                         .map(|m| m.len() > 0)
                                         .unwrap_or(false)
                                     {
-                                        let _ = ctx.app.emit(
-                                            FINISHED_EVENT,
-                                            RecordingFinished {
-                                                file_path: ctx.opts.output_path.clone(),
-                                                has_video: true,
-                                            },
-                                        );
+                                        let finished = RecordingFinished::for_delivered(
+                                            ctx.pool.as_ref(),
+                                            ctx.opts.output_path.clone(),
+                                            true,
+                                        )
+                                        .await;
+                                        let _ = ctx.app.emit(FINISHED_EVENT, finished);
                                     }
                                     emit_state(RecorderState::Stopped, 0)
                                 }
@@ -898,13 +898,13 @@ pub(super) async fn run_session(
             .map(|m| m.len() > 0)
             .unwrap_or(false)
         {
-            let _ = ctx.app.emit(
-                FINISHED_EVENT,
-                RecordingFinished {
-                    file_path: ctx.opts.output_path.clone(),
-                    has_video: ctx.opts.video_device_name.is_some(),
-                },
-            );
+            let finished = RecordingFinished::for_delivered(
+                ctx.pool.as_ref(),
+                ctx.opts.output_path.clone(),
+                ctx.opts.video_device_name.is_some(),
+            )
+            .await;
+            let _ = ctx.app.emit(FINISHED_EVENT, finished);
         }
         // The auto-stop is cleared inside `emit_state` for terminal states, so the
         // Stopped payload (and any later `current_state()` read) reports no stale deadline.

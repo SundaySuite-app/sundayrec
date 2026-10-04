@@ -294,12 +294,85 @@ fn save_folder_invalid() -> AppError {
 /// so only the root that holds the home folder is refused there; on macOS and
 /// Linux, mounted disks live below `/Volumes` or `/media` and are untouched.
 pub(crate) fn vet_new_save_folder(raw: &str) -> AppResult<()> {
-    vet_save_folder_for_home(raw, path_guard::home_dir().as_deref())
+    vet_save_folder_in(raw, path_guard::home_dir().as_deref(), &app_folders())
+}
+
+/// The folders this app keeps its own state in: the data directory (the
+/// database, the recovery folder, the crash records) and the local data
+/// directory (the file log, the pre-roll segments) — the same folder off
+/// Windows. A recordings folder is never one of them, nor inside one, nor
+/// above one.
+fn app_folders() -> Vec<PathBuf> {
+    [
+        crate::util::app_data_dir(),
+        crate::util::app_local_data_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// [`vet_new_save_folder`] for the one place a folder is NOT the answer of a
+/// dialog: the localStorage hand-over (`settings_import`). On top of the vet it
+/// has to be a folder that EXISTS and that this process can write into.
+///
+/// The hand-over carries a folder an old installation recorded into, so it was
+/// there when that installation last ran; one that is gone (an unplugged disk,
+/// a deleted folder) is not worth taking on the webview's word — the stored
+/// folder is kept (see `settings::import`) and the operator picks the folder
+/// again, in a dialog. The probe is a real file, created and removed: the mode
+/// bits of a share or a sandboxed folder say nothing about what is writable.
+pub(crate) fn vet_handover_save_folder(raw: &str) -> AppResult<()> {
+    vet_handover_in(raw, path_guard::home_dir().as_deref(), &app_folders())
+}
+
+/// [`vet_handover_save_folder`] with the home folder and the app's own folders
+/// passed in, so the tests can give it ones that exist.
+fn vet_handover_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppResult<()> {
+    vet_save_folder_in(raw, home, app)?;
+    let path = Path::new(raw);
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Err(save_folder_invalid()),
+        Err(_) => {
+            return Err(AppError::Validation(
+                "handover_folder_missing: the recordings folder does not exist".into(),
+            ))
+        }
+    }
+    let probe = path.join(format!(
+        ".sundayrec-handover-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let created = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe);
+    match created {
+        Ok(file) => {
+            drop(file);
+            let _ = std::fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(_) => Err(AppError::Validation(
+            "handover_folder_unwritable: the recordings folder cannot be written to".into(),
+        )),
+    }
 }
 
 /// [`vet_new_save_folder`] with the home folder passed in, so the tests can
 /// give it one without touching the process environment other tests read.
+#[cfg(test)]
 fn vet_save_folder_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
+    vet_save_folder_in(raw, home, &[])
+}
+
+/// The vet itself, with the home folder and the app's own folders passed in.
+fn vet_save_folder_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppResult<()> {
     let path = Path::new(raw);
     if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(save_folder_invalid());
@@ -326,6 +399,23 @@ fn vet_save_folder_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
             "save_folder_too_broad: the recordings folder cannot be the file system root, the home folder or a folder above it"
                 .into(),
         ));
+    }
+    // The app's own folders. The app cleans up in them (the recovery folder's
+    // leftovers, old logs) and works inside the recordings folder (the
+    // papirkurv, retention), so the two must never overlap: a recordings folder
+    // moved onto `<app-data>/recovery` was the first link of a chain that ended
+    // in deleted files (the #314 review). Judged by comparison key and by
+    // identity, like the home folder above (a firmlink or a differently-cased
+    // spelling of the same folder is the same folder).
+    for dir in app {
+        let dir = path_guard::resolved_with_missing_tail(dir).unwrap_or_else(|| dir.clone());
+        let inside = compare_key(&would_be).starts_with(compare_key(&dir));
+        if inside || path_guard::holds_home(&would_be, &dir) {
+            return Err(AppError::Validation(
+                "save_folder_app_data: the recordings folder cannot be the app's own data folder, inside it or above it"
+                    .into(),
+            ));
+        }
     }
     if looks_like_package(&would_be) {
         return Err(AppError::Validation(
@@ -1093,6 +1183,115 @@ mod tests {
         assert_refused(vet(&link.join("2026"), &home), "save_folder_invalid");
     }
 
+    // ── The app's own folders, and the hand-over's stricter vet (#314) ───────
+
+    /// A fake `<app-data>` with its `recovery` folder, both existing, next to
+    /// the fake home.
+    fn fake_app_data(dir: &tempfile::TempDir) -> PathBuf {
+        let app = dir.path().join("AppData").join("no.sundayrec.app");
+        std::fs::create_dir_all(app.join("recovery")).unwrap();
+        app
+    }
+
+    #[test]
+    fn a_save_folder_in_the_apps_own_data_folder_is_refused() {
+        let (dir, home) = fake_home();
+        let app = fake_app_data(&dir);
+        let apps = [app.clone()];
+        let refused = |p: &Path| {
+            assert_refused(
+                vet_save_folder_in(p.to_str().unwrap(), Some(&home), &apps),
+                "save_folder_app_data",
+            )
+        };
+        refused(&app); // the folder itself
+        refused(&app.join("recovery")); // the folder the recovery scan owns
+        refused(&app.join("recovery").join("2026")); // …and anything under it
+        refused(&app.join("not-made-yet").join("Opptak")); // a folder that does not exist yet
+        refused(app.parent().unwrap()); // a folder above it
+                                        // A sibling is a normal choice.
+        vet_save_folder_in(
+            dir.path().join("AppData").join("Opptak").to_str().unwrap(),
+            Some(&home),
+            &apps,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn the_real_app_data_folders_are_refused_as_a_save_folder() {
+        // No home, so the home rules cannot be what refuses it.
+        for app in app_folders() {
+            for raw in [app.clone(), app.join("recovery")] {
+                assert_refused(
+                    vet_save_folder_in(raw.to_str().unwrap(), None, &app_folders()),
+                    "save_folder_app_data",
+                );
+            }
+        }
+        assert!(
+            !app_folders().is_empty(),
+            "the premise: the platform has an app-data folder"
+        );
+    }
+
+    #[test]
+    fn the_hand_over_vet_refuses_an_existing_writable_folder_in_app_data() {
+        // Everything else about it is fine — it exists and can be written to —
+        // so only the app-folder rule can refuse it.
+        let (dir, home) = fake_home();
+        let app = fake_app_data(&dir);
+        assert_refused(
+            vet_handover_in(app.join("recovery").to_str().unwrap(), Some(&home), &[app]),
+            "save_folder_app_data",
+        );
+    }
+
+    #[test]
+    fn the_hand_over_vet_takes_an_existing_writable_folder_and_leaves_no_probe_behind() {
+        let (dir, home) = fake_home();
+        let app = fake_app_data(&dir);
+        let rig = dir.path().join("Rig").join("Opptak");
+        std::fs::create_dir_all(&rig).unwrap();
+        vet_handover_in(rig.to_str().unwrap(), Some(&home), &[app]).unwrap();
+        assert_eq!(std::fs::read_dir(&rig).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn the_hand_over_vet_refuses_a_folder_that_is_missing_or_is_a_file() {
+        let (dir, home) = fake_home();
+        let missing = dir.path().join("Disk-ute").join("Opptak");
+        assert_refused(
+            vet_handover_in(missing.to_str().unwrap(), Some(&home), &[]),
+            "handover_folder_missing",
+        );
+        // The ordinary vet takes it: the dialog's folder may be created later.
+        vet_save_folder_in(missing.to_str().unwrap(), Some(&home), &[]).unwrap();
+        let file = dir.path().join("fil.txt");
+        std::fs::write(&file, b"x").unwrap();
+        assert_refused(
+            vet_handover_in(file.to_str().unwrap(), Some(&home), &[]),
+            "save_folder_invalid",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_hand_over_vet_refuses_a_folder_it_cannot_write_to() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, home) = fake_home();
+        let locked = dir.path().join("Laast");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let result = vet_handover_in(locked.to_str().unwrap(), Some(&home), &[]);
+        let root = std::fs::File::create(locked.join("probe")).is_ok();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if root {
+            return; // running as root: the mode bits say nothing, so neither can this test
+        }
+        assert_refused(result, "handover_folder_unwritable");
+    }
+
     #[test]
     fn the_root_the_home_folder_and_its_parents_are_too_broad() {
         let (dir, home) = fake_home();
@@ -1576,7 +1775,11 @@ permissions = ["opener:allow-reveal-item-in-dir"]
 
     /// Every place in `files` (as `(path, line)`) that names the dialog plugin.
     fn dialog_mentions(files: &[PathBuf]) -> Vec<String> {
-        let needles = dialog_needles();
+        mentions_of(files, &dialog_needles())
+    }
+
+    /// Every place in `files` (as `path:line`) with one of `needles` on it.
+    fn mentions_of(files: &[PathBuf], needles: &[String]) -> Vec<String> {
         let mut findings = Vec::new();
         for file in files {
             let text = std::fs::read_to_string(file).unwrap_or_default();
@@ -1712,6 +1915,143 @@ permissions = ["opener:allow-reveal-item-in-dir"]
         write("app/lib/clean.ts", "export const x = 1;\n");
         let files = webview_sources(dir.path());
         assert_eq!(dialog_mentions(&files).len(), 4, "{files:?}");
+    }
+
+    // ── #314 S2: the webview holds no updater permission ─────────────────────
+
+    /// What names the updater plugin from the webview's side: its npm package
+    /// and its IPC commands (`invoke("plugin:updater|check")`). Spelled in two
+    /// halves so this file does not match itself.
+    fn updater_needles() -> [String; 2] {
+        [
+            concat!("@tauri-apps/plugin", "-updater").to_string(),
+            concat!("plugin:", "updater").to_string(),
+        ]
+    }
+
+    #[test]
+    fn the_webview_holds_no_updater_permission() {
+        // If this fails, a change gave the main window an `updater:` permission
+        // again — by hand in a capability file, or by a build script writing one
+        // (`build.rs` used to generate `updater.generated.json`). `plugin:updater|check`
+        // takes `allowDowngrades`, `proxy` and `headers`: a page that holds it
+        // can be offered an OLDER release, validly signed and without the fixes
+        // of the newer ones. Updating is Rust's own `update_check`/`update_install`,
+        // which call the plugin from Rust and need no capability.
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (cap_files, mut findings) =
+            scan_capability_dir("updater:", &manifest.join("capabilities"));
+        assert!(
+            cap_files >= 1,
+            "no capability files found — is the tripwire reading the right folder?"
+        );
+        let (conf_files, conf_findings) = scan_app_configs("updater:", manifest);
+        assert!(
+            conf_files >= 1,
+            "no tauri.conf.json found — is the tripwire reading the right folder?"
+        );
+        findings.extend(conf_findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
+    fn nothing_the_webview_is_built_from_names_the_updater_plugin() {
+        // The npm package is the other half of the lock, like the dialog's: a
+        // dependency nobody may call is one more thing that can be called the
+        // day a permission slips back.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the repo root");
+        let files = webview_sources(repo);
+        assert!(
+            files.len() > 100,
+            "the scan found almost nothing: {}",
+            files.len()
+        );
+        let findings = mentions_of(&files, &updater_needles());
+        assert!(
+            findings.is_empty(),
+            "the webview names the updater plugin — update from Rust instead \
+             (`update_check`/`update_install`):\n{findings:#?}"
+        );
+    }
+
+    #[test]
+    fn the_build_script_no_longer_writes_an_updater_capability() {
+        // The generator is gone, and with it the file. `build.rs` only removes a
+        // stale one; a `write` next to the capability name would be the grant
+        // coming back under another name than the one the scan reads.
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let build = std::fs::read_to_string(manifest.join("build.rs")).unwrap();
+        let code: String = build
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !code.contains("updater:"),
+            "build.rs names an `updater:` permission in code"
+        );
+        assert!(
+            !code.contains("std::fs::write"),
+            "build.rs writes a file — if it is a capability, the webview holds a permission \
+             no capability file shows"
+        );
+        assert!(!manifest
+            .join("capabilities/updater.generated.json")
+            .exists());
+    }
+
+    #[test]
+    fn the_updater_tripwire_sees_a_grant_and_an_import_wherever_they_hide() {
+        let dir = tempfile::tempdir().unwrap();
+        let caps = dir.path().join("capabilities");
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        // The mutant: `updater:default` put back, in the default capability and
+        // in a generated one, as a string and as an object.
+        write(
+            "capabilities/default.json",
+            r#"{ "identifier": "default", "windows": ["main"],
+                 "permissions": ["core:default", "updater:default"] }"#,
+        );
+        write(
+            "capabilities/updater.generated.json",
+            r#"{ "identifier": "updater", "windows": ["main"],
+                 "permissions": [{ "identifier": "updater:allow-check" }] }"#,
+        );
+        write(
+            "capabilities/clean.json",
+            r#"{ "identifier": "c", "windows": ["main"], "permissions": ["process:default"] }"#,
+        );
+        let (files, findings) = scan_capability_dir("updater:", &caps);
+        assert_eq!(files, 3, "{findings:#?}");
+        assert_eq!(findings.len(), 2, "{findings:#?}");
+        assert!(findings.iter().all(|f| f.contains("grants `updater:")));
+
+        let needle = &updater_needles()[0];
+        write(
+            "app/lib/update.ts",
+            &format!("import {{ check }} from \"{needle}\";\n"),
+        );
+        write(
+            "package.json",
+            &format!("{{ \"dependencies\": {{ \"{needle}\": \"^2\" }} }}"),
+        );
+        write(
+            "app/lib/invoke.ts",
+            &format!("await invoke(\"{}|check\");\n", updater_needles()[1]),
+        );
+        write("app/lib/clean.ts", "export const x = 1;\n");
+        let files = webview_sources(dir.path());
+        assert_eq!(
+            mentions_of(&files, &updater_needles()).len(),
+            3,
+            "{files:?}"
+        );
     }
 
     #[test]

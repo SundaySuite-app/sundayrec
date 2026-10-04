@@ -22,6 +22,40 @@ pub struct RecordingFinished {
     pub file_path: String,
     /// Whether it is a video (mp4) recording.
     pub has_video: bool,
+    /// The id of the recording's history row, written by the recorder just
+    /// before this event. The receipt's «Rediger» and «Vis i Finder» name a ROW,
+    /// never a path, so the page needs this and nothing else to act; `None` only
+    /// when the row could not be written or read, and the receipt then says so
+    /// instead of offering buttons that cannot work.
+    pub recording_id: Option<String>,
+}
+
+impl RecordingFinished {
+    /// The payload for a file the recorder has just delivered and written a
+    /// history row for: looks the row up by the path Rust itself delivered to.
+    /// A database that cannot answer is a `None`, never a failed event.
+    pub async fn for_delivered(
+        pool: Option<&sqlx::SqlitePool>,
+        file_path: String,
+        has_video: bool,
+    ) -> Self {
+        let recording_id = match pool {
+            Some(pool) => crate::db::store::recording_id_for_path(pool, &file_path)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        "recorder: could not look up the history row of the finished file: {e}"
+                    );
+                    None
+                }),
+            None => None,
+        };
+        Self {
+            file_path,
+            has_video,
+            recording_id,
+        }
+    }
 }
 
 /// Options for [`RecorderEngine::start`].

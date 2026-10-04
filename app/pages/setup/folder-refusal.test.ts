@@ -60,9 +60,10 @@ afterEach(() => {
 });
 
 describe("folderRefusalMessage", () => {
-  it("lesingen av Rust-kilden finner de fire reglene", () => {
+  it("lesingen av Rust-kilden finner de fem reglene", () => {
     // En lesing som fant null koder ville gjort alt under grønt.
     expect(rustSaveFolderCodes()).toEqual([
+      "save_folder_app_data",
       "save_folder_invalid",
       "save_folder_is_a_package",
       "save_folder_protected",
@@ -76,7 +77,7 @@ describe("folderRefusalMessage", () => {
     expect(message).not.toBe(t("general.saveFailed"));
   });
 
-  it("de fire setningene er fire forskjellige", () => {
+  it("de fem setningene er fem forskjellige", () => {
     const messages = rustSaveFolderCodes().map(folderRefusalMessage);
     expect(new Set(messages).size).toBe(messages.length);
   });

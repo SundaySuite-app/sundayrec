@@ -89,6 +89,14 @@ export interface FinishedRecording {
   hasVideo: boolean;
   /** Da det ble ferdig, så kvitteringen kan si det hvis den trenger det. */
   atMs: number;
+  /**
+   * Historikkradens id, fra `recording://finished` — Rust skrev raden rett før
+   * hendelsen. «Rediger» og «Vis i Finder» navngir en RAD og aldri en sti, så
+   * dette er alt kvitteringen trenger for å handle. `null` bare når raden ikke
+   * kunne skrives eller leses; kvitteringen sier det da (knappene er av, med
+   * grunn) i stedet for å lete etter raden på stien.
+   */
+  recordingId: string | null;
 }
 export const finishedRecording = signal<FinishedRecording | null>(null);
 
@@ -352,7 +360,13 @@ export function initRecording(): () => void {
     window.api.on("recording-finished", (data: unknown) => {
       stateGeneration += 1;
       const d = data as
-        { path?: string; file_path?: string; has_video?: boolean } | undefined;
+        | {
+            path?: string;
+            file_path?: string;
+            has_video?: boolean;
+            recording_id?: string | null;
+          }
+        | undefined;
       const path = d?.path ?? d?.file_path ?? null;
       endSessionLocally();
       if (!path) return;
@@ -360,6 +374,10 @@ export function initRecording(): () => void {
         path,
         hasVideo: d?.has_video === true,
         atMs: Date.now(),
+        recordingId:
+          typeof d?.recording_id === "string" && d.recording_id
+            ? d.recording_id
+            : null,
       };
     }),
     window.api.on("recording-error", (data: unknown) => {

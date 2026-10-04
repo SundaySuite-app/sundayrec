@@ -14,12 +14,18 @@
  *     `onCorruptBlob` fires once so the operator hears the app started from
  *     defaults;
  *   - a FAILED import (backend/db down): key and flag are left untouched, so
- *     the next boot retries with the blob intact.
+ *     the next boot retries with the blob intact;
+ *   - `settings_import_done`: Rust counts the hand-over, not this page (the
+ *     localStorage flag is only a courtesy a compromised page can ignore), and
+ *     says the one hand-over has already happened. Nothing is lost by that — it
+ *     happened — so it is a success: the blob is removed and the flag set, with
+ *     no reschedule and no toast. A retry could never succeed.
  *
  * `invoke` is injected by api-shim so the calls ride the E5.1 fixture seam —
  * the migration e2e spec drives this exact code path with a fixtured backend.
  */
 
+import { errorCode } from "./error-code-core";
 import {
   LEGACY_MIGRATED_FLAG,
   LEGACY_SETTINGS_KEY,
@@ -39,10 +45,19 @@ export async function migrateLegacySettingsOnce(deps: {
     if (raw !== null) {
       const mapped = mapLegacyBlob(raw);
       if (mapped) {
-        await deps.invoke("settings_import", { json: JSON.stringify(mapped) });
+        let handedOver = true;
+        try {
+          await deps.invoke("settings_import", {
+            json: JSON.stringify(mapped),
+          });
+        } catch (e) {
+          if (errorCode(e) !== "settings_import_done") throw e;
+          handedOver = false;
+        }
         // The imported slots/specials must reach the scheduler now, not at
         // the next save. Best-effort — the supervisor also reads at startup.
-        void deps.invoke("scheduler_reschedule").catch(() => {});
+        if (handedOver)
+          void deps.invoke("scheduler_reschedule").catch(() => {});
       } else {
         deps.onCorruptBlob();
       }

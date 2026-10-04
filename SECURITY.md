@@ -425,19 +425,71 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   side. `tauri-plugin-dialog` stays a Rust dependency: Rust is who asks.
 
   **What a path still is, and what remains.** No `#[tauri::command]` takes a
-  path-shaped parameter any more (`commands::path_ratchet` fails on one; its
+  path-shaped parameter any more — by name (`path`, `dest`, `target`, `src`,
+  `source`, `location`, `uri`, `dir` …) or by type (`PathBuf`, `Path`, `OsString`)
+  (`commands::path_ratchet` fails on one; its
   `GUARDED` list is gone, because a guard is not an answer, and `EXEMPT` is
   empty), and the old path-shaped parameters are pinned retired. The webview
   still receives paths — `OpenedRecording.path`, the export's `outputPath`, the
   history rows' `file_path` — for DISPLAY and for `<audio src>`, whose
   `asset://` address needs one over a scope Rust widened to exactly that file;
   no command accepts one back. One door still takes a save folder the webview
-  names: `settings_import`, the one-shot localStorage hand-over for an upgrade
-  from the old app, which takes JSON and not a path parameter and vets a NEW
-  folder like any other (a refusal keeps the stored folder). It runs once on an
-  install that has stored nothing, which is also the install a hostile page
-  could aim it at; closing it means dropping the hand-over of the old
-  installation's folder, an owner decision (docs/PLAN.md).
+  names, and it is counted by Rust: `settings_import`, the one-shot
+  localStorage hand-over for an upgrade from the old app. It takes JSON and not
+  a path parameter, and the ratchet holds that shape to a closed list
+  (`PARSED_PLACE_STRUCTS`: a command that parses `Settings` — or a struct with
+  a place in it — out of a `String`/`Value` must be listed with its reason).
+  Until the #314 review (B1) its «only once» was a flag in the webview's own
+  localStorage, which a compromised page ignores, so it could move the recordings
+  folder whenever it liked — the review's proof moved it to `<app-data>/recovery`,
+  the first link of a chain that ended in deleted files. Now:
+  - **Rust counts it.** `import` claims the `legacy_import_done` row in the SAME
+    transaction that writes the settings; a second call is refused with
+    `settings_import_done` and writes nothing, and a failed write rolls the
+    claim back so the retry at the next launch still has its chance. The gate is
+    this flag and not «a settings row exists»: a build older than R4 bridged a
+    subset into sqlite and kept the full blob in localStorage, so a row can sit
+    next to a hand-over that is still due. (Nothing in `setup` writes the row
+    before the page does — `email_cleanup` and the scheduler's prune only
+    rewrite a row that exists.)
+  - **The first `settings_get` closes it** (`settings::close_legacy_import`), for
+    the installs that never needed a hand-over — a fresh one, or one that did it
+    years ago and has no flag. The page awaits its migration before it reads its
+    settings, so a hand-over that was due has happened by then. The cost: an
+    import that failed and is retried after the page was already read is
+    answered `settings_import_done` and dropped; the page treats that as done
+    (`app/lib/migrate-legacy-settings.ts`).
+  - **The folder in it is held to more than a dialog's folder**
+    (`vet_handover_save_folder`): the usual vet, and it must EXIST, be a folder
+    and take a probe file — and no save folder at all (dialog or hand-over) may be
+    the app's own data folder, inside it or above it (`save_folder_app_data`).
+    A refusal keeps the stored folder and imports the rest. The intro and outro
+    clips are never carried.
+    What remains: on an install where the hand-over has not been closed yet — from
+    process start until the page's first read — one call can still name an existing,
+    writable folder outside the protected and app folders.
+
+  **The `updater:` lock (#314, S2).** The webview holds no updater permission.
+  `build.rs` used to generate `capabilities/updater.generated.json`
+  (`updater:default`) whenever the `updater` feature was on, which let the page
+  call `plugin:updater|check` — with `allowDowngrades`, `proxy` and `headers` —
+  and so be offered an older, validly signed release without these fixes. The
+  frontend never used it: updating is `update_check`/`update_install`, which call
+  the plugin from Rust and need no capability. The generator is gone (the build
+  script only deletes a stale file), no npm package is installed, and three
+  Rust tests beside the dialog ones fail if it returns:
+  `the_webview_holds_no_updater_permission`,
+  `nothing_the_webview_is_built_from_names_the_updater_plugin` and
+  `the_build_script_no_longer_writes_an_updater_capability`.
+
+  **Smaller, from the same review.** A token that is USED is the newest in
+  `ChosenPaths`, so the store evicts what nobody asks for, not what is in use. A
+  place whose plain Windows spelling (verbatim prefix stripped) does not
+  canonicalise back to it — names ending in a dot or a space — is refused
+  (`plain_names_the_same_place`). A file dropped on the window opens, and widens
+  the `asset://` scope, only if it is audio or video by its canonical name
+  (`AUDIO_EXT`/`VIDEO_EXT`). The recording receipt's buttons act on the history
+  row id `recording://finished` carries; with no row they are off, with a reason.
 
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every

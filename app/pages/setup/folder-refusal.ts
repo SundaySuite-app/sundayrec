@@ -8,7 +8,8 @@
  * vise. Derfor sjekker bakenden en NY mappe før den lagres
  * (`vet_new_save_folder` i `src-tauri/src/commands/recordings_open.rs`): ikke
  * en app eller pakke (som macOS ville STARTET i stedet for å vise), ikke roten
- * av disken eller selve hjemmemappa, ikke en beskyttet mappe som `~/.ssh`. En
+ * av disken eller selve hjemmemappa, ikke en beskyttet mappe som `~/.ssh`, og ikke appens egen datamappe (der
+ * gjenopprettingsmappa ligger). En
  * mappe som allerede står lagret, sjekkes aldri på nytt — den tar opp som før.
  *
  * ## Hvorfor en egen setning per kode
@@ -33,6 +34,8 @@ export function folderRefusalMessage(code: string): string | null {
       return t("app.setup.folder.refusedTooBroad");
     case "save_folder_protected":
       return t("app.setup.folder.refusedProtected");
+    case "save_folder_app_data":
+      return t("app.setup.folder.refusedAppData");
     case "save_folder_invalid":
       return t("app.setup.folder.refusedInvalid");
     default:

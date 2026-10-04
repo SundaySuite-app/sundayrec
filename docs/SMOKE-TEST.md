@@ -390,7 +390,14 @@ hatch.
    - VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
 4. Confirm the file exists on disk at the path shown — **«Vis i Finder»** on
    the receipt card is the shortest way, and it says so honestly («Fant ikke
-   fila på disken.») if the file is not where the row claims.
+   fila på disken.») if the file is not where the row claims. The card's
+   **«Rediger»** and **«Vis i Finder»** act on the history ROW id that
+   `recording://finished` carries (Rust wrote the row just before it); with no
+   row they are off, with the same reason on hover, and never silently do
+   nothing.
+   - VERIFIED-BY: e2e/record.spec.ts::kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien
+   - VERIFIED-BY: e2e/record.spec.ts::uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor
+   - VERIFIED-BY: app/state/recording.test.ts::kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id
    - **Expected:** in the save folder from Oppsett, named by the profile's
      filename pattern — the same folder and name a build from before
      security finding E1 gave (RIG-DAY «(e1)» / «(we1)»).
@@ -527,6 +534,22 @@ lenger».
      page shows the folder Rust stored. Cancelling the window changes nothing.
      Saving any other setting afterwards (change the language, say) leaves the
      folder as it was.
+   - **Upgrading from the old app (the localStorage hand-over, #314 B1):** on a
+     machine that still has the old app's settings, the FIRST launch of this
+     version carries over the old recordings folder (and the rest). It happens
+     once, counted by Rust (`legacy_import_done`): nothing the page sends later
+     can repeat it, and a folder that does not exist, cannot be written to, or is
+     the app's own data folder (`<app-data>/recovery` and the like) is never
+     taken — the folder you already had stays, and the rest is imported.
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_first_hand_over_from_an_old_installation_carries_its_folder
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_second_hand_over_cannot_move_the_recordings_folder
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_page_reading_its_settings_closes_the_hand_over
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::the_first_hand_over_is_taken_and_a_second_one_is_refused_and_writes_nothing
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::a_hand_over_on_an_install_with_a_bridged_settings_row_still_runs_once
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_save_folder_in_the_apps_own_data_folder_is_refused
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_hand_over_vet_refuses_an_existing_writable_folder_in_app_data
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_hand_over_vet_refuses_a_folder_that_is_missing_or_is_a_file
+   - VERIFIED-BY: app/lib/migrate-legacy-settings.test.ts::treats «settings_import_done» as done: key removed, flag set, nothing rescheduled
    - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::en avvisning fra mappevinduet når fram til setningen
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
@@ -1526,6 +1549,17 @@ store:
 
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the store, not just the select
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
+
+**The webview holds no updater permission (#314 S2).** `capabilities/` has no
+`updater:` grant and `build.rs` no longer generates one; the page cannot call
+`plugin:updater|check` (with `allowDowngrades`, `proxy`, `headers`), so it
+cannot be offered an older signed release. Updating is Rust's own
+`update_check`/`update_install`, below — if «Se etter oppdateringer nå» works
+in a release build, the lock cost nothing.
+
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_webview_holds_no_updater_permission
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::nothing_the_webview_is_built_from_names_the_updater_plugin
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_build_script_no_longer_writes_an_updater_capability
 
 1. Open **the gear → Avansert → «Oppdateringer»** and click **«Se etter
    oppdateringer nå»**.
