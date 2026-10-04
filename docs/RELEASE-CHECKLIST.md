@@ -203,16 +203,61 @@ minimum bar is what v0.12.0 actually met:
       numeric fields, so tauri refuses with _"optional pre-release identifier in
       app version must be numeric-only"_. v0.11.0-beta.1's first run failed on
       exactly this — macOS built fine and the draft came out with mac assets
-      only, which looks like a flake rather than a rule. `release.yml` now passes
-      `--bundles nsis` for Windows beta tags. **Stable releases still ship both**,
-      so a missing `.msi` on a stable draft IS a problem today.
-      ⚠️ **Owner decision pending (F2, not yet coded):** the F2 Windows rig
-      exploration flagged that the `.msi` uses Tauri's default `perMachine`
-      install scope, which prompts UAC even for a volunteer with no admin
-      rights — NSIS' default (`currentUser`) does not. The recommendation is
-      to make stable NSIS-only too and drop `.msi` from the release matrix;
-      see `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2». Until the owner
-      decides, this checkbox's "both" requirement stands as written.
+      only, which looks like a flake rather than a rule. `release.yml` passes
+      `--bundles nsis` for Windows beta tags.
+- [ ] **Windows på stable: NSIS er det nye brukere får. `.msi` bygges fortsatt,
+      men bare så en installasjon som allerede kom fra den kan oppdatere seg.**
+      (Eier avgjorde 2026-10-04, F-W7.) En manglende `.msi` på et stabilt utkast
+      er derfor fortsatt en feil, og `-setup.exe` skal være det som pekes på
+      overfor nye brukere (`docs/FRIVILLIG.md`). Hvorfor ikke MSI helt bort — fra
+      kildene til Tauri-versjonene `Cargo.lock` og `package-lock.json` låser
+      (`tauri-plugin-updater` 2.11.0, `tauri-utils` 2.9.3, tauri-cli 2.11.5): - Bundleren skriver bundle-typen inn i selve exe-en for hver pakke (hver pakke
+      bygges fra sin egen patchede kopi; tauri-bundlers `bundle.rs`
+      `patch_binary`, `__TAURI_BUNDLE_TYPE_VAR_MSI`/`_NSS`), og kjøretiden leser
+      den (`tauri-utils` `platform.rs:353-370`). En MSI-installert app VET
+      altså at den er MSI-installert. - Oppdateringsmodulen bruker det: `updater.rs:581-582` finner
+      installer-typen og kaller `get_urls` (608-637), som slår opp
+      `windows-x86_64-msi` **først** og `windows-x86_64` **etterpå**
+      (linje 624 og 626). Finner den ingen av dem, er det `TargetsNotFound` —
+      en feil på hver eneste sjekk, også uten ny versjon (kallet står FØR
+      `should_update` brukes, 581-584). Alle Windows-utgivelser siden v0.2.0
+      har plugin ≥ 2.10.1 med samme oppslag (584-586 i 2.10.1), så ingen
+      installasjon leser bare den generiske nøkkelen. - **Så lenge `-msi`-nøkkelen finnes** (i dag): en MSI-installasjon henter
+      `.msi`-en og kjører `msiexec /i <fil> /passive` (`updater.rs:910-914`),
+      samme produkt, samme `perMachine`-omfang. Ingen parallell installasjon,
+      og ingenting nytt — den får UAC-spørsmålet som før. - **Hvis `-msi`-nøkkelen mangler:** den faller over på `windows-x86_64`,
+      nå NSIS-pakken. Updateren pakker ut en `.exe` som NSIS
+      (`updater.rs:988-991`, byte-gjenkjenning) og kjører den med `/P /UPDATE`
+      (`updater.rs:884-887`). Tauris NSIS-mal (`installer.nsi`,
+      tauri-cli-v2.11.5) VET om dette: den leter under
+      `HKLM\…\Uninstall` etter en post med samme produktnavn og utgiver og
+      `msiexec` i avinstallasjonsstrengen (linje 189-216), setter `WixMode`,
+      og «if migrating from Wix, always uninstall» (313-316) — den
+      kjører MSI-ens avinstallasjon først. Så det er **tilsiktet en
+      migrasjon, ikke to parallelle installasjoner**. Men: NSIS-installereren
+      er `currentUser` og kjører uten administrator
+      (`RequestExecutionLevel user`, linje 110), mens MSI-en den skal fjerne er
+      `perMachine`; feiler avinstallasjonen, viser malen «kunne ikke
+      avinstallere» og avbryter (381) — brukeren blir stående på den gamle
+      versjonen. **Dette er lest i kildene, aldri kjørt på Windows.** Derfor
+      beholdes `.msi`, og derfor nekter `scripts/promote-release.mjs` å
+      promotere et stabilt manifest uten `windows-x86_64-msi`. - Generisk `windows-x86_64` skal peke på NSIS, ikke MSI. Uten en bryter
+      velger tauri-action MSI når begge finnes (v0.25.0: samme asset som
+      `-msi`); `release.yml` setter `updaterJsonPreferNsis: true`, og
+      promote-release.mjs nekter et manifest nyere enn v0.25.0 der de to
+      nøklene ikke er samme fil (en tilbakerulling til en eldre tag er
+      fortsatt lov). - Beta-ringen har aldri `-msi`: en MSI-installasjon som bytter til
+      beta-kanalen går dermed gjennom NSIS-migrasjonen over. Samme
+      uprøvde sti som over. - **Fjerne `.msi` helt** (bygget, nøkkelen, regelen i promote-release):
+      gjør det først når migrasjonen er sett fungere på en rigg (en MSI-
+      installasjon som oppdateres til en NSIS-pakke), eller når det er rimelig
+      sikkert at flåten ikke har noen MSI-installasjoner igjen.
+- [ ] **Hver Windows-installasjon har WebView2-bootstrapperen innebygd**
+      (`bundle.windows.webviewInstallMode: embedBootstrapper`, ~1,8 MB større).
+      Merk at den fortsatt trenger nettilgang for å hente selve runtimen —
+      bare `offlineInstaller` gjør ikke det, og den er bevisst valgt bort
+      (+127 MB på hver oppdatering). Se `docs/NEEDS-RICHARD.md`
+      §«Eierbeslutninger fra F2».
 
 ### 5b. Pin the Windows ffmpeg hash (one-off, only if an entry is missing)
 
@@ -230,6 +275,11 @@ minimum bar is what v0.12.0 actually met:
       as the Electron-era SundayRec).
 - [ ] The pre-release flag is now set automatically from the tag, so there is
       nothing to toggle by hand for the update feed's sake any more.
+- [ ] På et stabilt utkast med både `-setup.exe` og `.msi`: legg én linje øverst
+      i GitHub-beskrivelsen — «Windows: last ned `-setup.exe`. `.msi`-filen er
+      bare for å oppdatere en installasjon som allerede kom fra den.» Det
+      påvirker ikke `latest.json` (notatet i oppdateringsdialogen er skrevet ved
+      byggetid), så det er trygt å redigere etterpå.
 - [ ] ⚠️ **Transition-period exception — still real, do not skip:** any
       install still on v0.10.0 or earlier reads GitHub's `/releases/latest`
       directly and never consults the promoted channel at all (see

@@ -16,6 +16,15 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   Fra denne versjonen åpner SundayRec også en database som en nyere versjon
   har oppdatert, i stedet for å stoppe før vinduet vises. Det gjelder
   nedgradering til denne versjonen eller nyere.
+- **På Windows er `-setup.exe` den du laster ned, og den ber ikke om
+  administratorpassord.** Den installerer for brukeren som kjører den, så en
+  frivillig på en låst kirke-PC blir ikke stående fast. `.msi`-filen ligger
+  fortsatt ved utgivelsen, men bare så en installasjon som allerede kom fra den
+  kan oppdatere seg som før. Har du installert med `.msi` fra før, la appen
+  oppdatere seg selv – den fortsetter på samme måte.
+- **Windows-installasjonen har med WebView2-installereren selv.** Den trenger
+  ikke lastes ned først, men trenger fortsatt nett for å hente selve
+  WebView2-komponenten på en maskin som mangler den.
 
 ## v0.25.0 — eget lydkort for spesialopptak, og filene du velger velges i appens eget vindu
 
