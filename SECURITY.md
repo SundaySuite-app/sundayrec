@@ -225,14 +225,34 @@ So a future auditor doesn't have to re-derive these from scratch:
   network path) is compared by name only; and a network share that stops
   answering still leaves the click waiting until the OS gives up, now on a
   blocking-pool thread rather than a runtime worker.
-  A related gap that predates #302, found in its review: `settings_export_to_file`
-  writes to a path the renderer passes rather than one a dialog opened by Rust
-  returned, and its guard (`checked_path`) judges that path only up to its
-  deepest existing folder and only against the protected list — so a
-  compromised renderer could create or overwrite other files the user can
-  write. The firmlink fold above does close the `/System/Volumes/Data`
-  spelling of the protected folders for that guard too; the real fix (Rust
-  opens the dialog) is a high-priority row in `docs/PLAN.md`.
+- **A settings file's location comes from a dialog Rust opens.** The settings
+  profile («Innstillingsprofil») is exported and imported by
+  `settings_export_profile` and `settings_import_profile`, which take no
+  argument: each opens the native save/open dialog from Rust and touches only
+  the file that dialog answered. Until the review of #302 found it (A1), the
+  webview opened the dialog itself and passed the picked path to
+  `settings_export_to_file(path)` — and with no per-command ACL a compromised
+  webview could pass any path with no dialog at all, so the export was an
+  arbitrary file create/overwrite with content it shaped (every free-text
+  setting lands in the JSON): a `.cmd` in the Windows Startup folder, an
+  overwritten `~/.zshrc`. Its guard only knew the protected home folders. The dialog's
+  filter names now come from Rust too, in the stored UI language. The path the
+  dialog answers still meets the `UserChosenWrite`/`UserChosenRead` guard
+  (absolute, no `..`, not in a protected folder) as defence in depth, and an
+  imported profile's save folder still meets the save-folder vet (refused, the
+  stored folder is kept). The import reads at most 1 MiB, refuses a file that
+  is not a settings profile (`profile_not_settings`) without writing anything,
+  and lays the profile over the stored settings rather than over the defaults
+  — a wrong file used to reset everything, the schedule included. `commands::path_ratchet` (`REPLACED`) fails if a
+  path-taking twin of either command comes back, or if one of them grows a
+  path parameter.
+  What remains under the same rule: other commands still take a path from the
+  webview and are held only by a path guard — the editor's export folder
+  (`editor_export`'s `output_folder`, picked in the webview's own dialog), the
+  editor's open file and its sidecars (`editor_*`) and the papirkurv
+  (`trash_move`). (The recording's output path is already Rust's — finding
+  E1, above.) Each is a separate change; the row is in `docs/PLAN.md`. The webview's `dialog:` permissions stay until the last of
+  them has moved; nothing in it opens a SAVE dialog any more.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

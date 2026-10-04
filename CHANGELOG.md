@@ -5,6 +5,16 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Eksport og import av innstillinger åpner lagre- og åpne-vinduet fra appen
+  selv.** Det ser ut som før, men nå er det bare fila du velger i vinduet som
+  blir skrevet eller lest — et sikkerhetstiltak. Ved import spør appen nå om
+  du vil erstatte innstillingene før vinduet åpnes, ikke etter at du har valgt
+  fila.
+- **En feil valgt fil nullstiller ikke lenger innstillingene.** Velger du noe
+  som ikke er en innstillingsprofil, sier appen fra og endrer ingenting. Før
+  ble alt satt tilbake til standard — også opptaksmappen og tidsplanen. Og en
+  profil tar aldri bort opptaksmappen eller tømmer tidsplanen på maskinen du
+  importerer til; det den inneholder, tas med.
 - **Forhåndssjekken på Opptak-siden sier hvilket lydkort som mangler.** Når et
   spesialopptak skal ta opp fra sitt eget lydkort og det ikke er koblet til,
   navngir raden nå lydkortet («Lydenheten «Zoom H6» for spesialopptaket er ikke

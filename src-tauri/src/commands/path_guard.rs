@@ -27,6 +27,12 @@
 //! The tension the table resolves: settings export/import legitimately targets
 //! anywhere the user pointed a native dialog at, so pinning it to the recordings
 //! folder would break a real flow for no gain — the dialog IS the authorisation.
+//! But only a dialog the PROCESS opened: a path the renderer passes is just a
+//! claim that one was shown, and these guards judge it only against the
+//! protected folders. So the settings profile no longer takes a path at all —
+//! `commands::settings` opens the dialog in Rust and holds the answer to the
+//! `UserChosen*` policy as defence in depth (finding A1). The commands that
+//! still take a dialog's path from the renderer are listed in `SECURITY.md`.
 //! A deep link, by contrast, carries no user intent at all, so it gets the
 //! narrowest policy plus an explicit confirmation (see `commands::deeplink`).
 //!

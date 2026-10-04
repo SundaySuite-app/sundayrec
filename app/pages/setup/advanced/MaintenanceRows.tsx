@@ -13,6 +13,10 @@ import { confirmDialog } from "../../../ui/dialog";
 import { revealResult } from "../../../ui/reveal";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
 import { toast } from "../../../ui/toast";
+import { oneAtATime, runExport, runImport } from "./profile-core";
+
+/** Ett profilvindu om gangen, for begge knappene (se `oneAtATime`). */
+const oneProfileDialog = oneAtATime();
 
 /** Legacy ber om 200 kB; serveren klamrer uansett til 512 kB. */
 const LOG_TAIL_BYTES = 200 * 1024;
@@ -78,53 +82,55 @@ export function LogRow() {
 /**
  * Innstillingsprofilen — hele oppsettet som én JSON-fil.
  *
- * De native dialogene ER stiautoriseringen; bakenden sjekker på nytt med sine
- * egne les/skriv-policyer. En avbrutt dialog svarer `null` og skal ikke si noe.
+ * Lagre-/åpne-vinduet åpnes av RUST, ikke herfra: ingen sti krysser grensen,
+ * så et webview kan ikke peke eksporten på en annen fil enn den brukeren
+ * valgte (funn A1). Rekkefølgen og hva svarene betyr står i `profile-core.ts`;
+ * et avbrutt vindu skal ikke si noe.
  *
- * Importen spør først, fordi den erstatter alt. Etterpå leses innstillingene
- * inn på nytt gjennom den vanlige veien (`hydrateSettings`) i stedet for å
- * stole på returverdien: signalene er det ene stedet skjermen leser fra, og en
- * import som bare oppdaterte returverdien ville latt hver åpne skjerm stå og
- * vise det gamle.
+ * Importen spør først, fordi den erstatter alt — og FØR vinduet, fordi vinduet
+ * og importen nå er ett steg i bakenden.
  */
 export function ProfileRow() {
+  // Nøklene står som literaler i hvert kall, ikke som parametre til en felles
+  // hjelper: i18n-gatene leser `t("…")`-kallene, og en nøkkel i en variabel
+  // er en nøkkel de ikke ser.
   async function exportProfile(): Promise<void> {
-    const path = await window.api.pickSavePath({
-      defaultPath: "sundayrec-innstillinger.json",
-      name: "JSON",
-      extensions: ["json"],
-    });
-    if (!path) return;
-    try {
-      await window.api.settingsExportToFile(path);
+    const outcome = await runExport(() => window.api.settingsExportProfile());
+    if (outcome.kind === "done") {
       toast("success", t("app.setup.advanced.exported"));
-    } catch (err) {
+    } else if (outcome.kind === "failed") {
       toast(
         "error",
-        tf("app.setup.advanced.exportFailed", { err: errText(err) }),
+        tf("app.setup.advanced.exportFailed", { err: outcome.err }),
       );
     }
   }
 
   async function importProfile(): Promise<void> {
-    const path = await window.api.pickSettingsFile();
-    if (!path) return;
-    const ok = await confirmDialog({
-      title: t("app.setup.advanced.importTitle"),
-      message: t("app.setup.advanced.importBody"),
-      confirmLabel: t("app.setup.advanced.importConfirm"),
-      cancelLabel: t("app.setup.cancel"),
-      danger: true,
+    const outcome = await runImport({
+      confirm: () =>
+        confirmDialog({
+          title: t("app.setup.advanced.importTitle"),
+          message: t("app.setup.advanced.importBody"),
+          confirmLabel: t("app.setup.advanced.importConfirm"),
+          cancelLabel: t("app.setup.cancel"),
+          danger: true,
+        }),
+      importProfile: () => window.api.settingsImportProfile(),
+      rehydrate: hydrateSettings,
     });
-    if (!ok) return;
-    try {
-      await window.api.settingsImportFromFile(path);
-      await hydrateSettings();
+    if (outcome.kind === "done") {
       toast("success", t("app.setup.advanced.imported"));
-    } catch (err) {
+    } else if (outcome.kind === "failed") {
+      // En fil som ikke er en profil — eller er alt for stor — har sin egen
+      // setning: «Ingenting ble endret» er det viktigste å få vite da.
       toast(
         "error",
-        tf("app.setup.advanced.importFailed", { err: errText(err) }),
+        outcome.refusal === "notProfile"
+          ? t("app.setup.advanced.importNotProfile")
+          : outcome.refusal === "tooLarge"
+            ? t("app.setup.advanced.importTooLarge")
+            : tf("app.setup.advanced.importFailed", { err: outcome.err }),
       );
     }
   }
@@ -138,22 +144,17 @@ export function ProfileRow() {
       <Button
         variant="ghost"
         testId="adv-profile-export"
-        onClick={() => void exportProfile()}
+        onClick={() => void oneProfileDialog(exportProfile)}
       >
         {t("app.setup.advanced.export")}
       </Button>
       <Button
         variant="ghost"
         testId="adv-profile-import"
-        onClick={() => void importProfile()}
+        onClick={() => void oneProfileDialog(importProfile)}
       >
         {t("app.setup.advanced.import")}
       </Button>
     </SettingRow>
   );
-}
-
-/** Feilteksten en bruker faktisk kan gi videre. «[object Object]» er ikke en. */
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
