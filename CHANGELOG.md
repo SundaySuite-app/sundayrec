@@ -5,6 +5,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.25.0 — eget lydkort for spesialopptak, og filene du velger velges i appens eget vindu
+
 - **Overføringen av innstillinger fra en gammel installasjon skjer nå bare én
   gang, og appen holder selv tellingen.** Oppgraderer du fra den gamle appen,
   tas opptaksmappen og resten med som før. Men nettvisningen kan ikke lenger be
