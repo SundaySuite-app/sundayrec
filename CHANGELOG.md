@@ -70,8 +70,10 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   som de er på maskinen du importerer til — de er ikke lenger med i profilen.
   Det samme gjelder lydkortet et spesialopptak har valgt selv: det følger
   ikke med profilen. En import slår heller aldri på automatisk sletting av
-  opptak eller gjør tiden kortere. Før kunne en profil fra en maskin som aldri var satt opp, få
-  kirke-PC-en til å ta opp fra feil lydenhet og ikke starte etter en omstart.
+  opptak eller gjør tiden kortere, og et tomt kirkenavn eller en tom
+  ansvarlig person i profilen tømmer ikke det som står på maskinen. Før kunne
+  en profil fra en maskin som aldri var satt opp, få kirke-PC-en til å ta opp
+  fra feil lydenhet og ikke starte etter en omstart.
 - **«Velg mappe …» på Eksportering åpnes nå av appen selv.** Vinduet ser ut
   som før, men bare en mappe du faktisk har valgt i det kan få eksporten — et
   sikkerhetstiltak. Er mappen borte når du trykker Eksporter (en minnepinne
