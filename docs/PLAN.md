@@ -19,9 +19,7 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
-| Punkt                                                                                                                                                 | Betingelse / når | Kilde                                                 |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ----------------------------------------------------- |
-| Neste sqlx-migrasjon stenger nedgradering (eldre stabil starter ikke på en nyere database): avgjør `ignore_missing(true)` i `open_pool` før den lages | Fritt            | [store.rs](../src-tauri/src/db/store.rs) (modulhodet) |
+Ingenting åpent. (Siste punkt, nedgradering etter en ny migrasjon, ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).)
 
 ## Spike / maskinvare først
 

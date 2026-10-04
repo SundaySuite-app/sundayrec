@@ -9,20 +9,24 @@
 //! One database file for the app (settings + recording history). The schema
 //! lives in `migrations/` and is applied by [`open_pool`].
 //!
-//! ## ⚠️ A new migration locks out a downgrade
+//! ## A newer database still opens — so migrations may only ADD
 //!
-//! [`open_pool`] runs `sqlx::migrate!()` as it comes, and that refuses to start
-//! on a database carrying a migration the running binary does not know
-//! (`VersionMissing`). So the first build that ships a migration `0009` is a
-//! one-way door: a beta tester who goes back to the stable ring — or anyone
-//! who reinstalls an older version — gets an app that cannot open its own
-//! database, and setup fails before a window appears. Up to `0008` every ring
-//! knows every migration, so it has never bitten. Decide before the next
-//! migration whether `open_pool` should tolerate a newer database
-//! (`Migrator::set_ignore_missing(true)`, with what that means for a schema the
-//! old build does not understand) — `docs/PLAN.md` tracks it. Until then, a
-//! table that can live without a migration should: the export journal creates
-//! its own at runtime for exactly this reason (`editor::export_journal`).
+//! [`open_pool`] runs the migrations with `set_ignore_missing(true)`: a
+//! database carrying a migration this binary does not know (written by a newer
+//! version) opens anyway, instead of failing setup with `VersionMissing` before
+//! a window appears. That keeps the way back open — a beta tester returning to
+//! the stable ring, an owner rolling a bad release back, anyone reinstalling an
+//! older version.
+//!
+//! The price is a rule for every migration after `0008`: it may only ADD —
+//! new tables, new columns that are nullable or have a `DEFAULT`, new indexes.
+//! Never a `DROP`, a `RENAME`, or a `NOT NULL` column without a default: the
+//! older build still reads and writes the same tables, and must not find one
+//! gone or an insert refused. `every_migration_after_0008_only_adds` holds the
+//! rule. (Builds up to v0.25.0 still refuse a newer database — the door opens
+//! from the first release that carries this; `docs/PLAN.md` decision of
+//! 2026-10-04.) A table that can live without a migration may still create
+//! itself at runtime, as the export journal does (`editor::export_journal`).
 
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -98,7 +102,11 @@ pub async fn open_pool(db_path: &Path) -> AppResult<SqlitePool> {
         .busy_timeout(Duration::from_secs(30))
         .synchronous(SqliteSynchronous::Normal);
     let pool = SqlitePool::connect_with(opts).await?;
-    sqlx::migrate!().run(&pool).await?;
+    // A newer version's migrations are tolerated — see the module docs for why,
+    // and for the add-only rule that makes it safe.
+    let mut migrator = sqlx::migrate!();
+    migrator.set_ignore_missing(true);
+    migrator.run(&pool).await?;
     Ok(pool)
 }
 
@@ -930,6 +938,117 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(mode.to_lowercase(), "wal");
+    }
+
+    #[tokio::test]
+    async fn a_database_from_a_newer_version_still_opens_and_records() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("newer.sqlite");
+        let pool = open_pool(&path).await.unwrap();
+        // What a newer build leaves behind: a migration this one never heard of.
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) \
+             VALUES (9999, 'from a newer version', 1, X'00', 0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let pool = open_pool(&path)
+            .await
+            .expect("an older build must still open a newer database");
+        insert_recording(&pool, sample("/rec/after-downgrade.mp3", 1.0))
+            .await
+            .expect("and still record into it");
+    }
+
+    /// Why a migration would break an older build that opens the database
+    /// anyway (see the module docs), or `None` when it only adds.
+    fn breaks_an_older_build(sql: &str) -> Option<&'static str> {
+        let code: String = sql
+            .lines()
+            .map(|l| l.split("--").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_uppercase();
+        if code.contains("DROP ") {
+            return Some("DROP");
+        }
+        if code.contains("RENAME") {
+            return Some("RENAME");
+        }
+        for statement in code.split(';') {
+            if statement.contains("ADD COLUMN")
+                && statement.contains("NOT NULL")
+                && !statement.contains("DEFAULT")
+            {
+                return Some("NOT NULL column without a DEFAULT");
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn every_migration_after_0008_only_adds() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut seen = 0;
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let number: u32 = name
+                .split('_')
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or_else(|| panic!("{name}: not a numbered migration"));
+            seen += 1;
+            if number <= 8 {
+                continue; // shipped before the rule; every ring knows them
+            }
+            let sql = std::fs::read_to_string(&path).unwrap();
+            if let Some(why) = breaks_an_older_build(&sql) {
+                panic!("{name}: {why} — a migration may only add (store.rs module docs)");
+            }
+        }
+        assert!(
+            seen >= 8,
+            "found only {seen} migrations in {}",
+            dir.display()
+        );
+    }
+
+    #[test]
+    fn the_add_only_check_tells_adding_from_taking_away() {
+        assert_eq!(
+            breaks_an_older_build("CREATE TABLE x (id TEXT PRIMARY KEY);"),
+            None
+        );
+        assert_eq!(
+            breaks_an_older_build("ALTER TABLE recording ADD COLUMN mood TEXT;"),
+            None
+        );
+        assert_eq!(
+            breaks_an_older_build("ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL DEFAULT 0;"),
+            None
+        );
+        assert_eq!(
+            breaks_an_older_build(
+                "-- we no longer DROP anything\nCREATE INDEX i ON recording(id);"
+            ),
+            None
+        );
+        assert_eq!(
+            breaks_an_older_build("DROP TABLE upload_queue;"),
+            Some("DROP")
+        );
+        assert_eq!(
+            breaks_an_older_build("ALTER TABLE recording RENAME COLUMN note TO notes;"),
+            Some("RENAME")
+        );
+        assert_eq!(
+            breaks_an_older_build("ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL;"),
+            Some("NOT NULL column without a DEFAULT")
+        );
     }
 
     #[tokio::test]

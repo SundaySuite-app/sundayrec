@@ -5,6 +5,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Du kan gå tilbake til en eldre versjon uten at appen slutter å starte.**
+  Fra denne versjonen åpner SundayRec også en database som en nyere versjon
+  har oppdatert, i stedet for å stoppe før vinduet vises. Det gjelder
+  nedgradering til denne versjonen eller nyere.
+
 ## v0.25.0 — eget lydkort for spesialopptak, og filene du velger velges i appens eget vindu
 
 - **Overføringen av innstillinger fra en gammel installasjon skjer nå bare én
