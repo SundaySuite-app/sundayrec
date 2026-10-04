@@ -311,8 +311,10 @@ fn export_folder_error(why: ChosenError) -> AppError {
 /// in THIS session (`export_folder_unknown` otherwise — a made-up one, one
 /// from before a restart, one for a file), and its folder must still be there,
 /// still a folder, still the folder that was picked and still pass
-/// `path_guard` (`export_folder_missing` / `export_folder_refused`). The checks
-/// run off the async runtime: the folder may be a USB stick or a share.
+/// `path_guard` (`export_folder_missing` / `export_folder_refused`). That is
+/// all [`ChosenPaths::resolve`], in one step: the store has no way to give a
+/// place back without checking it. It runs off the async runtime: the folder
+/// may be a USB stick or a share.
 async fn resolve_export_folder(
     chosen: &ChosenPaths,
     token: Option<&str>,
@@ -320,15 +322,35 @@ async fn resolve_export_folder(
     let Some(token) = token else {
         return Ok(ExportFolder::BesideSource);
     };
-    let minted = chosen
-        .lookup(token, ChosenKind::Folder)
-        .map_err(export_folder_error)?;
-    let folder = off_runtime(move || chosen_paths::revalidate(&minted, ChosenKind::Folder))
+    let store = chosen.clone();
+    let token = token.to_string();
+    let folder = off_runtime(move || store.resolve(&token, ChosenKind::Folder))
         .await?
         .map_err(export_folder_error)?;
     let plain = chosen_paths::plain_string(&folder)
         .ok_or_else(|| export_folder_error(ChosenError::Refused))?;
     Ok(ExportFolder::Picked(plain))
+}
+
+/// The part of `editor_export` that decides WHERE: resolve the request's token
+/// into the folder, and hand THAT — never the token, never anything the
+/// request carries — to `seam`, the render. Split from the command so a test
+/// can stand in for the render and see exactly what folder it is given
+/// (`the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent`).
+///
+/// A token that does not resolve means `seam` is never called: nothing is
+/// rendered into a folder that was not checked.
+async fn run_export<T, F, Fut>(
+    chosen: &ChosenPaths,
+    request: &EditorExportRequest,
+    seam: F,
+) -> AppResult<T>
+where
+    F: FnOnce(ExportFolder) -> Fut,
+    Fut: std::future::Future<Output = AppResult<T>>,
+{
+    let folder = resolve_export_folder(chosen, request.output_folder_token.as_deref()).await?;
+    seam(folder).await
 }
 
 /// «Velg mappe …» on the export page: open the native folder picker FROM RUST
@@ -366,13 +388,13 @@ pub(crate) async fn choose_output_folder(
     let Some(picked) = picked else {
         return Ok(None);
     };
-    let folder = off_runtime(move || chosen_paths::vet(&picked, ChosenKind::Folder))
+    let vetted = off_runtime(move || chosen_paths::vet(&picked, ChosenKind::Folder))
         .await?
         .map_err(export_folder_error)?;
-    let plain = chosen_paths::plain_string(&folder)
+    let plain = chosen_paths::plain_string(vetted.place())
         .ok_or_else(|| export_folder_error(ChosenError::Refused))?;
     let display_name = chosen_paths::display_name(&plain);
-    let token = chosen.mint(ChosenKind::Folder, folder);
+    let token = chosen.mint(vetted);
     Ok(Some(ChosenPlace {
         token,
         display_name,
@@ -419,25 +441,30 @@ pub async fn editor_export(
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
-    let folder = resolve_export_folder(&chosen, request.output_folder_token.as_deref()).await?;
     // v0.15: hardware video encode is automatic — hardware first where the
     // platform has it, software on a failed render (the `editorHwEncode`
     // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
-    let result = editor::export(
-        &engine,
-        &request,
-        &folder,
-        editor::HW_ENCODE_FIRST,
-        move |pct, phase| {
-            let _ = app.emit(
-                "editor://export-progress",
-                EditorExportProgress {
-                    pct,
-                    phase: phase.to_string(),
-                },
-            );
-        },
-    )
+    //
+    // The seam is given the folder `run_export` resolved, and only that.
+    let (engine, request_ref) = (&*engine, &request);
+    let result = run_export(&chosen, request_ref, |folder| async move {
+        editor::export(
+            engine,
+            request_ref,
+            &folder,
+            editor::HW_ENCODE_FIRST,
+            move |pct, phase| {
+                let _ = app.emit(
+                    "editor://export-progress",
+                    EditorExportProgress {
+                        pct,
+                        phase: phase.to_string(),
+                    },
+                );
+            },
+        )
+        .await
+    })
     .await?;
     // Counted HERE, after `editor::export` actually produced a file —
     // `CounterName::EditorExportMp3`'s own doc comment promises "an export
@@ -918,7 +945,8 @@ mod tests {
         // traversal, and a token minted for a FILE.
         let file = dir.path().join("opptak.mp3");
         std::fs::write(&file, b"x").unwrap();
-        let file_token = store.mint(ChosenKind::File, file.canonicalize().unwrap());
+        let file_token =
+            store.mint(chosen_paths::vet(&file, ChosenKind::File).expect("a file vets as a file"));
         for forged in [
             "00000000-0000-0000-0000-000000000000",
             plain.as_str(),
@@ -1107,6 +1135,78 @@ mod tests {
         let (tmp, out) = planned(&store, &req).await;
         assert_eq!(tmp, format!("{plain}/opptak_redigert.__editor_tmp.mp3"));
         assert_eq!(out, format!("{plain}/opptak_redigert.mp3"));
+    }
+
+    /// What the seam was handed, for [`run_export`]'s tests: records the
+    /// folder it is called with, and answers like a finished render.
+    async fn folder_given_to_the_seam(
+        store: &ChosenPaths,
+        req: &EditorExportRequest,
+    ) -> (AppResult<()>, Option<ExportFolder>) {
+        let seen = std::sync::Mutex::new(None);
+        let ran = run_export(store, req, |folder| {
+            *seen.lock().unwrap() = Some(folder);
+            async { Ok(()) }
+        })
+        .await;
+        (ran, seen.into_inner().unwrap())
+    }
+
+    #[tokio::test]
+    async fn the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent() {
+        // M3c: what `editor_export` gives the render is what the token
+        // RESOLVED to — the canonical folder, re-validated — and not the
+        // token itself, not a path, not the source's folder.
+        let dir = tempfile::tempdir().unwrap();
+        let (folder, plain) = picked_folder(dir.path(), "Eksport");
+        let (_, decoy) = picked_folder(dir.path(), "Et annet sted");
+        let store = ChosenPaths::new();
+        let token = choose_output_folder(&store, Some(folder))
+            .await
+            .unwrap()
+            .unwrap()
+            .token;
+        let mut req = request("/Users/kari/Documents/SundayRec/opptak.mp3");
+        req.output_folder_token = Some(token.clone());
+
+        let (ran, given) = folder_given_to_the_seam(&store, &req).await;
+        ran.unwrap();
+
+        assert_eq!(given, Some(ExportFolder::Picked(plain.clone())));
+        assert_ne!(given, Some(ExportFolder::Picked(token)), "not the token");
+        assert_ne!(given, Some(ExportFolder::Picked(decoy)));
+        assert_ne!(
+            given,
+            Some(ExportFolder::BesideSource),
+            "not the source's folder"
+        );
+
+        // No token: next to the source, and only then.
+        req.output_folder_token = None;
+        let (ran, given) = folder_given_to_the_seam(&store, &req).await;
+        ran.unwrap();
+        assert_eq!(given, Some(ExportFolder::BesideSource));
+    }
+
+    #[tokio::test]
+    async fn a_token_that_does_not_resolve_never_reaches_the_seam() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, plain) = picked_folder(dir.path(), "Eksport");
+        let store = ChosenPaths::new();
+        let mut req = request("/Users/kari/Documents/SundayRec/opptak.mp3");
+        // A path where the token goes, and a made-up token: both refused, and
+        // the render is never called.
+        for forged in [plain.as_str(), "00000000-0000-0000-0000-000000000000"] {
+            req.output_folder_token = Some(forged.to_string());
+            let (ran, given) = folder_given_to_the_seam(&store, &req).await;
+            match ran {
+                Err(AppError::Validation(msg)) => {
+                    assert!(msg.starts_with("export_folder_unknown"), "{msg}")
+                }
+                other => panic!("{forged:?}: expected export_folder_unknown, got {other:?}"),
+            }
+            assert_eq!(given, None, "{forged:?} reached the seam");
+        }
     }
 
     /// The generic sidecar commands must not be a second door into the file

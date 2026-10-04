@@ -1163,8 +1163,12 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_folder_deleted_since_the_pick_is_refused
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_cancelled_pick_mints_nothing
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_path_in_the_old_field_goes_nowhere
-   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::revalidation_refuses_a_folder_swapped_for_a_symlink_elsewhere
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::resolving_refuses_a_folder_swapped_for_a_symlink_elsewhere
    - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_store_is_bounded_and_evicts_the_oldest_first
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::a_minted_token_resolves_to_its_place_and_only_as_its_kind
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_same_place_again_reuses_its_token
+   - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_vet_refuses_a_protected_folder_and_a_file_in_one
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent
    - «Samme mappe» lands exactly where it did before:
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_same_folder_export_lands_exactly_where_it_did_before
    - The page: the name shown, the token sent, a cancel, a refusal with its own sentence:

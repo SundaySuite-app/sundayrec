@@ -238,8 +238,10 @@ pub fn checked_input_file(raw: &str) -> AppResult<()> {
 }
 
 /// [`checked_input_file`] with the home folder passed in (see
-/// [`deny_sensitive_for_home`]).
-fn checked_input_file_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
+/// [`deny_sensitive_for_home`]). `pub(crate)` for `commands::chosen_paths`,
+/// whose vet takes the same seam so its tests can give it a home with a
+/// protected folder in it.
+pub(crate) fn checked_input_file_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
     let path = require_absolute(raw)?;
     let canonical = path
         .canonicalize()
@@ -256,10 +258,16 @@ fn checked_input_file_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> 
 /// would otherwise go unseen); the deepest existing ancestor is canonicalised
 /// and checked against the deny list.
 pub fn checked_path(raw: &str) -> AppResult<()> {
+    checked_path_for_home(raw, home_dir().as_deref())
+}
+
+/// [`checked_path`] with the home folder passed in — the seam
+/// [`checked_input_file_for_home`] is, for the same reason.
+pub(crate) fn checked_path_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
     let path = require_absolute(raw)?;
     reject_traversal(path, raw)?;
     let canonical = deepest_existing_canonical(path, raw)?;
-    deny_sensitive(&canonical)
+    deny_sensitive_for_home(&canonical, home)
 }
 
 /// Reject a path carrying `..` components. Split out so the root-scoping guard

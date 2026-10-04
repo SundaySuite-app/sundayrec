@@ -71,10 +71,157 @@
 //! called in the command's own body, like a guard — and the test that feeds it
 //! a forged token. [`editor_export_names_its_folder_only_by_token`] pins the
 //! A2 fix from the outside.
+//!
+//! The same goes for a token that is a PARAMETER of the command rather than a
+//! field of its request: a `#[tauri::command]` parameter named like a place
+//! plus `_token` must be listed in [`PARAM_TOKENS`], with the same resolver and
+//! proof. A token is not a path, and it is exactly as good as one for deciding
+//! where the command acts, so it cannot be the one shape the ratchet does not
+//! look at. And a resolver is not taken on its word: following the calls from
+//! the command's body must reach `ChosenPaths::resolve` — the one door a token
+//! gives its place back through — or the entry is a name with nothing behind it.
+//!
+//! ## What «the body calls it» means: code, not comments
+//!
+//! Every lexical rule here — a guard in the body, a resolver in the body, a
+//! `path_guard` mention — is read from the source with its COMMENTS STRIPPED
+//! (`//`, `///`, `//!` and nested `/* */`; [`strip_comments`]). Without that, a
+//! comment that merely names the guard — «// no longer calls
+//! `check_export_paths(&request)`», or a doc comment on the NEXT command, which
+//! sits in the previous command's segment — made the ratchet go green over an
+//! unguarded command.
 
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+
+/// The source with its comments removed — `//`, `///`, `//!` and (nested)
+/// `/* … */` — and every newline kept, so line numbers and the line-based
+/// parsers below still line up. String, raw-string and character literals are
+/// read as literals: a `//` inside `"https://…"` is not a comment, and a `"`
+/// inside a comment does not open a string.
+fn strip_comments(src: &str) -> String {
+    lex(src, false)
+}
+
+/// [`strip_comments`] and the contents of string and character literals
+/// blanked too (the quotes stay), so a `{` or a function name inside a literal
+/// can neither move a brace count nor pass for a call.
+fn code_only(src: &str) -> String {
+    lex(src, true)
+}
+
+fn lex(src: &str, blank_literals: bool) -> String {
+    let c: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let is_ident_char = |ch: char| ch.is_ascii_alphanumeric() || ch == '_';
+    // One literal character: kept, or a blank (newlines always kept).
+    let lit = |out: &mut String, ch: char| {
+        out.push(if blank_literals && ch != '\n' {
+            ' '
+        } else {
+            ch
+        })
+    };
+    let mut i = 0;
+    while i < c.len() {
+        let ch = c[i];
+        let next = c.get(i + 1).copied();
+        if ch == '/' && next == Some('/') {
+            while i < c.len() && c[i] != '\n' {
+                i += 1;
+            }
+        } else if ch == '/' && next == Some('*') {
+            let mut depth = 1;
+            i += 2;
+            while i < c.len() && depth > 0 {
+                if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+                    depth += 1;
+                    i += 2;
+                } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
+                    depth -= 1;
+                    i += 2;
+                } else {
+                    if c[i] == '\n' {
+                        out.push('\n');
+                    }
+                    i += 1;
+                }
+            }
+            out.push(' ');
+        } else if ch == 'r'
+            && (i == 0
+                || !is_ident_char(c[i - 1])
+                || (c[i - 1] == 'b' && (i < 2 || !is_ident_char(c[i - 2]))))
+            && matches!(next, Some('"' | '#'))
+            && {
+                let hashes = c[i + 1..].iter().take_while(|&&h| h == '#').count();
+                c.get(i + 1 + hashes) == Some(&'"')
+            }
+        {
+            // A raw string: r"…", r#"…"#, br#"…"#.
+            let hashes = c[i + 1..].iter().take_while(|&&h| h == '#').count();
+            out.push('r');
+            out.extend(std::iter::repeat_n('#', hashes));
+            out.push('"');
+            i += hashes + 2;
+            while i < c.len() {
+                if c[i] == '"' && (1..=hashes).all(|k| c.get(i + k) == Some(&'#')) {
+                    break;
+                }
+                lit(&mut out, c[i]);
+                i += 1;
+            }
+            out.push('"');
+            out.extend(std::iter::repeat_n('#', hashes));
+            i += hashes + 1;
+        } else if ch == '"' {
+            out.push('"');
+            i += 1;
+            while i < c.len() && c[i] != '"' {
+                if c[i] == '\\' && i + 1 < c.len() {
+                    lit(&mut out, c[i]);
+                    i += 1;
+                }
+                lit(&mut out, c[i]);
+                i += 1;
+            }
+            out.push('"');
+            i += 1;
+        } else if ch == '\'' {
+            // A character literal ('x', '\n', '\u{1F600}') — or a lifetime ('a),
+            // which has no closing quote and is just kept.
+            let close = if next == Some('\\') {
+                c[i + 2..]
+                    .iter()
+                    .position(|&q| q == '\'')
+                    .map(|p| i + 2 + p)
+            } else if c.get(i + 2) == Some(&'\'') && next != Some('\'') {
+                Some(i + 2)
+            } else {
+                None
+            };
+            match close {
+                Some(end) => {
+                    out.push('\'');
+                    for &q in &c[i + 1..end] {
+                        lit(&mut out, q);
+                    }
+                    out.push('\'');
+                    i = end + 1;
+                }
+                None => {
+                    out.push('\'');
+                    i += 1;
+                }
+            }
+        } else {
+            out.push(ch);
+            i += 1;
+        }
+    }
+    out
+}
 
 /// Commands that take a path-shaped parameter AND run it through
 /// [`crate::commands::path_guard`]. The policy each one applies is documented on
@@ -143,8 +290,10 @@ enum FieldHandling {
     /// picked in a dialog Rust opened (`commands::chosen_paths`). The webview
     /// can only hand back a token it was given. `resolver` turns it into the
     /// place and re-validates it, and must appear in the command's own body
-    /// (lexically, like [`Guarded`]); `proof` is a test that hands the
-    /// resolver a made-up token and checks it is refused.
+    /// (lexically, like [`Guarded`], comments stripped) — and following the
+    /// calls from there must reach `ChosenPaths::resolve`
+    /// ([`token_problem`]); `proof` is a test that hands the resolver a
+    /// made-up token and checks it is refused.
     Token {
         resolver: &'static str,
         proof: &'static str,
@@ -187,7 +336,7 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
         "editor_export",
         "EditorExportRequest.output_folder_token",
         Token {
-            resolver: "resolve_export_folder(&chosen",
+            resolver: "run_export(&chosen",
             proof: "a_made_up_or_foreign_token_is_refused_with_its_own_code",
         },
     ),
@@ -231,6 +380,15 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
     ),
 ];
 
+/// Every `#[tauri::command]` PARAMETER that is a token for a place
+/// ([`is_token_param`]), as `(command, parameter, Token { … })`. The shape
+/// [`PATH_FIELDS`] gives a token field, for a token the command takes
+/// directly. Empty today: the one token the webview sends, the export
+/// folder's, rides inside `EditorExportRequest`. A new command taking one — the
+/// next PR's `editor_open_recording` takes a File token — is a failing test
+/// until it is listed here.
+const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[];
+
 /// Field names that do not LOOK like paths but become part of one, so they
 /// are judged as paths too.
 ///
@@ -252,6 +410,9 @@ struct Command {
     name: String,
     file: String,
     path_params: Vec<String>,
+    /// The parameters that are TOKENS for a place (`output_folder_token`):
+    /// see [`is_token_param`].
+    token_params: Vec<String>,
     /// Every parameter as `(name, type)`, for the field-level check.
     params: Vec<(String, String)>,
     /// The source from this command's `fn` line up to the next command (or EOF).
@@ -263,6 +424,17 @@ struct Command {
 fn is_path_like(name: &str) -> bool {
     let n = name.trim_start_matches('_').to_ascii_lowercase();
     n.contains("path") || n.ends_with("folder") || n.ends_with("dir") || n.ends_with("file")
+}
+
+/// Whether a command PARAMETER is a token for a place: a path-shaped name plus
+/// `_token` — the same rule [`is_path_like_field`] applies to a request's
+/// fields (`device_token` is not a place; `output_folder_token` is). Judged by
+/// name, like everything here, and over-matching costs a line in
+/// [`PARAM_TOKENS`].
+fn is_token_param(name: &str) -> bool {
+    name.trim_start_matches('_')
+        .strip_suffix("_token")
+        .is_some_and(is_path_like)
 }
 
 /// Split a parameter list body at commas that sit at depth zero, so
@@ -336,7 +508,11 @@ fn param_names(signature: &str) -> Vec<String> {
 }
 
 /// Parse one `commands/*.rs` file into its `#[tauri::command]` functions.
+///
+/// The source is read with its comments stripped ([`strip_comments`]): what a
+/// command's segment «calls» is what it calls, not what a comment says.
 fn parse_file(file: &str, source: &str) -> Vec<Command> {
+    let source = strip_comments(source);
     let lines: Vec<&str> = source.lines().collect();
     // Where each command's attribute sits, so a segment can end at the next one.
     let attr_lines: Vec<usize> = lines
@@ -386,12 +562,17 @@ fn parse_file(file: &str, source: &str) -> Vec<Command> {
             .into_iter()
             .filter(|n| is_path_like(n))
             .collect();
+        let token_params: Vec<String> = param_names(&signature)
+            .into_iter()
+            .filter(|n| is_token_param(n))
+            .collect();
         let segment_end = attr_lines.get(nth + 1).copied().unwrap_or(lines.len());
         let segment = lines[end.min(segment_end)..segment_end].join("\n");
         commands.push(Command {
             name,
             file: file.to_string(),
             path_params,
+            token_params,
             params: params(&signature),
             segment,
         });
@@ -470,6 +651,7 @@ fn is_ident(s: &str) -> bool {
 /// `#[serde(\n default = …,\n)]` exists), visibility, generics. Tuple and
 /// unit structs carry no field NAMES, so they are not entered.
 fn parse_structs(source: &str, out: &mut StructFields) {
+    let source = strip_comments(source);
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
     while i < lines.len() {
@@ -733,21 +915,13 @@ fn every_classified_field_still_exists_and_its_guard_is_called() {
                 );
             }
             Token { resolver, proof } => {
-                let segment = &commands
+                let command = commands
                     .iter()
                     .find(|c| &c.name == cmd)
-                    .expect("findings came from this command")
-                    .segment;
-                assert!(
-                    segment.contains(resolver),
-                    "`{cmd}` lists `{field}` as a token resolved by `{resolver}`, \
-                     but its body never calls it"
-                );
-                assert!(
-                    source_defines_fn(proof),
-                    "`{cmd}` lists `{field}` as a token, proven by `{proof}` — \
-                     but that test no longer exists"
-                );
+                    .expect("findings came from this command");
+                if let Some(problem) = token_problem(command, resolver, proof, &crate_code()) {
+                    panic!("`{cmd}` lists `{field}` as a token: {problem}");
+                }
             }
             Exempt(reason) => assert!(
                 reason.trim().len() >= 20,
@@ -762,18 +936,142 @@ fn every_classified_field_still_exists_and_its_guard_is_called() {
     assert_eq!(keys.len(), before, "PATH_FIELDS has duplicates");
 }
 
-/// Whether `fn <name>(` appears in this crate's or the core's sources.
-fn source_defines_fn(name: &str) -> bool {
+/// This crate's and the core's sources, as code only ([`code_only`]): no
+/// comments, no literal contents. What a name «appears in» is what is there.
+fn crate_code() -> Vec<String> {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     rust_files(&manifest.join("src"), &mut files);
     rust_files(&manifest.join("../crates/sundayrec-core/src"), &mut files);
+    files.sort();
+    files
+        .iter()
+        .map(|f| code_only(&std::fs::read_to_string(f).unwrap_or_default()))
+        .collect()
+}
+
+/// Whether `fn <name>(` is defined in this crate's or the core's sources (in
+/// code — a `fn name(` inside a comment does not define it).
+fn source_defines_fn(name: &str) -> bool {
+    defines_fn(&crate_code(), name)
+}
+
+fn defines_fn(sources: &[String], name: &str) -> bool {
     let needle = format!("fn {name}(");
-    files.iter().any(|f| {
-        std::fs::read_to_string(f)
-            .unwrap_or_default()
-            .contains(&needle)
-    })
+    sources.iter().any(|src| src.contains(&needle))
+}
+
+/// The body of the function `name` — from its opening brace to the matching
+/// one — in the first of `sources` (as [`code_only`] text, so no brace in a
+/// comment or a literal can end it early).
+fn fn_body(sources: &[String], name: &str) -> Option<String> {
+    let needles = [format!("fn {name}("), format!("fn {name}<")];
+    for src in sources {
+        let Some(at) = needles.iter().filter_map(|n| src.find(n)).min() else {
+            continue;
+        };
+        let open = at + src[at..].find('{')?;
+        let mut depth = 0i32;
+        for (i, ch) in src[open..].char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(src[open + 1..open + i].to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// The identifiers a body calls: every `name(` (free function or method).
+fn called_names(body: &str) -> BTreeSet<String> {
+    let chars: Vec<char> = body.chars().collect();
+    let mut out = BTreeSet::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_alphabetic() || chars[i] == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            if chars.get(i) == Some(&'(') {
+                out.insert(chars[start..i].iter().collect());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Whether following the calls from function `name` — a few levels, through
+/// functions defined in `sources` — reaches the store's one door,
+/// `ChosenPaths::resolve` (a `.resolve(…, ChosenKind::…)` call).
+fn reaches_store(
+    sources: &[String],
+    name: &str,
+    depth: usize,
+    seen: &mut BTreeSet<String>,
+) -> bool {
+    if depth == 0 || !seen.insert(name.to_string()) {
+        return false;
+    }
+    let Some(body) = fn_body(sources, name) else {
+        return false;
+    };
+    if body.contains(".resolve(") && body.contains("ChosenKind::") {
+        return true;
+    }
+    called_names(&body)
+        .iter()
+        .any(|callee| reaches_store(sources, callee, depth - 1, seen))
+}
+
+/// What is wrong with a Token entry, if anything: the resolver is not called
+/// in the command's own body (comments stripped), the chain behind it never
+/// reaches `ChosenPaths::resolve`, or its proof test is gone. One function for
+/// the real lists and the fixtures that hold it to its word.
+fn token_problem(cmd: &Command, resolver: &str, proof: &str, sources: &[String]) -> Option<String> {
+    if !cmd.segment.contains(resolver) {
+        return Some(format!(
+            "its body never calls the resolver `{resolver}` (a comment that \
+             names it does not count)"
+        ));
+    }
+    let start = resolver.split('(').next().unwrap_or(resolver);
+    if !reaches_store(sources, start, 4, &mut BTreeSet::new()) {
+        return Some(format!(
+            "following `{start}` never reaches `ChosenPaths::resolve` — the \
+             resolver does not turn the token back into a checked place"
+        ));
+    }
+    if !defines_fn(sources, proof) {
+        return Some(format!("the proof test `{proof}` no longer exists"));
+    }
+    None
+}
+
+/// Every `(command, parameter)` that is a place-token parameter and is not
+/// listed in `listed` — what [`every_token_parameter_is_classified`] requires
+/// to be empty, and what the fixture below holds it to.
+fn unclassified_token_params(
+    commands: &[Command],
+    listed: &[(&str, &str, FieldHandling)],
+) -> Vec<String> {
+    commands
+        .iter()
+        .flat_map(|cmd| {
+            cmd.token_params
+                .iter()
+                .filter(|p| !listed.iter().any(|(c, l, _)| *c == cmd.name && l == p))
+                .map(|p| format!("{} — {p}", cmd.name))
+        })
+        .collect()
 }
 
 /// The fix for E1, pinned from the outside: `start_recording`'s parameters
@@ -1093,9 +1391,10 @@ fn every_guarded_command_still_exists_and_calls_a_guard() {
 }
 
 /// The body of `tauri::generate_handler![…]` in `src/lib.rs` — what the webview
-/// can actually invoke. Comments are stripped line by line BEFORE the closing
-/// `]` is looked for, so a note that names a retired command is not mistaken
-/// for its registration, and a `[…]` in a note does not end the block early.
+/// can actually invoke. Comments are stripped BEFORE the closing
+/// `]` is looked for (the lexer of [`strip_comments`]), so a note that names a
+/// retired command is not mistaken for its registration, and a `[…]` in a note
+/// does not end the block early.
 fn registered_handler_block() -> String {
     let lib = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
     let src = std::fs::read_to_string(&lib)
@@ -1107,17 +1406,10 @@ fn registered_handler_block() -> String {
 /// to a fixture.
 fn handler_block_of(src: &str) -> Option<String> {
     const OPEN: &str = "tauri::generate_handler![";
+    let src = strip_comments(src);
     let start = src.find(OPEN)? + OPEN.len();
-    let mut block = Vec::new();
-    for line in src[start..].lines() {
-        let code = line.split("//").next().unwrap_or_default();
-        if let Some(end) = code.find(']') {
-            block.push(&code[..end]);
-            return Some(block.join("\n"));
-        }
-        block.push(code);
-    }
-    None
+    let end = src[start..].find(']')?;
+    Some(src[start..start + end].to_string())
 }
 
 #[test]
@@ -1289,4 +1581,252 @@ pub fn plain(id: String) -> bool { true }
     assert!(parsed[1].path_params.is_empty());
     // A command's segment must NOT bleed into the next one's.
     assert!(!parsed[1].segment.contains("path_guard"));
+}
+
+// ── S2/S4: token parameters, and comments that name a guard ─────────────────
+
+#[test]
+fn every_token_parameter_is_classified() {
+    let unclassified = unclassified_token_params(&all_commands(), PARAM_TOKENS);
+    assert!(
+        unclassified.is_empty(),
+        "\n\
+         ────────────────────────────────────────────────────────────────────\n\
+         A #[tauri::command] takes a TOKEN for a place as a parameter and it\n\
+         is not listed in PARAM_TOKENS. A token is not a path, but it decides\n\
+         where the command acts exactly as the path it stands for (finding A2).\n\
+         \n\
+         {}\n\
+         \n\
+         List it as `(command, \"param\", Token {{ resolver, proof }})`: the call\n\
+         in the command's own body that turns the token back into a CHECKED\n\
+         place (`ChosenPaths::resolve`, directly or through a helper), and the\n\
+         test that hands it a made-up token and sees it refused.\n\
+         ────────────────────────────────────────────────────────────────────",
+        unclassified
+            .iter()
+            .map(|u| format!("  {u}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[test]
+fn every_listed_token_parameter_exists_and_is_resolved() {
+    let commands = all_commands();
+    let code = crate_code();
+    for (cmd, param, handling) in PARAM_TOKENS {
+        let Some(command) = commands.iter().find(|c| &c.name == cmd) else {
+            panic!("PARAM_TOKENS lists `{cmd}`, which no longer exists — remove the entry");
+        };
+        assert!(
+            command.token_params.iter().any(|p| p == param),
+            "PARAM_TOKENS lists `{cmd}` / `{param}`, but that command no longer \
+             takes it — remove the stale entry"
+        );
+        let Token { resolver, proof } = handling else {
+            panic!("`{cmd}` / `{param}`: a token parameter must be listed as a Token");
+        };
+        if let Some(problem) = token_problem(command, resolver, proof, &code) {
+            panic!("`{cmd}` lists the token parameter `{param}`: {problem}");
+        }
+    }
+}
+
+#[test]
+fn an_unlisted_token_parameter_is_found() {
+    // The shape the next PR brings: a command taking its token directly. Not
+    // listed → the ratchet names it; listed → it does not.
+    let src = r#"
+#[tauri::command]
+pub async fn editor_open_recording(
+    chosen: State<'_, ChosenPaths>,
+    recording_file_token: String,
+    job_token: String,
+) -> AppResult<()> {
+    Ok(())
+}
+"#;
+    let commands = parse_file("fixture.rs", src);
+    assert_eq!(
+        commands[0].token_params,
+        vec!["recording_file_token".to_string()],
+        "a token for a place; `job_token` is not one"
+    );
+    assert_eq!(
+        unclassified_token_params(&commands, &[]),
+        vec!["editor_open_recording — recording_file_token".to_string()],
+        "an unlisted token parameter must be reported"
+    );
+    let listed = [(
+        "editor_open_recording",
+        "recording_file_token",
+        Token {
+            resolver: "x",
+            proof: "y",
+        },
+    )];
+    assert!(unclassified_token_params(&commands, &listed).is_empty());
+}
+
+#[test]
+fn the_token_parameter_rule_matches_places_and_not_other_tokens() {
+    for name in [
+        "output_folder_token",
+        "_recording_file_token",
+        "save_dir_token",
+        "media_path_token",
+    ] {
+        assert!(is_token_param(name), "{name} stands for a place");
+    }
+    for name in ["device_token", "token", "job_token", "csrf_token", "folder"] {
+        assert!(!is_token_param(name), "{name} is not a place token");
+    }
+}
+
+#[test]
+fn the_comment_stripper_removes_every_kind_and_keeps_the_lines() {
+    let src = "a // line\n/// doc\n//! inner\nb /* block */ c\n/* multi\nline */ d\n\
+               /* outer /* nested */ still outer */ e\n";
+    let out = strip_comments(src);
+    for gone in ["line", "doc", "inner", "block", "multi", "nested", "outer"] {
+        assert!(!out.contains(gone), "`{gone}` survived: {out:?}");
+    }
+    let tokens: Vec<&str> = out.split_whitespace().collect();
+    assert_eq!(tokens, ["a", "b", "c", "d", "e"]);
+    assert_eq!(out.lines().count(), src.lines().count(), "newlines kept");
+}
+
+#[test]
+fn the_comment_stripper_leaves_literals_alone() {
+    // `//` in a string is not a comment, a quote in a comment opens nothing,
+    // and raw strings, chars and lifetimes do not confuse it.
+    let src = r##"let u = "https://example.org/x"; // "unterminated
+let r = r#"a // b "quoted" c"#; /* " */ let c = '"'; let d = '\'';
+fn f<'a>(x: &'a str) -> &'a str { x } // done
+"##;
+    let out = strip_comments(src);
+    assert!(out.contains(r#""https://example.org/x""#), "{out}");
+    assert!(out.contains(r##"r#"a // b "quoted" c"#"##), "{out}");
+    assert!(
+        out.contains("fn f<'a>(x: &'a str) -> &'a str { x }"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("unterminated") && !out.contains("done"),
+        "{out}"
+    );
+    // And in code-only mode the literals' contents are blank — a name inside
+    // one cannot be a call.
+    let code = code_only(r#"let s = "path_guard::checked_path(x)"; let t = '{';"#);
+    assert!(
+        !code.contains("path_guard") && !code.contains('{'),
+        "{code}"
+    );
+}
+
+/// A guard that only a COMMENT names must not count (S4). Three shapes of
+/// comment, one fixture: a `//` line in the body, a `/* */` block in the body,
+/// and the doc comment of the NEXT command, which sits in this command's
+/// segment (the segment runs to the next `#[tauri::command]`, and a doc comment
+/// comes before it).
+#[test]
+fn a_guard_named_only_in_a_comment_does_not_count() {
+    let src = r#"
+#[tauri::command]
+pub async fn editor_peaks(input_path: String) -> AppResult<()> {
+    // path_guard::checked_input_file(&input_path)?;
+    /* path_guard::checked_input_file(&input_path)?; */
+    do_it(&input_path)
+}
+
+/// Reads a file — behind `path_guard::checked_input_file`, honest.
+#[tauri::command]
+pub async fn editor_other(input_path: String) -> AppResult<()> {
+    path_guard::checked_input_file(&input_path)?;
+    Ok(())
+}
+"#;
+    let commands = parse_file("fixture.rs", src);
+    let (unguarded, guarded) = (&commands[0], &commands[1]);
+    assert!(
+        !unguarded.segment.contains("path_guard"),
+        "a comment is not a call: {:?}",
+        unguarded.segment
+    );
+    assert!(guarded.segment.contains("path_guard::checked_input_file"));
+}
+
+/// The same for a field's guard and a token's resolver: named only in a
+/// comment, the entry FAILS.
+#[test]
+fn a_resolver_named_only_in_a_comment_fails_the_token_check() {
+    let sources = vec![code_only(
+        r#"
+async fn run_export() {
+    let _ = store.resolve(&token, ChosenKind::Folder);
+}
+async fn a_forged_token_is_refused() {}
+"#,
+    )];
+    let real = r#"
+#[tauri::command]
+pub async fn editor_export(chosen: State<'_, ChosenPaths>, request: R) -> AppResult<()> {
+    run_export(&chosen, &request).await
+}
+"#;
+    let commented = r#"
+#[tauri::command]
+pub async fn editor_export(chosen: State<'_, ChosenPaths>, request: R) -> AppResult<()> {
+    // run_export(&chosen, &request).await
+    /// run_export(&chosen, &request)
+    render(&request).await
+}
+"#;
+    let resolver = "run_export(&chosen";
+    let proof = "a_forged_token_is_refused";
+    let ok = &parse_file("fixture.rs", real)[0];
+    assert_eq!(token_problem(ok, resolver, proof, &sources), None);
+    let bad = &parse_file("fixture.rs", commented)[0];
+    let problem = token_problem(bad, resolver, proof, &sources)
+        .expect("a resolver that only a comment names must fail");
+    assert!(problem.contains("never calls the resolver"), "{problem}");
+}
+
+#[test]
+fn a_resolver_that_never_reaches_the_store_fails_the_token_check() {
+    // The command calls its resolver, and the resolver hands back the stored
+    // string without going through `ChosenPaths::resolve` — the unchecked
+    // lookup the store no longer offers. Name only, nothing behind it.
+    let sources = vec![code_only(
+        r#"
+async fn run_export() { let _ = lookup_raw(token); }
+async fn lookup_raw(t: &str) {}
+async fn a_forged_token_is_refused() {}
+"#,
+    )];
+    let cmd = &parse_file(
+        "fixture.rs",
+        r#"
+#[tauri::command]
+pub async fn editor_export(chosen: State<'_, ChosenPaths>) -> AppResult<()> {
+    run_export(&chosen).await
+}
+"#,
+    )[0];
+    let problem = token_problem(
+        cmd,
+        "run_export(&chosen",
+        "a_forged_token_is_refused",
+        &sources,
+    )
+    .expect("no path to `ChosenPaths::resolve`");
+    assert!(problem.contains("never reaches"), "{problem}");
+    // …and a proof test that is gone is its own failure.
+    let reaching = vec![code_only(
+        "async fn run_export() { s.resolve(&t, ChosenKind::Folder); }",
+    )];
+    let problem =
+        token_problem(cmd, "run_export(&chosen", "gone", &reaching).expect("the proof must exist");
+    assert!(problem.contains("no longer exists"), "{problem}");
 }

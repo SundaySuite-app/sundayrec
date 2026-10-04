@@ -158,8 +158,13 @@ So a future auditor doesn't have to re-derive these from scratch:
   file is asked for), and RE-VALIDATED when used — the place must still exist,
   still be that kind, still canonicalise to the very place that was picked (a
   folder swapped for a symlink since then is not that folder), and still pass
-  `path_guard`. The webview is shown the place's last component only. Finding
-  A2 is closed this way: the editor's export folder used to be
+  `path_guard`. The webview is shown the place's last component only. The
+  guarantee is carried by types, not by convention: only `vet` can make a
+  `Vetted` place, `mint` takes one and consumes it (a path nobody vetted is not
+  a type `mint` accepts), the raw lookup is private, and the one way a token
+  gives its place back is `ChosenPaths::resolve(token, kind)` — lookup, kind
+  check and re-validation in one step. Finding A2 is closed this way for the
+  export FOLDER: the editor's export folder used to be
   `editor_export`'s `output_folder`, the answer of a folder picker the webview
   opened — so ffmpeg rendered into any folder the user can write to that the
   protected-folder list did not name. `editor_pick_output_folder` now opens
@@ -172,8 +177,23 @@ So a future auditor doesn't have to re-derive these from scratch:
   export lands next to its source. Unlike the plugin's own `open` command, the
   Rust picker does not widen the `asset://` scope to the picked folder.
   `commands::path_ratchet` judges a place-shaped name plus `_token` as a path
-  field, and holds it to a `Token` entry naming the resolver the command must
-  call and the test that feeds it a forged token.
+  field — in a request struct (`PATH_FIELDS`) or as a direct command parameter
+  (`PARAM_TOKENS`) — and holds it to a `Token` entry naming the resolver the
+  command must call (and following its calls must reach `ChosenPaths::resolve`)
+  and the test that feeds it a forged token. Its lexical rules read the source
+  with comments stripped, so a comment that names a guard cannot make a command
+  look guarded.
+  **What A2 does NOT close, so nobody reads it as more than it is:** the
+  export's SOURCE and the intro/outro jingles are still paths from the
+  webview — `EditorExportRequest.input_path`, `intro_path` and `outro_path`,
+  held only by `path_guard` (`check_export_paths`). And «ved siden av kilden»
+  (`ExportFolder::BesideSource`, no token) is still DERIVED from `input_path`:
+  the export lands in the folder of whatever source path the webview sent, so
+  a compromised webview that names any readable audio file also chooses that
+  file's folder as the destination. Both close in the next change (PR-C):
+  `editor_open_recording` opens the file dialog in Rust and answers with a
+  File token, and the export takes that token instead of `input_path`,
+  `intro_path` and `outro_path`.
 - **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
   tokens, and — defensively, though SundayRec no longer streams — the trailing
   key segment of RTMP URLs) are kept out of log output
@@ -284,10 +304,12 @@ So a future auditor doesn't have to re-derive these from scratch:
   path parameter.
   What remains under the same rule: other commands still take a path from the
   webview and are held only by a path guard — the editor's open file and its
-  sidecars (`editor_*`) and the papirkurv (`trash_move`). (The recording's
-  output path is already Rust's — finding E1, above — and the editor's export
-  folder is a token for a folder Rust's own dialog answered — finding A2,
-  above.) Each is a separate change; the row is in `docs/PLAN.md`. The webview's `dialog:` permissions stay until the last of
+  sidecars (`editor_*`), the export's source and jingles (`input_path`,
+  `intro_path`, `outro_path`, and with them the «ved siden av kilden»
+  destination) and the papirkurv (`trash_move`). (The recording's output path
+  is already Rust's — finding E1, above — and the editor's PICKED export folder
+  is a token for a folder Rust's own dialog answered — finding A2, above.) Each
+  is a separate change; the row is in `docs/PLAN.md`. The webview's `dialog:` permissions stay until the last of
   them has moved; nothing in it opens a SAVE dialog any more.
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
