@@ -298,7 +298,6 @@ pub fn run() {
                 cfg!(windows),
             ));
             let db_dir = data_choice.active.clone();
-            let move_failed = matches!(data_choice.outcome, appdata::Outcome::FellBack { .. });
             // The crash hook was armed on the Local dir before this ran. It
             // follows the database to Roaming only when the move FAILED there;
             // when Roaming is unreachable the ring stays in Local, or the
