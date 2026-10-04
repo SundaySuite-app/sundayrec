@@ -50,7 +50,7 @@ use super::path_guard::{self, PathPolicy};
 use super::recordings_open::vet_new_save_folder;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::settings::{self, FolderVet};
+use crate::settings;
 
 /// Load the current settings (defaults if never saved), validated.
 #[tauri::command]
@@ -109,10 +109,10 @@ pub async fn settings_export_profile(window: tauri::Window, db: State<'_, Db>) -
 /// (`profile_not_settings`, `profile_too_large`) and changes nothing.
 ///
 /// **Takes no path** — see the module docs. The picked file still meets
-/// [`PathPolicy::UserChosenRead`] before it is read, and a NEW save folder in
-/// it meets [`vet_new_save_folder`]: refused, the stored one is kept and the
-/// rest is imported. What a profile never takes away (the save folder, the
-/// schedule) is in [`settings::import_profile`].
+/// [`PathPolicy::UserChosenRead`] before it is read. What a profile carries,
+/// and what it never touches — this machine's sound card, camera, save folder,
+/// start-at-login; a schedule it would empty; retention it would switch on —
+/// is in [`settings::profile`].
 ///
 /// The dialog and the import are one step here, so the renderer asks
 /// «Importere innstillinger?» BEFORE calling this, not between the two.
@@ -123,7 +123,7 @@ pub async fn settings_import_profile(
 ) -> AppResult<Option<Settings>> {
     let lang = dialog_lang(&db.pool).await?;
     let picked = ask_which_to_open(&window, lang).await?;
-    import_profile_from(&db.pool, picked, vet_new_save_folder).await
+    import_profile_from(&db.pool, picked).await
 }
 
 /// [`settings_export_profile`] once its dialog has answered: a cancel (`None`)
@@ -138,7 +138,7 @@ pub(crate) async fn export_profile_to(
     };
     // Read AFTER the dialog closed: the file carries the settings as they are
     // when the operator clicked «Lagre», not as they were when the dialog opened.
-    let json = settings::export(pool).await?;
+    let json = settings::export_profile(pool).await?;
     crate::util::off_runtime(move || write_profile(&path, &json)).await??;
     Ok(true)
 }
@@ -147,18 +147,17 @@ pub(crate) async fn export_profile_to(
 /// changes nothing; a picked file is guarded, read (at most
 /// [`MAX_PROFILE_BYTES`]) and laid over the stored settings by
 /// [`settings::import_profile`] — which refuses a file that is not a settings
-/// profile without writing anything, and never takes the save folder or the
-/// schedule away.
+/// profile without writing anything, and leaves this machine's own settings
+/// ([`settings::profile::MACHINE_LOCAL`]) alone.
 pub(crate) async fn import_profile_from(
     pool: &SqlitePool,
     picked: Option<PathBuf>,
-    vet: FolderVet,
 ) -> AppResult<Option<Settings>> {
     let Some(path) = picked else {
         return Ok(None);
     };
     let text = crate::util::off_runtime(move || read_profile(&path)).await??;
-    settings::import_profile(pool, &text, vet).await.map(Some)
+    settings::import_profile(pool, &text).await.map(Some)
 }
 
 /// The most a profile file may weigh. An exported profile is a few kilobytes
@@ -475,12 +474,6 @@ mod tests {
     // commands hand the dialog's answer to — `None` for a cancel, a path for a
     // pick — which is everything the commands do after the dialog closes.
 
-    /// A vet with no opinion — for the profile tests about everything but the
-    /// folder.
-    fn accept_any(_: &str) -> AppResult<()> {
-        Ok(())
-    }
-
     /// Settings that differ from the defaults in more than one place, so a
     /// round trip that lost a field — or a cancel that reset them — shows.
     fn distinctive() -> Settings {
@@ -589,7 +582,7 @@ mod tests {
         let pool = pool_in(dir.path()).await;
         let stored = settings::save(&pool, distinctive()).await.unwrap();
 
-        let imported = import_profile_from(&pool, None, accept_any).await.unwrap();
+        let imported = import_profile_from(&pool, None).await.unwrap();
 
         assert_eq!(imported, None, "a cancel answers None, not settings");
         assert_eq!(settings::load(&pool).await.unwrap(), stored);
@@ -599,7 +592,8 @@ mod tests {
     async fn a_picked_profile_is_imported_stored_and_returned() {
         // The round trip the feature exists for: the church PC exports, the
         // second machine imports — the schedule, the special recording, the
-        // folder and the sound all arrive.
+        // language and the sound rules all arrive; the second machine keeps
+        // its own folder (and every other machine-local setting).
         let dir = tempfile::tempdir().unwrap();
         let first = pool_in(&machine(dir.path(), "a")).await;
         let exported = settings::save(&first, church_machine(dir.path()))
@@ -609,12 +603,25 @@ mod tests {
         export_profile_to(&first, Some(file.clone())).await.unwrap();
 
         let second = pool_in(&machine(dir.path(), "b")).await;
-        let imported = import_profile_from(&second, Some(file), accept_any)
+        let imported = import_profile_from(&second, Some(file))
             .await
-            .unwrap();
+            .unwrap()
+            .expect("a picked profile is imported");
 
-        assert_eq!(imported.as_ref(), Some(&exported));
-        assert_eq!(settings::load(&second).await.unwrap(), exported);
+        assert_eq!(imported.slots, exported.slots);
+        assert_eq!(imported.special_recordings, exported.special_recordings);
+        assert_eq!(imported.language, exported.language);
+        assert_eq!(imported.silence_threshold, exported.silence_threshold);
+        assert_eq!(
+            imported.save_folder, None,
+            "the folder is the second machine's"
+        );
+        // Everything a profile carries is now the same on both machines.
+        assert_eq!(
+            settings::export_profile(&second).await.unwrap(),
+            settings::export_profile(&first).await.unwrap()
+        );
+        assert_eq!(settings::load(&second).await.unwrap(), imported);
     }
 
     // ── S1: a wrong file must not wipe the church PC ────────────────────────
@@ -665,7 +672,7 @@ mod tests {
     ) -> AppResult<Option<Settings>> {
         let file = dir.join(name);
         std::fs::write(&file, content).unwrap();
-        import_profile_from(pool, Some(file), accept_any).await
+        import_profile_from(pool, Some(file)).await
     }
 
     fn assert_refused(result: AppResult<Option<Settings>>, code: &str, what: &str) {
@@ -740,29 +747,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_profile_without_a_save_folder_keeps_this_machines() {
-        // Absent, null (the exporting machine used the default) and blank all
-        // mean «no folder chosen» — never «stop recording where you do today».
+    async fn a_profile_never_moves_this_machines_save_folder() {
+        // A folder in a profile is a path on the machine that exported it.
+        // None of these — absent, null, blank, another machine's folder the
+        // vet would accept, one it would refuse — moves this one's.
         let dir = tempfile::tempdir().unwrap();
         let (pool, stored) = church_pool(dir.path()).await;
+        let elsewhere = dir.path().join("Annen maskin").join("Opptak");
+        let package = dir.path().join("Gudstjeneste.logicx");
         for (i, profile) in [
-            r#"{ "language": "en" }"#,
-            r#"{ "language": "da", "saveFolder": null }"#,
-            r#"{ "language": "de", "saveFolder": "   " }"#,
+            serde_json::json!({ "language": "en" }),
+            serde_json::json!({ "language": "da", "saveFolder": null }),
+            serde_json::json!({ "language": "de", "saveFolder": "   " }),
+            serde_json::json!({ "language": "fr", "saveFolder": elsewhere.to_str().unwrap() }),
+            serde_json::json!({ "language": "pl", "saveFolder": package.to_str().unwrap() }),
         ]
         .into_iter()
         .enumerate()
         {
-            let imported =
-                import_bytes(&pool, dir.path(), &format!("p{i}.json"), profile.as_bytes())
-                    .await
-                    .unwrap()
-                    .unwrap();
-            assert_eq!(imported.save_folder, stored.save_folder, "{profile}");
+            let text = profile.to_string();
+            let imported = import_bytes(&pool, dir.path(), &format!("p{i}.json"), text.as_bytes())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(imported.save_folder, stored.save_folder, "{text}");
         }
         // …and only what the file named changed.
         let after = settings::load(&pool).await.unwrap();
-        assert_eq!(after.language.as_deref(), Some("de"));
+        assert_eq!(after.language.as_deref(), Some("pl"));
         assert_eq!(after.silence_threshold, stored.silence_threshold);
     }
 
@@ -788,7 +800,7 @@ mod tests {
         export_profile_to(&laptop, Some(blank.clone()))
             .await
             .unwrap();
-        let imported = import_profile_from(&pool, Some(blank), accept_any)
+        let imported = import_profile_from(&pool, Some(blank))
             .await
             .unwrap()
             .unwrap();
@@ -823,40 +835,89 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_imported_profile_keeps_the_stored_folder_when_the_real_vet_refuses_its_own() {
-        // #308 through the new door, with the REAL vet: a profile from another
-        // machine names a folder this one refuses (here a Logic project). The
-        // folder this machine records into stays; the rest is imported.
+    async fn a_blank_laptops_profile_leaves_the_church_pc_recording_as_before() {
+        // The review's Sunday trap, end to end through the file and the
+        // database. The church PC: its mixer, the X32 routing, start-at-login,
+        // the camera, retention at 30 days. The file: a FULL profile from a
+        // laptop nobody set up — every key, every default, written the way
+        // profiles were before machine-local fields left them — plus a
+        // retention of 14 days.
+        use sundayrec_core::settings::DeviceChannels;
         let dir = tempfile::tempdir().unwrap();
         let pool = pool_in(dir.path()).await;
-        let mine = dir.path().join("Opptak");
-        let mine_str = mine.to_str().unwrap().to_string();
-        settings::save(
+        let church = settings::save(
             &pool,
             Settings {
-                save_folder: Some(mine_str.clone()),
-                ..Default::default()
+                device_id: Some("x32-usb".into()),
+                device_name: Some("X32 USB Audio".into()),
+                device_channels: [(
+                    "x32-usb".to_string(),
+                    DeviceChannels {
+                        channel_l: 16,
+                        channel_r: 17,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                launch_at_login: true,
+                video_enabled: true,
+                video_device_name: Some("Logitech BRIO".into()),
+                auto_delete_days: 30,
+                ..church_machine(dir.path())
             },
         )
         .await
         .unwrap();
-        let theirs = dir.path().join("Gudstjeneste.logicx");
-        let file = dir.path().join("profil.json");
-        std::fs::write(
-            &file,
-            serde_json::json!({ "saveFolder": theirs.to_str().unwrap(), "language": "sv" })
-                .to_string(),
-        )
+        assert_eq!(
+            (church.input_channel_l, church.input_channel_r),
+            (Some(16), Some(17)),
+            "the premise: validate derived the routing for the stored device"
+        );
+        let laptop = serde_json::to_string_pretty(&Settings {
+            auto_delete_days: 14,
+            ..Default::default()
+        })
         .unwrap();
 
-        let imported = import_profile_from(&pool, Some(file), vet_new_save_folder)
+        let imported = import_bytes(&pool, dir.path(), "laptop.json", laptop.as_bytes())
             .await
             .unwrap()
-            .expect("a picked file is imported");
+            .unwrap();
 
-        assert_eq!(imported.save_folder.as_deref(), Some(mine_str.as_str()));
-        assert_eq!(imported.language.as_deref(), Some("sv"));
+        assert_eq!(imported.device_id, church.device_id);
+        assert_eq!(imported.device_name, church.device_name);
+        assert_eq!(imported.device_channels, church.device_channels);
+        assert_eq!(
+            (imported.input_channel_l, imported.input_channel_r),
+            (Some(16), Some(17))
+        );
+        assert!(
+            imported.launch_at_login,
+            "SundayRec still starts after a reboot"
+        );
+        assert!(imported.video_enabled);
+        assert_eq!(imported.video_device_name, church.video_device_name);
+        assert_eq!(imported.save_folder, church.save_folder);
+        assert_eq!(imported.auto_delete_days, 30, "retention is not shortened");
+        assert_eq!(imported.slots, church.slots);
         assert_eq!(settings::load(&pool).await.unwrap(), imported);
+
+        // And on a church PC that never deletes anything, the laptop's 14 days
+        // do not switch deletion on.
+        settings::save(
+            &pool,
+            Settings {
+                auto_delete_days: 0,
+                ..imported
+            },
+        )
+        .await
+        .unwrap();
+        let again = import_bytes(&pool, dir.path(), "laptop2.json", laptop.as_bytes())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(again.auto_delete_days, 0, "retention is not switched on");
     }
 
     #[tokio::test]
@@ -873,7 +934,7 @@ mod tests {
             dir.path().join("finnes-ikke.json"),
             PathBuf::from("sundayrec-no-such-folder").join("profil.json"),
         ] {
-            let err = import_profile_from(&pool, Some(picked.clone()), accept_any)
+            let err = import_profile_from(&pool, Some(picked.clone()))
                 .await
                 .unwrap_err();
             assert!(

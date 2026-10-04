@@ -1491,10 +1491,16 @@ validation in `sundayrec-core::settings`.
    - **Expected:** the import's question comes BEFORE the open window — «Avbryt»
      there opens no window at all — and a double-click on either button opens
      one window, not two.
-   - **Expected:** a profile from another machine whose save folder this one
-     cannot use, or that has none, is imported without it: the recordings
-     folder stays as it was. A profile with an empty schedule leaves this
-     machine's schedule and special recordings in place.
+   - **Expected:** the exported file has no `deviceId`, `saveFolder`,
+     `launchAtLogin`, `videoEnabled` or other machine-local key. Importing a
+     profile from another machine — even a full one from a laptop nobody set
+     up — leaves this machine's sound card and channels, camera, recordings
+     folder and «Start automatisk med maskinen» as they were (after a reboot
+     SundayRec still starts). Automatic deletion is never switched on or made
+     shorter by an import. A profile with an empty schedule leaves this
+     machine's schedule and special recordings in place. A special recording's
+     own sound card is not in the exported file and is not taken from an
+     imported one.
    - **Expected:** picking a file that is not a profile (a recording, a text
      file, `{}`) says «Filen er ikke en innstillingsprofil fra SundayRec, eller
      den er skadet. Ingenting ble endret.» — and nothing is: folder, language
@@ -1509,14 +1515,27 @@ validation in `sundayrec-core::settings`.
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_destination_gets_the_settings_as_pretty_json
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_cancelled_import_changes_nothing
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_profile_is_imported_stored_and_returned
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::an_imported_profile_keeps_the_stored_folder_when_the_real_vet_refuses_its_own
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_guard_still_judges_a_picked_destination
    - A wrong file changes nothing; a profile never takes the folder or the schedule away:
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_file_that_is_not_a_settings_profile_is_refused_and_changes_nothing
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_file_over_the_cap_is_refused_and_one_at_the_cap_is_read
-   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_without_a_save_folder_keeps_this_machines
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_never_moves_this_machines_save_folder
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_profile_without_a_schedule_keeps_this_machines
-   - VERIFIED-BY: src-tauri/src/settings/mod.rs::an_unreadable_field_costs_that_field_not_the_import
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::an_unreadable_field_costs_that_field_not_the_import
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_lenient_fields_garbage_is_skipped_and_does_not_count
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_leading_byte_order_mark_is_not_the_end_of_the_profile
+   - This machine's own settings stay; retention is never switched on or shortened:
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_blank_laptops_profile_leaves_the_church_pc_recording_as_before
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_blank_laptops_profile_takes_nothing_from_the_church_pc
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::half_a_device_group_moves_nothing
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::retention_can_be_switched_off_or_lengthened_never_on_or_shortened
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_weekly_plan_can_be_armed_never_disarmed
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_export_leaves_this_machine_out
+   - A special recording's own sound card does not travel, and no setting goes unclassified:
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::a_special_recordings_sound_card_is_not_carried_either_way
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::every_settings_field_is_classified
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_machine_local_line_is_pinned
+   - VERIFIED-BY: src-tauri/src/settings/profile.rs::the_church_pc_fixture_sets_every_machine_local_field_off_its_default
    - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::får sin egen setning, og ingenting leses inn
    - The question before the window, a quiet cancel, one window at a time:
    - VERIFIED-BY: app/pages/setup/advanced/profile-core.test.ts::et nei på spørsmålet åpner ikke noe vindu

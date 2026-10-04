@@ -339,7 +339,7 @@
         "export": "Eksportér",
         "import": "Importér",
         "importTitle": "Importere indstillinger?",
-        "importBody": "Det her erstatter indstillingerne på denne computer med indholdet i den fil, du vælger. Optagelser, biblioteket og adgangskoder røres ikke.",
+        "importBody": "Det her erstatter indstillingerne på denne computer med indholdet i den fil, du vælger. Lydenhed, kamera, optagelsesmappe og »Start automatisk med computeren« forbliver, som de er her. Optagelser, biblioteket og adgangskoder røres ikke.",
         "importConfirm": "Ja, importér",
         "exported": "Indstillingerne blev eksporteret.",
         "exportFailed": "Kunne ikke eksportere indstillingerne: {err}",

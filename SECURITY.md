@@ -238,9 +238,13 @@ So a future auditor doesn't have to re-derive these from scratch:
   overwritten `~/.zshrc`. Its guard only knew the protected home folders. The dialog's
   filter names now come from Rust too, in the stored UI language. The path the
   dialog answers still meets the `UserChosenWrite`/`UserChosenRead` guard
-  (absolute, no `..`, not in a protected folder) as defence in depth, and an
-  imported profile's save folder still meets the save-folder vet (refused, the
-  stored folder is kept). The import reads at most 1 MiB, refuses a file that
+  (absolute, no `..`, not in a protected folder) as defence in depth. A
+  profile never carries this machine's own settings — its sound card and
+  routing, camera, save folder, start-at-login, wake and updates
+  (`settings::profile::MACHINE_LOCAL`): they are left out of the export and
+  ignored by the import, so a file cannot move where this machine records or
+  stop it starting. Nor can an import switch automatic deletion on or shorten
+  it. The import reads at most 1 MiB, refuses a file that
   is not a settings profile (`profile_not_settings`) without writing anything,
   and lays the profile over the stored settings rather than over the defaults
   — a wrong file used to reset everything, the schedule included. `commands::path_ratchet` (`REPLACED`) fails if a
