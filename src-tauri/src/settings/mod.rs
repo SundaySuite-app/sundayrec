@@ -92,19 +92,40 @@ fn new_folder_asked_for<'a>(stored: Option<&str>, incoming: Option<&'a str>) -> 
     (Some(asked) != stored).then_some(asked)
 }
 
+/// The intro and outro clips a renderer write may NOT change: whatever the
+/// incoming settings say, the stored clips stay.
+///
+/// A clip is a file the export splices into the audio, so it is a place the
+/// webview must not name (finding A2): it would be a file read chosen with no
+/// dialog. The editor's clips are set by `settings_pick_editor_intro`/`_outro`
+/// — a dialog Rust opens — and cleared by `settings_clear_editor_intro`/`_outro`,
+/// and by nothing else. The renderer sends the FULL settings object on every
+/// save, so this is also what keeps a save from an older page, or one built
+/// before the pick, from putting the old value back.
+///
+/// ⚠️ This is the one place a renderer-built [`Settings`] is overlaid with the
+/// stored one; the machine-local fields of `settings::profile` (a profile import)
+/// are the same idea for a file.
+fn keep_stored_clips(stored: &Settings, incoming: &mut Settings) {
+    incoming.editor_intro_path = stored.editor_intro_path.clone();
+    incoming.editor_outro_path = stored.editor_outro_path.clone();
+}
+
 /// `settings_save` from the renderer: [`save`], but a NEW save folder must
 /// pass `vet` first — refused with the vet's error code, nothing written. See
-/// [`new_folder_asked_for`] for what counts as new.
+/// [`new_folder_asked_for`] for what counts as new. The stored intro and outro
+/// clips are kept whatever the renderer sent ([`keep_stored_clips`]).
 ///
 /// The backend's own writers (the scheduler's prune, `reset`) call [`save`]
 /// directly: they write back what they loaded, and the folder in it is the
 /// stored one.
 pub async fn save_from_renderer(
     pool: &SqlitePool,
-    incoming: Settings,
+    mut incoming: Settings,
     vet: FolderVet,
 ) -> AppResult<Settings> {
     let stored = load(pool).await?;
+    keep_stored_clips(&stored, &mut incoming);
     if let Some(folder) = new_folder_asked_for(
         stored.save_folder.as_deref(),
         incoming.save_folder.as_deref(),
@@ -142,10 +163,13 @@ pub async fn reset(pool: &SqlitePool) -> AppResult<Settings> {
 ///
 /// The hand-over is a renderer write too, so a NEW save folder in it must pass
 /// `vet`. Unlike [`save_from_renderer`] a refusal does not fail the import: the
-/// folder this machine already has is KEPT and the rest is imported.
+/// folder this machine already has is KEPT and the rest is imported. The same
+/// goes for the intro and outro clips, which an import never carries
+/// ([`keep_stored_clips`]) — an old installation picks them again once.
 pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<Settings> {
     let stored = load(pool).await?;
     let mut merged = Settings::from_json_merged(json);
+    keep_stored_clips(&stored, &mut merged);
     if let Some(folder) =
         new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
     {
@@ -247,6 +271,74 @@ mod tests {
         let after = load(&pool).await.unwrap();
         assert_eq!(after.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
         assert_eq!(after.language, None);
+    }
+
+    fn with_clips(intro: Option<&str>, outro: Option<&str>) -> Settings {
+        Settings {
+            editor_intro_path: intro.map(str::to_string),
+            editor_outro_path: outro.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_save_keeps_the_stored_intro_and_outro() {
+        // A2: a clip is a file the export reads, so the webview cannot name it.
+        // Whatever a full-object save carries — another file, nothing at all, a
+        // clip where none is stored — the STORED clips are what is kept.
+        let (pool, _d) = temp_pool().await;
+        save(
+            &pool,
+            with_clips(Some("/Musikk/intro.wav"), Some("/Musikk/outro.wav")),
+        )
+        .await
+        .unwrap();
+        for sent in [
+            with_clips(Some("/etc/hosts"), Some("/Users/x/.ssh/id_ed25519")),
+            with_clips(None, None),
+            Settings {
+                language: Some("en".into()),
+                ..with_clips(Some("/Musikk/intro.wav"), None)
+            },
+        ] {
+            let saved = save_from_renderer(&pool, sent, accept_any).await.unwrap();
+            assert_eq!(
+                saved.editor_intro_path.as_deref(),
+                Some("/Musikk/intro.wav")
+            );
+            assert_eq!(
+                saved.editor_outro_path.as_deref(),
+                Some("/Musikk/outro.wav")
+            );
+            let after = load(&pool).await.unwrap();
+            assert_eq!(after.editor_intro_path, saved.editor_intro_path);
+            assert_eq!(after.editor_outro_path, saved.editor_outro_path);
+        }
+        // The rest of the save still lands: only the clips are held back.
+        assert_eq!(load(&pool).await.unwrap().language.as_deref(), Some("en"));
+
+        // And a webview cannot ADD a clip to a machine that has none.
+        let (pool, _d) = temp_pool().await;
+        let saved = save_from_renderer(&pool, with_clips(Some("/etc/hosts"), None), accept_any)
+            .await
+            .unwrap();
+        assert_eq!(saved.editor_intro_path, None);
+    }
+
+    #[tokio::test]
+    async fn the_localstorage_hand_over_does_not_carry_the_clips_either() {
+        let (pool, _d) = temp_pool().await;
+        save(&pool, with_clips(Some("/Musikk/intro.wav"), None))
+            .await
+            .unwrap();
+        let json = r#"{"editorIntroPath": "/etc/hosts", "editorOutroPath": "/etc/passwd", "language": "de"}"#;
+        let imported = import(&pool, json, accept_any).await.unwrap();
+        assert_eq!(
+            imported.editor_intro_path.as_deref(),
+            Some("/Musikk/intro.wav")
+        );
+        assert_eq!(imported.editor_outro_path, None);
+        assert_eq!(imported.language.as_deref(), Some("de"));
     }
 
     #[tokio::test]

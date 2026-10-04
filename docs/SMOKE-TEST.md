@@ -1162,13 +1162,13 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_token_is_refused_with_its_own_code
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_folder_deleted_since_the_pick_is_refused
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_cancelled_pick_mints_nothing
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_path_in_the_old_field_goes_nowhere
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_path_in_the_old_folder_field_goes_nowhere
    - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::resolving_refuses_a_folder_swapped_for_a_symlink_elsewhere
    - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_store_is_bounded_and_evicts_the_oldest_first
    - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::a_minted_token_resolves_to_its_place_and_only_as_its_kind
    - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_same_place_again_reuses_its_token
    - VERIFIED-BY: src-tauri/src/commands/chosen_paths.rs::the_vet_refuses_a_protected_folder_and_a_file_in_one
-   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_export_is_handed_the_resolved_folder_and_nothing_the_webview_sent
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_export_is_handed_the_resolved_places_and_nothing_the_webview_sent
    - «Samme mappe» lands exactly where it did before:
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_same_folder_export_lands_exactly_where_it_did_before
    - The page: the name shown, the token sent, a cancel, a refusal with its own sentence:
@@ -1179,6 +1179,65 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_export_folder_refusal_has_a_sentence_in_the_renderer
    - The OS folder window itself (parented over the app, «Ny mappe», the
      folder it answers) needs the real app. // GUI-UNVERIFIED
+     5f. **The recording is the app's own door (A2, second half).** Open a
+     recording four ways: **«Åpne fil …»** (library and the error screen),
+     **«Rediger»** on a library row, **«Rediger»** on the finished-recording card,
+     and **drop a file on the window** (also one that lives on a USB stick), then
+     export each.
+   - **Expected:** the OS file window opens over the app with «Alle støttede
+     medier» first, then «Lyd», «Video» and «Alle filer», named in the app's
+     language. The recording opens, plays (also from the USB stick, which is
+     outside the standard folders) and exports as before; «Samme mappe som
+     opptaket» lands next to the opened file with the same name as before.
+   - **Expected:** a library row whose file has gone to the papirkurv opens
+     «Fant ikke fila» with the way to the papirkurv; the same after pulling the
+     stick out between opening and exporting («Originalfilen er ikke
+     tilgjengelig …»). Dropping a folder, or a file in a protected folder, opens
+     the failure screen and nothing else.
+   - The webview never names the recording — Rust opens the window (or catches
+     the drop, or reads the row), the page holds a token, and every command
+     checks it again when it uses it:
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_picked_recording_round_trips_as_a_token_and_shows_its_name
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_made_up_or_foreign_source_token_is_refused_with_its_own_code
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_token_to_a_recording_gone_since_the_open_is_refused
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_place_that_does_not_vet_grants_and_mints_nothing
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_webview_is_granted_exactly_the_canonical_file_it_opened
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_history_row_opens_by_its_id_and_the_webview_is_granted_its_file
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::an_id_with_no_row_is_unknown_and_a_path_is_no_id
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_history_row_whose_file_has_gone_says_so
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_dropped_file_opens_like_a_picked_one_and_carries_where_it_landed
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_dropped_folder_says_why_it_did_not_open
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::an_export_of_a_recording_that_is_not_open_is_refused_before_anything_else
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::an_old_shape_payload_names_no_source
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::every_source_refusal_has_a_sentence_in_the_renderer
+   - VERIFIED-BY: src-tauri/src/commands/media_filters.rs::every_language_names_the_media_filters
+   - VERIFIED-BY: src-tauri/src/db/store.rs::a_row_gives_its_file_by_id_and_a_made_up_id_gives_nothing
+   - The same file exports to the same place as before, by token as by path:
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::the_same_file_exports_to_the_same_place_through_a_token_as_by_its_path
+   - The jingles are two switches, and the clips come from the saved settings:
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_reads_the_saved_clip_and_revalidates_it
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::use_intro_with_no_saved_clip_is_no_intro
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::settings_save_keeps_the_stored_intro_and_outro
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::the_localstorage_hand_over_does_not_carry_the_clips_either
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_clip_is_stored_canonical_and_clearing_forgets_it
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_pick_that_is_not_a_file_stores_nothing
+   - The ratchet holds the shape from the outside:
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::the_requests_name_the_recording_only_by_token
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_open_known_takes_only_a_history_row_id
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::every_token_is_minted_behind_a_dialog_a_row_or_a_drop
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_command_that_mints_a_path_from_the_webview_is_found
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::editor_export_hands_the_seam_the_resolved_places
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::an_export_that_ignores_the_resolved_places_is_found
+   - VERIFIED-BY: src-tauri/src/commands/path_ratchet.rs::a_guard_named_only_in_a_string_literal_does_not_count
+   - The page: the token is sent, a gone file has its own sentence, the export refusal has its own:
+   - VERIFIED-BY: e2e/editor.spec.ts::«Rediger» på en biblioteksrad åpner opptaket
+   - VERIFIED-BY: e2e/editor.spec.ts::kvitteringens «Åpne i Rediger» åpner opptaket som nettopp ble tatt opp
+   - VERIFIED-BY: e2e/editor.spec.ts::«Etter» ber om en ekte gjengivelse av de samme tjue sekundene
+   - VERIFIED-BY: e2e/library.spec.ts::«Fant ikke fila», med en vei til papirkurven — ikke den generiske korrupt-teksten
+   - VERIFIED-BY: app/editor/export-core.test.ts::opptakslappen har setninger: åpne på nytt, borte, avvist — og jingelen
+   - VERIFIED-BY: app/editor/loader-core.test.ts::kjenner source_missing: lappen peker på en fil som er borte (A2)
+   - The OS file window and a real drop onto the window need the real app.
+     // GUI-UNVERIFIED
 6. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
    editor (or reselect another recording) then reselect the same recording.
    - **Expected:** the cut rows are back — restored **silently** from the

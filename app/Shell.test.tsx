@@ -350,6 +350,11 @@ describe("Shell", () => {
     navigate("export");
     loadState.value = "idle";
     lastEdited.value = {
+      opened: {
+        token: "t",
+        path: "/Users/x/SundayRec/2026-08-23.mp3",
+        name: "2026-08-23.mp3",
+      },
       path: "/Users/x/SundayRec/2026-08-23.mp3",
       fileName: "2026-08-23.mp3",
       startedAtMs: null,

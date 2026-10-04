@@ -14,7 +14,7 @@ import type { EditorExportRequest } from "@legacy/bindings/EditorExportRequest";
 
 const base: ExportRequestInput = {
   kind: "audio",
-  inputPath: "/Users/x/Opptak/gudstjeneste.mp4",
+  sourceToken: "a1b2c3d4-0000-4000-8000-000000000001",
   cutRegions: [{ start: 10, end: 20 }],
   duration: 3600,
   outputFolderToken: null,
@@ -113,13 +113,13 @@ describe("buildExportRequest", () => {
       ...base,
       masterPreset: "",
       vocalChainPreset: "",
-      introPath: "",
-      outroPath: "",
+      useIntro: false,
+      useOutro: false,
     });
     expect(params.masterPreset).toBeUndefined();
     expect(params.vocalChainPreset).toBeUndefined();
-    expect(params.introPath).toBeUndefined();
-    expect(params.outroPath).toBeUndefined();
+    expect(params.useIntro).toBeUndefined();
+    expect(params.useOutro).toBeUndefined();
   });
 
   it("carries the enhancement settings and jingles when set", () => {
@@ -131,20 +131,25 @@ describe("buildExportRequest", () => {
       vocalChainPreset: "voice-podcast",
       channelRepair,
       processing,
-      introPath: "/Users/x/intro.mp3",
-      outroPath: "/Users/x/outro.mp3",
+      useIntro: true,
+      useOutro: true,
     });
     expect(params.masterPreset).toBe("speech-clear");
     expect(params.vocalChainPreset).toBe("voice-podcast");
     expect(params.channelRepair).toEqual(channelRepair);
     expect(params.processing).toEqual(processing);
-    expect(params.introPath).toBe("/Users/x/intro.mp3");
-    expect(params.outroPath).toBe("/Users/x/outro.mp3");
+    // The jingles are two switches: the clips themselves are in the saved
+    // settings, and no path to one is on the wire.
+    expect(params.useIntro).toBe(true);
+    expect(params.useOutro).toBe(true);
+    expect("introPath" in params || "outroPath" in params).toBe(false);
   });
 
   it("passes the cut plan and duration through unchanged", () => {
     const params = buildExportRequest(base);
-    expect(params.inputPath).toBe(base.inputPath);
+    expect(params.sourceToken).toBe(base.sourceToken);
+    // A2: the recording is a token. No path to it is on the wire.
+    expect("inputPath" in params).toBe(false);
     expect(params.cutRegions).toEqual([{ start: 10, end: 20 }]);
     expect(params.duration).toBe(3600);
     expect(params.metadata).toEqual({ title: "Søndag" });
@@ -167,7 +172,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
   it("maps a full audio buildExportRequest() onto every EditorExportRequest field", () => {
     const request = toEditorExportRequest("audio", buildExportRequest(base));
     expect(request).toEqual({
-      inputPath: base.inputPath,
+      sourceToken: base.sourceToken,
       cutRegions: [{ start: 10, end: 20 }],
       duration: 3600,
       format: "mp3",
@@ -175,8 +180,8 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       bitrate: 256,
       bitDepth: 16,
       masterPreset: null,
-      introPath: null,
-      outroPath: null,
+      useIntro: false,
+      useOutro: false,
       gainDb: null,
       title: "Søndag",
       speaker: null,
@@ -201,7 +206,7 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       }),
     );
     expect(request).toEqual({
-      inputPath: base.inputPath,
+      sourceToken: base.sourceToken,
       cutRegions: [{ start: 10, end: 20 }],
       duration: 3600,
       format: "mov",
@@ -209,8 +214,8 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
       bitrate: null,
       bitDepth: null,
       masterPreset: null,
-      introPath: null,
-      outroPath: null,
+      useIntro: false,
+      useOutro: false,
       gainDb: null,
       title: "Søndag",
       speaker: null,
@@ -304,14 +309,12 @@ describe("toEditorExportRequest — the seam to EditorExportRequest", () => {
         ...base,
         masterPreset: "",
         vocalChainPreset: "",
-        introPath: "",
-        outroPath: "",
       }),
     );
     expect(request.masterPreset).toBeNull();
     expect(request.vocalChainPreset).toBeNull();
-    expect(request.introPath).toBeNull();
-    expect(request.outroPath).toBeNull();
+    expect(request.useIntro).toBe(false);
+    expect(request.useOutro).toBe(false);
   });
 });
 

@@ -5,6 +5,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **«Åpne fil …» og slipp av en fil åpnes nå av appen selv.** Vinduet ser ut
+  som før, og et opptak åpnes som før — fra Opptak, Bibliotek, «Sist redigert»,
+  «Åpne fil …» eller ved å slippe en fil på vinduet. Men bare en fil du faktisk
+  har valgt, eller et opptak appen selv har i historikken, kan redigeres og
+  eksporteres — et sikkerhetstiltak. Er fila borte (flyttet til papirkurven, en
+  disk som er tatt ut), sier appen «Fant ikke fila» der den før ga en generell
+  feil. Eksporter du et opptak som ikke lenger er åpent, ber appen deg åpne det
+  på nytt.
+- **Intro og outro til eksporten følger det som er lagret.** Klippene velges i
+  et vindu appen åpner selv og lagres i innstillingene; eksporten ber bare om
+  «med intro» og «med outro». Innstillingene dine kan ikke lenger få et klipp
+  fra noe annet enn det vinduet — og et klipp som er borte stopper eksporten
+  med en forklaring i stedet for å gi en kortere fil i det stille.
 - **Eksport og import av innstillinger åpner lagre- og åpne-vinduet fra appen
   selv.** Det ser ut som før, men nå er det bare fila du velger i vinduet som
   blir skrevet eller lest — et sikkerhetstiltak. Ved import spør appen nå om

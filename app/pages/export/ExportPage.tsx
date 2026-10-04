@@ -66,6 +66,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 
+import type { RecordingEntry } from "@legacy/types";
+
 import { exactSpan, keptSeconds } from "../../editor/editor-core";
 import { Loading, LoadFailed } from "../../editor/LoadStates";
 import { profileLabel, resultLine } from "../../editor/summary";
@@ -129,7 +131,12 @@ import {
   predictedOutputName,
   type ExportFormat,
 } from "../../editor/export-core";
-import { closeFile, openFile, pickAndOpen } from "../../editor/loader";
+import {
+  closeFile,
+  openFile,
+  pickAndOpen,
+  type OpenSource,
+} from "../../editor/loader";
 import { channelName } from "../../editor/publish-core";
 import {
   cuts,
@@ -237,6 +244,14 @@ function Head() {
  * enten «Sist redigert» (fordi vi SÅ det skje i denne økta) eller «Siste
  * opptak» (fordi det er alt vi vet).
  */
+/** En rad i historikken som åpningskilde: raden navngis, databasen vet fila.
+ *  Uten id er det ingen fil å åpne — «Kunne ikke åpne opptaket» (A2). */
+function rowSource(row: RecordingEntry): OpenSource {
+  return row.id
+    ? { kind: "known", recordingId: row.id, name: row.filename }
+    : { kind: "refused", error: "source_unknown" };
+}
+
 function Idle() {
   const edited = lastEdited.value;
   const last = lastRecording.value;
@@ -248,12 +263,20 @@ function Idle() {
     void loadRecordingCount();
   }, []);
 
-  const suggestion = edited
+  const suggestion: {
+    path: string;
+    name: string | undefined;
+    atMs: number | null;
+    label: string;
+    source: OpenSource;
+  } | null = edited
     ? {
         path: edited.path,
         name: edited.fileName,
         atMs: edited.startedAtMs,
         label: t("app.export.lastEdited"),
+        // Samme lapp som sist: den lever til appen lukkes (A2).
+        source: { kind: "opened", opened: edited.opened },
       }
     : last?.path
       ? {
@@ -261,6 +284,7 @@ function Idle() {
           name: last.filename,
           atMs: last.startedAt ?? last.timestamp ?? null,
           label: t("app.record.last"),
+          source: rowSource(last),
         }
       : null;
 
@@ -288,7 +312,7 @@ function Idle() {
               variant="primary"
               testId="export-last-open"
               onClick={() =>
-                void openFile(suggestion.path, {
+                void openFile(suggestion.source, {
                   startedAtMs: suggestion.atMs,
                 })
               }
@@ -321,7 +345,7 @@ function Idle() {
                   variant="secondary"
                   testId="export-pick-use"
                   onClick={() =>
-                    void openFile(row.path as string, {
+                    void openFile(rowSource(row), {
                       startedAtMs: row.startedAt ?? row.timestamp ?? null,
                     })
                   }

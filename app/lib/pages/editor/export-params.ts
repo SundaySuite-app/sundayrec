@@ -90,7 +90,9 @@ export type ExportChannelRepair = EditorChannelRepair;
  *  the caller. `kind` picks the audio-format fields or the video-codec ones. */
 export interface ExportRequestInput {
   kind: "audio" | "video";
-  inputPath: string;
+  /** The File token of the recording (`OpenedRecording.token`) — never a path
+   *  (A2): Rust resolves it and re-validates the file. */
+  sourceToken: string;
   cutRegions: readonly ExportCutRegion[];
   duration: number;
   /** `null` = "Samme mappe" (the default). A picked folder is Rust's token
@@ -108,8 +110,10 @@ export interface ExportRequestInput {
   videoCodec?: string;
   /** Peak-normalization gain in dB; 0 means "not normalized" → omitted. */
   gainDb?: number;
-  introPath?: string;
-  outroPath?: string;
+  /** Splice in the SAVED intro/outro clip. A switch, not a path: the clips live
+   *  in the settings and Rust reads them from there (A2). */
+  useIntro?: boolean;
+  useOutro?: boolean;
   metadata?: unknown;
   masterPreset?: string;
   vocalChainPreset?: string;
@@ -131,7 +135,7 @@ export function buildExportRequest(
   input: ExportRequestInput,
 ): Record<string, unknown> {
   const shared: Record<string, unknown> = {
-    inputPath: input.inputPath,
+    sourceToken: input.sourceToken,
     cutRegions: input.cutRegions,
     duration: input.duration,
     // Always present: `null` means "same folder as the source", which the
@@ -139,8 +143,8 @@ export function buildExportRequest(
     // `undefined`, never a path, never a `mode`.
     outputFolderToken: input.outputFolderToken ?? null,
     gainDb: input.gainDb ? input.gainDb : undefined,
-    introPath: orUndefined(input.introPath),
-    outroPath: orUndefined(input.outroPath),
+    useIntro: input.useIntro ? true : undefined,
+    useOutro: input.useOutro ? true : undefined,
     metadata: input.metadata,
     masterPreset: orUndefined(input.masterPreset),
     vocalChainPreset: orUndefined(input.vocalChainPreset),
@@ -198,7 +202,7 @@ export function toEditorExportRequest(
       : { ...(processingIn as EditorProcessing), channelRepair: null };
 
   return {
-    inputPath: o.inputPath as string,
+    sourceToken: o.sourceToken as string,
     cutRegions: (o.cutRegions ?? []) as EditorExportRequest["cutRegions"],
     duration: (o.duration ?? 0) as number,
     format:
@@ -211,8 +215,8 @@ export function toEditorExportRequest(
     bitDepth:
       kind === "video" ? null : ((o.outputBitDepth ?? null) as number | null),
     masterPreset: (o.masterPreset as string) || null,
-    introPath: (o.introPath ?? null) as string | null,
-    outroPath: (o.outroPath ?? null) as string | null,
+    useIntro: o.useIntro === true,
+    useOutro: o.useOutro === true,
     gainDb: (o.gainDb ?? null) as number | null,
     title: (m.title as string) || null,
     speaker: (m.speaker as string) || null,

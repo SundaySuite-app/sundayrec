@@ -31,13 +31,7 @@
     "dialog": {
       "confirm": "Continuer",
       "cancel": "Annuler",
-      "close": "Fermer",
-      "filter": {
-        "allFiles": "Tous les fichiers",
-        "allMedia": "Tous les médias pris en charge",
-        "audio": "Audio",
-        "video": "Vidéo"
-      }
+      "close": "Fermer"
     },
     "vu": {
       "hear": "Nous entendons du son",
@@ -1004,6 +998,9 @@
     "errExportFolderPickAgain": "Choisissez à nouveau le dossier d’export avec « Choisir un dossier… ».",
     "errExportFolderMissing": "Le dossier choisi n’existe plus — le disque est-il déconnecté ? Reconnectez-le, ou choisissez un autre dossier avec « Choisir un dossier… ».",
     "errExportFolderRefused": "Ce dossier ne peut pas servir à un export. Choisissez un autre dossier avec « Choisir un dossier… ».",
+    "errSourceUnknown": "L’enregistrement n’est plus ouvert. Rouvrez-le, puis exportez à nouveau.",
+    "errSourceRefused": "Cet enregistrement ne peut pas être ouvert dans l’éditeur (il se trouve dans un dossier protégé). Ouvrez un autre fichier.",
+    "errExportClipUnusable": "Le son d’intro ou d’outro n’existe plus ou ne peut pas être utilisé. Choisissez-le à nouveau, ou exportez sans.",
     "errRecordingInProgress": "Un enregistrement est en cours. Attendez qu’il soit terminé avant d’exporter.",
     "errPathNotAbsolute": "Dossier ou chemin de fichier non valide. Sélectionnez à nouveau le dossier de destination.",
     "metaDesc": "DESCRIPTION",

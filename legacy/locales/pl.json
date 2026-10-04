@@ -31,13 +31,7 @@
     "dialog": {
       "confirm": "Kontynuuj",
       "cancel": "Anuluj",
-      "close": "Zamknij",
-      "filter": {
-        "allFiles": "Wszystkie pliki",
-        "allMedia": "Wszystkie obsługiwane media",
-        "audio": "Audio",
-        "video": "Wideo"
-      }
+      "close": "Zamknij"
     },
     "vu": {
       "hear": "Słyszymy dźwięk",
@@ -1022,6 +1016,9 @@
     "errExportFolderPickAgain": "Wybierz ponownie folder eksportu przyciskiem „Wybierz folder…”.",
     "errExportFolderMissing": "Wybrany folder już nie istnieje — czy dysk jest odłączony? Podłącz go ponownie lub wybierz inny folder przyciskiem „Wybierz folder…”.",
     "errExportFolderRefused": "Tego folderu nie można użyć do eksportu. Wybierz inny folder przyciskiem „Wybierz folder…”.",
+    "errSourceUnknown": "Nagranie nie jest już otwarte. Otwórz je ponownie i wyeksportuj jeszcze raz.",
+    "errSourceRefused": "Tego nagrania nie można otworzyć w edytorze (znajduje się w chronionym folderze). Otwórz inny plik.",
+    "errExportClipUnusable": "Dźwięk intro lub outro już nie istnieje albo nie można go użyć. Wybierz go ponownie lub wyeksportuj bez niego.",
     "errRecordingInProgress": "Trwa nagrywanie. Poczekaj, aż się zakończy, zanim wyeksportujesz.",
     "errPathNotAbsolute": "Nieprawidłowy folder lub ścieżka pliku. Wybierz ponownie folder docelowy.",
     "metaDesc": "OPIS",

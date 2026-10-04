@@ -237,6 +237,17 @@ pub async fn recording_exists_for_path(pool: &SqlitePool, file_path: &str) -> Ap
     Ok(n != 0)
 }
 
+/// The file a history row names, by the row's id — `None` when there is no
+/// such row. What the editor opens a library or history recording by
+/// (`editor_open_known`): the webview names the ROW, never a path.
+pub async fn recording_file_path(pool: &SqlitePool, id: &str) -> AppResult<Option<String>> {
+    let path: Option<String> = sqlx::query_scalar("SELECT file_path FROM recording WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(path)
+}
+
 /// List recordings, newest first.
 pub async fn list_recordings(pool: &SqlitePool) -> AppResult<Vec<RecordingRow>> {
     let rows = sqlx::query(
@@ -437,6 +448,28 @@ mod tests {
         // Both tables must exist and be queryable on a fresh database.
         assert!(get_all_settings(&pool).await.unwrap().is_empty());
         assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_row_gives_its_file_by_id_and_a_made_up_id_gives_nothing() {
+        let (pool, _d) = temp_pool().await;
+        let row = insert_recording(&pool, sample("/rec/a.mp3", 1.0))
+            .await
+            .unwrap();
+        insert_recording(&pool, sample("/rec/b.mp3", 2.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            recording_file_path(&pool, &row.id)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("/rec/a.mp3")
+        );
+        // A path where the id goes finds no row: the lookup is by id only.
+        for forged in ["/rec/a.mp3", "", "nope"] {
+            assert_eq!(recording_file_path(&pool, forged).await.unwrap(), None);
+        }
     }
 
     #[tokio::test]

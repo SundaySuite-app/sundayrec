@@ -1,8 +1,9 @@
-import { BOOT_FIXTURES, fn, VOID, type Fixtures } from "./harness";
+import { BOOT_FIXTURES, fn, type Fixtures } from "./harness";
 import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 import type { EditorMediaInfo } from "../legacy/bindings/EditorMediaInfo";
 import type { EditorExportResult } from "../legacy/bindings/EditorExportResult";
 import type { EditorAutoProcess } from "../legacy/bindings/EditorAutoProcess";
+import type { OpenedRecording } from "../legacy/bindings/OpenedRecording";
 
 // The editor's fixtured recording — ONE recipe, read by both shells.
 //
@@ -13,6 +14,26 @@ import type { EditorAutoProcess } from "../legacy/bindings/EditorAutoProcess";
 
 export const FILE = "/Users/test/Opptak/2026-08-02 Gudstjeneste.mp3";
 export const DURATION = 600;
+
+/** The history row `FILE` belongs to — the id `recordingRow()` gives every row.
+ *  The editor opens a library recording BY this (`editor_open_known`, A2). */
+export const RECORDING_ID = "rec-1";
+
+/** What Rust answers when the editor opens `FILE`: the File token every later
+ *  `editor_*` command is called with, the name and the canonical path. */
+export const OPENED: OpenedRecording = {
+  token: "00000000-0000-4000-8000-0000000000e1",
+  name: "2026-08-02 Gudstjeneste.mp3",
+  path: FILE,
+};
+
+/** A SECOND recording, for the specs that open another file mid-session. */
+export const OTHER_RECORDING_ID = "rec-other";
+export const OTHER_OPENED: OpenedRecording = {
+  token: "00000000-0000-4000-8000-0000000000e2",
+  name: "2026-07-05 Kveldsmøte.mp3",
+  path: "/Users/test/Opptak/2026-07-05 Kveldsmøte.mp3",
+};
 
 /**
  * A recording whose timeline has THREE plausible sermon candidates, all ≥ 60 s
@@ -47,7 +68,12 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
       sampleFmt: "s16",
       sampleRate: 48_000,
     } satisfies EditorMediaInfo,
-    editor_allow_asset_path: VOID,
+    // A2: a recording opens by its row id, and Rust answers with the token the
+    // rest of the `editor_*` commands are called with.
+    editor_open_known:
+      fn(`(args) => args.recordingId === ${JSON.stringify(OTHER_RECORDING_ID)}
+      ? ${JSON.stringify(OTHER_OPENED)}
+      : ${JSON.stringify(OPENED)}`),
     // ~100 buckets/sec. Generated in the page rather than shipped as a 60 000
     // element literal across the init-script boundary.
     editor_peaks: fn(`() => {

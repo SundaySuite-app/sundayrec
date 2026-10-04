@@ -78,6 +78,15 @@ static NOTICE_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// The `on_window_event` handler. Registered on the builder in `lib.rs`.
 pub fn on_event(window: &Window, event: &WindowEvent) {
+    // A file dropped on the window: the OS tells the PROCESS, which opens it
+    // like a picked file and tells the page (A2 — the page used to be handed
+    // the path and send it back).
+    if let WindowEvent::DragDrop(drop) = event {
+        if window.label() == MAIN_LABEL {
+            crate::commands::editor::note_drop(window, drop);
+        }
+        return;
+    }
     let WindowEvent::CloseRequested { api, .. } = event else {
         return;
     };

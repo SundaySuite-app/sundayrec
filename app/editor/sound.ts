@@ -134,17 +134,18 @@ let analysis: Promise<void> | null = null;
  * `editor`-featuren, og det er nøyaktig det samme svaret.
  */
 export function ensureSoundAnalysis(): Promise<void> {
-  const path = E.filePath;
-  if (!path) return Promise.resolve();
-  if (analysisFor === path && analysis) return analysis;
-  analysisFor = path;
+  // Lappen, ikke stien: Rust slår opp opptaket med den (A2).
+  const token = E.sourceToken;
+  if (!token) return Promise.resolve();
+  if (analysisFor === token && analysis) return analysis;
+  analysisFor = token;
   analyzingSound.value = true;
   analysis = (async () => {
     try {
-      const res = await window.api.editorAutoProcess(path);
+      const res = await window.api.editorAutoProcess(token);
       // En annen fil rakk å bli åpnet mens vi analyserte: svaret gjelder
       // ikke lenger noe som står på skjermen.
-      if (E.filePath !== path) return;
+      if (E.sourceToken !== token) return;
       const rec = res?.diagnosis?.recommended;
       channelCode.value = res?.diagnosis?.code ?? null;
       channelRepair.value =
@@ -154,7 +155,7 @@ export function ensureSoundAnalysis(): Promise<void> {
     } catch {
       /* ingen anbefaling er et gyldig svar */
     } finally {
-      if (E.filePath === path) analyzingSound.value = false;
+      if (E.sourceToken === token) analyzingSound.value = false;
     }
   })();
   return analysis;
@@ -269,7 +270,7 @@ async function renderPreview(
   listenBusy.value = true;
   try {
     const res = await window.api.masterPreview(
-      E.filePath,
+      E.sourceToken,
       preset,
       start,
       LISTEN_SPAN_SEC,
@@ -291,11 +292,8 @@ async function playFile(
 ): Promise<void> {
   const audio = player();
   window.clearTimeout(stopTimer);
-  try {
-    await window.api.editorAllowAssetPath(path);
-  } catch {
-    /* de statiske globene dekker de vanlige mappene uansett */
-  }
+  // `asset://`-tilgangen er gitt av Rust: til opptaket da det ble åpnet, og til
+  // forhåndsvisningen da den ble rendret (A2).
   audio.src = window.api.toAssetUrl(path);
   audio.load();
   if (from > 0) {

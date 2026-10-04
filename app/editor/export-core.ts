@@ -342,6 +342,14 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["dialog_failed", "errExportFolderPickAgain"],
   ["export_folder_missing", "errExportFolderMissing"],
   ["export_folder_refused", "errExportFolderRefused"],
+  // A2 (PR-C): opptaket er en lapp Rust slår opp, og jinglene leses fra de
+  // lagrede innstillingene. Rust-siden pinner kodene mot denne tabellen i
+  // `every_source_refusal_has_a_sentence_in_the_renderer`. «Borte» sier det
+  // samme som `file_not_found`: fila er ikke der lenger.
+  ["source_unknown", "errSourceUnknown"],
+  ["source_missing", "errFileNotFound"],
+  ["source_refused", "errSourceRefused"],
+  ["export_clip_unusable", "errExportClipUnusable"],
   ["path must be absolute", "errPathNotAbsolute"],
   ["cannot resolve path", "errFileNotFound"],
 ];

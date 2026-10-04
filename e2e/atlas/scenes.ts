@@ -13,7 +13,12 @@ import {
   type Fixtures,
 } from "../harness";
 import type { WakeCapabilities } from "@legacy/bindings/WakeCapabilities";
-import { editorFixtures, EXPORT_HELD, FILE } from "../editor-fixtures";
+import {
+  editorFixtures,
+  EXPORT_HELD,
+  FILE,
+  RECORDING_ID,
+} from "../editor-fixtures";
 import {
   advanceClock,
   ATLAS_NOW,
@@ -270,13 +275,13 @@ function editorScene(over: Fixtures = {}): Fixtures {
 }
 
 /** Open a file through the same global the editor specs use. */
-async function openFile(page: Page, path = FILE): Promise<void> {
+async function openFile(page: Page, recordingId = RECORDING_ID): Promise<void> {
   await page.evaluate(
     (f) =>
       (
-        window as unknown as { openEditorWithFile: (p: string) => void }
-      ).openEditorWithFile(f),
-    path,
+        window as unknown as { openEditorWithRecording: (id: string) => void }
+      ).openEditorWithRecording(f),
+    recordingId,
   );
 }
 
@@ -945,7 +950,7 @@ export const SCENES: Scene[] = [
     id: "redigering--klipp",
     page: "Redigering",
     state: "Arbeidsflaten, steget «Klipp» — bølgeform og prekenforslag",
-    recipe: "`openEditorWithFile` på det fikstursydde opptaket",
+    recipe: "`openEditorWithRecording` på det fikstursydde opptaket",
     boot: { fixtures: editorScene(), settings: CHOSEN, goto: "editor" },
     act: async (page) => {
       await openEditor(page);

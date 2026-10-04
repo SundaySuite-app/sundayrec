@@ -7,7 +7,7 @@ import {
   storedSettings,
   type Fixtures,
 } from "./harness";
-import { editorFixtures, FILE } from "./editor-fixtures";
+import { editorFixtures, RECORDING_ID } from "./editor-fixtures";
 
 // «Legg ut» — kvitteringens panel og kortet i Avansert, sett utenfra.
 //
@@ -58,9 +58,9 @@ async function exportWithContent(
   await page.evaluate(
     (f) =>
       (
-        window as unknown as { openEditorWithFile: (p: string) => void }
-      ).openEditorWithFile(f),
-    FILE,
+        window as unknown as { openEditorWithRecording: (id: string) => void }
+      ).openEditorWithRecording(f),
+    RECORDING_ID,
   );
   await expect(page.getByTestId("editor")).toHaveAttribute(
     "data-state",

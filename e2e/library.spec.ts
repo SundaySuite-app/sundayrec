@@ -542,6 +542,13 @@ test.describe("F2-A-F: en slettet rad overlever en omstart", () => {
 
 // ── F2-9: en fil path_guard ikke lenger kan løse opp ────────────────────────
 
+/** Rust åpnet raden: lappen og stien `editor_*` kalles med (A2). */
+const OPENED_FIXTURE = {
+  token: "00000000-0000-4000-8000-0000000000f1",
+  name: "2026-08-09 Bønnemøte.mp3",
+  path: "/Users/test/Opptak/2026-08-09 Bønnemøte.mp3",
+};
+
 test.describe("REDIGERING på en fil som ikke lenger er der", () => {
   test("«Fant ikke fila», med en vei til papirkurven — ikke den generiske korrupt-teksten", async ({
     page,
@@ -564,9 +571,11 @@ test.describe("REDIGERING på en fil som ikke lenger er der", () => {
           file_path: "/Users/test/Opptak/2026-08-09 Bønnemøte.mp3",
         }),
       ],
-      editor_load_recording: fn(`() => {
+      // A2: raden åpnes med `editor_open_known`, og en rad hvis fil er borte
+      // svarer `source_missing` — Rust vetter fila FØR den gir ut en lapp.
+      editor_open_known: fn(`() => {
         throw new Error(
-          "validation: cannot resolve path /Users/test/Opptak/2026-08-09 Bønnemøte.mp3: No such file or directory (os error 2)",
+          "validation: source_missing: the recording is no longer there",
         );
       }`),
     });
@@ -595,6 +604,38 @@ test.describe("REDIGERING på en fil som ikke lenger er der", () => {
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "trash");
   });
 
+  test("en fil som forsvinner mellom åpningen og sonderingen sier også «Fant ikke fila»", async ({
+    page,
+  }) => {
+    // Det smale kappløpet: lappen ble gitt, og fila ble flyttet før ffprobe.
+    // `path_guard`s egen prosa er ordrett det en flyttet fil produserer.
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: [
+        recordingRow({
+          id: "rec-gone",
+          file_path: "/Users/test/Opptak/2026-08-09 Bønnemøte.mp3",
+        }),
+      ],
+      editor_open_known: OPENED_FIXTURE,
+      editor_load_recording: fn(`() => {
+        throw new Error(
+          "validation: cannot resolve path /Users/test/Opptak/2026-08-09 Bønnemøte.mp3: No such file or directory (os error 2)",
+        );
+      }`),
+    });
+
+    await page.getByTestId("library-row-edit").click();
+
+    await expect(page.getByTestId("editor")).toHaveAttribute(
+      "data-reason",
+      "not_found",
+    );
+    await expect(page.getByTestId("editor-load-error")).toContainText(
+      "Fant ikke fila",
+    );
+  });
+
   test("en fil som genuint ikke lar seg lese viser fortsatt den generiske teksten", async ({
     page,
   }) => {
@@ -609,6 +650,7 @@ test.describe("REDIGERING på en fil som ikke lenger er der", () => {
           file_path: "/Users/test/Opptak/2026-08-09 Bønnemøte.mp3",
         }),
       ],
+      editor_open_known: OPENED_FIXTURE,
       editor_load_recording: fn(`() => {
         throw new Error("recording error: ffprobe found no audio or video stream");
       }`),

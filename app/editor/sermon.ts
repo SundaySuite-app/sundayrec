@@ -61,12 +61,13 @@ export function candidatesFor(segments: readonly Segment[]): SermonCandidate[] {
  * aldri få det forrige opptakets segmenter tegnet oppå det nye.
  */
 export async function runAnalysis(seq: number): Promise<void> {
-  const filePath = E.filePath;
-  if (!filePath) return;
+  // Lappen, ikke stien: Rust slår opp opptaket med den (A2).
+  const token = E.sourceToken;
+  if (!token) return;
   analyzing.value = true;
   let raw: Segment[];
   try {
-    raw = await window.api.editorDetectSegments(filePath, false);
+    raw = await window.api.editorDetectSegments(token, false);
   } catch {
     raw = [];
   }

@@ -50,6 +50,8 @@ import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess"
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
 import type { ChosenPlace } from "../../legacy/bindings/ChosenPlace";
+import type { OpenedRecording } from "../../legacy/bindings/OpenedRecording";
+import type { DroppedRecording } from "../../legacy/bindings/DroppedRecording";
 
 /** `editor_export`'s wrapped result — `editorCall` (`api-shim.ts`) always adds
  *  `ok`, and only adds `error` on failure; `outputPath` is the real
@@ -81,8 +83,9 @@ declare global {
     showPage: (id: string) => void;
     /** Set to true while a recording owns the device. Nothing writes it — see above. */
     __isRecording?: boolean;
-    /** Open the editor on a file (drag-and-drop, and the library row). */
-    openEditorWithFile: (filePath: string, seekToSec?: number) => void;
+    /** Open the editor on a recording the app already knows, by its history
+     *  row id (the library row, the e2e harness) — never by a path (A2). */
+    openEditorWithRecording: (recordingId: string, seekToSec?: number) => void;
     api: {
       getSettings: () => Promise<Settings>;
       saveSettings: (s: Settings) => Promise<boolean>;
@@ -257,7 +260,30 @@ declare global {
         fn: (...args: unknown[]) => void,
       ) => (() => void) | undefined;
       toAssetUrl: (path: string) => string;
-      editorPickFile: () => Promise<string | null>;
+      /** «Åpne fil …»: RUST opens the file picker and answers with the File
+       *  token for the picked recording, its name and its canonical path —
+       *  the webview never sends a path to anything that reads it (A2).
+       *  `opened: null` = the operator cancelled; `ok: false` carries the
+       *  backend's error text (`source_*`). */
+      editorOpenRecording: () => Promise<
+        | { ok: true; opened: OpenedRecording | null }
+        | { ok: false; error: string }
+      >;
+      /** Open a library/history recording by its row id. `null` on any failure
+       *  (the reason is in `getRecentIpcFailures`, like every `call`). */
+      editorOpenKnown: (recordingId: string) => Promise<OpenedRecording | null>;
+      /** The recording a drop on the window opened — the process caught the
+       *  drop and minted the token (`editor://file-dropped`). */
+      onFileDropped: (fn: (dropped: DroppedRecording) => void) => () => void;
+      /** Pick/clear the editor's intro and outro clips: Rust's own dialog, and
+       *  the stored settings back (`null` = cancelled). Nothing in the pages
+       *  uses them yet — the export page dropped its intro/outro rows in D3 — and
+       *  `settings_save` no longer takes the clips from the page, so these are
+       *  the way back when a page needs them. */
+      settingsPickEditorClip: (
+        which: "intro" | "outro",
+      ) => Promise<Settings | null>;
+      settingsClearEditorClip: (which: "intro" | "outro") => Promise<Settings>;
       editorExportFile: (params: unknown) => Promise<EditorExportOutcome>;
       /** Kill the in-flight export render; resolves to whether one was running. */
       editorCancelExport: () => Promise<boolean>;
@@ -271,7 +297,7 @@ declare global {
       // The generated binding, not a hand-written twin — see `Suggestion` in
       // pages/editor/state.ts for what the twin cost us.
       editorDetectSegments: (
-        filePath: string,
+        sourceToken: string,
         force?: boolean,
       ) => Promise<EditorSegment[]>;
       /** Persist a sermon-pick correction (E8). Resolves to whether it was
@@ -292,7 +318,7 @@ declare global {
       // them). A Rust rename now fails `npm run typecheck`. (Extra finding —
       // see the PR description.)
       editorAutoProcess: (
-        filePath: string,
+        sourceToken: string,
       ) => Promise<EditorAutoProcess | null>;
       /** The liturgical day on a `YYYY-MM-DD` date («1. påskedag»), or null
        *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
@@ -317,7 +343,6 @@ declare global {
       >;
       startVu: (deviceName: string | null) => Promise<number>;
       stopVu: () => Promise<void>;
-      registerTrustedPath: (filePath: string) => Promise<boolean>;
       /** The cameras ffmpeg can see. REJECTS when the read failed — an empty
        *  list means "no cameras", and the two must not look alike. */
       listVideoDevices: () => Promise<{ name: string; index: number }[]>;
@@ -332,16 +357,17 @@ declare global {
       // hand-typed twin — see `EditorExportOutcome`'s doc comment above for
       // the class of bug that leaves unpinned.
       editorLoadRecording: (
-        filePath: string,
+        sourceToken: string,
       ) => Promise<EditorMediaInfo | null>;
-      editorAllowAssetPath: (filePath: string) => Promise<boolean>;
       editorExtractAudioPeaks: (
-        filePath: string,
+        sourceToken: string,
       ) => Promise<{ peaks: number[]; sampleRate: number } | null>;
-      editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>;
+      editorExtractPlaybackProxy: (
+        sourceToken: string,
+      ) => Promise<string | null>;
       editorExportVideo: (params: unknown) => Promise<EditorExportOutcome>;
       masterPreview: (
-        inputPath: string,
+        sourceToken: string,
         presetId: string,
         startSec: number,
         durationSec: number,

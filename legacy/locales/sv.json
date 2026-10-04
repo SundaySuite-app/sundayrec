@@ -31,13 +31,7 @@
     "dialog": {
       "confirm": "Fortsätt",
       "cancel": "Avbryt",
-      "close": "Stäng",
-      "filter": {
-        "allFiles": "Alla filer",
-        "allMedia": "Alla medier som stöds",
-        "audio": "Ljud",
-        "video": "Video"
-      }
+      "close": "Stäng"
     },
     "vu": {
       "hear": "Vi hör ljud",
@@ -1004,6 +998,9 @@
     "errExportFolderPickAgain": "Välj exportmappen igen med ”Välj mapp…”.",
     "errExportFolderMissing": "Mappen du valde finns inte längre — är disken frånkopplad? Anslut den igen, eller välj en annan mapp med ”Välj mapp…”.",
     "errExportFolderRefused": "Den mappen kan inte användas för export. Välj en annan mapp med ”Välj mapp…”.",
+    "errSourceUnknown": "Inspelningen är inte öppen längre. Öppna den igen och exportera på nytt.",
+    "errSourceRefused": "Den inspelningen kan inte öppnas i redigeraren (den ligger i en skyddad mapp). Öppna en annan fil.",
+    "errExportClipUnusable": "Intro- eller outroljudet finns inte kvar eller kan inte användas. Välj det på nytt eller exportera utan.",
     "errRecordingInProgress": "En inspelning pågår. Vänta tills den är klar innan du exporterar.",
     "errPathNotAbsolute": "Ogiltig mapp eller filsökväg. Välj målmappen igen.",
     "metaDesc": "BESKRIVNING",

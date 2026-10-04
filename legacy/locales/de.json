@@ -31,13 +31,7 @@
     "dialog": {
       "confirm": "Weiter",
       "cancel": "Abbrechen",
-      "close": "Schließen",
-      "filter": {
-        "allFiles": "Alle Dateien",
-        "allMedia": "Alle unterstützten Medien",
-        "audio": "Audio",
-        "video": "Video"
-      }
+      "close": "Schließen"
     },
     "vu": {
       "hear": "Wir hören Ton",
@@ -1004,6 +998,9 @@
     "errExportFolderPickAgain": "Wählen Sie den Exportordner mit „Ordner wählen…“ erneut.",
     "errExportFolderMissing": "Der gewählte Ordner ist nicht mehr vorhanden — ist der Datenträger getrennt? Schließen Sie ihn wieder an, oder wählen Sie mit „Ordner wählen…“ einen anderen Ordner.",
     "errExportFolderRefused": "Dieser Ordner kann nicht für einen Export verwendet werden. Wählen Sie mit „Ordner wählen…“ einen anderen Ordner.",
+    "errSourceUnknown": "Die Aufnahme ist nicht mehr geöffnet. Öffnen Sie sie erneut und exportieren Sie noch einmal.",
+    "errSourceRefused": "Diese Aufnahme kann im Editor nicht geöffnet werden (sie liegt in einem geschützten Ordner). Öffnen Sie eine andere Datei.",
+    "errExportClipUnusable": "Der Intro- oder Outro-Ton ist nicht mehr vorhanden oder kann nicht verwendet werden. Wählen Sie ihn neu aus oder exportieren Sie ohne.",
     "errRecordingInProgress": "Eine Aufnahme läuft gerade. Warten Sie, bis sie fertig ist, bevor Sie exportieren.",
     "errPathNotAbsolute": "Ungültiger Ordner oder Dateipfad. Wählen Sie den Zielordner erneut.",
     "metaDesc": "BESCHREIBUNG",

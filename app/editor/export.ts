@@ -515,7 +515,9 @@ export async function runExport(
   // Innholdet slik det står NÅ, trimmet i endene. Datoen og menighetsnavnet
   // følger med uansett om noe er skrevet: `date`/`album`-taggene er sanne for
   // enhver eksport av et opptak vi vet når ble tatt.
-  const inputPath = E.filePath;
+  const sourceToken = E.sourceToken;
+  // Stien er bare til sidevognen («Innhold»), ikke til eksporten (A2).
+  const mediaPath = E.filePath;
   const content: ExportContent = {
     title: exportTitle.value.trim(),
     speaker: exportSpeaker.value.trim(),
@@ -524,7 +526,7 @@ export async function runExport(
 
   const params = buildExportRequest({
     kind: video ? "video" : "audio",
-    inputPath,
+    sourceToken,
     cutRegions: E.cuts,
     duration: E.duration,
     outputFolderToken: exportFolder.value?.token ?? null,
@@ -617,7 +619,7 @@ export async function runExport(
     clearDraft();
     clearDirty();
     // …og innholdet blir stående ved opptaket til neste gang.
-    void keepContent(inputPath, content);
+    void keepContent(mediaPath, content);
     return;
   }
   exportWasCancelled.value = isCancelled(result.error);

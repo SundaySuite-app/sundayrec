@@ -13,6 +13,13 @@
 //! `editor_export`'s `output_folder`, so ffmpeg would render into any folder
 //! the user can write to — no dialog needed.
 //!
+//! The same holds for a file the editor READS: the recording, and the jingles.
+//! `editor_open_recording` opens the file picker FROM RUST, `editor_open_known`
+//! names a history row (the database decides the path), and a file dropped on
+//! the window is caught by the process itself (`commands::editor::note_drop`).
+//! All three mint a File token; every editor command that works on a recording
+//! takes that token and nothing else.
+//!
 //! When the dialog and the use of its answer are one step (the settings
 //! profile, `commands::settings`), the command simply opens the dialog and
 //! acts on the answer. When they are NOT — «Velg mappe …» is clicked on the
@@ -335,7 +342,7 @@ pub fn display_name(plain: &str) -> String {
 /// Unlike the plugin's `open` command, this does NOT widen the webview's
 /// `asset://` scope to the picked folder (the plugin adds it recursively). The
 /// export page never loads anything from it; the editor widens the scope one
-/// file at a time through `editor_allow_asset_path`.
+/// file at a time, for the recording it just opened (`commands::editor`).
 pub async fn ask_for_folder(window: &tauri::Window) -> AppResult<Option<PathBuf>> {
     let (tx, rx) = oneshot::channel();
     let dialog = window.dialog().file().set_can_create_directories(true);
@@ -344,6 +351,31 @@ pub async fn ask_for_folder(window: &tauri::Window) -> AppResult<Option<PathBuf>
     dialog.pick_folder(move |answer| {
         // The receiver is gone only if the command itself was dropped; then
         // there is nobody left to tell.
+        let _ = tx.send(answer);
+    });
+    dialog_answer(rx.await, "dialog_failed")
+}
+
+/// Ask for ONE existing file: the native open dialog over `window`, behind the
+/// given `(name, extensions)` filters — the first is the one shown first. `None`
+/// is a cancel.
+///
+/// Parented and awaited exactly like [`ask_for_folder`] (see there), and its
+/// dialog failure carries the same `dialog_failed` code.
+pub async fn ask_for_file(
+    window: &tauri::Window,
+    filters: &[(&str, &[&str])],
+) -> AppResult<Option<PathBuf>> {
+    let (tx, rx) = oneshot::channel();
+    let mut dialog = window.dialog().file();
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        dialog = dialog.set_parent(window);
+    }
+    for (name, extensions) in filters {
+        dialog = dialog.add_filter(*name, extensions);
+    }
+    dialog.pick_file(move |answer| {
         let _ = tx.send(answer);
     });
     dialog_answer(rx.await, "dialog_failed")

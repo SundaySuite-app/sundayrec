@@ -62,6 +62,7 @@
  * besøk. Datoen er fortsatt det man leser først.
  */
 
+import type { OpenedRecording } from "@legacy/bindings/OpenedRecording";
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
@@ -148,7 +149,8 @@ export function libraryHeading(tab: string | undefined): string | undefined {
  *
  * Tauri fanger OS-drag selv, og api-shimmen sender dem tilbake inn i DOM-en som
  * syntetiske `dragover`/`drop` mot `document.elementFromPoint(…)`, med
- * `File.path` satt. Sonen er derfor et element som ALLTID står — ikke en
+ * `File.opened` satt — lappen Rust ga fila da prosessen selv fanget slippet
+ * (A2: stien når aldri siden). Sonen er derfor et element som ALLTID står — ikke en
  * overlay som dukker opp ved `dragenter`, for den finnes ikke å treffe når
  * hendelsen kommer.
  *
@@ -185,10 +187,10 @@ export function DropZone({ children }: { children: ComponentChildren }) {
       event.preventDefault();
       setOver(false);
       const file = event.dataTransfer?.files?.[0] as
-        (File & { path?: string }) | undefined;
-      const path = file?.path;
-      if (!path) return;
-      void openDropped(path);
+        (File & { opened?: OpenedRecording }) | undefined;
+      const opened = file?.opened;
+      if (!opened) return;
+      void openDropped(opened);
     };
     el.addEventListener("dragover", onOver);
     el.addEventListener("dragleave", onLeave);
@@ -215,19 +217,14 @@ export function DropZone({ children }: { children: ComponentChildren }) {
 /**
  * Åpne en sluppet fil.
  *
- * Et slipp er en eksplisitt handling fra brukeren, så mappen får tillit for
- * denne økta — uten det avviser sti-forsvaret et opptak som ligger på en
- * ekstern disk eller et sted som ikke ligner på lagringsmappen. Legacy gjør
- * det samme, i sin egen slipp-håndterer.
+ * Et slipp er en eksplisitt handling fra brukeren, og Rust åpnet fila da det
+ * skjedde: `opened` er lappen den ga, og asset-tilgangen til akkurat denne fila
+ * er allerede gitt. (Det het `registerTrustedPath` — en stubb som svarte `true`
+ * — til A2.)
  */
-async function openDropped(path: string): Promise<void> {
+async function openDropped(opened: OpenedRecording): Promise<void> {
   if (!(await confirmDiscard())) return;
-  try {
-    await window.api.registerTrustedPath(path);
-  } catch {
-    /* forsvaret svarer nei — lasteren sier ærlig fra hvis det var grunnen */
-  }
-  void openFile(path);
+  void openFile({ kind: "opened", opened });
 }
 
 export function LibraryPage() {
@@ -447,10 +444,10 @@ function Row({
         */}
         <Button
           variant="primary"
-          disabled={row.path === null}
+          disabled={!row.entry.id}
           disabledReason={t("app.done.revealFailed")}
           testId="library-row-edit"
-          onClick={() => openInEditor(row.path as string, row.atMs)}
+          onClick={() => openInEditor(row.entry.id, row.atMs, row.filename)}
         >
           {t("nav.editor")}
         </Button>

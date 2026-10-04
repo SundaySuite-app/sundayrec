@@ -11,8 +11,8 @@ import { errorCode } from "@lib/error-code-core";
  * or removed by hand — rather than present but unreadable (wrong format,
  * genuine corruption)?
  *
- * `checked_input_file` (Rust `path_guard.rs`) runs first in every editor IPC
- * command, and a moved/trashed path fails it with
+ * `checked_input_file` (Rust `path_guard.rs`) runs inside every vet of a
+ * recording, and a moved/trashed path fails it with
  * `validation: cannot resolve path <raw>: <os error>` — prose folded in from
  * `canonicalize()`'s own error, not a stable snake_case code. `load_recording`
  * carries its own defense-in-depth existence check too (a narrower race
@@ -24,6 +24,9 @@ import { errorCode } from "@lib/error-code-core";
 export function isMissingFileFailure(message: string): boolean {
   return (
     errorCode(message) === "file_not_found" ||
+    // A2 (PR-C): opptaket åpnes nå med en lapp, og `source_missing` er svaret
+    // når fila bak lappen (eller bak en historikkrad) er borte.
+    errorCode(message) === "source_missing" ||
     message.includes("cannot resolve path")
   );
 }

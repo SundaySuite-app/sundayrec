@@ -45,6 +45,8 @@ import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePa
 import type { ManualStartRequest } from "../../legacy/bindings/ManualStartRequest";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import type { ChosenPlace } from "../../legacy/bindings/ChosenPlace";
+import type { OpenedRecording } from "../../legacy/bindings/OpenedRecording";
+import type { DroppedRecording } from "../../legacy/bindings/DroppedRecording";
 import { toEditorExportRequest } from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
@@ -67,63 +69,8 @@ import { createNotifierSlot, type ShimNotifier } from "./shim-notifier-core";
 import { errorCode } from "./error-code-core";
 import { parseGoto } from "./goto-core";
 
-// Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
-// the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
-// as the original) for anything the webview can't decode directly. Keep these in
-// sync with the drag-drop sets in editor-page.ts / editor/state.ts.
-const AUDIO_EXT = [
-  "mp3",
-  "mp1",
-  "mp2",
-  "wav",
-  "flac",
-  "aac",
-  "m4a",
-  "m4b",
-  "m4r",
-  "ogg",
-  "oga",
-  "opus",
-  "aiff",
-  "aif",
-  "wma",
-  "mka",
-  "ac3",
-  "eac3",
-  "amr",
-  "3ga",
-  "caf",
-  "wv",
-  "tta",
-  "au",
-  "snd",
-  "ape",
-  "dts",
-  "mpc",
-  "ra",
-  "ram",
-  "spx",
-  "gsm",
-];
-const VIDEO_EXT = [
-  "mp4",
-  "mov",
-  "mkv",
-  "m4v",
-  "webm",
-  "avi",
-  "wmv",
-  "ts",
-  "mts",
-  "m2ts",
-  "flv",
-  "3gp",
-  "asf",
-  "f4v",
-];
-// Everything the editor can ingest — audio OR video. The loader probes/decodes
-// per file, so the picker should be as accepting as possible.
-const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
+// (The editor's accept lists — every audio and video format the bundled ffmpeg
+// demuxes — moved to Rust with the open dialog: `commands/editor.rs`, A2.)
 
 // ── Host services (toast / navigate / translate) ────────────────────────────
 //
@@ -659,6 +606,10 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
   const ts = r.created_at ?? r.started_at ?? 0;
   if (r.id) historyIdByTs.set(ts, r.id);
   return {
+    // The row's id — what the editor opens a library/history recording by
+    // (`editor_open_known`): the webview names the ROW, the database holds the
+    // path (A2).
+    id: r.id,
     timestamp: ts,
     // `started_at` UNTOUCHED alongside `timestamp`, which is `created_at ??
     // started_at` — the moment the ROW was written, i.e. when a finished
@@ -1490,30 +1441,65 @@ const api: Record<string, unknown> = {
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks
   // file://). Sync — convertFileSrc returns a string.
   toAssetUrl: (path: string) => toAssetUrl(path),
-  // F1-I18N-T: filter names go through the shim's own `t` hook: they are
-  // OS-native dialog chrome, not app UI, so nothing in `app/` renders them —
-  // without the hook an English-language user would still see Norwegian
-  // labels in their file picker.
-  editorPickFile: async () => {
-    const n = notifier.current();
-    return pickPath({
-      filters: [
-        {
-          name: n.t("app.dialog.filter.allMedia", "Alle støttede medier"),
-          extensions: MEDIA_EXT,
-        },
-        { name: n.t("app.dialog.filter.audio", "Lyd"), extensions: AUDIO_EXT },
-        {
-          name: n.t("app.dialog.filter.video", "Video"),
-          extensions: VIDEO_EXT,
-        },
-        {
-          name: n.t("app.dialog.filter.allFiles", "Alle filer"),
-          extensions: ["*"],
-        },
-      ],
-    });
+  // «Åpne fil …» (A2): RUST opens the native file picker over every audio and
+  // video format — the filter names are its own, in the UI language — and
+  // answers with the File token for the picked recording, its name and its
+  // canonical path. No argument, no path in: every command that reads or
+  // renders the recording takes the token (`sourceToken`), so the webview can
+  // no longer point ffmpeg at a file the operator never picked
+  // (src-tauri/src/commands/editor.rs). Never throws: a refusal travels as
+  // `{ ok: false, error }` so the loader can say which one it was.
+  editorOpenRecording: async () => {
+    try {
+      const opened = await invoke<OpenedRecording | null>(
+        "editor_open_recording",
+      );
+      return { ok: true, opened: opened ?? null };
+    } catch (e) {
+      console.warn("[api-shim] editor_open_recording failed", e);
+      return { ok: false, error: ipcErrText(e) };
+    }
   },
+  // A library/history row opens by its id: the database holds the path. `call`,
+  // so a failure lands in the ring the loader reads (`source_missing` is «Fant
+  // ikke fila»).
+  editorOpenKnown: async (recordingId: string) =>
+    call<OpenedRecording | null>("editor_open_known", { recordingId }, null),
+  // A drop on the window is caught by the PROCESS, which opens the first file
+  // like a picked one and tells us here (`editor://file-dropped`) — the page is
+  // never handed the dropped path. The drag-drop bridge below turns it into the
+  // synthetic `drop` the library's drop zone listens for.
+  onFileDropped: (fn: (dropped: DroppedRecording) => void) => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    void listen<DroppedRecording>("editor://file-dropped", (e) => fn(e.payload))
+      .then((unlisten) => {
+        if (gone) unlisten();
+        else off = unlisten;
+      })
+      .catch((e) => warnListenFailedOnce("editor://file-dropped", e));
+    return () => {
+      gone = true;
+      off?.();
+    };
+  },
+  // The editor's intro/outro clips — Rust's own dialog, and the stored settings
+  // back (`null` = cancelled). No page uses them yet: the D3 export page has no
+  // intro/outro rows, and `settings_save` keeps whatever clip is stored (A2).
+  settingsPickEditorClip: async (which: "intro" | "outro") =>
+    call<Settings | null>(
+      which === "intro"
+        ? "settings_pick_editor_intro"
+        : "settings_pick_editor_outro",
+      undefined,
+      null,
+    ),
+  settingsClearEditorClip: (which: "intro" | "outro") =>
+    invoke<Settings>(
+      which === "intro"
+        ? "settings_clear_editor_intro"
+        : "settings_clear_editor_outro",
+    ),
   // Map the old export params to EditorExportRequest (outputFormat→format,
   // outputBitrate→bitrate, …; drops mode/metadata besides title/speaker/
   // description) via `toEditorExportRequest` — the ONE typed place this
@@ -1525,8 +1511,8 @@ const api: Record<string, unknown> = {
     });
   },
   // One-click "best result": diagnose + recommended preset bundle.
-  editorAutoProcess: async (fp: string) =>
-    call("editor_auto_process", { inputPath: fp }, null),
+  editorAutoProcess: async (sourceToken: string) =>
+    call("editor_auto_process", { sourceToken }, null),
   // Kill the in-flight export's ffmpeg. Returns whether one was running; the
   // export itself then rejects with `cancelled`, which the editor maps to a
   // calm "Eksport avbrutt." (This was a stub returning `true` — the Avbryt
@@ -1590,8 +1576,8 @@ const api: Record<string, unknown> = {
   // ARRAY, not a { segments } wrapper (which would make E.suggestions an object).
   // The result is cached in a `<stem>.segments.json` sidecar; `force` (the
   // explicit «Analyser opptak» button) re-runs the analysis instead of reading it.
-  editorDetectSegments: async (fp: string, force?: boolean) =>
-    call("editor_segments", { inputPath: fp, force: force ?? false }, []),
+  editorDetectSegments: async (sourceToken: string, force?: boolean) =>
+    call("editor_segments", { sourceToken, force: force ?? false }, []),
   // E8 — the sermon dropdown's correction, persisted next to the recording in
   // `<stem>.feedback.json`. Resolves to whether anything was written: picking
   // the block the detector already chose is not a correction. Never throws; a
@@ -1616,33 +1602,18 @@ const api: Record<string, unknown> = {
   // rename of any field now fails `npm run typecheck` here instead of this
   // command quietly answering `undefined` to every field the loader reads,
   // which is exactly what a `kind`/`type` split did to `EditorSegment`.
-  editorLoadRecording: async (fp: string) =>
+  editorLoadRecording: async (sourceToken: string) =>
     call<EditorMediaInfo | null>(
       "editor_load_recording",
-      { inputPath: fp },
+      { sourceToken },
       null,
     ),
-  // editor_allow_asset_path → widens the webview's `asset://` scope to ONE file.
-  // The static scope globs cover the standard user folders only; recordings on
-  // an external drive/share match none of them and the <audio> src fails with an
-  // opaque media error. Call this before pointing any element at a path. Returns
-  // false when the grant was refused (guarded path / feature-off) — the caller
-  // still tries the element, since paths inside the static scope work regardless.
-  editorAllowAssetPath: async (fp: string) => {
-    try {
-      await invoke("editor_allow_asset_path", { path: fp });
-      return true;
-    } catch (e) {
-      console.warn("[api-shim] editor_allow_asset_path failed", e);
-      return false;
-    }
-  },
   // editor_peaks → { peaks, sampleRate } — the waveform for BOTH the audio and
   // the video loader (playback is always a media element on asset://). Streamed
   // out of ffmpeg 100 peaks/s and cached in a `<stem>.peaks.json` sidecar, so a
   // reopen costs a JSON read instead of a full decode.
-  editorExtractAudioPeaks: async (fp: string) =>
-    call("editor_peaks", { inputPath: fp }, null),
+  editorExtractAudioPeaks: async (sourceToken: string) =>
+    call("editor_peaks", { sourceToken }, null),
   // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file. The
   // LAST-RESORT playback transport: used only when the webview has no decoder
   // for the container, or when the original refused to open. Normal playback
@@ -1650,12 +1621,8 @@ const api: Record<string, unknown> = {
   // path builds a multi-GB Web-Audio PCM buffer. Returns the proxy path, or null
   // when even the transcode failed (the editor then says playback is
   // unavailable — cuts and export still run on the original).
-  editorExtractPlaybackProxy: async (fp: string) =>
-    call<string | null>(
-      "editor_extract_playback_proxy",
-      { inputPath: fp },
-      null,
-    ),
+  editorExtractPlaybackProxy: async (sourceToken: string) =>
+    call<string | null>("editor_extract_playback_proxy", { sourceToken }, null),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
   // (h264/h265). Maps the renderer params to EditorExportRequest via
   // `toEditorExportRequest`, same as `editorExportFile` — including `gainDb`,
@@ -1672,16 +1639,14 @@ const api: Record<string, unknown> = {
   // editor_master_preview/apply take a single `request` struct; cancel takes jobId.
   // Mastering commands return bare structs; the consumer expects { ok, … }.
   masterPreview: async (
-    inputPath: string,
+    sourceToken: string,
     presetId: string,
     startSec: number,
     durationSec: number,
   ) =>
     editorCall("editor_master_preview", {
-      request: { inputPath, presetId, startSec, durationSec },
+      request: { sourceToken, presetId, startSec, durationSec },
     }),
-
-  registerTrustedPath: async () => true,
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
 
@@ -1735,11 +1700,16 @@ void (async () => {
 
 // ── Native drag-drop bridge ───────────────────────────────────────────────
 // Tauri intercepts OS file drags (dragDropEnabled defaults to true), so the
-// legacy pages' HTML5 dragover/drop handlers never fire — and even if they
-// did, Electron's non-standard `File.path` doesn't exist here. Bridge the
-// native stream back into the DOM: re-dispatch synthetic DragEvents at the
-// drop position with File objects carrying a real `path` property, so the
-// editor's load/intro/outro zones work unmodified.
+// pages' HTML5 dragover/drop handlers never fire — and a browser `File` has no
+// path anyway. Bridge the native stream back into the DOM: re-dispatch
+// synthetic DragEvents at the drop position.
+//
+// A2: the PATH of a dropped file never reaches the page. `onDragDropEvent`
+// still carries it in its payload, and this bridge ignores it: enter/over/leave
+// are only positions, and the `drop` is dispatched from Rust's own
+// `editor://file-dropped` — the process caught the drop, opened the file like a
+// picked one and sent the token (`commands::editor::note_drop`). The synthetic
+// `File` carries that as `opened`, where it used to carry `path`.
 void (async () => {
   try {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");
@@ -1750,7 +1720,7 @@ void (async () => {
       el: Element | null,
       x: number,
       y: number,
-      paths?: string[],
+      opened?: OpenedRecording,
     ): void => {
       if (!el) return;
       const ev = new DragEvent(type, {
@@ -1761,11 +1731,9 @@ void (async () => {
       });
       try {
         const dt = new DataTransfer();
-        for (const p of paths ?? []) {
-          const name = p.split(/[\\/]/).pop() ?? p;
-          const f = new File([], name);
-          // The legacy handlers read Electron's non-standard `File.path`.
-          Object.defineProperty(f, "path", { value: p });
+        if (opened) {
+          const f = new File([], opened.name);
+          Object.defineProperty(f, "opened", { value: opened });
           dt.items.add(f);
         }
         // DragEvent's init dict ignores dataTransfer in some WebKit builds —
@@ -1777,13 +1745,26 @@ void (async () => {
       el.dispatchEvent(ev);
     };
 
+    // The drop itself: Rust opened the file. A file that could not be opened is
+    // dropped with no `opened` (an empty `files` list) — the zone ignores it.
+    window.api.onFileDropped((dropped) => {
+      // Native positions are physical pixels; the DOM wants logical.
+      const scale = window.devicePixelRatio || 1;
+      const x = dropped.x / scale;
+      const y = dropped.y / scale;
+      const el = document.elementFromPoint(x, y);
+      if (lastTarget && lastTarget !== el) {
+        dispatch("dragleave", lastTarget, x, y);
+      }
+      dispatch("drop", el, x, y, dropped.opened ?? undefined);
+      lastTarget = null;
+    });
+
     await getCurrentWebview().onDragDropEvent((event) => {
       const payload = event.payload as {
         type: string;
         position?: { x: number; y: number };
-        paths?: string[];
       };
-      // Native positions are physical pixels; the DOM wants logical.
       const scale = window.devicePixelRatio || 1;
       const x = (payload.position?.x ?? 0) / scale;
       const y = (payload.position?.y ?? 0) / scale;
@@ -1795,12 +1776,8 @@ void (async () => {
         lastTarget = el;
         dispatch("dragover", el, x, y);
       } else if (payload.type === "drop") {
-        const el = document.elementFromPoint(x, y);
-        if (lastTarget && lastTarget !== el) {
-          dispatch("dragleave", lastTarget, x, y);
-        }
-        dispatch("drop", el, x, y, payload.paths);
-        lastTarget = null;
+        // The drop is Rust's (above); only the hover state ends here.
+        dispatch("dragleave", lastTarget, 0, 0);
       } else {
         // "leave" / cancelled.
         dispatch("dragleave", lastTarget, 0, 0);
