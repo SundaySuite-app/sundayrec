@@ -19,11 +19,26 @@
 //! older version.
 //!
 //! The price is a rule for every migration after `0008`: it may only ADD —
-//! new tables, new columns that are nullable or have a `DEFAULT`, new indexes.
-//! Never a `DROP`, a `RENAME`, or a `NOT NULL` column without a default: the
-//! older build still reads and writes the same tables, and must not find one
-//! gone or an insert refused. `every_migration_after_0008_only_adds` holds the
-//! rule. (Builds up to v0.25.0 still refuse a newer database — the door opens
+//! new tables, new columns that are nullable or have a `DEFAULT`, new plain
+//! indexes. The older build still reads and writes the same tables, and must
+//! not find one gone, a column renamed, or an insert refused. Nothing else
+//! passes: not a `DROP`, a `RENAME`, a `UNIQUE` index (an older insert can
+//! violate it), a trigger (it fires on the older build's writes), nor an
+//! `UPDATE`/`DELETE` that rewrites rows the older build owns.
+//! `every_migration_after_0008_only_adds` holds the rule, by a whitelist of
+//! statement shapes after comments and string literals are stripped (the
+//! fixtures in `the_add_only_check_tells_adding_from_taking_away` show each
+//! way round it that was tried). So is a column `NOT NULL` without a
+//! `DEFAULT`: SQLite refuses to `ADD` one only when the table already has rows
+//! (`sqlite_refuses_a_not_null_column_without_a_default_only_on_a_table_with_rows`),
+//! so a migration run on CI's empty database would pass and then fail on a
+//! church's real one — and where it did pass, the older build's insert
+//! (which knows nothing of the column) would be refused.
+//!
+//! A migration that has to break the rule on purpose (a backfill `UPDATE` of
+//! its own new column, say) says so with a line
+//! `-- older-builds: <the reason>` in the file; the reason is read in review.
+//! (Builds up to v0.25.0 still refuse a newer database — the door opens
 //! from the first release that carries this; `docs/PLAN.md` decision of
 //! 2026-10-04.) A table that can live without a migration may still create
 //! itself at runtime, as the export journal does (`editor::export_journal`).
@@ -963,28 +978,112 @@ mod tests {
             .expect("and still record into it");
     }
 
+    /// The SQL with comments removed and every quoted string or identifier
+    /// collapsed to the single word `Q`, upper-cased, all whitespace folded to
+    /// one space. What is left is only statement structure, so keywords can be
+    /// matched on whole words: `/* DROP */` and `'drop'` vanish, `DROP\nTABLE`
+    /// reads as `DROP TABLE`, and `renamed_at` is one word that is not `RENAME`.
+    fn code_only(sql: &str) -> String {
+        let chars: Vec<char> = sql.chars().collect();
+        let mut out = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            let next = chars.get(i + 1).copied();
+            if c == '-' && next == Some('-') {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+                out.push(' ');
+            } else if c == '/' && next == Some('*') {
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
+                }
+                i += 2;
+                out.push(' ');
+            } else if c == '\'' || c == '"' || c == '`' || c == '[' {
+                let close = if c == '[' { ']' } else { c };
+                i += 1;
+                while i < chars.len() {
+                    if chars[i] == close {
+                        if close != ']' && chars.get(i + 1) == Some(&close) {
+                            i += 2; // a doubled quote is an escaped quote
+                            continue;
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+                i += 1;
+                out.push_str(" Q ");
+            } else {
+                out.push(c.to_ascii_uppercase());
+                i += 1;
+            }
+        }
+        out.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    /// `statement` contains `word` as a whole word (not as part of `RENAMED_AT`).
+    fn has_word(statement: &str, word: &str) -> bool {
+        statement
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .any(|w| w == word)
+    }
+
+    /// The reason in a `-- older-builds: <reason>` line, if the file has one
+    /// with a real reason (at least ten characters, so not just "ok").
+    fn older_builds_exception(sql: &str) -> Option<&str> {
+        sql.lines()
+            .filter_map(|l| l.trim_start().strip_prefix("--"))
+            .filter_map(|l| l.trim().strip_prefix("older-builds:"))
+            .map(str::trim)
+            .find(|reason| reason.chars().count() >= 10)
+    }
+
     /// Why a migration would break an older build that opens the database
-    /// anyway (see the module docs), or `None` when it only adds.
+    /// anyway (see the module docs), or `None` when it only adds. A whitelist:
+    /// every statement must be `CREATE TABLE`, `CREATE INDEX` (not `UNIQUE`) or
+    /// `ALTER TABLE .. ADD`; anything else is named by its closest reason.
     fn breaks_an_older_build(sql: &str) -> Option<&'static str> {
-        let code: String = sql
-            .lines()
-            .map(|l| l.split("--").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .to_uppercase();
-        if code.contains("DROP ") {
-            return Some("DROP");
+        if older_builds_exception(sql).is_some() {
+            return None;
         }
-        if code.contains("RENAME") {
-            return Some("RENAME");
-        }
-        for statement in code.split(';') {
-            if statement.contains("ADD COLUMN")
-                && statement.contains("NOT NULL")
-                && !statement.contains("DEFAULT")
+        for statement in code_only(sql).split(';').map(str::trim) {
+            if statement.is_empty() {
+                continue;
+            }
+            if statement.starts_with("ALTER TABLE ")
+                && statement.contains(" NOT NULL")
+                && (!has_word(statement, "DEFAULT") || statement.contains("DEFAULT NULL"))
             {
                 return Some("NOT NULL column without a DEFAULT");
             }
+            let adds = statement.starts_with("CREATE TABLE ")
+                || statement.starts_with("CREATE INDEX ")
+                || (statement.starts_with("ALTER TABLE ")
+                    && has_word(statement, "ADD")
+                    && !has_word(statement, "DROP")
+                    && !has_word(statement, "RENAME"));
+            if adds {
+                continue;
+            }
+            return Some(if has_word(statement, "DROP") {
+                "DROP"
+            } else if has_word(statement, "RENAME") {
+                "RENAME"
+            } else if statement.starts_with("CREATE UNIQUE INDEX ") {
+                "UNIQUE INDEX"
+            } else if has_word(statement, "TRIGGER") {
+                "TRIGGER"
+            } else if statement.starts_with("UPDATE ") {
+                "UPDATE"
+            } else if statement.starts_with("DELETE ") {
+                "DELETE"
+            } else {
+                "a statement that is not CREATE TABLE, CREATE INDEX or ALTER TABLE .. ADD"
+            });
         }
         None
     }
@@ -1019,36 +1118,137 @@ mod tests {
 
     #[test]
     fn the_add_only_check_tells_adding_from_taking_away() {
-        assert_eq!(
-            breaks_an_older_build("CREATE TABLE x (id TEXT PRIMARY KEY);"),
-            None
-        );
-        assert_eq!(
-            breaks_an_older_build("ALTER TABLE recording ADD COLUMN mood TEXT;"),
-            None
-        );
-        assert_eq!(
-            breaks_an_older_build("ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL DEFAULT 0;"),
-            None
-        );
-        assert_eq!(
-            breaks_an_older_build(
-                "-- we no longer DROP anything\nCREATE INDEX i ON recording(id);"
+        // What adds passes.
+        for sql in [
+            "CREATE TABLE x (id TEXT PRIMARY KEY);",
+            "CREATE TABLE IF NOT EXISTS x (id TEXT UNIQUE NOT NULL);", // a NEW table may be strict
+            "CREATE INDEX i ON recording(id);",
+            "CREATE INDEX IF NOT EXISTS i ON recording(id);",
+            "ALTER TABLE recording ADD COLUMN mood TEXT;",
+            "ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL DEFAULT 0;",
+            "CREATE TABLE a (x TEXT); CREATE INDEX a_x ON a(x);",
+            // The false positives that used to trip it: a word in a comment,
+            // a string, a quoted name, or the middle of another word.
+            "-- we no longer DROP anything\nCREATE INDEX i ON recording(id);",
+            "/* DROP TABLE x; */ CREATE TABLE y (id TEXT);",
+            "ALTER TABLE recording ADD COLUMN renamed_at REAL;",
+            "ALTER TABLE recording ADD COLUMN updated_at REAL;",
+            "ALTER TABLE recording ADD COLUMN note TEXT DEFAULT 'drop; delete -- update';",
+            "ALTER TABLE recording ADD COLUMN \"drop\" TEXT;",
+            "ALTER TABLE recording ADD COLUMN note TEXT DEFAULT 'not null';",
+            "ALTER TABLE recording ADD COLUMN n INTEGER NOT\nNULL DEFAULT 0;",
+            "CREATE TABLE trigger_log (id TEXT);",
+        ] {
+            assert_eq!(breaks_an_older_build(sql), None, "{sql}");
+        }
+
+        // What takes away is named, whatever the spelling.
+        for (sql, why) in [
+            ("DROP TABLE upload_queue;", "DROP"),
+            ("drop table upload_queue;", "DROP"),
+            ("DROP\nTABLE upload_queue;", "DROP"), // used to slip past "DROP "
+            ("DROP\tINDEX recording_idx;", "DROP"),
+            ("DROP   TABLE upload_queue;", "DROP"),
+            ("/* a note */ DROP TABLE upload_queue;", "DROP"),
+            ("CREATE TABLE a (x TEXT);\nDROP TABLE b;", "DROP"), // not just the first statement
+            ("ALTER TABLE recording DROP COLUMN note;", "DROP"),
+            (
+                "ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL;",
+                "NOT NULL column without a DEFAULT",
             ),
-            None
+            (
+                "ALTER TABLE recording ADD COLUMN n INTEGER NOT\n\tNULL;",
+                "NOT NULL column without a DEFAULT",
+            ),
+            (
+                "ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL DEFAULT NULL;",
+                "NOT NULL column without a DEFAULT",
+            ),
+            (
+                "ALTER TABLE recording RENAME COLUMN note TO notes;",
+                "RENAME",
+            ),
+            ("ALTER TABLE recording RENAME TO rec;", "RENAME"),
+            (
+                "ALTER TABLE recording\nRENAME COLUMN note TO notes;",
+                "RENAME",
+            ),
+            ("CREATE UNIQUE INDEX u ON recording(path);", "UNIQUE INDEX"),
+            ("create unique\nindex u on recording(path);", "UNIQUE INDEX"),
+            (
+                "CREATE TRIGGER t AFTER INSERT ON recording BEGIN SELECT 1; END;",
+                "TRIGGER",
+            ),
+            ("UPDATE recording SET note = '';", "UPDATE"),
+            ("DELETE FROM recording;", "DELETE"),
+            ("delete\nfrom recording where id = 1;", "DELETE"),
+            (
+                "ALTER TABLE recording ADD COLUMN n TEXT;\nUPDATE recording SET n = 'x';",
+                "UPDATE",
+            ),
+            (
+                "INSERT INTO recording (id) VALUES ('x');",
+                "a statement that is not CREATE TABLE, CREATE INDEX or ALTER TABLE .. ADD",
+            ),
+            (
+                "CREATE VIEW v AS SELECT 1;",
+                "a statement that is not CREATE TABLE, CREATE INDEX or ALTER TABLE .. ADD",
+            ),
+        ] {
+            assert_eq!(breaks_an_older_build(sql), Some(why), "{sql}");
+        }
+
+        // The real 0007 is exactly what the rule forbids (and why it stops at 0008).
+        let sql_0007 = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/0007_drop_upload_queue.sql"),
+        )
+        .unwrap();
+        assert_eq!(breaks_an_older_build(&sql_0007), Some("DROP"));
+    }
+
+    #[test]
+    fn an_older_builds_line_with_a_reason_lets_one_migration_break_the_rule() {
+        let backfill = "ALTER TABLE recording ADD COLUMN n TEXT;\n\
+                        -- older-builds: backfill av egen ny kolonne, eldre bygg leser den aldri\n\
+                        UPDATE recording SET n = 'x';";
+        assert_eq!(breaks_an_older_build(backfill), None);
+        // Without a reason, or with a thin one, it does not count ...
+        for bare in [
+            "-- older-builds:\nDROP TABLE x;",
+            "-- older-builds: ok\nDROP TABLE x;",
+            "-- older builds: en lang begrunnelse her\nDROP TABLE x;",
+            "/* older-builds: en lang begrunnelse her */ DROP TABLE x;",
+            "SELECT '-- older-builds: en lang begrunnelse her'; DROP TABLE x;",
+        ] {
+            assert!(breaks_an_older_build(bare).is_some(), "{bare}");
+        }
+    }
+
+    #[tokio::test]
+    async fn sqlite_refuses_a_not_null_column_without_a_default_only_on_a_table_with_rows() {
+        // Why the check keeps a NOT NULL rule: SQLite does not enforce it for
+        // a migration on an empty database, which is all CI ever migrates.
+        let add = "ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL";
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let empty = open_pool(&dir.path().join("empty.sqlite")).await.unwrap();
+        sqlx::query(add)
+            .execute(&empty)
+            .await
+            .expect("on an empty table SQLite lets it through");
+
+        let used = open_pool(&dir.path().join("used.sqlite")).await.unwrap();
+        insert_recording(&used, sample("/rec/one.mp3", 1.0))
+            .await
+            .unwrap();
+        assert!(
+            sqlx::query(add).execute(&used).await.is_err(),
+            "with a recording in the table it is refused, and a church would not start"
         );
-        assert_eq!(
-            breaks_an_older_build("DROP TABLE upload_queue;"),
-            Some("DROP")
-        );
-        assert_eq!(
-            breaks_an_older_build("ALTER TABLE recording RENAME COLUMN note TO notes;"),
-            Some("RENAME")
-        );
-        assert_eq!(
-            breaks_an_older_build("ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL;"),
-            Some("NOT NULL column without a DEFAULT")
-        );
+        sqlx::query("ALTER TABLE recording ADD COLUMN n INTEGER NOT NULL DEFAULT 0")
+            .execute(&used)
+            .await
+            .expect("with a DEFAULT it is allowed on both");
     }
 
     #[tokio::test]
