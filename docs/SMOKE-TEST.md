@@ -1481,6 +1481,14 @@ oppdateringen flytter databasen ut av; se neste avsnitt).
       manifestet er slettet fra Roaming-mappa.
   - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::et_manifest_fra_et_krasj_for_oppdateringen_gjenopprettes_etter_flyttingen
   - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::manifester_i_begge_mappene_gjenopprettes_hver_for_seg
+- [ ] **Roaming som ikke kan nås er ikke en ny installasjon.** NotFound uten
+      lesbar `%APPDATA%`, eller en annen metadata-feil, gir fallback og
+      ingenting i Local; `rename` prøves på nytt.
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_roaming_mappe_hvis_forelder_mangler_gir_fallback_og_ingenting_i_local
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_metadata_feil_som_ikke_er_notfound_gir_fallback_og_ingenting_i_local
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_rename_som_feiler_et_par_ganger_prøves_på_nytt_og_flyttingen_lykkes
+- [ ] **Nedgradering: data igjen i den gamle mappa sies fra om én gang.**
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_roaming_database_nyere_enn_local_gir_varsel_om_data_igjen_i_den_gamle_mappa
 - [ ] **Mac og Linux: ingenting endres.** Appdata-stien er den samme som før.
   - VERIFIED-BY: src-tauri/src/appdata.rs::utenfor_windows_er_stien_uendret_og_ingenting_leses_eller_lages
   - VERIFIED-BY: src-tauri/src/appdata.rs::mac_og_linux_har_samme_appdata_sti_som_for

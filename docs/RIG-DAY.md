@@ -349,15 +349,31 @@ faktisk skal se nå — sist.
       `%APPDATA%\no.sundayrec.app\recovery`), oppgrader til denne
       versjonen, start den. **Forventet:** det avbrutte opptaket dukker opp
       i Historikk som gjenopprettet fil, og manifestet er borte fra
-      `Roaming\…\recovery`. Gjør det en gang til MED manifestet i begge
-      mappene (kopier den ene filen til `Local\…\recovery` før start): begge
-      gjenopprettes.
+      `Roaming\…\recovery`. Gjør det en gang til MED SAMME manifest i begge
+      mappene (kopier den ene filen til `Local\…\recovery` før start):
+      opptaket gir fortsatt ÉN rad i Historikk, ikke to (duplikater fanges av
+      `recording_exists_for_path`), og begge manifestene er borte etterpå.
 - [ ] **(w-appdata-fallback) En flytting som feiler mister ingenting.**
       Lag `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite.flytter` som en
       MAPPE (hindrer tempfila), start. **Forventet:** appen starter med
       historikken fra Roaming (ikke tom), loggen sier at flyttingen feilet,
-      og ett banner («SundayRec fikk ikke flyttet …») kommer etter ca. 20 s;
-      neste start (uten hindringen) flytter.
+      og ett banner kommer etter ca. 20 s med katalogteksten
+      «Historikken og innstillingene ble ikke flyttet til den nye mappen …»
+      (på valgt språk); neste start (uten hindringen) flytter.
+- [ ] **(w-appdata-nedgradering) Data fra en nedgradert økt blir ikke borte
+      i det stille.** Etter en vellykket flytting: installer v0.25.0 over, endre
+      en innstilling og ta et testopptak, avslutt normalt, installer denne
+      versjonen igjen. **Forventet:** appen viser den nye mappas historikk
+      (ikke testopptaket), og ett banner etter ca. 20 s: «Historikk og
+      innstillinger fra den eldre versjonen ligger igjen i den gamle mappa …».
+      Samme start en gang til: ingen nytt banner.
+- [ ] **(w-appdata-nett) Roaming som ikke er nådd er ikke en ny installasjon.**
+      På en maskin med omdirigert Roaming-mappe: koble fra nettverket/VPN, start
+      appen FØR Local har en database (f.eks. etter å ha flyttet
+      `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite` bort). **Forventet:**
+      ingen ny database i Local; appen bruker Roaming slik den alltid har gjort
+      (og feiler om den heller ikke kan nås), og første start MED nettverk
+      flytter databasen.
 
 _(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, MSI/UAC på stable, m.fl. Fylles inn her når de respektive PR-ene er

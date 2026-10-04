@@ -428,6 +428,15 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
     sted. Prisen: skriver en nedgradert økt noe, hentes det ikke tilbake ved
     neste oppgradering (Local finnes, og vinner) — to databaser flettes aldri
     på gjetning. Roaming-fila vokser ikke lenger.
+  - **«Finnes ikke» krever bevis.** Roaming regnes bare som uten database når
+    `metadata` sier `NotFound` OG `%APPDATA%` er en lesbar mappe (Rust mapper
+    `ERROR_BAD_NETPATH` til `NotFound`). Alt annet er en fallback, og ingenting
+    lages i Local, så en omdirigert Roaming-mappe som ikke er nådd ved
+    pålogging aldri gir en tom database som vinner for alltid. `rename` prøves
+    fem ganger (antivirus på tempfila).
+  - **Nedgradering:** er Roaming-databasen nyere enn Local ved oppstart, sier
+    appen fra én gang (banner, 7 språk) at det den eldre versjonen lagret ligger
+    igjen i den gamle mappa. Utfallet telles (`appdata.move.*`, uten sti).
   - **Feiler flyttingen** (integritet, radtall, full disk, låst fil), brukes
     Roaming for denne økta, feilen loggføres, og frivillige får ett banner
     («SundayRec fikk ikke flyttet …») én gang. Appen starter aldri med en
