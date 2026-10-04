@@ -5,6 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Eksport av video på Mac går omtrent 2,8 ganger raskere, uten målbart
+  kvalitetstap.** Redigeringen ba maskinvareenkoderen om sanntid også når den
+  eksporterte en ferdig fil, og da venter den på klokka i stedet for å gå så
+  fort den kan. Det flagget er nå tatt bort fra eksporten. Målt på 20 sekunder
+  1080p H.264: 3,4 sekunder mot 9,4 sekunder, med samme bildekvalitet (PSNR).
+  Opptaket er uendret: det ber om sanntid, som det har gjort siden v0.25.0.
+
 - **Du kan gå tilbake til en eldre versjon uten at appen slutter å starte.**
   Fra denne versjonen åpner SundayRec også en database som en nyere versjon
   har oppdatert, i stedet for å stoppe før vinduet vises. Det gjelder

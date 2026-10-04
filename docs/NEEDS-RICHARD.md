@@ -423,39 +423,49 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
   `embedBootstrapper` bygger hele runtimen inn i installereren (større
   installer, ingen nettverksavhengighet ved installasjon). Ikke satt i
   `tauri.conf.json` i dag.
-- **`-realtime 1` for VideoToolbox-enkoderen (C, mening).** Et forslag fra
-  lydkjede-gjennomgangen: tvinge VideoToolbox' `-realtime 1`-flagg på
-  H.264-video-enkodingen (`recorder/engine.rs`) for å garantere at enkoderen
-  ikke sakker akterut under en lang, CPU-presset opptak — på bekostning av
-  noe kvalitet ved lav bitrate. Ikke innført; eierens smak på
-  kvalitet-vs-robusthet-avveiningen avgjør.
-- **`_redigert`-eksporter finnes ikke i biblioteket.** En eksportert
-  `*_redigert.<format>`-fil (Redigering → Eksportering) skrives til disk, men
-  får ingen egen rad i historikken/biblioteket — den er kun synlig som en
-  fil i Utforsker/Finder. Spørsmål til eier: skal en eksport spores som en
-  egen biblioteksrad (kobling til originalopptaket, egen papirkurv-håndtering
-  osv.), eller er "bare en fil på disk" riktig modell for et redigert utsnitt?
-- **En «Kirke»-mastringsprofil (C, mening).** Lydkjede-gjennomgangen foreslo
-  et fjerde mastringspreset (ved siden av `speech-clear`/`speech-natural`/
-  `speech-punchy`/`music-speech`) tunet spesifikt for kirkerom — mer
-  forsiktig kompresjon, en høyere gate-terskel for romklang. Ikke innført;
-  trenger et navn, tallverdier og eierens ØK.
-- **Automatisk monolevering ved høyt korrelerte L/R-kanaler (C, mening).**
-  Forslag: når eksportens L/R-kanaler måler ≥ 0,98 korrelert (praktisk talt
-  samme signal på begge, typisk en enkelt mikrofon matet inn i begge kanaler),
-  lever automatisk som mono i stedet for en stereofil med to identiske
-  kanaler — halvert filstørrelse, ingen hørbar forskjell. Ikke innført;
-  krever et eiervalg om terskelen og om det skal være automatisk eller et
-  forslag brukeren bekrefter.
-- **`{when}`-limingen i `app.status.next`/`app.banner.missedTitle`.** Begge
-  nøklene limer en formatert dato/klokke rett inn i en frase
-  (`"Neste opptak {when}"`, `"{when} ble ikke tatt opp"`) — et mønster som
-  fungerer på norsk, men ikke nødvendigvis på alle sju språkene (ordstilling
-  og bøyning rundt tidsuttrykk varierer). Spørsmål til eier: er dette verdt
-  en omskriving i alle språk (egne, språkspesifikke fraser i stedet for én
-  delt mal), eller er `{when}`-formen god nok som den er?
+- **`-realtime 1` for VideoToolbox-enkoderen (C, mening) — ✅ AVGJORT
+  2026-10-04 og gjennomført.** Eier: robusthet foran kvalitet. **Opptaket**
+  skal ha `-realtime 1` på VideoToolbox-enkoderen, slik at den ikke sakker
+  akterut under et langt opptak der CPU-en er presset; en **eksport** i
+  redigereren er ikke sanntid og skal ikke ha flagget. Ved gjennomføringen
+  viste det seg at opptaket allerede hadde flagget (`push_video_encoder_args`
+  i `crates/sundayrec-core/src/capture.rs`, rett etter `-b:v`, både H.264 og
+  HEVC) — det som manglet i dette punktet var at **eksporten også hadde det**
+  (`videotoolbox_codec_args` i `editor.rs`). Flagget er nå fjernet derfra, og
+  goldentestene viser `-realtime 1` på opptak, ingenting på eksport,
+  ingenting på Windows/Linux eller med maskinvareenkoder av, og en
+  lyd-only-argv byte-lik som før. Flagget finnes i den medfølgende ffmpeg
+  8.1.2 (`-h encoder=h264_videotoolbox`). Gjenstår: ett langt videoopptak på
+  Mac under CPU-last på riggdagen (`docs/RIG-DAY.md`, Mac-boksen).
+- **`_redigert`-eksporter finnes ikke i biblioteket — ✅ AVGJORT
+  2026-10-04: NEI.** En eksportert `*_redigert.<format>`-fil (Redigering →
+  Eksportering) skrives til disk, men får ingen egen rad i
+  historikken/biblioteket — den er kun synlig som en fil i Utforsker/Finder.
+  Eier: de forblir bare filer på disk, ingen egen biblioteksrad, ingen
+  kobling til originalopptaket. Ingen kode.
+- **En «Kirke»-mastringsprofil (C, mening) — ⏸ AVGJORT 2026-10-04: VENT.**
+  Lydkjede-gjennomgangen foreslo et fjerde mastringspreset (ved siden av
+  `speech-clear`/`speech-natural`/`speech-punchy`/`music-speech`) tunet
+  spesifikt for kirkerom — mer forsiktig kompresjon, en høyere gate-terskel
+  for romklang. Eier: vent til det er gjort en lyttetest i et kirkerom; først
+  da finnes tallverdiene å bygge profilen på. Ikke innført.
+- **Automatisk monolevering ved høyt korrelerte L/R-kanaler (C, mening) —
+  ⏸ AVGJORT 2026-10-04: VENT.** Forslag: når eksportens L/R-kanaler måler
+  ≥ 0,98 korrelert (praktisk talt samme signal på begge, typisk en enkelt
+  mikrofon matet inn i begge kanaler), lever automatisk som mono i stedet for
+  en stereofil med to identiske kanaler — halvert filstørrelse, ingen hørbar
+  forskjell. Eier: vent til lyttetest; terskelen og valget mellom automatikk
+  og et forslag brukeren bekrefter avgjøres da. Ikke innført.
+- **`{when}`-limingen i `app.status.next`/`app.banner.missedTitle` — ✅
+  AVGJORT 2026-10-04: LA VÆRE, god nok.** Begge nøklene limer en formatert
+  dato/klokke rett inn i en frase (`"Neste opptak {when}"`,
+  `"{when} ble ikke tatt opp"`) — et mønster som fungerer på norsk, og som
+  eier mener er godt nok på de andre språkene også. Ingen omskriving av
+  språkfilene; én delt mal beholdes. Ingen kode.
 - **Resten av språkrundens kildefunn.** `scratchpad/i18n/source-text-findings.md`
   punkt 4, 8–12, 14, 15, 17, 19–21 og 24 er merket eiervalg/rest av den
   runden selv — de er IKKE gjengitt her, fordi kildefila ikke var
   tilgjengelig i denne økten (se sluttmeldingen på PR-en som førte inn denne
   seksjonen). Fylles inn punkt for punkt når fila er lesbar igjen.
+  **Eier 2026-10-04:** kan ikke avgjøres før kildefila finnes — punktene
+  ligger urørt til den er lesbar igjen.
