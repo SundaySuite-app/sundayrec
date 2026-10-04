@@ -189,6 +189,20 @@ faktisk skal se nå — sist.
       Utstien planlegges nå i Rust — et avvik her er et funn mot E1, ikke mot
       opptaksmotoren.
 
+- [ ] **(e2) Langt videoopptak på Mac under CPU-last (`-realtime 1`).**
+      Slå på videobryteren med et kamera valgt (maskinvareenkoder på, som
+      standard), start et opptak, og belast CPU-en samtidig, for eksempel med
+      `yes > /dev/null` i fire til åtte Terminal-vinduer eller en tung
+      eksport i Redigering. La det gå **minst 60 minutter** (helst en hel
+      gudstjeneste). Stopp, og spill av fila.
+      **Forventet:** ingen manglende bilder eller frysninger, og bilde og lyd
+      i takt helt til slutten (klapp i begynnelsen og slutten, og se at lyden
+      treffer). Opptaksoverlegget viser ikke at enkoderen sakker akterut.
+      Eierbeslutning 2026-10-04: robusthet foran kvalitet, så litt mykere
+      bilde ved lav bitrate er riktig pris, men tapte bilder eller drift er
+      et funn. Denne sjekken gjelder opptaket; en eksport i Redigering har
+      ikke flagget og skal være like skarp som før.
+
 ## Windows-boksen
 
 - [ ] **(b) Kamera + video, stopp og start rett etter hverandre.** Ta opp en
@@ -386,11 +400,12 @@ mutasjonstestet mot ekte ffmpeg-sidecar-målinger på kjente L/R-nivåer
 riggdagen lenger.
 
 _(v–ix hører til resten av lydkjede-gjennomgangen (rapport C) — ingen av dem
-endte som en kodefiks. De ble eierspørsmål i stedet, og står i
-`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)»:
-`-realtime 1` for VideoToolbox-enkoderen, en egen «Kirke»-mastringsprofil, og
-automatisk monolevering ved høyt korrelerte L/R-kanaler. Ingen av dem har noe
-å rigg-teste før eieren har bestemt seg og en PR har landet.)_
+endte som en kodefiks i den runden. De ble eierspørsmål, og står i
+`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2» merket «(C, mening)».
+Eier avgjorde 2026-10-04: `-realtime 1` for VideoToolbox-opptaket er
+gjennomført (se (e2) i Mac-boksen over), mens den egne «Kirke»-mastringsprofilen
+og automatisk monolevering venter på en lyttetest. De to siste har ingenting
+å rigg-teste før en PR har landet.)_
 
 ## Etterpå
 

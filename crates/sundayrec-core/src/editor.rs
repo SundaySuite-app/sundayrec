@@ -404,11 +404,18 @@ pub fn default_video_bitrate_kbps(width: u32, height: u32) -> u32 {
     }
 }
 
-/// Build the video + audio codec args for the HARDWARE (VideoToolbox) path —
-/// the realtime encoder for live 4K. Unlike software x264/x265 it has no CRF, so
-/// it targets `-b:v <bitrate>`; `-realtime 1` biases it for live capture, HEVC
-/// carries the `hvc1` tag, and `+faststart` is emitted only for ISO/QuickTime
-/// containers. macOS-only (caller-gated; see [`VideoEncoder::Hardware`]).
+/// Build the video + audio codec args for the HARDWARE (VideoToolbox) path of
+/// an EXPORT. Unlike software x264/x265 it has no CRF, so it targets
+/// `-b:v <bitrate>`; HEVC carries the `hvc1` tag, and `+faststart` is emitted
+/// only for ISO/QuickTime containers. macOS-only (caller-gated; see
+/// [`VideoEncoder::Hardware`]).
+///
+/// **No `-realtime 1` here, deliberately** (eierbeslutning 2026-10-04). That
+/// flag tells VideoToolbox to keep up with a live source even at the cost of
+/// quality — right for the RECORDING (`capture::push_video_encoder_args`),
+/// where the camera won't wait and a lagging encoder drops frames. An export
+/// reads a finished file and may take the time it needs, so it should get the
+/// encoder's best quality for the bitrate, not the live-capture trade-off.
 pub fn videotoolbox_codec_args(
     container: &str,
     codec: VideoCodec,
@@ -420,12 +427,7 @@ pub fn videotoolbox_codec_args(
         VideoCodec::H264 => vec![s("-c:v"), s("h264_videotoolbox")],
         VideoCodec::H265 => vec![s("-c:v"), s("hevc_videotoolbox"), s("-tag:v"), s("hvc1")],
     };
-    a.extend([
-        s("-b:v"),
-        format!("{bitrate_kbps}k"),
-        s("-realtime"),
-        s("1"),
-    ]);
+    a.extend([s("-b:v"), format!("{bitrate_kbps}k")]);
     // The hardware path only swaps the VIDEO encoder — the audio track is the
     // same AAC, and so is its rate pin. A software retry after a failed
     // hardware render must land the same file.
@@ -2424,7 +2426,7 @@ mod tests {
     }
 
     #[test]
-    fn videotoolbox_uses_hw_encoder_bitrate_and_realtime() {
+    fn videotoolbox_uses_hw_encoder_and_bitrate() {
         let a = videotoolbox_codec_args("mov", VideoCodec::H265, 40_000, None);
         assert!(
             a.windows(2).any(|w| w == ["-c:v", "hevc_videotoolbox"]),
@@ -2432,13 +2434,31 @@ mod tests {
         );
         assert!(a.windows(2).any(|w| w == ["-tag:v", "hvc1"]));
         assert!(a.windows(2).any(|w| w == ["-b:v", "40000k"]));
-        assert!(a.windows(2).any(|w| w == ["-realtime", "1"]));
         // No software-only knobs.
         assert!(!a.iter().any(|x| x == "-crf"));
         assert!(!a.iter().any(|x| x == "-preset"));
         // H.264 hardware variant.
         let h264 = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, None);
         assert!(h264.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
+    }
+
+    #[test]
+    fn videotoolbox_export_has_no_realtime_flag() {
+        // `-realtime 1` belongs to the RECORDING (live source, the encoder must
+        // keep up). An export is not realtime — neither codec carries the flag,
+        // whatever the container or whether the source rate is known.
+        for codec in [VideoCodec::H264, VideoCodec::H265] {
+            for container in ["mp4", "mov", "mkv"] {
+                let a = videotoolbox_codec_args(container, codec, 12_000, Some(48_000));
+                assert!(
+                    !a.iter().any(|x| x == "-realtime"),
+                    "{codec:?}/{container}: {a:?}"
+                );
+            }
+        }
+        // The rest of the run is as before: codec, bitrate, then audio.
+        let a = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000, None);
+        assert_eq!(&a[..4], ["-c:v", "h264_videotoolbox", "-b:v", "12000k"]);
     }
 
     #[test]

@@ -761,7 +761,10 @@ pub fn push_video_encoder_args(
             }
         }
         // VideoToolbox has no CRF — target a resolution-appropriate bitrate, and
-        // `-realtime 1` biases it for live capture. Output dims = the pinned input
+        // `-realtime 1` tells it to keep up with the live camera even under CPU
+        // pressure (robustness over quality; owner decision 2026-10-04). ONLY
+        // here: an editor EXPORT is not realtime and gets no flag (see
+        // `editor::videotoolbox_codec_args`). Output dims = the pinned input
         // mode (capture doesn't scale); default to 1080p.
         let (w, h) = video_input
             .map(|m| (m.width, m.height))
@@ -2270,5 +2273,144 @@ mod tests {
         assert!(drift < pan, "pan after drift; got: {af}");
         assert!(pan < sil, "pan before silencedetect; got: {af}");
         assert!(sil < lvl, "silencedetect before astats; got: {af}");
+    }
+
+    // ── `-realtime 1` on VideoToolbox (owner decision 2026-10-04) ──────────────
+    //
+    // The RECORDING is live: the camera delivers frames at its own pace, and an
+    // encoder that falls behind on a CPU under pressure drops frames and drifts
+    // against the audio. So VideoToolbox is asked for `-realtime 1` here —
+    // robustness over quality. An editor EXPORT is not realtime (it may take the
+    // time it needs) and must not carry the flag; that is guarded by
+    // `videotoolbox_export_has_no_realtime_flag` in `editor.rs`.
+
+    /// The args from `-c:v` up to (not including) `-pix_fmt`. Used to show the
+    /// flag sits AS an encoder argument, right after `-c:v`/`-b:v`, and not just
+    /// somewhere in the argv.
+    fn encoder_run(args: &[String]) -> Vec<String> {
+        let at = args.iter().position(|a| a == "-c:v").expect("a -c:v");
+        let end = args
+            .iter()
+            .position(|a| a == "-pix_fmt")
+            .expect("a -pix_fmt");
+        args[at..end].to_vec()
+    }
+
+    #[test]
+    fn h264_videotoolbox_recording_on_mac_asks_for_realtime() {
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/rec/v.mp4",
+            &CaptureOpts {
+                hw_accel: true,
+                ..CaptureOpts::default()
+            },
+        );
+        // The whole encoder run, in order: codec, bitrate, then the realtime flag.
+        assert_eq!(
+            encoder_run(&args),
+            [
+                "-c:v",
+                "h264_videotoolbox",
+                "-b:v",
+                "12000k",
+                "-realtime",
+                "1"
+            ],
+            "{args:?}"
+        );
+        // Exactly one `-realtime`.
+        assert_eq!(args.iter().filter(|a| *a == "-realtime").count(), 1);
+    }
+
+    #[test]
+    fn realtime_flag_is_absent_without_videotoolbox() {
+        // Windows/Linux: software encoder (libx264) — there is no VideoToolbox,
+        // and `-realtime` is a VideoToolbox flag libx264 does not know.
+        for platform in [Platform::Windows, Platform::Linux] {
+            let args = build_unified_capture_args(
+                platform,
+                Some("Cam"),
+                "Mic",
+                "/rec/v.mp4",
+                &CaptureOpts {
+                    hw_accel: true,
+                    ..CaptureOpts::default()
+                },
+            );
+            assert!(has_pair(&args, "-c:v", "libx264"), "{platform:?} {args:?}");
+            assert!(
+                !args.iter().any(|a| a == "-realtime"),
+                "{platform:?}: {args:?}"
+            );
+        }
+        // Mac with hardware encoding OFF: libx264 + preset, no `-realtime`.
+        let sw = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/rec/v.mp4",
+            &CaptureOpts {
+                hw_accel: false,
+                ..CaptureOpts::default()
+            },
+        );
+        assert_eq!(
+            encoder_run(&sw),
+            ["-c:v", "libx264", "-preset", "veryfast"],
+            "{sw:?}"
+        );
+        assert!(!sw.iter().any(|a| a == "-realtime"), "{sw:?}");
+    }
+
+    /// An audio-only recording is BYTE-unchanged by the `-realtime` change: the
+    /// whole argv per platform, captured from `origin/main` BEFORE the change.
+    /// No video encoder, no `-realtime`, nothing new.
+    #[test]
+    fn audio_only_argv_is_byte_identical_golden() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let opts = CaptureOpts::default();
+
+        let mac = build_unified_capture_args(Platform::MacOS, None, "1", "/rec/a.m4a", &opts);
+        assert_eq!(
+            mac,
+            s(&[
+                "-hide_banner", "-progress", "pipe:1", "-nostats", "-f", "avfoundation",
+                "-thread_queue_size", "8192", "-rtbufsize", "256M", "-fflags", "+genpts",
+                "-i", ":1", "-af",
+                "silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=/dev/stderr",
+                "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-avoid_negative_ts", "make_zero",
+                "-y", "/rec/a.m4a",
+            ])
+        );
+
+        let win = build_unified_capture_args(Platform::Windows, None, "Mic", "/rec/a.m4a", &opts);
+        assert_eq!(
+            win,
+            s(&[
+                "-hide_banner", "-progress", "pipe:1", "-nostats", "-f", "dshow",
+                "-i", "audio=Mic", "-af",
+                "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=pipe\\:2",
+                "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-avoid_negative_ts", "make_zero",
+                "-y", "/rec/a.m4a",
+            ])
+        );
+
+        // Audio-only on a Mac with hardware encoding ON is the same argv as
+        // above (`hw_accel` is a video choice and does not touch audio capture).
+        let mac_hw = build_unified_capture_args(
+            Platform::MacOS,
+            None,
+            "1",
+            "/rec/a.m4a",
+            &CaptureOpts {
+                hw_accel: true,
+                ..CaptureOpts::default()
+            },
+        );
+        assert_eq!(mac_hw, mac);
+        assert!(!mac.iter().any(|a| a == "-realtime" || a == "-c:v"));
     }
 }
