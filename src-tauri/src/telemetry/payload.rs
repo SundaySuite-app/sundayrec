@@ -176,7 +176,10 @@ pub async fn build(
     payload.corrections = ctx.corrections.clone();
 
     // ── Crashes + supervised restarts (E2.1/E2.2's rings) ────────────────────
-    let crash_dir = ctx.app_data_dir.join("crashes");
+    // The ring's own location is the one fact: after a Windows fallback (F-W10)
+    // it may be somewhere other than `<app-data>/crashes`. `None` before the
+    // hook is armed — every test, which then names the folder itself.
+    let crash_dir = crate::crash::dir().unwrap_or_else(|| ctx.app_data_dir.join("crashes"));
     let mut records = crate::crash::read_crashes(&crash_dir);
     records.extend(crate::crash::read_restarts(&crash_dir));
     for r in &records {

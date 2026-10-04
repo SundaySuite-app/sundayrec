@@ -299,8 +299,11 @@ pub fn run() {
             ));
             let db_dir = data_choice.active.clone();
             let move_failed = matches!(data_choice.outcome, appdata::Outcome::FellBack { .. });
-            if move_failed {
-                // The crash hook was armed on the Local dir before this ran.
+            // The crash hook was armed on the Local dir before this ran. It
+            // follows the database to Roaming only when the move FAILED there;
+            // when Roaming is unreachable the ring stays in Local, or the
+            // crash record of this very start would be written nowhere.
+            if data_choice.crash_ring_follows_active() {
                 crash::repoint(db_dir.join("crashes"));
             }
             appdata::install(data_choice);

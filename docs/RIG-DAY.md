@@ -379,7 +379,7 @@ faktisk skal se nå — sist.
       en innstilling og ta et testopptak, avslutt normalt, installer denne
       versjonen igjen. **Forventet:** appen viser den nye mappas historikk
       (ikke testopptaket), og ett banner etter ca. 20 s: «Historikk og
-      innstillinger fra den eldre versjonen ligger igjen i den gamle mappa …».
+      innstillinger fra den eldre versjonen ligger igjen i den gamle mappen …».
       Samme start en gang til: ingen nytt banner.
 - [ ] **(w-appdata-nett) Roaming som ikke er nådd er ikke en ny installasjon.**
       På en maskin med omdirigert Roaming-mappe: koble fra nettverket/VPN, start

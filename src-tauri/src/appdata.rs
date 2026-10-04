@@ -124,9 +124,20 @@ pub struct Choice {
     /// økt har skrevet i den gamle fila siden flyttingen. Det den økta la inn
     /// vises ikke i den nye mappa, og det skal frivillige få høre om, én gang.
     pub roaming_newer: bool,
+    /// Fallbacken skyldes at Roaming ikke kunne nås (nettverksmappe, VPN), ikke
+    /// at selve flyttingen feilet. Krasjringen blir da i Local: en
+    /// krasjpost fra denne oppstarten skal ikke skrives til en mappe som ikke
+    /// svarer.
+    pub roaming_unreachable: bool,
 }
 
 impl Choice {
+    /// Skal krasjringen flyttes til [`Self::active`]? Bare ved en fallback der
+    /// Roaming faktisk svarer. (Ringen ble satt til Local før valget var tatt.)
+    pub fn crash_ring_follows_active(&self) -> bool {
+        matches!(self.outcome, Outcome::FellBack { .. }) && !self.roaming_unreachable
+    }
+
     /// `<active>/<sub>` og så `<other>/<sub>`: alle steder en «uferdig»-fil
     /// kan ligge. Aktiv først, så nye manifester vinner ved samme navn.
     pub fn dirs_to_scan(&self, sub: &str) -> Vec<PathBuf> {
@@ -290,10 +301,17 @@ enum Probe {
     Unknown(String),
 }
 
-/// Local: en feil er «ikke en database der». Local er en lokal disk, og en
-/// feil der gir uansett feil ved opprettelsen under, med fallback.
+/// Local: bare `NotFound` (og en tom fil) betyr «ingen database der». En annen
+/// feil (`PermissionDenied`, en fil AV holder) sier ingenting om at den
+/// IKKE finnes, og å regne den som tom ville latt flyttingen erstatte en ekte
+/// Local-database med Roaming-kopien (rename erstatter fila). Alt annet enn
+/// `NotFound` gir derfor «den finnes»: `AlreadyLocal`, og `open_pool` feiler
+/// høylytt i stedet for at noe skrives oppå.
 fn local_has_database(path: &Path, seams: &Seams) -> bool {
-    (seams.stat)(path).is_ok_and(|m| m.is_file && m.len > 0)
+    match (seams.stat)(path) {
+        Ok(m) => m.is_file && m.len > 0,
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    }
 }
 
 /// Roaming: «finnes ikke» krever to ting. `metadata` sier `NotFound`, OG
@@ -365,6 +383,7 @@ pub(crate) async fn resolve_with(
             other: None,
             outcome: Outcome::Unchanged,
             roaming_newer: false,
+            roaming_unreachable: false,
         };
     }
     let roaming_db = roaming.join(DB_FILE);
@@ -375,8 +394,9 @@ pub(crate) async fn resolve_with(
         other: Some(roaming.to_path_buf()),
         outcome,
         roaming_newer,
+        roaming_unreachable: false,
     };
-    let fell_back = |reason: String| {
+    let fell_back = |reason: String, roaming_unreachable: bool| {
         tracing::error!(
             "F-W10: moving the database to Local AppData failed; this session runs on Roaming: {reason}"
         );
@@ -385,6 +405,7 @@ pub(crate) async fn resolve_with(
             other: Some(local.to_path_buf()),
             outcome: Outcome::FellBack { reason },
             roaming_newer: false,
+            roaming_unreachable,
         }
     };
 
@@ -404,9 +425,10 @@ pub(crate) async fn resolve_with(
         // her ville laget en tom database i Local, som ved neste start vinner
         // over den ekte. Ingenting lages; Roaming brukes som før.
         Probe::Unknown(why) => {
-            return fell_back(format!(
-                "could not tell whether the Roaming database exists: {why}"
-            ))
+            return fell_back(
+                format!("could not tell whether the Roaming database exists: {why}"),
+                true,
+            )
         }
         Probe::File => {}
     }
@@ -429,7 +451,7 @@ pub(crate) async fn resolve_with(
         }
         Err(reason) => {
             let _ = std::fs::remove_file(local.join(TEMP_FILE));
-            fell_back(reason)
+            fell_back(reason, false)
         }
     }
 }
@@ -812,7 +834,18 @@ mod tests {
         std::fs::write(&blocked, b"x").unwrap();
         let local = blocked.join("no.sundayrec.app");
 
-        let c = resolve(&s.roaming, &local, true).await;
+        // Windows sier `NotFound` (ERROR_PATH_NOT_FOUND) for en sti under en
+        // fil; Unix sier `NotADirectory`. Sømmen gir Windows-svaret overalt.
+        let stat = |p: &Path| {
+            if p.starts_with(&blocked) {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            } else {
+                real_stat(p)
+            }
+        };
+        let seams = no_pause(&stat, &real_rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &local, true, &seams).await;
 
         assert!(matches!(c.outcome, Outcome::FellBack { .. }));
         assert_eq!(c.active, s.roaming);
@@ -985,6 +1018,81 @@ mod tests {
             c.outcome
         );
         assert!(!s.local.exists(), "ingenting lages i Local");
+    }
+
+    #[tokio::test]
+    async fn en_stat_feil_paa_en_eksisterende_local_database_flytter_ikke_roaming_oppaa() {
+        let s = seam();
+        std::fs::create_dir_all(&s.local).unwrap();
+        let local_pool = database_with(&s.local, 10).await;
+        store::checkpoint_and_close(&local_pool).await;
+        let roaming_pool = database_with(&s.roaming, 3).await;
+        store::checkpoint_and_close(&roaming_pool).await;
+        let local_db = s.local.join(DB_FILE);
+        let stat = |p: &Path| {
+            if p == local_db {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                real_stat(p)
+            }
+        };
+        let seams = no_pause(&stat, &real_rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        assert_eq!(c.outcome, Outcome::AlreadyLocal);
+        assert_eq!(c.active, s.local);
+        assert_eq!(
+            count_in(&local_db, "recording").await,
+            10,
+            "Local er urørt, ikke erstattet av Roaming sine 3"
+        );
+    }
+
+    #[test]
+    fn krasjringen_flyttes_ikke_til_en_roaming_mappe_som_ikke_svarer() {
+        let choice = |outcome, unreachable| Choice {
+            active: PathBuf::from("/r"),
+            other: Some(PathBuf::from("/l")),
+            outcome,
+            roaming_newer: false,
+            roaming_unreachable: unreachable,
+        };
+        let failed = || Outcome::FellBack { reason: "x".into() };
+        // Flyttingen feilet, Roaming svarer: ringen følger databasen dit.
+        assert!(choice(failed(), false).crash_ring_follows_active());
+        // Roaming svarer ikke: ringen blir i Local.
+        assert!(!choice(failed(), true).crash_ring_follows_active());
+        assert!(!choice(Outcome::AlreadyLocal, false).crash_ring_follows_active());
+        assert!(!choice(
+            Outcome::Moved {
+                recordings: 1,
+                settings: 1
+            },
+            false
+        )
+        .crash_ring_follows_active());
+    }
+
+    #[tokio::test]
+    async fn en_uoppnaaelig_roaming_merkes_som_uoppnaaelig_og_en_feilet_flytting_gjoer_ikke() {
+        let root = tempfile::tempdir().unwrap();
+        let roaming = root.path().join("ikke-naadd/no.sundayrec.app");
+        let local = root.path().join("Local/no.sundayrec.app");
+        let c = resolve(&roaming, &local, true).await;
+        assert!(c.roaming_unreachable);
+        assert!(!c.crash_ring_follows_active());
+
+        let s = seam();
+        let pool = database_with(&s.roaming, 3).await;
+        store::checkpoint_and_close(&pool).await;
+        let rename =
+            |_: &Path, _: &Path| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        let seams = no_pause(&real_stat, &rename, &copy_and_sync);
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+        assert!(matches!(c.outcome, Outcome::FellBack { .. }));
+        assert!(!c.roaming_unreachable);
+        assert!(c.crash_ring_follows_active());
     }
 
     #[tokio::test]
@@ -1174,6 +1282,7 @@ mod tests {
             other: Some(PathBuf::from("/l")),
             outcome: Outcome::FellBack { reason: "x".into() },
             roaming_newer: false,
+            roaming_unreachable: false,
         };
         let w = pending_warnings(&c);
         assert_eq!(w.len(), 1);
@@ -1272,6 +1381,7 @@ mod tests {
             other: Some(s.local.clone()),
             outcome: Outcome::FellBack { reason: "x".into() },
             roaming_newer: false,
+            roaming_unreachable: false,
         };
         assert_eq!(c.dirs_to_scan("recovery").len(), 2);
     }
