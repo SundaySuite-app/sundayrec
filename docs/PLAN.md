@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-10-04, ved v0.25.0 (stabil og beta)._
+_Sist gått gjennom: 2026-10-04, ved v0.25.1 (stabil og beta)._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
@@ -60,6 +60,9 @@ Mac og Windows, valg av opptaksmappe ved første oppstart, oppgradering fra
 v0.24.0, og «Vis i Finder» på opptaks- og eksportkvitteringen. **v0.25.0 gikk
 rett til stabil 2026-10-04 etter eiers ordre** (RELEASE-CHECKLIST §5, slik
 v0.12.0) — riggpunktene over er derfor etterkontroll av det flåten alt har.
+Det samme gjelder v0.25.1 (2026-10-04): flyttingen av appdata til Local
+AppData og NSIS/MSI på Windows (RIG-DAY w-appdata\*, w7) og et langt
+videoopptak på Mac under CPU-last (e2).
 
 ## Ikke planlagt
 

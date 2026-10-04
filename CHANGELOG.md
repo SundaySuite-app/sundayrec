@@ -5,6 +5,8 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.25.1 — raskere videoeksport på Mac, Windows-data i den lokale appmappen
+
 - **Eksport av video på Mac går omtrent 2,8 ganger raskere, uten målbart
   kvalitetstap.** Redigeringen ba maskinvareenkoderen om sanntid også når den
   eksporterte en ferdig fil, og da venter den på klokka i stedet for å gå så
