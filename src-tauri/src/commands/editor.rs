@@ -990,10 +990,14 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     use sundayrec_core::telemetry::CounterName;
+    // `mock_app` is not built on Windows (see Cargo.toml: the `test` feature
+    // there leaves the lib test binary unloadable), so neither is what uses it.
+    #[cfg(not(windows))]
     use tauri::Manager;
 
     // ── The asset grant: one file, in tauri's own scope ──────────────────────
 
+    #[cfg(not(windows))]
     #[test]
     fn the_asset_grant_opens_the_one_file_and_nothing_beside_it() {
         // Against a real (mock-runtime) app and its REAL asset scope, asking
@@ -1032,6 +1036,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn two_grants_open_two_files_and_no_more() {
         let app = tauri::test::mock_app();

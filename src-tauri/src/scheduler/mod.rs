@@ -2214,7 +2214,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let manifest = SessionManifest {
-            session_id: "crashed-session".into(),
+            session_id: started.timestamp_millis().to_string(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: started.timestamp_millis() as u64,
             preroll_clip_path: None,
@@ -2226,7 +2226,10 @@ mod tests {
             }],
         };
         std::fs::write(
-            dir.path().join("crashed-session.json"),
+            dir.path()
+                .join(crate::recorder::recovery::manifest_file_name(
+                    &manifest.session_id,
+                )),
             manifest.to_json().unwrap(),
         )
         .unwrap();
@@ -2546,7 +2549,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let manifest = SessionManifest {
-            session_id: "crashed-session".into(),
+            session_id: started.timestamp_millis().to_string(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: started.timestamp_millis() as u64,
             preroll_clip_path: None,
@@ -2558,7 +2561,10 @@ mod tests {
             }],
         };
         std::fs::write(
-            dir.path().join("crashed-session.json"),
+            dir.path()
+                .join(crate::recorder::recovery::manifest_file_name(
+                    &manifest.session_id,
+                )),
             manifest.to_json().unwrap(),
         )
         .unwrap();

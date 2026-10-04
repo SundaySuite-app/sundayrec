@@ -195,10 +195,17 @@ So a future auditor doesn't have to re-derive these from scratch:
   argument), `editor_open_known` (a history row, by the ROW'S id: the database
   holds the path; rows are written by the recorder and by startup recovery,
   which reads a manifest only if it is named the way the recorder names its own
-  (`<session_id>.json`, one function for both) and puts every file in it, the
+  (`<session_id>.json`, one function for both) and the id is what the recorder
+  makes — its start time in ms: 1–20 ASCII digits, so no sidecar name such as
+  `<stem>.meta.json` written through `editor_write_sidecar` can ever carry its
+  own matching id — and puts every file in it, the
   pre-roll clip and the row's final path through `path_guard::checked_input_file`
-  first — a manifest that fails either is left untouched, with no row and
-  nothing deleted), and a file dropped on the
+  first. A manifest that fails the name or the guard gets no row and nothing in
+  it is deleted: it is warned about once and renamed `<name>.refused`, so it
+  neither warns at every start nor counts as a recording in flight in the
+  scheduler's missed-recording check (`pending_windows_in` applies the same
+  name rule). It is never deleted, so a later version or support can fetch it.
+  Pinned by the tests in `recorder::recovery`), and a file dropped on the
   window (the process catches the drop itself, `window::on_event` →
   `editor::note_drop`, and tells the page with `editor://file-dropped` — the
   path of a drop never reaches the page). `editor_load_recording`,

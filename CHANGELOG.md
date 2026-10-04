@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Gjenoppretting etter krasj leser bare det opptakeren selv har skrevet.**
+  Et opptak som ble avbrutt gjenopprettes som før. Men en fil i
+  gjenopprettingsmappen som ikke er skrevet av opptakeren — eller som peker på
+  en beskyttet fil — gir ingen rad og sletter ingenting. Appen sier fra én
+  gang og gir fila nytt navn med `.refused` på slutten; den slettes aldri, og
+  den demper heller ikke varselet «opptak ble ikke tatt».
 - **«Åpne fil …» og slipp av en fil åpnes nå av appen selv.** Vinduet ser ut
   som før, og et opptak åpnes som før — fra Opptak, Bibliotek, «Sist redigert»,
   «Åpne fil …» eller ved å slippe en fil på vinduet. Men bare en fil du faktisk

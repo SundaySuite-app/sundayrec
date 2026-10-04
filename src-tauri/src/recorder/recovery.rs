@@ -32,6 +32,23 @@ fn manifest_dir(app: &AppHandle) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// The longest id the recorder makes: `start_ms.to_string()` of a `u64` is at
+/// most 20 digits.
+const SESSION_ID_MAX_LEN: usize = 20;
+
+/// Is `id` a session id the recorder could have made?
+///
+/// The recorder has named every session by its start time in epoch ms
+/// (`start_ms.to_string()`: `engine::supervisor`, `cpal_capture`), so an id is
+/// ASCII digits and nothing else. The rule is that narrow on purpose: the id
+/// ends up inside a file name, and the sidecar commands can write any JSON into
+/// the app data folder under `<stem>.meta.json` — a free-text id would let a
+/// forged file name itself after its own contents (`session_id: "<stem>.meta"`).
+/// No digit string contains a dot, so no forgery can.
+fn is_a_recorders_session_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= SESSION_ID_MAX_LEN && id.bytes().all(|b| b.is_ascii_digit())
+}
+
 /// The file name a session's manifest has in [`manifest_dir`]. The ONE place
 /// the name is made: [`manifest_path`] writes it, and the startup scan reads
 /// back only a file that carries exactly this name for the `session_id` inside
@@ -51,12 +68,43 @@ fn manifest_path(app: &AppHandle, session_id: &str) -> Option<PathBuf> {
 /// into a history row, and the app data folder is a folder the webview's
 /// sidecar commands can write into. A manifest that was not written by
 /// [`write_manifest`] is, at best, litter and, at worst, a forged list of files
-/// to finish and delete. The recorder always writes `<session_id>.json`, so
-/// anything under another name — or whose `session_id` is a path, not an id —
-/// is not ours and is not read as a recording.
+/// to finish and delete. The recorder always writes `<session_id>.json`, with
+/// a session id that is its start time in ms ([`is_a_recorders_session_id`]), so
+/// anything under another name — or whose `session_id` is a path, a stem, free
+/// text — is not ours and is not read as a recording.
+///
+/// BOTH readers of the folder use this: the startup scan, and
+/// [`pending_windows_in`], whose verdict suppresses the «recording was not made»
+/// alert and so must not be buyable with a forged file either.
 fn is_the_recorders_own_name(path: &Path, manifest: &SessionManifest) -> bool {
-    path.file_name().and_then(|n| n.to_str())
-        == Some(manifest_file_name(&manifest.session_id).as_str())
+    is_a_recorders_session_id(&manifest.session_id)
+        && path.file_name().and_then(|n| n.to_str())
+            == Some(manifest_file_name(&manifest.session_id).as_str())
+}
+
+/// Put a manifest the scan refused out of the scan's way, WITHOUT deleting it:
+/// `<name>.refused`, which is neither a `.json` file the next launch would read
+/// and warn about again, nor one [`pending_windows_in`] would count as a
+/// recording in flight. The refusal was announced once, when it happened; the
+/// file stays for a later version or support to fetch. If the name is taken, a
+/// number is added — nothing is ever overwritten either.
+async fn set_aside_refused(path: &Path) {
+    let mut aside = path.as_os_str().to_owned();
+    aside.push(".refused");
+    let mut aside = PathBuf::from(aside);
+    let mut n = 1u32;
+    while tokio::fs::try_exists(&aside).await.unwrap_or(false) {
+        n += 1;
+        let mut next = path.as_os_str().to_owned();
+        next.push(format!(".refused.{n}"));
+        aside = PathBuf::from(next);
+    }
+    if let Err(e) = tokio::fs::rename(path, &aside).await {
+        tracing::warn!(
+            file = %path.display(),
+            "recovery: could not set a refused manifest aside: {e}"
+        );
+    }
 }
 
 /// Write / overwrite the session manifest atomically (temp + rename), through
@@ -174,6 +222,11 @@ pub(crate) fn pending_windows_in(dir: &Path) -> Vec<(u64, u64)> {
         let Ok(manifest) = SessionManifest::from_json(&body) else {
             continue;
         };
+        // Nor is a manifest the recorder did not write: the scan will refuse it,
+        // and a file that is refused must not buy a missed service its alibi.
+        if !is_the_recorders_own_name(&path, &manifest) {
+            continue;
+        }
         let start = manifest.session_start_ms;
         let last_seen = sundayrec_core::recovery::all_fragment_paths(&manifest)
             .iter()
@@ -243,7 +296,10 @@ pub(crate) async fn scan_recovery_dir(
             Ok(manifest) => {
                 // Only a file the recorder itself could have written is read as
                 // a recording. Nothing is deleted: a manifest under a foreign
-                // name is not ours to clear either, and the operator can look.
+                // name is not ours to clear either. It is warned about ONCE and
+                // then named `<name>.refused`, so it neither warns at every
+                // start nor counts in `pending_windows_in`, and stays for a
+                // later version or support to look at.
                 if !is_the_recorders_own_name(&path, &manifest) {
                     tracing::warn!(
                         file = %path.display(),
@@ -256,11 +312,13 @@ pub(crate) async fn scan_recovery_dir(
                         "A file in the recovery folder was not written by the recorder and was \
                          ignored.",
                     );
+                    set_aside_refused(&path).await;
                     continue;
                 }
                 // A file the guard refuses a person is refused here too, and the
                 // WHOLE session is left exactly as it is: no row, no fragment
-                // touched, no manifest cleared. A recorder never writes one.
+                // touched, no manifest deleted — the manifest is only renamed
+                // `<name>.refused` (see above). A recorder never writes one.
                 if let Some(refused) = refused_by_the_guard(&manifest, home) {
                     tracing::warn!(
                         session = %manifest.session_id,
@@ -274,6 +332,7 @@ pub(crate) async fn scan_recovery_dir(
                         "An interrupted recording was not recovered — a file in its record is in \
                          a protected place.",
                     );
+                    set_aside_refused(&path).await;
                     continue;
                 }
                 // A fragment that GROWS between two size samples has a live
@@ -531,6 +590,66 @@ async fn recover_session_for_home(
     manifest: &SessionManifest,
     home: Option<&Path>,
 ) -> usize {
+    recover_session_with(app, pool, manifest, home, &Ffmpeg).await
+}
+
+/// How a recovered deliverable is finished. The one seam of this file the tests
+/// replace: the real finish concatenates the fragments over the primary and
+/// DELETES them, so «was the guard asked BEFORE the finish?» is only answerable
+/// by watching what the finish is handed — and a headless test run has no
+/// ffmpeg to leave a trace on disk.
+trait Finisher {
+    async fn finish(
+        &self,
+        deliverable: &sundayrec_core::recorder::Deliverable,
+        preroll: Option<&str>,
+        delivery: Option<&DeliverySpec>,
+    ) -> crate::error::AppResult<String>;
+}
+
+/// The production finish: [`finalize_deliverable`], the same one a live stop uses.
+struct Ffmpeg;
+
+impl Finisher for Ffmpeg {
+    async fn finish(
+        &self,
+        deliverable: &sundayrec_core::recorder::Deliverable,
+        preroll: Option<&str>,
+        delivery: Option<&DeliverySpec>,
+    ) -> crate::error::AppResult<String> {
+        finalize_deliverable(deliverable, preroll, delivery).await
+    }
+}
+
+/// The pre-roll clip to prepend to deliverable `index` of `manifest`, if any:
+/// only the FIRST deliverable gets one, only while the file still exists, and
+/// only if the path guard would let a person open it.
+///
+/// A clip the guard refuses is not prepended: its bytes would end up inside a
+/// recording a person can play and share. (And the scan deletes the clip it
+/// prepended, under the same guard.)
+fn preroll_for<'a>(
+    manifest: &'a SessionManifest,
+    index: usize,
+    home: Option<&Path>,
+) -> Option<&'a str> {
+    if index != 0 {
+        return None;
+    }
+    manifest
+        .preroll_clip_path
+        .as_deref()
+        .filter(|p| Path::new(p).exists())
+        .filter(|p| path_guard::checked_input_file_for_home(p, home).is_ok())
+}
+
+async fn recover_session_with(
+    app: Option<&AppHandle>,
+    pool: &SqlitePool,
+    manifest: &SessionManifest,
+    home: Option<&Path>,
+    finisher: &impl Finisher,
+) -> usize {
     if let Some(refused) = refused_delivery_dir(manifest, home) {
         tracing::warn!(
             session = %manifest.session_id,
@@ -570,19 +689,8 @@ async fn recover_session_for_home(
             continue;
         }
         let deliverable = dm.to_deliverable();
-        // The pre-roll clip is prepended only to the first deliverable, and only
-        // if it still exists.
-        let preroll = if index == 0 {
-            manifest
-                .preroll_clip_path
-                .as_deref()
-                .filter(|p| Path::new(p).exists())
-                // A clip the guard refuses is not prepended either: its bytes
-                // would end up inside a recording a person can play and share.
-                .filter(|p| path_guard::checked_input_file_for_home(p, home).is_ok())
-        } else {
-            None
-        };
+        // The pre-roll clip goes to the first deliverable only — see `preroll_for`.
+        let preroll = preroll_for(manifest, index, home);
 
         // Decoupled capture: the manifest carries how to finish the capture
         // fragments — encode a WAV (audio) or remux an MKV (video) to the user's
@@ -594,7 +702,8 @@ async fn recover_session_for_home(
             .as_ref()
             .map(|enc| DeliverySpec::from_manifest(enc, &dm.primary_path));
 
-        let final_path = finalize_deliverable(&deliverable, preroll, delivery_spec.as_ref())
+        let final_path = finisher
+            .finish(&deliverable, preroll, delivery_spec.as_ref())
             .await
             .unwrap_or_else(|e| {
                 tracing::warn!(
@@ -696,7 +805,7 @@ mod tests {
         let a = dir.join("sermon.m4a").to_string_lossy().into_owned();
         let b = dir.join("sermon_2.m4a").to_string_lossy().into_owned();
         SessionManifest {
-            session_id: "1700000000000-sermon".into(),
+            session_id: "1700000000000".into(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: 1_700_000_000_000,
             preroll_clip_path: None,
@@ -959,9 +1068,7 @@ mod tests {
         // a zero-width window that covers nothing.
         write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
         write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
-        tokio::fs::write(recovery.path().join("session.json"), m.to_json().unwrap())
-            .await
-            .unwrap();
+        write_recorders_manifest(recovery.path(), &m).await;
 
         let windows = pending_windows_in(recovery.path());
         assert_eq!(windows.len(), 1, "one unfinalised session");
@@ -982,9 +1089,7 @@ mod tests {
         let recovery = tempfile::tempdir().unwrap();
         let rec = tempfile::tempdir().unwrap();
         let m = manifest_in(rec.path());
-        tokio::fs::write(recovery.path().join("s.json"), m.to_json().unwrap())
-            .await
-            .unwrap();
+        write_recorders_manifest(recovery.path(), &m).await;
         let windows = pending_windows_in(recovery.path());
         assert_eq!(windows.len(), 1);
         assert!(
@@ -1122,6 +1227,299 @@ mod tests {
         .await
     }
 
+    /// `file` is gone under its own name and kept, byte for byte, as
+    /// `<name>.refused` — renamed, never deleted.
+    fn is_set_aside(file: &Path) -> bool {
+        let mut aside = file.as_os_str().to_owned();
+        aside.push(".refused");
+        !file.exists() && Path::new(&aside).is_file()
+    }
+
+    /// How many `.json` files the scan would still read in `dir`.
+    fn json_files_in(dir: &Path) -> usize {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+            .count()
+    }
+
+    #[test]
+    fn a_session_id_is_what_the_recorder_makes_and_nothing_else() {
+        // `start_ms.to_string()`: digits, at most 20 of them (a u64).
+        for ok in ["0", "1786179600000", &u64::MAX.to_string()] {
+            assert!(is_a_recorders_session_id(ok), "{ok:?}");
+        }
+        for bad in [
+            "",
+            "123456789012345678901", // 21 digits
+            "1786179600000.meta",    // names itself after a `.meta.json` sidecar
+            "1786179600000-sermon",
+            "session",
+            "../1",
+            " 1",
+            "-1",
+            "1 ",
+            "١٢٣", // Arabic-Indic digits are digits to unicode, not to the recorder
+        ] {
+            assert!(!is_a_recorders_session_id(bad), "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_forged_manifest_that_names_itself_after_a_meta_sidecar_gives_no_row() {
+        // The PoC of the PR #313 review: `editor_write_sidecar(Meta)` writes
+        // `<stem>.meta.json` with ANY json, so `session_id: "<stem>.meta"` made
+        // the forged file carry exactly the name its own content asked for. The
+        // id is digits now, so no sidecar name can ever be the recorder's.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        m.session_id = "1700000000000.meta".into();
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let forged = write_recorders_manifest(recovery.path(), &m).await;
+        assert_eq!(forged.file_name().unwrap(), "1700000000000.meta.json");
+
+        assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert!(
+            Path::new(&m.deliverables[0].primary_path).exists()
+                && Path::new(&m.deliverables[1].primary_path).exists(),
+            "nothing the forgery names is touched"
+        );
+        assert!(is_set_aside(&forged));
+    }
+
+    #[tokio::test]
+    async fn a_forged_manifest_cannot_delete_the_pre_roll_file_it_names() {
+        // The other half of the PoC: the scan deletes the pre-roll clip of a
+        // manifest it recovered. A document the guard would let a person open
+        // is exactly a file this must never reach through a forged manifest.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let document = rec.path().join("preken.docx");
+        write_fragment(&document).await;
+        let mut m = manifest_in(rec.path());
+        m.session_id = "1700000000000.meta".into();
+        m.preroll_clip_path = Some(document.to_string_lossy().into_owned());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_recorders_manifest(recovery.path(), &m).await;
+
+        let _ = scan_dir(&pool, recovery.path()).await;
+        assert!(document.exists(), "a forged manifest deletes nothing");
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn pending_windows_ignore_a_manifest_the_recorder_did_not_write() {
+        // The window suppresses the «recording was not made» alert. A forged
+        // file, or one the scan refused, must never be able to keep a missed
+        // service quiet — for a name the recorder does not use, for a session id
+        // that is not a start time, and for a refused file set aside as
+        // `.refused`.
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path());
+        let body = m.to_json().unwrap();
+
+        // Under a foreign name.
+        std::fs::write(recovery.path().join("min-egen-manifest.json"), &body).unwrap();
+        // The recorder's name, but the id is a sidecar stem, not a start time.
+        let mut sidecar = m.clone();
+        sidecar.session_id = "1700000000000.meta".into();
+        write_recorders_manifest(recovery.path(), &sidecar).await;
+        // A refused manifest, set aside.
+        std::fs::write(
+            recovery
+                .path()
+                .join(format!("{}.refused", manifest_file_name(&m.session_id))),
+            &body,
+        )
+        .unwrap();
+        assert!(
+            pending_windows_in(recovery.path()).is_empty(),
+            "none of these is a recording in flight"
+        );
+
+        // And the control: the recorder's own manifest does count.
+        write_recorders_manifest(recovery.path(), &m).await;
+        assert_eq!(pending_windows_in(recovery.path()).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_refused_manifest_is_set_aside_once_and_not_warned_about_at_every_start() {
+        // Left as `<id>.json`, a manifest the guard refuses would be read, warned
+        // about and left again at every launch, and would count in
+        // `pending_windows_in` for good. Renamed `<name>.refused` it does neither
+        // — and it is still there, byte for byte.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let (home, m, protected) = home_with_a_fragment_in_ssh();
+        write_fragment(&protected).await;
+        let file = write_recorders_manifest(recovery.path(), &m).await;
+        let body = std::fs::read(&file).unwrap();
+
+        assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
+        assert_eq!(
+            json_files_in(recovery.path()),
+            0,
+            "nothing left for the next start to warn about"
+        );
+        assert!(pending_windows_in(recovery.path()).is_empty());
+        let mut aside = file.as_os_str().to_owned();
+        aside.push(".refused");
+        assert_eq!(std::fs::read(&aside).unwrap(), body, "kept, unchanged");
+
+        // The next start finds nothing to read.
+        assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
+        assert_eq!(std::fs::read(&aside).unwrap(), body);
+    }
+
+    #[tokio::test]
+    async fn a_second_refusal_of_the_same_name_keeps_the_first_one_too() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let (home, m, protected) = home_with_a_fragment_in_ssh();
+        write_fragment(&protected).await;
+        let file = write_recorders_manifest(recovery.path(), &m).await;
+        assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
+        // The same refused name turns up again.
+        write_recorders_manifest(recovery.path(), &m).await;
+        assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
+
+        let kept = std::fs::read_dir(recovery.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(&*file.file_name().unwrap().to_string_lossy())
+            })
+            .count();
+        assert_eq!(kept, 2, "two refusals, two files — nothing overwritten");
+    }
+
+    // ── The pre-roll clip and the finish: what the guard guards ─────────────
+
+    #[test]
+    fn the_pre_roll_clip_goes_to_the_first_deliverable_only() {
+        let rec = tempfile::tempdir().unwrap();
+        let clip = rec.path().join("preroll.wav");
+        std::fs::write(&clip, b"x").unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        m.preroll_clip_path = Some(clip.to_string_lossy().into_owned());
+
+        assert_eq!(
+            preroll_for(&m, 0, Some(home.path())),
+            Some(clip.to_string_lossy().as_ref())
+        );
+        assert_eq!(preroll_for(&m, 1, Some(home.path())), None);
+        // A clip that is gone is not prepended; one never named is no clip.
+        std::fs::remove_file(&clip).unwrap();
+        assert_eq!(preroll_for(&m, 0, Some(home.path())), None);
+        m.preroll_clip_path = None;
+        assert_eq!(preroll_for(&m, 0, Some(home.path())), None);
+    }
+
+    #[test]
+    fn a_pre_roll_clip_the_guard_refuses_is_not_prepended() {
+        // Its bytes would end up inside a recording a person can play and share.
+        // The clip EXISTS and `index` is 0, so only the guard can say no.
+        let home = tempfile::tempdir().unwrap();
+        let ssh = home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let secret = ssh.join("id_ed25519");
+        std::fs::write(&secret, b"x").unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        m.preroll_clip_path = Some(secret.to_string_lossy().into_owned());
+
+        assert_eq!(preroll_for(&m, 0, Some(home.path())), None);
+    }
+
+    /// A [`Finisher`] that finishes nothing and writes down what it was asked
+    /// to: the primary of each deliverable, and the clip it was handed.
+    #[derive(Default)]
+    struct SpyFinisher {
+        asked: std::sync::Mutex<Vec<(String, Option<String>)>>,
+    }
+
+    impl Finisher for SpyFinisher {
+        async fn finish(
+            &self,
+            deliverable: &sundayrec_core::recorder::Deliverable,
+            preroll: Option<&str>,
+            _delivery: Option<&DeliverySpec>,
+        ) -> crate::error::AppResult<String> {
+            self.asked.lock().unwrap().push((
+                deliverable.primary_path.clone(),
+                preroll.map(str::to_string),
+            ));
+            Ok(deliverable.primary_path.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_deliverable_with_a_protected_fragment_is_never_handed_to_the_finish() {
+        // Finishing concatenates the fragments over the primary and DELETES them.
+        // The guard has to be asked BEFORE that, not after: a fragment in `.ssh`
+        // is a file that must not be read into a recording, nor removed. The spy
+        // sees the order — a guard moved behind the finish would still skip the
+        // row, but only after the finish had already been told to go.
+        let (pool, _db) = temp_pool().await;
+        let home = tempfile::tempdir().unwrap();
+        let ssh = home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        let secret = ssh.join("id_ed25519");
+        m.deliverables[0]
+            .fragments
+            .push(secret.to_string_lossy().into_owned());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(&secret).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+
+        let spy = SpyFinisher::default();
+        let n = recover_session_with(None, &pool, &m, Some(home.path()), &spy).await;
+
+        let asked = spy.asked.lock().unwrap().clone();
+        assert_eq!(
+            asked,
+            vec![(m.deliverables[1].primary_path.clone(), None)],
+            "only the ordinary deliverable is ever finished"
+        );
+        assert_eq!(n, 1);
+        assert!(secret.exists());
+    }
+
+    #[tokio::test]
+    async fn recovery_hands_the_pre_roll_clip_to_the_first_deliverable_only() {
+        // The clip `preroll_for` chooses is the clip the finish receives.
+        let (pool, _db) = temp_pool().await;
+        let rec = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let clip = rec.path().join("preroll.wav");
+        write_fragment(&clip).await;
+        let mut m = manifest_in(rec.path());
+        m.preroll_clip_path = Some(clip.to_string_lossy().into_owned());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+
+        let spy = SpyFinisher::default();
+        assert_eq!(
+            recover_session_with(None, &pool, &m, Some(home.path()), &spy).await,
+            2
+        );
+        let asked = spy.asked.lock().unwrap().clone();
+        assert_eq!(asked[0].1.as_deref(), Some(clip.to_string_lossy().as_ref()));
+        assert_eq!(asked[1].1, None);
+    }
+
     #[tokio::test]
     async fn a_manifest_under_a_name_the_recorder_does_not_write_gives_no_row() {
         // The forgery PR #313 closes: the webview could write any file into the
@@ -1141,8 +1539,8 @@ mod tests {
         assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
         assert!(list_recordings(&pool).await.unwrap().is_empty());
         assert!(
-            forged.exists(),
-            "a file that is not ours is not ours to delete"
+            is_set_aside(&forged),
+            "a file that is not ours is not ours to delete — it is only set aside"
         );
         assert!(Path::new(&m.deliverables[0].primary_path).exists());
         assert!(Path::new(&m.deliverables[1].primary_path).exists());
@@ -1163,6 +1561,7 @@ mod tests {
 
         assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
         assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert!(is_set_aside(&file));
     }
 
     #[tokio::test]
@@ -1200,8 +1599,8 @@ mod tests {
         assert!(protected.exists());
         assert!(Path::new(&m.deliverables[1].primary_path).exists());
         assert!(
-            file.exists(),
-            "the refused manifest is left for a person to look at"
+            is_set_aside(&file),
+            "the refused manifest is kept, renamed, for a person to look at"
         );
     }
 
@@ -1255,7 +1654,7 @@ mod tests {
             0,
             "nothing written there"
         );
-        assert!(file.exists(), "the refused manifest is left alone");
+        assert!(is_set_aside(&file), "the refused manifest is kept, renamed");
     }
 
     #[tokio::test]
