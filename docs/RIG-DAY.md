@@ -389,9 +389,27 @@ faktisk skal se nå — sist.
       (og feiler om den heller ikke kan nås), og første start MED nettverk
       flytter databasen.
 
-_(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
-runder — skjulte mapper + OneDrive-varsel, MSI/UAC på stable, m.fl. Fylles inn her når de respektive PR-ene er
-merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
+- [ ] **(w7) Windows-installasjon: NSIS uten UAC, og MSI → NSIS.** Tre ting,
+      på en Windows-maskin med en vanlig bruker (ikke administrator) — helst en
+      ren maskin eller VM. Bevis fra release-bygget finnes ikke for noen av dem
+      (se `docs/RELEASE-CHECKLIST.md` §5a); dette er den første kjøringen. 1) **Ny installasjon:** kjør `SundayRec_*_x64-setup.exe` som vanlig bruker.
+      **Forventet:** ingen UAC-spørsmål; appen havner under
+      `%LOCALAPPDATA%\SundayRec`, ikke `Program Files`. 2) **Uten WebView2:** på en maskin der WebView2 ikke finnes (eldre
+      Windows 10 / ren VM), én gang MED og én gang UTEN nett. **Forventet:**
+      med nett installeres WebView2 av den innebygde bootstrapperen uten at
+      noe lastes ned først; uten nett ventes det å feile — `embedBootstrapper` trenger
+      fortsatt nett for selve runtimen, og eier har valgt bort
+      `offlineInstaller` (+127 MB på hver oppdatering; `NEEDS-RICHARD.md`).
+      Bevis det, men en feil uten nett er ikke et funn. 3) **MSI → NSIS:** installer en eldre `.msi` (v0.25.0, som administrator),
+      og la appen oppdatere seg til en utgivelse der `-msi`-nøkkelen er med:
+      **Forventet:** `.msi` oppdaterer over seg selv (UAC som før), én
+      installasjon. Test deretter, med `-msi`-nøkkelen fjernet fra en
+      testfeed, at NSIS-stien avinstallerer MSI-en og ikke etterlater to
+      installasjoner — og hva en ikke-administrator ser da.
+
+_(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
+runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
+respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## Ørene
 

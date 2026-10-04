@@ -38,7 +38,7 @@ Kode, men bare etter et forsøk på ekte maskin.
 | **Notarisering:** godta Apples oppdaterte avtale, sett `NOTARIZE_MAC=true`                                           | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Release blockers, punkt 3 |
 | Windows-kodesigneringssertifikat (valgfritt; fjerner SmartScreen-advarselen)                                         | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Signing                   |
 | Rive `notify.sundaysuite.app` i `sunday-telemetry` og slette lagrede adresser — når flåten er på v0.23.0 eller nyere | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §PU-1                      |
-| Eierbeslutninger fra F2 som står igjen: MSI/UAC, webview for frakoblet PC, resten av språkfunnene                    | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Eierbeslutninger fra F2   |
+| Eierbeslutninger fra F2 som står igjen: resten av språkfunnene                                                       | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Eierbeslutninger fra F2   |
 | Klassisk ffmpeg-pre-roll: fjerne nødluka når en ekte søndag har bevist den native bufferen                           | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Summary                   |
 | SoundCloud-API: lagt på is; tellerne `editor.publish.*` avgjør om den tas opp igjen                                  | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §«Legg ut»                 |
 

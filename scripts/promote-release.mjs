@@ -99,17 +99,58 @@ const MANIFEST_URL = (tag) =>
 // is absent is not "no update available", it is a hard `TargetsNotFound` error
 // on every check that install ever makes.
 //
-// `windows-x86_64-msi` is deliberately NOT required: MSI cannot express a
-// `-beta.N` version (Windows Installer's ProductVersion is three numeric
-// fields), so release.yml builds Windows betas with `--bundles nsis` and the
-// beta manifest legitimately has four entries, not five. NSIS is what the
-// updater installs from either way.
+// `windows-x86_64-msi` is NOT in this list, because a beta legitimately lacks
+// it: MSI cannot express a `-beta.N` version (Windows Installer's ProductVersion
+// is three numeric fields), so release.yml builds Windows betas with
+// `--bundles nsis` and the beta manifest has four entries, not five. It IS
+// required for a plain `vX.Y.Z` tag — see STABLE_ONLY_PLATFORMS below.
 const REQUIRED_PLATFORMS = [
   "darwin-aarch64",
   "darwin-aarch64-app",
   "windows-x86_64",
   "windows-x86_64-nsis",
 ];
+
+// ── NSIS for new installs, MSI kept for the installs that already exist ─────
+// (F-W7, decided 2026-10-04.) A NEW Windows install is pointed at NSIS only
+// (`currentUser`, no UAC). The `.msi` is still BUILT on stable, solely so an
+// install that came from it keeps updating from its own manifest key. Two
+// rules in manifestProblems() hold that arrangement in place:
+//
+//  1. A plain-stable manifest must carry `windows-x86_64-msi`. An install made
+//     from the MSI has `bundle_type = Msi` baked into its exe by the bundler,
+//     so the updater looks for `windows-x86_64-msi` first (tauri-plugin-updater
+//     2.11.0, updater.rs:581-582, get_urls at 608-637). If it is absent the updater silently falls
+//     through to `windows-x86_64` — the NSIS installer — and an NSIS setup run
+//     over a perMachine MSI install is a migration (the template uninstalls the
+//     MSI first, through its own UAC prompt) that nobody has watched happen on
+//     a real Windows machine. Better a promote that refuses than an unproven
+//     migration pushed at the fleet. Remove this rule together with the MSI
+//     build once that migration is proven on the rig.
+//
+//  2. The generic `windows-x86_64` entry must be the NSIS asset (same url and
+//     signature as `windows-x86_64-nsis`). Up to and including v0.25.0
+//     tauri-action pointed it at the MSI; release.yml now sets
+//     `updaterJsonPreferNsis: true`. This is the ratchet that catches that
+//     input being dropped or ignored. It only applies to versions NEWER than
+//     NSIS_GENERIC_SINCE: a rollback (docs/ROLLBACK.md) promotes an OLDER tag,
+//     and v0.25.0 and earlier legitimately have the MSI there.
+const STABLE_ONLY_PLATFORMS = ["windows-x86_64-msi"];
+const NSIS_GENERIC_SINCE = [0, 25, 0];
+
+function versionTuple(version) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? ""));
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function isNewerThan(version, floor) {
+  const v = versionTuple(version);
+  if (!v) return false;
+  for (let i = 0; i < 3; i++) {
+    if (v[i] !== floor[i]) return v[i] > floor[i];
+  }
+  return false;
+}
 
 // ── Manifest validation (pure — unit-tested in promote-release.test.mjs) ─────
 //
@@ -150,7 +191,10 @@ export function manifestProblems(manifest, tag) {
     return [...problems, "latest.json has no `platforms` object"];
   }
 
-  for (const key of REQUIRED_PLATFORMS) {
+  const required = STABLE_TAG.test(tag)
+    ? [...REQUIRED_PLATFORMS, ...STABLE_ONLY_PLATFORMS]
+    : REQUIRED_PLATFORMS;
+  for (const key of required) {
     const entry = platforms[key];
     if (!entry || typeof entry !== "object") {
       problems.push(
@@ -168,6 +212,23 @@ export function manifestProblems(manifest, tag) {
     if (typeof entry.url !== "string" || entry.url.trim() === "") {
       problems.push(`"${key}" has no download url`);
     }
+  }
+
+  // Rule 2 above: the generic Windows key is the NSIS asset. Compared on url AND
+  // signature — either one differing means a different file.
+  const generic = platforms["windows-x86_64"];
+  const nsis = platforms["windows-x86_64-nsis"];
+  if (
+    isNewerThan(expected, NSIS_GENERIC_SINCE) &&
+    generic &&
+    nsis &&
+    (generic.url !== nsis.url || generic.signature !== nsis.signature)
+  ) {
+    problems.push(
+      `"windows-x86_64" does not point at the same asset as "windows-x86_64-nsis" — ` +
+        `it must, so anything that falls back to the generic key gets the no-UAC installer ` +
+        `(release.yml: updaterJsonPreferNsis: true)`,
+    );
   }
 
   return problems;

@@ -23,9 +23,9 @@ import {
   tagChannelProblem,
 } from "./promote-release.mjs";
 
-const entry = (sig = "dW50cnVzdGVk…") => ({
+const entry = (sig = "dW50cnVzdGVk…", id = 1) => ({
   signature: sig,
-  url: "https://api.github.com/repos/SundaySuite-app/sundayrec/releases/assets/1",
+  url: `https://api.github.com/repos/SundaySuite-app/sundayrec/releases/assets/${id}`,
 });
 
 const betaManifest = {
@@ -58,6 +58,74 @@ describe("manifestProblems", () => {
 
   it("accepts the 5-entry stable manifest", () => {
     expect(manifestProblems(stableManifest, "v0.10.0")).toEqual([]);
+  });
+
+  // F-W7 (2026-10-04): new Windows installs get NSIS only, but the `.msi` is
+  // still built so an install that came from it keeps updating. These shapes
+  // are what release.yml's `updaterJsonPreferNsis: true` produces: generic and
+  // `-nsis` are the same asset, `-msi` is its own.
+  const nsisFirstStable = (version) => ({
+    version,
+    platforms: {
+      "darwin-aarch64": entry("sig", 10),
+      "darwin-aarch64-app": entry("sig", 10),
+      "windows-x86_64": entry("sig-nsis", 21),
+      "windows-x86_64-msi": entry("sig-msi", 20),
+      "windows-x86_64-nsis": entry("sig-nsis", 21),
+    },
+  });
+
+  it("accepts a stable manifest whose generic Windows key is the NSIS asset", () => {
+    expect(manifestProblems(nsisFirstStable("0.26.0"), "v0.26.0")).toEqual([]);
+  });
+
+  it("rejects a stable manifest without the MSI key — an MSI install would fall through to NSIS unwatched", () => {
+    const m = nsisFirstStable("0.26.0");
+    delete m.platforms["windows-x86_64-msi"];
+    const problems = manifestProblems(m, "v0.26.0");
+    expect(problems).toEqual([
+      expect.stringContaining('no "windows-x86_64-msi" entry'),
+    ]);
+  });
+
+  it("does not require the MSI key on a beta — MSI cannot express a beta version", () => {
+    const m = nsisFirstStable("0.26.0-beta.1");
+    delete m.platforms["windows-x86_64-msi"];
+    expect(manifestProblems(m, "v0.26.0-beta.1")).toEqual([]);
+  });
+
+  it("rejects a generic Windows key that still points at the MSI (the tauri-action default)", () => {
+    const m = nsisFirstStable("0.26.0");
+    m.platforms["windows-x86_64"] = entry("sig-msi", 20);
+    const problems = manifestProblems(m, "v0.26.0");
+    expect(problems).toEqual([
+      expect.stringContaining("updaterJsonPreferNsis"),
+    ]);
+  });
+
+  it("rejects a generic key with the NSIS url but another signature", () => {
+    const m = nsisFirstStable("0.26.0");
+    m.platforms["windows-x86_64"] = entry("sig-other", 21);
+    expect(manifestProblems(m, "v0.26.0")).toEqual([
+      expect.stringContaining("updaterJsonPreferNsis"),
+    ]);
+  });
+
+  it("applies the generic-is-NSIS rule to betas too", () => {
+    const m = nsisFirstStable("0.26.0-beta.1");
+    m.platforms["windows-x86_64"] = entry("sig-msi", 20);
+    expect(manifestProblems(m, "v0.26.0-beta.1")).toEqual([
+      expect.stringContaining("updaterJsonPreferNsis"),
+    ]);
+  });
+
+  it("still lets a rollback promote v0.25.0, whose generic key IS the MSI", () => {
+    // docs/ROLLBACK.md promotes an OLDER tag. v0.25.0 (and everything before
+    // it) was built before updaterJsonPreferNsis; its live manifest has
+    // `windows-x86_64` and `windows-x86_64-msi` on the same asset.
+    const m = nsisFirstStable("0.25.0");
+    m.platforms["windows-x86_64"] = entry("sig-msi", 20);
+    expect(manifestProblems(m, "v0.25.0")).toEqual([]);
   });
 
   it("rejects the mac-only manifest a half-failed matrix leaves behind", () => {

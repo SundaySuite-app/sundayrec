@@ -210,7 +210,7 @@ jobs:
           echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
 
       - name: Build, sign, and publish
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updater signing — REQUIRED for auto-update. Signs latest.json + the
@@ -320,6 +320,21 @@ jobs:
           # which is exactly the arrangement that stops updates silently the day
           # a default changes.
           uploadUpdaterJson: true
+          # `windows-x86_64` (den generiske nøkkelen) skal peke på NSIS, ikke MSI.
+          #
+          # Når begge pakker finnes, velger tauri-action selv hvem som får den
+          # generiske nøkkelen — og uten denne bryteren er det MSI (v0.25.0s
+          # latest.json: `windows-x86_64` og `windows-x86_64-msi` er samme
+          # asset). Oppdateringsmodulen slår opp `windows-x86_64-<installer>`
+          # først og faller tilbake til `windows-x86_64`; hver installasjon
+          # finner altså sin egen pakke (`-nsis` eller `-msi`), og den generiske
+          # nøkkelen brukes bare når den ikke kan avgjøre hvilken installer exe-en
+          # kom fra, eller den spesifikke nøkkelen mangler. Da skal reserven være
+          # den installeren vi peker nye brukere til (NSIS, ingen UAC), ikke
+          # `perMachine`-MSI-en. Se docs/RELEASE-CHECKLIST.md §5a, og
+          # scripts/promote-release.mjs som nekter å promotere et manifest der
+          # nøkkelen peker på noe annet.
+          updaterJsonPreferNsis: true
           # `--bundles nsis` on Windows BETA builds only.
           #
           # MSI cannot express a beta version. Windows Installer's ProductVersion
@@ -334,6 +349,12 @@ jobs:
           # and break everything else: the tag would no longer match `-beta.`,
           # so `prerelease:` above would go false and `promote-release.mjs` would
           # refuse the tag. Dropping MSI from betas costs nothing by comparison —
-          # NSIS is what the updater installs from anyway. Stable releases are
-          # untouched and still ship both.
+          # NSIS is what the updater installs from anyway.
+          #
+          # Stable releases still BUILD both (no `--bundles` switch), but only
+          # NSIS is what a NEW installation is pointed at (2026-10-04, F-W7).
+          # The `.msi` stays purely so an install that already came from it can
+          # keep updating through its own `windows-x86_64-msi` key — see
+          # docs/RELEASE-CHECKLIST.md §5a for what the updater does if it is
+          # missing, and why it is not dropped yet.
           args: ${{ (matrix.platform == 'windows-latest' && contains(github.ref_name, '-beta.')) && '--bundles nsis ' || '' }}${{ matrix.args }}

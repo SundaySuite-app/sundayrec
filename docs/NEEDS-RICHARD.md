@@ -398,16 +398,28 @@ Funn fra F2s Fable-granskinger (rigg + lydkjede + Windows) som ikke er kodet
 — hver av dem trenger et eiervalg før noen skriver en fiks. Ingen av disse
 blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
 
-- **MSI på stable trigger UAC uten admin (F-W7).** `.msi`-installereren
-  bruker Windows Installers standard `perMachine`-omfang, som ber om
+- **MSI på stable trigger UAC uten admin (F-W7) — ✅ AVGJORT 2026-10-04 og
+  gjennomført, men med `.msi` beholdt av én grunn.** `.msi`-installereren bruker
+  Windows Installers standard `perMachine`-omfang, som ber om
   administrator-elevering selv når brukeren ikke har administratorrettigheter
   — en frivillig på en låst kirke-PC kan sitte fast på nettopp det spørsmålet.
-  Betaer sender allerede kun NSIS (`docs/RELEASE-CHECKLIST.md` §5a — MSI kan
-  ikke uttrykke et beta-versjonsnummer), og NSIS' standard er `currentUser`
-  (ingen UAC). Anbefaling: gjør stable NSIS-only også, og fjern `.msi` fra
-  release-matrisen. **Ingen kode er skrevet** — `src-tauri/tauri.conf.json`s
-  `bundle.windows` har ingen `nsis`/`wix`-overstyring i dag, så dette er
-  fortsatt bare et funn.
+  Eier sa ja til NSIS-only. **Nye installasjoner får nå bare NSIS**
+  (`bundle.windows.nsis.installMode: "currentUser"` står eksplisitt i
+  `tauri.conf.json`, ingen UAC), og den generiske oppdateringsnøkkelen
+  `windows-x86_64` peker på NSIS (`updaterJsonPreferNsis: true` i
+  `release.yml`).
+  **Hvorfor `.msi` fortsatt bygges på stable:** en installasjon som allerede
+  kom fra `.msi` har «jeg er MSI» bakt inn i selve exe-en, og oppdateringsmodulen
+  slår da opp `windows-x86_64-msi` i `latest.json` først. Uten den nøkkelen
+  faller den i det stille over på NSIS-pakken — en migrasjon fra `perMachine` MSI
+  til `currentUser` NSIS (Tauris NSIS-mal avinstallerer MSI-en først, med eget
+  UAC-spørsmål) som ingen har sett skje på en ekte Windows-maskin. Å fjerne MSI
+  helt er derfor IKKE bevist trygt herfra; `scripts/promote-release.mjs` krever
+  nå `windows-x86_64-msi` i et stabilt manifest, så det ikke skjer ved et uhell.
+  Detaljene med kildehenvisninger: `docs/RELEASE-CHECKLIST.md` §5a. **Når
+  `.msi` kan fjernes helt** (og regelen i promote-release.mjs, og MSI-bygget):
+  etter at migrasjonen er sett på riggen (RIG-DAY), eller når det er rimelig
+  sikkert at ingen MSI-installasjoner er igjen i flåten.
 - **~~Database-mappa bør flytte fra Roaming til Local AppData (F-W10).~~
   AVGJORT 2026-10-04 og GJENNOMFØRT** (`src-tauri/src/appdata.rs`). Bakgrunn:
   `sundayrec.sqlite` med WAL-sidefiler lå under Windows' Roaming-profil, som
@@ -439,7 +451,7 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
     igjen i den gamle mappa. Utfallet telles (`appdata.move.*`, uten sti).
   - **Feiler flyttingen** (integritet, radtall, full disk, låst fil), brukes
     Roaming for denne økta, feilen loggføres, og frivillige får ett banner
-    («SundayRec fikk ikke flyttet …») én gang. Appen starter aldri med en
+    (katalogteksten «Historikken og innstillingene ble ikke flyttet …») én gang. Appen starter aldri med en
     tom database når Roaming har data; neste start prøver på nytt.
   - **Recovery:** skanningen leser BÅDE `Local\…\recovery` og
     `Roaming\…\recovery`, så et opptak som krasjet like før oppdateringen
@@ -451,13 +463,22 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
     (`save_folder_app_data`) dekket begge plasseringene fra F-W6.
   - 👤 Kan bare bevises på en ekte Windows-boks: se RIG-DAY «Windows-boksen»
     (w-appdata) og SMOKE-TEST §13.
-- **`webviewInstallMode: embedBootstrapper` for den frakoblede kirke-PC-en.**
-  Standard WebView2-installasjon laster en liten bootstrapper som henter
-  resten fra nettet ved førstegangsbehov — en kirke-PC uten internett (eller
-  bak en restriktiv brannmur) kan sitte uten en fungerende WebView2-runtime.
-  `embedBootstrapper` bygger hele runtimen inn i installereren (større
-  installer, ingen nettverksavhengighet ved installasjon). Ikke satt i
-  `tauri.conf.json` i dag.
+- **`webviewInstallMode: embedBootstrapper` — ✅ AVGJORT 2026-10-04 og
+  gjennomført** (`bundle.windows.webviewInstallMode` i `tauri.conf.json`,
+  holdt fast av `scripts/windows-installer.test.mjs`). Standard WebView2-
+  installasjon laster en liten bootstrapper fra nettet ved førstegangsbehov;
+  nå ligger bootstrapperen i installereren (~1,8 MB større).
+  **Begrenset gevinst, og det er avgjort å leve med:** Tauris dokumentasjon
+  og skjema er tydelige på at også `embedBootstrapper` «Requires an internet
+  connection» — den innebygde bootstrapperen laster selve WebView2-runtimen
+  fra Microsofts servere når den kjører. Den installerer altså ikke uten nett.
+  **`offlineInstaller` er bevisst valgt bort:** det er det eneste valget som
+  installerer uten nett, men koster ~127 MB ekstra på hver oppdatering
+  (installeren går fra ~62 MB til ~190 MB, MSI-en fra ~85 MB til ~212 MB), og
+  Windows 10 (fra 1803) og Windows 11 har WebView2 fra før, så en frakoblet
+  installasjon betyr bare noe på en gammel eller strippet Windows 10. Punktet
+  er avsluttet. Står ikke bevist før et Windows-bygg er kjørt på en maskin
+  uten WebView2 (riggpunkt i `docs/RIG-DAY.md`).
 - **`-realtime 1` for VideoToolbox-enkoderen (C, mening) — ✅ AVGJORT
   2026-10-04 og gjennomført.** Eier: robusthet foran kvalitet. **Opptaket**
   skal ha `-realtime 1` på VideoToolbox-enkoderen, slik at den ikke sakker

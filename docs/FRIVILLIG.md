@@ -30,6 +30,8 @@ spør ikke etter et administratorpassord; `.msi`-filen kan gjøre det selv om
 den som installerer ikke er administrator på maskinen — akkurat det en
 frivillig på en låst kirke-PC ikke kan svare på. Installasjonsfilen er heller
 ikke signert ennå, så Windows advarer med «SmartScreen beskyttet PC-en din».
+Har du installert med `.msi` fra før, la appen oppdatere seg selv – den
+fortsetter på samme måte.
 
 1. Kjør `-setup.exe`-filen (ikke `.msi`).
 2. Trykk **«Mer info»**, og deretter **«Kjør likevel»**.
