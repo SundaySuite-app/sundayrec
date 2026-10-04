@@ -1144,6 +1144,7 @@
     "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
     "trashManifestUnreadable": "Papirkurvens innhold kunne ikke leses. Filene ligger der fortsatt, men appen vet ikke lenger hvor de kom fra.",
-    "dataDirMoveFailed": "Historikken og innstillingene ble ikke flyttet til den nye mappen. Appen bruker den gamle denne gangen, og ingenting er slettet. Start appen på nytt; hjelper det ikke, ta kontakt."
+    "dataDirMoveFailed": "Historikken og innstillingene ble ikke flyttet til den nye mappen. Appen bruker den gamle denne gangen, og ingenting er slettet. Start appen på nytt; hjelper det ikke, ta kontakt.",
+    "dataLeftInOldDir": "Historikk og innstillinger fra den eldre versjonen ligger igjen i den gamle mappa. Denne versjonen bruker den nye mappa, så det du la inn med den eldre versjonen vises ikke her."
   }
 }

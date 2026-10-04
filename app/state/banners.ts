@@ -47,6 +47,7 @@ export type BackendWarningKey =
   | "backend-disk-low"
   | "backend-trash-manifest"
   | "backend-data-dir-move"
+  | "backend-data-left-in-old-dir"
   | "backend-warning";
 
 /** Nøklene. Lukket liste: et nytt banner er en beslutning, ikke noe som siger

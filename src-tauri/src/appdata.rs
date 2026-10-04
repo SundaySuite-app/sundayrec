@@ -120,6 +120,10 @@ pub struct Choice {
     /// Den andre plasseringen. Recovery-skanningen leser den også.
     pub other: Option<PathBuf>,
     pub outcome: Outcome,
+    /// Local fantes allerede, men Roaming-databasen er NYERE: en nedgradert
+    /// økt har skrevet i den gamle fila siden flyttingen. Det den økta la inn
+    /// vises ikke i den nye mappa, og det skal frivillige få høre om, én gang.
+    pub roaming_newer: bool,
 }
 
 impl Choice {
@@ -134,7 +138,69 @@ impl Choice {
     }
 }
 
+/// Utfallet som en teller (ingen sti, ingen tall): `None` utenfor Windows.
+pub fn outcome_counter(outcome: &Outcome) -> Option<sundayrec_core::telemetry::CounterName> {
+    use sundayrec_core::telemetry::CounterName as C;
+    match outcome {
+        Outcome::Unchanged => None,
+        Outcome::AlreadyLocal => Some(C::AppdataAlreadyLocal),
+        Outcome::Fresh => Some(C::AppdataFresh),
+        Outcome::Moved { .. } => Some(C::AppdataMoved),
+        Outcome::FellBack { .. } => Some(C::AppdataFellBack),
+    }
+}
+
+/// Tell utfallet av denne oppstarten. Kalles ETTER `telemetry::startup`
+/// (som laster tellerne fra databasen og nullstiller kartet), og er en
+/// no-op uten samtykke, som alle tellere.
+pub fn count_outcome() {
+    if let Some(c) = CHOICE.get().and_then(|c| outcome_counter(&c.outcome)) {
+        crate::telemetry::counters::count(c);
+    }
+}
+
+/// Et banner som skal sies én gang: kode, claim-nøkkel i databasen, reservetekst.
+pub struct StartupWarning {
+    pub code: &'static str,
+    pub claim_key: String,
+    pub msg: &'static str,
+}
+
+/// Bannerne en oppstart skylder frivillige, av [`Choice`]. Ren.
+pub fn pending_warnings(choice: &Choice) -> Vec<StartupWarning> {
+    use sundayrec_core::notify::code;
+    let mut out = Vec::new();
+    if matches!(choice.outcome, Outcome::FellBack { .. }) {
+        out.push(StartupWarning {
+            code: code::DATA_DIR_MOVE_FAILED,
+            claim_key: "appdata_move_failed_warned".into(),
+            msg: "SundayRec could not move the history and settings to the new folder and is using the old one this time. Nothing has been deleted.",
+        });
+    }
+    if choice.roaming_newer {
+        // Nøkkelen bærer Roaming-fila sitt tidsstempel (hele sekunder): én
+        // advarsel per nedgraderingsøkt, ikke én for alltid og ikke én per start.
+        let stamp = choice
+            .other
+            .as_ref()
+            .and_then(|o| db_touched_ms(&o.join(DB_FILE)))
+            .map(|ms| ms / 1000)
+            .unwrap_or(0);
+        out.push(StartupWarning {
+            code: code::DATA_LEFT_IN_OLD_DIR,
+            claim_key: format!("appdata_old_dir_newer_warned_{stamp}"),
+            msg: "History and settings from the older version were left in the old folder. This version uses the new folder, so they are not shown here.",
+        });
+    }
+    out
+}
+
 static CHOICE: OnceLock<Choice> = OnceLock::new();
+
+/// Valget denne oppstarten gjorde, hvis `install` er kalt.
+pub fn installed() -> Option<&'static Choice> {
+    CHOICE.get()
+}
 
 /// Registrer valget (kalles én gang fra `setup`, før noe leser appdata).
 pub fn install(choice: Choice) {
@@ -163,42 +229,189 @@ pub fn scan_dirs<R: tauri::Runtime>(app: &tauri::AppHandle<R>, sub: &str) -> Vec
     }
 }
 
-fn non_empty_file(path: &Path) -> bool {
-    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > 0)
+/// Det filsystemet kan svare på om én sti, i en form en test kan late som om.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Stat {
+    pub is_file: bool,
+    pub is_dir: bool,
+    pub len: u64,
+}
+
+type StatFn<'a> = dyn Fn(&Path) -> std::io::Result<Stat> + Sync + 'a;
+type RenameFn<'a> = dyn Fn(&Path, &Path) -> std::io::Result<()> + Sync + 'a;
+type CopyFn<'a> = dyn Fn(&Path, &Path) -> std::io::Result<()> + Sync + 'a;
+
+/// Sømmene mot det ekte filsystemet. Produksjon bruker [`Seams::real`]; testene
+/// bytter ut én om gangen for å lage feil som en tempmappe ikke kan lage: en
+/// nettverksmappe som ikke er nådd, en antivirus som holder en fil, en kopi
+/// som mister en rad.
+pub(crate) struct Seams<'a> {
+    pub stat: &'a StatFn<'a>,
+    pub rename: &'a RenameFn<'a>,
+    pub copy: &'a CopyFn<'a>,
+    /// Pausen mellom to rename-forsøk.
+    pub rename_pause: std::time::Duration,
+}
+
+/// Antall rename-forsøk. En antivirus eller en indekserer kan holde den
+/// nylagde tempfila åpen noen hundre millisekunder; det er ingen grunn til å
+/// gi opp flyttingen (og lage en fallback-søndag) for det.
+const RENAME_ATTEMPTS: u32 = 5;
+
+fn real_stat(path: &Path) -> std::io::Result<Stat> {
+    let m = std::fs::metadata(path)?;
+    Ok(Stat {
+        is_file: m.is_file(),
+        is_dir: m.is_dir(),
+        len: m.len(),
+    })
+}
+
+impl Seams<'static> {
+    pub(crate) fn real() -> Self {
+        Seams {
+            stat: &real_stat,
+            rename: &|a, b| std::fs::rename(a, b),
+            copy: &copy_and_sync,
+            rename_pause: std::time::Duration::from_millis(250),
+        }
+    }
+}
+
+/// Hva en sti er, med forskjellen mellom «finnes ikke» og «vet ikke».
+enum Probe {
+    /// En ikke-tom fil.
+    File,
+    /// Finnes, men er tom (eller ikke en fil): ingenting å miste.
+    Empty,
+    /// `NotFound` OG den omgivende mappa er lesbar: den finnes sikkert ikke.
+    Missing,
+    /// Alt annet. Ikke et svar.
+    Unknown(String),
+}
+
+/// Local: en feil er «ikke en database der». Local er en lokal disk, og en
+/// feil der gir uansett feil ved opprettelsen under, med fallback.
+fn local_has_database(path: &Path, seams: &Seams) -> bool {
+    (seams.stat)(path).is_ok_and(|m| m.is_file && m.len > 0)
+}
+
+/// Roaming: «finnes ikke» krever to ting. `metadata` sier `NotFound`, OG
+/// foreldermappa (`%APPDATA%`) er en lesbar mappe. Rust mapper også
+/// `ERROR_BAD_NETPATH` og `ERROR_BAD_NET_NAME` til `NotFound`, så en omdirigert
+/// Roaming-mappe på et nettverk som ikke er nådd ennå (autostart ved
+/// pålogging, VPN) ser ellers ut som en ny installasjon, og en tom database i
+/// Local ville fått vinne for alltid.
+fn probe_roaming(path: &Path, roaming_dir: &Path, seams: &Seams) -> Probe {
+    match (seams.stat)(path) {
+        Ok(m) if m.is_file && m.len > 0 => Probe::File,
+        Ok(_) => Probe::Empty,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let parent_readable = roaming_dir
+                .parent()
+                .is_some_and(|p| (seams.stat)(p).is_ok_and(|m| m.is_dir));
+            if parent_readable {
+                Probe::Missing
+            } else {
+                Probe::Unknown(format!("{e}; the parent folder is not readable"))
+            }
+        }
+        Err(e) => Probe::Unknown(e.to_string()),
+    }
+}
+
+/// Epoke-ms for filas siste endring, det nyeste av hovedfila og `-wal` (en
+/// database i WAL-modus skriver til `-wal`, og hovedfila røres bare ved
+/// checkpoint).
+fn db_touched_ms(db: &Path) -> Option<u128> {
+    let mut wal = db.as_os_str().to_owned();
+    wal.push("-wal");
+    [db.to_path_buf(), PathBuf::from(wal)]
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+        .filter_map(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())
+        .max()
+}
+
+/// FAT-tidsstempler har to sekunders oppløsning, og et nettverk kan runde.
+const NEWER_SLACK_MS: u128 = 2_000;
+
+/// Er Roaming-databasen skrevet i ETTER Local? Flyttingen lager Local-fila
+/// etter at Roaming-fila ble checkpointet, så rett etter en flytting er Local
+/// alltid nyest; Roaming blir nyest bare når en nedgradert versjon har kjørt.
+pub(crate) fn roaming_is_newer(roaming_db: &Path, local_db: &Path) -> bool {
+    match (db_touched_ms(roaming_db), db_touched_ms(local_db)) {
+        (Some(r), Some(l)) => r > l + NEWER_SLACK_MS,
+        _ => false,
+    }
 }
 
 /// Avgjør hvor appdata bor, og flytter databasen om det trengs. Ingen
 /// filsystem-tilgang i det hele tatt når `windows` er `false`.
 pub async fn resolve(roaming: &Path, local: &Path, windows: bool) -> Choice {
+    resolve_with(roaming, local, windows, &Seams::real()).await
+}
+
+pub(crate) async fn resolve_with(
+    roaming: &Path,
+    local: &Path,
+    windows: bool,
+    seams: &Seams<'_>,
+) -> Choice {
     if !windows || roaming == local {
         return Choice {
             active: roaming.to_path_buf(),
             other: None,
             outcome: Outcome::Unchanged,
+            roaming_newer: false,
         };
     }
     let roaming_db = roaming.join(DB_FILE);
     let local_db = local.join(DB_FILE);
 
-    let to_local = |outcome| Choice {
+    let to_local = |outcome, roaming_newer| Choice {
         active: local.to_path_buf(),
         other: Some(roaming.to_path_buf()),
         outcome,
+        roaming_newer,
+    };
+    let fell_back = |reason: String| {
+        tracing::error!(
+            "F-W10: moving the database to Local AppData failed; this session runs on Roaming: {reason}"
+        );
+        Choice {
+            active: roaming.to_path_buf(),
+            other: Some(local.to_path_buf()),
+            outcome: Outcome::FellBack { reason },
+            roaming_newer: false,
+        }
     };
 
-    if non_empty_file(&local_db) {
-        if non_empty_file(&roaming_db) {
-            tracing::info!(
-                "F-W10: the database exists in both Roaming and Local; Local is used, the Roaming file is left untouched"
+    // Local har databasen: den er sannheten, også når Roaming ikke kan nås.
+    if local_has_database(&local_db, seams) {
+        let newer = roaming_is_newer(&roaming_db, &local_db);
+        if newer {
+            tracing::warn!(
+                "F-W10: the Roaming database was written after the Local one (a downgraded version ran); Local is used, the newer data stays in the old folder"
             );
         }
-        return to_local(Outcome::AlreadyLocal);
+        return to_local(Outcome::AlreadyLocal, newer);
     }
-    if !non_empty_file(&roaming_db) {
-        return to_local(Outcome::Fresh);
+    match probe_roaming(&roaming_db, roaming, seams) {
+        Probe::Empty | Probe::Missing => return to_local(Outcome::Fresh, false),
+        // Vi vet ikke om Roaming har en database. Å velge «ny installasjon»
+        // her ville laget en tom database i Local, som ved neste start vinner
+        // over den ekte. Ingenting lages; Roaming brukes som før.
+        Probe::Unknown(why) => {
+            return fell_back(format!(
+                "could not tell whether the Roaming database exists: {why}"
+            ))
+        }
+        Probe::File => {}
     }
 
-    match move_database(&roaming_db, &local_db).await {
+    match move_database(&roaming_db, &local_db, seams).await {
         Ok((recordings, settings)) => {
             copy_state_files(roaming, local);
             tracing::info!(
@@ -206,21 +419,17 @@ pub async fn resolve(roaming: &Path, local: &Path, windows: bool) -> Choice {
                 settings,
                 "F-W10: the database was moved from Roaming to Local AppData (the Roaming file is left untouched)"
             );
-            to_local(Outcome::Moved {
-                recordings,
-                settings,
-            })
+            to_local(
+                Outcome::Moved {
+                    recordings,
+                    settings,
+                },
+                false,
+            )
         }
         Err(reason) => {
-            tracing::error!(
-                "F-W10: moving the database to Local AppData failed; this session runs on Roaming: {reason}"
-            );
             let _ = std::fs::remove_file(local.join(TEMP_FILE));
-            Choice {
-                active: roaming.to_path_buf(),
-                other: Some(local.to_path_buf()),
-                outcome: Outcome::FellBack { reason },
-            }
+            fell_back(reason)
         }
     }
 }
@@ -275,6 +484,7 @@ async fn count_rows(conn: &mut SqliteConnection) -> Result<Vec<Option<i64>>, Str
 pub(crate) async fn move_database(
     roaming_db: &Path,
     local_db: &Path,
+    seams: &Seams<'_>,
 ) -> Result<(i64, i64), String> {
     // 1. Alt fra -wal inn i hovedfila. TRUNCATE (ikke PASSIVE) venter på
     //    lesere og tømmer -wal; `busy != 0` betyr at det IKKE ble ferdig, og
@@ -309,7 +519,7 @@ pub(crate) async fn move_database(
         name.push(side);
         let _ = std::fs::remove_file(PathBuf::from(name));
     }
-    copy_and_sync(roaming_db, &tmp).map_err(|e| format!("copy failed: {e}"))?;
+    (seams.copy)(roaming_db, &tmp).map_err(|e| format!("copy failed: {e}"))?;
 
     // 3. Verifiser kopien. `immutable` leser bare hovedfila og lager ingen
     //    -wal/-shm ved siden av den.
@@ -347,12 +557,28 @@ pub(crate) async fn move_database(
     };
 
     // 4. Atomisk til sitt rette navn.
-    std::fs::rename(&tmp, local_db).map_err(|e| {
+    rename_with_retry(&tmp, local_db, seams).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         format!("rename failed: {e}")
     })?;
     sync_dir(dir);
     Ok((counts[0].unwrap_or(0), counts[1].unwrap_or(0)))
+}
+
+/// `rename` med [`RENAME_ATTEMPTS`] forsøk og en kort pause: en antivirus som
+/// skanner den nylagde tempfila gir «tilgang nektet» i noen hundre ms.
+fn rename_with_retry(from: &Path, to: &Path, seams: &Seams) -> std::io::Result<()> {
+    let mut last = None;
+    for attempt in 0..RENAME_ATTEMPTS {
+        if attempt > 0 {
+            std::thread::sleep(seams.rename_pause);
+        }
+        match (seams.rename)(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.expect("at least one attempt"))
 }
 
 fn copy_and_sync(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -675,6 +901,314 @@ mod tests {
         assert!(s.roaming.join("crashes/crash-1-0.json").is_file());
     }
 
+    // ── Roaming som ikke kan nås er IKKE en ny installasjon ─────────────────
+
+    fn no_pause<'a>(stat: &'a StatFn, rename: &'a RenameFn, copy: &'a CopyFn) -> Seams<'a> {
+        Seams {
+            stat,
+            rename,
+            copy,
+            rename_pause: std::time::Duration::ZERO,
+        }
+    }
+
+    fn real_rename(a: &Path, b: &Path) -> std::io::Result<()> {
+        std::fs::rename(a, b)
+    }
+
+    #[tokio::test]
+    async fn en_roaming_mappe_hvis_forelder_mangler_gir_fallback_og_ingenting_i_local() {
+        let root = tempfile::tempdir().unwrap();
+        // `%APPDATA%` selv er borte (en omdirigert nettverksmappe som ikke er nådd).
+        let roaming = root.path().join("ikke-naadd/no.sundayrec.app");
+        let local = root.path().join("Local/no.sundayrec.app");
+
+        let c = resolve(&roaming, &local, true).await;
+
+        match &c.outcome {
+            Outcome::FellBack { reason } => assert!(reason.contains("Roaming"), "{reason}"),
+            other => panic!("forventet fallback, fikk {other:?}"),
+        }
+        assert_eq!(c.active, roaming);
+        assert!(!local.exists(), "ingenting lages i Local");
+    }
+
+    #[tokio::test]
+    async fn en_metadata_feil_som_ikke_er_notfound_gir_fallback_og_ingenting_i_local() {
+        let s = seam();
+        let pool = database_with(&s.roaming, 5).await;
+        store::checkpoint_and_close(&pool).await;
+        let roaming = s.roaming.clone();
+        let stat = move |p: &Path| {
+            if p.starts_with(&roaming) {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                real_stat(p)
+            }
+        };
+        let seams = no_pause(&stat, &real_rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        assert!(
+            matches!(c.outcome, Outcome::FellBack { .. }),
+            "{:?}",
+            c.outcome
+        );
+        assert_eq!(c.active, s.roaming);
+        assert!(!s.local.exists(), "ingenting lages i Local");
+        assert_eq!(count_in(&s.roaming.join(DB_FILE), "recording").await, 5);
+    }
+
+    #[tokio::test]
+    async fn notfound_uten_lesbar_forelder_er_ikke_en_ny_installasjon() {
+        // Rust mapper ERROR_BAD_NETPATH og ERROR_BAD_NET_NAME til NotFound:
+        // sømmen gjør det samme, for fila OG for mappa rundt.
+        let s = seam();
+        let pool = database_with(&s.roaming, 5).await;
+        store::checkpoint_and_close(&pool).await;
+        let roaming = s.roaming.clone();
+        let stat = move |p: &Path| {
+            if p.starts_with(&roaming) || Some(p) == roaming.parent() {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            } else {
+                real_stat(p)
+            }
+        };
+        let seams = no_pause(&stat, &real_rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        assert!(
+            matches!(c.outcome, Outcome::FellBack { .. }),
+            "{:?}",
+            c.outcome
+        );
+        assert!(!s.local.exists(), "ingenting lages i Local");
+    }
+
+    #[tokio::test]
+    async fn notfound_med_lesbar_forelder_er_en_ny_installasjon() {
+        let s = seam();
+        std::fs::remove_dir_all(&s.roaming).unwrap();
+        // Forelderen (`Roaming/`) finnes fortsatt, mappa til appen finnes ikke.
+        assert!(s.roaming.parent().unwrap().is_dir());
+
+        let c = resolve(&s.roaming, &s.local, true).await;
+
+        assert_eq!(c.outcome, Outcome::Fresh);
+        assert_eq!(c.active, s.local);
+    }
+
+    #[tokio::test]
+    async fn local_med_database_vinner_selv_om_roaming_ikke_kan_nås() {
+        let s = seam();
+        std::fs::create_dir_all(&s.local).unwrap();
+        let pool = database_with(&s.local, 3).await;
+        store::checkpoint_and_close(&pool).await;
+        let stat = |p: &Path| {
+            if p.starts_with(s.roaming.parent().unwrap()) {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            } else {
+                real_stat(p)
+            }
+        };
+        let seams = no_pause(&stat, &real_rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        assert_eq!(c.outcome, Outcome::AlreadyLocal);
+        assert_eq!(c.active, s.local);
+    }
+
+    // ── rename: en antivirus som holder tempfila ────────────────────────────
+
+    #[tokio::test]
+    async fn en_rename_som_feiler_et_par_ganger_prøves_på_nytt_og_flyttingen_lykkes() {
+        let s = seam();
+        let pool = database_with(&s.roaming, 6).await;
+        store::checkpoint_and_close(&pool).await;
+        let attempts = std::sync::atomic::AtomicU32::new(0);
+        let rename = |a: &Path, b: &Path| {
+            if attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) < 2 {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                std::fs::rename(a, b)
+            }
+        };
+        let seams = no_pause(&real_stat, &rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        assert!(
+            matches!(c.outcome, Outcome::Moved { recordings: 6, .. }),
+            "{:?}",
+            c.outcome
+        );
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert!(!s.local.join(TEMP_FILE).exists());
+    }
+
+    #[tokio::test]
+    async fn en_rename_som_aldri_lykkes_gir_fallback_etter_fem_forsøk_uten_rester() {
+        let s = seam();
+        let pool = database_with(&s.roaming, 6).await;
+        store::checkpoint_and_close(&pool).await;
+        let attempts = std::sync::atomic::AtomicU32::new(0);
+        let rename = |_: &Path, _: &Path| {
+            attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        };
+        let seams = no_pause(&real_stat, &rename, &copy_and_sync);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        assert!(matches!(c.outcome, Outcome::FellBack { .. }));
+        assert_eq!(
+            attempts.load(std::sync::atomic::Ordering::SeqCst),
+            RENAME_ATTEMPTS
+        );
+        assert!(!s.local.join(TEMP_FILE).exists());
+        assert!(!s.local.join(DB_FILE).exists());
+        assert_eq!(count_in(&s.roaming.join(DB_FILE), "recording").await, 6);
+    }
+
+    // ── radtall: en intakt kopi med færre rader er ikke en kopi ─────────────
+
+    #[tokio::test]
+    async fn en_kopi_med_færre_rader_gir_fallback_selv_om_integriteten_er_ok() {
+        let s = seam();
+        let pool = database_with(&s.roaming, 20).await;
+        store::checkpoint_and_close(&pool).await;
+        // En hel, gyldig database med samme skjema og FÆRRE rader.
+        let other = tempfile::tempdir().unwrap();
+        let few = database_with(other.path(), 19).await;
+        store::checkpoint_and_close(&few).await;
+        let few_db = other.path().join(DB_FILE);
+        let copy = |_from: &Path, to: &Path| std::fs::copy(&few_db, to).map(|_| ());
+        let seams = no_pause(&real_stat, &real_rename, &copy);
+
+        let c = resolve_with(&s.roaming, &s.local, true, &seams).await;
+
+        match &c.outcome {
+            Outcome::FellBack { reason } => assert!(reason.contains("row counts"), "{reason}"),
+            other => panic!("forventet fallback, fikk {other:?}"),
+        }
+        assert!(!s.local.join(DB_FILE).exists());
+        assert_eq!(count_in(&s.roaming.join(DB_FILE), "recording").await, 20);
+    }
+
+    // ── nedgradering: nyere data ligger igjen i Roaming ─────────────────────
+
+    fn touch(path: &Path, offset_secs: i64) {
+        let now = std::time::SystemTime::now();
+        let t = if offset_secs >= 0 {
+            now + std::time::Duration::from_secs(offset_secs as u64)
+        } else {
+            now - std::time::Duration::from_secs((-offset_secs) as u64)
+        };
+        let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        f.set_modified(t).unwrap();
+    }
+
+    #[tokio::test]
+    async fn en_roaming_database_nyere_enn_local_gir_varsel_om_data_igjen_i_den_gamle_mappa() {
+        let s = seam();
+        for dir in [&s.roaming, &s.local] {
+            std::fs::create_dir_all(dir).unwrap();
+            let pool = database_with(dir, 2).await;
+            store::checkpoint_and_close(&pool).await;
+        }
+        touch(&s.local.join(DB_FILE), -3600);
+        touch(&s.roaming.join(DB_FILE), 0);
+
+        let c = resolve(&s.roaming, &s.local, true).await;
+
+        assert_eq!(c.outcome, Outcome::AlreadyLocal);
+        assert!(c.roaming_newer);
+        let w = pending_warnings(&c);
+        assert_eq!(w.len(), 1);
+        assert_eq!(
+            w[0].code,
+            sundayrec_core::notify::code::DATA_LEFT_IN_OLD_DIR
+        );
+        assert!(w[0].claim_key.starts_with("appdata_old_dir_newer_warned_"));
+    }
+
+    #[tokio::test]
+    async fn en_roaming_database_eldre_enn_local_gir_ikke_varsel() {
+        let s = seam();
+        for dir in [&s.roaming, &s.local] {
+            std::fs::create_dir_all(dir).unwrap();
+            let pool = database_with(dir, 2).await;
+            store::checkpoint_and_close(&pool).await;
+        }
+        touch(&s.roaming.join(DB_FILE), -3600);
+        touch(&s.local.join(DB_FILE), 0);
+
+        let c = resolve(&s.roaming, &s.local, true).await;
+
+        assert_eq!(c.outcome, Outcome::AlreadyLocal);
+        assert!(!c.roaming_newer);
+        assert!(pending_warnings(&c).is_empty());
+    }
+
+    #[tokio::test]
+    async fn rett_etter_en_flytting_er_local_nyest_og_gir_ikke_varsel() {
+        let s = seam();
+        let pool = database_with(&s.roaming, 2).await;
+        store::checkpoint_and_close(&pool).await;
+        let moved = resolve(&s.roaming, &s.local, true).await;
+        assert!(matches!(moved.outcome, Outcome::Moved { .. }));
+        assert!(pending_warnings(&moved).is_empty());
+
+        let again = resolve(&s.roaming, &s.local, true).await;
+
+        assert!(!again.roaming_newer);
+    }
+
+    #[tokio::test]
+    async fn en_fallback_gir_varselet_om_at_flyttingen_feilet() {
+        let c = Choice {
+            active: PathBuf::from("/r"),
+            other: Some(PathBuf::from("/l")),
+            outcome: Outcome::FellBack { reason: "x".into() },
+            roaming_newer: false,
+        };
+        let w = pending_warnings(&c);
+        assert_eq!(w.len(), 1);
+        assert_eq!(
+            w[0].code,
+            sundayrec_core::notify::code::DATA_DIR_MOVE_FAILED
+        );
+    }
+
+    // ── telemetri: utfallet som en teller, uten sti ─────────────────────────
+
+    #[test]
+    fn hvert_utfall_har_sin_teller_og_unchanged_har_ingen() {
+        use sundayrec_core::telemetry::CounterName as C;
+        assert_eq!(outcome_counter(&Outcome::Unchanged), None);
+        assert_eq!(
+            outcome_counter(&Outcome::AlreadyLocal),
+            Some(C::AppdataAlreadyLocal)
+        );
+        assert_eq!(outcome_counter(&Outcome::Fresh), Some(C::AppdataFresh));
+        assert_eq!(
+            outcome_counter(&Outcome::Moved {
+                recordings: 1,
+                settings: 1
+            }),
+            Some(C::AppdataMoved)
+        );
+        assert_eq!(
+            outcome_counter(&Outcome::FellBack {
+                reason: "/Users/ola/x".into()
+            }),
+            Some(C::AppdataFellBack)
+        );
+    }
+
     // ── Mac/Linux: ingenting endres ─────────────────────────────────────────
 
     #[tokio::test]
@@ -737,6 +1271,7 @@ mod tests {
             active: s.roaming.clone(),
             other: Some(s.local.clone()),
             outcome: Outcome::FellBack { reason: "x".into() },
+            roaming_newer: false,
         };
         assert_eq!(c.dirs_to_scan("recovery").len(), 2);
     }

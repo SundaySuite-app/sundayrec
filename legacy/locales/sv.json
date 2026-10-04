@@ -1144,6 +1144,7 @@
     "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
     "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
     "trashManifestUnreadable": "Papperskorgens innehåll kunde inte läsas. Filerna finns kvar, men appen vet inte längre var de kom ifrån.",
-    "dataDirMoveFailed": "Historiken och inställningarna kunde inte flyttas till den nya mappen. Appen använder den gamla den här gången, och inget har raderats. Starta om appen; hjälper det inte, hör av dig."
+    "dataDirMoveFailed": "Historiken och inställningarna kunde inte flyttas till den nya mappen. Appen använder den gamla den här gången, och inget har raderats. Starta om appen; hjälper det inte, hör av dig.",
+    "dataLeftInOldDir": "Historik och inställningar från den äldre versionen finns kvar i den gamla mappen. Den här versionen använder den nya mappen, så det du sparade med den äldre versionen visas inte här."
   }
 }

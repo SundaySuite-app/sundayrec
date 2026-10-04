@@ -461,39 +461,34 @@ pub fn run() {
                 );
             }
 
-            // F-W10: a database move that fell back says so ONCE — a banner,
+            // F-W10: what the move owes the volunteer is said ONCE — a banner,
             // after the window has had time to open (a warning emitted during
             // `setup` reaches nobody). «Once» is a settings claim in the very
-            // database that stayed in use, so every later start with the same
-            // problem is quiet in the UI and loud only in the log.
-            if move_failed {
+            // database in use, so a later start with the same problem is
+            // quiet in the UI and loud only in the log. The banner shows the
+            // CATALOGUE text for the code (7 languages); `msg` is the fallback.
+            let startup_warnings = appdata::installed()
+                .map(appdata::pending_warnings)
+                .unwrap_or_default();
+            if !startup_warnings.is_empty() {
                 let handle = app.handle().clone();
                 crash::watch_handle(
-                    "appdata::move_warning",
+                    "appdata::startup_warnings",
                     tauri::async_runtime::spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_secs(20)).await;
                         let Some(db) = handle.try_state::<db::Db>() else {
                             return;
                         };
-                        let first_time = db::store::claim_setting(
-                            &db.pool,
-                            "appdata_move_failed_warned",
-                            "1",
-                        )
-                        .await
-                        .unwrap_or(false);
-                        if first_time {
-                            notify::warn(
-                                &handle,
-                                sundayrec_core::notify::BackendWarning::warn(
-                                    sundayrec_core::notify::code::DATA_DIR_MOVE_FAILED,
-                                )
-                                .msg(
-                                    "SundayRec fikk ikke flyttet historikken og innstillingene til den \
-                                     nye mappen og bruker den gamle denne gangen. Ingenting er slettet. \
-                                     Start programmet om igjen; hjelper det ikke, ta kontakt.",
-                                ),
-                            );
+                        for w in startup_warnings {
+                            let first_time = db::store::claim_setting(&db.pool, &w.claim_key, "1")
+                                .await
+                                .unwrap_or(false);
+                            if first_time {
+                                notify::warn(
+                                    &handle,
+                                    sundayrec_core::notify::BackendWarning::warn(w.code).msg(w.msg),
+                                );
+                            }
                         }
                     }),
                 );
@@ -557,6 +552,9 @@ pub fn run() {
                             return;
                         };
                         telemetry::startup(&handle, &db.pool).await;
+                        // F-W10: AFTER `startup`, which loads the counters from
+                        // the database and so would wipe an earlier count.
+                        appdata::count_outcome();
                     }),
                 );
                 telemetry::spawn_periodic_drain(app.handle().clone());

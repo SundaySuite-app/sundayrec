@@ -1144,6 +1144,7 @@
     "deviceMissing": "Le périphérique audio « {device} » n’est pas connecté.",
     "diskLow": "L’espace disque commence à manquer — {freeGb} Go libres. L’enregistrement s’arrêtera de lui-même si le disque est plein.",
     "trashManifestUnreadable": "Le contenu de la corbeille n’a pas pu être lu. Les fichiers sont toujours là, mais l’application ne sait plus d’où ils viennent.",
-    "dataDirMoveFailed": "L’historique et les réglages n’ont pas pu être déplacés vers le nouveau dossier. L’application utilise l’ancien cette fois, et rien n’a été supprimé. Redémarrez l’application ; si cela ne suffit pas, contactez-nous."
+    "dataDirMoveFailed": "L’historique et les réglages n’ont pas pu être déplacés vers le nouveau dossier. L’application utilise l’ancien cette fois, et rien n’a été supprimé. Redémarrez l’application ; si cela ne suffit pas, contactez-nous.",
+    "dataLeftInOldDir": "L’historique et les réglages de l’ancienne version sont restés dans l’ancien dossier. Cette version utilise le nouveau dossier, donc ce que vous avez enregistré avec l’ancienne version n’apparaît pas ici."
   }
 }
