@@ -244,11 +244,11 @@ pub fn run() {
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
         .manage(editor::ExportEngine::new())
-        // The exports `editor_export` delivered this session — one of the three
-        // things «Vis i Finder» (`recordings_reveal`) may show.
-        .manage(commands::recordings_open::DeliveredExports::new())
-        // Folders the operator picked in a dialog Rust opened, by session token
-        // — the only way an export can name a folder (A2, commands/chosen_paths.rs).
+        // Places by session token (A2/A3, commands/chosen_paths.rs): the folders
+        // and files the operator picked in a dialog Rust opened, the recordings
+        // Rust opened from a history row or a drop, and the exports
+        // `editor_export` delivered this session — the only ways the webview
+        // can name a place.
         .manage(commands::chosen_paths::ChosenPaths::new());
 
     // P3b: replace tauri's default macOS menu with the same menu, one item
@@ -562,14 +562,17 @@ pub fn run() {
             commands::db::recordings_delete,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
-            // Papirkurv. `trash_move` is what the delete actions in Historikk
-            // now run; `trash_purge` is the only one that loses anything.
+            // Papirkurv. `trash_move` (history row ids, never paths) is what the
+            // delete actions in Historikk now run; `trash_purge` is the only one that loses anything.
             commands::trash::trash_move,
             commands::trash::trash_list,
             commands::trash::trash_restore,
             commands::trash::trash_purge,
             commands::settings::settings_get,
             commands::settings::settings_save,
+            // The recordings folder: Rust opens the folder dialog, vets the
+            // folder and stores it; `settings_save` keeps whatever is stored.
+            commands::settings::settings_pick_save_folder,
             commands::settings::settings_reset,
             commands::settings::settings_import,
             // The profile file: Rust opens the save/open dialog itself, so no
@@ -588,11 +591,13 @@ pub fn run() {
             // takes a path (see commands/logs.rs for why that IS the guard).
             commands::logs::logs_reveal,
             commands::logs::logs_tail,
-            // The tray's «Åpne opptaksmappen» (no argument) and «Vis i Finder»
-            // (path_guard + delivered export / recordings root / known
-            // recording). The webview has no opener permission of its own.
+            // The tray's «Åpne opptaksmappen» (no argument) and «Vis i Finder»:
+            // by a history row's id, or by the token an export's result
+            // carried — never a path. The webview has no opener permission of
+            // its own.
             commands::recordings_open::recordings_open_folder,
             commands::recordings_open::recordings_reveal,
+            commands::recordings_open::recordings_reveal_export,
             // Trackpad haptics (macOS Force Touch; no-op elsewhere). The editor
             // fires subtle, throttled taps on snap / limit / marker-crossing.
             commands::haptics::haptic_perform,

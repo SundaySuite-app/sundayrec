@@ -84,7 +84,7 @@ import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { ProgressBar } from "../../ui/ProgressBar/ProgressBar";
 import { RadioCards, type RadioOption } from "../../ui/RadioCards/RadioCards";
-import { reveal } from "../../ui/reveal";
+import { revealExport } from "../../ui/reveal";
 import { TextArea } from "../../ui/TextArea/TextArea";
 import { TextField } from "../../ui/TextField/TextField";
 import { Toggle } from "../../ui/Toggle/Toggle";
@@ -96,6 +96,7 @@ import {
   exportedFolder,
   exportedLoudness,
   exportedPath,
+  exportedRevealToken,
   exportedSeconds,
   exportErrorText,
   exportEtaMs,
@@ -698,18 +699,24 @@ function Receipt() {
 
   return (
     <>
-      <ReceiptCard path={path} name={name} meta={meta} />
+      <ReceiptCard
+        revealToken={exportedRevealToken.value}
+        name={name}
+        meta={meta}
+      />
       <PublishPanel />
     </>
   );
 }
 
 function ReceiptCard({
-  path,
+  revealToken,
   name,
   meta,
 }: {
-  path: string;
+  /** Lappen eksportens svar bar (`recordings_reveal_export`); `null` = fila
+   *  fikk ingen, og det er ikke noe å vise. */
+  revealToken: string | null;
   name: string;
   meta: string;
 }) {
@@ -727,7 +734,9 @@ function ReceiptCard({
         <Button
           variant="primary"
           testId="editor-exported-reveal"
-          onClick={() => void reveal(path)}
+          disabled={!revealToken}
+          disabledReason={t("app.done.revealFailed")}
+          onClick={() => void revealExport(revealToken)}
         >
           {t("app.done.show")}
         </Button>

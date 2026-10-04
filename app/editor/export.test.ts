@@ -46,6 +46,11 @@ import { EXPORT_PHASE_PREPARING } from "./export-core";
 import { dirty, E, resetFileState } from "./model";
 import { soundProfile } from "./sound";
 
+/** Lappene til de to opptakene testene bytter mellom. Sidevognene (A3) navngir
+ *  opptaket med lappen, aldri stien. */
+const TOKEN_A = "11111111-1111-4111-8111-111111111111";
+const TOKEN_B = "22222222-2222-4222-8222-222222222222";
+
 /** En promise denne testen selv bestemmer NÅR løses. */
 function deferred<T>(): {
   promise: Promise<T>;
@@ -60,7 +65,7 @@ function deferred<T>(): {
 
 let deletedDrafts: string[];
 let exportRequests: Record<string, unknown>[];
-let savedContent: Array<{ path: string; content: unknown }>;
+let savedContent: Array<{ token: string; content: unknown }>;
 let deletedContent: string[];
 
 /** `window.api`-stubben. `exportResult` er hva `editorExportFile` svarer
@@ -76,16 +81,16 @@ function installFakeApi(exportResult: Promise<unknown>): void {
         exportRequests.push(params);
         return exportResult;
       },
-      editorDeleteCutsDraft: (path: string) => {
-        deletedDrafts.push(path);
+      editorDeleteCutsDraft: (token: string) => {
+        deletedDrafts.push(token);
         return Promise.resolve();
       },
-      editorSaveContent: (path: string, content: unknown) => {
-        savedContent.push({ path, content });
+      editorSaveContent: (token: string, content: unknown) => {
+        savedContent.push({ token, content });
         return Promise.resolve(true);
       },
-      editorDeleteContent: (path: string) => {
-        deletedContent.push(path);
+      editorDeleteContent: (token: string) => {
+        deletedContent.push(token);
         return Promise.resolve(true);
       },
     },
@@ -96,6 +101,7 @@ beforeEach(() => {
   resetExport();
   resetFileState();
   E.filePath = "/Opptak/2026-08-23.flac";
+  E.sourceToken = TOKEN_A;
   E.duration = 3600;
   E.cuts = [];
   // "none" holder testen unna `ensureSoundAnalysis()` — en annen await, med
@@ -122,6 +128,7 @@ afterEach(() => {
 function switchToFileB(): void {
   E.loadSeq += 1;
   E.filePath = "/Opptak/2026-08-30.flac";
+  E.sourceToken = TOKEN_B;
   resetExport();
 }
 
@@ -176,7 +183,7 @@ describe("runExport — generasjonsvakten", () => {
     expect(exportedPath.value).toBe("/Opptak/2026-08-23 (eksportert).mp3");
     expect(exportedSeconds.value).toBe(120);
     expect(exporting.value).toBe(false);
-    expect(deletedDrafts).toEqual(["/Opptak/2026-08-23.flac"]);
+    expect(deletedDrafts).toEqual([TOKEN_A]);
   });
 
   it("en FEILET eksport som lander etter et filbytte skriver ingen feilmelding for fil B", async () => {
@@ -527,7 +534,7 @@ describe("runExport — innholdet", () => {
 
     expect(savedContent).toEqual([
       {
-        path: "/Opptak/2026-08-23.flac",
+        token: TOKEN_A,
         content: { title: "Tittel", speaker: "", description: "" },
       },
     ]);
@@ -541,7 +548,7 @@ describe("runExport — innholdet", () => {
     await Promise.resolve();
 
     expect(savedContent).toEqual([]);
-    expect(deletedContent).toEqual(["/Opptak/2026-08-23.flac"]);
+    expect(deletedContent).toEqual([TOKEN_A]);
   });
 
   it("en sidevogn som ikke lar seg skrive, velter ikke kvitteringen", async () => {
@@ -641,7 +648,7 @@ describe("beskrivelsesmalen i «Innhold»", () => {
         editorChurchDayName: () => Promise.resolve(null),
       },
     };
-    await loadExportContent(E.filePath, null, E.loadSeq);
+    await loadExportContent(E.sourceToken, null, E.loadSeq);
     expect(descriptionFollowsTemplate.value).toBe(false);
     expect(currentDescription()).toBe("Slik den ble sendt");
   });
@@ -658,7 +665,7 @@ describe("beskrivelsesmalen i «Innhold»", () => {
         editorChurchDayName: () => Promise.resolve(null),
       },
     };
-    await loadExportContent(E.filePath, null, E.loadSeq);
+    await loadExportContent(E.sourceToken, null, E.loadSeq);
     expect(descriptionFollowsTemplate.value).toBe(true);
     expect(currentDescription()).toBe("«Bare tittel» — , Sentrumskirken.");
   });

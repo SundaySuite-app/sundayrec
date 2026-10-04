@@ -1591,7 +1591,10 @@ stille ikke å gjøre noe. Type-only; ingen oppførsel er endret.
 Rust-kommandoer — `recordings_open_folder` og `recordings_reveal` — i stedet
 for opener-pluginen. `recordings_reveal` viser bare et opptak eller en eksport
 fra denne økta; se `src-tauri/src/commands/recordings_open.rs`. Svaret er
-fortsatt `boolean`.)
+fortsatt `boolean`. Og siden PR-D tar ingen av dem en sti: shimmen har
+`revealRecording(recordingId)` for historikkraden og `revealExport(token)` for
+eksportkvitteringen (`revealFile(path)` og `pickFolder()` er borte), og
+`trashMove` tar radenes id-er.)
 
 ## e2e
 

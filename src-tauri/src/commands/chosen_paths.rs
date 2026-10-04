@@ -31,17 +31,19 @@
 //!
 //! ## What the store promises
 //!
-//! - **Minted only here, only after a dialog Rust opened answered** and the
-//!   answer passed [`vet`]. No command takes a path to mint from; the only
-//!   callers of [`ChosenPaths::mint`] are dialog commands — and `mint` takes a
-//!   [`Vetted`], a value only [`vet`] can make, so a path that was not vetted
-//!   is not even a type `mint` accepts.
+//! - **Minted only here, only after a dialog Rust opened answered** (or, for
+//!   the two kinds the webview never picks, after Rust read a history row or
+//!   the export engine wrote the file) and the answer passed [`vet`]. No
+//!   command takes a path to mint from; the only callers of
+//!   [`ChosenPaths::mint`] are dialog commands, `editor_open_known`, the
+//!   drop handler and `editor_export` — and `mint` takes a [`Vetted`], a value
+//!   only [`vet`] can make, so a path that was not vetted is not even a type
+//!   `mint` accepts.
 //! - **Session-scoped.** The map lives in memory: a restart forgets every
 //!   token, so a token can never outlive the operator's own sense of «I picked
 //!   that folder just now». Nothing is persisted.
-//! - **Bounded** ([`CHOSEN_PATHS_MAX`]), oldest evicted first — like
-//!   `DeliveredExports`, so a process that runs for weeks cannot grow it
-//!   without limit. Picking the same place again reuses its token and makes it
+//! - **Bounded** ([`CHOSEN_PATHS_MAX`]), oldest evicted first, so a process
+//!   that runs for weeks cannot grow it without limit. Picking the same place again reuses its token and makes it
 //!   the newest — «the same place» being the exact canonical path, not a
 //!   case-folded spelling of it (two folders that differ only in case are two
 //!   folders on a case-sensitive disk).
@@ -90,6 +92,12 @@ pub enum ChosenKind {
     Folder,
     /// An existing file something will be read FROM.
     File,
+    /// A file the export engine WROTE in this session — what the receipt's
+    /// «Vis i Finder» shows (`recordings_reveal_export`). Its own kind, so an
+    /// export token is as unknown as a made-up one anywhere a recording or a
+    /// folder is asked for: it cannot be opened in the editor, nor named as a
+    /// destination, only revealed.
+    Export,
 }
 
 /// Why a picked place cannot be used. Deliberately pathless: the caller turns
@@ -268,7 +276,7 @@ pub(crate) fn vet_for_home(
     let canonical = place.canonicalize().map_err(|_| ChosenError::Gone)?;
     let is_kind = match kind {
         ChosenKind::Folder => canonical.is_dir(),
-        ChosenKind::File => canonical.is_file(),
+        ChosenKind::File | ChosenKind::Export => canonical.is_file(),
     };
     if !is_kind {
         return Err(ChosenError::Gone);
@@ -276,7 +284,9 @@ pub(crate) fn vet_for_home(
     let plain = plain_string(&canonical).ok_or(ChosenError::Refused)?;
     let guarded = match kind {
         ChosenKind::Folder => path_guard::checked_path_for_home(&plain, home),
-        ChosenKind::File => path_guard::checked_input_file_for_home(&plain, home),
+        ChosenKind::File | ChosenKind::Export => {
+            path_guard::checked_input_file_for_home(&plain, home)
+        }
     };
     guarded.map_err(|_| ChosenError::Refused)?;
     Ok(Vetted {

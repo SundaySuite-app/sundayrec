@@ -61,14 +61,54 @@ pub async fn settings_get(db: State<'_, Db>) -> AppResult<Settings> {
 
 /// Validate, persist and return the given settings.
 ///
-/// A NEW save folder must pass [`vet_new_save_folder`] first (absolute, not
-/// protected, not a package, not the root or the home folder) — the folder
-/// decides what the tray opens and what «Vis i Finder» may show. A folder that
-/// is already stored is never judged again; see
-/// [`settings::save_from_renderer`].
+/// The save folder and the editor's intro and outro clips are NOT taken from
+/// the renderer: whatever it sends, the stored values stay
+/// ([`settings::save_from_renderer`]). The folder changes only through
+/// [`settings_pick_save_folder`], which opens the dialog in Rust.
 #[tauri::command]
 pub async fn settings_save(db: State<'_, Db>, settings: Settings) -> AppResult<Settings> {
-    settings::save_from_renderer(&db.pool, settings, vet_new_save_folder).await
+    settings::save_from_renderer(&db.pool, settings).await
+}
+
+/// Pick the recordings folder: a native folder dialog this command opens, the
+/// folder vetted by [`vet_new_save_folder`] (absolute, not protected, not a
+/// package, not the root or the home folder) and stored as `saveFolder`, and the
+/// stored settings back — or `None` when the operator cancelled and nothing
+/// changed.
+///
+/// **Takes nothing from the webview** (the A2 family): the folder decides where
+/// every recording lands, what the tray opens and where the papirkurv lives, so
+/// it is the answer of a dialog the PROCESS opened — not a string the page sent
+/// to `settings_save`, which now keeps the stored folder whatever it says. A
+/// refusal is `save_folder_*` and changes nothing.
+#[tauri::command]
+pub async fn settings_pick_save_folder(
+    window: tauri::Window,
+    db: State<'_, Db>,
+) -> AppResult<Option<Settings>> {
+    let picked = super::chosen_paths::ask_for_folder(&window).await?;
+    choose_save_folder(&db.pool, picked).await
+}
+
+/// [`settings_pick_save_folder`] once its dialog has answered: a cancel
+/// (`None`) changes nothing; a picked folder is vetted (off the runtime) and
+/// stored. Split from the command so the tests can play the dialog.
+pub(crate) async fn choose_save_folder(
+    pool: &SqlitePool,
+    picked: Option<PathBuf>,
+) -> AppResult<Option<Settings>> {
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    // The folder as the operator's dialog spelled it, like the page used to
+    // store it — not canonicalised, so a share or a symlinked disk keeps the
+    // name the operator knows it by.
+    let folder = picked.to_str().ok_or_else(|| {
+        AppError::Validation("save_folder_invalid: the folder's name cannot be checked".into())
+    })?;
+    settings::pick_save_folder(pool, folder, vet_new_save_folder)
+        .await
+        .map(Some)
 }
 
 /// Reset all settings to their defaults, persisting them.
@@ -475,7 +515,6 @@ mod tests {
                 language: Some("en".into()),
                 ..loaded.clone()
             },
-            vet_new_save_folder,
         )
         .await
         .unwrap();
@@ -512,56 +551,69 @@ mod tests {
         );
     }
 
+    /// [`choose_save_folder`] for a picked path, as the `Settings` it stored.
+    async fn picked(pool: &sqlx::SqlitePool, folder: &Path) -> AppResult<Settings> {
+        let answer = choose_save_folder(pool, Some(folder.to_path_buf())).await?;
+        Ok(answer.expect("a pick answers with the stored settings"))
+    }
+
     #[tokio::test]
-    async fn a_new_save_folder_from_the_renderer_meets_the_real_vet() {
+    async fn a_picked_save_folder_meets_the_real_vet() {
         let dir = tempfile::tempdir().unwrap();
         let pool = pool_in(dir.path()).await;
-        let with = |folder: &str| Settings {
-            save_folder: Some(folder.to_string()),
-            ..Default::default()
-        };
 
         assert_code(
-            settings::save_from_renderer(&pool, with("SundayRec"), vet_new_save_folder).await,
+            picked(&pool, Path::new("SundayRec")).await,
             "save_folder_invalid",
         );
         let package = dir.path().join("Gudstjeneste.logicx");
-        assert_code(
-            settings::save_from_renderer(
-                &pool,
-                with(package.to_str().unwrap()),
-                vet_new_save_folder,
-            )
-            .await,
-            "save_folder_is_a_package",
-        );
+        assert_code(picked(&pool, &package).await, "save_folder_is_a_package");
         #[cfg(unix)]
-        assert_code(
-            settings::save_from_renderer(&pool, with("/"), vet_new_save_folder).await,
-            "save_folder_too_broad",
-        );
+        assert_code(picked(&pool, Path::new("/")).await, "save_folder_too_broad");
         if let Some(home) = crate::commands::path_guard::home_dir() {
             let ssh = home.join(".ssh").join("Opptak");
-            assert_code(
-                settings::save_from_renderer(
-                    &pool,
-                    with(ssh.to_str().unwrap()),
-                    vet_new_save_folder,
-                )
-                .await,
-                "save_folder_protected",
-            );
+            assert_code(picked(&pool, &ssh).await, "save_folder_protected");
         }
         // Nothing refused was stored.
         assert_eq!(settings::load(&pool).await.unwrap().save_folder, None);
 
-        // A plain folder is.
+        // A plain folder is, and is what the stored settings say afterwards.
         let good = dir.path().join("Opptak");
-        let saved =
-            settings::save_from_renderer(&pool, with(good.to_str().unwrap()), vet_new_save_folder)
-                .await
-                .unwrap();
+        let saved = picked(&pool, &good).await.unwrap();
         assert_eq!(saved.save_folder.as_deref(), good.to_str());
+        assert_eq!(settings::load(&pool).await.unwrap(), saved);
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_folder_dialog_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let before = settings::load(&pool).await.unwrap();
+        assert_eq!(choose_save_folder(&pool, None).await.unwrap(), None);
+        assert_eq!(settings::load(&pool).await.unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn the_renderer_cannot_set_a_folder_the_vet_would_have_accepted() {
+        // The point of PR-D: a plain, vetted-OK folder sent in `settings_save`
+        // used to be stored with no dialog. Now only a pick stores one.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let good = dir.path().join("Opptak");
+        assert!(vet_new_save_folder(good.to_str().unwrap()).is_ok());
+        let saved = settings::save_from_renderer(
+            &pool,
+            Settings {
+                save_folder: good.to_str().map(str::to_string),
+                language: Some("en".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(saved.save_folder, None);
+        assert_eq!(saved.language.as_deref(), Some("en"));
+        assert_eq!(settings::load(&pool).await.unwrap().save_folder, None);
     }
 
     // ── The settings profile (A1): the tests play the dialog ────────────────

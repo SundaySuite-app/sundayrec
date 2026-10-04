@@ -23,12 +23,13 @@
  *
  * ## Hva bakenden godtar
  *
- * `window.api.revealFile` er Rust-kommandoen `recordings_reveal`, ikke
- * opener-pluginen: webviewet har ingen `opener:`-tillatelse. Bakenden viser
- * bare et opptak (i opptaksmappa, eller et historikken kjenner) eller en
- * eksport fra denne økta, og bare en fil som finnes. Alt annet er `false` —
- * og dermed den samme toasten her. Stien sendes ORDRETT: bakendens første
- * sjekk er et eksakt treff mot historikkraden den kom fra.
+ * `window.api.revealRecording`/`revealExport` er Rust-kommandoene
+ * `recordings_reveal` og `recordings_reveal_export`, ikke opener-pluginen:
+ * webviewet har ingen `opener:`-tillatelse. Ingen av dem tar en STI (B-
+ * familien, PR-D): det første tar en historikkrads id og Rust slår opp fila i
+ * databasen; det andre tar lappen eksportens svar bar. Alt bakenden ikke
+ * kjenner, og alt som ikke finnes, er `false` — og dermed den samme toasten
+ * her.
  *
  * ## Hvorfor `app/ui/`, ikke `app/lib/ui/`
  *
@@ -61,14 +62,27 @@ export async function revealResult(
 }
 
 /**
- * «Vis i Finder» for ÉN FIL. `null`/tom sti = ingenting å vise, og — som før —
- * ingen feil å si fra om: et kort uten et opptak ennå skal kunne rendre uten
- * at det er noe å avsløre.
+ * «Vis i Finder» for ÉT OPPTAK i historikken — radens id, aldri en sti. `null`/
+ * tom id = ingenting å vise, og — som før — ingen feil å si fra om: et kort
+ * uten et opptak ennå skal kunne rendre uten at det er noe å avsløre.
  */
-export async function reveal(path: string | null): Promise<void> {
-  if (!path) return;
+export async function reveal(recordingId: string | null): Promise<void> {
+  if (!recordingId) return;
   await revealResult(
-    await window.api.revealFile(path),
+    await window.api.revealRecording(recordingId),
+    t("app.done.revealFailed"),
+  );
+}
+
+/**
+ * «Vis i Finder» på eksport-kvitteringen — lappen Rust la i eksportens svar.
+ * `null` = fila fikk ingen lapp (den lot seg ikke sjekke), og da er det ikke
+ * noe å vise.
+ */
+export async function revealExport(token: string | null): Promise<void> {
+  if (!token) return;
+  await revealResult(
+    await window.api.revealExport(token),
     t("app.done.revealFailed"),
   );
 }

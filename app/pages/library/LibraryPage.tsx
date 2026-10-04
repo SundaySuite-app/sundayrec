@@ -459,10 +459,10 @@ function Row({
         */}
         <Button
           variant="secondary"
-          disabled={row.path === null}
+          disabled={!row.entry.id}
           disabledReason={t("app.done.revealFailed")}
           testId="library-row-reveal"
-          onClick={() => void reveal(row.path)}
+          onClick={() => void reveal(row.entry.id ?? null)}
         >
           {t("app.done.show")}
         </Button>
@@ -567,18 +567,19 @@ function forgetWhatIsNowTrashed(): void {
 /**
  * Flytt én rads filer til papirkurven, og rydd bort det som ikke fantes.
  *
- * Ordrett legacys `trashRows`, og av legacys grunn: `trash_move` hopper over
- * det som ikke er på disken, så en historikkrad hvis fil noen slettet for hånd
- * ville blitt stående for alltid uten en vei ut. Den raden har ingenting å
- * gjenopprette, så den fjernes i stedet — og fordi den ikke er med i det som
- * ble flyttet, får toasten ingen «Angre» å tilby.
+ * Ordrett legacys `trashRows` (men med radenes id-er, ikke stiene — B1), og av
+ * legacys grunn: `trash_move` hopper over det som ikke er på disken, så en
+ * historikkrad hvis fil noen slettet for hånd ville blitt stående for alltid
+ * uten en vei ut. Den raden har ingenting å gjenopprette, så den fjernes i
+ * stedet — og fordi den ikke er med i det som ble flyttet, får toasten ingen
+ * «Angre» å tilby.
  */
 async function trashRow(row: LibraryRow): Promise<TrashEntry[]> {
   const entries = row.video ? [row.entry, row.video] : [row.entry];
-  const paths = entries
-    .map((e) => e.path)
-    .filter((p): p is string => typeof p === "string" && p.length > 0);
-  const moved = paths.length ? await window.api.trashMove(paths) : [];
+  const ids = entries
+    .map((e) => e.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const moved = ids.length ? await window.api.trashMove(ids) : [];
   const movedPaths = new Set(moved.map((e) => e.originalPath));
   for (const entry of entries) {
     if (entry.path && movedPaths.has(entry.path)) continue;

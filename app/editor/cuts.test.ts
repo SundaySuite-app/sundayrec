@@ -17,6 +17,7 @@ import {
   addCut,
   applySermon,
   clearCuts,
+  clearDraft,
   deleteCut,
   keepAll,
   redoCut,
@@ -33,6 +34,11 @@ import {
   resetFileState,
 } from "./model";
 
+/** Lappen Rust ga opptaket (A3): det eneste utkastet navngir det med. */
+const TOKEN = "11111111-1111-4111-8111-111111111111";
+let savedDrafts: Array<{ token: string; list: unknown }>;
+let deletedDrafts: string[];
+
 beforeEach(() => {
   (
     globalThis as unknown as { requestAnimationFrame: unknown }
@@ -40,15 +46,24 @@ beforeEach(() => {
   (
     globalThis as unknown as { cancelAnimationFrame: unknown }
   ).cancelAnimationFrame = () => {};
+  savedDrafts = [];
+  deletedDrafts = [];
   (globalThis as unknown as { window: unknown }).window = {
     api: {
-      editorSaveCutsDraft: () => Promise.resolve(),
-      editorDeleteCutsDraft: () => Promise.resolve(),
+      editorSaveCutsDraft: (token: string, list: unknown) => {
+        savedDrafts.push({ token, list });
+        return Promise.resolve();
+      },
+      editorDeleteCutsDraft: (token: string) => {
+        deletedDrafts.push(token);
+        return Promise.resolve();
+      },
     },
   };
   vi.useFakeTimers();
   resetFileState();
   E.filePath = "/Opptak/2026-08-23.flac";
+  E.sourceToken = TOKEN;
   E.duration = 3600;
   E.cutHistory = [[]];
   E.cutHistoryIdx = 0;
@@ -60,6 +75,37 @@ afterEach(() => {
   vi.useRealTimers();
   resetFileState();
   delete (globalThis as unknown as { window?: unknown }).window;
+});
+
+// ── Utkastet navngir opptaket med lappen (A3) ───────────────────────────────
+
+describe("kutt-utkastet", () => {
+  // MUTASJONSPRØVEN: send `E.filePath` i stedet for `E.sourceToken` i
+  // `scheduleDraftSave`, og denne blir rød — Rust tar ikke lenger imot en sti.
+  it("skrives med opptakets lapp, aldri stien", () => {
+    addCut(600, 900);
+    vi.advanceTimersByTime(2000);
+
+    expect(savedDrafts).toEqual([
+      { token: TOKEN, list: [{ start: 600, end: 900 }] },
+    ]);
+  });
+
+  it("slettes med lappen etter en eksport", () => {
+    clearDraft();
+
+    expect(deletedDrafts).toEqual([TOKEN]);
+  });
+
+  it("uten et åpent opptak (ingen lapp) skrives og slettes ingenting", () => {
+    E.sourceToken = "";
+    addCut(600, 900);
+    clearDraft();
+    vi.advanceTimersByTime(5000);
+
+    expect(savedDrafts).toEqual([]);
+    expect(deletedDrafts).toEqual([]);
+  });
 });
 
 // ── (a) Angre/gjør om og «ulagrede endringer» ───────────────────────────────

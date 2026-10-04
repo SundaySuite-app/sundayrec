@@ -62,6 +62,25 @@ export interface BootOptions {
 const FN_MARKER = "__sundayrec_fn__";
 const VOID_MARKER = "__sundayrec_void__";
 
+/**
+ * SOURCE (for a `fn(...)` fixture) of the lookup `trash_move`'s backend does
+ * (B1): the page names recordings by their history rows' ids, and Rust finds
+ * the files — here from the spec's own `recordings_list` fixture. An id with no
+ * row throws what the backend refuses with, so a page that sent a path in an
+ * id's place fails the spec instead of being waved through.
+ */
+export const PATHS_OF_RECORDING_IDS = `(ids) => {
+  const rows = window.__SUNDAYREC_FIXTURES__.recordings_list;
+  const list = typeof rows === "function" ? rows() : rows || [];
+  const byId = Object.fromEntries(list.map((r) => [r.id, r.file_path]));
+  return ids.map((id) => {
+    if (!(id in byId)) {
+      throw new Error("validation: recording_unknown: no recording in the history by that id");
+    }
+    return byId[id];
+  });
+}`;
+
 /** Wrap a function SOURCE string so `boot` rebuilds it inside the page. */
 export function fn(source: string): unknown {
   return { [FN_MARKER]: source };

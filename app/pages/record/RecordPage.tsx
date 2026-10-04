@@ -172,7 +172,7 @@ import {
   resumeCameraPreview,
 } from "../../ui/CameraPreview/ownership";
 import { alertDialog } from "../../ui/dialog";
-import { reveal } from "../../ui/reveal";
+import { reveal, revealResult } from "../../ui/reveal";
 import { toast } from "../../ui/toast";
 import { spanText } from "./span-text";
 import { confirmAndStop } from "./stop";
@@ -959,7 +959,7 @@ function LastRecordingCard() {
         <Button
           variant="ghost"
           testId="record-last-reveal"
-          onClick={() => void reveal(last.path ?? null)}
+          onClick={() => void reveal(last.id ?? null)}
         >
           {t("app.done.show")}
         </Button>
@@ -1019,6 +1019,16 @@ async function editFinished(
   path: string,
   startedAtMs: number | null,
 ): Promise<void> {
+  openInEditor(await rowIdFor(path), startedAtMs, basename(path));
+}
+
+/**
+ * Historikkradens id for opptaket som nettopp ble ferdig — den EKTE veien inn i
+ * «Rediger» og «Vis i Finder», som begge navngir en rad og aldri en sti (A2,
+ * B-familien). Radens fil kjenner Rust; stien her er bare det `recording-
+ * finished`-hendelsen sa, og brukes til å finne raden i lista.
+ */
+async function rowIdFor(path: string): Promise<string | undefined> {
   const idOf = (): string | undefined =>
     recordings.peek()?.find((r) => r.path === path)?.id;
   let id = idOf();
@@ -1026,7 +1036,18 @@ async function editFinished(
     await loadRecordingCount();
     id = idOf();
   }
-  openInEditor(id, startedAtMs, basename(path));
+  return id;
+}
+
+/** «Vis i Finder» på kvitteringen: raden først, så Rust. Finnes ingen rad,
+ *  er det ingenting å vise — og knappen sier det, i stedet for å tie. */
+async function revealFinished(path: string): Promise<void> {
+  const id = await rowIdFor(path);
+  if (!id) {
+    await revealResult(false, t("app.done.revealFailed"));
+    return;
+  }
+  await reveal(id);
 }
 
 function Done() {
@@ -1090,7 +1111,7 @@ function Done() {
         <Button
           variant="secondary"
           testId="record-done-reveal"
-          onClick={() => void reveal(finished.path)}
+          onClick={() => void revealFinished(finished.path)}
         >
           {t("app.done.show")}
         </Button>

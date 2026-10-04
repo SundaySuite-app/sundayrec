@@ -12,7 +12,9 @@
 //! `CARGO_MANIFEST_DIR` — finds every `#[tauri::command]` whose parameters look
 //! like paths, and requires each one to appear in exactly one of two lists
 //! below: [`GUARDED`] or [`EXEMPT`] (with a mandatory reason). A new command is a
-//! failing test until a human has classified it.
+//! failing test until a human has classified it. Since PR-D no command takes a
+//! path from the webview, and `GUARDED` is empty on purpose: a path guard alone
+//! is no longer an answer ([`no_command_is_held_only_by_a_path_guard`]).
 //!
 //! The style is the one [`sundayrec_core::timeouts`] uses: assert the property
 //! the codebase must hold, in the codebase, rather than write it down in a doc
@@ -224,28 +226,42 @@ fn lex(src: &str, blank_literals: bool) -> String {
 }
 
 /// Commands that take a path-shaped parameter AND run it through
-/// [`crate::commands::path_guard`]. The policy each one applies is documented on
-/// the command itself; see the table in the `path_guard` module docs.
-const GUARDED: &[&str] = &[
-    // ── R1 editor: the sidecar and sermon-pick commands. (The commands that
-    //    read or render the recording left this list in PR-C: they take a File
-    //    token now, see PARAM_TOKENS. Their sidecars are PR-D.) ───────────────
-    "editor_read_sidecar",
-    "editor_write_sidecar",
-    "editor_delete_sidecar",
-    "editor_record_sermon_pick",
-    "editor_sermon_pick",
-    // ── Papirkurv ────────────────────────────────────────────────────────────
-    "trash_move",
-    // ── «Vis i Finder»: the webview lost `opener:allow-reveal-item-in-dir` ────
-    // checked_input_file + delivered export / recordings root / known recording.
-    "recordings_reveal",
+/// [`crate::commands::path_guard`] — and nothing else.
+///
+/// **Empty since PR-D, and meant to stay empty** ([`no_command_is_held_only_by_a_path_guard`]).
+/// A guard judges a path against the protected home folders and nothing more:
+/// with no per-command ACL a compromised webview can send any path the guard
+/// lets through, with no dialog and no history row behind it. That is how every
+/// finding of the A- and B-families worked, and the last seven commands that
+/// took one — the editor's sidecars and sermon pick (`media_path`),
+/// `recordings_reveal` (`path`) and `trash_move` (`paths`) — now name a thing
+/// Rust knows instead: a File token, a history row's id, an Export token. A
+/// command that really must take a path from the webview is an [`EXEMPT`]
+/// entry with its reason, which is a decision somebody has to defend in
+/// review, not a line that makes the test green.
+const GUARDED: &[&str] = &[];
+
+/// The parameters the commands above USED to take, and must not take again, as
+/// `(command, parameter)`. The commands kept their names, so
+/// [`REPLACED`] (which wants the old NAME gone) cannot hold them; this holds
+/// the old SHAPE gone. A parameter coming back under one of these names is the
+/// hole reopened, with or without a guard call beside it.
+const RETIRED_PARAMS: &[(&str, &str)] = &[
+    ("editor_read_sidecar", "media_path"),
+    ("editor_write_sidecar", "media_path"),
+    ("editor_delete_sidecar", "media_path"),
+    ("editor_record_sermon_pick", "media_path"),
+    ("editor_sermon_pick", "media_path"),
+    ("recordings_reveal", "path"),
+    ("trash_move", "paths"),
 ];
 
 /// Path-taking commands that were not guarded but REPLACED: the webview no
 /// longer names the path at all, because the successor opens the native dialog
 /// itself and acts only on what that dialog answered (finding A1 — SECURITY.md:
-/// «a settings file's location comes from a dialog Rust opens»).
+/// «a settings file's location comes from a dialog Rust opens»). The «old name»
+/// may also be the dialog plugin's own command, which the page used to call
+/// from JavaScript before PR-D/PR-F took the permission away.
 ///
 /// Strictly stronger than a guard, and therefore easy to undo by accident: a
 /// later "convenience" overload that takes the path again would sail through
@@ -262,6 +278,10 @@ const REPLACED: &[(&str, &str)] = &[
     // id (`editor_open_known`), is pinned by
     // `editor_open_known_takes_only_a_history_row_id`.
     ("editor_allow_asset_path", "editor_open_recording"),
+    // The recordings folder: the page opened the plugin's own folder dialog and
+    // sent the answer in `settings_save`. Now Rust opens it and stores the
+    // vetted folder, and `settings_save` keeps whatever is stored.
+    ("plugin:dialog|open", "settings_pick_save_folder"),
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
@@ -275,6 +295,11 @@ enum FieldHandling {
     /// Validated before use by the named function, which must appear in the
     /// command's own body (lexically — a guard one call further away is a
     /// guard a refactor can drop without anything noticing).
+    ///
+    /// Nothing is held by a guard alone today — the last, `Settings.save_folder`,
+    /// became [`Overwritten`] in PR-D — and the variant stays, like [`Exempt`],
+    /// for the check behind it.
+    #[allow(dead_code)]
     Guarded(&'static str),
     /// A renderer string that DOES end up in a path, but only after `into`
     /// has reduced it to a single path component (no separators, so it cannot
@@ -370,10 +395,16 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
         },
     ),
     // ── settings_save: the persisted profile.
+    // The recordings folder is a place the webview must not name either (PR-D):
+    // it is set by the Rust dialog `settings_pick_save_folder`, and
+    // `settings_save` keeps the stored folder whatever it sends.
     (
         "settings_save",
         "Settings.save_folder",
-        Guarded("vet_new_save_folder"),
+        Overwritten {
+            by: "keep_stored_save_folder",
+            proof: "settings_save_keeps_the_stored_save_folder",
+        },
     ),
     // The clips are a file the export reads, so the webview may not name them:
     // `settings_save` keeps the stored values whatever it sends, and the only
@@ -458,6 +489,59 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
         Token {
             resolver: "resolve_source(&chosen",
             proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    // ── The sidecars and the sermon pick (A3/A4, PR-D): the same File token,
+    //    and the sidecar's path is derived in Rust from what it resolves to.
+    //    `with_source` resolves the token and only then runs the seam.
+    (
+        "editor_read_sidecar",
+        "source_token",
+        Token {
+            resolver: "with_source(&chosen",
+            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
+        },
+    ),
+    (
+        "editor_write_sidecar",
+        "source_token",
+        Token {
+            resolver: "with_source(&chosen",
+            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
+        },
+    ),
+    (
+        "editor_delete_sidecar",
+        "source_token",
+        Token {
+            resolver: "with_source(&chosen",
+            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
+        },
+    ),
+    (
+        "editor_record_sermon_pick",
+        "source_token",
+        Token {
+            resolver: "with_source(&chosen",
+            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
+        },
+    ),
+    (
+        "editor_sermon_pick",
+        "source_token",
+        Token {
+            resolver: "with_source(&chosen",
+            proof: "a_sidecar_command_with_a_forged_token_never_touches_the_disk",
+        },
+    ),
+    // ── «Vis i Finder» on the export receipt (B-family, PR-D): the Export
+    //    token `editor_export` put in its result.
+    (
+        "recordings_reveal_export",
+        "export_token",
+        Token {
+            resolver: "reveal_export_target(&chosen",
+            proof: "a_forged_foreign_or_misplaced_export_token_is_refused",
         },
     ),
 ];
@@ -1420,7 +1504,9 @@ fn the_parser_actually_finds_commands() {
         .iter()
         .find(|c| c.name == "editor_read_sidecar")
         .unwrap();
-    assert_eq!(sidecar.path_params, vec!["media_path".to_string()]);
+    assert!(sidecar.path_params.is_empty());
+    assert_eq!(sidecar.token_params, vec!["source_token".to_string()]);
+    assert!(sidecar.params.iter().any(|(n, _)| n == "sidecar"));
     let peaks = commands.iter().find(|c| c.name == "editor_peaks").unwrap();
     assert!(peaks.path_params.is_empty());
     assert_eq!(peaks.token_params, vec!["source_token".to_string()]);
@@ -1454,20 +1540,22 @@ fn every_path_taking_command_is_classified() {
         "\n\
          ────────────────────────────────────────────────────────────────────\n\
          A new #[tauri::command] takes a filesystem path and has not been\n\
-         classified. The renderer is CSP-locked, but IPC is still an attack\n\
-         surface: an unguarded path is an arbitrary read, an arbitrary write,\n\
-         or a file uploaded to someone's Drive.\n\
+         classified. The webview is CSP-locked, but IPC is still an attack\n\
+         surface, and a path from the webview is only a CLAIM: with no\n\
+         per-command ACL it can send any path with no dialog and no history\n\
+         row behind it, and `path_guard` knows only the protected home\n\
+         folders. That is how every finding of the A- and B-families worked.\n\
          \n\
          {}\n\
          \n\
          Do ONE of these, in src/commands/path_ratchet.rs:\n\
          \n\
-         1. GUARD IT (the default). Pick a PathPolicy from the table in\n\
-            commands/path_guard.rs — RecordingsRooted / ReadOnlyMedia /\n\
-            UserChosenRead / UserChosenWrite — call\n\
-            `path_guard::check(&the_path, policy)?` as the FIRST thing in the\n\
-            command, name the policy in the command's doc-comment, then add the\n\
-            command to GUARDED.\n\
+         1. NAME A THING RUST KNOWS instead of the path (the default): open\n\
+            the dialog in Rust (`chosen_paths::ask_for_file`/`ask_for_folder`),\n\
+            take a history ROW'S id (`store::recording_file_path`, see\n\
+            ROW_ID_PARAMS), or take a token from `ChosenPaths` (see\n\
+            PARAM_TOKENS). A path guard alone is not an answer — GUARDED is\n\
+            empty on purpose.\n\
          \n\
          2. EXEMPT IT, if the parameter is not a filesystem path the process\n\
             acts on (a remote folder id, an opaque handle). Add it to EXEMPT\n\
@@ -2153,6 +2241,12 @@ const MINTERS: &[(&str, &str)] = &[
         "mints the token for the export folder `editor_pick_output_folder` \
          picked in a dialog Rust opened; a cancel mints nothing.",
     ),
+    (
+        "with_reveal_token",
+        "mints the Export token for the file `editor::export` has just written, \
+         so the receipt's «Vis i Finder» can reveal it. Takes the engine's own \
+         result, never a path; the token opens nothing but a reveal.",
+    ),
 ];
 
 /// How a door proves the place it hands a minter is one Rust obtained.
@@ -2211,6 +2305,15 @@ const MINT_DOORS: &[(&str, &str, Evidence, &str)] = &[
             source: "ask_for_folder(",
         },
         "The folder picker Rust opens; the place is its answer.",
+    ),
+    (
+        "with_reveal_token",
+        "editor_export",
+        Evidence::Flows {
+            source: "editor::export(",
+        },
+        "The export engine's own result: the file `editor::export` has just \
+         written — the place is what the engine delivered, not anything sent.",
     ),
 ];
 
@@ -2562,6 +2665,19 @@ pub(crate) async fn choose_output_folder(chosen: &ChosenPaths, picked: Option<Pa
     let token = chosen.mint(vet(&picked).await?);
     Ok(Some(token))
 }
+pub async fn editor_export(chosen: State<'_, ChosenPaths>, request: EditorExportRequest) -> AppResult<EditorExportResult> {
+    let result = run_export(&chosen, request_ref, |resolved| async move {
+        editor::export(engine, request_ref, &resolved, HW, progress).await
+    })
+    .await?;
+    let result = with_reveal_token(&chosen, result).await;
+    Ok(result)
+}
+async fn with_reveal_token(chosen: &ChosenPaths, mut result: EditorExportResult) -> EditorExportResult {
+    let token = chosen.mint(vet(&result.output_path).await.unwrap());
+    result.reveal_token = Some(token);
+    result
+}
 "#;
 
 /// [`REAL_DOORS`] with `from` replaced by `to` — exactly once, so a mutant that
@@ -2580,6 +2696,23 @@ fn the_real_doors_pass_the_mint_ratchet() {
     assert_eq!(
         mint_violations(&[code_only(REAL_DOORS)]),
         Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_export_token_minted_from_anything_but_the_engines_result_is_found() {
+    // `editor_export` hands `with_reveal_token` the result `run_export` built
+    // around `editor::export`. A path out of the request in its place is a
+    // token for a place the webview named.
+    let bad = mutated(
+        "let result = with_reveal_token(&chosen, result).await;",
+        "let result = with_reveal_token(&chosen, request.out).await;",
+    );
+    let found = mint_violations(&[bad]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("`editor_export` hands `with_reveal_token` `request.out`")
+            || found[0].contains("does not hand `with_reveal_token` a plain place variable")
     );
 }
 
@@ -2868,4 +3001,315 @@ fn an_export_that_ignores_the_resolved_places_is_found() {
             "not caught: {what}"
         );
     }
+}
+
+// ── PR-D: no command takes a path from the webview ───────────────────────────
+
+/// A guard is no longer an answer. `GUARDED` held the last seven commands that
+/// took a path from the webview and was emptied in PR-D; if this fails, a path
+/// parameter is back with nothing but `path_guard` behind it — the shape every
+/// finding of the A- and B-families had. Name a thing Rust knows instead (a
+/// token, a history row's id, a dialog Rust opens), or exempt it WITH a reason.
+#[test]
+fn no_command_is_held_only_by_a_path_guard() {
+    assert!(
+        GUARDED.is_empty(),
+        "GUARDED is empty on purpose since PR-D, and now lists {GUARDED:?}: a path \
+         the webview sends is a claim, and `path_guard` judges only the protected \
+         home folders. Take a token, a history row's id or a dialog Rust opens \
+         instead — or add an EXEMPT entry with its reason."
+    );
+    // …and the reading really finds no path-shaped parameter anywhere, so an
+    // empty list is not an empty scan.
+    let commands = all_commands();
+    assert!(
+        commands.len() > 60,
+        "the scan found {} commands",
+        commands.len()
+    );
+    let exempt: BTreeSet<&str> = EXEMPT.iter().map(|(n, _)| *n).collect();
+    let paths: Vec<String> = commands
+        .iter()
+        .filter(|c| !c.path_params.is_empty() && !exempt.contains(c.name.as_str()))
+        .map(|c| format!("{} ({})", c.name, c.path_params.join(", ")))
+        .collect();
+    assert_eq!(paths, Vec::<String>::new());
+}
+
+#[test]
+fn the_retired_path_parameters_stay_retired() {
+    let commands = all_commands();
+    for (command, param) in RETIRED_PARAMS {
+        let Some(found) = commands.iter().find(|c| c.name == *command) else {
+            panic!("RETIRED_PARAMS lists `{command}`, which no longer exists — remove the entry");
+        };
+        assert!(
+            !found
+                .params
+                .iter()
+                .any(|(n, _)| n.trim_start_matches('_') == *param),
+            "`{command}` takes `{param}` again. It was retired in PR-D: the \
+             webview names a File token, a history row's id or an Export token, \
+             and Rust finds the file. A path under the old name — with or without \
+             a guard call beside it — reopens the hole."
+        );
+    }
+}
+
+/// Parameters that name a RECORDING by its history row — `recording_id`,
+/// `recording_ids` — as `(command, parameter, lookup)`. Not paths and not
+/// tokens, so the two rules above do not see them; but each one decides which
+/// file a command acts on, so each is held to what makes it safe: the lookup
+/// function named here must be called in the command's own body, and following
+/// the calls from it must reach `store::recording_file_path` — the database,
+/// written only by the recorder. A new command taking one is a failing test
+/// until it is listed.
+const ROW_ID_PARAMS: &[(&str, &str, &str)] = &[
+    ("editor_open_known", "recording_id", "open_known("),
+    (
+        "recordings_reveal",
+        "recording_id",
+        "reveal_recording_target(",
+    ),
+    ("trash_move", "recording_ids", "known_recording_files("),
+];
+
+/// Whether a parameter NAME is a history row's id.
+fn is_row_id_param(name: &str) -> bool {
+    let n = name.trim_start_matches('_');
+    n == "recording_id" || n == "recording_ids" || n.ends_with("_recording_id")
+}
+
+/// Whether following the calls from `name` — a few levels, through functions
+/// defined in `sources` — reaches the database lookup `recording_file_path(`.
+fn reaches_row_lookup(
+    sources: &[String],
+    name: &str,
+    depth: usize,
+    seen: &mut BTreeSet<String>,
+) -> bool {
+    if depth == 0 || !seen.insert(name.to_string()) {
+        return false;
+    }
+    let Some(body) = fn_body(sources, name) else {
+        return false;
+    };
+    if body.contains("recording_file_path(") {
+        return true;
+    }
+    called_names(&body)
+        .iter()
+        .any(|callee| reaches_row_lookup(sources, callee, depth - 1, seen))
+}
+
+/// What is wrong with a row-id entry, if anything.
+fn row_id_problem(cmd: &Command, param: &str, lookup: &str, sources: &[String]) -> Option<String> {
+    if !cmd.params.iter().any(|(n, _)| n == param) {
+        return Some(format!("it no longer takes `{param}`"));
+    }
+    if !cmd.segment.contains(lookup) {
+        return Some(format!(
+            "its body never calls the lookup `{lookup}` (a comment that names it does not count)"
+        ));
+    }
+    let start = lookup.split('(').next().unwrap_or(lookup);
+    if !reaches_row_lookup(sources, start, 4, &mut BTreeSet::new()) {
+        return Some(format!(
+            "following `{start}` never reaches `recording_file_path` — the id is \
+             not turned into a file by the database"
+        ));
+    }
+    let sent: Vec<&str> = cmd
+        .params
+        .iter()
+        .filter(|(_, ty)| !is_injected(ty))
+        .map(|(n, _)| n.as_str())
+        .collect();
+    if sent != [param] {
+        return Some(format!(
+            "it takes {sent:?} from the webview — the row id must be ALL it sends, \
+             a second parameter is a second way to say where"
+        ));
+    }
+    None
+}
+
+#[test]
+fn every_row_id_parameter_is_classified() {
+    let unlisted: Vec<String> = all_commands()
+        .iter()
+        .flat_map(|cmd| {
+            cmd.params
+                .iter()
+                .filter(|(n, _)| is_row_id_param(n))
+                .filter(|(n, _)| {
+                    !ROW_ID_PARAMS
+                        .iter()
+                        .any(|(c, p, _)| *c == cmd.name && p == n)
+                })
+                .map(|(n, _)| format!("  {} — {n}", cmd.name))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(
+        unlisted.is_empty(),
+        "\n\
+         A #[tauri::command] takes a history row's id and it is not listed in\n\
+         ROW_ID_PARAMS. The id decides which file the command acts on, so it is\n\
+         held to a lookup in the database (`store::recording_file_path`):\n\
+         {}\n",
+        unlisted.join("\n")
+    );
+}
+
+#[test]
+fn every_listed_row_id_command_looks_the_file_up_in_the_database() {
+    let commands = all_commands();
+    let code = crate_code();
+    for (command, param, lookup) in ROW_ID_PARAMS {
+        let Some(found) = commands.iter().find(|c| c.name == *command) else {
+            panic!("ROW_ID_PARAMS lists `{command}`, which no longer exists — remove the entry");
+        };
+        if let Some(problem) = row_id_problem(found, param, lookup, &code) {
+            panic!("`{command}` lists the row id `{param}`: {problem}");
+        }
+    }
+}
+
+#[test]
+fn a_row_id_entry_that_does_not_reach_the_database_is_found() {
+    let code = vec![code_only(
+        r#"
+fn reveal_recording_target(pool: &Pool, id: &str) -> PathBuf {
+    let raw = store::recording_file_path(pool, id).unwrap();
+    PathBuf::from(raw)
+}
+fn reveal_elsewhere(id: &str) -> PathBuf { PathBuf::from(id) }
+"#,
+    )];
+    let command = |segment: &str, params: &[(&str, &str)]| Command {
+        name: "recordings_reveal".into(),
+        file: "recordings_open.rs".into(),
+        path_params: vec![],
+        token_params: vec![],
+        params: params
+            .iter()
+            .map(|(n, t)| (n.to_string(), t.to_string()))
+            .collect(),
+        segment: segment.into(),
+    };
+    let good = command(
+        "let t = reveal_recording_target(&db.pool, &recording_id).await?;",
+        &[("app", "tauri::AppHandle"), ("recording_id", "String")],
+    );
+    assert_eq!(
+        row_id_problem(&good, "recording_id", "reveal_recording_target(", &code),
+        None
+    );
+    // The lookup named in a comment or not at all.
+    let bare = command(
+        "let t = PathBuf::from(&recording_id);",
+        &[("recording_id", "String")],
+    );
+    assert!(
+        row_id_problem(&bare, "recording_id", "reveal_recording_target(", &code)
+            .unwrap()
+            .contains("never calls the lookup")
+    );
+    // A lookup that never reaches the database.
+    let hollow = command(
+        "let t = reveal_elsewhere(&recording_id);",
+        &[("recording_id", "String")],
+    );
+    assert!(
+        row_id_problem(&hollow, "recording_id", "reveal_elsewhere(", &code)
+            .unwrap()
+            .contains("never reaches `recording_file_path`")
+    );
+    // A second parameter from the webview is a second way to say where.
+    let two = command(
+        "let t = reveal_recording_target(&db.pool, &recording_id).await?;",
+        &[("recording_id", "String"), ("dir", "String")],
+    );
+    assert!(
+        row_id_problem(&two, "recording_id", "reveal_recording_target(", &code)
+            .unwrap()
+            .contains("a second parameter")
+    );
+}
+
+/// «Vis i Finder» and the papirkurv name recordings by row and exports by token,
+/// and nothing else — pinned from the outside, as `editor_export` and
+/// `editor_open_known` are above.
+#[test]
+fn reveal_and_trash_take_nothing_that_names_a_place_but_an_id_or_a_token() {
+    let commands = all_commands();
+    let sent_by = |name: &str| -> Vec<(String, String)> {
+        commands
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("{name} was not parsed"))
+            .params
+            .iter()
+            .filter(|(_, ty)| !is_injected(ty))
+            .cloned()
+            .collect()
+    };
+    assert_eq!(
+        sent_by("recordings_reveal"),
+        vec![("recording_id".to_string(), "String".to_string())]
+    );
+    assert_eq!(
+        sent_by("recordings_reveal_export"),
+        vec![("export_token".to_string(), "String".to_string())]
+    );
+    assert_eq!(
+        sent_by("trash_move"),
+        vec![("recording_ids".to_string(), "Vec<String>".to_string())]
+    );
+    // The sidecar commands: the token, the KIND of sidecar (a closed enum) and
+    // — for the write and the sermon pick — what to put in it. No place.
+    for (name, extra) in [
+        ("editor_read_sidecar", vec!["sidecar"]),
+        ("editor_write_sidecar", vec!["sidecar", "value"]),
+        ("editor_delete_sidecar", vec!["sidecar"]),
+        ("editor_record_sermon_pick", vec!["request"]),
+        ("editor_sermon_pick", vec!["segments"]),
+    ] {
+        let sent: Vec<String> = sent_by(name).into_iter().map(|(n, _)| n).collect();
+        let mut want = vec!["source_token".to_string()];
+        want.extend(extra.iter().map(|s| s.to_string()));
+        assert_eq!(sent, want, "{name}");
+    }
+}
+
+/// `settings_pick_save_folder` is the dialog that replaced the page's own: it
+/// takes nothing from the webview, and `settings_save` has no other road to the
+/// store than the one that keeps the stored folder.
+#[test]
+fn the_save_folder_is_picked_in_rust_and_settings_save_keeps_it() {
+    let commands = all_commands();
+    let pick = commands
+        .iter()
+        .find(|c| c.name == "settings_pick_save_folder")
+        .expect("settings_pick_save_folder was not parsed");
+    assert!(
+        pick.params.iter().all(|(_, ty)| is_injected(ty)),
+        "settings_pick_save_folder takes {:?} from the webview",
+        pick.params
+    );
+    assert!(
+        pick.segment.contains("ask_for_folder("),
+        "it opens the dialog in Rust: {:?}",
+        pick.segment
+    );
+    let save = commands
+        .iter()
+        .find(|c| c.name == "settings_save")
+        .expect("settings_save was not parsed");
+    assert!(
+        save.segment.contains("save_from_renderer(") && !save.segment.contains("settings::save("),
+        "settings_save must go through save_from_renderer, which keeps the stored folder: {:?}",
+        save.segment
+    );
 }

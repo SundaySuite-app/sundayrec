@@ -3,6 +3,7 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
+  PATHS_OF_RECORDING_IDS,
   recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
@@ -85,12 +86,13 @@ const ROWS = [
 const TRASH_STORE: Fixtures = {
   trash_move: fn(`(args) => {
     const list = (window.__E2E_TRASH__ ||= []);
-    const moved = args.paths.map((p, i) => ({
+    const paths = (${PATHS_OF_RECORDING_IDS})(args.recordingIds);
+    const moved = paths.map((p, i) => ({
       id: "t" + (list.length + i), originalPath: p, trashedPath: "/tmp/trash/x",
       name: p.split("/").pop(), deletedAt: Date.now(), related: [], byteSize: 1000,
     }));
     list.push(...moved);
-    (window.__E2E_TRASHED__ ||= []).push(...args.paths);
+    (window.__E2E_TRASHED__ ||= []).push(...paths);
     return moved;
   }`),
   trash_list: fn(`() => (window.__E2E_TRASH__ ||= [])`),

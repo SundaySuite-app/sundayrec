@@ -157,6 +157,10 @@ export const cancelling = signal(false);
 
 /** Kvitteringen: stien bakenden faktisk skrev til. */
 export const exportedPath = signal<string | null>(null);
+/** Lappen kvitteringens «Vis i Finder» gir tilbake (`recordings_reveal_export`):
+ *  Rust la den i svaret da fila var levert. `null` = ingenting å vise. Stien
+ *  over er til visning; den tas ikke imot av noen kommando. */
+export const exportedRevealToken = signal<string | null>(null);
 /** Sekundene som ble eksportert — kvitteringens «28 min 10 s». */
 export const exportedSeconds = signal(0);
 /** Anslåtte byte for fila som ble skrevet. Anslag, ikke en `stat`. */
@@ -260,6 +264,7 @@ export function resetExport(): void {
   exportPhase.value = null;
   cancelling.value = false;
   exportedPath.value = null;
+  exportedRevealToken.value = null;
   exportedSeconds.value = 0;
   exportedBytes.value = null;
   exportedFolder.value = "";
@@ -285,13 +290,13 @@ export function resetExport(): void {
  * ikke den forriges innhold. Og et felt noen rakk å skrive i, overskrives ikke.
  */
 export async function loadExportContent(
-  path: string,
+  sourceToken: string,
   startedAtMs: number | null,
   seq: number,
 ): Promise<void> {
   let saved: ExportContent | null = null;
   try {
-    saved = parseSavedContent(await window.api.editorReadContent(path));
+    saved = parseSavedContent(await window.api.editorReadContent(sourceToken));
   } catch {
     /* en sidevogn som ikke lot seg lese er ikke en grunn til å ikke åpne fila */
   }
@@ -330,7 +335,7 @@ export async function loadExportContent(
  * forhåndsutfylt felt neste gang, og skal aldri koste kvitteringen.
  */
 async function keepContent(
-  path: string,
+  sourceToken: string,
   content: ExportContent,
 ): Promise<void> {
   const empty =
@@ -339,8 +344,8 @@ async function keepContent(
     content.description === "";
   try {
     await (empty
-      ? window.api.editorDeleteContent(path)
-      : window.api.editorSaveContent(path, content));
+      ? window.api.editorDeleteContent(sourceToken)
+      : window.api.editorSaveContent(sourceToken, content));
   } catch {
     /* se over */
   }
@@ -374,6 +379,7 @@ export async function pickExportFolder(): Promise<void> {
 /** Legg kvitteringen bort og kom tilbake til valgene, med dem stående. */
 export function exportAgain(): void {
   exportedPath.value = null;
+  exportedRevealToken.value = null;
   exportedLoudness.value = null;
   exportedContent.value = null;
   exportErrorText.value = null;
@@ -468,6 +474,7 @@ export async function runExport(
   // bare ikke gjør noe.
   if (isRecording.peek()) {
     exportedPath.value = null;
+    exportedRevealToken.value = null;
     exportWasCancelled.value = false;
     exportErrorText.value = "errRecordingInProgress";
     exportFailed.value = true;
@@ -479,6 +486,7 @@ export async function runExport(
   exporting.value = true;
   cancelling.value = false;
   exportedPath.value = null;
+  exportedRevealToken.value = null;
   exportedLoudness.value = null;
   exportErrorText.value = null;
   exportWasCancelled.value = false;
@@ -515,9 +523,9 @@ export async function runExport(
   // Innholdet slik det står NÅ, trimmet i endene. Datoen og menighetsnavnet
   // følger med uansett om noe er skrevet: `date`/`album`-taggene er sanne for
   // enhver eksport av et opptak vi vet når ble tatt.
+  // Lappen peker ut både kilden og sidevognen («Innhold», A3): Rust avleder
+  // `<stem>.meta.json` selv. Stien sendes ingen steder.
   const sourceToken = E.sourceToken;
-  // Stien er bare til sidevognen («Innhold»), ikke til eksporten (A2).
-  const mediaPath = E.filePath;
   const content: ExportContent = {
     title: exportTitle.value.trim(),
     speaker: exportSpeaker.value.trim(),
@@ -577,6 +585,7 @@ export async function runExport(
   let result: {
     ok: boolean;
     outputPath?: string;
+    revealToken?: string;
     loudness?: EditorExportLoudness;
     error?: string;
   };
@@ -607,6 +616,7 @@ export async function runExport(
 
   if (result.ok && result.outputPath) {
     exportedPath.value = result.outputPath;
+    exportedRevealToken.value = result.revealToken ?? null;
     // Mappen fila FAKTISK havnet i — stien bakenden svarte med, som også er
     // den «Vis i Finder» viser. For en valgt mappe er det den samme mappen
     // lappen sto for (Rust bygger stien av den), så navnet er det samme.
@@ -619,7 +629,7 @@ export async function runExport(
     clearDraft();
     clearDirty();
     // …og innholdet blir stående ved opptaket til neste gang.
-    void keepContent(mediaPath, content);
+    void keepContent(sourceToken, content);
     return;
   }
   exportWasCancelled.value = isCancelled(result.error);

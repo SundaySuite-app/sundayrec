@@ -11,11 +11,14 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { setLocale } from "../i18n";
 import { clearToasts, toasts } from "./toast";
-import { reveal, revealResult } from "./reveal";
+import { reveal, revealExport, revealResult } from "./reveal";
 
-function withFakeApi(revealFile: (p: string) => Promise<boolean>): void {
+function withFakeApi(
+  revealRecording: (id: string) => Promise<boolean>,
+  revealExport: (token: string) => Promise<boolean> = async () => true,
+): void {
   (globalThis as unknown as { window: unknown }).window = {
-    api: { revealFile },
+    api: { revealRecording, revealExport },
   };
 }
 
@@ -48,46 +51,77 @@ describe("revealResult", () => {
 });
 
 describe("reveal", () => {
-  it("spør ikke bakenden, og sier ingenting, når stien er null", async () => {
+  it("spør ikke bakenden, og sier ingenting, når raden ikke har en id", async () => {
     let called = false;
     withFakeApi(async () => {
       called = true;
       return true;
     });
     await reveal(null);
+    await reveal("");
     expect(called).toBe(false);
     expect(toasts.value).toHaveLength(0);
   });
 
-  it("toaster når revealFile svarer false — R10: ExportPage gjorde ikke dette", async () => {
+  it("toaster når revealRecording svarer false — R10: ExportPage gjorde ikke dette", async () => {
     withFakeApi(async () => false);
-    await reveal("/opptak/gudstjeneste.mp3");
+    await reveal("rad-1");
     expect(toasts.value).toHaveLength(1);
     expect(toasts.value[0]?.kind).toBe("error");
   });
 
-  it("sier ingenting når revealFile svarer true", async () => {
+  it("sier ingenting når revealRecording svarer true", async () => {
     withFakeApi(async () => true);
-    await reveal("/opptak/gudstjeneste.mp3");
+    await reveal("rad-1");
     expect(toasts.value).toHaveLength(0);
   });
 
-  it("sender stien ORDRETT — bakenden slår den opp eksakt i historikken", async () => {
+  it("sender radens id ORDRETT — bakenden slår fila opp i databasen", async () => {
     const seen: string[] = [];
-    withFakeApi(async (p) => {
-      seen.push(p);
+    withFakeApi(async (id) => {
+      seen.push(id);
       return true;
     });
-    const path = "/Users/kantor/Documents/SundayRec/Søndag 4. okt 11.00.mp3";
-    await reveal(path);
-    expect(seen).toEqual([path]);
+    await reveal("0b3c2f64-8a41-4d7e-9a58-1f2e6b7c9d10");
+    expect(seen).toEqual(["0b3c2f64-8a41-4d7e-9a58-1f2e6b7c9d10"]);
   });
 
-  it("toaster også når bakenden nekter fordi fila verken er et opptak eller en eksport", async () => {
-    // `recordings_reveal` sier nei til en sti utenfor policyen; shimmen gjør
-    // det om til `false`, og for den frivillige er det samme setning.
+  it("toaster også når bakenden nekter fordi raden ikke finnes", async () => {
+    // `recordings_reveal` sier nei til en id uten rad; shimmen gjør det om til
+    // `false`, og for den frivillige er det samme setning.
     withFakeApi(async () => false);
-    await reveal("/etc/hosts");
+    await reveal("finnes-ikke");
+    expect(toasts.value).toHaveLength(1);
+    expect(toasts.value[0]?.msg).toBe("Fant ikke fila på disken.");
+  });
+});
+
+describe("revealExport", () => {
+  it("uten lapp (fila fikk ingen) er det ingenting å spørre om", async () => {
+    let called = false;
+    withFakeApi(
+      async () => true,
+      async () => {
+        called = true;
+        return true;
+      },
+    );
+    await revealExport(null);
+    expect(called).toBe(false);
+    expect(toasts.value).toHaveLength(0);
+  });
+
+  it("sender lappen ordrett, og toaster når bakenden sier nei", async () => {
+    const seen: string[] = [];
+    withFakeApi(
+      async () => true,
+      async (token) => {
+        seen.push(token);
+        return false;
+      },
+    );
+    await revealExport("lapp-1");
+    expect(seen).toEqual(["lapp-1"]);
     expect(toasts.value).toHaveLength(1);
     expect(toasts.value[0]?.msg).toBe("Fant ikke fila på disken.");
   });

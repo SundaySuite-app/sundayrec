@@ -662,6 +662,14 @@ pub struct EditorExportResult {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[ts(optional)]
     pub loudness: Option<EditorExportLoudness>,
+    /// What the receipt hands back to `recordings_reveal_export` to show this
+    /// file in Finder/Explorer — an opaque session token (`ChosenKind::Export`),
+    /// minted by the `editor_export` COMMAND once the file is delivered, never
+    /// by the seam. `None` straight out of [`export`], and for a file the token
+    /// store could not vet (the receipt then has nothing to reveal).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[ts(optional)]
+    pub reveal_token: Option<String>,
 }
 
 /// Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
@@ -3677,6 +3685,7 @@ where
     Ok(EditorExportResult {
         output_path: out_path,
         loudness,
+        reveal_token: None,
     })
 }
 

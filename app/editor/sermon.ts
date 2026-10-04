@@ -104,7 +104,7 @@ async function applyStoredPick(seq: number): Promise<void> {
   let stored: number | null;
   try {
     stored =
-      (await window.api.editorSermonPick(E.filePath, E.segments)) ?? null;
+      (await window.api.editorSermonPick(E.sourceToken, E.segments)) ?? null;
   } catch {
     stored = null;
   }
@@ -125,12 +125,12 @@ async function applyStoredPick(seq: number): Promise<void> {
 export function chooseSermon(index: number): void {
   if (!E.segments[index]) return;
   const request =
-    E.filePath && E.duration > 0
+    E.sourceToken && E.duration > 0
       ? buildSermonPickRequest(E.segments, E.autoSermonIndex, index, E.duration)
       : null;
-  const filePath = E.filePath;
+  const sourceToken = E.sourceToken;
   if (!promote(index)) return;
-  if (request) void window.api.editorRecordSermonPick(filePath, request);
+  if (request) void window.api.editorRecordSermonPick(sourceToken, request);
 }
 
 /**

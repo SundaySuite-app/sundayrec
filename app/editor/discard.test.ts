@@ -75,6 +75,7 @@ beforeEach(() => {
   resetExport();
   resetFileState();
   E.filePath = "/Opptak/2026-08-23.flac";
+  E.sourceToken = "11111111-1111-4111-8111-111111111111";
   E.duration = 3600;
   loadState.value = "ready";
 });

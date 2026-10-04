@@ -109,8 +109,11 @@ declare global {
         import("../../legacy/bindings/PruneSummary").PruneSummary
       >;
       /** Move recordings (with sidecars + video sibling) into the papirkurv.
-       *  Rejects rather than reporting a delete that did not happen. */
-      trashMove: (paths: string[]) => Promise<TrashEntry[]>;
+       *  Names them by their history rows' ids — Rust looks the files up, so
+       *  the page never sends a path (B1). Rejects (`recording_unknown`) for an
+       *  id the history does not hold, and rather than reporting a delete that
+       *  did not happen. */
+      trashMove: (recordingIds: string[]) => Promise<TrashEntry[]>;
       /** Everything currently recoverable, newest first. */
       trashList: () => Promise<TrashEntry[]>;
       /** Put one entry back where it came from. */
@@ -152,18 +155,30 @@ declare global {
       /** Whether the rolling pre-roll buffer is actually running. */
       prerollStatus?: () => Promise<{ active: boolean }>;
       runPreflight: () => Promise<{ findings: PreflightFinding[] }>;
-      pickFolder: () => Promise<string | null>;
+      /** «Velg mappe …» for the RECORDINGS folder: RUST opens the folder
+       *  picker, vets the folder (`vet_new_save_folder`) and stores it as
+       *  `saveFolder` itself — nothing the page sends can decide it, and
+       *  `settings_save` leaves the stored folder alone. `settings` is the
+       *  stored settings back, `null` when the operator cancelled; `ok: false`
+       *  carries the backend's error text (`save_folder_*`, `dialog_failed`). */
+      settingsPickSaveFolder: () => Promise<
+        { ok: true; settings: Settings | null } | { ok: false; error: string }
+      >;
       /** Open the RECORDINGS folder in the OS file manager
        *  (`recordings_open_folder`). Takes no path: the backend resolves the
        *  folder itself, the configured one or `<Documents>/SundayRec`.
        *  Resolves FALSE when it could not (no such folder yet, or the OS
        *  refused); the failure is also toasted and kept in the IPC ring. */
       openFolder: () => Promise<boolean>;
-      /** Reveal ONE file in Finder/Explorer (`recordings_reveal`). Only a
-       *  recording (inside the recordings folder, or one the history knows)
-       *  or an export made in this session is shown. Resolves FALSE on any
-       *  refusal or failure, without toasting — the caller says it. */
-      revealFile: (p: string) => Promise<boolean>;
+      /** Reveal a recording in Finder/Explorer (`recordings_reveal`), named by
+       *  its history row's id — Rust looks the file up; no path goes to the
+       *  backend (B-family). Resolves FALSE on any refusal or failure, without
+       *  toasting — the caller says it. */
+      revealRecording: (recordingId: string) => Promise<boolean>;
+      /** Reveal an export made in this session (`recordings_reveal_export`),
+       *  named by the token its `editor_export` result carried
+       *  (`revealToken`). FALSE as above. */
+      revealExport: (exportToken: string) => Promise<boolean>;
       /** Whether the one-time «E-postvarsler er fjernet» banner should show.
        *  `false` on an IPC failure. */
       noticeEmailRemovedPending: () => Promise<boolean>;
@@ -301,14 +316,16 @@ declare global {
         force?: boolean,
       ) => Promise<EditorSegment[]>;
       /** Persist a sermon-pick correction (E8). Resolves to whether it was
-       *  recorded — re-picking the detector's own block is not a correction. */
+       *  recorded — re-picking the detector's own block is not a correction.
+       *  Names the recording by its File token (A3/A4); Rust derives
+       *  `<stem>.feedback.json` from what the token resolves to. */
       editorRecordSermonPick: (
-        filePath: string,
+        sourceToken: string,
         request: import("../../legacy/bindings/EditorSermonPickRequest").EditorSermonPickRequest,
       ) => Promise<boolean>;
       /** Index into `segments` of the block the human corrected us to, or null. */
       editorSermonPick: (
-        filePath: string,
+        sourceToken: string,
         segments: EditorSegment[],
       ) => Promise<number | null>;
       // Typed against the GENERATED `EditorAutoProcess` binding (nesting
@@ -324,18 +341,22 @@ declare global {
        *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
       editorChurchDayName: (date: string) => Promise<string | null>;
       /** The recording's saved «Innhold» (`<stem>.meta.json`), raw — parse it
-       *  with `parseSavedContent`. Null when there is none. */
-      editorReadContent: (filePath: string) => Promise<unknown>;
+       *  with `parseSavedContent`. Null when there is none. The sidecar
+       *  commands name the recording by its File token, never its path (A3). */
+      editorReadContent: (sourceToken: string) => Promise<unknown>;
       /** Save «Innhold» beside the recording. Resolves to whether it stuck. */
       editorSaveContent: (
-        filePath: string,
+        sourceToken: string,
         content: { title: string; speaker: string; description: string },
       ) => Promise<boolean>;
       /** Remove the saved «Innhold» — an export with every field empty. */
-      editorDeleteContent: (filePath: string) => Promise<boolean>;
-      editorReadCutsDraft: (filePath: string) => Promise<unknown>;
-      editorSaveCutsDraft: (filePath: string, cuts: unknown) => Promise<void>;
-      editorDeleteCutsDraft: (filePath: string) => Promise<void>;
+      editorDeleteContent: (sourceToken: string) => Promise<boolean>;
+      editorReadCutsDraft: (sourceToken: string) => Promise<unknown>;
+      editorSaveCutsDraft: (
+        sourceToken: string,
+        cuts: unknown,
+      ) => Promise<void>;
+      editorDeleteCutsDraft: (sourceToken: string) => Promise<void>;
       /** The backend-tagged input list — the renderer's ONLY audio-device
        *  enumeration since the getUserMedia label blink-open was removed. */
       listAudioDevices: () => Promise<

@@ -315,26 +315,29 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   itself calls one (`NSWorkspace isFilePackageAtPath`: apps, installers,
   plug-ins, and the document packages installed apps declare, such as
   `.key`/`.logicx`), on every OS an extension list and an `Info.plist` check;
-  `recordings_reveal` only _reveals_ (never opens) an existing file that is
-  inside the recordings folder, known to the recording history, or an export
-  delivered in this session — compared as canonical paths, and refused with an
-  error that does not echo the path. A NEW save folder from the renderer is
-  vetted before it is stored (`settings_save`; a profile import keeps the
-  stored folder instead): absolute, outside the protected home folders, not a
-  package, and not the file-system root, the home folder or a folder above it.
+  `recordings_reveal` and `recordings_reveal_export` only _reveal_ (never
+  open) an existing file — the file of a history row the webview names by its
+  id, or the export a token from the export's own result stands for; neither
+  takes a path (B-family, below) — and refuse with an error that does not echo
+  the path. A NEW save folder is vetted before it is stored
+  (`settings_pick_save_folder`, which opens the dialog in Rust; a profile import
+  keeps the stored folder instead): absolute, outside the protected home
+  folders, not a package, and not the file-system root, the home folder or a
+  folder above it.
   Paths are compared through one key that also folds macOS' firmlink spelling
   (`/System/Volumes/Data/Users/…` is `/Users/…`) and case where the file
   system ignores it, and — on macOS and Linux — by file identity (device and
   inode) wherever the file exists; the protected-folder check every path guard
-  shares (`path_guard::deny_sensitive_under`) uses the same pair. Both commands,
-  and the save-folder vet, do their filesystem checks off the async runtime.
+  shares (`path_guard::deny_sensitive_under`) uses the same pair. The open and
+  reveal commands, and the save-folder vet, do their filesystem checks off the
+  async runtime.
   The plugin's injected `<a target=_blank>` click handler is switched off
   (`open_js_links_on_click(false)`).
   What remains after the follow-up to the review of #302 (2026-10-02), none of
   it running code from the folder: a save folder stored before the vet existed
   is never re-judged — on purpose, so an installation goes on recording where
-  it always did — so one planted earlier still decides grant 2 (what may be
-  _revealed_), though the tray will not open it if it is a package; a NEW
+  it always did — so one planted earlier still decides where the recorder
+  writes, though the tray will not open it if it is a package; a NEW
   folder that does not exist yet can only be judged by its extension (the OS
   has nothing to look at until the recorder creates it — the tray asks the OS
   again before opening it); Windows has no identity check, so a second
@@ -367,19 +370,75 @@ File)`: typed, looked up, re-validated). «Ved siden av kilden» is derived from
   — a wrong file used to reset everything, the schedule included. `commands::path_ratchet` (`REPLACED`) fails if a
   path-taking twin of either command comes back, or if one of them grows a
   path parameter.
-  What remains under the same rule: a few commands still take a path from the
-  webview and are held only by a path guard — the editor's sidecars and sermon
-  pick (`editor_read_sidecar`, `editor_write_sidecar`, `editor_delete_sidecar`,
-  `editor_record_sermon_pick`, `editor_sermon_pick`, all `media_path`),
-  `recordings_reveal` and the papirkurv (`trash_move`). (The recording's output
-  path is already Rust's — finding E1, above — the editor's PICKED export folder
-  is a token for a folder Rust's own dialog answered, and the recording and its
-  jingles are tokens and settings — finding A2, above.) The last change is the
-  row in `docs/PLAN.md`. The webview's `dialog:` permissions stay until it has
-  moved: the setup page's save-folder picker (`window.api.pickFolder`, which
-  `settings_save` then vets as a new save folder) still opens its dialog in
-  JavaScript. Nothing in the webview opens a dialog for a recording, a clip or
-  an export folder any more, and nothing opens a SAVE dialog.
+  **A3/A4, the B-family and B1: closed (PR-D).** The last commands that took a
+  path from the webview — the editor's sidecars and sermon pick, «Vis i
+  Finder» and the papirkurv — were held only by `path_guard`, which judges a
+  path against the protected home folders and nothing else. None takes one any
+  more; each names a thing Rust already knows:
+  - `editor_read_sidecar`, `editor_write_sidecar`, `editor_delete_sidecar`,
+    `editor_record_sermon_pick` and `editor_sermon_pick` take `source_token` —
+    the File token of the recording (finding A2) — and nothing else. Rust
+    resolves it with `resolve_source` (typed, looked up, re-validated) and
+    builds `<stem>.meta.json`, `<stem>.cuts-draft.json` and
+    `<stem>.feedback.json` itself, with the suffixes
+    `sundayrec_core::editor::sidecar_path` has always used. A sidecar can
+    therefore only land beside a recording Rust opened; a forged token never
+    reaches the seam (`with_source`, pinned by
+    `a_sidecar_command_with_a_forged_token_never_touches_the_disk`). The
+    generic write and delete still refuse the feedback file.
+  - `recordings_reveal` takes a history ROW's id (`store::recording_file_path`
+    — the database, written only by the recorder), and a new
+    `recordings_reveal_export` takes the token `editor_export` put in its
+    result for the file the engine had just delivered. That token is a
+    `ChosenKind::Export` token in the same store as the others: typed (it opens
+    nothing in the editor and names no folder), session-scoped, bounded and
+    re-validated when used (a file swapped for a symlink elsewhere is not the
+    one delivered). The set of «delivered exports» and the three grants it
+    served (inside the recordings root, a recording the history knows, a
+    delivered export — the middle one a scan that canonicalised every history
+    row) are gone. The three callers each have a road without a path: the
+    library row and «Siste opptak» pass their row's id, the recording receipt
+    finds its row by the path in Rust's own `recording://finished` event, and
+    the export receipt passes the token.
+  - `trash_move` takes the ids of history rows. An id with no row refuses the
+    whole call (`recording_unknown`) before anything moves, so it moves only a
+    recording the history knows and the sidecars beside it. Retention
+    (`recordings_prune`) never comes through it — it runs in Rust over its own
+    rows — and nothing in the app moves an export to the papirkurv.
+  - **The recordings folder** is picked by `settings_pick_save_folder`: Rust
+    opens the folder dialog, vets the folder with `vet_new_save_folder` and
+    stores it. `settings_save` keeps the stored folder whatever the webview
+    sends (as it keeps the intro and outro clips), so the folder cannot be set
+    from a string — before, the page sent the dialog's answer in
+    `settings_save`, and a compromised page could send any folder the vet
+    accepted with no dialog at all.
+
+  **The `dialog:` lock (PR-F).** With nothing in the webview opening a dialog,
+  `capabilities/default.json` grants no `dialog:` permission, the npm package
+  `@tauri-apps/plugin-dialog` is gone from `package.json` and the lock file,
+  and two Rust tests next to the opener one fail if either comes back:
+  `the_webview_holds_no_dialog_permission` (any capability file or inline
+  config, read exactly like the opener tripwire) and
+  `nothing_the_webview_is_built_from_names_the_dialog_plugin` (`package.json`,
+  the lock file and every source under `app/`, `legacy/`, `e2e/`, `scripts/`).
+  A vitest in `app/lib/api-shim-files.test.ts` says the same from the other
+  side. `tauri-plugin-dialog` stays a Rust dependency: Rust is who asks.
+
+  **What a path still is, and what remains.** No `#[tauri::command]` takes a
+  path-shaped parameter any more (`commands::path_ratchet` fails on one; its
+  `GUARDED` list is gone, because a guard is not an answer, and `EXEMPT` is
+  empty), and the old path-shaped parameters are pinned retired. The webview
+  still receives paths — `OpenedRecording.path`, the export's `outputPath`, the
+  history rows' `file_path` — for DISPLAY and for `<audio src>`, whose
+  `asset://` address needs one over a scope Rust widened to exactly that file;
+  no command accepts one back. One door still takes a save folder the webview
+  names: `settings_import`, the one-shot localStorage hand-over for an upgrade
+  from the old app, which takes JSON and not a path parameter and vets a NEW
+  folder like any other (a refusal keeps the stored folder). It runs once on an
+  install that has stored nothing, which is also the install a hostile page
+  could aim it at; closing it means dropping the hand-over of the old
+  installation's folder, an owner decision (docs/PLAN.md).
+
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.

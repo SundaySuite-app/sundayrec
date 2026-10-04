@@ -503,8 +503,13 @@ lenger».
 2. Use **«Vis i Finder»** on the row.
    - **Expected:** the OS file manager opens with the recording selected. This
      goes through the Rust command `recordings_reveal` — the webview holds no
-     `opener:` permission — which only shows a file inside the recordings
-     folder, one the history knows, or an export made in this session.
+     `opener:` permission — which takes the history ROW's id and shows the file
+     the database holds for it (never a path from the page). The same goes for
+     «Siste opptak» and the receipt after a recording; the export receipt uses
+     `recordings_reveal_export` and the token the export's result carried.
+   - VERIFIED-BY: e2e/library.spec.ts::«Vis i Finder» på en rad sender radens id til Rust, aldri stien
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_recording_is_revealed_by_its_row_id_wherever_it_lies
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::an_id_with_no_row_is_refused_and_a_path_is_no_id
    - Change the save folder (Opptak → «Hvor skal opptakene?») to another folder
      and press **«Vis i Finder»** on a row recorded BEFORE the change.
      **Expected:** it is still shown (the history knows it).
@@ -513,16 +518,30 @@ lenger».
      says to choose a folder inside it, such as «SundayRec» in Dokumenter — not
      just «Kunne ikke lagre innstillingen». (An app or a Keynote/Logic project
      is refused the same way, but the native picker rarely lets you pick one;
-     the check is there for a webview that does not use the picker.) A folder
+     the check is there for a folder the picker does let through.) A folder
      chosen BEFORE this version is never questioned: on an upgraded machine
      whose folder would now be refused, recording goes on exactly as before.
-   - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::koden fra et avvist settings_save når fram til setningen
+   - The folder window is the app's own (the A2 family): **«Velg mappe …»** in
+     «Hvor skal opptakene?» opens the OS folder window from Rust, which can
+     create a folder, and what it answers is vetted and stored by Rust — the
+     page shows the folder Rust stored. Cancelling the window changes nothing.
+     Saving any other setting afterwards (change the language, say) leaves the
+     folder as it was.
+   - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::en avvisning fra mappevinduet når fram til setningen
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_renderer_cannot_set_a_folder_the_vet_would_have_accepted
+   - VERIFIED-BY: e2e/control-room.spec.ts::«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret
+   - VERIFIED-BY: e2e/control-room.spec.ts::en mappe Rust avviser blir stående som den var, og setningen sier hvorfor
    - Export a recording to a folder OUTSIDE the recordings folder (Redigering →
      Eksporter → «Velg mappe…», e.g. the Desktop), then press **«Vis i
      Finder»** on the receipt. **Expected:** the exported file is shown.
      Restart the app: the receipt is gone, and nothing else can reveal that
-     export any more — that is the policy, not a bug.
+     export any more — that is the policy, not a bug (the button's token is
+     only good for this session).
+   - VERIFIED-BY: e2e/export-page.spec.ts::«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_forged_foreign_or_misplaced_export_token_is_refused
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_symlink_swapped_in_at_a_delivered_name_is_refused
    - On a missing file (delete one by hand in Finder, then press its row's
      button) **Expected:** the toast «Fant ikke fila på disken.», not silence.
 3. Press **«Slett»** on a row.
@@ -533,6 +552,11 @@ lenger».
      nobody learns exists. Inside it, «Legg tilbake» restores and «Slett nå» is
      the one genuinely dangerous button — and there **CANCEL is the Enter
      choice** and the confirm is a red SECONDARY.
+   - «Slett» sends the history rows' ids (`trash_move` takes `recording_ids`,
+     never paths); Rust finds the files and moves them with their sidecars.
+     Retention does not come through this command.
+   - VERIFIED-BY: src-tauri/src/commands/trash.rs::a_recording_is_trashed_by_its_row_id_with_its_sidecar_and_nothing_else
+   - VERIFIED-BY: src-tauri/src/commands/trash.rs::an_id_the_history_does_not_know_refuses_the_whole_call
 4. **Retention** (owner decision 2026-08-31): turn on «Slett gamle opptak» on
    Avansert with a window older than an existing recording, restart the app.
    - **Expected:** the old recording MOVES to the Papirkurv — never a hard
@@ -1251,7 +1275,14 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      button were dropped — the restore is automatic now, see
      editor/loader.ts). After a successful **Eksporter** the draft is deleted,
      so a later reopen restores nothing.
+   - The draft, «Innhold» and the sermon pick are all named by the recording's
+     File token (A3/A4): the page never sends the path, and Rust derives
+     `<stem>.cuts-draft.json`, `.meta.json` and `.feedback.json` beside the
+     file the token stands for. Nothing about where they land has changed.
    - VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
+   - VERIFIED-BY: app/editor/cuts.test.ts::skrives med opptakets lapp, aldri stien
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_is_kept_read_and_removed_beside_the_recording_its_token_stands_for
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_command_with_a_forged_token_never_touches_the_disk
      ⚠️ **The standalone mastering panel is gone** (the old steps 6 and 7 — the
      `_mastert` file, «Forhåndsvis mastering (15 s)», the apply-with-progress and its
      Avbryt). `editor_master_apply` is no longer reached from anywhere; the preview
