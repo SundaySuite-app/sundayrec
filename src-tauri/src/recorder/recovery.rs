@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use sundayrec_core::recovery::{recoverable_deliverables, SessionManifest};
 
@@ -25,11 +25,25 @@ use crate::commands::path_guard;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
 
-/// `<app-data>/recovery` — where session manifests live. Created on demand.
+/// `<app-data>/recovery` — where NEW session manifests are written. Created on
+/// demand. «App-data» is wherever the database lives ([`crate::appdata`]).
 fn manifest_dir(app: &AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_data_dir().ok()?.join("recovery");
+    let dir = crate::appdata::dir(app).ok()?.join("recovery");
     let _ = std::fs::create_dir_all(&dir);
     Some(dir)
+}
+
+/// Every place an unfinished session's manifest can be: where new ones are
+/// written, and (F-W10) the OTHER app-data location. On Windows the update that
+/// moves the database from Roaming to Local AppData lands right after a
+/// crashed Sunday, and the manifest of that recording is still in
+/// `Roaming\…\recovery`. Reading only the new place would turn «the app
+/// finds my interrupted recording» into «the recording is gone». The active
+/// folder is created, as it always was; the other is not — an absent folder
+/// is just an empty one.
+fn manifest_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    let _ = manifest_dir(app);
+    crate::appdata::scan_dirs(app, "recovery")
 }
 
 /// The longest id the recorder makes: `start_ms.to_string()` of a `u64` is at
@@ -192,9 +206,14 @@ fn mtime_ms(path: &Path) -> Option<u64> {
 /// the caller ([`crate::scheduler::check_missed`]) is already awaiting database
 /// I/O around it. A `spawn_blocking` here would cost more than it saves.
 pub fn pending_windows(app: &AppHandle) -> Vec<(u64, u64)> {
-    manifest_dir(app)
-        .map(|dir| pending_windows_in(&dir))
-        .unwrap_or_default()
+    pending_windows_across(&manifest_dirs(app))
+}
+
+/// [`pending_windows_in`] over every folder a manifest can be in.
+pub(crate) fn pending_windows_across(dirs: &[PathBuf]) -> Vec<(u64, u64)> {
+    dirs.iter()
+        .flat_map(|dir| pending_windows_in(dir))
+        .collect()
 }
 
 /// [`pending_windows`] against a plain directory.
@@ -242,10 +261,33 @@ pub(crate) fn pending_windows_in(dir: &Path) -> Vec<(u64, u64)> {
 /// delete its manifest. Returns how many recordings were recovered. Never errors
 /// — a single bad manifest is logged + cleared, the rest still process.
 pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
-    let Some(dir) = manifest_dir(&app) else {
-        return 0;
-    };
-    scan_recovery_dir(Some(&app), &pool, &dir, ScanPolicy::production()).await
+    scan_recovery_dirs(
+        Some(&app),
+        &pool,
+        &manifest_dirs(&app),
+        ScanPolicy::production(),
+    )
+    .await
+}
+
+/// [`scan_recovery_dir`] over every folder a manifest can be in (F-W10: the
+/// active app-data folder AND the other one), summing what was recovered. The
+/// tests drive THIS, so a refactor that scans only the new place fails them.
+pub(crate) async fn scan_recovery_dirs(
+    app: Option<&AppHandle>,
+    pool: &SqlitePool,
+    dirs: &[PathBuf],
+    policy: ScanPolicy,
+) -> usize {
+    let mut recovered = 0;
+    for dir in dirs {
+        let one = ScanPolicy {
+            probe_writers: policy.probe_writers,
+            home: policy.home.clone(),
+        };
+        recovered += scan_recovery_dir(app, pool, dir, one).await;
+    }
+    recovered
 }
 
 /// What a scan is allowed to vary — only ever varied by the tests.
@@ -1562,6 +1604,107 @@ mod tests {
         assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
         assert!(list_recordings(&pool).await.unwrap().is_empty());
         assert!(is_set_aside(&file));
+    }
+
+    /// F-W10: Roaming og Local som tempmapper, med en ekte database i Roaming
+    /// så flyttingen faktisk skjer. Returnerer valget `resolve` gjorde.
+    async fn moved_seam() -> (tempfile::TempDir, crate::appdata::Choice) {
+        let root = tempfile::tempdir().unwrap();
+        let roaming = root.path().join("Roaming/no.sundayrec.app");
+        let local = root.path().join("Local/no.sundayrec.app");
+        std::fs::create_dir_all(&roaming).unwrap();
+        let old = crate::db::store::open_pool(&roaming.join(crate::appdata::DB_FILE))
+            .await
+            .unwrap();
+        crate::db::store::set_setting(&old, "language", "\"no\"")
+            .await
+            .unwrap();
+        crate::db::store::checkpoint_and_close(&old).await;
+        let choice = crate::appdata::resolve(&roaming, &local, true).await;
+        assert!(
+            matches!(choice.outcome, crate::appdata::Outcome::Moved { .. }),
+            "premisset: databasen ble flyttet, {:?}",
+            choice.outcome
+        );
+        (root, choice)
+    }
+
+    #[tokio::test]
+    async fn et_manifest_fra_et_krasj_for_oppdateringen_gjenopprettes_etter_flyttingen() {
+        let (_root, choice) = moved_seam().await;
+        let roaming_recovery = choice.other.clone().unwrap().join("recovery");
+        std::fs::create_dir_all(&roaming_recovery).unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut m = manifest_in(rec.path());
+        m.session_id = "1786179600000".into();
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let file = write_recorders_manifest(&roaming_recovery, &m).await;
+        let new_pool = crate::db::store::open_pool(&choice.active.join(crate::appdata::DB_FILE))
+            .await
+            .unwrap();
+        let dirs = choice.dirs_to_scan("recovery");
+
+        // Missed-check-beviset ser det også, FØR skanningen har gjort noe.
+        assert_eq!(pending_windows_across(&dirs).len(), 1);
+
+        let recovered = scan_recovery_dirs(
+            None,
+            &new_pool,
+            &dirs,
+            ScanPolicy {
+                probe_writers: false,
+                home: path_guard::home_dir(),
+            },
+        )
+        .await;
+
+        assert_eq!(recovered, 2, "begge leveransene fra det avbrutte opptaket");
+        assert_eq!(list_recordings(&new_pool).await.unwrap().len(), 2);
+        assert!(!file.exists(), "manifestet ryddes der det ble funnet");
+    }
+
+    #[tokio::test]
+    async fn manifester_i_begge_mappene_gjenopprettes_hver_for_seg() {
+        let (_root, choice) = moved_seam().await;
+        let roaming_recovery = choice.other.clone().unwrap().join("recovery");
+        let local_recovery = choice.active.join("recovery");
+        std::fs::create_dir_all(&roaming_recovery).unwrap();
+        std::fs::create_dir_all(&local_recovery).unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        for (dir, id) in [
+            (&roaming_recovery, "1786179600000"),
+            (&local_recovery, "1786183200000"),
+        ] {
+            let mut m = manifest_in(rec.path());
+            m.session_id = id.into();
+            m.deliverables.truncate(1);
+            let path = rec
+                .path()
+                .join(format!("{id}.mp3"))
+                .to_string_lossy()
+                .into_owned();
+            m.deliverables[0].fragments = vec![path.clone()];
+            m.deliverables[0].primary_path = path;
+            write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+            write_recorders_manifest(dir, &m).await;
+        }
+        let pool = crate::db::store::open_pool(&choice.active.join(crate::appdata::DB_FILE))
+            .await
+            .unwrap();
+
+        let recovered = scan_recovery_dirs(
+            None,
+            &pool,
+            &choice.dirs_to_scan("recovery"),
+            ScanPolicy {
+                probe_writers: false,
+                home: path_guard::home_dir(),
+            },
+        )
+        .await;
+
+        assert_eq!(recovered, 2);
     }
 
     #[tokio::test]

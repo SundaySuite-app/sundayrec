@@ -55,6 +55,15 @@ pub mod code {
     /// longer say where each one came from, which is exactly the thing a
     /// volunteer needs to hear before they conclude a recording is gone.
     pub const TRASH_MANIFEST_UNREADABLE: &str = "trash_manifest_unreadable";
+    /// Windows only (F-W10): moving the database from Roaming to Local AppData
+    /// failed, so this session runs on the old copy. Nothing is lost; the move
+    /// is tried again at the next start. Raised once per install.
+    pub const DATA_DIR_MOVE_FAILED: &str = "data_dir_move_failed";
+    /// Windows only (F-W10): the database lives in Local AppData, but the old
+    /// Roaming one was written to AFTER it — a downgraded version ran in
+    /// between. What that version saved stays in the old folder. Raised once
+    /// per such session.
+    pub const DATA_LEFT_IN_OLD_DIR: &str = "data_left_in_old_dir";
 
     /// Every code above, in declaration order. The renderer's key table is
     /// checked against this list.
@@ -64,6 +73,8 @@ pub mod code {
         DEVICE_MISSING,
         DISK_LOW,
         TRASH_MANIFEST_UNREADABLE,
+        DATA_DIR_MOVE_FAILED,
+        DATA_LEFT_IN_OLD_DIR,
     ];
 }
 
@@ -416,7 +427,7 @@ mod tests {
                 "{c} is not snake_case"
             );
         }
-        assert_eq!(code::ALL.len(), 5);
+        assert_eq!(code::ALL.len(), 7);
     }
 
     #[test]

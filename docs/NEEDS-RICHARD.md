@@ -420,14 +420,49 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
   `.msi` kan fjernes helt** (og regelen i promote-release.mjs, og MSI-bygget):
   etter at migrasjonen er sett på riggen (RIG-DAY), eller når det er rimelig
   sikkert at ingen MSI-installasjoner er igjen i flåten.
-- **Database-mappa bør flytte fra Roaming til Local AppData (F-W10).**
-  `sundayrec.sqlite` (og resten av appdataen) ligger i dag under Windows'
-  Roaming-profil, som synkroniserer over nettverket på domenepåloggede
-  maskiner — en stor, stadig voksende SQLite-fil med WAL-sidefiler er
-  nøyaktig den typen data Roaming-profiler håndterer dårlig. tmp-mappa og
-  loggeren flyttes allerede til Local AppData i en annen F2-runde (F-W6); DB-
-  flyttingen er IKKE del av den og trenger sitt eget owner-OK (dataflytting
-  på en allerede installert base er ikke en ren tilleggsendring).
+- **~~Database-mappa bør flytte fra Roaming til Local AppData (F-W10).~~
+  AVGJORT 2026-10-04 og GJENNOMFØRT** (`src-tauri/src/appdata.rs`). Bakgrunn:
+  `sundayrec.sqlite` med WAL-sidefiler lå under Windows' Roaming-profil, som
+  synkroniserer over nettverket på domenepåloggede maskiner — en stor,
+  stadig voksende SQLite-fil er nøyaktig den typen data Roaming håndterer
+  dårlig. tmp-mappa og loggeren flyttet allerede i F-W6. Slik ble F-W10 løst,
+  kun på Windows (Mac og Linux er byte-uendret, med golden-test):
+  - **Én engangsflytting ved oppstart, før databasen åpnes.** Den gamle
+    databasen åpnes og `PRAGMA wal_checkpoint(TRUNCATE)` kjøres (alt i
+    hovedfila), radtall telles i `recording` og `app_setting`, fila kopieres
+    til en tempfil i Local, fsync, `PRAGMA integrity_check` og samme radtall
+    på kopien, og først da gis den navnet `sundayrec.sqlite` med én atomisk
+    `rename`. En avbrutt flytting etterlater bare tempfila, som neste start
+    skriver over.
+  - **Den gamle fila i Roaming står urørt (ikke slettet, ikke omdøpt).**
+    v0.25.0 og eldre leter i Roaming. En nedgradert app åpner da en foreldet
+    men ekte kopi med all historikk, i stedet for en tom database på et tomt
+    sted. Prisen: skriver en nedgradert økt noe, hentes det ikke tilbake ved
+    neste oppgradering (Local finnes, og vinner) — to databaser flettes aldri
+    på gjetning. Roaming-fila vokser ikke lenger.
+  - **«Finnes ikke» krever bevis.** Roaming regnes bare som uten database når
+    `metadata` sier `NotFound` OG `%APPDATA%` er en lesbar mappe (Rust mapper
+    `ERROR_BAD_NETPATH` til `NotFound`). Alt annet er en fallback, og ingenting
+    lages i Local, så en omdirigert Roaming-mappe som ikke er nådd ved
+    pålogging aldri gir en tom database som vinner for alltid. `rename` prøves
+    fem ganger (antivirus på tempfila).
+  - **Nedgradering:** er Roaming-databasen nyere enn Local ved oppstart, sier
+    appen fra én gang (banner, 7 språk) at det den eldre versjonen lagret ligger
+    igjen i den gamle mappa. Utfallet telles (`appdata.move.*`, uten sti).
+  - **Feiler flyttingen** (integritet, radtall, full disk, låst fil), brukes
+    Roaming for denne økta, feilen loggføres, og frivillige får ett banner
+    (katalogteksten «Historikken og innstillingene ble ikke flyttet …») én gang. Appen starter aldri med en
+    tom database når Roaming har data; neste start prøver på nytt.
+  - **Recovery:** skanningen leser BÅDE `Local\…\recovery` og
+    `Roaming\…\recovery`, så et opptak som krasjet like før oppdateringen
+    gjenopprettes ved første start. Nye manifester skrives der databasen bor.
+    Småfilene (`last-recording.json`, telemetrihistorikken, `last-error.json`,
+    krasjringen) kopieres med best-effort.
+  - **Ikke flyttet:** opptaksmappa (brukerdata), papirkurven og
+    capture-mappene (ligger i opptaksmappa). Sti-vaktene
+    (`save_folder_app_data`) dekket begge plasseringene fra F-W6.
+  - 👤 Kan bare bevises på en ekte Windows-boks: se RIG-DAY «Windows-boksen»
+    (w-appdata) og SMOKE-TEST §13.
 - **`webviewInstallMode: embedBootstrapper` — ✅ AVGJORT 2026-10-04 og
   gjennomført** (`bundle.windows.webviewInstallMode` i `tauri.conf.json`,
   holdt fast av `scripts/windows-installer.test.mjs`). Standard WebView2-

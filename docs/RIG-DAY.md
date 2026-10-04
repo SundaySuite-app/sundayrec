@@ -11,7 +11,7 @@ ikke lar seg presse sammen.
 **Forutsetninger:** en Mac og en Windows-boks, begge med SundayRec
 installert og et ekte lydoppsett (USB-mikrofon eller mikser) tilkoblet;
 tilgang til terminal på Mac-en (for `kill -9`) og til Oppgavebehandling +
-`%APPDATA%`-mappa på Windows-boksen; en kopi-vennlig ekte
+`%APPDATA%`- og `%LOCALAPPDATA%`-mappene på Windows-boksen; en kopi-vennlig ekte
 `sundayrec.sqlite` det er greit å teste mot; nok tid til at maskinen kan
 sovne og våkne av seg selv minst én gang.
 
@@ -233,7 +233,8 @@ faktisk skal se nå — sist.
       **Forventet ETTER (F2-W1, #243):** en synlig, passiv installer kjører,
       `SundayRec_*_x64-setup.exe` blir IKKE drept i Oppgavebehandling, og
       appen kommer tilbake i den nye versjonen. `update-relaunch.log`
-      (i `%APPDATA%`) skal ha en linje som starter med `installing` og
+      (i appdata-mappa: `%LOCALAPPDATA%` fra og med F-W10, `%APPDATA%` for
+      versjoner før) skal ha en linje som starter med `installing` og
       slutter med `kill-on-close disarmed: true`.
 - [ ] **(w2) Oppdatering er sperret mens det tas opp.** Start et opptak, gå
       til banneret / gearikonet → Avansert.
@@ -339,6 +340,55 @@ faktisk skal se nå — sist.
       `Dokumenter\SundayRec`) med samme navn som før, `_2` på et nytt opptak
       samme dag; «Vis i Utforsker» på kvitteringen viser den.
 
+- [ ] **(w-appdata) Databasen og appdataen flytter fra Roaming til Local
+      (F-W10, avgjort 2026-10-04).** Oppgrader en installasjon som HAR
+      historikk (v0.25.0 eller eldre med minst noen opptak og endrede
+      innstillinger) til denne versjonen. Gjør det slik at `sundayrec.sqlite`
+      har et ikke-tomt `-wal` (la appen stå en stund etter siste opptak, og
+      avslutt den med Oppgavebehandling i stedet for «Avslutt» før
+      oppgraderingen).
+      **Forventet:** (1) første start viser all historikken og alle
+      innstillingene (språk, opptaksmappe, planlagte slots); (2)
+      `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite` finnes, ingen
+      `sundayrec.sqlite.flytter` blir liggende; (3) den gamle
+      `%APPDATA%\no.sundayrec.app\sundayrec.sqlite` finnes fortsatt, urørt;
+      (4) loggen (`%LOCALAPPDATA%\…\logs\sundayrec.log`) har en linje
+      «the database was moved from Roaming to Local AppData»; (5) andre start
+      flytter ikke igjen og viser ingen banner. **Nedgradering:** installer
+      v0.25.0 over den; den skal åpne den gamle databasen med historikken
+      (ikke en tom).
+- [ ] **(w-appdata-recovery) Krasj → oppdatering → gjenoppretting.** På en
+      v0.25.0-installasjon: start et opptak, drep appen med
+      Oppgavebehandling midt i (manifestet ligger nå i
+      `%APPDATA%\no.sundayrec.app\recovery`), oppgrader til denne
+      versjonen, start den. **Forventet:** det avbrutte opptaket dukker opp
+      i Historikk som gjenopprettet fil, og manifestet er borte fra
+      `Roaming\…\recovery`. Gjør det en gang til MED SAMME manifest i begge
+      mappene (kopier den ene filen til `Local\…\recovery` før start):
+      opptaket gir fortsatt ÉN rad i Historikk, ikke to (duplikater fanges av
+      `recording_exists_for_path`), og begge manifestene er borte etterpå.
+- [ ] **(w-appdata-fallback) En flytting som feiler mister ingenting.**
+      Lag `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite.flytter` som en
+      MAPPE (hindrer tempfila), start. **Forventet:** appen starter med
+      historikken fra Roaming (ikke tom), loggen sier at flyttingen feilet,
+      og ett banner kommer etter ca. 20 s med katalogteksten
+      «Historikken og innstillingene ble ikke flyttet til den nye mappen …»
+      (på valgt språk); neste start (uten hindringen) flytter.
+- [ ] **(w-appdata-nedgradering) Data fra en nedgradert økt blir ikke borte
+      i det stille.** Etter en vellykket flytting: installer v0.25.0 over, endre
+      en innstilling og ta et testopptak, avslutt normalt, installer denne
+      versjonen igjen. **Forventet:** appen viser den nye mappas historikk
+      (ikke testopptaket), og ett banner etter ca. 20 s: «Historikk og
+      innstillinger fra den eldre versjonen ligger igjen i den gamle mappen …».
+      Samme start en gang til: ingen nytt banner.
+- [ ] **(w-appdata-nett) Roaming som ikke er nådd er ikke en ny installasjon.**
+      På en maskin med omdirigert Roaming-mappe: koble fra nettverket/VPN, start
+      appen FØR Local har en database (f.eks. etter å ha flyttet
+      `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite` bort). **Forventet:**
+      ingen ny database i Local; appen bruker Roaming slik den alltid har gjort
+      (og feiler om den heller ikke kan nås), og første start MED nettverk
+      flytter databasen.
+
 - [ ] **(w7) Windows-installasjon: NSIS uten UAC, og MSI → NSIS.** Tre ting,
       på en Windows-maskin med en vanlig bruker (ikke administrator) — helst en
       ren maskin eller VM. Bevis fra release-bygget finnes ikke for noen av dem
@@ -358,9 +408,8 @@ faktisk skal se nå — sist.
       installasjoner — og hva en ikke-administrator ser da.
 
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
-runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
-logger, m.fl. Fylles inn her når de respektive PR-ene er merget; se
-`docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
+runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
+respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## Ørene
 

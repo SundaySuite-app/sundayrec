@@ -1143,6 +1143,8 @@
     "recoverySkipped": "Eine unterbrochene Aufnahme konnte nicht vollständig wiederhergestellt werden: {file}",
     "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
     "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
-    "trashManifestUnreadable": "Der Inhalt des Papierkorbs konnte nicht gelesen werden. Die Dateien sind noch da, aber die App weiß nicht mehr, woher sie stammen."
+    "trashManifestUnreadable": "Der Inhalt des Papierkorbs konnte nicht gelesen werden. Die Dateien sind noch da, aber die App weiß nicht mehr, woher sie stammen.",
+    "dataDirMoveFailed": "Verlauf und Einstellungen konnten nicht in den neuen Ordner verschoben werden. Die App verwendet diesmal den alten, und es wurde nichts gelöscht. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner. Starte die App neu; falls das nicht hilft, melde dich.",
+    "dataLeftInOldDir": "Verlauf und Einstellungen der älteren Version liegen noch im alten Ordner. Diese Version verwendet den neuen Ordner, daher werden die Änderungen der älteren Version hier nicht angezeigt. Deine Aufnahmedateien liegen weiterhin im Aufnahmeordner."
   }
 }

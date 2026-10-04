@@ -1165,6 +1165,8 @@
     "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
     "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
-    "trashManifestUnreadable": "Nie udało się odczytać zawartości kosza. Pliki nadal tam są, ale aplikacja nie wie już, skąd pochodzą."
+    "trashManifestUnreadable": "Nie udało się odczytać zawartości kosza. Pliki nadal tam są, ale aplikacja nie wie już, skąd pochodzą.",
+    "dataDirMoveFailed": "Nie udało się przenieść historii i ustawień do nowego folderu. Tym razem aplikacja używa starego, a nic nie zostało usunięte. Twoje pliki nagrań nadal są w folderze nagrań. Uruchom aplikację ponownie; jeśli to nie pomoże, skontaktuj się z nami.",
+    "dataLeftInOldDir": "Historia i ustawienia ze starszej wersji pozostały w starym folderze. Ta wersja używa nowego folderu, więc to, co zapisano w starszej wersji, nie jest tu widoczne. Twoje pliki nagrań nadal są w folderze nagrań."
   }
 }

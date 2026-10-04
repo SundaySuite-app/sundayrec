@@ -26,7 +26,8 @@
 //! tokio runtime is already coming down. So:
 //!
 //!   - **No tokio, no app handle.** The target directory is resolved ONCE at
-//!     startup into a [`OnceLock`] and the write is plain `std::fs`.
+//!     startup into a static (re-pointed at most once by `setup`, F-W10) and the
+//!     write is plain `std::fs`.
 //!   - **No lock this process holds elsewhere.** Nothing here takes a mutex that
 //!     any other module can be inside — the ring's ordering comes from the
 //!     filename, not from shared state.
@@ -47,7 +48,7 @@
 use std::panic::{AssertUnwindSafe, PanicHookInfo};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::OnceLock;
+use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -81,7 +82,7 @@ const BACKTRACE_MAX_CHARS: usize = 8000;
 /// The directory crash records are written to and read from. Resolved ONCE at
 /// startup (see [`install_hook`]) so the panic hook never has to touch an app
 /// handle or the path resolver.
-static CRASH_DIR: OnceLock<PathBuf> = OnceLock::new();
+static CRASH_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
 /// Disambiguates two records written inside the same millisecond.
 static SEQ: AtomicU32 = AtomicU32::new(0);
@@ -135,8 +136,13 @@ pub fn install_hook() {
     // reachable here (there is no app yet) — [`crate::util::app_data_dir`]
     // mirrors exactly what Tauri's resolver computes, and `setup` verifies the
     // two agree (see `verify_dir_matches`).
-    if let Some(dir) = crate::util::app_data_dir() {
-        let _ = CRASH_DIR.set(dir.join("crashes"));
+    //
+    // F-W10: the LOCAL app-data dir — on Windows that is where the database
+    // lives after the move; off Windows it is the very same directory as
+    // before. When the move fell back to Roaming, `setup` re-points the ring
+    // with [`repoint`].
+    if let Some(dir) = crate::util::app_local_data_dir() {
+        repoint(dir.join("crashes"));
     }
 
     let previous = std::panic::take_hook();
@@ -173,7 +179,22 @@ pub fn verify_dir_matches(app_data_dir: &Path) {
 
 /// The crash directory, if one was resolved.
 pub fn dir() -> Option<PathBuf> {
-    CRASH_DIR.get().cloned()
+    CRASH_DIR.read().ok()?.clone()
+}
+
+/// [`dir`] for the panic hook: `try_read`, because the hook must never block,
+/// and a re-point in flight is a microsecond-long write no panic is worth
+/// waiting for.
+fn dir_nonblocking() -> Option<PathBuf> {
+    CRASH_DIR.try_read().ok()?.clone()
+}
+
+/// Move the ring to `dir` (F-W10): `setup` knows which app-data folder won
+/// (the database may have stayed in Roaming), the hook was armed before that.
+pub fn repoint(dir: PathBuf) {
+    if let Ok(mut slot) = CRASH_DIR.write() {
+        *slot = Some(dir);
+    }
 }
 
 /// Format + persist a panic. The whole body is best-effort.
@@ -193,8 +214,8 @@ fn persist_panic(info: &PanicHookInfo<'_>) {
         "PANIC: {}",
         record.message
     );
-    if let Some(dir) = CRASH_DIR.get() {
-        let _ = write_record(dir, CRASH_PREFIX, &record, CRASH_RING_MAX);
+    if let Some(dir) = dir_nonblocking() {
+        let _ = write_record(&dir, CRASH_PREFIX, &record, CRASH_RING_MAX);
     }
 }
 
@@ -265,8 +286,8 @@ pub fn record_task_panic(task: &str, detail: &str) {
         backtrace: None,
         task: Some(task.to_string()),
     };
-    if let Some(dir) = CRASH_DIR.get() {
-        let _ = write_record(dir, CRASH_PREFIX, &record, CRASH_RING_MAX);
+    if let Some(dir) = dir_nonblocking() {
+        let _ = write_record(&dir, CRASH_PREFIX, &record, CRASH_RING_MAX);
     }
 }
 
@@ -289,8 +310,8 @@ pub fn record_task_restart(task: &str, detail: &str) {
         backtrace: None,
         task: Some(task.to_string()),
     };
-    if let Some(dir) = CRASH_DIR.get() {
-        let _ = write_record(dir, RESTART_PREFIX, &record, RESTART_RING_MAX);
+    if let Some(dir) = dir_nonblocking() {
+        let _ = write_record(&dir, RESTART_PREFIX, &record, RESTART_RING_MAX);
     }
 }
 

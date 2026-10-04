@@ -191,6 +191,17 @@ minimum bar is what v0.12.0 actually met:
 
 ### 5a. Bump + tag (beta ring)
 
+- [ ] **Telemetry contract first (before ANY promote).** If the release adds
+      a `CounterName` (`crates/sundayrec-core/src/telemetry.rs`) or any other
+      telemetry field, those names must already be DEPLOYED in `sunday-telemetry`
+      (`src/schema.ts`, e.g. `COUNTER_NAMES`) before the release is promoted. The
+      endpoint answers a name it does not know with `400 not_in_enum`, and the
+      client then throws away the WHOLE payload — crashes and quality data
+      included, from every install that updated. Prove it with the `live_endpoint`
+      test (`src-tauri/src/telemetry/http_sender.rs`) against the deployed
+      Worker (or `npx wrangler dev` in `sunday-telemetry/`):
+      `SUNDAYREC_TELEMETRY_URL=… SUNDAYREC_TELEMETRY_KEY=… cargo test -p sundayrec live_endpoint -- --ignored --nocapture`.
+      (v0.25.1 adds `appdata.move.*`, F-W10.)
 - [ ] Bump version in lockstep to `vX.Y.Z-beta.N`: `package.json`,
       `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`.
 - [ ] `git tag vX.Y.Z-beta.N && git push origin vX.Y.Z-beta.N`.

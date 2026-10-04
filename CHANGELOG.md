@@ -11,7 +11,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   fort den kan. Det flagget er nå tatt bort fra eksporten. Målt på 20 sekunder
   1080p H.264: 3,4 sekunder mot 9,4 sekunder, med samme bildekvalitet (PSNR).
   Opptaket er uendret: det ber om sanntid, som det har gjort siden v0.25.0.
-
+- **På Windows ligger historikken og innstillingene nå i Local AppData i stedet
+  for Roaming.** Første gang du starter etter oppdateringen flyttes de
+  automatisk og kontrollert, og et opptak som krasjet like før oppdateringen
+  gjenopprettes som vanlig. Går flyttingen ikke, bruker appen den gamle
+  plasseringen denne gangen og sier fra én gang. Mac er uendret.
 - **Du kan gå tilbake til en eldre versjon uten at appen slutter å starte.**
   Fra denne versjonen åpner SundayRec også en database som en nyere versjon
   har oppdatert, i stedet for å stoppe før vinduet vises. Det gjelder

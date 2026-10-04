@@ -83,6 +83,9 @@ export const WARNING_BANNER_KEYS: Record<string, BackendWarningKey> = {
   disk_low: "backend-disk-low",
   // F1-M2: papirkurvens manifest var ulesbart og ble flyttet til side.
   trash_manifest_unreadable: "backend-trash-manifest",
+  // F-W10: flyttingen av databasen til Local AppData (Windows) feilet.
+  data_dir_move_failed: "backend-data-dir-move",
+  data_left_in_old_dir: "backend-data-left-in-old-dir",
 };
 
 /** Katalognøkkelens suffiks under `notify.*` for en kjent kode. */
@@ -93,6 +96,9 @@ export const WARNING_SUFFIXES: Record<string, string> = {
   disk_low: "diskLow",
   // F1-M2.
   trash_manifest_unreadable: "trashManifestUnreadable",
+  // F-W10.
+  data_dir_move_failed: "dataDirMoveFailed",
+  data_left_in_old_dir: "dataLeftInOldDir",
 };
 
 /** Byte per GB, 1024³ — det samme tallet forhåndssjekken og disken bruker. */

@@ -375,7 +375,7 @@ fn folder_is_writable(folder: &std::path::Path) -> bool {
 /// Read `<app-data>/last-error.json` (written by the recorder) into structured
 /// form. `None` if absent/unparseable — a missing file just means "no recent error".
 fn read_last_error(app: &AppHandle) -> Option<LastErrorInfo> {
-    let path = app.path().app_data_dir().ok()?.join("last-error.json");
+    let path = crate::appdata::dir(app).ok()?.join("last-error.json");
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str::<LastErrorInfo>(&raw).ok()
 }
@@ -384,7 +384,7 @@ fn read_last_error(app: &AppHandle) -> Option<LastErrorInfo> {
 /// persists at session end. Empty when absent/unparseable — a missing file just
 /// means "nothing recorded yet". The most recent entry is the "last recording".
 fn read_recording_history(app: &AppHandle) -> Vec<sundayrec_core::selftest::RecordingTelemetry> {
-    let Ok(dir) = app.path().app_data_dir() else {
+    let Ok(dir) = crate::appdata::dir(app) else {
         return Vec::new();
     };
     std::fs::read_to_string(dir.join("recording-telemetry-history.json"))
@@ -397,7 +397,7 @@ fn read_recording_history(app: &AppHandle) -> Vec<sundayrec_core::selftest::Reco
 /// effort: any failure (no dir, no permission) returns `None` so diagnostics
 /// still surfaces the text to the user.
 fn save_report(app: &AppHandle, markdown: &str) -> Option<String> {
-    let dir = app.path().app_data_dir().ok()?;
+    let dir = crate::appdata::dir(app).ok()?;
     std::fs::create_dir_all(&dir).ok()?;
     let path = dir.join("SundayRec-diagnose.md");
     std::fs::write(&path, markdown).ok()?;

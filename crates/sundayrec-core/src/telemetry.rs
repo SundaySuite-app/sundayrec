@@ -351,6 +351,23 @@ pub enum CounterName {
     /// An update was downloaded and installed.
     #[serde(rename = "update.installed")]
     UpdateInstalled,
+    // ── App data (F-W10, Windows) ────────────────────────────────────────────
+    // How the one-time move of the database from Roaming to Local AppData went
+    // on this start. Four outcomes of a closed enum, no path and no size: the
+    // number that says whether the fleet got through the move, and whether
+    // the fallback ever happens in the wild.
+    /// The database was moved to Local AppData on this start.
+    #[serde(rename = "appdata.move.moved")]
+    AppdataMoved,
+    /// The move failed; this session ran on the old Roaming folder.
+    #[serde(rename = "appdata.move.fallback")]
+    AppdataFellBack,
+    /// The database was already in Local AppData (every start after the move).
+    #[serde(rename = "appdata.move.already")]
+    AppdataAlreadyLocal,
+    /// No database anywhere: a new installation, which starts in Local.
+    #[serde(rename = "appdata.move.fresh")]
+    AppdataFresh,
 }
 
 /// Every [`CounterName`], in wire order. The single source of truth for the
@@ -376,6 +393,10 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::TrashRestored,
     CounterName::DiagnoseRun,
     CounterName::UpdateInstalled,
+    CounterName::AppdataMoved,
+    CounterName::AppdataFellBack,
+    CounterName::AppdataAlreadyLocal,
+    CounterName::AppdataFresh,
 ];
 
 impl CounterName {
@@ -406,6 +427,10 @@ impl CounterName {
             Self::TrashRestored => "trash.restored",
             Self::DiagnoseRun => "diagnose.run",
             Self::UpdateInstalled => "update.installed",
+            Self::AppdataMoved => "appdata.move.moved",
+            Self::AppdataFellBack => "appdata.move.fallback",
+            Self::AppdataAlreadyLocal => "appdata.move.already",
+            Self::AppdataFresh => "appdata.move.fresh",
         }
     }
 

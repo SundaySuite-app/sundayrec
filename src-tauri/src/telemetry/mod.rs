@@ -207,7 +207,7 @@ async fn purge_collected(pool: &SqlitePool, reset_to: payload::Watermarks) -> Ap
 /// would lose a batch if the insert failed, and re-queuing a batch is harmless
 /// (the `dedup_key` unique index absorbs it) while losing one is silent.
 pub async fn drain(app: &AppHandle, pool: &SqlitePool) -> AppResult<bool> {
-    let Ok(app_data_dir) = app.path().app_data_dir() else {
+    let Ok(app_data_dir) = crate::appdata::dir(app) else {
         return Ok(false);
     };
     let version = app.package_info().version.to_string();
@@ -320,7 +320,7 @@ async fn enqueue(pool: &SqlitePool, p: &TelemetryPayload, now_ms: i64) -> AppRes
 /// Read-only: no install id is minted, no watermark advances, no counter is
 /// spent. Calling it a hundred times changes nothing.
 pub async fn preview_payload(app: &AppHandle, pool: &SqlitePool) -> AppResult<TelemetryPreview> {
-    let Ok(app_data_dir) = app.path().app_data_dir() else {
+    let Ok(app_data_dir) = crate::appdata::dir(app) else {
         return Err(crate::error::AppError::Internal(
             "fant ikke app-datamappen".into(),
         ));
