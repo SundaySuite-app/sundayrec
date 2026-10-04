@@ -547,44 +547,73 @@ pub(crate) async fn move_database(
     //    -wal/-shm ved siden av den.
     let verified = async {
         let mut copy = connect(&tmp, true).await?;
-        let check: Vec<String> = sqlx::query("PRAGMA integrity_check")
-            .fetch_all(&mut copy)
-            .await
-            .map_err(|e| format!("integrity_check failed: {e}"))?
-            .iter()
-            .map(|r| r.get::<String, _>(0))
-            .collect();
-        if check != ["ok"] {
-            return Err(format!(
-                "integrity_check on the copy: {}",
-                check.join("; ").chars().take(200).collect::<String>()
-            ));
-        }
-        let counts = count_rows(&mut copy).await?;
+        let result = verify_copy(&mut copy, &source_counts).await;
+        // Lukk FØR tempfila eventuelt slettes, på alle veier ut: en tilkobling
+        // som bare droppes lukkes i bakgrunnen, og Windows sletter ikke en fil
+        // som fortsatt er åpen (da ble `.flytter` liggende igjen).
         let _ = copy.close().await;
-        if counts != source_counts {
-            return Err(format!(
-                "row counts differ: {source_counts:?} in Roaming, {counts:?} in the copy"
-            ));
-        }
-        Ok(counts)
+        result
     }
     .await;
     let counts = match verified {
         Ok(c) => c,
         Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
+            remove_with_retry(&tmp, seams);
             return Err(e);
         }
     };
 
     // 4. Atomisk til sitt rette navn.
     rename_with_retry(&tmp, local_db, seams).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
+        remove_with_retry(&tmp, seams);
         format!("rename failed: {e}")
     })?;
     sync_dir(dir);
     Ok((counts[0].unwrap_or(0), counts[1].unwrap_or(0)))
+}
+
+/// Kopiens `integrity_check` og radtall mot kildens. Tar tilkoblingen lånt, så
+/// kalleren lukker den uansett utfall.
+async fn verify_copy(
+    copy: &mut SqliteConnection,
+    source_counts: &[Option<i64>],
+) -> Result<Vec<Option<i64>>, String> {
+    let check: Vec<String> = sqlx::query("PRAGMA integrity_check")
+        .fetch_all(&mut *copy)
+        .await
+        .map_err(|e| format!("integrity_check failed: {e}"))?
+        .iter()
+        .map(|r| r.get::<String, _>(0))
+        .collect();
+    if check != ["ok"] {
+        return Err(format!(
+            "integrity_check on the copy: {}",
+            check.join("; ").chars().take(200).collect::<String>()
+        ));
+    }
+    let counts = count_rows(copy).await?;
+    if counts != source_counts {
+        return Err(format!(
+            "row counts differ: {source_counts:?} in Roaming, {counts:?} in the copy"
+        ));
+    }
+    Ok(counts)
+}
+
+/// Fjern en forlatt tempfil, med samme forsøk og pause som [`rename_with_retry`]
+/// (en antivirus eller en tilkobling som ennå ikke er helt lukket holder den et
+/// øyeblikk). Best-effort: blir den likevel liggende, skriver neste start over.
+fn remove_with_retry(path: &Path, seams: &Seams) {
+    for attempt in 0..RENAME_ATTEMPTS {
+        if attempt > 0 {
+            std::thread::sleep(seams.rename_pause);
+        }
+        match std::fs::remove_file(path) {
+            Ok(()) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(_) => {}
+        }
+    }
 }
 
 /// `rename` med [`RENAME_ATTEMPTS`] forsøk og en kort pause: en antivirus som
