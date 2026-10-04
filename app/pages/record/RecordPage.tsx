@@ -148,11 +148,7 @@ import {
   isRecording,
   markSessionStarted,
 } from "../../state/recording";
-import {
-  lastRecording,
-  loadRecordingCount,
-  recordings,
-} from "../../state/recordings";
+import { lastRecording, loadRecordingCount } from "../../state/recordings";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -959,7 +955,7 @@ function LastRecordingCard() {
         <Button
           variant="ghost"
           testId="record-last-reveal"
-          onClick={() => void reveal(last.path ?? null)}
+          onClick={() => void reveal(last.id ?? null)}
         >
           {t("app.done.show")}
         </Button>
@@ -1009,24 +1005,19 @@ function LastRecordingCard() {
  * mot nærmeste kant, og ville flyttet kortet vekk fra midten igjen.
  */
 /**
- * «Rediger» på kvitteringen. Opptaket åpnes ved sin RAD i historikken (A2: Rust
- * vet fila, siden sender ingen sti) — og raden kan mangle et øyeblikk etter at
- * opptaket ble ferdig, før `loadRecordingCount()` har lest den. Så: finn den i
- * lista, les lista på nytt hvis den ikke står der, og åpne. Finnes den fortsatt
- * ikke, sier Rediger «Kunne ikke åpne opptaket» i stedet for å tie.
+ * Raden kvitteringens «Rediger» og «Vis i Finder» handler på — den EKTE veien
+ * inn i begge, som navngir en rad og aldri en sti (A2, B-familien). Rust skrev
+ * raden rett før `recording://finished` og la id-en i hendelsen; at den ikke
+ * er der betyr at raden ikke ble skrevet, og da finnes ingenting å handle på.
+ * Som reserve (en hendelse uten id) kan historikken ha lest raden inn mens
+ * kvitteringen sto: samme fil, samme rad. Aldri en søk på stien etterpå.
  */
-async function editFinished(
-  path: string,
-  startedAtMs: number | null,
-): Promise<void> {
-  const idOf = (): string | undefined =>
-    recordings.peek()?.find((r) => r.path === path)?.id;
-  let id = idOf();
-  if (!id) {
-    await loadRecordingCount();
-    id = idOf();
-  }
-  openInEditor(id, startedAtMs, basename(path));
+function finishedRowId(
+  finished: { path: string; recordingId: string | null },
+  loaded: { path?: string; id?: string | null } | null | undefined,
+): string | null {
+  if (finished.recordingId) return finished.recordingId;
+  return loaded?.path === finished.path ? (loaded.id ?? null) : null;
 }
 
 function Done() {
@@ -1056,6 +1047,7 @@ function Done() {
   if (!finished) return null;
 
   const row = rows?.path === finished.path ? rows : null;
+  const rowId = finishedRowId(finished, rows);
   // Se `LastRecordingCard`: 0 er «ukjent», ikke «null sekunder».
   const span = spanOfSeconds(row?.durationSec || null);
   const size = formatBytes(row?.fileSizeBytes ?? null, locale.value);
@@ -1075,13 +1067,20 @@ function Done() {
         {row?.filename ?? basename(finished.path)}
       </div>
       <div class={styles.row}>
+        {/*
+          Uten rad finnes ingenting å åpne eller vise, og knappene sier det
+          (som i biblioteket) i stedet for å lukke seg uten et ord.
+        */}
         <Button
           variant="primary"
+          disabled={!rowId}
+          disabledReason={t("app.done.revealFailed")}
           testId="record-done-edit"
           onClick={() =>
-            void editFinished(
-              finished.path,
+            openInEditor(
+              rowId ?? undefined,
               row?.startedAt ?? row?.timestamp ?? null,
+              basename(finished.path),
             )
           }
         >
@@ -1089,8 +1088,10 @@ function Done() {
         </Button>
         <Button
           variant="secondary"
+          disabled={!rowId}
+          disabledReason={t("app.done.revealFailed")}
           testId="record-done-reveal"
-          onClick={() => void reveal(finished.path)}
+          onClick={() => void reveal(rowId)}
         >
           {t("app.done.show")}
         </Button>

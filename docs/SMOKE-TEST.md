@@ -390,7 +390,14 @@ hatch.
    - VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
 4. Confirm the file exists on disk at the path shown — **«Vis i Finder»** on
    the receipt card is the shortest way, and it says so honestly («Fant ikke
-   fila på disken.») if the file is not where the row claims.
+   fila på disken.») if the file is not where the row claims. The card's
+   **«Rediger»** and **«Vis i Finder»** act on the history ROW id that
+   `recording://finished` carries (Rust wrote the row just before it); with no
+   row they are off, with the same reason on hover, and never silently do
+   nothing.
+   - VERIFIED-BY: e2e/record.spec.ts::kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien
+   - VERIFIED-BY: e2e/record.spec.ts::uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor
+   - VERIFIED-BY: app/state/recording.test.ts::kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id
    - **Expected:** in the save folder from Oppsett, named by the profile's
      filename pattern — the same folder and name a build from before
      security finding E1 gave (RIG-DAY «(e1)» / «(we1)»).
@@ -503,8 +510,13 @@ lenger».
 2. Use **«Vis i Finder»** on the row.
    - **Expected:** the OS file manager opens with the recording selected. This
      goes through the Rust command `recordings_reveal` — the webview holds no
-     `opener:` permission — which only shows a file inside the recordings
-     folder, one the history knows, or an export made in this session.
+     `opener:` permission — which takes the history ROW's id and shows the file
+     the database holds for it (never a path from the page). The same goes for
+     «Siste opptak» and the receipt after a recording; the export receipt uses
+     `recordings_reveal_export` and the token the export's result carried.
+   - VERIFIED-BY: e2e/library.spec.ts::«Vis i Finder» på en rad sender radens id til Rust, aldri stien
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_recording_is_revealed_by_its_row_id_wherever_it_lies
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::an_id_with_no_row_is_refused_and_a_path_is_no_id
    - Change the save folder (Opptak → «Hvor skal opptakene?») to another folder
      and press **«Vis i Finder»** on a row recorded BEFORE the change.
      **Expected:** it is still shown (the history knows it).
@@ -513,16 +525,46 @@ lenger».
      says to choose a folder inside it, such as «SundayRec» in Dokumenter — not
      just «Kunne ikke lagre innstillingen». (An app or a Keynote/Logic project
      is refused the same way, but the native picker rarely lets you pick one;
-     the check is there for a webview that does not use the picker.) A folder
+     the check is there for a folder the picker does let through.) A folder
      chosen BEFORE this version is never questioned: on an upgraded machine
      whose folder would now be refused, recording goes on exactly as before.
-   - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::koden fra et avvist settings_save når fram til setningen
+   - The folder window is the app's own (the A2 family): **«Velg mappe …»** in
+     «Hvor skal opptakene?» opens the OS folder window from Rust, which can
+     create a folder, and what it answers is vetted and stored by Rust — the
+     page shows the folder Rust stored. Cancelling the window changes nothing.
+     Saving any other setting afterwards (change the language, say) leaves the
+     folder as it was.
+   - **Upgrading from the old app (the localStorage hand-over, #314 B1):** on a
+     machine that still has the old app's settings, the FIRST launch of this
+     version carries over the old recordings folder (and the rest). It happens
+     once, counted by Rust (`legacy_import_done`): nothing the page sends later
+     can repeat it, and a folder that does not exist, cannot be written to, or is
+     the app's own data folder (`<app-data>/recovery` and the like) is never
+     taken — the folder you already had stays, and the rest is imported.
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_first_hand_over_from_an_old_installation_carries_its_folder
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_second_hand_over_cannot_move_the_recordings_folder
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_page_reading_its_settings_closes_the_hand_over
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::the_first_hand_over_is_taken_and_a_second_one_is_refused_and_writes_nothing
+   - VERIFIED-BY: src-tauri/src/settings/mod.rs::a_hand_over_on_an_install_with_a_bridged_settings_row_still_runs_once
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_save_folder_in_the_apps_own_data_folder_is_refused
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_hand_over_vet_refuses_an_existing_writable_folder_in_app_data
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_hand_over_vet_refuses_a_folder_that_is_missing_or_is_a_file
+   - VERIFIED-BY: app/lib/migrate-legacy-settings.test.ts::treats «settings_import_done» as done: key removed, flag set, nothing rescheduled
+   - VERIFIED-BY: app/pages/setup/folder-refusal.test.ts::en avvisning fra mappevinduet når fram til setningen
    - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_legacy_save_folder_the_vet_refuses_still_loads_saves_and_records
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::a_picked_save_folder_meets_the_real_vet
+   - VERIFIED-BY: src-tauri/src/commands/settings.rs::the_renderer_cannot_set_a_folder_the_vet_would_have_accepted
+   - VERIFIED-BY: e2e/control-room.spec.ts::«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret
+   - VERIFIED-BY: e2e/control-room.spec.ts::en mappe Rust avviser blir stående som den var, og setningen sier hvorfor
    - Export a recording to a folder OUTSIDE the recordings folder (Redigering →
      Eksporter → «Velg mappe…», e.g. the Desktop), then press **«Vis i
      Finder»** on the receipt. **Expected:** the exported file is shown.
      Restart the app: the receipt is gone, and nothing else can reveal that
-     export any more — that is the policy, not a bug.
+     export any more — that is the policy, not a bug (the button's token is
+     only good for this session).
+   - VERIFIED-BY: e2e/export-page.spec.ts::«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_forged_foreign_or_misplaced_export_token_is_refused
+   - VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::a_symlink_swapped_in_at_a_delivered_name_is_refused
    - On a missing file (delete one by hand in Finder, then press its row's
      button) **Expected:** the toast «Fant ikke fila på disken.», not silence.
 3. Press **«Slett»** on a row.
@@ -533,6 +575,11 @@ lenger».
      nobody learns exists. Inside it, «Legg tilbake» restores and «Slett nå» is
      the one genuinely dangerous button — and there **CANCEL is the Enter
      choice** and the confirm is a red SECONDARY.
+   - «Slett» sends the history rows' ids (`trash_move` takes `recording_ids`,
+     never paths); Rust finds the files and moves them with their sidecars.
+     Retention does not come through this command.
+   - VERIFIED-BY: src-tauri/src/commands/trash.rs::a_recording_is_trashed_by_its_row_id_with_its_sidecar_and_nothing_else
+   - VERIFIED-BY: src-tauri/src/commands/trash.rs::an_id_the_history_does_not_know_refuses_the_whole_call
 4. **Retention** (owner decision 2026-08-31): turn on «Slett gamle opptak» on
    Avansert with a window older than an existing recording, restart the app.
    - **Expected:** the old recording MOVES to the Papirkurv — never a hard
@@ -1251,7 +1298,14 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      button were dropped — the restore is automatic now, see
      editor/loader.ts). After a successful **Eksporter** the draft is deleted,
      so a later reopen restores nothing.
+   - The draft, «Innhold» and the sermon pick are all named by the recording's
+     File token (A3/A4): the page never sends the path, and Rust derives
+     `<stem>.cuts-draft.json`, `.meta.json` and `.feedback.json` beside the
+     file the token stands for. Nothing about where they land has changed.
    - VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
+   - VERIFIED-BY: app/editor/cuts.test.ts::skrives med opptakets lapp, aldri stien
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_is_kept_read_and_removed_beside_the_recording_its_token_stands_for
+   - VERIFIED-BY: src-tauri/src/commands/editor.rs::a_sidecar_command_with_a_forged_token_never_touches_the_disk
      ⚠️ **The standalone mastering panel is gone** (the old steps 6 and 7 — the
      `_mastert` file, «Forhåndsvis mastering (15 s)», the apply-with-progress and its
      Avbryt). `editor_master_apply` is no longer reached from anywhere; the preview
@@ -1495,6 +1549,17 @@ store:
 
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the store, not just the select
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
+
+**The webview holds no updater permission (#314 S2).** `capabilities/` has no
+`updater:` grant and `build.rs` no longer generates one; the page cannot call
+`plugin:updater|check` (with `allowDowngrades`, `proxy`, `headers`), so it
+cannot be offered an older signed release. Updating is Rust's own
+`update_check`/`update_install`, below — if «Se etter oppdateringer nå» works
+in a release build, the lock cost nothing.
+
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_webview_holds_no_updater_permission
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::nothing_the_webview_is_built_from_names_the_updater_plugin
+- VERIFIED-BY: src-tauri/src/commands/recordings_open.rs::the_build_script_no_longer_writes_an_updater_capability
 
 1. Open **the gear → Avansert → «Oppdateringer»** and click **«Se etter
    oppdateringer nå»**.

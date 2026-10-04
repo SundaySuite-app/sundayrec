@@ -13,65 +13,82 @@
  * to anslag som er «omtrent like» ville betydd at kortet og skinnen kan si
  * forskjellige ting om den samme disken.
  *
- * ## Native dialog, ikke et tekstfelt
+ * ## Native dialog, ikke et tekstfelt — og Rust åpner den
  *
- * `window.api.pickFolder` åpner OS-ets egen mappevelger. Det er ikke bare
- * hyggeligere enn å skrive en sti: dialogen ER autorisasjonen — bakenden
- * håndhever at appen bare skriver til steder brukeren faktisk har pekt på.
+ * `window.api.settingsPickSaveFolder` ber RUST åpne OS-ets egen mappevelger,
+ * sjekke mappa og lagre den. Det er ikke bare hyggeligere enn å skrive en sti:
+ * dialogen ER autorisasjonen, og siden den åpnes av prosessen og ikke av
+ * nettvisningen kan ingen sti sendes derfra uten at en dialog ble vist.
+ * Før (A2-familien) åpnet siden velgeren selv og sendte svaret tilbake i
+ * `settings_save` — og med den samme kommandoen kunne et kompromittert
+ * webview satt opptaksmappa til hvilken som helst mappe uten noen dialog.
+ * `settings_save` rører ikke mappa lenger; svaret her er de lagrede
+ * innstillingene, og siden speiler dem.
  *
  * ## Når bakenden sier nei
  *
  * En NY mappe sjekkes før den lagres: ikke en app eller pakke, ikke roten av
- * disken eller selve hjemmemappa, ikke `~/.ssh` og slike. Avvisningen ruller
- * valget tilbake som enhver feilet lagring, og toasten sier hvorfor
- * (`folder-refusal.ts`). En mappe som allerede står lagret, sjekkes aldri.
+ * disken eller selve hjemmemappa, ikke `~/.ssh` og slike. Ingenting lagres, og
+ * toasten sier hvorfor (`folder-refusal.ts`). En mappe som allerede står
+ * lagret, sjekkes aldri.
  */
 
 import { useState } from "preact/hooks";
 
+import { errorCode } from "@lib/error-code-core";
+
 import { t, tf } from "../../i18n";
+import { useReceipt } from "../../settings/use-receipt";
 import {
   currentRoomMinutes,
   diskFreeBytes,
   refreshDiskSpace,
 } from "../../state/disk";
-import { usePatch } from "../../settings/use-patch";
-import { settings } from "../../state/settings";
+import { patchSettings, settings } from "../../state/settings";
 import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
 import { Receipt } from "../../ui/Receipt/Receipt";
+import { toast } from "../../ui/toast";
 import { folderRefusalMessage } from "./folder-refusal";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
 
 export function FolderPage() {
   const folder = (settings.value.saveFolder ?? "").trim();
-  // Den delte lagringsmodellen (`usePatch`), ikke en håndlagd: kvitteringen
-  // teller ned, og en feilet skrivning ruller tilbake i stedet for å la
-  // skjermen stå og påstå en mappe basen ikke har.
-  const save = usePatch();
+  // Kvitteringen teller ned av seg selv (`useReceipt`). Selve lagringen er
+  // Rusts: svaret på valget ER det som ble lagret, så det finnes ingenting å
+  // rulle tilbake — en avvisning har ikke rørt noe.
+  const { receipt, show, reset } = useReceipt();
   const [picking, setPicking] = useState(false);
 
   async function pick(): Promise<void> {
-    if (picking || save.busy) return;
+    if (picking) return;
     setPicking(true);
     try {
-      const chosen = await window.api.pickFolder();
+      const answer = await window.api.settingsPickSaveFolder();
+      if (!answer.ok) {
+        // Bakenden sa nei til mappa (en app, roten av disken …) — toasten
+        // sier hvorfor, ikke bare at det ikke ble lagret.
+        toast(
+          "error",
+          folderRefusalMessage(errorCode(answer.error)) ??
+            t("general.saveFailed"),
+        );
+        show("failed");
+        return;
+      }
       // Avbrutt dialog: ingen endring, ingen kvittering. En «Lagret ✓» her
       // ville vært en kvittering for noe som ikke skjedde.
-      if (!chosen) return;
-      await save.write(
-        { saveFolder: chosen },
-        {
-          // Ny disk, nytt tall: plassen på den gamle mappen sier ingenting om
-          // den nye, og «plass til 300 t» må ikke bli stående fra forrige valg.
-          after: () => refreshDiskSpace(),
-          // Bakenden kan si nei til mappa (en app, roten av disken …) — da
-          // sier toasten hvorfor, ikke bare at det ikke ble lagret.
-          failedMessage: folderRefusalMessage,
-        },
-      );
+      if (!answer.settings) {
+        reset();
+        return;
+      }
+      patchSettings({ saveFolder: answer.settings.saveFolder ?? null });
+      show("saved");
+      // Ny disk, nytt tall: plassen på den gamle mappen sier ingenting om
+      // den nye, og «plass til 300 t» må ikke bli stående fra forrige valg.
+      await refreshDiskSpace();
     } finally {
       setPicking(false);
     }
@@ -80,7 +97,7 @@ export function FolderPage() {
   const pickButton = (
     <Button
       variant={folder ? "secondary" : "primary"}
-      busy={picking || save.busy}
+      busy={picking}
       testId="folder-pick"
       onClick={() => void pick()}
     >
@@ -103,7 +120,7 @@ export function FolderPage() {
             {spaceText()}
           </p>
           <div class={styles.footer}>
-            <Receipt state={save.receipt} testId="folder-receipt" />
+            <Receipt state={receipt} testId="folder-receipt" />
           </div>
         </Card>
       ) : (

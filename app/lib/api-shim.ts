@@ -31,7 +31,6 @@ import {
   isTauri,
 } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n";
 import type { PruneSummary } from "../../legacy/bindings/PruneSummary";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
@@ -115,35 +114,6 @@ const notifier = createNotifierSlot({
  */
 export function setShimNotifier(override: Partial<ShimNotifier> | null): void {
   notifier.set(override);
-}
-
-/** A native file/folder picker that returns the chosen path (or null), never
- *  throwing — a denied permission or cancel just yields null. */
-async function pickPath(opts: {
-  directory?: boolean;
-  name?: string;
-  extensions?: string[];
-  /** Multiple filter groups (first is the default on macOS). Takes precedence
-   *  over the single name/extensions pair when present. */
-  filters?: { name: string; extensions: string[] }[];
-}): Promise<string | null> {
-  try {
-    const filters =
-      opts.filters && opts.filters.length
-        ? opts.filters
-        : opts.extensions && opts.name
-          ? [{ name: opts.name, extensions: opts.extensions }]
-          : undefined;
-    const res = await openDialog({
-      directory: !!opts.directory,
-      multiple: false,
-      filters,
-    });
-    return typeof res === "string" ? res : null;
-  } catch (e) {
-    console.warn("[api-shim] file dialog failed", e);
-    return null;
-  }
 }
 
 /** Convert a local filesystem path to an `asset://` URL WKWebView can load in an
@@ -755,8 +725,10 @@ const api: Record<string, unknown> = {
       moved: 0,
       disabled: true,
     }),
-  trashMove: async (paths: string[]) =>
-    invoke<TrashEntry[]>("trash_move", { paths }),
+  // Recordings are named by their history rows' ids (B1): Rust looks the files
+  // up, and refuses an id the history does not hold.
+  trashMove: async (recordingIds: string[]) =>
+    invoke<TrashEntry[]>("trash_move", { recordingIds }),
   trashList: async () => call<TrashEntry[]>("trash_list", undefined, []),
   trashRestore: async (id: string) =>
     invoke<TrashEntry>("trash_restore", { id }),
@@ -943,7 +915,23 @@ const api: Record<string, unknown> = {
   // «Åpne opptaksmappen» was refused on every click (and the refusal swallowed
   // here). Both now go through Rust commands that decide what may be shown —
   // see `src-tauri/src/commands/recordings_open.rs`.
-  pickFolder: async () => pickPath({ directory: true }),
+  // «Velg mappe …» for opptaksmappen: RUST åpner mappevelgeren, sjekker mappa
+  // og lagrer `saveFolder` selv — ingen sti går noen vei, og `settings_save`
+  // rører ikke mappa (src-tauri/src/commands/settings.rs). Svaret er de
+  // lagrede innstillingene (`null` = avbrutt). Kaster aldri: en avvisning
+  // reiser som `{ ok: false, error }`, så siden kan si hvilken regel
+  // (`save_folder_*`).
+  settingsPickSaveFolder: async () => {
+    try {
+      const settings = await invoke<Settings | null>(
+        "settings_pick_save_folder",
+      );
+      return { ok: true, settings: settings ?? null };
+    } catch (e) {
+      console.warn("[api-shim] settings_pick_save_folder failed", e);
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
   // No argument: the backend resolves the recordings folder itself (the
   // configured one, or `<Documents>/SundayRec` — the old call was skipped when
   // no folder was configured, which is the default). Through `call`, so a
@@ -968,10 +956,13 @@ const api: Record<string, unknown> = {
               )
           : null,
     )) !== false,
-  // The path is passed through VERBATIM: the backend's first check is an
-  // exact match against the history row the renderer got it from.
-  revealFile: async (p: string) =>
-    quietAction("recordings_reveal", { path: p }),
+  // «Vis i Finder» names a THING Rust knows, never a path (B-family): a history
+  // row's id, or the token the export's result carried. The backend looks the
+  // file up itself and refuses what it does not know.
+  revealRecording: async (recordingId: string) =>
+    quietAction("recordings_reveal", { recordingId }),
+  revealExport: async (exportToken: string) =>
+    quietAction("recordings_reveal_export", { exportToken }),
 
   // ── One-time notices ──────────────────────────────────────────────────
   //
@@ -1542,33 +1533,41 @@ const api: Record<string, unknown> = {
   // «Innhold» lives in the recording's `.meta.json` — the sidecar kind the
   // Electron editor kept title/speaker/description in, and one that already
   // travels with the recording through the papirkurv.
-  editorReadContent: async (fp: string) =>
-    call("editor_read_sidecar", { mediaPath: fp, sidecar: "meta" }, null),
+  //
+  // Every sidecar call names the recording by its File token (A3), never its
+  // path: Rust resolves the token and derives `<stem>.meta.json` & co. itself,
+  // so a sidecar can only land beside a recording Rust opened.
+  editorReadContent: async (sourceToken: string) =>
+    call("editor_read_sidecar", { sourceToken, sidecar: "meta" }, null),
   editorSaveContent: async (
-    fp: string,
+    sourceToken: string,
     content: { title: string; speaker: string; description: string },
   ) =>
     call(
       "editor_write_sidecar",
-      { mediaPath: fp, sidecar: "meta", value: content },
+      { sourceToken, sidecar: "meta", value: content },
       false,
     ),
-  editorDeleteContent: async (fp: string) =>
-    call("editor_delete_sidecar", { mediaPath: fp, sidecar: "meta" }, false),
-  editorReadCutsDraft: async (fp: string) =>
-    call("editor_read_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, null),
+  editorDeleteContent: async (sourceToken: string) =>
+    call("editor_delete_sidecar", { sourceToken, sidecar: "meta" }, false),
+  editorReadCutsDraft: async (sourceToken: string) =>
+    call("editor_read_sidecar", { sourceToken, sidecar: "cutsDraft" }, null),
   // The old main wrapped the cut array as { cuts, ts }; preserve that so the
   // loader's `draft.cuts` / age check still work.
-  editorSaveCutsDraft: async (fp: string, cuts: unknown) =>
+  editorSaveCutsDraft: async (sourceToken: string, cuts: unknown) =>
     call(
       "editor_write_sidecar",
-      { mediaPath: fp, sidecar: "cutsDraft", value: { cuts, ts: Date.now() } },
+      {
+        sourceToken,
+        sidecar: "cutsDraft",
+        value: { cuts, ts: Date.now() },
+      },
       false,
     ).then(() => true),
-  editorDeleteCutsDraft: async (fp: string) =>
+  editorDeleteCutsDraft: async (sourceToken: string) =>
     call(
       "editor_delete_sidecar",
-      { mediaPath: fp, sidecar: "cutsDraft" },
+      { sourceToken, sidecar: "cutsDraft" },
       false,
     ).then(() => true),
   // editor_segments → EditorSegment[]. The consumer (editor/detection.ts) casts
@@ -1582,17 +1581,13 @@ const api: Record<string, unknown> = {
   // `<stem>.feedback.json`. Resolves to whether anything was written: picking
   // the block the detector already chose is not a correction. Never throws; a
   // failure to record must not interrupt an edit the user is in the middle of.
-  editorRecordSermonPick: async (fp: string, request: unknown) =>
-    call("editor_record_sermon_pick", { mediaPath: fp, request }, false),
+  editorRecordSermonPick: async (sourceToken: string, request: unknown) =>
+    call("editor_record_sermon_pick", { sourceToken, request }, false),
   // The other half: which of these segments the human's stored correction means
   // (`null` when there is none). Matched on OFFSETS in the backend, because the
   // indices in a stored record mean nothing once detection has run again.
-  editorSermonPick: async (fp: string, segments: unknown) =>
-    call<number | null>(
-      "editor_sermon_pick",
-      { mediaPath: fp, segments },
-      null,
-    ),
+  editorSermonPick: async (sourceToken: string, segments: unknown) =>
+    call<number | null>("editor_sermon_pick", { sourceToken, segments }, null),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a

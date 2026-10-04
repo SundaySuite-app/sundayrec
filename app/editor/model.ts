@@ -97,9 +97,10 @@ export type PlaybackSource = "original" | "proxy" | "none";
 // ── Den muterbare sannheten ─────────────────────────────────────────────────
 
 export const E = {
-  /** Stien til opptaket som er åpent. Tom = ingen. Bare til visning, avspilling
-   *  og sidevognene (`media_path`, PR-D) — ingen kommando som LESER eller
-   *  RENDRER opptaket tar den imot. */
+  /** Stien til opptaket som er åpent. Tom = ingen. Bare til visning
+   *  (mappenavnet, filtypen) og avspilling (`asset://` trenger en adresse) —
+   *  INGEN kommando tar den imot: verken de som leser eller rendrer opptaket
+   *  eller sidevognene og prekenvalget (A3/A4), som alle tar `sourceToken`. */
   filePath: "",
   /** Lappen Rust ga opptaket da det ble åpnet (`OpenedRecording.token`). Det
    *  eneste som peker ut opptaket for `editor_*`-kommandoene (A2). Tom = ingen. */

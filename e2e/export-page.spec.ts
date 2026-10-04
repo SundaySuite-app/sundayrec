@@ -4,6 +4,7 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
+  PATHS_OF_RECORDING_IDS,
   recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
@@ -14,7 +15,9 @@ import {
   exportOkMastered,
   EXPORT_HELD,
   FILE,
+  OPENED,
   RECORDING_ID,
+  REVEAL_TOKEN,
 } from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
@@ -171,7 +174,8 @@ test.describe("eksportering", () => {
       trash_move: fn(`(args) => {
         const list = (window.__E2E_TRASH__ ||= []);
         const now = Date.now();
-        const moved = (args.paths || []).map((p, i) => ({
+        const paths = (${PATHS_OF_RECORDING_IDS})(args.recordingIds);
+        const moved = paths.map((p, i) => ({
           id: "e2e-trashed-" + now + "-" + i,
           originalPath: p,
           trashedPath: p + ".trashed",
@@ -301,6 +305,33 @@ test.describe("eksportering", () => {
     await expect(page.getByTestId("library-row")).toHaveCount(1);
   });
 
+  test("«Vis i Finder» på kvitteringen sender lappen fra eksportens svar, aldri stien", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN: la `ReceiptCard` kalle `window.api.revealExport` med
+    // `exportedPath` i stedet for lappen, og denne blir rød — Rust tar ikke
+    // lenger imot en sti (B-familien, PR-D).
+    await openThenExport(page, {
+      recordings_reveal_export: fn(`(args) => {
+        (window.__E2E_REVEALS__ ||= []).push(args);
+        return null;
+      }`),
+    });
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+
+    await page.getByTestId("editor-exported-reveal").click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __E2E_REVEALS__?: unknown[] })
+              .__E2E_REVEALS__,
+        ),
+      )
+      .toEqual([{ exportToken: REVEAL_TOKEN }]);
+  });
+
   // F2-C-B: kvitteringen sier hvilket NIVÅ fila havnet på.
   //
   // «−16 LUFS» er ikke pynt. Bakenden planlegger nå pass 2 slik at loudnorm
@@ -428,7 +459,7 @@ const CAPTURE_WRITES: Fixtures = {
   }`),
 };
 
-type SidecarWrite = { mediaPath: string; sidecar: string; value: unknown };
+type SidecarWrite = { sourceToken: string; sidecar: string; value: unknown };
 
 test.describe("eksportering — innhold", () => {
   test("feltene følger eksporten, og tittelen blir filnavnet", async ({
@@ -494,7 +525,8 @@ test.describe("eksportering — innhold", () => {
     );
     const meta = writes.filter((w) => w.sidecar === "meta");
     expect(meta).toHaveLength(1);
-    expect(meta[0]?.mediaPath).toBe(FILE);
+    // Opptakets LAPP, aldri stien (A3): Rust avleder `.meta.json` selv.
+    expect(meta[0]?.sourceToken).toBe(OPENED.token);
     expect(meta[0]?.value).toEqual({
       title: "Den gode hyrde",
       speaker: "Kari Nordmann",

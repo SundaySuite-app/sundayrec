@@ -459,6 +459,72 @@ test.describe("opptaksoverlegget", () => {
     await page.getByTestId("record-done-ok").click();
     await expect(done).toHaveCount(0);
   });
+
+  test("kvitteringens «Vis i Finder» handler på radens id fra hendelsen, ikke på en rad funnet via stien", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN: la `finishedRowId` i `RecordPage.tsx` lete etter raden
+    // på stien igjen (som `rowIdFor` gjorde), og denne blir rød — listen har en
+    // ANNEN rad på samme sti, og Rust sa hvilken som er opptakets.
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        recordings_list: [
+          recordingRow({
+            id: "rec-liste",
+            file_path: "/Users/test/Opptak/2026-08-23.mp3",
+          }),
+        ],
+        recordings_reveal: fn(`(args) => {
+          (window.__E2E_REVEALS__ ||= []).push(args);
+          return true;
+        }`),
+      },
+      settings: { ...CHOSEN, saveFolder: "/Users/test/Opptak" },
+      goto: "home",
+    });
+    await emit(page, "recording-finished", {
+      file_path: "/Users/test/Opptak/2026-08-23.mp3",
+      has_video: false,
+      recording_id: "rec-hendelse",
+    });
+    const reveal = page.getByTestId("record-done-reveal");
+    await expect(reveal).not.toHaveAttribute("aria-disabled", "true");
+    await reveal.click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_REVEALS__))
+      .toEqual([{ recordingId: "rec-hendelse" }]);
+  });
+
+  test("uten en rad er kvitteringens «Rediger» og «Vis i Finder» av, og sier hvorfor", async ({
+    page,
+  }) => {
+    // Raden ble ikke skrevet: hendelsen har ingen id, og historikken har ingen
+    // rad på stien. Knappene lukker seg ikke i stillhet — de er av, med grunn.
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, recordings_list: [] },
+      settings: { ...CHOSEN, saveFolder: "/Users/test/Opptak" },
+      goto: "home",
+    });
+    await emit(page, "recording-finished", {
+      file_path: "/Users/test/Opptak/2026-08-23.mp3",
+      has_video: false,
+    });
+    await expect(page.getByTestId("record-done")).toBeVisible();
+    for (const id of ["record-done-edit", "record-done-reveal"]) {
+      const button = page.getByTestId(id);
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      await expect(button).toHaveAttribute(
+        "title",
+        "Fant ikke fila på disken.",
+      );
+    }
+    // «Ferdig» virker som før.
+    await page.getByTestId("record-done-ok").click();
+    await expect(page.getByTestId("record-done")).toHaveCount(0);
+  });
 });
 
 test.describe("bannerne på opptakssiden", () => {

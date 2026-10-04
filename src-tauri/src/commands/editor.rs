@@ -41,9 +41,11 @@
 //! all: the request says `use_intro`/`use_outro`, and Rust reads the clip from
 //! the saved settings.
 //!
-//! The opening commands also answer with the canonical path, for display and for
-//! the sidecar commands (`media_path`) that PR-D converts. No command that
-//! reads or renders the recording accepts it back.
+//! The opening commands also answer with the canonical path — for display and
+//! for `<audio src>` (`asset://` needs an address). No command accepts it back:
+//! not the ones that read or render the recording, and not the sidecar and
+//! sermon-pick commands either (A3/A4, PR-D): those take the same token and
+//! derive `<stem>.meta.json` & co. in Rust from what it resolves to.
 
 use std::path::{Path, PathBuf};
 
@@ -132,10 +134,11 @@ pub struct OpenedRecording {
     pub token: String,
     /// The file's own name («2026-08-02 Gudstjeneste.mp3»), for the heading.
     pub name: String,
-    /// The canonical path, plain: what `<audio src>` plays (`asset://`) and what
-    /// the sidecar commands (`editor_read_sidecar` & co., PR-D) still take.
-    /// NOT accepted by anything that reads or renders the recording — those
-    /// take `token` and nothing else.
+    /// The canonical path, plain: what the page SHOWS (the folder it sits in)
+    /// and what `<audio src>` plays (`asset://` needs an address, and Rust
+    /// granted the scope to exactly this file). NOT accepted by any command —
+    /// every one that reads, renders or keeps something for the recording
+    /// takes `token` and nothing else.
     pub path: String,
 }
 
@@ -202,9 +205,45 @@ pub(crate) async fn open_source<G>(
 where
     G: FnOnce(&Path) -> AppResult<()>,
 {
+    open_vetted_source(chosen, place, grant, false).await
+}
+
+/// Whether `place` ends in an extension the editor's open dialog offers
+/// ([`AUDIO_EXT`], [`VIDEO_EXT`]) — compared without regard to case, as a file
+/// manager shows `OPPTAK.MP3`.
+fn has_media_extension(place: &Path) -> bool {
+    place
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|e| AUDIO_EXT.iter().chain(VIDEO_EXT).any(|m| *m == e))
+}
+
+/// [`open_source`], and `only_media`: a place that is not an audio or video file
+/// by its name is refused (`source_refused`) AFTER it has been vetted and
+/// BEFORE the webview's `asset://` scope is widened to it or a token is minted.
+///
+/// The drop handler asks for it. A file the operator PICKS has been looked for
+/// in a dialog that says what it offers (and whose «all files» filter is a
+/// deliberate choice), but a drop is anything the OS was handed — and a dropped
+/// `.cmd` or key file would otherwise become readable by the page through
+/// `asset://`. The name is judged on the CANONICAL file, so a `take.mp3` that is
+/// a link to a file that is not media is not media.
+async fn open_vetted_source<G>(
+    chosen: &ChosenPaths,
+    place: PathBuf,
+    grant: G,
+    only_media: bool,
+) -> AppResult<OpenedRecording>
+where
+    G: FnOnce(&Path) -> AppResult<()>,
+{
     let vetted = off_runtime(move || chosen_paths::vet(&place, ChosenKind::File))
         .await?
         .map_err(source_error)?;
+    if only_media && !has_media_extension(vetted.place()) {
+        return Err(source_error(ChosenError::Refused));
+    }
     let plain = chosen_paths::plain_string(vetted.place())
         .ok_or_else(|| source_error(ChosenError::Refused))?;
     editor::allow_asset_path(&plain, grant)?;
@@ -343,7 +382,7 @@ pub(crate) async fn dropped_recording<G>(
 where
     G: FnOnce(&Path) -> AppResult<()>,
 {
-    let (opened, error) = match open_source(chosen, file, grant).await {
+    let (opened, error) = match open_vetted_source(chosen, file, grant, true).await {
         Ok(opened) => (Some(opened), None),
         Err(e) => (None, Some(leading_code(&e))),
     };
@@ -771,7 +810,6 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 pub async fn editor_export(
     app: tauri::AppHandle,
     engine: State<'_, ExportEngine>,
-    delivered: State<'_, super::recordings_open::DeliveredExports>,
     chosen: State<'_, ChosenPaths>,
     db: State<'_, Db>,
     request: EditorExportRequest,
@@ -809,10 +847,27 @@ pub async fn editor_export(
     // number against the very question the counter exists to answer.
     crate::telemetry::counters::count(export_counter_for_format(&request.format));
     // The receipt's «Vis i Finder» may show this file even when it was saved
-    // outside the recordings folder — and only because the engine delivered it
-    // (see `commands::recordings_open`).
-    delivered.record(&result.output_path);
+    // outside the recordings folder — and only because the engine delivered it,
+    // by the token minted here (see `commands::recordings_open`).
+    let result = with_reveal_token(&chosen, result).await;
     Ok(result)
+}
+
+/// `result` with the Export token for the file the engine has just delivered,
+/// or without one when the token store cannot vet it (it is then simply not
+/// revealable — the receipt shows an off button). The ONE place an Export token
+/// is minted: the place is the output of `editor::export`, which is why
+/// `editor_export` hands over the whole result and not a path.
+async fn with_reveal_token(
+    chosen: &ChosenPaths,
+    mut result: EditorExportResult,
+) -> EditorExportResult {
+    let place = PathBuf::from(&result.output_path);
+    match off_runtime(move || chosen_paths::vet(&place, ChosenKind::Export)).await {
+        Ok(Ok(vetted)) => result.reveal_token = Some(chosen.mint(vetted)),
+        _ => tracing::warn!("a delivered export could not be vetted; it will not be revealable"),
+    }
+    result
 }
 
 /// Abort the in-flight export (kills the render's ffmpeg). Returns whether one
@@ -824,16 +879,53 @@ pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<
 
 // ── P1 parity: sidecars, probe, file guard, cleanup, mastering flow ──────────────
 
+// ── The sidecars: derived from the recording, never named (A3/A4) ────────────
+//
+// The five sidecar and sermon-pick commands used to take the recording's path
+// (`media_path`) and trust `path_guard` to judge it — which it can only do
+// against the protected home folders. A compromised webview could therefore
+// write, read and DELETE `<stem>.meta.json`, `<stem>.cuts-draft.json` and
+// `<stem>.feedback.json` beside any file the user can write to, and learn
+// whether such a file exists.
+//
+// Now they take the recording's File token (`source_token`) and nothing else.
+// The recording is what [`resolve_source`] gives back — typed, looked up and
+// re-validated — and the sidecar's path is built in Rust from it, with the
+// suffixes `sundayrec_core::editor::sidecar_path` has always used. Where a
+// sidecar can land is therefore exactly «next to a recording Rust opened».
+// The seam still takes a string, but only ever this one.
+
+/// Run `work` on the recording a `source_token` stands for, off the async
+/// runtime (the file may be on a USB stick or a share). The ONE shape the five
+/// sidecar and sermon-pick commands share, so none of them can reach the seam
+/// with a string of its own: a token that does not resolve never runs `work`.
+async fn with_source<T, F>(chosen: &ChosenPaths, source_token: &str, work: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(String) -> T + Send + 'static,
+{
+    let source = resolve_source(chosen, source_token).await?;
+    off_runtime(move || work(source)).await
+}
+
 /// Read a per-recording sidecar JSON (.meta / .cuts-draft / .transcript), or
 /// `null` when absent/corrupt. The editor's reopen-ability — cuts/intro-outro/
 /// metadata persist across sessions.
+///
+/// **Takes the recording's File token**, not its path: the sidecar is
+/// `<stem>.<kind>.json` beside the file the token stands for. A made-up,
+/// foreign or stale token is `source_unknown`/`source_missing`/`source_refused`
+/// like everywhere else the editor resolves one.
 #[tauri::command]
-pub fn editor_read_sidecar(
-    media_path: String,
+pub async fn editor_read_sidecar(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
     sidecar: EditorSidecar,
 ) -> AppResult<Option<serde_json::Value>> {
-    super::path_guard::checked_path(&media_path)?;
-    editor::read_sidecar(&media_path, sidecar)
+    with_source(&chosen, &source_token, move |source| {
+        editor::read_sidecar(&source, sidecar)
+    })
+    .await?
 }
 
 /// The feedback sidecar is not a sidecar the generic commands may touch.
@@ -861,23 +953,34 @@ fn refuse_feedback_sidecar(sidecar: EditorSidecar) -> AppResult<()> {
 }
 
 /// Write a per-recording sidecar JSON (pretty). Returns whether it persisted.
+/// Takes the recording's File token — see [`editor_read_sidecar`].
 #[tauri::command]
-pub fn editor_write_sidecar(
-    media_path: String,
+pub async fn editor_write_sidecar(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
     sidecar: EditorSidecar,
     value: serde_json::Value,
 ) -> AppResult<bool> {
-    super::path_guard::checked_path(&media_path)?;
     refuse_feedback_sidecar(sidecar)?;
-    Ok(editor::write_sidecar(&media_path, sidecar, &value))
+    with_source(&chosen, &source_token, move |source| {
+        editor::write_sidecar(&source, sidecar, &value)
+    })
+    .await
 }
 
-/// Delete a per-recording sidecar. Returns whether one was removed.
+/// Delete a per-recording sidecar. Returns whether one was removed. Takes the
+/// recording's File token — see [`editor_read_sidecar`].
 #[tauri::command]
-pub fn editor_delete_sidecar(media_path: String, sidecar: EditorSidecar) -> AppResult<bool> {
-    super::path_guard::checked_path(&media_path)?;
+pub async fn editor_delete_sidecar(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+    sidecar: EditorSidecar,
+) -> AppResult<bool> {
     refuse_feedback_sidecar(sidecar)?;
-    Ok(editor::delete_sidecar(&media_path, sidecar))
+    with_source(&chosen, &source_token, move |source| {
+        editor::delete_sidecar(&source, sidecar)
+    })
+    .await
 }
 
 /// The liturgical day a service date falls on — «1. påskedag», «julaften» —
@@ -902,15 +1005,19 @@ pub fn editor_church_day_name(date: String) -> Option<String> {
 /// re-picking the block the detector already chose is not a correction, and an
 /// unreadable feedback file is left alone rather than overwritten.
 ///
-/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
-/// commands; the target is a file next to a recording the user opened.
+/// **Takes the recording's File token** — the target is a file next to a
+/// recording Rust opened, never one the webview named (see
+/// [`editor_read_sidecar`]).
 #[tauri::command]
-pub fn editor_record_sermon_pick(
-    media_path: String,
+pub async fn editor_record_sermon_pick(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
     request: crate::editor::EditorSermonPickRequest,
 ) -> AppResult<bool> {
-    super::path_guard::checked_path(&media_path)?;
-    Ok(editor::record_sermon_pick(&media_path, &request))
+    with_source(&chosen, &source_token, move |source| {
+        editor::record_sermon_pick(&source, &request)
+    })
+    .await
 }
 
 /// Which of `segments` the human's stored sermon correction means, or `null`
@@ -918,15 +1025,18 @@ pub fn editor_record_sermon_pick(
 /// The reopen half of E8: detection returns its own answer, this says what the
 /// person decided last time.
 ///
-/// **Path policy: `UserChosenWrite`** — read-only in effect, but it resolves the
-/// same sidecar path the write side does and gets the same guard.
+/// **Takes the recording's File token** — read-only in effect, but it resolves
+/// the same sidecar the write side does, from the same token.
 #[tauri::command]
-pub fn editor_sermon_pick(
-    media_path: String,
+pub async fn editor_sermon_pick(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
     segments: Vec<EditorSegment>,
 ) -> AppResult<Option<u32>> {
-    super::path_guard::checked_path(&media_path)?;
-    Ok(editor::sermon_pick_index(&media_path, &segments))
+    with_source(&chosen, &source_token, move |source| {
+        editor::sermon_pick_index(&source, &segments)
+    })
+    .await
 }
 
 // ── V1/PR3: fire prober som aldri fikk en dør ────────────────────────────────
@@ -1377,6 +1487,110 @@ mod tests {
         );
     }
 
+    // ── The sidecars: beside the recording a token stands for ────────────────
+
+    /// Everything in `dir`, by name, for «nothing was written anywhere».
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[tokio::test]
+    async fn a_sidecar_is_kept_read_and_removed_beside_the_recording_its_token_stands_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let (file, _) = recording(dir.path(), "opptak.mp3");
+        let store = ChosenPaths::new();
+        let token = opened(&store, &file).await.token;
+        let meta = serde_json::json!({ "title": "Preken", "speaker": "Kari" });
+
+        let wrote = {
+            let value = meta.clone();
+            with_source(&store, &token, move |source| {
+                editor::write_sidecar(&source, EditorSidecar::Meta, &value)
+            })
+            .await
+            .unwrap()
+        };
+        assert!(wrote);
+        // The same suffix the page has always got: `<stem>.meta.json`, beside it.
+        assert!(dir.path().join("opptak.meta.json").is_file());
+
+        let read = with_source(&store, &token, |source| {
+            editor::read_sidecar(&source, EditorSidecar::Meta)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(read, Some(meta));
+
+        let removed = with_source(&store, &token, |source| {
+            editor::delete_sidecar(&source, EditorSidecar::Meta)
+        })
+        .await
+        .unwrap();
+        assert!(removed);
+        assert!(!dir.path().join("opptak.meta.json").exists());
+    }
+
+    #[tokio::test]
+    async fn a_sidecar_command_with_a_forged_token_never_touches_the_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let (file, plain) = recording(dir.path(), "opptak.mp3");
+        let store = ChosenPaths::new();
+        let real = opened(&store, &file).await.token;
+        let before = names_in(dir.path());
+
+        // A made-up token, the recording's own PATH where the token goes (the
+        // old wire value), a traversal, and a token a session did not mint.
+        for forged in [
+            "00000000-0000-0000-0000-000000000000",
+            plain.as_str(),
+            "../../.ssh",
+            "",
+        ] {
+            let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let flag = ran.clone();
+            let outcome = with_source(&store, forged, move |source| {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                editor::write_sidecar(&source, EditorSidecar::Meta, &serde_json::json!({}))
+            })
+            .await;
+            assert_eq!(code_of(outcome), "source_unknown", "{forged:?}");
+            assert!(
+                !ran.load(std::sync::atomic::Ordering::SeqCst),
+                "{forged:?}: the seam must never see a place no token stands for"
+            );
+        }
+        let foreign = with_source(&ChosenPaths::new(), &real, |source| {
+            editor::delete_sidecar(&source, EditorSidecar::Meta)
+        })
+        .await;
+        assert_eq!(code_of(foreign), "source_unknown");
+        assert_eq!(names_in(dir.path()), before, "nothing was written");
+    }
+
+    #[tokio::test]
+    async fn a_sidecar_is_never_derived_from_a_token_for_a_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, _) = recording(dir.path(), "opptak.mp3");
+        let folder = dir.path().join("Eksport");
+        std::fs::create_dir_all(&folder).unwrap();
+        let store = ChosenPaths::new();
+        let folder_token =
+            store.mint(chosen_paths::vet(&folder, ChosenKind::Folder).expect("a folder vets"));
+
+        let outcome = with_source(&store, &folder_token, |source| {
+            editor::write_sidecar(&source, EditorSidecar::Meta, &serde_json::json!({}))
+        })
+        .await;
+        assert_eq!(code_of(outcome), "source_unknown");
+        assert_eq!(names_in(dir.path()), vec!["Eksport", "opptak.mp3"]);
+    }
+
     #[tokio::test]
     async fn a_token_to_a_recording_gone_since_the_open_is_refused() {
         // Moved to the papirkurv between «Åpne» and the next command.
@@ -1527,6 +1741,46 @@ mod tests {
         assert_eq!((dropped.error, dropped.x, dropped.y), (None, 120.0, 340.5));
         assert_eq!(resolve_source(&store, &open.token).await.unwrap(), plain);
         assert_eq!(*granted.lock().unwrap(), vec![PathBuf::from(plain)]);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_file_that_is_not_media_gets_no_scope_and_no_token() {
+        // The mutant: a `.txt` (or a `.cmd`, or a key file) dropped on the
+        // window. It must neither be made readable to the page through
+        // `asset://` nor be given a token — and a media file named in capitals
+        // still opens.
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChosenPaths::new();
+        let granted = std::sync::Mutex::new(Vec::<PathBuf>::new());
+        let grant = |p: &Path| {
+            granted.lock().unwrap().push(p.to_path_buf());
+            Ok(())
+        };
+        for name in ["notater.txt", "start.cmd", "id_ed25519", "opptak.mp3.txt"] {
+            let (file, _) = recording(dir.path(), name);
+            let dropped = dropped_recording(&store, file, (1.0, 2.0), grant).await;
+            assert_eq!(dropped.opened, None, "{name}");
+            assert_eq!(dropped.error.as_deref(), Some("source_refused"), "{name}");
+        }
+        assert!(granted.lock().unwrap().is_empty(), "no scope was widened");
+        assert_eq!(store.len(), 0, "no token was minted");
+
+        let (loud, _) = recording(dir.path(), "OPPTAK.MP3");
+        let dropped = dropped_recording(&store, loud, (1.0, 2.0), grant).await;
+        assert!(dropped.opened.is_some(), "{:?}", dropped.error);
+        assert_eq!(granted.lock().unwrap().len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_dropped_media_name_that_links_to_a_non_media_file_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (target, _) = recording(dir.path(), "hemmelig.txt");
+        let link = dir.path().join("opptak.mp3");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let store = ChosenPaths::new();
+        let dropped = dropped_recording(&store, link, (0.0, 0.0), |_| panic!("no grant")).await;
+        assert_eq!(dropped.error.as_deref(), Some("source_refused"));
     }
 
     #[tokio::test]

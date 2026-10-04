@@ -15,9 +15,10 @@ token: string,
  */
 name: string, 
 /**
- * The canonical path, plain: what `<audio src>` plays (`asset://`) and what
- * the sidecar commands (`editor_read_sidecar` & co., PR-D) still take.
- * NOT accepted by anything that reads or renders the recording — those
- * take `token` and nothing else.
+ * The canonical path, plain: what the page SHOWS (the folder it sits in)
+ * and what `<audio src>` plays (`asset://` needs an address, and Rust
+ * granted the scope to exactly this file). NOT accepted by any command —
+ * every one that reads, renders or keeps something for the recording
+ * takes `token` and nothing else.
  */
 path: string, };

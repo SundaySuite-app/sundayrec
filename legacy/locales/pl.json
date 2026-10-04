@@ -147,6 +147,7 @@
         "refusedPackage": "Ten folder to aplikacja lub pakiet (np. projekt Keynote lub Logic), a nie zwykły folder. Wybierz inny folder.",
         "refusedTooBroad": "Wybierz folder wewnątrz folderu domowego, na przykład „SundayRec” w Dokumentach – nie sam folder domowy ani katalog główny dysku.",
         "refusedProtected": "Ten folder jest chroniony i nie może służyć do nagrań. Wybierz inny folder.",
+        "refusedAppData": "Ten folder jest własnym folderem danych aplikacji lub leży w nim i nie może służyć do nagrań. Wybierz inny folder.",
         "refusedInvalid": "Tego folderu nie można użyć do nagrań. Wybierz inny folder."
       },
       "qualityLede": "Wyższa jakość to większe pliki. Większość zostaje przy Dobrej.",

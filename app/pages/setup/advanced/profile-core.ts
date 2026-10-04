@@ -3,7 +3,7 @@
  *
  * ## Hvorfor appen ikke lenger velger fila selv
  *
- * Før åpnet skallet lagre-/åpne-vinduet (`@tauri-apps/plugin-dialog`) og
+ * Før åpnet skallet lagre-/åpne-vinduet selv (dialog-pluginen i JS) og
  * sendte STIEN det svarte til bakenden. Men appen har ingen tilgangsliste per
  * kommando: et kompromittert webview kunne kalt eksporten med en hvilken som
  * helst sti uten å vise noe vindu — og skrevet en fil med innhold det selv

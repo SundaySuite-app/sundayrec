@@ -243,6 +243,61 @@ test.describe("kortene folder ut den ekte skjermen", () => {
     await expect(page.getByTestId("folder-pick")).toBeVisible();
   });
 
+  test("«Velg mappe» ber Rust om mappevelgeren og viser det Rust lagret", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN: la `FolderPage.pick` sende en sti i `saveSettings` i
+    // stedet for å kalle `settingsPickSaveFolder`, og `__E2E_PICKS__` forblir
+    // tom — Rust åpner mappevinduet (A2-familien, PR-D).
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500e9 },
+        settings_pick_save_folder: fn(`(args) => {
+          (window.__E2E_PICKS__ ||= []).push(args ?? null);
+          return { ...${JSON.stringify(CHOSEN)}, saveFolder: "/Volumes/Kirke/Opptak" };
+        }`),
+      },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await page.getByTestId("control-folder-expand").click();
+    await page.getByTestId("folder-pick").click();
+
+    await expect(page.getByTestId("folder-path")).toHaveText(
+      "/Volumes/Kirke/Opptak",
+    );
+    // Rust åpnet vinduet: kallet bar ingenting fra siden.
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { __E2E_PICKS__?: unknown[] }).__E2E_PICKS__,
+      ),
+    ).toEqual([null]);
+  });
+
+  test("en mappe Rust avviser blir stående som den var, og setningen sier hvorfor", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        settings_pick_save_folder: fn(`() => {
+          throw new Error("validation: save_folder_too_broad: the recordings folder cannot be the root");
+        }`),
+      },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await page.getByTestId("control-folder-expand").click();
+    await page.getByTestId("folder-pick").click();
+
+    await expect(page.getByTestId("toast-host")).toContainText("hjemmemappen");
+    await expect(page.getByTestId("folder-path")).toHaveText(
+      "/Users/frivillig/SundayRec",
+    );
+  });
+
   test("de to tilleggene styres av bryteren sin, ikke av en utfoldingsknapp", async ({
     page,
   }) => {

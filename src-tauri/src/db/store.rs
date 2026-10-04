@@ -153,6 +153,57 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> AppResult
     Ok(())
 }
 
+/// Insert `key` only when no row has it. `true` = this call inserted it; `false`
+/// = it was already there (and is unchanged). The claim is one statement, so two
+/// callers racing for it cannot both win.
+pub async fn claim_setting(pool: &SqlitePool, key: &str, value: &str) -> AppResult<bool> {
+    let done = sqlx::query(
+        "INSERT INTO app_setting (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO NOTHING",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// [`claim_setting`] for `claim_key` and, in the SAME transaction, [`set_setting`]
+/// for `key`. `true` = the claim was won and both rows are written; `false` = the
+/// claim was already held, and NOTHING was written — not the claim, not `key`.
+/// A failure after the claim rolls the claim back with the rest, so a write that
+/// did not land does not use up the one chance.
+pub async fn claim_and_set_setting(
+    pool: &SqlitePool,
+    claim_key: &str,
+    key: &str,
+    value: &str,
+) -> AppResult<bool> {
+    let mut tx = pool.begin().await?;
+    let claimed = sqlx::query(
+        "INSERT INTO app_setting (key, value) VALUES (?1, '1')
+         ON CONFLICT(key) DO NOTHING",
+    )
+    .bind(claim_key)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        == 1;
+    if !claimed {
+        return Ok(false);
+    }
+    sqlx::query(
+        "INSERT INTO app_setting (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// All settings as `(key, value)` pairs, ordered by key for stable output.
 pub async fn get_all_settings(pool: &SqlitePool) -> AppResult<Vec<(String, String)>> {
     let rows = sqlx::query("SELECT key, value FROM app_setting ORDER BY key")
@@ -235,6 +286,23 @@ pub async fn recording_exists_for_path(pool: &SqlitePool, file_path: &str) -> Ap
         .fetch_one(pool)
         .await?;
     Ok(n != 0)
+}
+
+/// The id of the history row for `file_path` — the newest if a file was
+/// recorded over — or `None` when there is none. What the `recording://finished`
+/// event carries, so the receipt names a ROW (as «Rediger» and «Vis i Finder»
+/// must) without the page having to find it by comparing paths.
+pub async fn recording_id_for_path(
+    pool: &SqlitePool,
+    file_path: &str,
+) -> AppResult<Option<String>> {
+    let id: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM recording WHERE file_path = ?1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(file_path)
+    .fetch_optional(pool)
+    .await?;
+    Ok(id)
 }
 
 /// The file a history row names, by the row's id — `None` when there is no

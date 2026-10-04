@@ -226,6 +226,7 @@ describe("forgetMovedPath", () => {
       path: "/Opptak/2026-08-23.flac",
       hasVideo: false,
       atMs: 0,
+      recordingId: null,
     };
     forgetMovedPath(["/annet.flac", "/Opptak/2026-08-23.flac"]);
     expect(finishedRecording.value).toBeNull();
@@ -236,6 +237,7 @@ describe("forgetMovedPath", () => {
       path: "/Opptak/2026-08-23.flac",
       hasVideo: false,
       atMs: 0,
+      recordingId: null,
     };
     finishedRecording.value = receipt;
     forgetMovedPath(["/Opptak/en-helt-annen-dag.flac"]);
@@ -253,6 +255,7 @@ describe("forgetMovedPath", () => {
       path: "/Opptak/2026-08-23.flac",
       hasVideo: false,
       atMs: 0,
+      recordingId: null,
     };
     finishedRecording.value = receipt;
     forgetMovedPath([]);
@@ -322,6 +325,23 @@ describe("oppstarts-snapshotet", () => {
     h.off();
   });
 
+  it("kvitteringen bærer radens id fra Rust, og en hendelse uten id gir ingen id", () => {
+    const h = withFakeApi({ snapshot: RECORDING });
+    h.emit("recording-finished", {
+      file_path: "/tmp/a.flac",
+      recording_id: "rad-1",
+    });
+    expect(finishedRecording.value?.recordingId).toBe("rad-1");
+    h.emit("recording-finished", { file_path: "/tmp/b.flac" });
+    expect(finishedRecording.value?.recordingId).toBeNull();
+    h.emit("recording-finished", {
+      file_path: "/tmp/c.flac",
+      recording_id: "",
+    });
+    expect(finishedRecording.value?.recordingId).toBeNull();
+    h.off();
+  });
+
   it("lar kvitteringen stå når motoren svarer «idle»", async () => {
     // Den vanlige oppstarten rett etter et opptak: motoren ER idle, og det
     // skal ikke fjerne kvitteringen som allerede står på skjermen.
@@ -332,6 +352,7 @@ describe("oppstarts-snapshotet", () => {
       path: "/tmp/forrige.flac",
       hasVideo: false,
       atMs: 1,
+      recordingId: null,
     };
     await hydrateRecordingState();
     expect(isRecording.value).toBe(false);

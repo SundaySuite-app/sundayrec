@@ -13,7 +13,7 @@ use sqlx::SqlitePool;
 use sundayrec_core::settings::Settings;
 
 use crate::db::store;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 /// The one-time clean-up after e-mail alerts were removed (run from `setup`).
 pub mod email_cleanup;
@@ -24,6 +24,16 @@ pub use profile::{export_profile, import_profile};
 
 /// The `app_setting` key the whole settings blob lives under.
 pub const SETTINGS_KEY: &str = "settings";
+
+/// The `app_setting` key whose row means «the localStorage hand-over is over».
+/// Written by [`import`] in the same transaction as the settings it imports, and
+/// by [`close_legacy_import`] when the page reads its settings for the first
+/// time. Nothing deletes it — not [`reset`], not a profile import.
+pub const LEGACY_IMPORT_KEY: &str = "legacy_import_done";
+
+/// The stable code of the refusal a second [`import`] gets (`settings_import_done`).
+/// The renderer maps it to «already handed over» (`app/lib/migrate-legacy-settings.ts`).
+pub const IMPORT_DONE_CODE: &str = "settings_import_done";
 
 /// Load the settings: read the stored JSON (or fall back to defaults when the
 /// key is absent), merge it over the defaults so older/partial blobs never
@@ -57,7 +67,16 @@ pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
 /// what was just removed (R3 papered over it with a renderer-side mirror, now
 /// deleted). Pruning at the write boundary makes the prune un-revertable: no
 /// save can put a >7-days-ended special back, whoever sends it.
-pub async fn save(pool: &SqlitePool, mut settings: Settings) -> AppResult<Settings> {
+pub async fn save(pool: &SqlitePool, settings: Settings) -> AppResult<Settings> {
+    let (settings, json) = prepared(settings)?;
+    store::set_setting(pool, SETTINGS_KEY, &json).await?;
+    Ok(settings)
+}
+
+/// The validated, pruned settings and the JSON that goes in the row — what
+/// [`save`] and [`import`] each write, one with a plain upsert and one inside the
+/// hand-over's transaction.
+fn prepared(mut settings: Settings) -> AppResult<(Settings, String)> {
     settings.validate();
     let now = chrono::Local::now().naive_local();
     let (kept, pruned) =
@@ -66,8 +85,7 @@ pub async fn save(pool: &SqlitePool, mut settings: Settings) -> AppResult<Settin
         settings.special_recordings = kept;
     }
     let json = serde_json::to_string(&settings)?;
-    store::set_setting(pool, SETTINGS_KEY, &json).await?;
-    Ok(settings)
+    Ok((settings, json))
 }
 
 /// How a save folder in a RENDERER write is judged. The app passes
@@ -111,28 +129,53 @@ fn keep_stored_clips(stored: &Settings, incoming: &mut Settings) {
     incoming.editor_outro_path = stored.editor_outro_path.clone();
 }
 
-/// `settings_save` from the renderer: [`save`], but a NEW save folder must
-/// pass `vet` first — refused with the vet's error code, nothing written. See
-/// [`new_folder_asked_for`] for what counts as new. The stored intro and outro
-/// clips are kept whatever the renderer sent ([`keep_stored_clips`]).
+/// The save folder a renderer write may NOT change: whatever the incoming
+/// settings say, the stored folder stays.
+///
+/// The recordings folder is where every recording lands, what the tray opens
+/// and where the papirkurv lives — a place the webview must not name. Until
+/// PR-D the page opened the folder dialog itself (`@tauri-apps/plugin-dialog`)
+/// and sent the answer in a `settings_save`, vetted by [`FolderVet`] — which
+/// judged only WHAT the folder is (a package, the home folder, `~/.ssh`), not
+/// whether anybody chose it: a compromised webview could point the recorder at
+/// any other writable folder with no dialog at all. The folder is now set by
+/// [`pick_save_folder`] — `settings_pick_save_folder`, which opens the dialog in
+/// Rust — and by nothing else the webview can call. The renderer sends the FULL
+/// settings object on every save, so this is also what keeps a save from a page
+/// that has not yet seen the pick from putting the old folder back.
+fn keep_stored_save_folder(stored: &Settings, incoming: &mut Settings) {
+    incoming.save_folder = stored.save_folder.clone();
+}
+
+/// `settings_save` from the renderer: [`save`], except that the stored save
+/// folder ([`keep_stored_save_folder`]) and the stored intro and outro clips
+/// ([`keep_stored_clips`]) are kept whatever the renderer sent.
 ///
 /// The backend's own writers (the scheduler's prune, `reset`) call [`save`]
 /// directly: they write back what they loaded, and the folder in it is the
 /// stored one.
-pub async fn save_from_renderer(
-    pool: &SqlitePool,
-    mut incoming: Settings,
-    vet: FolderVet,
-) -> AppResult<Settings> {
+pub async fn save_from_renderer(pool: &SqlitePool, mut incoming: Settings) -> AppResult<Settings> {
     let stored = load(pool).await?;
     keep_stored_clips(&stored, &mut incoming);
-    if let Some(folder) = new_folder_asked_for(
-        stored.save_folder.as_deref(),
-        incoming.save_folder.as_deref(),
-    ) {
-        vet_off_runtime(vet, folder).await?;
-    }
+    keep_stored_save_folder(&stored, &mut incoming);
     save(pool, incoming).await
+}
+
+/// Store a save folder the operator PICKED in the dialog Rust opened
+/// (`settings_pick_save_folder`): `vet` first — refused with the vet's error
+/// code, nothing written — then the stored settings with just that folder
+/// changed, and the stored settings back. The load/save pair the backend's own
+/// writers use, not [`save_from_renderer`] (which would keep the old folder, by
+/// design).
+pub async fn pick_save_folder(
+    pool: &SqlitePool,
+    folder: &str,
+    vet: FolderVet,
+) -> AppResult<Settings> {
+    vet_off_runtime(vet, folder).await?;
+    let mut stored = load(pool).await?;
+    stored.save_folder = Some(folder.to_string());
+    save(pool, stored).await
 }
 
 /// Run `vet` on the blocking pool ([`crate::util::off_runtime`]): it
@@ -161,24 +204,87 @@ pub async fn reset(pool: &SqlitePool) -> AppResult<Settings> {
 /// [`import_profile`], which lays the file over what IS stored instead — see
 /// the [`profile`] module for why the two differ.
 ///
-/// The hand-over is a renderer write too, so a NEW save folder in it must pass
-/// `vet`. Unlike [`save_from_renderer`] a refusal does not fail the import: the
-/// folder this machine already has is KEPT and the rest is imported. The same
-/// goes for the intro and outro clips, which an import never carries
-/// ([`keep_stored_clips`]) — an old installation picks them again once.
+/// ## One hand-over, and Rust keeps the count
+///
+/// The hand-over is a renderer write, and it can carry a save folder the webview
+/// names itself — kept because the OLD installation's folder is its whole
+/// purpose (an upgrade that dropped it would record somewhere new). That is only
+/// acceptable once. The «only once» used to be a flag in the webview's own
+/// localStorage (`LEGACY_MIGRATED_FLAG`), which a compromised page just ignores,
+/// so it could move the recordings folder whenever it liked (the #314 review: to
+/// `<app-data>/recovery`, the first link of a chain that ended in deleted files).
+///
+/// So the count is [`LEGACY_IMPORT_KEY`], a row this function claims in the SAME
+/// transaction that writes the settings: the second call is refused with
+/// [`IMPORT_DONE_CODE`] and writes nothing, and a failed write rolls the claim
+/// back so the retry on the next launch still has its chance. The gate is a
+/// flag and not «the settings row exists» because a row proves nothing here: a
+/// build older than R4 bridged a subset of the settings into sqlite while the
+/// full blob stayed in localStorage, so a row can sit next to a hand-over that
+/// is still due (and nothing in `setup` writes the row before the renderer —
+/// `email_cleanup` and the scheduler's prune only rewrite a row that exists).
+///
+/// A flag only the import sets would leave every install that never needed the
+/// hand-over — a fresh one, or one that did it years ago — with a door nobody
+/// shut, so [`close_legacy_import`] shuts it when the page reads its settings:
+/// the page awaits its migration BEFORE `settings_get`, so by then the hand-over
+/// has either happened or is not needed.
+///
+/// The folder in the hand-over must pass `vet` — the app passes
+/// `vet_handover_save_folder`: the usual save-folder vet plus «exists, is a
+/// folder, can be written to», and never the app's own data folder. Unlike a
+/// renderer save, a refusal does not fail the import: the folder this machine
+/// already has is KEPT and the rest is imported. The same goes for the intro and
+/// outro clips, which an import never carries ([`keep_stored_clips`]) — an old
+/// installation picks them again once.
 pub async fn import(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<Settings> {
+    // Refused early, before the vet touches the disk, when the flag is already
+    // there; the claim below is what makes it final.
+    if store::get_setting(pool, LEGACY_IMPORT_KEY).await?.is_some() {
+        return Err(import_done());
+    }
     let stored = load(pool).await?;
+    let merged = merged_for_handover(&stored, json, vet).await;
+    let (settings, row) = prepared(merged)?;
+    if !store::claim_and_set_setting(pool, LEGACY_IMPORT_KEY, SETTINGS_KEY, &row).await? {
+        return Err(import_done());
+    }
+    Ok(settings)
+}
+
+fn import_done() -> AppError {
+    AppError::Validation(format!(
+        "{IMPORT_DONE_CODE}: the settings hand-over from the old installation has already happened"
+    ))
+}
+
+/// The hand-over's JSON laid over defaults, with the two things it may not
+/// change: the stored clips, and a stored save folder it cannot replace with one
+/// `vet` refuses. Pure of the database: nothing is written.
+async fn merged_for_handover(stored: &Settings, json: &str, vet: FolderVet) -> Settings {
     let mut merged = Settings::from_json_merged(json);
-    keep_stored_clips(&stored, &mut merged);
+    keep_stored_clips(stored, &mut merged);
     if let Some(folder) =
         new_folder_asked_for(stored.save_folder.as_deref(), merged.save_folder.as_deref())
     {
         if let Err(e) = vet_off_runtime(vet, folder).await {
             tracing::warn!(code = %e, "an imported save folder was refused; the stored one is kept");
-            merged.save_folder = stored.save_folder;
+            merged.save_folder = stored.save_folder.clone();
         }
     }
-    save(pool, merged).await
+    merged
+}
+
+/// Shut the hand-over: from now on [`import`] answers [`IMPORT_DONE_CODE`].
+/// Called by `settings_get` AFTER it has read — the page's first read comes after
+/// its own migration, so a hand-over that was due has happened by then. A no-op
+/// when the flag is already there. A failure is logged and swallowed: reading
+/// the settings must not fail because the flag could not be written, and the
+/// next read tries again.
+pub async fn close_legacy_import(pool: &SqlitePool) {
+    if let Err(e) = store::claim_setting(pool, LEGACY_IMPORT_KEY, "1").await {
+        tracing::warn!(code = %e, "could not close the settings hand-over");
+    }
 }
 
 #[cfg(test)]
@@ -205,6 +311,14 @@ mod tests {
         }
     }
 
+    /// [`import`] with the hand-over's gate lifted first — for the tests about
+    /// the MERGE (which folder wins, what is clamped) that need several imports
+    /// on one database. The gate itself is tested where it is the point.
+    async fn handover_again(pool: &SqlitePool, json: &str, vet: FolderVet) -> AppResult<Settings> {
+        store::delete_setting(pool, LEGACY_IMPORT_KEY).await?;
+        import(pool, json, vet).await
+    }
+
     /// The thread each call of [`record_thread`] ran on — for the test below
     /// only (a `FolderVet` is a plain `fn`, so it has nowhere else to put it).
     static VET_THREADS: std::sync::Mutex<Vec<std::thread::ThreadId>> =
@@ -225,7 +339,7 @@ mod tests {
         // canonicalises a folder that may be on a share that does not answer.
         let (pool, _d) = temp_pool().await;
         let me = std::thread::current().id();
-        save_from_renderer(&pool, with_folder(Some("/Volumes/A")), record_thread)
+        pick_save_folder(&pool, "/Volumes/A", record_thread)
             .await
             .unwrap_err();
         import(&pool, r#"{ "saveFolder": "/Volumes/B" }"#, record_thread)
@@ -251,26 +365,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_new_folder_from_the_renderer_is_vetted_and_a_refusal_writes_nothing() {
+    async fn a_picked_folder_is_vetted_and_a_refusal_writes_nothing() {
+        let (pool, _d) = temp_pool().await;
+        save(
+            &pool,
+            Settings {
+                language: Some("nb".into()),
+                ..with_folder(Some("/Volumes/Rig/Opptak"))
+            },
+        )
+        .await
+        .unwrap();
+        let err = pick_save_folder(&pool, "/Users/kantor", refuse_all)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("save_folder_test"), "{err}");
+        // Nothing of the refused pick landed.
+        let after = load(&pool).await.unwrap();
+        assert_eq!(after.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+        assert_eq!(after.language.as_deref(), Some("nb"));
+    }
+
+    #[tokio::test]
+    async fn a_vetted_pick_changes_the_folder_and_nothing_else() {
+        let (pool, _d) = temp_pool().await;
+        save(
+            &pool,
+            Settings {
+                language: Some("nb".into()),
+                ..with_folder(Some("/Volumes/Rig/Opptak"))
+            },
+        )
+        .await
+        .unwrap();
+        let picked = pick_save_folder(&pool, "/Volumes/Ny/Opptak", accept_any)
+            .await
+            .unwrap();
+        assert_eq!(picked.save_folder.as_deref(), Some("/Volumes/Ny/Opptak"));
+        assert_eq!(picked.language.as_deref(), Some("nb"));
+        assert_eq!(load(&pool).await.unwrap(), picked);
+    }
+
+    #[tokio::test]
+    async fn settings_save_keeps_the_stored_save_folder() {
+        // PR-D: the recordings folder is a place the webview must not name.
+        // Whatever a full-object save carries — another folder, nothing at all,
+        // a relative path, one in a protected folder — the STORED folder is
+        // what is kept, and no vet is asked (there is no vet to ask).
         let (pool, _d) = temp_pool().await;
         save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
             .await
             .unwrap();
-        let err = save_from_renderer(
-            &pool,
+        for sent in [
+            with_folder(Some("/Users/kantor/Documents/Annet")),
+            with_folder(Some("/Users/kantor/.ssh")),
+            with_folder(Some("rel/opptak")),
+            with_folder(Some("")),
+            with_folder(None),
             Settings {
                 language: Some("en".into()),
-                ..with_folder(Some("/Users/kantor"))
+                ..with_folder(Some("/Volumes/Rig/Opptak"))
             },
-            refuse_all,
-        )
-        .await
-        .unwrap_err();
-        assert!(err.to_string().contains("save_folder_test"), "{err}");
-        // Nothing of the refused write landed — not the folder, not the rest.
-        let after = load(&pool).await.unwrap();
-        assert_eq!(after.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
-        assert_eq!(after.language, None);
+        ] {
+            let saved = save_from_renderer(&pool, sent).await.unwrap();
+            assert_eq!(saved.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+            assert_eq!(load(&pool).await.unwrap().save_folder, saved.save_folder);
+        }
+        // The rest of the save still lands: only the folder is held back.
+        assert_eq!(load(&pool).await.unwrap().language.as_deref(), Some("en"));
+
+        // And a webview cannot SET a folder on a machine that has none.
+        let (pool, _d) = temp_pool().await;
+        let saved = save_from_renderer(&pool, with_folder(Some("/Users/kantor/Annet")))
+            .await
+            .unwrap();
+        assert_eq!(saved.save_folder, None);
     }
 
     fn with_clips(intro: Option<&str>, outro: Option<&str>) -> Settings {
@@ -301,7 +470,7 @@ mod tests {
                 ..with_clips(Some("/Musikk/intro.wav"), None)
             },
         ] {
-            let saved = save_from_renderer(&pool, sent, accept_any).await.unwrap();
+            let saved = save_from_renderer(&pool, sent).await.unwrap();
             assert_eq!(
                 saved.editor_intro_path.as_deref(),
                 Some("/Musikk/intro.wav")
@@ -319,7 +488,7 @@ mod tests {
 
         // And a webview cannot ADD a clip to a machine that has none.
         let (pool, _d) = temp_pool().await;
-        let saved = save_from_renderer(&pool, with_clips(Some("/etc/hosts"), None), accept_any)
+        let saved = save_from_renderer(&pool, with_clips(Some("/etc/hosts"), None))
             .await
             .unwrap();
         assert_eq!(saved.editor_intro_path, None);
@@ -342,30 +511,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stored_folder_is_never_judged_again_and_the_default_is_always_allowed() {
+    async fn a_stored_folder_is_never_judged_again_by_an_import() {
         // The Sunday invariant: a folder stored before the vet existed rides
-        // along on every full-object save and must not fail it.
+        // along on the hand-over and must not fail it.
         let (pool, _d) = temp_pool().await;
         save(&pool, with_folder(Some("/Users/kantor")))
             .await
             .unwrap();
-        let saved = save_from_renderer(
+        let imported = handover_again(
             &pool,
-            Settings {
-                language: Some("en".into()),
-                ..with_folder(Some("/Users/kantor"))
-            },
+            r#"{ "language": "en", "saveFolder": "/Users/kantor" }"#,
             refuse_all,
         )
         .await
         .unwrap();
-        assert_eq!(saved.save_folder.as_deref(), Some("/Users/kantor"));
+        assert_eq!(imported.save_folder.as_deref(), Some("/Users/kantor"));
         assert_eq!(load(&pool).await.unwrap().language.as_deref(), Some("en"));
         // Back to the default (blank or absent) is not a folder choice.
-        for back in [None, Some(""), Some("  ")] {
-            save_from_renderer(&pool, with_folder(back), refuse_all)
-                .await
-                .unwrap();
+        for back in [
+            r#"{}"#,
+            r#"{ "saveFolder": "" }"#,
+            r#"{ "saveFolder": "  " }"#,
+        ] {
+            handover_again(&pool, back, refuse_all).await.unwrap();
         }
     }
 
@@ -375,7 +543,7 @@ mod tests {
         save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
             .await
             .unwrap();
-        let imported = import(
+        let imported = handover_again(
             &pool,
             r#"{ "language": "de", "saveFolder": "D:\\Opptak" }"#,
             refuse_all,
@@ -386,7 +554,7 @@ mod tests {
         assert_eq!(imported.language.as_deref(), Some("de"));
         assert_eq!(load(&pool).await.unwrap(), imported);
         // …and an import carrying the stored folder is not judged at all.
-        let same = import(
+        let same = handover_again(
             &pool,
             r#"{ "language": "sv", "saveFolder": "/Volumes/Rig/Opptak" }"#,
             refuse_all,
@@ -395,10 +563,115 @@ mod tests {
         .unwrap();
         assert_eq!(same.language.as_deref(), Some("sv"));
         // An accepted new folder is taken.
-        let moved = import(&pool, r#"{ "saveFolder": "/Volumes/Ny" }"#, accept_any)
+        let moved = handover_again(&pool, r#"{ "saveFolder": "/Volumes/Ny" }"#, accept_any)
             .await
             .unwrap();
         assert_eq!(moved.save_folder.as_deref(), Some("/Volumes/Ny"));
+    }
+
+    fn assert_import_done(result: AppResult<Settings>) {
+        match result {
+            Err(AppError::Validation(msg)) => assert!(
+                msg.starts_with(IMPORT_DONE_CODE),
+                "expected `{IMPORT_DONE_CODE}`, got `{msg}`"
+            ),
+            other => panic!("expected the hand-over to be refused, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_first_hand_over_is_taken_and_a_second_one_is_refused_and_writes_nothing() {
+        let (pool, _d) = temp_pool().await;
+        let first = import(
+            &pool,
+            r#"{ "language": "de", "saveFolder": "/Volumes/Rig/Opptak" }"#,
+            accept_any,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.language.as_deref(), Some("de"));
+        assert_eq!(first.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+
+        // The webview tries again, with a folder of its own and another language.
+        assert_import_done(
+            import(
+                &pool,
+                r#"{ "language": "fr", "saveFolder": "/Volumes/Annen" }"#,
+                accept_any,
+            )
+            .await,
+        );
+        // …even with a vet that would take anything, and nothing changed.
+        assert_eq!(load(&pool).await.unwrap(), first);
+    }
+
+    #[tokio::test]
+    async fn a_hand_over_on_an_install_with_a_bridged_settings_row_still_runs_once() {
+        // A build older than R4 wrote a subset into sqlite and left the full
+        // blob in localStorage: the row exists and the hand-over is still due,
+        // so «the row exists» is not the gate.
+        let (pool, _d) = temp_pool().await;
+        save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
+            .await
+            .unwrap();
+        let imported = import(&pool, r#"{ "language": "sv" }"#, accept_any)
+            .await
+            .unwrap();
+        assert_eq!(imported.language.as_deref(), Some("sv"));
+        assert_import_done(import(&pool, r#"{ "language": "da" }"#, accept_any).await);
+    }
+
+    #[tokio::test]
+    async fn a_closed_hand_over_refuses_an_import_on_an_install_that_never_needed_one() {
+        let (pool, _d) = temp_pool().await;
+        let stored = save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
+            .await
+            .unwrap();
+        close_legacy_import(&pool).await;
+        close_legacy_import(&pool).await; // closing twice is not an error
+        assert_import_done(
+            import(&pool, r#"{ "saveFolder": "/Volumes/Annen" }"#, accept_any).await,
+        );
+        assert_eq!(load(&pool).await.unwrap(), stored);
+    }
+
+    #[tokio::test]
+    async fn a_reset_and_a_renderer_save_do_not_reopen_the_hand_over() {
+        let (pool, _d) = temp_pool().await;
+        import(&pool, "{}", accept_any).await.unwrap();
+        reset(&pool).await.unwrap();
+        save_from_renderer(&pool, Settings::default())
+            .await
+            .unwrap();
+        assert_import_done(import(&pool, "{}", accept_any).await);
+    }
+
+    #[tokio::test]
+    async fn the_hand_over_claim_is_won_once_and_a_lost_claim_writes_nothing() {
+        // The store half of the gate: the claim and the settings row are one
+        // transaction, so the loser leaves the row exactly as the winner wrote it.
+        let (pool, _d) = temp_pool().await;
+        assert!(
+            store::claim_and_set_setting(&pool, LEGACY_IMPORT_KEY, SETTINGS_KEY, "{}")
+                .await
+                .unwrap()
+        );
+        assert!(!store::claim_and_set_setting(
+            &pool,
+            LEGACY_IMPORT_KEY,
+            SETTINGS_KEY,
+            r#"{"language":"fr"}"#
+        )
+        .await
+        .unwrap());
+        assert_eq!(
+            store::get_setting(&pool, SETTINGS_KEY)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}"),
+            "the refused claim wrote nothing"
+        );
     }
 
     /// A pool over a temp-dir database file, fully migrated.

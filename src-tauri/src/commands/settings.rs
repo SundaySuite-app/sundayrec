@@ -48,27 +48,74 @@ use tokio::sync::oneshot;
 
 use super::chosen_paths::dialog_answer;
 use super::path_guard::{self, PathPolicy};
-use super::recordings_open::vet_new_save_folder;
+use super::recordings_open::{vet_handover_save_folder, vet_new_save_folder};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::settings;
 
 /// Load the current settings (defaults if never saved), validated.
+///
+/// Also the moment the localStorage hand-over closes
+/// ([`settings::close_legacy_import`]): the page reads its settings only after
+/// its own migration has run, so a hand-over that was due has happened — and
+/// `settings_import` is refused from here on.
 #[tauri::command]
 pub async fn settings_get(db: State<'_, Db>) -> AppResult<Settings> {
-    settings::load(&db.pool).await
+    let loaded = settings::load(&db.pool).await?;
+    settings::close_legacy_import(&db.pool).await;
+    Ok(loaded)
 }
 
 /// Validate, persist and return the given settings.
 ///
-/// A NEW save folder must pass [`vet_new_save_folder`] first (absolute, not
-/// protected, not a package, not the root or the home folder) — the folder
-/// decides what the tray opens and what «Vis i Finder» may show. A folder that
-/// is already stored is never judged again; see
-/// [`settings::save_from_renderer`].
+/// The save folder and the editor's intro and outro clips are NOT taken from
+/// the renderer: whatever it sends, the stored values stay
+/// ([`settings::save_from_renderer`]). The folder changes only through
+/// [`settings_pick_save_folder`], which opens the dialog in Rust.
 #[tauri::command]
 pub async fn settings_save(db: State<'_, Db>, settings: Settings) -> AppResult<Settings> {
-    settings::save_from_renderer(&db.pool, settings, vet_new_save_folder).await
+    settings::save_from_renderer(&db.pool, settings).await
+}
+
+/// Pick the recordings folder: a native folder dialog this command opens, the
+/// folder vetted by [`vet_new_save_folder`] (absolute, not protected, not a
+/// package, not the root or the home folder) and stored as `saveFolder`, and the
+/// stored settings back — or `None` when the operator cancelled and nothing
+/// changed.
+///
+/// **Takes nothing from the webview** (the A2 family): the folder decides where
+/// every recording lands, what the tray opens and where the papirkurv lives, so
+/// it is the answer of a dialog the PROCESS opened — not a string the page sent
+/// to `settings_save`, which now keeps the stored folder whatever it says. A
+/// refusal is `save_folder_*` and changes nothing.
+#[tauri::command]
+pub async fn settings_pick_save_folder(
+    window: tauri::Window,
+    db: State<'_, Db>,
+) -> AppResult<Option<Settings>> {
+    let picked = super::chosen_paths::ask_for_folder(&window).await?;
+    choose_save_folder(&db.pool, picked).await
+}
+
+/// [`settings_pick_save_folder`] once its dialog has answered: a cancel
+/// (`None`) changes nothing; a picked folder is vetted (off the runtime) and
+/// stored. Split from the command so the tests can play the dialog.
+pub(crate) async fn choose_save_folder(
+    pool: &SqlitePool,
+    picked: Option<PathBuf>,
+) -> AppResult<Option<Settings>> {
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    // The folder as the operator's dialog spelled it, like the page used to
+    // store it — not canonicalised, so a share or a symlinked disk keeps the
+    // name the operator knows it by.
+    let folder = picked.to_str().ok_or_else(|| {
+        AppError::Validation("save_folder_invalid: the folder's name cannot be checked".into())
+    })?;
+    settings::pick_save_folder(pool, folder, vet_new_save_folder)
+        .await
+        .map(Some)
 }
 
 /// Reset all settings to their defaults, persisting them.
@@ -77,17 +124,21 @@ pub async fn settings_reset(db: State<'_, Db>) -> AppResult<Settings> {
     settings::reset(&db.pool).await
 }
 
-/// Import a (possibly partial/older) settings JSON: merge over defaults,
-/// validate, persist, and return the stored value. A new save folder that
-/// [`vet_new_save_folder`] refuses is not imported — the stored one is kept
-/// (see [`settings::import`]).
+/// Import the settings of the OLD installation, once: merge the JSON over
+/// defaults, validate, persist, and return the stored value. A second call is
+/// refused with `settings_import_done` and writes nothing — see
+/// [`settings::import`] for why Rust keeps that count and not the webview.
+///
+/// A save folder in the JSON that [`vet_handover_save_folder`] refuses (missing,
+/// not writable, the app's own data folder, a protected folder …) is not
+/// imported — the stored one is kept.
 ///
 /// Takes the JSON, not a file: its one caller is the localStorage hand-over in
 /// `app/lib/migrate-legacy-settings.ts`. A profile FILE goes through
 /// [`settings_import_profile`].
 #[tauri::command]
 pub async fn settings_import(db: State<'_, Db>, json: String) -> AppResult<Settings> {
-    settings::import(&db.pool, &json, vet_new_save_folder).await
+    settings::import(&db.pool, &json, vet_handover_save_folder).await
 }
 
 /// Export the current settings as pretty JSON to a file the operator picks in
@@ -475,7 +526,6 @@ mod tests {
                 language: Some("en".into()),
                 ..loaded.clone()
             },
-            vet_new_save_folder,
         )
         .await
         .unwrap();
@@ -512,56 +562,172 @@ mod tests {
         );
     }
 
+    /// The `settings_import` command's body: the hand-over with the REAL vet.
+    async fn hand_over(pool: &sqlx::SqlitePool, json: serde_json::Value) -> AppResult<Settings> {
+        settings::import(pool, &json.to_string(), vet_handover_save_folder).await
+    }
+
+    fn assert_hand_over_closed(result: AppResult<Settings>) {
+        let err = result.expect_err("the hand-over should be closed");
+        assert!(
+            err.to_string().contains(settings::IMPORT_DONE_CODE),
+            "{err}"
+        );
+    }
+
     #[tokio::test]
-    async fn a_new_save_folder_from_the_renderer_meets_the_real_vet() {
+    async fn the_first_hand_over_from_an_old_installation_carries_its_folder() {
+        // An upgrade must go on recording where the old installation did: a
+        // real folder, that exists and can be written to, passes the real vet.
         let dir = tempfile::tempdir().unwrap();
         let pool = pool_in(dir.path()).await;
-        let with = |folder: &str| Settings {
-            save_folder: Some(folder.to_string()),
+        let old = dir.path().join("Opptak");
+        std::fs::create_dir_all(&old).unwrap();
+        let old_str = old.to_str().unwrap();
+
+        let taken = hand_over(
+            &pool,
+            serde_json::json!({ "saveFolder": old_str, "language": "sv" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(taken.save_folder.as_deref(), Some(old_str));
+        assert_eq!(taken.language.as_deref(), Some("sv"));
+        assert_eq!(settings::load(&pool).await.unwrap(), taken);
+    }
+
+    #[tokio::test]
+    async fn a_second_hand_over_cannot_move_the_recordings_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let old = dir.path().join("Opptak");
+        let other = dir.path().join("Annen");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let first = hand_over(
+            &pool,
+            serde_json::json!({ "saveFolder": old.to_str().unwrap() }),
+        )
+        .await
+        .unwrap();
+
+        // A perfectly good folder, vetted and writable — and still refused.
+        assert_hand_over_closed(
+            hand_over(
+                &pool,
+                serde_json::json!({ "saveFolder": other.to_str().unwrap() }),
+            )
+            .await,
+        );
+        assert_eq!(settings::load(&pool).await.unwrap(), first);
+    }
+
+    #[tokio::test]
+    async fn the_page_reading_its_settings_closes_the_hand_over() {
+        // `settings_get`'s body, as the command runs it: read, then close.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let loaded = settings::load(&pool).await.unwrap();
+        settings::close_legacy_import(&pool).await;
+        assert_hand_over_closed(
+            hand_over(
+                &pool,
+                serde_json::json!({ "saveFolder": dir.path().to_str().unwrap() }),
+            )
+            .await,
+        );
+        assert_eq!(settings::load(&pool).await.unwrap(), loaded);
+    }
+
+    #[tokio::test]
+    async fn a_hand_over_naming_a_folder_that_is_gone_keeps_the_stored_folder_and_takes_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let stored_folder = dir.path().join("Opptak");
+        std::fs::create_dir_all(&stored_folder).unwrap();
+        let stored = Settings {
+            save_folder: Some(stored_folder.to_str().unwrap().to_string()),
             ..Default::default()
         };
+        settings::save(&pool, stored).await.unwrap();
+        let gone = dir.path().join("Disk-ute").join("Opptak");
+        let taken = hand_over(
+            &pool,
+            serde_json::json!({ "saveFolder": gone.to_str().unwrap(), "language": "sv" }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            taken.save_folder.as_deref(),
+            stored_folder.to_str(),
+            "the stored folder stays"
+        );
+        assert_eq!(taken.language.as_deref(), Some("sv"));
+    }
+
+    /// [`choose_save_folder`] for a picked path, as the `Settings` it stored.
+    async fn picked(pool: &sqlx::SqlitePool, folder: &Path) -> AppResult<Settings> {
+        let answer = choose_save_folder(pool, Some(folder.to_path_buf())).await?;
+        Ok(answer.expect("a pick answers with the stored settings"))
+    }
+
+    #[tokio::test]
+    async fn a_picked_save_folder_meets_the_real_vet() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
 
         assert_code(
-            settings::save_from_renderer(&pool, with("SundayRec"), vet_new_save_folder).await,
+            picked(&pool, Path::new("SundayRec")).await,
             "save_folder_invalid",
         );
         let package = dir.path().join("Gudstjeneste.logicx");
-        assert_code(
-            settings::save_from_renderer(
-                &pool,
-                with(package.to_str().unwrap()),
-                vet_new_save_folder,
-            )
-            .await,
-            "save_folder_is_a_package",
-        );
+        assert_code(picked(&pool, &package).await, "save_folder_is_a_package");
         #[cfg(unix)]
-        assert_code(
-            settings::save_from_renderer(&pool, with("/"), vet_new_save_folder).await,
-            "save_folder_too_broad",
-        );
+        assert_code(picked(&pool, Path::new("/")).await, "save_folder_too_broad");
         if let Some(home) = crate::commands::path_guard::home_dir() {
             let ssh = home.join(".ssh").join("Opptak");
-            assert_code(
-                settings::save_from_renderer(
-                    &pool,
-                    with(ssh.to_str().unwrap()),
-                    vet_new_save_folder,
-                )
-                .await,
-                "save_folder_protected",
-            );
+            assert_code(picked(&pool, &ssh).await, "save_folder_protected");
         }
         // Nothing refused was stored.
         assert_eq!(settings::load(&pool).await.unwrap().save_folder, None);
 
-        // A plain folder is.
+        // A plain folder is, and is what the stored settings say afterwards.
         let good = dir.path().join("Opptak");
-        let saved =
-            settings::save_from_renderer(&pool, with(good.to_str().unwrap()), vet_new_save_folder)
-                .await
-                .unwrap();
+        let saved = picked(&pool, &good).await.unwrap();
         assert_eq!(saved.save_folder.as_deref(), good.to_str());
+        assert_eq!(settings::load(&pool).await.unwrap(), saved);
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_folder_dialog_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let before = settings::load(&pool).await.unwrap();
+        assert_eq!(choose_save_folder(&pool, None).await.unwrap(), None);
+        assert_eq!(settings::load(&pool).await.unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn the_renderer_cannot_set_a_folder_the_vet_would_have_accepted() {
+        // The point of PR-D: a plain, vetted-OK folder sent in `settings_save`
+        // used to be stored with no dialog. Now only a pick stores one.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = pool_in(dir.path()).await;
+        let good = dir.path().join("Opptak");
+        assert!(vet_new_save_folder(good.to_str().unwrap()).is_ok());
+        let saved = settings::save_from_renderer(
+            &pool,
+            Settings {
+                save_folder: good.to_str().map(str::to_string),
+                language: Some("en".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(saved.save_folder, None);
+        assert_eq!(saved.language.as_deref(), Some("en"));
+        assert_eq!(settings::load(&pool).await.unwrap().save_folder, None);
     }
 
     // ── The settings profile (A1): the tests play the dialog ────────────────

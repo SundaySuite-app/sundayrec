@@ -17,4 +17,12 @@ outputPath: string,
  * report we could not read. OPTIONAL on the TS side on purpose: every
  * caller that only wants the path keeps compiling.
  */
-loudness?: EditorExportLoudness, };
+loudness?: EditorExportLoudness, 
+/**
+ * What the receipt hands back to `recordings_reveal_export` to show this
+ * file in Finder/Explorer — an opaque session token (`ChosenKind::Export`),
+ * minted by the `editor_export` COMMAND once the file is delivered, never
+ * by the seam. `None` straight out of [`export`], and for a file the token
+ * store could not vet (the receipt then has nothing to reveal).
+ */
+revealToken?: string, };

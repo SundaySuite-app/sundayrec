@@ -4,6 +4,7 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
+  PATHS_OF_RECORDING_IDS,
   recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
@@ -80,12 +81,13 @@ const TRASH_STORE: Fixtures = {
   trash_move: fn(`(args) => {
     const key = ${JSON.stringify(TRASH_DB_KEY)};
     const list = JSON.parse(localStorage.getItem(key) || "[]");
-    const moved = args.paths.map((p, i) => ({
+    const paths = (${PATHS_OF_RECORDING_IDS})(args.recordingIds);
+    const moved = paths.map((p, i) => ({
       id: "t" + (list.length + i), originalPath: p, trashedPath: "/tmp/trash/x",
       name: p.split("/").pop(), deletedAt: Date.now(), related: [], byteSize: 1000,
     }));
     localStorage.setItem(key, JSON.stringify([...list, ...moved]));
-    (window.__E2E_TRASHED__ ||= []).push(...args.paths);
+    (window.__E2E_TRASHED__ ||= []).push(...paths);
     return moved;
   }`),
   trash_restore: fn(`(args) => {
@@ -439,6 +441,31 @@ test.describe("F2-T3: tastatursnarveier i biblioteket", () => {
     await expect(search).not.toBeFocused();
     await page.keyboard.press("Control+f");
     await expect(search).toBeFocused();
+  });
+
+  test("«Vis i Finder» på en rad sender radens id til Rust, aldri stien", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN: la `reveal(row.entry.id)` i `LibraryPage.tsx` bli
+    // `reveal(row.path)`, og denne blir rød — Rust tar ikke lenger imot en sti
+    // (B-familien, PR-D).
+    await openLibrary(page, {
+      ...BOOT_FIXTURES,
+      recordings_list: ROWS,
+      trash_list: [],
+      recordings_reveal: fn(`(args) => {
+        (window.__E2E_REVEALS__ ||= []).push(args);
+        return null;
+      }`),
+    });
+    await page
+      .getByTestId("library-row")
+      .filter({ hasText: "Bønnemøte" })
+      .getByTestId("library-row-reveal")
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_REVEALS__))
+      .toEqual([{ recordingId: "rec-a" }]);
   });
 
   test("placeholderen bærer den ekte snarveien, ikke en hardkodet setning", async ({

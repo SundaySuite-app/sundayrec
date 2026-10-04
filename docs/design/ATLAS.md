@@ -712,9 +712,10 @@ derfor litt annerledes ut enn i den ekte appen, og ingen av dem er feil i appen:
   ingen nettleser kan laste. Bølgeform, segmenter, kutt og eksport tegnes fra
   fixturer og er ekte.
 - **Native OS-dialoger er ikke fotografert.** «Velg mappe», «Åpne fil…» og
-  eksport-destinasjon går gjennom `@tauri-apps/plugin-dialog`, og
-  innstillingsprofilens import/eksport åpner vinduet fra Rust — ingen fixtur
-  kan stå i stedet for noen av dem. De er markert som egne trinn i flytene i
+  eksport-destinasjon og opptaksmappen åpnes av Rust (`editor_open_recording`,
+  `editor_pick_output_folder`, `settings_pick_save_folder` — webviewet har ingen
+  dialog-tillatelse lenger), og innstillingsprofilens import/eksport åpner
+  vinduet fra Rust — ingen fixtur kan stå i stedet for noen av dem. De er markert som egne trinn i flytene i
   §3.
 - **Kameraforhåndsvisningen er tom.** Selve bildet kommer fra `getUserMedia` i
   webviewen; scenen `home--video-pa` viser rammen og kortene, ikke et videobilde.

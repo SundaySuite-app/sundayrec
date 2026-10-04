@@ -118,6 +118,10 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
   };
 }
 
+/** The token `editor_export` puts in its result for the delivered file — what
+ *  the receipt's «Vis i Finder» hands back to `recordings_reveal_export` (PR-D). */
+export const REVEAL_TOKEN = "00000000-0000-4000-8000-0000000000e3";
+
 /** Where a fixtured export lands. The backend picks the name; this is its
  *  answer, and the receipt shows THIS — never the renderer's prediction. */
 export const EXPORTED =
@@ -128,7 +132,10 @@ export const EXPORTED =
  *  here (where it IS real TypeScript) and its JSON spliced into the fixture
  *  source below. A Rust rename of `outputPath` fails here, same reasoning as
  *  `SEGMENTS`. */
-const EXPORT_RESULT: EditorExportResult = { outputPath: EXPORTED };
+const EXPORT_RESULT: EditorExportResult = {
+  outputPath: EXPORTED,
+  revealToken: REVEAL_TOKEN,
+};
 
 /** An export that finishes at once. NO `loudness`: nothing mastered it, so
  *  there is no level claim to make — which is what the backend answers. */
@@ -149,7 +156,11 @@ export const EXPORT_OK = fn(`(args) => {
 export function exportOkMastered(
   loudness: NonNullable<EditorExportResult["loudness"]>,
 ): ReturnType<typeof fn> {
-  const result: EditorExportResult = { outputPath: EXPORTED, loudness };
+  const result: EditorExportResult = {
+    outputPath: EXPORTED,
+    revealToken: REVEAL_TOKEN,
+    loudness,
+  };
   return fn(`(args) => {
     (window.__E2E_EXPORTS__ ||= []).push(args.request);
     return ${JSON.stringify(result)};

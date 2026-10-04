@@ -145,6 +145,7 @@
         "refusedPackage": "Dieser Ordner ist eine App oder ein Paket (etwa ein Keynote- oder Logic-Projekt), kein gewöhnlicher Ordner. Wählen Sie einen anderen Ordner.",
         "refusedTooBroad": "Wählen Sie einen Ordner innerhalb Ihres Benutzerordners, zum Beispiel „SundayRec“ in Dokumente – nicht den Benutzerordner selbst oder das Stammverzeichnis des Laufwerks.",
         "refusedProtected": "Dieser Ordner ist geschützt und kann nicht für Aufnahmen verwendet werden. Wählen Sie einen anderen Ordner.",
+        "refusedAppData": "Dieser Ordner ist der eigene Datenordner der App oder liegt darin und kann nicht für Aufnahmen verwendet werden. Wählen Sie einen anderen Ordner.",
         "refusedInvalid": "Dieser Ordner kann nicht für Aufnahmen verwendet werden. Wählen Sie einen anderen Ordner."
       },
       "qualityLede": "Höhere Qualität bedeutet größere Dateien. Die meisten bleiben bei Gut.",

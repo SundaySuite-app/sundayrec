@@ -49,8 +49,10 @@ export const canRedo = signal(false);
 
 const draftSaver = createDraftScheduler<Cut[]>({
   delayMs: DRAFT_SAVE_DEBOUNCE_MS,
-  save: (fp, list) => {
-    void window.api.editorSaveCutsDraft(fp, list).catch(() => {});
+  // Skrivingen navngir opptaket med lappen den ble armert med (A3) — ikke
+  // stien, som Rust ikke tar imot, og ikke lappen `E` har om to sekunder.
+  save: (token, list) => {
+    void window.api.editorSaveCutsDraft(token, list).catch(() => {});
   },
 });
 
@@ -73,18 +75,18 @@ export function cancelDraftSave(): void {
  */
 export function clearDraft(): void {
   draftSaver.cancel();
-  if (E.filePath) {
-    void window.api.editorDeleteCutsDraft(E.filePath).catch(() => {});
+  if (E.sourceToken) {
+    void window.api.editorDeleteCutsDraft(E.sourceToken).catch(() => {});
   }
 }
 
 function scheduleDraftSave(): void {
-  if (!E.filePath) return;
+  if (!E.sourceToken) return;
   // Øyeblikksbilde: den levende lista endres videre (håndtaksdrag redigerer
   // elementene in place), og skrivingen skal beskrive tilstanden slik den var
   // da den ble bedt om.
   draftSaver.schedule(
-    E.filePath,
+    E.sourceToken,
     E.cuts.map((c) => ({ ...c })),
   );
 }

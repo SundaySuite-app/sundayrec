@@ -895,13 +895,10 @@ mod imp {
                 .map(|m| m.len() > 0)
                 .unwrap_or(false)
             {
-                let _ = app.emit(
-                    FINISHED_EVENT,
-                    RecordingFinished {
-                        file_path: final_path.clone(),
-                        has_video,
-                    },
-                );
+                let finished =
+                    RecordingFinished::for_delivered(pool.as_ref(), final_path.clone(), has_video)
+                        .await;
+                let _ = app.emit(FINISHED_EVENT, finished);
             }
         }
         // The terminal write clears the shared auto-stop deadline itself (inside

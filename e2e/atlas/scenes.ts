@@ -67,10 +67,9 @@ import {
  *    `currentOs() === "win"`, and `navigator.userAgentData.platform` beats any
  *    user-agent override, so Desktop Chrome can never be Windows here.
  *  - **Native pickers** («Åpne fil…», «Velg mappe», profil-import/-eksport).
- *    The first two go through `@tauri-apps/plugin-dialog`, which invokes
- *    directly and is not fixture-covered; the click is a silent no-op. The
- *    profile's dialogs are opened by Rust itself (`settings_export_profile`/
- *    `settings_import_profile`), which no fixture answers either. The state
+ *    All of them are opened by Rust itself (`editor_open_recording`,
+ *    `settings_pick_save_folder`, `settings_export_profile`/
+ *    `settings_import_profile`), which no fixture answers. The state
  *    BEFORE the click is photographed; the state after does not exist out here.
  *  - **Playback.** `asset://` is dead outside Tauri, so the editor's playback
  *    notice is always the honest «ikke tilgjengelig» one and the play button

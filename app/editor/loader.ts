@@ -281,8 +281,8 @@ async function openFileNow(
     }
     adopt(opened);
   }
-  // Fra nå av er stien bare til visning, avspilling og sidevognene; lappen er
-  // det Rust-kommandoene får.
+  // Fra nå av er stien bare til visning og avspilling; lappen er det ALLE
+  // Rust-kommandoene får, sidevognene (A3) med.
   const path = E.filePath;
   const token = E.sourceToken;
 
@@ -383,7 +383,7 @@ async function openFileNow(
 
   // 4. Sidevogna. Et utkast som finnes betyr at forrige økt endte midt i noe.
   try {
-    const draft = (await window.api.editorReadCutsDraft(path)) as {
+    const draft = (await window.api.editorReadCutsDraft(token)) as {
       cuts?: Array<{ start: number; end: number }>;
       ts?: number;
     } | null;
@@ -406,7 +406,7 @@ async function openFileNow(
   // 4b. Innholdet: tittel/taler/beskrivelse fra `.meta.json`, eller dagens
   // navn på en helligdag. To raske oppslag, og EKSPORTERING skal ha dem før
   // noen rekker å se feltene. Vokter selv på `seq`.
-  await loadExportContent(path, E.startedAtMs, seq);
+  await loadExportContent(token, E.startedAtMs, seq);
   if (seq !== E.loadSeq) return;
 
   loadPhase.value = null;

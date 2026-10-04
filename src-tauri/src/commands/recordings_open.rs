@@ -43,70 +43,69 @@
 //! question `open` itself asks, everywhere by an extension list and the
 //! `Info.plist` every code bundle carries.
 //!
-//! ## The save folder the renderer may store
+//! ## The save folder: picked in a Rust dialog, vetted, never sent
 //!
-//! The recordings root decides what the tray opens and what grant 2 below may
-//! reveal, so a NEW value from the renderer is vetted before it is stored
-//! ([`vet_new_save_folder`], called through `crate::settings`): absolute and
-//! `..`-free, outside the protected home folders, not a package, and not the
-//! filesystem root, the home folder or a folder above it. A value already
-//! stored is never re-judged — an installation that records into it today
-//! must go on doing so (see `crate::settings::save_from_renderer`).
+//! The recordings root decides what the tray opens and where the recordings
+//! and the papirkurv live, so a NEW folder is vetted before it is stored
+//! ([`vet_new_save_folder`]): absolute and `..`-free, outside the protected
+//! home folders, not a package, and not the filesystem root, the home folder or
+//! a folder above it. Since PR-D it also comes from a dialog the PROCESS opens
+//! (`settings_pick_save_folder`, `commands::settings`), not from a string the
+//! webview sends in `settings_save`, which keeps the stored folder whatever it
+//! says. A value already stored is never re-judged — an installation that
+//! records into it today must go on doing so (see
+//! `crate::settings::save_from_renderer`).
 //!
-//! ## `recordings_reveal` — path policy
+//! ## «Vis i Finder» — two commands, neither takes a path (B-family, PR-D)
 //!
-//! **Path policy: [`path_guard::checked_input_file`], then one of three
-//! grants.** The path must be absolute, `..`-free, an existing regular FILE (a
-//! bundle is a directory, so it can never be revealed), and outside the
-//! protected home directories. Then it must be ONE of:
+//! Until PR-D `recordings_reveal` took a PATH and judged it with
+//! `path_guard::checked_input_file` plus one of three grants (a delivered
+//! export, inside the recordings root, a recording the history knows). With no
+//! per-command ACL that was a question the webview answered for itself: the
+//! three grants were checks on a claim, and the third («the history has a row
+//! for this path») was a scan over every row, canonicalising each — on a share
+//! that has stopped answering, minutes. Now the webview names a THING Rust
+//! already knows, and Rust decides the file:
 //!
-//! 1. a file the export engine delivered in this session
-//!    ([`DeliveredExports`], filled only on a successful `editor_export`) — the
-//!    receipt's button, for an export saved outside the recordings folder;
-//! 2. inside the recordings root ([`path_guard::checked_under_root`]);
-//! 3. a recording the history knows (`recording` table) — a recording made
-//!    before the save folder was changed.
+//! - [`recordings_reveal`]`(recording_id)` — a history ROW's id. The database
+//!   holds the path (`store::recording_file_path`, written only by the
+//!   recorder), exactly as `editor_open_known` does for the editor. An id with
+//!   no row is `reveal_not_allowed`. Callers: the library row, «Siste opptak»,
+//!   and the recording receipt (which finds its row by the path of the
+//!   `recording://finished` event — Rust's own).
+//! - [`recordings_reveal_export`]`(export_token)` — the token `editor_export`
+//!   put in its result for the file the engine had just delivered
+//!   (`ChosenKind::Export`, `commands::chosen_paths`): typed (an export token
+//!   is no recording's token and no folder's), session-scoped and re-validated
+//!   when used — still there, still a file, still the file that was delivered
+//!   (a symlink swapped in at the same name is not), still outside the
+//!   protected folders.
 //!
-//! The target is canonicalised first (symlinks and `..` resolved, which is
-//! also what turns macOS' `/var/…` into `/private/var/…`). Grants 1 and 2
-//! compare CANONICAL paths, further normalised by [`compare_key`] for the
-//! Windows verbatim/UNC prefixes and for case. Grant 3 first looks the
-//! renderer's RAW string up in the history — the renderer passes a row's
-//! `file_path` back verbatim, so this exact match is the normal hit — and only
-//! on a miss compares canonical keys row by row. The raw match grants nothing a
-//! canonical one would not (it names the same stored row, and the same string
-//! canonicalises to the same file), and what is revealed is always the
-//! canonical target vetted first, never the renderer's string.
-//!
-//! Reveal never opens or runs anything — it selects the item in a file-manager
-//! window — so "show" is the only verb on offer here. Error messages are
-//! English codes and never carry the path.
+//! What gets revealed is always the CANONICAL file, vetted first
+//! ([`vetted_target`]): absolute, `..`-free, an existing regular FILE (a
+//! bundle is a directory, so it can never be revealed) and outside the
+//! protected home directories. Reveal never opens or runs anything — it
+//! selects the item in a file-manager window — so «show» is the only verb on
+//! offer. Error messages are English codes and never carry the path.
 //!
 //! ## No filesystem call on the async runtime
 //!
 //! Every canonicalise and stat both commands make runs on
-//! `tokio::task::spawn_blocking` ([`off_runtime`]). A save folder, a clicked
-//! file or a history row can sit on a network share that has stopped
+//! `tokio::task::spawn_blocking` ([`off_runtime`]). A save folder, a history
+//! row or a delivered export can sit on a network share that has stopped
 //! answering, and the OS may take minutes to give up on it; run inline, that
 //! wait would hold one of the runtime's few worker threads — and with them
 //! every other command — instead of one blocking-pool thread.
 
-use std::path::{Component, Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
-
 use sqlx::SqlitePool;
+use std::path::{Component, Path, PathBuf};
 use tauri::State;
 
+use super::chosen_paths::{ChosenError, ChosenKind, ChosenPaths};
 use super::path_guard::{self, compare_key, strip_verbatim};
 use crate::db::{store, Db};
 use crate::error::{AppError, AppResult};
 use crate::util::off_runtime;
-
-/// How many delivered exports one session remembers. A session that exports
-/// more than this simply loses the oldest «Vis i Finder» grants (the receipt
-/// only ever shows the latest); the bound exists so the set cannot grow without
-/// limit in a process that runs for weeks.
-const DELIVERED_EXPORTS_MAX: usize = 256;
 
 /// Directory extensions macOS treats as a package: an application, a plug-in
 /// or an installer — `open` on one runs or installs something instead of
@@ -171,58 +170,6 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
     "xcworkspace",
     "xpc",
 ];
-
-/// Export outputs the export engine delivered in this session — grant 1 of
-/// [`recordings_reveal`]'s policy. Managed state; filled ONLY by
-/// `commands::editor::editor_export` after `editor::export` succeeded, so
-/// nothing the renderer can call adds to it directly.
-#[derive(Debug, Default)]
-pub struct DeliveredExports {
-    keys: Mutex<Vec<PathBuf>>,
-}
-
-impl DeliveredExports {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Remember a delivered export. Canonicalised NOW, while the file
-    /// certainly exists and is the one the engine wrote; a later symlink
-    /// swapped in at the same name canonicalises elsewhere and no longer
-    /// matches.
-    pub fn record(&self, output_path: &str) {
-        let Ok(canonical) = Path::new(output_path).canonicalize() else {
-            tracing::warn!("a delivered export could not be resolved; it will not be revealable");
-            return;
-        };
-        let key = compare_key(&canonical);
-        let mut keys = self.keys.lock().unwrap_or_else(PoisonError::into_inner);
-        if keys.contains(&key) {
-            return;
-        }
-        if keys.len() >= DELIVERED_EXPORTS_MAX {
-            keys.remove(0);
-        }
-        keys.push(key);
-    }
-
-    fn contains(&self, canonical: &Path) -> bool {
-        let key = compare_key(canonical);
-        self.keys
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains(&key)
-    }
-}
-
-/// Which of the three grants let a reveal through. Returned so the tests can
-/// pin the policy branch by branch, and logged for support.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RevealGrant {
-    DeliveredExport,
-    UnderRecordingsRoot,
-    KnownRecording,
-}
 
 fn invalid_file() -> AppError {
     AppError::Validation(
@@ -336,8 +283,8 @@ fn save_folder_invalid() -> AppError {
 ///
 /// ## Why «too broad», and why not stricter
 ///
-/// The home folder works as a recordings folder — but then grant 2 lets the
-/// webview reveal every file in it, and the tray opens it; `/` and `C:\` are
+/// The home folder works as a recordings folder — but then the tray opens it
+/// and the papirkurv would be created in it; `/` and `C:\` are
 /// the same at machine scale, and the recorder could not even write there
 /// (macOS' root is a read-only system volume; Windows denies a standard user
 /// files in `C:\`). The native picker that sets the folder has a «New folder»
@@ -347,12 +294,85 @@ fn save_folder_invalid() -> AppError {
 /// so only the root that holds the home folder is refused there; on macOS and
 /// Linux, mounted disks live below `/Volumes` or `/media` and are untouched.
 pub(crate) fn vet_new_save_folder(raw: &str) -> AppResult<()> {
-    vet_save_folder_for_home(raw, path_guard::home_dir().as_deref())
+    vet_save_folder_in(raw, path_guard::home_dir().as_deref(), &app_folders())
+}
+
+/// The folders this app keeps its own state in: the data directory (the
+/// database, the recovery folder, the crash records) and the local data
+/// directory (the file log, the pre-roll segments) — the same folder off
+/// Windows. A recordings folder is never one of them, nor inside one, nor
+/// above one.
+fn app_folders() -> Vec<PathBuf> {
+    [
+        crate::util::app_data_dir(),
+        crate::util::app_local_data_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// [`vet_new_save_folder`] for the one place a folder is NOT the answer of a
+/// dialog: the localStorage hand-over (`settings_import`). On top of the vet it
+/// has to be a folder that EXISTS and that this process can write into.
+///
+/// The hand-over carries a folder an old installation recorded into, so it was
+/// there when that installation last ran; one that is gone (an unplugged disk,
+/// a deleted folder) is not worth taking on the webview's word — the stored
+/// folder is kept (see `settings::import`) and the operator picks the folder
+/// again, in a dialog. The probe is a real file, created and removed: the mode
+/// bits of a share or a sandboxed folder say nothing about what is writable.
+pub(crate) fn vet_handover_save_folder(raw: &str) -> AppResult<()> {
+    vet_handover_in(raw, path_guard::home_dir().as_deref(), &app_folders())
+}
+
+/// [`vet_handover_save_folder`] with the home folder and the app's own folders
+/// passed in, so the tests can give it ones that exist.
+fn vet_handover_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppResult<()> {
+    vet_save_folder_in(raw, home, app)?;
+    let path = Path::new(raw);
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Err(save_folder_invalid()),
+        Err(_) => {
+            return Err(AppError::Validation(
+                "handover_folder_missing: the recordings folder does not exist".into(),
+            ))
+        }
+    }
+    let probe = path.join(format!(
+        ".sundayrec-handover-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let created = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe);
+    match created {
+        Ok(file) => {
+            drop(file);
+            let _ = std::fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(_) => Err(AppError::Validation(
+            "handover_folder_unwritable: the recordings folder cannot be written to".into(),
+        )),
+    }
 }
 
 /// [`vet_new_save_folder`] with the home folder passed in, so the tests can
 /// give it one without touching the process environment other tests read.
+#[cfg(test)]
 fn vet_save_folder_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
+    vet_save_folder_in(raw, home, &[])
+}
+
+/// The vet itself, with the home folder and the app's own folders passed in.
+fn vet_save_folder_in(raw: &str, home: Option<&Path>, app: &[PathBuf]) -> AppResult<()> {
     let path = Path::new(raw);
     if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(save_folder_invalid());
@@ -379,6 +399,23 @@ fn vet_save_folder_for_home(raw: &str, home: Option<&Path>) -> AppResult<()> {
             "save_folder_too_broad: the recordings folder cannot be the file system root, the home folder or a folder above it"
                 .into(),
         ));
+    }
+    // The app's own folders. The app cleans up in them (the recovery folder's
+    // leftovers, old logs) and works inside the recordings folder (the
+    // papirkurv, retention), so the two must never overlap: a recordings folder
+    // moved onto `<app-data>/recovery` was the first link of a chain that ended
+    // in deleted files (the #314 review). Judged by comparison key and by
+    // identity, like the home folder above (a firmlink or a differently-cased
+    // spelling of the same folder is the same folder).
+    for dir in app {
+        let dir = path_guard::resolved_with_missing_tail(dir).unwrap_or_else(|| dir.clone());
+        let inside = compare_key(&would_be).starts_with(compare_key(&dir));
+        if inside || path_guard::holds_home(&would_be, &dir) {
+            return Err(AppError::Validation(
+                "save_folder_app_data: the recordings folder cannot be the app's own data folder, inside it or above it"
+                    .into(),
+            ));
+        }
     }
     if looks_like_package(&would_be) {
         return Err(AppError::Validation(
@@ -441,41 +478,6 @@ fn openable_folder(root: &Path) -> AppResult<String> {
     }
 }
 
-/// Whether the history has a row for this file: first by the exact string (the
-/// renderer passes `file_path` back verbatim, so this is the normal hit), then
-/// by canonical key, for a row stored under another spelling of the same file.
-async fn is_known_recording(pool: &SqlitePool, raw: &str, target: &Path) -> AppResult<bool> {
-    is_known_recording_with(pool, raw, target, Path::canonicalize).await
-}
-
-/// [`is_known_recording`] with the canonicaliser passed in — the seam
-/// `tests::the_history_scan_leaves_the_runtime_free` uses to stall one row.
-///
-/// The miss path canonicalises EVERY row, and a row can name a file on a share
-/// that no longer answers (an old recording on the church's NAS). So the scan
-/// runs in [`off_runtime`]; the two database reads before it stay async.
-async fn is_known_recording_with<C>(
-    pool: &SqlitePool,
-    raw: &str,
-    target: &Path,
-    canonicalize: C,
-) -> AppResult<bool>
-where
-    C: Fn(&Path) -> std::io::Result<PathBuf> + Send + 'static,
-{
-    if store::recording_exists_for_path(pool, raw).await? {
-        return Ok(true);
-    }
-    let key = compare_key(target);
-    let rows = store::list_recordings(pool).await?;
-    off_runtime(move || {
-        rows.iter().any(|row| {
-            canonicalize(Path::new(&row.file_path)).is_ok_and(|c| compare_key(&c) == key)
-        })
-    })
-    .await
-}
-
 /// The clicked path as the canonical file it names: absolute, `..`-free, an
 /// existing regular file outside the protected home folders. Filesystem work —
 /// [`reveal_target`] runs it in [`off_runtime`].
@@ -497,41 +499,31 @@ fn vetted_target(raw: &str) -> AppResult<PathBuf> {
     Ok(target)
 }
 
-/// Grant 2: the canonical `target` lies inside `root`. Filesystem work (the
-/// root is canonicalised) — run in [`off_runtime`].
-fn is_under_root(target: &Path, root: &Path) -> bool {
-    // A relative save folder would be resolved against the process working
-    // directory — the same reason `openable_folder` refuses one.
-    root.is_absolute()
-        && target
-            .to_str()
-            .is_some_and(|canonical| path_guard::checked_under_root(canonical, root).is_ok())
+/// The file a history ROW names, as the canonical file to reveal. The row's id
+/// is all the webview sends; the database decides the path. An id with no row
+/// is `reveal_not_allowed` — an unknown id, a made-up one, and a PATH in the
+/// id's place (the old wire value) are all the same «no such row».
+async fn reveal_recording_target(pool: &SqlitePool, recording_id: &str) -> AppResult<PathBuf> {
+    let raw = store::recording_file_path(pool, recording_id)
+        .await?
+        .ok_or_else(not_allowed)?;
+    off_runtime(move || vetted_target(&raw)).await?
 }
 
-/// The whole reveal policy, minus fetching its inputs: returns the canonical
-/// file to reveal and the grant that allowed it. Cheapest grant first.
-async fn reveal_target(
-    raw: &str,
-    delivered: &DeliveredExports,
-    root: Option<&Path>,
-    pool: &SqlitePool,
-) -> AppResult<(PathBuf, RevealGrant)> {
-    let owned = raw.to_owned();
-    let target = off_runtime(move || vetted_target(&owned)).await??;
-
-    if delivered.contains(&target) {
-        return Ok((target, RevealGrant::DeliveredExport));
-    }
-    if let Some(root) = root {
-        let (t, r) = (target.clone(), root.to_path_buf());
-        if off_runtime(move || is_under_root(&t, &r)).await? {
-            return Ok((target, RevealGrant::UnderRecordingsRoot));
-        }
-    }
-    if is_known_recording(pool, raw, &target).await? {
-        return Ok((target, RevealGrant::KnownRecording));
-    }
-    Err(not_allowed())
+/// The file an Export token stands for, as the canonical file to reveal:
+/// [`ChosenPaths::resolve`] — typed, looked up and re-validated NOW — and
+/// nothing else. A token for another kind, a made-up one and one from before a
+/// restart are `reveal_not_allowed`; a file that has gone, been swapped for a
+/// link elsewhere or entered a protected folder since is `reveal_invalid_path`.
+async fn reveal_export_target(chosen: &ChosenPaths, export_token: &str) -> AppResult<PathBuf> {
+    let store = chosen.clone();
+    let token = export_token.to_owned();
+    off_runtime(move || store.resolve(&token, ChosenKind::Export))
+        .await?
+        .map_err(|why| match why {
+            ChosenError::Unknown => not_allowed(),
+            ChosenError::Gone | ChosenError::Refused => invalid_file(),
+        })
 }
 
 /// The tray's «Åpne opptaksmappen»: open the recordings folder in
@@ -551,36 +543,48 @@ pub async fn recordings_open_folder(app: tauri::AppHandle, db: State<'_, Db>) ->
     })
 }
 
-/// «Vis i Finder» / «Vis i Utforsker»: select one file in a file-manager
-/// window. Reveal only — never open.
+/// Select `target` in a file-manager window — reveal only, never open.
+fn show_in_file_manager(app: &tauri::AppHandle, target: &Path) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+
+    app.opener().reveal_item_in_dir(target).map_err(|e| {
+        tracing::warn!(error = %e, "the OS refused to reveal a file");
+        AppError::Internal("reveal_failed: the file manager could not show the file".into())
+    })
+}
+
+/// «Vis i Finder» / «Vis i Utforsker» for a recording in the history: select
+/// its file in a file-manager window. Reveal only — never open.
 ///
-/// **Path policy: [`path_guard::checked_input_file`] + one of three grants**
-/// (delivered export, inside the recordings root, known recording) — see the
-/// module docs.
+/// **Takes a history row's id, not a path** (B-family): the database holds the
+/// file — see the module docs. Refused with a code and no path.
 #[tauri::command]
 pub async fn recordings_reveal(
     app: tauri::AppHandle,
     db: State<'_, Db>,
-    delivered: State<'_, DeliveredExports>,
-    path: String,
+    recording_id: String,
 ) -> AppResult<()> {
-    use tauri_plugin_opener::OpenerExt;
+    let target = reveal_recording_target(&db.pool, &recording_id)
+        .await
+        .inspect_err(|e| tracing::warn!(code = %e, "recordings_reveal refused an id"))?;
+    show_in_file_manager(&app, &target)
+}
 
-    // A root that cannot be resolved only closes grant 2; the other two still
-    // apply.
-    let root = path_guard::recordings_root(&app, &db).await.ok();
-    let (target, grant) = match reveal_target(&path, &delivered, root.as_deref(), &db.pool).await {
-        Ok(ok) => ok,
-        Err(e) => {
-            tracing::warn!(code = %e, "recordings_reveal refused a path");
-            return Err(e);
-        }
-    };
-    tracing::debug!(?grant, "recordings_reveal");
-    app.opener().reveal_item_in_dir(&target).map_err(|e| {
-        tracing::warn!(error = %e, "the OS refused to reveal a file");
-        AppError::Internal("reveal_failed: the file manager could not show the file".into())
-    })
+/// «Vis i Finder» / «Vis i Utforsker» on the export receipt: select the file
+/// `editor_export` delivered. Reveal only — never open.
+///
+/// **Takes the Export token from the export's result, not a path** — see the
+/// module docs.
+#[tauri::command]
+pub async fn recordings_reveal_export(
+    app: tauri::AppHandle,
+    chosen: State<'_, ChosenPaths>,
+    export_token: String,
+) -> AppResult<()> {
+    let target = reveal_export_target(&chosen, &export_token)
+        .await
+        .inspect_err(|e| tracing::warn!(code = %e, "recordings_reveal_export refused a token"))?;
+    show_in_file_manager(&app, &target)
 }
 
 #[cfg(test)]
@@ -616,7 +620,7 @@ mod tests {
         }
     }
 
-    fn assert_code(result: AppResult<(PathBuf, RevealGrant)>, code: &str) {
+    fn assert_code(result: AppResult<PathBuf>, code: &str) {
         match result {
             Err(AppError::Validation(msg)) => {
                 assert!(msg.starts_with(code), "expected `{code}`, got `{msg}`")
@@ -625,245 +629,119 @@ mod tests {
         }
     }
 
-    // ── recordings_reveal: the policy, branch by branch ─────────────────────
-
-    #[tokio::test]
-    async fn a_file_inside_the_recordings_root_is_revealed() {
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        let file = touch(&root.join("2026-10-04 11.00.mp3"));
-        let (target, grant) = reveal_target(&file, &DeliveredExports::new(), Some(&root), &pool)
+    /// A history row for `file`, and its id.
+    async fn known(pool: &SqlitePool, file: &str) -> String {
+        insert_recording(pool, row(file)).await.unwrap();
+        crate::db::store::list_recordings(pool)
             .await
-            .unwrap();
-        assert_eq!(grant, RevealGrant::UnderRecordingsRoot);
-        assert_eq!(target, Path::new(&file).canonicalize().unwrap());
+            .unwrap()
+            .into_iter()
+            .find(|r| r.file_path == file)
+            .expect("the row was written")
+            .id
     }
 
-    #[tokio::test]
-    async fn a_file_outside_every_grant_is_refused() {
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        std::fs::create_dir_all(&root).unwrap();
-        let elsewhere = touch(&dir.path().join("Private/diary.txt"));
-        assert_code(
-            reveal_target(&elsewhere, &DeliveredExports::new(), Some(&root), &pool).await,
-            "reveal_not_allowed",
-        );
-        // A sibling that merely shares the root's name as a PREFIX is outside.
-        let sibling = touch(&dir.path().join("SundayRec-evil/x.mp3"));
-        assert_code(
-            reveal_target(&sibling, &DeliveredExports::new(), Some(&root), &pool).await,
-            "reveal_not_allowed",
-        );
+    /// An Export token for `file`, minted the way `editor_export` mints it.
+    fn delivered(chosen: &ChosenPaths, file: &str) -> String {
+        let vetted = crate::commands::chosen_paths::vet(Path::new(file), ChosenKind::Export)
+            .expect("a delivered file vets");
+        chosen.mint(vetted)
     }
 
+    // ── recordings_reveal: a history row's id, never a path ─────────────────
+
     #[tokio::test]
-    async fn a_recording_the_history_knows_is_revealed_outside_the_root() {
-        // The save folder was changed after this recording was made.
+    async fn a_recording_is_revealed_by_its_row_id_wherever_it_lies() {
+        // The save folder was changed after this recording was made: the row,
+        // not a folder, is what says the file is a recording.
         let (pool, dir) = world().await;
-        let root = dir.path().join("NewFolder");
-        std::fs::create_dir_all(&root).unwrap();
         let old = touch(&dir.path().join("OldFolder/service.wav"));
-        insert_recording(&pool, row(&old)).await.unwrap();
-        let (_, grant) = reveal_target(&old, &DeliveredExports::new(), Some(&root), &pool)
-            .await
-            .unwrap();
-        assert_eq!(grant, RevealGrant::KnownRecording);
+        let id = known(&pool, &old).await;
+        let target = reveal_recording_target(&pool, &id).await.unwrap();
+        assert_eq!(target, Path::new(&old).canonicalize().unwrap());
+    }
+
+    #[tokio::test]
+    async fn an_id_with_no_row_is_refused_and_a_path_is_no_id() {
+        let (pool, dir) = world().await;
+        let file = touch(&dir.path().join("SundayRec/a.mp3"));
+        let id = known(&pool, &file).await;
+        // Made up, empty, a traversal — and the file's own PATH where the id
+        // goes (the old wire value), even though a row for exactly that file
+        // exists: the id is the only way in.
+        for forged in [
+            "00000000-0000-0000-0000-000000000000",
+            "",
+            "../../.ssh/id_ed25519",
+            file.as_str(),
+        ] {
+            assert_code(
+                reveal_recording_target(&pool, forged).await,
+                "reveal_not_allowed",
+            );
+        }
+        assert!(reveal_recording_target(&pool, &id).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_row_whose_file_was_deleted_by_hand_says_so() {
+        let (pool, dir) = world().await;
+        let file = touch(&dir.path().join("SundayRec/gone.mp3"));
+        let id = known(&pool, &file).await;
+        std::fs::remove_file(&file).unwrap();
+        assert_code(
+            reveal_recording_target(&pool, &id).await,
+            "reveal_invalid_path",
+        );
+    }
+
+    #[tokio::test]
+    async fn a_row_that_names_a_folder_or_a_relative_path_reveals_nothing() {
+        let (pool, dir) = world().await;
+        let bundle = dir.path().join("SundayRec/Calculator.app");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let id = known(&pool, bundle.to_str().unwrap()).await;
+        assert_code(
+            reveal_recording_target(&pool, &id).await,
+            "reveal_invalid_path",
+        );
+        // Tests run with the crate folder as cwd: a relative row must not be
+        // resolved against it.
+        let id = known(&pool, "Cargo.toml").await;
+        assert_code(
+            reveal_recording_target(&pool, &id).await,
+            "reveal_invalid_path",
+        );
     }
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn a_history_row_stored_under_another_spelling_still_matches() {
-        // The row was written through a symlinked folder; the renderer asks
-        // with the resolved spelling. Canonical keys on both sides make them
-        // the same file.
+    async fn a_row_stored_under_another_spelling_reveals_the_canonical_file() {
+        // The row was written through a symlinked folder; what is shown is the
+        // file itself.
         let (pool, dir) = world().await;
         let real = touch(&dir.path().join("Real/service.wav"));
         let alias_dir = dir.path().join("Alias");
         std::os::unix::fs::symlink(dir.path().join("Real"), &alias_dir).unwrap();
         let via_alias = alias_dir.join("service.wav");
-        insert_recording(&pool, row(via_alias.to_str().unwrap()))
-            .await
-            .unwrap();
-        let (_, grant) = reveal_target(&real, &DeliveredExports::new(), None, &pool)
-            .await
-            .unwrap();
-        assert_eq!(grant, RevealGrant::KnownRecording);
+        let id = known(&pool, via_alias.to_str().unwrap()).await;
+        let target = reveal_recording_target(&pool, &id).await.unwrap();
+        assert_eq!(target, Path::new(&real).canonicalize().unwrap());
     }
 
     #[tokio::test]
-    async fn an_export_delivered_this_session_is_revealed_outside_the_root() {
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        std::fs::create_dir_all(&root).unwrap();
-        let export = touch(&dir.path().join("USB-stick/service_redigert.mp3"));
-        let delivered = DeliveredExports::new();
-        // Not yet delivered: refused.
-        assert_code(
-            reveal_target(&export, &delivered, Some(&root), &pool).await,
-            "reveal_not_allowed",
-        );
-        delivered.record(&export);
-        let (_, grant) = reveal_target(&export, &delivered, Some(&root), &pool)
-            .await
-            .unwrap();
-        assert_eq!(grant, RevealGrant::DeliveredExport);
-    }
-
-    #[test]
-    fn the_delivered_set_is_bounded_and_forgets_the_oldest() {
-        let dir = tempfile::tempdir().unwrap();
-        let delivered = DeliveredExports::new();
-        let first = touch(&dir.path().join("e0.mp3"));
-        delivered.record(&first);
-        for i in 1..=DELIVERED_EXPORTS_MAX {
-            delivered.record(&touch(&dir.path().join(format!("e{i}.mp3"))));
-        }
-        let canonical_first = Path::new(&first).canonicalize().unwrap();
-        assert!(!delivered.contains(&canonical_first));
-        let last = dir.path().join(format!("e{DELIVERED_EXPORTS_MAX}.mp3"));
-        assert!(delivered.contains(&last.canonicalize().unwrap()));
-        assert_eq!(delivered.keys.lock().unwrap().len(), DELIVERED_EXPORTS_MAX);
-    }
-
-    #[test]
-    fn recording_a_missing_export_grants_nothing() {
-        let dir = tempfile::tempdir().unwrap();
-        let delivered = DeliveredExports::new();
-        delivered.record(dir.path().join("never-written.mp3").to_str().unwrap());
-        assert!(delivered.keys.lock().unwrap().is_empty());
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_symlink_inside_the_root_pointing_out_is_refused() {
-        // The case canonicalisation exists for: the link is inside the root,
-        // its target is not, and the target is what Finder would show.
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        std::fs::create_dir_all(&root).unwrap();
-        let outside = touch(&dir.path().join("Private/secret.txt"));
-        let link = root.join("innocent.mp3");
-        std::os::unix::fs::symlink(&outside, &link).unwrap();
-        assert_code(
-            reveal_target(
-                link.to_str().unwrap(),
-                &DeliveredExports::new(),
-                Some(&root),
-                &pool,
-            )
-            .await,
-            "reveal_not_allowed",
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_swapped_in_symlink_at_a_delivered_name_is_refused() {
-        // Delivered, then replaced by a link to somewhere else: the recorded
-        // key is the ORIGINAL file, so the link no longer matches.
-        let (pool, dir) = world().await;
-        let export = touch(&dir.path().join("Out/service.mp3"));
-        let delivered = DeliveredExports::new();
-        delivered.record(&export);
-        std::fs::remove_file(&export).unwrap();
-        let outside = touch(&dir.path().join("Private/secret.txt"));
-        std::os::unix::fs::symlink(&outside, &export).unwrap();
-        assert_code(
-            reveal_target(&export, &delivered, None, &pool).await,
-            "reveal_not_allowed",
-        );
-    }
-
-    #[tokio::test]
-    async fn dotdot_traversal_is_refused_even_when_it_lands_on_a_real_file() {
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        std::fs::create_dir_all(&root).unwrap();
-        touch(&dir.path().join("Private/secret.txt"));
-        let escape = format!("{}/../Private/secret.txt", root.to_str().unwrap());
-        assert_code(
-            reveal_target(&escape, &DeliveredExports::new(), Some(&root), &pool).await,
-            "reveal_invalid_path",
-        );
-        // …and also when it would have stayed inside the root.
-        let inside = touch(&root.join("a.mp3"));
-        let wobble = format!("{}/sub/../a.mp3", root.to_str().unwrap());
-        std::fs::create_dir_all(root.join("sub")).unwrap();
-        assert!(Path::new(&inside).exists());
-        assert_code(
-            reveal_target(&wobble, &DeliveredExports::new(), Some(&root), &pool).await,
-            "reveal_invalid_path",
-        );
-    }
-
-    #[tokio::test]
-    async fn a_missing_file_is_refused_even_inside_the_root() {
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        std::fs::create_dir_all(&root).unwrap();
-        let gone = root.join("deleted-by-hand.mp3");
-        assert_code(
-            reveal_target(
-                gone.to_str().unwrap(),
-                &DeliveredExports::new(),
-                Some(&root),
-                &pool,
-            )
-            .await,
-            "reveal_invalid_path",
-        );
-    }
-
-    #[tokio::test]
-    async fn a_directory_is_never_revealed_even_inside_the_root() {
-        let (pool, dir) = world().await;
-        let root = dir.path().join("SundayRec");
-        let sub = root.join("Calculator.app");
-        std::fs::create_dir_all(&sub).unwrap();
-        assert_code(
-            reveal_target(
-                sub.to_str().unwrap(),
-                &DeliveredExports::new(),
-                Some(&root),
-                &pool,
-            )
-            .await,
-            "reveal_invalid_path",
-        );
-    }
-
-    #[tokio::test]
-    async fn a_relative_path_is_refused() {
-        let (pool, _dir) = world().await;
-        assert_code(
-            reveal_target("SundayRec/a.mp3", &DeliveredExports::new(), None, &pool).await,
-            "reveal_invalid_path",
-        );
-    }
-
-    #[tokio::test]
-    async fn without_a_root_only_the_other_grants_apply() {
-        let (pool, dir) = world().await;
-        let file = touch(&dir.path().join("SundayRec/a.mp3"));
-        assert_code(
-            reveal_target(&file, &DeliveredExports::new(), None, &pool).await,
-            "reveal_not_allowed",
-        );
-    }
-
-    #[tokio::test]
-    async fn refusal_messages_never_carry_the_path() {
+    async fn a_refusal_never_carries_the_path() {
         let (pool, dir) = world().await;
         let secret = touch(&dir.path().join("Private/kirkevalg-2026.txt"));
-        for raw in [
-            secret.as_str(),
-            "/definitely/not/here/kirkevalg-2026.txt",
-            "kirkevalg-2026.txt",
-        ] {
-            let err = reveal_target(raw, &DeliveredExports::new(), None, &pool)
-                .await
-                .unwrap_err();
+        std::fs::remove_file(&secret).unwrap();
+        let id = known(&pool, &secret).await;
+        let chosen = ChosenPaths::new();
+        let errors = [
+            reveal_recording_target(&pool, &id).await.unwrap_err(),
+            reveal_recording_target(&pool, &secret).await.unwrap_err(),
+            reveal_export_target(&chosen, &secret).await.unwrap_err(),
+        ];
+        for err in errors {
             assert!(
                 !err.to_string().contains("kirkevalg"),
                 "the error names the file: {err}"
@@ -871,43 +749,102 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    // ── recordings_reveal_export: the token the export's result carried ──────
+
     #[tokio::test]
-    async fn macos_var_and_private_var_are_the_same_file() {
-        // `/var` is a symlink to `/private/var` on macOS, and `$TMPDIR` (so
-        // every temp dir) is spelled through it.
-        let (pool, dir) = world().await;
-        let file = touch(&dir.path().join("SundayRec/a.mp3"));
-        let canonical = Path::new(&file).canonicalize().unwrap();
-        let canonical = canonical.to_str().unwrap();
-        let rest = canonical
-            .strip_prefix("/private/var/")
-            .expect("macOS temp dirs live under /private/var");
-        let via_var = format!("/var/{rest}");
-        // Delivered under one spelling, asked for under the other — both ways.
-        let delivered = DeliveredExports::new();
-        delivered.record(&via_var);
-        let (_, grant) = reveal_target(canonical, &delivered, None, &pool)
-            .await
-            .unwrap();
-        assert_eq!(grant, RevealGrant::DeliveredExport);
-        let delivered = DeliveredExports::new();
-        delivered.record(canonical);
-        let (_, grant) = reveal_target(&via_var, &delivered, None, &pool)
-            .await
-            .unwrap();
-        assert_eq!(grant, RevealGrant::DeliveredExport);
-        // And the root, spelled through `/var`, still contains the canonical file.
-        let root_via_var = PathBuf::from(&via_var).parent().unwrap().to_path_buf();
-        let (_, grant) = reveal_target(
-            canonical,
-            &DeliveredExports::new(),
-            Some(&root_via_var),
-            &pool,
-        )
-        .await
-        .unwrap();
-        assert_eq!(grant, RevealGrant::UnderRecordingsRoot);
+    async fn an_export_is_revealed_by_its_token_outside_every_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let export = touch(&dir.path().join("USB-stick/service_redigert.mp3"));
+        let chosen = ChosenPaths::new();
+        // Not delivered, so no token.
+        assert_code(
+            reveal_export_target(&chosen, "00000000-0000-0000-0000-000000000000").await,
+            "reveal_not_allowed",
+        );
+        let token = delivered(&chosen, &export);
+        let target = reveal_export_target(&chosen, &token).await.unwrap();
+        assert_eq!(target, Path::new(&export).canonicalize().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_forged_foreign_or_misplaced_export_token_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let export = touch(&dir.path().join("Out/service.mp3"));
+        let chosen = ChosenPaths::new();
+        let real = delivered(&chosen, &export);
+
+        // The export's own PATH where the token goes (the old wire value), a
+        // traversal and the empty string.
+        for forged in [export.as_str(), "../../.ssh", ""] {
+            assert_code(
+                reveal_export_target(&chosen, forged).await,
+                "reveal_not_allowed",
+            );
+        }
+        // A token a session did not mint means nothing to it.
+        assert_code(
+            reveal_export_target(&ChosenPaths::new(), &real).await,
+            "reveal_not_allowed",
+        );
+        // A File token for the very same file is not an Export token: a
+        // recording the editor opened is not revealable by this command.
+        let file_token = chosen.mint(
+            crate::commands::chosen_paths::vet(Path::new(&export), ChosenKind::File).unwrap(),
+        );
+        assert_code(
+            reveal_export_target(&chosen, &file_token).await,
+            "reveal_not_allowed",
+        );
+        // …and the reverse: an Export token opens nothing else.
+        assert_eq!(
+            chosen.resolve(&real, ChosenKind::File),
+            Err(ChosenError::Unknown)
+        );
+        assert_eq!(
+            chosen.resolve(&real, ChosenKind::Folder),
+            Err(ChosenError::Unknown)
+        );
+    }
+
+    #[tokio::test]
+    async fn an_export_that_has_gone_since_the_delivery_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let export = touch(&dir.path().join("Out/service.mp3"));
+        let chosen = ChosenPaths::new();
+        let token = delivered(&chosen, &export);
+        std::fs::remove_file(&export).unwrap();
+        assert_code(
+            reveal_export_target(&chosen, &token).await,
+            "reveal_invalid_path",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlink_swapped_in_at_a_delivered_name_is_refused() {
+        // Delivered, then replaced by a link to somewhere else: the token
+        // stands for the ORIGINAL file, so the link no longer matches.
+        let dir = tempfile::tempdir().unwrap();
+        let export = touch(&dir.path().join("Out/service.mp3"));
+        let chosen = ChosenPaths::new();
+        let token = delivered(&chosen, &export);
+        std::fs::remove_file(&export).unwrap();
+        let outside = touch(&dir.path().join("Private/secret.txt"));
+        std::os::unix::fs::symlink(&outside, &export).unwrap();
+        assert_code(
+            reveal_export_target(&chosen, &token).await,
+            "reveal_invalid_path",
+        );
+    }
+
+    #[tokio::test]
+    async fn a_delivered_file_that_does_not_exist_gets_no_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("never-written.mp3");
+        assert_eq!(
+            crate::commands::chosen_paths::vet(&missing, ChosenKind::Export).err(),
+            Some(ChosenError::Gone)
+        );
     }
 
     // ── recordings_open_folder ───────────────────────────────────────────────
@@ -1246,6 +1183,115 @@ mod tests {
         assert_refused(vet(&link.join("2026"), &home), "save_folder_invalid");
     }
 
+    // ── The app's own folders, and the hand-over's stricter vet (#314) ───────
+
+    /// A fake `<app-data>` with its `recovery` folder, both existing, next to
+    /// the fake home.
+    fn fake_app_data(dir: &tempfile::TempDir) -> PathBuf {
+        let app = dir.path().join("AppData").join("no.sundayrec.app");
+        std::fs::create_dir_all(app.join("recovery")).unwrap();
+        app
+    }
+
+    #[test]
+    fn a_save_folder_in_the_apps_own_data_folder_is_refused() {
+        let (dir, home) = fake_home();
+        let app = fake_app_data(&dir);
+        let apps = [app.clone()];
+        let refused = |p: &Path| {
+            assert_refused(
+                vet_save_folder_in(p.to_str().unwrap(), Some(&home), &apps),
+                "save_folder_app_data",
+            )
+        };
+        refused(&app); // the folder itself
+        refused(&app.join("recovery")); // the folder the recovery scan owns
+        refused(&app.join("recovery").join("2026")); // …and anything under it
+        refused(&app.join("not-made-yet").join("Opptak")); // a folder that does not exist yet
+        refused(app.parent().unwrap()); // a folder above it
+                                        // A sibling is a normal choice.
+        vet_save_folder_in(
+            dir.path().join("AppData").join("Opptak").to_str().unwrap(),
+            Some(&home),
+            &apps,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn the_real_app_data_folders_are_refused_as_a_save_folder() {
+        // No home, so the home rules cannot be what refuses it.
+        for app in app_folders() {
+            for raw in [app.clone(), app.join("recovery")] {
+                assert_refused(
+                    vet_save_folder_in(raw.to_str().unwrap(), None, &app_folders()),
+                    "save_folder_app_data",
+                );
+            }
+        }
+        assert!(
+            !app_folders().is_empty(),
+            "the premise: the platform has an app-data folder"
+        );
+    }
+
+    #[test]
+    fn the_hand_over_vet_refuses_an_existing_writable_folder_in_app_data() {
+        // Everything else about it is fine — it exists and can be written to —
+        // so only the app-folder rule can refuse it.
+        let (dir, home) = fake_home();
+        let app = fake_app_data(&dir);
+        assert_refused(
+            vet_handover_in(app.join("recovery").to_str().unwrap(), Some(&home), &[app]),
+            "save_folder_app_data",
+        );
+    }
+
+    #[test]
+    fn the_hand_over_vet_takes_an_existing_writable_folder_and_leaves_no_probe_behind() {
+        let (dir, home) = fake_home();
+        let app = fake_app_data(&dir);
+        let rig = dir.path().join("Rig").join("Opptak");
+        std::fs::create_dir_all(&rig).unwrap();
+        vet_handover_in(rig.to_str().unwrap(), Some(&home), &[app]).unwrap();
+        assert_eq!(std::fs::read_dir(&rig).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn the_hand_over_vet_refuses_a_folder_that_is_missing_or_is_a_file() {
+        let (dir, home) = fake_home();
+        let missing = dir.path().join("Disk-ute").join("Opptak");
+        assert_refused(
+            vet_handover_in(missing.to_str().unwrap(), Some(&home), &[]),
+            "handover_folder_missing",
+        );
+        // The ordinary vet takes it: the dialog's folder may be created later.
+        vet_save_folder_in(missing.to_str().unwrap(), Some(&home), &[]).unwrap();
+        let file = dir.path().join("fil.txt");
+        std::fs::write(&file, b"x").unwrap();
+        assert_refused(
+            vet_handover_in(file.to_str().unwrap(), Some(&home), &[]),
+            "save_folder_invalid",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_hand_over_vet_refuses_a_folder_it_cannot_write_to() {
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, home) = fake_home();
+        let locked = dir.path().join("Laast");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let result = vet_handover_in(locked.to_str().unwrap(), Some(&home), &[]);
+        let root = std::fs::File::create(locked.join("probe")).is_ok();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if root {
+            return; // running as root: the mode bits say nothing, so neither can this test
+        }
+        assert_refused(result, "handover_folder_unwritable");
+    }
+
     #[test]
     fn the_root_the_home_folder_and_its_parents_are_too_broad() {
         let (dir, home) = fake_home();
@@ -1300,50 +1346,6 @@ mod tests {
 
     // ── the history scan stays off the runtime ───────────────────────────────
 
-    #[tokio::test]
-    async fn the_history_scan_leaves_the_runtime_free() {
-        // One row stored under another spelling (so the raw lookup misses and
-        // the canonical scan runs), and a canonicaliser that STALLS — the way a
-        // stat on a share that stopped answering does — until a task on this
-        // same single-threaded runtime lets it go. If the scan ran on the
-        // runtime thread, that task could never run: the wait times out, the
-        // row never matches, and the grant is lost.
-        use std::sync::mpsc;
-        use std::time::Duration;
-
-        let (pool, dir) = world().await;
-        let real = touch(&dir.path().join("NAS").join("service.wav"));
-        let other_spelling = dir.path().join("NAS").join(".").join("service.wav");
-        insert_recording(&pool, row(other_spelling.to_str().unwrap()))
-            .await
-            .unwrap();
-        let target = Path::new(&real).canonicalize().unwrap();
-
-        let (started_tx, started_rx) = mpsc::channel::<()>();
-        let (go_tx, go_rx) = mpsc::channel::<()>();
-        let release = tokio::spawn(async move {
-            loop {
-                if started_rx.try_recv().is_ok() {
-                    let _ = go_tx.send(());
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        });
-        let stalling = move |p: &Path| {
-            let _ = started_tx.send(());
-            go_rx
-                .recv_timeout(Duration::from_secs(5))
-                .map_err(|_| std::io::Error::other("the share never answered"))?;
-            p.canonicalize()
-        };
-        let known = is_known_recording_with(&pool, &real, &target, stalling)
-            .await
-            .unwrap();
-        assert!(known, "the scan blocked the runtime that had to release it");
-        release.await.unwrap();
-    }
-
     // ── the capability tripwire ──────────────────────────────────────────────
 
     // What the tripwire reads, and why it reads more than the loader does.
@@ -1376,9 +1378,11 @@ mod tests {
     /// capability extension, so the loader skips them too.
     const OS_LITTER: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 
-    /// Every `opener:` permission in one parsed capability file — a single
+    /// Every permission of the plugin behind `prefix` (`opener:`, `dialog:`) in
+    /// one parsed capability file — a single
     /// capability, a list, or a named list — or why it is not one.
-    fn opener_grants_in_file(
+    fn grants_in_file(
+        prefix: &str,
         origin: &str,
         file: &serde_json::Value,
     ) -> Result<Vec<String>, String> {
@@ -1399,13 +1403,14 @@ mod tests {
         };
         let mut grants = Vec::new();
         for cap in capabilities {
-            grants.extend(opener_grants_in_capability(origin, cap)?);
+            grants.extend(grants_in_capability(prefix, origin, cap)?);
         }
         Ok(grants)
     }
 
-    /// Every `opener:` permission one capability grants.
-    fn opener_grants_in_capability(
+    /// Every permission behind `prefix` one capability grants.
+    fn grants_in_capability(
+        prefix: &str,
         origin: &str,
         cap: &serde_json::Value,
     ) -> Result<Vec<String>, String> {
@@ -1420,7 +1425,7 @@ mod tests {
                 .ok_or_else(|| {
                     format!("{origin}: a permission that is neither a string nor has an identifier")
                 })?;
-            if id.trim().to_ascii_lowercase().starts_with("opener:") {
+            if id.trim().to_ascii_lowercase().starts_with(prefix) {
                 grants.push(format!("{origin} grants `{id}` to the webview"));
             }
         }
@@ -1449,10 +1454,10 @@ mod tests {
     }
 
     /// Scan a capabilities folder: how many files were read, and every
-    /// finding (an `opener:` grant, or a file that could not be read as a
+    /// finding (a grant behind `prefix`, or a file that could not be read as a
     /// capability).
-    fn scan_capability_dir(dir: &Path) -> (usize, Vec<String>) {
-        fn walk(dir: &Path, files: &mut usize, findings: &mut Vec<String>) {
+    fn scan_capability_dir(prefix: &str, dir: &Path) -> (usize, Vec<String>) {
+        fn walk(prefix: &str, dir: &Path, files: &mut usize, findings: &mut Vec<String>) {
             let entries = match std::fs::read_dir(dir) {
                 Ok(entries) => entries,
                 Err(e) => {
@@ -1463,7 +1468,7 @@ mod tests {
             for entry in entries {
                 let path = entry.expect("a directory entry").path();
                 if path.is_dir() {
-                    walk(&path, files, findings);
+                    walk(prefix, &path, files, findings);
                     continue;
                 }
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -1473,7 +1478,7 @@ mod tests {
                 *files += 1;
                 let origin = path.display().to_string();
                 match parse_capability_source(&path)
-                    .and_then(|value| opener_grants_in_file(&origin, &value))
+                    .and_then(|value| grants_in_file(prefix, &origin, &value))
                 {
                     Ok(grants) => findings.extend(grants),
                     Err(why) => findings.push(why),
@@ -1481,13 +1486,13 @@ mod tests {
             }
         }
         let (mut files, mut findings) = (0, Vec::new());
-        walk(dir, &mut files, &mut findings);
+        walk(prefix, dir, &mut files, &mut findings);
         (files, findings)
     }
 
     /// Inline capabilities in the app config and the platform files merged
     /// into it: every `tauri*.conf.*` / `Tauri*.toml` beside the manifest.
-    fn scan_app_configs(dir: &Path) -> (usize, Vec<String>) {
+    fn scan_app_configs(prefix: &str, dir: &Path) -> (usize, Vec<String>) {
         let (mut files, mut findings) = (0, Vec::new());
         for entry in std::fs::read_dir(dir).expect("the manifest folder") {
             let path = entry.expect("a directory entry").path();
@@ -1514,7 +1519,7 @@ mod tests {
             // A string entry names a capability FILE (scanned above); only an
             // object is an inline capability.
             for cap in inline.iter().filter(|c| c.is_object()) {
-                match opener_grants_in_capability(&origin, cap) {
+                match grants_in_capability(prefix, &origin, cap) {
                     Ok(grants) => findings.extend(grants),
                     Err(why) => findings.push(why),
                 }
@@ -1531,12 +1536,13 @@ mod tests {
         // never configured — route the need through a Rust command in this
         // module (which decides what may be shown) instead.
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let (cap_files, mut findings) = scan_capability_dir(&manifest.join("capabilities"));
+        let (cap_files, mut findings) =
+            scan_capability_dir("opener:", &manifest.join("capabilities"));
         assert!(
             cap_files >= 1,
             "no capability files found — is the tripwire reading the right folder?"
         );
-        let (conf_files, conf_findings) = scan_app_configs(manifest);
+        let (conf_files, conf_findings) = scan_app_configs("opener:", manifest);
         assert!(
             conf_files >= 1,
             "no tauri.conf.json found — is the tripwire reading the right folder?"
@@ -1559,7 +1565,7 @@ mod tests {
             "default.json",
             r#"{ "identifier": "default", "windows": ["main"], "permissions": ["core:default"] }"#,
         );
-        assert_eq!(scan_capability_dir(&caps), (1, vec![]));
+        assert_eq!(scan_capability_dir("opener:", &caps), (1, vec![]));
 
         // Nested JSON — the old tripwire only listed the top level.
         write(
@@ -1592,7 +1598,7 @@ permissions = ["opener:allow-reveal-item-in-dir"]
         // OS litter is passed over.
         write(".DS_Store", "\0\0\0\x01Bud1");
 
-        let (files, findings) = scan_capability_dir(&caps);
+        let (files, findings) = scan_capability_dir("opener:", &caps);
         assert_eq!(files, 7, "{findings:#?}");
         let has = |needle: &str| findings.iter().any(|f| f.contains(needle));
         assert!(
@@ -1705,7 +1711,7 @@ permissions = ["opener:allow-reveal-item-in-dir"]
             r#"{ "app": { "security": { "capabilities": ["default"] } } }"#,
         )
         .unwrap();
-        assert_eq!(scan_app_configs(dir.path()), (1, vec![]));
+        assert_eq!(scan_app_configs("opener:", dir.path()), (1, vec![]));
         // A platform file merged into the config, with an inline capability.
         std::fs::write(
             dir.path().join("tauri.macos.conf.json"),
@@ -1714,7 +1720,7 @@ permissions = ["opener:allow-reveal-item-in-dir"]
         )
         .unwrap();
         std::fs::write(dir.path().join("tauri.windows.conf.json5"), "{}").unwrap();
-        let (files, findings) = scan_app_configs(dir.path());
+        let (files, findings) = scan_app_configs("opener:", dir.path());
         assert_eq!(files, 3, "{findings:#?}");
         assert!(
             findings
@@ -1730,38 +1736,321 @@ permissions = ["opener:allow-reveal-item-in-dir"]
         );
     }
 
-    #[tokio::test]
-    async fn a_relative_path_is_refused_even_when_it_lands_on_a_granted_file() {
-        // Pins `checked_input_file` as the policy's first step: without it a
-        // relative path is resolved against the working directory and then
-        // matched like any other. (Tests run with the crate folder as cwd.)
-        let (pool, _dir) = world().await;
-        let delivered = DeliveredExports::new();
-        delivered.record(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("Cargo.toml")
-                .to_str()
-                .unwrap(),
+    // ── PR-F: the webview opens no dialog of its own ─────────────────────────
+
+    /// Every file under `dir` with one of `exts`, read as text — for the scan of
+    /// what the webview is BUILT from. `node_modules` and `target` are skipped.
+    fn webview_sources(repo: &Path) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        for dir in ["app", "legacy", "e2e", "scripts", "src"] {
+            files_with(
+                &repo.join(dir),
+                &["ts", "tsx", "js", "mjs", "cjs", "json", "html"],
+                &mut files,
+            );
+        }
+        for root in [
+            "package.json",
+            "package-lock.json",
+            "vite.config.ts",
+            "index.html",
+        ] {
+            let file = repo.join(root);
+            if file.is_file() {
+                files.push(file);
+            }
+        }
+        files
+    }
+
+    /// What names the dialog plugin from the webview's side: its npm package,
+    /// and its IPC commands (`invoke("plugin:dialog|open")`). Spelled in two
+    /// halves so this file does not match itself.
+    fn dialog_needles() -> [String; 2] {
+        [
+            concat!("@tauri-apps/plugin", "-dialog").to_string(),
+            concat!("plugin:", "dialog").to_string(),
+        ]
+    }
+
+    /// Every place in `files` (as `(path, line)`) that names the dialog plugin.
+    fn dialog_mentions(files: &[PathBuf]) -> Vec<String> {
+        mentions_of(files, &dialog_needles())
+    }
+
+    /// Every place in `files` (as `path:line`) with one of `needles` on it.
+    fn mentions_of(files: &[PathBuf], needles: &[String]) -> Vec<String> {
+        let mut findings = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(file).unwrap_or_default();
+            for (n, line) in text.lines().enumerate() {
+                if needles.iter().any(|needle| line.contains(needle.as_str())) {
+                    findings.push(format!("{}:{}", file.display(), n + 1));
+                }
+            }
+        }
+        findings
+    }
+
+    #[test]
+    fn the_webview_holds_no_dialog_permission() {
+        // If this fails, a change gave the main window a `dialog:` permission
+        // again (or added a capability file the tripwire cannot read). The
+        // plugin's `open` and `save` take a filter and answer with a PATH, and
+        // with no per-command ACL a page that holds the permission can open a
+        // dialog nobody asked for — or send any path onward as if one had been
+        // shown. Route the need through a Rust command that opens the dialog
+        // itself (`chosen_paths::ask_for_file`/`ask_for_folder`) and keeps the
+        // answer in Rust. `tauri-plugin-dialog` stays a dependency: Rust is who
+        // asks.
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (cap_files, mut findings) =
+            scan_capability_dir("dialog:", &manifest.join("capabilities"));
+        assert!(
+            cap_files >= 1,
+            "no capability files found — is the tripwire reading the right folder?"
         );
-        assert_code(
-            reveal_target("Cargo.toml", &delivered, None, &pool).await,
-            "reveal_invalid_path",
+        let (conf_files, conf_findings) = scan_app_configs("dialog:", manifest);
+        assert!(
+            conf_files >= 1,
+            "no tauri.conf.json found — is the tripwire reading the right folder?"
+        );
+        findings.extend(conf_findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
+    fn nothing_the_webview_is_built_from_names_the_dialog_plugin() {
+        // The npm package is the other half of the lock: with no permission it
+        // could only fail, but a dependency nobody may call is one more thing
+        // that can be called the day a permission slips back. package.json,
+        // the lock file and every source the webview is built from.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the repo root");
+        let files = webview_sources(repo);
+        assert!(
+            files.len() > 100,
+            "the scan found almost nothing: {}",
+            files.len()
+        );
+        assert!(
+            files.iter().any(|f| f.ends_with("package.json"))
+                && files.iter().any(|f| f.ends_with("api-shim.ts")),
+            "the scan did not read package.json and the shim"
+        );
+        let findings = dialog_mentions(&files);
+        assert!(
+            findings.is_empty(),
+            "the webview names the dialog plugin again — open dialogs from Rust \
+             instead (see `chosen_paths::ask_for_file`):\n{findings:#?}"
         );
     }
 
-    #[tokio::test]
-    async fn a_relative_recordings_root_grants_nothing() {
-        let (pool, _dir) = world().await;
-        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
-        assert_code(
-            reveal_target(
-                file.to_str().unwrap(),
-                &DeliveredExports::new(),
-                Some(Path::new(".")),
-                &pool,
-            )
-            .await,
-            "reveal_not_allowed",
+    #[test]
+    fn the_dialog_tripwire_sees_a_grant_and_an_import_wherever_they_hide() {
+        // A `dialog:` grant in a nested toml, a hidden list and an inline
+        // capability of a platform config; and an import in a source, a
+        // package.json and a lock file.
+        let dir = tempfile::tempdir().unwrap();
+        let caps = dir.path().join("capabilities");
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        write(
+            "capabilities/default.json",
+            r#"{ "identifier": "default", "windows": ["main"],
+                 "permissions": ["core:default", "dialog:default"] }"#,
+        );
+        write(
+            "capabilities/nested/open.toml",
+            "[[capabilities]]\nidentifier = \"x\"\nwindows = [\"main\"]\n\
+             permissions = [\"dialog:allow-open\"]\n",
+        );
+        write(
+            "capabilities/.hidden.json",
+            r#"[{ "identifier": "l", "windows": ["main"],
+                 "permissions": [{ "identifier": "dialog:allow-save" }] }]"#,
+        );
+        // A clean opener grant is no dialog finding, and the opener scan does
+        // not see a dialog one.
+        write(
+            "capabilities/opener.json",
+            r#"{ "identifier": "o", "windows": ["main"], "permissions": ["opener:default"] }"#,
+        );
+        let (files, findings) = scan_capability_dir("dialog:", &caps);
+        assert_eq!(files, 4, "{findings:#?}");
+        assert_eq!(findings.len(), 3, "{findings:#?}");
+        assert!(findings.iter().all(|f| f.contains("grants `dialog:")));
+        let (_, opener) = scan_capability_dir("opener:", &caps);
+        assert_eq!(opener.len(), 1, "{opener:#?}");
+
+        write(
+            "tauri.macos.conf.json",
+            r#"{ "app": { "security": { "capabilities": [
+                 { "identifier": "mac", "permissions": ["dialog:default"] } ] } } }"#,
+        );
+        let (_, inline) = scan_app_configs("dialog:", dir.path());
+        assert_eq!(inline.len(), 1, "{inline:#?}");
+
+        let needle = &dialog_needles()[0];
+        write(
+            "app/lib/shim.ts",
+            &format!("import {{ open }} from \"{needle}\";\n"),
+        );
+        write(
+            "package.json",
+            &format!("{{ \"dependencies\": {{ \"{needle}\": \"^2\" }} }}"),
+        );
+        write(
+            "package-lock.json",
+            &format!("\"node_modules/{needle}\": {{}}"),
+        );
+        write(
+            "app/lib/invoke.ts",
+            &format!("await invoke(\"{}|open\");\n", dialog_needles()[1]),
+        );
+        write("app/lib/clean.ts", "export const x = 1;\n");
+        let files = webview_sources(dir.path());
+        assert_eq!(dialog_mentions(&files).len(), 4, "{files:?}");
+    }
+
+    // ── #314 S2: the webview holds no updater permission ─────────────────────
+
+    /// What names the updater plugin from the webview's side: its npm package
+    /// and its IPC commands (`invoke("plugin:updater|check")`). Spelled in two
+    /// halves so this file does not match itself.
+    fn updater_needles() -> [String; 2] {
+        [
+            concat!("@tauri-apps/plugin", "-updater").to_string(),
+            concat!("plugin:", "updater").to_string(),
+        ]
+    }
+
+    #[test]
+    fn the_webview_holds_no_updater_permission() {
+        // If this fails, a change gave the main window an `updater:` permission
+        // again — by hand in a capability file, or by a build script writing one
+        // (`build.rs` used to generate `updater.generated.json`). `plugin:updater|check`
+        // takes `allowDowngrades`, `proxy` and `headers`: a page that holds it
+        // can be offered an OLDER release, validly signed and without the fixes
+        // of the newer ones. Updating is Rust's own `update_check`/`update_install`,
+        // which call the plugin from Rust and need no capability.
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (cap_files, mut findings) =
+            scan_capability_dir("updater:", &manifest.join("capabilities"));
+        assert!(
+            cap_files >= 1,
+            "no capability files found — is the tripwire reading the right folder?"
+        );
+        let (conf_files, conf_findings) = scan_app_configs("updater:", manifest);
+        assert!(
+            conf_files >= 1,
+            "no tauri.conf.json found — is the tripwire reading the right folder?"
+        );
+        findings.extend(conf_findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
+    fn nothing_the_webview_is_built_from_names_the_updater_plugin() {
+        // The npm package is the other half of the lock, like the dialog's: a
+        // dependency nobody may call is one more thing that can be called the
+        // day a permission slips back.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the repo root");
+        let files = webview_sources(repo);
+        assert!(
+            files.len() > 100,
+            "the scan found almost nothing: {}",
+            files.len()
+        );
+        let findings = mentions_of(&files, &updater_needles());
+        assert!(
+            findings.is_empty(),
+            "the webview names the updater plugin — update from Rust instead \
+             (`update_check`/`update_install`):\n{findings:#?}"
+        );
+    }
+
+    #[test]
+    fn the_build_script_no_longer_writes_an_updater_capability() {
+        // The generator is gone, and with it the file. `build.rs` only removes a
+        // stale one; a `write` next to the capability name would be the grant
+        // coming back under another name than the one the scan reads.
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let build = std::fs::read_to_string(manifest.join("build.rs")).unwrap();
+        let code: String = build
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !code.contains("updater:"),
+            "build.rs names an `updater:` permission in code"
+        );
+        assert!(
+            !code.contains("std::fs::write"),
+            "build.rs writes a file — if it is a capability, the webview holds a permission \
+             no capability file shows"
+        );
+        assert!(!manifest
+            .join("capabilities/updater.generated.json")
+            .exists());
+    }
+
+    #[test]
+    fn the_updater_tripwire_sees_a_grant_and_an_import_wherever_they_hide() {
+        let dir = tempfile::tempdir().unwrap();
+        let caps = dir.path().join("capabilities");
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        // The mutant: `updater:default` put back, in the default capability and
+        // in a generated one, as a string and as an object.
+        write(
+            "capabilities/default.json",
+            r#"{ "identifier": "default", "windows": ["main"],
+                 "permissions": ["core:default", "updater:default"] }"#,
+        );
+        write(
+            "capabilities/updater.generated.json",
+            r#"{ "identifier": "updater", "windows": ["main"],
+                 "permissions": [{ "identifier": "updater:allow-check" }] }"#,
+        );
+        write(
+            "capabilities/clean.json",
+            r#"{ "identifier": "c", "windows": ["main"], "permissions": ["process:default"] }"#,
+        );
+        let (files, findings) = scan_capability_dir("updater:", &caps);
+        assert_eq!(files, 3, "{findings:#?}");
+        assert_eq!(findings.len(), 2, "{findings:#?}");
+        assert!(findings.iter().all(|f| f.contains("grants `updater:")));
+
+        let needle = &updater_needles()[0];
+        write(
+            "app/lib/update.ts",
+            &format!("import {{ check }} from \"{needle}\";\n"),
+        );
+        write(
+            "package.json",
+            &format!("{{ \"dependencies\": {{ \"{needle}\": \"^2\" }} }}"),
+        );
+        write(
+            "app/lib/invoke.ts",
+            &format!("await invoke(\"{}|check\");\n", updater_needles()[1]),
+        );
+        write("app/lib/clean.ts", "export const x = 1;\n");
+        let files = webview_sources(dir.path());
+        assert_eq!(
+            mentions_of(&files, &updater_needles()).len(),
+            3,
+            "{files:?}"
         );
     }
 
