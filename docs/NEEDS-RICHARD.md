@@ -408,14 +408,40 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
   release-matrisen. **Ingen kode er skrevet** — `src-tauri/tauri.conf.json`s
   `bundle.windows` har ingen `nsis`/`wix`-overstyring i dag, så dette er
   fortsatt bare et funn.
-- **Database-mappa bør flytte fra Roaming til Local AppData (F-W10).**
-  `sundayrec.sqlite` (og resten av appdataen) ligger i dag under Windows'
-  Roaming-profil, som synkroniserer over nettverket på domenepåloggede
-  maskiner — en stor, stadig voksende SQLite-fil med WAL-sidefiler er
-  nøyaktig den typen data Roaming-profiler håndterer dårlig. tmp-mappa og
-  loggeren flyttes allerede til Local AppData i en annen F2-runde (F-W6); DB-
-  flyttingen er IKKE del av den og trenger sitt eget owner-OK (dataflytting
-  på en allerede installert base er ikke en ren tilleggsendring).
+- **~~Database-mappa bør flytte fra Roaming til Local AppData (F-W10).~~
+  AVGJORT 2026-10-04 og GJENNOMFØRT** (`src-tauri/src/appdata.rs`). Bakgrunn:
+  `sundayrec.sqlite` med WAL-sidefiler lå under Windows' Roaming-profil, som
+  synkroniserer over nettverket på domenepåloggede maskiner — en stor,
+  stadig voksende SQLite-fil er nøyaktig den typen data Roaming håndterer
+  dårlig. tmp-mappa og loggeren flyttet allerede i F-W6. Slik ble F-W10 løst,
+  kun på Windows (Mac og Linux er byte-uendret, med golden-test):
+  - **Én engangsflytting ved oppstart, før databasen åpnes.** Den gamle
+    databasen åpnes og `PRAGMA wal_checkpoint(TRUNCATE)` kjøres (alt i
+    hovedfila), radtall telles i `recording` og `app_setting`, fila kopieres
+    til en tempfil i Local, fsync, `PRAGMA integrity_check` og samme radtall
+    på kopien, og først da gis den navnet `sundayrec.sqlite` med én atomisk
+    `rename`. En avbrutt flytting etterlater bare tempfila, som neste start
+    skriver over.
+  - **Den gamle fila i Roaming står urørt (ikke slettet, ikke omdøpt).**
+    v0.25.0 og eldre leter i Roaming. En nedgradert app åpner da en foreldet
+    men ekte kopi med all historikk, i stedet for en tom database på et tomt
+    sted. Prisen: skriver en nedgradert økt noe, hentes det ikke tilbake ved
+    neste oppgradering (Local finnes, og vinner) — to databaser flettes aldri
+    på gjetning. Roaming-fila vokser ikke lenger.
+  - **Feiler flyttingen** (integritet, radtall, full disk, låst fil), brukes
+    Roaming for denne økta, feilen loggføres, og frivillige får ett banner
+    («SundayRec fikk ikke flyttet …») én gang. Appen starter aldri med en
+    tom database når Roaming har data; neste start prøver på nytt.
+  - **Recovery:** skanningen leser BÅDE `Local\…\recovery` og
+    `Roaming\…\recovery`, så et opptak som krasjet like før oppdateringen
+    gjenopprettes ved første start. Nye manifester skrives der databasen bor.
+    Småfilene (`last-recording.json`, telemetrihistorikken, `last-error.json`,
+    krasjringen) kopieres med best-effort.
+  - **Ikke flyttet:** opptaksmappa (brukerdata), papirkurven og
+    capture-mappene (ligger i opptaksmappa). Sti-vaktene
+    (`save_folder_app_data`) dekket begge plasseringene fra F-W6.
+  - 👤 Kan bare bevises på en ekte Windows-boks: se RIG-DAY «Windows-boksen»
+    (w-appdata) og SMOKE-TEST §13.
 - **`webviewInstallMode: embedBootstrapper` for den frakoblede kirke-PC-en.**
   Standard WebView2-installasjon laster en liten bootstrapper som henter
   resten fra nettet ved førstegangsbehov — en kirke-PC uten internett (eller

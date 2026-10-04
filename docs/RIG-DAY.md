@@ -11,7 +11,7 @@ ikke lar seg presse sammen.
 **Forutsetninger:** en Mac og en Windows-boks, begge med SundayRec
 installert og et ekte lydoppsett (USB-mikrofon eller mikser) tilkoblet;
 tilgang til terminal på Mac-en (for `kill -9`) og til Oppgavebehandling +
-`%APPDATA%`-mappa på Windows-boksen; en kopi-vennlig ekte
+`%APPDATA%`- og `%LOCALAPPDATA%`-mappene på Windows-boksen; en kopi-vennlig ekte
 `sundayrec.sqlite` det er greit å teste mot; nok tid til at maskinen kan
 sovne og våkne av seg selv minst én gang.
 
@@ -219,7 +219,8 @@ faktisk skal se nå — sist.
       **Forventet ETTER (F2-W1, #243):** en synlig, passiv installer kjører,
       `SundayRec_*_x64-setup.exe` blir IKKE drept i Oppgavebehandling, og
       appen kommer tilbake i den nye versjonen. `update-relaunch.log`
-      (i `%APPDATA%`) skal ha en linje som starter med `installing` og
+      (i appdata-mappa: `%LOCALAPPDATA%` fra og med F-W10, `%APPDATA%` for
+      versjoner før) skal ha en linje som starter med `installing` og
       slutter med `kill-on-close disarmed: true`.
 - [ ] **(w2) Oppdatering er sperret mens det tas opp.** Start et opptak, gå
       til banneret / gearikonet → Avansert.
@@ -325,9 +326,41 @@ faktisk skal se nå — sist.
       `Dokumenter\SundayRec`) med samme navn som før, `_2` på et nytt opptak
       samme dag; «Vis i Utforsker» på kvitteringen viser den.
 
+- [ ] **(w-appdata) Databasen og appdataen flytter fra Roaming til Local
+      (F-W10, avgjort 2026-10-04).** Oppgrader en installasjon som HAR
+      historikk (v0.25.0 eller eldre med minst noen opptak og endrede
+      innstillinger) til denne versjonen. Gjør det slik at `sundayrec.sqlite`
+      har et ikke-tomt `-wal` (la appen stå en stund etter siste opptak, og
+      avslutt den med Oppgavebehandling i stedet for «Avslutt» før
+      oppgraderingen).
+      **Forventet:** (1) første start viser all historikken og alle
+      innstillingene (språk, opptaksmappe, planlagte slots); (2)
+      `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite` finnes, ingen
+      `sundayrec.sqlite.flytter` blir liggende; (3) den gamle
+      `%APPDATA%\no.sundayrec.app\sundayrec.sqlite` finnes fortsatt, urørt;
+      (4) loggen (`%LOCALAPPDATA%\…\logs\sundayrec.log`) har en linje
+      «the database was moved from Roaming to Local AppData»; (5) andre start
+      flytter ikke igjen og viser ingen banner. **Nedgradering:** installer
+      v0.25.0 over den; den skal åpne den gamle databasen med historikken
+      (ikke en tom).
+- [ ] **(w-appdata-recovery) Krasj → oppdatering → gjenoppretting.** På en
+      v0.25.0-installasjon: start et opptak, drep appen med
+      Oppgavebehandling midt i (manifestet ligger nå i
+      `%APPDATA%\no.sundayrec.app\recovery`), oppgrader til denne
+      versjonen, start den. **Forventet:** det avbrutte opptaket dukker opp
+      i Historikk som gjenopprettet fil, og manifestet er borte fra
+      `Roaming\…\recovery`. Gjør det en gang til MED manifestet i begge
+      mappene (kopier den ene filen til `Local\…\recovery` før start): begge
+      gjenopprettes.
+- [ ] **(w-appdata-fallback) En flytting som feiler mister ingenting.**
+      Lag `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite.flytter` som en
+      MAPPE (hindrer tempfila), start. **Forventet:** appen starter med
+      historikken fra Roaming (ikke tom), loggen sier at flyttingen feilet,
+      og ett banner («SundayRec fikk ikke flyttet …») kommer etter ca. 20 s;
+      neste start (uten hindringen) flytter.
+
 _(w4, w7–w13, w15 hører til andre F2-Windows-funn som løper i egne
-runder — skjulte mapper + OneDrive-varsel, Local AppData for database/tmp/
-logger, MSI/UAC på stable, m.fl. Fylles inn her når de respektive PR-ene er
+runder — skjulte mapper + OneDrive-varsel, MSI/UAC på stable, m.fl. Fylles inn her når de respektive PR-ene er
 merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
 ## Ørene

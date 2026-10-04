@@ -1447,8 +1447,43 @@ npm run tauri dev
 | Panics (process hook + watched-task) | `<app-data>/crashes/crash-<millis>-<seq>.json`        | newest 20                                                                     |
 | Supervised-task restarts             | `<app-data>/crashes/restart-<millis>-<seq>.json`      | newest 20, own ring — a flapping task cannot evict the panic that explains it |
 
-`<app-data>` is the platform app-data dir Tauri resolves (macOS:
-`~/Library/Application Support/…`; Windows: `%APPDATA%\…`).
+`<app-data>` er plattformens appdata-mappe (macOS:
+`~/Library/Application Support/…`; Windows: `%LOCALAPPDATA%\…` fra F-W10, før
+det `%APPDATA%\…`, altså Roaming-profilen, som første start etter
+oppdateringen flytter databasen ut av; se neste avsnitt).
+
+### Windows: databasen flytter fra Roaming til Local AppData (F-W10) [HW]
+
+- [ ] **Oppgrader en installasjon med historikk.** Fra v0.25.0 eller eldre
+      (noen opptak, endrede innstillinger, et ikke-tomt `sundayrec.sqlite-wal`)
+      til denne versjonen.
+      **Forventet:** første start viser all historikk og alle innstillinger;
+      `%LOCALAPPDATA%\no.sundayrec.app\sundayrec.sqlite` finnes uten
+      `sundayrec.sqlite.flytter` ved siden av; den gamle
+      `%APPDATA%\no.sundayrec.app\sundayrec.sqlite` står FORTSATT der, urørt
+      (en nedgradering finner historikk, ikke en tom database); loggen sier
+      «the database was moved from Roaming to Local AppData»; andre start
+      flytter ingenting.
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_flytting_tar_med_skrivinger_som_bare_la_i_wal
+  - VERIFIED-BY: src-tauri/src/appdata.rs::flyttingen_sletter_ikke_roaming_og_den_gamle_fila_har_alt
+  - VERIFIED-BY: src-tauri/src/appdata.rs::andre_oppstart_flytter_ikke_igjen
+  - UNVERIFIED: ekte Windows-fillåsing, oppløsning av `%LOCALAPPDATA%` og en
+    domene-Roaming-profil. Bare en Windows-boks beviser dem.
+- [ ] **En flytting som feiler mister ingenting.** Lag
+      `sundayrec.sqlite.flytter` som en MAPPE i Local-mappa og start.
+      **Forventet:** appen starter på Roaming-databasen (historikken er der),
+      loggen sier at flyttingen feilet, ett banner kommer etter ca. 20 s.
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_feil_i_flyttingen_gir_fallback_til_roaming_uten_tap
+  - VERIFIED-BY: src-tauri/src/appdata.rs::en_local_mappe_som_ikke_kan_lages_gir_fallback_uten_tap
+- [ ] **Krasj → oppdatering → gjenoppretting.** Drep et opptak på den gamle
+      versjonen (manifestet ligger i `Roaming\…\recovery`), oppgrader, start.
+      **Forventet:** det avbrutte opptaket gjenopprettes i Historikk, og
+      manifestet er slettet fra Roaming-mappa.
+  - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::et_manifest_fra_et_krasj_for_oppdateringen_gjenopprettes_etter_flyttingen
+  - VERIFIED-BY: src-tauri/src/recorder/recovery.rs::manifester_i_begge_mappene_gjenopprettes_hver_for_seg
+- [ ] **Mac og Linux: ingenting endres.** Appdata-stien er den samme som før.
+  - VERIFIED-BY: src-tauri/src/appdata.rs::utenfor_windows_er_stien_uendret_og_ingenting_leses_eller_lages
+  - VERIFIED-BY: src-tauri/src/appdata.rs::mac_og_linux_har_samme_appdata_sti_som_for
 
 ### «Vis» / «Kopier» (the gear → Avansert → «Logg»)
 

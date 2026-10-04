@@ -5,6 +5,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **På Windows ligger historikken og innstillingene nå i Local AppData i stedet
+  for Roaming.** Første gang du starter etter oppdateringen flyttes de
+  automatisk og kontrollert, og et opptak som krasjet like før oppdateringen
+  gjenopprettes som vanlig. Går flyttingen ikke, bruker appen den gamle
+  plasseringen denne gangen og sier fra én gang. Mac er uendret.
 - **Du kan gå tilbake til en eldre versjon uten at appen slutter å starte.**
   Fra denne versjonen åpner SundayRec også en database som en nyere versjon
   har oppdatert, i stedet for å stoppe før vinduet vises. Det gjelder
