@@ -56,8 +56,8 @@ use ts_rs::TS;
 use sundayrec_core::alerts::AlertText;
 use sundayrec_core::lang::Lang;
 use sundayrec_core::schedule::{
-    active_within, capped_supervisor_sleep_ms, enumeration_base, events_due, late_start_choice,
-    missed_recordings, next_recording, prune_specials, resolve_special_device,
+    active_within, capped_supervisor_sleep_ms, enumeration_base, events_due, fire_after_missed_net,
+    late_start_choice, missed_recordings, next_recording, prune_specials, resolve_special_device,
     scheduled_max_minutes, settings_for_special_device, special_device_wanted,
     supervisor_should_fire, upcoming_dates, upcoming_events, CoveredWindow, ScheduledEvent,
     ScheduledEventKind, SpecialDevice, SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
@@ -96,7 +96,8 @@ const IDLE_RECHECK: StdDuration = StdDuration::from_secs(5 * 60);
 
 /// How long a scheduled Start waits for a Stop fired just before it (same
 /// instant, back-to-back recordings) to release the recorder.
-const STOP_SETTLE: StdDuration = StdDuration::from_secs(5);
+const STOP_SETTLE: StdDuration =
+    StdDuration::from_millis(sundayrec_core::timeouts::RecorderTimeouts::STOP_FINALIZE_MS + 15_000);
 
 /// How many EXPECTED background wake failures (needs-admin / disabled / the
 /// prompt dismissed) this process has already reported.
@@ -274,7 +275,8 @@ async fn supervisor(
             Err(e) => match &last_good {
                 Some(prev) => {
                     tracing::warn!(
-                        "scheduler: settings read failed ({e}) — keeping the last good plan,                          retrying in {}s",
+                        "scheduler: settings read failed ({e}) — keeping the last good plan, \
+                         retrying in {}s",
                         SETTINGS_RETRY.as_secs()
                     );
                     (prev.clone(), true)
@@ -426,25 +428,32 @@ async fn supervisor(
                 // `next_occurrence`, so run the late-start net before the
                 // normal recompute.
                 let wall_elapsed_ms = (Local::now().naive_local() - slept_from).num_milliseconds();
+                let mut net_ran = false;
                 if wall_elapsed_ms.saturating_sub(sleep_ms as i64) > 120_000 {
                     tracing::info!(
                         wall_elapsed_ms,
                         sleep_ms,
                         "scheduler: overslept — running the missed-recording net"
                     );
-                    if let Err(e) = check_missed(&app, &pool).await {
-                        tracing::warn!("scheduler: post-sleep missed-check failed: {e}");
+                    match check_missed(&app, &pool).await {
+                        Ok(_) => net_ran = true,
+                        Err(e) => tracing::warn!("scheduler: post-sleep missed-check failed: {e}"),
                     }
                 }
                 if fire_now {
                     // Fire EVERYTHING that is due, not just `ev`: a recording
                     // that starts the moment another ends shares its instant,
                     // and re-enumerating from «now» would drop it as past.
-                    // `ev.at` floors the clock so a timer that woke a few ms
-                    // early still covers its own event.
-                    let fire_at = Local::now().naive_local().max(ev.at);
+                    // `fire_at` is `ev.at`, not the clock: after an oversleep
+                    // the clock is hours past a queue of stale events that the
+                    // missed-net has just dealt with, and what came due while
+                    // firing is picked up by `enumeration_base`.
+                    let fire_at = ev.at;
                     let mut stopped = false;
                     for due in events_due(&events, fire_at) {
+                        if !fire_after_missed_net(due.kind, net_ran) {
+                            continue;
+                        }
                         if due.kind == ScheduledEventKind::Start && stopped {
                             // `stop()` only dispatches; give the recorder a
                             // moment to let go before the next Start asks.

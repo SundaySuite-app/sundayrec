@@ -619,6 +619,16 @@ pub fn events_due(events: &[ScheduledEvent], fire_at: NaiveDateTime) -> Vec<Sche
         .collect()
 }
 
+/// Whether a due event still fires after the late-start net (`check_missed`)
+/// has just run on waking from an oversleep. The net already started whatever
+/// is inside its window, so a stale Start would be a false «skipped» or a
+/// second start, and a stale Reminder/Preflight is noise; a Stop still fires,
+/// so a recording the net started late is not left to the max-duration
+/// backstop. Without the net (a normal wake) everything due fires.
+pub fn fire_after_missed_net(kind: ScheduledEventKind, net_ran: bool) -> bool {
+    !net_ran || kind == ScheduledEventKind::Stop
+}
+
 /// How far from the wall clock a recorded fire time may be and still anchor
 /// the next enumeration. Past it the fire is old news (or the clock jumped).
 const FIRE_ANCHOR_WINDOW_SECS: i64 = 60;
@@ -1930,6 +1940,24 @@ mod tests {
         assert_eq!(due[0].kind, ScheduledEventKind::Stop);
         assert_eq!(due[1].kind, ScheduledEventKind::Reminder);
         assert_eq!(due[2].kind, ScheduledEventKind::Preflight);
+    }
+
+    #[test]
+    fn after_the_missed_net_only_stops_still_fire() {
+        use ScheduledEventKind::*;
+        for k in [Start, Stop, Reminder, Preflight] {
+            assert!(
+                fire_after_missed_net(k, false),
+                "{k:?} fires on a normal wake"
+            );
+        }
+        assert!(fire_after_missed_net(Stop, true));
+        for k in [Start, Reminder, Preflight] {
+            assert!(
+                !fire_after_missed_net(k, true),
+                "{k:?} is stale after the net"
+            );
+        }
     }
 
     #[test]
