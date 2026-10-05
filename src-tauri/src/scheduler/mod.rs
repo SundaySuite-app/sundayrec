@@ -56,11 +56,12 @@ use ts_rs::TS;
 use sundayrec_core::alerts::AlertText;
 use sundayrec_core::lang::Lang;
 use sundayrec_core::schedule::{
-    active_within, capped_supervisor_sleep_ms, late_start_choice, missed_recordings,
-    next_recording, prune_specials, resolve_special_device, scheduled_max_minutes,
-    settings_for_special_device, special_device_wanted, supervisor_should_fire, upcoming_dates,
-    upcoming_events, CoveredWindow, ScheduledEvent, ScheduledEventKind, SpecialDevice,
-    SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
+    active_within, capped_supervisor_sleep_ms, enumeration_base, events_due, fire_after_missed_net,
+    late_start_choice, missed_recordings, next_recording, prune_specials, resolve_special_device,
+    scheduled_max_minutes, settings_for_special_device, special_device_wanted,
+    supervisor_should_fire, upcoming_dates, upcoming_events, CoveredWindow, ScheduledEvent,
+    ScheduledEventKind, SpecialDevice, SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
+    STOP_SETTLE_MS,
 };
 use sundayrec_core::settings::Settings;
 use sundayrec_core::wake::{background_wake_log_action, should_block, wake_failure_notice_key};
@@ -85,10 +86,18 @@ const UPCOMING_DAYS: i64 = 14;
 /// How many days of upcoming starts wake scheduling considers.
 const WAKE_HORIZON_DAYS: i64 = 14;
 
-/// After firing an event the supervisor sleeps this long before recomputing, so
-/// a timer that fired a few ms early can't re-select the same event and
-/// double-fire it. Harmless at the scheduler's minute granularity.
-const FIRE_GUARD: StdDuration = StdDuration::from_secs(1);
+/// How long the supervisor waits before reading the settings again after a
+/// failed read (a transient db error), keeping the last good plan meanwhile.
+const SETTINGS_RETRY: StdDuration = StdDuration::from_secs(30);
+
+/// How long the supervisor parks when no event is scheduled at all. A
+/// reschedule signal wakes it sooner; this is the safety net for a signal that
+/// never comes (a settings write that did not call `reschedule()`).
+const IDLE_RECHECK: StdDuration = StdDuration::from_secs(5 * 60);
+
+/// How long a scheduled Start waits for a Stop fired just before it (same
+/// instant, back-to-back recordings) to release the recorder.
+const STOP_SETTLE: StdDuration = StdDuration::from_millis(STOP_SETTLE_MS);
 
 /// How many EXPECTED background wake failures (needs-admin / disabled / the
 /// prompt dismissed) this process has already reported.
@@ -230,6 +239,13 @@ async fn supervisor(
     // `Drop` releases and the re-spawned supervisor re-opens the window on its
     // first pass.
     let mut keep_awake = KeepAwake::new(crate::power::blocker(), "scheduled recording is due");
+    // The last settings that read cleanly. A failed read must not become an
+    // empty plan (the supervisor would then park with nothing to fire).
+    let mut last_good: Option<Settings> = None;
+    // When the last group of events fired. The next enumeration starts from
+    // here, not from «now», so events that share that instant are not
+    // mistaken for the past (see `enumeration_base`).
+    let mut fired_through: Option<NaiveDateTime> = None;
     loop {
         let pool = match app.try_state::<Db>() {
             Some(db) => db.pool.clone(),
@@ -251,12 +267,39 @@ async fn supervisor(
             }
         }
 
-        let mut settings = settings::load(&pool).await.unwrap_or_default();
+        let (mut settings, load_failed) = match settings::load(&pool).await {
+            Ok(s) => {
+                last_good = Some(s.clone());
+                (s, false)
+            }
+            Err(e) => match &last_good {
+                Some(prev) => {
+                    tracing::warn!(
+                        "scheduler: settings read failed ({e}) — keeping the last good plan, \
+                         retrying in {}s",
+                        SETTINGS_RETRY.as_secs()
+                    );
+                    (prev.clone(), true)
+                }
+                None => {
+                    tracing::warn!(
+                        "scheduler: settings read failed ({e}) — no plan yet, retrying in {}s",
+                        SETTINGS_RETRY.as_secs()
+                    );
+                    tokio::select! {
+                        _ = tokio::time::sleep(SETTINGS_RETRY) => {}
+                        _ = notify.notified() => {}
+                    }
+                    continue;
+                }
+            },
+        };
 
         // Prune specials that ended > 7 days ago and persist the trimmed list.
         let now = Local::now().naive_local();
         let (kept, pruned) = prune_specials(&settings.special_recordings, now);
-        if pruned > 0 {
+        // Never persist a stale snapshot over a db that could not be read.
+        if pruned > 0 && !load_failed {
             settings.special_recordings = kept.clone();
             if let Err(e) = settings::save(&pool, settings.clone()).await {
                 tracing::warn!("scheduler: pruning save failed: {e}");
@@ -338,14 +381,24 @@ async fn supervisor(
         let events = upcoming_events(
             settings.active_slots(),
             &kept,
-            now,
+            enumeration_base(now, fired_through),
             settings.reminder_minutes,
             HORIZON_DAYS,
         );
 
         let Some(ev) = events.first().cloned() else {
-            // Nothing scheduled ahead — sleep until a reschedule wakes us.
-            notify.notified().await;
+            // Nothing scheduled ahead — sleep until a reschedule wakes us, but
+            // never for good: re-read the plan every few minutes (and sooner
+            // after a failed read).
+            let park = if load_failed {
+                SETTINGS_RETRY
+            } else {
+                IDLE_RECHECK
+            };
+            tokio::select! {
+                _ = tokio::time::sleep(park) => {}
+                _ = notify.notified() => {}
+            }
             continue;
         };
 
@@ -358,8 +411,13 @@ async fn supervisor(
         // so we re-evaluate against the real wall clock at least every few minutes;
         // only FIRE when this sleep covers the WHOLE remaining wait (otherwise it's
         // a periodic re-check → loop + recompute).
-        let sleep_ms = capped_supervisor_sleep_ms(wait_ms);
-        let fire_now = supervisor_should_fire(wait_ms);
+        let mut sleep_ms = capped_supervisor_sleep_ms(wait_ms);
+        let mut fire_now = supervisor_should_fire(wait_ms);
+        if load_failed && sleep_ms > SETTINGS_RETRY.as_millis() as u64 {
+            // Re-read the settings soon; fire only when this sleep reaches the event.
+            sleep_ms = SETTINGS_RETRY.as_millis() as u64;
+            fire_now = false;
+        }
 
         let slept_from = Local::now().naive_local();
         tokio::select! {
@@ -370,19 +428,43 @@ async fn supervisor(
                 // `next_occurrence`, so run the late-start net before the
                 // normal recompute.
                 let wall_elapsed_ms = (Local::now().naive_local() - slept_from).num_milliseconds();
+                let mut net_ran = false;
                 if wall_elapsed_ms.saturating_sub(sleep_ms as i64) > 120_000 {
                     tracing::info!(
                         wall_elapsed_ms,
                         sleep_ms,
                         "scheduler: overslept — running the missed-recording net"
                     );
-                    if let Err(e) = check_missed(&app, &pool).await {
-                        tracing::warn!("scheduler: post-sleep missed-check failed: {e}");
+                    match check_missed(&app, &pool).await {
+                        Ok(_) => net_ran = true,
+                        Err(e) => tracing::warn!("scheduler: post-sleep missed-check failed: {e}"),
                     }
                 }
                 if fire_now {
-                    fire(&app, &pool, &settings, &kept, &ev).await;
-                    tokio::time::sleep(FIRE_GUARD).await;
+                    // Fire EVERYTHING that is due, not just `ev`: a recording
+                    // that starts the moment another ends shares its instant,
+                    // and re-enumerating from «now» would drop it as past.
+                    // `fire_at` is `ev.at`, not the clock: after an oversleep
+                    // the clock is hours past a queue of stale events that the
+                    // missed-net has just dealt with, and what came due while
+                    // firing is picked up by `enumeration_base`.
+                    let fire_at = ev.at;
+                    let mut stopped = false;
+                    for due in events_due(&events, fire_at) {
+                        if !fire_after_missed_net(due.kind, net_ran) {
+                            continue;
+                        }
+                        if due.kind == ScheduledEventKind::Start && stopped {
+                            // `stop()` only dispatches; give the recorder a
+                            // moment to let go before the next Start asks.
+                            settle_after_stop(&app).await;
+                        }
+                        stopped |= due.kind == ScheduledEventKind::Stop;
+                        fire(&app, &pool, &settings, &kept, &due).await;
+                    }
+                    // Replaces the old 1 s FIRE_GUARD: nothing at or before
+                    // `fire_at` is enumerated again.
+                    fired_through = Some(fire_at);
                 }
                 // else: periodic re-check — recompute against the fresh clock.
             }
@@ -390,6 +472,16 @@ async fn supervisor(
                 // Settings changed — fall through to recompute.
             }
         }
+    }
+}
+
+/// Wait (briefly) until the recorder is no longer active — used between a Stop
+/// and a Start fired at the same instant.
+async fn settle_after_stop(app: &AppHandle) {
+    let engine = app.state::<RecorderEngine>();
+    let deadline = tokio::time::Instant::now() + STOP_SETTLE;
+    while engine.current_state().is_active() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(StdDuration::from_millis(100)).await;
     }
 }
 

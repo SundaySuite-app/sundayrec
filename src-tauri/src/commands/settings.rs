@@ -51,6 +51,7 @@ use super::path_guard::{self, PathPolicy};
 use super::recordings_open::{vet_handover_save_folder, vet_new_save_folder};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::scheduler::SchedulerEngine;
 use crate::settings;
 
 /// Load the current settings (defaults if never saved), validated.
@@ -118,10 +119,16 @@ pub(crate) async fn choose_save_folder(
         .map(Some)
 }
 
-/// Reset all settings to their defaults, persisting them.
+/// Reset all settings to their defaults, persisting them. Wakes the scheduler:
+/// the schedule just changed under it.
 #[tauri::command]
-pub async fn settings_reset(db: State<'_, Db>) -> AppResult<Settings> {
-    settings::reset(&db.pool).await
+pub async fn settings_reset(
+    db: State<'_, Db>,
+    scheduler: State<'_, SchedulerEngine>,
+) -> AppResult<Settings> {
+    let stored = settings::reset(&db.pool).await?;
+    scheduler.reschedule();
+    Ok(stored)
 }
 
 /// Import the settings of the OLD installation, once: merge the JSON over
@@ -168,14 +175,22 @@ pub async fn settings_export_profile(window: tauri::Window, db: State<'_, Db>) -
 ///
 /// The dialog and the import are one step here, so the renderer asks
 /// «Importere innstillinger?» BEFORE calling this, not between the two.
+///
+/// Wakes the scheduler after an import: a profile can carry a schedule, and a
+/// supervisor parked on an empty plan would otherwise never see it.
 #[tauri::command]
 pub async fn settings_import_profile(
     window: tauri::Window,
     db: State<'_, Db>,
+    scheduler: State<'_, SchedulerEngine>,
 ) -> AppResult<Option<Settings>> {
     let lang = dialog_lang(&db.pool).await?;
     let picked = ask_which_to_open(&window, lang).await?;
-    import_profile_from(&db.pool, picked).await
+    let imported = import_profile_from(&db.pool, picked).await?;
+    if imported.is_some() {
+        scheduler.reschedule();
+    }
+    Ok(imported)
 }
 
 /// Which of the editor's two jingles a command is about.
