@@ -5,6 +5,22 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.25.2 — ingen tapte eller overskrevne søndagsopptak
+
+- **To planlagte opptak rett etter hverandre blir begge tatt opp.** Planleggeren
+  fyrte bare den første hendelsen på et tidspunkt, så når ett opptak sluttet idet
+  det neste startet, ble det neste aldri startet. Den sovner heller ikke lenger
+  for godt når planen leses som tom, og en importert profil vekker den.
+- **Et opptak kan ikke lenger overskrive et annet.** Delte opptak får navn som
+  ikke kan kollidere (`_part2`), leveringen skriver aldri over en fil som finnes,
+  og Start avvises mens et opptak fortsatt lagres.
+- **Innstillingene nullstilles ikke lenger.** Én ukjent verdi faller tilbake for
+  det ene feltet, ikke for alle, og feiler lesingen ved oppstart, lagres ingenting
+  over basen før den er lest.
+- **Appen sier ikke «klar» mens opptaket fortsatt lagres**, Windows holder
+  maskinen våken under videoopptak, og gjenkobling etter et utfall bytter ikke til
+  en annen mikrofon.
+
 ## v0.25.1 — raskere videoeksport på Mac, Windows-data i den lokale appmappen
 
 - **Eksport av video på Mac går omtrent 2,8 ganger raskere, uten målbart
