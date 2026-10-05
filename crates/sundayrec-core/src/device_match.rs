@@ -139,6 +139,44 @@ pub fn names_match_exactly(a: &str, b: &str) -> bool {
     a.trim().to_lowercase() == b.trim().to_lowercase()
 }
 
+/// Drop ONLY Windows' port-enumeration prefix (`"N- "`: digits, a dash, then
+/// whitespace) at the start of the name and straight after each `(`, so
+/// `"Microphone (2- USB Audio CODEC)"` and `"Microphone (USB Audio CODEC)"` — the
+/// same USB device after it moved to another port — compare equal. Nothing else
+/// is loosened: `"(2-in-1)"` keeps its digits (no whitespace after the dash).
+fn strip_port_prefixes(name: &str) -> String {
+    fn strip(s: &str) -> &str {
+        let rest = s.trim_start_matches(|c: char| c.is_ascii_digit());
+        if rest.len() == s.len() {
+            return s;
+        }
+        let Some(rest) = rest
+            .strip_prefix('-')
+            .or_else(|| rest.strip_prefix('\u{2013}'))
+        else {
+            return s;
+        };
+        if rest.starts_with(char::is_whitespace) {
+            rest.trim_start()
+        } else {
+            s
+        }
+    }
+    let name = name.trim();
+    let mut parts = name.split('(');
+    let mut out = strip(parts.next().unwrap_or("")).to_string();
+    for part in parts {
+        out.push('(');
+        out.push_str(strip(part));
+    }
+    out
+}
+
+/// Equality for RECONNECT: [`names_match_exactly`] after [`strip_port_prefixes`].
+fn reconnect_names_match(a: &str, b: &str) -> bool {
+    names_match_exactly(&strip_port_prefixes(a), &strip_port_prefixes(b))
+}
+
 /// RECONNECT lookup: only a device whose name equals `name` (case-insensitive,
 /// trimmed) counts as "the same device is back".
 ///
@@ -149,7 +187,9 @@ pub fn names_match_exactly(a: &str, b: &str) -> bool {
 /// and the rest of the service would be recorded from the wrong microphone while
 /// the UI says "reconnected". `name` here is the device the first segment actually
 /// OPENED, not the stored label. No exact hit means "not back yet" and the
-/// back-off carries on. An empty `name` matches nothing.
+/// back-off carries on. An empty `name` matches nothing. Windows' `"N- "` port
+/// prefix is ignored on both sides (see [`strip_port_prefixes`]), because the
+/// same USB device gets a new number when it is plugged into another port.
 pub fn find_exact_device_match<'a>(
     devices: &'a [FfmpegDevice],
     name: &str,
@@ -157,7 +197,9 @@ pub fn find_exact_device_match<'a>(
     if name.trim().is_empty() {
         return None;
     }
-    devices.iter().find(|d| names_match_exactly(&d.name, name))
+    devices
+        .iter()
+        .find(|d| reconnect_names_match(&d.name, name))
 }
 
 /// Find the best matching device for a stored `name`, applying the five-strategy
@@ -261,6 +303,21 @@ mod tests {
         let devs = vec![dev("Built-in Microphone"), dev("Behringer UMC204HD")];
         let got = find_exact_device_match(&devs, "  behringer umc204hd ").unwrap();
         assert_eq!(got.name, "Behringer UMC204HD");
+    }
+
+    #[test]
+    fn reconnect_ignores_only_the_windows_port_prefix() {
+        let moved = vec![dev("Microphone (2- USB Audio CODEC)")];
+        assert!(find_exact_device_match(&moved, "Microphone (USB Audio CODEC)").is_some());
+        let back = vec![dev("Microphone (USB Audio CODEC)")];
+        assert!(find_exact_device_match(&back, "Microphone (2- USB Audio CODEC)").is_some());
+        let leading = vec![dev("3- USB Audio CODEC")];
+        assert!(find_exact_device_match(&leading, "usb audio codec").is_some());
+        // Still no loose matching: a different device, and digits that are not the prefix.
+        let other = vec![dev("Microphone Array (Realtek(R) Audio)")];
+        assert!(find_exact_device_match(&other, "Microphone (2- USB Audio CODEC)").is_none());
+        let multi = vec![dev("Mic (2-in-1)")];
+        assert!(find_exact_device_match(&multi, "Mic (in-1)").is_none());
     }
 
     #[test]
