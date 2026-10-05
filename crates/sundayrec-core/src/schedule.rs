@@ -471,6 +471,21 @@ pub enum ScheduledEventKind {
     Preflight,
 }
 
+impl ScheduledEventKind {
+    /// Firing order among events that share the same instant: a Stop goes
+    /// first so a recording that ends exactly when the next one begins (a
+    /// 11:00–12:30 slot and a 12:30–13:30 special) is closed before the
+    /// follow-up Start looks for a free recorder; the lead-in notices come last.
+    fn fire_rank(self) -> u8 {
+        match self {
+            ScheduledEventKind::Stop => 0,
+            ScheduledEventKind::Start => 1,
+            ScheduledEventKind::Reminder => 2,
+            ScheduledEventKind::Preflight => 3,
+        }
+    }
+}
+
 /// A single timed action the scheduler supervisor should perform. The shell
 /// sorts these, sleeps until the nearest, fires it, then recomputes — so this
 /// enumeration replaces the per-job node-schedule timers from the Electron
@@ -486,9 +501,12 @@ pub struct ScheduledEvent {
 }
 
 /// Enumerate every START/STOP/REMINDER/PREFLIGHT moment within `horizon_days`
-/// of `now`, sorted ascending by time. The supervisor sleeps until the first
-/// entry, fires it, and re-enumerates — so a fired event naturally drops off
-/// (its next occurrence rolls a week/horizon out). Mirrors the set of timers
+/// of `now`, sorted ascending by time (and, within the same instant, Stop <
+/// Start < Reminder < Preflight). The supervisor sleeps until the first entry,
+/// fires every event that is due ([`events_due`]), and re-enumerates from the
+/// moment it fired ([`enumeration_base`]) — so a fired event naturally drops
+/// off (its next occurrence rolls a week/horizon out) while a sibling at the
+/// same instant is not mistaken for the past. Mirrors the set of timers
 /// `reschedule()` registers in `scheduler.ts`, minus the DST-gap *warning*
 /// (which is a node-schedule artefact handled in the shell, not a decision).
 ///
@@ -582,8 +600,39 @@ pub fn upcoming_events(
         }
     }
 
-    out.sort_by_key(|e| e.at);
+    // Stable and total: events at the same instant fire in a fixed order,
+    // whatever order the slots/specials happened to be listed in.
+    out.sort_by_key(|e| (e.at, e.kind.fire_rank()));
     out
+}
+
+/// Every event in `events` (sorted, as [`upcoming_events`] returns them) that
+/// is due at `fire_at`, in firing order. The supervisor fires ALL of them in
+/// one go: firing only `events.first()` and re-enumerating from «now» made the
+/// siblings that share its instant look like the past, so a recording starting
+/// the moment another one ends was never started.
+pub fn events_due(events: &[ScheduledEvent], fire_at: NaiveDateTime) -> Vec<ScheduledEvent> {
+    events
+        .iter()
+        .take_while(|e| e.at <= fire_at)
+        .cloned()
+        .collect()
+}
+
+/// How far from the wall clock a recorded fire time may be and still anchor
+/// the next enumeration. Past it the fire is old news (or the clock jumped).
+const FIRE_ANCHOR_WINDOW_SECS: i64 = 60;
+
+/// The instant [`upcoming_events`] should enumerate from. After a fire it is
+/// the fire time rather than `now`: anything strictly after it has not been
+/// fired yet — including an event that came due while the fire itself was
+/// busy (a start can take seconds) — and nothing at or before it is fired
+/// twice. Without a recent fire it is simply `now`.
+pub fn enumeration_base(now: NaiveDateTime, fired_through: Option<NaiveDateTime>) -> NaiveDateTime {
+    match fired_through {
+        Some(f) if (f - now).num_seconds().abs() <= FIRE_ANCHOR_WINDOW_SECS => f,
+        _ => now,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1766,6 +1815,142 @@ mod tests {
             assert_eq!(got.kind, *kind);
             assert_eq!(got.source, TriggerKind::Slot(0));
         }
+    }
+
+    /// Mimic the supervisor: pick the due group at `fire_at`, then enumerate
+    /// again from the anchored base. Returns (kind, source) of what fired.
+    fn fire_and_reenumerate(
+        slots: &[ScheduleSlot],
+        specials: &[SpecialRecording],
+        now: NaiveDateTime,
+        fire_at: NaiveDateTime,
+    ) -> (Vec<(ScheduledEventKind, TriggerKind)>, Vec<ScheduledEvent>) {
+        let events = upcoming_events(slots, specials, now, 0, 2);
+        let fired: Vec<_> = events_due(&events, fire_at)
+            .iter()
+            .map(|e| (e.kind, e.source))
+            .collect();
+        // The next pass runs a little after the fire, so `now` has moved on.
+        let later = fire_at + Duration::seconds(2);
+        let next = upcoming_events(
+            slots,
+            specials,
+            enumeration_base(later, Some(fire_at)),
+            0,
+            2,
+        );
+        (fired, next)
+    }
+
+    #[test]
+    fn back_to_back_recordings_fire_stop_then_start_at_the_shared_instant() {
+        // Weekly 11:00–12:30 service, and a special 12:30–13:30 the same Sunday.
+        let slots = vec![ScheduleSlot {
+            days: vec![6],
+            start: "11:00".to_string(),
+            stop: "12:30".to_string(),
+            max: None,
+        }];
+        let specials = vec![SpecialRecording {
+            id: None,
+            date: "2026-06-07".to_string(),
+            name: "Dåp".to_string(),
+            start: "12:30".to_string(),
+            stop: "13:30".to_string(),
+            device_id: None,
+        }];
+        let (fired, next) = fire_and_reenumerate(
+            &slots,
+            &specials,
+            dt("2026-06-07 12:00"),
+            dt("2026-06-07 12:30"),
+        );
+        // BOTH events at 12:30 fire — Stop first, so the special's Start finds a
+        // free recorder — in one group.
+        assert_eq!(
+            fired,
+            vec![
+                (ScheduledEventKind::Stop, TriggerKind::Slot(0)),
+                (ScheduledEventKind::Start, TriggerKind::Special(0)),
+            ]
+        );
+        // …and the next enumeration neither repeats them nor skips ahead past
+        // the special's own Stop.
+        assert_eq!(next[0].kind, ScheduledEventKind::Stop);
+        assert_eq!(next[0].source, TriggerKind::Special(0));
+        assert_eq!(next[0].at, dt("2026-06-07 13:30"));
+    }
+
+    #[test]
+    fn two_slots_sharing_a_boundary_fire_in_a_fixed_order_whatever_the_listing_order() {
+        let a = ScheduleSlot {
+            days: vec![6],
+            start: "09:00".to_string(),
+            stop: "10:00".to_string(),
+            max: None,
+        };
+        let b = ScheduleSlot {
+            days: vec![6],
+            start: "10:00".to_string(),
+            stop: "11:00".to_string(),
+            max: None,
+        };
+        for slots in [vec![a.clone(), b.clone()], vec![b.clone(), a.clone()]] {
+            let (fired, _) =
+                fire_and_reenumerate(&slots, &[], dt("2026-06-07 09:30"), dt("2026-06-07 10:00"));
+            let kinds: Vec<_> = fired.iter().map(|f| f.0).collect();
+            assert_eq!(
+                kinds,
+                vec![ScheduledEventKind::Stop, ScheduledEventKind::Start]
+            );
+        }
+    }
+
+    #[test]
+    fn reminder_and_preflight_do_not_displace_a_start_at_the_same_instant() {
+        // reminder 30 min before a 12:00 start = 11:30, the same instant the
+        // 11:00–11:30 slot stops. Every one of them is due; Stop leads.
+        let slots = vec![
+            ScheduleSlot {
+                days: vec![6],
+                start: "11:00".to_string(),
+                stop: "11:30".to_string(),
+                max: None,
+            },
+            ScheduleSlot {
+                days: vec![6],
+                start: "12:00".to_string(),
+                stop: "13:00".to_string(),
+                max: None,
+            },
+        ];
+        let events = upcoming_events(&slots, &[], dt("2026-06-07 11:10"), 30, 1);
+        let due = events_due(&events, dt("2026-06-07 11:30"));
+        assert_eq!(due.len(), 3); // Stop, Reminder, Preflight (12:00 − 30 min)
+        assert_eq!(due[0].kind, ScheduledEventKind::Stop);
+        assert_eq!(due[1].kind, ScheduledEventKind::Reminder);
+        assert_eq!(due[2].kind, ScheduledEventKind::Preflight);
+    }
+
+    #[test]
+    fn enumeration_base_anchors_on_a_recent_fire_only() {
+        let now = dt("2026-06-07 12:30");
+        assert_eq!(enumeration_base(now, None), now);
+        // A fire a few seconds ago (or a hair in the future: the timer woke
+        // early) anchors; an event that came due while firing stays visible.
+        let recent = now - Duration::seconds(5);
+        assert_eq!(enumeration_base(now, Some(recent)), recent);
+        let ahead = now + Duration::seconds(1);
+        assert_eq!(enumeration_base(now, Some(ahead)), ahead);
+        // An old fire — or a clock that jumped — is ignored.
+        assert_eq!(
+            enumeration_base(now, Some(now - Duration::minutes(10))),
+            now
+        );
+        assert_eq!(
+            enumeration_base(now, Some(now + Duration::minutes(10))),
+            now
+        );
     }
 
     #[test]
