@@ -871,6 +871,7 @@
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
     "ipcFailed": "Something in the background did not respond, so this view may be incomplete.",
     "settingsLoadFailed": "Could not read the settings — showing defaults. Changes you make now may be lost.",
+    "settingsLoadRetry": "Try again",
     "settingsMigrationCorrupt": "The settings from the previous version could not be read — the app starts with defaults.",
     "recordingsFolderMissing": "The recordings folder doesn’t exist yet. It is created when the first recording starts. If it is on an external disk, check that the disk is connected."
   },

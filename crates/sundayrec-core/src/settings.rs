@@ -753,14 +753,52 @@ impl Settings {
 
     /// Parse a (possibly partial or older) settings JSON blob, MERGING it over
     /// the defaults: any missing or unknown field falls back to its default,
-    /// matching the Electron `store.get(key, default)` semantics. A malformed
-    /// blob (not a JSON object) falls back to the full defaults rather than
-    /// erroring, so a corrupt store never bricks the app.
+    /// matching the Electron `store.get(key, default)` semantics.
+    ///
+    /// The merge is FIELD BY FIELD: a field whose value cannot be read (an enum
+    /// variant this build does not know — a beta that stored `format: "opus"`
+    /// and was then rolled back — or a value of the wrong type) loses only
+    /// itself and keeps its default; every other setting survives. Only a blob
+    /// that is not a JSON object at all falls back to the full defaults, so a
+    /// corrupt store never bricks the app. Use
+    /// [`Settings::from_json_merged_reporting`] to learn which fields were
+    /// dropped.
     ///
     /// The returned value is NOT yet validated — call [`Settings::validate`]
     /// (the persistence layer does this).
     pub fn from_json_merged(value: &str) -> Settings {
-        serde_json::from_str::<Settings>(value).unwrap_or_default()
+        Self::from_json_merged_reporting(value).0
+    }
+
+    /// [`Settings::from_json_merged`], plus the JSON names of the fields that
+    /// had to be dropped because their stored value could not be read. Empty
+    /// for a clean blob — and for a blob that is not an object (nothing field
+    /// specific to name; the caller sees the full defaults).
+    pub fn from_json_merged_reporting(value: &str) -> (Settings, Vec<String>) {
+        // Fast path: the whole blob reads, which is every healthy store.
+        if let Ok(all) = serde_json::from_str::<Settings>(value) {
+            return (all, Vec::new());
+        }
+        let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(value)
+        else {
+            return (Settings::default(), Vec::new());
+        };
+        let mut kept = serde_json::Map::new();
+        let mut dropped = Vec::new();
+        for (key, v) in map {
+            // A one-field object over the defaults: if it alone reads, the field
+            // is good. (Fields are independent for serde, so this is exact.)
+            let mut probe = serde_json::Map::new();
+            probe.insert(key.clone(), v.clone());
+            if serde_json::from_value::<Settings>(serde_json::Value::Object(probe)).is_ok() {
+                kept.insert(key, v);
+            } else {
+                dropped.push(key);
+            }
+        }
+        let settings =
+            serde_json::from_value::<Settings>(serde_json::Value::Object(kept)).unwrap_or_default();
+        (settings, dropped)
     }
 }
 
@@ -1253,6 +1291,36 @@ mod tests {
         assert_eq!(Settings::from_json_merged("not json"), Settings::default());
         assert_eq!(Settings::from_json_merged("42"), Settings::default());
         assert_eq!(Settings::from_json_merged("[]"), Settings::default());
+    }
+
+    #[test]
+    fn one_unreadable_field_costs_only_that_field() {
+        // The audit PoC: a beta stored `format: "opus"`; the older build does not
+        // know it. Before, the WHOLE blob failed → no slots, no saveFolder.
+        let blob = r#"{
+            "churchName": "Domkirken",
+            "saveFolder": "/Volumes/Opptak",
+            "silenceThreshold": -40,
+            "format": "opus",
+            "silenceTimeoutMinutes": "soon",
+            "slots": [{"days":[6],"start":"11:00","stop":"12:00"}]
+        }"#;
+        let (s, mut dropped) = Settings::from_json_merged_reporting(blob);
+        assert_eq!(s.save_folder.as_deref(), Some("/Volumes/Opptak"));
+        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(s.silence_threshold, -40);
+        assert_eq!(s.slots.len(), 1);
+        // Only the broken fields fell back, and they are named.
+        assert_eq!(s.format, Settings::default().format);
+        assert_eq!(
+            s.silence_timeout_minutes,
+            Settings::default().silence_timeout_minutes
+        );
+        dropped.sort();
+        assert_eq!(dropped, ["format", "silenceTimeoutMinutes"]);
+        // A clean blob reports nothing; so does a non-object.
+        assert!(Settings::from_json_merged_reporting("{}").1.is_empty());
+        assert!(Settings::from_json_merged_reporting("[]").1.is_empty());
     }
 
     #[test]

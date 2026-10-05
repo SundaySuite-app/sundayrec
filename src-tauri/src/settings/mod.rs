@@ -36,9 +36,14 @@ pub const LEGACY_IMPORT_KEY: &str = "legacy_import_done";
 pub const IMPORT_DONE_CODE: &str = "settings_import_done";
 
 /// Load the settings: read the stored JSON (or fall back to defaults when the
-/// key is absent), merge it over the defaults so older/partial blobs never
-/// crash, then validate (clamp numeric ranges). The result is always a valid
-/// [`Settings`].
+/// key is absent), merge it over the defaults field by field so older/partial
+/// blobs never crash and one unreadable value costs only itself, then validate
+/// (clamp numeric ranges). The result is always a valid [`Settings`].
+///
+/// A row that exists but cannot be READ (a database error) is an `Err`, never
+/// defaults: every writer here loads first (`save_from_renderer`,
+/// `pick_save_folder`, `import`), so a failed read can never be written back
+/// over the stored settings.
 ///
 /// Also warms [`crate::ui_lang`] with `settings.language`. That is a cache
 /// write, not a second source of truth: the capture loop and the task
@@ -51,7 +56,16 @@ pub const IMPORT_DONE_CODE: &str = "settings_import_done";
 pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
     let raw = store::get_setting(pool, SETTINGS_KEY).await?;
     let mut settings = match raw {
-        Some(json) => Settings::from_json_merged(&json),
+        Some(json) => {
+            let (merged, dropped) = Settings::from_json_merged_reporting(&json);
+            // One value this build cannot read (e.g. an enum variant a newer
+            // build stored) costs that field only; say which, so a "my setting
+            // went back to default" report has a trail.
+            for field in &dropped {
+                tracing::warn!(field = %field, "settings: stored value unreadable, using the default for this field only");
+            }
+            merged
+        }
         None => Settings::default(),
     };
     settings.validate();
@@ -737,6 +751,41 @@ mod tests {
         // Everything else defaulted.
         assert_eq!(loaded.silence_timeout_minutes, 5);
         assert_eq!(loaded.channels, ChannelMode::Stereo);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_enum_value_in_the_stored_blob_does_not_reset_the_rest() {
+        let (pool, _d) = temp_pool().await;
+        // A beta stored `format: "opus"`; this build does not know it.
+        let blob = r#"{ "format": "opus", "saveFolder": "/Volumes/Opptak", "churchName": "Domkirken", "slots": [{"days":[6],"start":"11:00","stop":"12:00"}] }"#;
+        store::set_setting(&pool, SETTINGS_KEY, blob).await.unwrap();
+        let loaded = load(&pool).await.unwrap();
+        assert_eq!(loaded.save_folder.as_deref(), Some("/Volumes/Opptak"));
+        assert_eq!(loaded.slots.len(), 1);
+        // The next renderer save carries the survivors forward, not defaults.
+        let saved = save_from_renderer(&pool, loaded).await.unwrap();
+        assert_eq!(saved.save_folder.as_deref(), Some("/Volumes/Opptak"));
+        let again = load(&pool).await.unwrap();
+        assert_eq!(again.church_name, "Domkirken");
+        assert_eq!(again.slots.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_read_refuses_the_write_and_leaves_the_row_alone() {
+        let (pool, dir) = temp_pool().await;
+        let blob = r#"{ "churchName": "Domkirken" }"#;
+        store::set_setting(&pool, SETTINGS_KEY, blob).await.unwrap();
+        // The database going away mid-flight: load fails → the save must fail,
+        // not fall back to defaults and write them.
+        pool.close().await;
+        assert!(save_from_renderer(&pool, Settings::default())
+            .await
+            .is_err());
+        let reopened = store::open_pool(&dir.path().join("test.sqlite"))
+            .await
+            .unwrap();
+        let row = store::get_setting(&reopened, SETTINGS_KEY).await.unwrap();
+        assert_eq!(row.as_deref(), Some(blob));
     }
 
     #[tokio::test]

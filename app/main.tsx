@@ -71,7 +71,12 @@ import { initPreroll } from "./state/preroll";
 import { hydrateRecordingState, initRecording } from "./state/recording";
 import { loadRecordingCount } from "./state/recordings";
 import { initRetention } from "./state/retention";
-import { flushSavePending, hydrateSettings, settings } from "./state/settings";
+import {
+  flushSavePending,
+  hydrateError,
+  hydrateSettings,
+  settings,
+} from "./state/settings";
 import { toast } from "./ui/toast";
 
 /** Dyplenken denne oppstarten kom med, eller `null`. */
@@ -241,5 +246,11 @@ async function boot(): Promise<void> {
   // 8. Første gang: OPPSETT er ikke et sted brukeren valgte å gå, det er
   // starten. (`?goto=` tvinger `onboardingDone` sann i shimmen, så en dyplenke
   // kommer aldri hit.)
-  if (!settings.peek().onboardingDone) navigate("setup", { firstRun: true });
+  // En feilet lesing gir standardverdier med `onboardingDone: false`; det er
+  // ikke «første gang», det er en base vi ikke fikk lest. Bli stående med
+  // banneret og «Prøv igjen» (Shell) i stedet for å sende en kirke med et
+  // ferdig oppsett inn i førstegangsveiviseren.
+  if (!settings.peek().onboardingDone && !hydrateError.peek()) {
+    navigate("setup", { firstRun: true });
+  }
 }

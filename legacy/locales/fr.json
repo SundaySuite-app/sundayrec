@@ -871,6 +871,7 @@
     "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application.",
     "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet.",
     "settingsLoadFailed": "Impossible de lire les réglages — affichage des valeurs par défaut. Les modifications effectuées maintenant peuvent être perdues.",
+    "settingsLoadRetry": "Réessayer",
     "settingsMigrationCorrupt": "Les réglages de la version précédente n’ont pas pu être lus — l’application démarre avec les valeurs par défaut.",
     "recordingsFolderMissing": "Le dossier des enregistrements n’existe pas encore. Il est créé au démarrage du premier enregistrement. S’il se trouve sur un disque externe, vérifiez que le disque est branché."
   },
