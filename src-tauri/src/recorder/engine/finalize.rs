@@ -330,7 +330,7 @@ async fn finalize_one(
 
     // Decoupled capture: the deliverable's primary is a WAV (audio) or MKV (video)
     // capture, so ask `finalize_deliverable` to encode/remux it to the user's
-    // format. The capture stem (carrying any `_2` split suffix) maps back into the
+    // format. The capture stem (carrying any `_partN` split suffix) maps back into the
     // save folder with the delivery extension.
     // The SAME spec the crash-recovery manifest carries — a live stop and a
     // next-launch recovery must deliver identically (see `delivery_encode_for`).
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn capture_base_path_keeps_the_delivery_stem() {
         // The capture base carries the delivery's OWN stem so `delivery_path_for`
-        // maps it straight back, and splits derive `<stem>_2.<ext>`.
+        // maps it straight back, and splits derive `<stem>_part2.<ext>`.
         //
         // F2-W7: `capture_base_path`/`delivery_path_for` return a STRING
         // through `Path::join`, so their separator is the PLATFORM's (`\` on

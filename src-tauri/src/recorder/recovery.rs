@@ -737,7 +737,7 @@ async fn recover_session_with(
         // Decoupled capture: the manifest carries how to finish the capture
         // fragments — encode a WAV (audio) or remux an MKV (video) to the user's
         // delivery format. `None` = legacy (the fragments already ARE the delivery
-        // file → no transcode). The capture primary's stem (with any `_2` split
+        // file → no transcode). The capture primary's stem (with any `_partN` split
         // suffix) maps back into the save folder.
         let delivery_spec = manifest
             .delivery_encode

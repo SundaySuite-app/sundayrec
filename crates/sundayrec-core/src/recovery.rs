@@ -82,9 +82,9 @@ pub struct AudioEncodeManifest {
 
 /// Map a capture-WAV primary path back to its delivery path for the decoupled
 /// audio path: the delivery directory, the WAV's own file stem (which carries any
-/// `_2` split suffix — never `_rN`, since reconnect fragments are merged INTO the
-/// primary), and the delivery extension. E.g. `<cap>/sermon_2.wav` + dir `/rec` +
-/// `mp3` → `/rec/sermon_2.mp3`.
+/// `_partN` split suffix — never `_rN`, since reconnect fragments are merged INTO the
+/// primary), and the delivery extension. E.g. `<cap>/sermon_part2.wav` + dir `/rec` +
+/// `mp3` → `/rec/sermon_part2.mp3`.
 pub fn delivery_path_for(capture_primary: &str, delivery_dir: &str, ext: &str) -> String {
     let stem = Path::new(capture_primary)
         .file_stem()
@@ -350,10 +350,10 @@ mod tests {
             delivery_path_for("/tmp/cap-123/sermon.wav", "/rec", "mp3"),
             want("sermon.mp3")
         );
-        // A split deliverable keeps its `_2` suffix through the mapping.
+        // A split deliverable keeps its `_part2` suffix through the mapping.
         assert_eq!(
-            delivery_path_for("/tmp/cap-123/sermon_2.wav", "/rec", "flac"),
-            want("sermon_2.flac")
+            delivery_path_for("/tmp/cap-123/sermon_part2.wav", "/rec", "flac"),
+            want("sermon_part2.flac")
         );
         // No extension → just the stem in the delivery dir.
         assert_eq!(
