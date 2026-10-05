@@ -328,7 +328,16 @@ pub(crate) async fn finalize_deliverable(
 /// `path` if nothing exists there, else the first free `_2`, `_3`, … sibling
 /// (same rule as the plan-time [`make_unique_path`](sundayrec_core::filename::make_unique_path)).
 fn free_delivery_path(path: &str) -> String {
-    let free = sundayrec_core::filename::make_unique_path(path, |p| Path::new(p).exists());
+    // A path the Papirkurv remembers as a trashed recording's origin is taken too
+    // (same rule as the plan-time `build_opts_in`): a recording landing there
+    // would be hidden in the library as «i papirkurven» and lose its row when
+    // the trash is emptied. The trash lives in the delivery folder.
+    let trashed = crate::recorder::opts::trashed_origins(
+        Path::new(path).parent().unwrap_or_else(|| Path::new(".")),
+    );
+    let free = sundayrec_core::filename::make_unique_path(path, |p| {
+        Path::new(p).exists() || trashed.contains(Path::new(p))
+    });
     if free != path {
         tracing::warn!(
             wanted = %path,
@@ -975,6 +984,21 @@ mod tests {
         std::fs::write(&want, b"first recording").unwrap();
         let got = free_delivery_path(&want);
         assert_ne!(got, want);
+        assert!(got.ends_with("2026-10-04_2.mp3"), "{got}");
+    }
+
+    #[test]
+    fn free_delivery_path_skips_a_path_the_papirkurv_remembers() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir
+            .path()
+            .join("2026-10-04.mp3")
+            .to_string_lossy()
+            .into_owned();
+        std::fs::write(&a, b"A").unwrap();
+        crate::trash::move_into_trash(dir.path(), std::slice::from_ref(&a)).unwrap();
+        assert!(!Path::new(&a).exists(), "A is in the trash, not on disk");
+        let got = free_delivery_path(&a);
         assert!(got.ends_with("2026-10-04_2.mp3"), "{got}");
     }
 

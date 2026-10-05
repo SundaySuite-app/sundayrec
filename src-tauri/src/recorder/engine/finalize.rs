@@ -262,9 +262,28 @@ pub(super) async fn finalize_pending(
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
 ) -> bool {
+    finalize_pending_with_first(ctx, session, finalized, end_ms, telemetry, delivered_bytes)
+        .await
+        .0
+}
+
+/// [`finalize_pending`] that also reports where deliverable 0 ACTUALLY landed:
+/// `Some(path)` when deliverable 0 was finalised in this call and delivered. That
+/// path can differ from the planned `opts.output_path` — delivery never overwrites,
+/// so it moves to a free `_N` sibling when the planned one is taken — and the
+/// `recording://finished` receipt must point at the file that was written.
+pub(super) async fn finalize_pending_with_first(
+    ctx: &SessionContext,
+    session: &RecordingSession,
+    finalized: &mut usize,
+    end_ms: u64,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
+    delivered_bytes: &AtomicU64,
+) -> (bool, Option<String>) {
     let deliverables = session.deliverables();
     let total = deliverables.len();
     let mut all_delivered = true;
+    let mut first_path = None;
     for index in *finalized..total {
         let d = &deliverables[index];
         // This deliverable ends when the NEXT one started, or at `end_ms` if it's
@@ -273,11 +292,22 @@ pub(super) async fn finalize_pending(
             .get(index + 1)
             .map(|next| next.started_at_ms)
             .unwrap_or(end_ms);
-        all_delivered &=
+        let (delivered, path) =
             finalize_one(ctx, d, index, deliverable_end, telemetry, delivered_bytes).await;
+        all_delivered &= delivered;
+        if index == 0 {
+            first_path = path;
+        }
     }
     *finalized = total;
-    all_delivered
+    (all_delivered, first_path)
+}
+
+/// The path the `recording://finished` receipt points at: where deliverable 0
+/// actually landed, else the planned one (nothing was delivered — the old
+/// behaviour). Delivery never overwrites, so landed != planned happens.
+pub(super) fn finished_receipt_path(landed: Option<&str>, planned: &str) -> String {
+    landed.unwrap_or(planned).to_string()
 }
 
 /// Finalise ONE deliverable: concat-stitch its fragments into its primary file
@@ -312,7 +342,7 @@ async fn finalize_one(
     end_ms: u64,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
-) -> bool {
+) -> (bool, Option<String>) {
     // Truth measurement, part 1: this deliverable SHOULD hold its wall-clock
     // span. What it ACTUALLY holds is probed below; the session-end verdict
     // compares the sums. Accumulated up front so a failed finalize still
@@ -368,8 +398,10 @@ async fn finalize_one(
             "empty_output",
             &AlertText::RecordingEmptyOutput.text(crate::ui_lang::current()),
         );
-        return false;
+        return (false, None);
     }
+    // Where the delivery really is — `Some` only when it reached the user's format.
+    let landed = delivered.then(|| final_path.clone());
 
     // Best-effort: the finished file's actual size on disk.
     let byte_size = tokio::fs::metadata(&final_path)
@@ -386,7 +418,7 @@ async fn finalize_one(
     delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
     let Some(pool) = &ctx.pool else {
-        return delivered;
+        return (delivered, landed);
     };
     let started_at = deliverable.started_at_ms;
     let duration_ms = end_ms.saturating_sub(started_at) as f64;
@@ -420,7 +452,7 @@ async fn finalize_one(
         )
         .await;
     }
-    delivered
+    (delivered, landed)
 }
 
 /// Extract a standalone audio sidecar from a finished VIDEO recording and write a
@@ -536,6 +568,18 @@ mod tests {
         // delivery path so this is only a defensive edge case.
         let d2 = capture_dir("sermon.mp3", "42");
         assert_eq!(d2, std::path::PathBuf::from(".sundayrec-capture-42"));
+    }
+
+    #[test]
+    fn the_finished_receipt_points_at_where_the_delivery_landed() {
+        // Delivery moved to `_2` because the planned path was taken: the receipt
+        // must name the file that was written, not the older recording.
+        assert_eq!(
+            finished_receipt_path(Some("/rec/a_2.mp3"), "/rec/a.mp3"),
+            "/rec/a_2.mp3"
+        );
+        // Nothing delivered → the planned path, as before.
+        assert_eq!(finished_receipt_path(None, "/rec/a.mp3"), "/rec/a.mp3");
     }
 
     #[test]

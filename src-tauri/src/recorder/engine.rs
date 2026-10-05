@@ -159,6 +159,10 @@ struct RecorderSession {
     supervisor: tauri::async_runtime::JoinHandle<()>,
     /// Send `()` to request a graceful stop.
     stop_tx: tokio::sync::mpsc::Sender<()>,
+    /// The session's generation-scoped state writer, kept so `stop()`'s abort
+    /// backstop can move the engine out of `Stopping` when it kills the
+    /// supervisor that would have.
+    state: StateWriter,
 }
 
 /// The engine handle stored in Tauri-managed state. At most one recording runs
@@ -734,6 +738,7 @@ impl RecorderEngine {
             audio_engine: Arc::clone(&self.audio_engine),
             opts,
         };
+        let session_state = ctx.state.clone();
         // Why the modern engine fell back, if it did — recorded into the engine
         // status (read by the diagnose tool), NOT surfaced as a fatal recording
         // error (the recording proceeds fine on DirectShow).
@@ -773,6 +778,7 @@ impl RecorderEngine {
                     *lock_recover(&self.session) = Some(RecorderSession {
                         supervisor,
                         stop_tx,
+                        state: session_state,
                     });
                     return Ok(());
                 }
@@ -854,6 +860,7 @@ impl RecorderEngine {
         *lock_recover(&self.session) = Some(RecorderSession {
             supervisor,
             stop_tx,
+            state: session_state,
         });
         Ok(())
     }
@@ -868,6 +875,7 @@ impl RecorderEngine {
         if let Some(session) = session {
             let _ = session.stop_tx.try_send(());
             let supervisor = session.supervisor;
+            let state = session.state;
             tauri::async_runtime::spawn(async move {
                 // The supervisor is far from done here: stopping the capture is
                 // bounded by STOP_FINALIZE_MS, and the finalize chain that follows
@@ -883,9 +891,25 @@ impl RecorderEngine {
                 ))
                 .await;
                 supervisor.abort();
+                fail_stuck_stop(&state);
             });
         }
     }
+}
+
+/// After the stop backstop aborted the supervisor: if the session is still the
+/// engine's current one and never reached a terminal state, the supervisor that
+/// would have emitted `Stopped`/`Failed` is gone, so the engine would sit in
+/// `Stopping` (or whatever it was in) forever and `start_recording` would refuse
+/// every manual start with `already_recording` until a restart. Emit `Failed`
+/// instead. A newer session (generation moved on) or an already-terminal state
+/// is left alone.
+fn fail_stuck_stop(state: &StateWriter) {
+    if !state.is_current() || lock_recover(&state.last_state).is_terminal() {
+        return;
+    }
+    tracing::error!("recorder: stop backstop aborted the supervisor — marking the session failed");
+    state.set(RecorderState::Failed, 0);
 }
 
 /// The auto-stop deadline after the user extends by `minutes`: add to the current
@@ -917,6 +941,27 @@ pub(crate) fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_aborted_stop_leaves_the_engine_failed_not_stopping_forever() {
+        let g = two_generations(RecorderState::Stopping, None);
+        // A newer session claimed the engine: the aborted one must not touch it.
+        fail_stuck_stop(&g.stale);
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Stopping);
+        assert!(g.sink.payloads().is_empty());
+        // The current session: Stopping → Failed, announced to the UI.
+        fail_stuck_stop(&g.fresh);
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Failed);
+        assert_eq!(
+            g.sink.payloads().last().unwrap().state,
+            RecorderState::Failed
+        );
+        // Already terminal (the supervisor finished in time): left alone.
+        let done = two_generations(RecorderState::Stopped, None);
+        fail_stuck_stop(&done.fresh);
+        assert_eq!(*done.last_state.lock().unwrap(), RecorderState::Stopped);
+        assert!(done.sink.payloads().is_empty());
+    }
 
     #[test]
     fn event_channels_are_stable() {

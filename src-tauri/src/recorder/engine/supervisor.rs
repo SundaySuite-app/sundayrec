@@ -32,7 +32,8 @@ use super::args::{build_record_args, recording_preview_path};
 use super::emit::{emit_error, emit_failure, emit_warning, reconnecting_message};
 use super::finalize::{
     capture_base_path, capture_dir, delivery_encode_for, finalize_pending,
-    finalize_session_telemetry, session_manifest,
+    finalize_pending_with_first, finalize_session_telemetry, finished_receipt_path,
+    session_manifest,
 };
 use super::payloads::{
     RecordingEvent, RecordingFinished, RecordingLevels, RecordingOpts, RecordingProgress,
@@ -313,6 +314,8 @@ pub(super) async fn run_session(
         // Each split closes one; session end finalises the rest. The pre-roll clip is
         // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
         let mut finalized: usize = 0;
+        // Where deliverable 0 really landed (see `finished_receipt_path`).
+        let mut first_delivery: Option<String> = None;
         // Did EVERY deliverable reach the user's format? A split deliverable that
         // failed its delivery an hour ago must still keep the recovery manifest
         // alive at the clean stop — otherwise its capture is deleted with the
@@ -470,7 +473,7 @@ pub(super) async fn run_session(
                     // The split CLOSES the current deliverable. Finalise it (concat
                     // its fragments + write its history row) BEFORE opening the next.
                     let close_ms = now_ms();
-                    all_delivered &= finalize_pending(
+                    let (ok, first) = finalize_pending_with_first(
                         &ctx,
                         &session,
                         &mut finalized,
@@ -479,6 +482,8 @@ pub(super) async fn run_session(
                         &delivered_bytes,
                     )
                     .await;
+                    all_delivered &= ok;
+                    first_delivery = first_delivery.or(first);
 
                     let next = session.begin_split_segment(close_ms);
                     tracing::info!(segment = %next, "recorder: split — starting new segment");
@@ -897,7 +902,7 @@ pub(super) async fn run_session(
         // Graceful end of session: finalise the last (and any not-yet-finalised)
         // deliverable — concat its fragments + write its history row.
         emit_state(RecorderState::Stopping, session.reconnect_count());
-        all_delivered &= finalize_pending(
+        let (ok, first) = finalize_pending_with_first(
             &ctx,
             &session,
             &mut finalized,
@@ -906,6 +911,8 @@ pub(super) async fn run_session(
             &delivered_bytes,
         )
         .await;
+        all_delivered &= ok;
+        first_delivery = first_delivery.or(first);
         if all_delivered {
             // Clean finish: every deliverable reached the user's format and has its
             // history row, so the recovery manifest is no longer needed.
@@ -929,14 +936,18 @@ pub(super) async fn run_session(
         // Record→edit hand-off: tell the UI where the finished file landed so it can
         // offer "open in editor". Only when the main file actually exists + is
         // non-empty (a recording that produced nothing skips the suggestion).
-        if tokio::fs::metadata(&ctx.opts.output_path)
+        // The path deliverable 0 ACTUALLY landed on (delivery never overwrites, so it
+        // can differ from the planned one); the planned path only when it was not
+        // delivered at all (the old behaviour).
+        let finished_path = finished_receipt_path(first_delivery.as_deref(), &ctx.opts.output_path);
+        if tokio::fs::metadata(&finished_path)
             .await
             .map(|m| m.len() > 0)
             .unwrap_or(false)
         {
             let finished = RecordingFinished::for_delivered(
                 ctx.pool.as_ref(),
-                ctx.opts.output_path.clone(),
+                finished_path,
                 ctx.opts.video_device_name.is_some(),
                 !ctx.state.is_current(),
             )

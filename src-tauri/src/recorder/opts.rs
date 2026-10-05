@@ -59,7 +59,9 @@ pub(crate) fn build_opts(
 
 /// Every path the Papirkurv in `folder` holds as an `original_path` (the media
 /// file and the companions that moved with it).
-fn trashed_origins(folder: &std::path::Path) -> std::collections::HashSet<std::path::PathBuf> {
+pub(crate) fn trashed_origins(
+    folder: &std::path::Path,
+) -> std::collections::HashSet<std::path::PathBuf> {
     crate::trash::read_manifest(folder)
         .into_iter()
         .flat_map(|e| {
