@@ -86,7 +86,7 @@ import {
 
 import { EditorPage, editorHeading } from "./editor/EditorPage";
 import { loadState } from "./editor/model";
-import { locale, t, tDyn, tf } from "./i18n";
+import { locale, resolveStartupLocale, setLocale, t, tDyn, tf } from "./i18n";
 import {
   DropZone,
   libraryHeading,
@@ -100,12 +100,17 @@ import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { SetupPage } from "./pages/setup/SetupPage";
-import { consumePendingAction, pendingAction, route } from "./router/router";
+import {
+  consumePendingAction,
+  navigate,
+  pendingAction,
+  route,
+} from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { audioDevices } from "./state/devices";
 import { banners, dismissBanner } from "./state/banners";
 import { isRecording } from "./state/recording";
-import { hydrateError, settings } from "./state/settings";
+import { hydrateError, hydrateSettings, settings } from "./state/settings";
 import { Banner } from "./ui/Banner/Banner";
 import { Button } from "./ui/Button/Button";
 import { activeDialog } from "./ui/dialog";
@@ -151,6 +156,11 @@ export function Shell({ probe }: ShellProps) {
           tone="bad"
           title={tDyn("error", failed)}
           testId="hydrate-error"
+          actions={
+            <Button testId="hydrate-retry" onClick={() => void retryHydrate()}>
+              {t("error.settingsLoadRetry")}
+            </Button>
+          }
         />
       ) : null}
 
@@ -171,6 +181,19 @@ export function Shell({ probe }: ShellProps) {
       )}
     </PageShell>
   );
+}
+
+/**
+ * «Prøv igjen» på banneret for en feilet innstillingslesing. Leser på nytt; går
+ * det, er innstillingene ikke lenger skrivebeskyttet, språket følger det
+ * lagrede, og en ekte førstegangsinstallasjon (som oppstarten ikke sendte til
+ * oppsettet mens lesingen sto som feilet) kommer dit nå.
+ */
+async function retryHydrate(): Promise<void> {
+  await hydrateSettings();
+  if (hydrateError.peek()) return;
+  await setLocale(resolveStartupLocale(settings.peek().language));
+  if (!settings.peek().onboardingDone) navigate("setup", { firstRun: true });
 }
 
 /**

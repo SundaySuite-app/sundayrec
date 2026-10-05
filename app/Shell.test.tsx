@@ -10,7 +10,7 @@ import { setLocale } from "./i18n";
 import { globalError } from "./state/global-error";
 import { recordings } from "./state/recordings";
 import { trashEntries } from "./state/trash";
-import { patchSettings } from "./state/settings";
+import { hydrateError, patchSettings } from "./state/settings";
 
 // Fortsatt det ene stedet i enhetsgaten som beviser (a) at `.tsx` kompilerer
 // uten et Babel-forvalg — transformen er tsconfigs `jsxImportSource: "preact"`
@@ -425,6 +425,18 @@ describe("Shell", () => {
   it("sier fra når innstillingene ikke kunne leses", () => {
     navigate("record");
     expect(render(<Shell />)).not.toContain('data-testid="hydrate-error"');
+  });
+
+  it("en feilet lesing gir banneret en «Prøv igjen»-knapp", () => {
+    navigate("record");
+    hydrateError.value = "settingsLoadFailed";
+    try {
+      const html = render(<Shell />);
+      expect(html).toContain('data-testid="hydrate-error"');
+      expect(html).toContain('data-testid="hydrate-retry"');
+    } finally {
+      hydrateError.value = null;
+    }
   });
 
   it("Overlays er dialog- og toastverten, og bare den stående live-regionen når begge er tomme", () => {

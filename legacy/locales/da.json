@@ -871,6 +871,7 @@
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet.",
     "ipcFailed": "Noget i baggrunden svarede ikke, så denne visning kan være ufuldstændig.",
     "settingsLoadFailed": "Kunne ikke læse indstillingerne — viser standardindstillinger. Ændringer du foretager nu kan gå tabt.",
+    "settingsLoadRetry": "Prøv igen",
     "settingsMigrationCorrupt": "Indstillingerne fra den forrige version kunne ikke læses — appen starter med standardindstillinger.",
     "recordingsFolderMissing": "Optagelsesmappen findes ikke endnu. Den oprettes, når den første optagelse starter. Ligger den på en ekstern disk, så tjek, at disken er tilsluttet."
   },

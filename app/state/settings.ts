@@ -28,6 +28,14 @@
  * innstillingene» har ingen måte å vite at det var en lesefeil. Derfor spør vi
  * IPC-feilringen etterpå: registrerte shimmen en `settings_get`-feil, er
  * `hydrateError` satt, og S1b viser det som et banner.
+ *
+ * ## Og aldri skriv over det vi ikke fikk lest
+ *
+ * Mens `hydrateError` er satt er innstillingene SKRIVEBESKYTTET:
+ * `saveSettingsDebounced` svarer `false` uten å skrive, og `write()` nekter
+ * det som alt ventet. Hver bryter lagrer hele objektet, så en skriving her ville
+ * lagt standardverdiene over ukeplan, spesialopptak, enhet og kirkenavn i basen.
+ * Veien ut er «Prøv igjen» i banneret, som kjører `hydrateSettings` på nytt.
  */
 
 import { signal } from "@preact/signals";
@@ -154,6 +162,14 @@ let settle: ((ok: boolean) => void) | null = null;
 let lastFailureCode = "";
 
 async function write(): Promise<boolean> {
+  // Aldri skriv mens lesingen står som feilet: det vi har i minnet er
+  // standardverdier, ikke det som ligger i basen, og en skriving ville lagt
+  // standardverdiene over ukeplanen, mappa og kirkenavnet. (Tilsvarende vakt
+  // i `saveSettingsDebounced`; denne tar det som alt venter i byga.)
+  if (hydrateError.peek()) {
+    lastFailureCode = "";
+    return false;
+  }
   try {
     const ok = !!(await window.api.saveSettings(payloadFor(settings.value)));
     lastFailureCode = "";
@@ -200,6 +216,9 @@ function resolvePending(ok: boolean): void {
 export function saveSettingsDebounced(
   delayMs: number = SAVE_COALESCE_MS,
 ): Promise<boolean> {
+  // Se `write()`: en feilet hydrering er skrivebeskyttet modus. `false` er det
+  // `useSetting` reverterer på, så verdien i UI blir ikke stående som lagret.
+  if (hydrateError.peek()) return Promise.resolve(false);
   if (!pending) {
     pending = new Promise<boolean>((resolve) => {
       settle = resolve;

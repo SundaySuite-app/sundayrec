@@ -889,6 +889,7 @@
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
     "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny.",
     "settingsLoadFailed": "Nie można odczytać ustawień — wyświetlane są ustawienia domyślne. Wprowadzone teraz zmiany mogą zostać utracone.",
+    "settingsLoadRetry": "Spróbuj ponownie",
     "settingsMigrationCorrupt": "Nie można odczytać ustawień z poprzedniej wersji — aplikacja uruchamia się z ustawieniami domyślnymi.",
     "recordingsFolderMissing": "Folder nagrań jeszcze nie istnieje. Zostanie utworzony, gdy rozpocznie się pierwsze nagranie. Jeśli znajduje się na dysku zewnętrznym, sprawdź, czy dysk jest podłączony."
   },
