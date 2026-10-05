@@ -16,7 +16,7 @@ use cpal::{FromSample, Sample, SampleFormat};
 use ringbuf::traits::Producer;
 use ringbuf::HeapProd;
 use sundayrec_core::audio::{observe_levels, MeterBanks};
-use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
+use sundayrec_core::device_match::{find_best_device_match, find_exact_device_match, FfmpegDevice};
 
 use crate::audio::asio::{route_frame, ChannelRoute};
 
@@ -113,6 +113,32 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
         .into_iter()
         .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
         .ok_or_else(|| format!("input device not found: {name}"))
+}
+
+/// RECONNECT counterpart of [`find_device`]: open the input device named `name`
+/// and nothing that merely resembles it (case-insensitive, trimmed — see
+/// [`find_exact_device_match`]). `name` is the cpal name the first segment
+/// actually opened. A miss is an `Err`, which the supervisor reads as "the
+/// device is not back yet" and keeps backing off, instead of recording the rest
+/// of the service from a different microphone.
+#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
+pub fn find_device_exact(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
+    let devices: Vec<cpal::Device> = host
+        .input_devices()
+        .map_err(|e| format!("listing input devices: {e}"))?
+        .collect();
+    let candidates: Vec<FfmpegDevice> = devices
+        .iter()
+        .filter_map(|d| d.name().ok())
+        .map(|n| FfmpegDevice::new(n, "cpal", None))
+        .collect();
+    let target = find_exact_device_match(&candidates, name)
+        .map(|d| d.name.clone())
+        .ok_or_else(|| format!("input device not back: {name}"))?;
+    devices
+        .into_iter()
+        .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
+        .ok_or_else(|| format!("input device not back: {name}"))
 }
 
 /// The DECISION half of [`find_device`]: which cpal device name should be opened

@@ -549,6 +549,13 @@ mod imp {
             state,
             audio_engine: _,
         } = ctx;
+        // Hold the machine awake for the WHOLE session, exactly as `run_session`
+        // does (F2-W5): a timer-woken, unattended Windows PC otherwise sleeps
+        // mid-service once its idle limit runs out. The binding's DROP is the
+        // release — every early `return` below and `stop()`'s abort of this task
+        // included — and it sits before the ready handshake so it overlaps the
+        // scheduler's own block.
+        let _keep_awake = crate::recorder::engine::session_keep_awake();
         let label = host_kind.label();
         // The session's start AND its id (a singleton engine never repeats a
         // start timestamp). Stamped before the device probe, like `run_session`
@@ -895,9 +902,13 @@ mod imp {
                 .map(|m| m.len() > 0)
                 .unwrap_or(false)
             {
-                let finished =
-                    RecordingFinished::for_delivered(pool.as_ref(), final_path.clone(), has_video)
-                        .await;
+                let finished = RecordingFinished::for_delivered(
+                    pool.as_ref(),
+                    final_path.clone(),
+                    has_video,
+                    !state.is_current(),
+                )
+                .await;
                 let _ = app.emit(FINISHED_EVENT, finished);
             }
         }
@@ -947,6 +958,27 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F2-W5 seam: `run_cpal_session` is the Windows video path and owns its own
+    /// session loop, so the keep-awake block the ffmpeg supervisor takes is NOT
+    /// inherited here. It needs an `AppHandle` + a sound card to run, so the
+    /// opening of its body is pinned instead: the guard must be a NAMED binding
+    /// (a bare `let _ =` would drop, and release, it immediately) taken before
+    /// the first suspension point.
+    #[test]
+    fn run_cpal_session_holds_the_keep_awake_block_for_the_whole_session() {
+        let src = include_str!("cpal_capture.rs");
+        let start = src
+            .find("pub(crate) async fn run_cpal_session(")
+            .expect("run_cpal_session exists");
+        let body = &src[start..];
+        let first_await = body.find(".await").expect("the session awaits");
+        let preamble = &body[..first_await];
+        assert!(
+            preamble.contains("let _keep_awake = crate::recorder::engine::session_keep_awake();"),
+            "run_cpal_session must hold session_keep_awake() before its first .await"
+        );
+    }
     use ringbuf::traits::{Producer, Split};
     use std::time::Duration;
     use tokio::io::AsyncReadExt;

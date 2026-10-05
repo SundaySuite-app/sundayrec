@@ -134,7 +134,10 @@ pub(crate) enum CaptureChild {
 /// Spawn a capture for `backend` writing to `output_path`. The ffmpeg arm
 /// builds the argv from the resolved devices; the native arm resolves the
 /// device itself (fuzzy, by NAME — so every spawn re-resolves, covering the
-/// index-reshuffle class of bug for free).
+/// index-reshuffle class of bug for free). `reopen` is `Some(name)` for a
+/// RECONNECT spawn: the native arm then finds exactly that device (the one the
+/// first segment opened) instead of fuzzy-matching the stored label.
+#[allow(clippy::too_many_arguments)]
 async fn spawn_capture(
     backend: CaptureBackend,
     platform: Platform,
@@ -143,6 +146,7 @@ async fn spawn_capture(
     opts: &RecordingOpts,
     output_path: &str,
     pinned_rate: Option<u32>,
+    reopen: Option<&str>,
 ) -> AppResult<CaptureChild> {
     match backend {
         CaptureBackend::Ffmpeg => {
@@ -152,11 +156,12 @@ async fn spawn_capture(
             )))
         }
         CaptureBackend::NativeAudio { host } => Ok(CaptureChild::Native(Box::new(
-            crate::recorder::native_capture::segment::spawn_native_segment(
+            crate::recorder::native_capture::segment::spawn_native_segment_for(
                 host,
                 opts,
                 output_path,
                 pinned_rate,
+                reopen,
             )
             .await?,
         ))),
@@ -337,6 +342,7 @@ pub(super) async fn run_session(
             &ctx.opts,
             session.primary_path(),
             None,
+            None,
         )
         .await
         {
@@ -368,6 +374,7 @@ pub(super) async fn run_session(
                     &ctx.opts,
                     session.primary_path(),
                     None,
+                    None,
                 )
                 .await
                 {
@@ -393,8 +400,14 @@ pub(super) async fn run_session(
             }
         };
 
+        // The device the FIRST segment really opened: every reconnect must find
+        // exactly this one again (see `find_exact_device_match`). For ffmpeg it is
+        // `ctx.audio` (read per reconnect); for the native engine it is the cpal
+        // name the segment reports.
+        let mut native_device: Option<String> = None;
         if let CaptureChild::Native(seg) = &child {
             pinned_rate = Some(seg.spec.sample_rate);
+            native_device = seg.device_name.clone();
         }
         emit_state(RecorderState::Recording, 0);
 
@@ -477,6 +490,7 @@ pub(super) async fn run_session(
                         &ctx.opts,
                         &next,
                         None, // new deliverable — free to renegotiate the rate
+                        None,
                     )
                     .await
                     {
@@ -572,6 +586,7 @@ pub(super) async fn run_session(
                                             ctx.pool.as_ref(),
                                             ctx.opts.output_path.clone(),
                                             true,
+                                            !ctx.state.is_current(),
                                         )
                                         .await;
                                         let _ = ctx.app.emit(FINISHED_EVENT, finished);
@@ -683,38 +698,58 @@ pub(super) async fn run_session(
                                 // zero-byte recording (2026-07-31). The native
                                 // backend re-resolves by name inside its own
                                 // spawn, so this ffmpeg enumeration is skipped.
-                                if ctx.backend == CaptureBackend::Ffmpeg {
+                                //
+                                // A RECONNECT matches by exact name only (the device
+                                // the first segment opened, case-insensitive): the
+                                // fuzzy ladder would swap a dropped USB mixer for
+                                // the laptop mic on a shared word like "microphone"
+                                // and record the rest of the service from it. No
+                                // exact hit = "not back yet", and the back-off goes on.
+                                let mut device_back = true;
+                                if ctx.backend == CaptureBackend::Ffmpeg
+                                    && !ctx.audio.name.trim().is_empty()
+                                {
                                     if let Ok(inv) =
                                         crate::audio::device_enum::enumerate_ffmpeg_devices().await
                                     {
-                                        if let Some(fresh) =
-                                            sundayrec_core::device_match::find_best_device_match(
-                                                &inv.audio_inputs,
-                                                &ctx.opts.audio_device_name,
-                                            )
-                                        {
-                                            if fresh.index != ctx.audio.index {
-                                                tracing::warn!(
-                                                    old = ?ctx.audio.index,
-                                                    new = ?fresh.index,
-                                                    "recorder: device index moved — re-resolved before respawn"
-                                                );
+                                        match sundayrec_core::device_match::find_exact_device_match(
+                                            &inv.audio_inputs,
+                                            &ctx.audio.name,
+                                        ) {
+                                            Some(fresh) => {
+                                                if fresh.index != ctx.audio.index {
+                                                    tracing::warn!(
+                                                        old = ?ctx.audio.index,
+                                                        new = ?fresh.index,
+                                                        "recorder: device index moved — re-resolved before respawn"
+                                                    );
+                                                }
+                                                ctx.audio = fresh.clone();
                                             }
-                                            ctx.audio = fresh.clone();
+                                            None => device_back = false,
                                         }
                                     }
                                 }
-                                match spawn_capture(
-                                    ctx.backend,
-                                    ctx.platform,
-                                    &ctx.audio,
-                                    ctx.video.as_ref(),
-                                    &ctx.opts,
-                                    &next_segment,
-                                    pinned_rate, // an _rN fragment must match its siblings
-                                )
-                                .await
-                                {
+                                let reopen_name = native_device.as_deref();
+                                let respawned = if device_back {
+                                    spawn_capture(
+                                        ctx.backend,
+                                        ctx.platform,
+                                        &ctx.audio,
+                                        ctx.video.as_ref(),
+                                        &ctx.opts,
+                                        &next_segment,
+                                        pinned_rate, // an _rN fragment must match its siblings
+                                        reopen_name,
+                                    )
+                                    .await
+                                } else {
+                                    Err(AppError::Recording(format!(
+                                        "input device not back: {}",
+                                        ctx.audio.name
+                                    )))
+                                };
+                                match respawned {
                                     Ok(mut c) => {
                                         // Native: the device may have come back at a
                                         // DIFFERENT rate than the deliverable's pinned
@@ -757,6 +792,7 @@ pub(super) async fn run_session(
                                                     &ctx.opts,
                                                     &split_path,
                                                     None,
+                                                    reopen_name,
                                                 )
                                                 .await
                                                 {
@@ -902,6 +938,7 @@ pub(super) async fn run_session(
                 ctx.pool.as_ref(),
                 ctx.opts.output_path.clone(),
                 ctx.opts.video_device_name.is_some(),
+                !ctx.state.is_current(),
             )
             .await;
             let _ = ctx.app.emit(FINISHED_EVENT, finished);

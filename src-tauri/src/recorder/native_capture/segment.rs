@@ -46,8 +46,8 @@ use crate::recorder::engine::{
     SILENCE_EVENT, STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, negotiate, open_host, ring_capacity, CpalHostKind,
-    StreamSink,
+    build_input_stream_any, find_device, find_device_exact, negotiate, open_host, ring_capacity,
+    CpalHostKind, StreamSink,
 };
 use crate::recorder::native_capture::writer::{
     spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY,
@@ -82,6 +82,10 @@ pub struct NativeSegment {
     pub frames: Arc<AtomicU64>,
     /// The pinned capture format (routed channels + negotiated rate).
     pub spec: WavSpec,
+    /// The cpal name of the device this segment actually opened — what a
+    /// RECONNECT must find again, exactly, rather than whatever the stored
+    /// label fuzzy-matches (`None` only if cpal could not report a name).
+    pub device_name: Option<String>,
 }
 
 /// Open the device, negotiate its format, and start the full native stack
@@ -100,21 +104,61 @@ pub async fn spawn_native_segment(
     output_path: &str,
     pinned_rate: Option<u32>,
 ) -> AppResult<NativeSegment> {
-    let device_name = opts.audio_device_name.clone();
+    spawn_native_segment_for(host, opts, output_path, pinned_rate, None).await
+}
+
+/// [`spawn_native_segment`] with the reconnect rule: when `reopen` is
+/// `Some(name)`, the device is found by EXACT name (the one the first segment
+/// opened) instead of the fuzzy ladder, and a miss fails the spawn so the
+/// supervisor's back-off keeps waiting for the real device. `None` is the first
+/// start, where the stored label legitimately needs the ladder.
+pub async fn spawn_native_segment_for(
+    host: CpalHostKind,
+    opts: &RecordingOpts,
+    output_path: &str,
+    pinned_rate: Option<u32>,
+    reopen: Option<&str>,
+) -> AppResult<NativeSegment> {
+    let exact = reopen.map(str::to_owned);
+    let device_name = exact
+        .clone()
+        .unwrap_or_else(|| opts.audio_device_name.clone());
     let requested_rate = pinned_rate.or(opts.sample_rate);
 
     // Probe on a blocking thread: the (!Send) device handle never escapes.
-    let negotiated = {
+    let (negotiated, opened_name) = {
         let name = device_name.clone();
+        let exact = exact.is_some();
         tokio::task::spawn_blocking(move || -> Result<_, String> {
             let h = open_host(host)?;
-            let device = find_device(&h, &name)?;
-            negotiate(&device, requested_rate)
+            let device = if exact {
+                find_device_exact(&h, &name)?
+            } else {
+                find_device(&h, &name)?
+            };
+            #[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name.
+            let opened = cpal::traits::DeviceTrait::name(&device).ok();
+            Ok((negotiate(&device, requested_rate)?, opened))
         })
         .await
         .map_err(|e| AppError::Recording(format!("device probe task failed: {e}")))?
         .map_err(AppError::Recording)?
     };
+    // A first start that landed on a device whose name is not the stored one
+    // (the ladder's substring/word-overlap strategies) is worth a trail: the
+    // recording may be from a different microphone than the user picked. A UI
+    // warning is deferred; reconnects never get here with a loose match.
+    if let Some(opened) = opened_name.as_deref() {
+        if !device_name.is_empty()
+            && !sundayrec_core::device_match::names_match_exactly(opened, &device_name)
+        {
+            tracing::warn!(
+                requested = %device_name,
+                opened = %opened,
+                "recorder: stored input device matched loosely, not by exact name"
+            );
+        }
+    }
 
     let plan = build_route_plan(
         opts.channel_mode,
@@ -178,12 +222,17 @@ pub async fn spawn_native_segment(
     let st_meters = Arc::clone(&meters);
     let st_overrun = Arc::clone(&overrun);
     let st_name = device_name.clone();
+    let exact_reopen = exact.is_some();
     let stream_join = std::thread::Builder::new()
         .name("native-capture".into())
         .spawn(move || {
             let build = (|| -> Result<cpal::Stream, String> {
                 let h = open_host(host)?;
-                let device = find_device(&h, &st_name)?;
+                let device = if exact_reopen {
+                    find_device_exact(&h, &st_name)?
+                } else {
+                    find_device(&h, &st_name)?
+                };
                 let config = cpal::StreamConfig {
                     channels: negotiated.channels,
                     sample_rate: negotiated.sample_rate,
@@ -236,6 +285,7 @@ pub async fn spawn_native_segment(
         bytes,
         frames,
         spec,
+        device_name: opened_name,
     };
 
     match ready_rx.await {

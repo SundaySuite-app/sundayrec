@@ -20,4 +20,14 @@ has_video: boolean,
  * when the row could not be written or read, and the receipt then says so
  * instead of offering buttons that cannot work.
  */
-recording_id: string | null, };
+recording_id: string | null, 
+/**
+ * `true` when a NEWER recording has been started since this one's
+ * supervisor was launched — i.e. this is a straggler finishing its
+ * finalize chain (concat + delivery encode run for minutes) while another
+ * session is live. The renderer must not read it as "the session I am
+ * showing has ended": it is the old one's receipt, and tearing the screen
+ * down for it leaves the live recording running behind a "ready" page.
+ * Absent on the wire from older builds, which reads as `false`.
+ */
+superseded: boolean, };
