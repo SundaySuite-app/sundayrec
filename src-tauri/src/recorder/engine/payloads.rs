@@ -28,16 +28,31 @@ pub struct RecordingFinished {
     /// when the row could not be written or read, and the receipt then says so
     /// instead of offering buttons that cannot work.
     pub recording_id: Option<String>,
+    /// `true` when a NEWER recording has been started since this one's
+    /// supervisor was launched — i.e. this is a straggler finishing its
+    /// finalize chain (concat + delivery encode run for minutes) while another
+    /// session is live. The renderer must not read it as "the session I am
+    /// showing has ended": it is the old one's receipt, and tearing the screen
+    /// down for it leaves the live recording running behind a "ready" page.
+    /// Absent on the wire from older builds, which reads as `false`.
+    #[serde(default)]
+    pub superseded: bool,
 }
 
 impl RecordingFinished {
     /// The payload for a file the recorder has just delivered and written a
     /// history row for: looks the row up by the path Rust itself delivered to.
     /// A database that cannot answer is a `None`, never a failed event.
+    ///
+    /// `superseded` is `!state.is_current()` of the emitting supervisor's
+    /// [`StateWriter`](super::StateWriter): the same generation guard that stops
+    /// a straggler's state writes decides whether its `finished` is the live
+    /// session's.
     pub async fn for_delivered(
         pool: Option<&sqlx::SqlitePool>,
         file_path: String,
         has_video: bool,
+        superseded: bool,
     ) -> Self {
         let recording_id = match pool {
             Some(pool) => crate::db::store::recording_id_for_path(pool, &file_path)
@@ -54,6 +69,7 @@ impl RecordingFinished {
             file_path,
             has_video,
             recording_id,
+            superseded,
         }
     }
 }
@@ -228,6 +244,35 @@ mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: RecordingProgress = serde_json::from_str(&json).unwrap();
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn finished_payload_carries_superseded_and_defaults_to_false() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let live = rt.block_on(RecordingFinished::for_delivered(
+            None,
+            "/x/a.mp3".into(),
+            false,
+            false,
+        ));
+        let stale = rt.block_on(RecordingFinished::for_delivered(
+            None,
+            "/x/a.mp3".into(),
+            false,
+            true,
+        ));
+        assert!(!live.superseded);
+        assert!(stale.superseded);
+        let json = serde_json::to_string(&stale).unwrap();
+        assert!(json.contains("\"superseded\":true"), "got: {json}");
+        // An older sender that never wrote the field still parses, as "live".
+        let old: RecordingFinished = serde_json::from_str(
+            r#"{"file_path":"/x/a.mp3","has_video":false,"recording_id":null}"#,
+        )
+        .unwrap();
+        assert!(!old.superseded);
     }
 
     #[test]

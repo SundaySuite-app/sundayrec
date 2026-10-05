@@ -15,16 +15,20 @@
  * «recording» er dens kvittering på at den er tilbake), og krysset.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   dismissReconnecting,
+  enterFinalizing,
+  FINALIZE_TIMEOUT_MS,
+  finalizing,
   finishedRecording,
   forgetMovedPath,
   hydrateRecordingState,
   initRecording,
   isRecording,
   markSessionStarted,
+  recorderState,
   reconnecting,
   scheduledStopMs,
   silenceActive,
@@ -67,6 +71,9 @@ function withFakeApi(opts: FakeApiOpts = {}): Harness {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
+  recorderState.value = null;
+  finalizing.value = false;
   clearBanners();
   reconnecting.value = false;
   silenceActive.value = false;
@@ -367,6 +374,58 @@ describe("oppstarts-snapshotet", () => {
     markSessionStarted();
     await hydrateRecordingState();
     expect(isRecording.value).toBe(true);
+    h.off();
+  });
+});
+
+describe("ferdig-melding og fullfører-frist", () => {
+  it("en ferdig-melding fra en ERSTATTET økt river ikke ned den nye", () => {
+    // MUTASJONSPRØVEN: fjern `if (d?.superseded === true) return;` fra
+    // `recording-finished`-handleren, og denne blir rød — den gamle økta sin
+    // sene melding setter `isRecording = false` mens det nye opptaket går.
+    const h = withFakeApi();
+    markSessionStarted();
+    h.emit("recording-finished", {
+      file_path: "/tmp/gammel.mp3",
+      recording_id: "rad-gammel",
+      superseded: true,
+    });
+    expect(isRecording.value).toBe(true);
+    expect(finishedRecording.value).toBeNull();
+    // Den AKTIVE økta sin melding virker som før (felt fraværende = ikke erstattet).
+    h.emit("recording-finished", { file_path: "/tmp/ny.mp3" });
+    expect(isRecording.value).toBe(false);
+    expect(finishedRecording.value?.path).toBe("/tmp/ny.mp3");
+    h.off();
+  });
+
+  it("fristen slår ikke til mens motoren fortsatt melder «stopping»", () => {
+    // MUTASJONSPRØVEN: fjern `recorderState.peek() === "stopping"`-grenen i
+    // `armFinalizeTimer`, og denne blir rød — overlegget forsvinner etter 30 s
+    // midt i en 90-minutters koding.
+    vi.useFakeTimers();
+    const h = withFakeApi();
+    markSessionStarted();
+    h.emit("recording-overlay-stop", { state: "stopping" });
+    enterFinalizing();
+    vi.advanceTimersByTime(FINALIZE_TIMEOUT_MS * 3 + 1);
+    expect(isRecording.value).toBe(true);
+    expect(finalizing.value).toBe(true);
+    // Når motoren er ferdig, rydder den terminale tilstanden som vanlig.
+    h.emit("recording-overlay-stop", { state: "stopped" });
+    expect(isRecording.value).toBe(false);
+    expect(finalizing.value).toBe(false);
+    h.off();
+  });
+
+  it("fristen er fortsatt bakstopperen når motoren ikke har sagt «stopping»", () => {
+    vi.useFakeTimers();
+    const h = withFakeApi();
+    markSessionStarted();
+    enterFinalizing();
+    vi.advanceTimersByTime(FINALIZE_TIMEOUT_MS + 1);
+    expect(isRecording.value).toBe(false);
+    expect(finalizing.value).toBe(false);
     h.off();
   });
 });

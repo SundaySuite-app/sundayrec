@@ -19,7 +19,8 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
-Ingenting åpent. (Siste punkt, nedgradering etter en ny migrasjon, ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).)
+- Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
+- Audit 2026-10-05: 🟡/🔵/⚪-funn gjenstår (~85, rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota), pluss papirkurv knyttet til rad-id i stedet for sti (rest av 🟠).
 
 ## Spike / maskinvare først
 

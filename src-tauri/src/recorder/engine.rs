@@ -115,9 +115,9 @@ pub(crate) use self::process::{sleep_opt, stop_and_wait_bounded, wait_opt};
 pub(crate) use self::reader::error_code_str;
 use self::supervisor::run_session;
 pub(crate) use self::supervisor::{select_capture_backend, CaptureBackend, SegmentOutcome};
-// Outside the engine only `crate::power`'s tests drive the keep-awake seam (and
-// `recorder::context`'s docs link to it).
-#[cfg(any(test, doc))]
+// Every session loop takes the keep-awake block through this one door: the ffmpeg
+// supervisor and the Windows cpal video session (`recorder::cpal_capture`); the
+// two-process fallback runs inside the supervisor and inherits it.
 pub(crate) use self::supervisor::session_keep_awake;
 
 /// Event channel: a progress heartbeat (bytes written so far).
@@ -602,6 +602,20 @@ impl RecorderEngine {
         // the macOS path and the Windows dshow fallback.
         let dshow_audio: Option<FfmpegDevice> =
             find_best_device_match(&inv.audio_inputs, &opts.audio_device_name).cloned();
+        if let Some(d) = &dshow_audio {
+            if !opts.audio_device_name.is_empty()
+                && !sundayrec_core::device_match::names_match_exactly(
+                    &d.name,
+                    &opts.audio_device_name,
+                )
+            {
+                tracing::warn!(
+                    requested = %opts.audio_device_name,
+                    matched = %d.name,
+                    "recorder: stored input device matched loosely, not by exact name"
+                );
+            }
+        }
         // Video resolution uses the dedicated video-input list + the video match
         // ladder (F2.1). None unless the user enabled video AND a name matches.
         let video = match &opts.video_device_name {

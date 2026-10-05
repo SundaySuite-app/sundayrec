@@ -133,6 +133,33 @@ pub fn extract_brand_words(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// `true` when `a` and `b` name the same device: equal after trimming and
+/// lower-casing, nothing looser. The rule a RECONNECT matches by.
+pub fn names_match_exactly(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
+}
+
+/// RECONNECT lookup: only a device whose name equals `name` (case-insensitive,
+/// trimmed) counts as "the same device is back".
+///
+/// The five-strategy ladder in [`find_best_device_match`] is right for the first
+/// start (a stored Web-Audio label has to find its ffmpeg/cpal twin), but wrong
+/// after a dropout: with the USB mixer gone, "Microphone (USB Audio CODEC)" shares
+/// "microphone" + "audio" with the laptop's "Microphone Array (Realtek(R) Audio)",
+/// and the rest of the service would be recorded from the wrong microphone while
+/// the UI says "reconnected". `name` here is the device the first segment actually
+/// OPENED, not the stored label. No exact hit means "not back yet" and the
+/// back-off carries on. An empty `name` matches nothing.
+pub fn find_exact_device_match<'a>(
+    devices: &'a [FfmpegDevice],
+    name: &str,
+) -> Option<&'a FfmpegDevice> {
+    if name.trim().is_empty() {
+        return None;
+    }
+    devices.iter().find(|d| names_match_exactly(&d.name, name))
+}
+
 /// Find the best matching device for a stored `name`, applying the five-strategy
 /// ladder. Returns `None` only when no strategy matched (and `name` was
 /// non-empty). An empty `name` returns the first device (the OS default).
@@ -214,6 +241,33 @@ mod tests {
         let devs = vec![dev("Built-in Microphone"), dev("RODE NT-USB")];
         let got = find_best_device_match(&devs, "RODE NT-USB").unwrap();
         assert_eq!(got.name, "RODE NT-USB");
+    }
+
+    #[test]
+    fn reconnect_never_matches_a_lookalike_device() {
+        // The Windows pair from the audit: shares "microphone" + "audio".
+        let devs = vec![dev("Microphone Array (Realtek(R) Audio)")];
+        assert!(find_exact_device_match(&devs, "Microphone (USB Audio CODEC)").is_none());
+        // The ladder (first start) DOES pick it, which is why reconnect needs its own rule.
+        assert!(find_best_device_match(&devs, "Microphone (USB Audio CODEC)").is_some());
+        // macOS pair: shares the "behringer" brand word.
+        let devs = vec![avf("Behringer X-USB", 1)];
+        assert!(find_exact_device_match(&devs, "Behringer UMC204HD").is_none());
+        assert!(find_best_device_match(&devs, "Behringer UMC204HD").is_some());
+    }
+
+    #[test]
+    fn reconnect_matches_same_name_ignoring_case_and_padding() {
+        let devs = vec![dev("Built-in Microphone"), dev("Behringer UMC204HD")];
+        let got = find_exact_device_match(&devs, "  behringer umc204hd ").unwrap();
+        assert_eq!(got.name, "Behringer UMC204HD");
+    }
+
+    #[test]
+    fn reconnect_with_empty_name_matches_nothing() {
+        let devs = vec![dev("Built-in Microphone")];
+        assert!(find_exact_device_match(&devs, "").is_none());
+        assert!(find_exact_device_match(&devs, "   ").is_none());
     }
 
     #[test]

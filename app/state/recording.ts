@@ -171,9 +171,24 @@ export function dismissReconnecting(): void {
 export function enterFinalizing(): void {
   if (finalizing.peek()) return;
   finalizing.value = true;
+  armFinalizeTimer();
+}
+
+function armFinalizeTimer(): void {
   finalizeTimer = setTimeout(() => {
     finalizeTimer = null;
     if (!finalizing.peek()) return;
+    // ⚠️ Motoren sier selv at den ennå jobber: `stopping` er koding og
+    // levering, og et 90-minutters opptak i MP3 bruker 1–2 minutter på det.
+    // Å erklære økta ferdig nå gir «klar»-skjerm over en mikrofon motoren
+    // fortsatt eier — preroll griper den, Start er aktiv, og et nytt opptak
+    // splitter det forrige. Den ekte bakstopperen er Rust-siden; når den
+    // flytter tilstanden videre (`stopped`/`failed`/`idle`) rydder hendelsen.
+    // Vi ser bare på nytt om litt.
+    if (recorderState.peek() === "stopping") {
+      armFinalizeTimer();
+      return;
+    }
     // Ingen terminal hendelse kom. Motoren kan fortsatt skrive, men UI-et skal
     // ikke bli stående og påstå at noe pågår.
     console.warn(
@@ -358,15 +373,23 @@ export function initRecording(): () => void {
       );
     }),
     window.api.on("recording-finished", (data: unknown) => {
-      stateGeneration += 1;
       const d = data as
         | {
             path?: string;
             file_path?: string;
             has_video?: boolean;
             recording_id?: string | null;
+            superseded?: boolean;
           }
         | undefined;
+      // ⚠️ En ETTERSLENGER: et nytt opptak ble startet mens den forrige økta
+      // fortsatt leverte (koding kan ta minutter), og dette er DEN GAMLES
+      // ferdigmelding. Den sier ingenting om økta skjermen viser — å rive den
+      // ned (`endSessionLocally`) etterlater «klar» over et opptak som går, og
+      // neste Start stopper og splitter det. Raden finnes i biblioteket;
+      // kvitteringen hører til en økt som ikke lenger er den aktive.
+      if (d?.superseded === true) return;
+      stateGeneration += 1;
       const path = d?.path ?? d?.file_path ?? null;
       endSessionLocally();
       if (!path) return;
