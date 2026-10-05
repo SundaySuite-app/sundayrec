@@ -629,9 +629,16 @@ pub fn fire_after_missed_net(kind: ScheduledEventKind, net_ran: bool) -> bool {
     !net_ran || kind == ScheduledEventKind::Stop
 }
 
+/// The longest a scheduled Start waits for a Stop fired just before it to
+/// release the recorder: the stop's finalise bound plus a margin.
+pub const STOP_SETTLE_MS: u64 = crate::timeouts::RecorderTimeouts::STOP_FINALIZE_MS + 15_000;
+
 /// How far from the wall clock a recorded fire time may be and still anchor
 /// the next enumeration. Past it the fire is old news (or the clock jumped).
-const FIRE_ANCHOR_WINDOW_SECS: i64 = 60;
+/// Derived from [`STOP_SETTLE_MS`]: a fire group that waited out a whole
+/// Stop→Start settle ends that long after its anchor, and an event that came
+/// due meanwhile must still count as unfired.
+pub const FIRE_ANCHOR_WINDOW_SECS: i64 = (STOP_SETTLE_MS / 1000) as i64 + 60;
 
 /// The instant [`upcoming_events`] should enumerate from. After a fire it is
 /// the fire time rather than `now`: anything strictly after it has not been
@@ -1970,6 +1977,11 @@ mod tests {
         assert_eq!(enumeration_base(now, Some(recent)), recent);
         let ahead = now + Duration::seconds(1);
         assert_eq!(enumeration_base(now, Some(ahead)), ahead);
+        // The anchor outlives a full Stop→Start settle (plus margin)…
+        let settle = Duration::milliseconds(STOP_SETTLE_MS as i64);
+        assert!(FIRE_ANCHOR_WINDOW_SECS > settle.num_seconds());
+        let after_settle = now - settle;
+        assert_eq!(enumeration_base(now, Some(after_settle)), after_settle);
         // An old fire — or a clock that jumped — is ignored.
         assert_eq!(
             enumeration_base(now, Some(now - Duration::minutes(10))),

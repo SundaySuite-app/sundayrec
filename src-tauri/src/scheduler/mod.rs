@@ -61,6 +61,7 @@ use sundayrec_core::schedule::{
     scheduled_max_minutes, settings_for_special_device, special_device_wanted,
     supervisor_should_fire, upcoming_dates, upcoming_events, CoveredWindow, ScheduledEvent,
     ScheduledEventKind, SpecialDevice, SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
+    STOP_SETTLE_MS,
 };
 use sundayrec_core::settings::Settings;
 use sundayrec_core::wake::{background_wake_log_action, should_block, wake_failure_notice_key};
@@ -96,8 +97,7 @@ const IDLE_RECHECK: StdDuration = StdDuration::from_secs(5 * 60);
 
 /// How long a scheduled Start waits for a Stop fired just before it (same
 /// instant, back-to-back recordings) to release the recorder.
-const STOP_SETTLE: StdDuration =
-    StdDuration::from_millis(sundayrec_core::timeouts::RecorderTimeouts::STOP_FINALIZE_MS + 15_000);
+const STOP_SETTLE: StdDuration = StdDuration::from_millis(STOP_SETTLE_MS);
 
 /// How many EXPECTED background wake failures (needs-admin / disabled / the
 /// prompt dismissed) this process has already reported.
