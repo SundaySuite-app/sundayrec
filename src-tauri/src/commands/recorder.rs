@@ -84,7 +84,7 @@ use ts_rs::TS;
 use sundayrec_core::settings::ChannelMode;
 
 use crate::db::Db;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::recorder::engine::{RecorderEngine, RecorderStatePayload, RecordingOpts};
 use crate::recorder::preroll::{preroll_settings_from, PrerollClip, PrerollEngine, PrerollStatus};
 use crate::settings;
@@ -289,6 +289,10 @@ pub fn plan_preroll_harvest(
 /// resulting future is nameable as `Send`, which the Tauri command wrapping it
 /// requires.
 pub trait StartRecordingDeps {
+    /// Is a session alive or still finalising? (`is_active() || Stopping` — see
+    /// [`engine_is_busy`].) Read FIRST by [`start_recording_impl`].
+    fn engine_busy(&self) -> bool;
+
     /// Plan the recording's [`RecordingOpts`] from what the renderer asked for
     /// — in Rust, so the output path is never the renderer's (finding E1).
     /// Fails the whole start BEFORE any device is touched, exactly as the old
@@ -333,6 +337,16 @@ pub trait StartRecordingDeps {
     fn count_started_manual(&self);
 }
 
+/// `true` while a session is running OR still finalising its files. A manual
+/// start in either state is refused with `already_recording`: `RecorderEngine::
+/// start` would `stop()` the live session and plan the SAME same-day filename
+/// (the old one's delivery file doesn't exist until it finalises), and the two
+/// deliveries would then overwrite each other. The scheduler has its own guard
+/// (it starts through `engine.start` directly) and is unaffected.
+pub(crate) fn engine_is_busy(state: sundayrec_core::recorder::RecorderState) -> bool {
+    state.is_active() || state == sundayrec_core::recorder::RecorderState::Stopping
+}
+
 /// The start choreography. See the module header for the diagram; the ORDER of
 /// the calls below is the behaviour, and `tests::the_start_choreography_*` is
 /// what now holds it in place.
@@ -340,6 +354,13 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
     deps: &D,
     request: ManualStartRequest,
 ) -> AppResult<()> {
+    // Refuse before touching anything — no plan, no pre-roll harvest, no meter
+    // stop — so a stray second press (a stale «klar» UI, a reloaded webview,
+    // Space held down) leaves the running session exactly as it was. The
+    // renderer localises the code (`NATIVE_ERRORS.already_recording`).
+    if deps.engine_busy() {
+        return Err(AppError::Recording("already_recording".into()));
+    }
     // The plan FIRST, and from the request alone: the opts the engine is
     // handed below are these, and nothing the renderer sent can reach them
     // except the three values `ManualStartRequest` has room for. First also
@@ -398,6 +419,10 @@ struct TauriStartDeps<'a> {
 }
 
 impl StartRecordingDeps for TauriStartDeps<'_> {
+    fn engine_busy(&self) -> bool {
+        engine_is_busy(self.engine.current_state())
+    }
+
     async fn plan(&self, request: ManualStartRequest) -> AppResult<RecordingOpts> {
         plan_manual(&self.app, &self.pool, &request).await
     }
@@ -467,6 +492,11 @@ pub async fn start_recording(
     db: State<'_, Db>,
     request: ManualStartRequest,
 ) -> AppResult<()> {
+    // One start at a time: two presses racing through plan → settle would both
+    // pass the busy check before either reached `Preparing`. The second waits
+    // here, then meets the first one's state and is refused.
+    static START_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _gate = START_GATE.lock().await;
     let deps = TauriStartDeps {
         app,
         engine: &engine,
@@ -842,6 +872,8 @@ mod tests {
         preroll_active: bool,
         clip: Option<PrerollClip>,
         engine_fails: bool,
+        /// What the engine reports when the start is attempted.
+        engine_state: sundayrec_core::recorder::RecorderState,
         /// The opts `start_engine` was handed — what the engine would open.
         engine_got: Mutex<Option<RecordingOpts>>,
     }
@@ -858,6 +890,7 @@ mod tests {
                 preroll_active: false,
                 clip: None,
                 engine_fails: false,
+                engine_state: sundayrec_core::recorder::RecorderState::Idle,
                 engine_got: Mutex::new(None),
             }
         }
@@ -889,6 +922,10 @@ mod tests {
     }
 
     impl StartRecordingDeps for MockDeps {
+        fn engine_busy(&self) -> bool {
+            engine_is_busy(self.engine_state)
+        }
+
         async fn plan(&self, request: ManualStartRequest) -> AppResult<RecordingOpts> {
             self.push(Step::Plan(request.clone()));
             if self.plan_fails {
@@ -972,6 +1009,33 @@ mod tests {
             custom_name: None,
             max_minutes: None,
             video: Some(false),
+        }
+    }
+
+    #[test]
+    fn engine_is_busy_covers_every_live_or_finalising_state() {
+        use sundayrec_core::recorder::RecorderState::*;
+        for s in [Preparing, Recording, Reconnecting, Stopping] {
+            assert!(engine_is_busy(s), "{s:?} must refuse a second start");
+        }
+        for s in [Idle, Stopped, Failed] {
+            assert!(!engine_is_busy(s), "{s:?} must accept a start");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_while_a_session_lives_or_finalises_is_refused_untouched() {
+        use sundayrec_core::recorder::RecorderState::*;
+        for state in [Preparing, Recording, Reconnecting, Stopping] {
+            let deps = MockDeps {
+                engine_state: state,
+                ..MockDeps::new()
+            };
+            let err = run(&deps, page_request()).await.unwrap_err();
+            // The renderer matches this code (`record-core.ts` NATIVE_ERRORS).
+            assert!(err.to_string().contains("already_recording"), "{err}");
+            // Nothing was touched: not planned, not harvested, not started.
+            assert!(deps.steps().is_empty(), "{state:?}: {:?}", deps.steps());
         }
     }
 

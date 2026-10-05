@@ -591,8 +591,8 @@ mod tests {
     ///  deliverable 1: sermon.wav      (SIGKILLed mid-capture → a reconnect)
     ///               + sermon_r1.wav   (runs until the RIFF guard fires)
     ///               → concat -c copy → delivered as sermon.wav
-    ///  deliverable 2: sermon_2.wav    (graceful stop)
-    ///               → delivered as sermon_2.wav
+    ///  deliverable 2: sermon_part2.wav    (graceful stop)
+    ///               → delivered as sermon_part2.wav
     /// ```
     ///
     /// Assertions, in order of what they would catch:
@@ -656,7 +656,7 @@ mod tests {
         let close_ms = crate::db::store::now_ms() as u64;
         s.finalize_pending(&pool, close_ms, "wav").await;
         let f3 = s.begin_split(close_ms);
-        assert!(f3.ends_with("_2.wav"), "split path: {f3}");
+        assert!(f3.ends_with("_part2.wav"), "split path: {f3}");
         assert_eq!(s.deliverable_count(), 2, "a split OPENS a new deliverable");
 
         // ── Segment 3: deliverable 2, clean stop. ────────────────────────────

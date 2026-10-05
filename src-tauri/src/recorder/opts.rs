@@ -57,6 +57,20 @@ pub(crate) fn build_opts(
     )
 }
 
+/// Every path the Papirkurv in `folder` holds as an `original_path` (the media
+/// file and the companions that moved with it).
+pub(crate) fn trashed_origins(
+    folder: &std::path::Path,
+) -> std::collections::HashSet<std::path::PathBuf> {
+    crate::trash::read_manifest(folder)
+        .into_iter()
+        .flat_map(|e| {
+            std::iter::once(e.original_path).chain(e.related.into_iter().map(|r| r.original_path))
+        })
+        .map(std::path::PathBuf::from)
+        .collect()
+}
+
 /// [`build_opts`] with the two things it reads from outside the settings —
 /// the resolved save folder and the clock — passed in.
 ///
@@ -104,9 +118,14 @@ pub(crate) fn build_opts_in(
     let output_path = folder.join(fname).to_string_lossy().into_owned();
     // Never overwrite a same-day recording: bump to `_2`, `_3`, … if the chosen
     // filename already exists on disk (pure suffix logic in core; `Path::exists`
-    // is the only I/O seam).
+    // is the only I/O seam). A path the Papirkurv remembers as a trashed
+    // recording's ORIGIN counts as taken too: its file is gone from here, but
+    // the library hides any row on that path as «i papirkurven», so a new
+    // recording reusing it would be invisible and lose its row when the trash
+    // is emptied.
+    let trashed = trashed_origins(folder);
     let output_path = sundayrec_core::filename::make_unique_path(&output_path, |p| {
-        std::path::Path::new(p).exists()
+        std::path::Path::new(p).exists() || trashed.contains(std::path::Path::new(p))
     });
 
     Ok(RecordingOpts {
@@ -177,5 +196,42 @@ mod tests {
         assert_eq!(format_ext(FileFormat::Wav), "wav");
         assert_eq!(format_ext(FileFormat::Flac), "flac");
         assert_eq!(format_ext(FileFormat::Aac), "aac");
+    }
+
+    fn plan_in(folder: &std::path::Path) -> String {
+        let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 4)
+            .unwrap()
+            .and_hms_opt(11, 0, 0)
+            .unwrap();
+        build_opts_in(folder, &Settings::default(), None, 0, Some(false), now)
+            .unwrap()
+            .output_path
+    }
+
+    /// A same-day recording must not reuse the path of one in the Papirkurv:
+    /// the file is gone, but the library hides a row on that path as «i
+    /// papirkurven» and the row is deleted when the trash is emptied.
+    #[test]
+    fn a_trashed_recordings_path_is_taken_for_the_next_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = plan_in(dir.path());
+        std::fs::write(&first, b"audio").unwrap();
+        // Alive on disk: bumped (the pre-existing rule).
+        assert_ne!(plan_in(dir.path()), first);
+
+        crate::trash::move_into_trash(dir.path(), std::slice::from_ref(&first)).unwrap();
+        assert!(
+            !std::path::Path::new(&first).exists(),
+            "file is in the trash"
+        );
+
+        let second = plan_in(dir.path());
+        assert_ne!(second, first, "a trashed origin must count as occupied");
+        assert!(second.contains("_2."), "{second}");
+        // Both the live AND the trashed path are skipped, one after the other.
+        std::fs::write(&second, b"audio").unwrap();
+        crate::trash::move_into_trash(dir.path(), std::slice::from_ref(&second)).unwrap();
+        let third = plan_in(dir.path());
+        assert!(third.contains("_3."), "{third}");
     }
 }

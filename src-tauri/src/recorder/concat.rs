@@ -94,7 +94,7 @@ pub(crate) struct DeliverySpec {
 impl DeliverySpec {
     /// Build the spec for ONE capture primary from the session's persisted
     /// [`AudioEncodeManifest`] — the manifest's own fields plus the delivery path
-    /// derived from the capture stem (which carries any `_2` split suffix).
+    /// derived from the capture stem (which carries any `_partN` split suffix).
     ///
     /// The single place a manifest becomes a finalise spec. It has three callers —
     /// the live stop (`engine::finalize_one`), the next-launch crash recovery
@@ -287,6 +287,15 @@ pub(crate) async fn finalize_deliverable(
     match delivery {
         None => Ok(primary),
         Some(spec) => {
+            // NEVER overwrite a file that is already there: an earlier recording
+            // (or a still-finalising one) may own `spec.delivery_path` — the path
+            // was picked at plan time, before that file existed. Deliver to a free
+            // sibling instead and report THAT path (callers store the returned
+            // path in the history row).
+            let spec = &DeliverySpec {
+                delivery_path: free_delivery_path(&spec.delivery_path),
+                ..spec.clone()
+            };
             if let Err(e) = transcode_capture_to_delivery(&primary, spec).await {
                 // Keep the capture on disk so nothing is lost to a failed delivery —
                 // WAV and MKV are both fully playable recordings in their own right.
@@ -316,14 +325,37 @@ pub(crate) async fn finalize_deliverable(
     }
 }
 
+/// `path` if nothing exists there, else the first free `_2`, `_3`, … sibling
+/// (same rule as the plan-time [`make_unique_path`](sundayrec_core::filename::make_unique_path)).
+fn free_delivery_path(path: &str) -> String {
+    // A path the Papirkurv remembers as a trashed recording's origin is taken too
+    // (same rule as the plan-time `build_opts_in`): a recording landing there
+    // would be hidden in the library as «i papirkurven» and lose its row when
+    // the trash is emptied. The trash lives in the delivery folder.
+    let trashed = crate::recorder::opts::trashed_origins(
+        Path::new(path).parent().unwrap_or_else(|| Path::new(".")),
+    );
+    let free = sundayrec_core::filename::make_unique_path(path, |p| {
+        Path::new(p).exists() || trashed.contains(Path::new(p))
+    });
+    if free != path {
+        tracing::warn!(
+            wanted = %path,
+            chosen = %free,
+            "recorder: delivery path already taken — delivering to a free sibling instead of overwriting"
+        );
+    }
+    free
+}
+
 /// Build the one-shot delivery ffmpeg arguments for a merged capture file. Pure so
 /// the argument shape is unit-tested without a process.
 ///
-/// - `AudioEncode`: `-i <wav> <audio_encode_args> -y <delivery>` — the SAME
+/// - `AudioEncode`: `-i <wav> <audio_encode_args> -n <delivery>` — the SAME
 ///   [`audio_encode_args`] seam the recorder uses, so channels / sample-rate /
 ///   bitrate match the recording's settings.
 /// - `RemuxCopy`: `-i <mkv> -map 0 -c copy [-tag:v hvc1] [-movflags +faststart]
-///   -y <delivery>` — a lossless stream copy into the delivery container (seconds
+///   -n <delivery>` — a lossless stream copy into the delivery container (seconds
 ///   even for a multi-hour service). `+faststart` (progressive playback) only for
 ///   the ISO/QuickTime containers, mirroring the capture-args gate.
 fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
@@ -368,7 +400,10 @@ fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
             }
         }
     }
-    args.push("-y".into());
+    // `-n`, never `-y`: the caller has already picked a free path, so ffmpeg
+    // refusing to overwrite only ever fires on a race — and then a failed
+    // delivery (capture kept) beats a silently replaced recording.
+    args.push("-n".into());
     args.push(spec.delivery_path.clone());
     args
 }
@@ -810,6 +845,68 @@ mod tests {
         );
     }
 
+    /// An earlier recording already owns the delivery path (a same-day take, or
+    /// the previous session still finalising): the new delivery must land on a
+    /// FREE sibling, return THAT path, and leave the earlier file byte-identical.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn delivery_onto_an_existing_file_goes_to_a_new_path() {
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("cap.wav");
+        sine_wav(&ffmpeg, &wav, 2);
+        let wav_s = wav.to_string_lossy().into_owned();
+        let taken = dir.path().join("2026-10-04.wav");
+        std::fs::write(&taken, b"the FIRST recording").unwrap();
+        let spec = DeliverySpec {
+            delivery_path: taken.to_string_lossy().into_owned(),
+            ext: "wav".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            mode: DeliveryMode::AudioEncode,
+            hvc1_tag: false,
+        };
+        let d = deliverable(&wav_s, &[&wav_s]);
+        let out = {
+            let _guard = crate::media::ffmpeg::tests::ENV_LOCK.lock().unwrap();
+            // SAFETY: serialised by ENV_LOCK; restored before releasing the lock.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let result = finalize_deliverable(&d, None, Some(&spec)).await;
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            result.expect("delivery must succeed")
+        };
+        assert_ne!(
+            Path::new(&out),
+            taken,
+            "must not deliver onto the taken path"
+        );
+        assert!(out.ends_with("2026-10-04_2.wav"), "{out}");
+        assert_eq!(
+            std::fs::read(&taken).unwrap(),
+            b"the FIRST recording",
+            "the earlier recording is untouched"
+        );
+        assert!(
+            probe_secs(&ffprobe, Path::new(&out)) > 1.5,
+            "the new file is real audio"
+        );
+        assert!(
+            !wav.exists(),
+            "the capture is consumed after a good delivery"
+        );
+    }
+
     #[tokio::test]
     async fn preroll_below_gate_clip_is_dropped_like_a_missing_one() {
         // A pre-roll clip that exists but is too small (below the plausible-output
@@ -863,6 +960,46 @@ mod tests {
             mode,
             hvc1_tag,
         }
+    }
+
+    #[test]
+    fn delivery_never_asks_ffmpeg_to_overwrite() {
+        for mode in [DeliveryMode::AudioEncode, DeliveryMode::RemuxCopy] {
+            let args = delivery_transcode_args("/cap/x.wav", &spec("mp3", mode, false));
+            assert!(!args.iter().any(|a| a == "-y"), "{args:?}");
+            // `-n` sits right before the output path.
+            assert_eq!(args[args.len() - 2], "-n");
+        }
+    }
+
+    #[test]
+    fn free_delivery_path_skips_a_taken_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let want = dir
+            .path()
+            .join("2026-10-04.mp3")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(free_delivery_path(&want), want, "free path is kept");
+        std::fs::write(&want, b"first recording").unwrap();
+        let got = free_delivery_path(&want);
+        assert_ne!(got, want);
+        assert!(got.ends_with("2026-10-04_2.mp3"), "{got}");
+    }
+
+    #[test]
+    fn free_delivery_path_skips_a_path_the_papirkurv_remembers() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir
+            .path()
+            .join("2026-10-04.mp3")
+            .to_string_lossy()
+            .into_owned();
+        std::fs::write(&a, b"A").unwrap();
+        crate::trash::move_into_trash(dir.path(), std::slice::from_ref(&a)).unwrap();
+        assert!(!Path::new(&a).exists(), "A is in the trash, not on disk");
+        let got = free_delivery_path(&a);
+        assert!(got.ends_with("2026-10-04_2.mp3"), "{got}");
     }
 
     #[test]

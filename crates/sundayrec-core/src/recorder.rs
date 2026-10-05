@@ -28,7 +28,7 @@
 //!     [`crate::reconnect::reconnect_delay`] back-off), the fatal-error
 //!     allowlist that skips reconnect ([`is_fatal_reconnect_error`], mirroring
 //!     Electron's `FATAL_RECONNECT_ERRORS`), the `_rN` reconnect-segment naming
-//!     and `_N` split-segment naming, and the "use the ORIGINAL session start
+//!     and `_partN` split-segment naming, and the "use the ORIGINAL session start
 //!     for duration/date even after reconnects" rule.
 //!   - **Improved:** Electron tracked reconnect timing implicitly through live
 //!     timers; here the time budget is an explicit, tested predicate
@@ -209,8 +209,8 @@ pub struct Deliverable {
 /// The session is a sequence of **deliverables**. The first deliverable opens at
 /// `new()`. A **reconnect** (`on_unexpected_exit` → `_rN`) appends a fragment to
 /// the *current* deliverable — it stays one file. A **split**
-/// (`begin_split_segment` → `_N`) CLOSES the current deliverable and OPENS a new
-/// one whose first fragment is the `_N` path. So:
+/// (`begin_split_segment` → `_partN`) CLOSES the current deliverable and OPENS a new
+/// one whose first fragment is the `_partN` path. So:
 ///   - reconnect = stitch (more fragments in the same deliverable),
 ///   - split = a brand-new deliverable (its own file + own history row),
 ///   - the pre-roll clip is prepended to the FIRST deliverable's FIRST fragment
@@ -238,7 +238,7 @@ pub struct RecordingSession {
     /// streak's 10 s ceiling), which is why this is separate from the monotonic
     /// `reconnect_count`.
     streak_attempts: u32,
-    /// How many *split* rotations have happened (drives the `_N` suffix).
+    /// How many *split* rotations have happened (drives the `_partN` suffix).
     split_count: u32,
     /// The base path (deliverable 0's first fragment) all suffixed segment names
     /// derive from.
@@ -390,8 +390,8 @@ impl RecordingSession {
         let attempt = self.reconnect_count;
         // The reconnect fragment derives from the CURRENT deliverable's primary
         // path (NOT the session base), so a reconnect inside a split deliverable
-        // is named `g_2_r1.mp3` and groups under that deliverable — its concat
-        // target is `g_2.mp3`, not the original `g.mp3`.
+        // is named `g_part2_r1.mp3` and groups under that deliverable — its concat
+        // target is `g_part2.mp3`, not the original `g.mp3`.
         // `deliverables` is never empty (`new` seeds it, nothing drains it), but
         // re-seed rather than panic mid-recording if the invariant ever broke.
         if self.deliverables.is_empty() {
@@ -446,7 +446,7 @@ impl RecordingSession {
 
     /// Rotate to a fresh split segment: a split CLOSES the current deliverable
     /// and OPENS a new one. Bumps the split count, appends a new [`Deliverable`]
-    /// whose first fragment is the `_N` path, and returns the new path the engine
+    /// whose first fragment is the `_partN` path, and returns the new path the engine
     /// should spawn ffmpeg against. Called when the engine's split timer fires
     /// (after finalising the current segment with a graceful stop).
     ///
@@ -481,10 +481,10 @@ pub fn reconnect_segment_path(base_path: &str, attempt: u32) -> String {
 }
 
 /// Build a reconnect-fragment path for the 1-based reconnect `attempt`, derived
-/// from a deliverable's PRIMARY path (which may itself carry a `_N` split
+/// from a deliverable's PRIMARY path (which may itself carry a `_partN` split
 /// suffix). Only a trailing `_rN` reconnect suffix is stripped first, so a split
-/// deliverable's `_N` is preserved: `g_2.mp3` → `g_2_r1.mp3`, and a stacked
-/// reconnect `g_2_r1.mp3` → `g_2_r2.mp3` (no `_r1_r2`).
+/// deliverable's `_partN` is preserved: `g_part2.mp3` → `g_part2_r1.mp3`, and a stacked
+/// reconnect `g_part2_r1.mp3` → `g_part2_r2.mp3` (no `_r1_r2`).
 pub fn reconnect_fragment_path(primary_path: &str, attempt: u32) -> String {
     let (stem, ext) = split_ext(primary_path);
     let stem = strip_reconnect_suffix(stem);
@@ -494,7 +494,7 @@ pub fn reconnect_fragment_path(primary_path: &str, attempt: u32) -> String {
     }
 }
 
-/// Strip ONLY a trailing `_rN` reconnect suffix from a stem (leaving any `_N`
+/// Strip ONLY a trailing `_rN` reconnect suffix from a stem (leaving any `_partN`
 /// split suffix intact). Used by [`reconnect_fragment_path`] so reconnects don't
 /// stack but a split deliverable's number is preserved.
 fn strip_reconnect_suffix(stem: &str) -> &str {
@@ -512,16 +512,19 @@ fn strip_reconnect_suffix(stem: &str) -> &str {
 }
 
 /// Build the split-segment path for the 1-based split `index`:
-/// `name.mp3` → `name_2.mp3` (the original is conceptually segment 1, so the
-/// first split is `_2`). Any existing `_rN`/`_N` suffix is stripped first.
+/// `name.mp3` → `name_part2.mp3` (the original is conceptually segment 1, so the
+/// first split is `_part2`). The stem is used VERBATIM: a delivery base that
+/// already carries a collision suffix (`name_2.mp3`, the same-day bump from
+/// `make_unique_path`) must keep it, and the split suffix must not be a bare
+/// `_N` — that is exactly the shape `make_unique_path` hands out, so `_N` splits
+/// of `name.mp3` would land on a DIFFERENT, finished recording's `name_2.mp3`.
 pub fn split_segment_path(base_path: &str, index: u32) -> String {
     let (stem, ext) = split_ext(base_path);
-    let stem = strip_segment_suffix(stem);
-    // The original file is segment 1; the first split rotation is `_2`.
+    // The original file is segment 1; the first split rotation is `_part2`.
     let n = index + 1;
     match ext {
-        Some(e) => format!("{stem}_{n}.{e}"),
-        None => format!("{stem}_{n}"),
+        Some(e) => format!("{stem}_part{n}.{e}"),
+        None => format!("{stem}_part{n}"),
     }
 }
 
@@ -981,20 +984,24 @@ mod tests {
     #[test]
     fn begin_split_segment_numbers_and_appends() {
         let mut s = RecordingSession::new("/rec/sermon.mp3", 0);
-        assert_eq!(s.begin_split_segment(60_000), "/rec/sermon_2.mp3");
-        assert_eq!(s.begin_split_segment(120_000), "/rec/sermon_3.mp3");
+        assert_eq!(s.begin_split_segment(60_000), "/rec/sermon_part2.mp3");
+        assert_eq!(s.begin_split_segment(120_000), "/rec/sermon_part3.mp3");
         assert_eq!(
             s.segments(),
-            ["/rec/sermon.mp3", "/rec/sermon_2.mp3", "/rec/sermon_3.mp3"]
+            [
+                "/rec/sermon.mp3",
+                "/rec/sermon_part2.mp3",
+                "/rec/sermon_part3.mp3"
+            ]
         );
         assert_eq!(s.split_count(), 2);
-        assert_eq!(s.current_segment(), "/rec/sermon_3.mp3");
+        assert_eq!(s.current_segment(), "/rec/sermon_part3.mp3");
         // Each split opened a NEW deliverable — three one-fragment deliverables.
         let dels = s.deliverables();
         assert_eq!(dels.len(), 3);
         assert_eq!(dels[0].primary_path, "/rec/sermon.mp3");
-        assert_eq!(dels[1].primary_path, "/rec/sermon_2.mp3");
-        assert_eq!(dels[2].primary_path, "/rec/sermon_3.mp3");
+        assert_eq!(dels[1].primary_path, "/rec/sermon_part2.mp3");
+        assert_eq!(dels[2].primary_path, "/rec/sermon_part3.mp3");
         assert!(dels.iter().all(|d| d.fragments.len() == 1));
     }
 
@@ -1003,20 +1010,20 @@ mod tests {
     #[test]
     fn segments_accumulate_across_reconnect_and_split_in_order() {
         let mut s = RecordingSession::new("/rec/g.mp3", 0);
-        // split at 30 min → _2 (opens deliverable 2)
+        // split at 30 min → _part2 (opens deliverable 2)
         let _ = s.begin_split_segment(30 * 60_000);
-        // reconnect during the _2 deliverable → its fragment derives from the
-        // deliverable primary (`g_2`), not the session base → `g_2_r1`.
+        // reconnect during the _part2 deliverable → its fragment derives from the
+        // deliverable primary (`g_part2`), not the session base → `g_part2_r1`.
         let _ = s.on_unexpected_exit(35 * 60_000, None);
-        // another split → _3 (opens deliverable 3)
+        // another split → _part3 (opens deliverable 3)
         let _ = s.begin_split_segment(65 * 60_000);
         assert_eq!(
             s.segments(),
             [
                 "/rec/g.mp3",
-                "/rec/g_2.mp3",
-                "/rec/g_2_r1.mp3",
-                "/rec/g_3.mp3",
+                "/rec/g_part2.mp3",
+                "/rec/g_part2_r1.mp3",
+                "/rec/g_part3.mp3",
             ]
         );
         // primary is always the FIRST deliverable's original path; the session
@@ -1037,9 +1044,25 @@ mod tests {
     }
 
     #[test]
-    fn split_path_numbers_from_two_and_strips() {
-        assert_eq!(split_segment_path("/a/b.mp3", 1), "/a/b_2.mp3");
-        assert_eq!(split_segment_path("/a/b_3.mp3", 2), "/a/b_3.mp3");
+    fn split_path_numbers_from_two_and_never_collides_with_a_bumped_base() {
+        assert_eq!(split_segment_path("/a/b.mp3", 1), "/a/b_part2.mp3");
+        assert_eq!(split_segment_path("/a/b.mp3", 2), "/a/b_part3.mp3");
+        assert_eq!(split_segment_path("/a/b", 1), "/a/b_part2");
+        // A same-day-bumped delivery base keeps its `_N` and is never reused:
+        // neither the first split of `b_2` nor `b_3` equals the base or another
+        // `_N` (which `make_unique_path` could have given a finished recording).
+        for base in ["/a/b_2.mp3", "/a/b_3.mp3"] {
+            for index in 1..=3 {
+                let seg = split_segment_path(base, index);
+                assert_ne!(seg, base);
+                assert!(seg.starts_with(&base[..base.len() - 4]), "{seg}");
+                let stem = seg.trim_end_matches(".mp3");
+                assert!(stem.contains("_part"), "{seg}");
+            }
+        }
+        assert_eq!(split_segment_path("/a/b_2.mp3", 1), "/a/b_2_part2.mp3");
+        // Distinct per index, and a custom stem ending `_r5` is not mangled.
+        assert_eq!(split_segment_path("/a/b_r5.mp3", 1), "/a/b_r5_part2.mp3");
     }
 
     #[test]
@@ -1113,8 +1136,11 @@ mod tests {
         let dels = s.deliverables();
         assert_eq!(dels.len(), 2);
         assert_eq!(dels[0].fragments, ["/rec/s.mp3"]);
-        assert_eq!(dels[1].primary_path, "/rec/s_2.mp3");
-        assert_eq!(dels[1].fragments, ["/rec/s_2.mp3", "/rec/s_2_r1.mp3"]);
+        assert_eq!(dels[1].primary_path, "/rec/s_part2.mp3");
+        assert_eq!(
+            dels[1].fragments,
+            ["/rec/s_part2.mp3", "/rec/s_part2_r1.mp3"]
+        );
         assert_eq!(dels[1].started_at_ms, 60_000);
     }
 
@@ -1136,9 +1162,12 @@ mod tests {
         // Deliverable 2: the split file + ITS reconnect fragment. The reconnect
         // ATTEMPT number is session-wide (the budget is session-wide), so this is
         // the SECOND reconnect of the session → `_r2`, derived from the
-        // deliverable's `g_2` primary → `g_2_r2`.
-        assert_eq!(dels[1].primary_path, "/rec/g_2.mp3");
-        assert_eq!(dels[1].fragments, ["/rec/g_2.mp3", "/rec/g_2_r2.mp3"]);
+        // deliverable's `g_part2` primary → `g_part2_r2`.
+        assert_eq!(dels[1].primary_path, "/rec/g_part2.mp3");
+        assert_eq!(
+            dels[1].fragments,
+            ["/rec/g_part2.mp3", "/rec/g_part2_r2.mp3"]
+        );
         assert_eq!(dels[1].started_at_ms, 1_800_000);
     }
 
