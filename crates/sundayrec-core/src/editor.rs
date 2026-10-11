@@ -818,6 +818,25 @@ pub struct RecordingMetadata {
     pub chapters: Vec<Chapter>,
 }
 
+/// Escape a value for the FFMETADATA1 format: `=`, `;`, `#`, `\` and a newline
+/// are special there, and a description with a line break (or a title with an
+/// `=`) otherwise ends the value early and turns the rest into a stray key.
+fn ffmeta_escape(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    for c in v.chars() {
+        match c {
+            '=' | ';' | '#' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\n' => out.push_str("\\\n"),
+            '\r' => {}
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Build the `;FFMETADATA1` sidecar text for chapters, mirroring `exportEdited`'s
 /// `lines` builder: title/artist/comment header, then a `[CHAPTER]` block per
 /// chapter with `TIMEBASE=1/1000` and START/END in milliseconds (each chapter
@@ -829,19 +848,19 @@ pub fn ffmetadata(meta: &RecordingMetadata, duration: f64) -> Option<String> {
     }
     let mut lines = vec![";FFMETADATA1".to_string()];
     if let Some(t) = &meta.title {
-        lines.push(format!("title={t}"));
+        lines.push(format!("title={}", ffmeta_escape(t)));
     }
     if let Some(s) = &meta.speaker {
-        lines.push(format!("artist={s}"));
+        lines.push(format!("artist={}", ffmeta_escape(s)));
     }
     if let Some(a) = &meta.album {
-        lines.push(format!("album={a}"));
+        lines.push(format!("album={}", ffmeta_escape(a)));
     }
     if let Some(d) = &meta.date {
-        lines.push(format!("date={d}"));
+        lines.push(format!("date={}", ffmeta_escape(d)));
     }
     if let Some(d) = &meta.description {
-        lines.push(format!("comment={d}"));
+        lines.push(format!("comment={}", ffmeta_escape(d)));
     }
     // Chapters MUST be time-sorted before deriving each END from the next START —
     // ffmpeg silently mishandles a `[CHAPTER]` whose END < START. The renderer
@@ -859,7 +878,7 @@ pub fn ffmetadata(meta: &RecordingMetadata, duration: f64) -> Option<String> {
         lines.push("TIMEBASE=1/1000".to_string());
         lines.push(format!("START={start}"));
         lines.push(format!("END={end}"));
-        lines.push(format!("title={}", ch.title));
+        lines.push(format!("title={}", ffmeta_escape(&ch.title)));
     }
     Some(lines.join("\n"))
 }
@@ -2965,6 +2984,33 @@ mod tests {
     }
 
     // ── ffmetadata ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn ffmetadata_escapes_special_characters_in_values() {
+        let meta = RecordingMetadata {
+            title: Some("A=B; C#1".into()),
+            description: Some("linje 1\nlinje 2\\".into()),
+            chapters: vec![Chapter {
+                time: 0.0,
+                title: "x=y".into(),
+            }],
+            ..Default::default()
+        };
+        let text = ffmetadata(&meta, 10.0).unwrap();
+        assert!(text.contains("title=A\\=B\\; C\\#1"), "{text}");
+        assert!(text.contains("comment=linje 1\\\nlinje 2\\\\"), "{text}");
+        assert!(text.contains("title=x\\=y"), "{text}");
+        // Nothing but the header and known keys: no stray key born of a newline.
+        for l in text.lines() {
+            assert!(
+                l.starts_with(';')
+                    || l.starts_with('[')
+                    || l.starts_with("linje 2")
+                    || l.contains('='),
+                "{l}"
+            );
+        }
+    }
 
     #[test]
     fn ffmetadata_none_without_chapters() {
