@@ -576,6 +576,7 @@ impl ConcatFormat {
 ///
 /// `format` pins the intro, main and outro legs of the concat to the source's
 /// rate/layout (see [`ConcatFormat`]).
+#[allow(clippy::too_many_arguments)] // one graph builder, one flat call site per pass
 pub fn audio_export_filter_complex(
     keeps: &[KeepSegment],
     main_input_idx: usize,
