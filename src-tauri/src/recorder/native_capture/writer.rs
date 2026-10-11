@@ -10,11 +10,16 @@
 //! zeroed until finalize):
 //! - every [`WriterConfig::flush_every`] (250 ms in production) the buffered
 //!   bytes are flushed AND the RIFF/data size fields are patched in place via
-//!   a second file handle — a crash at any instant leaves a playable WAV, and
-//!   the recovery scan's 900 ms two-sample growth probe always sees the file
-//!   growing;
-//! - `sync_all` runs once at finalize (matching ffmpeg's behavior of not
-//!   fsyncing during capture).
+//!   a second file handle — a process crash (the OS survives) at any instant
+//!   leaves a playable WAV, and the recovery scan's 900 ms two-sample growth
+//!   probe always sees the file growing;
+//! - flush only hands bytes to the OS page cache, so every
+//!   [`WriterConfig::sync_every`] (5 s in production) the writer also calls
+//!   `sync_data` right after the header patch — data AND header size fields
+//!   reach stable storage together, and a power cut or bluescreen loses at most
+//!   the last few seconds instead of whatever the OS had not yet written back
+//!   (tens of seconds on macOS);
+//! - the final `sync_all` runs at finalize.
 //!
 //! The writer also owns the in-process [`SilenceDetector`] feed: it sees every
 //! routed block anyway, so it computes the block peak and forwards debounced
@@ -43,6 +48,11 @@ use sundayrec_core::wav::{self, WavSpec};
 /// invisibility to the old 900 ms probe was the E6.4 defect — this writer
 /// flushes on a fixed clock, so it was never at risk.
 pub const FLUSH_EVERY: Duration = Duration::from_millis(250);
+
+/// How often the writer forces captured audio to stable storage
+/// (`sync_data`). Runs on the writer thread, never the RT callback; the ring
+/// (several seconds deep) absorbs the stall of an fsync on a slow disk.
+pub const SYNC_EVERY: Duration = Duration::from_secs(5);
 
 /// Sleep when the ring is empty (matches the legacy pipe writer's cadence).
 const IDLE_SLEEP: Duration = Duration::from_millis(2);
@@ -82,6 +92,9 @@ pub enum WriterEvent {
 pub struct WriterSummary {
     pub data_bytes: u64,
     pub frames: u64,
+    /// Number of periodic `sync_data` calls made during capture (excludes the
+    /// final `sync_all`).
+    pub periodic_syncs: u64,
 }
 
 /// Everything a writer life needs, fixed at spawn.
@@ -89,6 +102,8 @@ pub struct WriterConfig {
     pub path: PathBuf,
     pub spec: WavSpec,
     pub flush_every: Duration,
+    /// Cadence of the periodic `sync_data` (see [`SYNC_EVERY`]).
+    pub sync_every: Duration,
     pub silence: SilenceDetector,
 }
 
@@ -211,6 +226,8 @@ fn run_writer(
     let mut frames: u64 = 0;
     let mut started_sent = false;
     let mut last_flush = Instant::now();
+    let mut last_sync = Instant::now();
+    let mut periodic_syncs: u64 = 0;
 
     loop {
         let n = cons.pop_slice(&mut samples);
@@ -270,6 +287,20 @@ fn run_writer(
                 );
             }
             last_flush = Instant::now();
+
+            // Force the flushed bytes to stable storage on a slower clock. A
+            // failed fsync is as fatal as a failed write: the data is not safe.
+            if last_sync.elapsed() >= cfg.sync_every {
+                if let Err(e) = out.get_ref().sync_data() {
+                    return fail(
+                        classify_io_error(&e),
+                        format!("periodic sync failed: {e}"),
+                        &events,
+                    );
+                }
+                last_sync = Instant::now();
+                periodic_syncs += 1;
+            }
         }
     }
 
@@ -286,7 +317,11 @@ fn run_writer(
             &events,
         );
     }
-    Ok(WriterSummary { data_bytes, frames })
+    Ok(WriterSummary {
+        data_bytes,
+        frames,
+        periodic_syncs,
+    })
 }
 
 #[cfg(test)]
@@ -305,6 +340,7 @@ mod tests {
             path,
             spec: SPEC,
             flush_every: Duration::from_millis(20),
+            sync_every: Duration::from_millis(40),
             // −50 dB, 48 kHz — loud test samples never trip it.
             silence: SilenceDetector::new(-50.0, SPEC.sample_rate),
         }
@@ -415,6 +451,22 @@ mod tests {
     }
 
     #[test]
+    fn audio_is_fsynced_periodically_while_running() {
+        let mut rig = spawn_rig();
+        assert!(rig.prod.push_slice(&loud_block(2400)) > 0);
+        // Test cadence: flush 20 ms, sync 40 ms. After 250 ms several periodic
+        // syncs must have happened, not just the finalize fsync.
+        std::thread::sleep(Duration::from_millis(250));
+        rig.stop.store(true, Ordering::Relaxed);
+        let summary = rig.join.join().expect("join").expect("clean finalize");
+        assert!(
+            summary.periodic_syncs >= 2,
+            "expected periodic sync_data during capture, got {}",
+            summary.periodic_syncs
+        );
+    }
+
+    #[test]
     fn silence_events_flow_from_the_detector() {
         let mut rig = spawn_rig();
         // 1.2 s of digital silence at 48 kHz → debounced Start; then loud → End.
@@ -455,7 +507,8 @@ mod tests {
             summary,
             WriterSummary {
                 data_bytes: 0,
-                frames: 0
+                frames: 0,
+                periodic_syncs: 0
             }
         );
         let on_disk = std::fs::read(&rig.path).expect("read");
