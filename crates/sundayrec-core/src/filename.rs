@@ -30,21 +30,45 @@ const WIN_RESERVED: &[&str] = &[
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
+/// The longest name [`sanitize_filename`] returns, in characters. The date,
+/// split suffix and extension are added on top (`_YYYY-MM-DD.ext`), so the file
+/// name stays far below the 255-byte NAME_MAX of APFS/ext4/NTFS even for
+/// multi-byte letters, and a deep save folder keeps room under Windows' MAX_PATH.
+const MAX_NAME_CHARS: usize = 100;
+
+/// Characters that steer the rendering of text rather than being any: the
+/// bidirectional marks and overrides (`U+200E/F`, `U+202A..E`, `U+2066..9`,
+/// `U+061C`). In a file name they make an executable LOOK like a document in
+/// a file manager (the classic right-to-left-override trick).
+fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
 /// Make `name` safe as a filename across macOS and Windows: strip path/illegal
-/// characters, trim trailing dots/spaces, dodge reserved device names, and
-/// never return empty. Direct port of `recorder-utils.ts` `sanitizeFilename`.
+/// characters, control characters and bidi marks, cut it to
+/// [`MAX_NAME_CHARS`], trim trailing dots/spaces, dodge reserved device names
+/// (also with an extension: Windows reads `CON.txt` as the device), and never
+/// return empty. Extends `recorder-utils.ts` `sanitizeFilename`.
 pub fn sanitize_filename(name: &str) -> String {
-    let mut safe: String = name
+    let mapped: String = name
         .chars()
+        .filter(|c| !c.is_control() && !is_bidi_control(*c))
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
             other => other,
         })
         .collect();
-    safe = safe.trim().to_string();
-    // Strip trailing dots/spaces (Windows disallows them).
+    let mut safe: String = mapped.trim().chars().take(MAX_NAME_CHARS).collect();
+    // Strip trailing dots/spaces (Windows disallows them) — after the cut, which
+    // may have ended the name on one.
     safe = safe.trim_end_matches(['.', ' ']).to_string();
-    if WIN_RESERVED.iter().any(|r| r.eq_ignore_ascii_case(&safe)) {
+    // Windows decides "device" on the part before the FIRST dot, ignoring the
+    // spaces and dots at its end: `CON.test`, `aux.preken.mp3`, `NUL .txt`.
+    let stem = safe.split('.').next().unwrap_or("").trim_end();
+    if WIN_RESERVED.iter().any(|r| r.eq_ignore_ascii_case(stem)) {
         safe = format!("_{safe}");
     }
     if safe.is_empty() {
@@ -167,6 +191,34 @@ mod tests {
 
     fn dt(s: &str) -> NaiveDateTime {
         NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()
+    }
+
+    #[test]
+    fn sanitize_bounds_the_name_and_drops_invisible_steering() {
+        // Audit 2026-10 (87): a 300-character special-recording name made the
+        // Sunday start fail on NAME_MAX; control and bidi characters survived.
+        let long = "å".repeat(300);
+        let out = sanitize_filename(&long);
+        assert_eq!(out.chars().count(), 100);
+        assert!(out.len() <= 200, "bytes: {}", out.len());
+        assert_eq!(sanitize_filename("a\nb\tc\u{0}d"), "abcd");
+        assert_eq!(sanitize_filename("pre\u{202E}ken\u{200F}"), "preken");
+        // The cut may end on a dot or a space: those are trimmed again.
+        let tricky = format!("{}. . .tail", "x".repeat(97));
+        assert_eq!(sanitize_filename(&tricky), "x".repeat(97));
+        // Control characters only → the fallback, not an empty name.
+        assert_eq!(sanitize_filename("\u{7}\u{202E}"), "opptak");
+    }
+
+    #[test]
+    fn sanitize_dodges_reserved_names_with_a_suffix() {
+        assert_eq!(sanitize_filename("CON.test"), "_CON.test");
+        assert_eq!(sanitize_filename("aux.preken.mp3"), "_aux.preken.mp3");
+        assert_eq!(sanitize_filename("NUL .txt"), "_NUL .txt");
+        assert_eq!(sanitize_filename("Com9.x"), "_Com9.x");
+        // Not a device: the reserved word only counts as the whole first part.
+        assert_eq!(sanitize_filename("console.log"), "console.log");
+        assert_eq!(sanitize_filename("preken.con"), "preken.con");
     }
 
     #[test]

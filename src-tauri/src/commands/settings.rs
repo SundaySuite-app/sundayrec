@@ -119,18 +119,6 @@ pub(crate) async fn choose_save_folder(
         .map(Some)
 }
 
-/// Reset all settings to their defaults, persisting them. Wakes the scheduler:
-/// the schedule just changed under it.
-#[tauri::command]
-pub async fn settings_reset(
-    db: State<'_, Db>,
-    scheduler: State<'_, SchedulerEngine>,
-) -> AppResult<Settings> {
-    let stored = settings::reset(&db.pool).await?;
-    scheduler.reschedule();
-    Ok(stored)
-}
-
 /// Import the settings of the OLD installation, once: merge the JSON over
 /// defaults, validate, persist, and return the stored value. A second call is
 /// refused with `settings_import_done` and writes nothing — see
@@ -145,7 +133,23 @@ pub async fn settings_reset(
 /// [`settings_import_profile`].
 #[tauri::command]
 pub async fn settings_import(db: State<'_, Db>, json: String) -> AppResult<Settings> {
+    vet_import_size(&json)?;
     settings::import(&db.pool, &json, vet_handover_save_folder).await
+}
+
+/// The hand-over JSON is a few kilobytes of localStorage; the webview should
+/// not be able to push an unbounded string through the merge and the store
+/// (the same ceiling as a profile FILE, [`MAX_PROFILE_BYTES`]). Refused before
+/// anything is parsed, and — unlike a refusal later — before the one-shot
+/// `settings_import_done` claim is spent.
+fn vet_import_size(json: &str) -> AppResult<()> {
+    if json.len() as u64 > MAX_PROFILE_BYTES {
+        return Err(AppError::Validation(format!(
+            "settings_import_too_large: the hand-over is at most {} KiB",
+            MAX_PROFILE_BYTES / 1024
+        )));
+    }
+    Ok(())
 }
 
 /// Export the current settings as pretty JSON to a file the operator picks in
@@ -995,6 +999,17 @@ mod tests {
             stored,
             "a refused file writes nothing"
         );
+    }
+
+    #[test]
+    fn an_oversized_hand_over_is_refused_before_it_is_parsed() {
+        // Audit 2026-10 (113): the webview could send any size of string.
+        let cap = MAX_PROFILE_BYTES as usize;
+        assert!(vet_import_size(&" ".repeat(cap)).is_ok());
+        let err = vet_import_size(&" ".repeat(cap + 1))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("settings_import_too_large"), "{err}");
     }
 
     #[tokio::test]

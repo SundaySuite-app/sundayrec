@@ -3,7 +3,8 @@
 //! The renderer:
 //!   - reads `wake_capabilities` to show what this machine can/can't do,
 //!   - reads `wake_get_sleep_config` to surface sleep settings that sabotage
-//!     wake (+ a "Fiks automatisk" button → `wake_fix_sleep`),
+//!     wake (the admin-prompting fix, `wake_fix_sleep`, has no UI and is not
+//!     registered — audit 2026-10),
 //!   - calls `wake_verify` to compare the OS-scheduled wakes against what we
 //!     expect from the current schedule,
 //!   - calls `wake_reschedule` (user-initiated, may prompt for admin) to (re)
@@ -24,8 +25,8 @@ use crate::db::Db;
 use crate::error::AppResult;
 use crate::settings;
 use crate::wake::{
-    current_platform, fix_mac_sleep, fix_win_wake_timers, get_sleep_config, verify_scheduled_wakes,
-    TestWakeResult, WakeEngine, WakeFixResult, WakeResult, WakeStatus,
+    current_platform, get_sleep_config, verify_scheduled_wakes, TestWakeResult, WakeEngine,
+    WakeResult, WakeStatus,
 };
 
 /// How many days of upcoming starts wake scheduling/verification considers.
@@ -53,21 +54,6 @@ pub fn wake_capabilities() -> WakeCapabilities {
 #[tauri::command]
 pub async fn wake_get_sleep_config() -> sundayrec_core::wake::SleepConfig {
     get_sleep_config().await
-}
-
-/// Apply the platform's sleep fix (mac: disable autopoweroff + raise standbydelay;
-/// win: enable wake timers). Prompts for admin. No-op result on unsupported OS.
-#[tauri::command]
-pub async fn wake_fix_sleep() -> WakeFixResult {
-    use sundayrec_core::wake::WakePlatform;
-    match current_platform() {
-        WakePlatform::MacArm | WakePlatform::MacIntel => fix_mac_sleep().await,
-        WakePlatform::Win => fix_win_wake_timers().await,
-        _ => WakeFixResult {
-            ok: false,
-            message: Some("unsupported".to_string()),
-        },
-    }
 }
 
 /// Compare the OS-scheduled wakes against what the current schedule expects.
