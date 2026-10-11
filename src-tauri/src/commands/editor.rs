@@ -952,6 +952,26 @@ fn refuse_feedback_sidecar(sidecar: EditorSidecar) -> AppResult<()> {
     Ok(())
 }
 
+/// The most a sidecar the webview writes may weigh once serialised. What the
+/// renderer writes (`meta`, `cutsDraft`) is kilobytes; the big derived caches
+/// (peaks, segments) are written by Rust. The cap keeps a compromised page from
+/// filling the recording's folder, or the pretty-printer's memory, through
+/// this one command.
+const MAX_SIDECAR_BYTES: usize = 2 * 1024 * 1024;
+
+/// Refuse a sidecar value over [`MAX_SIDECAR_BYTES`] (`sidecar_too_large`).
+fn vet_sidecar_size(value: &serde_json::Value) -> AppResult<()> {
+    // Compact form: the smallest honest size, so the cap never refuses what
+    // the pretty-printer would only have padded.
+    if value.to_string().len() > MAX_SIDECAR_BYTES {
+        return Err(crate::error::AppError::Validation(format!(
+            "sidecar_too_large: a sidecar is at most {} KiB",
+            MAX_SIDECAR_BYTES / 1024
+        )));
+    }
+    Ok(())
+}
+
 /// Write a per-recording sidecar JSON (pretty). Returns whether it persisted.
 /// Takes the recording's File token — see [`editor_read_sidecar`].
 #[tauri::command]
@@ -962,6 +982,7 @@ pub async fn editor_write_sidecar(
     value: serde_json::Value,
 ) -> AppResult<bool> {
     refuse_feedback_sidecar(sidecar)?;
+    vet_sidecar_size(&value)?;
     with_source(&chosen, &source_token, move |source| {
         editor::write_sidecar(&source, sidecar, &value)
     })
@@ -1104,6 +1125,16 @@ mod tests {
     // there leaves the lib test binary unloadable), so neither is what uses it.
     #[cfg(not(windows))]
     use tauri::Manager;
+
+    #[test]
+    fn an_oversized_sidecar_value_is_refused() {
+        // Audit 2026-10 (113): `editor_write_sidecar` took any JSON value.
+        let small = serde_json::json!({ "cuts": [1, 2, 3] });
+        assert!(vet_sidecar_size(&small).is_ok());
+        let big = serde_json::json!({ "blob": "x".repeat(MAX_SIDECAR_BYTES) });
+        let err = vet_sidecar_size(&big).unwrap_err().to_string();
+        assert!(err.contains("sidecar_too_large"), "{err}");
+    }
 
     // ── The asset grant: one file, in tauri's own scope ──────────────────────
 
