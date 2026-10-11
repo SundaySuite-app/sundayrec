@@ -521,6 +521,37 @@ fn atrim_faded(input_ref: &str, seg: &KeepSegment, total_duration: f64) -> Strin
     chain
 }
 
+/// The format every `concat` input is pinned to when jingles are spliced in.
+///
+/// `concat` needs identical rate and layout on all inputs, and with only
+/// `sample_fmts` set the negotiation lets a mono 44.1 kHz intro drag the whole
+/// export (a stereo 48 kHz sermon included) down to mono 44.1 kHz. `None`
+/// fields leave that property to the negotiation, as before.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConcatFormat {
+    /// The SOURCE recording's sample rate.
+    pub sample_rate: Option<u32>,
+    /// The SOURCE recording's channel count (only 1 and 2 have a named layout).
+    pub channels: Option<u32>,
+}
+
+impl ConcatFormat {
+    /// `aformat=…` for one concat leg: float planar plus, where known, the
+    /// source's rate and layout.
+    fn aformat(self) -> String {
+        let mut f = String::from("aformat=sample_fmts=fltp");
+        if let Some(r) = self.sample_rate.filter(|r| *r > 0) {
+            f.push_str(&format!(":sample_rates={r}"));
+        }
+        match self.channels {
+            Some(1) => f.push_str(":channel_layouts=mono"),
+            Some(2) => f.push_str(":channel_layouts=stereo"),
+            _ => {}
+        }
+        f
+    }
+}
+
 /// The audio filter graph for an *export* (the general case): trims, optional
 /// processing filters, optional intro/outro concat. Mirrors `exportEdited`'s
 /// `concatParts` builder. Returns the `-filter_complex` string and the output
@@ -536,6 +567,9 @@ fn atrim_faded(input_ref: &str, seg: &KeepSegment, total_duration: f64) -> Strin
 /// [`join_fades`]). `post_filters` run LAST, on the final pad after any
 /// intro/outro concat: that is where the dither belongs, because it has to see
 /// every sample that reaches the encoder.
+///
+/// `format` pins the intro, main and outro legs of the concat to the source's
+/// rate/layout (see [`ConcatFormat`]).
 pub fn audio_export_filter_complex(
     keeps: &[KeepSegment],
     main_input_idx: usize,
@@ -544,6 +578,7 @@ pub fn audio_export_filter_complex(
     has_intro: bool,
     has_outro: bool,
     total_duration: f64,
+    format: ConcatFormat,
 ) -> (String, String) {
     let main_ref = format!("[{main_input_idx}:a]");
     let outro_idx = main_input_idx + 1;
@@ -578,21 +613,22 @@ pub fn audio_export_filter_complex(
 
     let mut concat_parts: Vec<String> = Vec::new();
     if has_intro {
-        concat_parts.push("[0:a]aformat=sample_fmts=fltp[intro_fmt]".to_string());
+        concat_parts.push(format!("[0:a]{}[intro_fmt]", format.aformat()));
     }
     concat_parts.extend(filter_parts);
     if has_outro {
-        concat_parts.push(format!(
-            "[{outro_idx}:a]aformat=sample_fmts=fltp[outro_fmt]"
-        ));
+        concat_parts.push(format!("[{outro_idx}:a]{}[outro_fmt]", format.aformat()));
     }
 
     let mut map_arg = if has_intro || has_outro {
+        // The main leg is pinned too: a processing chain can change its
+        // format, and an unpinned leg is what the negotiation then follows.
+        concat_parts.push(format!("[main_out]{}[main_fmt]", format.aformat()));
         let mut inputs = String::new();
         if has_intro {
             inputs.push_str("[intro_fmt]");
         }
-        inputs.push_str("[main_out]");
+        inputs.push_str("[main_fmt]");
         if has_outro {
             inputs.push_str("[outro_fmt]");
         }
@@ -2548,6 +2584,7 @@ mod tests {
             false,
             false,
             2.0,
+            ConcatFormat::default(),
         );
         // Trimmed at the START only (the keep runs to the file's end) → one fade.
         assert_eq!(
@@ -2565,12 +2602,54 @@ mod tests {
             start: 0.0,
             end: 10.0,
         }];
-        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], &[], true, true, 10.0);
+        let (fc, map) = audio_export_filter_complex(
+            &keeps,
+            1,
+            &[],
+            &[],
+            true,
+            true,
+            10.0,
+            ConcatFormat::default(),
+        );
         assert!(fc.starts_with("[0:a]aformat=sample_fmts=fltp[intro_fmt];"));
         assert!(fc.contains("[1:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[main_out]"));
         assert!(fc.contains("[2:a]aformat=sample_fmts=fltp[outro_fmt]"));
-        assert!(fc.ends_with("[intro_fmt][main_out][outro_fmt]concat=n=3:v=0:a=1[final_out]"));
+        assert!(fc.ends_with("[intro_fmt][main_fmt][outro_fmt]concat=n=3:v=0:a=1[final_out]"));
         assert_eq!(map, "[final_out]");
+    }
+
+    #[test]
+    fn jingle_concat_pins_all_legs_to_the_source_rate_and_layout() {
+        // A mono 44.1 kHz intro in front of a 48 kHz stereo sermon must not
+        // drag the export down to mono 44.1 kHz: every leg is conformed to the
+        // SOURCE's rate and layout before the concat.
+        let keeps = vec![KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        }];
+        let fmt = ConcatFormat {
+            sample_rate: Some(48_000),
+            channels: Some(2),
+        };
+        let (fc, _map) = audio_export_filter_complex(&keeps, 1, &[], &[], true, true, 10.0, fmt);
+        let pin = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
+        assert!(fc.contains(&format!("[0:a]{pin}[intro_fmt]")), "{fc}");
+        assert!(fc.contains(&format!("[main_out]{pin}[main_fmt]")), "{fc}");
+        assert!(fc.contains(&format!("[2:a]{pin}[outro_fmt]")), "{fc}");
+        // A mono source keeps mono; an unknown source leaves rate/layout alone.
+        let mono = ConcatFormat {
+            sample_rate: Some(44_100),
+            channels: Some(1),
+        };
+        assert_eq!(
+            mono.aformat(),
+            "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=mono"
+        );
+        assert_eq!(
+            ConcatFormat::default().aformat(),
+            "aformat=sample_fmts=fltp"
+        );
     }
 
     #[test]
@@ -2593,6 +2672,7 @@ mod tests {
             false,
             false,
             10.0,
+            ConcatFormat::default(),
         );
         assert!(fc.contains("[seg0][seg1]concat=n=2:v=0:a=1[concat_out]"));
         assert!(fc.contains("[concat_out]loudnorm[main_out]"));
@@ -2605,7 +2685,16 @@ mod tests {
         // Cut 5–6 s out of a 10 s file: seg0 ends at an interior edge (fade out),
         // seg1 starts at one (fade in). The file's own start/end stay hard.
         let keeps = build_keeps(&[cut(5.0, 6.0)], 10.0);
-        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        let (fc, _map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &[],
+            &[],
+            false,
+            false,
+            10.0,
+            ConcatFormat::default(),
+        );
         assert_eq!(
             fc,
             "[0:a]atrim=start=0.0000:end=5.0000,asetpts=PTS-STARTPTS,\
@@ -2622,7 +2711,16 @@ mod tests {
     fn an_uncut_export_has_no_fades_at_all() {
         // Whole file kept → both edges are the real file edges → no envelope.
         let keeps = build_keeps(&[], 10.0);
-        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        let (fc, _map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &[],
+            &[],
+            false,
+            false,
+            10.0,
+            ConcatFormat::default(),
+        );
         assert!(!fc.contains("afade"), "{fc}");
         assert!(!audio_simple_af(&keeps[0], 10.0).contains("afade"));
     }
@@ -2632,7 +2730,16 @@ mod tests {
         // Head + tail cut (the "trim to sermon" shape) → one keep, two fades.
         let keeps = build_keeps(&[cut(0.0, 2.0), cut(8.0, 10.0)], 10.0);
         assert_eq!(keeps.len(), 1);
-        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        let (fc, _map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &[],
+            &[],
+            false,
+            false,
+            10.0,
+            ConcatFormat::default(),
+        );
         assert!(fc.contains("afade=t=in:st=0:d=0.015"), "{fc}");
         // Segment-local time: the 6 s segment fades out at 6 − 0.015.
         assert!(fc.contains("afade=t=out:st=5.9850:d=0.015"), "{fc}");
@@ -2697,10 +2804,19 @@ mod tests {
             end: 10.0,
         }];
         let dither = vec!["aresample=osf=s16:dither_method=triangular".to_string()];
-        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], &dither, true, true, 10.0);
+        let (fc, map) = audio_export_filter_complex(
+            &keeps,
+            1,
+            &[],
+            &dither,
+            true,
+            true,
+            10.0,
+            ConcatFormat::default(),
+        );
         assert!(
             fc.ends_with(
-                "[intro_fmt][main_out][outro_fmt]concat=n=3:v=0:a=1[final_out];\
+                "[intro_fmt][main_fmt][outro_fmt]concat=n=3:v=0:a=1[final_out];\
                  [final_out]aresample=osf=s16:dither_method=triangular[out]"
             ),
             "{fc}"
@@ -2708,7 +2824,16 @@ mod tests {
         assert_eq!(map, "[out]");
 
         // Without jingles it hangs off [main_out] instead.
-        let (fc2, map2) = audio_export_filter_complex(&keeps, 0, &[], &dither, false, false, 10.0);
+        let (fc2, map2) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &[],
+            &dither,
+            false,
+            false,
+            10.0,
+            ConcatFormat::default(),
+        );
         assert!(
             fc2.ends_with(";[main_out]aresample=osf=s16:dither_method=triangular[out]"),
             "{fc2}"

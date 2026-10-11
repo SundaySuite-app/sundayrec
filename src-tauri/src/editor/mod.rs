@@ -3164,6 +3164,12 @@ where
     bail_if_cancelled(engine)?;
     let probed = load_recording(&inputs.source).await.ok();
     let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
+    // The jingle concat is pinned to the source's rate/layout (audit: a mono
+    // 44.1 kHz intro used to drag the whole export down to mono 44.1 kHz).
+    let concat_format = sundayrec_core::editor::ConcatFormat {
+        sample_rate: source_rate,
+        channels: probed.as_ref().and_then(|i| i.channels),
+    };
 
     // 1c. WHERE it lands, and whether there is room for it.
     //
@@ -3328,6 +3334,7 @@ where
             false,
             false,
             req.duration,
+            sundayrec_core::editor::ConcatFormat::default(),
         );
         let measure_args: Vec<String> = vec![
             "-nostdin".into(),
@@ -3529,6 +3536,7 @@ where
                 has_intro,
                 has_outro,
                 req.duration,
+                concat_format,
             );
             args.extend(["-filter_complex".into(), fc]);
             args.extend(["-map".into(), map]);
