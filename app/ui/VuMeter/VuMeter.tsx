@@ -67,6 +67,7 @@ import {
 import { tDyn } from "../../i18n";
 import { StatusDot } from "../StatusDot/StatusDot";
 import styles from "./VuMeter.module.css";
+import { effectiveLevel, needsRepaint, STALE_MS } from "./vu-meter-core";
 
 /**
  * Enheten på tallene under Avansert. En konstant, ikke tekst i treet: «dBFS»
@@ -160,6 +161,10 @@ export function VuMeter({
     peakL: VU_FLOOR_DB,
     peakR: VU_FLOOR_DB,
   });
+  // When the last packet arrived (performance.now clock). A feed that goes
+  // quiet without a state change would otherwise freeze the bars on its last
+  // level — see `effectiveLevel`.
+  const lastPacketAt = useRef<number | null>(null);
   const [word, setWord] = useState<LevelWord>("nothing");
   const [feedState, setFeedState] = useState<VuFeedState | "off">("idle");
   const [mono, setMono] = useState(false);
@@ -193,6 +198,7 @@ export function VuMeter({
       let seen = false;
       setFeedState("connecting");
       return source((packet) => {
+        lastPacketAt.current = performance.now();
         levels.current = {
           l: packet.l,
           r: packet.r,
@@ -224,6 +230,7 @@ export function VuMeter({
       onLevels: (l, r, raw: VuLevels) => {
         const chosen = pickRef.current?.() ?? DEFAULT_PICK;
         const peak = pickLR(raw.peak_dbfs, chosen.mode, chosen.chL, chosen.chR);
+        lastPacketAt.current = performance.now();
         levels.current = { l, r, peakL: peak.l, peakR: peak.r };
         // Bare ORDET utløser en render, ikke pakken.
         const next = levelWordFor(peak.l, peak.r);
@@ -254,9 +261,27 @@ export function VuMeter({
     let last = performance.now();
     let alive = true;
 
+    // Colours are read once and again when the OS theme flips — not per bar
+    // per frame (`getPropertyValue` on a live style forces style resolution).
     const style = getComputedStyle(canvas);
-    const colour = (name: string): string =>
-      style.getPropertyValue(name).trim();
+    const colours = new Map<string, string>();
+    const colour = (name: string): string => {
+      let v = colours.get(name);
+      if (v === undefined) {
+        v = style.getPropertyValue(name).trim();
+        colours.set(name, v);
+      }
+      return v;
+    };
+    // Anything that changes what the canvas shows without the levels moving.
+    let dirty = true;
+    let painted: { l: number; r: number; mono: boolean } | null = null;
+    const scheme = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const onScheme = (): void => {
+      colours.clear();
+      dirty = true;
+    };
+    scheme?.addEventListener?.("change", onScheme);
 
     const sizeToBox = (): void => {
       const dpr = window.devicePixelRatio || 1;
@@ -266,8 +291,14 @@ export function VuMeter({
       const w = Math.round(width * dpr);
       const h = Math.round(height * dpr);
       // Å skrive `width` nullstiller canvasen — bare når den faktisk endret seg.
-      if (canvas.width !== w) canvas.width = w;
-      if (canvas.height !== h) canvas.height = h;
+      if (canvas.width !== w) {
+        canvas.width = w;
+        dirty = true;
+      }
+      if (canvas.height !== h) {
+        canvas.height = h;
+        dirty = true;
+      }
     };
 
     const paintBar = (y: number, h: number, w: number, db: number): void => {
@@ -310,13 +341,34 @@ export function VuMeter({
       const barH = BAR_H * dpr;
       const gap = BAR_GAP * dpr;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const l = smoothL.step(levels.current.l, dt);
-      const r = smoothR.step(levels.current.r, dt);
-      paintBar(0, barH, w, l);
-      // Mono: ÉN stolpe. En andre stolpe som viser den samme kanalen én gang
-      // til er en påstand om en høyrekanal som ikke finnes.
-      if (!monoRef.current) paintBar(barH + gap, barH, w, r);
+      const l = smoothL.step(
+        effectiveLevel(levels.current.l, lastPacketAt.current, now),
+        dt,
+      );
+      const r = smoothR.step(
+        effectiveLevel(levels.current.r, lastPacketAt.current, now),
+        dt,
+      );
+      // A silent stream also owes the WORD a fall back to «nothing».
+      if (
+        wordRef.current !== "nothing" &&
+        lastPacketAt.current !== null &&
+        now - lastPacketAt.current > STALE_MS
+      ) {
+        wordRef.current = "nothing";
+        setWord("nothing");
+      }
+      const next = { l, r, mono: monoRef.current };
+      // Resting bars (silence, or a stopped feed) need no repaint at 60 Hz.
+      if (needsRepaint(painted, next, dirty)) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        paintBar(0, barH, w, l);
+        // Mono: ÉN stolpe. En andre stolpe som viser den samme kanalen én gang
+        // til er en påstand om en høyrekanal som ikke finnes.
+        if (!next.mono) paintBar(barH + gap, barH, w, r);
+        painted = next;
+        dirty = false;
+      }
 
       raf = requestAnimationFrame(frame);
     };
@@ -332,6 +384,7 @@ export function VuMeter({
       alive = false;
       cancelAnimationFrame(raf);
       observer.disconnect();
+      scheme?.removeEventListener?.("change", onScheme);
     };
   }, []);
 
@@ -339,10 +392,13 @@ export function VuMeter({
   // som oppdateres 30 ganger i sekundet er uleselig uansett.
   useEffect(() => {
     if (!showNumbers) return;
-    const tick = setInterval(
-      () => setReadout({ l: levels.current.l, r: levels.current.r }),
-      1000,
-    );
+    const tick = setInterval(() => {
+      const now = performance.now();
+      setReadout({
+        l: effectiveLevel(levels.current.l, lastPacketAt.current, now),
+        r: effectiveLevel(levels.current.r, lastPacketAt.current, now),
+      });
+    }, 1000);
     return () => clearInterval(tick);
   }, [showNumbers]);
 
