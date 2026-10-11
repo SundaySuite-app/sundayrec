@@ -1658,10 +1658,11 @@ validation in `sundayrec-core::settings`.
    - The church-profile round-trip (debounced save → storage → reload):
    - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
    - Since R4 there is no curated subset to drop a key from: `settings_save`
-     carries the FULL object in one vocabulary, boot only reads, and a field
-     written is a field read back (the #113/#115 class ends structurally):
+     carries a PATCH of the changed fields that Rust merges over the stored
+     row, boot only reads, and a field written is a field read back (the
+     #113/#115 class ends structurally):
    - VERIFIED-BY: e2e/settings-seam.spec.ts::boot performs no settings_save at all
-   - VERIFIED-BY: e2e/settings-seam.spec.ts::one change saves the whole vocabulary — untouched fields keep their stored values
+   - VERIFIED-BY: e2e/settings-seam.spec.ts::one change sends only that field — untouched fields keep their stored values
    - An existing install's localStorage blob is migrated into sqlite exactly
      once (old names translated, floats coerced, secrets stripped, key
      removed):
