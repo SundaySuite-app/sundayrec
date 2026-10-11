@@ -328,7 +328,9 @@ enum FieldHandling {
     /// stored before anything is saved, and `proof` is a test that sends a
     /// different value and sees the stored one survive. Both must exist in the
     /// sources. (`settings_save`'s intro/outro clips: a file the export reads
-    /// is not the webview's to name.)
+    /// is not the webview's to name — until `settings_save` became a patch and
+    /// left this table; the variant stays for the next typed struct.)
+    #[allow(dead_code)]
     Overwritten {
         by: &'static str,
         proof: &'static str,
@@ -394,50 +396,18 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
         },
     ),
-    // ── settings_save: the persisted profile.
-    // The recordings folder is a place the webview must not name either (PR-D):
-    // it is set by the Rust dialog `settings_pick_save_folder`, and
-    // `settings_save` keeps the stored folder whatever it sends.
-    (
-        "settings_save",
-        "Settings.save_folder",
-        Overwritten {
-            by: "keep_stored_save_folder",
-            proof: "settings_save_keeps_the_stored_save_folder",
-        },
-    ),
-    // The clips are a file the export reads, so the webview may not name them:
-    // `settings_save` keeps the stored values whatever it sends, and the only
-    // ways to change them are the Rust dialogs `settings_pick_editor_intro`/
-    // `_outro` (and the clears).
-    (
-        "settings_save",
-        "Settings.editor_intro_path",
-        Overwritten {
-            by: "keep_stored_clips",
-            proof: "settings_save_keeps_the_stored_intro_and_outro",
-        },
-    ),
-    (
-        "settings_save",
-        "Settings.editor_outro_path",
-        Overwritten {
-            by: "keep_stored_clips",
-            proof: "settings_save_keeps_the_stored_intro_and_outro",
-        },
-    ),
-    // `publish_target` is flagged by the place-NAME rule («target»): it is an
-    // enum naming a publishing CHANNEL (SoundCloud, the church's own page, none),
-    // not a place on this machine. The one URL it can select is stored as typed
-    // and vetted every time it is opened (`publish::custom_upload_url`).
-    (
-        "settings_save",
-        "Settings.publish_target",
-        Exempt(
-            "an enum naming a publishing channel, not a file or a folder; the custom \
-             link is vetted when opened (`publish::custom_upload_url`)",
-        ),
-    ),
+    // ── settings_save: no longer a typed struct.
+    // `settings_save` takes a PATCH (`serde_json::Value`: the fields the page
+    // changed), so this parser sees no `Settings` parameter and there is no
+    // struct field left to classify here. What the old entries pinned still
+    // holds, and is pinned where it now lives: `settings_save` must go through
+    // `save_patch_from_renderer` (see `the_save_folder_is_picked_in_rust_and_settings_save_keeps_it`), which ends
+    // in `save_from_renderer` -> `keep_stored_save_folder` / `keep_stored_clips`
+    // (tests: `a_full_object_is_still_a_valid_patch_and_keeps_the_folder_rules`,
+    // `settings_save_keeps_the_stored_save_folder`,
+    // `settings_save_keeps_the_stored_intro_and_outro`). `publish_target` is an
+    // enum naming a publishing CHANNEL, not a place on this machine; the custom
+    // link is vetted when opened (`publish::custom_upload_url`).
 ];
 
 /// Every `#[tauri::command]` PARAMETER named `*_token` ([`is_token_param`]), as
@@ -3948,8 +3918,9 @@ fn the_save_folder_is_picked_in_rust_and_settings_save_keeps_it() {
         .find(|c| c.name == "settings_save")
         .expect("settings_save was not parsed");
     assert!(
-        save.segment.contains("save_from_renderer(") && !save.segment.contains("settings::save("),
-        "settings_save must go through save_from_renderer, which keeps the stored folder: {:?}",
+        save.segment.contains("save_patch_from_renderer(")
+            && !save.segment.contains("settings::save("),
+        "settings_save must go through save_patch_from_renderer (-> save_from_renderer), which keeps the stored folder: {:?}",
         save.segment
     );
 }

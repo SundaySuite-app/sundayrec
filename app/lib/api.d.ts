@@ -88,7 +88,7 @@ declare global {
     openEditorWithRecording: (recordingId: string, seekToSec?: number) => void;
     api: {
       getSettings: () => Promise<Settings>;
-      saveSettings: (s: Settings) => Promise<boolean>;
+      saveSettings: (s: Partial<Settings>) => Promise<boolean>;
       /** Write the whole (validated) settings object to a JSON file the
        *  operator picks in a save dialog RUST opens — no path crosses from
        *  here. `true` = written, `false` = cancelled. Rejects on failure — the
@@ -194,7 +194,9 @@ declare global {
       /** Open the OS notification settings. `false` when it could not. */
       notificationOpenSettings: () => Promise<boolean>;
       getAppVersion: () => Promise<string>;
-      checkForUpdates: () => Promise<void>;
+      /** `background: true` = the hourly timer, not the owner's button: Rust
+       *  then refuses the network call while the stored «auto update» is off. */
+      checkForUpdates: (opts?: { background?: boolean }) => Promise<void>;
       installUpdate: () => void;
       /** Push the UI language to the Rust menubar tray (it renders its own labels). */
       traySetLanguage?: (code: string) => Promise<void>;

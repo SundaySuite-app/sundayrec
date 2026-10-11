@@ -59,8 +59,9 @@ import {
 } from "@lib/pages/auto-update-schedule-core";
 
 import { dismissBanner, raiseBanner } from "./banners";
-import { settings } from "./settings";
+import { hydrateError, settings } from "./settings";
 import {
+  backgroundCheckAllowed,
   notesOf,
   phaseFromEvent,
   UPDATE_CHANNELS,
@@ -83,9 +84,15 @@ let timer: ReturnType<typeof setInterval> | null = null;
  * og ingenting på skjermen ville noensinne vist det.
  */
 export function applyAutoUpdateSchedule(): void {
+  // En innstilling vi ikke fikk lest er IKKE «på»: signalet holder da
+  // standardverdiene (`autoUpdate: true`), ikke eierens valg, og en eier som
+  // har slått sjekken av skal ikke få kontakt med serveren fordi basen hakket.
+  // `hydrateError` er en del av effektens avhengigheter, så «Prøv igjen» som
+  // lykkes arme timeren da, med det lagrede valget. Rust sjekker det lagrede
+  // valget på nytt per kall (`update_check`), så dette er ikke eneste lås.
   const action = planAutoUpdateSchedule(
     timer !== null,
-    autoUpdateEnabled(settings.value.autoUpdate),
+    autoUpdateEnabled(settings.value.autoUpdate) && !hydrateError.value,
   );
   if (action.stop && timer !== null) {
     clearInterval(timer);
@@ -94,11 +101,22 @@ export function applyAutoUpdateSchedule(): void {
   if (action.start) {
     // Å arme er «sjekk nå, og så hver time». Oppstart og et bytte midt i økta
     // tar dermed samme vei, i stedet for å være to adferder å holde i takt.
-    void window.api.checkForUpdates();
-    timer = setInterval(() => {
-      void window.api.checkForUpdates();
-    }, AUTO_UPDATE_INTERVAL_MS);
+    backgroundCheck();
+    timer = setInterval(backgroundCheck, AUTO_UPDATE_INTERVAL_MS);
   }
+}
+
+/**
+ * Den automatiske sjekken. `background: true` forteller Rust at dette er
+ * timeren og ikke eierens knapp, så Rust kan nekte når innstillingen står av.
+ *
+ * Sjekken hoppes over mens en nedlasting pågår eller er ferdig: `update-checking`
+ * og et nytt svar ville overskrevet «laster ned»/«klar til omstart» i raden og
+ * banneret, og eieren sto igjen uten knappen som fullfører oppdateringen.
+ */
+function backgroundCheck(): void {
+  if (!backgroundCheckAllowed(updatePhase.peek())) return;
+  void window.api.checkForUpdates({ background: true });
 }
 
 /**
