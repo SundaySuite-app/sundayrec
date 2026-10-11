@@ -21,16 +21,19 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 - Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
 - Audit 2026-10-05: 🟡/🔵/⚪-funn gjenstår (~85, rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota), pluss papirkurv knyttet til rad-id i stedet for sti (rest av 🟠).
+- Lisensvakt i CI (`cargo deny check licenses`) og en samlet liste over tredjepartslisenser i installasjonen — se [AVHENGIGHETER.md](AVHENGIGHETER.md) §Lisensvakt.
 
 ## Spike / maskinvare først
 
 Kode, men bare etter et forsøk på ekte maskin.
 
-| Punkt                                                                                     | Kilde                                                            |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel)           | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
-| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet | [VARSLING.md](VARSLING.md) §Senere                               |
-| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)     | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
+| Punkt                                                                                              | Kilde                                                            |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel)                    | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
+| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet          | [VARSLING.md](VARSLING.md) §Senere                               |
+| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)              | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
+| cpal 0.17.3 → 0.18: xruns fra lydsystemet, frekvensbytte på Mac, ASIO-vranglåser, WASAPI-rettelser | [AVHENGIGHETER.md](AVHENGIGHETER.md) §cpal                       |
+| Windows: lytter på endringer i enhetslista (`IMMNotificationClient`) for raskere gjenkobling       | [AVHENGIGHETER.md](AVHENGIGHETER.md) §Windows                    |
 
 ## Eier (Richard)
 
@@ -75,3 +78,5 @@ Nevnt, bevisst ikke tatt:
 - Kapitler i eksporten (ingen kilde siden v0.15) —
   [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §R1. Kjernen kan fortsatt skrive dem;
   en framtidig kapittelkilde trenger bare å fylle lista.
+- `earshot` som VAD-motor og `ebur128` for lydstyrke under opptak —
+  [AVHENGIGHETER.md](AVHENGIGHETER.md) §Notert, ikke planlagt.

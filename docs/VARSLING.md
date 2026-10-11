@@ -51,7 +51,9 @@ Verifisering på rigg: `docs/SMOKE-TEST.md` §8b.
 - **macOS-tillatelsen** leses ikke. `UNUserNotificationCenter` krever en
   Objective-C-blokk, krasjer utenfor en `.app`-bundle, og det er ikke bevist at
   den speiler NSUserNotification-veien pluginen viser varsler gjennom. Spike på
-  ekte Mac først; til da er svaret `unknown` + testvarselet.
+  ekte Mac først; til da er svaret `unknown` + testvarselet. Bindingen til
+  spiken er `objc2-user-notifications`, samme objc2-familie som resten av
+  `src-tauri` (se [AVHENGIGHETER.md](AVHENGIGHETER.md)).
 
 ## ✅ Runde 3 — «Senere»-lista (2026-09-28)
 
