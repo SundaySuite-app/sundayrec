@@ -771,7 +771,7 @@ impl RecorderEngine {
             let cpal_ctx = ctx.clone();
             let supervisor = tauri::async_runtime::spawn(async move {
                 let _panic_guard =
-                    SupervisorPanicGuard::new(cpal_ctx.state.clone(), Some(cpal_ctx.app.clone()));
+                    SupervisorPanicGuard::announcing(cpal_ctx.state.clone(), cpal_ctx.app.clone());
                 run_cpal_session(host_kind, cpal_ctx, stop_rx, ready_tx).await;
             });
             match ready_rx.await {
@@ -842,7 +842,7 @@ impl RecorderEngine {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let supervisor = tauri::async_runtime::spawn(async move {
-            let _panic_guard = SupervisorPanicGuard::new(ctx.state.clone(), Some(ctx.app.clone()));
+            let _panic_guard = SupervisorPanicGuard::announcing(ctx.state.clone(), ctx.app.clone());
             run_session(ctx, stop_rx, ready_tx).await;
         });
 
@@ -923,12 +923,26 @@ fn fail_stuck_stop(state: &StateWriter) {
 /// panic: the guard does nothing then (the abort path has [`fail_stuck_stop`]).
 pub(crate) struct SupervisorPanicGuard {
     state: StateWriter,
-    app: Option<AppHandle>,
+    /// Runs after the state was set to `Failed` (production: announce the error
+    /// to the UI). A callback rather than an `AppHandle`, so the guard itself
+    /// does not drag the whole Tauri runtime into every test binary that
+    /// constructs one (that broke the Windows test exe at load time).
+    on_failed: Option<Box<dyn FnOnce() + Send>>,
 }
 
 impl SupervisorPanicGuard {
-    pub(crate) fn new(state: StateWriter, app: Option<AppHandle>) -> Self {
-        Self { state, app }
+    pub(crate) fn new(state: StateWriter, on_failed: Option<Box<dyn FnOnce() + Send>>) -> Self {
+        Self { state, on_failed }
+    }
+
+    /// The production guard: on a panic also emits the terminal error event.
+    fn announcing(state: StateWriter, app: AppHandle) -> Self {
+        Self::new(
+            state,
+            Some(Box::new(move || {
+                emit_failure(&app, "supervisor_panic", "recorder supervisor panicked")
+            })),
+        )
     }
 }
 
@@ -938,8 +952,8 @@ impl Drop for SupervisorPanicGuard {
             return;
         }
         if fail_panicked_supervisor(&self.state) {
-            if let Some(app) = &self.app {
-                emit_failure(app, "supervisor_panic", "recorder supervisor panicked");
+            if let Some(f) = self.on_failed.take() {
+                f();
             }
         }
     }
