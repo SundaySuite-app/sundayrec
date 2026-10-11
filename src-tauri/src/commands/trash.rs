@@ -77,8 +77,8 @@ pub async fn trash_move(
     }
     crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::TrashMoved);
     let dir = save_dir(&app, &db).await?;
-    // The seam also refuses a file outside `dir` (a folder change since it was
-    // recorded) — see `trash::move_rows_into_trash`.
+    // A row from an earlier save folder goes into THIS folder's trash — see
+    // `trash::move_rows_into_trash`.
     tokio::task::spawn_blocking(move || trash::move_rows_into_trash(&dir, &rows))
         .await
         .map_err(|e| crate::error::AppError::Internal(format!("trash move join: {e}")))?

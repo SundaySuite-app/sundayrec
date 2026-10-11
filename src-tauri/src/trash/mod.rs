@@ -459,52 +459,19 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
 /// each `(row id, file path)` pair is journalled WITH its id, so the library,
 /// purge and restore all follow the row rather than the path.
 ///
-/// Refuses the whole call (`recording_outside_save_folder`) when an existing
-/// file lies outside `save_dir`, before anything moves. The trash is per save
-/// folder, so after a folder change an old recording would otherwise be
-/// "deleted" into the NEW folder's trash — possibly a USB stick, via a
-/// cross-volume copy — where it can no longer be found next to its siblings.
+/// No save-folder check on purpose: the callers only pass paths that a history
+/// row names (never a path from the webview), and a recording from a previous
+/// save folder must stay deletable after the folder was changed — it goes into
+/// the current folder's trash.
 pub fn move_rows_into_trash(
     save_dir: &Path,
     rows: &[(String, String)],
 ) -> AppResult<Vec<TrashEntry>> {
-    for (_, path) in rows {
-        let p = Path::new(path);
-        // A missing file is skipped by the move itself and harmless; only a
-        // file that WOULD move has to be ours to move.
-        if p.is_file() && !is_within(save_dir, p) {
-            return Err(AppError::Validation(
-                "recording_outside_save_folder: the recording is not in the current save folder"
-                    .into(),
-            ));
-        }
-    }
     let items: Vec<(Option<String>, String)> = rows
         .iter()
         .map(|(id, path)| (Some(id.clone()), path.clone()))
         .collect();
     move_items_into_trash(save_dir, &items)
-}
-
-/// `path` with symlinks resolved; for a path that does not exist (yet), its
-/// parent resolved and the file name re-attached.
-fn canonical_or_self(path: &Path) -> PathBuf {
-    if let Ok(c) = path.canonicalize() {
-        return c;
-    }
-    match (
-        path.parent().and_then(|d| d.canonicalize().ok()),
-        path.file_name(),
-    ) {
-        (Some(dir), Some(name)) => dir.join(name),
-        _ => path.to_path_buf(),
-    }
-}
-
-/// Whether `path` lies under `root` (both resolved, so `..` and symlinks do not
-/// fool it).
-fn is_within(root: &Path, path: &Path) -> bool {
-    canonical_or_self(path).starts_with(canonical_or_self(root))
 }
 
 fn move_items_into_trash(
@@ -996,30 +963,26 @@ mod tests {
     }
 
     #[test]
-    fn a_recording_outside_the_save_folder_is_refused_and_nothing_moves() {
-        let (dir, inside) = fixture();
+    fn a_known_row_from_an_earlier_save_folder_can_still_be_trashed() {
+        // After a folder change the library still lists the old recordings; the
+        // delete must work, landing in the CURRENT folder's trash.
+        let (dir, _inside) = fixture();
         let elsewhere = tempfile::tempdir().unwrap();
-        let outside = elsewhere.path().join("old.mp3");
-        fs::write(&outside, b"x").unwrap();
+        let old = elsewhere.path().join("old.mp3");
+        fs::write(&old, b"x").unwrap();
 
-        let err = move_rows_into_trash(
+        let entries = move_rows_into_trash(
             dir.path(),
-            &[
-                ("a".into(), inside.to_string_lossy().into_owned()),
-                ("b".into(), outside.to_string_lossy().into_owned()),
-            ],
+            &[("row-old".into(), old.to_string_lossy().into_owned())],
         )
-        .expect_err("a file from another folder is refused");
-        assert!(err.to_string().contains("recording_outside_save_folder"));
-        assert!(inside.is_file(), "the whole call is refused up front");
-        assert!(outside.is_file());
-        assert!(!trash_dir(dir.path()).exists());
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(!old.exists(), "the file left the old folder");
+        assert!(Path::new(&entries[0].trashed_path).starts_with(trash_dir(dir.path())));
 
-        // `..` does not smuggle a file in.
-        let sneaky = dir.path().join("..").join("old.mp3");
-        assert!(!is_within(dir.path(), &sneaky));
-        assert!(!is_within(dir.path(), &outside));
-        assert!(is_within(dir.path(), &inside));
+        let back = restore(dir.path(), &entries[0].id).unwrap();
+        assert_eq!(back.original_path, old.to_string_lossy());
+        assert!(old.is_file(), "and an undo brings it home");
     }
 
     #[test]
