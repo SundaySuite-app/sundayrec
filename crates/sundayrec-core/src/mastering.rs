@@ -165,25 +165,7 @@ pub fn parse_loudnorm_json(stderr: &str) -> Option<LoudnessMeasurement> {
     if stderr.is_empty() {
         return None;
     }
-    // Collect top-level brace blocks.
-    let bytes = stderr.as_bytes();
-    let mut blocks: Vec<&str> = Vec::new();
-    let mut depth = 0i32;
-    let mut start: i64 = -1;
-    for (i, &c) in bytes.iter().enumerate() {
-        if c == b'{' {
-            if depth == 0 {
-                start = i as i64;
-            }
-            depth += 1;
-        } else if c == b'}' {
-            depth -= 1;
-            if depth == 0 && start != -1 {
-                blocks.push(&stderr[start as usize..=i]);
-                start = -1;
-            }
-        }
-    }
+    let blocks = flat_brace_blocks(stderr);
 
     for block in blocks.iter().rev() {
         if !block.contains("input_i") || !block.contains("input_tp") {
@@ -219,12 +201,48 @@ pub fn parse_loudnorm_json(stderr: &str) -> Option<LoudnessMeasurement> {
     None
 }
 
+/// Every flat `{…}` candidate in `stderr`, in order: from each `{` to the first
+/// `}` after it. loudnorm's block never nests, so this is exact for it — and,
+/// unlike counting brace depth over the whole stderr, a stray brace elsewhere
+/// (a `{` or `}` echoed from a filter graph or a folder name in ffmpeg's banner)
+/// cannot shift the count and swallow or misplace the real block.
+fn flat_brace_blocks(stderr: &str) -> Vec<&str> {
+    let mut blocks = Vec::new();
+    for (s, _) in stderr.match_indices('{') {
+        if let Some(rel) = stderr[s..].find('}') {
+            blocks.push(&stderr[s..=s + rel]);
+        }
+    }
+    blocks
+}
+
+/// Whether pass 1 measured SILENCE: loudnorm's report for audio with nothing
+/// above its absolute gate carries `"input_i" : "-inf"` (and `-inf` peaks).
+/// There is no gain that normalises silence, so the export should skip the
+/// mastering gain rather than die on «could not parse the measurement».
+pub fn loudnorm_measured_silence(stderr: &str) -> bool {
+    flat_brace_blocks(stderr)
+        .iter()
+        .rev()
+        .find(|b| b.contains("input_i") && b.contains("input_tp"))
+        .and_then(|b| extract_json_str(b, "input_i"))
+        .is_some_and(|v| {
+            let v = v.trim().to_ascii_lowercase();
+            v.starts_with("-inf") || v.starts_with("nan")
+        })
+}
+
 /// Pull a quoted-string-valued number out of a flat loudnorm JSON block by key,
 /// e.g. `"input_i" : "-23.45"` → `-23.45`. loudnorm emits all numerics as
 /// strings, so we locate `"key"`, skip to the next quote-delimited value and
 /// `parseFloat` it (matching JS `parseFloat` lenience: leading number, trailing
 /// junk ignored).
 fn extract_json_number(block: &str, key: &str) -> Option<f64> {
+    parse_float_lenient(extract_json_str(block, key)?)
+}
+
+/// The quoted value after `"key" :` in a flat JSON block, unparsed.
+fn extract_json_str<'a>(block: &'a str, key: &str) -> Option<&'a str> {
     let needle = format!("\"{key}\"");
     let key_pos = block.find(&needle)?;
     let after = &block[key_pos + needle.len()..];
@@ -234,7 +252,7 @@ fn extract_json_number(block: &str, key: &str) -> Option<f64> {
     let q1 = rest.find('"')?;
     let after_q1 = &rest[q1 + 1..];
     let q2 = after_q1.find('"')?;
-    parse_float_lenient(&after_q1[..q2])
+    Some(&after_q1[..q2])
 }
 
 /// JS-`parseFloat`-style lenient parse: take the leading numeric prefix
@@ -829,6 +847,39 @@ mod tests {
         assert_eq!(m.input_lra, 9.40);
         assert_eq!(m.input_thresh, -33.51);
         assert_eq!(m.target_offset, 7.45);
+    }
+
+    #[test]
+    fn stray_braces_outside_the_block_do_not_hide_the_measurement() {
+        // A folder name or filter echo in ffmpeg's banner can carry unbalanced
+        // braces; counting depth over the whole stderr then lost the block.
+        let after_stray_close = format!("Input #0, from '/tmp/a}}b.wav':\n{SAMPLE}");
+        let after_stray_open = format!("Input #0, from '/tmp/a{{b.wav':\n{SAMPLE}");
+        let trailing_open = format!("{SAMPLE}\nlog line with a {{ in it");
+        for stderr in [after_stray_close, after_stray_open, trailing_open] {
+            let m = parse_loudnorm_json(&stderr).expect(&stderr);
+            assert_eq!(m.input_i, -23.45, "{stderr}");
+            assert_eq!(m.input_tp, -3.12, "{stderr}");
+        }
+    }
+
+    #[test]
+    fn silence_is_recognised_not_mistaken_for_garbage() {
+        let silent = r#"[Parsed_loudnorm_0 @ 0x1]
+{
+        "input_i" : "-inf",
+        "input_tp" : "-inf",
+        "input_lra" : "0.00",
+        "input_thresh" : "-inf",
+        "target_offset" : "inf"
+}"#;
+        // Not a usable measurement (there is nothing to normalise)…
+        assert!(parse_loudnorm_json(silent).is_none());
+        // …but the seam can tell it from a garbled block.
+        assert!(loudnorm_measured_silence(silent));
+        assert!(!loudnorm_measured_silence(SAMPLE));
+        assert!(!loudnorm_measured_silence(""));
+        assert!(!loudnorm_measured_silence("{ \"input_i\" : \"-20\" }"));
     }
 
     #[test]

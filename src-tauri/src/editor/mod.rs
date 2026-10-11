@@ -3406,39 +3406,58 @@ where
             (0.0, 50.0),
         )
         .await?;
-        let measured = sundayrec_core::mastering::parse_loudnorm_json(&stderr)
-            .ok_or_else(|| AppError::Recording("could not parse loudnorm measurement".into()))?;
-        // 2c. What pass 2 can HONESTLY deliver from those numbers (F2-C-B).
-        //     `linear=true` alone was only ever a wish: loudnorm falls back to
-        //     its gain rider whenever the measured range overshoots the preset's
-        //     LRA gate or the gain the target implies would break the true-peak
-        //     ceiling — which is most real sermons. The plan widens the gate
-        //     (inert in linear mode) and, when the ceiling binds, aims at the
-        //     quieter level a single gain can reach and SAYS so.
-        let p2 = plan_pass2(&measured, p);
-        if !p2.linear {
-            tracing::warn!(
-                preset = %p.id,
-                input_i = p2.measured.input_i,
-                input_lra = p2.measured.input_lra,
-                input_tp = p2.measured.input_tp,
-                input_thresh = p2.measured.input_thresh,
-                "loudnorm cannot normalise this measurement linearly — the export \
-                 will be gain-ridden, not one clean gain"
-            );
-        } else if p2.peak_limited {
-            tracing::info!(
-                preset = %p.id,
-                target_lufs = p2.target_lufs,
-                preset_lufs = p2.preset_lufs,
-                input_tp = p2.measured.input_tp,
-                "true-peak ceiling capped the mastering gain — landing quieter \
-                 than the preset asks rather than compressing to reach it"
-            );
+        let measured = match sundayrec_core::mastering::parse_loudnorm_json(&stderr) {
+            Some(m) => m,
+            // Silence has no loudness to normalise: skip the gain and export
+            // the cut as it is, rather than fail the whole export with an error
+            // that blames the measurement.
+            None if sundayrec_core::mastering::loudnorm_measured_silence(&stderr) => {
+                tracing::warn!(
+                    preset = %p.id,
+                    "the export measures as silence — skipping the mastering gain"
+                );
+                on_progress(50.0, EXPORT_PHASE_ENCODING);
+                None
+            }
+            None => {
+                return Err(AppError::Recording(
+                    "could not parse loudnorm measurement".into(),
+                ))
+            }
+        };
+        if let Some(measured) = measured {
+            // 2c. What pass 2 can HONESTLY deliver from those numbers (F2-C-B).
+            //     `linear=true` alone was only ever a wish: loudnorm falls back to
+            //     its gain rider whenever the measured range overshoots the preset's
+            //     LRA gate or the gain the target implies would break the true-peak
+            //     ceiling — which is most real sermons. The plan widens the gate
+            //     (inert in linear mode) and, when the ceiling binds, aims at the
+            //     quieter level a single gain can reach and SAYS so.
+            let p2 = plan_pass2(&measured, p);
+            if !p2.linear {
+                tracing::warn!(
+                    preset = %p.id,
+                    input_i = p2.measured.input_i,
+                    input_lra = p2.measured.input_lra,
+                    input_tp = p2.measured.input_tp,
+                    input_thresh = p2.measured.input_thresh,
+                    "loudnorm cannot normalise this measurement linearly — the export \
+                     will be gain-ridden, not one clean gain"
+                );
+            } else if p2.peak_limited {
+                tracing::info!(
+                    preset = %p.id,
+                    target_lufs = p2.target_lufs,
+                    preset_lufs = p2.preset_lufs,
+                    input_tp = p2.measured.input_tp,
+                    "true-peak ceiling capped the mastering gain — landing quieter \
+                     than the preset asks rather than compressing to reach it"
+                );
+            }
+            plan = Some(p2);
+            proc_filters.push(loudnorm_apply_filter(&p2));
+            on_progress(50.0, EXPORT_PHASE_ENCODING);
         }
-        plan = Some(p2);
-        proc_filters.push(loudnorm_apply_filter(&p2));
-        on_progress(50.0, EXPORT_PHASE_ENCODING);
     }
     // The dither (16-bit PCM targets only) is a POST filter: it must see the
     // finished signal, jingles included, on its way into the encoder.
