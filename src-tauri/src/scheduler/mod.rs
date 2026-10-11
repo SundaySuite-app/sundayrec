@@ -547,6 +547,47 @@ fn stop_verdict(
     }
 }
 
+/// Whether the plan's own Start, finding a recording already running, takes it
+/// over: a take nobody scheduled (not claimed by an earlier start in this
+/// session) that has no deadline of its own. A manual take with its own
+/// auto-stop is the operator's choice and is left alone; so is a session an
+/// earlier slot owns. Only the Start event asks — a take begun AFTER the plan's
+/// start is never adopted.
+fn should_adopt(
+    owned: Option<ScheduledSession>,
+    state: sundayrec_core::recorder::RecorderState,
+    generation: u64,
+    deadline_ms: Option<u64>,
+) -> bool {
+    state.is_active()
+        && deadline_ms.is_none()
+        && !matches!(owned, Some(o) if o.generation == generation)
+}
+
+/// Take over the manual recording that is running when the plan's Start fires:
+/// arm the slot's own stop as its deadline (so the countdown, «+15 min» and
+/// «Avbryt auto-stop» work as on a scheduled start) and claim it, so the plan's
+/// Stop ends it. `false` = not adoptable, nothing touched.
+fn adopt_running_take(
+    engine: &RecorderEngine,
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    source: TriggerKind,
+) -> bool {
+    if !should_adopt(
+        *lock_recover(&SCHEDULED_SESSION),
+        engine.current_state(),
+        engine.session_generation(),
+        engine.scheduled_stop_ms(),
+    ) {
+        return false;
+    }
+    let (_, minutes) = start_plan(settings, specials, source, Local::now().naive_local());
+    engine.extend_autostop(minutes);
+    claim_session(engine, source);
+    true
+}
+
 /// The name and auto-stop (minutes) a scheduled start of `kind` begins with.
 ///
 /// The auto-stop runs to the slot's/special's own stop (`minutes_until_stop`),
@@ -614,6 +655,16 @@ async fn fire(
             // take, or an earlier scheduled one still finalising). Skip + tell the
             // user, leaving the running recording untouched.
             if engine.current_state().is_active() {
+                // A manual take begun just before the service has no end of its
+                // own: the plan takes it over rather than leave it to run until
+                // somebody presses Stop or the disk is full.
+                if adopt_running_take(&engine, settings, specials, ev.source) {
+                    tracing::info!(
+                        "scheduler: a manual recording is already running — adopted it, \
+                         the slot's stop ends it"
+                    );
+                    return;
+                }
                 tracing::warn!(
                     "scheduler: a recording is already active — skipping the scheduled start"
                 );
@@ -3669,6 +3720,60 @@ mod tests {
         assert_eq!(
             start_plan(&settings, &specials, TriggerKind::Slot(9), at("11:00:00")).1,
             sundayrec_core::schedule::SCHEDULED_MAX_BACKSTOP_MINUTES
+        );
+    }
+
+    #[test]
+    fn the_plan_adopts_a_manual_take_that_has_no_end_of_its_own() {
+        let slot = TriggerKind::Slot(0);
+        let adopt = |owned, state, gen, deadline| should_adopt(owned, state, gen, deadline);
+        // A manual take, no deadline, nobody's claim: adopted.
+        assert!(adopt(None, RecorderState::Recording, 5, None));
+        assert!(
+            adopt(owned(4, slot), RecorderState::Recording, 5, None),
+            "an OLD claim is not this session"
+        );
+        // A manual take with its own auto-stop is the operator's choice.
+        assert!(!adopt(None, RecorderState::Recording, 5, Some(T0)));
+        // A session an earlier slot owns is not up for grabs.
+        assert!(!adopt(
+            owned(5, TriggerKind::Slot(1)),
+            RecorderState::Recording,
+            5,
+            None
+        ));
+        // Nothing running (or only finalising): nothing to adopt.
+        assert!(!adopt(None, RecorderState::Stopping, 5, None));
+        assert!(!adopt(None, RecorderState::Stopped, 5, None));
+        // Once adopted (claim + deadline) the stop and the buttons behave as for
+        // a scheduled start: the stop ends it at the deadline, «+15» defers it.
+        let claimed = owned(5, slot);
+        assert_eq!(
+            stop_verdict(
+                claimed,
+                slot,
+                RecorderState::Recording,
+                5,
+                Some(T0 + 20_000),
+                T0
+            ),
+            StopVerdict::Stop
+        );
+        assert_eq!(
+            stop_verdict(
+                claimed,
+                slot,
+                RecorderState::Recording,
+                5,
+                Some(T0 + 15 * 60_000),
+                T0
+            ),
+            StopVerdict::Moved
+        );
+        // A take begun AFTER the plan's start (a later session) stays NotOurs.
+        assert_eq!(
+            stop_verdict(claimed, slot, RecorderState::Recording, 6, None, T0),
+            StopVerdict::NotOurs
         );
     }
 
