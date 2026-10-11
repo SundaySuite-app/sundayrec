@@ -128,7 +128,12 @@ pub struct CameraCapabilities {
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — opens the real camera to list its modes.
 #[tauri::command]
-pub async fn get_camera_capabilities(device_token: String) -> AppResult<CameraCapabilities> {
+pub async fn get_camera_capabilities(
+    recorder: State<'_, crate::recorder::engine::RecorderEngine>,
+    device_token: String,
+) -> AppResult<CameraCapabilities> {
+    // The probe opens the camera; a live recording may own it.
+    super::recorder::refuse_while_recording(recorder.current_state())?;
     let platform = crate::recorder::engine::current_platform();
     let modes = crate::media::camera::probe_camera_modes(&device_token, platform).await;
     let c = sundayrec_core::capture::summarize_camera_capabilities(&modes);

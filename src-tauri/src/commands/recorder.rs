@@ -347,6 +347,28 @@ pub(crate) fn engine_is_busy(state: sundayrec_core::recorder::RecorderState) -> 
     state.is_active() || state == sundayrec_core::recorder::RecorderState::Stopping
 }
 
+/// Whether a stop press ends something: only a live session (running,
+/// preparing, reconnecting). Idle/finished/`Stopping` states stop nothing new.
+fn stop_press_counts(state: sundayrec_core::recorder::RecorderState) -> bool {
+    state.is_active()
+}
+
+/// Refuse a command that would OPEN the audio/video device while a session
+/// owns it (running, reconnecting, or still finalising its files). The UI
+/// hides these buttons during a recording, but a stale screen, a reloaded
+/// webview or a second window can still send them — and a second opener on the
+/// same device starves or corrupts the live capture. Same code as a second
+/// manual start gets, which the renderer already localises.
+pub(crate) fn refuse_while_recording(
+    state: sundayrec_core::recorder::RecorderState,
+) -> AppResult<()> {
+    if engine_is_busy(state) {
+        Err(AppError::Recording("already_recording".into()))
+    } else {
+        Ok(())
+    }
+}
+
 /// The start choreography. See the module header for the diagram; the ORDER of
 /// the calls below is the behaviour, and `tests::the_start_choreography_*` is
 /// what now holds it in place.
@@ -517,8 +539,11 @@ pub async fn preroll_start(
     app: AppHandle,
     preroll: State<'_, PrerollEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
+    engine: State<'_, RecorderEngine>,
     db: State<'_, Db>,
 ) -> AppResult<bool> {
+    // A recording owns the device; the renderer re-arms the buffer when it ends.
+    refuse_while_recording(engine.current_state())?;
     // The buffer is about to become the ONE owner of the input device; the VU
     // engine must let go first. (The native buffer then emits `vu://levels`
     // itself, so the meters keep running — see `audio::vu::emit_vu_levels`.)
@@ -588,8 +613,14 @@ pub fn preroll_status(preroll: State<'_, PrerollEngine>) -> PrerollStatus {
 /// Safe to call when nothing is running.
 #[tauri::command]
 pub fn stop_recording(engine: State<'_, RecorderEngine>) -> AppResult<()> {
+    // `stop()` is safe with nothing running, but then nothing was stopped: a
+    // stray press (or a second one while it finalises) must not inflate the
+    // «stopped» counter.
+    let counts = stop_press_counts(engine.current_state());
     engine.stop();
-    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingStopped);
+    if counts {
+        crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingStopped);
+    }
     Ok(())
 }
 
@@ -714,7 +745,9 @@ pub async fn get_disk_space(app: AppHandle, db: State<'_, Db>) -> AppResult<Disk
 pub async fn run_test_recording(
     db: State<'_, Db>,
     vu: State<'_, crate::audio::vu::VuEngine>,
+    engine: State<'_, RecorderEngine>,
 ) -> AppResult<TestRecordingResult> {
+    refuse_while_recording(engine.current_state())?;
     // Release the channel-grid/VU stream before opening the device for real.
     vu.stop();
     let s = settings::load(&db.pool).await.unwrap_or_default();
@@ -730,8 +763,10 @@ pub async fn run_test_recording(
 pub async fn run_capture_bench(
     db: State<'_, Db>,
     vu: State<'_, crate::audio::vu::VuEngine>,
+    engine: State<'_, RecorderEngine>,
     secs: u32,
 ) -> AppResult<sundayrec_core::selftest::SelfTestReport> {
+    refuse_while_recording(engine.current_state())?;
     // Release the channel-grid/VU stream before the bench opens the device.
     vu.stop();
     let s = settings::load(&db.pool).await.unwrap_or_default();
@@ -1009,6 +1044,35 @@ mod tests {
             custom_name: None,
             max_minutes: None,
             video: Some(false),
+        }
+    }
+
+    #[test]
+    fn device_opening_commands_are_refused_while_a_session_owns_the_device() {
+        use sundayrec_core::recorder::RecorderState::*;
+        for s in [Preparing, Recording, Reconnecting, Stopping] {
+            let err = refuse_while_recording(s).expect_err("must refuse");
+            assert!(
+                err.to_string().contains("already_recording"),
+                "{s:?}: {err}"
+            );
+        }
+        for s in [Idle, Stopped, Failed] {
+            assert!(
+                refuse_while_recording(s).is_ok(),
+                "{s:?} leaves the device free"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stop_press_with_nothing_recording_is_not_counted() {
+        use sundayrec_core::recorder::RecorderState::*;
+        for s in [Preparing, Recording, Reconnecting] {
+            assert!(stop_press_counts(s), "{s:?}");
+        }
+        for s in [Idle, Stopping, Stopped, Failed] {
+            assert!(!stop_press_counts(s), "{s:?}");
         }
     }
 
