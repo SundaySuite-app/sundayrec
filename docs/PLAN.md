@@ -15,6 +15,20 @@ registeret som peker dit. Et punkt som ikke står her, er ikke planlagt.
 
 Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
+## Ombyggingen — før appen rulles ut
+
+Eierens beslutning 2026-10-11: store grep, høy risiko, gjennomføres i nye økter
+lokalt på Macen. Hovedplanen er [OMBYGGING.md](OMBYGGING.md), med delplanene
+[LYDMOTOR.md](LYDMOTOR.md) og [VIDEOMOTOR.md](VIDEOMOTOR.md). Én linje per
+milepæl; pakkene står i hovedplanen og fjernes derfra når de er ferdige.
+
+| Milepæl                      | Pakker       | Kort                                                                                                            |
+| ---------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------- |
+| M1 — Grunnmuren              | A1–A5, C0    | Lisensvakt, ffmpeg-versjonen i docs, cpal 0.18, Windows-enhetslytter, nødlukene ut, maskinvarekoding på Windows |
+| M2 — Ny lyd i redigeringen   | B0–B3        | filmcrafts `audio-dsp` inn, lydstyrke og lydkjede i Rust, «Tale» renser av seg selv                             |
+| M3 — Ny videomotor           | C1–C5        | Kamera i Rust, lyden alltid gjennom den native motoren, én sti i stedet for fire                                |
+| M4 — Sanntid, fart og resten | B4–B6, D1–D3 | Én dekoding, sanntidslytting, rask videoeksport, earshot, macOS-varsler, LUFS under opptak                      |
+
 ## Kode
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
@@ -26,11 +40,11 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 Kode, men bare etter et forsøk på ekte maskin.
 
-| Punkt                                                                                     | Kilde                                                            |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel)           | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
-| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet | [VARSLING.md](VARSLING.md) §Senere                               |
-| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)     | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
+| Punkt                                                                                                                     | Kilde                                                            |
+| ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel) — pakke D2 i [OMBYGGING.md](OMBYGGING.md) | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
+| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet                                 | [VARSLING.md](VARSLING.md) §Senere                               |
+| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)                                     | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
 
 ## Eier (Richard)
 
@@ -40,7 +54,6 @@ Kode, men bare etter et forsøk på ekte maskin.
 | Windows-kodesigneringssertifikat (valgfritt; fjerner SmartScreen-advarselen)                                         | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Signing                   |
 | Rive `notify.sundaysuite.app` i `sunday-telemetry` og slette lagrede adresser — når flåten er på v0.23.0 eller nyere | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §PU-1                      |
 | Eierbeslutninger fra F2 som står igjen: resten av språkfunnene                                                       | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Eierbeslutninger fra F2   |
-| Klassisk ffmpeg-pre-roll: fjerne nødluka når en ekte søndag har bevist den native bufferen                           | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §Summary                   |
 | SoundCloud-API: lagt på is; tellerne `editor.publish.*` avgjør om den tas opp igjen                                  | [NEEDS-RICHARD.md](NEEDS-RICHARD.md) §«Legg ut»                 |
 
 ## Rigg og ører
