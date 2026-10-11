@@ -778,9 +778,13 @@ pub fn read_sidecar(
 /// `JSON.stringify(_, null, 2)`). Returns whether the write succeeded; a bad
 /// path (escape guard) or an fs error is a clean `false`, never a throw, so the
 /// autosave can fail silently exactly as the Electron handlers did.
+///
+/// Atomic (temp + rename): these are the sidecars a person fills in by hand —
+/// the cuts DRAFT and the metadata — and an autosave killed mid-write must not
+/// leave a truncated file where the last good one was.
 pub fn write_sidecar(media_path: &str, sidecar: EditorSidecar, value: &serde_json::Value) -> bool {
     match serde_json::to_string_pretty(value) {
-        Ok(json) => write_sidecar_raw(media_path, sidecar, &json),
+        Ok(json) => write_sidecar_atomic(media_path, sidecar, &json),
         Err(_) => false,
     }
 }
@@ -3407,7 +3411,7 @@ where
         )
         .await?;
         let measured = match sundayrec_core::mastering::parse_loudnorm_json(&stderr) {
-            Some(m) => m,
+            Some(m) => Some(m),
             // Silence has no loudness to normalise: skip the gain and export
             // the cut as it is, rather than fail the whole export with an error
             // that blames the measurement.
@@ -4255,6 +4259,37 @@ mod tests {
     // ffmpeg-driven entry points are HARDWARE-UNVERIFIED — feature-off they
     // return `feature_disabled` (tested here), feature-on they are proven only
     // in the smoke test.
+
+    /// The cuts draft is hand work: it is replaced by rename, never truncated in
+    /// place (a new inode proves the former), and no temp is left behind.
+    #[cfg(unix)]
+    #[test]
+    fn write_sidecar_replaces_the_file_atomically() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::tempdir().unwrap();
+        let media = dir.path().join("preken.wav").to_string_lossy().into_owned();
+        let first = serde_json::json!({ "cuts": [1] });
+        assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &first));
+        let path = resolve_sidecar(&media, EditorSidecar::CutsDraft).unwrap();
+        let ino_before = std::fs::metadata(&path).unwrap().ino();
+
+        let second = serde_json::json!({ "cuts": [1, 2] });
+        assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &second));
+        assert_ne!(
+            std::fs::metadata(&path).unwrap().ino(),
+            ino_before,
+            "truncated in place instead of replaced by rename"
+        );
+        assert_eq!(
+            read_sidecar(&media, EditorSidecar::CutsDraft).unwrap(),
+            Some(second)
+        );
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 1, "a temp was left behind: {names:?}");
+    }
 
     #[cfg(feature = "editor")]
     #[test]
