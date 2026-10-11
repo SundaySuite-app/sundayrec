@@ -119,6 +119,43 @@ pub fn scheduled_max_minutes(slot_max: u32) -> u32 {
     }
 }
 
+/// The auto-stop a scheduled recording is started with: whole minutes from
+/// `now` to the next wall-clock `stop` ("HH:MM" — tomorrow's when today's has
+/// passed, which is what a past-midnight stop is), rounded UP and at least 1,
+/// capped by [`scheduled_max_minutes`].
+///
+/// Armed as the engine's own deadline, so the countdown the volunteer sees, the
+/// «+15 min» / «Avbryt auto-stop» buttons and the slot's stop are ONE clock —
+/// where the deadline used to be the 240-min backstop and the slot's Stop
+/// event ran a second, invisible one.
+pub fn minutes_until_stop(stop: &str, now: NaiveDateTime, slot_max: u32) -> u32 {
+    let (eh, em) = parse_hm(stop, (12, 0));
+    let mut at = now.date().and_hms_opt(eh, em, 0).unwrap_or(now);
+    if at <= now {
+        at += Duration::days(1);
+    }
+    let secs = (at - now).num_seconds().max(1) as u32;
+    secs.div_ceil(60).clamp(1, scheduled_max_minutes(slot_max))
+}
+
+/// How long a scheduled recording is PLANNED to run, in minutes: start → stop
+/// (past midnight when the stop is earlier), capped by the same max the start
+/// is armed with ([`scheduled_max_minutes`]). `None` for a degenerate
+/// start == stop, which is never scheduled. What the preflight disk check
+/// sizes the free space against.
+pub fn planned_duration_minutes(start: &str, stop: &str, slot_max: u32) -> Option<u32> {
+    if is_degenerate(start, stop) {
+        return None;
+    }
+    let (sh, sm) = parse_hm(start, (11, 0));
+    let (eh, em) = parse_hm(stop, (12, 0));
+    let mut span = (eh * 60 + em) as i64 - (sh * 60 + sm) as i64;
+    if span <= 0 {
+        span += 24 * 60;
+    }
+    Some((span as u32).min(scheduled_max_minutes(slot_max)))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //   Types — serde-compatible with the Electron `types/index.ts` interfaces
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1629,6 +1666,41 @@ mod tests {
 
     /// start == stop is rejected for slots and specials alike: it must not be
     /// scheduled, late-started, or reported as «missed» every week.
+    #[test]
+    fn minutes_until_stop_counts_to_the_stop_across_midnight_and_caps() {
+        // Rounded up: 11:00:20 → 12:00 is 59m40s, armed as 60.
+        let late =
+            NaiveDateTime::parse_from_str("2026-06-07 11:00:20", "%Y-%m-%d %H:%M:%S").unwrap();
+        assert_eq!(minutes_until_stop("12:00", late, 0), 60);
+        assert_eq!(minutes_until_stop("12:00", dt("2026-06-07 11:00"), 0), 60);
+        // A late start counts what is LEFT, not the whole slot.
+        assert_eq!(minutes_until_stop("12:00", dt("2026-06-07 11:20"), 0), 40);
+        // Past midnight.
+        assert_eq!(minutes_until_stop("00:30", dt("2026-06-07 23:00"), 0), 90);
+        // The slot's max and the backstop still cap it.
+        assert_eq!(
+            minutes_until_stop("14:00", dt("2026-06-07 11:00"), 120),
+            120
+        );
+        assert_eq!(
+            minutes_until_stop("23:00", dt("2026-06-07 08:00"), 0),
+            SCHEDULED_MAX_BACKSTOP_MINUTES
+        );
+    }
+
+    #[test]
+    fn planned_duration_spans_midnight_and_is_capped_by_the_max() {
+        assert_eq!(planned_duration_minutes("11:00", "12:30", 0), Some(90));
+        assert_eq!(planned_duration_minutes("23:00", "00:30", 0), Some(90));
+        // Capped by the slot max, and by the backstop when none is set.
+        assert_eq!(planned_duration_minutes("11:00", "14:00", 120), Some(120));
+        assert_eq!(
+            planned_duration_minutes("08:00", "20:00", 0),
+            Some(SCHEDULED_MAX_BACKSTOP_MINUTES)
+        );
+        assert_eq!(planned_duration_minutes("11:00", "11:00", 0), None);
+    }
+
     #[test]
     fn degenerate_slot_and_special_are_never_scheduled_or_reported_missed() {
         let deg_slot = vec![ScheduleSlot {

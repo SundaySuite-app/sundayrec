@@ -7,17 +7,14 @@
 //! checking the ffmpeg binary. It then hands those facts to
 //! [`assemble_findings`](sundayrec_core::preflight::assemble_findings).
 //!
-//! ## macOS mic/camera permission — honestly deferred
+//! ## macOS mic/camera permission
 //!
-//! The Electron build used `systemPreferences.getMediaAccessStatus('microphone'
-//! | 'camera')` to raise an `error/device` finding when permission was denied.
-//! Tauri 2 has no equivalent clean API, and shelling out to AppleScript / `tccutil`
-//! to read the TCC database is fragile and entitlement-sensitive. So the F2.2
-//! plumbing leaves `mic_denied`/`cam_denied` as `false` (permission check NOT
-//! performed) and defers a proper probe to **Fase 5** (wake/permission), where
-//! the macOS permission flow is built. This is an honest gap, not a silent pass:
-//! the core path for the finding exists and is tested; only the live probe is
-//! absent.
+//! Read from the same TCC probe the recorder's own `start()` refuses on
+//! ([`crate::media::permissions::status`]), so a Sunday-morning preflight and
+//! the start it precedes agree: `Denied`/`Restricted` raise the `error/device`
+//! finding, `NotDetermined`/`Unknown` do not (opening the device is what shows
+//! the OS prompt, and a check that cannot tell must not cry wolf). Off macOS
+//! the probe answers `Unknown`, so both flags stay `false`.
 //!
 //! ## Hardware-unverified
 //!
@@ -29,11 +26,13 @@
 use sqlx::SqlitePool;
 use sundayrec_core::device_match::find_best_device_match;
 use sundayrec_core::preflight::{
-    assemble_findings_for, looks_like_onedrive, video_active, PreflightFacts, PreflightFinding,
+    assemble_findings_for, looks_like_onedrive, planned_capture_bytes, video_active,
+    PreflightFacts, PreflightFinding,
 };
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
 use crate::media::ffmpeg::ffmpeg_health;
+use crate::media::permissions::{status, MediaKind};
 use crate::settings;
 
 /// Probe a folder for writability the way Electron did (`preflight.ts:40-47`):
@@ -63,6 +62,11 @@ fn folder_writable(folder: &std::path::Path) -> bool {
 /// skips the space check rather than fail-stop).
 fn free_bytes(folder: &std::path::Path) -> Option<u64> {
     fs4::available_space(folder).ok()
+}
+
+/// Whether the OS has explicitly blocked `kind` (macOS Denied/Restricted).
+fn permission_blocked(kind: MediaKind) -> bool {
+    status(kind).is_blocked()
 }
 
 /// Whether the audio device named in settings is among the enumerated inputs.
@@ -170,15 +174,18 @@ pub struct PreflightOutcome {
 /// Documents directory the Tauri command resolves (used only when no
 /// `save_folder` is set).
 ///
-/// macOS mic/camera permission is NOT probed here — see the module docs
-/// (deferred to Fase 5). An empty `findings` means "alt klart".
+/// macOS mic/camera permission is read from the TCC probe — see the module
+/// docs. An empty `findings` means "alt klart".
 ///
 /// `device` says which audio device the device check is about; see
-/// [`PreflightDevice`].
+/// [`PreflightDevice`]. `planned_minutes` is how long the recording this check
+/// precedes is planned to run (a scheduled start), so the free-space check can
+/// size the disk against it instead of the flat threshold; `None` = no plan.
 pub async fn run_preflight_detailed(
     pool: &SqlitePool,
     documents_dir: Option<&std::path::Path>,
     device: PreflightDevice,
+    planned_minutes: Option<u32>,
 ) -> PreflightOutcome {
     let settings = settings::load(pool).await.unwrap_or_default();
 
@@ -221,11 +228,13 @@ pub async fn run_preflight_detailed(
         folder_writable: writable,
         free_bytes: free,
         video_active: video_active(&settings),
-        // macOS permission probe deferred to Fase 5 — see module docs.
-        mic_denied: false,
-        cam_denied: false,
+        // macOS TCC — see module docs.
+        mic_denied: permission_blocked(MediaKind::Microphone),
+        cam_denied: permission_blocked(MediaKind::Camera),
         device_present,
         save_folder_onedrive: onedrive,
+        planned_capture_bytes: planned_minutes
+            .map(|m| planned_capture_bytes(m, settings.resolved_sample_rate())),
     };
 
     PreflightOutcome {
@@ -240,7 +249,7 @@ pub async fn run_preflight(
     pool: &SqlitePool,
     documents_dir: Option<&std::path::Path>,
 ) -> Vec<PreflightFinding> {
-    run_preflight_detailed(pool, documents_dir, PreflightDevice::Settings)
+    run_preflight_detailed(pool, documents_dir, PreflightDevice::Settings, None)
         .await
         .findings
 }
@@ -296,7 +305,7 @@ mod tests {
         let pool = crate::db::store::open_pool(&dir.path().join("test.sqlite"))
             .await
             .expect("open_pool");
-        run_preflight_detailed(&pool, Some(dir.path()), device)
+        run_preflight_detailed(&pool, Some(dir.path()), device, None)
             .await
             .findings
             .into_iter()

@@ -260,10 +260,47 @@ const BYTES_PER_GB: f64 = 1_073_741_824.0;
 /// decimal (the `.toFixed(1)` formatting). At or above the threshold there is no
 /// finding.
 pub fn disk_space_finding(free_bytes: u64, video_active: bool) -> Option<PreflightFinding> {
-    let min = if video_active {
-        MIN_DISK_VIDEO_BYTES
-    } else {
-        MIN_DISK_AUDIO_BYTES
+    disk_space_finding_for(free_bytes, video_active, None)
+}
+
+/// Sample rate assumed for the planned-size estimate when the setting is
+/// `Auto` (the device's native rate): the usual rate of an audio interface.
+const ESTIMATE_SAMPLE_RATE_HZ: u32 = 48_000;
+
+/// Bytes the capture WAV of a recording planned for `planned_minutes` will
+/// take: 16-bit PCM, estimated at two channels (never under-counts a mono
+/// capture). `sample_rate_hz` is [`Settings::resolved_sample_rate`]; `None`
+/// (Auto) is estimated at 48 kHz.
+///
+/// [`Settings::resolved_sample_rate`]: crate::settings::Settings::resolved_sample_rate
+pub fn planned_capture_bytes(planned_minutes: u32, sample_rate_hz: Option<u32>) -> u64 {
+    let spec = crate::wav::WavSpec {
+        channels: 2,
+        sample_rate: sample_rate_hz.unwrap_or(ESTIMATE_SAMPLE_RATE_HZ),
+    };
+    u64::from(planned_minutes) * 60 * spec.bytes_per_second()
+}
+
+/// [`disk_space_finding`] for a recording whose length is known.
+///
+/// A flat 500 MB threshold says «klart» at 1 GB, but the during-recording guard
+/// ([`low_disk_should_stop`]) holds 500 MB back and the finalise step another
+/// [`finalize_reserve_bytes`] — so 1 GB runs out after well under an hour of
+/// WAV and the service is cut short. With `planned_capture_bytes` (audio only:
+/// a video capture's size depends on a bitrate preflight does not know) the
+/// threshold becomes what the guard will actually need: the plan, its finalise
+/// reserve, and the headroom, never less than the flat threshold.
+pub fn disk_space_finding_for(
+    free_bytes: u64,
+    video_active: bool,
+    planned_capture_bytes: Option<u64>,
+) -> Option<PreflightFinding> {
+    let flat = min_disk_headroom_bytes(video_active);
+    let min = match planned_capture_bytes {
+        Some(planned) if !video_active => flat
+            .saturating_add(planned)
+            .saturating_add(finalize_reserve_bytes(false, planned)),
+        _ => flat,
     };
     if free_bytes < min {
         Some(
@@ -297,8 +334,12 @@ fn format_gb(bytes: u64) -> String {
 /// Pure string matching — no filesystem access — so it is testable on macOS
 /// against a Windows-shaped path, which is exactly what the tests below do.
 pub fn looks_like_onedrive(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.contains(r"\onedrive\") || lower.contains("/onedrive/")
+    path.split(['/', '\\']).any(|segment| {
+        let seg = segment.to_ascii_lowercase();
+        // `OneDrive`, `OneDrive - <organisasjon>` (Windows work/school) and
+        // `OneDrive-<organisasjon>` (macOS CloudStorage). Not `OneDriveBackup`.
+        seg == "onedrive" || seg.starts_with("onedrive -") || seg.starts_with("onedrive-")
+    })
 }
 
 /// The F2-W9 warning for a save folder [`looks_like_onedrive`] flagged.
@@ -364,6 +405,10 @@ pub struct PreflightFacts {
     /// needs the yes/no, and the shell already has the path to compute it
     /// from.
     pub save_folder_onedrive: bool,
+    /// Capture bytes the PLANNED recording will need (`planned_capture_bytes`),
+    /// when preflight runs ahead of a scheduled start with a known length.
+    /// `None` = no plan (a manual check): the flat threshold applies.
+    pub planned_capture_bytes: Option<u64>,
 }
 
 /// Assemble the preflight findings from the gathered facts, in the SAME order
@@ -447,7 +492,9 @@ pub fn assemble_findings_for(
     }
 
     if let Some(free) = facts.free_bytes {
-        if let Some(finding) = disk_space_finding(free, facts.video_active) {
+        if let Some(finding) =
+            disk_space_finding_for(free, facts.video_active, facts.planned_capture_bytes)
+        {
             findings.push(finding);
         }
     }
@@ -488,6 +535,7 @@ mod tests {
             cam_denied: false,
             device_present: true,
             save_folder_onedrive: false,
+            planned_capture_bytes: None,
         }
     }
 
@@ -674,6 +722,7 @@ mod tests {
             cam_denied: true,
             device_present: false,
             save_folder_onedrive: false,
+            planned_capture_bytes: None,
         };
         let findings = assemble_findings(facts);
         assert_eq!(findings.len(), 6);
@@ -714,6 +763,40 @@ mod tests {
     }
 
     #[test]
+    fn looks_like_onedrive_matches_the_organisation_named_folder() {
+        // Windows work/school accounts: `OneDrive - <organisasjon>`.
+        assert!(looks_like_onedrive(
+            r"C:\Users\Anne\OneDrive - Menigheten\Dokumenter\SundayRec"
+        ));
+        // macOS File Provider: `~/Library/CloudStorage/OneDrive-<org>`.
+        assert!(looks_like_onedrive(
+            "/Users/anne/Library/CloudStorage/OneDrive-Menigheten/SundayRec"
+        ));
+        // …but a folder that merely starts with the word is not one.
+        assert!(!looks_like_onedrive(r"C:\Users\Anne\OneDriveBackup\x"));
+    }
+
+    // ── disk_space_finding_for (planned length) ──────────────────────────────
+
+    #[test]
+    fn one_gb_free_is_not_klart_for_a_long_planned_wav_recording() {
+        const GB: u64 = 1024 * 1024 * 1024;
+        // 3 h at 48 kHz stereo 16-bit ≈ 1.9 GB of WAV: 1 GB would run the
+        // disk guard dry (500 MB headroom + finalise reserve) mid-service.
+        let planned = planned_capture_bytes(180, Some(48_000));
+        assert!(planned > GB);
+        assert!(disk_space_finding_for(GB, false, Some(planned)).is_some());
+        // Without a plan the flat threshold still says «klart» (old behaviour).
+        assert!(disk_space_finding_for(GB, false, None).is_none());
+        // Plenty of room for the plan, its reserve and the headroom: clear.
+        let need = MIN_DISK_AUDIO_BYTES + planned + planned / 5;
+        assert!(disk_space_finding_for(need, false, Some(planned)).is_none());
+        assert!(disk_space_finding_for(need - 1, false, Some(planned)).is_some());
+        // Video is sized by its own threshold: the plan is not an estimate there.
+        assert!(disk_space_finding_for(MIN_DISK_VIDEO_BYTES, true, Some(planned)).is_none());
+    }
+
+    #[test]
     fn looks_like_onedrive_requires_the_whole_segment_not_a_substring() {
         // A folder someone genuinely named `MyOneDriveBackup` is not synced by
         // anything — a naive `contains("onedrive")` would still flag it.
@@ -745,6 +828,7 @@ mod tests {
     fn assemble_raises_the_onedrive_warning_between_disk_space_and_mic() {
         let facts = PreflightFacts {
             save_folder_onedrive: true,
+            planned_capture_bytes: None,
             ..all_clear()
         };
         let findings = assemble_findings(facts);
@@ -757,6 +841,7 @@ mod tests {
         let facts = PreflightFacts {
             folder_writable: false,
             save_folder_onedrive: true,
+            planned_capture_bytes: None,
             ..all_clear()
         };
         let findings = assemble_findings(facts);
