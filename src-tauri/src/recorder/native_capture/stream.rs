@@ -354,6 +354,15 @@ pub enum StreamSink {
     },
 }
 
+/// Samples to pre-reserve in the callback's `conv`/`scratch` buffers. The driver's
+/// block size is unknown (`BufferSize::Default`), so reserve a generous number of
+/// FRAMES per channel: a fixed 4096 samples was outgrown by one block from a
+/// 32-channel mixer (512 frames x 32 = 16384), putting a heap allocation on the
+/// real-time audio thread. `Vec` still grows past this rather than dropping audio.
+fn rt_scratch_capacity(total_channels: usize) -> usize {
+    (total_channels.max(1) * 4096).max(4096)
+}
+
 /// Build an input stream for sample type `T`: convert each sample to f32 via
 /// cpal `from_sample` (covers i16/i32/f32/**I24**/u16/…) and feed the sink.
 /// `conv`/`scratch` are allocated once here, never in the real-time callback.
@@ -368,8 +377,9 @@ where
     T: cpal::SizedSample,
     f32: FromSample<T>,
 {
-    let mut conv: Vec<f32> = Vec::with_capacity(4096);
-    let mut scratch: Vec<f32> = Vec::with_capacity(4096);
+    let cap = rt_scratch_capacity(total);
+    let mut conv: Vec<f32> = Vec::with_capacity(cap);
+    let mut scratch: Vec<f32> = Vec::with_capacity(cap);
     device.build_input_stream(
         config,
         move |data: &[T], _: &cpal::InputCallbackInfo| {
@@ -473,6 +483,15 @@ pub fn build_input_stream_any(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 32-channel mixer's 512-frame block (16384 samples) must fit the
+    /// pre-reserved callback buffers — no allocation on the audio thread.
+    #[test]
+    fn callback_buffers_are_reserved_for_a_many_channel_block() {
+        assert!(rt_scratch_capacity(32) >= 32 * 512);
+        assert!(rt_scratch_capacity(2) >= 4096);
+        assert!(rt_scratch_capacity(0) >= 4096);
+    }
 
     const fn r(channels: u16, min_rate: u32, max_rate: u32, format: SampleFormat) -> RangeInfo {
         RangeInfo {

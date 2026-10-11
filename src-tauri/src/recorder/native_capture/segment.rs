@@ -160,6 +160,17 @@ pub async fn spawn_native_segment_for(
         }
     }
 
+    // A reconnect (exact match) refuses a pick the returned device no longer
+    // has, instead of letting `build_route_plan` clamp it onto the last channel.
+    if exact.is_some() {
+        crate::audio::asio::check_channel_picks(
+            opts.channel_mode,
+            opts.input_channel_l,
+            opts.input_channel_r,
+            negotiated.channels,
+        )
+        .map_err(|e| AppError::Recording(format!("input device not back: {e}")))?;
+    }
     let plan = build_route_plan(
         opts.channel_mode,
         opts.input_channel_l,
@@ -577,6 +588,11 @@ pub(crate) struct SegmentEnv<'a> {
     /// Free bytes on the capture volume; `None` when it cannot be probed (an
     /// unreadable volume is not evidence of a full one).
     pub free_bytes: &'a (dyn Fn() -> Option<u64> + Sync),
+    /// `true` when this segment is a RECONNECT piece (`_rN`), not the session's
+    /// first. A first segment that never opens is a failed start (fatal); a
+    /// reconnect segment that is merely slow must not end a session whose
+    /// reconnect budget is untouched.
+    pub reconnecting: bool,
 }
 
 /// The production sink: a real `AppHandle` plus the two pieces of session state
@@ -665,19 +681,52 @@ pub(crate) async fn run_native_segment(
     let disk_folder = std::path::Path::new(&ctx.opts.output_path)
         .parent()
         .map(|p| p.to_path_buf());
-    let free_bytes = move || -> Option<u64> {
+    let free_bytes = nonblocking_probe(move || -> Option<u64> {
         disk_folder
             .as_ref()
             .and_then(|folder| fs4::available_space(folder).ok())
-    };
+    });
     let env = SegmentEnv {
         now_ms: &now_ms,
         free_bytes: &free_bytes,
+        reconnecting: session.reconnect_count() > 0,
     };
     drive_native_segment(
         &mut seg, &sink, &env, &ctx.opts, counters, stop_rx, stop_watch,
     )
     .await
+}
+
+/// Wrap a BLOCKING free-space probe so calling it from the async segment loop
+/// never blocks the loop. `fs4::available_space` is a syscall: on a network share
+/// or a USB drive that has stalled it can hang for minutes, and inside the
+/// `select!` that would freeze the stop request, the watchdogs and the meters
+/// with it. Each call starts at most one probe on the blocking pool and answers
+/// with the LAST finished result (`None` until the first one lands) — one disk
+/// tick (30 s) stale at worst, against a headroom measured in hundreds of MiB.
+/// Must be called from inside a tokio runtime.
+fn nonblocking_probe(
+    probe: impl Fn() -> Option<u64> + Send + Sync + 'static,
+) -> impl Fn() -> Option<u64> + Sync {
+    use std::sync::atomic::AtomicBool;
+    const UNKNOWN: u64 = u64::MAX;
+    let probe = Arc::new(probe);
+    let last = Arc::new(AtomicU64::new(UNKNOWN));
+    let inflight = Arc::new(AtomicBool::new(false));
+    move || {
+        if !inflight.swap(true, Ordering::AcqRel) {
+            let (probe, last, inflight) =
+                (Arc::clone(&probe), Arc::clone(&last), Arc::clone(&inflight));
+            tokio::task::spawn_blocking(move || {
+                last.store(probe().unwrap_or(UNKNOWN), Ordering::Release);
+                inflight.store(false, Ordering::Release);
+            });
+        }
+        match last.load(Ordering::Acquire) {
+            UNKNOWN => None,
+            v => Some(v),
+        }
+    }
 }
 
 /// The segment runner proper: one `select!` loop over every signal and timer a
@@ -828,11 +877,26 @@ where
             }
             // Startup watchdog: no first block on disk in time.
             _ = &mut startup_sleep, if !started_seen => {
+                seg.stop().await;
+                if env.reconnecting {
+                    // A reconnect piece that is slow to deliver its first block
+                    // (a mixer that re-enumerates for >12 s) is NOT a failed
+                    // start: `DeviceNotFound` is fatal and would end the session
+                    // with the reconnect budget untouched, and `sink.error` is
+                    // the terminal channel. Warn and let the recovery policy
+                    // retry — `DeviceDisconnected` is transient.
+                    sink.warning(
+                        "start_timeout",
+                        &AlertText::RecordingStartTimeoutMic.text(crate::ui_lang::current()),
+                    );
+                    break SegmentOutcome::UnexpectedExit {
+                        last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                    };
+                }
                 sink.error(
                     "start_timeout",
                     &AlertText::RecordingStartTimeoutMic.text(crate::ui_lang::current()),
                 );
-                seg.stop().await;
                 break SegmentOutcome::UnexpectedExit {
                     last_error: Some(RecordingErrorCode::DeviceNotFound),
                 };
@@ -1362,11 +1426,27 @@ mod tests {
         stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
         stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
     ) -> SegmentOutcome {
+        drive_as(rig, opts, counters, free, clock, stop_rx, stop_watch, false).await
+    }
+
+    /// [`drive`], but for a reconnect (`_rN`) segment when `reconnecting`.
+    #[allow(clippy::too_many_arguments)]
+    async fn drive_as(
+        rig: &mut Rig,
+        opts: &RecordingOpts,
+        counters: SegmentCounters,
+        free: Option<u64>,
+        clock: Arc<AtomicU64>,
+        stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
+        stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
+        reconnecting: bool,
+    ) -> SegmentOutcome {
         let now = move || clock.load(Ordering::Relaxed);
         let free_fn = move || free;
         let env = SegmentEnv {
             now_ms: &now,
             free_bytes: &free_fn,
+            reconnecting,
         };
         drive_native_segment(
             &mut rig.seg,
@@ -1468,6 +1548,67 @@ mod tests {
             1,
             "the stack must be torn down"
         );
+    }
+
+    /// The free-space probe must not block the segment loop: a stalled volume
+    /// (a hung network share) would otherwise freeze stop, watchdogs and meters.
+    #[tokio::test]
+    async fn a_stalled_free_space_probe_does_not_block_the_caller() {
+        let started = std::time::Instant::now();
+        let probe = nonblocking_probe(|| {
+            std::thread::sleep(Duration::from_millis(1500));
+            Some(42)
+        });
+        assert_eq!(probe(), None, "no result yet — and no waiting for one");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "the probe call blocked the caller for {:?}",
+            started.elapsed()
+        );
+        // Once the blocking call finishes, its result is served.
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if probe() == Some(42) {
+                return;
+            }
+        }
+        panic!("the probe result never arrived");
+    }
+
+    /// A RECONNECT segment that is slow to deliver its first block is not a
+    /// failed start: a warning and a transient code, so the recovery policy
+    /// retries instead of ending the session with its budget untouched.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_reconnect_segment_warns_and_stays_recoverable() {
+        let mut r = rig();
+        let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        let opts = test_opts("/tmp/x.wav");
+        let out = drive_as(
+            &mut r,
+            &opts,
+            counters(),
+            Some(u64::MAX / 2),
+            FakeClock::default().handle(),
+            &mut stop_rx,
+            &mut w_rx,
+            true,
+        )
+        .await;
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: Some(RecordingErrorCode::DeviceDisconnected)
+            }
+        );
+        assert!(!sundayrec_core::recorder::is_fatal_reconnect_error(
+            RecordingErrorCode::DeviceDisconnected
+        ));
+        assert!(r.sink.has(&Ev::Warning("start_timeout".into())));
+        assert!(
+            !r.sink.has(&Ev::Error("start_timeout".into())),
+            "a reconnect piece must not fire the terminal error channel"
+        );
+        assert_eq!(r.stops.load(Ordering::Relaxed), 1);
     }
 
     /// The stuck detector: bytes frozen past the tolerance while the segment is

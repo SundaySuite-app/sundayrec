@@ -132,7 +132,8 @@ pub enum ChannelRoute {
 ///   - MonoMix → one channel averaging 0 & 1.
 ///
 /// Indices that would exceed `total_input_channels` are clamped to the last valid
-/// channel so a stale settings pick can never read out of bounds.
+/// channel so a stale settings pick can never read out of bounds (a reconnect
+/// refuses them first — see [`check_channel_picks`]).
 pub fn build_route_plan(
     mode: sundayrec_core::settings::ChannelMode,
     input_channel_l: Option<i32>,
@@ -152,6 +153,43 @@ pub fn build_route_plan(
         // with itself = ch0).
         ChannelMode::MonoMix => vec![ChannelRoute::MixHalf(0, 1u16.min(max))],
     }
+}
+
+/// Check that the EXPLICIT channel picks the recording's mode reads exist on a
+/// device exposing `total_input_channels`. [`build_route_plan`] clamps a missing
+/// pick to the last channel so the callback can never read out of bounds — right
+/// for a first start (a recording beats no recording), WRONG for a reconnect: a
+/// mixer that re-enumerates as a 2-channel device would otherwise have its
+/// channel 2 recorded twice for the rest of the service, silently. A reconnect
+/// calls this first and treats `Err` as "the device is not back yet".
+/// Defaults (`None`) are never an error — a 1-channel interface legitimately
+/// records its only channel as "stereo".
+pub fn check_channel_picks(
+    mode: sundayrec_core::settings::ChannelMode,
+    input_channel_l: Option<i32>,
+    input_channel_r: Option<i32>,
+    total_input_channels: u16,
+) -> Result<(), String> {
+    use sundayrec_core::settings::ChannelMode;
+    // Only the picks the chosen mode actually reads are validated.
+    let (uses_l, uses_r) = match mode {
+        ChannelMode::Stereo => (true, true),
+        ChannelMode::MonoL => (true, false),
+        ChannelMode::MonoR => (false, true),
+        ChannelMode::MonoMix => (false, false),
+    };
+    for (used, pick) in [(uses_l, input_channel_l), (uses_r, input_channel_r)] {
+        if let Some(i) = pick.filter(|_| used) {
+            if i < 0 || i >= i32::from(total_input_channels) {
+                return Err(format!(
+                    "input channel {} is not available: the device exposes {} input channel(s)",
+                    i + 1,
+                    total_input_channels
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Apply a route plan to one interleaved input frame (`total` source samples),
@@ -720,6 +758,22 @@ mod tests {
         // so the callback can never read out of bounds.
         let p = build_route_plan(ChannelMode::Stereo, Some(30), Some(31), 2);
         assert_eq!(p, vec![ChannelRoute::Pick(1), ChannelRoute::Pick(1)]);
+    }
+
+    #[test]
+    fn channel_picks_the_device_no_longer_has_are_refused() {
+        use sundayrec_core::settings::ChannelMode;
+        // A mixer that came back as a 2-channel device must not get channel 31
+        // silently folded onto channel 2 (the same channel recorded twice).
+        let e = check_channel_picks(ChannelMode::Stereo, Some(30), Some(31), 2).unwrap_err();
+        assert!(e.contains("31"), "{e}");
+        assert!(check_channel_picks(ChannelMode::MonoR, Some(0), Some(2), 2).is_err());
+        assert!(check_channel_picks(ChannelMode::Stereo, Some(-1), Some(1), 2).is_err());
+        // In range, defaults, and picks the mode does not read all pass.
+        assert!(check_channel_picks(ChannelMode::Stereo, Some(8), Some(9), 32).is_ok());
+        assert!(check_channel_picks(ChannelMode::Stereo, None, None, 1).is_ok());
+        assert!(check_channel_picks(ChannelMode::MonoL, Some(0), Some(9), 2).is_ok());
+        assert!(check_channel_picks(ChannelMode::MonoMix, Some(9), Some(9), 2).is_ok());
     }
 
     #[test]
