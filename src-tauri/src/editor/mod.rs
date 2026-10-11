@@ -794,6 +794,8 @@ pub fn write_sidecar(media_path: &str, sidecar: EditorSidecar, value: &serde_jso
 /// COMPACTLY. Pretty-printing puts one array element per line, which for a 2 h
 /// peaks cache means ~720 000 lines and roughly double the bytes — for a file no
 /// human ever opens.
+// Only the derived-cache writers (feature-on) call it now that `write_sidecar` is atomic.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 fn write_sidecar_raw(media_path: &str, sidecar: EditorSidecar, json: &str) -> bool {
     let Some(path) = resolve_sidecar(media_path, sidecar) else {
         return false;
