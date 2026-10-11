@@ -1912,6 +1912,25 @@ pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
     }
 }
 
+/// A recording is starting: end any export that is running. The two are both
+/// full-file ffmpeg work on the same CPU and disk, and the recording is the
+/// one that cannot be redone (audit 2026-10: the editor's guard stood only at
+/// the export CLICK, so an export started earlier ran on through the start of a
+/// scheduled recording). Returns whether a render was killed. Best effort — a
+/// recording must start whatever this finds; the cancelled export reports
+/// `cancelled` to its own caller.
+pub async fn cancel_export_for_recording<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    let Some(engine) = app.try_state::<ExportEngine>() else {
+        return false;
+    };
+    let killed = cancel_export(&engine).await.unwrap_or(false);
+    if killed {
+        tracing::warn!("a recording is starting: the running export was cancelled");
+    }
+    killed
+}
+
 // ── HARDWARE-UNVERIFIED implementations (feature on) ─────────────────────────────
 
 /// Probe a recording: spawn ffprobe with the core's argv, parse its output with
@@ -4271,6 +4290,31 @@ mod tests {
         .await;
         writer.abort();
         (end, started.elapsed())
+    }
+
+    // `mock_app` is not built on Windows (see Cargo.toml), nor is `sleep`.
+    #[cfg(all(feature = "editor", unix))]
+    #[tokio::test]
+    async fn a_starting_recording_kills_the_running_export() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        // No engine managed / nothing running: a quiet no-op.
+        assert!(!cancel_export_for_recording(handle).await);
+
+        handle.manage(ExportEngine::new());
+        assert!(!cancel_export_for_recording(handle).await);
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        handle.state::<ExportEngine>().hold(child);
+        assert!(cancel_export_for_recording(handle).await);
+        // The render is gone and the export's own cancel check sees why.
+        assert!(handle.state::<ExportEngine>().take().is_none());
+        assert!(handle.state::<ExportEngine>().is_cancelled());
     }
 
     #[cfg(feature = "editor")]
