@@ -29,6 +29,10 @@ I tillegg:
   slik Electron-appen ble portert — «rebuilt cleanly, not copied» (README).
 - **Kopierer vi likevel,** får fila en linje øverst om hvor koden kommer fra,
   hvilken lisens den har og hvem som har opphavsretten.
+- **Unntaket: filmcrafts `audio-dsp`** (eiers beslutning 2026-10-11). Hele
+  craten tas inn i repoet, låst til én commit, med lisensfilene og `NOTICE`,
+  en `UPSTREAM.md` over lokale endringer, og testene deres i vår CI. Den
+  følges ikke fortløpende oppstrøms. Se [LYDMOTOR.md](LYDMOTOR.md).
 - **KI-skrevne prosjekter er ekstra usikre.** Vi vet ikke hvor koden kommer fra
   (den kan inneholde GPL-kode under en MIT-fil), og de er ofte svakt testet.
   En fork kan dessuten bære en annens opphavsrett (ClawScribe er Meetily med
@@ -120,6 +124,13 @@ gjennomgangen: ingen av appene over løser det. Veien er
 `objc2-user-notifications` (samme objc2-familie som `src-tauri` alt bruker),
 ikke Swift-pakken anarlog bruker til mikrofontillatelsen.
 
+### Redigeringsprogrammer (andre runde)
+
+Sett på: filmcraft og soundcraft (ArtCraft), Clypra, katana, Gausian, OpenCut,
+auto-editor og et knippe Tauri-redigerere. **filmcrafts `audio-dsp`** er
+grunnlaget for [LYDMOTOR.md](LYDMOTOR.md). katanas raske videoeksport
+(`-c:v copy`) er ideen bak fase 6 der, men koden er for enkel til å bruke.
+
 ## Notert, ikke planlagt
 
 - **`earshot` som VAD-motor** (MIT/Apache, ren Rust, ~95 KiB, ingen
@@ -128,19 +139,26 @@ ikke Swift-pakken anarlog bruker til mikrofontillatelsen.
   modellen på 2,8 MB. Påstanden om at den slår Silero er utviklerens egen, og
   sang kan bli tolket som tale. _Når:_ VAD-porten i [VAD.md](VAD.md) har et
   korpus å måle på.
-- **`ebur128` for lydstyrke under opptak** (MIT, av GStreamer-vedlikeholderen).
-  Den kan gi en LUFS-måler eller en sjekk etter opptaket («−40 LUFS: er
-  mikseren dempet?») fra f32-strømmen den native motoren alt har. Den skal
-  ikke erstatte loudnorm-målingen i mastering, som er referansen. _Når:_ eier
-  vil ha funksjonen.
+- **Lydstyrke under opptak.** En LUFS-måler eller en sjekk etter opptaket
+  («−40 LUFS: er mikseren dempet?») fra f32-strømmen den native motoren alt
+  har. Måleren kommer inn med [LYDMOTOR.md](LYDMOTOR.md) fase 0, så `ebur128`
+  trengs ikke. _Når:_ eier vil ha funksjonen.
+- **Klippliste til DaVinci/Premiere** (FCPXML/EDL, som auto-editor og
+  filmcrafts `interchange` lager). _Når:_ et medieteam vil gjøre ferdig
+  redigeringen et annet sted.
 
 ## Vurdert og lagt bort
 
-| Hva                                                | Hvorfor ikke                                                           |
-| -------------------------------------------------- | ---------------------------------------------------------------------- |
-| `ffmpeg-sidecar`                                   | `progress.rs`/`levels.rs` og `fetch-ffmpeg.mjs` gjør mer, og er testet |
-| `keepawake`                                        | `power.rs` gjør jobben, med begrunnelse per plattform                  |
-| Meetilys `incremental_saver`                       | Opptil 30 s i minnet før disk; vi skriver rett til fil                 |
-| Meetilys og anarlogs enhetsovervåking              | Henholdsvis spørring hvert 2. s og ingen Windows-støtte                |
-| Små opptaksapper fra 2026 (Tauri + cpal)           | Svakere enn det vi har, få eller ingen tester                          |
-| Cap, Whispering (Epicenter), autoshorts, AIMeeting | AGPL, ingen lisens eller «all rights reserved»                         |
+| Hva                                                  | Hvorfor ikke                                                               |
+| ---------------------------------------------------- | -------------------------------------------------------------------------- |
+| `ffmpeg-sidecar`                                     | `progress.rs`/`levels.rs` og `fetch-ffmpeg.mjs` gjør mer, og er testet     |
+| `keepawake`                                          | `power.rs` gjør jobben, med begrunnelse per plattform                      |
+| Meetilys `incremental_saver`                         | Opptil 30 s i minnet før disk; vi skriver rett til fil                     |
+| Meetilys og anarlogs enhetsovervåking                | Henholdsvis spørring hvert 2. s og ingen Windows-støtte                    |
+| Små opptaksapper fra 2026 (Tauri + cpal)             | Svakere enn det vi har, få eller ingen tester                              |
+| Cap, Whispering (Epicenter), autoshorts, AIMeeting   | AGPL, ingen lisens eller «all rights reserved»                             |
+| filmcrafts kodeker, egui-UI og tidslinjemotor        | ffmpeg dekker kodekene (og har MP3/FLAC-koding); et annet problem enn vårt |
+| Clypra                                               | Lenker ffmpeg statisk inn (`ffmpeg-next`); handler om videosammensetting   |
+| Gausian, OpenCut                                     | KI-video med GStreamer; OpenCut skrives om fra bunnen                      |
+| kerf, autocut                                        | PolyForm Noncommercial; ingen lisens                                       |
+| OpenTake, chukcut, Video_For_Lazies, lumen-cut, tern | GPL-3.0, AGPL-3.0, «all rights reserved»                                   |

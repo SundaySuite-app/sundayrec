@@ -21,6 +21,7 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 - Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
 - Audit 2026-10-05: 🟡/🔵/⚪-funn gjenstår (~85, rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota), pluss papirkurv knyttet til rad-id i stedet for sti (rest av 🟠).
+- **Ny lydmotor for redigeringen:** lyden behandles i Rust (filmcrafts `audio-dsp`), og ffmpeg brukes bare til filer. Sju faser, fra lydstyrke via sanntidslytting til rask videoeksport — se [LYDMOTOR.md](LYDMOTOR.md).
 - Lisensvakt i CI (`cargo deny check licenses`) og en samlet liste over tredjepartslisenser i installasjonen — se [AVHENGIGHETER.md](AVHENGIGHETER.md) §Lisensvakt.
 
 ## Spike / maskinvare først
