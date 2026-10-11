@@ -17,7 +17,7 @@ import {
 // write the keys the Rust engine reads.
 
 test.describe("«Ta opp automatisk» av beholder tiden", () => {
-  test("av skriver flagget og lar `slots` stå — i payloaden OG i basen", async ({
+  test("av skriver flagget og lar `slots` stå — i basen (payloaden er bare flagget)", async ({
     page,
   }) => {
     // The owner question P1a wrote down and the owner answered. Before
@@ -40,17 +40,15 @@ test.describe("«Ta opp automatisk» av beholder tiden", () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
 
-    // The R4 invariant on the seam: the payload is the WHOLE vocabulary, and
-    // it carries the flag off with the slots intact.
+    // The seam: the patch carries the flag off and nothing else; the slots
+    // are not in it and stay intact in the store.
     await expect
       .poll(() => settingsSavePayloads(page).then((p) => p.length))
       .toBeGreaterThan(0);
     const saves = await settingsSavePayloads(page);
     const last = saves[saves.length - 1];
     expect(last.autoRecordEnabled).toBe(false);
-    expect(last.slots).toEqual([
-      { days: [6], start: "11:00", stop: "12:30", max: null },
-    ]);
+    expect(last).toEqual({ autoRecordEnabled: false });
 
     // …and the store agrees. This is the half a UI assertion cannot see.
     const stored = await storedSettings(page);

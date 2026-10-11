@@ -67,15 +67,19 @@ pub async fn settings_get(db: State<'_, Db>) -> AppResult<Settings> {
     Ok(loaded)
 }
 
-/// Validate, persist and return the given settings.
+/// Validate, persist and return the settings after laying the renderer's
+/// PATCH over the stored ones ([`settings::save_patch_from_renderer`]): only the
+/// fields the page names change, so a stale page cannot write old values over
+/// fields it never touched. A full settings object still works — it is a patch
+/// that names every field.
 ///
 /// The save folder and the editor's intro and outro clips are NOT taken from
 /// the renderer: whatever it sends, the stored values stay
 /// ([`settings::save_from_renderer`]). The folder changes only through
 /// [`settings_pick_save_folder`], which opens the dialog in Rust.
 #[tauri::command]
-pub async fn settings_save(db: State<'_, Db>, settings: Settings) -> AppResult<Settings> {
-    settings::save_from_renderer(&db.pool, settings).await
+pub async fn settings_save(db: State<'_, Db>, settings: serde_json::Value) -> AppResult<Settings> {
+    settings::save_patch_from_renderer(&db.pool, settings).await
 }
 
 /// Pick the recordings folder: a native folder dialog this command opens, the
