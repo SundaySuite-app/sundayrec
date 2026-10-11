@@ -262,7 +262,17 @@ pub(crate) async fn finalize_deliverable(
             )));
         }
 
-        // 1d. Atomically replace the primary file with the muxed temp.
+        // 1d. Make the muxed temp durable BEFORE the rename and before the
+        //     fragments (the only other copy of the audio) are deleted: a power cut
+        //     after the rename must not leave a delivery whose data blocks were
+        //     never written back. A failed sync keeps the primary + fragments.
+        if let Err(e) = sync_file_and_dir(&tmp_path).await {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            let _ = tokio::fs::remove_file(&list_path).await;
+            return Err(AppError::Recording(format!(
+                "concat: could not flush the merged file to disk for {primary}: {e}; kept the primary + fragments"
+            )));
+        }
         atomic_replace(&tmp_path, &primary_path).await?;
 
         // 1e. Delete the now-merged fragment files (fragments[1..]) + the list.
@@ -292,28 +302,47 @@ pub(crate) async fn finalize_deliverable(
             // was picked at plan time, before that file existed. Deliver to a free
             // sibling instead and report THAT path (callers store the returned
             // path in the history row).
+            let planned = free_delivery_path(&spec.delivery_path);
+            // Encode into a temp NEXT TO the delivery and rename on success: a
+            // crash (or a failed encode) mid-transcode leaves only the temp, never
+            // a half-written file under the delivery's real name that the library,
+            // the editor or the next recovery pass could mistake for a recording.
+            let delivered = deliver_via_temp(&planned, |tmp| {
+                let tmp_spec = DeliverySpec {
+                    delivery_path: tmp,
+                    ..spec.clone()
+                };
+                let primary = primary.clone();
+                async move { transcode_capture_to_delivery(&primary, &tmp_spec).await }
+            })
+            .await;
             let spec = &DeliverySpec {
-                delivery_path: free_delivery_path(&spec.delivery_path),
+                delivery_path: match delivered {
+                    Ok(path) => path,
+                    Err(e) => {
+                        // Keep the capture on disk so nothing is lost to a failed
+                        // delivery — WAV and MKV are both fully playable recordings
+                        // in their own right.
+                        tracing::error!(
+                            capture = %primary,
+                            delivery = %planned,
+                            "recorder: delivery failed, keeping the capture file: {e}"
+                        );
+                        return Err(e);
+                    }
+                },
                 ..spec.clone()
             };
-            if let Err(e) = transcode_capture_to_delivery(&primary, spec).await {
-                // Keep the capture on disk so nothing is lost to a failed delivery —
-                // WAV and MKV are both fully playable recordings in their own right.
-                tracing::error!(
+            // The delivery file is whole — the capture is now redundant litter,
+            // but only once the delivery is durable on disk (a power cut right
+            // after Stop must not leave a partial MP3 and no lossless source).
+            if !remove_capture_once_delivery_durable(&primary, &spec.delivery_path).await {
+                tracing::warn!(
                     capture = %primary,
                     delivery = %spec.delivery_path,
-                    "recorder: delivery transcode failed, keeping the capture file: {e}"
+                    "recorder: could not fsync the delivery; keeping the capture file"
                 );
-                return Err(e);
             }
-            if !output_is_valid(Path::new(&spec.delivery_path)).await {
-                return Err(AppError::Recording(format!(
-                    "concat: delivery transcode produced an invalid/zero-byte file {}; kept the capture {primary}",
-                    spec.delivery_path
-                )));
-            }
-            // The delivery file is whole — the capture is now redundant litter.
-            let _ = tokio::fs::remove_file(&primary).await;
             tracing::info!(
                 capture = %primary,
                 delivery = %spec.delivery_path,
@@ -323,6 +352,78 @@ pub(crate) async fn finalize_deliverable(
             Ok(spec.delivery_path.clone())
         }
     }
+}
+
+/// Scratch path for an in-progress delivery: `<stem>_deliver_tmp.<ext>` beside
+/// `delivery` (same extension, so ffmpeg still picks the right muxer).
+fn delivery_tmp_path(delivery: &str) -> String {
+    let p = Path::new(delivery);
+    let dir = p.parent().unwrap_or_else(|| Path::new(""));
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "recording".to_string());
+    let name = match p.extension() {
+        Some(e) => format!("{stem}_deliver_tmp.{}", e.to_string_lossy()),
+        None => format!("{stem}_deliver_tmp"),
+    };
+    dir.join(name).to_string_lossy().into_owned()
+}
+
+/// Run `transcode` against a temp path beside `delivery_path`, validate the
+/// result, and only then move it into place. Returns the path it ended up at
+/// (a free sibling if something claimed `delivery_path` meanwhile — never an
+/// overwrite). On ANY failure the temp is removed and `delivery_path` is untouched.
+/// A temp left by an earlier crash is cleared first (ffmpeg runs with `-n`).
+async fn deliver_via_temp<F, Fut>(delivery_path: &str, transcode: F) -> AppResult<String>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = AppResult<()>>,
+{
+    let tmp = delivery_tmp_path(delivery_path);
+    let _ = tokio::fs::remove_file(&tmp).await;
+    if let Err(e) = transcode(tmp.clone()).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    if !output_is_valid(Path::new(&tmp)).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(AppError::Recording(format!(
+            "concat: delivery transcode produced an invalid/zero-byte file for {delivery_path}"
+        )));
+    }
+    let target = free_delivery_path(delivery_path);
+    if let Err(e) = tokio::fs::rename(&tmp, &target).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(AppError::Recording(format!(
+            "concat: could not move the finished delivery into place at {target}: {e}"
+        )));
+    }
+    Ok(target)
+}
+
+/// fsync `path` and (on unix) its parent directory, so both the file's data and
+/// its directory entry survive a power cut. The directory sync is skipped on
+/// Windows, where a directory cannot be opened as a plain file.
+async fn sync_file_and_dir(path: &Path) -> std::io::Result<()> {
+    let f = tokio::fs::File::open(path).await?;
+    f.sync_all().await?;
+    drop(f);
+    #[cfg(unix)]
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        tokio::fs::File::open(dir).await?.sync_all().await?;
+    }
+    Ok(())
+}
+
+/// Delete the lossless `capture` only after `delivery` has been fsynced.
+/// Returns `false` (capture kept) when the delivery could not be made durable.
+async fn remove_capture_once_delivery_durable(capture: &str, delivery: &str) -> bool {
+    if sync_file_and_dir(Path::new(delivery)).await.is_err() {
+        return false;
+    }
+    let _ = tokio::fs::remove_file(capture).await;
+    true
 }
 
 /// `path` if nothing exists there, else the first free `_2`, `_3`, … sibling
@@ -468,6 +569,9 @@ pub(crate) async fn output_is_valid(path: &Path) -> bool {
         .arg(path)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
+        // A timed-out probe is dropped below; without this the wedged ffprobe
+        // would outlive the future and leak.
+        .kill_on_drop(true)
         .output();
     match tokio::time::timeout(Duration::from_secs(15), probe).await {
         Ok(Ok(out)) if out.status.success() => {
@@ -928,6 +1032,105 @@ mod tests {
         assert_eq!(out, primary_s, "below-gate pre-roll dropped, primary kept");
         // The below-gate pre-roll guard means no concat ran → primary untouched.
         assert_eq!(tokio::fs::read(&primary).await.unwrap(), vec![0u8; 8192]);
+    }
+
+    #[tokio::test]
+    async fn a_crash_mid_transcode_leaves_no_file_under_the_delivery_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let delivery = dir.path().join("sermon.mp3").to_string_lossy().into_owned();
+        // The transcode writes part of the file, then fails (a crash looks the
+        // same on disk: the partial output exists, the process never finished).
+        let r = deliver_via_temp(&delivery, |tmp| async move {
+            tokio::fs::write(&tmp, vec![1u8; 64 * 1024]).await.unwrap();
+            Err(AppError::Recording("ffmpeg died".into()))
+        })
+        .await;
+        assert!(r.is_err());
+        assert!(
+            !Path::new(&delivery).exists(),
+            "no partial under the real name"
+        );
+        assert!(
+            !Path::new(&delivery_tmp_path(&delivery)).exists(),
+            "temp cleaned up"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_writer_only_sees_the_delivery_name_after_a_finished_transcode() {
+        let dir = tempfile::tempdir().unwrap();
+        let delivery = dir.path().join("sermon.mp3").to_string_lossy().into_owned();
+        let seen_tmp = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let seen = std::sync::Arc::clone(&seen_tmp);
+        let target = delivery.clone();
+        let out = deliver_via_temp(&delivery, |tmp| async move {
+            assert_ne!(tmp, target, "ffmpeg must write to a temp, not the delivery");
+            assert!(!Path::new(&target).exists());
+            *seen.lock().unwrap() = tmp.clone();
+            tokio::fs::write(&tmp, vec![1u8; 64 * 1024]).await.unwrap();
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(out, delivery);
+        assert!(Path::new(&delivery).exists());
+        assert!(!Path::new(&seen_tmp.lock().unwrap().clone()).exists());
+    }
+
+    #[tokio::test]
+    async fn a_stale_temp_from_an_earlier_crash_is_cleared_before_the_next_delivery() {
+        let dir = tempfile::tempdir().unwrap();
+        let delivery = dir.path().join("sermon.mp3").to_string_lossy().into_owned();
+        let stale = delivery_tmp_path(&delivery);
+        tokio::fs::write(&stale, b"partial from the crash")
+            .await
+            .unwrap();
+        let out = deliver_via_temp(&delivery, |tmp| async move {
+            // ffmpeg runs with -n: a surviving temp would make it refuse.
+            assert!(!Path::new(&tmp).exists(), "stale temp must be gone");
+            tokio::fs::write(&tmp, vec![1u8; 64 * 1024]).await.unwrap();
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(out, delivery);
+        assert_eq!(
+            tokio::fs::metadata(&delivery).await.unwrap().len(),
+            64 * 1024
+        );
+    }
+
+    #[tokio::test]
+    async fn capture_is_kept_when_the_delivery_cannot_be_made_durable() {
+        let dir = tempfile::tempdir().unwrap();
+        let capture = dir.path().join("cap.wav");
+        tokio::fs::write(&capture, b"lossless").await.unwrap();
+        let missing = dir.path().join("never-written.mp3");
+        let removed = remove_capture_once_delivery_durable(
+            &capture.to_string_lossy(),
+            &missing.to_string_lossy(),
+        )
+        .await;
+        assert!(!removed, "no durable delivery → capture must stay");
+        assert!(capture.exists());
+    }
+
+    #[tokio::test]
+    async fn capture_is_removed_after_a_durable_delivery() {
+        let dir = tempfile::tempdir().unwrap();
+        let capture = dir.path().join("cap.wav");
+        let delivery = dir.path().join("out.mp3");
+        tokio::fs::write(&capture, b"lossless").await.unwrap();
+        tokio::fs::write(&delivery, b"mp3").await.unwrap();
+        assert!(
+            remove_capture_once_delivery_durable(
+                &capture.to_string_lossy(),
+                &delivery.to_string_lossy()
+            )
+            .await
+        );
+        assert!(!capture.exists());
+        assert!(delivery.exists());
     }
 
     #[tokio::test]
