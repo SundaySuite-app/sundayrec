@@ -273,6 +273,10 @@ pub fn special_active_now(
     now: NaiveDateTime,
     window_ms: i64,
 ) -> bool {
+    // Same rule as for slots: start == stop is rejected, not read as 24 h.
+    if is_degenerate(start, stop) {
+        return false;
+    }
     let (Some(start_dt), Some(stop_dt)) = (
         parse_date_time(date, start, (11, 0)),
         parse_date_time(date, stop, (12, 0)),
@@ -412,6 +416,9 @@ pub fn upcoming_dates(
         }
     }
     for sp in specials {
+        if is_degenerate(&sp.start, &sp.stop) {
+            continue;
+        }
         if let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0)) {
             if start > now && start < cutoff {
                 out.push(start);
@@ -447,6 +454,9 @@ pub fn next_recording(
         }
     }
     for sp in specials {
+        if is_degenerate(&sp.start, &sp.stop) {
+            continue;
+        }
         if let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0)) {
             consider(start);
         }
@@ -572,6 +582,11 @@ pub fn upcoming_events(
     }
 
     for (i, sp) in specials.iter().enumerate() {
+        // start == stop: rejected like a degenerate slot — otherwise the
+        // past-midnight rule below turns it into a 24 h recording.
+        if is_degenerate(&sp.start, &sp.stop) {
+            continue;
+        }
         let src = TriggerKind::Special(i);
         let start = parse_date_time(&sp.date, &sp.start, (11, 0));
         push(start, ScheduledEventKind::Start, src);
@@ -640,15 +655,32 @@ pub const STOP_SETTLE_MS: u64 = crate::timeouts::RecorderTimeouts::STOP_FINALIZE
 /// due meanwhile must still count as unfired.
 pub const FIRE_ANCHOR_WINDOW_SECS: i64 = (STOP_SETTLE_MS / 1000) as i64 + 60;
 
+/// How far BEHIND a recorded fire time the wall clock may have been stepped
+/// and the fire still anchor the enumeration. The case it exists for is the
+/// autumn DST change: at 03:00 the local clock returns to 02:00, so an event
+/// at 02:30 that fired in the first pass is enumerated again in the repeated
+/// hour and would fire a second time. 90 min covers the one-hour step plus
+/// the settle margin; a bigger jump back is a clock correction, not a repeat.
+pub const FIRE_ANCHOR_CLOCK_STEP_BACK_SECS: i64 = 90 * 60;
+
 /// The instant [`upcoming_events`] should enumerate from. After a fire it is
 /// the fire time rather than `now`: anything strictly after it has not been
 /// fired yet — including an event that came due while the fire itself was
 /// busy (a start can take seconds) — and nothing at or before it is fired
-/// twice. Without a recent fire it is simply `now`.
+/// twice, which includes a wall-clock hour that repeats (see
+/// [`FIRE_ANCHOR_CLOCK_STEP_BACK_SECS`]). Without a recent fire it is simply
+/// `now`.
 pub fn enumeration_base(now: NaiveDateTime, fired_through: Option<NaiveDateTime>) -> NaiveDateTime {
     match fired_through {
-        Some(f) if (f - now).num_seconds().abs() <= FIRE_ANCHOR_WINDOW_SECS => f,
-        _ => now,
+        Some(f) => {
+            let ahead_secs = (f - now).num_seconds();
+            if (-FIRE_ANCHOR_WINDOW_SECS..=FIRE_ANCHOR_CLOCK_STEP_BACK_SECS).contains(&ahead_secs) {
+                f
+            } else {
+                now
+            }
+        }
+        None => now,
     }
 }
 
@@ -899,6 +931,11 @@ pub fn missed_recordings(
     let start_cutoff = now - Duration::milliseconds(MISSED_LOG_WINDOW_MS);
 
     for slot in slots {
+        // A degenerate slot is never scheduled (see `upcoming_events`), so it
+        // can never have been "missed" either.
+        if is_degenerate(&slot.start, &slot.stop) {
+            continue;
+        }
         let (sh, sm) = parse_hm(&slot.start, (11, 0));
         for &d in &slot.days {
             let Some(candidate) = most_recent_occurrence(d, sh, sm, now) else {
@@ -932,6 +969,9 @@ pub fn missed_recordings(
     }
 
     for sp in specials {
+        if is_degenerate(&sp.start, &sp.stop) {
+            continue;
+        }
         let Some(start) = parse_date_time(&sp.date, &sp.start, (11, 0)) else {
             continue;
         };
@@ -1587,6 +1627,44 @@ mod tests {
         assert_eq!(missed[0].label, "Ukentlig opptak (11:00–12:00)");
     }
 
+    /// start == stop is rejected for slots and specials alike: it must not be
+    /// scheduled, late-started, or reported as «missed» every week.
+    #[test]
+    fn degenerate_slot_and_special_are_never_scheduled_or_reported_missed() {
+        let deg_slot = vec![ScheduleSlot {
+            days: vec![6],
+            start: "11:00".to_string(),
+            stop: "11:00".to_string(),
+            max: None,
+        }];
+        let deg_special = vec![SpecialRecording {
+            id: None,
+            date: "2026-06-07".to_string(),
+            name: "Konsert".to_string(),
+            start: "11:00".to_string(),
+            stop: "11:00".to_string(),
+            device_id: None,
+        }];
+        // Two hours after the 11:00 start: well past the late-start window.
+        let now = dt("2026-06-07 13:00");
+        assert!(
+            missed_recordings(&deg_slot, &deg_special, now, &[], &[], &HashSet::new()).is_empty()
+        );
+        // Not scheduled: no events, not the next recording, no wake date.
+        let early = dt("2026-06-06 09:00");
+        assert!(upcoming_events(&[], &deg_special, early, 15, 3).is_empty());
+        assert_eq!(next_recording(&[], &deg_special, early), None);
+        assert!(upcoming_dates(&[], &deg_special, early, 3).is_empty());
+        // …and not late-started as a 24 h recording.
+        assert!(!special_active_now(
+            "2026-06-07",
+            "11:00",
+            "11:00",
+            dt("2026-06-07 11:10"),
+            MISSED_WINDOW_MS
+        ));
+    }
+
     #[test]
     fn missed_recordings_suppressed_when_covered_or_triggered_or_fresh() {
         let slots = vec![sunday_slot()];
@@ -1987,9 +2065,29 @@ mod tests {
             enumeration_base(now, Some(now - Duration::minutes(10))),
             now
         );
-        assert_eq!(
-            enumeration_base(now, Some(now + Duration::minutes(10))),
-            now
+        // A fire far ahead of the clock is a correction, not a repeated hour.
+        assert_eq!(enumeration_base(now, Some(now + Duration::hours(3))), now);
+    }
+
+    /// Autumn DST: 03:00 → 02:00. An event at 02:30 fires in the first pass;
+    /// when the clock reads 02:00 again it must not be enumerated a second time.
+    #[test]
+    fn a_repeated_dst_hour_does_not_refire_an_event() {
+        let slots = vec![ScheduleSlot {
+            days: vec![6], // Sunday 2026-10-25 is the Norwegian fall-back day
+            start: "02:30".to_string(),
+            stop: "04:00".to_string(),
+            max: None,
+        }];
+        let fired = dt("2026-10-25 02:30");
+        // Clock stepped back: 02:00 again, 30 min before the recorded fire.
+        let now = dt("2026-10-25 02:00");
+        let base = enumeration_base(now, Some(fired));
+        let ev = upcoming_events(&slots, &[], base, 0, 1);
+        assert!(
+            !ev.iter()
+                .any(|e| e.kind == ScheduledEventKind::Start && e.at <= fired),
+            "the 02:30 start already fired in the first pass: {ev:?}"
         );
     }
 
