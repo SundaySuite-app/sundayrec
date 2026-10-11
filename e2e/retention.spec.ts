@@ -26,6 +26,7 @@ const MOVED_ENTRIES: TrashEntry[] = [1, 2, 3].map((n) => ({
   deletedAt: Date.now(),
   related: [],
   byteSize: 86_000_000,
+  recordingId: null,
 }));
 
 test.describe("retensjonspasset ved oppstart", () => {

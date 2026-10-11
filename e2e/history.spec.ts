@@ -90,6 +90,7 @@ const TRASH_STORE: Fixtures = {
     const moved = paths.map((p, i) => ({
       id: "t" + (list.length + i), originalPath: p, trashedPath: "/tmp/trash/x",
       name: p.split("/").pop(), deletedAt: Date.now(), related: [], byteSize: 1000,
+      recordingId: args.recordingIds[i],
     }));
     list.push(...moved);
     (window.__E2E_TRASHED__ ||= []).push(...paths);
@@ -102,7 +103,7 @@ const TRASH_STORE: Fixtures = {
     const gone = at >= 0 ? list.splice(at, 1)[0] : null;
     (window.__E2E_RESTORED__ ||= []).push(args.id);
     return gone ?? { id: args.id, originalPath: "", trashedPath: "", name: "",
-                     deletedAt: Date.now(), related: [], byteSize: 0 };
+                     deletedAt: Date.now(), related: [], byteSize: 0, recordingId: null };
   }`),
 };
 

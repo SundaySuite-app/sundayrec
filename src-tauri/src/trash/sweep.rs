@@ -88,8 +88,7 @@ async fn tick(app: &AppHandle) {
     if purged.is_empty() {
         return;
     }
-    let paths: Vec<String> = purged.iter().map(|e| e.original_path.clone()).collect();
-    match store::delete_recordings_for_paths(&db.pool, &paths).await {
+    match super::drop_history_rows(&db.pool, &purged).await {
         Ok(rows) => tracing::info!(
             "trash: auto-purged {} recording(s) older than {} days ({rows} history row(s))",
             purged.len(),

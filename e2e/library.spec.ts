@@ -54,6 +54,7 @@ function trashEntry(over: Partial<TrashEntry> = {}): TrashEntry {
     deletedAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
     related: [],
     byteSize: 86_000_000,
+    recordingId: null,
     ...over,
   };
 }
@@ -85,6 +86,7 @@ const TRASH_STORE: Fixtures = {
     const moved = paths.map((p, i) => ({
       id: "t" + (list.length + i), originalPath: p, trashedPath: "/tmp/trash/x",
       name: p.split("/").pop(), deletedAt: Date.now(), related: [], byteSize: 1000,
+      recordingId: args.recordingIds[i],
     }));
     localStorage.setItem(key, JSON.stringify([...list, ...moved]));
     (window.__E2E_TRASHED__ ||= []).push(...paths);
@@ -98,7 +100,7 @@ const TRASH_STORE: Fixtures = {
     localStorage.setItem(key, JSON.stringify(list));
     (window.__E2E_RESTORED__ ||= []).push(args.id);
     return gone ?? { id: args.id, originalPath: "", trashedPath: "", name: "",
-                     deletedAt: Date.now(), related: [], byteSize: 0 };
+                     deletedAt: Date.now(), related: [], byteSize: 0, recordingId: null };
   }`),
   trash_purge: fn(`(args) => {
     const key = ${JSON.stringify(TRASH_DB_KEY)};

@@ -121,10 +121,10 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
         .collect();
 
     let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir_str);
-    let paths: Vec<String> = rows
+    let paths: Vec<(String, String)> = rows
         .iter()
         .filter(|r| decision.delete_ids.contains(&r.id))
-        .map(|r| r.file_path.clone())
+        .map(|r| (r.id.clone(), r.file_path.clone()))
         .collect();
 
     if paths.is_empty() {
@@ -136,8 +136,8 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
 
     let moved = tokio::task::spawn_blocking(move || {
         let mut moved = 0usize;
-        for path in paths {
-            match crate::trash::move_into_trash(&save_dir, &[path]) {
+        for row in paths {
+            match crate::trash::move_rows_into_trash(&save_dir, &[row]) {
                 Ok(entries) => moved += entries.len(),
                 // Best-effort per recording: a file that will not move stays in
                 // the library (its row is untouched), and the pass goes on.

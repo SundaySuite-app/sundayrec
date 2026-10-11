@@ -35,4 +35,13 @@ related: Array<TrashItem>,
 /**
  * Size of the media file in bytes, when it could be read.
  */
-byteSize: number | null, };
+byteSize: number | null, 
+/**
+ * The history row this recording was trashed from. The row — not the path —
+ * is what the library hides, what a purge deletes and what a restore
+ * re-points: a NEW recording can reuse the exact path of a trashed take
+ * (date-only file names), and a path match would then hide it and drop its
+ * row. `None` for entries written before the field existed and for
+ * callers that only had a path; those fall back to matching `original_path`.
+ */
+recordingId: string | null, };

@@ -257,6 +257,7 @@ describe("Shell", () => {
         deletedAt: Date.now(),
         related: [],
         byteSize: 1000,
+        recordingId: null,
       },
     ];
     const trashed = render(<Shell />);
@@ -274,6 +275,7 @@ describe("Shell", () => {
         deletedAt: Date.now(),
         related: [],
         byteSize: 1000,
+        recordingId: null,
       },
     ];
     const unrelated = render(<Shell />);

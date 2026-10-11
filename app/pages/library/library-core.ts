@@ -137,7 +137,7 @@ export function rowSpan(durationSec: number | null): RowSpan {
  * ⚠️ Papirkurv-filteret hører IKKE hjemme her. Denne funksjonen shaper radene
  * en økt allerede har; den avgjør ikke hvilke økter som fortjener en rad.
  * `LibraryPage.tsx` fjerner det som ligger i papirkurven FØR den kaller denne
- * funksjonen — `withoutTrashed(entries, trashedPaths(trashEntries.value))` fra
+ * funksjonen — `withoutTrashed(entries, trashEntries.value)` fra
  * `@lib/pages/trash-core`, reaktivt mot `trashEntries`-signalet — nettopp for
  * at en rad som nettopp ble slettet ikke skal fortsette å tilby «Rediger» mot
  * en fil som nå ligger i papirkurven (F2-A-F). `api-shim.ts`s `getHistory`

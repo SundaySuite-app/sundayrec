@@ -252,7 +252,7 @@ export function LibraryPage() {
   const visibleEntries =
     entries === null
       ? null
-      : withoutTrashed(entries, trashedPaths([...(trashEntries.value ?? [])]));
+      : withoutTrashed(entries, [...(trashEntries.value ?? [])]);
 
   const rows =
     visibleEntries === null
@@ -580,10 +580,10 @@ async function trashRow(row: LibraryRow): Promise<TrashEntry[]> {
     .map((e) => e.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   const moved = ids.length ? await window.api.trashMove(ids) : [];
-  const movedPaths = new Set(moved.map((e) => e.originalPath));
+  const movedIds = new Set(moved.map((e) => e.recordingId));
   for (const entry of entries) {
-    if (entry.path && movedPaths.has(entry.path)) continue;
-    if (entry.timestamp) await window.api.deleteHistoryEntry(entry.timestamp);
+    if (entry.id && movedIds.has(entry.id)) continue;
+    if (entry.id) await window.api.deleteHistoryEntry(entry.id);
   }
   return moved;
 }

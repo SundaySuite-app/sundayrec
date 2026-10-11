@@ -63,6 +63,8 @@ type Api = {
   revealRecording: (recordingId: string) => Promise<boolean>;
   revealExport: (exportToken: string) => Promise<boolean>;
   trashMove: (recordingIds: string[]) => Promise<unknown>;
+  getHistory: () => Promise<Array<{ id: string }>>;
+  deleteHistoryEntry: (id: string) => Promise<void>;
   settingsPickSaveFolder: () => Promise<
     { ok: true; settings: unknown } | { ok: false; error: string }
   >;
@@ -272,6 +274,61 @@ describe("papirkurven — radenes id-er, ikke stiene (B1)", () => {
     };
     ipc.answers.set("trash_move", () => Promise.reject(refusal));
     await expect(api.trashMove(["rad-x"])).rejects.toEqual(refusal);
+  });
+});
+
+describe("historikk og papirkurv følger radens id (audit 2026-10-05)", () => {
+  const row = (id: string) => ({
+    id,
+    file_path: "/Opptak/2026-10-04.mp3",
+    device_name: null,
+    started_at: 1,
+    duration_ms: null,
+    byte_size: null,
+    created_at: 1,
+    note: null,
+  });
+  const trashed = (recordingId: string | null) => ({
+    id: "t1",
+    originalPath: "/Opptak/2026-10-04.mp3",
+    trashedPath: "/Opptak/.sundayrec-trash/1-x.mp3",
+    name: "2026-10-04.mp3",
+    deletedAt: 1,
+    related: [],
+    byteSize: 1,
+    recordingId,
+  });
+
+  // MUTASJONSPRØVEN: filtrer på `file_path` i stedet for id i `getHistory`, og
+  // den første blir rød — det nye opptaket forsvinner fordi lydsjekken i
+  // papirkurven hadde samme dato-filnavn.
+  it("getHistory skjuler raden papirkurven peker på, ikke et nytt opptak på samme sti", async () => {
+    ipc.answers.set("recordings_list", async () => [
+      row("lydsjekk"),
+      row("gudstjeneste"),
+    ]);
+    ipc.answers.set("trash_list", async () => [trashed("lydsjekk")]);
+    expect((await api.getHistory()).map((e) => e.id)).toEqual(["gudstjeneste"]);
+  });
+
+  it("en papirkurvoppføring uten rad-id faller tilbake til stien", async () => {
+    ipc.answers.set("recordings_list", async () => [row("a")]);
+    ipc.answers.set("trash_list", async () => [trashed(null)]);
+    expect(await api.getHistory()).toEqual([]);
+  });
+
+  it("deleteHistoryEntry sletter raden med DEN id-en og avviser når slettingen feiler", async () => {
+    ipc.calls.length = 0;
+    ipc.answers.set("recordings_delete", async () => null);
+    await api.deleteHistoryEntry("rad-2");
+    expect(callsTo("recordings_delete")).toEqual([
+      { cmd: "recordings_delete", args: { id: "rad-2" } },
+    ]);
+
+    ipc.answers.set("recordings_delete", () =>
+      Promise.reject(new Error("nei")),
+    );
+    await expect(api.deleteHistoryEntry("rad-2")).rejects.toThrow("nei");
   });
 });
 
