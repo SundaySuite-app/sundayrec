@@ -35,8 +35,14 @@ samtykket:
 Varsler sendes heller ikke ut av maskinen. Når et opptak feiler, sier
 SundayRec fra med et varsel på selve maskinen — ikke på e-post, og ikke via
 oss. (Tidligere versjoner kunne sende e-post, over menighetens egen
-e-postserver eller via en SundaySuite-tjeneste. Begge deler er fjernet, og en
-oppdatert app sletter det lagrede e-postpassordet fra maskinen.)
+e-postserver eller via en SundaySuite-tjeneste. Begge deler er fjernet. En
+oppdatert app fjerner e-postadressen og e-postinnstillingene fra
+innstillingene sine, og passordet sendes aldri noe sted. Hvis du brukte
+e-postvarsler i en tidligere versjon, kan selve passordet likevel ligge igjen i
+passordtjenesten til operativsystemet ditt (Nøkkelring på macOS, Legitimasjonsbehandling
+på Windows), under tjenestenavnet `no.sundayrec.app` og navnet
+`email.smtp_password`. Appen leser det ikke lenger og rører det ikke, så du kan
+fjerne det selv ved å søke etter «sundayrec» der.)
 
 ---
 
@@ -95,7 +101,8 @@ Spørsmål om personvern, innsyn eller sletting kan rettes til
 
 ## Uten at vi vet hvem du er
 
-SundayRec lager en tilfeldig installasjons-ID (en UUID) på din maskin. Den er
+SundayRec lager en tilfeldig installasjons-ID (en helt tilfeldig UUID, uten
+innebygd klokkeslett) på din maskin. Den er
 **ikke** utledet fra e-post, navn eller kirke, og den knyttes aldri til noen
 av delene. Vi kan altså ikke se hvem du er, hvilken menighet du tilhører,
 eller koble to installasjoner til samme person.
@@ -135,7 +142,10 @@ seg selv erstattes i sin helhet med `<path>`.
 Men vi lover ikke at dette fanger alt, for det gjør det ikke. En feilmelding
 settes sammen av programmet mens den skrives, og en sti som står inne i en
 lengre tekst blir ikke alltid kjent igjen som en sti. Da kan brukernavnet ditt
-være borte samtidig som et mappenavn eller et filnavn står igjen. På samme måte
+være borte samtidig som et mappenavn eller et filnavn står igjen. (Mapper og
+disker med mellomrom i navnet, som «OneDrive - Menighet», fjernes sammen med
+resten av stien. Et _filnavn_ med mellomrom, som «Gudstjeneste 9. november.wav»,
+kan fortsatt la halen av navnet stå igjen.) På samme måte
 kan et enhetsnavn stå i en melding uten å ligne på noe filtrene leter etter.
 
 Vi nevner det fordi det er forskjell på «dette kan ikke skje» og «dette prøver

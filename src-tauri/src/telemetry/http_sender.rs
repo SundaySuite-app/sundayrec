@@ -35,7 +35,17 @@
 //!
 //! 429 is the interesting entry: the only 4xx that IS transient, and the one a
 //! blanket "4xx means stop" rule would get wrong by throwing away a payload the
-//! endpoint explicitly asked us to send again later.
+//! endpoint explicitly asked us to send again later. On a 429 or 503 the
+//! `Retry-After` is honoured (never shorter than the ladder's own step), and every
+//! wait is jittered so a fleet that failed together does not retry together.
+//!
+//! ## The DELETE route has a different contract
+//!
+//! A refused report is worth dropping; a refused deletion is not. See
+//! [`classify_delete`]: only 400/422 (the id itself is unusable) are permanent,
+//! everything else — including 401/403/404/413 — keeps the id parked and retries
+//! with backoff, because the user's request is fine and the endpoint's state at
+//! this moment is what is wrong.
 //!
 //! ## What is NOT here
 //!
@@ -92,16 +102,23 @@ impl HttpTelemetrySender {
     /// success with zero counts rather than a 404, so a machine that retired an
     /// id before ever sending anything does not retry forever.
     pub async fn delete_install(&self, install_id: &str) -> Result<(), SendFailure> {
+        // A malformed id can never be deleted anywhere: refuse it here, without a
+        // request, as a permanent failure so the caller clears it.
+        let Some(url) = self.endpoint.delete_url(install_id) else {
+            return Err(SendFailure::Permanent(
+                "the install id is not UUID-shaped".to_string(),
+            ));
+        };
         let res = self
             .client
-            .delete(self.endpoint.delete_url(install_id))
+            .delete(url)
             .header(WRITE_KEY_HEADER, &self.endpoint.write_key)
             .timeout(REQUEST_TIMEOUT)
             .send()
             .await;
 
         match res {
-            Ok(r) => classify(r.status()),
+            Ok(r) => classify_delete(r.status(), retry_after(&r)),
             Err(e) => Err(SendFailure::Transient(transport_error(&e))),
         }
     }
@@ -121,7 +138,7 @@ impl TelemetrySender for HttpTelemetrySender {
                 .await;
 
             match res {
-                Ok(r) => classify(r.status()),
+                Ok(r) => classify_with(r.status(), retry_after(&r)),
                 Err(e) => Err(SendFailure::Transient(transport_error(&e))),
             }
         })
@@ -134,12 +151,18 @@ impl TelemetrySender for HttpTelemetrySender {
 /// tested without a socket — the classification is the part with a wrong answer,
 /// and the wrong answer is invisible until a deploy starts 4xx-ing the fleet.
 pub fn classify(status: StatusCode) -> Result<(), SendFailure> {
+    classify_with(status, None)
+}
+
+/// [`classify`] that also carries the endpoint's `Retry-After`, when it sent one
+/// on the two statuses where it means something (429 and 503).
+pub fn classify_with(status: StatusCode, retry_after: Option<Duration>) -> Result<(), SendFailure> {
     if status.is_success() {
         return Ok(());
     }
     // The two transient 4xx, named before the blanket rule below.
     if status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::REQUEST_TIMEOUT {
-        return Err(SendFailure::Transient(format!("endpoint said {status}")));
+        return Err(transient(status, retry_after));
     }
     if status.is_client_error() {
         // Every other 4xx says this payload is unacceptable. Re-sending the same
@@ -152,7 +175,65 @@ pub fn classify(status: StatusCode) -> Result<(), SendFailure> {
     // 5xx and anything else unrecognised: assume it is ours to wait out. The
     // conservative direction — a payload kept too long costs a queue slot, a
     // payload dropped wrongly is gone.
-    Err(SendFailure::Transient(format!("endpoint said {status}")))
+    Err(transient(status, retry_after))
+}
+
+fn transient(status: StatusCode, retry_after: Option<Duration>) -> SendFailure {
+    let message = format!("endpoint said {status}");
+    match retry_after {
+        Some(d)
+            if status == StatusCode::TOO_MANY_REQUESTS
+                || status == StatusCode::SERVICE_UNAVAILABLE =>
+        {
+            SendFailure::RetryAfter(message, d)
+        }
+        _ => SendFailure::Transient(message),
+    }
+}
+
+/// The status contract for the DELETE route — NOT [`classify`]'s.
+///
+/// A rejected report is worth dropping: the same bytes will be rejected again.
+/// A rejected DELETE is the opposite. The user asked for their data to be erased,
+/// and the id in the URL is fine — so a 401/403 (a rotated key, a misconfigured
+/// deploy), a 404 (a route not yet deployed) or a 413 says something about THIS
+/// moment, not about the request. Dropping the id there would silently turn
+/// «Slett mine data» into «Slett mine data, hvis endepunktet tilfeldigvis er
+/// riktig konfigurert akkurat nå», and PRIVACY.md promises «Den blir ikke glemt».
+///
+/// So only a status that says the id itself can never be valid is permanent: 400
+/// and 422 (malformed id) — and the sender refuses to build such a URL anyway
+/// (see `TelemetryEndpoint::delete_url`). Everything else is retried with
+/// backoff.
+pub fn classify_delete(
+    status: StatusCode,
+    retry_after: Option<Duration>,
+) -> Result<(), SendFailure> {
+    if status.is_success() {
+        return Ok(());
+    }
+    if status == StatusCode::BAD_REQUEST || status == StatusCode::UNPROCESSABLE_ENTITY {
+        return Err(SendFailure::Permanent(format!(
+            "endpoint rejected the deletion request: {status}"
+        )));
+    }
+    Err(transient(status, retry_after))
+}
+
+/// Parse a `Retry-After` header value in its delta-seconds form.
+///
+/// The telemetry Worker sends seconds. The HTTP-date form is deliberately not
+/// parsed: `None` falls back to the ladder, which is always safe.
+pub fn parse_retry_after(value: &str) -> Option<Duration> {
+    let secs: u64 = value.trim().parse().ok()?;
+    Some(Duration::from_secs(secs))
+}
+
+fn retry_after(r: &reqwest::Response) -> Option<Duration> {
+    r.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_retry_after)
 }
 
 /// A short, path-free description of a transport failure.
@@ -160,11 +241,6 @@ pub fn classify(status: StatusCode) -> Result<(), SendFailure> {
 /// `reqwest`'s `Display` includes the full URL, which is fine here (the URL is a
 /// build constant, not user data) but is noisy in a settings panel. This keeps
 /// the CATEGORY, which is the part that helps.
-///
-/// Shared with the e-mail relay's sender (`crate::notify::relay::sender`), which
-/// posts to the same Worker over the same client: a second copy of these four
-/// sentences would be two vocabularies for one set of network conditions,
-/// visible to the user as two pipes describing the same dead wifi differently.
 pub(crate) fn transport_error(e: &reqwest::Error) -> String {
     if e.is_timeout() {
         "the endpoint did not answer in time".to_string()
@@ -239,6 +315,53 @@ mod tests {
         // is gone. Unknown non-4xx errs toward keeping.
         let e = classify(StatusCode::from_u16(599).unwrap()).unwrap_err();
         assert!(matches!(e, SendFailure::Transient(_)), "got {e:?}");
+    }
+
+    #[test]
+    fn a_refused_deletion_is_transient_except_for_an_unusable_id() {
+        // A rejected report is dropped; a rejected DELETE must not be.
+        for code in [401u16, 403, 404, 405, 413, 429, 500, 503] {
+            let e = classify_delete(StatusCode::from_u16(code).unwrap(), None).unwrap_err();
+            assert!(
+                !matches!(e, SendFailure::Permanent(_)),
+                "{code} must keep the deletion, got {e:?}"
+            );
+        }
+        for code in [400u16, 422] {
+            let e = classify_delete(StatusCode::from_u16(code).unwrap(), None).unwrap_err();
+            assert!(matches!(e, SendFailure::Permanent(_)), "{code}: {e:?}");
+        }
+        assert!(classify_delete(StatusCode::OK, None).is_ok());
+    }
+
+    #[test]
+    fn retry_after_is_carried_on_429_and_503_only() {
+        let d = Some(Duration::from_secs(90));
+        for code in [429u16, 503] {
+            let e = classify_with(StatusCode::from_u16(code).unwrap(), d).unwrap_err();
+            assert_eq!(
+                e,
+                SendFailure::RetryAfter(
+                    format!("endpoint said {}", StatusCode::from_u16(code).unwrap()),
+                    Duration::from_secs(90)
+                )
+            );
+        }
+        // Not meaningful elsewhere: a plain transient.
+        let e = classify_with(StatusCode::BAD_GATEWAY, d).unwrap_err();
+        assert!(matches!(e, SendFailure::Transient(_)), "{e:?}");
+        // And without a header, a plain transient too.
+        let e = classify_with(StatusCode::TOO_MANY_REQUESTS, None).unwrap_err();
+        assert!(matches!(e, SendFailure::Transient(_)), "{e:?}");
+    }
+
+    #[test]
+    fn retry_after_parses_seconds_and_nothing_else() {
+        assert_eq!(parse_retry_after("120"), Some(Duration::from_secs(120)));
+        assert_eq!(parse_retry_after(" 5 "), Some(Duration::from_secs(5)));
+        for bad in ["", "-1", "soon", "Wed, 21 Oct 2026 07:28:00 GMT", "1.5"] {
+            assert_eq!(parse_retry_after(bad), None, "{bad:?}");
+        }
     }
 
     #[test]
