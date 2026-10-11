@@ -2002,6 +2002,34 @@ permissions = ["opener:allow-reveal-item-in-dir"]
             .exists());
     }
 
+    // ── audit 2026-10 (82, 84): no blanket core grant, no process plugin ──────
+
+    #[test]
+    fn the_webview_holds_no_process_or_emit_permission() {
+        // `process:default` = `allow-exit` + `allow-restart`: a page could end
+        // or restart the app and skip the quit/relaunch guard (`request_quit`).
+        // `core:default` pulls in `core:event:default`, whose `allow-emit` lets
+        // the page fire the events Rust listens to (`tray://action`, the
+        // notify/disk ones). The webview only `listen`s; relaunch and exit are
+        // Rust's own (`update_relaunch`, `request_quit`) and need no grant.
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        for prefix in [
+            "process:",
+            "core:default",
+            "core:event:default",
+            "core:event:allow-emit",
+        ] {
+            let (cap_files, mut findings) =
+                scan_capability_dir(prefix, &manifest.join("capabilities"));
+            assert!(
+                cap_files >= 1,
+                "no capability files found — is the tripwire reading the right folder?"
+            );
+            findings.extend(scan_app_configs(prefix, manifest).1);
+            assert!(findings.is_empty(), "{prefix}: {findings:#?}");
+        }
+    }
+
     #[test]
     fn the_updater_tripwire_sees_a_grant_and_an_import_wherever_they_hide() {
         let dir = tempfile::tempdir().unwrap();
