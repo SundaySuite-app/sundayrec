@@ -775,6 +775,16 @@ pub(super) async fn run_session(
                                                     &next_segment,
                                                 )
                                                 .await;
+                                                // The wrong-rate `_rN` is a fragment
+                                                // of the deliverable being closed
+                                                // (and may hold audio, so the abort
+                                                // kept it): left there, the `-c copy`
+                                                // join below would splice two rates.
+                                                discard_wrong_rate_fragment(
+                                                    &mut session,
+                                                    &next_segment,
+                                                )
+                                                .await;
                                                 // The session CONTINUES in a new
                                                 // deliverable — this one's verdict
                                                 // must reach the clean stop.
@@ -1434,6 +1444,16 @@ async fn run_segment(
     outcome
 }
 
+/// A reconnect came back at a different sample rate: take its `_rN` fragment out
+/// of the current deliverable and delete the file, so finalising that deliverable
+/// never joins audio of two rates. Only the first ms of the new capture are lost
+/// (the session continues in a new deliverable right after).
+async fn discard_wrong_rate_fragment(session: &mut RecordingSession, path: &str) {
+    if session.discard_last_reconnect_fragment().as_deref() == Some(path) {
+        let _ = tokio::fs::remove_file(path).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1488,5 +1508,27 @@ mod tests {
             select_capture_backend(false, true, false, false, false, false),
             CaptureBackend::Ffmpeg
         );
+    }
+
+    /// A reconnect that came back at another sample rate must not leave its `_rN`
+    /// in the deliverable that is about to be joined with `-c copy`.
+    #[tokio::test]
+    async fn a_wrong_rate_reconnect_fragment_is_dropped_from_the_deliverable_and_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("sermon.wav").to_string_lossy().into_owned();
+        let mut session = RecordingSession::new(primary.clone(), 0);
+        let RecoveryDecision::Reconnect { next_segment, .. } =
+            session.on_unexpected_exit(1_000, None)
+        else {
+            panic!("expected a reconnect");
+        };
+        tokio::fs::write(&next_segment, vec![0u8; 4096])
+            .await
+            .unwrap();
+
+        discard_wrong_rate_fragment(&mut session, &next_segment).await;
+
+        assert_eq!(session.current_deliverable_fragments(), [primary]);
+        assert!(!std::path::Path::new(&next_segment).exists());
     }
 }
