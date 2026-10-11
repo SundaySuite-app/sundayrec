@@ -21,7 +21,9 @@ Kart over alt som ligger her, og hva hvert dokument er til. Hva som
 | [RIG-DAY.md](RIG-DAY.md)             | Riggdagen: én økt som beviser riggpunktene, i rekkefølge                     |
 | [SMOKE-TEST.md](SMOKE-TEST.md)       | Maskinvare-runbook per funksjon — hva som skal skje på en ekte maskin        |
 | [AVHENGIGHETER.md](AVHENGIGHETER.md) | Kode og biblioteker utenfra: hva lisensen tillater, og hva som står på lista |
+| [OMBYGGING.md](OMBYGGING.md)         | Hovedplanen før utrulling: beslutninger, milepæler og arbeidspakker          |
 | [LYDMOTOR.md](LYDMOTOR.md)           | Planen for redigeringens lyd i Rust, med ffmpeg bare til filer               |
+| [VIDEOMOTOR.md](VIDEOMOTOR.md)       | Planen for videoopptak: kamera i Rust, lyden først                           |
 
 ## Utgivelse og drift
 

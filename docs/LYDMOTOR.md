@@ -1,7 +1,8 @@
 # Lydmotoren — redigeringens lyd i Rust, ffmpeg bare til filer
 
-_Skrevet 2026-10-11, ved v0.25.2. Status: **plan, ikke startet.** Eierens
-beslutning: gjennomføres, og vi tar risikoen._
+_Skrevet 2026-10-11, ved v0.25.2. Status: **plan, ikke startet.** Del av
+[OMBYGGING.md](OMBYGGING.md): fase N her er pakke BN der. Eierens beslutning:
+gjennomføres, og vi tar risikoen._
 
 Dette er planen for å bytte ut hvordan **Rediger** behandler lyd. I dag går all
 lyd gjennom ffmpeg-filtre, og en fil leses fra start til slutt fem–seks ganger
@@ -15,7 +16,7 @@ Det åpne står med én linje i [`PLAN.md`](PLAN.md); detaljene står her.
 ## Hvorfor
 
 Målt og lest 2026-10-11. Tallene er fra en sky-container med 4 kjerner,
-ffmpeg 6.1 (ikke den medfølgende 8.1.2) og syntetiske signaler. De viser
+ffmpeg 6.1 (ikke den medfølgende 9.0.1) og syntetiske signaler. De viser
 retningen, ikke fasiten.
 
 1. **Fila leses mange ganger.** Bølgeformen (`peaks`, 8 kHz-dekoding),
@@ -39,7 +40,7 @@ retningen, ikke fasiten.
    | Sus: «talen»                | urørt                            | urørt                    |
 
    `afftdn` uten `tn=1` og med riktig `nf` tok −57 dB. Dagens innstillinger
-   gjør altså lite. Dette bør sjekkes med 8.1.2 uansett om planen gjennomføres.
+   gjør altså lite. Dette bør sjekkes med 9.0.1 når B0 starter, med målingene i vedlegget.
 
 4. **Standardprofilen renser ingenting.** «Tale» (`sound-profiles.ts`) er
    `speech-clear`: høypass, EQ, kompressor og `loudnorm`. Støy- og
@@ -157,8 +158,10 @@ kommer først.
 - Forhåndsinnstillingene stilles inn på nytt etter gehør, fordi filtrene ikke
   er identiske: samme LUFS-mål, ny lytting.
 - **Det som forsvinner:** filterstreng-byggerne i `processing.rs` og
-  `mastering.rs` når fase 2 er godkjent. ffmpeg-kjeden lever **én utgivelse**
-  ved siden av, bak en skjult innstilling, og fjernes i den neste.
+  `mastering.rs` slettes **i samme milepæl** som fase 2 godkjennes (beslutning
+  B5 i OMBYGGING.md). Til sammenligningen før godkjenningen lager
+  `examples/chain_ab.rs` begge versjonene av samme utdrag til lytting. Den
+  slettes også når kjeden er godkjent.
 - **Ferdig når:** «Ørene» i [RIG-DAY.md](RIG-DAY.md) har lyttet til de tre
   profilene på minst tre ekte gudstjenester, gammel mot ny, og eieren har sagt
   ja.
@@ -221,8 +224,9 @@ løser et annet problem enn én frivillig med ett spørsmål.
 ## Risiko, og hvordan den tas
 
 - **Lyden blir annerledes.** Det er hele poenget, men en endring brukerne
-  merker. Derfor lytter Ørene før fase 2 og 3 slippes, og ffmpeg-kjeden lever
-  én utgivelse til.
+  merker. Derfor lytter Ørene før fase 2 og 3 slippes. Det finnes ingen
+  reserve etterpå (B5), så lyttingen må være grundig: tre ekte gudstjenester,
+  minst ett stort kirkerom og ett brumopptak.
 - **Ung kode oppstrøms.** Craten er låst og ligger i repoet. En feil i den
   rettes hos oss (`UPSTREAM.md`) og meldes oppstrøms.
 - **Redigeringen er fortsatt `HARDWARE-UNVERIFIED`.** Fase 5 (avspilling) er den
@@ -230,3 +234,39 @@ løser et annet problem enn én frivillig med ett spørsmål.
 - **Minne og disk.** 90 min stereo f32 er rundt 2 GB. Ingenting holder hele
   fila i minnet. Fase 1 avgjør om eksporten mellomlagrer på disk eller
   kjører kjeden to ganger.
+
+## Vedlegg: målingene, og hvordan de gjentas
+
+Målt 2026-10-11 i en sky-container med 4 kjerner, Linux, ffmpeg 6.1, filmcraft
+`0800a8b0`. Gjentas på Macen med `src-tauri/binaries/ffmpeg-*` (9.0.1) før B1.
+
+**Fart, én kjerne, 120 s stereo 48 kHz syntetisk tale-lignende signal:**
+
+| Effekt (filmcraft)        | × sanntid | Forsinkelse  |
+| ------------------------- | --------- | ------------ |
+| `dehum`                   | 354       | 0            |
+| `denoise`                 | 60        | 2048 samples |
+| `dereverb`                | 77        | 2048 samples |
+| `gate`                    | 814       | 0            |
+| `parametric_eq`           | 210       | 0            |
+| `compressor`              | 538       | 0            |
+| `deesser`                 | 382       | 0            |
+| `limiter` (true peak)     | 192       | 248 samples  |
+| **Hele kjeden**           | **18–21** |              |
+| `LoudnessMeter` (BS.1770) | 200       |              |
+
+Dagens ffmpeg-kjede «voice-noisy-room» gikk 32× sanntid, og 10× med
+`loudnorm` (`-threads 1 -filter_threads 1`).
+
+**Slik gjentas det:** en liten crate utenfor repoet med
+`filmcraft-audio-dsp = { path = "<filmcraft>/crates/audio-dsp" }` som:
+(1) lager samme signal (støy modulert med 4 Hz, 50 Hz brum på −34 dB, sus med topp på
+−46 dBFS), (2) kjører hver effekt med `create_effect(id, 48000.0, 2)` i blokker
+på 1024 og tar tiden, (3) kjører `LoudnessMeter::process` i blokker på 4800.
+Kvalitetsmålingene: (a) 1 kHz-pulser 0,5 s på / 0,5 s av med sus på −45 dBFS,
+RMS målt i pausene og i pulsene etter 5 s innsvinging, justert for effektens
+`latency()`, (b) korte støystøt hvert sekund foldet med en eksponentielt
+avtagende hale (RT60 1,5 s), RMS målt i halen (0,3–0,95 s) og i direktelyden
+(0–0,05 s). Samme filer kjøres gjennom ffmpeg med SundayRecs egne
+filterstrenger. De hentes ut med `processing::vocal_chain_presets()` og
+`mastering::build_measure_pass_filters()`.

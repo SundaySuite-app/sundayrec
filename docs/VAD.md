@@ -381,7 +381,7 @@ the VAD ever moves onto a path someone waits for, it stops being worth it and th
 `VadBackend` seam is where you would change engines — that is what the seam is
 for, and it is a one-file change in `src-tauri`.
 
-One candidate is noted (2026-10-11, not planned): `earshot` (MIT OR Apache-2.0)
+One replacement is planned (2026-10-11, package D1 in [OMBYGGING.md](OMBYGGING.md)): `earshot` (MIT OR Apache-2.0)
 is pure Rust with ~40 KiB of weights compiled in, no ONNX runtime, and the same
 16 kHz input (16 ms frames instead of Silero's 32 ms hop). It would remove both
 `tract-onnx` and the 2.8 MB model. Its accuracy claim against Silero is the

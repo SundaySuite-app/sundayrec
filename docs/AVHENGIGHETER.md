@@ -54,7 +54,10 @@ bruker.
 
 ## Åpne punkter
 
-### cpal 0.17.3 → 0.18.x
+Alle punktene her er nå arbeidspakker i [OMBYGGING.md](OMBYGGING.md), som
+bestemmer rekkefølgen. Detaljene står fortsatt her.
+
+### cpal 0.17.3 → 0.18.x (pakke A3)
 
 Vi er låst på 0.17.3 (`src-tauri/Cargo.toml`, for `I24` og ASIO-rettelsene).
 0.18.0 (2026-06) og 0.18.2 (2026-08) har det vi ellers måtte bygge selv:
@@ -84,7 +87,7 @@ ikke av seg selv, `build_*_stream` tar konfigurasjonen som verdi,
 _Når:_ egen PR, fulgt av en riggrunde på begge maskiner: gjenkobling
 ([RIG-DAY](RIG-DAY.md) (a)), ASIO (f) og et helt 90-minutters opptak (h).
 
-### Windows: lytter på endringer i enhetslista
+### Windows: lytter på endringer i enhetslista (pakke A4)
 
 `audio/device_watch.rs` har macOS-lytteren, men ikke Windows
 (`IMMNotificationClient`). Begrunnelsen i modulhodet er at det krever enten en
@@ -104,7 +107,7 @@ _Når:_ etter, eller samtidig med, cpal-oppgraderingen. Bevises på
 Windows-boksen med [RIG-DAY](RIG-DAY.md) (a): trekk ut og sett inn mikseren,
 og se at back-offen kuttes.
 
-### Lisensvakt i CI og tredjepartsmerknader
+### Lisensvakt i CI og tredjepartsmerknader (pakke A1)
 
 Ingenting stopper i dag et GPL- eller AGPL-crate fra å komme inn via
 `Cargo.lock`. `cargo deny check licenses` (cargo-deny, MIT/Apache) med en
@@ -117,7 +120,7 @@ appen, ville dekke det.
 
 _Når:_ kan gjøres uten rigg. Hvor lista skal vises i appen, er eiers valg.
 
-### macOS: leser systemet SundayRecs varsler?
+### macOS: leser systemet SundayRecs varsler? (pakke D2)
 
 Punktet eies av [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2. Fra
 gjennomgangen: ingen av appene over løser det. Veien er
@@ -131,18 +134,21 @@ auto-editor og et knippe Tauri-redigerere. **filmcrafts `audio-dsp`** er
 grunnlaget for [LYDMOTOR.md](LYDMOTOR.md). katanas raske videoeksport
 (`-c:v copy`) er ideen bak fase 6 der, men koden er for enkel til å bruke.
 
+### Videoopptak (tredje runde)
+
+Sett på: Caps kamera-crates, nokhwa, crabcamera, filmcrafts `platform` og
+ArtCraft-appene. ArtCraft har ingen kamerafangst. **Caps `cap-camera*`** (MIT,
+uttrykkelig unntatt fra resten av Caps AGPL) er grunnlaget for
+[VIDEOMOTOR.md](VIDEOMOTOR.md). Cap byttet selv bort fra nokhwa i 2025.
+`cap-mediafoundation-utils` og alt annet i Cap er AGPL og skal ikke leses.
+
 ## Notert, ikke planlagt
 
-- **`earshot` som VAD-motor** (MIT/Apache, ren Rust, ~95 KiB, ingen
-  modellfil, 16 kHz med 16 ms-rammer). Den kan bli en ny `VadBackend` og
-  sammenlignes med Silero/tract i `ab_eval`, og da slipper vi `tract-onnx` og
-  modellen på 2,8 MB. Påstanden om at den slår Silero er utviklerens egen, og
-  sang kan bli tolket som tale. _Når:_ VAD-porten i [VAD.md](VAD.md) har et
-  korpus å måle på.
-- **Lydstyrke under opptak.** En LUFS-måler eller en sjekk etter opptaket
-  («−40 LUFS: er mikseren dempet?») fra f32-strømmen den native motoren alt
-  har. Måleren kommer inn med [LYDMOTOR.md](LYDMOTOR.md) fase 0, så `ebur128`
-  trengs ikke. _Når:_ eier vil ha funksjonen.
+- **`earshot` som VAD-motor** og **lydstyrke under opptak** er flyttet inn i
+  planen som pakke D1 og D3 i [OMBYGGING.md](OMBYGGING.md). `earshot` erstatter
+  tract + Silero. Påstanden om at den slår Silero er utviklerens egen, og sang
+  kan bli tolket som tale, men VAD-en er i skyggemodus og bestemmer ingenting
+  før porten i [VAD.md](VAD.md) er passert.
 - **Klippliste til DaVinci/Premiere** (FCPXML/EDL, som auto-editor og
   filmcrafts `interchange` lager). _Når:_ et medieteam vil gjøre ferdig
   redigeringen et annet sted.

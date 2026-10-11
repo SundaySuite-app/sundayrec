@@ -350,6 +350,8 @@ re-discovering these bullets one at a time.
   rig. Once a real Sunday has proven the native buffer, the owner decides
   whether the hatch AND the classic engine (`recorder/preroll.rs`
   `ClassicPrerollEngine`) go — a live-path decision, not a settings sweep.
+  **Decided 2026-10-11:** they go, together with `classic_ffmpeg_audio`, as
+  package A5 in `docs/OMBYGGING.md` (`classic_directshow` follows in C3).
 - **OS wake-timers** (smoke §11): a real box for the `pmset` admin prompt, the
   Windows `SetWaitableTimer` resume, and a true sleep/wake cycle. The argument
   shaping, quoting and escalation ladders are unit-tested; the resume is not and
