@@ -400,7 +400,21 @@ pub(crate) async fn scan_recovery_dir(
                         continue;
                     }
                 }
-                recovered += recover_session_for_home(app, pool, &manifest, home).await;
+                let outcome = recover_session_for_home(app, pool, &manifest, home).await;
+                recovered += outcome.recovered;
+                // A deliverable whose finished file was not playable got no row.
+                // Its fragments are the only copy of that audio, and this
+                // manifest is the only record of where they are — deleting it
+                // would orphan them. Keep it (and the clip + capture folder the
+                // retry needs); the next launch tries again.
+                if outcome.unresolved > 0 {
+                    tracing::warn!(
+                        session = %manifest.session_id,
+                        unresolved = outcome.unresolved,
+                        "recovery: a deliverable could not be finished — keeping the manifest for the next launch"
+                    );
+                    continue;
+                }
                 // Clean up the manifest + any leftover pre-roll clip.
                 //
                 // ⚠️ ORDER: the history rows are written FIRST (inside
@@ -611,6 +625,16 @@ fn refused_by_the_guard(manifest: &SessionManifest, home: Option<&Path>) -> Opti
     })
 }
 
+/// What one recovery pass over a session achieved.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RecoverOutcome {
+    /// History rows written.
+    pub recovered: usize,
+    /// Deliverables whose files exist but were not valid after the finish, so
+    /// they got no row. The session's manifest must be kept while this is > 0.
+    pub unresolved: usize,
+}
+
 /// Finalise one orphaned session's surviving deliverables into history rows,
 /// against the real home folder. The scan goes through
 /// [`recover_session_for_home`] with the home it was given, so this is what the
@@ -621,7 +645,9 @@ pub(crate) async fn recover_session(
     pool: &SqlitePool,
     manifest: &SessionManifest,
 ) -> usize {
-    recover_session_for_home(app, pool, manifest, path_guard::home_dir().as_deref()).await
+    recover_session_for_home(app, pool, manifest, path_guard::home_dir().as_deref())
+        .await
+        .recovered
 }
 
 /// Finalise one orphaned session's surviving deliverables into history rows,
@@ -631,7 +657,7 @@ async fn recover_session_for_home(
     pool: &SqlitePool,
     manifest: &SessionManifest,
     home: Option<&Path>,
-) -> usize {
+) -> RecoverOutcome {
     recover_session_with(app, pool, manifest, home, &Ffmpeg).await
 }
 
@@ -691,7 +717,7 @@ async fn recover_session_with(
     manifest: &SessionManifest,
     home: Option<&Path>,
     finisher: &impl Finisher,
-) -> usize {
+) -> RecoverOutcome {
     if let Some(refused) = refused_delivery_dir(manifest, home) {
         tracing::warn!(
             session = %manifest.session_id,
@@ -705,10 +731,11 @@ async fn recover_session_with(
             "An interrupted recording was not recovered — its delivery folder is in a \
              protected place.",
         );
-        return 0;
+        return RecoverOutcome::default();
     }
     let recoverable = recoverable_deliverables(manifest, |p| Path::new(p).exists());
     let mut count = 0usize;
+    let mut unresolved = 0usize;
     for (index, dm) in recoverable.iter().enumerate() {
         // The guard, BEFORE anything is finished: finishing a deliverable
         // concatenates its fragments over the primary and then deletes them,
@@ -770,6 +797,7 @@ async fn recover_session_with(
                 &final_path,
                 "Et avbrutt opptak kunne ikke gjenopprettes — filen var ikke spillbar.",
             );
+            unresolved += 1;
             continue;
         }
 
@@ -810,7 +838,10 @@ async fn recover_session_with(
             count += 1;
         }
     }
-    count
+    RecoverOutcome {
+        recovered: count,
+        unresolved,
+    }
 }
 
 #[cfg(test)]
@@ -1233,6 +1264,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn scan_loop_keeps_the_manifest_when_a_deliverable_was_skipped_as_invalid() {
+        // A fragment below the size gate is "not playable": no row. Its manifest is
+        // the only record of where that fragment is, so it must survive for a retry.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        // Second deliverable: present but tiny (0 bytes) → invalid output.
+        tokio::fs::write(&m.deliverables[1].primary_path, b"")
+            .await
+            .unwrap();
+        let manifest_file = write_recorders_manifest(recovery.path(), &m).await;
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 1, "the playable deliverable still gets its row");
+        assert!(
+            manifest_file.exists(),
+            "manifest kept while a deliverable is unresolved"
+        );
+        assert!(Path::new(&m.deliverables[1].primary_path).exists());
+    }
+
+    #[tokio::test]
     async fn scan_loop_ignores_non_json_files() {
         let (pool, _db) = temp_pool().await;
         let recovery = tempfile::tempdir().unwrap();
@@ -1527,7 +1582,9 @@ mod tests {
         write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
 
         let spy = SpyFinisher::default();
-        let n = recover_session_with(None, &pool, &m, Some(home.path()), &spy).await;
+        let n = recover_session_with(None, &pool, &m, Some(home.path()), &spy)
+            .await
+            .recovered;
 
         let asked = spy.asked.lock().unwrap().clone();
         assert_eq!(
@@ -1554,7 +1611,9 @@ mod tests {
 
         let spy = SpyFinisher::default();
         assert_eq!(
-            recover_session_with(None, &pool, &m, Some(home.path()), &spy).await,
+            recover_session_with(None, &pool, &m, Some(home.path()), &spy)
+                .await
+                .recovered,
             2
         );
         let asked = spy.asked.lock().unwrap().clone();
@@ -1763,7 +1822,9 @@ mod tests {
         write_fragment(&secret).await;
         write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
 
-        let n = recover_session_for_home(None, &pool, &m, Some(home.path())).await;
+        let n = recover_session_for_home(None, &pool, &m, Some(home.path()))
+            .await
+            .recovered;
         assert_eq!(n, 1, "only the ordinary deliverable becomes a row");
         let rows = list_recordings(&pool).await.unwrap();
         assert_eq!(rows.len(), 1);
@@ -1788,7 +1849,9 @@ mod tests {
 
         assert_eq!(scan_with_home(&pool, recovery.path(), home.path()).await, 0);
         assert_eq!(
-            recover_session_for_home(None, &pool, &m, Some(home.path())).await,
+            recover_session_for_home(None, &pool, &m, Some(home.path()))
+                .await
+                .recovered,
             0
         );
         assert!(list_recordings(&pool).await.unwrap().is_empty());
