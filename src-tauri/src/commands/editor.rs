@@ -989,9 +989,8 @@ pub async fn editor_delete_sidecar(
 /// The export's «Innhold» card offers it as the title on a feast day. It is
 /// the SAME table the `church` filename pattern names recordings from
 /// (`sundayrec_core::church_calendar`), asked over IPC rather than re-typed in
-/// TypeScript: `legacy/shared/church-calendar.ts` is an older port that
-/// answers in slugs (`1-paaskedag`), and two calendars that disagree about
-/// Easter are worse than one. Featureless — it is a table lookup, not editor
+/// TypeScript (the old slug-answering `shared/church-calendar.ts` port is
+/// gone): two calendars that disagree about Easter are worse than one. Featureless — it is a table lookup, not editor
 /// I/O. `date` is `YYYY-MM-DD`.
 #[tauri::command]
 pub fn editor_church_day_name(date: String) -> Option<String> {

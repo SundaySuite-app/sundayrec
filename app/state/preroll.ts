@@ -20,7 +20,7 @@
  * stedet det kunne glemmes.
  */
 
-import { computed, effect, signal } from "@preact/signals";
+import { effect, signal } from "@preact/signals";
 import {
   decidePreroll,
   planReconcile,
@@ -36,11 +36,6 @@ import { settings } from "./settings";
  *  `false` (ingen enhetstreff, pre-roll av i backendens egen kopi), og en
  *  brikke som påstår noe annet ville vært samme løgn som feilen dette fikser. */
 export const prerollActive = signal(false);
-
-/** Sekundene brikka viser. Avledet, så den aldri kan bli uenig med lagret verdi. */
-export const prerollSeconds = computed(
-  () => settings.value.preRollSeconds ?? 0,
-);
 
 /**
  * Betingelsene, lest ut av signalene. Eksportert fordi den er hele inngangen

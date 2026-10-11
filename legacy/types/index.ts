@@ -32,11 +32,6 @@ export type {
 
 // DeviceChannels / ScheduleSlot / SpecialRecording are generated (re-exported above).
 
-export interface CutRegion {
-  start: number  // seconds
-  end: number    // seconds
-}
-
 export interface RecordingEntry {
   /**
    * The history row's id (`recording.id`). The editor opens a library/history
@@ -76,23 +71,6 @@ export interface RecordingEntry {
 export type Settings = SettingsGen
 
 
-export interface RecordingOpts extends Partial<Settings> {
-  deviceId?: string | null
-  customName?: string
-  overrideName?: string | null
-  splitTimestamp?: string
-  maxMinutes?: number
-  scheduledStopTime?: string
-  channelL?: number
-  channelR?: number
-  /** Internal: prevents infinite sample-rate retry loop */
-  _sampleRateRetried?: boolean
-}
-
-export interface DiskInfo {
-  freeBytes: number | null
-}
-
 export interface WakeResult {
   ok: boolean
   count?: number
@@ -101,18 +79,6 @@ export interface WakeResult {
   message?: string
 }
 
-
-export interface UpdateProgress {
-  percent: number
-  transferred: number
-  total: number
-  bytesPerSecond: number
-}
-
-export interface UpdateInfo {
-  version: string
-  releaseNotes?: string
-}
 
 // ChapterMarker is generated (re-exported above): { time (sec from start of
 // main content), title }.
