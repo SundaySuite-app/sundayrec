@@ -1244,16 +1244,15 @@ fn join(dir: &str, name: &str) -> String {
     }
 }
 
-/// The dynamic export timeout (ms): at least `MAX_EDIT_MS`, scaling to 0.6× the
-/// recording's real-time duration for long multi-pass jobs. Mirrors
-/// `exportEdited`'s `dynamicTimeoutMs`.
+/// Floor for the longest an ffmpeg pass may sit without its output time
+/// advancing.
 pub const MAX_EDIT_MS: u64 = 10 * 60 * 1000;
 
-/// Compute the kill-timer for an export given the source `duration` (seconds).
-pub fn export_timeout_ms(duration: f64) -> u64 {
-    let scaled = (duration * 1000.0 * 0.6).round() as u64;
-    MAX_EDIT_MS.max(scaled)
-}
+/// How long an export pass may make NO progress (ms) before it is killed as
+/// wedged. This replaced a wall-clock cap of 0.6× the content length, which
+/// killed a slow machine's heavy video encode half-way while it was moving
+/// steadily; a stall budget cannot, because every `-progress` tick resets it.
+pub const EXPORT_STALL_MS: u64 = MAX_EDIT_MS;
 
 /// Floor for a non-export editor ffmpeg op. Deliberately generous: a first-open
 /// waveform decode of a cold multi-gigabyte recording on a slow external volume
@@ -3453,19 +3452,6 @@ mod tests {
             ),
             "/a_redigert.mp3"
         );
-    }
-
-    // ── timeout ─────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn export_timeout_floors_at_max_edit_ms() {
-        assert_eq!(export_timeout_ms(10.0), MAX_EDIT_MS);
-    }
-
-    #[test]
-    fn export_timeout_scales_for_long_recordings() {
-        // 4 h = 14400 s → 0.6× = 8640 s = 8_640_000 ms > 600_000 floor.
-        assert_eq!(export_timeout_ms(14400.0), 8_640_000);
     }
 
     #[test]
