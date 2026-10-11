@@ -72,7 +72,7 @@
 //! ## The other half of the contract (stated here so it is one story)
 //!
 //!   - **Data controller: "SundaySuite".**
-//!   - **Fully anonymous.** [`TelemetryPayload::install_id`] is a random UUID v7
+//!   - **Fully anonymous.** [`TelemetryPayload::install_id`] is a random UUID v4
 //!     minted on the machine, never derived from hardware, e-mail, church name or
 //!     a Sunday Account, and never linked to one. Regenerating it (the app's
 //!     "delete my data") makes every future payload a new, unrelated install.
@@ -454,16 +454,24 @@ impl CounterName {
 /// user can edit, and a "random id" that is actually `ola@menighet.no` would
 /// defeat the entire anonymity claim.
 pub fn sanitize_install_id(raw: &str) -> String {
-    let ok = raw.len() == 36
-        && raw.bytes().enumerate().all(|(i, b)| match i {
-            8 | 13 | 18 | 23 => b == b'-',
-            _ => b.is_ascii_hexdigit(),
-        });
-    if ok {
+    if is_install_id_shaped(raw) {
         raw.to_ascii_lowercase()
     } else {
         NIL_INSTALL_ID.to_string()
     }
+}
+
+/// Whether `raw` is exactly the 8-4-4-4-12 hex shape of a UUID.
+///
+/// The one definition of "install-id shaped", shared by the payload sanitizer and
+/// by the deletion URL builder: the id is read back from a database the user can
+/// edit, and it is about to become a URL path segment.
+pub fn is_install_id_shaped(raw: &str) -> bool {
+    raw.len() == 36
+        && raw.bytes().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
 }
 
 /// A version string: the LEADING run of version-shaped characters (ASCII
@@ -671,12 +679,83 @@ fn path_run_end(text: &str, from: usize) -> usize {
             j += USER_PLACEHOLDER.len();
             continue;
         }
-        let Some(c) = rest.chars().next().filter(|c| is_path_body(*c)) else {
+        let Some(c) = rest.chars().next() else { break };
+        if c == ' ' {
+            // A folder or volume name with a space in it (`OneDrive - Bergen
+            // Kirke`, `/Volumes/Menighet Nordstrand`) must not end the run.
+            match spaced_continuation(text, j) {
+                Some(end) => {
+                    j = end;
+                    continue;
+                }
+                None => break,
+            }
+        }
+        if !is_path_body(c) {
             break;
-        };
+        }
         j += c.len_utf8();
     }
     j
+}
+
+/// How many space-separated words past a space [`spaced_continuation`] may look
+/// for the next path separator. `OneDrive - Bergen Kirke\Opptak` needs three.
+const SPACED_LOOKAHEAD_WORDS: usize = 4;
+
+/// If the space at byte `at` sits INSIDE a path — rather than ending it — the
+/// byte offset of the end of the word that proves it.
+///
+/// A path run used to end at the first space, so a directory with one left its
+/// tail on the wire: `…\OneDrive - Bergen Kirke\Opptak\x.wav` became `<path> -
+/// Bergen Kirke\Opptak\x.wav`, and `/Volumes/Menighet Nordstrand/x` became
+/// `<path> Nordstrand/x` — a congregation's name, past a scrubber whose whole job
+/// is keeping that off the wire.
+///
+/// The test is structural, not lexical: the space is inside the path when,
+/// within [`SPACED_LOOKAHEAD_WORDS`] single-space-separated words, one has a
+/// separator (`/` or `\`) INSIDE it — not first, not last. Prose has no such
+/// word: `kunne ikke åpne /tmp/x fordi disken er full` stays a path followed by
+/// a sentence, and a lone `og / eller` is not a separator inside a word. When
+/// the words in between are swallowed with the path, that errs safe: a few
+/// words of message are lost, never a folder name kept.
+///
+/// What this does NOT close is a spaced FILE name with no separator after it
+/// (`Gudstjeneste 9. november.wav`); that boundary stays pinned, and is handled
+/// at the insertion site by [`telemetry_path`].
+fn spaced_continuation(text: &str, at: usize) -> Option<usize> {
+    let mut k = at;
+    for _ in 0..SPACED_LOOKAHEAD_WORDS {
+        // `k` is at a single space; the next word starts after it.
+        let start = k + 1;
+        let mut end = start;
+        while end < text.len() {
+            let rest = &text[end..];
+            if rest.starts_with(USER_PLACEHOLDER) {
+                end += USER_PLACEHOLDER.len();
+                continue;
+            }
+            match rest.chars().next() {
+                Some(c) if is_path_body(c) => end += c.len_utf8(),
+                _ => break,
+            }
+        }
+        if end == start {
+            return None;
+        }
+        let word = &text[start..end];
+        let inner = word
+            .char_indices()
+            .any(|(i, c)| (c == '/' || c == '\\') && i > 0 && i + c.len_utf8() < word.len());
+        if inner {
+            return Some(end);
+        }
+        if !text[end..].starts_with(' ') {
+            return None;
+        }
+        k = end;
+    }
+    None
 }
 
 /// Replace every absolute path in `text` with [`PATH_PLACEHOLDER`], whether it
@@ -2006,7 +2085,7 @@ mod tests {
                  unable to open database file",
                 None,
                 "Failed to setup app: opening database at \
-                 <path> Support/no.sundaysuite.sundayrec/sundayrec.sqlite: \
+                 <path> \
                  unable to open database file",
             ),
         ];
@@ -2029,6 +2108,53 @@ mod tests {
             ] {
                 assert!(!got.contains(needle), "{needle:?} survived in: {got}");
             }
+        }
+    }
+
+    /// A directory or volume name containing a space used to leave its tail on
+    /// the wire (audit 2026-10-05): the run ended at the first space.
+    #[test]
+    fn a_spaced_folder_or_volume_name_does_not_leak_its_tail() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "kunne ikke åpne C:\\Users\\Kari\\OneDrive - Bergen Kirke\\Opptak\\x.wav feilet",
+                "kunne ikke åpne <path> feilet",
+            ),
+            (
+                "write failed: /Volumes/Menighet Nordstrand/Opptak/x.wav",
+                "write failed: <path>",
+            ),
+            (
+                "open(/Volumes/Menighet Nordstrand/x.wav) feilet",
+                "open(<path>) feilet",
+            ),
+        ];
+        for (raw, want) in cases {
+            let got = sanitize_free_text(raw, None, MESSAGE_MAX_CHARS);
+            assert_eq!(&got, want, "input: {raw}");
+            for needle in ["Kirke", "Bergen", "Menighet", "Nordstrand", "Opptak"] {
+                assert!(!got.contains(needle), "{needle:?} survived in: {got}");
+            }
+            assert_eq!(sanitize_free_text(&got, None, MESSAGE_MAX_CHARS), got);
+        }
+    }
+
+    /// The other half: prose after a path is not swallowed, or a crash report
+    /// could no longer tell two crashes apart.
+    #[test]
+    fn a_sentence_after_a_path_survives() {
+        for (raw, want) in [
+            (
+                "kunne ikke åpne /tmp/x fordi disken er full",
+                "kunne ikke åpne <path> fordi disken er full",
+            ),
+            ("lest /tmp/x og / eller y", "lest <path> og / eller y"),
+            (
+                "failed at /tmp/x because the disk is full again today",
+                "failed at <path> because the disk is full again today",
+            ),
+        ] {
+            assert_eq!(sanitize_free_text(raw, None, MESSAGE_MAX_CHARS), want);
         }
     }
 
