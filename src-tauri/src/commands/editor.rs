@@ -810,10 +810,19 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 pub async fn editor_export(
     app: tauri::AppHandle,
     engine: State<'_, ExportEngine>,
+    recorder: State<'_, crate::recorder::engine::RecorderEngine>,
     chosen: State<'_, ChosenPaths>,
     db: State<'_, Db>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
+    // The renderer refuses to start an export while recording, but only at the
+    // click: a stale screen, a second window or a recording that began a
+    // moment later all reach this command. The guard lives here, where it
+    // cannot be walked around. (The other direction — a recording that starts
+    // while an export runs — cancels the export in `RecorderEngine::start`.)
+    if export_blocked_by_recording(recorder.current_state()) {
+        return Err(AppError::Validation("recording_in_progress".into()));
+    }
     // v0.15: hardware video encode is automatic — hardware first where the
     // platform has it, software on a failed render (the `editorHwEncode`
     // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
@@ -1113,6 +1122,13 @@ pub async fn editor_master_cancel(
     job_id: String,
 ) -> AppResult<bool> {
     editor::master_cancel(&engine, &job_id).await
+}
+
+/// Whether the recorder's state forbids starting an export now: a recording is
+/// starting, running, reconnecting or finalising. Idle/stopped/failed are free.
+fn export_blocked_by_recording(state: sundayrec_core::recorder::RecorderState) -> bool {
+    use sundayrec_core::recorder::RecorderState;
+    state.is_active() || state == RecorderState::Stopping
 }
 
 #[cfg(test)]
@@ -1635,6 +1651,23 @@ mod tests {
             code_of(resolve_source(&store, &token).await),
             "source_missing"
         );
+    }
+
+    #[test]
+    fn export_is_refused_while_the_recorder_is_busy() {
+        use sundayrec_core::recorder::RecorderState::*;
+        for busy in [Preparing, Recording, Reconnecting, Stopping] {
+            assert!(export_blocked_by_recording(busy), "{busy:?}");
+        }
+        for free in [Idle, Stopped, Failed] {
+            assert!(!export_blocked_by_recording(free), "{free:?}");
+        }
+        // The refusal has a sentence in the renderer.
+        let export = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/editor/export-core.ts"),
+        )
+        .unwrap();
+        assert!(export.contains("[\"recording_in_progress\", \"errRecordingInProgress\"]"));
     }
 
     #[test]

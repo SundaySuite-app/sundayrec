@@ -778,9 +778,13 @@ pub fn read_sidecar(
 /// `JSON.stringify(_, null, 2)`). Returns whether the write succeeded; a bad
 /// path (escape guard) or an fs error is a clean `false`, never a throw, so the
 /// autosave can fail silently exactly as the Electron handlers did.
+///
+/// Atomic (temp + rename): these are the sidecars a person fills in by hand —
+/// the cuts DRAFT and the metadata — and an autosave killed mid-write must not
+/// leave a truncated file where the last good one was.
 pub fn write_sidecar(media_path: &str, sidecar: EditorSidecar, value: &serde_json::Value) -> bool {
     match serde_json::to_string_pretty(value) {
-        Ok(json) => write_sidecar_raw(media_path, sidecar, &json),
+        Ok(json) => write_sidecar_atomic(media_path, sidecar, &json),
         Err(_) => false,
     }
 }
@@ -790,6 +794,8 @@ pub fn write_sidecar(media_path: &str, sidecar: EditorSidecar, value: &serde_jso
 /// COMPACTLY. Pretty-printing puts one array element per line, which for a 2 h
 /// peaks cache means ~720 000 lines and roughly double the bytes — for a file no
 /// human ever opens.
+// Only the derived-cache writers (feature-on) call it now that `write_sidecar` is atomic.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 fn write_sidecar_raw(media_path: &str, sidecar: EditorSidecar, json: &str) -> bool {
     let Some(path) = resolve_sidecar(media_path, sidecar) else {
         return false;
@@ -1912,6 +1918,25 @@ pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
     }
 }
 
+/// A recording is starting: end any export that is running. The two are both
+/// full-file ffmpeg work on the same CPU and disk, and the recording is the
+/// one that cannot be redone (audit 2026-10: the editor's guard stood only at
+/// the export CLICK, so an export started earlier ran on through the start of a
+/// scheduled recording). Returns whether a render was killed. Best effort — a
+/// recording must start whatever this finds; the cancelled export reports
+/// `cancelled` to its own caller.
+pub async fn cancel_export_for_recording<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri::Manager;
+    let Some(engine) = app.try_state::<ExportEngine>() else {
+        return false;
+    };
+    let killed = cancel_export(&engine).await.unwrap_or(false);
+    if killed {
+        tracing::warn!("a recording is starting: the running export was cancelled");
+    }
+    killed
+}
+
 // ── HARDWARE-UNVERIFIED implementations (feature on) ─────────────────────────────
 
 /// Probe a recording: spawn ffprobe with the core's argv, parse its output with
@@ -2340,6 +2365,25 @@ fn read_segments_cache(
     .then_some(cache.segments)
 }
 
+/// Upper bound for the up-front PCM allocation: 6 h of 16 kHz mono f32 (~1.4 GB).
+/// A bogus probed duration must not turn into a bogus allocation; past this the
+/// `Vec` simply grows as before.
+#[cfg(feature = "editor")]
+const ANALYSIS_PCM_MAX_PREALLOC_SAMPLES: usize = 16_000 * 3600 * 6;
+
+/// Samples to reserve for the analysis buffer, from the byte count the probed
+/// duration implies (s16le: two bytes a sample). `None`/non-finite → no reserve.
+#[cfg(feature = "editor")]
+fn analysis_pcm_capacity(expected_bytes: Option<f64>) -> usize {
+    match expected_bytes {
+        // +1 sample of slack for the carry byte straddling a read.
+        Some(b) if b.is_finite() && b > 0.0 => {
+            (((b / 2.0) as usize).saturating_add(1)).min(ANALYSIS_PCM_MAX_PREALLOC_SAMPLES)
+        }
+        _ => 0,
+    }
+}
+
 /// Decode a recording to the 16 kHz mono f32 PCM the detector works on.
 ///
 /// Split out of [`segments`] (E9) because shadow mode needs the same buffer and
@@ -2392,7 +2436,11 @@ where
 
     // Raw s16le mono → f32 normalised samples for the classifier, folded in as
     // the chunks arrive (a sample can straddle a read, hence the carry byte).
-    let mut pcm: Vec<f32> = Vec::new();
+    //
+    // Sized up front from the probed duration: a `Vec` grown by doubling holds
+    // old and new buffers at once while it reallocates, which at 3 h (~690 MB
+    // of f32) peaked near 1.6 GB.
+    let mut pcm: Vec<f32> = Vec::with_capacity(analysis_pcm_capacity(expected_bytes));
     let mut buf = vec![0u8; 64 * 1024];
     let mut carry: Option<u8> = None;
     let mut read_bytes: u64 = 0;
@@ -3164,6 +3212,12 @@ where
     bail_if_cancelled(engine)?;
     let probed = load_recording(&inputs.source).await.ok();
     let source_rate: Option<u32> = probed.as_ref().and_then(|i| i.sample_rate);
+    // The jingle concat is pinned to the source's rate/layout (audit: a mono
+    // 44.1 kHz intro used to drag the whole export down to mono 44.1 kHz).
+    let concat_format = sundayrec_core::editor::ConcatFormat {
+        sample_rate: source_rate,
+        channels: probed.as_ref().and_then(|i| i.channels),
+    };
 
     // 1c. WHERE it lands, and whether there is room for it.
     //
@@ -3296,8 +3350,9 @@ where
     }
     let pre_filters = build_pre_filters(chain, req.gain_db, preset.as_ref());
 
-    // The kill-timer for EACH ffmpeg pass, from the media it actually renders.
-    let timeout_ms = export_timeout_ms_for(kept_duration);
+    // The stall budget for EACH ffmpeg pass: no progress for this long = wedged.
+    // Deliberately NOT scaled by the media length — see `export_stall_ms`.
+    let timeout_ms = export_stall_ms();
 
     // 2b. HONEST pass 1. The loudness that matters is the loudness of what we
     //     are about to ENCODE — the cut, vocal-chained, gain-shifted signal —
@@ -3328,6 +3383,7 @@ where
             false,
             false,
             req.duration,
+            sundayrec_core::editor::ConcatFormat::default(),
         );
         let measure_args: Vec<String> = vec![
             "-nostdin".into(),
@@ -3356,39 +3412,58 @@ where
             (0.0, 50.0),
         )
         .await?;
-        let measured = sundayrec_core::mastering::parse_loudnorm_json(&stderr)
-            .ok_or_else(|| AppError::Recording("could not parse loudnorm measurement".into()))?;
-        // 2c. What pass 2 can HONESTLY deliver from those numbers (F2-C-B).
-        //     `linear=true` alone was only ever a wish: loudnorm falls back to
-        //     its gain rider whenever the measured range overshoots the preset's
-        //     LRA gate or the gain the target implies would break the true-peak
-        //     ceiling — which is most real sermons. The plan widens the gate
-        //     (inert in linear mode) and, when the ceiling binds, aims at the
-        //     quieter level a single gain can reach and SAYS so.
-        let p2 = plan_pass2(&measured, p);
-        if !p2.linear {
-            tracing::warn!(
-                preset = %p.id,
-                input_i = p2.measured.input_i,
-                input_lra = p2.measured.input_lra,
-                input_tp = p2.measured.input_tp,
-                input_thresh = p2.measured.input_thresh,
-                "loudnorm cannot normalise this measurement linearly — the export \
-                 will be gain-ridden, not one clean gain"
-            );
-        } else if p2.peak_limited {
-            tracing::info!(
-                preset = %p.id,
-                target_lufs = p2.target_lufs,
-                preset_lufs = p2.preset_lufs,
-                input_tp = p2.measured.input_tp,
-                "true-peak ceiling capped the mastering gain — landing quieter \
-                 than the preset asks rather than compressing to reach it"
-            );
+        let measured = match sundayrec_core::mastering::parse_loudnorm_json(&stderr) {
+            Some(m) => Some(m),
+            // Silence has no loudness to normalise: skip the gain and export
+            // the cut as it is, rather than fail the whole export with an error
+            // that blames the measurement.
+            None if sundayrec_core::mastering::loudnorm_measured_silence(&stderr) => {
+                tracing::warn!(
+                    preset = %p.id,
+                    "the export measures as silence — skipping the mastering gain"
+                );
+                on_progress(50.0, EXPORT_PHASE_ENCODING);
+                None
+            }
+            None => {
+                return Err(AppError::Recording(
+                    "could not parse loudnorm measurement".into(),
+                ))
+            }
+        };
+        if let Some(measured) = measured {
+            // 2c. What pass 2 can HONESTLY deliver from those numbers (F2-C-B).
+            //     `linear=true` alone was only ever a wish: loudnorm falls back to
+            //     its gain rider whenever the measured range overshoots the preset's
+            //     LRA gate or the gain the target implies would break the true-peak
+            //     ceiling — which is most real sermons. The plan widens the gate
+            //     (inert in linear mode) and, when the ceiling binds, aims at the
+            //     quieter level a single gain can reach and SAYS so.
+            let p2 = plan_pass2(&measured, p);
+            if !p2.linear {
+                tracing::warn!(
+                    preset = %p.id,
+                    input_i = p2.measured.input_i,
+                    input_lra = p2.measured.input_lra,
+                    input_tp = p2.measured.input_tp,
+                    input_thresh = p2.measured.input_thresh,
+                    "loudnorm cannot normalise this measurement linearly — the export \
+                     will be gain-ridden, not one clean gain"
+                );
+            } else if p2.peak_limited {
+                tracing::info!(
+                    preset = %p.id,
+                    target_lufs = p2.target_lufs,
+                    preset_lufs = p2.preset_lufs,
+                    input_tp = p2.measured.input_tp,
+                    "true-peak ceiling capped the mastering gain — landing quieter \
+                     than the preset asks rather than compressing to reach it"
+                );
+            }
+            plan = Some(p2);
+            proc_filters.push(loudnorm_apply_filter(&p2));
+            on_progress(50.0, EXPORT_PHASE_ENCODING);
         }
-        plan = Some(p2);
-        proc_filters.push(loudnorm_apply_filter(&p2));
-        on_progress(50.0, EXPORT_PHASE_ENCODING);
     }
     // The dither (16-bit PCM targets only) is a POST filter: it must see the
     // finished signal, jingles included, on its way into the encoder.
@@ -3529,6 +3604,7 @@ where
                 has_intro,
                 has_outro,
                 req.duration,
+                concat_format,
             );
             args.extend(["-filter_complex".into(), fc]);
             args.extend(["-map".into(), map]);
@@ -3719,20 +3795,99 @@ fn is_hard_abort(result: &AppResult<String>) -> bool {
     })
 }
 
-/// The export kill-timer in milliseconds: the core's duration-scaled
-/// [`export_timeout_ms`](sundayrec_core::editor::export_timeout_ms), unless
-/// `SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE` names a shorter one.
+/// The export STALL budget in milliseconds: how long a pass may go without its
+/// output time advancing before it is killed as wedged (see
+/// [`pump_export_progress`]). Not a wall-clock cap on the render — that was
+/// 0.6× the content length, which killed a slow machine's heavy video encode
+/// half-way while it was making steady progress.
+///
+/// `SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE` names a different budget.
 ///
 /// The override exists for the real-ffmpeg smoke test, which has to prove the
-/// timeout path actually kills the child — waiting out the 10-minute floor to
+/// timeout path actually kills the child — waiting out the 10-minute budget to
 /// learn that is not a test anyone runs. Never set in production.
 #[cfg(feature = "editor")]
-fn export_timeout_ms_for(kept_duration: f64) -> u64 {
+fn export_stall_ms() -> u64 {
     std::env::var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE")
         .ok()
         .and_then(|v| v.trim().parse::<u64>().ok())
         .filter(|ms| *ms > 0)
-        .unwrap_or_else(|| sundayrec_core::editor::export_timeout_ms(kept_duration))
+        .unwrap_or(sundayrec_core::editor::EXPORT_STALL_MS)
+}
+
+/// How a progress pump ended.
+#[cfg(feature = "editor")]
+#[derive(Debug, PartialEq, Eq)]
+enum PumpEnd {
+    /// The stream closed (ffmpeg exited or closed stdout).
+    Eof,
+    /// No forward progress within the stall budget.
+    Stalled,
+}
+
+/// Read ffmpeg's `-progress` stream, reporting percentages, until it closes or
+/// stalls. "Stalled" means the OUTPUT TIME has not advanced for `stall` — not
+/// that the pass has run long. A render that is slow but moving is never killed;
+/// one that is wedged (or that keeps printing `N/A`) is.
+#[cfg(feature = "editor")]
+async fn pump_export_progress<R, F>(
+    out: &mut R,
+    stall: std::time::Duration,
+    total_sec: f64,
+    span: (f32, f32),
+    phase: &str,
+    on_progress: &F,
+) -> PumpEnd
+where
+    R: tokio::io::AsyncRead + Unpin,
+    F: Fn(f32, &str),
+{
+    use sundayrec_core::mastering::parse_progress_time;
+    use tokio::io::AsyncReadExt;
+
+    let mut buf = String::new();
+    let mut chunk = [0u8; 4096];
+    let mut last_pct = 0.0f32;
+    let mut best_time = f64::NEG_INFINITY;
+    let mut last_advance = std::time::Instant::now();
+    loop {
+        let remaining = stall.saturating_sub(last_advance.elapsed());
+        if remaining.is_zero() {
+            return PumpEnd::Stalled;
+        }
+        match tokio::time::timeout(remaining, out.read(&mut chunk)).await {
+            Err(_elapsed) => return PumpEnd::Stalled,
+            Ok(Ok(0)) | Ok(Err(_)) => return PumpEnd::Eof,
+            Ok(Ok(n)) => buf.push_str(&String::from_utf8_lossy(&chunk[..n])),
+        }
+        // Consume COMPLETE lines only, leaving any partial tail for the
+        // next read. Re-scanning an accumulating buffer (what the
+        // mastering loop does) always re-reports the FIRST out_time in
+        // it, which freezes the bar for the first ~30 ticks.
+        while let Some(nl) = buf.find('\n') {
+            let line: String = buf.drain(..=nl).collect();
+            let Some(cur) = parse_progress_time(&line) else {
+                continue;
+            };
+            if cur > best_time {
+                best_time = cur;
+                last_advance = std::time::Instant::now();
+            }
+            if total_sec <= 0.0 {
+                continue;
+            }
+            // This pass's fraction, mapped onto its slice of the bar.
+            // The final slice stops at 99: the output isn't usable until
+            // ffmpeg exits and the container is finalised, so 100
+            // belongs to the caller.
+            let frac = (cur / total_sec).clamp(0.0, 1.0) as f32;
+            let pct = (span.0 + frac * (span.1 - span.0)).clamp(0.0, 99.0);
+            if pct > last_pct {
+                last_pct = pct;
+                on_progress(pct, phase);
+            }
+        }
+    }
 }
 
 /// Spawn one export ffmpeg pass, stream its `-progress` to `on_progress`, and
@@ -3759,7 +3914,6 @@ async fn run_export_ffmpeg<F>(
 where
     F: Fn(f32, &str),
 {
-    use sundayrec_core::mastering::parse_progress_time;
     use tokio::io::AsyncReadExt;
 
     // The one gate every export pass goes through: never spawn a render the
@@ -3812,65 +3966,43 @@ where
         }
     }
 
-    // The whole read-then-wait is under the kill-timer: if ffmpeg wedges, the
-    // stdout read never returns EOF, so timing only the `wait()` would hang.
-    let waited = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
+    // Read-then-wait under the STALL timer: if ffmpeg wedges, the stdout read
+    // never returns EOF, so timing only the `wait()` would hang. Progress resets
+    // the timer; see [`pump_export_progress`].
+    let stall = std::time::Duration::from_millis(timeout_ms);
+    let waited: Result<AppResult<std::process::ExitStatus>, ()> = async {
         if let Some(mut out) = stdout.take() {
-            let mut buf = String::new();
-            let mut chunk = [0u8; 4096];
-            let mut last_pct = 0.0f32;
-            loop {
-                match out.read(&mut chunk).await {
-                    Ok(0) => break,
-                    Ok(n) => buf.push_str(&String::from_utf8_lossy(&chunk[..n])),
-                    Err(_) => break,
-                }
-                // Consume COMPLETE lines only, leaving any partial tail for the
-                // next read. Re-scanning an accumulating buffer (what the
-                // mastering loop does) always re-reports the FIRST out_time in
-                // it, which freezes the bar for the first ~30 ticks.
-                while let Some(nl) = buf.find('\n') {
-                    let line: String = buf.drain(..=nl).collect();
-                    let Some(cur) = parse_progress_time(&line) else {
-                        continue;
-                    };
-                    if total_sec <= 0.0 {
-                        continue;
-                    }
-                    // This pass's fraction, mapped onto its slice of the bar.
-                    // The final slice stops at 99: the output isn't usable until
-                    // ffmpeg exits and the container is finalised, so 100
-                    // belongs to the caller.
-                    let frac = (cur / total_sec).clamp(0.0, 1.0) as f32;
-                    let pct = (span.0 + frac * (span.1 - span.0)).clamp(0.0, 99.0);
-                    if pct > last_pct {
-                        last_pct = pct;
-                        on_progress(pct, phase);
-                    }
-                }
+            if pump_export_progress(&mut out, stall, total_sec, span, phase, on_progress).await
+                == PumpEnd::Stalled
+            {
+                return Err(());
             }
         }
-        // Reclaim the child to await its exit. Gone = a cancel took it.
+        // Reclaim the child to await its exit. Gone = a cancel took it. After
+        // EOF an exit is imminent; a child that holds on is wedged too.
         match engine.take() {
-            Some(mut c) => c
-                .wait()
-                .await
-                .map_err(|e| AppError::Recording(format!("export wait: {e}"))),
-            None => Err(AppError::Recording("cancelled".into())),
+            Some(mut c) => match tokio::time::timeout(stall, c.wait()).await {
+                Ok(r) => Ok(r.map_err(|e| AppError::Recording(format!("export wait: {e}")))),
+                Err(_elapsed) => {
+                    let _ = c.kill().await;
+                    Err(())
+                }
+            },
+            None => Ok(Err(AppError::Recording("cancelled".into()))),
         }
-    })
+    }
     .await;
 
     let status = match waited {
         Ok(r) => r?,
-        Err(_elapsed) => {
+        Err(()) => {
             // Kill the child ourselves so no ffmpeg outlives the abandoned
             // export (`kill()` also reaps it — no zombie).
             if let Some(mut c) = engine.take() {
                 let _ = c.kill().await;
             }
             let tail = stderr_task.await.unwrap_or_default();
-            tracing::warn!(timeout_ms, tail = %tail, "export exceeded its kill-timer");
+            tracing::warn!(stall_ms = timeout_ms, tail = %tail, "export made no progress within its stall budget");
             // The renderer maps the bare code to a friendly Norwegian sentence.
             return Err(AppError::Recording("timeout".into()));
         }
@@ -4129,6 +4261,145 @@ mod tests {
     // ffmpeg-driven entry points are HARDWARE-UNVERIFIED — feature-off they
     // return `feature_disabled` (tested here), feature-on they are proven only
     // in the smoke test.
+
+    /// The cuts draft is hand work: it is replaced by rename, never truncated in
+    /// place (a new inode proves the former), and no temp is left behind.
+    #[cfg(unix)]
+    #[test]
+    fn write_sidecar_replaces_the_file_atomically() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::tempdir().unwrap();
+        let media = dir.path().join("preken.wav").to_string_lossy().into_owned();
+        let first = serde_json::json!({ "cuts": [1] });
+        assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &first));
+        let path = resolve_sidecar(&media, EditorSidecar::CutsDraft).unwrap();
+        let ino_before = std::fs::metadata(&path).unwrap().ino();
+
+        let second = serde_json::json!({ "cuts": [1, 2] });
+        assert!(write_sidecar(&media, EditorSidecar::CutsDraft, &second));
+        assert_ne!(
+            std::fs::metadata(&path).unwrap().ino(),
+            ino_before,
+            "truncated in place instead of replaced by rename"
+        );
+        assert_eq!(
+            read_sidecar(&media, EditorSidecar::CutsDraft).unwrap(),
+            Some(second)
+        );
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 1, "a temp was left behind: {names:?}");
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    fn analysis_pcm_is_preallocated_from_the_probed_duration() {
+        // 3 h at 16 kHz mono s16le: the reserve is the sample count, not 0.
+        let bytes = 3.0 * 3600.0 * 16_000.0 * 2.0;
+        assert_eq!(analysis_pcm_capacity(Some(bytes)), 172_800_001);
+        // No usable duration → no reserve; a bogus one is capped, not honoured.
+        assert_eq!(analysis_pcm_capacity(None), 0);
+        assert_eq!(analysis_pcm_capacity(Some(f64::NAN)), 0);
+        assert_eq!(
+            analysis_pcm_capacity(Some(1e15)),
+            ANALYSIS_PCM_MAX_PREALLOC_SAMPLES
+        );
+    }
+
+    /// Drive `pump_export_progress` with a writer that emits `ticks` progress
+    /// blocks `every` apart, then (if `then_hang`) goes silent without closing.
+    #[cfg(feature = "editor")]
+    async fn pump_with(
+        stall_ms: u64,
+        ticks: &[f64],
+        every_ms: u64,
+        then_hang: bool,
+    ) -> (PumpEnd, std::time::Duration) {
+        use tokio::io::AsyncWriteExt;
+        let (mut tx, mut rx) = tokio::io::duplex(1024);
+        let ticks = ticks.to_vec();
+        let writer = tokio::spawn(async move {
+            for t in ticks {
+                let us = (t * 1_000_000.0) as u64;
+                let block = format!("out_time_ms={us}\nprogress=continue\n");
+                if tx.write_all(block.as_bytes()).await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(every_ms)).await;
+            }
+            if then_hang {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+            // Dropping `tx` closes the stream.
+        });
+        let started = std::time::Instant::now();
+        let end = pump_export_progress(
+            &mut rx,
+            std::time::Duration::from_millis(stall_ms),
+            100.0,
+            (0.0, 99.0),
+            "encoding",
+            &|_, _| {},
+        )
+        .await;
+        writer.abort();
+        (end, started.elapsed())
+    }
+
+    // `mock_app` is not built on Windows (see Cargo.toml), nor is `sleep`.
+    #[cfg(all(feature = "editor", unix))]
+    #[tokio::test]
+    async fn a_starting_recording_kills_the_running_export() {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        // No engine managed / nothing running: a quiet no-op.
+        assert!(!cancel_export_for_recording(handle).await);
+
+        handle.manage(ExportEngine::new());
+        assert!(!cancel_export_for_recording(handle).await);
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        handle.state::<ExportEngine>().hold(child);
+        assert!(cancel_export_for_recording(handle).await);
+        // The render is gone and the export's own cancel check sees why.
+        assert!(handle.state::<ExportEngine>().take().is_none());
+        assert!(handle.state::<ExportEngine>().is_cancelled());
+    }
+
+    #[cfg(feature = "editor")]
+    #[tokio::test]
+    async fn a_slow_but_moving_export_is_never_killed() {
+        // 8 ticks 80 ms apart = ~640 ms in all: far past the 300 ms stall
+        // budget, but the output time advances every tick. The old wall-clock
+        // cap would have fired.
+        let ticks: Vec<f64> = (1..=8).map(f64::from).collect();
+        let (end, took) = pump_with(300, &ticks, 80, false).await;
+        assert_eq!(end, PumpEnd::Eof);
+        assert!(took.as_millis() >= 560, "{took:?}");
+    }
+
+    #[cfg(feature = "editor")]
+    #[tokio::test]
+    async fn a_wedged_export_is_killed_after_the_stall_budget() {
+        let (end, took) = pump_with(200, &[1.0, 2.0], 20, true).await;
+        assert_eq!(end, PumpEnd::Stalled);
+        assert!(took.as_millis() < 2_000, "{took:?}");
+    }
+
+    #[cfg(feature = "editor")]
+    #[tokio::test]
+    async fn progress_lines_that_do_not_advance_still_stall() {
+        // ffmpeg keeps printing but the output time is frozen.
+        let (end, _) = pump_with(250, &[5.0; 40], 30, true).await;
+        assert_eq!(end, PumpEnd::Stalled);
+    }
 
     #[cfg(not(feature = "editor"))]
     #[tokio::test]

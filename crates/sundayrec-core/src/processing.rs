@@ -84,6 +84,14 @@ fn db_to_linear(db: f64) -> f64 {
 /// time constant, but NOT for a linear amplitude: `db_to_linear(-70)` is
 /// 0.000316, which rounds to `"0"`. That is why a dB value is printed as a dB
 /// value with the suffix (see the units note above) and never pre-converted.
+fn finite_or(v: f64, default: f64) -> f64 {
+    if v.is_finite() {
+        v
+    } else {
+        default
+    }
+}
+
 fn coef(v: f64) -> String {
     let s = format!("{v:.3}");
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
@@ -572,11 +580,14 @@ impl VocalChain {
             // NO `dB` suffix: `afftdn`'s `nr`/`nf` are already denominated in dB
             // (`nr` 0.01…97, `nf` −80…−20), so the bare number IS the dB value.
             // See the units note at the top of this file.
-            f.push(format!(
-                "afftdn=nr={}:nf={}:tn=1",
-                coef(self.denoise.reduction_db),
-                coef(self.denoise.noise_floor_db)
-            ));
+            //
+            // Clamped to the ranges ffmpeg accepts: the editor sliders reach
+            // `nr` 0 and `nf` −10, both of which make `afftdn` refuse to start
+            // (exit 222) and kill the whole export. A non-finite value takes
+            // the preset default rather than rendering `NaN`.
+            let nr = finite_or(self.denoise.reduction_db, 12.0).clamp(0.01, 97.0);
+            let nf = finite_or(self.denoise.noise_floor_db, -25.0).clamp(-80.0, -20.0);
+            f.push(format!("afftdn=nr={}:nf={}:tn=1", coef(nr), coef(nf)));
         }
         if self.dereverb.enabled {
             // Map strength 0..1 → a gentle downward expander. Higher strength =
@@ -1571,6 +1582,23 @@ mod tests {
         // No measurement / non-finite → default to podcast.
         assert_eq!(recommend_vocal_preset(None), "voice-podcast");
         assert_eq!(recommend_vocal_preset(Some(f64::NAN)), "voice-podcast");
+    }
+
+    #[test]
+    fn denoise_sliders_are_clamped_to_what_afftdn_accepts() {
+        // The editor sliders reach nr 0 and nf −10; ffmpeg exits 222 on both.
+        let render = |reduction_db: f64, noise_floor_db: f64| {
+            only(|c| {
+                c.denoise = DenoiseStage {
+                    enabled: true,
+                    reduction_db,
+                    noise_floor_db,
+                }
+            })
+        };
+        assert_eq!(render(0.0, -10.0), vec!["afftdn=nr=0.01:nf=-20:tn=1"]);
+        assert_eq!(render(200.0, -300.0), vec!["afftdn=nr=97:nf=-80:tn=1"]);
+        assert_eq!(render(f64::NAN, f64::NAN), vec!["afftdn=nr=12:nf=-25:tn=1"]);
     }
 
     // ── T5: a real measurement must reach `afftdn:nf`, not the −25 guess ────────
