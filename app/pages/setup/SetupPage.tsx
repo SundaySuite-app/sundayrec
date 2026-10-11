@@ -50,10 +50,6 @@ import styles from "./setup.module.css";
  *  første-gangs-sekvensen og `decisions-core` bruker. */
 export type SetupTab = "sound" | "folder" | "quality" | "church" | "notify";
 
-/** Den gamle System-fanen. Rendrer nøyaktig det samme som ingen fane gjør —
- *  flaten er én — men id-en består, fordi dyplenken gjør det. */
-export const ADVANCED_TAB = "advanced";
-
 export function isSetupTab(tab: string | undefined): tab is SetupTab {
   return (
     tab === "sound" ||
