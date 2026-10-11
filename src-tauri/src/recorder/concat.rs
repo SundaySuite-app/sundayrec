@@ -406,7 +406,9 @@ where
 /// its directory entry survive a power cut. The directory sync is skipped on
 /// Windows, where a directory cannot be opened as a plain file.
 async fn sync_file_and_dir(path: &Path) -> std::io::Result<()> {
-    let f = tokio::fs::File::open(path).await?;
+    // Opened for WRITE (without truncating): on Windows FlushFileBuffers needs a
+    // handle with write access and fails with ACCESS_DENIED on a read-only one.
+    let f = tokio::fs::OpenOptions::new().write(true).open(path).await?;
     f.sync_all().await?;
     drop(f);
     #[cfg(unix)]
