@@ -342,6 +342,7 @@ const EVENT_MAP: Record<string, string> = {
   "vu-levels": "vu://levels",
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
+  "recording-device-substituted": "recording://device-substituted",
   "master-progress": "editor-master-progress",
   "editor-export-progress": "editor://export-progress",
   // Fase 9: the three editor passes that used to run for minutes behind a

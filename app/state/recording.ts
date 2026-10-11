@@ -42,6 +42,8 @@ import { liveFromRecordingState } from "@lib/preroll-lifecycle-core";
 import type { RecorderState } from "@legacy/bindings/RecorderState";
 
 import { levelWordFor } from "../audio/level-words";
+import { tf } from "../i18n";
+import { toast } from "../ui/toast";
 import { raiseBanner } from "./banners";
 import {
   snapshotStillApplies,
@@ -434,6 +436,16 @@ export function initRecording(): () => void {
       //     er dens egen kvittering på at den er tilbake,
       //   • og et kryss, fordi den som hører at lyden er tilbake har rett.
       reconnecting.value = true;
+    }),
+    // Et START-treff som endte på en ANNEN enhet enn den lagrede (ordoverlapp,
+    // ikke samme navn). Ikke-terminalt og IKKE en gjenkobling: ingen
+    // `reconnecting`, ingen banner — bare en toast, og opptaket går videre.
+    window.api.on("recording-device-substituted", (data: unknown) => {
+      const device = (data as { message?: string } | undefined)?.message;
+      if (!device) return;
+      toast("warn", tf("recording.deviceSubstituted", { device }), {
+        durationMs: 12_000,
+      });
     }),
     window.api.on("recording-reconnecting", () => {
       reconnecting.value = true;

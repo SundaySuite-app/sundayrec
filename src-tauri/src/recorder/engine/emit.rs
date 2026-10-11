@@ -6,7 +6,28 @@ use sundayrec_core::alerts::AlertText;
 use tauri::{AppHandle, Emitter};
 
 use super::payloads::RecordingEvent;
-use super::{ERROR_EVENT, WARNING_EVENT};
+use super::{DEVICE_SUBSTITUTED_EVENT, ERROR_EVENT, WARNING_EVENT};
+
+/// The notice for a START that opened a different device than the stored one, or
+/// `None` when it is the same device (or nothing was stored). `message` carries
+/// the device that was ACTUALLY opened; the renderer words the sentence.
+pub(crate) fn device_substitution_notice(requested: &str, opened: &str) -> Option<RecordingEvent> {
+    sundayrec_core::device_match::is_device_substitution(requested, opened).then(|| {
+        RecordingEvent {
+            code: "device_substituted".to_string(),
+            message: opened.to_string(),
+        }
+    })
+}
+
+/// Announce a loose start match on [`DEVICE_SUBSTITUTED_EVENT`] (non-blocking
+/// toast in the renderer; the recording carries on).
+pub(crate) fn emit_device_substitution(app: &AppHandle, requested: &str, opened: &str) {
+    if let Some(ev) = device_substitution_notice(requested, opened) {
+        tracing::warn!(%requested, %opened, "recorder: start opened a different device than the stored one");
+        let _ = app.emit(DEVICE_SUBSTITUTED_EVENT, ev);
+    }
+}
 
 /// The `recording://reconnecting` message for this attempt.
 ///
@@ -117,6 +138,19 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_loose_start_match_is_announced_with_the_device_that_opened() {
+        let ev = device_substitution_notice(
+            "Microphone (USB Audio CODEC)",
+            "Microphone Array (Realtek(R) Audio)",
+        )
+        .expect("a different device must be announced");
+        assert_eq!(ev.code, "device_substituted");
+        assert_eq!(ev.message, "Microphone Array (Realtek(R) Audio)");
+        assert!(device_substitution_notice("Behringer UMC204HD", "behringer umc204hd").is_none());
+        assert!(device_substitution_notice("", "Built-in Microphone").is_none());
+    }
 
     #[test]
     fn reconnecting_message_promises_no_denominator() {

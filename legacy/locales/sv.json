@@ -1029,6 +1029,7 @@
     "crMonoMix": "Mixa till mono"
   },
   "recording": {
+    "deviceSubstituted": "Inspelningen använder ”{device}”, inte den enhet du valde. Kontrollera att det är rätt mikrofon.",
     "live": "SPELAR IN NU",
     "filesize": "filstorlek",
     "diskLeft": "kvarvarande diskutrymme",

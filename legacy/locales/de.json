@@ -1029,6 +1029,7 @@
     "crMonoMix": "Zu Mono mischen"
   },
   "recording": {
+    "deviceSubstituted": "Aufnahme von „{device}“, nicht vom gewählten Gerät. Prüfen Sie, ob es das richtige Mikrofon ist.",
     "live": "AUFNAHME LÄUFT",
     "filesize": "Dateigröße",
     "diskLeft": "Speicherplatz übrig",

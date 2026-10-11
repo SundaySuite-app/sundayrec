@@ -177,6 +177,41 @@ fn reconnect_names_match(a: &str, b: &str) -> bool {
     names_match_exactly(&strip_port_prefixes(a), &strip_port_prefixes(b))
 }
 
+/// `true` when a START opened `opened` although the user stored `requested`, and
+/// it may be a DIFFERENT device: only the ladder's word-overlap / brand-word
+/// strategies (4 and 5 in [`find_best_device_match`]) land here, e.g. a stored USB
+/// mixer label that settled for the laptop mic on a shared word — the recording
+/// would come from a microphone the user did not pick, and a stored Web-Audio
+/// label is the normal case for the looser substring strategies, so those (one
+/// name containing the other, as long as the contained part is more than generic
+/// vocabulary like "microphone") are NOT flagged. The Windows port prefix is
+/// ignored, and an empty `requested` (system default) is never a substitution.
+pub fn is_device_substitution(requested: &str, opened: &str) -> bool {
+    if requested.trim().is_empty() || reconnect_names_match(requested, opened) {
+        return false;
+    }
+    let (r, o) = (
+        requested.trim().to_lowercase(),
+        opened.trim().to_lowercase(),
+    );
+    let contained = if o.contains(&r) {
+        Some(&r)
+    } else if r.contains(&o) {
+        Some(&o)
+    } else {
+        None
+    };
+    match contained {
+        // Generic-only = every token is vocabulary ("microphone", "usb audio");
+        // a short model name like "Qu-5" is NOT generic.
+        Some(inner) => inner
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .all(is_generic),
+        None => true,
+    }
+}
+
 /// RECONNECT lookup: only a device whose name equals `name` (case-insensitive,
 /// trimmed) counts as "the same device is back".
 ///
@@ -455,5 +490,36 @@ mod tests {
         let got = find_best_device_match(&devs, "Built-in Mic").unwrap();
         assert_eq!(got.format, "avfoundation");
         assert_eq!(got.index, Some(1));
+    }
+
+    #[test]
+    fn a_loose_start_match_is_a_substitution_but_a_port_move_is_not() {
+        // The ladder picked the laptop mic for a stored USB mixer label.
+        assert!(is_device_substitution(
+            "Microphone (USB Audio CODEC)",
+            "Microphone Array (Realtek(R) Audio)"
+        ));
+        // Same device, case/whitespace or Windows port number differences.
+        assert!(!is_device_substitution(
+            " behringer umc204hd ",
+            "BEHRINGER UMC204HD"
+        ));
+        assert!(!is_device_substitution(
+            "Microphone (USB Audio CODEC)",
+            "Microphone (2- USB Audio CODEC)"
+        ));
+        // A stored label that is a part of the real name is the same device...
+        assert!(!is_device_substitution(
+            "Qu-5",
+            "Allen & Heath Qu-5 (USB Audio)"
+        ));
+        // ...unless that part is only generic vocabulary.
+        assert!(is_device_substitution(
+            "Microphone",
+            "Microphone Array (Realtek(R) Audio)"
+        ));
+        // System default: nothing was stored, nothing was substituted.
+        assert!(!is_device_substitution("", "Built-in Microphone"));
+        assert!(!is_device_substitution("   ", "Built-in Microphone"));
     }
 }
