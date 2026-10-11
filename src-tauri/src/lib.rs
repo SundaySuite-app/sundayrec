@@ -425,6 +425,12 @@ pub fn run() {
             if local_dir != roaming_dir {
                 util::move_once_best_effort(&roaming_dir.join("tmp"), &tmp_dir);
             }
+            // A crash mid-service leaves the rolling segments behind; nothing
+            // writes yet, so everything matching is an orphan.
+            let swept = recorder::preroll::sweep_stale_preroll_files(&tmp_dir);
+            if swept > 0 {
+                tracing::info!(swept, "startup: removed stale pre-roll segments");
+            }
             app.manage(recorder::preroll::PrerollEngine::new(tmp_dir));
 
             // Launch the scheduler supervisor now that the db pool + recorder
