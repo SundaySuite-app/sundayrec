@@ -307,6 +307,7 @@ impl VideoCapture {
     /// The crash-recovery manifest to persist once the capture is live.
     pub(crate) fn manifest(&self) -> SessionManifest {
         SessionManifest {
+            recovery_attempts: 0,
             session_id: self.session_id.clone(),
             device_name: self.device_name.clone(),
             session_start_ms: self.started_ms,

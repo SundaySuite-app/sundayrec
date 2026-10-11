@@ -471,6 +471,7 @@ impl HeadlessSession {
     pub fn manifest(&self, delivery_ext: &str) -> sundayrec_core::recovery::SessionManifest {
         use sundayrec_core::recovery::{AudioEncodeManifest, DeliverableManifest, SessionManifest};
         SessionManifest {
+            recovery_attempts: 0,
             session_id: self.start_ms.to_string(),
             device_name: "lavfi".into(),
             session_start_ms: self.start_ms,
@@ -1124,6 +1125,7 @@ mod tests {
         // 4. And it is RETRYABLE: the next launch's recovery scan finishes the
         //    job from the surviving capture.
         let manifest = sundayrec_core::recovery::SessionManifest {
+            recovery_attempts: 0,
             session_id: "kill-delivery".into(),
             device_name: "lavfi".into(),
             session_start_ms: deliverable.started_at_ms,

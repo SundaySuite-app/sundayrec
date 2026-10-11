@@ -152,6 +152,13 @@ pub struct SessionManifest {
     pub delivery_encode: Option<AudioEncodeManifest>,
     /// Every deliverable's layout, in order.
     pub deliverables: Vec<DeliverableManifest>,
+    /// How many startup recovery passes ended with a deliverable that could not be
+    /// finished (its file stayed unplayable). Written back by the scan so a
+    /// deliverable that can never become valid is retried a bounded number of
+    /// times instead of at every launch forever. `#[serde(default)]` so older
+    /// manifests deserialise as 0.
+    #[serde(default)]
+    pub recovery_attempts: u32,
 }
 
 impl SessionManifest {
@@ -237,6 +244,7 @@ mod tests {
 
     fn manifest() -> SessionManifest {
         SessionManifest {
+            recovery_attempts: 0,
             session_id: "1700000000000-sermon".into(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: 1_700_000_000_000,
@@ -424,6 +432,7 @@ mod tests {
         // A 3-fragment deliverable loses its MIDDLE fragment: the surviving two are
         // kept in their original order and the primary stays the first survivor.
         let m = SessionManifest {
+            recovery_attempts: 0,
             session_id: "s".into(),
             device_name: "dev".into(),
             session_start_ms: 0,
@@ -455,6 +464,7 @@ mod tests {
     #[test]
     fn empty_manifest_has_nothing_to_recover() {
         let m = SessionManifest {
+            recovery_attempts: 0,
             session_id: "empty".into(),
             device_name: "dev".into(),
             session_start_ms: 0,
@@ -471,6 +481,7 @@ mod tests {
         // A zero-fragment deliverable can never yield a survivor (no first() →
         // filtered out) regardless of the existence predicate.
         let m = SessionManifest {
+            recovery_attempts: 0,
             session_id: "s".into(),
             device_name: "dev".into(),
             session_start_ms: 0,

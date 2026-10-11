@@ -406,13 +406,17 @@ pub(crate) async fn scan_recovery_dir(
                 // Its fragments are the only copy of that audio, and this
                 // manifest is the only record of where they are — deleting it
                 // would orphan them. Keep it (and the clip + capture folder the
-                // retry needs); the next launch tries again.
+                // retry needs) for another try at the next launch, but only a
+                // bounded number of times: a file that can never become valid
+                // must not cost a warning and an ffmpeg run at EVERY start.
                 if outcome.unresolved > 0 {
                     tracing::warn!(
                         session = %manifest.session_id,
                         unresolved = outcome.unresolved,
-                        "recovery: a deliverable could not be finished — keeping the manifest for the next launch"
+                        attempt = manifest.recovery_attempts + 1,
+                        "recovery: a deliverable could not be finished — keeping the manifest"
                     );
+                    count_failed_attempt(&path, &manifest).await;
                     continue;
                 }
                 // Clean up the manifest + any leftover pre-roll clip.
@@ -625,6 +629,50 @@ fn refused_by_the_guard(manifest: &SessionManifest, home: Option<&Path>) -> Opti
     })
 }
 
+/// How many launches may try to finish a session whose deliverable stays
+/// unplayable before its manifest is parked in [`UNRESOLVED_DIR`].
+pub(crate) const MAX_RECOVERY_ATTEMPTS: u32 = 3;
+
+/// Sub-folder of the manifest folder where a session recovery gave up on is
+/// parked. Its fragments stay on disk where they were; the manifest (the record
+/// of where they are) is kept for support, but the scan no longer reads it —
+/// `scan_recovery_dir` and `pending_windows_in` only look at `*.json` directly
+/// in the folder.
+pub(crate) const UNRESOLVED_DIR: &str = "unresolved";
+
+/// One more startup pass ended with `manifest` still unresolved. Write the count
+/// back into the manifest, or — at [`MAX_RECOVERY_ATTEMPTS`] — move it to
+/// [`UNRESOLVED_DIR`] next to it. Best-effort: a failure leaves the manifest
+/// where it is (it will simply be tried again).
+async fn count_failed_attempt(path: &Path, manifest: &SessionManifest) {
+    let attempts = manifest.recovery_attempts.saturating_add(1);
+    if attempts >= MAX_RECOVERY_ATTEMPTS {
+        let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+            return;
+        };
+        let parked = dir.join(UNRESOLVED_DIR);
+        if tokio::fs::create_dir_all(&parked).await.is_ok()
+            && tokio::fs::rename(path, parked.join(name)).await.is_ok()
+        {
+            tracing::warn!(
+                session = %manifest.session_id,
+                attempts,
+                "recovery: giving up — manifest parked in {UNRESOLVED_DIR}/, fragments left where they are"
+            );
+        }
+        return;
+    }
+    let counted = SessionManifest {
+        recovery_attempts: attempts,
+        ..manifest.clone()
+    };
+    if let Ok(body) = counted.to_json() {
+        if let Err(e) = crate::util::write_atomic_async(path, body.as_bytes()).await {
+            tracing::debug!("recovery: could not record the failed attempt: {e}");
+        }
+    }
+}
+
 /// What one recovery pass over a session achieved.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RecoverOutcome {
@@ -791,12 +839,15 @@ async fn recover_session_with(
 
         if !output_is_valid(Path::new(&final_path)).await {
             tracing::warn!(file = %final_path, "recovery: finished file invalid — skipping history row");
-            warn_recovery_skipped(
-                app,
-                "invalid_output",
-                &final_path,
-                "Et avbrutt opptak kunne ikke gjenopprettes — filen var ikke spillbar.",
-            );
+            // Said once: a retry of the same session at a later launch is silent.
+            if manifest.recovery_attempts == 0 {
+                warn_recovery_skipped(
+                    app,
+                    "invalid_output",
+                    &final_path,
+                    "Et avbrutt opptak kunne ikke gjenopprettes — filen var ikke spillbar.",
+                );
+            }
             unresolved += 1;
             continue;
         }
@@ -878,6 +929,7 @@ mod tests {
         let a = dir.join("sermon.m4a").to_string_lossy().into_owned();
         let b = dir.join("sermon_2.m4a").to_string_lossy().into_owned();
         SessionManifest {
+            recovery_attempts: 0,
             session_id: "1700000000000".into(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: 1_700_000_000_000,
@@ -1118,6 +1170,7 @@ mod tests {
     async fn recover_session_on_empty_manifest_is_a_noop() {
         let (pool, _db) = temp_pool().await;
         let m = SessionManifest {
+            recovery_attempts: 0,
             session_id: "empty".into(),
             device_name: "dev".into(),
             session_start_ms: 0,
@@ -1285,6 +1338,53 @@ mod tests {
             "manifest kept while a deliverable is unresolved"
         );
         assert!(Path::new(&m.deliverables[1].primary_path).exists());
+    }
+
+    #[tokio::test]
+    async fn a_deliverable_that_never_becomes_valid_is_retried_a_bounded_number_of_times() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path());
+        tokio::fs::write(&m.deliverables[0].primary_path, b"")
+            .await
+            .unwrap();
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let manifest_file = write_recorders_manifest(recovery.path(), &m).await;
+        let read_attempts = || {
+            let body = std::fs::read_to_string(&manifest_file).unwrap();
+            SessionManifest::from_json(&body).unwrap().recovery_attempts
+        };
+
+        scan_dir(&pool, recovery.path()).await;
+        assert_eq!(read_attempts(), 1, "first failed pass is counted");
+        scan_dir(&pool, recovery.path()).await;
+        assert_eq!(read_attempts(), 2);
+        scan_dir(&pool, recovery.path()).await;
+
+        // Third strike: parked, not deleted; fragments untouched.
+        assert!(!manifest_file.exists(), "no longer read at startup");
+        let parked = recovery
+            .path()
+            .join(UNRESOLVED_DIR)
+            .join(manifest_file.file_name().unwrap());
+        assert!(parked.exists(), "kept for support in unresolved/");
+        assert!(Path::new(&m.deliverables[0].primary_path).exists());
+        assert!(
+            pending_windows_in(recovery.path()).is_empty(),
+            "a parked session is not a recording in flight"
+        );
+        // A fourth launch has nothing left to retry.
+        assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
+    }
+
+    #[test]
+    fn a_manifest_from_before_the_attempt_counter_reads_as_zero() {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&manifest_in(Path::new("/rec")).to_json().unwrap()).unwrap();
+        v.as_object_mut().unwrap().remove("recovery_attempts");
+        let m = SessionManifest::from_json(&v.to_string()).unwrap();
+        assert_eq!(m.recovery_attempts, 0);
     }
 
     #[tokio::test]
@@ -1914,6 +2014,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let manifest = SessionManifest {
+            recovery_attempts: 0,
             session_id: "1786179600000".into(),
             device_name: "Soundcraft USB Audio".into(),
             session_start_ms: 1_786_179_600_000,
