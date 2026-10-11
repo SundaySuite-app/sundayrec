@@ -169,8 +169,13 @@ pub struct PrerollStatus {
 /// audio per crash, forever, in the app-data dir. Only files this module's two
 /// engines name (`sundayrec-preroll-*.wav`) are touched. MUST run at startup,
 /// before any engine can write: it cannot tell a live segment from an orphan.
-/// Returns how many files were removed (best-effort; a locked file is skipped).
-pub fn sweep_stale_preroll_files(dir: &std::path::Path) -> usize {
+/// `keep` names files to spare regardless — the clips a crash-recovery manifest
+/// still points at (recovery prepends them to the salvaged recording and deletes
+/// them itself). Returns how many files were removed (best-effort; a locked file is skipped).
+pub fn sweep_stale_preroll_files(
+    dir: &std::path::Path,
+    keep: &std::collections::HashSet<std::ffi::OsString>,
+) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
@@ -178,7 +183,9 @@ pub fn sweep_stale_preroll_files(dir: &std::path::Path) -> usize {
         .flatten()
         .filter(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
-            name.starts_with("sundayrec-preroll-") && name.ends_with(".wav")
+            name.starts_with("sundayrec-preroll-")
+                && name.ends_with(".wav")
+                && !keep.contains(&e.file_name())
         })
         .filter(|e| e.path().is_file() && std::fs::remove_file(e.path()).is_ok())
         .count()
@@ -793,6 +800,21 @@ mod tests {
     use super::*;
     use sundayrec_core::settings::{ChannelMode, SampleRate, Settings};
 
+    /// The crash-recovery manifest still needs the session's pre-roll clip (the
+    /// first ~15 s of the recording): the sweep must spare exactly that file.
+    #[test]
+    fn startup_sweep_spares_the_clip_a_recovery_manifest_points_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        let clip = p.join("sundayrec-preroll-clip-3c.wav");
+        std::fs::write(&clip, b"RIFF").unwrap();
+        std::fs::write(p.join("sundayrec-preroll-clip-old.wav"), b"RIFF").unwrap();
+        let keep: std::collections::HashSet<_> = [clip.file_name().unwrap().to_owned()].into();
+        assert_eq!(sweep_stale_preroll_files(p, &keep), 1);
+        assert!(clip.exists(), "the clip recovery needs was swept");
+        assert!(!p.join("sundayrec-preroll-clip-old.wav").exists());
+    }
+
     #[test]
     fn startup_sweep_removes_only_stale_preroll_files() {
         let dir = tempfile::tempdir().unwrap();
@@ -807,12 +829,15 @@ mod tests {
         // Not ours: must survive.
         std::fs::write(p.join("notes.wav"), b"x").unwrap();
         std::fs::write(p.join("sundayrec-preroll-readme.txt"), b"x").unwrap();
-        assert_eq!(sweep_stale_preroll_files(p), 3);
+        assert_eq!(sweep_stale_preroll_files(p, &Default::default()), 3);
         assert!(p.join("notes.wav").exists());
         assert!(p.join("sundayrec-preroll-readme.txt").exists());
-        assert_eq!(sweep_stale_preroll_files(p), 0);
+        assert_eq!(sweep_stale_preroll_files(p, &Default::default()), 0);
         // A missing dir is not an error.
-        assert_eq!(sweep_stale_preroll_files(&p.join("nope")), 0);
+        assert_eq!(
+            sweep_stale_preroll_files(&p.join("nope"), &Default::default()),
+            0
+        );
     }
 
     #[test]
