@@ -15,7 +15,9 @@
 //!
 //! This implements the two-process fallback for a **simple video session**:
 //!   - NO split (one continuous video + one continuous audio file), and
-//!   - NO reconnect (a device death aborts the session — it does not respawn).
+//!   - NO reconnect (a device death ends the session — it does not respawn — and is
+//!     announced: a dead camera as its camera code, a dead audio process as
+//!     `device_disconnected`; the surviving temp is still muxed and kept).
 //!
 //! That is deliberate. The unified engine's reconnect/split machinery
 //! ([`crate::recorder::engine::run_session`]) is built around ONE child process
@@ -249,6 +251,7 @@ pub(crate) async fn run_two_process_session(
     // either child dies (a death here ends the session; reconnect is out of
     // scope for the simple fallback).
     let mut video_died_early = false;
+    let mut audio_died_early = false;
     loop {
         tokio::select! {
             _ = stop_rx.recv() => {
@@ -261,6 +264,7 @@ pub(crate) async fn run_two_process_session(
                 break;
             }
             status = audio_child.wait() => {
+                audio_died_early = true;
                 tracing::warn!(?status, "recorder: two-process — audio process exited early");
                 break;
             }
@@ -323,6 +327,18 @@ pub(crate) async fn run_two_process_session(
         emit_failure(&app, code, failure.as_str());
         write_history(&pool, &audio_temp, &audio, started_ms, now_ms()).await;
         return Ok(());
+    }
+
+    // The AUDIO capture died on its own (mixer unplugged, driver reset). The
+    // mux below still salvages what was recorded, but the volunteer must hear
+    // that the sound stopped part-way — without this the session ended as a
+    // clean stop and the video simply had no sound for the rest of the service.
+    if let Some(code) = audio_death_failure_code(video_died_early, audio_died_early) {
+        emit_failure(
+            &app,
+            code,
+            "two-process: the audio capture exited before the session was stopped",
+        );
     }
 
     // Decide the head-alignment from each file's wall-clock start_time, then mux.
@@ -409,6 +425,16 @@ async fn write_history(
     if let Err(e) = insert_recording(pool, row).await {
         tracing::error!("recorder: two-process failed to write history row: {e}");
     }
+}
+
+/// The failure code for a session whose AUDIO process died on its own while the
+/// video kept recording, or `None` when nothing needs announcing (a user stop,
+/// or the video side died — that case has its own, more specific report).
+fn audio_death_failure_code(
+    video_died_early: bool,
+    audio_died_early: bool,
+) -> Option<&'static str> {
+    (audio_died_early && !video_died_early).then_some("device_disconnected")
 }
 
 /// Derive a temp capture path next to the final output: `<dir>/<stem><suffix>.<ext>`.
@@ -507,6 +533,18 @@ mod tests {
                 .join("service_vtmp.mp4")
                 .to_string_lossy()
         );
+    }
+
+    #[test]
+    fn a_dead_audio_process_is_announced_but_a_video_death_keeps_its_own_report() {
+        assert_eq!(
+            audio_death_failure_code(false, true),
+            Some("device_disconnected")
+        );
+        // A user stop: neither process died on its own.
+        assert_eq!(audio_death_failure_code(false, false), None);
+        // The camera died: reported (more specifically) by the video branch.
+        assert_eq!(audio_death_failure_code(true, false), None);
     }
 
     #[test]
