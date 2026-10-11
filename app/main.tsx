@@ -145,7 +145,11 @@ if (!overlayHost) {
 document.documentElement.classList.add(platformClass(currentOs()));
 
 // TODO(S1b): `?probe=` forsvinner sammen med `app/dev/`.
-const probe = new URLSearchParams(location.search).get("probe");
+// Dev builds only (e2e runs against the dev server): in a shipped bundle the
+// probe is dead code, so no URL can reach it and Vite drops `SettingProbe`.
+const probe = import.meta.env.DEV
+  ? new URLSearchParams(location.search).get("probe")
+  : null;
 
 // 3.
 render(<Shell probe={probe} />, host);
