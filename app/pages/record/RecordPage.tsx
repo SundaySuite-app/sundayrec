@@ -55,10 +55,9 @@
  *     ville vært å åpne nøyaktig den mikrofonen sett 2 finnes for å slutte å
  *     ta opp fra uten å spørre.
  *   - måleren fjernes helt før `start_recording` og mens et opptak går.
- *     ⚠️ `@lib/audio/vu-feed` avstår fra `start_vu` ved å lese
- *     `window.__isRecording`, og `app/` gjenskaper ikke den globalen med
- *     vilje. Her er det derfor MONTERINGEN som er vakten: ingen måler i treet,
- *     ingen `start_vu`. Overlegget leser motorens egen `recording://levels`.
+ *     ⚠️ `@lib/audio/vu-feed` har ingen egen opptaksvakt, og `app/`
+ *     gjenskaper ikke `window.__isRecording` med vilje. Her er det derfor
+ *     MONTERINGEN som er vakten: ingen måler i treet, ingen `start_vu`. Overlegget leser motorens egen `recording://levels`.
  *   - **kilde-kortet KOLLAPSER når opptaket starter.** D2 la en ANDRE måler på
  *     skjermen: «Hvilken lyd?» har sin egen (`sound-vu`), og et utfoldet
  *     kilde-kort viser den ved siden av sidens (`record-vu`). Strømmen er
