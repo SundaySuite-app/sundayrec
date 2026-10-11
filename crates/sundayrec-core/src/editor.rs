@@ -228,6 +228,12 @@ pub fn codec_args(
             } else {
                 "pcm_s16le"
             }),
+            // Past 4 GiB a plain RIFF header overflows (ffmpeg then writes a
+            // truncated, unplayable size — 3 h of 24-bit 96 kHz stereo is
+            // ~6 GB). `auto` stays RIFF until the data would not fit, then
+            // switches to RF64; ordinary files are byte-for-byte as before.
+            s("-rf64"),
+            s("auto"),
         ],
         "flac" | "mka" => vec![s("-c:a"), s("flac")],
         "aac" | "m4a" | "m4b" | "m4r" | "caf" => {
@@ -2139,16 +2145,19 @@ mod tests {
     fn wav_codec_respects_bit_depth() {
         assert_eq!(
             codec_args("wav", None, Some(24), None),
-            vec!["-c:a", "pcm_s24le"]
+            vec!["-c:a", "pcm_s24le", "-rf64", "auto"]
         );
         assert_eq!(
             codec_args("wav", None, Some(16), None),
-            vec!["-c:a", "pcm_s16le"]
+            vec!["-c:a", "pcm_s16le", "-rf64", "auto"]
         );
         assert_eq!(
             codec_args("wav", None, None, None),
-            vec!["-c:a", "pcm_s16le"]
+            vec!["-c:a", "pcm_s16le", "-rf64", "auto"]
         );
+        // Only the WAV muxer knows the option.
+        assert!(!codec_args("aiff", None, None, None).contains(&"-rf64".to_string()));
+        assert!(!codec_args("dts", None, None, None).contains(&"-rf64".to_string()));
     }
 
     #[test]
@@ -2566,7 +2575,10 @@ mod tests {
         };
         let args = audio_simple_export_args(&seg, "wav", None, Some(24), None, 2.0);
         assert!(args.contains(&"-vn".to_string()));
-        assert!(args.ends_with(&["-c:a".to_string(), "pcm_s24le".to_string()]));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-c:a" && w[1] == "pcm_s24le"));
+        assert!(args.ends_with(&["-rf64".to_string(), "auto".to_string()]));
     }
 
     #[test]
