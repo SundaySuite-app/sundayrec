@@ -105,6 +105,10 @@ pub struct WriterConfig {
     /// Cadence of the periodic `sync_data` (see [`SYNC_EVERY`]).
     pub sync_every: Duration,
     pub silence: SilenceDetector,
+    /// Live mirror of [`WriterSummary::periodic_syncs`], bumped after each
+    /// periodic `sync_data`. `None` in production; tests use it to wait for
+    /// real syncs instead of guessing how long an fsync takes on a busy disk.
+    pub sync_count: Option<Arc<AtomicU64>>,
 }
 
 /// Classify an I/O error for the event channel (pure; unit-tested).
@@ -300,6 +304,9 @@ fn run_writer(
                 }
                 last_sync = Instant::now();
                 periodic_syncs += 1;
+                if let Some(c) = &cfg.sync_count {
+                    c.store(periodic_syncs, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -343,6 +350,7 @@ mod tests {
             sync_every: Duration::from_millis(40),
             // −50 dB, 48 kHz — loud test samples never trip it.
             silence: SilenceDetector::new(-50.0, SPEC.sample_rate),
+            sync_count: None,
         }
     }
 
@@ -452,13 +460,37 @@ mod tests {
 
     #[test]
     fn audio_is_fsynced_periodically_while_running() {
-        let mut rig = spawn_rig();
-        assert!(rig.prod.push_slice(&loud_block(2400)) > 0);
-        // Test cadence: flush 20 ms, sync 40 ms. After 250 ms several periodic
-        // syncs must have happened, not just the finalize fsync.
-        std::thread::sleep(Duration::from_millis(250));
-        rig.stop.store(true, Ordering::Relaxed);
-        let summary = rig.join.join().expect("join").expect("clean finalize");
+        // Test cadence: flush 20 ms, sync 40 ms. Wait for two periodic syncs
+        // to actually COMPLETE rather than sleeping a fixed 250 ms: on a busy
+        // disk (a CI runner with the whole suite writing) one `sync_data` can
+        // take well over 100 ms, and the fixed sleep saw only one.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut prod, cons) = HeapRb::<f32>::new(1 << 16).split();
+        let stop = Arc::new(AtomicBool::new(false));
+        let syncs = Arc::new(AtomicU64::new(0));
+        let mut cfg = test_cfg(dir.path().join("capture.wav"));
+        cfg.sync_count = Some(Arc::clone(&syncs));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let join = spawn_wav_writer(
+            cons,
+            cfg,
+            Arc::clone(&stop),
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
+            tx,
+        )
+        .expect("spawn writer");
+        assert!(prod.push_slice(&loud_block(2400)) > 0);
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while syncs.load(Ordering::Relaxed) < 2 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        stop.store(true, Ordering::Relaxed);
+        let summary = join.join().expect("join").expect("clean finalize");
+        // The live counter and the summary agree, and both saw two syncs
+        // during capture — not just the finalize `sync_all`.
+        assert_eq!(summary.periodic_syncs, syncs.load(Ordering::Relaxed));
         assert!(
             summary.periodic_syncs >= 2,
             "expected periodic sync_data during capture, got {}",

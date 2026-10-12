@@ -221,6 +221,7 @@ pub async fn spawn_native_segment_for(
                 silence_threshold_db(opts.stop_on_silence, opts.silence_threshold_db),
                 spec.sample_rate,
             ),
+            sync_count: None,
         },
         Arc::clone(&writer_stop),
         Arc::clone(&bytes),
