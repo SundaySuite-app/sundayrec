@@ -1542,6 +1542,20 @@ oppdateringen flytter databasen ut av; se neste avsnitt).
   thread before a line ever reaches disk — confirm none show up if you have
   any of those configured.
 
+### Lisenser (Avansert, bottom card)
+
+**Avansert -> Lisenser -> «Vis lisenser»** opens `THIRD-PARTY-NOTICES.html`
+in a sandboxed frame inside the app (`licenses_notices` reads it from the
+bundle's resource directory). It must name ffmpeg as GPL with where the source
+is, then list the npm and Rust libraries with their licence texts. A missing
+file shows an error toast, never an empty page.
+
+- VERIFIED-BY: e2e/system-support.spec.ts::«Vis lisenser» opens the bundled notices in a frame and closes again
+- VERIFIED-BY: e2e/system-support.spec.ts::a missing notices file says so instead of showing an empty page
+- **On a real installer** (rig): install, open Avansert -> Vis lisenser, scroll to
+  the end; `Contents/Resources/resources/THIRD-PARTY-NOTICES.html` (macOS) /
+  `resources\THIRD-PARTY-NOTICES.html` next to the exe (Windows) must exist.
+
 ### ⚠️ Capture probe — backend only, no surface
 
 `run_diagnostics` still runs a real ~2 s capture (and, with video on, grabs one

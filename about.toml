@@ -1,0 +1,31 @@
+# cargo-about — tredjepartsmerknadene (pakke A1b). Genererer
+# src-tauri/resources/THIRD-PARTY-NOTICES.html via `npm run licenses:notices`.
+# Lista er den samme som i deny.toml: det som slipper gjennom lisensvakten, er
+# det som kan stå i merknadene. Se docs/DISTRIBUTION.md §Tredjepartsmerknader.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "CDLA-Permissive-2.0",
+  "MPL-2.0",
+]
+
+# Faste mål, ikke vertsmaskinens: uten dem ville fila bli ulik på Mac og Linux
+# (Windows-only crates mangler på Mac), og «er fila fersk?»-sjekken i CI ville
+# flakke. Dette er de tre plattformene installasjonsfilene bygges for.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+]
+
+# Ingen nettoppslag: lisenstekstene leses fra de nedlastede crate-kildene.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+workarounds = []

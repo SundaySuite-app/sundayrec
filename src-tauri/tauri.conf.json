@@ -44,6 +44,7 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
+    "resources": ["resources/THIRD-PARTY-NOTICES.html"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

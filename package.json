@@ -17,6 +17,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
+    "licenses:notices": "node scripts/gen-third-party-notices.mjs",
+    "licenses:notices:check": "node scripts/gen-third-party-notices.mjs --check",
     "licenses:npm": "license-checker --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;MPL-2.0;Python-2.0;BlueOak-1.0.0;CC0-1.0;CC-BY-3.0\" --summary",
     "test": "vitest run",
     "notes:check": "node scripts/release-notes.mjs --check",

@@ -24,12 +24,12 @@ hver, med porter, modellvalg og ferdig startmelding — står i
 [GJENNOMFORING.md](GJENNOMFORING.md). Én linje per milepæl her; pakkene står i
 hovedplanen og fjernes derfra når de er ferdige.
 
-| Milepæl                      | Pakker       | Kort                                                                                                            |
-| ---------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------- |
-| M1 — Grunnmuren              | A1–A5        | Lisensvakt, ffmpeg-versjonen i docs, cpal 0.18, Windows-enhetslytter, nødlukene ut, maskinvarekoding på Windows |
-| M2 — Ny lyd i redigeringen   | B0–B3        | filmcrafts `audio-dsp` inn, lydstyrke og lydkjede i Rust, «Tale» renser av seg selv                             |
-| M3 — Ny videomotor           | C1–C5        | Kamera i Rust, lyden alltid gjennom den native motoren, én sti i stedet for fire                                |
-| M4 — Sanntid, fart og resten | B4–B6, D1–D3 | Én dekoding, sanntidslytting, rask videoeksport, earshot, macOS-varsler, LUFS under opptak                      |
+| Milepæl                      | Pakker       | Kort                                                                                       |
+| ---------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| M1 — Grunnmuren              | A2–A5        | ffmpeg-versjonen i docs, cpal 0.18, Windows-enhetslytter, nødlukene ut                     |
+| M2 — Ny lyd i redigeringen   | B0–B3        | filmcrafts `audio-dsp` inn, lydstyrke og lydkjede i Rust, «Tale» renser av seg selv        |
+| M3 — Ny videomotor           | C1–C5        | Kamera i Rust, lyden alltid gjennom den native motoren, én sti i stedet for fire           |
+| M4 — Sanntid, fart og resten | B4–B6, D1–D3 | Én dekoding, sanntidslytting, rask videoeksport, earshot, macOS-varsler, LUFS under opptak |
 
 M2 og M3 kjøres parallelt i egne arbeidstrær (eiers beslutning 2026-10-12).
 **Blokkert på eieren:** B2c sletter de gamle filterstrengene først når Ørene har

@@ -1,0 +1,48 @@
+/*
+ * Lisensleseren: en nesten full-skjerm flate over appen, med egen lukkeknapp.
+ * Rammen får all høyden som er igjen — teksten er lang og skal rulle i seg selv.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--scrim);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+}
+
+.panel {
+  width: min(860px, 100%);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: var(--bg);
+}

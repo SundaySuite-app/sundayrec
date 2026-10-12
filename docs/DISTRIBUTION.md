@@ -104,6 +104,39 @@ host or drops a key, the missing one gets printed the same way — copy its
 `⚠ … computed <hash>` line into `scripts/ffmpeg-checksums.json` and commit,
 exactly how these pins were captured.
 
+### Third-party notices (`THIRD-PARTY-NOTICES.html`)
+
+MIT and Apache-2.0 require their notices to travel with what we distribute, and
+the GPL ffmpeg above makes the same demand for its source. Every installer
+therefore carries `THIRD-PARTY-NOTICES.html`, and the app shows it under
+**Avansert -> Lisenser -> Vis lisenser** (`licenses_notices`, which reads the
+bundle's resource directory; see `src-tauri/src/commands/licenses.rs`).
+
+- **Contents:** a fixed ffmpeg section (GPL v3+, built `--enable-gpl
+--enable-version3`, where the source is), the npm runtime dependencies that
+  end up in the frontend bundle, and every Rust crate in the shipped build with
+  its licence text.
+- **Generated, then checked in:** `npm run licenses:notices` (needs `cargo
+install cargo-about --features cli`; without `--features cli` it builds and
+  installs nothing). Inputs are `about.toml` (accepted licences, same list as
+  `deny.toml`; fixed targets so the same crates are listed on every OS) and
+  `scripts/gen-third-party-notices.mjs`, which writes the HTML, the ffmpeg text
+  and the npm part. The script sorts cargo-about's JSON itself, because
+  cargo-about's own templates follow directory order, which differs between
+  macOS and Linux (the first CI run caught exactly that). The file is checked in
+  because `tauri build` requires a declared resource to exist; the `check` job
+  runs `npm run licenses:notices:check`, which fails, naming the crates that are
+  missing or extra, when `Cargo.lock` or `package-lock.json` changed and the
+  file did not. It compares the crate list and the ffmpeg/npm part, not the
+  licence texts cargo-about digs out of source-file headers (`ring`): those are
+  not the same set on macOS and Linux.
+- **Bundled via** `bundle.resources` in `tauri.conf.json`. A unit test pins that
+  the path in Rust and in the config are the same string. On macOS it lands in
+  `SundayRec.app/Contents/Resources/resources/`, on Windows next to the exe in
+  `resources\`.
+- **When ffmpeg's build or version changes,** update the ffmpeg text in
+  `scripts/gen-third-party-notices.mjs` and regenerate.
+
 ## Required GitHub repository secrets
 
 Settings → Secrets and variables → Actions → New repository secret.
@@ -170,4 +203,5 @@ Linux), **e2e** (the Playwright renderer tier), **windows-check** (Windows
 `cargo check` + clippy + `cargo test --workspace` on a real Windows runner —
 since F2-W7, #231; before that it only compile-checked), and **audit** (npm +
 cargo advisories, plus the license guard: `cargo deny check licenses bans` and
-`npm run licenses:npm`, see AVHENGIGHETER.md). No secrets required.
+`npm run licenses:npm`, see AVHENGIGHETER.md). The `check` job also verifies
+that `THIRD-PARTY-NOTICES.html` is fresh. No secrets required.

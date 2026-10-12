@@ -80,3 +80,49 @@ test.describe("log file", () => {
     );
   });
 });
+
+test.describe("licenses", () => {
+  test("«Vis lisenser» opens the bundled notices in a frame and closes again", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        licenses_notices:
+          "<!doctype html><h2>FFmpeg (GPL)</h2><p>source: https://ffmpeg.org</p>",
+      },
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    await expect(page.getByTestId("adv-licenses")).toContainText("Lisenser");
+    await page.getByTestId("adv-licenses-open").click();
+
+    const frame = page.frameLocator('[data-testid="licenses-frame"]');
+    await expect(frame.getByText("FFmpeg (GPL)")).toBeVisible();
+    await expect(page.getByTestId("licenses-frame")).toHaveAttribute(
+      "sandbox",
+      "",
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("licenses-viewer")).toHaveCount(0);
+  });
+
+  test("a missing notices file says so instead of showing an empty page", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    await page.getByTestId("adv-licenses-open").click();
+
+    await expect(page.getByTestId("toast-host")).toContainText(
+      "Fant ikke lisensteksten",
+    );
+    await expect(page.getByTestId("licenses-viewer")).toHaveCount(0);
+  });
+});

@@ -32,6 +32,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   du frekvens på Mac midt i opptaket, setter appen den ikke tilbake, men
   fortsetter i en ny fil.
 
+- **Lisenser står nå i appen.** Under Avansert finnes et nytt kort, «Lisenser»,
+  som viser programvaren fra andre som SundayRec er bygget på. Det forteller
+  også at ffmpeg er GPL-lisensiert og hvor kildekoden finnes. Den samme lista
+  følger med i installasjonsfilene.
+
 ## v0.25.3 — tryggere opptak og mange mindre rettelser
 
 - **Opptaket overlever strømbrudd og krasj bedre.** Lyden lagres helt ned på

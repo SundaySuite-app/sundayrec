@@ -58,6 +58,7 @@ import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
 import { DiagnoseRow } from "./advanced/DiagnoseRow";
+import { LicensesCard } from "./advanced/LicensesCard";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
 import { PublishCard } from "./advanced/PublishCard";
 import { currentOs } from "../../state/platform-core";
@@ -162,6 +163,7 @@ export function AdvancedPage() {
       <PublishCard />
       <ScheduleCard />
       <AsioAttribution />
+      <LicensesCard />
     </SubPage>
   );
 }
