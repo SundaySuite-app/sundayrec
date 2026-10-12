@@ -1,0 +1,28 @@
+# cargo-deny — lisensvakten (pakke A1a). Kjøres i `audit`-jobben i ci.yml:
+#   cargo deny check licenses bans
+# Regelen står i docs/AVHENGIGHETER.md §Regelen: ingen GPL/AGPL i Cargo.lock.
+# Lista er MÅLT mot treet 2026-10-12, ikke gjettet. 0BSD, CC0-1.0, MIT-0,
+# Unlicense og LGPL-2.1-or-later står med vilje IKKE her: de står bare i
+# OR-uttrykk sammen med MIT/Apache-2.0, og cargo-deny velger det tillatte.
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "CDLA-Permissive-2.0",
+  # MPL-2.0 er greit som AVHENGIGHET (cssparser, selectors, option-ext …).
+  # Kopieres koden inn i våre filer, blir de filene MPL — se AVHENGIGHETER.md.
+  "MPL-2.0",
+]
+
+[bans]
+# Vi sjekker lisenser her, ikke duplikater (Tauri drar inn mange dubletter).
+multiple-versions = "allow"
+wildcards = "allow"

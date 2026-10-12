@@ -169,4 +169,5 @@ ts-rs bindings drift, feature-off clippy), **vad** (clippy + tests with the
 Linux), **e2e** (the Playwright renderer tier), **windows-check** (Windows
 `cargo check` + clippy + `cargo test --workspace` on a real Windows runner —
 since F2-W7, #231; before that it only compile-checked), and **audit** (npm +
-cargo advisories). No secrets required.
+cargo advisories, plus the license guard: `cargo deny check licenses bans` and
+`npm run licenses:npm`, see AVHENGIGHETER.md). No secrets required.

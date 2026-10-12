@@ -112,9 +112,14 @@ og se at back-offen kuttes.
 
 ### Lisensvakt i CI og tredjepartsmerknader (pakke A1)
 
-Ingenting stopper i dag et GPL- eller AGPL-crate fra å komme inn via
-`Cargo.lock`. `cargo deny check licenses` (cargo-deny, MIT/Apache) med en
-liste over tillatte lisenser kan bli et steg i `audit`-jobben i `ci.yml`.
+**Lisensvakten er på plass (A1a).** `deny.toml` har lista over tillatte
+lisenser, og `audit`-jobben i `ci.yml` kjører `cargo deny check licenses bans`
+og `npm run licenses:npm` (`license-checker --onlyAllow`). Et GPL- eller
+AGPL-crate i `Cargo.lock`, eller en GPL-pakke i `package-lock.json`, gjør
+jobben rød. Lokalt: `cargo deny check licenses bans` og `npm run licenses:npm`.
+npm-lista er litt videre enn Rust-lista fordi verktøytreet (kun dev) har
+`Python-2.0` (argparse), `BlueOak-1.0.0` (minimatch), `CC0-1.0` og `CC-BY-3.0`
+(SPDX-datafiler under `license-checker` selv); ingen av dem er kopileft.
 
 MIT og Apache krever også at merknadene følger med det vi distribuerer.
 Installasjonsfilene har ingen samlet liste over tredjepartslisenser i dag.

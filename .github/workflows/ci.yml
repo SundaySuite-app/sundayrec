@@ -647,3 +647,22 @@ jobs:
 
       - name: cargo audit
         run: cargo audit
+
+      # License guard (OMBYGGING pakke A1a, docs/AVHENGIGHETER.md §Regelen):
+      # nothing GPL/AGPL may enter Cargo.lock or package-lock.json unnoticed.
+      # Kept inside this job on purpose — the required check is named
+      # "Dependency audit", so no branch-protection change is needed.
+      - name: Install cargo-deny (prebuilt binary)
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: cargo deny (licenses + bans)
+        run: cargo deny check licenses bans
+
+      # --ignore-scripts: license-checker only reads node_modules/*/package.json,
+      # so neither husky's prepare nor any dependency install script is needed.
+      - name: npm licenses
+        run: |
+          npm ci --ignore-scripts
+          npm run licenses:npm
