@@ -86,7 +86,9 @@ const STAGES: readonly StageSpec[] = [
         id: "floor",
         key: "denoiseFloorDb",
         min: -60,
-        max: -10,
+        // afftdn rejects nf above −20 (the whole export dies), so the slider
+        // stops there; the Rust chain clamps as well.
+        max: -20,
         step: 1,
         unit: DB,
       },

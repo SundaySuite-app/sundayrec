@@ -7,7 +7,7 @@
 //!
 //! ## The install id
 //!
-//! A random UUID v7 in the `app_setting` bag. Random — not derived from the
+//! A random UUID v4 in the `app_setting` bag. Random — not derived from the
 //! machine's serial, the MAC address, the user's e-mail, the church name, or a
 //! Sunday Account. That is not a style preference: a derived id is a stable
 //! pseudonym for a PERSON, and the owner decision was full anonymity. A random
@@ -22,7 +22,7 @@
 //! ## Deletion
 //!
 //! "Delete my data" has two halves. The local half is here:
-//! [`regenerate_install_id`] mints a new id, so every future payload belongs to
+//! [`regenerate_install_id`] mints a new id (while consent is active), so every future payload belongs to
 //! an unrelated install, and parks the OLD id in
 //! [`KEY_PENDING_DELETIONS`] so a later phase's sender can issue the remote
 //! DELETE for it. Parking it rather than dropping it is the difference between
@@ -40,9 +40,10 @@
 //!
 //! ## What is deliberately absent
 //!
-//! No network client, no endpoint URL, no sender implementation. E3 builds the
-//! client half only; see [`sender`] for how the consent gate is arranged so the
-//! later phase adds a sender rather than a check.
+//! No network code lives in this file: the endpoint is resolved in [`config`]
+//! and the HTTP client is [`http_sender`]. See [`sender`] for how the consent
+//! gate is arranged so that sending is one more step behind the same check
+//! rather than a second place that has to remember it.
 
 use std::time::Duration;
 
@@ -272,7 +273,7 @@ pub async fn drain_in(
             quality = built.quality.len(),
             findings = built.findings.len(),
             corrections = built.corrections.len(),
-            "telemetry: queued one report (nothing is sent — no endpoint in this build)"
+            "telemetry: queued one report (it is sent by the sender loop, and only if this build has an endpoint)"
         );
     }
     Ok(queued)
@@ -479,7 +480,7 @@ pub async fn install_id_if_any(pool: &SqlitePool) -> AppResult<Option<String>> {
     Ok(raw.and_then(|v| serde_json::from_str::<String>(&v).ok()))
 }
 
-/// The install id, minting a fresh random UUID v7 on first need.
+/// The install id, minting a fresh random UUID v4 on first need.
 ///
 /// Only called from paths that have already established that consent is active.
 pub async fn ensure_install_id(pool: &SqlitePool) -> AppResult<String> {
@@ -492,39 +493,61 @@ pub async fn ensure_install_id(pool: &SqlitePool) -> AppResult<String> {
     Ok(id)
 }
 
-/// A fresh random install id. UUID v7 — time-ordered, but the ordering is the
-/// only thing derived from anything: the remaining 74 bits are random, and
-/// nothing about the machine, the user or the congregation is an input.
+/// A fresh random install id. UUID v4 — 122 random bits, nothing derived from
+/// anything: not the machine, the user, the congregation, or the clock. (v7 was
+/// used before; its first 48 bits are the creation time, which would have dated
+/// the install — and the moment of every "delete my data" — to the millisecond.)
 fn new_install_id() -> String {
-    Uuid::now_v7().to_string()
+    Uuid::new_v4().to_string()
 }
 
 /// The local half of "delete my data": become a different install.
 ///
-/// Mints a new id, parks the old one for the remote DELETE a later phase will
-/// send, and purges anything queued under the old id (those payloads carry it,
-/// so keeping them would re-upload what the user just asked to have removed).
-/// Returns the NEW id.
-pub async fn regenerate_install_id(pool: &SqlitePool) -> AppResult<String> {
+/// Parks the old id for the remote DELETE the sender issues, and purges anything
+/// queued under it (those payloads carry it, so keeping them would re-upload what
+/// the user just asked to have removed).
+///
+/// Returns the NEW id — or `None` when consent is not active. Minting an id for
+/// someone who has not said yes (or who revoked) would be the very collection the
+/// consent gate exists to prevent: a per-install identifier sitting in the
+/// database of a user who declined. So without consent the old id is parked and
+/// REMOVED, and the next grant mints a fresh one ([`ensure_install_id`]) — which
+/// is also what makes the deletion complete for a user who revoked first.
+pub async fn regenerate_install_id(pool: &SqlitePool) -> AppResult<Option<String>> {
     let previous = install_id_if_any(pool).await?;
     if let Some(old) = previous.as_deref() {
         park_for_deletion(pool, old).await?;
     }
-    let id = new_install_id();
-    store::set_setting(pool, KEY_INSTALL_ID, &serde_json::to_string(&id)?).await?;
+    let active = consent_active(pool).await;
+    let new_id = if active {
+        let id = new_install_id();
+        store::set_setting(pool, KEY_INSTALL_ID, &serde_json::to_string(&id)?).await?;
+        Some(id)
+    } else {
+        store::delete_setting(pool, KEY_INSTALL_ID).await?;
+        None
+    };
     // Anything already queued is addressed to the retired id, and the history it
-    // was built from must not be re-reported under the new one.
-    purge_collected(pool, payload::Watermarks::starting_now(now_ms())).await?;
+    // was built from must not be re-reported under the new one. With consent off
+    // the watermarks are zeroed, exactly as a revoke does: the next grant sets
+    // its own starting point.
+    let reset = if active {
+        payload::Watermarks::starting_now(now_ms())
+    } else {
+        payload::Watermarks::default()
+    };
+    purge_collected(pool, reset).await?;
     tracing::info!(
         had_previous = previous.is_some(),
-        "telemetry: install id regenerated — future reports belong to a new, unrelated install"
+        minted_new = new_id.is_some(),
+        "telemetry: install id retired — future reports belong to a new, unrelated install"
     );
-    Ok(id)
+    Ok(new_id)
 }
 
 /// Remember an install id whose remote data should be deleted, newest last,
 /// capped at [`MAX_PENDING_DELETIONS`].
-async fn park_for_deletion(pool: &SqlitePool, id: &str) -> AppResult<()> {
+pub(super) async fn park_for_deletion(pool: &SqlitePool, id: &str) -> AppResult<()> {
     let mut ids = pending_deletions(pool).await?;
     if !ids.iter().any(|existing| existing == id) {
         ids.push(id.to_string());
@@ -707,7 +730,10 @@ mod tests {
         consent_set(&pool, true).await.unwrap();
         let first = install_id_if_any(&pool).await.unwrap().expect("minted");
 
-        let second = regenerate_install_id(&pool).await.unwrap();
+        let second = regenerate_install_id(&pool)
+            .await
+            .unwrap()
+            .expect("consent is active, so a new id is minted");
         assert_ne!(second, first, "a new install, not a renamed one");
         assert_eq!(
             install_id_if_any(&pool).await.unwrap(),
@@ -742,13 +768,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regenerating_without_consent_mints_no_new_id() {
+        // Audit 2026-10-05: "Slett mine data" used to mint a fresh install id even
+        // for a user who had revoked (or never granted) — a per-install identifier
+        // in the database of someone who said no.
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        let first = install_id_if_any(&pool).await.unwrap().expect("minted");
+        consent_set(&pool, false).await.unwrap();
+
+        let out = regenerate_install_id(&pool).await.unwrap();
+        assert_eq!(out, None, "no consent, no new id");
+        assert_eq!(
+            install_id_if_any(&pool).await.unwrap(),
+            None,
+            "the retired id is removed, not replaced"
+        );
+        assert_eq!(
+            pending_deletions(&pool).await.unwrap(),
+            vec![first.clone()],
+            "…but the old one is still owed a remote deletion"
+        );
+        assert_eq!(
+            payload::watermarks(&pool).await.unwrap(),
+            payload::Watermarks::default(),
+            "a later grant sets its own starting point"
+        );
+        assert!(!consent_active(&pool).await);
+
+        // A later grant mints a genuinely new id.
+        consent_set(&pool, true).await.unwrap();
+        let again = install_id_if_any(&pool).await.unwrap().expect("minted");
+        assert_ne!(again, first);
+    }
+
+    #[tokio::test]
+    async fn install_ids_are_random_v4_and_carry_no_timestamp() {
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        let id = install_id_if_any(&pool).await.unwrap().expect("minted");
+        let parsed = Uuid::parse_str(&id).expect("a UUID");
+        assert_eq!(
+            parsed.get_version_num(),
+            4,
+            "v7 puts the creation time in the first 48 bits"
+        );
+    }
+
+    #[tokio::test]
     async fn a_malformed_pending_list_does_not_block_a_regenerate() {
         let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         store::set_setting(&pool, KEY_PENDING_DELETIONS, "not json")
             .await
             .unwrap();
-        let new = regenerate_install_id(&pool).await.unwrap();
+        let new = regenerate_install_id(&pool)
+            .await
+            .unwrap()
+            .expect("consent is active");
         assert_eq!(install_id_if_any(&pool).await.unwrap(), Some(new));
         assert_eq!(pending_deletions(&pool).await.unwrap().len(), 1);
     }

@@ -53,6 +53,10 @@ export const DEFAULT_MS: Record<ToastKind, number> = {
   error: 0,
 };
 
+/** Høyeste antall toaster på skjermen samtidig. En feil er permanent, så uten
+ *  tak vokser køen i et langt opptak til den dekker stopp-området. */
+export const MAX_TOASTS = 5;
+
 /** Køen slik den er nå, eldst først. */
 export const toasts = signal<readonly ToastItem[]>([]);
 
@@ -77,12 +81,48 @@ export function toast(
   msg: string,
   opts: ToastOpts = {},
 ): () => void {
-  const id = nextId++;
   const durationMs = opts.durationMs ?? DEFAULT_MS[kind];
-  toasts.value = [
+
+  // Fold identical messages into the one already showing (a failing poll
+  // otherwise stacks one permanent toast per tick). Toasts with an action are
+  // never folded: each carries its own callback.
+  if (!opts.action) {
+    const dup = toasts
+      .peek()
+      .find((x) => x.kind === kind && x.msg === msg && !x.action);
+    if (dup) {
+      const prev = timers.get(dup.id);
+      if (prev) {
+        clearTimeout(prev);
+        timers.delete(dup.id);
+      }
+      if (durationMs > 0 && dup.durationMs > 0) {
+        timers.set(
+          dup.id,
+          setTimeout(() => dismissToast(dup.id), durationMs),
+        );
+      }
+      return () => dismissToast(dup.id);
+    }
+  }
+
+  const id = nextId++;
+  let queue = [
     ...toasts.peek(),
     { id, kind, msg, action: opts.action, durationMs },
   ];
+  // Over the cap: evict the oldest, but prefer one that is not an error —
+  // the message you can least afford to miss is the one that stays.
+  while (queue.length > MAX_TOASTS) {
+    const victim = queue.find((x) => x.kind !== "error") ?? queue[0]!;
+    const timer = timers.get(victim.id);
+    if (timer) {
+      clearTimeout(timer);
+      timers.delete(victim.id);
+    }
+    queue = queue.filter((x) => x.id !== victim.id);
+  }
+  toasts.value = queue;
   if (durationMs > 0) {
     timers.set(
       id,

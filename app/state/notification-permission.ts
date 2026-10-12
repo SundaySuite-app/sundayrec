@@ -32,8 +32,3 @@ export async function refreshNotificationPermission(): Promise<void> {
   }
   notificationPermission.value = await window.api.notificationPermission();
 }
-
-/** Test-krok. */
-export function resetNotificationPermissionForTests(): void {
-  notificationPermission.value = null;
-}

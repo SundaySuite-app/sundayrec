@@ -95,6 +95,29 @@ pub async fn upsert_entry(pool: &SqlitePool, e: &TelemetryEntry) -> AppResult<()
     Ok(())
 }
 
+/// Update an entry ONLY if its row still exists. Returns whether it did.
+///
+/// The pump holds a copy of its entry across a network round trip. A revoke or an
+/// install-id regeneration that purges the outbox meanwhile must stay purged:
+/// [`upsert_entry`] would write the row straight back, resurrecting a payload the
+/// user had just deleted. This is the write for every place the pump touches a
+/// row it did not just create.
+pub async fn update_entry_if_present(pool: &SqlitePool, e: &TelemetryEntry) -> AppResult<bool> {
+    let res = sqlx::query(
+        "UPDATE telemetry_queue SET
+            attempts = ?2, next_attempt = ?3, last_error = ?4, status = ?5
+         WHERE id = ?1",
+    )
+    .bind(&e.id)
+    .bind(i64::from(e.attempts))
+    .bind(e.next_attempt)
+    .bind(&e.last_error)
+    .bind(enum_to_db(&e.status)?)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 /// Enqueue an entry and immediately trim the queue back to [`QUEUE_MAX`],
 /// dropping the OLDEST rows.
 ///

@@ -28,6 +28,7 @@ import { errorCode } from "@lib/error-code-core";
 import { setLocale, t } from "../../i18n";
 import {
   lastSaveFailureCode,
+  patchSettings,
   saveSettingsDebounced,
 } from "../../state/settings";
 import { folderRefusalMessage } from "./folder-refusal";
@@ -44,8 +45,13 @@ function rustSaveFolderCodes(): string[] {
   return [...new Set(codes)].sort();
 }
 
-/** Et `window.api` med bare den ene kommandoen lagringen bruker. */
+let edits = 0;
+
+/** Et `window.api` med bare den ene kommandoen lagringen bruker — og en endring
+ *  å lagre: lagringen sender bare det som er endret, og ingenting endret
+ *  betyr ingen skriving (og dermed ingen avvisning å teste). */
 function withSave(save: () => Promise<unknown>): void {
+  patchSettings({ churchName: `kirke ${++edits}` });
   (globalThis as unknown as { window: unknown }).window = {
     api: { saveSettings: save },
   };

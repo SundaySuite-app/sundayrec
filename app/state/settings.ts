@@ -33,8 +33,9 @@
  *
  * Mens `hydrateError` er satt er innstillingene SKRIVEBESKYTTET:
  * `saveSettingsDebounced` svarer `false` uten å skrive, og `write()` nekter
- * det som alt ventet. Hver bryter lagrer hele objektet, så en skriving her ville
- * lagt standardverdiene over ukeplan, spesialopptak, enhet og kirkenavn i basen.
+ * det som alt ventet. Lagringen sender de ENDREDE feltene, og etter en feilet
+ * lesning er «endret» målt mot standardverdier — en skriving her ville lagt
+ * standardverdiene over ukeplan, spesialopptak, enhet og kirkenavn i basen.
  * Veien ut er «Prøv igjen» i banneret, som kjører `hydrateSettings` på nytt.
  */
 
@@ -47,7 +48,7 @@ import {
   IDLE_SAVE_TIMER,
   planFlush,
   planSave,
-  payloadFor,
+  patchFor,
   type SaveTimerState,
 } from "./settings-save-core";
 
@@ -61,6 +62,14 @@ export type Settings = typeof SETTINGS_DEFAULTS;
 
 /** Innstillingene som gjelder nå. Skriv aldri direkte — bruk `patchSettings`. */
 export const settings = signal<Settings>({ ...SETTINGS_DEFAULTS });
+
+/**
+ * Det vi tror basen holder: svaret fra siste vellykkede lesing, med hver
+ * vellykket skriving lagt oppå. Lagringen sender bare feltene som skiller seg
+ * fra denne — Rust fletter dem over det som faktisk er lagret, så en utdatert
+ * kopi her aldri kan skrive gamle verdier over felt den ikke har rørt.
+ */
+let baseline: Settings = { ...SETTINGS_DEFAULTS };
 
 /** Har vi lest fra basen ennå? Falsk betyr «dette er defaults, ikke svaret». */
 export const hydrated = signal(false);
@@ -94,6 +103,7 @@ export async function hydrateSettings(): Promise<void> {
   try {
     const loaded = await window.api.getSettings();
     settings.value = loaded;
+    baseline = { ...loaded };
     // Shimmen svarte kanskje med defaults ETTER en feilet lesning — den
     // kaster ikke, den logger og faller tilbake. Feilringen er det eneste
     // stedet forskjellen finnes.
@@ -103,6 +113,7 @@ export async function hydrateSettings(): Promise<void> {
   } catch (err) {
     console.warn("[settings] hydrate failed", err);
     settings.value = { ...SETTINGS_DEFAULTS };
+    baseline = { ...SETTINGS_DEFAULTS };
     hydrateError.value = "settingsLoadFailed";
   } finally {
     hydrated.value = true;
@@ -150,14 +161,22 @@ export function patchSettings(patch: Partial<Settings>): void {
 // ── Lagring ─────────────────────────────────────────────────────────────────
 //
 // Beslutningene bor i `settings-save-core.ts` og er tabelltestet; dette er
-// timeren og IPC-en rundt dem. Én delt promise per byge, akkurat som legacy:
-// den som ba om lagringen får vite om skrivningen faktisk landet, og «Lagret ✓»
-// kan aldri vises for noe som ikke ble lagret.
+// timeren og IPC-en rundt dem. Én delt promise per byge: den som ba om
+// lagringen får vite om skrivningen faktisk landet, og «Lagret ✓» kan aldri
+// vises for noe som ikke ble lagret.
+//
+// Bygene står i KØ. Når en byges skriving er sendt, tas promisen ut av
+// «ventende» — en endring som kommer mens IPC-en er i lufta starter en NY
+// byge med sitt eget løfte, i stedet for å låne kvitteringen til skrivningen
+// som alt er på vei (da fikk den andre endringen «Lagret ✓» for den første).
+// Skrivningene kjører én og én, så den andre ser basen slik den første lot den.
 
 let timer: SaveTimerState = IDLE_SAVE_TIMER;
 let handle: ReturnType<typeof setTimeout> | null = null;
 let pending: Promise<boolean> | null = null;
 let settle: ((ok: boolean) => void) | null = null;
+/** Halen av skrivekøa: løst når siste sendte skriving er ferdig. */
+let tail: Promise<unknown> = Promise.resolve();
 /** Koden bakenden avviste SIST skrivning med — `""` etter en som landet. */
 let lastFailureCode = "";
 
@@ -170,9 +189,17 @@ async function write(): Promise<boolean> {
     lastFailureCode = "";
     return false;
   }
-  try {
-    const ok = !!(await window.api.saveSettings(payloadFor(settings.value)));
+  // Bare det som er endret siden basen sist svarte. Ingenting endret = ingenting
+  // å skrive, og da er «lagret» sant.
+  const sent = patchFor(settings.value, baseline);
+  if (Object.keys(sent).length === 0) {
     lastFailureCode = "";
+    return true;
+  }
+  try {
+    const ok = !!(await window.api.saveSettings(sent));
+    lastFailureCode = "";
+    if (ok) baseline = { ...baseline, ...sent };
     return ok;
   } catch (err) {
     // Et avvist `settings_save` reiser hele veien (R3-B). `false` her er det
@@ -209,6 +236,19 @@ function resolvePending(ok: boolean): void {
 }
 
 /**
+ * Send byga som venter: ta promisen ut av «ventende» NÅ, og la den løses av
+ * akkurat denne skrivningen, bak de som alt er i køen.
+ */
+function dispatchWave(): void {
+  const done = settle;
+  settle = null;
+  pending = null;
+  const run = tail.then(write);
+  tail = run;
+  void run.then((ok) => done?.(ok));
+}
+
+/**
  * Lagre, etterslepende. Returnerer en promise som løses når skrivningen
  * FAKTISK landet — flere kall i samme byge deler den ene promisen og det ene
  * svaret.
@@ -230,19 +270,24 @@ export function saveSettingsDebounced(
   handle = setTimeout(() => {
     handle = null;
     timer = IDLE_SAVE_TIMER;
-    void write().then(resolvePending);
+    dispatchWave();
   }, delayMs);
   return pending;
 }
 
-/** Skriv nå hvis noe venter. Før navigasjon, før avslutning. */
+/**
+ * Skriv nå hvis noe venter, og vent til alt som er sendt har landet. Før
+ * navigasjon, før avslutning.
+ */
 export async function flushSavePending(): Promise<void> {
   const plan = planFlush(timer);
   timer = plan.next;
-  if (plan.action === "none") return;
-  if (handle) clearTimeout(handle);
-  handle = null;
-  resolvePending(await write());
+  if (plan.action === "send") {
+    if (handle) clearTimeout(handle);
+    handle = null;
+    dispatchWave();
+  }
+  await tail;
 }
 
 /**

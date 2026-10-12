@@ -337,6 +337,9 @@ const EXPORT_ERROR_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["channel_repair_needs_stereo", "errChannelRepairNeedsStereo"],
   ["invalid_format", "errInvalidFormat"],
   ["export_already_running", "errExportAlreadyRunning"],
+  // Bakendens opptaksvakt (audit 2026-10): skjermen sjekker `isRecording` bare
+  // ved klikk; `editor_export` sier nei selv om opptaket startet etterpå.
+  ["recording_in_progress", "errRecordingInProgress"],
   ["disk_low_for_export", "errDiskLowForExport"],
   ["export_folder_unknown", "errExportFolderPickAgain"],
   ["dialog_failed", "errExportFolderPickAgain"],

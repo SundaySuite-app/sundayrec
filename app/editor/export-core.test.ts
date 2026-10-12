@@ -194,6 +194,12 @@ describe("feilkodene", () => {
     );
   });
 
+  it("recording_in_progress (bakendens opptaksvakt) har en setning", () => {
+    expect(exportErrorKey("validation: recording_in_progress")).toBe(
+      "errRecordingInProgress",
+    );
+  });
+
   // F2-11: diskvakten FØR renderen. Rust-siden pinner den samme ledende koden
   // i `the_low_disk_refusal_uses_the_code_the_renderer_translates`.
   it("disk_low_for_export har sin egen setning — ikke disk_full sin", () => {

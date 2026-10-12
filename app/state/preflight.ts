@@ -58,11 +58,6 @@ import { settings } from "./settings";
 
 let hasRun = false;
 
-/** Test-krok: glem at sjekken har kjørt. */
-export function __resetSilentPreflight(): void {
-  hasRun = false;
-}
-
 /** Tillatelsene og sidecar-helsen, som forhåndssjekk-funn. Best effort — en
  *  probe vi ikke fikk kjørt legger ingenting til i stedet for å blokkere. */
 export async function collectHealthFindings(): Promise<PreflightFinding[]> {

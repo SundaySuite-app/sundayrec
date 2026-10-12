@@ -16,7 +16,7 @@ import type { RecorderStatePayload } from "../legacy/bindings/RecorderStatePaylo
 // `settings_save` invokes — the localStorage store is dead). The harness
 // installs a tiny FIXTURE-BACKED STORE standing in for the backend's sqlite
 // row: a spec's partial `settings` seed is merged over `SETTINGS_DEFAULTS`
-// (emulating Rust's merge-over-defaults), every `settings_save` replaces the
+// (emulating Rust's merge-over-defaults), every `settings_save` patch is merged over the
 // stored object and is recorded for `settingsSavePayloads`, and the store
 // itself survives `page.reload()` — persistence across a teardown is exactly
 // what the reload specs assert. A spec can still override any of the three
@@ -222,10 +222,13 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
     if (!("settings_get" in map)) map.settings_get = () => db.read();
     if (!("settings_save" in map))
       map.settings_save = (args?: Record<string, unknown>) => {
+        // The renderer sends a PATCH (the fields it changed); Rust lays it
+        // over the stored row, and so does this stand-in.
         const s = (args?.settings ?? {}) as Record<string, unknown>;
-        db.write(s);
+        const merged = { ...db.read(), ...s };
+        db.write(merged);
         ((w.__settingsSaves ??= []) as unknown[]).push(s);
-        return s;
+        return merged;
       };
     if (!("settings_import" in map))
       map.settings_import = (args?: Record<string, unknown>) => {
@@ -339,9 +342,9 @@ export const BOOT_FIXTURES: Fixtures = {
  * Every FULL settings object `settings_save` has received so far — recorded by
  * the harness's default store handler at the exact boundary where the object
  * leaves the renderer on its way to sqlite. The seam specs (settings-seam,
- * update-channel) pin the R4 invariant on this observable: the payload is the
- * whole vocabulary, so a field written is a field read back — nothing curated,
- * nothing silently re-defaulted (the #113 family's ending).
+ * update-channel) pin the seam on this observable: the payload is the PATCH
+ * (only the fields the page changed), and the stored row is where a field that
+ * was NOT touched must still be found, unchanged.
  */
 export async function settingsSavePayloads(
   page: Page,

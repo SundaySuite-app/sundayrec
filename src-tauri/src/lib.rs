@@ -401,7 +401,11 @@ pub fn run() {
             // for exactly this reason). Inert unless the env var is explicitly
             // set. The relaunched instance is started by LaunchServices
             // (`open`), which does NOT inherit the variable — no loop.
-            #[cfg(feature = "updater")]
+            //
+            // Debug builds only (audit 2026-10): a release app must not let a
+            // variable in its launching environment make it kill itself. Run
+            // the rig check with a `tauri build --debug` build.
+            #[cfg(all(feature = "updater", debug_assertions))]
             if std::env::var("SUNDAYREC_TEST_RELAUNCH").as_deref() == Ok("1") {
                 let relaunch_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -637,7 +641,6 @@ pub fn run() {
             // The recordings folder: Rust opens the folder dialog, vets the
             // folder and stores it; `settings_save` keeps whatever is stored.
             commands::settings::settings_pick_save_folder,
-            commands::settings::settings_reset,
             commands::settings::settings_import,
             // The profile file: Rust opens the save/open dialog itself, so no
             // path crosses from the webview (finding A1; commands/settings.rs).
@@ -712,7 +715,6 @@ pub fn run() {
             commands::scheduler::scheduler_check_missed,
             commands::wake::wake_capabilities,
             commands::wake::wake_get_sleep_config,
-            commands::wake::wake_fix_sleep,
             commands::wake::wake_verify,
             commands::wake::wake_reschedule,
             commands::wake::wake_test,

@@ -81,6 +81,7 @@ import { useEffect } from "preact/hooks";
 import {
   decideShortcut,
   isEditableTarget,
+  isInteractiveTarget,
   type ShortcutPage,
 } from "@lib/shortcuts-core";
 
@@ -120,7 +121,7 @@ import { PageShell } from "./ui/PageShell/PageShell";
 import { ToastHost } from "./ui/ToastHost/ToastHost";
 
 export interface ShellProps {
-  /** `?probe=<navn>`. TODO(P): forsvinner med `app/dev/`. */
+  /** `?probe=<navn>`, dev builds only. TODO(P): forsvinner med `app/dev/`. */
   probe?: string | null;
 }
 
@@ -166,7 +167,7 @@ export function Shell({ probe }: ShellProps) {
 
       <UpdateBanner />
 
-      {probe === "setting" ? (
+      {import.meta.env.DEV && probe === "setting" ? (
         <SettingProbe />
       ) : firstRun ? (
         <FirstRun />
@@ -314,6 +315,10 @@ function useGlobalShortcuts(): void {
         targetIsEditable: isEditableTarget(
           document.activeElement as HTMLElement | null,
         ),
+        targetIsInteractive: isInteractiveTarget(
+          document.activeElement as HTMLElement | null,
+        ),
+        repeat: event.repeat,
         // Samme vilkår som Start-knappens `disabled`-prop — se
         // `RecordPage.tsx`s `source.canStart`.
         startEnabled: sourceState(settings.peek(), audioDevices.peek())

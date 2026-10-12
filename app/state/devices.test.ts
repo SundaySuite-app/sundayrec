@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { planDeviceHeal, soundChosen, toDeviceOptions } from "./devices";
+import {
+  audioDevices,
+  loadAudioDevices,
+  planDeviceHeal,
+  soundChosen,
+  toDeviceOptions,
+} from "./devices";
 import type { TaggedAudioInput } from "@legacy/bindings/TaggedAudioInput";
 
 function input(over: Partial<TaggedAudioInput> = {}): TaggedAudioInput {
@@ -165,5 +171,55 @@ describe("planDeviceHeal — en lagret id som ikke lenger finnes", () => {
     expect(
       planDeviceHeal(stored, [{ id: "ny-id", name: "Focusrite" }]),
     ).toBeNull();
+  });
+});
+
+describe("loadAudioDevices — sekvensvakt og feil", () => {
+  type Win = { api: { listAudioDevices: () => Promise<TaggedAudioInput[]> } };
+  const setApi = (fn: Win["api"]["listAudioDevices"]): void => {
+    (globalThis as unknown as { window: Win }).window = {
+      api: { listAudioDevices: fn },
+    };
+  };
+  const reset = (): void => {
+    audioDevices.value = null;
+    delete (globalThis as unknown as { window?: unknown }).window;
+  };
+
+  it("en eldre lesning som svarer sent overstyrer ikke en nyere", async () => {
+    reset();
+    let release!: (v: TaggedAudioInput[]) => void;
+    const slow = new Promise<TaggedAudioInput[]>((r) => (release = r));
+    setApi(() => slow);
+    const first = loadAudioDevices();
+    setApi(async () => [input({ id: "new", name: "Ny" })]);
+    await loadAudioDevices();
+    expect(audioDevices.value?.map((d) => d.id)).toEqual(["new"]);
+    release([input({ id: "old", name: "Gammel" })]);
+    await first;
+    expect(audioDevices.value?.map((d) => d.id)).toEqual(["new"]);
+    reset();
+  });
+
+  it("en feilet gjenlesing beholder forrige liste", async () => {
+    reset();
+    setApi(async () => [input({ id: "x32" })]);
+    await loadAudioDevices();
+    setApi(async () => {
+      throw new Error("device busy");
+    });
+    await loadAudioDevices();
+    expect(audioDevices.value?.map((d) => d.id)).toEqual(["x32"]);
+    reset();
+  });
+
+  it("en feilet første lesning lander på tom liste, ikke null", async () => {
+    reset();
+    setApi(async () => {
+      throw new Error("boom");
+    });
+    await loadAudioDevices();
+    expect(audioDevices.value).toEqual([]);
+    reset();
   });
 });

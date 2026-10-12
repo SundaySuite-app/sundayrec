@@ -69,26 +69,17 @@ declare global {
      *
      * ⚠️ `window.loadSettings`, `window.showOnboarding` and `window.__isRecording`
      * are deliberately NOT recreated by `app/` — each was a second place that
-     * believed it knew a current value. `__isRecording` is still declared
-     * because `app/lib/audio/vu-feed.ts` READS it: the read is a guard against
-     * starting `start_vu` while a recording owns the device, and with nobody
-     * writing the flag the guard is inert. That is safe here and only here,
-     * because the shell guards the same thing by MOUNTING — no meter in the
-     * tree, no `start_vu` — which is written down at the call site in
-     * `app/pages/record/RecordPage.tsx`. Rebuilding the flag would be a second
-     * writer on one truth, which is the failure class this shell exists to end.
-     * Collapsing the two into an argument is the standing restanse; see «Etter
-     * byttet» in `docs/APP-SHELL.md`.
+     * believed it knew a current value. The VU feed is kept off the device
+     * during a take by MOUNTING (no meter in the tree, no `start_vu`), written
+     * down at the call site in `app/pages/record/RecordPage.tsx`.
      */
     showPage: (id: string) => void;
-    /** Set to true while a recording owns the device. Nothing writes it — see above. */
-    __isRecording?: boolean;
     /** Open the editor on a recording the app already knows, by its history
      *  row id (the library row, the e2e harness) — never by a path (A2). */
     openEditorWithRecording: (recordingId: string, seekToSec?: number) => void;
     api: {
       getSettings: () => Promise<Settings>;
-      saveSettings: (s: Settings) => Promise<boolean>;
+      saveSettings: (s: Partial<Settings>) => Promise<boolean>;
       /** Write the whole (validated) settings object to a JSON file the
        *  operator picks in a save dialog RUST opens — no path crosses from
        *  here. `true` = written, `false` = cancelled. Rejects on failure — the
@@ -194,7 +185,9 @@ declare global {
       /** Open the OS notification settings. `false` when it could not. */
       notificationOpenSettings: () => Promise<boolean>;
       getAppVersion: () => Promise<string>;
-      checkForUpdates: () => Promise<void>;
+      /** `background: true` = the hourly timer, not the owner's button: Rust
+       *  then refuses the network call while the stored «auto update» is off. */
+      checkForUpdates: (opts?: { background?: boolean }) => Promise<void>;
       installUpdate: () => void;
       /** Push the UI language to the Rust menubar tray (it renders its own labels). */
       traySetLanguage?: (code: string) => Promise<void>;
