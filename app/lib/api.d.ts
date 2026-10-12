@@ -398,6 +398,10 @@ declare global {
       /** The tail of the live log file, clamped server-side to 512 KB
        *  regardless of `maxBytes`. Empty string means nothing logged yet. */
       logsTail: (maxBytes: number) => Promise<string>;
+      /** The bundled `THIRD-PARTY-NOTICES.html` as text (`licenses_notices`).
+       *  No path in or out. `null` when the file is missing from the install —
+       *  never an empty string, so the caller can tell «empty» from «absent». */
+      licensesNotices: () => Promise<string | null>;
       /** Every IPC failure remembered this session (renderer-local ring,
        *  newest first) — answers even when the backend that IS failing can't
        *  be asked. */

@@ -1167,6 +1167,18 @@ const api: Record<string, unknown> = {
   // goes through `call()` with an empty-string fallback rather than throwing.
   logsTail: async (maxBytes: number) =>
     call<string>("logs_tail", { maxBytes }, ""),
+  // A1b — the notices file the installers ship. A missing file is `null`, not
+  // "" : an empty page would read as «there are no licences», which is the one
+  // wrong answer here. Logged, not toasted: the caller owns the sentence.
+  licensesNotices: async () => {
+    try {
+      const text = await invoke<string>("licenses_notices");
+      return text.length > 0 ? text : null;
+    } catch (e) {
+      console.warn("[api-shim] licenses_notices failed", e);
+      return null;
+    }
+  },
 
   // ── Telemetry (E3.6) — opt-in, anonymous, off by default ────────────────
   // Every command here is documented in src-tauri/src/commands/telemetry.rs;

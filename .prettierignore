@@ -22,3 +22,7 @@ src/lib/bindings
 # stays covered.
 docs/design/atlas
 docs/design/atlas-v015
+
+# Generert av `npm run licenses:notices` (A1b); about.hbs er malen, ikke vanlig HTML.
+src-tauri/resources/THIRD-PARTY-NOTICES.html
+about.hbs

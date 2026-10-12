@@ -15,6 +15,7 @@ pub mod editor;
 pub mod haptics;
 // E2.3 — reveal the log folder / copy its tail. Neither takes a path: the only
 // directory they can touch is computed in-process (see the module docs).
+pub mod licenses;
 pub mod logs;
 pub mod media;
 pub mod media_filters;

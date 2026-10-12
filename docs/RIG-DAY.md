@@ -223,6 +223,17 @@ faktisk skal se nå — sist.
       et funn. Denne sjekken gjelder opptaket; en eksport i Redigering har
       ikke flagget og skal være like skarp som før.
 
+- [ ] **(a1b) Lisensfila ligger i den installerte appen.** Installer en ekte
+      utgivelse (ikke en `tauri dev`-bygging). Gearikonet → Avansert → bunnen:
+      kortet «Lisenser» → «Vis lisenser».
+      **Forventet:** en side åpner seg i appen, med «FFmpeg (GPL)» øverst og
+      lenker til hvor kildene finnes, så npm- og Rust-bibliotekene med
+      lisenstekst. Knappen gir ikke feilmeldingen «Fant ikke lisensteksten».
+      Se også at fila finnes: macOS `SundayRec.app/Contents/Resources/resources/THIRD-PARTY-NOTICES.html`,
+      Windows `resources\THIRD-PARTY-NOTICES.html` ved siden av `SundayRec.exe`.
+      Gjør det på begge maskinene. (Macen kan også gjøres uten rigg, men
+      installert utgivelse + signert bygg er det som beviser at bunten er riktig.)
+
 ## Windows-boksen
 
 - [ ] **(b) Kamera + video, stopp og start rett etter hverandre.** Ta opp en

@@ -53,6 +53,7 @@ step "farger kun via tokens (app/)"; npm run css-tokens
 step "feilkoder er oversettbare";      npm run error-codes
 step "norsk-skralle (Rust)";           npm run rust-norwegian
 step "smoke VERIFIED-BY pointers";     npm run smoke-verified
+step "tredjepartsmerknader ferske";     npm run licenses:notices:check
 
 step "rust — cargo fmt --check";       npm run fmt:rust:check
 step "rust — cargo clippy -D warnings"; npm run lint:rust

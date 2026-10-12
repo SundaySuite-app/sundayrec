@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SundayRec — third-party notices</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #fff; }
+  h1 { font-size: 1.6rem; } h2 { margin-top: 2.5rem; font-size: 1.2rem; border-bottom: 1px solid #ccc; padding-bottom: .25rem; }
+  pre { white-space: pre-wrap; background: #f5f5f5; padding: .75rem; border-radius: 6px; font-size: 12px; }
+  ul.used-by { columns: 2; font-size: 13px; } code { font-size: 13px; }
+  @media (prefers-color-scheme: dark) { body { color: #e6e6e6; background: #161616; } pre { background: #222; } h2 { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>Third-party notices</h1>
+<p>SundayRec is MIT-licensed. It is built from, and distributed together with,
+the software listed below. Each component keeps its own license; the notices
+are reproduced here as those licenses require.</p>
+
+<h2 id="ffmpeg">FFmpeg (GPL)</h2>
+<p>The installers include the <code>ffmpeg</code> and <code>ffprobe</code>
+programs, which SundayRec runs as separate processes. They are built with
+<code>--enable-gpl --enable-version3</code> and are licensed under the
+<strong>GNU General Public License, version 3 or later</strong>. The GPL applies
+to those two programs only, not to the rest of SundayRec. Nothing is built with
+<code>--enable-nonfree</code>.</p>
+<p>You are entitled to the corresponding source code of the FFmpeg version we
+ship (see <code>docs/DISTRIBUTION.md</code> in the SundayRec repository for the
+exact version and build):</p>
+<ul>
+<li>FFmpeg source releases: <code>https://ffmpeg.org/download.html</code></li>
+<li>macOS builds (Martin Riedl): <code>https://ffmpeg.martin-riedl.de</code></li>
+<li>Windows builds (gyan.dev): <code>https://www.gyan.dev/ffmpeg/builds/</code></li>
+<li>SundayRec source: <code>https://github.com/SundaySuite-app/sundayrec</code></li>
+</ul>
+<p>The GPL v3 text: <code>https://www.gnu.org/licenses/gpl-3.0.txt</code>.
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.</p>
+
+<h2 id="frontend">User interface libraries (npm)</h2>
+<!--NPM-->
+
+<h2 id="rust">Rust libraries</h2>
+{{#each licenses}}
+<h3>{{name}}</h3>
+<ul class="used-by">
+{{#each used_by}}
+<li>{{crate.name}} {{crate.version}}{{#if crate.repository}} — <code>{{crate.repository}}</code>{{/if}}</li>
+{{/each}}
+</ul>
+<pre>{{text}}</pre>
+{{/each}}
+</body>
+</html>

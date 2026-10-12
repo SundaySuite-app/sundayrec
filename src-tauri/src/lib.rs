@@ -658,6 +658,8 @@ pub fn run() {
             // takes a path (see commands/logs.rs for why that IS the guard).
             commands::logs::logs_reveal,
             commands::logs::logs_tail,
+            // A1b — the bundled THIRD-PARTY-NOTICES.html as text (no path).
+            commands::licenses::licenses_notices,
             // The tray's «Åpne opptaksmappen» (no argument) and «Vis i Finder»:
             // by a history row's id, or by the token an export's result
             // carried — never a path. The webview has no opener permission of
