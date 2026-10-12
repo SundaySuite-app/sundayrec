@@ -786,6 +786,8 @@ impl RecorderEngine {
             // "Stopped" over the recording that replaced it.
             let cpal_ctx = ctx.clone();
             let supervisor = tauri::async_runtime::spawn(async move {
+                let _panic_guard =
+                    SupervisorPanicGuard::announcing(cpal_ctx.state.clone(), cpal_ctx.app.clone());
                 run_cpal_session(host_kind, cpal_ctx, stop_rx, ready_tx).await;
             });
             match ready_rx.await {
@@ -856,6 +858,7 @@ impl RecorderEngine {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let supervisor = tauri::async_runtime::spawn(async move {
+            let _panic_guard = SupervisorPanicGuard::announcing(ctx.state.clone(), ctx.app.clone());
             run_session(ctx, stop_rx, ready_tx).await;
         });
 
@@ -928,6 +931,62 @@ fn fail_stuck_stop(state: &StateWriter) {
     state.set(RecorderState::Failed, 0);
 }
 
+/// Held by a supervisor task for its whole life. If the task PANICS, the guard is
+/// dropped while the thread is unwinding and sets the terminal `Failed` state —
+/// without it the engine sat in `Recording`/`Stopping` forever (nobody left to
+/// emit a terminal state), `start_recording` refused with `already_recording`,
+/// and the UI hung. A normal exit or the stop backstop's `abort()` is not a
+/// panic: the guard does nothing then (the abort path has [`fail_stuck_stop`]).
+pub(crate) struct SupervisorPanicGuard {
+    state: StateWriter,
+    /// Runs after the state was set to `Failed` (production: announce the error
+    /// to the UI). A callback rather than an `AppHandle`, so the guard itself
+    /// does not drag the whole Tauri runtime into every test binary that
+    /// constructs one (that broke the Windows test exe at load time).
+    on_failed: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl SupervisorPanicGuard {
+    pub(crate) fn new(state: StateWriter, on_failed: Option<Box<dyn FnOnce() + Send>>) -> Self {
+        Self { state, on_failed }
+    }
+
+    /// The production guard: on a panic also emits the terminal error event.
+    fn announcing(state: StateWriter, app: AppHandle) -> Self {
+        Self::new(
+            state,
+            Some(Box::new(move || {
+                emit_failure(&app, "supervisor_panic", "recorder supervisor panicked")
+            })),
+        )
+    }
+}
+
+impl Drop for SupervisorPanicGuard {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            return;
+        }
+        if fail_panicked_supervisor(&self.state) {
+            if let Some(f) = self.on_failed.take() {
+                f();
+            }
+        }
+    }
+}
+
+/// The supervisor panicked: if its session is still the engine's current one and
+/// never reached a terminal state, mark it `Failed`. Returns whether it did (a
+/// newer session or an already-terminal state is left alone).
+fn fail_panicked_supervisor(state: &StateWriter) -> bool {
+    if !state.is_current() || lock_recover(&state.last_state).is_terminal() {
+        return false;
+    }
+    tracing::error!("recorder: the supervisor panicked — marking the session failed");
+    state.set(RecorderState::Failed, 0);
+    true
+}
+
 /// The auto-stop deadline after the user extends by `minutes`: add to the current
 /// deadline so "+30 min" really extends (never shortens), falling back to `now`
 /// when nothing is armed or the existing deadline already passed. Pure → tested.
@@ -977,6 +1036,55 @@ mod tests {
         fail_stuck_stop(&done.fresh);
         assert_eq!(*done.last_state.lock().unwrap(), RecorderState::Stopped);
         assert!(done.sink.payloads().is_empty());
+    }
+
+    /// A panic inside the supervisor task must not leave the engine in
+    /// `Recording` forever: the guard sets `Failed` as the future unwinds. Runs on a
+    /// real runtime, because WHERE the future is dropped (inside the unwind or
+    /// after tokio caught it) is exactly what the guard depends on.
+    #[tokio::test]
+    async fn a_panicking_supervisor_leaves_the_engine_failed_not_recording_forever() {
+        let g = two_generations(RecorderState::Recording, None);
+        let state = g.fresh.clone();
+        let task = tokio::spawn(async move {
+            let _guard = SupervisorPanicGuard::new(state, None);
+            tokio::task::yield_now().await;
+            panic!("boom in the supervisor");
+        });
+        let joined = task.await;
+        assert!(joined.is_err_and(|e| e.is_panic()));
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Failed);
+        assert_eq!(
+            g.sink.payloads().last().unwrap().state,
+            RecorderState::Failed
+        );
+    }
+
+    /// Only a panic fails the session: a clean exit leaves the state alone.
+    #[tokio::test]
+    async fn a_supervisor_that_exits_normally_leaves_the_state_alone() {
+        let g = two_generations(RecorderState::Stopped, None);
+        let state = g.fresh.clone();
+        tokio::spawn(async move {
+            let _guard = SupervisorPanicGuard::new(state, None);
+        })
+        .await
+        .unwrap();
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Stopped);
+        assert!(g.sink.payloads().is_empty());
+    }
+
+    /// A panic in an OLD session must not fail the one that replaced it.
+    #[tokio::test]
+    async fn a_panic_in_a_superseded_supervisor_does_not_fail_the_new_session() {
+        let g = two_generations(RecorderState::Recording, None);
+        let stale = g.stale.clone();
+        let _ = tokio::spawn(async move {
+            let _guard = SupervisorPanicGuard::new(stale, None);
+            panic!("old session dies");
+        })
+        .await;
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Recording);
     }
 
     #[test]

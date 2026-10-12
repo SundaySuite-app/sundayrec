@@ -125,7 +125,21 @@ pub async fn spawn_ffmpeg(args: &[&str]) -> AppResult<tokio::process::Child> {
 /// said 46.6 s, the file held 20.4 s, and nothing noticed). `None` on any
 /// failure — the caller treats an unprobeable file as unmeasured, never as 0 s.
 pub async fn probe_duration_secs(path: &str) -> Option<f64> {
-    let out = crate::util::hidden_command(ffprobe_path())
+    probe_duration_with(&ffprobe_path(), path, PROBE_TIMEOUT).await
+}
+
+/// Upper bound for one duration probe. A wedged ffprobe (dead network share,
+/// stuck device) must not stall finalize/recovery forever.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// [`probe_duration_secs`] with an explicit binary and timeout (testable). On
+/// timeout the child is killed (`kill_on_drop`) and the result is `None`.
+async fn probe_duration_with(
+    program: &str,
+    path: &str,
+    timeout: std::time::Duration,
+) -> Option<f64> {
+    let probe = crate::util::hidden_command(program)
         .args([
             "-v",
             "error",
@@ -136,9 +150,9 @@ pub async fn probe_duration_secs(path: &str) -> Option<f64> {
             path,
         ])
         .stdin(std::process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(timeout, probe).await.ok()?.ok()?;
     if !out.status.success() {
         return None;
     }
@@ -220,6 +234,30 @@ pub fn ffmpeg_health() -> FfmpegHealth {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// A hung ffprobe must not stall the caller: the probe times out and the
+    /// child is killed (`kill_on_drop`) instead of being awaited forever.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn probe_duration_gives_up_on_a_hung_ffprobe() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("fake-ffprobe");
+        std::fs::write(&fake, "#!/bin/sh\nsleep 30\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let t0 = std::time::Instant::now();
+        let got = probe_duration_with(
+            &fake.to_string_lossy(),
+            "whatever.mp3",
+            std::time::Duration::from_millis(300),
+        )
+        .await;
+        assert_eq!(got, None);
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(10),
+            "probe must return at the timeout, not wait for ffprobe"
+        );
+    }
 
     // ── Pure resolution policy (deterministic, parallel-safe — no env) ───────
 

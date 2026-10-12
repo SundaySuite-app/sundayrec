@@ -2491,6 +2491,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let manifest = SessionManifest {
+            recovery_attempts: 0,
             session_id: started.timestamp_millis().to_string(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: started.timestamp_millis() as u64,
@@ -2826,6 +2827,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let manifest = SessionManifest {
+            recovery_attempts: 0,
             session_id: started.timestamp_millis().to_string(),
             device_name: "Soundcraft USB".into(),
             session_start_ms: started.timestamp_millis() as u64,

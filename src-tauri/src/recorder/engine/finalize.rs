@@ -132,6 +132,7 @@ pub(super) fn session_manifest(
     delivery_encode: &Option<AudioEncodeManifest>,
 ) -> SessionManifest {
     SessionManifest {
+        recovery_attempts: 0,
         session_id: session_id.to_string(),
         device_name: audio.name.clone(),
         session_start_ms: start_ms,

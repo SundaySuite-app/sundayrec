@@ -207,6 +207,46 @@ where
     drop(sink); // EOF → ffmpeg flushes + finalises the container
 }
 
+/// How long the stop path waits for the cpal stream thread to wind down before
+/// moving on (a wedged driver must not hold the stop hostage).
+const STREAM_JOIN_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The stop order of the pipe path: first stop the cpal stream (so the callback
+/// cannot push another block), THEN tell the writer to drain what is left and
+/// exit. Setting the writer's stop flag first — as the code used to — lets the
+/// writer see "stop + empty ring" and close ffmpeg's stdin while the stream
+/// thread (it polls its flag every 50 ms) is still delivering callbacks, so the
+/// last ~50 ms of the recording was silently dropped.
+///
+/// `join_stream` joins the stream thread; it runs on a blocking thread and is
+/// bounded by `bound`.
+async fn stop_stream_then_writer(
+    stream_stop: &AtomicBool,
+    writer_stop: &AtomicBool,
+    join_stream: impl FnOnce() + Send + 'static,
+    bound: std::time::Duration,
+) {
+    stream_stop.store(true, Ordering::Relaxed);
+    let join = tokio::task::spawn_blocking(join_stream);
+    if tokio::time::timeout(bound, join).await.is_err() {
+        tracing::warn!("recorder: cpal — stream thread did not stop in time, continuing");
+    }
+    writer_stop.store(true, Ordering::Relaxed);
+}
+
+/// Wait for ffmpeg to exit, but never forever: past `bound` it is killed. Without
+/// this a wedged finalise froze the whole stop (UI stuck on «Stopper»).
+async fn wait_child_bounded(child: &mut tokio::process::Child, bound: std::time::Duration) {
+    if tokio::time::timeout(bound, child.wait()).await.is_err() {
+        tracing::error!(
+            timeout_ms = bound.as_millis() as u64,
+            "recorder: cpal — ffmpeg did not finalise in time on stop, killing it"
+        );
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //   F2-W4 — the Windows video session is crash-safe now
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,6 +307,7 @@ impl VideoCapture {
     /// The crash-recovery manifest to persist once the capture is live.
     pub(crate) fn manifest(&self) -> SessionManifest {
         SessionManifest {
+            recovery_attempts: 0,
             session_id: self.session_id.clone(),
             device_name: self.device_name.clone(),
             session_start_ms: self.started_ms,
@@ -402,11 +443,12 @@ mod imp {
     use sundayrec_core::capture::{build_cpal_pipe_audio_args, build_cpal_pipe_video_args};
     use sundayrec_core::device_match::FfmpegDevice;
     use sundayrec_core::recorder::RecorderState;
+    use sundayrec_core::timeouts::RecorderTimeouts;
     use tauri::Emitter;
 
     use super::{
-        finalize_video_capture, history_row, plan_video_capture, writer_task, CpalHostKind,
-        VideoCapture,
+        finalize_video_capture, history_row, plan_video_capture, stop_stream_then_writer,
+        wait_child_bounded, writer_task, CpalHostKind, VideoCapture, STREAM_JOIN_BOUND,
     };
     use crate::audio::asio::{build_route_plan, ChannelRoute};
     use crate::db::store::insert_recording;
@@ -760,7 +802,11 @@ mod imp {
         }
 
         // Stream is live → start draining into ffmpeg and report ready.
-        let writer = tauri::async_runtime::spawn(writer_task(cons, stdin, Arc::clone(&stop)));
+        // The writer has its OWN stop flag, set only after the stream thread is
+        // gone (see `stop_stream_then_writer`).
+        let writer_stop = Arc::new(AtomicBool::new(false));
+        let mut writer =
+            tauri::async_runtime::spawn(writer_task(cons, stdin, Arc::clone(&writer_stop)));
 
         // Live VU meters (H1): sample the per-channel peak-hold ~30×/s and emit
         // `recording://levels` so the in-recording meters work on the cpal path too.
@@ -850,11 +896,28 @@ mod imp {
 
         // ── Tear down: stop stream → writer EOF → ffmpeg finalises ───────────
         state.set(RecorderState::Stopping, 0);
-        stop.store(true, Ordering::Relaxed);
         levels_task.abort();
-        let _ = writer.await; // closes stdin (EOF)
-        let _ = child.wait().await; // ffmpeg finalises the container
-        let _ = stream_handle.join();
+        let finalize_bound = Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS);
+        stop_stream_then_writer(
+            &stop,
+            &writer_stop,
+            move || {
+                let _ = stream_handle.join();
+            },
+            STREAM_JOIN_BOUND,
+        )
+        .await;
+        // Writer drains the ring, then drops stdin (EOF). Bounded: a wedged ffmpeg
+        // that stops reading would block `write_all` forever; aborting drops the
+        // sink, which is the EOF.
+        if tokio::time::timeout(finalize_bound, &mut writer)
+            .await
+            .is_err()
+        {
+            tracing::error!("recorder: cpal — writer did not drain in time, aborting it");
+            writer.abort();
+        }
+        wait_child_bounded(&mut child, finalize_bound).await; // ffmpeg finalises the container
         if let Some(h) = stderr_log {
             h.abort();
         }
@@ -1404,6 +1467,79 @@ mod tests {
         reader.read_to_end(&mut got).await.expect("read");
         w.await.expect("writer joined");
         assert!(got.is_empty());
+    }
+
+    // ── Stop order + bounded teardown ────────────────────────────────────────
+
+    /// The writer may only be told to stop AFTER the stream thread is gone —
+    /// otherwise it can exit on "stop + empty ring" while the last callback
+    /// (up to ~50 ms of audio) is still on its way into the ring.
+    #[tokio::test]
+    async fn writer_is_told_to_stop_only_after_the_stream_thread_is_joined() {
+        let stream_stop = Arc::new(AtomicBool::new(false));
+        let writer_stop = Arc::new(AtomicBool::new(false));
+        let seen_in_join = Arc::new(AtomicBool::new(true));
+        let (ss, ws, seen) = (
+            Arc::clone(&stream_stop),
+            Arc::clone(&writer_stop),
+            Arc::clone(&seen_in_join),
+        );
+        stop_stream_then_writer(
+            &stream_stop,
+            &writer_stop,
+            move || {
+                // Stand-in for the stream thread still finishing its last callback.
+                std::thread::sleep(Duration::from_millis(100));
+                seen.store(ws.load(Ordering::Relaxed), Ordering::Relaxed);
+                assert!(ss.load(Ordering::Relaxed), "stream was told to stop first");
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(
+            !seen_in_join.load(Ordering::Relaxed),
+            "writer stop flag was already set while the stream thread was running"
+        );
+        assert!(
+            writer_stop.load(Ordering::Relaxed),
+            "and it is set afterwards"
+        );
+    }
+
+    /// A stream thread that never returns must not hold the stop hostage.
+    #[tokio::test]
+    async fn a_wedged_stream_thread_does_not_block_the_writer_stop() {
+        let stream_stop = AtomicBool::new(false);
+        let writer_stop = AtomicBool::new(false);
+        stop_stream_then_writer(
+            &stream_stop,
+            &writer_stop,
+            || std::thread::sleep(Duration::from_secs(3)),
+            Duration::from_millis(100),
+        )
+        .await;
+        assert!(writer_stop.load(Ordering::Relaxed));
+    }
+
+    /// An ffmpeg that never finalises is killed at the bound, not awaited forever.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn wait_child_bounded_kills_a_child_that_never_exits() {
+        let mut child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn sleep");
+        let t0 = std::time::Instant::now();
+        wait_child_bounded(&mut child, Duration::from_millis(150)).await;
+        assert!(
+            t0.elapsed() < Duration::from_secs(10),
+            "must return at the bound, not after 30 s"
+        );
+        assert!(
+            child.try_wait().expect("try_wait").is_some(),
+            "child reaped"
+        );
     }
 
     // ── Ring sizing on this path ─────────────────────────────────────────────

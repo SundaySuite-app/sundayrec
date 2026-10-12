@@ -50,7 +50,7 @@ use crate::recorder::native_capture::stream::{
     CpalHostKind, StreamSink,
 };
 use crate::recorder::native_capture::writer::{
-    spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY,
+    spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY, SYNC_EVERY,
 };
 use crate::util::lock_recover;
 use sundayrec_core::audio::MeterBanks;
@@ -214,6 +214,7 @@ pub async fn spawn_native_segment_for(
             path: std::path::PathBuf::from(output_path),
             spec,
             flush_every: FLUSH_EVERY,
+            sync_every: SYNC_EVERY,
             silence: SilenceDetector::new(
                 silence_threshold_db(opts.stop_on_silence, opts.silence_threshold_db),
                 spec.sample_rate,

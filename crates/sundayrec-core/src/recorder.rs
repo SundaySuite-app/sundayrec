@@ -444,6 +444,20 @@ impl RecordingSession {
             .map(|start| now_ms.saturating_sub(start))
     }
 
+    /// Take back the newest reconnect fragment of the current deliverable and
+    /// return its path: the reconnect that opened it turned out unusable (the
+    /// device came back at a different sample rate, so a `-c copy` join with its
+    /// siblings would corrupt the file). The deliverable's first fragment is never
+    /// removed. `None` when there is nothing to take back.
+    pub fn discard_last_reconnect_fragment(&mut self) -> Option<String> {
+        let current = self.deliverables.last_mut()?;
+        if current.fragments.len() > 1 {
+            current.fragments.pop()
+        } else {
+            None
+        }
+    }
+
     /// Rotate to a fresh split segment: a split CLOSES the current deliverable
     /// and OPENS a new one. Bumps the split count, appends a new [`Deliverable`]
     /// whose first fragment is the `_partN` path, and returns the new path the engine
@@ -980,6 +994,28 @@ mod tests {
     }
 
     // ── Split rotation ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_discarded_reconnect_fragment_leaves_the_deliverable_without_it() {
+        let mut s = RecordingSession::new("/rec/sermon.mp3", 0);
+        assert_eq!(
+            s.discard_last_reconnect_fragment(),
+            None,
+            "nothing to take back"
+        );
+        let RecoveryDecision::Reconnect { next_segment, .. } = s.on_unexpected_exit(1_000, None)
+        else {
+            panic!("expected a reconnect");
+        };
+        assert_eq!(s.current_deliverable_fragments().len(), 2);
+        assert_eq!(s.discard_last_reconnect_fragment(), Some(next_segment));
+        assert_eq!(s.current_deliverable_fragments(), ["/rec/sermon.mp3"]);
+        assert_eq!(
+            s.discard_last_reconnect_fragment(),
+            None,
+            "first fragment stays"
+        );
+    }
 
     #[test]
     fn begin_split_segment_numbers_and_appends() {
