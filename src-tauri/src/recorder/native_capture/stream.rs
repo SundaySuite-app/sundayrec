@@ -92,7 +92,6 @@ pub fn open_host(kind: CpalHostKind) -> Result<cpal::Host, String> {
 /// by its exact cpal name. This also gives every spawn a fresh device lookup by
 /// NAME — virtual devices (Teams, iPhone Continuity) reshuffle device *indices*
 /// mid-session, which is why the ffmpeg path re-resolves per attempt too.
-#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
     if name.is_empty() {
         return host
@@ -105,13 +104,13 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
         .collect();
     let candidates: Vec<FfmpegDevice> = devices
         .iter()
-        .filter_map(|d| d.name().ok())
+        .filter_map(crate::audio::devices::device_name)
         .map(|n| FfmpegDevice::new(n, "cpal", None))
         .collect();
     let target = resolve_device_target(&candidates, name);
     devices
         .into_iter()
-        .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
+        .find(|d| crate::audio::devices::device_name(d).as_deref() == Some(target.as_str()))
         .ok_or_else(|| format!("input device not found: {name}"))
 }
 
@@ -121,7 +120,6 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
 /// actually opened. A miss is an `Err`, which the supervisor reads as "the
 /// device is not back yet" and keeps backing off, instead of recording the rest
 /// of the service from a different microphone.
-#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 pub fn find_device_exact(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
     let devices: Vec<cpal::Device> = host
         .input_devices()
@@ -129,7 +127,7 @@ pub fn find_device_exact(host: &cpal::Host, name: &str) -> Result<cpal::Device, 
         .collect();
     let candidates: Vec<FfmpegDevice> = devices
         .iter()
-        .filter_map(|d| d.name().ok())
+        .filter_map(crate::audio::devices::device_name)
         .map(|n| FfmpegDevice::new(n, "cpal", None))
         .collect();
     let target = find_exact_device_match(&candidates, name)
@@ -137,7 +135,7 @@ pub fn find_device_exact(host: &cpal::Host, name: &str) -> Result<cpal::Device, 
         .ok_or_else(|| format!("input device not back: {name}"))?;
     devices
         .into_iter()
-        .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
+        .find(|d| crate::audio::devices::device_name(d).as_deref() == Some(target.as_str()))
         .ok_or_else(|| format!("input device not back: {name}"))
 }
 
@@ -363,16 +361,40 @@ fn rt_scratch_capacity(total_channels: usize) -> usize {
     (total_channels.max(1) * 4096).max(4096)
 }
 
+/// Forward a stream error from cpal's error callback to the supervisor channel,
+/// exactly as cpal 0.17 did: every error it delivered there was fatal to the
+/// stream. cpal 0.18 ALSO delivers advisory events through the same callback —
+/// `Xrun` (CoreAudio/WASAPI capture now report them) and `RealtimeDenied`
+/// (previously only printed to stderr). Treating those as fatal would turn a
+/// single glitch into a reconnect, which is a behaviour change, so they are
+/// logged and NOT forwarded. Counting xruns is A3c's job; classifying the
+/// remaining kinds (`DeviceBusy`, `PermissionDenied`, …) is A3b's.
+pub fn forward_stream_error(
+    context: &str,
+    e: &cpal::Error,
+    tx: &tokio::sync::mpsc::Sender<String>,
+) {
+    match e.kind() {
+        cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied => {
+            tracing::warn!("{context} advisory (not fatal): {e}");
+        }
+        _ => {
+            tracing::error!("{context} error: {e}");
+            let _ = tx.try_send(e.to_string());
+        }
+    }
+}
+
 /// Build an input stream for sample type `T`: convert each sample to f32 via
 /// cpal `from_sample` (covers i16/i32/f32/**I24**/u16/…) and feed the sink.
 /// `conv`/`scratch` are allocated once here, never in the real-time callback.
 fn build_typed<T>(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     total: usize,
     mut sink: StreamSink,
-    err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
-) -> Result<cpal::Stream, cpal::BuildStreamError>
+    err_fn: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<cpal::Stream, cpal::Error>
 where
     T: cpal::SizedSample,
     f32: FromSample<T>,
@@ -459,11 +481,11 @@ fn push_routed(scratch: &[f32], out_ch: usize, prod: &mut HeapProd<f32>, overrun
 /// interleaved at this stride).
 pub fn build_input_stream_any(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     sample_format: SampleFormat,
     total: usize,
     sink: StreamSink,
-    err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
+    err_fn: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, String> {
     use cpal::SampleFormat as SF;
     let built = match sample_format {

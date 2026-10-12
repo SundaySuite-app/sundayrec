@@ -513,13 +513,16 @@ async fn spawn_preroll_stack(
                     sample_rate: negotiated.sample_rate,
                     buffer_size: cpal::BufferSize::Default,
                 };
-                let err_fn = move |e: cpal::StreamError| {
-                    tracing::error!("preroll(native) stream error: {e}");
-                    let _ = st_err.try_send(e.to_string());
+                let err_fn = move |e: cpal::Error| {
+                    crate::recorder::native_capture::stream::forward_stream_error(
+                        "preroll(native) stream",
+                        &e,
+                        &st_err,
+                    );
                 };
                 let stream = build_input_stream_any(
                     &device,
-                    &config,
+                    config,
                     negotiated.sample_format,
                     negotiated.channels as usize,
                     StreamSink::Preroll {

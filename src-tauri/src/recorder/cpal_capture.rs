@@ -472,7 +472,6 @@ mod imp {
     /// Deliberately `default_input_config()` rather than the native engine's
     /// range-walk negotiation: this path's ffmpeg args are built from the probe
     /// BEFORE the stream exists, so probe and stream must agree by construction.
-    #[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human device name.
     fn probe_config(
         host_kind: CpalHostKind,
         device_name: &str,
@@ -516,13 +515,16 @@ mod imp {
             // On a device error mid-recording (USB pulled, driver reset) cpal calls
             // this — tell the supervisor so it finalises instead of hanging on a
             // pipe that will never get more data.
-            let err_fn = move |e: cpal::StreamError| {
-                tracing::error!("cpal input stream error: {e}");
-                let _ = err_tx.try_send(e.to_string());
+            let err_fn = move |e: cpal::Error| {
+                crate::recorder::native_capture::stream::forward_stream_error(
+                    "cpal input stream",
+                    &e,
+                    &err_tx,
+                );
             };
             let stream = build_input_stream_any(
                 &device,
-                &config,
+                config,
                 sample_format,
                 total_channels as usize,
                 StreamSink::Capture {

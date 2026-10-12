@@ -18,7 +18,6 @@
 //! still compile everywhere the workspace does.
 
 #[cfg(all(target_os = "windows", feature = "asio"))]
-#[allow(deprecated)] // cpal 0.17 deprecates `Device::name`; still the human device name we match against — same pattern as audio/asio.rs::imp.
 fn main() {
     use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -45,7 +44,10 @@ fn main() {
     let mut count = 0usize;
     for device in devices {
         count += 1;
-        let name = device.name().unwrap_or_else(|_| "<unnamed>".to_string());
+        let name = device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_else(|_| "<unnamed>".to_string());
         println!("\n── Device: {name}");
 
         match device.supported_input_configs() {

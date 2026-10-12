@@ -44,14 +44,19 @@ pub struct AudioDeviceList {
     pub inputs: Vec<AudioDevice>,
 }
 
+/// The human device name we match settings against. cpal 0.18 removed
+/// `DeviceTrait::name()`; it was always `description().name()` (in 0.17.3 it
+/// literally was), so this is the same string on every backend.
+pub fn device_name(device: &cpal::Device) -> Option<String> {
+    use cpal::traits::DeviceTrait;
+    device.description().ok().map(|d| d.name().to_string())
+}
+
 /// Summarise one device's capabilities. Never fails hard: a device that refuses
 /// to report a name or configs is reported with what we could read (defaults of
 /// 0 channels / empty rates) rather than aborting the whole enumeration.
-#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 fn summarise_input(device: &cpal::Device, is_default: bool) -> AudioDevice {
-    let name = device
-        .name()
-        .unwrap_or_else(|_| "Unknown device".to_string());
+    let name = device_name(device).unwrap_or_else(|| "Unknown device".to_string());
 
     // Walk every supported config range, tracking the widest channel count and
     // the union of supported sample-rate ranges.
@@ -90,18 +95,17 @@ fn summarise_input(device: &cpal::Device, is_default: bool) -> AudioDevice {
 }
 
 /// Enumerate input devices on the default host.
-#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 pub fn list_input_devices() -> AppResult<AudioDeviceList> {
     crate::audio::com_anchor::ensure();
     let host = cpal::default_host();
 
-    let default_in = host.default_input_device().and_then(|d| d.name().ok());
+    let default_in = host.default_input_device().and_then(|d| device_name(&d));
 
     let inputs = host
         .input_devices()
         .map_err(|e| AppError::Audio(format!("listing input devices: {e}")))?
         .map(|d| {
-            let is_default = d.name().ok().as_deref() == default_in.as_deref();
+            let is_default = device_name(&d).as_deref() == default_in.as_deref();
             summarise_input(&d, is_default)
         })
         .collect();
@@ -125,12 +129,11 @@ pub fn list_input_devices() -> AppResult<AudioDeviceList> {
 /// The default host is WASAPI on Windows and Core Audio on macOS — never ASIO
 /// (cpal only reaches ASIO through an explicit `host_from_id(HostId::Asio)`), so
 /// this call can never load an ASIO driver.
-#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name we match on.
 pub fn list_input_device_names() -> Vec<String> {
     crate::audio::com_anchor::ensure();
     let host = cpal::default_host();
     match host.input_devices() {
-        Ok(devices) => devices.filter_map(|d| d.name().ok()).collect(),
+        Ok(devices) => devices.filter_map(|d| device_name(&d)).collect(),
         Err(e) => {
             tracing::debug!(error = %e, "devices: could not enumerate host input names");
             Vec::new()
