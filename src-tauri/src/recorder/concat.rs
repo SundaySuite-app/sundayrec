@@ -356,7 +356,7 @@ pub(crate) async fn finalize_deliverable(
 
 /// Scratch path for an in-progress delivery: `<stem>_deliver_tmp.<ext>` beside
 /// `delivery` (same extension, so ffmpeg still picks the right muxer).
-fn delivery_tmp_path(delivery: &str) -> String {
+pub(crate) fn delivery_tmp_path(delivery: &str) -> String {
     let p = Path::new(delivery);
     let dir = p.parent().unwrap_or_else(|| Path::new(""));
     let stem = p
