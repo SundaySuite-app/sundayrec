@@ -184,4 +184,34 @@ describe("docs-truth", () => {
     ].join(" → ");
     expect(text).toContain(`**${path}**`);
   });
+
+  // A2, 2026-10: fetch-ffmpeg.mjs gikk til 9.0.1 i v0.21.0 (2026-09-28), men
+  // DISTRIBUTION.md sa «Version: 8.1.2» og «Not 9.0» i to uker. Hentescriptet er
+  // sannheten (det er det som faktisk havner i installøren), så dokumentet må
+  // følge det — og bare den ene av dem kan ikke lenger flyttes uten at denne
+  // feiler. Matcher på mønstrene, ikke på et tall, så en vanlig bump (endre
+  // begge) går grønt og en halv bump (endre én) går rødt.
+  it("DISTRIBUTION.md sier samme ffmpeg-versjon som FFMPEG_VERSION i scripts/fetch-ffmpeg.mjs (A2)", () => {
+    const script = readDoc("scripts/fetch-ffmpeg.mjs");
+    const pinned = /const FFMPEG_VERSION = "(\d+\.\d+\.\d+)";/.exec(
+      script,
+    )?.[1];
+    const documented = /\*\*Version: (\d+\.\d+\.\d+)\*\*/.exec(
+      readDoc("docs/DISTRIBUTION.md"),
+    )?.[1];
+    expect(
+      pinned,
+      "FFMPEG_VERSION ikke funnet i fetch-ffmpeg.mjs",
+    ).toBeDefined();
+    expect(
+      documented,
+      "«**Version: x.y.z**» ikke funnet i DISTRIBUTION.md",
+    ).toBeDefined();
+    expect(documented).toBe(pinned);
+    // Nedlastingstabellen nevner versjonen også; ingen av dem får henge igjen på en annen.
+    const table = readDoc("docs/DISTRIBUTION.md");
+    for (const m of table.matchAll(/<buildid>_(\d+\.\d+\.\d+)\//g)) {
+      expect(m[1]).toBe(pinned);
+    }
+  });
 });

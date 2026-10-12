@@ -16,7 +16,8 @@
 //! This is the part that used to be untrue in the doc above. `linear=true` is
 //! ffmpeg's *default*, and loudnorm silently falls back to its 3-second gain
 //! rider ("Dynamic") unless every one of these holds — verified against the
-//! bundled ffmpeg 8.1.2, each one measured, not read:
+//! bundled ffmpeg 9.0.1 (re-measured 2026-10-12; the 8.1.2 results were identical),
+//! each one measured, not read:
 //!
 //!   * `measured_LRA <= LRA` — the preset's LRA is a GATE, not a setting. A
 //!     sermon measuring LRA 12 against `speech-clear`'s `LRA=8` was normalised
@@ -153,7 +154,7 @@ pub struct LoudnessMeasurement {
 /// key was missing or non-finite — which reads as a harmless "we don't know" and
 /// is nothing of the sort: those two numbers are precisely loudnorm's
 /// "not measured" sentinels, and either of them switches `linear=true` off
-/// (measured, ffmpeg 8.1.2). A garbled pass-1 block therefore produced a
+/// (measured, ffmpeg 9.0.1). A garbled pass-1 block therefore produced a
 /// perfectly ordinary-looking pass 2 that quietly gain-rode the whole service.
 /// A measurement we could not read is now an ERROR the seam reports, not a
 /// different mastering nobody asked for.
@@ -300,7 +301,7 @@ pub enum NormalizationMode {
 }
 
 // ffmpeg's own domain for the `loudnorm` options we set — from
-// `ffmpeg -h filter=loudnorm` (8.1.2). Out-of-range values make ffmpeg REFUSE
+// `ffmpeg -h filter=loudnorm` (9.0.1). Out-of-range values make ffmpeg REFUSE
 // the whole filter graph, so the plan clamps into these rather than trusting
 // that a measurement is sane.
 const FF_I_MIN: f64 = -70.0;
@@ -1316,7 +1317,7 @@ mod tests {
         );
         // A report that does not say is not a guess.
         assert_eq!(parse_normalization_mode(""), None);
-        assert_eq!(parse_normalization_mode("ffmpeg version 8.1.2"), None);
+        assert_eq!(parse_normalization_mode("ffmpeg version 9.0.1"), None);
         // The numeric `normalization_type` the old target_offset fallback reads
         // is not a mode either.
         assert_eq!(

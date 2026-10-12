@@ -110,7 +110,7 @@ sidecars by `scripts/fetch-ffmpeg.mjs` (the `predev`/`pretauri` npm hooks run it
 automatically). To fetch them manually:
 
 ```bash
-npm run ffmpeg         # downloads ffmpeg 8.1.2 → src-tauri/binaries/<name>-<host-triple>
+npm run ffmpeg         # downloads ffmpeg 9.0.1 → src-tauri/binaries/<name>-<host-triple>
 ls src-tauri/binaries  # expect ffmpeg-… and ffprobe-… for your host triple
 ```
 
