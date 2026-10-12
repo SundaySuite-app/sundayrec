@@ -455,10 +455,12 @@ fn ms_to_seconds_string(ms: u64) -> String {
 /// watchdog's faster linear ramp; pre-roll is non-critical so it backs off much
 /// harder.)
 pub fn preroll_restart_delay(attempt: u32) -> u64 {
-    // `5000 * 2^attempt` can overflow for large `attempt`; compute the doubling
-    // with a checked shift and saturate to the 60 s cap on overflow.
-    let scaled = 5_000u64.checked_shl(attempt).unwrap_or(u64::MAX);
-    scaled.min(60_000)
+    // `5000 * 2^attempt` can overflow for large `attempt`. `checked_shl` only
+    // rejects a shift of 64+ — it does NOT notice bits shifted out (5000 << 61
+    // wraps to 0 ms, a busy-spinning ffmpeg) — so build the power of two with
+    // it and multiply with saturation.
+    let pow = 1u64.checked_shl(attempt).unwrap_or(u64::MAX);
+    5_000u64.saturating_mul(pow).min(60_000)
 }
 
 #[cfg(test)]
@@ -1074,5 +1076,14 @@ mod tests {
         assert_eq!(preroll_restart_delay(20), 60_000);
         // Huge attempt must not panic (overflow → saturates to the cap).
         assert_eq!(preroll_restart_delay(1_000), 60_000);
+    }
+
+    /// `checked_shl` only rejects shifts of 64+; 5000 << 61..=63 silently lost
+    /// bits (0 ms: no back-off at all) on attempts 61–63.
+    #[test]
+    fn restart_delay_never_wraps_below_the_cap() {
+        for attempt in 4..=200 {
+            assert_eq!(preroll_restart_delay(attempt), 60_000, "attempt {attempt}");
+        }
     }
 }

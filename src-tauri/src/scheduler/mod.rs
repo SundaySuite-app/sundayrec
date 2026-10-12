@@ -57,11 +57,11 @@ use sundayrec_core::alerts::AlertText;
 use sundayrec_core::lang::Lang;
 use sundayrec_core::schedule::{
     active_within, capped_supervisor_sleep_ms, enumeration_base, events_due, fire_after_missed_net,
-    late_start_choice, missed_recordings, next_recording, prune_specials, resolve_special_device,
-    scheduled_max_minutes, settings_for_special_device, special_device_wanted,
-    supervisor_should_fire, upcoming_dates, upcoming_events, CoveredWindow, ScheduledEvent,
-    ScheduledEventKind, SpecialDevice, SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
-    STOP_SETTLE_MS,
+    late_start_choice, minutes_until_stop, missed_recordings, next_recording,
+    planned_duration_minutes, prune_specials, resolve_special_device, scheduled_max_minutes,
+    settings_for_special_device, special_device_wanted, supervisor_should_fire, upcoming_dates,
+    upcoming_events, CoveredWindow, ScheduledEvent, ScheduledEventKind, SpecialDevice,
+    SpecialRecording, TriggerKind, MISSED_WINDOW_MS, STOP_SETTLE_MS,
 };
 use sundayrec_core::settings::Settings;
 use sundayrec_core::wake::{background_wake_log_action, should_block, wake_failure_notice_key};
@@ -301,7 +301,7 @@ async fn supervisor(
         // Never persist a stale snapshot over a db that could not be read.
         if pruned > 0 && !load_failed {
             settings.special_recordings = kept.clone();
-            if let Err(e) = settings::save(&pool, settings.clone()).await {
+            if let Err(e) = persist_prune(&pool).await {
                 tracing::warn!("scheduler: pruning save failed: {e}");
             }
             tracing::info!("scheduler: pruned {pruned} expired special(s)");
@@ -475,6 +475,161 @@ async fn supervisor(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   Who owns the running recording
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A slot's Stop event used to stop WHATEVER was recording. That stopped a
+// manual take started before the slot ended, and it overrode the volunteer who
+// pressed «+15 min» / «Avbryt auto-stop» because the service ran long. The
+// slot's stop is now the engine's own auto-stop deadline (`start_plan`), which
+// those buttons move, and the Stop event is the backstop for that deadline:
+// it applies only to the session its own trigger started, and only while the
+// deadline is still where the start put it.
+
+/// The recording a scheduled start began: which engine session, and from which
+/// slot/special.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScheduledSession {
+    generation: u64,
+    source: TriggerKind,
+}
+
+static SCHEDULED_SESSION: Mutex<Option<ScheduledSession>> = Mutex::new(None);
+
+/// Remember that the session `engine` just started belongs to `source`.
+fn claim_session(engine: &RecorderEngine, source: TriggerKind) {
+    *lock_recover(&SCHEDULED_SESSION) = Some(ScheduledSession {
+        generation: engine.session_generation(),
+        source,
+    });
+}
+
+/// How far past «now» the deadline may sit and still count as the one the start
+/// armed. The start rounds the remaining time UP to a whole minute, so the
+/// untouched deadline is up to 60 s after the slot's stop; the smallest
+/// «+15 min» is far beyond this.
+const UNTOUCHED_DEADLINE_SLACK_MS: u64 = 90_000;
+
+/// What a slot's Stop event should do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StopVerdict {
+    /// Nothing is recording.
+    Nothing,
+    /// The recording is not the one this trigger started (a manual take, or
+    /// another slot's): leave it.
+    NotOurs,
+    /// The operator moved or cancelled the auto-stop (+15 min / Avbryt): the
+    /// engine's own deadline ends the recording, when they said.
+    Moved,
+    /// Ours, deadline untouched: stop it.
+    Stop,
+}
+
+fn stop_verdict(
+    owned: Option<ScheduledSession>,
+    source: TriggerKind,
+    state: sundayrec_core::recorder::RecorderState,
+    generation: u64,
+    deadline_ms: Option<u64>,
+    now_ms: u64,
+) -> StopVerdict {
+    if !state.is_active() {
+        return StopVerdict::Nothing;
+    }
+    match owned {
+        Some(o) if o.generation == generation && o.source == source => {}
+        _ => return StopVerdict::NotOurs,
+    }
+    match deadline_ms {
+        Some(d) if d <= now_ms.saturating_add(UNTOUCHED_DEADLINE_SLACK_MS) => StopVerdict::Stop,
+        _ => StopVerdict::Moved,
+    }
+}
+
+/// Whether the plan's own Start, finding a recording already running, takes it
+/// over: a take nobody scheduled (not claimed by an earlier start in this
+/// session) that has no deadline of its own. A manual take with its own
+/// auto-stop is the operator's choice and is left alone; so is a session an
+/// earlier slot owns. Only the Start event asks — a take begun AFTER the plan's
+/// start is never adopted.
+fn should_adopt(
+    owned: Option<ScheduledSession>,
+    state: sundayrec_core::recorder::RecorderState,
+    generation: u64,
+    deadline_ms: Option<u64>,
+) -> bool {
+    state.is_active()
+        && deadline_ms.is_none()
+        && !matches!(owned, Some(o) if o.generation == generation)
+}
+
+/// Take over the manual recording that is running when the plan's Start fires:
+/// arm the slot's own stop as its deadline (so the countdown, «+15 min» and
+/// «Avbryt auto-stop» work as on a scheduled start) and claim it, so the plan's
+/// Stop ends it. `false` = not adoptable, nothing touched.
+fn adopt_running_take(
+    engine: &RecorderEngine,
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    source: TriggerKind,
+) -> bool {
+    if !should_adopt(
+        *lock_recover(&SCHEDULED_SESSION),
+        engine.current_state(),
+        engine.session_generation(),
+        engine.scheduled_stop_ms(),
+    ) {
+        return false;
+    }
+    let (_, minutes) = start_plan(settings, specials, source, Local::now().naive_local());
+    engine.extend_autostop(minutes);
+    claim_session(engine, source);
+    true
+}
+
+/// The name and auto-stop (minutes) a scheduled start of `kind` begins with.
+///
+/// The auto-stop runs to the slot's/special's own stop (`minutes_until_stop`),
+/// capped by the slot's max — and by the 240-min backstop when none is set, so
+/// even a missed Stop event can't leave a recording running until the disk
+/// fills. `Slot(i)` indexes `active_slots()` — the SAME slice `upcoming_events`
+/// indexed — so it keeps meaning what it meant when it was made.
+fn start_plan(
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    kind: TriggerKind,
+    now: NaiveDateTime,
+) -> (Option<String>, u32) {
+    match kind {
+        TriggerKind::Slot(i) => match settings.active_slots().get(i) {
+            Some(slot) => (
+                None,
+                minutes_until_stop(&slot.stop, now, slot.max.unwrap_or(0).max(0) as u32),
+            ),
+            None => (None, scheduled_max_minutes(0)),
+        },
+        TriggerKind::Special(i) => match specials.get(i) {
+            Some(sp) => (Some(sp.name.clone()), minutes_until_stop(&sp.stop, now, 0)),
+            None => (None, scheduled_max_minutes(0)),
+        },
+    }
+}
+
+/// Persist the prune of ended specials from a FRESH read of the stored settings.
+///
+/// The supervisor's own `settings` is a snapshot from the top of its pass; the
+/// operator can save in between (the save is awaited before the prune runs), and
+/// writing the snapshot back would undo that save. `settings::save` prunes at
+/// the write boundary, so loading the current row and saving it back is the
+/// whole prune — and the only thing that can be lost is the few milliseconds
+/// between this read and write, not a whole pass.
+async fn persist_prune(pool: &SqlitePool) -> AppResult<()> {
+    let fresh = settings::load(pool).await?;
+    settings::save(pool, fresh).await?;
+    Ok(())
+}
+
 /// Wait (briefly) until the recorder is no longer active — used between a Stop
 /// and a Start fired at the same instant.
 async fn settle_after_stop(app: &AppHandle) {
@@ -500,30 +655,24 @@ async fn fire(
             // take, or an earlier scheduled one still finalising). Skip + tell the
             // user, leaving the running recording untouched.
             if engine.current_state().is_active() {
+                // A manual take begun just before the service has no end of its
+                // own: the plan takes it over rather than leave it to run until
+                // somebody presses Stop or the disk is full.
+                if adopt_running_take(&engine, settings, specials, ev.source) {
+                    tracing::info!(
+                        "scheduler: a manual recording is already running — adopted it, \
+                         the slot's stop ends it"
+                    );
+                    return;
+                }
                 tracing::warn!(
                     "scheduler: a recording is already active — skipping the scheduled start"
                 );
                 notify_skipped_busy(app, settings);
                 return;
             }
-            let (custom_name, slot_max) = match ev.source {
-                // `active_slots()` — the SAME slice `upcoming_events` indexed,
-                // so `Slot(i)` keeps meaning what it meant when it was made.
-                TriggerKind::Slot(i) => (
-                    None,
-                    settings
-                        .active_slots()
-                        .get(i)
-                        .and_then(|s| s.max)
-                        .unwrap_or(0)
-                        .max(0) as u32,
-                ),
-                TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
-            };
-            // SAFEGUARD: a scheduled recording ALWAYS carries a max-duration
-            // backstop, so even a missed Stop event can't leave it recording until
-            // the disk fills.
-            let max_minutes = scheduled_max_minutes(slot_max);
+            let (custom_name, max_minutes) =
+                start_plan(settings, specials, ev.source, Local::now().naive_local());
             // A special with its own device records from it — or, when it is not
             // there, from the global device with a warning. Everything else is
             // `settings` itself, untouched (`start_settings`).
@@ -560,6 +709,7 @@ async fn fire(
                             crate::telemetry::counters::count(
                                 sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
                             );
+                            claim_session(&engine, ev.source);
                             tracing::info!("scheduler: started scheduled recording");
                             // R3-H: «Varsel på PC når opptak starter» — the
                             // unattended case is exactly when this is useful (a
@@ -614,19 +764,42 @@ async fn fire(
             // Read BEFORE the stop: a scheduled stop with nothing recording
             // (the start failed, or someone already pressed Stop) used to say
             // «Planlagt opptak avsluttet» about a recording that never ran.
-            let was_active = engine.current_state().is_active();
-            engine.stop();
-            tracing::info!(was_active, "scheduler: stop fired");
-            // R3-H: «Varsel på PC når opptak avsluttes». Fires when the
-            // scheduled stop is DISPATCHED (finalisation continues in the
-            // engine); a stop that later fails to finalise reaches the operator
-            // through the failure dispatch, which is never gated.
-            if stopped_notice_due(was_active, settings) {
-                notify_user(
-                    app,
-                    APP_TITLE,
-                    &AlertText::ScheduledStopped.text(lang_of(settings)),
-                );
+            let verdict = stop_verdict(
+                *lock_recover(&SCHEDULED_SESSION),
+                ev.source,
+                engine.current_state(),
+                engine.session_generation(),
+                engine.scheduled_stop_ms(),
+                crate::util::now_ms() as u64,
+            );
+            match verdict {
+                StopVerdict::Nothing => {
+                    tracing::info!("scheduler: stop fired with nothing recording");
+                }
+                StopVerdict::NotOurs => tracing::info!(
+                    "scheduler: stop fired, but the running recording was not started by \
+                     this slot — left running"
+                ),
+                StopVerdict::Moved => tracing::info!(
+                    "scheduler: stop fired, but the auto-stop was moved or cancelled — \
+                     the recording ends on the operator's deadline"
+                ),
+                StopVerdict::Stop => {
+                    engine.stop();
+                    tracing::info!("scheduler: stop fired");
+                    // R3-H: «Varsel på PC når opptak avsluttes». Fires when the
+                    // scheduled stop is DISPATCHED (finalisation continues in
+                    // the engine); a stop that later fails to finalise reaches
+                    // the operator through the failure dispatch, which is never
+                    // gated.
+                    if stopped_notice_due(true, settings) {
+                        notify_user(
+                            app,
+                            APP_TITLE,
+                            &AlertText::ScheduledStopped.text(lang_of(settings)),
+                        );
+                    }
+                }
             }
         }
         ScheduledEventKind::Reminder => {
@@ -1066,6 +1239,25 @@ fn preflight_device_for(choice: &DeviceChoice) -> crate::preflight::PreflightDev
 //   Preflight + missed-check
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// How long the slot/special `kind` is planned to record — what the preflight
+/// sizes the free disk against. `None` when the source is gone or degenerate.
+fn planned_minutes_for(
+    settings: &Settings,
+    specials: &[SpecialRecording],
+    kind: TriggerKind,
+) -> Option<u32> {
+    match kind {
+        TriggerKind::Slot(i) => {
+            let slot = settings.active_slots().get(i)?;
+            planned_duration_minutes(&slot.start, &slot.stop, slot.max.unwrap_or(0).max(0) as u32)
+        }
+        TriggerKind::Special(i) => {
+            let sp = specials.get(i)?;
+            planned_duration_minutes(&sp.start, &sp.stop, 0)
+        }
+    }
+}
+
 async fn run_scheduled_preflight(
     app: &AppHandle,
     pool: &SqlitePool,
@@ -1090,8 +1282,9 @@ async fn run_scheduled_preflight(
     // When it is the special's device that is missing, the finding itself says
     // so — `SpecialDeviceMissing`, carrying the device's name — and the
     // notification below and the Record page's card both read it from there.
+    let planned = planned_minutes_for(settings, specials, kind);
     let outcome =
-        crate::preflight::run_preflight_detailed(pool, documents.as_deref(), device).await;
+        crate::preflight::run_preflight_detailed(pool, documents.as_deref(), device, planned).await;
     let findings = outcome.findings;
     let errors: Vec<_> = findings
         .iter()
@@ -1214,18 +1407,7 @@ pub async fn check_missed(
     // while the lid was shut needs it.
     let busy = app.state::<RecorderEngine>().current_state().is_active();
     if let Some(t) = late_start_choice(&triggers, busy) {
-        let (custom_name, max_minutes) = match t.kind {
-            TriggerKind::Slot(i) => (
-                None,
-                settings
-                    .active_slots()
-                    .get(i)
-                    .and_then(|s| s.max)
-                    .unwrap_or(0)
-                    .max(0) as u32,
-            ),
-            TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
-        };
+        let (custom_name, max_minutes) = start_plan(&settings, specials, t.kind, now);
         // The same device decision `fire()` makes (`start_settings`). `None`:
         // something started recording while a special's device was looked up —
         // the trigger still counts as handled, and nothing is clobbered.
@@ -1247,6 +1429,7 @@ pub async fn check_missed(
                         .start(app.clone(), Some(pool.clone()), opts, None)
                         .await;
                     if late.is_ok() {
+                        claim_session(&engine, t.kind);
                         crate::telemetry::counters::count(
                             sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
                         );
@@ -1281,7 +1464,13 @@ pub async fn check_missed(
     }
 
     // History start times → local naive, for the dedup window.
-    let history = recording_history_local(pool).await;
+    // An unreadable history is NOT an empty one: with no rows every past
+    // occurrence looks unrecorded and the volunteer is told, loudly, that a
+    // recorded service was missed. Skip the report; the next pass asks again.
+    let Some(history) = recording_history_local(pool).await else {
+        tracing::warn!("scheduler: recording history unreadable — skipping the missed report");
+        return Ok(Vec::new());
+    };
     // …and the recordings the database does not know about YET: a crash leaves a
     // session manifest behind, and startup recovery is still concatenating it
     // into a history row while this runs. Without these windows the sweep
@@ -1525,19 +1714,15 @@ fn missed_wake_entry(
 }
 
 /// Recording start times converted to the local-wall `NaiveDateTime` frame the
-/// core compares in.
-async fn recording_history_local(pool: &SqlitePool) -> Vec<NaiveDateTime> {
-    let rows = crate::db::store::list_recordings(pool)
-        .await
-        .unwrap_or_default();
-    rows.into_iter()
-        .filter_map(|r| {
-            Local
-                .timestamp_millis_opt(r.started_at as i64)
-                .single()
-                .map(|dt| dt.naive_local())
-        })
-        .collect()
+/// core compares in. `None` when the history could not be READ — which must
+/// never be mistaken for «no recordings».
+async fn recording_history_local(pool: &SqlitePool) -> Option<Vec<NaiveDateTime>> {
+    let rows = crate::db::store::list_recordings(pool).await.ok()?;
+    Some(
+        rows.into_iter()
+            .filter_map(|r| local_naive(r.started_at as u64))
+            .collect(),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3384,6 +3569,7 @@ mod tests {
             cam_denied: false,
             device_present: false,
             save_folder_onedrive: false,
+            planned_capture_bytes: None,
         };
         let special = &assemble_findings_for(facts, Some("Zoom H6"))[0];
         let body = preflight_notification_body(special, Lang::No);
@@ -3418,5 +3604,220 @@ mod tests {
             recorded(plan_start(&settings, DeviceChoice::Global, never_read)),
             Cow::Borrowed(_)
         ));
+    }
+
+    // ── Audit 2026-10-05: stop ownership, history, prune ─────────────────────
+
+    use sundayrec_core::recorder::RecorderState;
+
+    fn owned(generation: u64, source: TriggerKind) -> Option<ScheduledSession> {
+        Some(ScheduledSession { generation, source })
+    }
+
+    const T0: u64 = 1_700_000_000_000;
+
+    #[test]
+    fn a_slots_stop_ends_only_the_session_its_own_start_began() {
+        let slot = TriggerKind::Slot(0);
+        // Ours, deadline where the start put it (a few seconds off): stop.
+        assert_eq!(
+            stop_verdict(
+                owned(7, slot),
+                slot,
+                RecorderState::Recording,
+                7,
+                Some(T0 + 20_000),
+                T0
+            ),
+            StopVerdict::Stop
+        );
+        // A manual take started before the slot ended: never ours.
+        assert_eq!(
+            stop_verdict(None, slot, RecorderState::Recording, 8, Some(T0), T0),
+            StopVerdict::NotOurs
+        );
+        // …or a newer session than the one this slot started.
+        assert_eq!(
+            stop_verdict(
+                owned(7, slot),
+                slot,
+                RecorderState::Recording,
+                8,
+                Some(T0),
+                T0
+            ),
+            StopVerdict::NotOurs
+        );
+        // …or another trigger's session (overlapping slot/special).
+        assert_eq!(
+            stop_verdict(
+                owned(7, TriggerKind::Special(0)),
+                slot,
+                RecorderState::Recording,
+                7,
+                Some(T0),
+                T0
+            ),
+            StopVerdict::NotOurs
+        );
+        // Nothing recording: nothing to say about it.
+        assert_eq!(
+            stop_verdict(owned(7, slot), slot, RecorderState::Stopped, 7, None, T0),
+            StopVerdict::Nothing
+        );
+    }
+
+    #[test]
+    fn a_slots_stop_respects_plus_fifteen_and_cancel_autostop() {
+        let slot = TriggerKind::Slot(0);
+        let run = |deadline| {
+            stop_verdict(
+                owned(7, slot),
+                slot,
+                RecorderState::Recording,
+                7,
+                deadline,
+                T0,
+            )
+        };
+        // «+15 min»: the deadline now sits 15 min ahead.
+        assert_eq!(run(Some(T0 + 15 * 60_000)), StopVerdict::Moved);
+        // «Avbryt auto-stop»: no deadline at all.
+        assert_eq!(run(None), StopVerdict::Moved);
+        // The deadline the start armed, rounded up to the minute, is still ours.
+        assert_eq!(run(Some(T0 + 59_000)), StopVerdict::Stop);
+        assert_eq!(run(Some(T0.saturating_sub(5_000))), StopVerdict::Stop);
+    }
+
+    #[test]
+    fn a_scheduled_start_arms_the_slots_own_stop_as_its_deadline() {
+        let settings = Settings {
+            slots: vec![sunday_slot()],
+            ..Settings::default()
+        };
+        let specials = vec![special("2026-06-07", "19:00", "21:30", "Konsert")];
+        let at = |t: &str| {
+            NaiveDateTime::parse_from_str(&format!("2026-06-07 {t}"), "%Y-%m-%d %H:%M:%S").unwrap()
+        };
+        // On time: the whole slot — NOT the 240-min backstop.
+        assert_eq!(
+            start_plan(&settings, &specials, TriggerKind::Slot(0), at("11:00:00")),
+            (None, 60)
+        );
+        // Started 20 min late: what is left.
+        assert_eq!(
+            start_plan(&settings, &specials, TriggerKind::Slot(0), at("11:20:00")).1,
+            40
+        );
+        let (name, mins) = start_plan(
+            &settings,
+            &specials,
+            TriggerKind::Special(0),
+            at("19:00:00"),
+        );
+        assert_eq!((name.as_deref(), mins), (Some("Konsert"), 150));
+        // A source that has vanished falls back to the backstop, never to «no limit».
+        assert_eq!(
+            start_plan(&settings, &specials, TriggerKind::Slot(9), at("11:00:00")).1,
+            sundayrec_core::schedule::SCHEDULED_MAX_BACKSTOP_MINUTES
+        );
+    }
+
+    #[test]
+    fn the_plan_adopts_a_manual_take_that_has_no_end_of_its_own() {
+        let slot = TriggerKind::Slot(0);
+        let adopt = |owned, state, gen, deadline| should_adopt(owned, state, gen, deadline);
+        // A manual take, no deadline, nobody's claim: adopted.
+        assert!(adopt(None, RecorderState::Recording, 5, None));
+        assert!(
+            adopt(owned(4, slot), RecorderState::Recording, 5, None),
+            "an OLD claim is not this session"
+        );
+        // A manual take with its own auto-stop is the operator's choice.
+        assert!(!adopt(None, RecorderState::Recording, 5, Some(T0)));
+        // A session an earlier slot owns is not up for grabs.
+        assert!(!adopt(
+            owned(5, TriggerKind::Slot(1)),
+            RecorderState::Recording,
+            5,
+            None
+        ));
+        // Nothing running (or only finalising): nothing to adopt.
+        assert!(!adopt(None, RecorderState::Stopping, 5, None));
+        assert!(!adopt(None, RecorderState::Stopped, 5, None));
+        // Once adopted (claim + deadline) the stop and the buttons behave as for
+        // a scheduled start: the stop ends it at the deadline, «+15» defers it.
+        let claimed = owned(5, slot);
+        assert_eq!(
+            stop_verdict(
+                claimed,
+                slot,
+                RecorderState::Recording,
+                5,
+                Some(T0 + 20_000),
+                T0
+            ),
+            StopVerdict::Stop
+        );
+        assert_eq!(
+            stop_verdict(
+                claimed,
+                slot,
+                RecorderState::Recording,
+                5,
+                Some(T0 + 15 * 60_000),
+                T0
+            ),
+            StopVerdict::Moved
+        );
+        // A take begun AFTER the plan's start (a later session) stays NotOurs.
+        assert_eq!(
+            stop_verdict(claimed, slot, RecorderState::Recording, 6, None, T0),
+            StopVerdict::NotOurs
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_history_is_not_an_empty_one() {
+        let (pool, _dir) = temp_pool().await;
+        assert_eq!(recording_history_local(&pool).await, Some(Vec::new()));
+        sqlx::query("DROP TABLE recording")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            recording_history_local(&pool).await.is_none(),
+            "a failed read must not read as «nothing was recorded»"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_prune_save_keeps_a_save_made_since_the_snapshot() {
+        let (pool, _dir) = temp_pool().await;
+        // Stored: the operator's CURRENT plan (one slot) plus a special that
+        // ended long ago, written raw because `settings::save` itself prunes.
+        let mut stored = Settings {
+            slots: vec![sunday_slot()],
+            ..Settings::default()
+        };
+        stored.special_recordings = vec![special("2020-01-01", "10:00", "11:00", "Gammel")];
+        crate::db::store::set_setting(
+            &pool,
+            settings::SETTINGS_KEY,
+            &serde_json::to_string(&stored).unwrap(),
+        )
+        .await
+        .unwrap();
+        persist_prune(&pool).await.expect("prune");
+        let after = settings::load(&pool).await.expect("load");
+        assert!(
+            after.special_recordings.is_empty(),
+            "the ended special is gone"
+        );
+        assert_eq!(
+            after.slots,
+            vec![sunday_slot()],
+            "…and the plan survived the prune"
+        );
     }
 }

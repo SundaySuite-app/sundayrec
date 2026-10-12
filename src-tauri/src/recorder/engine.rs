@@ -488,6 +488,13 @@ impl RecorderEngine {
         lock_recover(&self.audio_engine).1.clone()
     }
 
+    /// The generation of the session `start()` last began. A caller that
+    /// wants to know "is the recording running NOW the one I started?" reads
+    /// it right after a successful start and compares later.
+    pub fn session_generation(&self) -> u64 {
+        self.session_generation.load(Ordering::SeqCst)
+    }
+
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
     /// auto-stop is armed. Exposed via the `recording_scheduled_stop_ms` command
     /// so a (re)mounting screen can rehydrate the countdown synchronously.
