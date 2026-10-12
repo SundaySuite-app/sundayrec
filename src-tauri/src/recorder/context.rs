@@ -36,7 +36,7 @@ use sundayrec_core::selftest::RecordingTelemetry;
 use tauri::AppHandle;
 
 use crate::recorder::engine::{CaptureBackend, RecordingOpts, StateWriter};
-use crate::recorder::preroll::PrerollClip;
+use crate::recorder::native_capture::preroll::PrerollClip;
 
 /// Everything ONE recording session is run against, whichever capture path runs
 /// it: the ffmpeg supervisor (`engine::run_session`), the Windows cpal-pipe

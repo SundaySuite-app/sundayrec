@@ -271,14 +271,10 @@ pub struct Settings {
     /// scheduled for removal once the rig has verified 0 % loss.
     #[serde(default)]
     pub classic_ffmpeg_audio: bool,
-    /// Escape hatch: force the legacy **ffmpeg** pre-roll buffer (a 90-second
-    /// rolling avfoundation/dshow capture) instead of the native cpal one.
-    /// Default `false` — the native buffer holds the device with the same stack
-    /// the recorder uses, harvests its clip by byte copy, and doubles as the
-    /// `vu://levels` emitter so the meters and the buffer can coexist. Flip on
-    /// only if the native buffer misbehaves on a specific rig.
-    #[serde(default)]
-    pub classic_ffmpeg_preroll: bool,
+    // (A5a: `classicFfmpegPreroll` left — the native pre-roll buffer has been
+    // the only one since 2026-08-01. Old blobs carrying it are dropped
+    // tolerantly like every retired key; see
+    // `legacy_blob_with_classic_ffmpeg_preroll_imports_cleanly`.)
     // (v0.15: `separateAudioFormat` left — the separate audio sidecar now
     // follows `format`, the one audio-format choice the app has; `avSync`,
     // `videoBitrate` and `outputMode` left as dead fields with no reader. Old
@@ -594,7 +590,6 @@ impl Default for Settings {
             keep_separate_audio: true,
             classic_directshow: false,
             classic_ffmpeg_audio: false,
-            classic_ffmpeg_preroll: false,
 
             channels: default_channels(),
             input_channel_l: None,
@@ -1681,6 +1676,35 @@ mod tests {
     // imported `separateAudioFormat: "flac"` — the value itself is gone, the
     // `format` beside it survives and is what the sidecar follows now), and
     // the round-trip writes a blob without them.
+    #[test]
+    fn legacy_blob_with_classic_ffmpeg_preroll_imports_cleanly() {
+        // A5a: the pre-roll escape hatch is gone. A database written while it
+        // existed (on or off) must still load, keep its neighbours, and not
+        // write the key back.
+        for flag in ["true", "false"] {
+            let s = Settings::from_json_merged(&format!(
+                r#"{{
+                    "classicFfmpegPreroll": {flag},
+                    "classicFfmpegAudio": true,
+                    "preRollSeconds": 20,
+                    "churchName": "Domkirken"
+                }}"#
+            ))
+            .validated();
+            assert_eq!(s.pre_roll_seconds, 20);
+            assert_eq!(s.church_name, "Domkirken");
+            assert!(s.classic_ffmpeg_audio, "the audio hatch is still A5b's");
+            let json = serde_json::to_value(&s).unwrap();
+            assert!(
+                !json
+                    .as_object()
+                    .unwrap()
+                    .contains_key("classicFfmpegPreroll"),
+                "the retired key must not be written back"
+            );
+        }
+    }
+
     #[test]
     fn legacy_blob_with_v015_dead_fields_imports_cleanly() {
         let s = Settings::from_json_merged(

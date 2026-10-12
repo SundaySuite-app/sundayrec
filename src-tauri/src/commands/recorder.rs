@@ -86,7 +86,9 @@ use sundayrec_core::settings::ChannelMode;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::recorder::engine::{RecorderEngine, RecorderStatePayload, RecordingOpts};
-use crate::recorder::preroll::{preroll_settings_from, PrerollClip, PrerollEngine, PrerollStatus};
+use crate::recorder::native_capture::preroll::{
+    preroll_settings_from, NativePrerollEngine, PrerollClip, PrerollStatus,
+};
 use crate::settings;
 use crate::test_recording::{run_test_recording as run_test, TestRecordingResult};
 
@@ -435,7 +437,7 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
 struct TauriStartDeps<'a> {
     app: AppHandle,
     engine: &'a RecorderEngine,
-    preroll: &'a PrerollEngine,
+    preroll: &'a NativePrerollEngine,
     vu: &'a crate::audio::vu::VuEngine,
     pool: sqlx::SqlitePool,
 }
@@ -459,14 +461,7 @@ impl StartRecordingDeps for TauriStartDeps<'_> {
 
     async fn harvest_preroll(&self, plan: HarvestPlan) -> Option<PrerollClip> {
         self.preroll
-            .harvest(
-                plan.seconds,
-                plan.sample_rate,
-                plan.channels,
-                plan.audio_codec,
-                None, // PCM: no bitrate
-                plan.container_ext,
-            )
+            .harvest_in_format(plan.seconds, plan.audio_codec, plan.container_ext)
             .await
     }
 
@@ -509,7 +504,7 @@ impl StartRecordingDeps for TauriStartDeps<'_> {
 pub async fn start_recording(
     app: AppHandle,
     engine: State<'_, RecorderEngine>,
-    preroll: State<'_, PrerollEngine>,
+    preroll: State<'_, NativePrerollEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
     request: ManualStartRequest,
@@ -537,7 +532,7 @@ pub async fn start_recording(
 #[tauri::command]
 pub async fn preroll_start(
     app: AppHandle,
-    preroll: State<'_, PrerollEngine>,
+    preroll: State<'_, NativePrerollEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
     engine: State<'_, RecorderEngine>,
     db: State<'_, Db>,
@@ -578,7 +573,7 @@ pub async fn preroll_start(
 #[tauri::command]
 pub async fn preroll_stop(
     app: AppHandle,
-    preroll: State<'_, PrerollEngine>,
+    preroll: State<'_, NativePrerollEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
 ) -> AppResult<()> {
     release_preroll_to_meters(&app, &preroll, &vu).await;
@@ -596,7 +591,7 @@ pub async fn preroll_stop(
 /// owners of the microphone.
 async fn release_preroll_to_meters(
     app: &AppHandle,
-    preroll: &PrerollEngine,
+    preroll: &NativePrerollEngine,
     vu: &crate::audio::vu::VuEngine,
 ) {
     preroll.stop_and_release().await;
@@ -605,7 +600,7 @@ async fn release_preroll_to_meters(
 
 /// The pre-roll loop status, for the settings UI's "preroll aktiv" indicator.
 #[tauri::command]
-pub fn preroll_status(preroll: State<'_, PrerollEngine>) -> PrerollStatus {
+pub fn preroll_status(preroll: State<'_, NativePrerollEngine>) -> PrerollStatus {
     preroll.status()
 }
 

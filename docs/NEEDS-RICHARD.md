@@ -344,12 +344,6 @@ re-discovering these bullets one at a time.
   a real box yet, and whether `pmset schedule cancelall SundayRec` actually
   filters by owner (rather than deleting everything, or failing silently) is
   still an open question only a real Mac can answer.
-- **The classic ffmpeg pre-roll hatch** (`classicFfmpegPreroll`, no UI): R2
-  kept this field ON PURPOSE — it is the only fallback to the legacy rolling
-  ffmpeg pre-roll engine, and the native cpal buffer is still unproven on the
-  rig. Once a real Sunday has proven the native buffer, the owner decides
-  whether the hatch AND the classic engine (`recorder/preroll.rs`
-  `ClassicPrerollEngine`) go — a live-path decision, not a settings sweep.
 - **OS wake-timers** (smoke §11): a real box for the `pmset` admin prompt, the
   Windows `SetWaitableTimer` resume, and a true sleep/wake cycle. The argument
   shaping, quoting and escalation ladders are unit-tested; the resume is not and

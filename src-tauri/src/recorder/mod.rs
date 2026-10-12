@@ -21,7 +21,7 @@
 //! capture (PCM WAV / Matroska) into a hidden per-session folder, and [`concat`]
 //! stitches the fragments and encodes/remuxes them into the user's chosen format
 //! at the end. [`recovery`] finishes that job on the next launch when the app
-//! died mid-session; [`preroll`] supplies the audio captured before the button
+//! died mid-session; [`native_capture::preroll`] supplies the audio captured before the button
 //! press.
 //!
 //! The split mirrors the rest of the codebase: every rule lives, tested, in the
@@ -50,6 +50,5 @@ pub mod stderr_tail;
 #[cfg(test)]
 mod longrun;
 pub mod native_capture;
-pub mod preroll;
 pub mod recovery;
 pub mod two_process;

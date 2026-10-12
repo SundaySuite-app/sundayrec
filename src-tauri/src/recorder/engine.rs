@@ -87,7 +87,7 @@ use tauri::{AppHandle, Emitter};
 use crate::audio::device_enum::{enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE};
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::SessionContext;
-use crate::recorder::preroll::PrerollClip;
+use crate::recorder::native_capture::preroll::PrerollClip;
 use crate::util::lock_recover;
 
 // The engine is split by concern; this file keeps the engine handle, its

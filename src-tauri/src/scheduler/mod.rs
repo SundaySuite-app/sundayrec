@@ -1145,7 +1145,7 @@ fn mic_holders(app: &AppHandle) -> MicHolders {
     MicHolders {
         recording: state.is_active() || state == sundayrec_core::recorder::RecorderState::Stopping,
         preroll: app
-            .try_state::<crate::recorder::preroll::PrerollEngine>()
+            .try_state::<crate::recorder::native_capture::preroll::NativePrerollEngine>()
             .is_some_and(|p| p.is_active()),
         vu: app
             .try_state::<crate::audio::vu::VuEngine>()

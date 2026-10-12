@@ -183,7 +183,6 @@ export function mapLegacyBlob(raw: string): Dict | null {
   }
   put("classicDirectshow", bool(s.classicDirectshow));
   put("classicFfmpegAudio", bool(s.classicFfmpegAudio));
-  put("classicFfmpegPreroll", bool(s.classicFfmpegPreroll));
 
   // Audio processing
   put("channels", oneOf(s.channels, ["stereo", "monoL", "monoR", "monoMix"]));

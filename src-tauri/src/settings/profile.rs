@@ -89,7 +89,6 @@ pub const MACHINE_LOCAL: &[&str] = &[
     //    native engine misbehaves on a specific rig" — their own docs).
     "classicDirectshow",
     "classicFfmpegAudio",
-    "classicFfmpegPreroll",
     // ── The camera: which one, whether it records, and how it is mounted
     //    (`videoFlip` is "a per-machine preference" in its own doc).
     "videoEnabled",
@@ -380,7 +379,6 @@ mod tests {
             sample_rate_mode: SampleRate::R48000,
             classic_directshow: true,
             classic_ffmpeg_audio: true,
-            classic_ffmpeg_preroll: true,
             video_enabled: true,
             video_device_name: Some("Logitech BRIO".into()),
             video_device_index: Some(1),
@@ -491,7 +489,6 @@ mod tests {
             "sampleRateMode",
             "classicDirectshow",
             "classicFfmpegAudio",
-            "classicFfmpegPreroll",
             "videoEnabled",
             "videoDeviceName",
             "videoDeviceIndex",

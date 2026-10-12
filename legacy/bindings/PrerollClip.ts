@@ -3,10 +3,8 @@
 /**
  * A harvested, trimmed pre-roll clip ready to prepend to a recording.
  *
- * `raw_path` is the *trimmed* clip produced by the harvest in the
- * format the caller requested — the recording's own capture format, so the
- * prepend is a lossless `-c copy` (today PCM `.wav`; the raw rolling capture it
- * came from is consumed + deleted during harvest). `trim_ms` and
+ * `raw_path` is the clip the harvest produced in the recording's own capture
+ * format (PCM `.wav`), so the prepend is a lossless `-c copy`. `trim_ms` and
  * `start_offset_ms` are the core mat's verdict, kept on the clip for
  * diagnostics.
  */
@@ -20,7 +18,7 @@ raw_path: string,
  */
 trim_ms: number, 
 /**
- * Where in the raw capture the kept window started (ffmpeg `-ss`), for
- * diagnostics; the trimmed clip already begins here.
+ * Where in the buffered audio the kept window started, for diagnostics;
+ * the clip already begins here.
  */
 start_offset_ms: number, };

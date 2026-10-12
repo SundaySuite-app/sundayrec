@@ -90,15 +90,6 @@ classicDirectshow: boolean,
  */
 classicFfmpegAudio: boolean, 
 /**
- * Escape hatch: force the legacy **ffmpeg** pre-roll buffer (a 90-second
- * rolling avfoundation/dshow capture) instead of the native cpal one.
- * Default `false` — the native buffer holds the device with the same stack
- * the recorder uses, harvests its clip by byte copy, and doubles as the
- * `vu://levels` emitter so the meters and the buffer can coexist. Flip on
- * only if the native buffer misbehaves on a specific rig.
- */
-classicFfmpegPreroll: boolean, 
-/**
  * Input channel layout.
  */
 channels: ChannelMode, 
