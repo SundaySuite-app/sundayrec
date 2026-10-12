@@ -28,6 +28,7 @@
 //!   - [`wake`]         — wake-from-sleep capability/parse/schedule-command decisions (Fase 5)
 //!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
 //!   - [`two_process`]  — two-process audio+video fallback: per-process capture args + A/V mux/offset (Fase 3.3b)
+//!   - [`video_encoder`] — which video encoder a recording gets: the Windows hardware probe order (nvenc → qsv → amf → mf → libx264), the golden-tested argv per encoder, and the fall-back-on-failure decision (C0a)
 //!   - [`update`]       — auto-update status model + dev-check guard + semver "is newer" (R7)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
 //!   - [`levels`]       — pure parser for `astats` per-channel peak-level stderr → live UI meters (B-5)
@@ -88,6 +89,7 @@ pub mod tuning;
 pub mod two_process;
 pub mod update;
 pub mod vad;
+pub mod video_encoder;
 pub mod wake;
 pub mod wav;
 pub mod window;

@@ -440,7 +440,9 @@ mod imp {
     use cpal::SampleFormat;
     use sqlx::SqlitePool;
     use sundayrec_core::audio::MeterBanks;
-    use sundayrec_core::capture::{build_cpal_pipe_audio_args, build_cpal_pipe_video_args};
+    use sundayrec_core::capture::{
+        build_cpal_pipe_audio_args, build_cpal_pipe_video_args_with_encoder,
+    };
     use sundayrec_core::device_match::FfmpegDevice;
     use sundayrec_core::recorder::RecorderState;
     use sundayrec_core::timeouts::RecorderTimeouts;
@@ -667,7 +669,7 @@ mod imp {
 
         // ── Build ffmpeg args (audio-only or video+pipe) ─────────────────────
         let args: Vec<String> = match &video {
-            Some(v) => build_cpal_pipe_video_args(
+            Some(v) => build_cpal_pipe_video_args_with_encoder(
                 &v.name,
                 sundayrec_core::capture::RECORDING_FRAMERATE,
                 sample_rate,
@@ -677,6 +679,10 @@ mod imp {
                 opts.bitrate_kbps,
                 // v0.15: the recording codec is a constant (H.264).
                 sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+                // C0a: this machine's probed hardware encoder (software if the
+                // probe has not run or found none).
+                crate::media::video_encoder::active()
+                    .unwrap_or(sundayrec_core::video_encoder::VideoEncoder::Software),
                 None, // live preview wiring deferred for the cpal path
             ),
             None => build_cpal_pipe_audio_args(
@@ -888,6 +894,12 @@ mod imp {
                 status = child.wait() => {
                     tracing::warn!(?status, "recorder: cpal — ffmpeg exited unexpectedly");
                     let t = stderr_tail::snapshot(&tail);
+                    // C0a: this path has no reconnect, so the session ends here —
+                    // but a dying hardware encoder is forgotten so the NEXT video
+                    // recording starts on libx264 instead of on the same encoder.
+                    if has_video {
+                        crate::media::video_encoder::note_unexpected_exit(&app, None);
+                    }
                     emit_failure(&app, "ffmpeg_exited", t.lines().last().unwrap_or("ffmpeg stopped"));
                     break;
                 }

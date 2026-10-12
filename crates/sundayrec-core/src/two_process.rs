@@ -33,7 +33,7 @@
 //! drift over a 90-minute service is corrected too, and `-shortest` stops the
 //! muxer when the shorter input ends (no trailing audio over a frozen frame).
 
-use crate::capture::{push_video_encoder_args, VideoCaptureMode};
+use crate::capture::{push_video_encoder_args_with, VideoCaptureMode};
 use crate::ffmpeg::Platform;
 
 /// A unified-capture startup failure dies within this many ms of session start
@@ -232,6 +232,30 @@ pub fn build_video_capture_args(
     hw_accel: bool,
     video_codec: crate::editor::VideoCodec,
 ) -> Vec<String> {
+    let encoder = crate::video_encoder::resolve_encoder(platform, hw_accel, video_codec, None);
+    build_video_capture_args_with_encoder(
+        platform,
+        video_device,
+        output_path,
+        mode,
+        output_framerate,
+        encoder,
+        video_codec,
+    )
+}
+
+/// [`build_video_capture_args`] with the encoder decided by the caller (C0a):
+/// the machine's probed hardware encoder on Windows, VideoToolbox on a Mac.
+#[allow(clippy::too_many_arguments)]
+pub fn build_video_capture_args_with_encoder(
+    platform: Platform,
+    video_device: &str,
+    output_path: &str,
+    mode: VideoCaptureMode,
+    output_framerate: u32,
+    encoder: crate::video_encoder::VideoEncoder,
+    video_codec: crate::editor::VideoCodec,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-use_wallclock_as_timestamps".into(),
@@ -268,10 +292,9 @@ pub fn build_video_capture_args(
         }
     }
 
-    push_video_encoder_args(
+    push_video_encoder_args_with(
         &mut args,
-        platform,
-        hw_accel,
+        encoder,
         video_codec,
         Some(mode),
         output_framerate,
