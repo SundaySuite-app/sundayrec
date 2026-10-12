@@ -24,6 +24,7 @@
 //!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
 //!   - [`reconnect`]    — watchdog (stuck-progress) + reconnect back-off decisions
 //!   - [`recorder`]     — the recorder state machine + session recovery/split policy (Fase 3)
+//!   - [`stream_fault`] — what a live capture-stream fault (cpal 0.18 `ErrorKind`) makes the recorder do: keep recording, reconnect, retry or stop (A3b)
 //!   - [`schedule`]     — scheduler recurrence/occurrence/missed-recording decisions (Fase 5)
 //!   - [`wake`]         — wake-from-sleep capability/parse/schedule-command decisions (Fase 5)
 //!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
@@ -80,6 +81,7 @@ pub mod selftest;
 pub mod settings;
 pub mod shadow;
 pub mod silence;
+pub mod stream_fault;
 pub mod telemetry;
 pub mod test_recording;
 pub mod timeouts;

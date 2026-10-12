@@ -513,12 +513,17 @@ async fn spawn_preroll_stack(
                     sample_rate: negotiated.sample_rate,
                     buffer_size: cpal::BufferSize::Default,
                 };
+                // Advisories (xrun, rerouted, realtime refused) are logged and
+                // recording carries on; only a fault that ends the stream is sent.
                 let err_fn = move |e: cpal::Error| {
-                    crate::recorder::native_capture::stream::forward_stream_error(
-                        "preroll(native) stream",
-                        &e,
-                        &st_err,
-                    );
+                    if let Some(report) =
+                        crate::recorder::native_capture::stream::classify_stream_error(
+                            "preroll(native) stream",
+                            &e,
+                        )
+                    {
+                        let _ = st_err.try_send(report.detail);
+                    }
                 };
                 let stream = build_input_stream_any(
                     &device,

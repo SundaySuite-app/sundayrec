@@ -19,6 +19,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   programvare som før. Feiler den valgte koderen midt i et opptak, bytter
   appen til programvare og glemmer valget. Diagnosen viser hvilken koder som
   er i bruk.
+- **Opptaket skiller bedre mellom feil på lydenheten.** En frakoblet mikser og
+  et bytte av samplingsfrekvens gir fortsatt en gjenkobling, men en enhet som
+  er opptatt av et annet program prøves på nytt med riktig beskjed, en nektet
+  mikrofontilgang stopper opptaket med beskjed om hva du må gjøre, og et
+  enkelt hakk eller en omruting av lyden avbryter ikke opptaket. Bytter
+  du frekvens på Mac midt i opptaket, setter appen den ikke tilbake, men
+  fortsetter i en ny fil.
 
 ## v0.25.3 — tryggere opptak og mange mindre rettelser
 

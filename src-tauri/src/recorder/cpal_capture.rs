@@ -517,12 +517,15 @@ mod imp {
             // On a device error mid-recording (USB pulled, driver reset) cpal calls
             // this — tell the supervisor so it finalises instead of hanging on a
             // pipe that will never get more data.
+            // Advisories (xrun, rerouted, realtime refused) are logged and
+            // recording carries on; only a fault that ends the stream is sent.
             let err_fn = move |e: cpal::Error| {
-                crate::recorder::native_capture::stream::forward_stream_error(
+                if let Some(report) = crate::recorder::native_capture::stream::classify_stream_error(
                     "cpal input stream",
                     &e,
-                    &err_tx,
-                );
+                ) {
+                    let _ = err_tx.try_send(report.detail);
+                }
             };
             let stream = build_input_stream_any(
                 &device,

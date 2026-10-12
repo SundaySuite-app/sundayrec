@@ -13,7 +13,9 @@
 //! - first `size=` (Started)  → `WriterEvent::Started` (first block flushed)
 //! - astats levels lines      → 33 ms sampler over the routed `MeterBanks`
 //! - silencedetect markers    → `WriterEvent::Silence` (in-process detector)
-//! - stderr error classify    → typed `cpal::StreamError` / `WriterErrorKind`
+//! - stderr error classify    → typed `cpal::ErrorKind` (via the core's
+//!   `stream_fault` table: keep recording / reconnect / retry / fatal) and
+//!   `WriterErrorKind`
 //! - `q` + wait (finalize)    → stop flags + bounded joins (writer patches
 //!   the RIFF header and fsyncs)
 
@@ -46,8 +48,8 @@ use crate::recorder::engine::{
     SILENCE_EVENT, STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, find_device_exact, negotiate, open_host, ring_capacity,
-    CpalHostKind, StreamSink,
+    build_input_stream_any, classify_stream_error, find_device, find_device_exact, negotiate,
+    open_host, ring_capacity, CpalHostKind, StreamFaultReport, StreamSink,
 };
 use crate::recorder::native_capture::writer::{
     spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY, SYNC_EVERY,
@@ -55,6 +57,7 @@ use crate::recorder::native_capture::writer::{
 use crate::util::lock_recover;
 use sundayrec_core::audio::MeterBanks;
 use sundayrec_core::errors::RecordingErrorCode;
+use sundayrec_core::stream_fault::{stream_fault_action, StreamFault, StreamFaultAction};
 
 /// How often the levels sampler reads the meters and emits (parity with the
 /// ffmpeg path's `LevelMeter::EMIT_EVERY` and the VU engine).
@@ -72,7 +75,7 @@ pub struct NativeSegment {
     stream_join: Option<std::thread::JoinHandle<()>>,
     writer_join: Option<std::thread::JoinHandle<Result<super::writer::WriterSummary, String>>>,
     events: tokio::sync::mpsc::UnboundedReceiver<WriterEvent>,
-    stream_err_rx: tokio::sync::mpsc::Receiver<String>,
+    stream_err_rx: tokio::sync::mpsc::Receiver<StreamFaultReport>,
     meters: Arc<MeterBanks>,
     /// Samples dropped by the RT callback on ring overrun (whole frames).
     pub overrun: Arc<AtomicU64>,
@@ -204,7 +207,7 @@ pub async fn spawn_native_segment_for(
     let frames = Arc::new(AtomicU64::new(0));
     let meters = Arc::new(MeterBanks::new(out_ch as usize));
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<WriterEvent>();
-    let (err_tx, stream_err_rx) = tokio::sync::mpsc::channel::<String>(1);
+    let (err_tx, stream_err_rx) = tokio::sync::mpsc::channel::<StreamFaultReport>(1);
 
     // Writer first, so the stream never produces into a ring nobody drains.
     let writer_join = spawn_wav_writer(
@@ -249,12 +252,13 @@ pub async fn spawn_native_segment_for(
                     sample_rate: negotiated.sample_rate,
                     buffer_size: cpal::BufferSize::Default,
                 };
+                // Only a fault that ends the stream reaches the runner; the
+                // advisories (xrun, rerouted, realtime refused) are logged
+                // inside `classify_stream_error` and recording carries on.
                 let err_fn = move |e: cpal::Error| {
-                    crate::recorder::native_capture::stream::forward_stream_error(
-                        "native capture stream",
-                        &e,
-                        &err_tx,
-                    );
+                    if let Some(report) = classify_stream_error("native capture stream", &e) {
+                        let _ = err_tx.try_send(report);
+                    }
                 };
                 let stream = build_input_stream_any(
                     &device,
@@ -470,8 +474,11 @@ pub(crate) enum SegmentSignal {
     /// The writer's channel closed WITHOUT an error event — the writer thread
     /// died. The supervisor decides; there is nothing to classify.
     WriterGone,
-    /// The cpal stream reported a device error (USB pulled, format lost).
-    StreamError(String),
+    /// The cpal stream reported a fault that ends it (USB pulled, format
+    /// changed, device busy, permission refused) — typed, so the runner can
+    /// tell them apart. Advisories never arrive here (see
+    /// [`classify_stream_error`]).
+    StreamError(StreamFaultReport),
 }
 
 /// Everything [`run_native_segment`] needs from a live capture.
@@ -513,8 +520,13 @@ impl SegmentSignals for NativeSegment {
                 Some(ev) => SegmentSignal::Writer(ev),
                 None => SegmentSignal::WriterGone,
             },
+            // A closed channel means the stream (which owns the sender) is
+            // gone without a report: unclassified, i.e. the old reconnect.
             msg = self.stream_err_rx.recv() => SegmentSignal::StreamError(
-                msg.unwrap_or_else(|| "audio device error".into()),
+                msg.unwrap_or_else(|| StreamFaultReport {
+                    fault: StreamFault::Other,
+                    detail: "audio device error".into(),
+                }),
             ),
         }
     }
@@ -854,21 +866,41 @@ where
                             sink.warning(code_str, &message);
                         }
                         seg.stop().await;
-                        break SegmentOutcome::UnexpectedExit { last_error: Some(verdict.code) };
+                        break SegmentOutcome::UnexpectedExit { last_error: Some(verdict.code), stream_fault: None };
                     }
                     SegmentSignal::WriterGone => {
                         // Writer gone without an error event — treat as an
                         // unexpected exit; the recovery policy decides.
                         seg.stop().await;
-                        break SegmentOutcome::UnexpectedExit { last_error: None };
+                        break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None };
                     }
-                    // Device error mid-session (USB pulled, format lost): finalize the
-                    // fragment so the _rN concat has a valid piece, then reconnect.
-                    SegmentSignal::StreamError(reason) => {
-                        sink.warning("device_disconnected", &reason);
+                    // A stream fault mid-session. The class decides (core
+                    // `stream_fault` table): unplugged / format changed →
+                    // reconnect, busy → retry under its own code, permission →
+                    // fatal with the permission sentence. Either way the
+                    // fragment is finalized first, so the _rN concat (or the
+                    // fail-stop delivery) has a valid piece.
+                    SegmentSignal::StreamError(StreamFaultReport { fault, detail }) => {
+                        let code = match stream_fault_action(fault) {
+                            // Filtered out at the callback; harmless if one
+                            // slips through — the stream is still running.
+                            StreamFaultAction::KeepRecording => {
+                                tracing::warn!(?fault, %detail, "native capture: advisory reached the runner — still recording");
+                                continue;
+                            }
+                            StreamFaultAction::Reconnect(code) => {
+                                sink.warning(error_code_str(code), &detail);
+                                code
+                            }
+                            StreamFaultAction::Fatal(code) => {
+                                sink.failure(error_code_str(code), &detail);
+                                code
+                            }
+                        };
                         seg.stop().await;
                         break SegmentOutcome::UnexpectedExit {
-                            last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                            last_error: Some(code),
+                            stream_fault: Some(fault),
                         };
                     }
                 }
@@ -894,6 +926,7 @@ where
                     );
                     break SegmentOutcome::UnexpectedExit {
                         last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                        stream_fault: None,
                     };
                 }
                 sink.error(
@@ -902,6 +935,7 @@ where
                 );
                 break SegmentOutcome::UnexpectedExit {
                     last_error: Some(RecordingErrorCode::DeviceNotFound),
+                    stream_fault: None,
                 };
             }
             // Byte-progress watchdog.
@@ -924,7 +958,7 @@ where
                         ),
                     );
                     seg.stop().await;
-                    break SegmentOutcome::UnexpectedExit { last_error: None };
+                    break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None };
                 }
             }
             // Low-disk guard + RIFF-cap guard (same 30 s cadence; the cap has
@@ -1542,7 +1576,8 @@ mod tests {
         assert_eq!(
             out,
             SegmentOutcome::UnexpectedExit {
-                last_error: Some(RecordingErrorCode::DeviceNotFound)
+                last_error: Some(RecordingErrorCode::DeviceNotFound),
+                stream_fault: None,
             }
         );
         assert!(r.sink.has(&Ev::Error("start_timeout".into())));
@@ -1600,7 +1635,8 @@ mod tests {
         assert_eq!(
             out,
             SegmentOutcome::UnexpectedExit {
-                last_error: Some(RecordingErrorCode::DeviceDisconnected)
+                last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                stream_fault: None,
             }
         );
         assert!(!sundayrec_core::recorder::is_fatal_reconnect_error(
@@ -1652,7 +1688,13 @@ mod tests {
         .await;
         ticker.abort();
 
-        assert_eq!(out, SegmentOutcome::UnexpectedExit { last_error: None });
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: None,
+                stream_fault: None
+            }
+        );
         // The CHANNEL is the assertion, not just the code. A stall the recovery
         // policy answers with `Reconnect` must never reach `recording://error`:
         // that channel is terminal (the overlay comes down) and it is the one
@@ -1686,7 +1728,13 @@ mod tests {
             &mut w_rx,
         )
         .await;
-        assert_eq!(out, SegmentOutcome::UnexpectedExit { last_error: None });
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: None,
+                stream_fault: None
+            }
+        );
         assert_eq!(r.stops.load(Ordering::Relaxed), 1);
     }
 
@@ -1715,7 +1763,8 @@ mod tests {
         assert_eq!(
             out,
             SegmentOutcome::UnexpectedExit {
-                last_error: Some(RecordingErrorCode::DiskFull)
+                last_error: Some(RecordingErrorCode::DiskFull),
+                stream_fault: None,
             }
         );
         assert!(r.sink.has(&Ev::Error("disk_full".into())));
@@ -1753,7 +1802,8 @@ mod tests {
         assert_eq!(
             out,
             SegmentOutcome::UnexpectedExit {
-                last_error: Some(RecordingErrorCode::DeviceError)
+                last_error: Some(RecordingErrorCode::DeviceError),
+                stream_fault: None,
             }
         );
         assert!(r.sink.has(&Ev::Warning(
@@ -1761,17 +1811,21 @@ mod tests {
         )));
     }
 
-    /// A cpal device error mid-session: warn (not error — the fragment is
-    /// valid and the supervisor will reconnect) and report `DeviceDisconnected`
-    /// so the recovery policy treats it as transient.
-    #[tokio::test(start_paused = true)]
-    async fn a_device_error_finalises_the_fragment_and_asks_for_a_reconnect() {
+    /// Feed ONE cpal error, exactly as cpal's error callback would deliver it,
+    /// through the production classification (`classify_stream_error`) into a
+    /// running segment, and return what the segment did. `None` from the
+    /// classifier (an advisory) sends nothing, and the segment is then stopped
+    /// by the user so the test can tell "kept recording" from "ended".
+    async fn run_with_cpal_error(kind: cpal::ErrorKind) -> (SegmentOutcome, Rig) {
         let mut r = rig();
-        let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
             .unwrap();
-        r.tx.send(SegmentSignal::StreamError("device removed".into()))
-            .unwrap();
+        let e = cpal::Error::with_message(kind, "scripted");
+        match classify_stream_error("test stream", &e) {
+            Some(report) => r.tx.send(SegmentSignal::StreamError(report)).unwrap(),
+            None => stop_tx.send(()).await.unwrap(),
+        }
         let opts = test_opts("/tmp/x.wav");
         let out = drive(
             &mut r,
@@ -1783,14 +1837,159 @@ mod tests {
             &mut w_rx,
         )
         .await;
+        (out, r)
+    }
+
+    /// A3b class 1 — `DeviceNotAvailable` (USB pulled): warn (not error — the
+    /// fragment is valid and the supervisor will reconnect) and hand the
+    /// recovery policy the transient `DeviceDisconnected`.
+    #[tokio::test(start_paused = true)]
+    async fn an_unplugged_device_finalises_the_fragment_and_reconnects() {
+        let (out, r) = run_with_cpal_error(cpal::ErrorKind::DeviceNotAvailable).await;
         assert_eq!(
             out,
             SegmentOutcome::UnexpectedExit {
-                last_error: Some(RecordingErrorCode::DeviceDisconnected)
+                last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                stream_fault: Some(StreamFault::DeviceNotAvailable),
+            }
+        );
+        assert!(r.sink.has(&Ev::Warning("device_disconnected".into())));
+        assert!(!r.sink.seen().iter().any(|e| matches!(e, Ev::Error(_))));
+        assert_eq!(r.stops.load(Ordering::Relaxed), 1);
+    }
+
+    /// A3b class 2 — `StreamInvalidated` (macOS: the device's sample rate
+    /// changed): the same reconnect, and the fault travels with the outcome so
+    /// the supervisor reopens at the device's NEW rate instead of re-clocking
+    /// it back to the pinned one.
+    #[tokio::test(start_paused = true)]
+    async fn a_rate_change_reconnects_and_releases_the_rate_pin() {
+        let (out, r) = run_with_cpal_error(cpal::ErrorKind::StreamInvalidated).await;
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                stream_fault: Some(StreamFault::StreamInvalidated),
             }
         );
         assert!(r.sink.has(&Ev::Warning("device_disconnected".into())));
         assert_eq!(r.stops.load(Ordering::Relaxed), 1);
+        let SegmentOutcome::UnexpectedExit { stream_fault, .. } = out else {
+            unreachable!()
+        };
+        assert!(!sundayrec_core::stream_fault::reconnect_keeps_rate_pin(
+            stream_fault
+        ));
+    }
+
+    /// A3b class 3 — `DeviceBusy`: a retry under its OWN code (transient, so
+    /// the recovery policy retries on its back-off), not "disconnected".
+    #[tokio::test(start_paused = true)]
+    async fn a_busy_device_is_retried_as_device_busy() {
+        let (out, r) = run_with_cpal_error(cpal::ErrorKind::DeviceBusy).await;
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: Some(RecordingErrorCode::DeviceBusy),
+                stream_fault: Some(StreamFault::DeviceBusy),
+            }
+        );
+        assert!(r.sink.has(&Ev::Warning("device_busy".into())));
+        assert!(!r.sink.seen().iter().any(|e| matches!(e, Ev::Error(_))));
+        assert!(!sundayrec_core::recorder::is_fatal_reconnect_error(
+            RecordingErrorCode::DeviceBusy
+        ));
+    }
+
+    /// A3b class 4 — `PermissionDenied`: terminal. The segment raises a
+    /// `recording://error` under the permission code (whose sentence tells the
+    /// volunteer to grant microphone access), and the code it hands the
+    /// supervisor is one the recovery policy gives up on.
+    #[tokio::test(start_paused = true)]
+    async fn a_denied_permission_is_fatal_with_the_permission_message() {
+        let (out, r) = run_with_cpal_error(cpal::ErrorKind::PermissionDenied).await;
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: Some(RecordingErrorCode::DevicePermissionDenied),
+                stream_fault: Some(StreamFault::PermissionDenied),
+            }
+        );
+        assert!(r.sink.has(&Ev::Error("device_permission_denied".into())));
+        assert!(!r.sink.seen().iter().any(|e| matches!(e, Ev::Warning(_))));
+        assert!(sundayrec_core::recorder::is_fatal_reconnect_error(
+            RecordingErrorCode::DevicePermissionDenied
+        ));
+        assert_eq!(
+            AlertText::for_recording_code("device_permission_denied"),
+            AlertText::RecordingPermissionDenied
+        );
+        assert_eq!(r.stops.load(Ordering::Relaxed), 1);
+    }
+
+    /// The advisories cpal 0.18 sends through the SAME callback — a glitch, a
+    /// reroute, refused real-time priority — must not cost a reconnect: the
+    /// segment keeps recording until the user stops it.
+    #[tokio::test(start_paused = true)]
+    async fn advisories_do_not_end_the_segment() {
+        for kind in [
+            cpal::ErrorKind::Xrun,
+            cpal::ErrorKind::DeviceChanged,
+            cpal::ErrorKind::RealtimeDenied,
+        ] {
+            let (out, r) = run_with_cpal_error(kind).await;
+            assert_eq!(out, SegmentOutcome::GracefulStop, "{kind:?}");
+            assert!(
+                !r.sink
+                    .seen()
+                    .iter()
+                    .any(|e| matches!(e, Ev::Warning(_) | Ev::Error(_))),
+                "{kind:?} must not reach the volunteer"
+            );
+        }
+    }
+
+    /// Belt and braces: should an advisory ever reach the runner (the filter
+    /// lives in the callback), the runner too keeps recording.
+    #[tokio::test(start_paused = true)]
+    async fn an_advisory_that_reaches_the_runner_is_ignored() {
+        let mut r = rig();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
+        r.tx.send(SegmentSignal::StreamError(StreamFaultReport {
+            fault: StreamFault::Xrun,
+            detail: "xrun".into(),
+        }))
+        .unwrap();
+        stop_tx.send(()).await.unwrap();
+        let opts = test_opts("/tmp/x.wav");
+        let out = drive(
+            &mut r,
+            &opts,
+            counters(),
+            Some(u64::MAX / 2),
+            FakeClock::default().handle(),
+            &mut stop_rx,
+            &mut w_rx,
+        )
+        .await;
+        assert_eq!(out, SegmentOutcome::GracefulStop);
+    }
+
+    /// Anything unclassified (a backend error, a kind a later cpal adds) keeps
+    /// the pre-A3b behaviour: reconnect as `device_disconnected`.
+    #[tokio::test(start_paused = true)]
+    async fn an_unclassified_fault_keeps_the_old_reconnect() {
+        let (out, r) = run_with_cpal_error(cpal::ErrorKind::BackendError).await;
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: Some(RecordingErrorCode::DeviceDisconnected),
+                stream_fault: Some(StreamFault::Other),
+            }
+        );
+        assert!(r.sink.has(&Ev::Warning("device_disconnected".into())));
     }
 
     /// The full silence sequence: silence begins → the warning fires after
@@ -2160,7 +2359,13 @@ mod tests {
             &mut w_rx,
         )
         .await;
-        assert_eq!(out, SegmentOutcome::UnexpectedExit { last_error: None });
+        assert_eq!(
+            out,
+            SegmentOutcome::UnexpectedExit {
+                last_error: None,
+                stream_fault: None
+            }
+        );
         let t = tel.lock().expect("telemetry");
         assert_eq!(t.ring_overrun_samples, 4_096);
         assert!(
