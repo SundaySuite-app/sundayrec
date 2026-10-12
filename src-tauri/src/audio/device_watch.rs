@@ -29,18 +29,60 @@
 //! | platform | listener | status |
 //! |---|---|---|
 //! | macOS | CoreAudio `AudioObjectAddPropertyListener` on `kAudioHardwarePropertyDevices` | shipped, ⚠️ HARDWARE-UNVERIFIED |
-//! | Windows | `IMMNotificationClient` | **NOT shipped** — see below |
+//! | Windows | `IMMNotificationClient` via `RegisterEndpointNotificationCallback` | shipped (A4), ⚠️ HARDWARE-UNVERIFIED — RIG-DAY (a4) on the Windows box |
 //! | other | — | no-op (the signal simply never fires; back-off is slept in full) |
 //!
-//! Windows is deliberately absent. `IMMNotificationClient` is a COM *callback
-//! interface*: shipping it means hand-writing a vtable and `IUnknown`
-//! ref-counting against `windows-sys` (this tree's raw-FFI Win32 binding), or
-//! pulling the much larger `windows` crate for its `#[implement]` macro. Neither
-//! is a change that can be reviewed — let alone verified — without a Windows rig,
-//! and getting COM lifetime wrong in a process that holds an audio device is a
-//! worse failure than waiting out a 10 s back-off. The macOS half ships; Windows
-//! keeps today's behaviour (the full sleep) until someone with the hardware can
-//! land and test the COM half.
+//! ### Windows: why it was missing, and why it is not any more
+//!
+//! Until A4 this table said Windows was deliberately absent, because
+//! `IMMNotificationClient` is a COM *callback interface* — a vtable plus
+//! `IUnknown` ref-counting — and the only ways to get one were to hand-write it
+//! against `windows-sys` or to "pull in the much larger `windows` crate" for
+//! its `#[implement]` macro. The second half of that stopped being true with
+//! cpal 0.17/0.18: cpal's WASAPI backend is built on `windows` 0.62.2, so the
+//! crate and every feature this module needs were already compiled into every
+//! Windows build. A4 declares `windows`/`windows-core` directly, pinned with
+//! `=` to the exact version cpal uses (see `src-tauri/Cargo.toml` for why the
+//! pin is exact), and lets `#[implement]` write the vtable. Nothing new is
+//! compiled. What remains true is the other half of the old reasoning: the Mac
+//! cannot prove any of it. CI builds and unit-tests it on windows-latest; only
+//! the Windows rig can show the back-off being cut (RIG-DAY (a4)).
+//!
+//! The Windows half is modelled on cpal 0.18.2's `DefaultDeviceMonitor`
+//! (`src/host/wasapi/stream.rs`, © the cpal contributors, Apache-2.0), which
+//! registers an `IMMNotificationClient` the same way for default-device
+//! streams. Ours is our own, smaller code and does ONE thing: poke the same
+//! [`Notify`] the macOS half pokes. The camera half of a device watcher
+//! (`CM_Register_Notification`) belongs to C5a, not here.
+//!
+//! The two traps cpal documents, and how this module stays out of them:
+//!
+//! 1. **Unregistering while a callback runs deadlocks.**
+//!    `UnregisterEndpointNotificationCallback` blocks until any in-flight
+//!    callback returns; if that callback is waiting for something the
+//!    unregistering thread holds (or IS the unregistering thread), neither
+//!    moves. Here: production never unregisters (one listener for the life of
+//!    the process, exactly as on macOS — see [`device_change_signal`]); the
+//!    callback takes none of our locks and never calls back into COM; and the
+//!    only unregister path (`wasapi::Registration`'s `Drop`, exercised by tests) runs on an
+//!    ordinary thread, never from inside a callback.
+//! 2. **Never free what the callback uses if unregistering failed.** cpal
+//!    closes a raw event `HANDLE` only when unregistering succeeded, because a
+//!    still-registered callback could otherwise `SetEvent` a closed (or reused)
+//!    handle. Our callback owns no raw handle at all — only an
+//!    `Arc<Notify>` inside a ref-counted COM object — so there is nothing to
+//!    close; and if unregistering fails, `Drop` deliberately leaks one
+//!    reference to the client, so even an enumerator that kept the pointer
+//!    without holding a reference can never call into freed memory.
+//!
+//! COM lifetime: the listener is registered on its own thread, `device-watch`,
+//! which joins the multi-threaded apartment, creates its own
+//! `IMMDeviceEnumerator`, registers, and then parks for the rest of the
+//! process — the same immortal-thread shape as [`crate::audio::com_anchor`].
+//! Its apartment therefore never ends, the enumerator and client are never
+//! released on another thread, and COM can never be torn down underneath them.
+//! It is independent of cpal's cached enumerator: neither creates, uses nor
+//! releases the other's.
 //!
 //! The waiting half ([`wait_reconnect_backoff`]) is platform-independent and
 //! unit-tested under `tokio::time::pause()`; only the listener registration is
@@ -122,8 +164,10 @@ pub async fn wait_reconnect_backoff(
 ///
 /// One listener for the whole process, never removed: the recorder may start and
 /// stop many times in a session, and repeatedly adding/removing a CoreAudio
-/// property listener is a lifetime hazard for no benefit — the callback is a
-/// single `notify_waiters()` on an `Arc` that lives as long as the process.
+/// property listener or a WASAPI endpoint callback is a lifetime hazard for no
+/// benefit — on Windows, unregistering is exactly where the deadlock trap lives
+/// (see the module header). The callback is a single `notify_one()` on an `Arc`
+/// that lives as long as the process.
 pub fn device_change_signal() -> Arc<Notify> {
     static SIGNAL: std::sync::OnceLock<Arc<Notify>> = std::sync::OnceLock::new();
     Arc::clone(SIGNAL.get_or_init(|| {
@@ -271,14 +315,301 @@ mod coreaudio {
     }
 }
 
-// ── Every other platform: no listener (see the module header) ────────────────
+// ── Windows: IMMNotificationClient ───────────────────────────────────────────
 
-#[cfg(not(target_os = "macos"))]
+/// ⚠️ HARDWARE-UNVERIFIED — needs a real mixer unplug/replug on the Windows box
+/// (RIG-DAY (a4)).
+///
+/// Spawns the `device-watch` thread that registers the listener and then lives
+/// for the rest of the process (see the module header, «COM lifetime»). Does
+/// not wait for it: the result is only ever logged, and a failure means the
+/// recorder sleeps the full back-off — exactly the behaviour before A4.
+#[cfg(windows)]
+fn install_listener(notify: &Arc<Notify>) {
+    let notify = Arc::clone(notify);
+    let spawned = std::thread::Builder::new()
+        .name("device-watch".into())
+        .spawn(move || wasapi::register_and_park(notify));
+    if let Err(e) = spawned {
+        tracing::warn!(
+            error = %e,
+            "device_watch: could not spawn the device-watch thread — \
+             reconnect back-off will not be cut short"
+        );
+    }
+}
+
+/// The Windows listener: an `IMMNotificationClient` whose only job is to poke
+/// the shared [`Notify`] when an endpoint APPEARS. Modelled on cpal 0.18.2's
+/// `DefaultDeviceMonitor` (Apache-2.0) — see the module header for the two
+/// traps it is built to avoid.
+#[cfg(windows)]
+mod wasapi {
+    use std::sync::Arc;
+
+    use tokio::sync::Notify;
+    use windows::core::{implement, Result, PCWSTR};
+    use windows::Win32::Foundation::PROPERTYKEY;
+    use windows::Win32::Media::Audio::{
+        eCapture, eConsole, EDataFlow, ERole, IMMDeviceEnumerator, IMMNotificationClient,
+        IMMNotificationClient_Impl, MMDeviceEnumerator, DEVICE_STATE, DEVICE_STATE_ACTIVE,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+
+    /// Body of the `device-watch` thread: join the MTA, register, park forever.
+    ///
+    /// On success the registration is held by this frame and the frame never
+    /// returns, so the listener is never unregistered and its enumerator is
+    /// never released — on this thread or any other. On failure we leave the
+    /// apartment again and let the thread end; nothing was registered.
+    pub(super) fn register_and_park(notify: Arc<Notify>) {
+        // SAFETY: plain COM call with no reserved pointer, on a fresh thread
+        // that has not joined an apartment yet (so RPC_E_CHANGED_MODE cannot
+        // happen). Balanced below on the failure path; on the success path the
+        // apartment is meant to last until the process ends.
+        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        if hr.is_err() {
+            tracing::warn!(
+                hr = hr.0,
+                "device_watch: CoInitializeEx(MTA) failed — \
+                 reconnect back-off will not be cut short"
+            );
+            return;
+        }
+        match Registration::register(notify) {
+            Ok(registration) => {
+                tracing::info!("device_watch: WASAPI endpoint-notification listener installed");
+                // Held, never dropped: the loop below never ends.
+                let _registration = registration;
+                loop {
+                    std::thread::park();
+                }
+            }
+            Err(e) => {
+                // Not fatal: the recorder falls back to sleeping the full
+                // back-off, which is exactly the behaviour before A4.
+                tracing::warn!(
+                    error = %e,
+                    "device_watch: could not register the WASAPI endpoint listener — \
+                     reconnect back-off will not be cut short"
+                );
+                // SAFETY: balances the successful CoInitializeEx above; every
+                // COM object this thread made has already been released.
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
+    /// One registered listener: the enumerator it is registered on, and the
+    /// client. The caller's thread must be in a COM apartment (the MTA) for
+    /// both `register` and `Drop`.
+    pub(super) struct Registration {
+        enumerator: IMMDeviceEnumerator,
+        client: IMMNotificationClient,
+    }
+
+    impl Registration {
+        pub(super) fn register(notify: Arc<Notify>) -> Result<Self> {
+            // SAFETY: COM is initialised on this thread (caller's contract);
+            // `MMDeviceEnumerator` is the documented CLSID for
+            // `IMMDeviceEnumerator`, and no aggregation is requested.
+            let enumerator: IMMDeviceEnumerator =
+                unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)? };
+            let client: IMMNotificationClient = DeviceListChanged { notify }.into();
+            // SAFETY: `client` is a valid, live COM object; the enumerator
+            // AddRefs it for as long as it stays registered.
+            unsafe { enumerator.RegisterEndpointNotificationCallback(&client)? };
+            Ok(Self { enumerator, client })
+        }
+    }
+
+    impl Drop for Registration {
+        /// Trap 1: synchronous — returns only after any in-flight callback has
+        /// finished. Safe because no callback ever waits on anything, and this
+        /// never runs on a notification thread (production never drops a
+        /// `Registration`; tests drop it on their own thread).
+        ///
+        /// Trap 2: if Windows says the unregister failed, it may still call
+        /// the client. Leak one reference so the object — and the `Notify` it
+        /// owns — outlives anything that could still call it.
+        fn drop(&mut self) {
+            // SAFETY: `client` is the exact object registered in `register`,
+            // and COM is initialised on this thread (caller's contract).
+            let unregistered = unsafe {
+                self.enumerator
+                    .UnregisterEndpointNotificationCallback(&self.client)
+            };
+            if let Err(e) = unregistered {
+                tracing::warn!(
+                    error = %e,
+                    "device_watch: unregistering the endpoint listener failed — \
+                     leaking the client rather than risk a call into freed memory"
+                );
+                std::mem::forget(self.client.clone());
+            }
+        }
+    }
+
+    /// The COM object Windows calls. Runs on a Windows-owned notification
+    /// thread, so every method is a few integer compares and at most one
+    /// `notify_one()`: no lock of ours, no allocation, no COM call, no waiting.
+    /// (`notify_one` may briefly take tokio's internal waiter-list lock to wake
+    /// a parked task; that lock is never held by anything that unregisters,
+    /// so it cannot take part in trap 1.)
+    ///
+    /// Only ARRIVALS poke. The signal exists to cut the back-off short when
+    /// the mixer comes back; a removal is not news to a recorder that is
+    /// already reconnecting, and would only buy one wasted, floor-delayed
+    /// attempt. `notify_one` (not `notify_waiters`) for the same reason as on
+    /// macOS — see `on_devices_changed`.
+    #[implement(IMMNotificationClient)]
+    pub(super) struct DeviceListChanged {
+        pub(super) notify: Arc<Notify>,
+    }
+
+    impl IMMNotificationClient_Impl for DeviceListChanged_Impl {
+        /// The usual replug: Windows keeps an endpoint for a USB device it has
+        /// seen before (as `NOTPRESENT`/`UNPLUGGED`), so plugging the mixer
+        /// back in arrives HERE as a transition to `ACTIVE`, not as
+        /// `OnDeviceAdded`.
+        fn OnDeviceStateChanged(&self, _id: &PCWSTR, new_state: DEVICE_STATE) -> Result<()> {
+            if new_state == DEVICE_STATE_ACTIVE {
+                self.notify.notify_one();
+            }
+            Ok(())
+        }
+
+        /// A device Windows has never seen before.
+        fn OnDeviceAdded(&self, _id: &PCWSTR) -> Result<()> {
+            self.notify.notify_one();
+            Ok(())
+        }
+
+        fn OnDeviceRemoved(&self, _id: &PCWSTR) -> Result<()> {
+            Ok(())
+        }
+
+        /// A new default CAPTURE device — what a session recording from "the
+        /// default input" reopens. Only the console role (Windows fires once per
+        /// role) and only when there IS a new default (a null id means the last
+        /// one went away).
+        fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, id: &PCWSTR) -> Result<()> {
+            if flow == eCapture && role == eConsole && !id.is_null() {
+                self.notify.notify_one();
+            }
+            Ok(())
+        }
+
+        /// Fires for every property-store write (names, formats, …) — far too
+        /// chatty to mean "a device appeared".
+        fn OnPropertyValueChanged(&self, _id: &PCWSTR, _key: &PROPERTYKEY) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::time::Duration;
+        use windows::core::w;
+        use windows::Win32::Media::Audio::{
+            eRender, DEVICE_STATE_NOTPRESENT, DEVICE_STATE_UNPLUGGED,
+        };
+
+        /// A fresh `Notify` and the COM object wrapping it, called through the
+        /// real vtable `#[implement]` generated — the wiring Windows will use.
+        fn client() -> (Arc<Notify>, IMMNotificationClient) {
+            let notify = Arc::new(Notify::new());
+            let client: IMMNotificationClient = DeviceListChanged {
+                notify: Arc::clone(&notify),
+            }
+            .into();
+            (notify, client)
+        }
+
+        /// Did the callback store a permit? `notify_one` stores one when nobody
+        /// waits, so a poke made before this call is observed immediately.
+        async fn poked(notify: &Notify) -> bool {
+            tokio::time::timeout(Duration::from_millis(10), notify.notified())
+                .await
+                .is_ok()
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn arrivals_poke_the_signal() {
+            let (n, c) = client();
+            // SAFETY: calling our own COM object through its vtable with a
+            // valid, NUL-terminated wide string.
+            unsafe { c.OnDeviceStateChanged(w!("mixer"), DEVICE_STATE_ACTIVE) }.unwrap();
+            assert!(poked(&n).await, "replug (state → ACTIVE) must poke");
+
+            let (n, c) = client();
+            // SAFETY: as above.
+            unsafe { c.OnDeviceAdded(w!("mixer")) }.unwrap();
+            assert!(poked(&n).await, "a never-seen device must poke");
+
+            let (n, c) = client();
+            // SAFETY: as above.
+            unsafe { c.OnDefaultDeviceChanged(eCapture, eConsole, w!("mixer")) }.unwrap();
+            assert!(poked(&n).await, "a new default capture device must poke");
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn departures_and_noise_do_not_poke() {
+            let (n, c) = client();
+            // SAFETY: calling our own COM object through its vtable with valid
+            // arguments (a NUL-terminated wide string, or null where Windows
+            // itself passes null).
+            unsafe {
+                c.OnDeviceRemoved(w!("mixer")).unwrap();
+                c.OnDeviceStateChanged(w!("mixer"), DEVICE_STATE_UNPLUGGED)
+                    .unwrap();
+                c.OnDeviceStateChanged(w!("mixer"), DEVICE_STATE_NOTPRESENT)
+                    .unwrap();
+                c.OnDefaultDeviceChanged(eRender, eConsole, w!("speakers"))
+                    .unwrap();
+                c.OnDefaultDeviceChanged(eCapture, eConsole, PCWSTR::null())
+                    .unwrap();
+                c.OnPropertyValueChanged(w!("mixer"), PROPERTYKEY::default())
+                    .unwrap();
+            }
+            assert!(!poked(&n).await, "only arrivals may cut the back-off");
+        }
+
+        /// The real COM path on a real Windows host: create an enumerator,
+        /// register, unregister (`Drop`) — on a thread that joined the MTA,
+        /// as `register_and_park` does. Proves the registration is accepted
+        /// and that unregistering returns (no deadlock with no callback in
+        /// flight); it cannot prove a callback fires — that is RIG-DAY (a4).
+        #[test]
+        fn registers_and_unregisters_on_an_mta_thread() {
+            std::thread::spawn(|| {
+                // SAFETY: fresh thread, no reserved pointer; balanced below.
+                let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+                assert!(hr.is_ok(), "CoInitializeEx(MTA) failed: {hr:?}");
+                {
+                    let registration = Registration::register(Arc::new(Notify::new()))
+                        .expect("RegisterEndpointNotificationCallback");
+                    drop(registration);
+                }
+                // SAFETY: balances the CoInitializeEx above; every COM object
+                // made on this thread was released in the block above.
+                unsafe { CoUninitialize() };
+            })
+            .join()
+            .expect("the COM test thread panicked");
+        }
+    }
+}
+
+// ── Every other platform: no listener ────────────────────────────────────────
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn install_listener(_notify: &Arc<Notify>) {
-    // Windows: IMMNotificationClient is a COM callback interface and is not
-    // shipped — see the module header for the reasoning. Everything else has no
-    // device-change API this app binds. The recorder sleeps the full back-off,
-    // exactly as it did before this module existed.
+    // No device-change API this app binds. The recorder sleeps the full
+    // back-off, exactly as it did before this module existed.
     tracing::debug!(
         "device_watch: no OS device-change listener on this platform — \
          reconnect back-off is slept in full"

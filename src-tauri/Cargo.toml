@@ -264,6 +264,31 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 
+# `windows` (the projected COM bindings, not the raw FFI above) for exactly one
+# thing: `audio::device_watch`'s `IMMNotificationClient`, the Windows half of the
+# device-list listener that cuts short the reconnect back-off (A4). A COM
+# *callback* interface needs a vtable and `IUnknown` ref-counting; `#[implement]`
+# generates both, where `windows-sys` would have us hand-write them.
+#
+# Pinned EXACTLY (`=`) to the version cpal 0.18.2 already compiles — check with
+# `cargo tree -i windows --target x86_64-pc-windows-msvc`. Two reasons:
+# - no second copy: the crate, and every feature below, is already in the build
+#   through cpal (cpal enables `Win32_Media_Audio`, `Win32_Foundation` and
+#   `Win32_System_Com_StructuredStorage`, which implies `Win32_System_Com`), so
+#   this adds zero compiled code;
+# - a cpal bump must not move the version under our vtable silently. When cpal
+#   moves to another `windows`, bump these two pins in the SAME PR (and re-run
+#   the Windows CI jobs), or the tree carries two copies.
+# `windows-core` is listed because the `#[implement]` macro expands to
+# `::windows_core::…` paths, so it must be a direct dependency; there is no
+# `implement` feature on `windows` 0.62 — the macro is always available.
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+] }
+windows-core = "=0.62.2"
+
 # ── macOS-only: trackpad haptics (Force Touch) ───────────────────────────────
 # The editor fires subtle haptic taps via `NSHapticFeedbackManager`. These are
 # the same `objc2` 0.6 lineage Tauri (muda) already vendors, declared directly

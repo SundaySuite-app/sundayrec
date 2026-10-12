@@ -11,7 +11,8 @@
 //!     apartment that lives as long as the process (see its header)
 //!   - [`vu`]          the VU engine: cpal input stream → `PeakMeters` → `vu://levels`
 //!   - [`device_watch`] the OS device-list-change signal that cuts short the
-//!     recorder's reconnect back-off (macOS CoreAudio; see its header)
+//!     recorder's reconnect back-off (macOS CoreAudio, Windows
+//!     `IMMNotificationClient`; see its header)
 //!
 //! The pure metering math (peak/RMS/dBFS, the lock-free `PeakMeters`) lives in
 //! `sundayrec-core::audio` and is fully unit-tested without hardware. The cpal
