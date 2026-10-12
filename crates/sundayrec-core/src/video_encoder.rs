@@ -33,6 +33,15 @@
 //! macOS og Linux prøver ingenting: macOS bruker VideoToolbox når `hw_accel` er
 //! på (som før), alt annet er programvare.
 //!
+//! ## Nøkkelbilder (C0b)
+//!
+//! Nøkkelbildeintervallet (`-g 2×fps -keyint_min fps`) hører ikke hjemme her:
+//! det er likt for alle koderne og legges på av
+//! `capture::push_video_encoder_args_with` rett etter de koderspesifikke
+//! argumentene. Golden-testen
+//! `every_encoder_and_path_gets_a_keyframe_every_two_seconds` pinner det for hver
+//! koder og hver sti. Prøven ([`probe_args`]) får det ikke: den er 0,2 s lang.
+//!
 //! ## HARDWARE-UNVERIFIED
 //!
 //! Koderne finnes ikke i Mac-sidecaren. Argumentene per koder er bevist av
@@ -628,6 +637,10 @@ mod tests {
             "30",
             "-fps_mode",
             "cfr",
+            "-g",
+            "60",
+            "-keyint_min",
+            "30",
             "-c:a",
             "aac",
             "-b:a",
@@ -664,6 +677,124 @@ mod tests {
             run(Some(VideoEncoder::MediaFoundation)),
             with(&["-c:v", "h264_mf", "-hw_encoding", "1", "-b:v", "12000k"])
         );
+    }
+
+    /// C0b: nøkkelbilde hvert 2. sekund i ALLE videoopptak — hver koder, hver
+    /// sti. `-g` er 2×fps og `-keyint_min` er fps, rett etter `-fps_mode cfr`.
+    #[test]
+    fn every_encoder_and_path_gets_a_keyframe_every_two_seconds() {
+        use crate::capture::{
+            build_cpal_pipe_video_args_with_encoder, push_video_encoder_args_with, VideoCaptureMode,
+        };
+        use crate::two_process::build_video_capture_args_with_encoder;
+
+        let keyint = |args: &[String], fps: u32| {
+            let at = args
+                .windows(2)
+                .position(|w| w == ["-fps_mode", "cfr"])
+                .expect("cfr conform present");
+            let want = s(&[
+                "-fps_mode",
+                "cfr",
+                "-g",
+                &(fps * 2).to_string(),
+                "-keyint_min",
+                &fps.to_string(),
+            ]);
+            assert_eq!(&args[at..at + 6], &want[..], "{args:?}");
+            // Nøyaktig ett sett: ingen sti legger det på to ganger.
+            assert_eq!(args.iter().filter(|a| *a == "-g").count(), 1, "{args:?}");
+            assert_eq!(
+                args.iter().filter(|a| *a == "-keyint_min").count(),
+                1,
+                "{args:?}"
+            );
+        };
+        let encoders = [
+            VideoEncoder::VideoToolbox,
+            VideoEncoder::Nvenc,
+            VideoEncoder::Qsv,
+            VideoEncoder::Amf,
+            VideoEncoder::MediaFoundation,
+            VideoEncoder::Software,
+        ];
+
+        for fps in [24_u32, 25, 30, 60] {
+            for encoder in encoders {
+                for codec in [VideoCodec::H264, VideoCodec::H265] {
+                    // Selve sømmen.
+                    let mut a = Vec::new();
+                    push_video_encoder_args_with(&mut a, encoder, codec, None, fps, false);
+                    keyint(&a, fps);
+
+                    // Totrinns-fallbackens videoprosess (mkv-temp).
+                    let mode = VideoCaptureMode {
+                        width: 1920,
+                        height: 1080,
+                        input_fps: 30,
+                    };
+                    for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
+                        let a = build_video_capture_args_with_encoder(
+                            platform,
+                            "Cam",
+                            "/rec/v.mkv",
+                            mode,
+                            fps,
+                            encoder,
+                            codec,
+                        );
+                        keyint(&a, fps);
+                    }
+
+                    // Windows' cpal-rør (dshow-kamera + PCM på pipe).
+                    for out in ["/rec/v.mkv", "/rec/v.mp4"] {
+                        let a = build_cpal_pipe_video_args_with_encoder(
+                            "Cam", fps, 48_000, 2, out, None, 192, codec, encoder, None,
+                        );
+                        keyint(&a, fps);
+                    }
+                }
+            }
+        }
+
+        // Den samlede stien på Mac (VideoToolbox og programvare) og Windows.
+        for (platform, hw_accel, dev) in [
+            (Platform::MacOS, true, "0"),
+            (Platform::MacOS, false, "0"),
+            (Platform::Windows, true, "Cam"),
+            (Platform::Linux, true, "/dev/video0"),
+        ] {
+            for fps in [25_u32, 30, 60] {
+                let a = build_unified_capture_args(
+                    platform,
+                    Some(dev),
+                    "1",
+                    "/rec/v.mp4",
+                    &CaptureOpts {
+                        hw_accel,
+                        framerate: fps,
+                        ..CaptureOpts::default()
+                    },
+                );
+                keyint(&a, fps);
+            }
+        }
+
+        // Kun lyd: ingen nøkkelbilder å snakke om.
+        let audio = build_unified_capture_args(
+            Platform::MacOS,
+            None,
+            "1",
+            "/rec/a.m4a",
+            &CaptureOpts::default(),
+        );
+        assert!(!audio.iter().any(|a| a == "-g" || a == "-keyint_min"));
+    }
+
+    /// Prøven skal ikke ha nøkkelbilde-flaggene: den er 0,2 s lang.
+    #[test]
+    fn probe_argv_is_unchanged_by_the_keyframe_interval() {
+        assert!(!probe_args(VideoEncoder::Nvenc).iter().any(|a| a == "-g"));
     }
 
     #[test]

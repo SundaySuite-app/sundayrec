@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Videoopptak får et nøkkelbilde hvert 2. sekund.** Et krasj midt i en
+  gudstjeneste koster dermed høyst et par sekunder bilde, og søking i
+  redigeringen går raskere. Gjelder alle videoopptak, uansett om maskinen koder
+  med skjermkortet eller i programvare. Det legger også grunnlaget for at
+  «Behold bare prekenen» senere kan gå på sekunder i stedet for minutter.
+
 - **Videoopptak på Windows bruker skjermkortet til å kode.** Tidligere ble
   1080p kodet i programvare på Windows, og på en eldre PC ga det høy
   CPU-last, tapte bilder og hakking. Nå prøver appen ved første videoopptak

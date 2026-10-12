@@ -37,6 +37,11 @@
 //!     `h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_mf` this machine's probe
 //!     settled on ([`CaptureOpts::hw_encoder`]). The decision and the argv per
 //!     encoder live in [`crate::video_encoder`]; golden tests pin every one.
+//!   - **Keyframe every 2 s (C0b)**: `-g <2×fps> -keyint_min <fps>` right after
+//!     the CFR conform, emitted by [`push_video_encoder_args_with`] so EVERY
+//!     encoder and path (unified, two-process video, Windows cpal pipe) gets it.
+//!     Less video lost on a crash, faster seeking, and the basis for cut-only
+//!     export (`-c:v copy`, B6).
 //!   - **Deadlock-proof live preview** ([`CaptureOpts::preview_jpg`]): a SECOND
 //!     output writes a low-fps JPEG to a FILE (`-update 1`) the UI polls. A file
 //!     sink — never a stdout pipe — so a slow/absent reader can NEVER back-pressure
@@ -813,6 +818,30 @@ pub fn push_video_encoder_args_with(
     args.push(framerate.to_string());
     args.push("-fps_mode".into());
     args.push("cfr".into());
+    push_keyframe_interval_args(args, framerate);
+}
+
+/// Seconds between keyframes in every video recording (C0b).
+pub const KEYFRAME_INTERVAL_SECS: u32 = 2;
+
+/// `-g <2×fps> -keyint_min <fps>` — a keyframe at least every
+/// [`KEYFRAME_INTERVAL_SECS`] seconds, whatever the encoder (C0b).
+///
+/// Why: a crash loses at most one GOP of video, the editor seeks without
+/// decoding half a minute from the last keyframe, and cut-only export
+/// (`-c:v copy`, LYDMOTOR fase 6 / B6) can snap cuts to keyframes that are
+/// close together. `-g` is the generic AVCodecContext GOP size, honoured by
+/// libx264/libx265 and by VideoToolbox, NVENC, QSV, AMF and Media Foundation
+/// alike; `-keyint_min` only bites on x264/x265 (the hardware encoders ignore
+/// it). It sits after the encoder args in every path because it is emitted by
+/// [`push_video_encoder_args_with`], the single seam shared by the Mac/Linux
+/// unified path, the two-process video process and the Windows cpal pipe.
+fn push_keyframe_interval_args(args: &mut Vec<String>, framerate: u32) {
+    let fps = framerate.max(1);
+    args.push("-g".into());
+    args.push((fps * KEYFRAME_INTERVAL_SECS).to_string());
+    args.push("-keyint_min".into());
+    args.push(fps.to_string());
 }
 
 /// Build the unified-capture ffmpeg argument vector.
