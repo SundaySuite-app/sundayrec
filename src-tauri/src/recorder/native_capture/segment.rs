@@ -136,8 +136,7 @@ pub async fn spawn_native_segment_for(
             } else {
                 find_device(&h, &name)?
             };
-            #[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human name.
-            let opened = cpal::traits::DeviceTrait::name(&device).ok();
+            let opened = crate::audio::devices::device_name(&device);
             Ok((negotiate(&device, requested_rate)?, opened))
         })
         .await
@@ -250,13 +249,16 @@ pub async fn spawn_native_segment_for(
                     sample_rate: negotiated.sample_rate,
                     buffer_size: cpal::BufferSize::Default,
                 };
-                let err_fn = move |e: cpal::StreamError| {
-                    tracing::error!("native capture stream error: {e}");
-                    let _ = err_tx.try_send(e.to_string());
+                let err_fn = move |e: cpal::Error| {
+                    crate::recorder::native_capture::stream::forward_stream_error(
+                        "native capture stream",
+                        &e,
+                        &err_tx,
+                    );
                 };
                 let stream = build_input_stream_any(
                     &device,
-                    &config,
+                    config,
                     negotiated.sample_format,
                     negotiated.channels as usize,
                     StreamSink::Capture {

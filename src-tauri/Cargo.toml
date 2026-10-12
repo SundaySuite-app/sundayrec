@@ -118,12 +118,13 @@ tauri-plugin-notification = "2"
 
 # Native audio I/O (CoreAudio / WASAPI / ASIO) — drives the VU metering engine
 # AND the Windows cpal capture path (WASAPI default, ASIO for pro interfaces)
-# that pipes PCM into the ffmpeg sidecar. Pinned to 0.17.3: 0.17 added 24-bit
-# (`I24`) sample support — common native format for pro USB interfaces + ASIO4ALL
-# that 0.15 could not represent — and 0.17.3 carries the ASIO linker fixes (0.17.1
-# had broken ASIO). The Windows-only `asio` feature turns on `cpal/asio` (see
-# [features]).
-cpal = "0.17.3"
+# that pipes PCM into the ffmpeg sidecar. 0.18 (A3a): unified `cpal::Error` /
+# `ErrorKind`, explicit `Stream::play()`, `StreamConfig` by value, no
+# `DeviceTrait::name()` (use `description().name()`), and Xrun / RealtimeDenied
+# events delivered through the error callback. 0.17 added 24-bit (`I24`)
+# support and 0.17.3 the ASIO linker fixes. The Windows-only `asio` feature
+# turns on `cpal/asio` (see [features]).
+cpal = "0.18"
 # Lock-free SPSC ring buffer between the cpal real-time callback (producer) and
 # the writer (consumer): the audio callback must NEVER block on I/O, so it
 # pushes routed PCM into the ring and the writer drains it. Used by the native

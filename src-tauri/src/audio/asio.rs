@@ -287,11 +287,9 @@ pub fn merge_audio_inputs(
 }
 
 // ── Real ASIO enumeration (Windows + feature only) ───────────────────────────
-// cpal 0.17: `SampleRate` is a plain `u32` (no `.0`), and `name()` is deprecated
-// but is still the human device name we match settings against — hence the
-// module-wide `allow(deprecated)`.
+// cpal 0.18: `SampleRate` is a plain `u32` (no `.0`), and the human device name
+// we match settings against comes from `description().name()`.
 #[cfg(all(target_os = "windows", feature = "asio"))]
-#[allow(deprecated)]
 mod imp {
     use super::*;
     use cpal::traits::{DeviceTrait, HostTrait};
@@ -305,9 +303,8 @@ mod imp {
     /// Summarise one ASIO device into an [`AsioDevice`]. Never panics: a device
     /// that refuses to report configs is returned with what we could read.
     fn summarise(device: &cpal::Device) -> AsioDevice {
-        let name = device
-            .name()
-            .unwrap_or_else(|_| "Unknown ASIO device".to_string());
+        let name = crate::audio::devices::device_name(device)
+            .unwrap_or_else(|| "Unknown ASIO device".to_string());
 
         let mut input_channels: u16 = 0;
         let mut output_channels: u16 = 0;
