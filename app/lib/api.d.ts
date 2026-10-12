@@ -91,7 +91,8 @@ declare global {
       settingsImportProfile: () => Promise<Settings | null>;
       getNextRecording: () => Promise<{ date: string } | null>;
       getHistory: () => Promise<unknown[]>;
-      deleteHistoryEntry: (ts: number) => Promise<void>;
+      /** Drop one history row by its id. Rejects when the delete failed. */
+      deleteHistoryEntry: (id: string) => Promise<void>;
       /** One retention pass: move recordings older than `autoDeleteDays` into
        *  the papirkurv (owner decision 2026-08-31 — the trash, never a hard
        *  delete). Never rejects: a failed pass answers `disabled` with 0

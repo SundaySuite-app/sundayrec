@@ -3,7 +3,6 @@ import {
   TRASH_KEEP_DAYS,
   ageText,
   toTrashRows,
-  trashedPaths,
   withoutTrashed,
   type TrashEntry,
 } from "./trash-core";
@@ -20,37 +19,52 @@ function entry(over: Partial<TrashEntry> = {}): TrashEntry {
     deletedAt: NOW,
     related: [],
     byteSize: 4096,
+    recordingId: null,
     ...over,
   };
 }
 
 describe("withoutTrashed", () => {
-  it("drops exactly the rows whose file is in the trash", () => {
+  it("drops exactly the rows whose file is in the trash (legacy entries match on path)", () => {
     const rows = [
       { path: "/rec/a.mp3" },
       { path: "/rec/b.mp3" },
       { path: "/rec/a.mp4" },
     ];
-    const trashed = trashedPaths([
+    const trashed = [
       entry({ originalPath: "/rec/a.mp3" }),
       entry({ id: "e2", originalPath: "/rec/a.mp4" }),
-    ]);
+    ];
     expect(withoutTrashed(rows, trashed)).toEqual([{ path: "/rec/b.mp3" }]);
+  });
+
+  it("matches an entry with a row id on the ROW, so a new recording on the same path stays visible", () => {
+    // The sound check was trashed; the service then reused `2026-10-04.mp3`.
+    const rows = [
+      { id: "sound-check", path: "/rec/2026-10-04.mp3" },
+      { id: "service", path: "/rec/2026-10-04.mp3" },
+    ];
+    const trashed = [
+      entry({
+        originalPath: "/rec/2026-10-04.mp3",
+        recordingId: "sound-check",
+      }),
+    ];
+    expect(withoutTrashed(rows, trashed)).toEqual([
+      { id: "service", path: "/rec/2026-10-04.mp3" },
+    ]);
   });
 
   it("keeps rows that have no path — a failed run is still yours to tidy", () => {
     const rows = [{ path: undefined }, { path: "/rec/a.mp3" }];
     expect(
-      withoutTrashed(
-        rows,
-        trashedPaths([entry({ originalPath: "/rec/a.mp3" })]),
-      ),
+      withoutTrashed(rows, [entry({ originalPath: "/rec/a.mp3" })]),
     ).toEqual([{ path: undefined }]);
   });
 
   it("returns the list untouched when the trash is empty", () => {
     const rows = [{ path: "/rec/a.mp3" }];
-    expect(withoutTrashed(rows, new Set())).toBe(rows);
+    expect(withoutTrashed(rows, [])).toBe(rows);
   });
 });
 

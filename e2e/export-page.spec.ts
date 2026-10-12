@@ -183,6 +183,7 @@ test.describe("eksportering", () => {
           deletedAt: now,
           related: [],
           byteSize: 1000,
+          recordingId: args.recordingIds[i],
         }));
         list.push(...moved);
         return moved;

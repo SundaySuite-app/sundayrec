@@ -21,16 +21,29 @@ export function trashedPaths(entries: TrashEntry[]): Set<string> {
 /**
  * The history minus everything that is sitting in the trash.
  *
- * Rows without a path are always kept: there is nothing to match them on, and
- * a failed recording that never produced a file is exactly the row a user
- * still needs to see in order to tidy it away.
+ * Matches on the history row's id (`recordingId`): a NEW recording can reuse
+ * the exact path of a trashed take, and a path match would hide it. Only
+ * entries without a row id (trashed before it was journalled) fall back to the
+ * path.
+ *
+ * Rows without an id or a path are always kept: there is nothing to match them
+ * on, and a failed recording that never produced a file is exactly the row a
+ * user still needs to see in order to tidy it away.
  */
-export function withoutTrashed<T extends { path?: string }>(
+export function withoutTrashed<T extends { id?: string; path?: string }>(
   rows: T[],
-  trashed: Set<string>,
+  trashed: readonly TrashEntry[],
 ): T[] {
-  if (trashed.size === 0) return rows;
-  return rows.filter((r) => !r.path || !trashed.has(r.path));
+  if (trashed.length === 0) return rows;
+  const ids = new Set(
+    trashed.flatMap((e) => (e.recordingId ? [e.recordingId] : [])),
+  );
+  const legacyPaths = new Set(
+    trashed.filter((e) => !e.recordingId).map((e) => e.originalPath),
+  );
+  return rows.filter(
+    (r) => !(r.id && ids.has(r.id)) && !(r.path && legacyPaths.has(r.path)),
+  );
 }
 
 /** How a trashed entry is described in the list. */

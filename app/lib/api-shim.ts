@@ -557,10 +557,6 @@ function emitLocal(channel: string, payload?: unknown): void {
 // `rowToEntry` below instead of leaving a stale local copy looking green
 // while `recordings_list` answers a shape this file no longer reads right.
 
-// Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
-// so deleteHistoryEntry(timestamp) can call recordings_delete(id).
-const historyIdByTs = new Map<number, string>();
-
 const basename = (p: string): string => p.split(/[\\/]/).pop() || p;
 
 /** Seconds → the old "Xt Ym" / "Ym" duration string the history table parses. */
@@ -577,7 +573,6 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
   const durationSec =
     r.duration_ms != null ? Math.round(r.duration_ms / 1000) : 0;
   const ts = r.created_at ?? r.started_at ?? 0;
-  if (r.id) historyIdByTs.set(ts, r.id);
   return {
     // The row's id — what the editor opens a library/history recording by
     // (`editor_open_known`): the webview names the ROW, the database holds the
@@ -704,14 +699,20 @@ const api: Record<string, unknown> = {
   // search and the home page's «Siste 5» from disagreeing about whether a
   // recording exists.
   getHistory: async () => {
-    historyIdByTs.clear();
     const rows = await call<RecordingRow[]>("recordings_list", undefined, []);
-    const trashed = new Set(
-      (await call<TrashEntry[]>("trash_list", undefined, [])).map(
-        (e) => e.originalPath,
-      ),
+    const entries = await call<TrashEntry[]>("trash_list", undefined, []);
+    // By ROW id: date-only file names let a new recording reuse the path of a
+    // trashed take, and a path match would hide it. Only entries trashed before
+    // the id was journalled (`recordingId` null) fall back to the path.
+    const trashedIds = new Set(
+      entries.flatMap((e) => (e.recordingId ? [e.recordingId] : [])),
     );
-    return rows.filter((r) => !trashed.has(r.file_path)).map(rowToEntry);
+    const legacyPaths = new Set(
+      entries.filter((e) => !e.recordingId).map((e) => e.originalPath),
+    );
+    return rows
+      .filter((r) => !trashedIds.has(r.id) && !legacyPaths.has(r.file_path))
+      .map(rowToEntry);
   },
 
   // ── Papirkurv ────────────────────────────────────────────────────────────
@@ -737,10 +738,12 @@ const api: Record<string, unknown> = {
   trashRestore: async (id: string) =>
     invoke<TrashEntry>("trash_restore", { id }),
   trashPurge: async (ids: string[]) => invoke<number>("trash_purge", { ids }),
-  deleteHistoryEntry: async (ts: number) => {
-    const id = historyIdByTs.get(ts);
-    if (!id) return false;
-    return call("recordings_delete", { id }, false).then(() => true);
+  // By the row's id, not the timestamp: an audio+video pair finished in the
+  // same second shares one, and a timestamp lookup deleted whichever row
+  // answered last. `invoke`, not `call` — a failed delete must reject instead
+  // of reporting success.
+  deleteHistoryEntry: async (id: string) => {
+    await invoke("recordings_delete", { id });
   },
 
   // ── Disk / recording ────────────────────────────────────────────────────

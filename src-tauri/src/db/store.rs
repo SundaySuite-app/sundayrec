@@ -390,6 +390,38 @@ pub async fn delete_recordings_for_paths(pool: &SqlitePool, paths: &[String]) ->
     Ok(removed)
 }
 
+/// Delete the history rows with these ids, returning how many went. What the
+/// trash uses for an entry that was journalled with its row id: unlike
+/// [`delete_recordings_for_paths`] it cannot take a different recording that
+/// happens to share the path.
+pub async fn delete_recordings_by_ids(pool: &SqlitePool, ids: &[String]) -> AppResult<u64> {
+    let mut removed = 0u64;
+    for id in ids {
+        let r = sqlx::query("DELETE FROM recording WHERE id = ?1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        removed += r.rows_affected();
+    }
+    Ok(removed)
+}
+
+/// Point a history row at the file it now lives in (a restore that had to pick
+/// a `_2` name because the original path was taken again). `true` when a row
+/// was updated.
+pub async fn set_recording_file_path(
+    pool: &SqlitePool,
+    id: &str,
+    file_path: &str,
+) -> AppResult<bool> {
+    let r = sqlx::query("UPDATE recording SET file_path = ?1 WHERE id = ?2")
+        .bind(file_path)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(r.rows_affected() > 0)
+}
+
 /// Delete every recording-history row. Used by the "clear history" action.
 /// ⚠️ Uten kaller siden V1/PR3, der `recordings_clear`-kommandoen gikk (ingen
 /// flate, ingen i18n-nøkkel, ingen shim-metode — en «tøm hele historikken» uten

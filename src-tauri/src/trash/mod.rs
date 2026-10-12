@@ -18,8 +18,9 @@
 //!
 //! Trashing does NOT touch the `recording` table. The row is the app's record
 //! that the service was recorded at all; the trash holds the bytes. The renderer
-//! hides rows whose file is currently in the trash (one `trash_list` per history
-//! load), so the row disappears from Historikk and comes back the moment the
+//! hides the rows the trash names (one `trash_list` per history load; matched
+//! by the row id each entry carries, by path only for entries older than that
+//! field), so the row disappears from Historikk and comes back the moment the
 //! file is restored — with its note, duration and cloud markers intact, none of
 //! which could survive a delete-and-reinsert.
 //!
@@ -162,6 +163,14 @@ pub struct TrashEntry {
     /// Size of the media file in bytes, when it could be read.
     #[ts(type = "number | null")]
     pub byte_size: Option<i64>,
+    /// The history row this recording was trashed from. The row — not the path —
+    /// is what the library hides, what a purge deletes and what a restore
+    /// re-points: a NEW recording can reuse the exact path of a trashed take
+    /// (date-only file names), and a path match would then hide it and drop its
+    /// row. `None` for entries written before the field existed and for
+    /// callers that only had a path; those fall back to matching `original_path`.
+    #[serde(default)]
+    pub recording_id: Option<String>,
 }
 
 // ── Manifest ────────────────────────────────────────────────────────────────
@@ -499,6 +508,33 @@ fn trash_target(dir: &Path, stamp: i64, name: &str) -> PathBuf {
 /// carried in memory, so a call with N recordings costs one read and N writes,
 /// not N reads of a file that is growing under it.
 pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<TrashEntry>> {
+    let items: Vec<(Option<String>, String)> = paths.iter().map(|p| (None, p.clone())).collect();
+    move_items_into_trash(save_dir, &items)
+}
+
+/// Like [`move_into_trash`], for recordings the caller knows by history row:
+/// each `(row id, file path)` pair is journalled WITH its id, so the library,
+/// purge and restore all follow the row rather than the path.
+///
+/// No save-folder check on purpose: the callers only pass paths that a history
+/// row names (never a path from the webview), and a recording from a previous
+/// save folder must stay deletable after the folder was changed — it goes into
+/// the current folder's trash.
+pub fn move_rows_into_trash(
+    save_dir: &Path,
+    rows: &[(String, String)],
+) -> AppResult<Vec<TrashEntry>> {
+    let items: Vec<(Option<String>, String)> = rows
+        .iter()
+        .map(|(id, path)| (Some(id.clone()), path.clone()))
+        .collect();
+    move_items_into_trash(save_dir, &items)
+}
+
+fn move_items_into_trash(
+    save_dir: &Path,
+    items: &[(Option<String>, String)],
+) -> AppResult<Vec<TrashEntry>> {
     let _guard = manifest_guard();
     let dir = trash_dir(save_dir);
     std::fs::create_dir_all(&dir)?;
@@ -513,7 +549,7 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
     let mut created: Vec<TrashEntry> = Vec::new();
     let mut manifest = read_manifest_locked(save_dir);
 
-    for raw in paths {
+    for (recording_id, raw) in items {
         let media = PathBuf::from(raw);
         if !media.is_file() {
             continue;
@@ -566,6 +602,7 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
             deleted_at: stamp_ms,
             related,
             byte_size,
+            recording_id: recording_id.clone(),
         };
 
         // Journal FIRST, move SECOND — see the doc comment above.
@@ -657,12 +694,10 @@ pub fn purge(save_dir: &Path, ids: &[String]) -> AppResult<Vec<TrashEntry>> {
     let _guard = manifest_guard();
     let entries = read_manifest_locked(save_dir);
     let all = ids.is_empty();
-    let (doomed, kept): (Vec<TrashEntry>, Vec<TrashEntry>) = entries
+    let (targeted, mut kept): (Vec<TrashEntry>, Vec<TrashEntry>) = entries
         .into_iter()
         .partition(|e| all || ids.contains(&e.id));
-    for entry in &doomed {
-        remove_files_of(entry);
-    }
+    let doomed = destroy_entries(targeted, &mut kept);
     write_manifest_locked(save_dir, &kept)?;
     Ok(doomed)
 }
@@ -681,28 +716,73 @@ pub fn purge_older_than(save_dir: &Path, days: i64, now_ms: f64) -> AppResult<Ve
     let _guard = manifest_guard();
     let cutoff = now_ms - (days as f64) * 24.0 * 60.0 * 60.0 * 1000.0;
     let entries = read_manifest_locked(save_dir);
-    let (doomed, kept): (Vec<TrashEntry>, Vec<TrashEntry>) =
+    let (targeted, mut kept): (Vec<TrashEntry>, Vec<TrashEntry>) =
         entries.into_iter().partition(|e| e.deleted_at < cutoff);
-    if doomed.is_empty() {
+    if targeted.is_empty() {
         return Ok(Vec::new());
     }
-    for entry in &doomed {
-        remove_files_of(entry);
-    }
+    let doomed = destroy_entries(targeted, &mut kept);
     write_manifest_locked(save_dir, &kept)?;
     Ok(doomed)
 }
 
-fn remove_files_of(entry: &TrashEntry) {
-    for path in
-        std::iter::once(&entry.trashed_path).chain(entry.related.iter().map(|r| &r.trashed_path))
+/// Delete the files of `targeted`; the entries that are really gone are
+/// returned, and any whose files could NOT be removed are pushed back onto
+/// `kept` so the manifest still points at them (a Windows handle held by a
+/// player or an indexer would otherwise leave an orphan in `.sundayrec-trash`
+/// that nothing — not the list, not the 30-day sweep — ever finds again).
+fn destroy_entries(targeted: Vec<TrashEntry>, kept: &mut Vec<TrashEntry>) -> Vec<TrashEntry> {
+    let mut doomed = Vec::new();
+    for entry in targeted {
+        if remove_files_of(&entry) {
+            doomed.push(entry);
+        } else {
+            kept.push(entry);
+        }
+    }
+    doomed
+}
+
+/// Remove an entry's files; `true` when every one is gone (already missing
+/// counts). The sidecars go FIRST and the recording last: an entry that is
+/// kept for a retry must still have its media file, because [`list`] drops an
+/// entry whose `trashed_path` is missing — and with it any sidecar left behind.
+fn remove_files_of(entry: &TrashEntry) -> bool {
+    let mut all_gone = true;
+    for path in entry
+        .related
+        .iter()
+        .map(|r| &r.trashed_path)
+        .chain(std::iter::once(&entry.trashed_path))
     {
+        if !all_gone && path == &entry.trashed_path {
+            break; // keep the recording so the entry stays listed for a retry
+        }
         if let Err(e) = std::fs::remove_file(path) {
             if e.kind() != std::io::ErrorKind::NotFound {
                 tracing::warn!("trash: could not purge {path}: {e}");
+                all_gone = false;
             }
         }
     }
+    all_gone
+}
+
+/// Drop the history rows of entries that were just destroyed — the moment a
+/// recording stops existing. An entry journalled with its row id deletes THAT
+/// row; an older one (no id) can only be matched by path.
+pub async fn drop_history_rows(pool: &sqlx::SqlitePool, purged: &[TrashEntry]) -> AppResult<u64> {
+    let mut ids: Vec<String> = Vec::new();
+    let mut paths: Vec<String> = Vec::new();
+    for e in purged {
+        match &e.recording_id {
+            Some(id) => ids.push(id.clone()),
+            None => paths.push(e.original_path.clone()),
+        }
+    }
+    let mut removed = store::delete_recordings_by_ids(pool, &ids).await?;
+    removed += store::delete_recordings_for_paths(pool, &paths).await?;
+    Ok(removed)
 }
 
 #[cfg(test)]
@@ -855,6 +935,111 @@ mod tests {
         assert_eq!(purged.len(), 1);
         assert!(!Path::new(&old_file).exists(), "the old bytes are gone");
         assert_eq!(list(dir.path()).len(), 1, "the fresh one stayed");
+    }
+
+    #[test]
+    fn a_purge_whose_file_cannot_be_removed_keeps_the_entry_for_a_retry() {
+        // A directory where the file should be makes `remove_file` fail with
+        // something other than NotFound — the stand-in for a Windows handle
+        // held open by a player or an indexer.
+        let (dir, media) = fixture();
+        let entries = move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        let stuck = PathBuf::from(&entries[0].trashed_path);
+        fs::remove_file(&stuck).unwrap();
+        fs::create_dir(&stuck).unwrap();
+
+        let purged = purge(dir.path(), &[]).unwrap();
+        assert!(
+            purged.is_empty(),
+            "nothing was destroyed, so nothing is reported"
+        );
+        assert_eq!(
+            read_manifest(dir.path()).len(),
+            1,
+            "the entry is still journalled"
+        );
+
+        // Same through the age sweep.
+        let mut old = read_manifest(dir.path());
+        old[0].deleted_at -= 40.0 * 24.0 * 60.0 * 60.0 * 1000.0;
+        write_manifest(dir.path(), &old).unwrap();
+        assert!(purge_older_than(dir.path(), 30, store::now_ms())
+            .unwrap()
+            .is_empty());
+        assert_eq!(read_manifest(dir.path()).len(), 1);
+
+        // Once the obstacle is gone the next purge finishes the job.
+        fs::remove_dir(&stuck).unwrap();
+        fs::write(&stuck, b"x").unwrap();
+        assert_eq!(purge(dir.path(), &[]).unwrap().len(), 1);
+        assert!(read_manifest(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn a_sidecar_that_cannot_be_removed_keeps_the_recording_listed() {
+        let (dir, media) = fixture();
+        let entries = move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        let side = PathBuf::from(&entries[0].related[0].trashed_path);
+        fs::remove_file(&side).unwrap();
+        fs::create_dir(&side).unwrap();
+
+        assert!(purge(dir.path(), &[]).unwrap().is_empty());
+        assert!(
+            Path::new(&entries[0].trashed_path).is_file(),
+            "the recording stays, so `list` keeps showing the entry"
+        );
+        assert_eq!(list(dir.path()).len(), 1);
+    }
+
+    #[test]
+    fn rows_are_journalled_with_their_ids_and_old_manifests_still_read() {
+        let (dir, media) = fixture();
+        let entries = move_rows_into_trash(
+            dir.path(),
+            &[("row-1".into(), media.to_string_lossy().into_owned())],
+        )
+        .unwrap();
+        assert_eq!(entries[0].recording_id.as_deref(), Some("row-1"));
+        assert_eq!(
+            read_manifest(dir.path())[0].recording_id.as_deref(),
+            Some("row-1"),
+            "the id survives the manifest round trip"
+        );
+
+        // A manifest written before the field existed.
+        let mut json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(manifest_path(dir.path())).unwrap()).unwrap();
+        json["entries"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("recordingId");
+        fs::write(manifest_path(dir.path()), json.to_string()).unwrap();
+        let old = read_manifest(dir.path());
+        assert_eq!(old.len(), 1, "an entry without the field is not dropped");
+        assert_eq!(old[0].recording_id, None);
+    }
+
+    #[test]
+    fn a_known_row_from_an_earlier_save_folder_can_still_be_trashed() {
+        // After a folder change the library still lists the old recordings; the
+        // delete must work, landing in the CURRENT folder's trash.
+        let (dir, _inside) = fixture();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let old = elsewhere.path().join("old.mp3");
+        fs::write(&old, b"x").unwrap();
+
+        let entries = move_rows_into_trash(
+            dir.path(),
+            &[("row-old".into(), old.to_string_lossy().into_owned())],
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(!old.exists(), "the file left the old folder");
+        assert!(Path::new(&entries[0].trashed_path).starts_with(trash_dir(dir.path())));
+
+        let back = restore(dir.path(), &entries[0].id).unwrap();
+        assert_eq!(back.original_path, old.to_string_lossy());
+        assert!(old.is_file(), "and an undo brings it home");
     }
 
     #[test]
@@ -1232,6 +1417,7 @@ mod tests {
                 deleted_at: store::now_ms(),
                 related: Vec::new(),
                 byte_size: Some(1),
+                recording_id: None,
             });
         }
         write_manifest(dir.path(), &seed).unwrap();
