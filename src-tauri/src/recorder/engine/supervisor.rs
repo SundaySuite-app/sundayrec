@@ -412,6 +412,13 @@ pub(super) async fn run_session(
             pinned_rate = Some(seg.spec.sample_rate);
             native_device = seg.device_name.clone();
         }
+        // A START match may have settled for a looser candidate than the stored
+        // device (reconnects never do). Say so, once, before the first block —
+        // the recording may be from a microphone the user did not pick.
+        let opened_name = native_device
+            .clone()
+            .unwrap_or_else(|| ctx.audio.name.clone());
+        super::emit::emit_device_substitution(&ctx.app, &ctx.opts.audio_device_name, &opened_name);
         emit_state(RecorderState::Recording, 0);
 
         'session: loop {

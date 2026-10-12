@@ -1029,6 +1029,7 @@
     "crMonoMix": "Mix to mono"
   },
   "recording": {
+    "deviceSubstituted": "Recording from \"{device}\", not the device you chose. Check that it is the right microphone.",
     "live": "RECORDING NOW",
     "filesize": "file size",
     "diskLeft": "disk space left",

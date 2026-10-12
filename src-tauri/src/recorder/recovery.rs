@@ -257,6 +257,49 @@ pub(crate) fn pending_windows_in(dir: &Path) -> Vec<(u64, u64)> {
     out
 }
 
+/// File NAMES of the pre-roll clips the recovery manifests in `dirs` point at.
+/// A crashed session's clip is the first ~15 s of its recording: recovery
+/// prepends it and deletes it itself, so the startup pre-roll sweep
+/// ([`crate::recorder::preroll::sweep_stale_preroll_files`]) must spare it.
+/// Names, not paths: the clip name carries a unique timestamp id, and a path
+/// spelled differently by the manifest must not make the clip look orphaned.
+pub(crate) fn referenced_preroll_clips(
+    dirs: &[PathBuf],
+) -> std::collections::HashSet<std::ffi::OsString> {
+    let mut keep = std::collections::HashSet::new();
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(body) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if let Ok(m) = SessionManifest::from_json(&body) {
+                if let Some(name) = m
+                    .preroll_clip_path
+                    .as_deref()
+                    .and_then(|c| Path::new(c).file_name())
+                {
+                    keep.insert(name.to_owned());
+                }
+            }
+        }
+    }
+    keep
+}
+
+/// [`referenced_preroll_clips`] over every folder a manifest can be in.
+pub fn referenced_preroll_clips_for(
+    app: &AppHandle,
+) -> std::collections::HashSet<std::ffi::OsString> {
+    referenced_preroll_clips(&manifest_dirs(app))
+}
+
 /// Startup scan: finalise every orphaned session, write its history rows, and
 /// delete its manifest. Returns how many recordings were recovered. Never errors
 /// — a single bad manifest is logged + cleared, the rest still process.
@@ -1178,6 +1221,28 @@ mod tests {
         let file = dir.join(manifest_file_name(&m.session_id));
         tokio::fs::write(&file, m.to_json().unwrap()).await.unwrap();
         file
+    }
+
+    #[tokio::test]
+    async fn referenced_preroll_clips_names_the_clip_of_every_pending_manifest() {
+        // The startup pre-roll sweep spares these: a crash mid-service must not
+        // lose the first ~15 s the clip holds.
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let mut with_clip = manifest_in(rec.path());
+        with_clip.preroll_clip_path = Some(
+            rec.path()
+                .join("sundayrec-preroll-clip-3c.wav")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        write_recorders_manifest(recovery.path(), &with_clip).await;
+        let keep = referenced_preroll_clips(&[recovery.path().to_path_buf()]);
+        assert!(keep.contains(std::ffi::OsStr::new("sundayrec-preroll-clip-3c.wav")));
+        assert_eq!(keep.len(), 1);
+        // No manifest, no protection; a missing folder is not an error.
+        assert!(referenced_preroll_clips(&[rec.path().to_path_buf()]).is_empty());
+        assert!(referenced_preroll_clips(&[recovery.path().join("nope")]).is_empty());
     }
 
     #[tokio::test]

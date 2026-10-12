@@ -33,6 +33,7 @@ import {
   scheduledStopMs,
   silenceActive,
 } from "./recording";
+import { toasts } from "../ui/toast";
 import { banners, clearBanners } from "./banners";
 import type { StatePayload } from "./recording-hydrate-core";
 
@@ -146,6 +147,23 @@ describe("gjenkoblingsstripa", () => {
     expect(reconnecting.value).toBe(true);
     h.emit("recording-reconnected");
     expect(reconnecting.value).toBe(false);
+    h.off();
+  });
+
+  it("en enhetsbytte-melding ved start er en toast — ikke «Kobler til igjen»", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    const before = toasts.value.length;
+    h.emit("recording-device-substituted", {
+      code: "device_substituted",
+      message: "Microphone Array (Realtek(R) Audio)",
+    });
+    expect(reconnecting.value).toBe(false);
+    expect(banners.value).toHaveLength(0);
+    const added = toasts.value.slice(before);
+    expect(added).toHaveLength(1);
+    expect(added[0]?.kind).toBe("warn");
+    expect(added[0]?.msg).toContain("Microphone Array (Realtek(R) Audio)");
     h.off();
   });
 

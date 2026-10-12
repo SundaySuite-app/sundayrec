@@ -1029,6 +1029,7 @@
     "crMonoMix": "Mixer en mono"
   },
   "recording": {
+    "deviceSubstituted": "Enregistrement depuis « {device} », et non depuis l’appareil choisi. Vérifiez que c’est le bon micro.",
     "live": "ENREGISTREMENT EN COURS",
     "filesize": "taille du fichier",
     "diskLeft": "espace disque restant",

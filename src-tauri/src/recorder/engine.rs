@@ -141,6 +141,11 @@ pub const SILENCE_EVENT: &str = "recording://silence";
 pub const RECONNECTING_EVENT: &str = "recording://reconnecting";
 /// Event channel: a reconnect succeeded and recording resumed.
 pub const RECONNECTED_EVENT: &str = "recording://reconnected";
+/// Event channel: a START opened a device other than the one the user stored
+/// (the match ladder settled for a looser candidate). Non-terminal and NOT a
+/// reconnect — the UI shows a notice and keeps recording. The payload is a
+/// [`RecordingEvent`] whose `message` is the device that was actually opened.
+pub const DEVICE_SUBSTITUTED_EVENT: &str = "recording://device-substituted";
 /// Event channel: the recorder state changed (the [`RecorderState`] payload).
 pub const STATE_EVENT: &str = "recording://state";
 /// Event channel: live per-channel peak audio levels (drives the L/R meters).
@@ -983,6 +988,7 @@ mod tests {
         assert_eq!(RECONNECTING_EVENT, "recording://reconnecting");
         assert_eq!(RECONNECTED_EVENT, "recording://reconnected");
         assert_eq!(STATE_EVENT, "recording://state");
+        assert_eq!(DEVICE_SUBSTITUTED_EVENT, "recording://device-substituted");
         assert_eq!(LEVELS_EVENT, "recording://levels");
         assert_eq!(FINISHED_EVENT, "recording://finished");
     }

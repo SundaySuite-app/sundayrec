@@ -1029,6 +1029,7 @@
     "crMonoMix": "Miks til mono"
   },
   "recording": {
+    "deviceSubstituted": "Optagelsen bruger »{device}«, ikke den enhed, du valgte. Tjek, at det er den rigtige mikrofon.",
     "live": "OPTAGER NU",
     "filesize": "filstørrelse",
     "diskLeft": "ledig diskplads",

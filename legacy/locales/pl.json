@@ -1047,6 +1047,7 @@
     "crMonoMix": "Zmiksuj do mono"
   },
   "recording": {
+    "deviceSubstituted": "Nagranie z urządzenia „{device}”, a nie z wybranego. Sprawdź, czy to właściwy mikrofon.",
     "live": "TRWA NAGRYWANIE",
     "filesize": "rozmiar pliku",
     "diskLeft": "wolne miejsce na dysku",
