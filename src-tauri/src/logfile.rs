@@ -392,8 +392,9 @@ pub fn log_startup_banner() {
         "SundayRec starting"
     );
     // The capture engine that will actually be used, so a "why does it sound
-    // like that" thread starts from the right stack. `classic_ffmpeg_audio` is
-    // the per-recording escape hatch; the DEFAULT since v0.6.0 is native cpal.
+    // like that" thread starts from the right stack. Audio-only recording is
+    // native cpal since v0.6.0, and the only engine since A5b removed the
+    // `classic_ffmpeg_audio` escape hatch.
     tracing::info!(
         audio_engine_default = "native (cpal → ring → own WAV writer)",
         video_and_offline = "bundled ffmpeg sidecar",

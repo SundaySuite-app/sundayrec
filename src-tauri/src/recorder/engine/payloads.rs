@@ -140,9 +140,6 @@ pub struct RecordingOpts {
     /// Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
     /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
     pub classic_directshow: bool,
-    /// Escape hatch: force the legacy ffmpeg audio capture (avfoundation) instead
-    /// of the native cpal engine. Default `false`. See `Settings::classic_ffmpeg_audio`.
-    pub classic_ffmpeg_audio: bool,
     /// The camera INPUT mode the recorder probed at start (a size + framerate the
     /// device actually advertises). NOT sent by the frontend — it's resolved
     /// server-side so avfoundation doesn't reject an unsupported size/rate. `None`
@@ -336,7 +333,6 @@ mod tests {
             keep_separate_audio: true,
             separate_audio_format: "wav".into(),
             classic_directshow: false,
-            classic_ffmpeg_audio: false,
             video_input: None,
         };
         let json = serde_json::to_string(&o).unwrap();

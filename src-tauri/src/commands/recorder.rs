@@ -751,8 +751,8 @@ pub async fn run_test_recording(
     run_test(&device).await
 }
 
-/// Precision capture bench (the zero-loss proof tool): run the REAL recording
-/// argv for `secs` seconds against the configured mic + sample-rate settings and
+/// Precision capture bench (the zero-loss proof tool): run the REAL native
+/// capture stack for `secs` seconds against the configured mic + sample-rate settings and
 /// return the full Pass/Warn/Fail report with expected/measured seconds.
 #[tauri::command]
 pub async fn run_capture_bench(
@@ -767,24 +767,13 @@ pub async fn run_capture_bench(
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let device = s.device_name.clone().unwrap_or_default();
     let rate = s.resolved_sample_rate();
-    // Dispatch on the SAME backend selection as a real recording, so the bench
-    // always proves the shipping path (native on mac unless the escape hatch
-    // forces ffmpeg).
-    match crate::recorder::engine::select_capture_backend(
-        cfg!(target_os = "macos"),
+    // The SAME host selection as a real audio-only recording, so the bench
+    // always proves the shipping path (the native engine is the only one).
+    let host = crate::recorder::engine::audio_only_host(
         cfg!(windows),
-        true,
-        s.classic_ffmpeg_audio,
-        s.classic_directshow,
         crate::audio::asio::is_asio_device(&device),
-    ) {
-        crate::recorder::engine::CaptureBackend::NativeAudio { host } => {
-            crate::test_recording::run_native_capture_bench(host, &device, rate, secs).await
-        }
-        crate::recorder::engine::CaptureBackend::Ffmpeg => {
-            crate::test_recording::run_capture_bench(&device, rate, secs).await
-        }
-    }
+    );
+    crate::test_recording::run_native_capture_bench(host, &device, rate, secs).await
 }
 
 #[cfg(test)]
@@ -813,7 +802,6 @@ mod tests {
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
             classic_directshow: false,
-            classic_ffmpeg_audio: false,
             video_input: None,
         }
     }
@@ -1352,13 +1340,12 @@ mod tests {
         }
     }
 
-    /// Windows, WASAPI, with both escape hatches thrown.
+    /// Windows, WASAPI, with the DirectShow escape hatch thrown.
     fn profile_wasapi(save: &std::path::Path) -> Settings {
         Settings {
             device_id: Some("Mikrofon (Realtek(R) Audio)".into()),
             device_name: Some("Mikrofon (Realtek(R) Audio)".into()),
             classic_directshow: true,
-            classic_ffmpeg_audio: true,
             channels: ChannelMode::MonoMix,
             sample_rate_mode: SampleRate::R44100,
             format: FileFormat::Aac,
@@ -1539,63 +1526,63 @@ mod tests {
     const GOLDEN_FROM_MAIN: &[(&str, &str)] = &[
         (
             "mac-default",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "mac-norsk-navn-maks",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/Høymesse – 1. søndag i advent (Ås kirke)_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":90,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/Høymesse – 1. søndag i advent (Ås kirke)_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":90,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "mac-blankt-navn",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "kirkeaar-navn",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/gudstjeneste_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/gudstjeneste_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "kirkeaar-palmesondag",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/palmesøndag_2026-03-29.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/palmesøndag_2026-03-29.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "qu5-flerkanal",
-            r#"{"audio_device_name":"Allen & Heath Qu-5","video_device_name":null,"output_path":"<save>/2026-06-07_1100.wav","stop_on_silence":true,"silence_threshold_db":-45,"silence_timeout_minutes":10,"channel_mode":"stereo","input_channel_l":4,"input_channel_r":5,"sample_rate":48000,"bitrate_kbps":256,"split_minutes":30,"manual_max_minutes":120,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"wav","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"Allen & Heath Qu-5","video_device_name":null,"output_path":"<save>/2026-06-07_1100.wav","stop_on_silence":true,"silence_threshold_db":-45,"silence_timeout_minutes":10,"channel_mode":"stereo","input_channel_l":4,"input_channel_r":5,"sample_rate":48000,"bitrate_kbps":256,"split_minutes":30,"manual_max_minutes":120,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"wav","classic_directshow":false}"#,
         ),
         (
             "asio-focusrite",
-            r#"{"audio_device_name":"Focusrite USB ASIO","video_device_name":null,"output_path":"<save>/gudstjeneste_2026-06-07.flac","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"monoL","input_channel_l":2,"input_channel_r":3,"sample_rate":96000,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"Focusrite USB ASIO","video_device_name":null,"output_path":"<save>/gudstjeneste_2026-06-07.flac","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"monoL","input_channel_l":2,"input_channel_r":3,"sample_rate":96000,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false}"#,
         ),
         (
             "wasapi-realtek-klassisk",
-            r#"{"audio_device_name":"Mikrofon (Realtek(R) Audio)","video_device_name":null,"output_path":"<save>/Gudstjeneste på Øvre Ålgård_2026-06-07.aac","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"monoMix","input_channel_l":null,"input_channel_r":null,"sample_rate":44100,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"aac","classic_directshow":true,"classic_ffmpeg_audio":true}"#,
+            r#"{"audio_device_name":"Mikrofon (Realtek(R) Audio)","video_device_name":null,"output_path":"<save>/Gudstjeneste på Øvre Ålgård_2026-06-07.aac","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"monoMix","input_channel_l":null,"input_channel_r":null,"sample_rate":44100,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"aac","classic_directshow":true}"#,
         ),
         (
             "video-paa-med-kamera",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":"FaceTime HD-kamera","output_path":"<save>/2026-06-07.mp4","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":"FaceTime HD-kamera","output_path":"<save>/2026-06-07.mp4","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false}"#,
         ),
         (
             "video-paa-uten-kamera",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "video-av-mot-innstillingen",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.flac","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07.flac","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false}"#,
         ),
         (
             "video-innstillingen-avgjoer",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":"FaceTime HD-kamera","output_path":"<save>/2026-06-07.mp4","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":"FaceTime HD-kamera","output_path":"<save>/2026-06-07.mp4","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"flac","classic_directshow":false}"#,
         ),
         (
             "spesial-med-eget-lydkort",
-            r#"{"audio_device_name":"Behringer X32","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"Behringer X32","video_device_name":null,"output_path":"<save>/2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "kollisjon-samme-dag",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07_2.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/2026-06-07_2.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
         (
             "fiendtlig-navn",
-            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/.._.._Library_LaunchAgents_evil.plist_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false,"classic_ffmpeg_audio":false}"#,
+            r#"{"audio_device_name":"MacBook Pro-mikrofon","video_device_name":null,"output_path":"<save>/.._.._Library_LaunchAgents_evil.plist_2026-06-07.mp3","stop_on_silence":false,"silence_threshold_db":-50,"silence_timeout_minutes":5,"channel_mode":"stereo","input_channel_l":null,"input_channel_r":null,"sample_rate":null,"bitrate_kbps":256,"split_minutes":0,"manual_max_minutes":0,"live_levels":true,"keep_separate_audio":true,"separate_audio_format":"mp3","classic_directshow":false}"#,
         ),
     ];
 
@@ -1791,7 +1778,6 @@ mod tests {
                 "keep_separate_audio": true,
                 "separate_audio_format": "cmd",
                 "classic_directshow": false,
-                "classic_ffmpeg_audio": false,
             });
             // (b) The three real fields, plus every spelling of a path beside them.
             let smuggled = serde_json::json!({

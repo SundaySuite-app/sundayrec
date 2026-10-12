@@ -7,7 +7,6 @@
  * ikke én nøkkel:
  *
  *   • enhetsvalget      `deviceId` + `deviceName` + `deviceChannels[id]`
- *   • opptaksmotoren    `classicFfmpegAudio` + `classicDirectshow`
  *   • OS-varselet       `notifyStart` + `notifyStop`
  *   • kameravalget      `videoDeviceName` + `videoDeviceIndex`
  *   • «del opp»/«slett» én tallnøkkel der 0 betyr av, vist som en bryter

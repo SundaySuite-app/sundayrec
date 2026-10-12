@@ -853,49 +853,39 @@ mod tests {
         );
     }
 
-    /// E6.2 BUG FIX, pinned: **every** WAV capture path consults the RIFF-cap
-    /// guard, not just the native one.
+    /// E6.2 BUG FIX, pinned: the WAV capture path consults the RIFF-cap guard.
     ///
-    /// The guard lived only in `native_capture::segment::run_native_segment`.
-    /// The ffmpeg capture path had none — and it is reachable on Linux, under
-    /// the `classic_ffmpeg_audio` hatch, and through the automatic
-    /// native-start-failure fallback. ffmpeg's wav muxer defaults to
-    /// `-rf64 never` (confirmed with the bundled 8.1.2 sidecar: `ffmpeg -h
-    /// muxer=wav` → "default never"), so past 4 GiB it writes a plain RIFF
-    /// header whose u32 size fields cannot describe the file. At 96 kHz stereo
-    /// s16 that is ~2.7 h — inside a long service.
+    /// The guard first lived only in `native_capture::segment::run_native_segment`
+    /// while an ffmpeg WAV capture — then reachable under the
+    /// `classic_ffmpeg_audio` hatch, through the automatic native-start-failure
+    /// fallback, and on Linux — had none. E6.2 gave the ffmpeg arm one too; A5b
+    /// removed both the hatch and the fallback, so the ffmpeg capture records
+    /// VIDEO only (Matroska, no 4 GiB ceiling) and its copy of the guard went
+    /// with them. What stays pinned is the native path: ffmpeg's wav muxer
+    /// defaults to `-rf64 never`, and a native WAV writer past 4 GiB would hit
+    /// the same unreadable RIFF header at ~2.7 h of 96 kHz stereo s16 — inside a
+    /// long service.
     ///
     /// A source-level assertion because the arm itself needs a `Wry` AppHandle
     /// (see the module docs); the guard's BEHAVIOUR on real bytes is proven by
     /// `forced_split_end_to_end_with_real_bytes`, which drives the identical
     /// expression.
     #[test]
-    fn both_capture_paths_consult_the_riff_cap_guard() {
-        for (name, src) in [
-            (
-                "recorder/engine/supervisor.rs (ffmpeg capture)",
-                include_str!("engine/supervisor.rs"),
-            ),
-            (
-                "recorder/native_capture/segment.rs (native capture)",
-                include_str!("native_capture/segment.rs"),
-            ),
-        ] {
-            // Either spelling of the guard counts. The ffmpeg path calls
-            // `should_force_split` directly; the native path reads the
-            // threshold and compares in `segment::disk_guard_verdict`, because
-            // `should_force_split` consults a process-global env override and a
-            // decision function that quietly reads ambient state cannot be
-            // table-tested (it is a coin flip against whatever else is running
-            // — how the 2026-08-10 CI-only failure arrived). What this test
-            // guards is that BOTH paths still consult the cap at all.
-            assert!(
-                src.contains("wav::should_force_split")
-                    || src.contains("wav::forced_split_threshold_bytes"),
-                "{name} no longer consults the 4 GiB RIFF-cap guard — a long \
-                 service will silently produce an unreadable capture"
-            );
-        }
+    fn the_native_capture_path_consults_the_riff_cap_guard() {
+        let src = include_str!("native_capture/segment.rs");
+        // The native path reads the threshold and compares in
+        // `segment::disk_guard_verdict`, because `should_force_split` consults a
+        // process-global env override and a decision function that quietly
+        // reads ambient state cannot be table-tested (it is a coin flip against
+        // whatever else is running — how the 2026-08-10 CI-only failure
+        // arrived). What this test guards is that the path still consults the
+        // cap at all.
+        assert!(
+            src.contains("wav::should_force_split")
+                || src.contains("wav::forced_split_threshold_bytes"),
+            "recorder/native_capture/segment.rs no longer consults the 4 GiB \
+             RIFF-cap guard — a long service will silently produce an unreadable capture"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────

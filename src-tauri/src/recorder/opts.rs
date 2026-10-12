@@ -170,9 +170,6 @@ pub(crate) fn build_opts_in(
         // `sundayrec_core::capture`, read by the engine — v0.15.)
         // Windows: force legacy DirectShow audio instead of cpal (WASAPI/ASIO).
         classic_directshow: settings.classic_directshow,
-        // Escape hatch: force legacy ffmpeg audio capture instead of the native
-        // cpal engine (removable once the rig has verified 0 % loss).
-        classic_ffmpeg_audio: settings.classic_ffmpeg_audio,
         // Resolved server-side by the recorder's camera-mode probe at start.
         video_input: None,
     })

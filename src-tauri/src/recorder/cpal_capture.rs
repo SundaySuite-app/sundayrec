@@ -7,9 +7,11 @@
 //! Audio-only sessions on BOTH platforms now run on the native engine
 //! ([`crate::recorder::native_capture`]: cpal → ring → direct WAV writer, full
 //! split/reconnect/silence support). This module remains for **Windows VIDEO
-//! sessions** (camera via dshow + cpal audio piped into one ffmpeg) and as the
-//! legacy path behind the `classic_ffmpeg_audio` hatch. It can only be retired
-//! when the native engine grows video — so it is HARDENED, not deleted.
+//! sessions** (camera via dshow + cpal audio piped into one ffmpeg). It can only
+//! be retired when the native engine grows video — so it is HARDENED, not
+//! deleted. (A5b removed the `classic_ffmpeg_audio` hatch that used to route
+//! audio-only sessions here too; the audio-only branches below are unreachable
+//! now and die with the file in C3b.)
 //!
 //! ## Why this exists
 //!
@@ -266,9 +268,9 @@ async fn wait_child_bounded(child: &mut tokio::process::Child, bound: std::time:
 // through the SAME `finalize_deliverable` the live stop uses, and lands in
 // history marked «Gjenopprettet etter uventet avslutning».
 //
-// (Audio-only cpal — the `classic_ffmpeg_audio` hatch — is left alone: the
-// native engine owns audio on both platforms now, and it already captures WAV
-// through this same decoupled layout.)
+// (Audio-only cpal is not part of this layout: since A5b the native engine is
+// the only audio-only recorder, and it already captures WAV through this same
+// decoupled layout.)
 
 /// The decoupled-capture layout for ONE Windows cpal VIDEO session: where ffmpeg
 /// captures, and everything needed to finish that capture — at stop, or on the
@@ -584,8 +586,7 @@ mod imp {
         //     and the sidecar/history metadata below stamps its own `"cpal"`-host
         //     entry rather than the dshow shadow;
         //   - `preroll_clip` — unsupported here by construction: `start()` routes
-        //     a pre-roll session to dshow, and warns on ASIO where it cannot;
-        //   - `audio_engine` — `start()` records the label itself for this path.
+        //     a pre-roll session to dshow, and warns on ASIO where it cannot.
         let SessionContext {
             app,
             pool,
@@ -596,7 +597,6 @@ mod imp {
             video,
             preroll_clip: _,
             state,
-            audio_engine: _,
         } = ctx;
         // Hold the machine awake for the WHOLE session, exactly as `run_session`
         // does (F2-W5): a timer-woken, unattended Windows PC otherwise sleeps
@@ -642,9 +642,9 @@ mod imp {
         // A video session captures crash-tolerant Matroska into a hidden
         // per-session folder beside the delivery file and is remuxed to the
         // user's mp4 at stop (F2-W4 — see the block comment above
-        // [`VideoCapture`]). Audio-only keeps writing its delivery file directly:
-        // that is the `classic_ffmpeg_audio` hatch, and the native engine — which
-        // owns audio on both platforms — already has this layout.
+        // [`VideoCapture`]). Audio-only would keep writing its delivery file directly,
+        // but no audio-only session reaches this function since A5b — the native
+        // engine owns audio on both platforms and already has this layout.
         let has_video = video.is_some();
         let capture = has_video.then(|| plan_video_capture(&opts, &device_name, start_ms));
         if let Some(c) = &capture {
@@ -1085,7 +1085,6 @@ mod tests {
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
             classic_directshow: false,
-            classic_ffmpeg_audio: false,
             video_input: None,
         }
     }

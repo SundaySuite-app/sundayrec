@@ -237,11 +237,10 @@
         "lede": "Ting, de fleste aldrig behøver at røre. Alt her har en tryg standard.",
         "soundLink": "Avanceret lyd",
         "engine": "Optagelsesmotor",
-        "engineDesc": "Skift kun, hvis lyden hakker.",
+        "engineDesc": "Gælder videooptagelser. Skift kun, hvis lyden hakker.",
         "engineConfirm": "Skifte optagelsesmotor",
         "engineChoice": {
           "native": "Indbygget",
-          "ffmpeg": "Klassisk (ffmpeg)",
           "dshow": "Klassisk (DirectShow)"
         },
         "preroll": "Forbuffer",

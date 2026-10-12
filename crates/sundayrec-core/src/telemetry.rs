@@ -1094,8 +1094,8 @@ pub struct WireSettings {
     /// WIRE-FROZEN since v0.15 (see `input_volume`): the meters are always on
     /// now, so the constant is `true`.
     pub show_live_levels: bool,
-    /// The escape hatch back to ffmpeg audio capture. Whether anyone still needs
-    /// it decides when the legacy path can be deleted.
+    /// WIRE-FROZEN since A5b (see `input_volume`): the escape hatch back to
+    /// ffmpeg audio capture is gone, so the constant is `false`.
     pub classic_ffmpeg_audio: bool,
     /// The Windows DirectShow escape hatch, same question.
     pub classic_directshow: bool,
@@ -1130,6 +1130,7 @@ pub struct WireSettings {
 pub const WIRE_INPUT_VOLUME: i32 = 100;
 pub const WIRE_TRIM_SILENCE: bool = false;
 pub const WIRE_SHOW_LIVE_LEVELS: bool = true;
+pub const WIRE_CLASSIC_FFMPEG_AUDIO: bool = false;
 
 impl WireSettings {
     /// Project the full [`Settings`] down to the wire-safe subset. The single,
@@ -1152,7 +1153,7 @@ impl WireSettings {
             trim_silence: WIRE_TRIM_SILENCE,
             preroll_enabled: s.pre_roll_seconds > 0,
             show_live_levels: WIRE_SHOW_LIVE_LEVELS,
-            classic_ffmpeg_audio: s.classic_ffmpeg_audio,
+            classic_ffmpeg_audio: WIRE_CLASSIC_FFMPEG_AUDIO,
             classic_directshow: s.classic_directshow,
             auto_update: s.auto_update,
             launch_at_login: s.launch_at_login,

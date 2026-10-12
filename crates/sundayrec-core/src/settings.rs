@@ -263,17 +263,10 @@ pub struct Settings {
     /// ASIO). Flip on only if cpal misbehaves on a specific rig. No effect on macOS.
     #[serde(default)]
     pub classic_directshow: bool,
-    /// Escape hatch: force the legacy **ffmpeg** audio capture (avfoundation on
-    /// macOS) instead of the native cpal engine that records the WAV directly.
-    /// Default `false` — the native engine is the standard path (avfoundation
-    /// measurably drops samples below ffmpeg's observability; the 2026-08-01
-    /// rebuild). Flip on only if the native engine misbehaves on a specific rig;
-    /// scheduled for removal once the rig has verified 0 % loss.
-    #[serde(default)]
-    pub classic_ffmpeg_audio: bool,
-    // (A5a: `classicFfmpegPreroll` left — the native pre-roll buffer has been
-    // the only one since 2026-08-01. Old blobs carrying it are dropped
-    // tolerantly like every retired key; see
+    // (A5a: `classicFfmpegPreroll` and A5b: `classicFfmpegAudio` left — the
+    // native engine has been the only audio-only recorder, and the only pre-roll
+    // buffer, since 2026-08-01. Old blobs carrying them are dropped tolerantly
+    // like every retired key; see
     // `legacy_blob_with_classic_ffmpeg_preroll_imports_cleanly`.)
     // (v0.15: `separateAudioFormat` left — the separate audio sidecar now
     // follows `format`, the one audio-format choice the app has; `avSync`,
@@ -589,7 +582,6 @@ impl Default for Settings {
             video_flip: false,
             keep_separate_audio: true,
             classic_directshow: false,
-            classic_ffmpeg_audio: false,
 
             channels: default_channels(),
             input_channel_l: None,
@@ -1685,7 +1677,6 @@ mod tests {
             let s = Settings::from_json_merged(&format!(
                 r#"{{
                     "classicFfmpegPreroll": {flag},
-                    "classicFfmpegAudio": true,
                     "preRollSeconds": 20,
                     "churchName": "Domkirken"
                 }}"#
@@ -1693,13 +1684,39 @@ mod tests {
             .validated();
             assert_eq!(s.pre_roll_seconds, 20);
             assert_eq!(s.church_name, "Domkirken");
-            assert!(s.classic_ffmpeg_audio, "the audio hatch is still A5b's");
             let json = serde_json::to_value(&s).unwrap();
             assert!(
                 !json
                     .as_object()
                     .unwrap()
                     .contains_key("classicFfmpegPreroll"),
+                "the retired key must not be written back"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_blob_with_classic_ffmpeg_audio_imports_cleanly() {
+        // A5b: the audio escape hatch is gone. A database written while it
+        // existed (on or off) must still load, keep its neighbours — including
+        // the DirectShow hatch beside it, which lives until C3 — and not write
+        // the key back.
+        for flag in ["true", "false"] {
+            let s = Settings::from_json_merged(&format!(
+                r#"{{
+                    "classicFfmpegAudio": {flag},
+                    "classicDirectshow": true,
+                    "preRollSeconds": 20,
+                    "churchName": "Domkirken"
+                }}"#
+            ))
+            .validated();
+            assert!(s.classic_directshow, "the DirectShow hatch is C3's");
+            assert_eq!(s.pre_roll_seconds, 20);
+            assert_eq!(s.church_name, "Domkirken");
+            let json = serde_json::to_value(&s).unwrap();
+            assert!(
+                !json.as_object().unwrap().contains_key("classicFfmpegAudio"),
                 "the retired key must not be written back"
             );
         }

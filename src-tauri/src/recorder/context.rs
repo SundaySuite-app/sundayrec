@@ -121,9 +121,6 @@ pub(crate) struct SessionContext {
     /// The ONE generation-guarded door to the recorder's shared state and
     /// auto-stop countdown. See [`StateWriter`] for what the guard is for.
     pub(crate) state: StateWriter,
-    /// `(engine label, fallback reason)` for the diagnose tool — the engine's
-    /// own cell, so a backend demotion mid-session is visible to support.
-    pub(crate) audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 }
 
 /// The three counters ONE segment is driven against.
