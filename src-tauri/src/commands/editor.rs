@@ -810,10 +810,19 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 pub async fn editor_export(
     app: tauri::AppHandle,
     engine: State<'_, ExportEngine>,
+    recorder: State<'_, crate::recorder::engine::RecorderEngine>,
     chosen: State<'_, ChosenPaths>,
     db: State<'_, Db>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
+    // The renderer refuses to start an export while recording, but only at the
+    // click: a stale screen, a second window or a recording that began a
+    // moment later all reach this command. The guard lives here, where it
+    // cannot be walked around. (The other direction — a recording that starts
+    // while an export runs — cancels the export in `RecorderEngine::start`.)
+    if export_blocked_by_recording(recorder.current_state()) {
+        return Err(AppError::Validation("recording_in_progress".into()));
+    }
     // v0.15: hardware video encode is automatic — hardware first where the
     // platform has it, software on a failed render (the `editorHwEncode`
     // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
@@ -952,6 +961,26 @@ fn refuse_feedback_sidecar(sidecar: EditorSidecar) -> AppResult<()> {
     Ok(())
 }
 
+/// The most a sidecar the webview writes may weigh once serialised. What the
+/// renderer writes (`meta`, `cutsDraft`) is kilobytes; the big derived caches
+/// (peaks, segments) are written by Rust. The cap keeps a compromised page from
+/// filling the recording's folder, or the pretty-printer's memory, through
+/// this one command.
+const MAX_SIDECAR_BYTES: usize = 2 * 1024 * 1024;
+
+/// Refuse a sidecar value over [`MAX_SIDECAR_BYTES`] (`sidecar_too_large`).
+fn vet_sidecar_size(value: &serde_json::Value) -> AppResult<()> {
+    // Compact form: the smallest honest size, so the cap never refuses what
+    // the pretty-printer would only have padded.
+    if value.to_string().len() > MAX_SIDECAR_BYTES {
+        return Err(crate::error::AppError::Validation(format!(
+            "sidecar_too_large: a sidecar is at most {} KiB",
+            MAX_SIDECAR_BYTES / 1024
+        )));
+    }
+    Ok(())
+}
+
 /// Write a per-recording sidecar JSON (pretty). Returns whether it persisted.
 /// Takes the recording's File token — see [`editor_read_sidecar`].
 #[tauri::command]
@@ -962,6 +991,7 @@ pub async fn editor_write_sidecar(
     value: serde_json::Value,
 ) -> AppResult<bool> {
     refuse_feedback_sidecar(sidecar)?;
+    vet_sidecar_size(&value)?;
     with_source(&chosen, &source_token, move |source| {
         editor::write_sidecar(&source, sidecar, &value)
     })
@@ -989,9 +1019,8 @@ pub async fn editor_delete_sidecar(
 /// The export's «Innhold» card offers it as the title on a feast day. It is
 /// the SAME table the `church` filename pattern names recordings from
 /// (`sundayrec_core::church_calendar`), asked over IPC rather than re-typed in
-/// TypeScript: `legacy/shared/church-calendar.ts` is an older port that
-/// answers in slugs (`1-paaskedag`), and two calendars that disagree about
-/// Easter are worse than one. Featureless — it is a table lookup, not editor
+/// TypeScript (the old slug-answering `shared/church-calendar.ts` port is
+/// gone): two calendars that disagree about Easter are worse than one. Featureless — it is a table lookup, not editor
 /// I/O. `date` is `YYYY-MM-DD`.
 #[tauri::command]
 pub fn editor_church_day_name(date: String) -> Option<String> {
@@ -1095,6 +1124,13 @@ pub async fn editor_master_cancel(
     editor::master_cancel(&engine, &job_id).await
 }
 
+/// Whether the recorder's state forbids starting an export now: a recording is
+/// starting, running, reconnecting or finalising. Idle/stopped/failed are free.
+fn export_blocked_by_recording(state: sundayrec_core::recorder::RecorderState) -> bool {
+    use sundayrec_core::recorder::RecorderState;
+    state.is_active() || state == RecorderState::Stopping
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1104,6 +1140,16 @@ mod tests {
     // there leaves the lib test binary unloadable), so neither is what uses it.
     #[cfg(not(windows))]
     use tauri::Manager;
+
+    #[test]
+    fn an_oversized_sidecar_value_is_refused() {
+        // Audit 2026-10 (113): `editor_write_sidecar` took any JSON value.
+        let small = serde_json::json!({ "cuts": [1, 2, 3] });
+        assert!(vet_sidecar_size(&small).is_ok());
+        let big = serde_json::json!({ "blob": "x".repeat(MAX_SIDECAR_BYTES) });
+        let err = vet_sidecar_size(&big).unwrap_err().to_string();
+        assert!(err.contains("sidecar_too_large"), "{err}");
+    }
 
     // ── The asset grant: one file, in tauri's own scope ──────────────────────
 
@@ -1605,6 +1651,23 @@ mod tests {
             code_of(resolve_source(&store, &token).await),
             "source_missing"
         );
+    }
+
+    #[test]
+    fn export_is_refused_while_the_recorder_is_busy() {
+        use sundayrec_core::recorder::RecorderState::*;
+        for busy in [Preparing, Recording, Reconnecting, Stopping] {
+            assert!(export_blocked_by_recording(busy), "{busy:?}");
+        }
+        for free in [Idle, Stopped, Failed] {
+            assert!(!export_blocked_by_recording(free), "{free:?}");
+        }
+        // The refusal has a sentence in the renderer.
+        let export = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/editor/export-core.ts"),
+        )
+        .unwrap();
+        assert!(export.contains("[\"recording_in_progress\", \"errRecordingInProgress\"]"));
     }
 
     #[test]

@@ -13,6 +13,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: nothing here writes to the repo, issues or releases.
+permissions:
+  contents: read
+
 # Cancel superseded runs on the same ref.
 concurrency:
   group: ci-${{ github.ref }}
@@ -23,19 +27,19 @@ jobs:
     name: Lint, typecheck & test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
       # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
         with:
           components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
@@ -245,18 +249,18 @@ jobs:
     name: Rust clippy + tests (vad feature)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
@@ -298,16 +302,16 @@ jobs:
     name: Build Tauri app (no bundle)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
@@ -342,9 +346,9 @@ jobs:
     name: Playwright e2e (renderer harness)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -362,7 +366,7 @@ jobs:
       # lean.
       - name: Upload traces on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-traces
           path: test-results/
@@ -385,13 +389,13 @@ jobs:
     name: Windows check + test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
@@ -431,15 +435,117 @@ jobs:
       # that only breaks off-default used to surface at tag time. This line TRACKS
       # the release list: adding a feature there means adding it here.
       #
-      # ⚠️ COVERAGE GAP, left open on purpose: because `asio` is missing here, the
-      # exact feature combo release.yml actually SHIPS for Windows is never
-      # compiled in PR CI — only this asio-less approximation is. A PR that only
-      # breaks under `--features asio` (Steinberg SDK not available in this
-      # runner) will show green here and still fail at tag time in release.yml.
-      # Don't assume this step proves the Windows release build compiles.
+      # The exact shipped list (with `asio`) is compiled by the separate
+      # `windows-asio` job below; this lane keeps the asio-less approximation
+      # because it needs no SDK download and stays in the required check.
       - name: cargo check (Windows release feature combo, minus asio)
         working-directory: src-tauri
         run: cargo check --workspace --no-default-features --features editor,tray,updater
+
+  # The macOS half. Roughly 56 `cfg(target_os = "macos")` blocks (the path_guard
+  # symlink/firmlink tests, recordings_open, the AppKit/AVFoundation seams)
+  # were COMPILED and TESTED nowhere in PR CI — ubuntu and windows both
+  # cfg them out — so a break there only surfaced at tag time, in release.yml,
+  # or on the rig. This job is the cheap standing version of what the
+  # maintainer's own Mac does: Rust only (no npm, no bundle, no frontend),
+  # same commands as the Windows lane.
+  #
+  # NOT a required check (branch protection is untouched on purpose): it
+  # blocks no PR until the owner adds "macOS check + test" to the required
+  # list. Do not rename it once that is done — a renamed required check hangs
+  # every PR.
+  macos-check:
+    name: macOS check + test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      # Same reason as the Windows lane: tauri-build only checks that every
+      # `externalBin` EXISTS. Empty stubs satisfy it; the real-ffmpeg tests take
+      # their tolerant skip path (no SUNDAYREC_REQUIRE_SIDECAR here either).
+      - name: Stub ffmpeg sidecars for tauri-build's existence check
+        working-directory: src-tauri
+        run: |
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          mkdir -p binaries
+          touch "binaries/ffmpeg-${triple}" "binaries/ffprobe-${triple}"
+
+      - name: cargo clippy (workspace, all targets)
+        working-directory: src-tauri
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test (workspace)
+        working-directory: src-tauri
+        run: cargo test --workspace
+
+      # The exact feature combo release.yml ships for macOS.
+      - name: cargo check (macOS release feature combo)
+        working-directory: src-tauri
+        run: cargo check --workspace --no-default-features --features editor,tray,updater
+
+  # The Windows RELEASE build compiles `--features asio`; `windows-check` above
+  # cannot (the Steinberg SDK is a download), so a PR that only breaks under
+  # `asio` was green here and red at tag time. This job closes that gap by
+  # doing what release.yml does: MSVC env, the checksum-pinned SDK zip,
+  # libclang for bindgen — and then only `cargo check`s the shipped feature list.
+  #
+  # NOT a required check, same as `macos-check`: name it in branch protection
+  # only after it has proven stable. Keep the SDK hash in step with release.yml.
+  windows-asio:
+    name: Windows check (asio release combo)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      # MSVC env first: git-bash's link.exe must not shadow the MSVC linker, so
+      # the compiling step below stays on the default (pwsh) shell.
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: Fetch ASIO SDK + set ASIO build env
+        shell: pwsh
+        run: |
+          $url = "https://download.steinberg.net/sdk_downloads/asiosdk_2.3.3_2019-06-14.zip"
+          Invoke-WebRequest -Uri $url -OutFile asiosdk.zip
+          # Same SHA-256 pin as release.yml: the zip is a frozen 2019 artifact.
+          $expected = "bc425d9b98701af74b43639798566c48bc005af7328a2251cff722c1885076b2"
+          $actual = (Get-FileHash asiosdk.zip -Algorithm SHA256).Hash.ToLower()
+          Write-Host "asiosdk.zip SHA-256: $actual"
+          if ($actual -ne $expected) {
+            Write-Error "ASIO SDK checksum mismatch (expected $expected) — refusing to build."
+            exit 1
+          }
+          Expand-Archive -Path asiosdk.zip -DestinationPath asiosdk -Force
+          $sdk = (Get-ChildItem asiosdk -Directory | Select-Object -First 1).FullName
+          echo "CPAL_ASIO_DIR=$sdk" >> $env:GITHUB_ENV
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Stub ffmpeg sidecars for tauri-build's existence check
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force binaries | Out-Null
+          New-Item -ItemType File -Force binaries/ffmpeg-x86_64-pc-windows-msvc.exe | Out-Null
+          New-Item -ItemType File -Force binaries/ffprobe-x86_64-pc-windows-msvc.exe | Out-Null
+
+      # Tracks release.yml's Windows `args` — adding a feature there means
+      # adding it here.
+      - name: cargo check (Windows release feature combo, WITH asio)
+        working-directory: src-tauri
+        run: cargo check --workspace --no-default-features --features editor,tray,asio,updater
 
   # Dependency vulnerability scan — advisory DBs for both ecosystems. Runs as
   # its own job so a slow cargo-audit install doesn't hold up the main gate.
@@ -447,14 +553,14 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
 
       # npm audit blocked EVERY push twice on 2026-09-04 when npmjs.org's own
       # audit endpoint itself returned 503 (real log line: `npm warn audit
@@ -529,7 +635,7 @@ jobs:
           done
 
       - name: Install cargo-audit (prebuilt binary — `cargo install --locked` took ~2 min here)
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           # Version pinned (not the bare `@cargo-audit` shorthand ref, which
           # floats to whatever install-action's latest release considers

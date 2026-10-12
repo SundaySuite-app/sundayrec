@@ -524,6 +524,10 @@ impl RecorderEngine {
         preroll_clip: Option<PrerollClip>,
     ) -> AppResult<()> {
         self.stop();
+        // A running editor export competes with the recording for CPU and disk
+        // (it cost whole seconds of samples before the native capture path),
+        // and the recording cannot be redone. The export loses.
+        crate::editor::cancel_export_for_recording(&app).await;
         // Claim the next generation right after stopping the previous session: the
         // old supervisor is still finalising in parallel, and from this moment its
         // writes to the shared state/countdown are suppressed (see

@@ -172,27 +172,11 @@ function requestStart(dev: string | null): void {
     // Superseded while we waited our turn — the newer request owns the state.
     if (my !== gen) return;
     // A recording owns the device outright (`start_recording` calls `vu.stop()`
-    // itself). Racing it with a start_vu would only be a stop-first-then-start
-    // fight over the same hardware — the meter that matters during a take reads
-    // `recording://levels` instead.
-    //
-    // ⚠️ NOBODY WRITES THIS FLAG. `app/` deliberately does not recreate
-    // `window.__isRecording` (it was a second place that believed it knew a
-    // current value — see `app/state/recording.ts`), so this guard is INERT.
-    // What actually holds the property today is MOUNTING: the shell takes the
-    // meter out of the tree before `start_recording` and while a take runs, so
-    // nothing is here to ask. Written down at that call site too, in
-    // `app/pages/record/RecordPage.tsx`, and declared in `app/lib/api.d.ts`.
-    //
-    // Two places have to agree, which is the shape this shell exists to end.
-    // Collapsing them — a `isRecording` argument this module is handed, instead
-    // of a global it reads — is the standing restanse; see «Etter byttet» in
-    // `docs/APP-SHELL.md`. It is a behaviour change, so it is not PR B's.
-    if (window.__isRecording) {
-      running = false;
-      setState("idle");
-      return;
-    }
+    // itself), so no meter may be mounted during a take. The shell enforces
+    // that by MOUNTING: it takes the meter out of the tree before
+    // `start_recording` and while a take runs (see
+    // `app/pages/record/RecordPage.tsx`). There is deliberately no flag read
+    // here — the old `window.__isRecording` guard had no writer and never fired.
     try {
       let count: number;
       try {

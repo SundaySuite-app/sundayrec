@@ -33,6 +33,12 @@ jobs:
   build:
     permissions:
       contents: write
+    # A named GitHub Environment: it is created automatically (with no rules)
+    # the first time this job runs, so on its own it gates nothing. It exists so
+    # the owner can add required reviewers / a tag-only deployment rule in
+    # Settings -> Environments -> release, which then puts a human between a
+    # pushed tag and the signing keys. (Both matrix legs ask for approval.)
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -61,8 +67,8 @@ jobs:
           # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
           # set up by the windows-only steps below (see docs/BUILD_ASIO.md). The
           # recorder falls back to WASAPI automatically when no ASIO driver exists.
-          # ci.yml's windows-check job compiles this list minus `asio` on every
-          # push.
+          # ci.yml's windows-check (minus asio) and windows-asio (the exact
+          # list) jobs compile this on every push.
           - platform: windows-latest
             args: "-- --no-default-features --features editor,tray,asio,updater"
 
@@ -81,23 +87,26 @@ jobs:
       - name: Refuse to build a release from a non-tag ref
         if: github.ref_type != 'tag'
         shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          echo "::error::release.yml ran on ${{ github.ref_type }} '${{ github.ref_name }}'."
+          echo "::error::release.yml ran on ${REF_TYPE} '${REF_NAME}'."
           echo "This workflow only makes sense on a version tag — every release field is"
           echo "derived from the tag name. Re-run it selecting a tag, or push a v* tag."
           exit 1
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
 
       - name: Set up Rust
         # Pinned: a floating stable + `-D warnings` turns any newly-added clippy lint into a red main. Bump deliberately.
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
 
       # ── Windows ASIO build prerequisites (see docs/BUILD_ASIO.md) ──────────
       # cpal's `asio` feature compiles C++ glue + bindgen against the Steinberg
@@ -112,7 +121,7 @@ jobs:
       # steps (proven the hard way in a throwaway probe, 2026-09-20).
       - name: Set up MSVC environment (Windows, for ASIO)
         if: matrix.platform == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
       - name: Fetch ASIO SDK + set ASIO build env (Windows)
         if: matrix.platform == 'windows-latest'
@@ -142,10 +151,12 @@ jobs:
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
           Write-Host "ASIO SDK at $sdk"
 
-      - name: Cache cargo (src-tauri)
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
+      # No rust-cache step on purpose: caches are scoped per git ref, a release
+      # runs on a fresh `v*` tag ref, and nothing writes a cache a later tag
+      # could read — so the step never hit (and its `./src-tauri -> target`
+      # path was wrong anyway: the workspace target dir is the repo root's).
+      # It only added an unpinned third-party action next to the signing keys
+      # and an upload at the end of every run.
 
       - name: Install frontend dependencies
         run: npm ci
@@ -204,10 +215,16 @@ jobs:
       - name: Enable notarization env (owner-gated, off by default)
         if: matrix.platform == 'macos-latest' && vars.NOTARIZE_MAC == 'true'
         shell: bash
+        # Passed through env, not interpolated into the script text, so a secret
+        # containing a quote or `$(` can never become shell syntax.
+        env:
+          SECRET_APPLE_ID: ${{ secrets.APPLE_ID }}
+          SECRET_APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SECRET_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
-          echo "APPLE_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
-          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_ID=${SECRET_APPLE_ID}" >> "$GITHUB_ENV"
+          echo "APPLE_PASSWORD=${SECRET_APPLE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${SECRET_APPLE_TEAM_ID}" >> "$GITHUB_ENV"
 
       - name: Build, sign, and publish
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0

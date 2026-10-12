@@ -43,7 +43,6 @@ export const EXPORT_PHASES = [
   EXPORT_PHASE_MEASURING,
   EXPORT_PHASE_ENCODING,
 ] as const;
-export type ExportPhase = (typeof EXPORT_PHASES)[number];
 
 /**
  * Can intro/outro jingles be applied when exporting `filePath`?

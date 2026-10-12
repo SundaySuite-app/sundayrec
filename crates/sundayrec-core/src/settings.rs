@@ -758,7 +758,9 @@ impl Settings {
     /// The merge is FIELD BY FIELD: a field whose value cannot be read (an enum
     /// variant this build does not know — a beta that stored `format: "opus"`
     /// and was then rolled back — or a value of the wrong type) loses only
-    /// itself and keeps its default; every other setting survives. Only a blob
+    /// itself and keeps its default; every other setting survives. The two
+    /// hand-built lists, `slots` and `specialRecordings`, go one step finer:
+    /// only the unreadable ELEMENTS are dropped (reported as `slots[2]`). Only a blob
     /// that is not a JSON object at all falls back to the full defaults, so a
     /// corrupt store never bricks the app. Use
     /// [`Settings::from_json_merged_reporting`] to learn which fields were
@@ -785,16 +787,38 @@ impl Settings {
         };
         let mut kept = serde_json::Map::new();
         let mut dropped = Vec::new();
-        for (key, v) in map {
-            // A one-field object over the defaults: if it alone reads, the field
-            // is good. (Fields are independent for serde, so this is exact.)
+        // A one-field object over the defaults: if it alone reads, the field
+        // is good. (Fields are independent for serde, so this is exact.)
+        let reads = |key: &str, v: &serde_json::Value| {
             let mut probe = serde_json::Map::new();
-            probe.insert(key.clone(), v.clone());
-            if serde_json::from_value::<Settings>(serde_json::Value::Object(probe)).is_ok() {
+            probe.insert(key.to_owned(), v.clone());
+            serde_json::from_value::<Settings>(serde_json::Value::Object(probe)).is_ok()
+        };
+        for (key, v) in map {
+            if reads(&key, &v) {
                 kept.insert(key, v);
-            } else {
-                dropped.push(key);
+                continue;
             }
+            // The two lists a volunteer builds by hand (the weekly plan and the
+            // dated one-offs) are rescued ELEMENT by element: one unreadable
+            // entry must not take the whole plan with it — a missing Sunday slot
+            // is a missed recording. The dropped entries are named by position
+            // (`slots[2]`) so the warning in `settings::load` has a trail.
+            if matches!(key.as_str(), "slots" | "specialRecordings") {
+                if let serde_json::Value::Array(items) = &v {
+                    let mut good = Vec::new();
+                    for (i, item) in items.iter().enumerate() {
+                        if reads(&key, &serde_json::Value::Array(vec![item.clone()])) {
+                            good.push(item.clone());
+                        } else {
+                            dropped.push(format!("{key}[{i}]"));
+                        }
+                    }
+                    kept.insert(key, serde_json::Value::Array(good));
+                    continue;
+                }
+            }
+            dropped.push(key);
         }
         let settings =
             serde_json::from_value::<Settings>(serde_json::Value::Object(kept)).unwrap_or_default();
@@ -1257,6 +1281,38 @@ mod tests {
         let s = Settings::from_json_merged(r#"{ "updateChannel": 3, "silenceThreshold": -40 }"#);
         assert_eq!(s.update_channel, UpdateChannel::Stable);
         assert_eq!(s.silence_threshold, -40);
+    }
+
+    #[test]
+    fn one_unreadable_list_element_costs_only_that_element() {
+        // The weekly plan and the dated one-offs are rescued per ELEMENT: a slot
+        // whose `days` is garbage must not take the Sunday slot beside it.
+        let json = r#"{
+            "churchName": "Domkirken",
+            "slots": [
+                {"days":[6],"start":"11:00","stop":"12:30","max":null},
+                {"days":"sunday","start":"11:00","stop":"12:30","max":null},
+                {"days":[2],"start":"19:00","stop":"20:00","max":null}
+            ],
+            "specialRecordings": [
+                {"date":"2026-12-24","name":7,"start":"16:00","stop":"17:00"},
+                {"date":"2026-12-25","name":"Juledag","start":"11:00","stop":"12:00"}
+            ]
+        }"#;
+        let (s, dropped) = Settings::from_json_merged_reporting(json);
+        assert_eq!(s.slots.len(), 2);
+        assert_eq!(s.slots[0].days, vec![6]);
+        assert_eq!(s.slots[1].days, vec![2]);
+        assert_eq!(s.special_recordings.len(), 1);
+        assert_eq!(s.special_recordings[0].name, "Juledag");
+        assert_eq!(s.church_name, "Domkirken");
+        assert_eq!(dropped, vec!["slots[1]", "specialRecordings[0]"]);
+
+        // A list that is not a list at all still loses just the field.
+        let (s, dropped) =
+            Settings::from_json_merged_reporting(r#"{"slots":"nope","onboardingDone":true}"#);
+        assert!(s.slots.is_empty() && s.onboarding_done);
+        assert_eq!(dropped, vec!["slots"]);
     }
 
     #[test]

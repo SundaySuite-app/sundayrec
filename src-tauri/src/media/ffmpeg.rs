@@ -18,7 +18,9 @@ use crate::error::{AppError, AppResult};
 //
 // Resolution order (first hit wins), mirrored from the SundayEdit
 // implementation but with `SUNDAYREC_*` env names:
-//   1. Env override (SUNDAYREC_FFMPEG / SUNDAYREC_FFPROBE) — dev + tests.
+//   1. Env override (SUNDAYREC_FFMPEG / SUNDAYREC_FFPROBE) — dev + tests ONLY.
+//      A release build ignores it (see [`dev_env_override`]): a variable set in
+//      the launching environment must not swap the binary a shipped app runs.
 //   2. Bundled sidecar next to the app executable — production. Tauri's
 //      `externalBin` drops `ffmpeg`/`ffprobe` next to the binary (Contents/MacOS
 //      on macOS, the install dir on Windows) with the target-triple suffix
@@ -32,6 +34,28 @@ use crate::error::{AppError, AppResult};
 /// `*_path` functions — means the tests never touch `std::env`.
 fn resolve_path(env_val: Option<String>, sidecar: Option<String>, fallback: &str) -> String {
     env_val.or(sidecar).unwrap_or_else(|| fallback.to_string())
+}
+
+/// Whether this build honours the `SUNDAYREC_FFMPEG`/`FFPROBE` overrides: dev
+/// builds and the crate's own tests do; a release build never. Anyone who can
+/// set the environment of the launching process (a login item, a wrapper
+/// script, a shared account) could otherwise point the shipped app's recorder
+/// at any executable.
+const HONOUR_DEV_ENV: bool = cfg!(any(debug_assertions, test));
+
+/// The policy of [`dev_env_override`], with the switch passed in so a test can
+/// close it without a release build.
+fn honour_dev_env(enabled: bool, value: Option<String>) -> Option<String> {
+    if enabled {
+        value
+    } else {
+        None
+    }
+}
+
+/// The env override for `name`, or `None` where this build ignores them.
+fn dev_env_override(name: &str) -> Option<String> {
+    honour_dev_env(HONOUR_DEV_ENV, std::env::var(name).ok())
 }
 
 /// Look for `name` (e.g. "ffmpeg") next to the current executable — that's
@@ -54,7 +78,7 @@ fn sidecar_path(name: &str) -> Option<String> {
 /// Path to the `ffmpeg` binary (recorder, MJPEG preview, exports).
 pub fn ffmpeg_path() -> String {
     resolve_path(
-        std::env::var("SUNDAYREC_FFMPEG").ok(),
+        dev_env_override("SUNDAYREC_FFMPEG"),
         sidecar_path("ffmpeg"),
         "ffmpeg",
     )
@@ -63,7 +87,7 @@ pub fn ffmpeg_path() -> String {
 /// Path to the `ffprobe` binary (media inspection / health-check).
 pub fn ffprobe_path() -> String {
     resolve_path(
-        std::env::var("SUNDAYREC_FFPROBE").ok(),
+        dev_env_override("SUNDAYREC_FFPROBE"),
         sidecar_path("ffprobe"),
         "ffprobe",
     )
@@ -236,6 +260,16 @@ pub(crate) mod tests {
     }
 
     // ── Pure resolution policy (deterministic, parallel-safe — no env) ───────
+
+    #[test]
+    fn a_release_build_ignores_the_env_overrides() {
+        // Audit 2026-10 (119): the override was honoured in the shipped app.
+        let set = Some("/tmp/evil-ffmpeg".to_string());
+        assert_eq!(honour_dev_env(false, set.clone()), None);
+        assert_eq!(honour_dev_env(true, set.clone()), set);
+        // Dev builds and these tests keep the seam; a release build does not.
+        assert_eq!(HONOUR_DEV_ENV, cfg!(any(debug_assertions, test)));
+    }
 
     #[test]
     fn resolve_prefers_env_override() {

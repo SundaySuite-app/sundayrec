@@ -1787,9 +1787,13 @@ mod tests {
         // exactly the state a real harvest meets seconds after a start.
         tokio::time::sleep(Duration::from_secs(2)).await;
 
+        // ~60 ticks are due in 2 s at 33 ms. The floor is deliberately a tenth
+        // of that: macOS CI runners (shared VMs, coalesced timers) measured 15
+        // here, and this assertion exists to catch a sampler that never runs or
+        // stalls (0-1 ticks), not to benchmark the scheduler.
         let ticked = ticks.load(Ordering::Relaxed);
         assert!(
-            ticked >= 30,
+            ticked >= 6,
             "the sampler should have run ~60× in 2 s at 33 ms, got {ticked}"
         );
         assert_eq!(

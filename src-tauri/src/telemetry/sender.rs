@@ -70,6 +70,10 @@ use crate::error::AppResult;
 pub enum SendFailure {
     /// The network, or the endpoint, or the moment. Back off and retry.
     Transient(String),
+    /// Like [`Self::Transient`], but the endpoint said how long to wait
+    /// (`Retry-After` on a 429 or 503). The wait is never shorter than the
+    /// ladder's own step — see `queue::on_failure_paced`.
+    RetryAfter(String, Duration),
     /// This payload will never be accepted. Drop it.
     Permanent(String),
 }
@@ -78,9 +82,18 @@ impl SendFailure {
     /// The message for the settings panel and the log.
     pub fn message(&self) -> &str {
         match self {
-            Self::Transient(m) | Self::Permanent(m) => m,
+            Self::Transient(m) | Self::RetryAfter(m, _) | Self::Permanent(m) => m,
         }
     }
+}
+
+/// A uniformly random fraction in `0.0..1.0` for retry jitter.
+///
+/// Drawn from the low 53 bits of a v4 UUID (the version and variant bits live
+/// higher up) so no RNG crate is needed for one number; the value only has to
+/// differ between installs, not be unpredictable.
+pub(super) fn jitter_fraction() -> f64 {
+    (uuid::Uuid::new_v4().as_u128() & ((1u128 << 53) - 1)) as f64 / (1u128 << 53) as f64
 }
 
 /// The future a [`TelemetrySender`] returns. Boxed by hand rather than via an
@@ -144,12 +157,41 @@ pub async fn pump_once(
         Some(e) => e.clone(),
         None => return Ok(PumpOutcome::Idle),
     };
-    super::queue_store::upsert_entry(pool, &entry).await?;
+    // `load_queue` above may be stale by now: a revoke or "Slett mine data" can
+    // purge the outbox between the read and this write. Update-only, so a purged
+    // row stays purged instead of being written back and sent.
+    if !super::queue_store::update_entry_if_present(pool, &entry).await? {
+        return Ok(PumpOutcome::Idle);
+    }
+    // The payload names the install it was built for. If that install has been
+    // retired since, it is the data the user asked to have erased — never send it.
+    let payload_id = payload_install_id(&entry.payload_json);
+    let current_id = super::install_id_if_any(pool).await?;
+    if let (Some(p), Some(c)) = (&payload_id, &current_id) {
+        if p != c {
+            super::queue_store::delete_entry(pool, &id).await?;
+            return Ok(PumpOutcome::Dropped);
+        }
+    }
+    // …and consent is asked again right before the socket, not only before the
+    // read: the revoke this guards against lands during the awaits above.
+    if !super::consent_active(pool).await {
+        return Ok(PumpOutcome::Blocked);
+    }
 
     match sender.send(&entry.payload_json).await {
         Ok(()) => {
             queue::on_success(&mut entries, &id);
             super::queue_store::delete_entry(pool, &id).await?;
+            // The send took a network round trip. If "Slett mine data" retired
+            // this install meanwhile, its DELETE may already have run — before
+            // this POST landed — so the report just delivered re-created data the
+            // user asked to erase. Park the id again so the next drain removes it.
+            if let Some(p) = payload_id {
+                if super::install_id_if_any(pool).await?.as_deref() != Some(p.as_str()) {
+                    super::park_for_deletion(pool, &p).await?;
+                }
+            }
             Ok(PumpOutcome::Sent)
         }
         Err(SendFailure::Permanent(msg)) => {
@@ -166,14 +208,35 @@ pub async fn pump_once(
             super::queue_store::delete_entry(pool, &id).await?;
             Ok(PumpOutcome::Dropped)
         }
-        Err(SendFailure::Transient(msg)) => {
-            queue::on_failure(&mut entries, &id, msg, now_ms);
+        Err(failure @ (SendFailure::Transient(_) | SendFailure::RetryAfter(..))) => {
+            let retry_after_ms = match &failure {
+                SendFailure::RetryAfter(_, d) => {
+                    Some(i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+                }
+                _ => None,
+            };
+            queue::on_failure_paced(
+                &mut entries,
+                &id,
+                failure.message(),
+                now_ms,
+                retry_after_ms,
+                jitter_fraction(),
+            );
             if let Some(updated) = entries.iter().find(|x| x.id == id) {
-                super::queue_store::upsert_entry(pool, updated).await?;
+                // Update-only: a purge during the send must not be undone.
+                super::queue_store::update_entry_if_present(pool, updated).await?;
             }
             Ok(PumpOutcome::Failed)
         }
     }
+}
+
+/// The `installId` a queued payload was built for, if it carries a well-formed one.
+fn payload_install_id(payload_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(payload_json).ok()?;
+    let id = v.get("installId")?.as_str()?;
+    Some(sundayrec_core::telemetry::sanitize_install_id(id))
 }
 
 /// How often the sender loop looks for something to do.
@@ -296,6 +359,11 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
                 // Built once per supervised run, not per iteration: the point of
                 // the shared client is its connection pool.
                 let sender = HttpTelemetrySender::new(endpoint);
+                // Deletion backoff lives in the task, not the database: a restart
+                // retries once straight away, which is the right thing to do for
+                // a request the user is waiting on.
+                let mut deletion_failures: u32 = 0;
+                let mut deletion_not_before = std::time::Instant::now();
                 loop {
                     tokio::time::sleep(PUMP_INTERVAL).await;
                     let Some(db) = app.try_state::<crate::db::Db>() else {
@@ -314,7 +382,16 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
                     }
                     // The remote half of "delete my data", drained on the same
                     // beat. It has its own consent story — see `drain_deletions`.
-                    drain_deletions(&db.pool, &sender).await;
+                    if std::time::Instant::now() >= deletion_not_before {
+                        match drain_deletions(&db.pool, &sender).await {
+                            DrainResult::Retry(hint) => {
+                                deletion_failures = deletion_failures.saturating_add(1);
+                                deletion_not_before = std::time::Instant::now()
+                                    + deletion_backoff(deletion_failures, hint, jitter_fraction());
+                            }
+                            DrainResult::Deleted | DrainResult::Idle => deletion_failures = 0,
+                        }
+                    }
                 }
             }
         },
@@ -346,18 +423,21 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
 ///
 /// One id per call, oldest first, so a long list drains over successive
 /// iterations rather than blocking one of them. A transient failure leaves the
-/// id parked for the next round; a permanent one clears it, because a 4xx here
-/// means the endpoint will never accept this deletion and retrying it forever is
-/// worse than stopping.
-async fn drain_deletions(pool: &SqlitePool, sender: &HttpTelemetrySender) {
+/// id parked and tells the loop how long to leave it alone ([`DrainResult::Retry`]);
+/// only a status that says the id itself is unusable clears it (see
+/// `http_sender::classify_delete` — a 401/403/404/413 is NOT such a status: the
+/// user's request is fine, the endpoint's state at this moment is not).
+async fn drain_deletions(pool: &SqlitePool, sender: &HttpTelemetrySender) -> DrainResult {
     let pending = match super::pending_deletions(pool).await {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!("telemetry: could not read pending deletions: {e}");
-            return;
+            return DrainResult::Idle;
         }
     };
-    let Some(id) = pending.first() else { return };
+    let Some(id) = pending.first() else {
+        return DrainResult::Idle;
+    };
 
     match sender.delete_install(id).await {
         Ok(()) => {
@@ -374,18 +454,64 @@ async fn drain_deletions(pool: &SqlitePool, sender: &HttpTelemetrySender) {
                     "telemetry: deletion succeeded but the id could not be cleared: {e}"
                 );
             }
+            DrainResult::Deleted
         }
         Err(SendFailure::Permanent(msg)) => {
             tracing::warn!(
-                "telemetry: the endpoint permanently refused a deletion request ({msg}); \
-                 the id has been dropped rather than retried forever"
+                "telemetry: the id cannot be deleted ({msg}); it has been dropped rather than \
+                 retried forever"
             );
             let _ = super::clear_pending_deletion(pool, id).await;
+            DrainResult::Deleted
         }
-        Err(SendFailure::Transient(msg)) => {
-            tracing::debug!("telemetry: deletion will be retried ({msg})");
+        Err(failure) => {
+            tracing::debug!(
+                "telemetry: deletion will be retried ({})",
+                failure.message()
+            );
+            let hint = match &failure {
+                SendFailure::RetryAfter(_, d) => Some(*d),
+                _ => None,
+            };
+            DrainResult::Retry(hint)
         }
     }
+}
+
+/// What one [`drain_deletions`] round did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrainResult {
+    /// Nothing was owed.
+    Idle,
+    /// An id was removed from the list (confirmed, or unusable).
+    Deleted,
+    /// The deletion could not be delivered; the id is still parked. Carries the
+    /// endpoint's `Retry-After`, if it sent one.
+    Retry(Option<Duration>),
+}
+
+/// How long to leave a failing deletion alone after `failures` consecutive
+/// failures. Pure: the ladder, the endpoint's `Retry-After` (never undercut) and
+/// a jitter fraction in `0.0..=1.0` are inputs.
+///
+/// Without this the loop re-sent a refused DELETE every minute for as long as the
+/// machine was on — and once 4xx stopped being "drop it", that would have been a
+/// permanent once-a-minute request against a misconfigured endpoint.
+fn deletion_backoff(failures: u32, retry_after: Option<Duration>, jitter: f64) -> Duration {
+    use sundayrec_core::telemetry::queue::{BACKOFF_STEPS_MS, RETRY_AFTER_CAP_MS};
+    let idx = (failures.saturating_sub(1) as usize).min(BACKOFF_STEPS_MS.len() - 1);
+    let mut ms = BACKOFF_STEPS_MS[idx];
+    if let Some(ra) = retry_after {
+        let ra = i64::try_from(ra.as_millis()).unwrap_or(i64::MAX);
+        ms = ms.max(ra.clamp(0, RETRY_AFTER_CAP_MS));
+    }
+    let jitter = if jitter.is_finite() {
+        jitter.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    ms += (ms as f64 * 0.25 * jitter) as i64;
+    Duration::from_millis(ms.max(0) as u64)
 }
 
 /// Fixtures shared by both test modules below.
@@ -637,7 +763,13 @@ mod tests {
         let back = store::load_queue(&pool).await.unwrap();
         assert_eq!(back[0].attempts, 1);
         assert_eq!(back[0].last_error.as_deref(), Some("no route to host"));
-        assert_eq!(back[0].next_attempt, now + queue::BACKOFF_STEPS_MS[0]);
+        // Jittered: never EARLIER than the ladder step, at most a quarter later.
+        let step = queue::BACKOFF_STEPS_MS[0];
+        assert!(
+            (now + step..=now + step + step / 4).contains(&back[0].next_attempt),
+            "next_attempt {} outside the jittered first rung",
+            back[0].next_attempt
+        );
 
         // The immediate next pump finds nothing due — no hot loop.
         assert_eq!(
@@ -785,6 +917,117 @@ mod tests {
             TelemetryEndpoint::normalize(Some("https://t.example".into()), None),
             None,
             "a url without a key must not produce an endpoint"
+        );
+    }
+
+    /// A sender that does something to the database WHILE the request is in
+    /// flight — the window a revoke or a regenerate lands in.
+    struct MidFlightSender {
+        pool: SqlitePool,
+        action: MidFlight,
+        result: Mode,
+    }
+    #[derive(Clone, Copy)]
+    enum MidFlight {
+        Purge,
+        RetireAndRunDelete,
+    }
+    impl TelemetrySender for MidFlightSender {
+        fn send<'a>(&'a self, payload: &'a str) -> SendFuture<'a> {
+            Box::pin(async move {
+                match self.action {
+                    MidFlight::Purge => {
+                        store::purge(&self.pool).await.unwrap();
+                    }
+                    MidFlight::RetireAndRunDelete => {
+                        // "Slett mine data" lands during the POST, and the drain
+                        // has already DELETEd the old id by the time it returns.
+                        let v: serde_json::Value = serde_json::from_str(payload).unwrap();
+                        let old = v["installId"].as_str().unwrap().to_string();
+                        crate::telemetry::regenerate_install_id(&self.pool)
+                            .await
+                            .unwrap();
+                        crate::telemetry::clear_pending_deletion(&self.pool, &old)
+                            .await
+                            .unwrap();
+                    }
+                }
+                match self.result {
+                    Mode::Ok => Ok(()),
+                    _ => Err(SendFailure::Transient("no route to host".into())),
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_purge_during_a_failed_send_is_not_undone() {
+        // The pump holds a copy of its entry across the network round trip. A
+        // revoke / regenerate that purges the outbox meanwhile must stay purged;
+        // the backoff write used to upsert the row straight back.
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        store::insert_capped(&pool, &entry("a", 0)).await.unwrap();
+
+        let sender = MidFlightSender {
+            pool: pool.clone(),
+            action: MidFlight::Purge,
+            result: Mode::Transient,
+        };
+        pump_once(&pool, &sender, 1_800_000_000_000).await.unwrap();
+        assert!(
+            store::load_queue(&pool).await.unwrap().is_empty(),
+            "a payload the user had just purged was written back"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_payload_for_a_retired_install_is_never_sent() {
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        let old = crate::telemetry::ensure_install_id(&pool).await.unwrap();
+        let mut e = entry("a", 0);
+        e.payload_json = format!(r#"{{"installId":"{old}"}}"#);
+        // The id is retired after the entry was read but (in this test) before
+        // the pump runs: the row survives because it was queued "concurrently".
+        crate::telemetry::regenerate_install_id(&pool)
+            .await
+            .unwrap();
+        store::insert_capped(&pool, &e).await.unwrap();
+
+        assert_eq!(
+            pump_once(&pool, &PanickingSender, 1_800_000_000_000)
+                .await
+                .unwrap(),
+            PumpOutcome::Dropped
+        );
+        assert!(store::load_queue(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_report_delivered_after_the_install_was_retired_is_deleted_again() {
+        // The POST lands AFTER the DELETE already ran: the endpoint now holds data
+        // for an id the user asked to have erased. The id must be owed again.
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        let old = crate::telemetry::ensure_install_id(&pool).await.unwrap();
+        let mut e = entry("a", 0);
+        e.payload_json = format!(r#"{{"installId":"{old}"}}"#);
+        store::insert_capped(&pool, &e).await.unwrap();
+
+        let sender = MidFlightSender {
+            pool: pool.clone(),
+            action: MidFlight::RetireAndRunDelete,
+            result: Mode::Ok,
+        };
+        assert_eq!(
+            pump_once(&pool, &sender, 1_800_000_000_000).await.unwrap(),
+            PumpOutcome::Sent
+        );
+        assert_eq!(
+            crate::telemetry::pending_deletions(&pool).await.unwrap(),
+            vec![old],
+            "the data that just landed must be deleted too"
         );
     }
 }
@@ -1036,7 +1279,12 @@ mod net_tests {
         let back = store::load_queue(&pool).await.unwrap();
         assert_eq!(back.len(), 1, "a rate-limited payload is kept");
         assert_eq!(back[0].attempts, 1);
-        assert_eq!(back[0].next_attempt, now + queue::BACKOFF_STEPS_MS[0]);
+        let step = queue::BACKOFF_STEPS_MS[0];
+        assert!(
+            (now + step..=now + step + step / 4).contains(&back[0].next_attempt),
+            "jittered first rung, never earlier than the step: {}",
+            back[0].next_attempt
+        );
 
         // …and it is not retried before its time, so a rate limit is not met
         // with a hot loop.
@@ -1161,5 +1409,94 @@ mod net_tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    // ── Audit 2026-10-05: the deletion contract and the pump/purge race ──────
+
+    #[tokio::test]
+    async fn a_refused_deletion_is_kept_not_discarded() {
+        // «Slett mine data» used to be dropped on ANY 4xx. A rotated key (401), a
+        // route not yet deployed (404) or a size rule (413) says nothing about the
+        // user's request — dropping the id there turned a promise into a hope.
+        for status in [
+            "401 Unauthorized",
+            "403 Forbidden",
+            "404 Not Found",
+            "413 Payload Too Large",
+        ] {
+            let (pool, _d, _g) = temp_pool().await;
+            let h = harness(status).await;
+            consent_set(&pool, true).await.unwrap();
+            let old_id = crate::telemetry::ensure_install_id(&pool).await.unwrap();
+            crate::telemetry::regenerate_install_id(&pool)
+                .await
+                .unwrap();
+
+            let sender = HttpTelemetrySender::new(h.endpoint.clone());
+            let got = drain_deletions(&pool, &sender).await;
+
+            assert!(matches!(got, DrainResult::Retry(_)), "{status}: {got:?}");
+            assert_eq!(
+                crate::telemetry::pending_deletions(&pool).await.unwrap(),
+                vec![old_id],
+                "{status}: the deletion must stay parked"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_malformed_pending_id_is_cleared_without_a_request() {
+        // The id comes from a database row the user can edit and goes into a URL
+        // path. It must never reach the network.
+        let (pool, _d, _g) = temp_pool().await;
+        let h = harness("200 OK").await;
+        crate::db::store::set_setting(
+            &pool,
+            crate::telemetry::KEY_PENDING_DELETIONS,
+            r#"["../admin?all=1"]"#,
+        )
+        .await
+        .unwrap();
+
+        let sender = HttpTelemetrySender::new(h.endpoint.clone());
+        assert_eq!(drain_deletions(&pool, &sender).await, DrainResult::Deleted);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(h.connections.load(Ordering::SeqCst), 0);
+        assert!(crate::telemetry::pending_deletions(&pool)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn the_deletion_retry_ladder_grows_honours_retry_after_and_is_jittered() {
+        use sundayrec_core::telemetry::queue::{BACKOFF_STEPS_MS, RETRY_AFTER_CAP_MS};
+        let ms = |f: u32, ra: Option<u64>, j: f64| {
+            deletion_backoff(f, ra.map(Duration::from_secs), j).as_millis() as i64
+        };
+        assert_eq!(ms(1, None, 0.0), BACKOFF_STEPS_MS[0]);
+        assert_eq!(ms(2, None, 0.0), BACKOFF_STEPS_MS[1]);
+        assert_eq!(
+            ms(99, None, 0.0),
+            BACKOFF_STEPS_MS[5],
+            "clamped, not indexed"
+        );
+        assert_eq!(ms(1, Some(600), 0.0), 600_000, "Retry-After lengthens");
+        assert_eq!(
+            ms(1, Some(1), 0.0),
+            BACKOFF_STEPS_MS[0],
+            "…but never shortens"
+        );
+        assert_eq!(ms(1, Some(u64::MAX), 0.0), RETRY_AFTER_CAP_MS);
+        assert_eq!(ms(1, None, 1.0), BACKOFF_STEPS_MS[0] * 5 / 4);
+    }
+
+    #[test]
+    fn jitter_is_a_fraction() {
+        for _ in 0..200 {
+            let j = jitter_fraction();
+            assert!((0.0..1.0).contains(&j), "{j}");
+        }
     }
 }

@@ -7,7 +7,7 @@ import {
   isDue,
   planFlush,
   planSave,
-  payloadFor,
+  patchFor,
   type SaveTimerState,
 } from "./settings-save-core";
 
@@ -82,28 +82,46 @@ describe("planFlush", () => {
   });
 });
 
-describe("payloadFor — the R4 invariant", () => {
-  it("sends the WHOLE vocabulary, not a selection", () => {
-    const sent = payloadFor(SETTINGS_DEFAULTS);
-    expect(Object.keys(sent).sort()).toEqual(
-      Object.keys(SETTINGS_DEFAULTS).sort(),
-    );
-    // A guard on the guard: if the defaults ever shrank to a handful, the
-    // assertion above would pass while proving nothing.
-    expect(Object.keys(sent).length).toBeGreaterThan(40);
+describe("patchFor — only what changed crosses", () => {
+  it("nothing changed → an empty patch", () => {
+    expect(patchFor(SETTINGS_DEFAULTS, { ...SETTINGS_DEFAULTS })).toEqual({});
   });
 
-  it("filters nothing at all — even a field this build has never heard of", () => {
-    // An older/newer backend's extra field must travel back untouched rather
-    // than being dropped and re-defaulted on the next read (#113/#115).
-    const sent = payloadFor({ ...SETTINGS_DEFAULTS, futureField: 42 });
-    expect(sent).toHaveProperty("futureField", 42);
+  it("names exactly the changed fields, nested values by content", () => {
+    const base = { ...SETTINGS_DEFAULTS };
+    const now: typeof SETTINGS_DEFAULTS = {
+      ...base,
+      churchName: "Domkirken",
+      deviceChannels: { x: { channelL: 1, channelR: 2 } },
+    };
+    expect(patchFor(now, base)).toEqual({
+      churchName: "Domkirken",
+      deviceChannels: { x: { channelL: 1, channelR: 2 } },
+    });
+    // An equal-by-content copy is not a change.
+    expect(
+      patchFor(
+        {
+          ...base,
+          slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
+        },
+        {
+          ...base,
+          slots: [{ days: [6], start: "11:00", stop: "12:30", max: null }],
+        },
+      ),
+    ).toEqual({});
+  });
+
+  it("a field the baseline has never heard of counts as changed", () => {
+    const now = { ...SETTINGS_DEFAULTS, futureField: 42 };
+    expect(patchFor(now, SETTINGS_DEFAULTS)).toEqual({ futureField: 42 });
   });
 
   it("is a copy, so a change made while the IPC is in flight cannot follow it", () => {
-    const before = { ...SETTINGS_DEFAULTS };
-    const sent = payloadFor(before);
-    before.churchName = "endret etterpå";
-    expect(sent.churchName).toBe("");
+    const now = { ...SETTINGS_DEFAULTS, churchName: "A" };
+    const sent = patchFor(now, SETTINGS_DEFAULTS);
+    now.churchName = "endret etterpå";
+    expect(sent.churchName).toBe("A");
   });
 });

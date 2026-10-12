@@ -23,7 +23,7 @@ import {
 // «Ta med kamera» (`videoEnabled`) på nivå 1. `askOpenEditor` er derfor med
 // videre som et URØRT felt, med den samme assertionen på den samme verdien.
 
-test.describe("settings seam — the full object crosses, boot only reads", () => {
+test.describe("settings seam — a patch crosses, boot only reads", () => {
   test("boot performs no settings_save at all", async ({ page }) => {
     await boot(page, {
       fixtures: BOOT_FIXTURES,
@@ -37,7 +37,7 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
 
-  test("one change saves the whole vocabulary — untouched fields keep their stored values", async ({
+  test("one change sends only that field — untouched fields keep their stored values", async ({
     page,
   }) => {
     // Seed NON-default values across unrelated corners of the model. Under the
@@ -85,26 +85,21 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     const saves = await settingsSavePayloads(page);
     const payload = saves[saves.length - 1];
 
-    // The changed field crossed…
-    expect(payload.videoEnabled).toBe(true);
-    // …and every seeded, UNTOUCHED field crossed WITH ITS VALUE — the exact
-    // thing the curated bridge silently dropped, one key at a time.
-    expect(payload.askOpenEditor).toBe(false);
-    expect(payload.autoDeleteDays).toBe(90);
-    expect(payload.silenceThreshold).toBe(-40);
-    expect(payload.splitMinutes).toBe(45);
-    expect(payload.launchAtLogin).toBe(true);
-    expect(payload.protectRecording).toBe(false);
-    expect(payload.updateChannel).toBe("beta");
-    expect(payload.reminderMinutes).toBe(15);
-    expect(payload.churchName).toBe("Domkirken");
-    expect(payload.autoRecordEnabled).toBe(false);
-    expect(payload.deviceChannels).toEqual({
+    // Only the changed field crossed…
+    expect(payload).toEqual({ videoEnabled: true });
+    // …and every seeded, UNTOUCHED field is still in the store WITH ITS VALUE —
+    // the exact thing the curated bridge silently dropped, one key at a time.
+    const stored = await storedSettings(page);
+    expect(stored.silenceThreshold).toBe(-40);
+    expect(stored.splitMinutes).toBe(45);
+    expect(stored.launchAtLogin).toBe(true);
+    expect(stored.protectRecording).toBe(false);
+    expect(stored.reminderMinutes).toBe(15);
+    expect(stored.churchName).toBe("Domkirken");
+    expect(stored.deviceChannels).toEqual({
       "qu5-usb": { channelL: 16, channelR: 17 },
     });
-
-    // The round trip closes: the store now answers what the save sent.
-    const stored = await storedSettings(page);
+    // The round trip closes: the store answers what the patch changed.
     expect(stored.videoEnabled).toBe(true);
     expect(stored.askOpenEditor).toBe(false);
     expect(stored.autoDeleteDays).toBe(90);

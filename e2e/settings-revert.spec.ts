@@ -60,7 +60,7 @@ test.describe("a settings change that cannot be saved", () => {
     expect((await storedSettings(page)).autoUpdate).toBe(true);
   });
 
-  test("a change that CAN be saved sticks, and crosses as the whole object", async ({
+  test("a change that CAN be saved sticks, and crosses as a patch", async ({
     page,
   }) => {
     // The R4 invariant, from the new shell: `settings_save` receives the whole
@@ -81,11 +81,8 @@ test.describe("a settings change that cannot be saved", () => {
     const payloads = await settingsSavePayloads(page);
     expect(payloads.length).toBeGreaterThan(0);
     const sent = payloads[payloads.length - 1];
-    expect(sent.autoUpdate).toBe(false);
-    // Not a curated subset: the fields nobody touched travel too.
-    expect(sent).toHaveProperty("churchName");
-    expect(sent).toHaveProperty("saveFolder");
-    expect(Object.keys(sent).length).toBeGreaterThan(40);
+    // A patch: only the field that changed travels; Rust keeps the rest.
+    expect(sent).toEqual({ autoUpdate: false });
     expect((await storedSettings(page)).autoUpdate).toBe(false);
 
     // The receipt is a receipt, not a state: it clears itself.

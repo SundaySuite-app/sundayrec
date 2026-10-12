@@ -59,7 +59,7 @@
  *
  * ⚠️ Og lyd-raden KOLLAPSER når et opptak starter, akkurat som kilde-kortet på
  * OPPTAK: monteringen er vakten som holder appen fra å be om enheten opptaket
- * nettopp tok (`@lib/audio/vu-feed`s `window.__isRecording`-sjekk er inert).
+ * nettopp tok (`@lib/audio/vu-feed` har ingen egen opptaksvakt).
  */
 
 import { signal } from "@preact/signals";

@@ -194,6 +194,33 @@ fn update_base() -> &'static str {
     option_env!("SUNDAYREC_UPDATE_BASE").unwrap_or(sundayrec_core::update::DEFAULT_UPDATE_BASE)
 }
 
+/// Refuse (with the stable `recording_in_progress` code) while the recorder is
+/// busy. The ONE rule behind both gates on the install path: the command asks it
+/// before the download starts, and the macOS/Linux branch of [`download`] asks it
+/// AGAIN right before the bundle is swapped — a recording can start during the
+/// minutes the bytes take to arrive, and nobody was at the button then.
+pub(crate) fn refuse_while_recording(
+    state: sundayrec_core::recorder::RecorderState,
+) -> AppResult<()> {
+    sundayrec_core::update::download_allowed(state).map_err(|code| {
+        AppError::Validation(format!(
+            "{code}: an update cannot be installed while a recording is in progress"
+        ))
+    })
+}
+
+/// May a BACKGROUND check (the hourly timer, not the owner's «check now» button)
+/// contact the server? Only when the stored settings could be READ and say
+/// «auto update» is on. A settings read that failed is not a yes: PRIVACY.md
+/// promises that switching it off means the app «tar ikke kontakt», and the
+/// renderer's own copy of the flag is the default `true` whenever its read
+/// failed — which is exactly when this is asked.
+pub(crate) fn background_check_allowed(
+    stored: &AppResult<sundayrec_core::settings::Settings>,
+) -> bool {
+    matches!(stored, Ok(s) if s.auto_update)
+}
+
 #[cfg(feature = "updater")]
 use sundayrec_core::settings::UpdateChannel;
 #[cfg(feature = "updater")]
@@ -474,6 +501,28 @@ pub async fn download(app: &AppHandle, engine: &UpdateEngine) -> AppResult<Updat
     } else {
         // macOS/Linux: the bundle is swapped now, exactly as before, and the
         // restart is the volunteer's separate second click.
+        //
+        // The command checked the recorder BEFORE the download; the bytes took
+        // minutes, and a scheduled recording may have started in them. Ask
+        // again, and keep the verified bytes out of the bundle if so: the
+        // status goes back to `Available`, so the button works once the
+        // recording is over.
+        let busy = {
+            use tauri::Manager;
+            app.state::<crate::recorder::engine::RecorderEngine>()
+                .current_state()
+        };
+        if let Err(refused) = refuse_while_recording(busy) {
+            relaunch_log(
+                app,
+                &format!("{version} downloaded but not installed: {refused}"),
+            );
+            engine.set(UpdateStatus::Available {
+                version,
+                notes: update.body.clone(),
+            });
+            return Err(refused);
+        }
         match update.install(&bytes) {
             Ok(()) => UpdateStatus::ReadyToInstall {
                 version,
@@ -861,5 +910,44 @@ mod tests {
             second.is_none(),
             "a second relaunch must not hand the same bytes to a second installer"
         );
+    }
+
+    #[test]
+    fn install_is_refused_while_the_recorder_is_busy() {
+        use sundayrec_core::recorder::RecorderState;
+        for busy in [
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+            RecorderState::Stopping,
+        ] {
+            let err = refuse_while_recording(busy).unwrap_err().to_string();
+            assert!(err.contains("recording_in_progress"), "{busy:?}: {err}");
+        }
+        for calm in [
+            RecorderState::Idle,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            assert!(refuse_while_recording(calm).is_ok(), "{calm:?}");
+        }
+    }
+
+    #[test]
+    fn a_background_check_needs_a_readable_setting_that_says_yes() {
+        use sundayrec_core::settings::Settings;
+        let on = Settings::default();
+        assert!(on.auto_update, "the shipped default is on");
+        assert!(background_check_allowed(&Ok(on.clone())));
+        let off = Settings {
+            auto_update: false,
+            ..on
+        };
+        assert!(!background_check_allowed(&Ok(off)));
+        // An unreadable setting is NOT consent: the renderer's copy is the
+        // default `true` exactly when its own read failed.
+        assert!(!background_check_allowed(&Err(AppError::Internal(
+            "db locked".into()
+        ))));
     }
 }

@@ -200,6 +200,34 @@ pub fn on_success(entries: &mut Vec<TelemetryEntry>, id: &str) -> bool {
 /// [`mark_sending`] BEFORE the attempt, so by the time this runs `attempts`
 /// already counts this try — the same convention as the cloud queue.
 pub fn on_failure(entries: &mut [TelemetryEntry], id: &str, error: impl Into<String>, now_ms: i64) {
+    on_failure_paced(entries, id, error, now_ms, None, 0.0);
+}
+
+/// The longest wait a server-sent `Retry-After` may impose: the top rung of the
+/// ladder. A misbehaving endpoint must not be able to park a report for a year.
+pub const RETRY_AFTER_CAP_MS: i64 = BACKOFF_STEPS_MS[BACKOFF_STEPS_MS.len() - 1];
+
+/// [`on_failure`] with the two things a fixed ladder cannot know.
+///
+///   - `retry_after_ms` — the endpoint's own `Retry-After` (a 429 or 503). The
+///     wait is the LONGER of that and the ladder step: the endpoint asking for
+///     ten minutes is never answered with a retry after one, and a short
+///     `Retry-After` never shortens the ladder. Capped at [`RETRY_AFTER_CAP_MS`].
+///   - `jitter` — a fraction in `0.0..=1.0` that stretches the wait by up to a
+///     quarter. Without it every install that failed in the same minute (a Worker
+///     deploy, a 503 burst) retries in the SAME minute on every rung of the
+///     ladder, which is how a recovering endpoint is knocked over again. Only
+///     ever lengthens the wait, so the ladder steps stay lower bounds.
+///
+/// Both are inputs rather than reads of a clock or an RNG so this stays pure.
+pub fn on_failure_paced(
+    entries: &mut [TelemetryEntry],
+    id: &str,
+    error: impl Into<String>,
+    now_ms: i64,
+    retry_after_ms: Option<i64>,
+    jitter: f64,
+) {
     if let Some(e) = entries.iter_mut().find(|e| e.id == id) {
         e.last_error = Some(error.into());
         if e.attempts >= MAX_ATTEMPTS {
@@ -207,7 +235,17 @@ pub fn on_failure(entries: &mut [TelemetryEntry], id: &str, error: impl Into<Str
         } else {
             e.status = TelemetryStatus::Pending;
             let idx = (e.attempts.saturating_sub(1) as usize).min(BACKOFF_STEPS_MS.len() - 1);
-            e.next_attempt = now_ms + BACKOFF_STEPS_MS[idx];
+            let mut wait = BACKOFF_STEPS_MS[idx];
+            if let Some(ra) = retry_after_ms {
+                wait = wait.max(ra.clamp(0, RETRY_AFTER_CAP_MS));
+            }
+            let jitter = if jitter.is_finite() {
+                jitter.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            wait += (wait as f64 * 0.25 * jitter) as i64;
+            e.next_attempt = now_ms + wait;
         }
     }
 }
@@ -444,6 +482,43 @@ mod tests {
         assert_eq!(q[0].last_error.as_deref(), Some("boom 6"));
         // A failed entry is never selected again, even far in the future.
         assert_eq!(pump_decision(true, &q, i64::MAX), PumpDecision::Idle);
+    }
+
+    #[test]
+    fn retry_after_lengthens_the_wait_but_never_shortens_it() {
+        let now = 1_000_000i64;
+        let wait = |ra: Option<i64>, jitter: f64| {
+            let mut q = vec![entry("a", 0)];
+            mark_sending(&mut q, "a");
+            on_failure_paced(&mut q, "a", "429", now, ra, jitter);
+            q[0].next_attempt - now
+        };
+        // The endpoint asked for ten minutes; the first rung is one.
+        assert_eq!(wait(Some(10 * 60_000), 0.0), 10 * 60_000);
+        // A short Retry-After never undercuts the ladder.
+        assert_eq!(wait(Some(1_000), 0.0), BACKOFF_STEPS_MS[0]);
+        // A hostile one is capped at the top rung.
+        assert_eq!(wait(Some(i64::MAX), 0.0), RETRY_AFTER_CAP_MS);
+        assert_eq!(wait(Some(-5), 0.0), BACKOFF_STEPS_MS[0]);
+    }
+
+    #[test]
+    fn jitter_only_ever_stretches_the_wait_by_up_to_a_quarter() {
+        let now = 1_000_000i64;
+        let wait = |jitter: f64| {
+            let mut q = vec![entry("a", 0)];
+            mark_sending(&mut q, "a");
+            on_failure_paced(&mut q, "a", "x", now, None, jitter);
+            q[0].next_attempt - now
+        };
+        let base = BACKOFF_STEPS_MS[0];
+        assert_eq!(wait(0.0), base);
+        assert_eq!(wait(1.0), base + base / 4);
+        assert!(wait(0.5) > base && wait(0.5) < base + base / 4);
+        // Nonsense in, ladder out.
+        assert_eq!(wait(f64::NAN), base);
+        assert_eq!(wait(-3.0), base);
+        assert_eq!(wait(9.0), base + base / 4);
     }
 
     #[test]

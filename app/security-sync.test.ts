@@ -82,6 +82,21 @@ describe("CSP duplication (tauri.conf.json vs each shell's index.html)", () => {
     });
   }
 
+  it("pins the directives default-src does not fall back for (audit 2026-10)", () => {
+    // `default-src` covers fetches, not `<base>`, form posts or plugins: without
+    // these three a stray injected `<base href>` retargets every relative URL
+    // and a `<form action>` can post the page out. Both policies carry them.
+    const conf = JSON.parse(
+      readFileSync(path.join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8"),
+    ) as { app?: { security?: { csp?: string; devCsp?: string } } };
+    for (const csp of [conf.app?.security?.csp, conf.app?.security?.devCsp]) {
+      const normalized = normalizeCsp(csp ?? "");
+      expect(normalized).toContain("base-uri 'self'");
+      expect(normalized).toContain("form-action 'none'");
+      expect(normalized).toContain("object-src 'none'");
+    }
+  });
+
   it("covers every shell that exists — a new index.html must be added here", () => {
     // The failure this catches is a third shell (or a rename) landing with no
     // policy check at all, which looks exactly like green.
