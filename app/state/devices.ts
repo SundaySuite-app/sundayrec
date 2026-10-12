@@ -220,6 +220,9 @@ async function healStoredDevice(
   }
 }
 
+/** Generation counter for `loadAudioDevices` — see there. */
+let audioReadSeq = 0;
+
 /** Lydinngangene. `null` = ikke lest ennå. */
 export const audioDevices = signal<AudioDeviceOption[] | null>(null);
 
@@ -248,21 +251,31 @@ export const videoDevicesFailed = signal(false);
 /**
  * Les lydinngangene.
  *
- * En feilet lesning lander på tom liste og ikke på `null`: shimmen svarer
+ * En feilet FØRSTE lesning lander på tom liste og ikke på `null`: shimmen svarer
  * allerede med `[]` for en avvist kommando, og å bli stående på «ikke lest»
  * for alltid ville gitt et kort som aldri sier noe. Tomt er det ærlige svaret
- * — og tomtilstanden sier hva man gjør med det.
+ * — og tomtilstanden sier hva man gjør med det. En feilet GJENlesning beholder
+ * derimot listen vi allerede har, og en eldre lesning som svarer sent
+ * overstyrer aldri en nyere.
  */
 export async function loadAudioDevices(): Promise<void> {
+  // Several readers run (mount, hot-plug, retry). Only the NEWEST one may
+  // publish: an older read that resolves late carries a stale device list.
+  const my = ++audioReadSeq;
   try {
     const list = toDeviceOptions(await window.api.listAudioDevices());
+    if (my !== audioReadSeq) return;
     audioDevices.value = list;
     // ETTER at signalet er satt: helingen skriver innstillinger, og skjermen
     // skal kunne finne den nye id-en i listen den allerede har.
     await healStoredDevice(list);
   } catch (err) {
     console.warn("[devices] kunne ikke lese lydenhetene:", err);
-    audioDevices.value = [];
+    if (my !== audioReadSeq) return;
+    // A failed RE-read keeps the list we already had: wiping it would turn a
+    // transient error into «ingen enheter» and disable Start mid-service. Only
+    // when nothing was ever read does the honest answer become the empty list.
+    audioDevices.value ??= [];
   }
 }
 

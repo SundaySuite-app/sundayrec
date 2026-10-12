@@ -3454,11 +3454,18 @@ møter den. (`recordings_prune` sto her til retensjonsrunden koblet den opp;
   `telemetry_count` / `telemetry_queue_status`, `run_capture_bench`.
 - **Gettere uten leser ennå:** `scheduler_check_missed`,
   `wake_get_sleep_config`, `wake_failure_history`.
-- **Vekke-verktøyene** (`wake_test`, `wake_cancel_test`, `wake_fix_sleep`,
+- **Vekke-verktøyene** (`wake_test`, `wake_cancel_test`,
   `wake_clear_failure_history`) — riggverktøy som venter på en Mac der
-  vekkingen faktisk feiler.
+  vekkingen faktisk feiler. (`wake_fix_sleep` — admin-prompten — er IKKE
+  registrert lenger, revisjon 2026-10: ingen flate kalte den, og en dør som
+  ber om administratorpassord skal ikke stå åpen for en webview uten knapp.
+  Å åpne den igjen er én `#[tauri::command]`-innpakning rundt
+  `wake::fix_mac_sleep`/`fix_win_wake_timers`.)
 - **Kirurgi utsatt:** mastring-kvartetten (over).
-- **Eiervalg:** `settings_reset`, `recording_update_note`.
+- **Eiervalg:** `recording_update_note`. (`settings_reset` er ikke registrert
+  lenger, revisjon 2026-10: den nullstilte plan og mappe uten at noen knapp
+  kalte den. `settings::reset` står igjen for den dagen en «Nullstill»-knapp
+  får en bekreftelse.)
 - (Historisk: `plan_recording_opts` SLETTET med sikkerhetsfunn E1. Start-stien
   kalte den og sendte svaret rett tilbake til `start_recording` — slik ble en
   streng fra webviewet opptakets utsti. Nå planlegger `start_recording` selv,

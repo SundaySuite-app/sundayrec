@@ -19,12 +19,6 @@ export const emailRemovedNotice = signal(false);
 
 let loaded = false;
 
-/** Test-krok: glem at beskjeden er lest. */
-export function resetEmailRemovedNoticeForTests(): void {
-  loaded = false;
-  emailRemovedNotice.value = false;
-}
-
 /** Spør bakenden én gang per oppstart. */
 export async function loadEmailRemovedNotice(): Promise<void> {
   if (loaded) return;

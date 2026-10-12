@@ -42,7 +42,7 @@ test.describe("update channel", () => {
     await expect(confirmBtn).toHaveText("Ja, bruk beta");
     await confirmBtn.click();
 
-    // … and the save must fire, carrying the channel in the full object.
+    // … and the save must fire, carrying the channel in the patch.
     await expect
       .poll(() => settingsSavePayloads(page).then((p) => p.length))
       .toBeGreaterThan(0);

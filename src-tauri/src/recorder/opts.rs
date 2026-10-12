@@ -110,7 +110,8 @@ pub(crate) fn build_opts_in(
         format: main_ext,
         pattern: settings.filename_pattern,
         custom_name,
-        // church-calendar name not ported yet → falls back to "gudstjeneste".
+        // No override: `build_filename` resolves the liturgical day itself
+        // (`sundayrec_core::church_calendar`) and falls back to the plain wording on ordinary days.
         church_name: None,
         split_timestamp: None,
         now,

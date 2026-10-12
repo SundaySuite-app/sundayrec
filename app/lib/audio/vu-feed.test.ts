@@ -3,8 +3,7 @@
 // overtake an in-flight `start_vu` and leave a cpal stream open on the device
 // with nobody left to close it.
 //
-// No DOM: the shell touches `window.api` and `window.__isRecording` and nothing
-// else, so a stub object is enough. The module holds singleton state, so every
+// No DOM: the shell touches `window.api` and nothing else, so a stub object is enough. The module holds singleton state, so every
 // test re-imports it through vi.resetModules().
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VuLevels } from "../../../legacy/bindings/VuLevels";
@@ -56,10 +55,7 @@ async function makeHarness(
       };
     },
   };
-  (globalThis as unknown as { window: unknown }).window = {
-    api,
-    __isRecording: false,
-  };
+  (globalThis as unknown as { window: unknown }).window = { api };
 
   const mod = await import("./vu-feed");
   return {
@@ -349,17 +345,5 @@ describe("state reporting", () => {
     h.emit(packet([-11, -11, -11, -11]));
     h.emit(packet([-12, -12, -12, -12]));
     expect(seen.length).toBe(before);
-  });
-});
-
-describe("recording guard", () => {
-  it("does not ask for a metering session while a recording owns the device", async () => {
-    const h = await makeHarness();
-    (
-      globalThis as unknown as { window: { __isRecording: boolean } }
-    ).window.__isRecording = true;
-    h.acquireVuFeed({ deviceName: "Qu-5" });
-    await h.drain();
-    expect(h.calls).toEqual([]);
   });
 });

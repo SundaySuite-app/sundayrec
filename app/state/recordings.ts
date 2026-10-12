@@ -28,9 +28,6 @@ import type { RecordingEntry } from "@legacy/types";
  */
 export const recordings = signal<RecordingEntry[] | null>(null);
 
-/** Hvor mange det er. Avledet, så den aldri kan bli uenig med lista. */
-export const recordingCount = computed(() => recordings.value?.length ?? null);
-
 /** Det nyeste opptaket, eller `null` når det ikke finnes noe (eller vi ikke vet). */
 export const lastRecording = computed(() => recordings.value?.[0] ?? null);
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   decideShortcut,
   isEditableTarget,
+  isInteractiveTarget,
   type ShortcutInput,
 } from "./shortcuts-core";
 
@@ -17,6 +18,8 @@ const START_READY: ShortcutInput = {
   isRecording: false,
   dialogOpen: false,
   targetIsEditable: false,
+  targetIsInteractive: false,
+  repeat: false,
   startEnabled: true,
 };
 
@@ -29,6 +32,8 @@ const SEARCH_READY: ShortcutInput = {
   isRecording: false,
   dialogOpen: false,
   targetIsEditable: false,
+  targetIsInteractive: false,
+  repeat: false,
   startEnabled: false,
 };
 
@@ -60,9 +65,20 @@ describe("decideShortcut — start (Space/R)", () => {
     ["siden er verken Opptak eller Redigering", { page: "other" }],
     ["Cmd holdes nede (Cmd+R er ikke vår snarvei)", { meta: true, key: "r" }],
     ["Ctrl holdes nede (Ctrl+R er ikke vår snarvei)", { ctrl: true, key: "r" }],
+    [
+      "Space havner på en fokusert knapp/bryter (browseren klikker den)",
+      { targetIsInteractive: true },
+    ],
+    ["tasten holdes nede (auto-repeat)", { repeat: true }],
     ["tasten er noe helt annet", { key: "a" }],
   ])("null når %s", (_label, override) => {
     expect(decideShortcut({ ...START_READY, ...override })).toBeNull();
+  });
+
+  it("R på en fokusert knapp starter fortsatt (R aktiverer ingen knapp)", () => {
+    expect(
+      decideShortcut({ ...START_READY, key: "r", targetIsInteractive: true }),
+    ).toBe("start");
   });
 
   it("R på Redigering-siden gjør ingenting (siden er feil, ikke tasten)", () => {
@@ -139,5 +155,31 @@ describe("isEditableTarget", () => {
   it("null/undefined (ingenting har fokus) er ikke skrivbart", () => {
     expect(isEditableTarget(null)).toBe(false);
     expect(isEditableTarget(undefined)).toBe(false);
+  });
+});
+
+describe("isInteractiveTarget", () => {
+  it.each(["BUTTON", "button", "A", "SUMMARY"])(
+    "%s er aktiverbart",
+    (tagName) => {
+      expect(isInteractiveTarget({ tagName })).toBe(true);
+    },
+  );
+
+  it.each(["switch", "button", "checkbox", "tab"])(
+    "role=%s er aktiverbart",
+    (role) => {
+      expect(
+        isInteractiveTarget({ tagName: "DIV", getAttribute: () => role }),
+      ).toBe(true);
+    },
+  );
+
+  it("div uten rolle, body og null er ikke aktiverbart", () => {
+    expect(
+      isInteractiveTarget({ tagName: "DIV", getAttribute: () => null }),
+    ).toBe(false);
+    expect(isInteractiveTarget({ tagName: "BODY" })).toBe(false);
+    expect(isInteractiveTarget(null)).toBe(false);
   });
 });
