@@ -1,6 +1,6 @@
 # Plan — hva gjenstår i SundayRec
 
-_Sist gått gjennom: 2026-10-05, ved v0.25.2 (stabil og beta)._
+_Sist gått gjennom: 2026-10-12, ved v0.25.3 (stabil og beta)._
 
 Én side som svarer på «hva er ikke gjort, og hvem sitt er det?». Hvert punkt
 **bor i ett dokument** (kolonnen «Kilde»), med detaljene der; denne sida er
@@ -20,7 +20,7 @@ Kartet over alle dokumentene er [`docs/README.md`](README.md).
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 - Nedgradering etter en ny migrasjon ble avgjort 2026-10-04: en nyere database åpnes, og migrasjoner kan bare legge til — se modulhodet i [store.rs](../src-tauri/src/db/store.rs).
-- Audit 2026-10-05: 🟡/🔵/⚪-funn gjenstår (~85, rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota), pluss papirkurv knyttet til rad-id i stedet for sti (rest av 🟠).
+- Audit 2026-10-05 (rapport `SundayRec-AUDIT-2026-10-05.md` på suite-rota): 🔴/🟠 rettet i v0.25.2, 🟡 og de fleste 🔵/⚪ i v0.25.3 (#333–#342). Gjenstår: prekenvalget forkaster tale som starter før 5:00 (rapportlinje 93 — **eierbeslutning**, golden-testene låser gulvet), klokkehopp tømmer papirkurven (110, trenger lagret sist-kjørt-tid), planleggerens prune mot samtidig lagring (129, bare innsnevret), sidecar-stamme delt mellom a.mp3/a.wav og døde kapitler/`master_apply` (135/136/139), ASIO-kanalnavn og to-prosess-video uten reconnect/temp-manifest (151, 65), 10 kommandoer uten UI-kaller (85), og Opus-reviewens KAN-liste: `forgetWhatIsNowTrashed` på sti, `_deliver_tmp` synlig i lagringsmappa, preroll-terskel bare for macOS, soak-cache-sti, smalt vindu for patch etter import.
 
 ## Spike / maskinvare først
 
@@ -65,7 +65,8 @@ Det samme gjelder v0.25.1 (2026-10-04): flyttingen av appdata til Local
 AppData og NSIS/MSI på Windows (RIG-DAY w-appdata\*, w7) og et langt
 videoopptak på Mac under CPU-last (e2). v0.25.2 (2026-10-05, også rett til stabil)
 retter auditens 🔴/🟠-funn i planlegger, levering, innstillinger og opptaksøkt;
-første ekte søndag på den er helseporten (ROLLBACK.md).
+første ekte søndag på den er helseporten (ROLLBACK.md). v0.25.3 (2026-10-12, også rett
+til stabil etter eiers ordre) retter auditens 🟡/🔵-funn; søndagen etter er helseporten.
 
 ## Ikke planlagt
 
