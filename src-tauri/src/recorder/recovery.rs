@@ -260,7 +260,7 @@ pub(crate) fn pending_windows_in(dir: &Path) -> Vec<(u64, u64)> {
 /// File NAMES of the pre-roll clips the recovery manifests in `dirs` point at.
 /// A crashed session's clip is the first ~15 s of its recording: recovery
 /// prepends it and deletes it itself, so the startup pre-roll sweep
-/// ([`crate::recorder::preroll::sweep_stale_preroll_files`]) must spare it.
+/// ([`crate::recorder::native_capture::preroll::sweep_stale_preroll_files`]) must spare it.
 /// Names, not paths: the clip name carries a unique timestamp id, and a path
 /// spelled differently by the manifest must not make the clip look orphaned.
 pub(crate) fn referenced_preroll_clips(

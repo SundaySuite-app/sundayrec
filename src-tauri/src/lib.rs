@@ -434,7 +434,7 @@ pub fn run() {
             // EXCEPT the clip a crash-recovery manifest still points at: recovery
             // (spawned above) prepends it to the salvaged recording.
             let keep = recorder::recovery::referenced_preroll_clips_for(app.handle());
-            let swept = recorder::preroll::sweep_stale_preroll_files(&tmp_dir, &keep);
+            let swept = recorder::native_capture::preroll::sweep_stale_preroll_files(&tmp_dir, &keep);
             if swept > 0 {
                 tracing::info!(swept, "startup: removed stale pre-roll segments");
             }
