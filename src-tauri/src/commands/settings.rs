@@ -67,15 +67,19 @@ pub async fn settings_get(db: State<'_, Db>) -> AppResult<Settings> {
     Ok(loaded)
 }
 
-/// Validate, persist and return the given settings.
+/// Validate, persist and return the settings after laying the renderer's
+/// PATCH over the stored ones ([`settings::save_patch_from_renderer`]): only the
+/// fields the page names change, so a stale page cannot write old values over
+/// fields it never touched. A full settings object still works — it is a patch
+/// that names every field.
 ///
 /// The save folder and the editor's intro and outro clips are NOT taken from
 /// the renderer: whatever it sends, the stored values stay
 /// ([`settings::save_from_renderer`]). The folder changes only through
 /// [`settings_pick_save_folder`], which opens the dialog in Rust.
 #[tauri::command]
-pub async fn settings_save(db: State<'_, Db>, settings: Settings) -> AppResult<Settings> {
-    settings::save_from_renderer(&db.pool, settings).await
+pub async fn settings_save(db: State<'_, Db>, settings: serde_json::Value) -> AppResult<Settings> {
+    settings::save_patch_from_renderer(&db.pool, settings).await
 }
 
 /// Pick the recordings folder: a native folder dialog this command opens, the
@@ -119,18 +123,6 @@ pub(crate) async fn choose_save_folder(
         .map(Some)
 }
 
-/// Reset all settings to their defaults, persisting them. Wakes the scheduler:
-/// the schedule just changed under it.
-#[tauri::command]
-pub async fn settings_reset(
-    db: State<'_, Db>,
-    scheduler: State<'_, SchedulerEngine>,
-) -> AppResult<Settings> {
-    let stored = settings::reset(&db.pool).await?;
-    scheduler.reschedule();
-    Ok(stored)
-}
-
 /// Import the settings of the OLD installation, once: merge the JSON over
 /// defaults, validate, persist, and return the stored value. A second call is
 /// refused with `settings_import_done` and writes nothing — see
@@ -145,7 +137,23 @@ pub async fn settings_reset(
 /// [`settings_import_profile`].
 #[tauri::command]
 pub async fn settings_import(db: State<'_, Db>, json: String) -> AppResult<Settings> {
+    vet_import_size(&json)?;
     settings::import(&db.pool, &json, vet_handover_save_folder).await
+}
+
+/// The hand-over JSON is a few kilobytes of localStorage; the webview should
+/// not be able to push an unbounded string through the merge and the store
+/// (the same ceiling as a profile FILE, [`MAX_PROFILE_BYTES`]). Refused before
+/// anything is parsed, and — unlike a refusal later — before the one-shot
+/// `settings_import_done` claim is spent.
+fn vet_import_size(json: &str) -> AppResult<()> {
+    if json.len() as u64 > MAX_PROFILE_BYTES {
+        return Err(AppError::Validation(format!(
+            "settings_import_too_large: the hand-over is at most {} KiB",
+            MAX_PROFILE_BYTES / 1024
+        )));
+    }
+    Ok(())
 }
 
 /// Export the current settings as pretty JSON to a file the operator picks in
@@ -995,6 +1003,17 @@ mod tests {
             stored,
             "a refused file writes nothing"
         );
+    }
+
+    #[test]
+    fn an_oversized_hand_over_is_refused_before_it_is_parsed() {
+        // Audit 2026-10 (113): the webview could send any size of string.
+        let cap = MAX_PROFILE_BYTES as usize;
+        assert!(vet_import_size(&" ".repeat(cap)).is_ok());
+        let err = vet_import_size(&" ".repeat(cap + 1))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("settings_import_too_large"), "{err}");
     }
 
     #[tokio::test]

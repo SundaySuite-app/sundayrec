@@ -51,6 +51,10 @@ export interface ShortcutInput {
   dialogOpen: boolean;
   /** Fokus står i et `input`/`textarea`/`select`/`[contenteditable]`. */
   targetIsEditable: boolean;
+  /** Fokus står på noe Space AKTIVERER (knapp, lenke, `role=button|switch|…`). */
+  targetIsInteractive: boolean;
+  /** `event.repeat` — tasten holdes nede (auto-repeat). */
+  repeat: boolean;
   /** Samme vilkår som Start-knappens klikkhåndterer: kilde valgt, ikke opptak. */
   startEnabled: boolean;
 }
@@ -84,6 +88,8 @@ export function decideShortcut(input: ShortcutInput): ShortcutAction {
     isRecording,
     dialogOpen,
     targetIsEditable,
+    targetIsInteractive,
+    repeat,
     startEnabled,
   } = input;
 
@@ -104,6 +110,12 @@ export function decideShortcut(input: ShortcutInput): ShortcutAction {
   if (key !== " " && lower !== "r") return null;
   if (page !== "record") return null;
   if (targetIsEditable) return null;
+  // Space er nettleserens «trykk den fokuserte knappen» (en bryter, «Åpne
+  // mappe», …). Å starte et opptak oppå det er et uønsket opptak. R er ikke en
+  // aktiveringstast og får lov.
+  if (key === " " && targetIsInteractive) return null;
+  // Auto-repeat av en holdt tast er aldri en ny, bevisst start.
+  if (repeat) return null;
   if (isRecording) return null;
   if (!startEnabled) return null;
   return "start";
@@ -115,6 +127,35 @@ export function decideShortcut(input: ShortcutInput): ShortcutAction {
 export interface EditableTargetShape {
   tagName?: string | null;
   isContentEditable?: boolean | null;
+  getAttribute?: ((name: string) => string | null) | null;
+}
+
+const INTERACTIVE_TAGS = new Set(["BUTTON", "A", "SUMMARY"]);
+const INTERACTIVE_ROLES = new Set([
+  "button",
+  "switch",
+  "checkbox",
+  "radio",
+  "tab",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "link",
+  "option",
+  "slider",
+]);
+
+/**
+ * Står fokuset på noe Space AKTIVERER? Knapper, lenker og ARIA-widgets
+ * (`role=switch` osv.) — der er Space «klikk», ikke en global snarvei.
+ */
+export function isInteractiveTarget(
+  el: EditableTargetShape | null | undefined,
+): boolean {
+  if (!el) return false;
+  if (INTERACTIVE_TAGS.has((el.tagName ?? "").toUpperCase())) return true;
+  const role = el.getAttribute?.("role");
+  return role != null && INTERACTIVE_ROLES.has(role.toLowerCase());
 }
 
 const EDITABLE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);

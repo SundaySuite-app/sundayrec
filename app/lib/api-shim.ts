@@ -503,7 +503,10 @@ async function loadSettingsFromBackend(): Promise<Settings> {
 // didn't touch launchAtLogin doesn't re-register the login item.
 let lastLaunchAtLogin: boolean | null = null;
 async function syncLaunchAtLogin(s: unknown): Promise<void> {
-  const enabled = !!(s as { launchAtLogin?: unknown } | null)?.launchAtLogin;
+  const raw = (s as { launchAtLogin?: unknown } | null)?.launchAtLogin;
+  // A PATCH that does not name the toggle says nothing about the login item.
+  if (raw === undefined) return;
+  const enabled = !!raw;
   if (enabled === lastLaunchAtLogin) return;
   lastLaunchAtLogin = enabled;
   try {
@@ -644,9 +647,10 @@ const api: Record<string, unknown> = {
 
   // ── Settings (R4: sqlite is the ONE store) ──────────────────────────────
   getSettings: async () => loadSettingsFromBackend(),
-  // WRITE — the FULL object crosses in one vocabulary; nothing is curated, so
-  // nothing can be silently re-defaulted (the #113/#115 class ends here, not
-  // per-field). A rejected `settings_save` travels to the caller (R3-B): the
+  // WRITE — a PATCH of the fields the page changed (a full object is also
+  // accepted: it is a patch naming every field). Rust lays it over the STORED
+  // settings, so a field the page did not touch keeps its stored value and a
+  // stale page cannot write old values over newer ones. A rejected `settings_save` travels to the caller (R3-B): the
   // debounced saver resolves `false` and the «Lagret ✓» chip stays honest.
   saveSettings: async (s: unknown) => {
     await invoke("settings_save", { settings: s });
@@ -1023,10 +1027,22 @@ const api: Record<string, unknown> = {
       console.debug("[api-shim] tray_set_language unavailable", e);
     }
   },
-  checkForUpdates: async () => {
-    emitLocal("update-checking");
+  checkForUpdates: async (opts?: { background?: boolean }) => {
+    const background = opts?.background === true;
+    // The hourly timer does not announce «checking»: it may be refused below
+    // without asking anyone, and a phase announced with no answer to follow it
+    // would stay on «checking» for good.
+    if (!background) emitLocal("update-checking");
     try {
-      const st = await invoke<UpdateStatus>("update_check");
+      // `background` is how Rust tells the timer from the owner's button: the
+      // timer is refused there while the STORED «auto update» is off, whatever
+      // this page believes about the setting.
+      const st = await invoke<UpdateStatus>("update_check", { background });
+      if (st.phase === "idle") {
+        // Refused without a network call (auto update is off): nothing was
+        // asked, so there is no answer to show — and none is invented.
+        return { available: false };
+      }
       if (st.phase === "available") {
         emitLocal("update-available", {
           version: st.version,

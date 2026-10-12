@@ -113,9 +113,9 @@ pub type FolderVet = fn(&str) -> AppResult<()>;
 /// `<Documents>/SundayRec`, which is the resolver's choice and not the
 /// renderer's).
 ///
-/// ⚠️ "already stored" is the whole Sunday invariant. The renderer sends the
-/// FULL settings object on every save, so a stored folder the vet would refuse
-/// today — chosen before the vet existed — rides along on every language
+/// ⚠️ "already stored" is the whole Sunday invariant. A renderer may send the
+/// FULL settings object (an older page does; a current page sends only changed
+/// fields), so a stored folder the vet would refuse today — chosen before the vet existed — rides along on every language
 /// change. Judging it would fail every save that installation makes, and the
 /// only way out would be to drop the folder it records into. So it is never
 /// judged, never repaired on load, and keeps recording exactly where it did.
@@ -131,9 +131,10 @@ fn new_folder_asked_for<'a>(stored: Option<&str>, incoming: Option<&'a str>) -> 
 /// webview must not name (finding A2): it would be a file read chosen with no
 /// dialog. The editor's clips are set by `settings_pick_editor_intro`/`_outro`
 /// — a dialog Rust opens — and cleared by `settings_clear_editor_intro`/`_outro`,
-/// and by nothing else. The renderer sends the FULL settings object on every
-/// save, so this is also what keeps a save from an older page, or one built
-/// before the pick, from putting the old value back.
+/// and by nothing else. A renderer may still send the FULL settings object (an
+/// older page does; a current one sends a patch), so this is also what keeps a
+/// save from an older page, or one built before the pick, from putting the old
+/// value back.
 ///
 /// ⚠️ This is the one place a renderer-built [`Settings`] is overlaid with the
 /// stored one; the machine-local fields of `settings::profile` (a profile import)
@@ -154,9 +155,9 @@ fn keep_stored_clips(stored: &Settings, incoming: &mut Settings) {
 /// whether anybody chose it: a compromised webview could point the recorder at
 /// any other writable folder with no dialog at all. The folder is now set by
 /// [`pick_save_folder`] — `settings_pick_save_folder`, which opens the dialog in
-/// Rust — and by nothing else the webview can call. The renderer sends the FULL
-/// settings object on every save, so this is also what keeps a save from a page
-/// that has not yet seen the pick from putting the old folder back.
+/// Rust — and by nothing else the webview can call. A renderer may still send the
+/// FULL settings object (an older page does), so this is also what keeps a save
+/// from a page that has not yet seen the pick from putting the old folder back.
 fn keep_stored_save_folder(stored: &Settings, incoming: &mut Settings) {
     incoming.save_folder = stored.save_folder.clone();
 }
@@ -173,6 +174,52 @@ pub async fn save_from_renderer(pool: &SqlitePool, mut incoming: Settings) -> Ap
     keep_stored_clips(&stored, &mut incoming);
     keep_stored_save_folder(&stored, &mut incoming);
     save(pool, incoming).await
+}
+
+/// The stored settings with a renderer PATCH laid over them: exactly the keys
+/// the patch names change, every other field keeps its stored value.
+///
+/// A patch value that cannot be read as its field (wrong type, a variant this
+/// build does not know) refuses the whole save as `settings_patch_invalid` —
+/// the same outcome as a full object the old typed command could not
+/// deserialize — rather than quietly keeping the old value and letting the page
+/// believe the change landed. Keys this build has no field for are ignored.
+fn overlay_patch(
+    stored: &Settings,
+    patch: serde_json::Map<String, serde_json::Value>,
+) -> AppResult<Settings> {
+    let mut base = serde_json::to_value(stored)?;
+    if let Some(obj) = base.as_object_mut() {
+        for (key, value) in patch {
+            obj.insert(key, value);
+        }
+    }
+    serde_json::from_value(base)
+        .map_err(|e| AppError::Validation(format!("settings_patch_invalid: {e}")))
+}
+
+/// `settings_save` from the renderer, PARTIAL: the renderer sends the fields it
+/// changed (a full object is just a patch that names every field, so an older
+/// page keeps working), Rust lays them over the STORED settings and then saves
+/// as [`save_from_renderer`] does.
+///
+/// ⚠️ This is what makes a stale page harmless. A page whose copy of the
+/// settings is older than the database (the scheduler pruned a special
+/// recording, a profile import landed, a second window saved) used to write its
+/// whole copy back over those fields on its next save. It can now only touch
+/// the fields it actually edited.
+pub async fn save_patch_from_renderer(
+    pool: &SqlitePool,
+    patch: serde_json::Value,
+) -> AppResult<Settings> {
+    let serde_json::Value::Object(patch) = patch else {
+        return Err(AppError::Validation(
+            "settings_patch_invalid: expected an object of settings fields".into(),
+        ));
+    };
+    let stored = load(pool).await?;
+    let merged = overlay_patch(&stored, patch)?;
+    save_from_renderer(pool, merged).await
 }
 
 /// Store a save folder the operator PICKED in the dialog Rust opened
@@ -988,5 +1035,101 @@ mod tests {
             vec![future],
             "the persisted list is the pruned one"
         );
+    }
+
+    // ── Partial renderer saves (audit 2026-10-05, «delvis lagring») ─────────
+
+    fn stored_with_plan() -> Settings {
+        use sundayrec_core::schedule::ScheduleSlot;
+        Settings {
+            church_name: "Domkirken".into(),
+            slots: vec![ScheduleSlot {
+                days: vec![6],
+                start: "11:00".into(),
+                stop: "12:30".into(),
+                max: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_patch_changes_only_the_fields_it_names() {
+        let (pool, _d) = temp_pool().await;
+        save(&pool, stored_with_plan()).await.unwrap();
+
+        // A page with a stale copy sends the ONE field it edited. The plan and
+        // the church name — which it knows nothing about — must survive.
+        let saved = save_patch_from_renderer(&pool, serde_json::json!({ "language": "en" }))
+            .await
+            .unwrap();
+        assert_eq!(saved.language.as_deref(), Some("en"));
+        assert_eq!(saved.church_name, "Domkirken");
+        assert_eq!(saved.slots.len(), 1);
+        let loaded = load(&pool).await.unwrap();
+        assert_eq!(loaded.church_name, "Domkirken");
+        assert_eq!(loaded.slots.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_full_object_is_still_a_valid_patch_and_keeps_the_folder_rules() {
+        let (pool, _d) = temp_pool().await;
+        save(&pool, with_folder(Some("/Volumes/Rig/Opptak")))
+            .await
+            .unwrap();
+        let full = serde_json::to_value(Settings {
+            language: Some("en".into()),
+            ..with_folder(Some("/Users/kantor/Annet"))
+        })
+        .unwrap();
+        let saved = save_patch_from_renderer(&pool, full).await.unwrap();
+        assert_eq!(saved.language.as_deref(), Some("en"));
+        assert_eq!(saved.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+    }
+
+    #[tokio::test]
+    async fn a_patch_cannot_set_the_clips_or_the_folder() {
+        let (pool, _d) = temp_pool().await;
+        save(
+            &pool,
+            Settings {
+                save_folder: Some("/Volumes/Rig/Opptak".into()),
+                editor_intro_path: Some("/Volumes/Rig/intro.wav".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let saved = save_patch_from_renderer(
+            &pool,
+            serde_json::json!({
+                "saveFolder": "/Users/kantor/Annet",
+                "editorIntroPath": "/etc/hosts",
+                "editorOutroPath": "/etc/passwd",
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(saved.save_folder.as_deref(), Some("/Volumes/Rig/Opptak"));
+        assert_eq!(
+            saved.editor_intro_path.as_deref(),
+            Some("/Volumes/Rig/intro.wav")
+        );
+        assert_eq!(saved.editor_outro_path, None);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_patch_is_refused_and_writes_nothing() {
+        let (pool, _d) = temp_pool().await;
+        save(&pool, stored_with_plan()).await.unwrap();
+        for bad in [
+            serde_json::json!({ "slots": "not a list" }),
+            serde_json::json!({ "format": "opus-from-the-future" }),
+            serde_json::json!(["language"]),
+        ] {
+            let err = save_patch_from_renderer(&pool, bad).await.unwrap_err();
+            assert!(err.to_string().contains("settings_patch_invalid"), "{err}");
+        }
+        assert_eq!(load(&pool).await.unwrap().slots.len(), 1);
     }
 }

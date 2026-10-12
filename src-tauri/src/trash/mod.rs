@@ -250,14 +250,71 @@ fn parse_manifest(save_dir: &Path) -> Result<Vec<TrashEntry>, Unreadable> {
         .entries
         .into_iter()
         .filter_map(|v| serde_json::from_value::<TrashEntry>(v).ok())
+        .filter(|e| entry_is_confined(save_dir, e))
         .collect();
     if parsed.len() != total {
         tracing::warn!(
-            "trash: skipped {} unreadable manifest entr(y/ies)",
+            "trash: skipped {} unreadable or out-of-bounds manifest entr(y/ies)",
             total - parsed.len()
         );
     }
     Ok(parsed)
+}
+
+/// Whether two paths are the same place, spelled possibly in different case
+/// (Windows and the default macOS volume do not tell `A` from `a`).
+fn same_place(a: &Path, b: &Path) -> bool {
+    if cfg!(any(windows, target_os = "macos")) {
+        a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    } else {
+        a == b
+    }
+}
+
+/// A path that names a place without any `..` or `.` detour.
+fn is_plain_absolute(p: &Path) -> bool {
+    use std::path::Component;
+    p.is_absolute()
+        && p.components()
+            .all(|c| !matches!(c, Component::ParentDir | Component::CurDir))
+}
+
+/// Does a manifest entry stay inside what the trash owns?
+///
+/// The manifest is a plain file in the save folder, which can sit on a share
+/// or a synced drive — whoever can write it can name any path in it, and the
+/// twelve-hourly sweep deletes `trashed_path` with no click. So every
+/// trashed path must be a direct child of THIS trash directory (and not the
+/// manifest itself), and the originals must be plain absolute
+/// paths — a sidecar's original sits beside the recording's, as
+/// `sidecars_of` finds them. The recording's own original may live outside the
+/// save folder (a file from before the folder was changed), so it is not
+/// pinned there; restore never overwrites, and an original inside the trash is
+/// refused.
+fn entry_is_confined(save_dir: &Path, entry: &TrashEntry) -> bool {
+    let dir = trash_dir(save_dir);
+    let in_trash = |p: &str| -> bool {
+        let p = Path::new(p);
+        // Never the manifest itself (or its quarantined `.corrupt-*` twin).
+        let not_bookkeeping = p
+            .file_name()
+            .is_some_and(|n| !n.to_string_lossy().to_lowercase().starts_with(MANIFEST));
+        is_plain_absolute(p) && not_bookkeeping && p.parent().is_some_and(|d| same_place(d, &dir))
+    };
+    let origin = Path::new(&entry.original_path);
+    let origin_ok = |p: &Path| is_plain_absolute(p) && !p.starts_with(&dir);
+    if !origin_ok(origin) || !in_trash(&entry.trashed_path) {
+        return false;
+    }
+    entry.related.iter().all(|r| {
+        let o = Path::new(&r.original_path);
+        origin_ok(o)
+            && in_trash(&r.trashed_path)
+            && match (o.parent(), origin.parent()) {
+                (Some(a), Some(b)) => same_place(a, b),
+                _ => false,
+            }
+    })
 }
 
 /// Move an unreadable manifest aside and describe what happened.
@@ -1028,6 +1085,63 @@ mod tests {
         let listed = list(dir.path());
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].name, "2026-08-02 Gudstjeneste.mp3");
+    }
+
+    #[test]
+    fn a_manifest_entry_that_names_files_outside_the_trash_is_dropped() {
+        // Audit 2026-10 (83): a hand-edited manifest must not make the sweep
+        // delete a file outside the trash directory, or the trash itself.
+        let (dir, media) = fixture();
+        let victim = dir.path().join("keep-me.mp3");
+        fs::write(&victim, b"precious").unwrap();
+        move_into_trash(dir.path(), &[media.to_string_lossy().into_owned()]).unwrap();
+        let raw = fs::read_to_string(manifest_path(dir.path())).unwrap();
+        let mut file: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let evil = |trashed: String, related: Vec<(String, String)>| {
+            serde_json::json!({
+                "id": format!("evil-{trashed}"),
+                "originalPath": dir.path().join("x.mp3").to_string_lossy(),
+                "trashedPath": trashed,
+                "name": "x.mp3",
+                "deletedAt": 1.0,
+                "related": related.iter().map(|(o, t)| serde_json::json!({
+                    "originalPath": o, "trashedPath": t })).collect::<Vec<_>>(),
+                "byteSize": null,
+            })
+        };
+        let trash = trash_dir(dir.path());
+        let entries = file["entries"].as_array_mut().unwrap();
+        // Outside the trash, a `..` detour out of it, the manifest itself, and
+        // a sidecar that points at an unrelated file.
+        entries.push(evil(victim.to_string_lossy().into_owned(), vec![]));
+        entries.push(evil(
+            trash
+                .join("..")
+                .join("keep-me.mp3")
+                .to_string_lossy()
+                .into_owned(),
+            vec![],
+        ));
+        entries.push(evil(
+            manifest_path(dir.path()).to_string_lossy().into_owned(),
+            vec![],
+        ));
+        entries.push(evil(
+            trash.join("1-x.mp3").to_string_lossy().into_owned(),
+            vec![(
+                dir.path().join("x.json").to_string_lossy().into_owned(),
+                victim.to_string_lossy().into_owned(),
+            )],
+        ));
+        fs::write(manifest_path(dir.path()), file.to_string()).unwrap();
+
+        // Both the sweep and a full purge only ever see the honest entry.
+        let swept = purge_older_than(dir.path(), 1, f64::MAX).unwrap();
+        assert_eq!(swept.len(), 1, "{swept:#?}");
+        assert!(victim.exists(), "a file outside the trash was deleted");
+        assert!(manifest_path(dir.path()).exists());
+        assert!(purge(dir.path(), &[]).unwrap().is_empty());
+        assert!(victim.exists());
     }
 
     #[test]

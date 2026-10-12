@@ -12,14 +12,14 @@
  *
  *   1. NÅR en skrivning skal skje (etterslepende debounce)
  *   2. Hvor mange IPC-rundturer en byge av endringer blir til (koalesering)
- *   3. HVA som sendes — hele innstillingsobjektet, aldri et utvalg
+ *   3. HVA som sendes — de endrede feltene (`patchFor`), som Rust fletter over
+ *      det lagrede
  *
- * Punkt 3 er R4-invarianten, og den er ikke en stilpreferanse: `settings_save`
- * tar imot hele vokabularet og skriver det som én rad. Et kuratert utvalg
- * betyr at et felt som ikke ble sendt blir stille satt tilbake til sin default
- * i basen — feilfamilien #113/#115, der en innstilling «ikke ville lagre seg»
- * og ingen kunne se hvorfor. `e2e/settings-seam.spec.ts` pinner det samme
- * utenfra, på `settingsSavePayloads`-sømmen.
+ * Punkt 3 var tidligere «hele objektet, aldri et utvalg» (R4), fordi
+ * `settings_save` erstattet raden og et felt som ikke ble sendt ble stille satt
+ * tilbake til default (feilfamilien #113/#115). Nå fletter Rust, så det er
+ * motsatt som er faren: å sende alt lar en utdatert kopi overskrive nyere
+ * verdier. `e2e/settings-seam.spec.ts` pinner utfallet utenfra, på basen.
  */
 
 /** Den etterslepende timeren, som en verdi i stedet for en lukking. */
@@ -88,16 +88,32 @@ export function planFlush(state: SaveTimerState): FlushPlan {
 }
 
 /**
- * Det som krysser til backend.
+ * Det som krysser til backend: feltene i `current` som skiller seg fra
+ * `baseline` (det basen sist svarte, med våre egne skrivinger lagt oppå).
  *
- * En grunn kopi, ikke et utvalg: hver eneste nøkkel blir med. Kopien finnes
- * bare for at en endring som skjer mens IPC-en er i lufta ikke skal endre
- * objektet mottakeren holder på — den fjerner ingenting.
+ * Rust fletter dette over det som ligger lagret (`settings::save_patch_from_renderer`),
+ * så felt vi ikke nevner beholder verdien de har i basen. Det er hele poenget:
+ * en kopi som er eldre enn basen (planleggeren ryddet et spesialopptak, en
+ * profil ble importert) kan ikke lenger skrive sine gamle verdier over felt den
+ * aldri rørte. Motsatt av den gamle R4-regelen «send alt» — den var til for at
+ * et utvalg ikke skulle sette uspesifiserte felt tilbake til default, og det
+ * kan ikke skje når mottakeren fletter i stedet for å erstatte (#113/#115).
  *
- * Denne funksjonen ser triviell ut, og det er nettopp derfor den er en
- * funksjon: den er det ene stedet noen ville lagt inn «send bare det som er
- * endret», og det ene stedet en test kan si at ingen har gjort det.
+ * Et felt `baseline` ikke kjenner (nytt i en nyere bakende) regnes som endret.
+ * Likhet er JSON-likhet; et objekt med annen nøkkelrekkefølge gir i verste fall
+ * ett felt for mye, aldri ett for lite.
  */
-export function payloadFor<T extends object>(settings: T): T {
-  return { ...settings };
+export function patchFor<T extends object>(
+  current: T,
+  baseline: Partial<T>,
+): Partial<T> {
+  const patch: Partial<T> = {};
+  for (const key of Object.keys(current) as Array<keyof T & string>) {
+    const was = baseline[key];
+    const now = current[key];
+    if (was === now) continue;
+    if (JSON.stringify(was) === JSON.stringify(now)) continue;
+    patch[key] = now;
+  }
+  return patch;
 }

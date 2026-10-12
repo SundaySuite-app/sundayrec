@@ -98,6 +98,26 @@ pub(crate) fn strip_verbatim(s: &str) -> String {
     s.to_string()
 }
 
+/// Drop the dots and spaces Windows strips from the end of every name:
+/// `C:\Users\a\.ssh.` and `C:\Users\a\.ssh ` ARE `C:\Users\a\.ssh`. For a
+/// tail that does not exist yet `canonicalize` cannot say so, and the key
+/// would see a different folder than the one the OS creates. A name that is
+/// only dots (`.`, `..`) is left alone. Pure string work, so it is tested on
+/// every OS; [`compare_key`] applies it where the rule holds (Windows).
+pub(crate) fn strip_windows_name_tails(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for piece in s.split_inclusive(['/', '\\']) {
+        let (name, sep) = match piece.char_indices().last() {
+            Some((i, c)) if c == '/' || c == '\\' => (&piece[..i], &piece[i..]),
+            _ => (piece, ""),
+        };
+        let trimmed = name.trim_end_matches(['.', ' ']);
+        out.push_str(if trimmed.is_empty() { name } else { trimmed });
+        out.push_str(sep);
+    }
+    out
+}
+
 /// The data volume's mount point on macOS 10.15+, lower-cased (it is compared
 /// after the case fold). Every firmlink in `/usr/share/firmlinks` — `/Users`,
 /// `/private`, `/Volumes`, `/Applications`, `/usr/local` … — joins a path on
@@ -140,6 +160,11 @@ pub(crate) fn compare_key(canonical: &Path) -> PathBuf {
         return canonical.to_path_buf();
     };
     let plain = strip_verbatim(s);
+    let plain = if cfg!(windows) {
+        strip_windows_name_tails(&plain)
+    } else {
+        plain
+    };
     let folded = if FOLD_CASE {
         plain.to_lowercase().replace('ſ', "s")
     } else {
@@ -464,6 +489,47 @@ mod tests {
             r"\\?\Volume{0000}\x.mp3"
         );
         assert_eq!(strip_verbatim("/Users/a/x.mp3"), "/Users/a/x.mp3");
+    }
+
+    #[test]
+    fn windows_strips_trailing_dots_and_spaces_from_every_name() {
+        // Audit 2026-10 (112): `~\.ssh.` that does not exist yet is `~\.ssh`
+        // once Windows creates it, and the deny list must see the latter.
+        assert_eq!(
+            strip_windows_name_tails(r"C:\Users\a\.ssh. \id"),
+            r"C:\Users\a\.ssh\id"
+        );
+        assert_eq!(
+            strip_windows_name_tails(r"C:\Users\a\.ssh."),
+            r"C:\Users\a\.ssh"
+        );
+        assert_eq!(
+            strip_windows_name_tails("C:/Users/a/.aws /x"),
+            "C:/Users/a/.aws/x"
+        );
+        // Names made only of dots, a UNC prefix and plain paths are untouched.
+        assert_eq!(strip_windows_name_tails(r"C:\a\..\b"), r"C:\a\..\b");
+        assert_eq!(
+            strip_windows_name_tails(r"\\nas\opptak\x.mp3"),
+            r"\\nas\opptak\x.mp3"
+        );
+        assert_eq!(strip_windows_name_tails("/Users/a/x.mp3"), "/Users/a/x.mp3");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_dotted_tail_cannot_dodge_the_deny_list_on_windows() {
+        let home = Path::new(r"C:\Users\kari");
+        for spelled in [
+            r"C:\Users\kari\.ssh.",
+            r"C:\Users\kari\.ssh ",
+            r"C:\Users\kari\.ssh. .\id",
+        ] {
+            assert!(
+                deny_sensitive_under(Path::new(spelled), home).is_err(),
+                "{spelled}"
+            );
+        }
     }
 
     #[test]

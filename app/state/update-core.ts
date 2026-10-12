@@ -46,6 +46,20 @@ export type UpdatePhase =
   | { kind: "restarting" }
   | { kind: "failed"; restartFailed: boolean };
 
+/**
+ * Skal den automatiske sjekken få kjøre i denne fasen? Ikke midt i en
+ * nedlasting, ikke når en nedlastet oppdatering venter på omstart, ikke under
+ * omstarten: sjekken sender `update-checking` og så et nytt svar, og begge
+ * overskriver fasen som bærer eierens neste trykk.
+ */
+export function backgroundCheckAllowed(phase: UpdatePhase): boolean {
+  return (
+    phase.kind !== "downloading" &&
+    phase.kind !== "ready" &&
+    phase.kind !== "restarting"
+  );
+}
+
 /** `phase.notes`, trimmet til `null` når den er tom eller utelatt — de to
  *  formene «ingen notat» kan komme i (en utelatt feed-nøkkel, eller en som
  *  eksplisitt er tom) skal aldri kunne skilles fra hverandre nedover. Eksportert

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  backgroundCheckAllowed,
   clampPercent,
   notesOf,
   phaseFromEvent,
@@ -228,5 +229,29 @@ describe("phaseFromEvent", () => {
       kind: "downloading",
       percent: 100,
     });
+  });
+});
+
+describe("backgroundCheckAllowed", () => {
+  it("never lets the hourly check overwrite a download, a staged update or a restart", () => {
+    for (const kind of ["downloading", "ready", "restarting"] as const) {
+      const phase = {
+        downloading: { kind: "downloading", percent: 10 },
+        ready: { kind: "ready", version: "1.0.0" },
+        restarting: { kind: "restarting" },
+      }[kind] as UpdatePhase;
+      expect(backgroundCheckAllowed(phase), kind).toBe(false);
+    }
+  });
+
+  it("runs in every other phase", () => {
+    const rest: UpdatePhase[] = [
+      { kind: "idle" },
+      { kind: "checking" },
+      { kind: "upToDate" },
+      { kind: "available", version: "1.0.0" },
+      { kind: "failed", restartFailed: false },
+    ];
+    for (const phase of rest) expect(backgroundCheckAllowed(phase)).toBe(true);
   });
 });

@@ -150,7 +150,7 @@ og beskrivelse står klare til å kopieres. **Appen laster ikke opp noe selv.**
   Permission/Cancelled classification, the Windows arm/clear ladder, the
   `wmic`→CIM fallback, and the dedup invariants — all unit-tested over a fake
   shell and fake timers in `src-tauri/src/wake/{plan,shell,win_timer,mod}.rs`.
-  The macOS IOKit read runs for real in the gate. Decisions stay in
+  The macOS IOKit read runs for real in the `macos-check` CI lane (and on a Mac). Decisions stay in
   `sundayrec_core::{schedule, wake}`; the rig exit is smoke §11.
 - **Windows wakes only while SundayRec runs.** The mechanism is an in-process
   `SetWaitableTimer(fResume = TRUE)`, not a scheduled task: no UAC prompt and

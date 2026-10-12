@@ -45,25 +45,47 @@ import {
   endSessionLocally,
   enterFinalizing,
   finalizing,
+  isRecording,
   sessionStartedAtMs,
 } from "../../state/recording";
 import { confirmDialog } from "../../ui/dialog";
 import { formatClock } from "./record-core";
 
+/** True while the question is on screen — a second press must not queue a
+ *  second dialog whose «stop» answer would then hit whatever runs by then. */
+let asking = false;
+
 export async function confirmAndStop(): Promise<void> {
   // Et andre trykk mens motoren skriver ferdig er ikke en ny stoppforespørsel.
-  if (finalizing.peek()) return;
+  if (finalizing.peek() || asking) return;
   const startedAt = sessionStartedAtMs.peek();
-  const keepRecording = await confirmDialog({
-    title: t("app.overlay.stopQuestion"),
-    message: tf("app.overlay.stopQuestionDesc", {
-      elapsed: formatClock(startedAt === null ? 0 : Date.now() - startedAt),
-    }),
-    confirmLabel: t("app.overlay.keep"),
-    cancelLabel: t("app.overlay.stopYes"),
-    escapeConfirms: true,
-  });
+  asking = true;
+  let keepRecording: boolean;
+  try {
+    keepRecording = await confirmDialog({
+      title: t("app.overlay.stopQuestion"),
+      message: tf("app.overlay.stopQuestionDesc", {
+        elapsed: formatClock(startedAt === null ? 0 : Date.now() - startedAt),
+      }),
+      confirmLabel: t("app.overlay.keep"),
+      cancelLabel: t("app.overlay.stopYes"),
+      escapeConfirms: true,
+    });
+  } finally {
+    asking = false;
+  }
   if (keepRecording) return;
+
+  // The dialog can stay open for minutes. If the take ended by itself meanwhile
+  // (scheduled stop, disk full, device lost) — or ended and a NEW one started —
+  // «stop» no longer refers to what the volunteer was asked about.
+  if (
+    !isRecording.peek() ||
+    finalizing.peek() ||
+    sessionStartedAtMs.peek() !== startedAt
+  ) {
+    return;
+  }
 
   enterFinalizing();
   try {

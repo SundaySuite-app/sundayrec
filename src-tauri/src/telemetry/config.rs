@@ -50,15 +50,13 @@ pub const BASE_URL_VAR: &str = "SUNDAYREC_TELEMETRY_URL";
 /// The env/build var carrying the write key.
 pub const WRITE_KEY_VAR: &str = "SUNDAYREC_TELEMETRY_KEY";
 
-/// The write key for this build — ONE resolution, used by both pipes.
+/// The write key for this build — ONE resolution.
 ///
-/// The e-mail relay posts to the same Worker with the same key (its routes are
-/// app-scoped and read it from `x-write-key`; see
-/// `crate::notify::relay::config`), so this is a function rather than a constant
-/// the relay could re-derive: `option_env!` takes a string LITERAL, so a second
-/// resolver would have to re-type `"SUNDAYREC_TELEMETRY_KEY"` — and two literals
-/// spelling one build variable is exactly the kind of agreement that holds until
-/// somebody renames one of them.
+/// A function rather than a constant because `option_env!` takes a string
+/// LITERAL: a second resolver would have to re-type `"SUNDAYREC_TELEMETRY_KEY"`,
+/// and two literals spelling one build variable is exactly the kind of agreement
+/// that holds until somebody renames one of them. (The e-mail relay that once
+/// shared this key is gone; the single resolver stays.)
 pub fn resolve_write_key() -> Option<String> {
     std::env::var(WRITE_KEY_VAR)
         .ok()
@@ -96,9 +94,16 @@ impl TelemetryEndpoint {
         })
     }
 
-    /// The deletion URL for one retired install id.
-    pub fn delete_url(&self, install_id: &str) -> String {
-        format!("{}/v1/install/{install_id}", self.base_url)
+    /// The deletion URL for one retired install id, or `None` when the id is not
+    /// UUID-shaped.
+    ///
+    /// The id comes out of a database row the user can edit and is spliced into a
+    /// URL path. Without this check `../x?y=` (or an e-mail address) would be sent
+    /// to the endpoint under the write key, so the shape is verified here, at the
+    /// one place a URL is built — not trusted from wherever the row was written.
+    pub fn delete_url(&self, install_id: &str) -> Option<String> {
+        sundayrec_core::telemetry::is_install_id_shaped(install_id)
+            .then(|| format!("{}/v1/install/{install_id}", self.base_url))
     }
 }
 
@@ -152,9 +157,29 @@ mod tests {
         );
         assert_eq!(c.write_key, "key123");
         assert_eq!(
-            c.delete_url("018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"),
-            "https://telemetry.sundaysuite.app/v1/install/018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+            c.delete_url("018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b")
+                .as_deref(),
+            Some(
+                "https://telemetry.sundaysuite.app/v1/install/018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+            )
         );
+    }
+
+    #[test]
+    fn a_malformed_install_id_never_becomes_a_url() {
+        // The id is read from an editable database row and spliced into a path.
+        let c = TelemetryEndpoint::normalize(Some("https://t.example".into()), Some("k".into()))
+            .expect("valid");
+        for bad in [
+            "",
+            "../admin",
+            "ola@menighet.no",
+            "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b/../x",
+            "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b?all=1",
+            "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8z",
+        ] {
+            assert_eq!(c.delete_url(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

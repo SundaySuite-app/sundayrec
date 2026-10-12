@@ -22,17 +22,6 @@ export function fitAll(): void {
   scheduleDraw();
 }
 
-/** Zoom om midten. `factor < 1` zoomer inn. */
-export function zoomBy(factor: number): void {
-  const center = (E.vpStart + E.vpEnd) / 2;
-  const half = ((E.vpEnd - E.vpStart) * factor) / 2;
-  E.vpStart = Math.max(0, center - half);
-  E.vpEnd = Math.min(E.duration, center + half);
-  enforceMinSpan();
-  syncViewport();
-  scheduleDraw();
-}
-
 /** Zoom forankret i sekundet under pekeren. */
 export function zoomAt(atSec: number, factor: number): void {
   const span = E.vpEnd - E.vpStart;

@@ -27,11 +27,35 @@ pub fn update_status(engine: State<'_, UpdateEngine>) -> UpdateStatus {
 
 /// Check for a newer signed release. Parks the result in the engine and returns
 /// it. `feature_disabled` in the default build; dev builds report `upToDate`.
+///
+/// `background` is the renderer saying «this is the hourly timer, not the
+/// owner's button». A background check is held to the STORED «auto update»
+/// setting here, not to the renderer's copy of it: PRIVACY.md promises that
+/// switching it off means the app does not contact the server, and a page whose
+/// settings read failed holds the default `true`. A refused background check
+/// answers [`UpdateStatus::Idle`] without touching the network or the engine.
+/// The manual button (`background` absent or false) is PRIVACY.md's one
+/// exception and is never refused.
 #[tauri::command]
 pub async fn update_check(
     app: AppHandle,
     engine: State<'_, UpdateEngine>,
+    background: Option<bool>,
 ) -> AppResult<UpdateStatus> {
+    use tauri::Manager;
+
+    if background.unwrap_or(false) {
+        let stored = match app.try_state::<crate::db::Db>() {
+            Some(db) => crate::settings::load(&db.pool).await,
+            None => Err(crate::error::AppError::Internal(
+                "database not ready".into(),
+            )),
+        };
+        if !crate::update::background_check_allowed(&stored) {
+            tracing::info!("background update check skipped: auto update is off or unreadable");
+            return Ok(UpdateStatus::Idle);
+        }
+    }
     crate::update::check(&app, &engine).await
 }
 
@@ -67,11 +91,9 @@ pub async fn update_download_install(
     let state = app
         .state::<crate::recorder::engine::RecorderEngine>()
         .current_state();
-    if let Err(code) = sundayrec_core::update::download_allowed(state) {
-        tracing::warn!(?state, "update download refused: {code}");
-        return Err(crate::error::AppError::Validation(format!(
-            "{code}: an update cannot be downloaded while a recording is in progress"
-        )));
+    if let Err(refused) = crate::update::refuse_while_recording(state) {
+        tracing::warn!(?state, "update download refused: {refused}");
+        return Err(refused);
     }
     crate::update::download(&app, &engine).await
 }
