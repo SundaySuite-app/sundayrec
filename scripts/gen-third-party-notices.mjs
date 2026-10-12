@@ -97,6 +97,17 @@ try {
   if (check) {
     const have = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";
     if (have !== html) {
+      // Show WHERE they differ: «ikke fersk» alone sends you off to guess
+      // whether it was a dependency, an OS or a tool version.
+      const a = have.split("\n");
+      const b = html.split("\n");
+      let i = 0;
+      while (i < a.length && i < b.length && a[i] === b[i]) i++;
+      console.error(
+        `Første forskjell på linje ${i + 1} (innsjekket ${a.length} linjer, generert ${b.length}):`,
+      );
+      console.error(`  innsjekket: ${JSON.stringify(a.slice(i, i + 3))}`);
+      console.error(`  generert:   ${JSON.stringify(b.slice(i, i + 3))}`);
       console.error(
         "THIRD-PARTY-NOTICES.html er ikke fersk. Kjør `npm run licenses:notices` og sjekk inn fila.",
       );
