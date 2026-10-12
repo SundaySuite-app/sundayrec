@@ -5,6 +5,24 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.25.3 — tryggere opptak og mange mindre rettelser
+
+- **Opptaket overlever strømbrudd og krasj bedre.** Lyden lagres helt ned på
+  disken hvert 5. sekund, leveringen er trygt lagret før kildefilene slettes, og
+  et krasj midt i gudstjenesten gjenopprettes med forhåndsopptaket intakt.
+- **Planlagt stopp stopper også et opptak som ble startet for hånd** rett før
+  gudstjenesten, og «+15 min» virker for planlagte opptak. Testopptak og
+  kamerasjekk avvises mens et opptak bruker mikrofonen.
+- **Du får beskjed når appen bruker en annen mikrofon enn den lagrede**, og en
+  mikser som kommer sent tilbake avslutter ikke lenger opptaket.
+- **Papirkurven og Biblioteket peker alltid på riktig opptak**, også når to
+  opptak har samme navn eller ble tatt opp samme sekund.
+- **Personvern:** valget om automatisk oppdatering håndheves i appen, «Slett mine
+  data» gis ikke opp ved en serverfeil, og mappenavn med mellomrom vaskes ut av
+  krasjrapporter.
+- **Editoren:** eksporten dør ikke på treg maskin eller ved stille opptak, og en
+  mono-jingle gjør ikke hele eksporten mono.
+
 ## v0.25.2 — ingen tapte eller overskrevne søndagsopptak
 
 - **To planlagte opptak rett etter hverandre blir begge tatt opp.** Planleggeren
