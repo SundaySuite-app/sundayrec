@@ -174,18 +174,32 @@ try {
     `<h2 id="rust">Rust libraries</h2>\n${rustSection(json)}\n</body>\n</html>\n`;
   if (check) {
     const have = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";
-    if (have !== html) {
-      // Show WHERE they differ: «ikke fersk» alone sends you off to guess
-      // whether it was a dependency, an OS or a tool version.
-      const a = have.split("\n");
-      const b = html.split("\n");
-      let i = 0;
-      while (i < a.length && i < b.length && a[i] === b[i]) i++;
-      console.error(
-        `Første forskjell på linje ${i + 1} (innsjekket ${a.length} linjer, generert ${b.length}):`,
-      );
-      console.error(`  innsjekket: ${JSON.stringify(a.slice(i, i + 3))}`);
-      console.error(`  generert:   ${JSON.stringify(b.slice(i, i + 3))}`);
+    // Sammenlignes på INNHOLDET det handler om, ikke byte for byte: delen før
+    // Rust-seksjonen (ffmpeg + npm, med lisensteksten) må være lik, og Rust-
+    // seksjonen må liste nøyaktig de samme crate+versjon-ene. Lisenstekstene
+    // cargo-about finner INNE i et crate (kildefiler med lisenshode, som i
+    // `ring`) er ikke den samme mengden på Mac og Linux, og en sjekk som
+    // flakker blir slått av. Den sjekken skal fange «Cargo.lock endret seg».
+    const split = (h) => {
+      const k = h.indexOf('<h2 id="rust">');
+      return {
+        head: k < 0 ? h : h.slice(0, k),
+        crates: new Set(
+          h
+            .slice(Math.max(k, 0))
+            .split("\n")
+            .filter((l) => l.startsWith("<li>")),
+        ),
+      };
+    };
+    const a = split(have);
+    const b = split(html);
+    const missing = [...b.crates].filter((c) => !a.crates.has(c));
+    const extra = [...a.crates].filter((c) => !b.crates.has(c));
+    if (a.head !== b.head || missing.length > 0 || extra.length > 0) {
+      if (a.head !== b.head) console.error("Forskjell i ffmpeg-/npm-delen.");
+      for (const c of missing) console.error(`  mangler i fila: ${c}`);
+      for (const c of extra) console.error(`  burde ikke stå i fila: ${c}`);
       console.error(
         "THIRD-PARTY-NOTICES.html er ikke fersk. Kjør `npm run licenses:notices` og sjekk inn fila.",
       );

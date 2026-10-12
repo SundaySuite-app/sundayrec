@@ -125,8 +125,11 @@ install cargo-about --features cli`; without `--features cli` it builds and
   cargo-about's own templates follow directory order, which differs between
   macOS and Linux (the first CI run caught exactly that). The file is checked in
   because `tauri build` requires a declared resource to exist; the `check` job
-  runs `npm run licenses:notices:check`, which fails with the first differing
-  line when `Cargo.lock` or `package-lock.json` changed and the file did not.
+  runs `npm run licenses:notices:check`, which fails, naming the crates that are
+  missing or extra, when `Cargo.lock` or `package-lock.json` changed and the
+  file did not. It compares the crate list and the ffmpeg/npm part, not the
+  licence texts cargo-about digs out of source-file headers (`ring`): those are
+  not the same set on macOS and Linux.
 - **Bundled via** `bundle.resources` in `tauri.conf.json`. A unit test pins that
   the path in Rust and in the config are the same string. On macOS it lands in
   `SundayRec.app/Contents/Resources/resources/`, on Windows next to the exe in
