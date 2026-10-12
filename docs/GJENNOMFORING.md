@@ -52,7 +52,7 @@ cargo install cargo-about --features cli   # A1b. ⚠️ uten `--features cli`
 bash scripts/ci-local.sh           # se at v0.25.3 er grønn på denne maskinen
 ```
 
-**Kjent: steg 0 er rød på en rask Mac.** Målt 2026-10-12 på v0.25.3 med ffmpeg
+**Steg 0 var rød på en rask Mac (rettet).** Målt 2026-10-12 på v0.25.3 med ffmpeg
 9.0.1: `cargo test --workspace` feiler på
 `recorder::longrun::tests::killing_the_delivery_encode_keeps_the_whole_capture_and_retries`,
 6 av 6 ganger, mens CI er grønn på samme commit (jobben «macOS check + test» i
@@ -74,8 +74,10 @@ Det er ikke en regresjon i appen. Testen beviser ikke det den sier:
    SKIP-grenen uten noensinne å ha drept en koding. 1–3 er lest i koden; 4 er
    den eneste forklaringen som stemmer med grønn CI.
 
-Fiks i egen PR før M1: vent på `delivery_tmp_path(&delivery_path)` i stedet for
-`delivery_path`, og la `killed` følge `pkill`-ens exitkode. Dette er en
+**Fikset i #348 (2026-10-12):** killeren venter på
+`delivery_tmp_path(&delivery_path)` i stedet for `delivery_path`, og `killed`
+følger `pkill`-ens exitkode. Feilen traff også Linux-løperne i CI, ikke bare
+Macen. Dette er en
 skjøtefeil av typen `docs/LEARNING.md` beskriver: temp+rename var riktig, testen
 var riktig da den ble skrevet, de er uenige i skjøten, og CI ble grønn.
 
