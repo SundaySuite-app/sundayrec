@@ -59,8 +59,8 @@ prerollEnabled: boolean,
  */
 showLiveLevels: boolean, 
 /**
- * The escape hatch back to ffmpeg audio capture. Whether anyone still needs
- * it decides when the legacy path can be deleted.
+ * WIRE-FROZEN since A5b (see `input_volume`): the escape hatch back to
+ * ffmpeg audio capture is gone, so the constant is `false`.
  */
 classicFfmpegAudio: boolean, 
 /**
