@@ -525,6 +525,17 @@ rask videoeksport (B6).
 
 **Hvor det bevises:** Macen (innebygd kamera + `ffprobe`).
 
+**Rettelser til planen (funnet i C0b):**
+
+- Flaggene står ikke i `capture.rs` per sti, men i den ene sømmen
+  `push_video_encoder_args_with` som C0a la inn. Den deles av den samlede stien,
+  tostegs-fallbackens videoprosess og Windows' cpal-rør, så alle tre og alle
+  seks koderne er dekket av ÉN golden-test
+  (`every_encoder_and_path_gets_a_keyframe_every_two_seconds`).
+- Kameratilgang ble ikke gitt til byggeøkta, og tillatelsen ble ikke omgått.
+  Intervallet er målt med `ffprobe -skip_frame nokey` på `testsrc2` gjennom
+  nøyaktig samme koderargv; det ekte kamerabeviset er RIG-DAY (c0b).
+
 **Startmelding:**
 
 > Les `docs/GJENNOMFORING.md` §C0b, `docs/VIDEOMOTOR.md` §C0 og

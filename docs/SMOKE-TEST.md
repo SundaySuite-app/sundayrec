@@ -330,6 +330,14 @@ the device.
      a Mac (no such encoders in the macOS sidecar); the argv per encoder is
      covered by golden tests in `capture.rs`/`video_encoder.rs`, the CPU claim
      by `docs/RIG-DAY.md` (c0a).
+   - **Keyframe every 2 s (C0b):** every video recording is encoded with
+     `-g <2×fps> -keyint_min <fps>`, whatever the encoder. **Check:** after a
+     30 s video recording, `ffprobe -v error -select_streams v -skip_frame nokey
+-show_entries frame=pts_time -of csv=p=0 <file>.mp4` lists a keyframe at
+     0, 2, 4, 6 … seconds (x264 may add one early on a hard scene cut, never
+     later than 2 s after the previous). Proven on a Mac with `testsrc2`
+     through the exact argv (see the PR); the real-camera run is the
+     `docs/RIG-DAY.md` (c0b) item.
 4. Stop, and open the file.
    - **Expected:** the mp4 has a video stream with picture in it. The preview is
      evidence that frames reached the ENGINE; only the file proves they were

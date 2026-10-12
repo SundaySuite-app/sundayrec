@@ -257,6 +257,23 @@ faktisk skal se nå — sist.
       Argumentene per koder (`-preset p4` for NVENC, `-preset veryfast` for QSV,
       `-hw_encoding 1` for MF, kun `-b:v` for AMF) er valgt uten
       maskinvare å prøve dem på — de er det første å justere.
+- [ ] **(c0b) Nøkkelbilde hvert 2. sekund med ekte kamera (C0b,
+      `ombygging/c0b-nokkelbilder`).** Intervallet er bevist med `ffprobe` på
+      et opptak fra `-f lavfi testsrc2` gjennom nøyaktig samme koderargv
+      (VideoToolbox og libx264 på Mac: nøkkelbilder ved 0, 2, 4, 6, 8, 10 s),
+      men IKKE med et ekte kamera: macOS ga ikke kameratilgang til
+      byggemiljøet, og tillatelsen ble ikke omgått. Dette punktet beviser det
+      som gjenstår. **Gjør:** (1) På Macen: ta opp 30 s video med det
+      innebygde kameraet i appen, og kjør
+      `ffprobe -skip_frame nokey` med `-show_entries frame=pts_time` på
+      mp4-filen (kommandoen står i SMOKE-TEST).
+      **Forventet:** nøkkelbilder ved 0, 2, 4, 6 … s (±ett bilde). (2) Gjenta
+      på Windows-boksen med koderen fra (c0a) (NVENC/QSV/AMF/MF) og med
+      `libx264` (sett `hw_accel` av). **Forventet:** samme intervall. Er det
+      lengre mellom nøkkelbildene med én koder (`h264_mf` er den mest
+      mistenkelige: den kan ignorere `-g`), noter koderen og målt intervall.
+      (3) Et 60 min opptak: filen søkes jevnt i en spiller, og et
+      `kill -9` midt i opptaket taper høyst et par sekunder bilde.
 - [ ] **(f) ASIO-delmengde.** Fra `docs/ASIO-TEST-MATRIX.md`, kjør minst:
       byggsjekken (`asio_spike`-eksempelet lister en enhet), én vanlig
       WASAPI-opptak (USB-mikrofon eller lydkort), én ASIO-opptak på et
