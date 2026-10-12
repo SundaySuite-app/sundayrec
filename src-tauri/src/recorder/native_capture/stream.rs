@@ -6,6 +6,13 @@
 //! confined to [`open_host`]'s Windows-only host ids. The decision half of
 //! format negotiation ([`pick_input_config`]) is pure and unit-tested off
 //! hardware; [`negotiate`] is the thin wrapper that feeds it real device data.
+//!
+//! The same split holds for stream faults (A3b): cpal 0.18 reports fatal errors
+//! and advisories through one error callback; [`stream_fault`] maps its typed
+//! `ErrorKind` onto the core's `StreamFault`, and [`classify_stream_error`] —
+//! the one error-callback body every cpal stream here uses — asks the core what
+//! that means. Advisories are logged and recording carries on; anything else is
+//! handed to the caller's supervisor as a [`StreamFaultReport`].
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -17,6 +24,7 @@ use ringbuf::traits::Producer;
 use ringbuf::HeapProd;
 use sundayrec_core::audio::{observe_levels, MeterBanks};
 use sundayrec_core::device_match::{find_best_device_match, find_exact_device_match, FfmpegDevice};
+use sundayrec_core::stream_fault::{stream_fault_action, StreamFault, StreamFaultAction};
 
 use crate::audio::asio::{route_frame, ChannelRoute};
 
@@ -280,6 +288,19 @@ pub fn pick_input_config(
 /// Negotiate a real device's input format: run the range walk through
 /// [`pick_input_config`], falling back to `default_input_config()` verbatim
 /// when the walk yields nothing.
+///
+/// **`default_input_config()` is the device's CURRENT rate on our three hosts,
+/// also in cpal 0.18 (checked against 0.18.2, A3b).** cpal 0.18's changelog
+/// says default configs "now prefer 48 kHz, then 44.1 kHz" and rank I32/I24
+/// above I16. That heuristic (`try_with_standard_sample_rate`,
+/// `cmp_default_heuristics`) is only used by backends that DERIVE a default from
+/// ranges (AAudio, WebAudio, …). CoreAudio still reads the device's
+/// `kAudioDevicePropertyStreamFormat`, WASAPI still returns `GetMixFormat`, and
+/// ASIO still returns the driver's rate — the same sources as 0.17.3. So the
+/// "auto = native rate" rule above is intact and nothing is pinned here. If a
+/// later cpal moves one of those three onto the heuristic, the anti-choppiness
+/// rule breaks silently (a 44.1 kHz mixer opened at 48 kHz, and on macOS cpal
+/// would RE-CLOCK the device to get it) — re-check this on every cpal bump.
 pub fn negotiate(
     device: &cpal::Device,
     requested_rate: Option<u32>,
@@ -292,7 +313,7 @@ pub fn negotiate(
         .map(|it| {
             it.map(|c| RangeInfo {
                 channels: c.channels(),
-                // cpal 0.17: SampleRate is a plain u32.
+                // SampleRate is a plain u32 (since cpal 0.17).
                 min_rate: c.min_sample_rate(),
                 max_rate: c.max_sample_rate(),
                 format: c.sample_format(),
@@ -361,26 +382,58 @@ fn rt_scratch_capacity(total_channels: usize) -> usize {
     (total_channels.max(1) * 4096).max(4096)
 }
 
-/// Forward a stream error from cpal's error callback to the supervisor channel,
-/// exactly as cpal 0.17 did: every error it delivered there was fatal to the
-/// stream. cpal 0.18 ALSO delivers advisory events through the same callback —
-/// `Xrun` (CoreAudio/WASAPI capture now report them) and `RealtimeDenied`
-/// (previously only printed to stderr). Treating those as fatal would turn a
-/// single glitch into a reconnect, which is a behaviour change, so they are
-/// logged and NOT forwarded. Counting xruns is A3c's job; classifying the
-/// remaining kinds (`DeviceBusy`, `PermissionDenied`, …) is A3b's.
-pub fn forward_stream_error(
-    context: &str,
-    e: &cpal::Error,
-    tx: &tokio::sync::mpsc::Sender<String>,
-) {
-    match e.kind() {
-        cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied => {
-            tracing::warn!("{context} advisory (not fatal): {e}");
+/// One stream fault the capture loop must act on: the class the recovery
+/// decision is made on, plus cpal's own words for the log and the warning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamFaultReport {
+    pub fault: StreamFault,
+    pub detail: String,
+}
+
+/// Map cpal 0.18's `ErrorKind` onto the core's [`StreamFault`]. Typed, never by
+/// matching the message: cpal's `Display` text changed between 0.17 and 0.18
+/// and will change again. `ErrorKind` is `#[non_exhaustive]`, so a kind added
+/// by a later cpal lands on [`StreamFault::Other`] — the pre-A3b behaviour
+/// (reconnect) — until someone classifies it here.
+pub fn stream_fault(kind: cpal::ErrorKind) -> StreamFault {
+    use cpal::ErrorKind as K;
+    match kind {
+        K::DeviceNotAvailable => StreamFault::DeviceNotAvailable,
+        K::StreamInvalidated => StreamFault::StreamInvalidated,
+        K::DeviceBusy => StreamFault::DeviceBusy,
+        K::PermissionDenied => StreamFault::PermissionDenied,
+        K::DeviceChanged => StreamFault::DeviceChanged,
+        K::Xrun => StreamFault::Xrun,
+        K::RealtimeDenied => StreamFault::RealtimeDenied,
+        _ => StreamFault::Other,
+    }
+}
+
+/// The ONE classification of a report from cpal's error callback, shared by
+/// every cpal stream in the app (native capture, the native pre-roll, the
+/// Windows cpal pipe, the VU meter).
+///
+/// cpal 0.18 delivers fatal errors AND advisories through the same callback.
+/// What the report means is decided in the core
+/// ([`sundayrec_core::stream_fault`]): `None` here means "the stream is still
+/// running, keep recording" (`Xrun`, `RealtimeDenied`, `DeviceChanged`) and is
+/// only logged; `Some` is a fault the caller must hand to its supervisor.
+///
+/// Called on cpal's callback thread, so it only logs and allocates the detail
+/// string — never blocks.
+pub fn classify_stream_error(context: &str, e: &cpal::Error) -> Option<StreamFaultReport> {
+    let fault = stream_fault(e.kind());
+    match stream_fault_action(fault) {
+        StreamFaultAction::KeepRecording => {
+            tracing::warn!(?fault, "{context} advisory (still recording): {e}");
+            None
         }
-        _ => {
-            tracing::error!("{context} error: {e}");
-            let _ = tx.try_send(e.to_string());
+        action => {
+            tracing::error!(?fault, ?action, "{context} error: {e}");
+            Some(StreamFaultReport {
+                fault,
+                detail: e.to_string(),
+            })
         }
     }
 }
@@ -698,6 +751,122 @@ mod tests {
         // A zero channel count is treated as mono rather than producing a
         // zero-capacity ring the producer could never push into.
         assert_eq!(ring_capacity(8_000, 0), MIN_RING_SAMPLES);
+    }
+
+    /// A3b: the four classes the reconnect machine acts on are mapped from
+    /// cpal's TYPE, not its message — an empty message proves no text is read.
+    #[test]
+    fn cpal_kinds_map_onto_the_core_fault_classes() {
+        use cpal::ErrorKind as K;
+        for (kind, want) in [
+            (K::DeviceNotAvailable, StreamFault::DeviceNotAvailable),
+            (K::StreamInvalidated, StreamFault::StreamInvalidated),
+            (K::DeviceBusy, StreamFault::DeviceBusy),
+            (K::PermissionDenied, StreamFault::PermissionDenied),
+            (K::DeviceChanged, StreamFault::DeviceChanged),
+            (K::Xrun, StreamFault::Xrun),
+            (K::RealtimeDenied, StreamFault::RealtimeDenied),
+            (K::BackendError, StreamFault::Other),
+            (K::HostUnavailable, StreamFault::Other),
+            (K::ResourceExhausted, StreamFault::Other),
+            (K::Other, StreamFault::Other),
+        ] {
+            assert_eq!(stream_fault(kind), want, "{kind:?}");
+            let report = classify_stream_error("t", &cpal::Error::with_message(kind, ""));
+            match stream_fault_action(want) {
+                StreamFaultAction::KeepRecording => assert_eq!(report, None, "{kind:?}"),
+                _ => assert_eq!(report.map(|r| r.fault), Some(want), "{kind:?}"),
+            }
+        }
+    }
+
+    /// A3b machine proof (macOS, real CoreAudio): a sample-rate change of the
+    /// device under a running capture arrives through OUR error callback as
+    /// `StreamInvalidated` and is classified as a fault that ends the stream —
+    /// the "frekvensbytte" the reconnect machine now owns.
+    ///
+    /// The rate change is forced the way another app would force it: a second
+    /// cpal stream on the same device at another rate (cpal re-clocks the
+    /// device to get it). The device's original rate is restored at the end.
+    /// Touches the default input device, so it is `#[ignore]`d:
+    /// `cargo test -p sundayrec rate_change_under_a_running_stream -- --ignored`
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "re-clocks the real default input device"]
+    fn rate_change_under_a_running_stream_is_a_stream_fault() {
+        use cpal::traits::StreamTrait;
+        use std::time::{Duration, Instant};
+
+        let host = open_host(CpalHostKind::Default).expect("host");
+        let device = host.default_input_device().expect("a default input device");
+        let original = device.default_input_config().expect("default config");
+        let r0 = original.sample_rate();
+        let r1 = if r0 == 44_100 { 48_000 } else { 44_100 };
+        let fmt = original.sample_format();
+        let ch = original.channels();
+        let supports = |rate: u32| {
+            device
+                .supported_input_configs()
+                .map(|mut it| {
+                    it.any(|c| (c.min_sample_rate()..=c.max_sample_rate()).contains(&rate))
+                })
+                .unwrap_or(false)
+        };
+        assert!(
+            supports(r1),
+            "default input cannot run at {r1} Hz — pick another device"
+        );
+
+        let open = |rate: u32, tx: Option<std::sync::mpsc::Sender<StreamFaultReport>>| {
+            let cfg = cpal::StreamConfig {
+                channels: ch,
+                sample_rate: rate,
+                buffer_size: cpal::BufferSize::Default,
+            };
+            let stream = build_input_stream_any(
+                &device,
+                cfg,
+                fmt,
+                ch as usize,
+                StreamSink::Meters(Arc::new(MeterBanks::new(ch as usize))),
+                move |e: cpal::Error| {
+                    if let (Some(r), Some(tx)) = (classify_stream_error("proof", &e), tx.as_ref()) {
+                        let _ = tx.send(r);
+                    }
+                },
+            )
+            .expect("build");
+            stream.play().expect("play");
+            stream
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let victim = open(r0, Some(tx));
+        std::thread::sleep(Duration::from_millis(300));
+        let intruder = open(r1, None); // re-clocks the device to r1
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut got = None;
+        while Instant::now() < deadline {
+            if let Ok(r) = rx.recv_timeout(Duration::from_millis(100)) {
+                got = Some(r);
+                break;
+            }
+        }
+        drop(intruder);
+        drop(victim);
+        // Put the device back where we found it.
+        drop(open(r0, None));
+        assert_eq!(
+            device.default_input_config().map(|c| c.sample_rate()).ok(),
+            Some(r0),
+            "the device's rate must be restored"
+        );
+
+        let got = got.expect("no fault reported within 3 s of the rate change");
+        assert_eq!(got.fault, StreamFault::StreamInvalidated, "{got:?}");
+        assert!(!sundayrec_core::stream_fault::reconnect_keeps_rate_pin(
+            Some(got.fault)
+        ));
     }
 
     #[test]

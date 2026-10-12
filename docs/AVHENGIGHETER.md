@@ -84,6 +84,17 @@ ikke av seg selv, `build_*_stream` tar konfigurasjonen som verdi,
 `StreamInstant` er nytt). cpal er nevnt i over 30 filer i `src-tauri`, og
 `audio::com_anchor` må leses på nytt mot den nye WASAPI-koden.
 
+**Målt i A3b mot 0.18.2-kilden (2026-10-12):**
+
+- «Standardkonfig foretrekker 48 kHz» (0.18-changeloggen) gjelder **ikke** våre
+  tre verter: CoreAudio leser fortsatt enhetens strømformat, WASAPI
+  `GetMixFormat` og ASIO driverens rate. «Auto = enhetens egen rate» står seg;
+  ingenting er pinnet (begrunnelsen står ved `negotiate()`).
+- **Nytt på macOS:** når en strøm bygges, setter cpal enhetens _fysiske_ format
+  (bitdybde + rate) hvis det finnes et som passer, ellers bare raten. Raten satte
+  den også i 0.17; bitdybden er ny. Riggpunkt i [RIG-DAY](RIG-DAY.md) (a).
+- Feilklassene og hva gjenkoblingen gjør med dem: `sundayrec_core::stream_fault`.
+
 _Når:_ egen PR, fulgt av en riggrunde på begge maskiner: gjenkobling
 ([RIG-DAY](RIG-DAY.md) (a)), ASIO (f) og et helt 90-minutters opptak (h).
 

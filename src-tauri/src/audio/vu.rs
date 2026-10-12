@@ -279,13 +279,13 @@ fn build_vu_stream(device_name: Option<&str>) -> AppResult<(cpal::Stream, Arc<Me
         negotiated.sample_format,
         channels,
         StreamSink::Meters(Arc::clone(&meters)),
-        |e: cpal::Error| match e.kind() {
-            // cpal 0.18 reports xruns through the error callback; they are
-            // advisory, so keep them out of the error log (0.17 never sent them).
-            cpal::ErrorKind::Xrun | cpal::ErrorKind::RealtimeDenied => {
-                tracing::warn!("VU input stream advisory: {e}")
-            }
-            _ => tracing::error!("VU input stream error: {e}"),
+        // Log-only: the meter has no supervisor to hand a fault to. The shared
+        // classification keeps advisories (xrun, rerouted) out of the error log.
+        |e: cpal::Error| {
+            let _ = crate::recorder::native_capture::stream::classify_stream_error(
+                "VU input stream",
+                &e,
+            );
         },
     )
     .map_err(|e| AppError::Audio(format!("building VU input stream: {e}")))?;

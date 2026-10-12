@@ -1,6 +1,24 @@
 //! The supervisor: capture-backend routing, the per-session [`run_session`]
 //! loop and the per-segment [`run_segment`] `select!`. Split out of
 //! `engine.rs`; see the parent module docs.
+//!
+//! **How a dying capture is classified (A3b).** Every segment ends in a
+//! [`SegmentOutcome`]; an [`SegmentOutcome::UnexpectedExit`] carries the error
+//! code the recovery policy (`RecordingSession::on_unexpected_exit`) decides
+//! on — fatal codes end the session, everything else reconnects on the back-off
+//! ladder. The ffmpeg path gets its code from stderr (`reader`); the native
+//! path gets it from cpal's TYPED fault through the core table
+//! `sundayrec_core::stream_fault` (unplugged / format changed → reconnect,
+//! busy → retry as `device_busy`, permission → fatal; xruns and reroutes never
+//! end a segment). A native exit also carries the fault itself, because one
+//! class needs more than a code: after `StreamInvalidated` (macOS: the
+//! device's sample rate changed) the reconnect opens at the device's CURRENT
+//! rate instead of forcing the deliverable's pinned one back onto it
+//! (`reconnect_keeps_rate_pin`), and the rate-mismatch check turns the change
+//! into a new deliverable. Respawn failures are still unclassified (`None` →
+//! transient): their cpal error is flattened to a string inside
+//! `spawn_native_segment`, so a permission refused at REOPEN keeps retrying
+//! until the time budget runs out.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,6 +36,7 @@ use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::selftest::RecordingTelemetry;
 use sundayrec_core::silence::{SilenceAction, SilenceWatcher};
+use sundayrec_core::stream_fault::{reconnect_keeps_rate_pin, StreamFault};
 use sundayrec_core::timeouts::RecorderTimeouts;
 use tauri::Emitter;
 use tokio::io::{AsyncReadExt, BufReader};
@@ -70,6 +89,13 @@ pub(crate) enum SegmentOutcome {
     /// last classified error (for the fatal-error short-circuit).
     UnexpectedExit {
         last_error: Option<RecordingErrorCode>,
+        /// The typed cpal fault that ended a NATIVE segment (A3b), when that is
+        /// what ended it. The code above already carries the recovery class;
+        /// this adds what the code cannot say — e.g. that the device's format
+        /// changed under the stream, so the reconnect must not force the old
+        /// rate back onto it ([`reconnect_keeps_rate_pin`]). `None` for the
+        /// ffmpeg path and for every other way a segment dies.
+        stream_fault: Option<StreamFault>,
     },
 }
 
@@ -532,7 +558,27 @@ pub(super) async fn run_session(
                         }
                     }
                 }
-                SegmentOutcome::UnexpectedExit { last_error } => {
+                SegmentOutcome::UnexpectedExit {
+                    last_error,
+                    stream_fault,
+                } => {
+                    // A3b: a native segment that died because the device's
+                    // format changed (macOS: its nominal rate) reopens at what
+                    // the device is NOW, not at the deliverable's pin. Forcing
+                    // the pin would make cpal re-clock the device straight back
+                    // — fighting whoever changed it (Audio MIDI Setup, a DAW,
+                    // OBS) — and the rate-mismatch check below would never see
+                    // the change. The pin itself stays: a fragment that comes
+                    // back at another rate still closes this deliverable.
+                    let respawn_rate = if reconnect_keeps_rate_pin(stream_fault) {
+                        pinned_rate
+                    } else {
+                        tracing::info!(
+                            ?stream_fault,
+                            "recorder: stream invalidated — reopening at the device's current rate"
+                        );
+                        None
+                    };
                     // The dead fragment stays part of the CURRENT deliverable —
                     // its bytes count toward the native RIFF-cap forced split.
                     deliverable_bytes =
@@ -761,7 +807,9 @@ pub(super) async fn run_session(
                                         ctx.video.as_ref(),
                                         &ctx.opts,
                                         &next_segment,
-                                        pinned_rate, // an _rN fragment must match its siblings
+                                        // an _rN fragment must match its siblings —
+                                        // unless the device's format changed (above)
+                                        respawn_rate,
                                         reopen_name,
                                     )
                                     .await
@@ -1033,13 +1081,19 @@ async fn run_segment(
         telemetry,
     } = counters;
     let Some(stderr) = child.stderr.take() else {
-        return SegmentOutcome::UnexpectedExit { last_error: None };
+        return SegmentOutcome::UnexpectedExit {
+            last_error: None,
+            stream_fault: None,
+        };
     };
     // stdout carries the `-progress` blocks (see `capture::PROGRESS_ARGS`). It
     // is now LOAD-BEARING: with `-nostats` the periodic stats line is gone from
     // stderr, so this pipe is where startup and the heartbeat come from.
     let Some(stdout) = child.stdout.take() else {
-        return SegmentOutcome::UnexpectedExit { last_error: None };
+        return SegmentOutcome::UnexpectedExit {
+            last_error: None,
+            stream_fault: None,
+        };
     };
     let mut stdin = child.stdin.take();
 
@@ -1290,9 +1344,9 @@ async fn run_segment(
                         }
                     }
                     Some(ReaderMsg::Exit { last_error }) => {
-                        break SegmentOutcome::UnexpectedExit { last_error };
+                        break SegmentOutcome::UnexpectedExit { last_error, stream_fault: None };
                     }
-                    None => break SegmentOutcome::UnexpectedExit { last_error: None },
+                    None => break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None },
                 }
             }
             // Graceful stop request.
@@ -1313,6 +1367,7 @@ async fn run_segment(
                 // reconnect-looping a start that won't fix itself.
                 break SegmentOutcome::UnexpectedExit {
                     last_error: Some(RecordingErrorCode::DeviceNotFound),
+                    stream_fault: None,
                 };
             }
             // Watchdog poll.
@@ -1345,7 +1400,7 @@ async fn run_segment(
                     // A wedged encoder: kill it so the reconnect path respawns.
                     let _ = child.start_kill();
                     let _ = child.wait().await;
-                    break SegmentOutcome::UnexpectedExit { last_error: None };
+                    break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None };
                 }
             }
             // RIFF-cap guard + low-disk guard (one 30 s tick, same order as the

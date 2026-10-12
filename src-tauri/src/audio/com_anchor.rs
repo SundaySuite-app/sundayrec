@@ -1,6 +1,6 @@
 //! Keep cpal's WASAPI device enumerator alive for the life of the process.
 //!
-//! cpal 0.17 caches ONE `IMMDeviceEnumerator` in a process-wide `OnceLock`
+//! cpal caches ONE `IMMDeviceEnumerator` in a process-wide `OnceLock`
 //! (`host::wasapi::device::ENUMERATOR`). It is created on whichever thread
 //! first enumerates devices, right after that thread joins a COM
 //! single-threaded apartment through a `thread_local!` guard — and when that
@@ -30,6 +30,30 @@
 //! can never be torn down underneath it. cpal's own per-thread STA attempt on
 //! this thread gets `RPC_E_CHANGED_MODE`, which it treats as fine and which
 //! also means its guard never calls `CoUninitialize` here.
+//!
+//! **Re-read against cpal 0.18.2 (A3b, 2026-10-12) — the reasoning still
+//! holds.** Written for 0.17.3; checked line by line against 0.18.2's
+//! `host/wasapi/device.rs` and `host/com.rs`:
+//! - `ENUMERATOR` is still a `static OnceLock<Enumerator>`, still filled by
+//!   `get_enumerator()` on the first caller's thread after
+//!   `com::com_initialized()`.
+//! - The guard moved from `host::wasapi::com` to the shared `host::com`, and is
+//!   unchanged: STA by default, `RPC_E_CHANGED_MODE` accepted, and
+//!   `CoUninitialize` in `Drop` only when its own `CoInitializeEx` succeeded —
+//!   so on this MTA thread it still never uninitialises.
+//! - `default_host().default_input_device()` still reaches `get_enumerator()`
+//!   (via `current_default_endpoint`), so the call below still creates the
+//!   enumerator HERE.
+//! - New in 0.18, and covered by the same anchor: a stream on a DEFAULT device
+//!   registers a `DefaultDeviceMonitor` (an `IMMNotificationClient`) on a clone
+//!   of the cached enumerator and unregisters it in `Drop`; the notification
+//!   callbacks (Windows' notification thread) and cpal's audio run loop call
+//!   `current_default_endpoint`, i.e. the cached enumerator, from threads that
+//!   are not ours. Our native engine opens exactly such a stream when the
+//!   stored device name is empty (`host.default_input_device()`). All of these
+//!   use the one cached pointer and so depend on COM staying up — which this
+//!   thread guarantees. Nothing in 0.18 creates a second, per-thread
+//!   enumerator that would need its own anchor.
 //!
 //! Every path into cpal's WASAPI backend calls [`ensure`] first:
 //! [`crate::audio::devices`] and `recorder::native_capture::stream::open_host`

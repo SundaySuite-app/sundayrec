@@ -38,6 +38,26 @@ faktisk skal se nå — sist.
       forsøksbudsjettet er brukt opp, skal du se en ekte terminal feil (ikke
       en advarsel) — for tidlig, og en glemt kabel ser ufarlig ut for lenge;
       for sent, og en glemt kabel blir aldri oppdaget.
+- [ ] **(a, A3b) Bytt samplingsfrekvens midt i opptaket.** Start et opptak
+      på mikseren (eller innebygd mikrofon), la det gå et minutt, og bytt
+      enhetens frekvens i **Audio MIDI-oppsett** (f.eks. 48 000 → 44 100 Hz).
+      **Forventet:** én gjenkoblingsstripe (advarsel `device_disconnected`,
+      ingen feilmelding), og opptaket fortsetter. Frekvensen du valgte i
+      Audio MIDI-oppsett **blir stående** — appen setter den ikke tilbake.
+      Etterpå er det TO filer (ny levering ved ny frekvens, ikke en skjøtet
+      fil med to frekvenser), og loggen har linjene «stream invalidated» og
+      «device rate changed across reconnect» etter hverandre. **Rødt funn:** frekvensen
+      hopper tilbake av seg selv, eller gjenkoblingen gjentar seg i en løkke.
+      Klassifiseringen er bevist på Macen med
+      `cargo test -p sundayrec rate_change_under_a_running_stream -- --ignored`
+      (ekte CoreAudio, 2026-10-12); dette punktet beviser resten av veien.
+- [ ] **(a, A3b) Lydformatet i Audio MIDI-oppsett før og etter opptak.** Noter
+      enhetens format (f.eks. «2 kan. 24-bit heltall 48,0 kHz») før du starter,
+      start et opptak, og se igjen. cpal 0.18 prøver nå å sette enhetens
+      FYSISKE format (bitdybde) til det appen ber om. **Forventet:** rate
+      uendret, og bitdybden enten uendret eller endret uten at andre programmer
+      på mikseren merker det. Endres den, noter det — det er et funn å vurdere,
+      ikke nødvendigvis en feil.
 - [ ] **(c) `kill -9` midt i et planlagt opptak.** Legg inn et planlagt
       opptak («Ta opp automatisk» eller et spesialopptak) et par minutter
       fram i tid. Når det har startet, finn prosessen med `ps aux` og drep
@@ -451,6 +471,24 @@ faktisk skal se nå — sist.
       installasjon. Test deretter, med `-msi`-nøkkelen fjernet fra en
       testfeed, at NSIS-stien avinstallerer MSI-en og ikke etterlater to
       installasjoner — og hva en ikke-administrator ser da.
+
+- [ ] **(w-a3b) Feilklassene i gjenkoblingen på Windows (native WASAPI).**
+      Lydopptak (ikke video), WASAPI-enhet. Tre ting: 1) **Trekk mikseren**
+      som i (a). **Forventet:** gjenkoblingsstripe (`device_disconnected`),
+      samme opptak fortsetter når den kommer tilbake. 2) **Ta enheten i
+      eksklusiv modus:** la et annet program (f.eks. en DAW med
+      «exclusive mode» på) ta mikseren midt i opptaket. **Forventet:**
+      advarsel med koden `device_busy` (ikke `device_disconnected`), og nye
+      forsøk på back-off-stigen til enheten er ledig igjen — ingen terminal
+      feil før tidsbudsjettet er brukt opp. 3) **Standardenheten byttes:** ta
+      opp med lydenheten satt til systemets standard (tomt navn), og bytt
+      standard inndata i Windows' lydinnstillinger midt i opptaket.
+      **Forventet:** én gjenkobling, og opptaket fortsetter fra **samme**
+      mikrofon som før (gjenkoblingen åpner enheten ved navn), ikke den nye
+      standarden. I alle tre: loggen `recorder: native capture starting`
+      viser samme `rate=` som enheten har i lydinnstillingene (A3b fant at
+      cpal 0.18s «foretrekk 48 kHz» ikke gjelder WASAPI — bekreft det).
+      Ingen `STATUS_ACCESS_VIOLATION` (se `audio::com_anchor`).
 
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
