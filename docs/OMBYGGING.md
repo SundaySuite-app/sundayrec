@@ -219,7 +219,10 @@ skal kjøres med, og en ferdig startmelding.
 git clone https://github.com/SundaySuite-app/sundayrec && cd sundayrec
 nvm use 22                         # CI kjører node 22; npm 11 ødelegger låsfila
 npm install && npm run ffmpeg      # ffmpeg 9.0.1-sidecars, sjekksumverifisert
-cargo install cargo-about          # A1b
+cargo install cargo-about --features cli   # A1b. UTEN --features cli
+                                           # bygger den, men installerer
+                                           # ingen binær, og sier det bare i
+                                           # en advarsel
 cargo test --workspace             # grønt før noe endres
 ```
 

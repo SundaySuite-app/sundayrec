@@ -44,9 +44,40 @@ Dette gjentas ikke per økt. Startmeldingene peker hit.
 git pull
 nvm use 22
 npm install && npm run ffmpeg      # ffmpeg 9.0.1; Macen hadde 8.1.2 per 2026-10-12
-cargo install cargo-about          # A1b trenger den
+cargo install cargo-about --features cli   # A1b. ⚠️ uten `--features cli`
+                                           # bygger den ferdig og installerer
+                                           # ingenting — advarselen er lett å
+                                           # lese forbi (målt 2026-10-12,
+                                           # cargo-about 0.9.2)
 bash scripts/ci-local.sh           # se at v0.25.3 er grønn på denne maskinen
 ```
+
+**Kjent: steg 0 er rød på en rask Mac.** Målt 2026-10-12 på v0.25.3 med ffmpeg
+9.0.1: `cargo test --workspace` feiler på
+`recorder::longrun::tests::killing_the_delivery_encode_keeps_the_whole_capture_and_retries`,
+6 av 6 ganger, mens CI er grønn på samme commit (jobben «macOS check + test» i
+run 38204469019 logger testen som `ok`). Alt før Rust-steget i `ci-local.sh` er
+grønt.
+
+Det er ikke en regresjon i appen. Testen beviser ikke det den sier:
+
+1. Leveringen kodes til `<stem>_deliver_tmp.<ext>` og flyttes på plass med
+   `rename` først når kodingen er validert (`concat::deliver_via_temp`,
+   `delivery_tmp_path`). Leveringsfila kan altså ikke finnes mens kodingen går.
+2. Testens killer venter på at `sermon.mp3` dukker opp og kjører
+   `pkill -9 -f <save-dir>` da. Kodingen er ferdig, så `pkill` treffer ingenting.
+3. Killeren melder likevel `killed = true`, fordi den ignorerer `pkill`-ens
+   exitkode. SKIP-vakten kan derfor aldri slå inn, og `assert!(result.is_err())`
+   feiler.
+4. På en treg CI-løper rekker ikke `rename` innenfor killerens budsjett
+   (2 000 × 2 ms), killeren returnerer `false`, og testen går grønn via
+   SKIP-grenen uten noensinne å ha drept en koding. 1–3 er lest i koden; 4 er
+   den eneste forklaringen som stemmer med grønn CI.
+
+Fiks i egen PR før M1: vent på `delivery_tmp_path(&delivery_path)` i stedet for
+`delivery_path`, og la `killed` følge `pkill`-ens exitkode. Dette er en
+skjøtefeil av typen `docs/LEARNING.md` beskriver: temp+rename var riktig, testen
+var riktig da den ble skrevet, de er uenige i skjøten, og CI ble grønn.
 
 ## Modellvalget
 
