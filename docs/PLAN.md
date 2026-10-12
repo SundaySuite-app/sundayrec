@@ -15,6 +15,26 @@ registeret som peker dit. Et punkt som ikke står her, er ikke planlagt.
 
 Kartet over alle dokumentene er [`docs/README.md`](README.md).
 
+## Ombyggingen — før appen rulles ut
+
+Eierens beslutning 2026-10-11: store grep, høy risiko, gjennomføres i nye økter
+lokalt på Macen. Hovedplanen er [OMBYGGING.md](OMBYGGING.md), med delplanene
+[LYDMOTOR.md](LYDMOTOR.md) og [VIDEOMOTOR.md](VIDEOMOTOR.md). Øktene — én PR
+hver, med porter, modellvalg og ferdig startmelding — står i
+[GJENNOMFORING.md](GJENNOMFORING.md). Én linje per milepæl her; pakkene står i
+hovedplanen og fjernes derfra når de er ferdige.
+
+| Milepæl                      | Pakker       | Kort                                                                                                            |
+| ---------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------- |
+| M1 — Grunnmuren              | A1–A5, C0    | Lisensvakt, ffmpeg-versjonen i docs, cpal 0.18, Windows-enhetslytter, nødlukene ut, maskinvarekoding på Windows |
+| M2 — Ny lyd i redigeringen   | B0–B3        | filmcrafts `audio-dsp` inn, lydstyrke og lydkjede i Rust, «Tale» renser av seg selv                             |
+| M3 — Ny videomotor           | C1–C5        | Kamera i Rust, lyden alltid gjennom den native motoren, én sti i stedet for fire                                |
+| M4 — Sanntid, fart og resten | B4–B6, D1–D3 | Én dekoding, sanntidslytting, rask videoeksport, earshot, macOS-varsler, LUFS under opptak                      |
+
+M2 og M3 kjøres parallelt i egne arbeidstrær (eiers beslutning 2026-10-12).
+**Blokkert på eieren:** B2c sletter de gamle filterstrengene først når Ørene har
+hørt tre ekte gudstjenester, gammel lyd mot ny, og eieren har sagt ja.
+
 ## Kode
 
 Kan gjøres uten eier eller rigg — men flere har en betingelse.
@@ -26,11 +46,11 @@ Kan gjøres uten eier eller rigg — men flere har en betingelse.
 
 Kode, men bare etter et forsøk på ekte maskin.
 
-| Punkt                                                                                     | Kilde                                                            |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel)           | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
-| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet | [VARSLING.md](VARSLING.md) §Senere                               |
-| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)     | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
+| Punkt                                                                                                                                   | Kilde                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| macOS: lese om systemet viser SundayRecs varsler (i dag `unknown` + testvarsel) — pakke D2, se [GJENNOMFORING.md](GJENNOMFORING.md) §D2 | [VARSLING.md](VARSLING.md) §Gjenstår fra runde 2                 |
+| Testvekkingens resultat (`test_ok`/`test_fail`) — krever et signal for at maskinen våknet                                               | [VARSLING.md](VARSLING.md) §Senere                               |
+| Intel/universal Mac-bygg (i dag bare Apple Silicon; trenger ffmpeg-pinner for x86_64)                                                   | [archive/BACKLOG-AUDIT](archive/BACKLOG-AUDIT-2026-07-07.md) #17 |
 
 ## Eier (Richard)
 
