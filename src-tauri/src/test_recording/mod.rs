@@ -164,7 +164,8 @@ pub async fn run_capture_bench(
 /// facts with the same [`sundayrec_core::selftest::selftest_verdict`] as the
 /// ffmpeg bench. Measured duration comes from ffprobe over the produced WAV
 /// (the truth), with the writer's exact frame count logged as the capture-side
-/// cross-check; ring overruns count as xrun-class events.
+/// cross-check; the xruns the audio system reported and any ring overrun
+/// count as xrun-class events.
 ///
 /// Interior-silence facts are not gathered here (no silencedetect pass), so
 /// the verdict focuses on loss + level — the bench's purpose.
@@ -219,6 +220,9 @@ pub async fn run_native_capture_bench(
     let frames = seg.frames.load(std::sync::atomic::Ordering::Relaxed);
     let frames_sec = frames as f64 / f64::from(seg.spec.sample_rate.max(1));
     let overrun = seg.overrun.load(std::sync::atomic::Ordering::Relaxed);
+    // The audio system's own xrun count (cpal `ErrorKind::Xrun`), not a phrase
+    // scraped from a log: the native engine reads no stderr.
+    let native_xruns = seg.xruns.load(std::sync::atomic::Ordering::Relaxed);
     let size_bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
     let strongest_rms_db = run_astats_rms(&out_str).await;
 
@@ -227,7 +231,7 @@ pub async fn run_native_capture_bench(
         measured_sec,
         drops: 0,
         dups: 0,
-        xruns: u64::from(overrun > 0),
+        xruns: native_xruns.saturating_add(u64::from(overrun > 0)),
         size_bytes,
         strongest_rms_db,
         silence_total_sec: 0.0,
@@ -241,6 +245,7 @@ pub async fn run_native_capture_bench(
         measured = facts.measured_sec,
         frames_sec,
         ring_overrun_samples = overrun,
+        native_xruns,
         rate = seg.spec.sample_rate,
         "native capture bench complete"
     );
@@ -727,13 +732,17 @@ mod tests {
         let frames = seg.frames.load(Ordering::Relaxed);
         let frames_sec = frames as f64 / f64::from(seg.spec.sample_rate.max(1));
         let overrun = seg.overrun.load(Ordering::Relaxed);
+        // The audio system's own xrun count over the 60 s (A3c). Reported, not
+        // asserted: it is a measurement of the machine, and 0 is the expected
+        // value on a quiet one, not a law.
+        let xruns = seg.xruns.load(Ordering::Relaxed);
         let probed = crate::media::ffmpeg::probe_duration_secs(&out_str)
             .await
             .unwrap_or(0.0);
 
         eprintln!(
             "BENCH60: wall={wall:.3}s frames_sec={frames_sec:.3}s ffprobe={probed:.3}s \
-             rate={} overruns={overrun} file={out_str}",
+             rate={} overruns={overrun} xruns={xruns} file={out_str}",
             seg.spec.sample_rate
         );
 

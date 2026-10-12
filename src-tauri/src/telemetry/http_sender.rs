@@ -447,6 +447,7 @@ mod live_endpoint {
             drops: 0,
             dups: 0,
             xruns: 0,
+            native_xruns: 0,
             levels_dropped: 0,
             capture_drop_lines: 0,
             msgs_dropped: 0,

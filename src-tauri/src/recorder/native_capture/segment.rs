@@ -16,6 +16,10 @@
 //! - stderr error classify    → typed `cpal::ErrorKind` (via the core's
 //!   `stream_fault` table: keep recording / reconnect / retry / fatal) and
 //!   `WriterErrorKind`
+//! - xrun/overrun stderr lines → the OS's own count: cpal 0.18 reports each
+//!   CoreAudio/WASAPI glitch as `ErrorKind::Xrun`; the stream's error callback
+//!   counts them (`NativeSegment::xruns`) and the runner folds the total into
+//!   `RecordingTelemetry::native_xruns` (A3c)
 //! - `q` + wait (finalize)    → stop flags + bounded joins (writer patches
 //!   the RIFF header and fsyncs)
 
@@ -48,8 +52,8 @@ use crate::recorder::engine::{
     SILENCE_EVENT, STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, classify_stream_error, find_device, find_device_exact, negotiate,
-    open_host, ring_capacity, CpalHostKind, StreamFaultReport, StreamSink,
+    build_input_stream_any, classify_stream_error_counting, find_device, find_device_exact,
+    negotiate, open_host, ring_capacity, CpalHostKind, StreamFaultReport, StreamSink,
 };
 use crate::recorder::native_capture::writer::{
     spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY, SYNC_EVERY,
@@ -79,6 +83,10 @@ pub struct NativeSegment {
     meters: Arc<MeterBanks>,
     /// Samples dropped by the RT callback on ring overrun (whole frames).
     pub overrun: Arc<AtomicU64>,
+    /// Xruns the audio system reported through cpal's error callback
+    /// (`ErrorKind::Xrun`) while this segment ran — the real glitch count
+    /// that replaces the ffmpeg path's stderr phrase scraping (A3c).
+    pub xruns: Arc<AtomicU64>,
     /// Header+data bytes on disk — the watchdog/progress/disk-guard truth.
     pub bytes: Arc<AtomicU64>,
     /// Exact frames written — the truth-measurement cross-check.
@@ -203,6 +211,7 @@ pub async fn spawn_native_segment_for(
     let stream_stop = Arc::new(AtomicBool::new(false));
     let writer_stop = Arc::new(AtomicBool::new(false));
     let overrun = Arc::new(AtomicU64::new(0));
+    let xruns = Arc::new(AtomicU64::new(0));
     let bytes = Arc::new(AtomicU64::new(0));
     let frames = Arc::new(AtomicU64::new(0));
     let meters = Arc::new(MeterBanks::new(out_ch as usize));
@@ -236,6 +245,7 @@ pub async fn spawn_native_segment_for(
     let st_stop = Arc::clone(&stream_stop);
     let st_meters = Arc::clone(&meters);
     let st_overrun = Arc::clone(&overrun);
+    let st_xruns = Arc::clone(&xruns);
     let st_name = device_name.clone();
     let exact_reopen = exact.is_some();
     let stream_join = std::thread::Builder::new()
@@ -254,10 +264,13 @@ pub async fn spawn_native_segment_for(
                     buffer_size: cpal::BufferSize::Default,
                 };
                 // Only a fault that ends the stream reaches the runner; the
-                // advisories (xrun, rerouted, realtime refused) are logged
-                // inside `classify_stream_error` and recording carries on.
+                // advisories (rerouted, realtime refused) are logged inside
+                // `classify_stream_error_counting` and recording carries on.
+                // An xrun is additionally COUNTED into `st_xruns`.
                 let err_fn = move |e: cpal::Error| {
-                    if let Some(report) = classify_stream_error("native capture stream", &e) {
+                    if let Some(report) =
+                        classify_stream_error_counting("native capture stream", &e, Some(&st_xruns))
+                    {
                         let _ = err_tx.try_send(report);
                     }
                 };
@@ -301,6 +314,7 @@ pub async fn spawn_native_segment_for(
         stream_err_rx,
         meters,
         overrun,
+        xruns,
         bytes,
         frames,
         spec,
@@ -478,7 +492,7 @@ pub(crate) enum SegmentSignal {
     /// The cpal stream reported a fault that ends it (USB pulled, format
     /// changed, device busy, permission refused) — typed, so the runner can
     /// tell them apart. Advisories never arrive here (see
-    /// [`classify_stream_error`]).
+    /// [`classify_stream_error_counting`]).
     StreamError(StreamFaultReport),
 }
 
@@ -503,6 +517,8 @@ pub(crate) trait SegmentSignals {
     fn frames(&self) -> u64;
     /// Samples dropped by the RT callback on ring overrun.
     fn overrun(&self) -> u64;
+    /// Xruns the audio system reported while this capture ran.
+    fn xruns(&self) -> u64;
     /// The pinned capture format.
     fn spec(&self) -> WavSpec;
     /// Take-and-reset the peak meter for `channel`, in dBFS.
@@ -542,6 +558,10 @@ impl SegmentSignals for NativeSegment {
 
     fn overrun(&self) -> u64 {
         self.overrun.load(Ordering::Relaxed)
+    }
+
+    fn xruns(&self) -> u64 {
+        self.xruns.load(Ordering::Relaxed)
     }
 
     fn spec(&self) -> WavSpec {
@@ -1056,9 +1076,14 @@ where
     if overrun > 0 {
         tracing::warn!(overrun, "native capture: ring overran — samples dropped");
     }
+    let xruns = seg.xruns();
+    if xruns > 0 {
+        tracing::warn!(xruns, "native capture: the audio system reported xruns");
+    }
     {
         let mut t = lock_recover(&telemetry);
         t.ring_overrun_samples = t.ring_overrun_samples.saturating_add(overrun);
+        t.native_xruns = t.native_xruns.saturating_add(xruns);
         t.native_frames_sec += seg.frames() as f64 / f64::from(seg.spec().sample_rate.max(1));
         // E6.3 symmetry with the ffmpeg twin: close this capture process's
         // drop/dup window. The native engine parses no ffmpeg stderr, so the
@@ -1339,6 +1364,7 @@ mod tests {
         bytes: Arc<AtomicU64>,
         frames: Arc<AtomicU64>,
         overrun: Arc<AtomicU64>,
+        xruns: Arc<AtomicU64>,
         peak: f32,
         spec: WavSpec,
         stops: Arc<AtomicU64>,
@@ -1364,6 +1390,9 @@ mod tests {
         fn overrun(&self) -> u64 {
             self.overrun.load(Ordering::Relaxed)
         }
+        fn xruns(&self) -> u64 {
+            self.xruns.load(Ordering::Relaxed)
+        }
         fn spec(&self) -> WavSpec {
             self.spec
         }
@@ -1383,6 +1412,7 @@ mod tests {
         bytes: Arc<AtomicU64>,
         frames: Arc<AtomicU64>,
         overrun: Arc<AtomicU64>,
+        xruns: Arc<AtomicU64>,
         stops: Arc<AtomicU64>,
         sink: Recorder,
     }
@@ -1392,6 +1422,7 @@ mod tests {
         let bytes = Arc::new(AtomicU64::new(0));
         let frames = Arc::new(AtomicU64::new(0));
         let overrun = Arc::new(AtomicU64::new(0));
+        let xruns = Arc::new(AtomicU64::new(0));
         let stops = Arc::new(AtomicU64::new(0));
         Rig {
             seg: Scripted {
@@ -1399,6 +1430,7 @@ mod tests {
                 bytes: Arc::clone(&bytes),
                 frames: Arc::clone(&frames),
                 overrun: Arc::clone(&overrun),
+                xruns: Arc::clone(&xruns),
                 peak: -12.0,
                 spec: WavSpec {
                     channels: 2,
@@ -1410,6 +1442,7 @@ mod tests {
             bytes,
             frames,
             overrun,
+            xruns,
             stops,
             sink: Recorder::default(),
         }
@@ -1823,7 +1856,7 @@ mod tests {
         r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
             .unwrap();
         let e = cpal::Error::with_message(kind, "scripted");
-        match classify_stream_error("test stream", &e) {
+        match crate::recorder::native_capture::stream::classify_stream_error("test stream", &e) {
             Some(report) => r.tx.send(SegmentSignal::StreamError(report)).unwrap(),
             None => stop_tx.send(()).await.unwrap(),
         }
@@ -2344,6 +2377,7 @@ mod tests {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         r.overrun.store(4_096, Ordering::Relaxed);
+        r.xruns.store(7, Ordering::Relaxed);
         r.frames.store(96_000, Ordering::Relaxed); // 2 s at 48 kHz
         r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
             .unwrap();
@@ -2369,6 +2403,7 @@ mod tests {
         );
         let t = tel.lock().expect("telemetry");
         assert_eq!(t.ring_overrun_samples, 4_096);
+        assert_eq!(t.native_xruns, 7, "the OS-reported xruns reach telemetry");
         assert!(
             (t.native_frames_sec - 2.0).abs() < 1e-9,
             "frames→seconds used the wrong rate: {}",
@@ -2387,6 +2422,7 @@ mod tests {
             let mut r = rig();
             let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
             r.overrun.store(1_000, Ordering::Relaxed);
+            r.xruns.store(2, Ordering::Relaxed);
             r.frames.store(48_000, Ordering::Relaxed);
             r.tx.send(SegmentSignal::WriterGone).unwrap();
             drive(
@@ -2402,6 +2438,7 @@ mod tests {
         }
         let t = tel.lock().expect("telemetry");
         assert_eq!(t.ring_overrun_samples, 2_000);
+        assert_eq!(t.native_xruns, 4);
         assert!((t.native_frames_sec - 2.0).abs() < 1e-9);
     }
 

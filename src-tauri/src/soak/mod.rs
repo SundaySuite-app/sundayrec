@@ -16,6 +16,7 @@
 //!   (`cpal` → ring → WAV writer) against the machine's microphone through the
 //!   existing [`crate::test_recording::run_native_capture_bench`]. This is the
 //!   only variant that can prove anything about real hardware: ring overruns,
+//!   the xruns CoreAudio/WASAPI report (A3c — counted natively, no stderr),
 //!   CoreAudio drift, a USB interface that stops delivering after 90 minutes.
 //!   It needs a rig, so it is `#[ignore]`d.
 //! - **lavfi** ([`SoakSource::Lavfi`]) — drives the REAL production capture
@@ -159,7 +160,9 @@ pub struct SoakIteration {
     pub drops: u64,
     /// ffmpeg `dup=`.
     pub dups: u64,
-    /// xrun/capture-drop class events.
+    /// xrun/capture-drop class events. On the device (native) flavour this is
+    /// the audio system's own count (cpal `ErrorKind::Xrun`) plus one for any
+    /// ring overrun; on lavfi it is still the ffmpeg stderr-derived count.
     pub xruns: u64,
     /// Output size in bytes.
     pub size_bytes: u64,

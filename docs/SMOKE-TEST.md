@@ -439,7 +439,10 @@ records its own health automatically during every recording (Pillar 0).
 **Scope note (v0.6.0+):** the ffmpeg-stderr metrics — `drop=`/`dup=` and
 xrun/discontinuity lines — apply to **video / ffmpeg sessions only** (video
 capture and the `classic_ffmpeg_audio` escape hatch). **Native audio sessions**
-instead report `ring_overrun_samples` plus an **exact frame-count cross-check**
+instead report `ring_overrun_samples`, **`native_xruns`** (the glitches CoreAudio /
+WASAPI themselves report through cpal 0.18 — counted by the engine, no stderr
+involved; shown as part of `xruns` in the diagnose report) plus an **exact
+frame-count cross-check**
 (frames written vs ffprobe/wall clock, with a verdict + REC-LOSS alarm). The
 key "recording mode lags" signal — how often the live-levels IPC channel was
 **full** (`levels_dropped`) — applies to both. Everything persists to
@@ -474,7 +477,8 @@ round, not a bug to report.
      the surface that displayed them is gone:
    - VERIFIED-BY: crates/sundayrec-core/src/diagnostics.rs::degraded_last_recording_warns_and_renders_section
    - **Healthy target:** `IPC-overbelastning 0` + clean exit, and per session
-     type: **native audio** → `ring_overrun_samples 0` + the frame-count
+     type: **native audio** → `ring_overrun_samples 0`, `xruns 0` (this is
+     `native_xruns` — a real count from the audio system) + the frame-count
      cross-check verdict exact; **video / ffmpeg** → `Dropp 0`, `xruns 0`.
    - A degraded recording also raises finding **SR-CAPTURE-01** with the counts.
 

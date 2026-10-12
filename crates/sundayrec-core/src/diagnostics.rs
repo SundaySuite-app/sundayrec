@@ -470,8 +470,8 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             if t.drops > 0 {
                 bits.push(format!("{} drops", t.drops));
             }
-            if t.xruns > 0 {
-                bits.push(format!("{} xruns", t.xruns));
+            if t.xruns_total() > 0 {
+                bits.push(format!("{} xruns", t.xruns_total()));
             }
             if t.capture_drop_lines > 0 {
                 bits.push(format!("{} capture-drop warnings", t.capture_drop_lines));
@@ -792,7 +792,7 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
         lines.push("## Last recording (technical)".to_string());
         lines.push(format!("- **Duration:** {:.0} s", t.duration_sec));
         lines.push(format!("- **Drops (frames):** {}", t.drops));
-        lines.push(format!("- **xruns/discontinuities:** {}", t.xruns));
+        lines.push(format!("- **xruns/discontinuities:** {}", t.xruns_total()));
         lines.push(format!(
             "- **IPC overload (lost level updates):** {}",
             t.levels_dropped
@@ -811,7 +811,11 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
                 let badge = if h.is_degraded() { "⚠️" } else { "✅" };
                 lines.push(format!(
                     "- {badge} {} — drops {}, xruns {}, ipc {} ({:.0} s)",
-                    h.timestamp, h.drops, h.xruns, h.levels_dropped, h.duration_sec
+                    h.timestamp,
+                    h.drops,
+                    h.xruns_total(),
+                    h.levels_dropped,
+                    h.duration_sec
                 ));
             }
         }
