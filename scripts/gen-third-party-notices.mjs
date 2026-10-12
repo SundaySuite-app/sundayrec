@@ -4,9 +4,14 @@
 //   node scripts/gen-third-party-notices.mjs          skriv fila
 //   node scripts/gen-third-party-notices.mjs --check  feil hvis den innsjekkede fila er gammel
 //
-// Rust-delen kommer fra `cargo about` (about.toml + about.hbs), npm-delen fra
+// Rust-delen kommer fra `cargo about --format json` (about.toml), npm-delen fra
 // package.json sine `dependencies` (det som havner i frontend-bunten), og
-// ffmpeg-/GPL-avsnittet står fast i about.hbs. Fila er innsjekket fordi
+// ffmpeg-/GPL-avsnittet står fast her.
+//
+// HTML-en bygges HER og ikke med en cargo-about-mal, fordi malens rekkefølge
+// følger katalogrekkefølgen i crate-kildene, og den er ulik på APFS og ext4
+// (første CI-kjøring: ring-lisensene kom i annen rekkefølge enn på Macen).
+// Sortert på (lisens, tekst) og (crate, versjon) er fila lik overalt. Fila er innsjekket fordi
 // `tauri build` krever at ressursfila finnes, og fordi en endring i
 // Cargo.lock/package-lock.json da vises i diffen til PR-en som gjorde den.
 import { execFileSync } from "node:child_process";
@@ -69,31 +74,104 @@ function npmSection() {
     .join("\n");
 }
 
+const FFMPEG = `<h2 id="ffmpeg">FFmpeg (GPL)</h2>
+<p>The installers include the <code>ffmpeg</code> and <code>ffprobe</code>
+programs, which SundayRec runs as separate processes. They are built with
+<code>--enable-gpl --enable-version3</code> and are licensed under the
+<strong>GNU General Public License, version 3 or later</strong>. The GPL applies
+to those two programs only, not to the rest of SundayRec. Nothing is built with
+<code>--enable-nonfree</code>.</p>
+<p>You are entitled to the corresponding source code of the FFmpeg version we
+ship (see <code>docs/DISTRIBUTION.md</code> in the SundayRec repository for the
+exact version and build):</p>
+<ul>
+<li>FFmpeg source releases: <code>https://ffmpeg.org/download.html</code></li>
+<li>macOS builds (Martin Riedl): <code>https://ffmpeg.martin-riedl.de</code></li>
+<li>Windows builds (gyan.dev): <code>https://www.gyan.dev/ffmpeg/builds/</code></li>
+<li>SundayRec source: <code>https://github.com/SundaySuite-app/sundayrec</code></li>
+</ul>
+<p>The GPL v3 text: <code>https://www.gnu.org/licenses/gpl-3.0.txt</code>.
+FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.</p>`;
+
+const HEAD = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SundayRec - third-party notices</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #fff; }
+  h1 { font-size: 1.6rem; } h2 { margin-top: 2.5rem; font-size: 1.2rem; border-bottom: 1px solid #ccc; padding-bottom: .25rem; }
+  pre { white-space: pre-wrap; background: #f5f5f5; padding: .75rem; border-radius: 6px; font-size: 12px; }
+  ul.used-by { columns: 2; font-size: 13px; } code { font-size: 13px; }
+  @media (prefers-color-scheme: dark) { body { color: #e6e6e6; background: #161616; } pre { background: #222; } h2 { border-color: #444; } }
+</style>
+</head>
+<body>
+<h1>Third-party notices</h1>
+<p>SundayRec is MIT-licensed. It is built from, and distributed together with,
+the software listed below. Each component keeps its own license; the notices
+are reproduced here as those licenses require.</p>
+`;
+
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+function rustSection(json) {
+  // Same licence text under the same id = one block, with the union of users.
+  const groups = new Map();
+  for (const l of json.licenses) {
+    const text = l.text.replace(/\r\n/g, "\n").trim();
+    const key = `${l.id}\u0000${text}`;
+    let g = groups.get(key);
+    if (!g)
+      groups.set(key, (g = { name: l.name, id: l.id, text, users: new Set() }));
+    for (const u of l.used_by) {
+      g.users.add(
+        `${esc(u.crate.name)} ${esc(u.crate.version)}` +
+          (u.crate.repository
+            ? ` - <code>${esc(u.crate.repository)}</code>`
+            : ""),
+      );
+    }
+  }
+  return [...groups.values()]
+    .sort((a, b) => cmp(a.id, b.id) || cmp(a.text, b.text))
+    .map(
+      (g) =>
+        `<h3>${esc(g.name)}</h3>\n<ul class="used-by">\n` +
+        [...g.users]
+          .sort(cmp)
+          .map((u) => `<li>${u}</li>`)
+          .join("\n") +
+        `\n</ul>\n<pre>${esc(g.text)}</pre>`,
+    )
+    .join("\n");
+}
+
 const tmp = mkdtempSync(join(tmpdir(), "notices-"));
 try {
-  const rustOut = join(tmp, "rust.html");
+  const rustOut = join(tmp, "rust.json");
   execFileSync(
     "cargo",
     [
       "about",
       "generate",
+      "--format",
+      "json",
       "--manifest-path",
       "src-tauri/Cargo.toml",
       "-c",
       "about.toml",
-      "about.hbs",
       "-o",
       rustOut,
     ],
     { cwd: root, stdio: ["ignore", "inherit", "inherit"] },
   );
-  // CRLF -> LF: some crates ship CRLF licence files. Git normalises them on
-  // commit, and CI's checkout would then differ from what this wrote on a Mac.
-  const html = readFileSync(rustOut, "utf8")
-    .replace("<!--NPM-->", () => npmSection())
-    .replace(/\r\n/g, "\n");
-  if (html.includes("<!--NPM-->"))
-    throw new Error("npm-markøren ble ikke erstattet");
+  const json = JSON.parse(readFileSync(rustOut, "utf8"));
+  const html =
+    HEAD +
+    FFMPEG +
+    `\n<h2 id="frontend">User interface libraries (npm)</h2>\n${npmSection()}\n` +
+    `<h2 id="rust">Rust libraries</h2>\n${rustSection(json)}\n</body>\n</html>\n`;
   if (check) {
     const have = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";
     if (have !== html) {

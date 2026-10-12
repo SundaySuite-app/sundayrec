@@ -119,18 +119,20 @@ bundle's resource directory; see `src-tauri/src/commands/licenses.rs`).
 - **Generated, then checked in:** `npm run licenses:notices` (needs `cargo
 install cargo-about --features cli`; without `--features cli` it builds and
   installs nothing). Inputs are `about.toml` (accepted licences, same list as
-  `deny.toml`; fixed targets so the file is identical on every OS), `about.hbs`
-  (the template, with the ffmpeg text) and `scripts/gen-third-party-notices.mjs`
-  (adds the npm part). The file is checked in because `tauri build` requires a
-  declared resource to exist; the `check` job runs `npm run
-licenses:notices:check` and fails with a one-line instruction when
-  `Cargo.lock` or `package-lock.json` changed and the file did not.
+  `deny.toml`; fixed targets so the same crates are listed on every OS) and
+  `scripts/gen-third-party-notices.mjs`, which writes the HTML, the ffmpeg text
+  and the npm part. The script sorts cargo-about's JSON itself, because
+  cargo-about's own templates follow directory order, which differs between
+  macOS and Linux (the first CI run caught exactly that). The file is checked in
+  because `tauri build` requires a declared resource to exist; the `check` job
+  runs `npm run licenses:notices:check`, which fails with the first differing
+  line when `Cargo.lock` or `package-lock.json` changed and the file did not.
 - **Bundled via** `bundle.resources` in `tauri.conf.json`. A unit test pins that
   the path in Rust and in the config are the same string. On macOS it lands in
   `SundayRec.app/Contents/Resources/resources/`, on Windows next to the exe in
   `resources\`.
 - **When ffmpeg's build or version changes,** update the ffmpeg text in
-  `about.hbs` and regenerate.
+  `scripts/gen-third-party-notices.mjs` and regenerate.
 
 ## Required GitHub repository secrets
 
