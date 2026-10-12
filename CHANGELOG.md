@@ -24,6 +24,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   har brukt appens egen lydmotor siden august; den skjulte nødbryteren tilbake
   til ffmpeg er borte. Gamle innstillinger leses som før, og rester av
   forhåndsopptak etter et krasj ryddes fortsatt bort ved oppstart.
+- **Lydopptak bruker bare appens egen lydmotor.** Den skjulte nødbryteren som
+  sendte et lydopptak tilbake til ffmpeg er fjernet, og det er den automatiske
+  reserveveien også: starter lydmotoren ikke, får du beskjed om det i stedet for
+  at appen stille prøver en eldre vei. Gamle innstillinger leses som før.
+  Valget «Klassisk (ffmpeg)» under Avansert er borte; på Windows står
+  DirectShow-valget igjen for videoopptak.
 - **Hakk i lyden telles nå av lydsystemet selv.** Opptaket teller hvert hakk
   macOS og Windows melder om, i stedet for å tolke tekst fra en loggfil. Tallet
   vises i diagnoserapporten, i lydtesten og i den anonyme helsestatistikken

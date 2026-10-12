@@ -151,6 +151,14 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
   rydder opp etter beslutningen.
 - **Ferdig når:** innstillingene leses fortsatt uten feil fra en gammel database
   (test), og ingen kodevei når ffmpeg-fangst av lyd uten video.
+- **Rettet i A5b:** `classic_directshow` nådde også lyd uten video (på Windows
+  tvang den ffmpeg), så den slutter å styre lydøkter allerede her — den styrer
+  bare videoøkter til C3 sletter den. Det samme gjelder reserveveien: den
+  automatiske fallbacken fra native til ffmpeg ved startfeil er fjernet, ikke bare
+  bryteren. Soak-harnessen (`soak/`, `soak.yml`) og fault-injection-testene i
+  `recorder/longrun.rs` kjører fortsatt ffmpeg-lydargv mot en lavfi-kilde; det er
+  testkode, ikke en vei appen kan ta, og den må skrives om til den native
+  motoren (egen økt) før `build_unified_capture_args` kan miste lydgrenen.
 
 ### B — Lydmotoren (detaljer i [LYDMOTOR.md](LYDMOTOR.md))
 

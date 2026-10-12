@@ -64,7 +64,7 @@
 > I dag er lydfangsten en **native cpal-motor** (CoreAudio/WASAPI) som skriver
 > WAV direkte (cpal → ring → egen WAV-skriver). ffmpeg består for
 > **video-sesjoner + offline-arbeid** (leveranse-encode, preroll) og
-> nødbryteren `classic_ffmpeg_audio`.
+> (nødbryteren `classic_ffmpeg_audio` er fjernet, A5b).
 
 **Sentrale arkitektur-valg (bygg det riktig):**
 
@@ -99,7 +99,8 @@ Hver fase: **Mål · Kilde å speile (adferd) · Rust/Tauri-mapping · Exit-krit
   **⚠️ SUPERSEDED av v0.6.0 (PR #65):** ffmpeg-capture-beskrivelsen over er
   historisk — lydfangsten er i dag en **native cpal-motor** (CoreAudio/WASAPI)
   som skriver WAV direkte; ffmpeg gjelder kun video-sesjoner + offline-arbeid
-  (leveranse-encode, preroll) og nødbryteren `classic_ffmpeg_audio`.
+  (leveranse-encode, preroll). (Nødbryteren `classic_ffmpeg_audio` er
+  fjernet, A5b.)
 - **Skall:** scaffold Tauri 2 + React 19 + Tailwind v4; `sundayrec-core` Rust-crate;
   ffmpeg-sidecar (kopier SundayEdits `fetch-ffmpeg.mjs` + `externalBin`); sqlx-schema;
   keyring; ts-rs-søm; logger; feilmodell; CI som signerer Mac + bygger Win + `latest.json`.
