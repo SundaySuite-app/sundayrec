@@ -35,6 +35,12 @@ lossPct: number,
  */
 gapSec: number, drops: number, dups: number, xruns: number, 
 /**
+ * Xruns the audio system reported to the native engine (cpal
+ * `ErrorKind::Xrun`, A3c). 0 on the ffmpeg path, where [`Self::xruns`]
+ * carries the stderr-derived count instead.
+ */
+nativeXruns: number, 
+/**
  * Live-levels IPC messages dropped on a full channel.
  */
 levelsDropped: number, 

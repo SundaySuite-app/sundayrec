@@ -193,7 +193,11 @@ faktisk skal se nå — sist.
       intervallene, ingen fil er tom eller korrupt, og loggen roterer som
       forventet uten å miste noe — bekreft at de roterte filene
       (`sundayrec.1.log` … `.4.log`) er intakte og i riktig rekkefølge
-      etterpå. Dette er også den økten som gir de ærlige tallene til
+      etterpå. **Xruns (A3c):** diagnoserapporten skal vise antall xruns for
+      opptaket. Det er tallet lydsystemet selv melder (CoreAudio/WASAPI via
+      cpal), ikke noe lest ut av en logg. Noter det per maskin: 0 på en
+      rolig maskin er det vanlige, og et tall over 0 skal stemme med
+      hakk du faktisk kan høre eller se i bølgeformen. Dette er også den økten som gir de ærlige tallene til
       RELEASE-CHECKLIST.md §6a (Dropp/xruns/IPC-overbelastning) hvis noe i
       opptaksmotoren er endret siden sist.
 - [ ] **(e1) Manuelt opptak fra Opptak-sida lagres som før (navn/mappe).**

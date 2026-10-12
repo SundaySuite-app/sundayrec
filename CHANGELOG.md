@@ -19,6 +19,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   programvare som før. Feiler den valgte koderen midt i et opptak, bytter
   appen til programvare og glemmer valget. Diagnosen viser hvilken koder som
   er i bruk.
+
+- **Hakk i lyden telles nå av lydsystemet selv.** Opptaket teller hvert hakk
+  macOS og Windows melder om, i stedet for å tolke tekst fra en loggfil. Tallet
+  vises i diagnoserapporten, i lydtesten og i den anonyme helsestatistikken
+  (bare et tall, ingenting om enheten).
 - **Opptaket skiller bedre mellom feil på lydenheten.** En frakoblet mikser og
   et bytte av samplingsfrekvens gir fortsatt en gjenkobling, men en enhet som
   er opptatt av et annet program prøves på nytt med riktig beskjed, en nektet

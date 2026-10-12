@@ -24,8 +24,8 @@ import type { SelfTestReport } from "./SelfTestReport";
  *   four segments reported 40, not 160. The fix is a per-process window
  *   ([`RecordingTelemetry::seal_process`], called at each segment end) whose
  *   maximum is added to the session total.
- * - **`xruns`, `capture_drop_lines`, `levels_dropped`, `msgs_dropped` are EVENT
- *   counts** — one increment per matching stderr line / dropped message. They
+ * - **`xruns`, `native_xruns`, `capture_drop_lines`, `levels_dropped`,
+ *   `msgs_dropped` are EVENT counts** — one increment per matching stderr line / dropped message. They
  *   already accumulate correctly across any number of processes, because
  *   nothing about them restarts; they were checked for the same flaw and do not
  *   have it.
@@ -47,9 +47,19 @@ drops: bigint,
  */
 dups: bigint, 
 /**
- * xrun/overrun-class stderr lines seen — the direct stutter signal.
+ * xrun/overrun-class stderr lines seen — the direct stutter signal on the
+ * ffmpeg path. Always 0 on the native engine, which reads no stderr; see
+ * [`Self::native_xruns`].
  */
 xruns: bigint, 
+/**
+ * Xruns the audio system itself reported to the NATIVE engine (A3c): cpal
+ * 0.18 delivers a CoreAudio/WASAPI buffer glitch through the stream's
+ * error callback as `ErrorKind::Xrun`, and the engine counts each one.
+ * A real count from the OS, not a phrase scraped from a log; 0 on the
+ * ffmpeg path (which has [`Self::xruns`] instead).
+ */
+nativeXruns: bigint, 
 /**
  * Times the live-levels IPC `try_send` hit a FULL channel — the direct
  * renderer/IPC-starvation signal ("recording mode lags"). A rising count

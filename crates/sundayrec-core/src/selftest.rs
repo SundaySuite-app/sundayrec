@@ -473,8 +473,8 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
 ///   four segments reported 40, not 160. The fix is a per-process window
 ///   ([`RecordingTelemetry::seal_process`], called at each segment end) whose
 ///   maximum is added to the session total.
-/// - **`xruns`, `capture_drop_lines`, `levels_dropped`, `msgs_dropped` are EVENT
-///   counts** — one increment per matching stderr line / dropped message. They
+/// - **`xruns`, `native_xruns`, `capture_drop_lines`, `levels_dropped`,
+///   `msgs_dropped` are EVENT counts** — one increment per matching stderr line / dropped message. They
 ///   already accumulate correctly across any number of processes, because
 ///   nothing about them restarts; they were checked for the same flaw and do not
 ///   have it.
@@ -506,8 +506,17 @@ pub struct RecordingTelemetry {
     #[serde(skip)]
     #[ts(skip)]
     pub cur_dups: u64,
-    /// xrun/overrun-class stderr lines seen — the direct stutter signal.
+    /// xrun/overrun-class stderr lines seen — the direct stutter signal on the
+    /// ffmpeg path. Always 0 on the native engine, which reads no stderr; see
+    /// [`Self::native_xruns`].
     pub xruns: u64,
+    /// Xruns the audio system itself reported to the NATIVE engine (A3c): cpal
+    /// 0.18 delivers a CoreAudio/WASAPI buffer glitch through the stream's
+    /// error callback as `ErrorKind::Xrun`, and the engine counts each one.
+    /// A real count from the OS, not a phrase scraped from a log; 0 on the
+    /// ffmpeg path (which has [`Self::xruns`] instead).
+    #[serde(default)]
+    pub native_xruns: u64,
     /// Times the live-levels IPC `try_send` hit a FULL channel — the direct
     /// renderer/IPC-starvation signal ("recording mode lags"). A rising count
     /// means the UI couldn't keep up and back-pressure was building.
@@ -618,6 +627,15 @@ impl RecordingTelemetry {
         self.drops.saturating_add(self.cur_drops)
     }
 
+    /// Every xrun the session saw, whichever engine counted it: the ffmpeg
+    /// path's stderr-derived [`Self::xruns`] plus the native engine's
+    /// OS-reported [`Self::native_xruns`]. One engine fills one of them; a
+    /// session that fell back from native to ffmpeg mid-way fills both. Use
+    /// this wherever the number is shown to a person.
+    pub fn xruns_total(&self) -> u64 {
+        self.xruns.saturating_add(self.native_xruns)
+    }
+
     /// [`Self::drops_total`] for `dup=`.
     pub fn dups_total(&self) -> u64 {
         self.dups.saturating_add(self.cur_dups)
@@ -629,6 +647,7 @@ impl RecordingTelemetry {
     pub fn is_degraded(&self) -> bool {
         self.drops_total() > 0
             || self.xruns > 0
+            || self.native_xruns > 0
             || self.levels_dropped > 0
             || self.capture_drop_lines > 0
             || self.ring_overrun_samples > 0
@@ -668,11 +687,14 @@ pub fn facts_from_recording(t: &RecordingTelemetry, size_bytes: u64) -> SelfTest
         // process is still open must still see that process's drops.
         drops: t.drops_total(),
         dups: t.dups_total(),
-        // Capture-drop lines ARE xrun-class events for verdict purposes; a
-        // native ring overrun counts as one xrun event (its MAGNITUDE already
-        // shows up as duration loss — the overrun samples never reach disk).
+        // Capture-drop lines ARE xrun-class events for verdict purposes; the
+        // native engine's OS-reported xruns are the same class, counted for
+        // real; a native ring overrun counts as one xrun event (its MAGNITUDE
+        // already shows up as duration loss — the overrun samples never reach
+        // disk).
         xruns: t
             .xruns
+            .saturating_add(t.native_xruns)
             .saturating_add(t.capture_drop_lines)
             .saturating_add(u64::from(t.ring_overrun_samples > 0)),
         size_bytes,
@@ -953,6 +975,31 @@ clean line";
         t.observe_line("size=256kB time=00:00:05.00");
         assert_eq!(t.capture_drop_lines, 2);
         assert!(t.is_degraded(), "capture drops must degrade the verdict");
+    }
+
+    #[test]
+    fn native_xruns_degrade_and_reach_the_verdict() {
+        let t = RecordingTelemetry {
+            expected_sec: 62.0,
+            measured_sec: 60.0,
+            native_xruns: 3,
+            ..Default::default()
+        };
+        assert!(t.is_degraded(), "an OS-reported xrun is a glitch");
+        assert_eq!(t.xruns_total(), 3);
+        // Both engines' counters add up; stderr lines are not needed for it.
+        let both = RecordingTelemetry {
+            xruns: 2,
+            native_xruns: 3,
+            ..Default::default()
+        };
+        assert_eq!(both.xruns_total(), 5);
+        let f = facts_from_recording(&t, 1_000_000);
+        assert_eq!(f.xruns, 3);
+        // A native engine feeds no stderr, so observe_line never touches it.
+        let mut quiet = RecordingTelemetry::default();
+        quiet.observe_line("[avfoundation @ 0x1] real-time buffer too full");
+        assert_eq!(quiet.native_xruns, 0);
     }
 
     #[test]

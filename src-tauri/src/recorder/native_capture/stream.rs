@@ -411,7 +411,8 @@ pub fn stream_fault(kind: cpal::ErrorKind) -> StreamFault {
 
 /// The ONE classification of a report from cpal's error callback, shared by
 /// every cpal stream in the app (native capture, the native pre-roll, the
-/// Windows cpal pipe, the VU meter).
+/// Windows cpal pipe, the VU meter). [`classify_stream_error_counting`] is the
+/// same decision plus an xrun counter, used by the recording engine's stream.
 ///
 /// cpal 0.18 delivers fatal errors AND advisories through the same callback.
 /// What the report means is decided in the core
@@ -422,9 +423,44 @@ pub fn stream_fault(kind: cpal::ErrorKind) -> StreamFault {
 /// Called on cpal's callback thread, so it only logs and allocates the detail
 /// string — never blocks.
 pub fn classify_stream_error(context: &str, e: &cpal::Error) -> Option<StreamFaultReport> {
+    classify_stream_error_counting(context, e, None)
+}
+
+/// [`classify_stream_error`] that also COUNTS the xruns cpal reports (A3c).
+///
+/// Since cpal 0.18 CoreAudio and WASAPI report a buffer under-/overrun through
+/// the error callback as `ErrorKind::Xrun`. That is the real number of audible
+/// glitch candidates the OS saw, and it replaces what the ffmpeg path derives
+/// from stderr phrases. Only the recording engine's stream passes a counter;
+/// the pre-roll, the VU meter and the ffmpeg-fed Windows pipe pass none, so a
+/// glitch in a meter or in audio that never reaches a file is not charged to
+/// the recording.
+///
+/// A glitching device can report one per buffer, so the log line is thinned:
+/// the 1st, 2nd, 4th, 8th… xruns are logged and the rest only counted.
+/// `RealtimeDenied` is deliberately NOT counted: it is one report at start-up
+/// (the audio thread runs without real-time priority), not a glitch, and the
+/// glitches it makes more likely arrive as `Xrun` and are counted then.
+pub fn classify_stream_error_counting(
+    context: &str,
+    e: &cpal::Error,
+    xruns: Option<&AtomicU64>,
+) -> Option<StreamFaultReport> {
     let fault = stream_fault(e.kind());
     match stream_fault_action(fault) {
         StreamFaultAction::KeepRecording => {
+            if let (StreamFault::Xrun, Some(counter)) = (fault, xruns) {
+                let n = counter.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+                if !n.is_power_of_two() {
+                    return None;
+                }
+                tracing::warn!(
+                    ?fault,
+                    xruns = n,
+                    "{context} advisory (still recording): {e}"
+                );
+                return None;
+            }
             tracing::warn!(?fault, "{context} advisory (still recording): {e}");
             None
         }
@@ -751,6 +787,32 @@ mod tests {
         // A zero channel count is treated as mono rather than producing a
         // zero-capacity ring the producer could never push into.
         assert_eq!(ring_capacity(8_000, 0), MIN_RING_SAMPLES);
+    }
+
+    /// A3c: only `Xrun` is counted — not the other advisories, not a fatal
+    /// fault — and the count is exact even though the log line is thinned.
+    #[test]
+    fn only_xruns_are_counted() {
+        use cpal::ErrorKind as K;
+        let count = AtomicU64::new(0);
+        let report = |kind: K| {
+            classify_stream_error_counting("t", &cpal::Error::with_message(kind, ""), Some(&count))
+        };
+        for _ in 0..10 {
+            assert!(report(K::Xrun).is_none(), "an xrun never ends the stream");
+        }
+        assert_eq!(count.load(Ordering::Relaxed), 10);
+        assert!(report(K::RealtimeDenied).is_none());
+        assert!(report(K::DeviceChanged).is_none());
+        assert!(report(K::DeviceNotAvailable).is_some());
+        assert_eq!(
+            count.load(Ordering::Relaxed),
+            10,
+            "other kinds leave the count alone"
+        );
+        // Without a counter (meters, pre-roll) the same report is just logged.
+        assert!(classify_stream_error("t", &cpal::Error::with_message(K::Xrun, "")).is_none());
+        assert_eq!(count.load(Ordering::Relaxed), 10);
     }
 
     /// A3b: the four classes the reconnect machine acts on are mapped from

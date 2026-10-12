@@ -971,6 +971,11 @@ pub struct QualityReport {
     pub dups: u64,
     #[ts(type = "number")]
     pub xruns: u64,
+    /// Xruns the audio system reported to the native engine (cpal
+    /// `ErrorKind::Xrun`, A3c). 0 on the ffmpeg path, where [`Self::xruns`]
+    /// carries the stderr-derived count instead.
+    #[ts(type = "number")]
+    pub native_xruns: u64,
     /// Live-levels IPC messages dropped on a full channel.
     #[ts(type = "number")]
     pub levels_dropped: u64,
@@ -1358,6 +1363,7 @@ pub fn quality_report(t: &RecordingTelemetry, at: i64) -> QualityReport {
         drops: t.drops,
         dups: t.dups,
         xruns: t.xruns,
+        native_xruns: t.native_xruns,
         levels_dropped: t.levels_dropped,
         capture_drop_lines: t.capture_drop_lines,
         msgs_dropped: t.msgs_dropped,
@@ -1515,6 +1521,7 @@ mod tests {
         ("drops", "num"),
         ("dups", "num"),
         ("xruns", "num"),
+        ("nativeXruns", "num"),
         ("levelsDropped", "num"),
         ("captureDropLines", "num"),
         ("msgsDropped", "num"),
@@ -1675,6 +1682,7 @@ mod tests {
                 drops: 1,
                 dups: 2,
                 xruns: 3,
+                native_xruns: 8,
                 levels_dropped: 4,
                 capture_drop_lines: 5,
                 msgs_dropped: 6,
@@ -2576,6 +2584,7 @@ mod tests {
             drops: 40,
             dups: 1,
             xruns: 2,
+            native_xruns: 9,
             levels_dropped: 3,
             capture_drop_lines: 4,
             msgs_dropped: 5,
@@ -2593,6 +2602,7 @@ mod tests {
         assert_eq!(q.at, 1_800_000_000_000);
         assert_eq!(q.drops, 40);
         assert_eq!(q.ring_overrun_samples, 6);
+        assert_eq!(q.native_xruns, 9);
         assert_eq!(q.verdict, Some(SelfTestVerdict::Fail));
         assert!(q.reasons.contains(&QualityReason::LargeGap));
         assert!(q.reasons.contains(&QualityReason::ManyDrops));

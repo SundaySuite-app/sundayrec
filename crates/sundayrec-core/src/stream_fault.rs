@@ -20,8 +20,8 @@
 //! | [`StreamFault::DeviceBusy`] | retry, `device_busy` | the device is THERE but held (WASAPI `AUDCLNT_E_DEVICE_IN_USE`, ASIO `HardwareStuck`). Same recovery policy as a reconnect — a timed back-off — but the code says what actually happened, and no device-list change will cut the wait short |
 //! | [`StreamFault::PermissionDenied`] | **fatal**, `device_permission_denied` | a retry cannot grant a permission; the session ends with the sentence that tells the volunteer what to do |
 //! | [`StreamFault::DeviceChanged`] | keep recording | cpal: "the stream remains active and no rebuild is required" |
-//! | [`StreamFault::Xrun`] | keep recording | one glitch; counting them is A3c's job |
-//! | [`StreamFault::RealtimeDenied`] | keep recording | audio still flows, at a higher risk of glitches |
+//! | [`StreamFault::Xrun`] | keep recording | one glitch; the native engine COUNTS it (A3c, `RecordingTelemetry::native_xruns`) |
+//! | [`StreamFault::RealtimeDenied`] | keep recording | audio still flows, at a higher risk of glitches; logged, not counted — it is one report at start-up, and the glitches it makes likelier arrive as `Xrun` |
 //! | [`StreamFault::Other`] | reconnect, `device_disconnected` | anything else (backend error, host gone, resource limit) keeps the pre-A3b behaviour: tear down and reconnect |
 //!
 //! "Reconnect" and "retry" deliberately share one mechanism — the
