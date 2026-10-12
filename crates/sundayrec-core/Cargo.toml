@@ -41,7 +41,6 @@ regex = "1"
 # to opt out of — `no_std` here would buy nothing and diverge from the
 # resolution the rest of the graph already uses.
 semver = "1"
-kmon = "1.7.1"
 [dev-dependencies]
 # Property tests for the parsers most exposed to hostile/malformed input
 # (WAV headers, image headers, deep links, ffmpeg progress/telemetry lines,
