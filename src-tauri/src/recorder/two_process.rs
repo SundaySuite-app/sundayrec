@@ -50,8 +50,8 @@ use sundayrec_core::capture::VideoCaptureMode;
 use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::two_process::{
-    av_offset_decision, build_audio_capture_args, build_mux_args, build_video_capture_args,
-    CameraFailure,
+    av_offset_decision, build_audio_capture_args, build_mux_args,
+    build_video_capture_args_with_encoder, CameraFailure,
 };
 
 use crate::db::store::{insert_recording, RecordingRow};
@@ -178,13 +178,20 @@ pub(crate) async fn run_two_process_session(
         height: 720,
         input_fps: 30,
     });
-    let video_args = build_video_capture_args(
+    // C0a: the machine's probed hardware encoder on Windows (None → software).
+    let encoder = sundayrec_core::video_encoder::resolve_encoder(
+        platform,
+        hw_accel,
+        video_codec,
+        crate::media::video_encoder::active(),
+    );
+    let video_args = build_video_capture_args_with_encoder(
         platform,
         &device_token(&video),
         &video_temp,
         mode,
         sundayrec_core::capture::RECORDING_FRAMERATE,
-        hw_accel,
+        encoder,
         video_codec,
     );
     let audio_args = build_audio_capture_args(

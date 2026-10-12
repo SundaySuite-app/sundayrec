@@ -5,6 +5,7 @@ import type { LogFileInfo } from "./LogFileInfo";
 import type { RecordingTelemetry } from "./RecordingTelemetry";
 import type { SettingsSummary } from "./SettingsSummary";
 import type { TaskRestartSummary } from "./TaskRestartSummary";
+import type { VideoEncoderSummary } from "./VideoEncoderSummary";
 
 /**
  * Everything the `src-tauri` layer gathered, ready to be formatted. No secrets
@@ -135,4 +136,11 @@ dbJournalMode: string | null,
  * `PRAGMA busy_timeout` — should read `30000`. Same "couldn't ask" =
  * `None` convention as [`Self::db_journal_mode`].
  */
-dbBusyTimeoutMs: number | null, };
+dbBusyTimeoutMs: number | null, 
+/**
+ * Which video encoder recordings get on this machine, and what the probe
+ * said (Windows: nvenc → qsv → amf → mf → libx264). `None` = not gathered
+ * (a test fixture, or an old caller). A report that says «hakking» can now
+ * also say whether the machine is encoding 1080p in software.
+ */
+videoEncoder: VideoEncoderSummary | null, };

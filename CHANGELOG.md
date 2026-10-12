@@ -5,6 +5,15 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Videoopptak på Windows bruker skjermkortet til å kode.** Tidligere ble
+  1080p kodet i programvare på Windows, og på en eldre PC ga det høy
+  CPU-last, tapte bilder og hakking. Nå prøver appen ved første videoopptak
+  NVIDIA, Intel, AMD og Media Foundation i den rekkefølgen, og husker den
+  første som virker på akkurat denne maskinen. Finnes ingen, brukes
+  programvare som før. Feiler den valgte koderen midt i et opptak, bytter
+  appen til programvare og glemmer valget. Diagnosen viser hvilken koder som
+  er i bruk.
+
 ## v0.25.3 — tryggere opptak og mange mindre rettelser
 
 - **Opptaket overlever strømbrudd og krasj bedre.** Lyden lagres helt ned på

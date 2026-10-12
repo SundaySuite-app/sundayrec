@@ -483,6 +483,23 @@ Windows-boksen bruker under halvparten av CPU-en det bruker i dag
 **Hvor det bevises:** Macen (golden-testene) + **Riggen** (CPU-målingen).
 Koderne finnes ikke i Mac-sidecaren, så prøven kan ikke kjøres her.
 
+**Rettelser til planen (funnet i C0a):**
+
+- Windows' vanlige videoøkt går ikke gjennom `push_video_encoder_args`, men
+  gjennom cpal-røret (`build_cpal_pipe_video_args`), som hadde `libx264`
+  hardkodet. Begge stiene bruker nå samme valg
+  (`sundayrec_core::video_encoder`), ellers hadde endringen ikke nådd Windows'
+  vanlige videoopptak. Koderrunnen er delt i `push_encoder_args`.
+- «Faller til `libx264` ved gjenkoblingen» gjelder ffmpeg-/dshow-stien
+  (`run_session`). cpal-røret har ikke gjenkobling og avslutter økta når
+  ffmpeg dør; der glemmer C0a bare valget, så NESTE opptak får `libx264`.
+- Prøven bruker nøyaktig koderargumentene opptaket bruker, ikke bare
+  `-c:v <koder>`: `-hw_encoding 1` for `h264_mf` (ellers kan Media Foundation
+  velge sin programvare-koder og «bestå»), og bitrate som på Mac.
+- Etter en koderfeil midt i et opptak prøves ikke maskinvare på nytt før appen
+  startes på nytt, slik at en koder som består prøven men feiler under last
+  ikke velges igjen ved neste opptak samme dag.
+
 **Startmelding:**
 
 > Les `docs/GJENNOMFORING.md` §C0a og `docs/VIDEOMOTOR.md` §C0. Gjennomfør økta

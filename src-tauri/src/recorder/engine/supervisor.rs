@@ -661,6 +661,16 @@ pub(super) async fn run_session(
                             // the SAME reconnect budget as device exits. (This replaces a
                             // hand-inlined duplicate of this match that gave up after
                             // exactly one respawn retry.)
+                            // C0a: a video recording that died may have been killed
+                            // by its hardware encoder. The core decides whether the
+                            // encoder takes the blame; if so every respawn below
+                            // builds its argv with libx264 and the stored choice is
+                            // forgotten.
+                            if ctx.video.is_some() {
+                                crate::media::video_encoder::note_unexpected_exit(
+                                    &ctx.app, last_error,
+                                );
+                            }
                             let mut delay_ms = delay_ms;
                             let mut attempt = attempt;
                             let mut next_segment = next_segment;

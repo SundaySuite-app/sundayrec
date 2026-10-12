@@ -49,6 +49,9 @@ pub fn build_record_args(
         // platform has it — the builder gates `hw_accel` to macOS itself).
         video_codec: sundayrec_core::capture::RECORDING_VIDEO_CODEC,
         hw_accel: sundayrec_core::capture::RECORDING_HW_ACCEL,
+        // C0a: the Windows hardware encoder this machine's probe settled on
+        // (`None` until a video session has probed → software, as before).
+        hw_encoder: crate::media::video_encoder::active(),
     };
     build_unified_capture_args(
         platform,

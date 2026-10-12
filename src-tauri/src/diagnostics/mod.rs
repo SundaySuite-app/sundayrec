@@ -139,6 +139,14 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     // cheap is already gathered if it has to be skipped or times out.
     let probe = run_capture_probe(app, &s).await;
 
+    // C0a: which video encoder recordings get here (and, when no recording is
+    // running, a fresh probe of the hardware encoders — Windows only).
+    let recording_active = app
+        .try_state::<crate::recorder::engine::RecorderEngine>()
+        .map(|e| e.current_state().is_active())
+        .unwrap_or(false);
+    let video_encoder = crate::media::video_encoder::diagnose(app, recording_active).await;
+
     let input = DiagnosticsInput {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         platform: std::env::consts::OS.to_string(),
@@ -174,6 +182,7 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         log_file: read_log_file_info(),
         db_journal_mode,
         db_busy_timeout_ms,
+        video_encoder: Some(video_encoder),
     };
 
     // Structured findings (the error-code system) + the human report.

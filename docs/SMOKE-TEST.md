@@ -321,6 +321,15 @@ the device.
      it is now the first place a dead camera shows up.
    - VERIFIED-BY: e2e/record.spec.ts::⚠️ previewen slipper kameraet FØR start_recording
    - VERIFIED-BY: e2e/record.spec.ts::poller motorens frames og måler seg på headeren
+   - **Windows (C0a):** the FIRST video recording on a machine probes the
+     hardware encoders (`h264_nvenc` → `h264_qsv` → `h264_amf` → `h264_mf` →
+     `libx264`) with a 0.2 s test clip and stores the first that works in
+     `video-encoder.json` (Local AppData, per machine). **Expected:** the start
+     takes a few seconds longer that one time; the next start does not. Task
+     Manager shows far less CPU than software x264 did. The probe cannot run on
+     a Mac (no such encoders in the macOS sidecar); the argv per encoder is
+     covered by golden tests in `capture.rs`/`video_encoder.rs`, the CPU claim
+     by `docs/RIG-DAY.md` (c0a).
 4. Stop, and open the file.
    - **Expected:** the mp4 has a video stream with picture in it. The preview is
      evidence that frames reached the ENGINE; only the file proves they were

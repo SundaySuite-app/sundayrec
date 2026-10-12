@@ -191,6 +191,14 @@ pub struct DiagnosticsInput {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub db_busy_timeout_ms: Option<u64>,
+
+    // ── C0a: video encoder ───────────────────────────────────────────────────
+    /// Which video encoder recordings get on this machine, and what the probe
+    /// said (Windows: nvenc → qsv → amf → mf → libx264). `None` = not gathered
+    /// (a test fixture, or an old caller). A report that says «hakking» can now
+    /// also say whether the machine is encoding 1080p in software.
+    #[serde(default)]
+    pub video_encoder: Option<crate::video_encoder::VideoEncoderSummary>,
 }
 
 /// What the crash ring holds — count + newest, not the records themselves. The
@@ -700,6 +708,24 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     }
     lines.push(String::new());
 
+    // ── Video encoder (C0a) ─────────────────────────────────────────────────
+    if let Some(enc) = &input.video_encoder {
+        lines.push("## Video encoder".to_string());
+        lines.push(format!("- **In use:** {}", enc.chosen));
+        if enc.probes.is_empty() {
+            lines.push("- **Probe:** not run".to_string());
+        } else {
+            for p in &enc.probes {
+                lines.push(format!(
+                    "- **Probe `{}`:** {}",
+                    p.encoder,
+                    if p.ok { "works" } else { "failed" }
+                ));
+            }
+        }
+        lines.push(String::new());
+    }
+
     // ── Devices ─────────────────────────────────────────────────────────────
     lines.push("## Devices".to_string());
     lines.push(format!("### Audio devices ({})", input.audio_devices.len()));
@@ -897,6 +923,32 @@ mod tests {
         assert!(md.contains("**App version:** 0.1.0"));
         assert!(md.contains("macos (aarch64)"));
         assert!(md.contains("ffmpeg version 6.0"));
+    }
+
+    #[test]
+    fn video_encoder_section_names_the_encoder_and_each_probe() {
+        use crate::video_encoder::{VideoEncoderProbeResult, VideoEncoderSummary};
+        let mut input = sample_input();
+        input.video_encoder = Some(VideoEncoderSummary {
+            chosen: "h264_qsv".into(),
+            probes: vec![
+                VideoEncoderProbeResult {
+                    encoder: "h264_nvenc".into(),
+                    ok: false,
+                },
+                VideoEncoderProbeResult {
+                    encoder: "h264_qsv".into(),
+                    ok: true,
+                },
+            ],
+        });
+        let md = build_report_markdown(input);
+        assert!(md.contains("## Video encoder"));
+        assert!(md.contains("- **In use:** h264_qsv"));
+        assert!(md.contains("- **Probe `h264_nvenc`:** failed"));
+        assert!(md.contains("- **Probe `h264_qsv`:** works"));
+        // Uten data: ingen seksjon.
+        assert!(!build_report_markdown(sample_input()).contains("## Video encoder"));
     }
 
     #[test]

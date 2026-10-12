@@ -32,6 +32,11 @@
 //!     clock, and the audio chain gets `aresample=async=1000:first_pts=0` — together
 //!     these keep lip-sync over a whole service (cameras drop fps in low light; a
 //!     USB mixer's clock differs from the camera's).
+//!   - **Encoder choice (C0a)**: the encoder is `libx264` unless the platform has
+//!     hardware — VideoToolbox on macOS, and on Windows whichever of
+//!     `h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_mf` this machine's probe
+//!     settled on ([`CaptureOpts::hw_encoder`]). The decision and the argv per
+//!     encoder live in [`crate::video_encoder`]; golden tests pin every one.
 //!   - **Deadlock-proof live preview** ([`CaptureOpts::preview_jpg`]): a SECOND
 //!     output writes a low-fps JPEG to a FILE (`-update 1`) the UI polls. A file
 //!     sink — never a stdout pipe — so a slow/absent reader can NEVER back-pressure
@@ -45,6 +50,7 @@ use crate::ffmpeg::{
     build_levels_detect_filter, build_silence_detect_filter, unified_audio_drift_filter, Platform,
 };
 use crate::settings::ChannelMode;
+use crate::video_encoder::{push_encoder_args, resolve_encoder, VideoEncoder};
 
 // ── The recording's video knobs (v0.15: constants, no longer settings) ────────
 //
@@ -315,6 +321,37 @@ pub fn build_cpal_pipe_video_args(
     video_codec: crate::editor::VideoCodec,
     preview_jpg: Option<&str>,
 ) -> Vec<String> {
+    build_cpal_pipe_video_args_with_encoder(
+        camera_dshow_name,
+        framerate,
+        input_sample_rate,
+        channels,
+        output_path,
+        output_sample_rate,
+        bitrate_kbps,
+        video_codec,
+        VideoEncoder::Software,
+        preview_jpg,
+    )
+}
+
+/// [`build_cpal_pipe_video_args`] with the video encoder decided by the caller
+/// (C0a). This is the Windows VIDEO session's argv — the path that actually
+/// encodes 1080p30 on a church PC — so it is where a hardware encoder pays off.
+/// `VideoEncoder::Software` reproduces the pre-C0a argv byte for byte.
+#[allow(clippy::too_many_arguments)]
+pub fn build_cpal_pipe_video_args_with_encoder(
+    camera_dshow_name: &str,
+    framerate: u32,
+    input_sample_rate: u32,
+    channels: u8,
+    output_path: &str,
+    output_sample_rate: Option<u32>,
+    bitrate_kbps: u32,
+    video_codec: crate::editor::VideoCodec,
+    encoder: VideoEncoder,
+    preview_jpg: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = vec!["-hide_banner".into()];
 
     // Input 0: dshow camera, wall-clock timestamped for head alignment.
@@ -351,27 +388,19 @@ pub fn build_cpal_pipe_video_args(
     // remux. Same gate as `build_unified_capture_args`.
     let iso_container = matches!(ext_of(output_path), "mp4" | "mov" | "m4v");
 
-    // Software video encode (VideoToolbox is mac-only; ASIO is Windows-only).
-    args.push("-c:v".into());
-    match video_codec {
-        crate::editor::VideoCodec::H264 => args.push("libx264".into()),
-        crate::editor::VideoCodec::H265 => {
-            args.push("libx265".into());
-            if iso_container {
-                args.push("-tag:v".into());
-                args.push("hvc1".into());
-            }
-        }
-    }
-    args.push("-preset".into());
-    args.push("veryfast".into());
-    args.push("-pix_fmt".into());
-    args.push("yuv420p".into());
+    // Video encode. `encoder` is the machine's probed hardware encoder on
+    // Windows (C0a), or `Software` (libx264/libx265) — the argv from before.
+    // Windows hardware is H.264 only; any other pairing falls back to software.
+    let encoder = resolve_encoder(Platform::Windows, true, video_codec, Some(encoder));
     // Conform to TRUE constant frame rate so the picture stays locked to audio.
-    args.push("-r".into());
-    args.push(framerate.to_string());
-    args.push("-fps_mode".into());
-    args.push("cfr".into());
+    push_video_encoder_args_with(
+        &mut args,
+        encoder,
+        video_codec,
+        None,
+        framerate,
+        iso_container,
+    );
 
     args.extend(audio_encode_args(
         ext_of(output_path),
@@ -704,6 +733,11 @@ pub struct CaptureOpts {
     /// builder honours this ONLY on macOS (`Platform::MacOS`); elsewhere it
     /// silently falls back to software (VideoToolbox is mac-only).
     pub hw_accel: bool,
+    /// The hardware encoder this machine's probe settled on (C0a, Windows:
+    /// `h264_nvenc` → `h264_qsv` → `h264_amf` → `h264_mf`; see
+    /// [`crate::video_encoder`]). `None` = not decided → software, exactly the
+    /// argv from before C0a. Ignored off Windows and when `hw_accel` is false.
+    pub hw_encoder: Option<crate::video_encoder::VideoEncoder>,
 }
 
 impl Default for CaptureOpts {
@@ -722,6 +756,7 @@ impl Default for CaptureOpts {
             video_input: None,
             video_codec: RECORDING_VIDEO_CODEC,
             hw_accel: RECORDING_HW_ACCEL,
+            hw_encoder: None,
         }
     }
 }
@@ -747,51 +782,31 @@ pub fn push_video_encoder_args(
     framerate: u32,
     iso_container: bool,
 ) {
-    let use_hw = hw_accel && matches!(platform, Platform::MacOS);
-    args.push("-c:v".into());
-    if use_hw {
-        match video_codec {
-            crate::editor::VideoCodec::H264 => args.push("h264_videotoolbox".into()),
-            crate::editor::VideoCodec::H265 => {
-                args.push("hevc_videotoolbox".into());
-                if iso_container {
-                    args.push("-tag:v".into());
-                    args.push("hvc1".into());
-                }
-            }
-        }
-        // VideoToolbox has no CRF — target a resolution-appropriate bitrate, and
-        // `-realtime 1` tells it to keep up with the live camera even under CPU
-        // pressure (robustness over quality; owner decision 2026-10-04). ONLY
-        // here: an editor EXPORT is not realtime and gets no flag (see
-        // `editor::videotoolbox_codec_args`). Output dims = the pinned input
-        // mode (capture doesn't scale); default to 1080p.
-        let (w, h) = video_input
-            .map(|m| (m.width, m.height))
-            .unwrap_or((1920, 1080));
-        args.push("-b:v".into());
-        args.push(format!(
-            "{}k",
-            crate::editor::default_video_bitrate_kbps(w, h)
-        ));
-        args.push("-realtime".into());
-        args.push("1".into());
-    } else {
-        match video_codec {
-            crate::editor::VideoCodec::H264 => args.push("libx264".into()),
-            crate::editor::VideoCodec::H265 => {
-                args.push("libx265".into());
-                // `hvc1` tag so QuickTime/Apple players accept the HEVC stream in
-                // an mp4/mov container (see the iso_container doc above).
-                if iso_container {
-                    args.push("-tag:v".into());
-                    args.push("hvc1".into());
-                }
-            }
-        }
-        args.push("-preset".into());
-        args.push("veryfast".into());
-    }
+    let encoder = resolve_encoder(platform, hw_accel, video_codec, None);
+    push_video_encoder_args_with(
+        args,
+        encoder,
+        video_codec,
+        video_input,
+        framerate,
+        iso_container,
+    );
+}
+
+/// [`push_video_encoder_args`] with the encoder already decided (C0a). The
+/// decision itself — which hardware encoder this machine gets — lives in
+/// [`crate::video_encoder`]; this only shapes the argv: the encoder's own run
+/// ([`crate::video_encoder::push_encoder_args`]), then the shared
+/// `-pix_fmt yuv420p -r <fps> -fps_mode cfr`.
+pub fn push_video_encoder_args_with(
+    args: &mut Vec<String>,
+    encoder: VideoEncoder,
+    video_codec: crate::editor::VideoCodec,
+    video_input: Option<VideoCaptureMode>,
+    framerate: u32,
+    iso_container: bool,
+) {
+    push_encoder_args(args, encoder, video_codec, video_input, iso_container);
     args.push("-pix_fmt".into());
     args.push("yuv420p".into());
     args.push("-r".into());
@@ -969,10 +984,9 @@ pub fn build_unified_capture_args(
         // reject foreign tags) — the tag is applied at the finalize REMUX into
         // mp4/mov instead, so only stamp it here for a direct ISO-container output.
         let iso_container = matches!(ext_of(output_path), "mp4" | "mov" | "m4v");
-        push_video_encoder_args(
+        push_video_encoder_args_with(
             &mut args,
-            platform,
-            opts.hw_accel,
+            resolve_encoder(platform, opts.hw_accel, opts.video_codec, opts.hw_encoder),
             opts.video_codec,
             opts.video_input,
             opts.framerate,

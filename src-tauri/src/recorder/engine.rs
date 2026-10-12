@@ -681,6 +681,12 @@ impl RecorderEngine {
             }
         }
 
+        // C0a: settle which video encoder this machine uses (Windows: probe the
+        // hardware encoders once and remember the winner; elsewhere instant).
+        if video.is_some() {
+            crate::media::video_encoder::prepare_session(&app).await;
+        }
+
         // ── Windows: capture audio via cpal (modern API), not ffmpeg/dshow ──────
         // dshow is an old API that splits pro interfaces into stereo pairs and is
         // the source of the Windows instability. So on Windows we capture audio

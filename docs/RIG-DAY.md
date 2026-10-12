@@ -212,6 +212,51 @@ faktisk skal se nå — sist.
       rest av forrige økts «Stoppet»-tilstand vises over det nye. En
       generasjon som ikke er den gjeldende skal ikke få lov til å skrive til
       skjermen.
+- [ ] **(c0a) Maskinvarekoding på Windows (C0a, `ombygging/c0a-hw-koder`).**
+      Koderne (`h264_nvenc`, `h264_qsv`, `h264_amf`, `h264_mf`) finnes ikke i
+      Mac-sidecaren, så hverken prøven eller CPU-gevinsten er kjørt noe sted
+      ennå — golden-testene i `capture.rs` og `video_encoder.rs` beviser bare
+      argumentene. Dette punktet beviser resten. Bruk en **eldre kirke-PC** om
+      du har en (det er den som hakket), ellers Windows-boksen.
+      **Rekkefølge:** (1) Mål BASISEN først, med forrige utgivelse (v0.25.3,
+      programvare): ta opp **60 minutter** video (1080p30, kamera + lyd) og
+      noter CPU-bruk i Oppgavebehandling (gjennomsnitt og topp for
+      `sundayrec` + `ffmpeg`, hver 5. min), og antall tapte bilder
+      (`drop=` i siste `frame=`-linje i loggen, eller `lost_frames` i
+      opptakstelemetrien). (2) Installer denne versjonen, slett
+      `%LOCALAPPDATA%\no.sundayrec.app\video-encoder.json` om den finnes, og
+      gjenta de 60 minuttene på samme maskin, samme kamera, samme scene.
+      **Forventet:** (a) Ved første videoopptak tar starten noen sekunder
+      ekstra (prøven), og `video-encoder.json` finnes etterpå med første
+      koder som virker på maskinen (NVIDIA: `h264_nvenc`, Intel:
+      `h264_qsv`, AMD: `h264_amf`, ellers `h264_mf`; `libx264` bare hvis
+      ingen virker). Loggen har `video encoder probe` per koder og
+      `video encoder: probe finished`. (b) **CPU under halvparten av basisen**
+      (snitt over de 60 minuttene) og **ingen tapte bilder** (`drop=0`). (c) Neste
+      videoopptak starter UTEN ekstra ventetid (`using stored choice`). (d)
+      Filen spiller i VLC og i Windows' egen spiller, har jevn 30 fps, og
+      lyd og bilde er i synk ved 60 min (klapp foran kameraet ved start og
+      slutt). (e) Bitraten er rimelig: `ffprobe` viser rundt 12 Mbit/s
+      (alle fire koderne får `-b:v 12000k`; AMF og MF styrer bitrate etter
+      egne regler, så les av faktisk verdi og noter den).
+      **Test også:** (f) **Diagnose** (Innstillinger → Avansert) har seksjonen
+      «Video encoder» med «In use» og én «Probe»-linje per koder som ble
+      prøvd; den kjører prøven på nytt og oppdaterer `video-encoder.json`.
+      Under et pågående opptak sier den bare hva som er i bruk («Probe: not
+      run»). (g) **Feilende koder:** erstatt innholdet i `video-encoder.json`
+      med en koder maskinen IKKE har (f.eks. `h264_nvenc` på en AMD-boks) og
+      start et opptak. **Forventet:** opptaket faller til
+      `libx264` ved første gjenkobling (loggen sier «falling back to libx264»), filen blir hel, og
+      `video-encoder.json` er slettet. NB: dette gjelder ffmpeg-/dshow-stien;
+      Windows' vanlige videoøkt (cpal-røret) har ikke gjenkobling, så der
+      slutter økta, men valget glemmes og NESTE opptak får `libx264`/ny
+      prøve — noter hva som faktisk skjer. (h) Et ikke-NVIDIA-/Intel-/AMD-
+      oppsett (Hyper-V-VM, ingen GPU): prøven skal falle til `libx264` uten
+      feilmelding og uten mer enn noen sekunders forsinkelse.
+      **Hvis CPU-målet ikke nås:** noter koder, GPU, driverversjon og tallene.
+      Argumentene per koder (`-preset p4` for NVENC, `-preset veryfast` for QSV,
+      `-hw_encoding 1` for MF, kun `-b:v` for AMF) er valgt uten
+      maskinvare å prøve dem på — de er det første å justere.
 - [ ] **(f) ASIO-delmengde.** Fra `docs/ASIO-TEST-MATRIX.md`, kjør minst:
       byggsjekken (`asio_spike`-eksempelet lister en enhet), én vanlig
       WASAPI-opptak (USB-mikrofon eller lydkort), én ASIO-opptak på et
