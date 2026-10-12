@@ -20,6 +20,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   appen til programvare og glemmer valget. Diagnosen viser hvilken koder som
   er i bruk.
 
+- **Windows kobler til mikseren igjen med en gang den settes inn.** Når et
+  opptak har mistet lydenheten, ventet appen på Windows ut en pause på opptil
+  ti sekunder mellom hvert nytt forsøk, selv om mikseren allerede var tilbake.
+  Nå sier Windows fra når en lydenhet dukker opp, og appen prøver med en gang —
+  slik den allerede gjorde på Mac.
+
 - **Den gamle ffmpeg-bufferen for forhåndsopptak er fjernet.** Forhåndsopptaket
   har brukt appens egen lydmotor siden august; den skjulte nødbryteren tilbake
   til ffmpeg er borte. Gamle innstillinger leses som før, og rester av

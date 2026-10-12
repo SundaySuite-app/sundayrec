@@ -240,6 +240,23 @@ faktisk skal se nå — sist.
 
 ## Windows-boksen
 
+- [ ] **(a4) Back-offen kuttes når mikseren settes inn igjen (A4).** Start et
+      lydopptak på USB-mikseren (eller en USB-mikrofon), la det gå et minutt,
+      trekk ut kabelen, vent **ca. 20 sekunder** (så back-off-stigen har nådd
+      lange ventetider), og sett den inn igjen. Se på klokka eller i loggen.
+      **Forventet FØR A4:** gjenkoblingen skjer først når den pågående
+      back-offen er sovet ut — opptil 10 sekunder etter at mikseren er tilbake,
+      og opptil 10 sekunder stillhet i opptaket som ingen ba om.
+      **Forventet ETTER:** fra første opptak har loggen linja
+      `WASAPI endpoint-notification listener installed`, og opptaket kobler seg til igjen
+      **innen omtrent ett sekund** etter at mikseren er satt inn (gulvet er
+      300 ms, pluss tiden Windows bruker på å gjøre enheten klar). Samme
+      opptak fortsetter, ingen feilmelding. **Rødt funn:** ventetiden er
+      fortsatt opptil 10 sekunder (lytteren fyrer ikke — sjekk om
+      installasjonslinja står i loggen), appen henger eller krasjer når
+      mikseren settes inn eller trekkes ut, eller gjenkoblingen går i løkke.
+      Gjenta én gang med «standard inndataenhet» som valgt enhet i appen.
+
 - [ ] **(b) Kamera + video, stopp og start rett etter hverandre.** Ta opp en
       videoøkt (kamera + lyd), stopp den, og **innen få sekunder** start et
       helt nytt opptak (f.eks. et kveldsmøte rett etter gudstjenesten).
