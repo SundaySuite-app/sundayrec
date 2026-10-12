@@ -504,7 +504,6 @@ mod tests {
     use super::*;
     use crate::db::store::{list_recordings, open_pool};
     use crate::media::ffmpeg::tests::{fetched_sidecar, ENV_LOCK};
-    use crate::recorder::concat::delivery_tmp_path;
 
     /// 96 kHz stereo s16 = 384 000 B/s, so a threshold measured in hundreds of
     /// kB is crossed in well under a second of realtime-paced capture. (It is
@@ -1079,7 +1078,7 @@ mod tests {
         // kill only if `pkill` actually matched a process (exit 0); otherwise
         // the SKIP below is the honest outcome.
         let pattern = save.path().to_string_lossy().into_owned();
-        let watch_path = delivery_tmp_path(&delivery_path);
+        let watch_path = crate::recorder::concat::delivery_tmp_path(&delivery_path);
         let killer = tokio::spawn(async move {
             for _ in 0..2_000 {
                 if std::fs::metadata(&watch_path).is_ok() {
@@ -1127,7 +1126,7 @@ mod tests {
              so the kill did not actually interrupt it"
         );
         assert!(
-            !Path::new(&delivery_tmp_path(&delivery_path)).exists(),
+            !Path::new(&crate::recorder::concat::delivery_tmp_path(&delivery_path)).exists(),
             "the killed encode's temp must be cleaned up, not left beside the delivery"
         );
 
