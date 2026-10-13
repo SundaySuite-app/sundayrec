@@ -2,6 +2,13 @@ name: Soak
 
 # E6.1 — the long-run harness.
 #
+# ffmpeg-arv til C3 (M1R #8): the lavfi soak below exercises the ffmpeg capture
+# argv, which audio recordings no longer use after A5b (the native cpal -> ring
+# -> WAV writer replaced it). It still covers the ffmpeg video/encode side, but
+# a green run proves nothing about the native audio writer; that has its own
+# kill-and-recover test (recorder::longrun::tests::native_writer_kill). The
+# workflow is unchanged until C3.
+#
 # SundayRec's defining workload is a 60–180 minute UNATTENDED single take, and
 # nothing in the PR gate runs longer than a few seconds. This workflow is the
 # other end of that scale: it repeats the PRODUCTION capture argv against a
