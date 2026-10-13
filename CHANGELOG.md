@@ -5,6 +5,14 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Appen sier nå fra hvorfor opptaket ikke startet.** Står ikke mikseren i,
+  fikk du bare «Noe gikk galt»; nå står det at lydenheten ikke ble funnet. Det
+  samme gjelder når mikrofonen er slått av i Windows eller brukes av et annet
+  program. Mister appen tilgangen til mikrofonen midt i et opptak, avslutter
+  den med beskjed om det i stedet for å prøve å koble til på nytt i timevis.
+  Et rent lydopptak venter heller ikke lenger på en enhetsliste det ikke bruker,
+  så en henger i den ikke lenger kan hindre en planlagt gudstjeneste i å starte.
+
 - **Videoopptak får et nøkkelbilde hvert 2. sekund.** Et krasj midt i en
   gudstjeneste koster dermed høyst et par sekunder bilde, og søking i
   redigeringen går raskere. Gjelder alle videoopptak, uansett om maskinen koder

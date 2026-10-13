@@ -24,6 +24,7 @@ use ringbuf::traits::Producer;
 use ringbuf::HeapProd;
 use sundayrec_core::audio::{observe_levels, MeterBanks};
 use sundayrec_core::device_match::{find_best_device_match, find_exact_device_match, FfmpegDevice};
+use sundayrec_core::errors::RecordingErrorCode;
 use sundayrec_core::stream_fault::{stream_fault_action, StreamFault, StreamFaultAction};
 
 use crate::audio::asio::{route_frame, ChannelRoute};
@@ -56,6 +57,120 @@ impl CpalHostKind {
             CpalHostKind::Asio => "asio",
         }
     }
+}
+
+/// Why the native engine could not START (or RE-open) a capture, with the
+/// stable code the volunteer's sentence is picked by.
+///
+/// Until M1R #4 every start failure was a bare string ("input device not
+/// found: X", "building input stream: …") that became `AppError::Recording`,
+/// and the renderer only recognises code strings — so once the ffmpeg reserve
+/// was gone (A5b) a mixer that was not plugged in showed as «Noe gikk galt».
+/// The code travels FIRST in the `AppError` text (see [`NativeStartError::
+/// into_app_error`]), the way `start_timeout` and `no_save_folder` do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeStartError {
+    pub code: RecordingErrorCode,
+    /// The engine's own words, for the log and the support trail.
+    pub detail: String,
+}
+
+impl NativeStartError {
+    pub fn new(code: RecordingErrorCode, detail: impl Into<String>) -> Self {
+        Self {
+            code,
+            detail: detail.into(),
+        }
+    }
+
+    /// A failure with no typed cause (host would not open, a task panicked…).
+    pub fn other(detail: impl Into<String>) -> Self {
+        Self::new(RecordingErrorCode::DeviceError, detail)
+    }
+
+    /// A cpal error, classified by its TYPED kind (never by cpal's prose —
+    /// except the one WASAPI gap in [`start_error_code`]).
+    pub fn from_cpal(context: &str, e: &cpal::Error) -> Self {
+        Self::new(
+            start_error_code(stream_fault(e.kind()), e.kind(), e.message()),
+            format!("{context}: {e}"),
+        )
+    }
+
+    /// The same failure seen from a RECONNECT reopen. There a missing device
+    /// is "not back yet" and anything unclassified is just another failed try:
+    /// both must stay transient, because `DeviceNotFound` is a FATAL class for
+    /// the recovery policy (`is_fatal_reconnect_error`) and would end a
+    /// service the moment the mixer is unplugged. Permission and busy keep
+    /// their meaning (a permission cannot be granted by waiting; busy retries).
+    pub fn for_reopen(mut self) -> Self {
+        if matches!(
+            self.code,
+            RecordingErrorCode::DeviceNotFound | RecordingErrorCode::DeviceError
+        ) {
+            self.code = RecordingErrorCode::DeviceDisconnected;
+        }
+        self
+    }
+
+    /// `"<code>: <detail>"` — the code FIRST so `nativeErrorSuffixFromText`
+    /// finds it in the shim's answer.
+    pub fn into_app_error(self) -> crate::error::AppError {
+        crate::error::AppError::Recording(format!(
+            "{}: {}",
+            crate::recorder::engine::error_code_str(self.code),
+            self.detail
+        ))
+    }
+}
+
+impl std::fmt::Display for NativeStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+impl From<NativeStartError> for crate::error::AppError {
+    fn from(e: NativeStartError) -> Self {
+        e.into_app_error()
+    }
+}
+
+/// Which stable code a failed cpal call at START maps to. Pure.
+///
+/// The typed fault decides, with one exception cpal leaves open: WASAPI maps
+/// `E_ACCESSDENIED` (microphone switched off under Windows Privacy settings)
+/// to `BackendError`, which would be read as a transient fault. A
+/// `BackendError` whose message says access was denied is therefore a
+/// permission problem. HARDWARE-UNVERIFIED on Windows (the exact wording is
+/// the OS's), so it only widens the fatal class for text that unmistakably
+/// says "access denied".
+pub fn start_error_code(
+    fault: StreamFault,
+    kind: cpal::ErrorKind,
+    message: Option<&str>,
+) -> RecordingErrorCode {
+    match fault {
+        StreamFault::PermissionDenied => RecordingErrorCode::DevicePermissionDenied,
+        StreamFault::DeviceBusy => RecordingErrorCode::DeviceBusy,
+        StreamFault::DeviceNotAvailable => RecordingErrorCode::DeviceNotFound,
+        _ if kind == cpal::ErrorKind::BackendError
+            && message.is_some_and(is_access_denied_text) =>
+        {
+            RecordingErrorCode::DevicePermissionDenied
+        }
+        _ => RecordingErrorCode::DeviceError,
+    }
+}
+
+/// `true` for the OS's "access denied" wording (`E_ACCESSDENIED` is
+/// `0x80070005`, «Access is denied.»).
+fn is_access_denied_text(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("access is denied")
+        || m.contains("access denied")
+        || m.contains("e_accessdenied")
+        || m.contains("0x80070005")
 }
 
 /// Open the requested cpal host. The explicit WASAPI/ASIO ids exist only on
@@ -101,14 +216,22 @@ pub fn open_host(kind: CpalHostKind) -> Result<cpal::Host, String> {
 /// NAME — virtual devices (Teams, iPhone Continuity) reshuffle device *indices*
 /// mid-session, which is why the ffmpeg path re-resolves per attempt too.
 pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
+    find_device_typed(host, name).map_err(|e| e.detail)
+}
+
+/// [`find_device`] with the failure's stable code (see [`NativeStartError`]).
+pub fn find_device_typed(host: &cpal::Host, name: &str) -> Result<cpal::Device, NativeStartError> {
     if name.is_empty() {
-        return host
-            .default_input_device()
-            .ok_or_else(|| "no default input device".to_string());
+        return host.default_input_device().ok_or_else(|| {
+            NativeStartError::new(
+                RecordingErrorCode::DeviceNotFound,
+                "no default input device",
+            )
+        });
     }
     let devices: Vec<cpal::Device> = host
         .input_devices()
-        .map_err(|e| format!("listing input devices: {e}"))?
+        .map_err(|e| NativeStartError::from_cpal("listing input devices", &e))?
         .collect();
     let candidates: Vec<FfmpegDevice> = devices
         .iter()
@@ -119,7 +242,12 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
     devices
         .into_iter()
         .find(|d| crate::audio::devices::device_name(d).as_deref() == Some(target.as_str()))
-        .ok_or_else(|| format!("input device not found: {name}"))
+        .ok_or_else(|| {
+            NativeStartError::new(
+                RecordingErrorCode::DeviceNotFound,
+                format!("input device not found: {name}"),
+            )
+        })
 }
 
 /// RECONNECT counterpart of [`find_device`]: open the input device named `name`
@@ -129,9 +257,25 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
 /// device is not back yet" and keeps backing off, instead of recording the rest
 /// of the service from a different microphone.
 pub fn find_device_exact(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
+    find_device_exact_typed(host, name).map_err(|e| e.detail)
+}
+
+/// [`find_device_exact`] with the failure's stable code. A miss is
+/// `DeviceDisconnected` — "not back yet", transient — never `DeviceNotFound`,
+/// which the recovery policy treats as fatal.
+pub fn find_device_exact_typed(
+    host: &cpal::Host,
+    name: &str,
+) -> Result<cpal::Device, NativeStartError> {
+    let not_back = || {
+        NativeStartError::new(
+            RecordingErrorCode::DeviceDisconnected,
+            format!("input device not back: {name}"),
+        )
+    };
     let devices: Vec<cpal::Device> = host
         .input_devices()
-        .map_err(|e| format!("listing input devices: {e}"))?
+        .map_err(|e| NativeStartError::from_cpal("listing input devices", &e).for_reopen())?
         .collect();
     let candidates: Vec<FfmpegDevice> = devices
         .iter()
@@ -140,11 +284,11 @@ pub fn find_device_exact(host: &cpal::Host, name: &str) -> Result<cpal::Device, 
         .collect();
     let target = find_exact_device_match(&candidates, name)
         .map(|d| d.name.clone())
-        .ok_or_else(|| format!("input device not back: {name}"))?;
+        .ok_or_else(not_back)?;
     devices
         .into_iter()
         .find(|d| crate::audio::devices::device_name(d).as_deref() == Some(target.as_str()))
-        .ok_or_else(|| format!("input device not back: {name}"))
+        .ok_or_else(not_back)
 }
 
 /// The DECISION half of [`find_device`]: which cpal device name should be opened
@@ -305,9 +449,17 @@ pub fn negotiate(
     device: &cpal::Device,
     requested_rate: Option<u32>,
 ) -> Result<NegotiatedFormat, String> {
+    negotiate_typed(device, requested_rate).map_err(|e| e.detail)
+}
+
+/// [`negotiate`] with the failure's stable code.
+pub fn negotiate_typed(
+    device: &cpal::Device,
+    requested_rate: Option<u32>,
+) -> Result<NegotiatedFormat, NativeStartError> {
     let default_cfg = device
         .default_input_config()
-        .map_err(|e| format!("querying default input config: {e}"))?;
+        .map_err(|e| NativeStartError::from_cpal("querying default input config", &e))?;
     let ranges: Vec<RangeInfo> = device
         .supported_input_configs()
         .map(|it| {
@@ -576,6 +728,19 @@ pub fn build_input_stream_any(
     sink: StreamSink,
     err_fn: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, String> {
+    build_input_stream_typed(device, config, sample_format, total, sink, err_fn)
+        .map_err(|e| e.detail)
+}
+
+/// [`build_input_stream_any`] with the failure's stable code.
+pub fn build_input_stream_typed(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    sample_format: SampleFormat,
+    total: usize,
+    sink: StreamSink,
+    err_fn: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<cpal::Stream, NativeStartError> {
     use cpal::SampleFormat as SF;
     let built = match sample_format {
         SF::I8 => build_typed::<i8>(device, config, total, sink, err_fn),
@@ -586,9 +751,13 @@ pub fn build_input_stream_any(
         SF::U16 => build_typed::<u16>(device, config, total, sink, err_fn),
         SF::F32 => build_typed::<f32>(device, config, total, sink, err_fn),
         SF::F64 => build_typed::<f64>(device, config, total, sink, err_fn),
-        other => return Err(format!("unsupported input sample format: {other:?}")),
+        other => {
+            return Err(NativeStartError::other(format!(
+                "unsupported input sample format: {other:?}"
+            )))
+        }
     };
-    built.map_err(|e| format!("building input stream: {e}"))
+    built.map_err(|e| NativeStartError::from_cpal("building input stream", &e))
 }
 
 #[cfg(test)]
@@ -817,6 +986,87 @@ mod tests {
 
     /// A3b: the four classes the reconnect machine acts on are mapped from
     /// cpal's TYPE, not its message — an empty message proves no text is read.
+    // ── M1R #4: typed start failures ─────────────────────────────────────────
+
+    #[test]
+    fn start_failures_map_to_the_codes_the_ui_has_sentences_for() {
+        use cpal::ErrorKind as K;
+        use RecordingErrorCode as C;
+        for (kind, want) in [
+            (K::PermissionDenied, C::DevicePermissionDenied),
+            (K::DeviceBusy, C::DeviceBusy),
+            (K::DeviceNotAvailable, C::DeviceNotFound),
+            (K::StreamInvalidated, C::DeviceError),
+            (K::UnsupportedConfig, C::DeviceError),
+            (K::HostUnavailable, C::DeviceError),
+            (K::BackendError, C::DeviceError),
+        ] {
+            let e = NativeStartError::from_cpal("t", &cpal::Error::with_message(kind, "x"));
+            assert_eq!(e.code, want, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn wasapi_access_denied_behind_a_backend_error_is_a_permission_problem() {
+        use cpal::ErrorKind as K;
+        let denied =
+            cpal::Error::with_message(K::BackendError, "Access is denied. (os error -2147024891)");
+        assert_eq!(
+            NativeStartError::from_cpal("t", &denied).code,
+            RecordingErrorCode::DevicePermissionDenied
+        );
+        // Only BackendError, and only text that says so.
+        let other = cpal::Error::with_message(K::BackendError, "The parameter is incorrect.");
+        assert_eq!(
+            NativeStartError::from_cpal("t", &other).code,
+            RecordingErrorCode::DeviceError
+        );
+        let wrong_kind = cpal::Error::with_message(K::Other, "access denied");
+        assert_eq!(
+            NativeStartError::from_cpal("t", &wrong_kind).code,
+            RecordingErrorCode::DeviceError
+        );
+    }
+
+    #[test]
+    fn a_reopen_keeps_a_missing_device_transient_but_permission_fatal() {
+        use RecordingErrorCode as C;
+        for (from, want) in [
+            (C::DeviceNotFound, C::DeviceDisconnected),
+            (C::DeviceError, C::DeviceDisconnected),
+            (C::DevicePermissionDenied, C::DevicePermissionDenied),
+            (C::DeviceBusy, C::DeviceBusy),
+        ] {
+            assert_eq!(NativeStartError::new(from, "x").for_reopen().code, want);
+        }
+        // The point of the mapping: nothing a reopen can produce for a
+        // missing device may be fatal, or unplugging the mixer ends the service.
+        assert!(!sundayrec_core::recorder::is_fatal_reconnect_error(
+            NativeStartError::new(C::DeviceNotFound, "x")
+                .for_reopen()
+                .code
+        ));
+        assert!(sundayrec_core::recorder::is_fatal_reconnect_error(
+            NativeStartError::new(C::DevicePermissionDenied, "x")
+                .for_reopen()
+                .code
+        ));
+    }
+
+    #[test]
+    fn the_code_leads_the_app_error_text() {
+        let text = NativeStartError::new(
+            RecordingErrorCode::DeviceNotFound,
+            "input device not found: Qu-24",
+        )
+        .into_app_error()
+        .to_string();
+        assert!(
+            text.contains("device_not_found: input device not found: Qu-24"),
+            "{text}"
+        );
+    }
+
     #[test]
     fn cpal_kinds_map_onto_the_core_fault_classes() {
         use cpal::ErrorKind as K;

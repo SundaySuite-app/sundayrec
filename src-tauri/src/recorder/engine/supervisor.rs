@@ -15,10 +15,11 @@
 //! device's sample rate changed) the reconnect opens at the device's CURRENT
 //! rate instead of forcing the deliverable's pinned one back onto it
 //! (`reconnect_keeps_rate_pin`), and the rate-mismatch check turns the change
-//! into a new deliverable. Respawn failures are still unclassified (`None` →
-//! transient): their cpal error is flattened to a string inside
-//! `spawn_native_segment`, so a permission refused at REOPEN keeps retrying
-//! until the time budget runs out.
+//! into a new deliverable. A failed respawn carries its own typed cause
+//! ([`SpawnFailure::code`], from `native_capture::stream::NativeStartError`):
+//! a permission refused at REOPEN is fatal at once, a device that is not back
+//! yet stays transient, and the first start's code leads the `AppError` text
+//! so the volunteer gets the matching sentence.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -44,7 +45,7 @@ use tokio::io::{AsyncReadExt, BufReader};
 use crate::audio::device_watch::BackoffOutcome;
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::{SegmentCounters, SessionContext};
-use crate::recorder::native_capture::stream::CpalHostKind;
+use crate::recorder::native_capture::stream::{CpalHostKind, NativeStartError};
 use crate::util::lock_recover;
 
 use super::args::{build_record_args, recording_preview_path};
@@ -113,6 +114,17 @@ pub(crate) enum CaptureBackend {
     NativeAudio { host: CpalHostKind },
 }
 
+/// `true` when `start()` must list the ffmpeg devices before it can start.
+///
+/// Only a VIDEO session does: the camera (and, on the ffmpeg paths, the mic) is
+/// addressed through avfoundation/dshow's list. An audio-only session runs on
+/// the native engine, which finds the mic by name through cpal, so it must not
+/// wait for — or fail on — `ffmpeg -list_devices` (M1R #5). Mirrors the test
+/// `start()` uses to decide that a session wants a camera.
+pub(crate) fn needs_ffmpeg_device_enumeration(video_device_name: Option<&str>) -> bool {
+    video_device_name.is_some_and(|n| !n.is_empty())
+}
+
 /// Pure routing decision for the session's capture backend.
 ///
 /// Audio-only sessions ALWAYS route to the native engine (CoreAudio on macOS;
@@ -159,6 +171,31 @@ pub(crate) enum CaptureChild {
     Native(Box<crate::recorder::native_capture::segment::NativeSegment>),
 }
 
+/// A failed [`spawn_capture`]: the error for the caller/UI, plus the stable code
+/// when the native engine could name the cause (M1R #4). `code` is what the
+/// reconnect policy is consulted with — `None` (the ffmpeg arm, or a native
+/// failure with no typed cause) stays the old "transient" reading.
+pub(crate) struct SpawnFailure {
+    pub error: AppError,
+    pub code: Option<RecordingErrorCode>,
+}
+
+impl From<AppError> for SpawnFailure {
+    fn from(error: AppError) -> Self {
+        Self { error, code: None }
+    }
+}
+
+impl From<NativeStartError> for SpawnFailure {
+    fn from(e: NativeStartError) -> Self {
+        let code = Some(e.code);
+        Self {
+            error: e.into_app_error(),
+            code,
+        }
+    }
+}
+
 /// Spawn a capture for `backend` writing to `output_path`. The ffmpeg arm
 /// builds the argv from the resolved devices; the native arm resolves the
 /// device itself (fuzzy, by NAME — so every spawn re-resolves, covering the
@@ -175,7 +212,7 @@ async fn spawn_capture(
     output_path: &str,
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
-) -> AppResult<CaptureChild> {
+) -> Result<CaptureChild, SpawnFailure> {
     match backend {
         CaptureBackend::Ffmpeg => {
             let args = build_record_args(platform, audio, video, opts, output_path);
@@ -213,10 +250,9 @@ pub(crate) fn session_keep_awake() -> crate::power::PowerBlock {
 /// Everything the session runs against arrives in ONE [`SessionContext`]
 /// (F2-T2) — this used to be twelve loose parameters, and that friction is why
 /// the cpal path was forgotten when `session_generation` was added (F1-A5).
-/// `ctx` is `mut` because two of its fields legitimately move during a session:
-/// the backend can demote itself to ffmpeg once, and a reconnect re-resolves the
-/// audio device by name. Writing them back into the context (rather than into
-/// locals) is what makes every later spawn, manifest and history row see them.
+/// `ctx` is `mut` because a reconnect re-resolves the ffmpeg-side audio device
+/// by name. Writing it back into the context (rather than into a local) is what
+/// makes every later spawn, manifest and history row see it.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — drives real captures over a long runtime.
 pub(super) async fn run_session(
@@ -380,7 +416,7 @@ pub(super) async fn run_session(
                 c
             }
             Err(e) => {
-                let _ = ready.send(Err(e));
+                let _ = ready.send(Err(e.error));
                 emit_state(RecorderState::Failed, 0);
                 // The capture dir was just created and never written to — empty.
                 let _ = tokio::fs::remove_dir(&cap_dir).await;
@@ -499,8 +535,8 @@ pub(super) async fn run_session(
                             child = c;
                         }
                         Err(e) => {
-                            tracing::error!("recorder: split respawn failed: {e}");
-                            emit_failure(&ctx.app, "device_error", &e.to_string());
+                            tracing::error!("recorder: split respawn failed: {}", e.error);
+                            emit_failure(&ctx.app, "device_error", &e.error.to_string());
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // A failing exit keeps the manifest either way (only the
                             // clean stop deletes it), so the verdict is moot here.
@@ -773,10 +809,10 @@ pub(super) async fn run_session(
                                     )
                                     .await
                                 } else {
-                                    Err(AppError::Recording(format!(
+                                    Err(SpawnFailure::from(AppError::Recording(format!(
                                         "input device not back: {}",
                                         ctx.audio.name
-                                    )))
+                                    ))))
                                 };
                                 match respawned {
                                     Ok(mut c) => {
@@ -843,7 +879,7 @@ pub(super) async fn run_session(
                                                         emit_failure(
                                                             &ctx.app,
                                                             "device_error",
-                                                            &e.to_string(),
+                                                            &e.error.to_string(),
                                                         );
                                                         emit_state(
                                                             RecorderState::Failed,
@@ -881,8 +917,17 @@ pub(super) async fn run_session(
                                         break;
                                     }
                                     Err(e) => {
-                                        tracing::warn!("recorder: reconnect respawn failed: {e}");
-                                        match session.on_unexpected_exit(now_ms(), None) {
+                                        tracing::warn!(
+                                            code = ?e.code,
+                                            "recorder: reconnect respawn failed: {}",
+                                            e.error
+                                        );
+                                        // M1R #4: the reopen's TYPED cause reaches the
+                                        // policy, so a refused permission ends the session
+                                        // with its sentence instead of "reconnecting" for
+                                        // the whole time budget. A missing device arrives
+                                        // as the transient `DeviceDisconnected`.
+                                        match session.on_unexpected_exit(now_ms(), e.code) {
                                             RecoveryDecision::Reconnect {
                                                 delay_ms: next_delay,
                                                 attempt: next_attempt,
@@ -897,8 +942,11 @@ pub(super) async fn run_session(
                                             RecoveryDecision::GiveUp => {
                                                 emit_failure(
                                                     &ctx.app,
-                                                    "device_disconnected",
-                                                    &e.to_string(),
+                                                    e.code.map_or(
+                                                        "device_disconnected",
+                                                        error_code_str,
+                                                    ),
+                                                    &e.error.to_string(),
                                                 );
                                                 emit_state(
                                                     RecorderState::Failed,
@@ -1464,6 +1512,61 @@ async fn discard_wrong_rate_fragment(session: &mut RecordingSession, path: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// M1R #4: the typed cause of a failed spawn survives to the reconnect
+    /// loop (it used to be flattened to a string and read as "transient"), and
+    /// the first start's code LEADS the text the UI is picked from.
+    #[test]
+    fn a_spawn_failure_keeps_its_typed_cause() {
+        let denied: SpawnFailure =
+            NativeStartError::new(RecordingErrorCode::DevicePermissionDenied, "no access")
+                .for_reopen()
+                .into();
+        assert_eq!(
+            denied.code,
+            Some(RecordingErrorCode::DevicePermissionDenied)
+        );
+        assert!(
+            sundayrec_core::recorder::is_fatal_reconnect_error(denied.code.unwrap()),
+            "a refused permission must end the reconnect loop"
+        );
+        assert!(denied
+            .error
+            .to_string()
+            .contains("device_permission_denied: no access"));
+
+        let gone: SpawnFailure = NativeStartError::new(
+            RecordingErrorCode::DeviceNotFound,
+            "input device not back: X",
+        )
+        .for_reopen()
+        .into();
+        assert_eq!(gone.code, Some(RecordingErrorCode::DeviceDisconnected));
+        assert!(!sundayrec_core::recorder::is_fatal_reconnect_error(
+            gone.code.unwrap()
+        ));
+
+        // The ffmpeg arm has no typed cause: the old reading.
+        assert_eq!(
+            SpawnFailure::from(AppError::Recording("x".into())).code,
+            None
+        );
+    }
+
+    /// M1R #5, in pure decision form: an audio-only session needs NO ffmpeg
+    /// device listing (its start must not wait on, or fail with, a hung
+    /// avfoundation/dshow enumeration); only a session that asks for a camera does.
+    #[test]
+    fn audio_only_needs_no_ffmpeg_enumeration() {
+        assert!(!needs_ffmpeg_device_enumeration(None));
+        assert!(!needs_ffmpeg_device_enumeration(Some("")));
+        assert!(needs_ffmpeg_device_enumeration(Some("FaceTime HD Camera")));
+        // Consistent with the router: whatever skips the listing is native.
+        assert!(matches!(
+            select_capture_backend(false, !needs_ffmpeg_device_enumeration(None), false),
+            CaptureBackend::NativeAudio { .. }
+        ));
+    }
 
     #[test]
     fn backend_routing_matrix() {

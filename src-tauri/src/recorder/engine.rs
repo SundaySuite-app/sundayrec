@@ -115,7 +115,8 @@ pub(crate) use self::process::{sleep_opt, stop_and_wait_bounded, wait_opt};
 pub(crate) use self::reader::error_code_str;
 use self::supervisor::run_session;
 pub(crate) use self::supervisor::{
-    audio_only_host, select_capture_backend, CaptureBackend, SegmentOutcome,
+    audio_only_host, needs_ffmpeg_device_enumeration, select_capture_backend, CaptureBackend,
+    SegmentOutcome,
 };
 // Every session loop takes the keep-awake block through this one door: the ffmpeg
 // supervisor and the Windows cpal video session (`recorder::cpal_capture`); the
@@ -479,8 +480,9 @@ impl RecorderEngine {
     }
 
     /// Record which audio engine `start()` chose (+ optional fallback reason), for
-    /// the diagnose tool. `fallback` is `Some(reason)` only when the modern engine
-    /// (WASAPI/ASIO) couldn't start and we fell back to DirectShow.
+    /// the diagnose tool. `fallback` is `Some(reason)` only when a VIDEO session's
+    /// Windows cpal pipe (WASAPI/ASIO) couldn't start and fell back to DirectShow;
+    /// audio-only sessions never fall back (A5b).
     pub(crate) fn set_audio_engine(&self, engine: &str, fallback: Option<String>) {
         *lock_recover(&self.audio_engine) = (Some(engine.to_string()), fallback);
     }
@@ -588,6 +590,13 @@ impl RecorderEngine {
         }
 
         let platform = current_platform();
+        // Only a VIDEO session talks to ffmpeg at all (audio-only runs on the
+        // native engine, which addresses the mic by name through cpal), so only
+        // a video session may wait for `ffmpeg -list_devices`. An audio-only
+        // session used to wait for it anyway — up to the 8 s cap below — and a
+        // hung avfoundation/dshow listing then cancelled a service cpal could
+        // have recorded without trouble (M1R #5).
+        //
         // Bound the device probe: `ffmpeg -list_devices` (avfoundation) can stall
         // if the mic is momentarily contended (e.g. the VU cpal stream hasn't
         // released yet), and a stalled start is worse than a clear error.
@@ -596,34 +605,39 @@ impl RecorderEngine {
         // instead of always re-spawning ffmpeg — saves 50–500 ms off the felt start.
         // The window is short (RECORD_START_ENUM_MAX_AGE); past it we enumerate
         // fresh, preserving the "don't decide on a stale list" intent.
-        let inv = match tokio::time::timeout(
-            std::time::Duration::from_secs(8),
-            enumerate_ffmpeg_devices_within(RECORD_START_ENUM_MAX_AGE),
-        )
-        .await
-        {
-            Ok(result) => result?,
-            Err(_) => {
-                // The message LEADS with the stable code, the way
-                // `settings.rs`'s `no_save_folder` does: the shim answers with
-                // `AppError`'s text, and `nativeErrorSuffixFromText` finds the
-                // code inside it. Without one the renderer fell through to
-                // `errorUnknown` and appended this Norwegian line verbatim —
-                // engine prose, shown to a volunteer, in one of seven
-                // languages. `start_timeout` already has its sentence in all
-                // seven.
-                return Err(AppError::Recording(
-                    "start_timeout: timed out while looking for the device — try again".into(),
-                ));
+        let inv = if !needs_ffmpeg_device_enumeration(opts.video_device_name.as_deref()) {
+            None
+        } else {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(8),
+                enumerate_ffmpeg_devices_within(RECORD_START_ENUM_MAX_AGE),
+            )
+            .await
+            {
+                Ok(result) => Some(result?),
+                Err(_) => {
+                    // The message LEADS with the stable code, the way
+                    // `settings.rs`'s `no_save_folder` does: the shim answers with
+                    // `AppError`'s text, and `nativeErrorSuffixFromText` finds the
+                    // code inside it. Without one the renderer fell through to
+                    // `errorUnknown` and appended this Norwegian line verbatim —
+                    // engine prose, shown to a volunteer, in one of seven
+                    // languages. `start_timeout` already has its sentence in all
+                    // seven.
+                    return Err(AppError::Recording(
+                        "start_timeout: timed out while looking for the device — try again".into(),
+                    ));
+                }
             }
         };
-        // Match the selected mic against ffmpeg's dshow/avfoundation list. On
-        // Windows the cpal capture path (below) addresses the device BY NAME via
-        // cpal, so a dshow match is not required there — keep it OPTIONAL so an
-        // ASIO-only / cpal-only device doesn't error here. It is still needed for
-        // the macOS path and the Windows dshow fallback.
-        let dshow_audio: Option<FfmpegDevice> =
-            find_best_device_match(&inv.audio_inputs, &opts.audio_device_name).cloned();
+        // Match the selected mic against ffmpeg's dshow/avfoundation list. Only a
+        // VIDEO session (Windows cpal-pipe or the ffmpeg path) addresses the mic
+        // through that list; the native engine resolves the device BY NAME via
+        // cpal, so an audio-only session gets `None` here and a name-only entry
+        // below (`name_only_audio`) for its manifest/history metadata.
+        let dshow_audio: Option<FfmpegDevice> = inv.as_ref().and_then(|i| {
+            find_best_device_match(&i.audio_inputs, &opts.audio_device_name).cloned()
+        });
         if let Some(d) = &dshow_audio {
             if !opts.audio_device_name.is_empty()
                 && !sundayrec_core::device_match::names_match_exactly(
@@ -640,8 +654,8 @@ impl RecorderEngine {
         }
         // Video resolution uses the dedicated video-input list + the video match
         // ladder (F2.1). None unless the user enabled video AND a name matches.
-        let video = match &opts.video_device_name {
-            Some(name) if !name.is_empty() => {
+        let video = match (&opts.video_device_name, inv.as_ref()) {
+            (Some(name), Some(inv)) if !name.is_empty() => {
                 sundayrec_core::device_enum::find_best_video_device_match(&inv.video_inputs, name)
                     .cloned()
             }
@@ -833,9 +847,9 @@ impl RecorderEngine {
                 ctx.opts.audio_device_name
             )));
         }
-        // Record the engine label for the diagnose tool (a native start failure
-        // later overwrites this with the fallback engine + reason inside
-        // `run_session`).
+        // Record the engine label for the diagnose tool. A native start failure
+        // does not change it: there is no fallback engine for audio (A5b), the
+        // failure reaches the caller as a typed start error.
         let engine_label = match ctx.backend {
             CaptureBackend::NativeAudio { host } => host.label(),
             CaptureBackend::Ffmpeg => {
