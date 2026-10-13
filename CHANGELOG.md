@@ -21,6 +21,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   heller ikke lenger meldt som «fant ikke enheten» i testen når opptaket
   fungerer fint.
 
+- **Grunnlaget for appens egen kamerafangst på Mac.** Appen kan nå snakke
+  direkte med kameraet gjennom macOS (AVFoundation) i stedet for via ffmpeg,
+  og kjenner igjen en iPhone brukt som webkamera (Continuity). Ingenting
+  endrer seg i opptakene ennå: den nye fangsten tas i bruk i en senere
+  versjon, når bildene låses til lydens klokke.
+
 - **Videoopptak får et nøkkelbilde hvert 2. sekund.** Et krasj midt i en
   gudstjeneste koster dermed høyst et par sekunder bilde, og søking i
   redigeringen går raskere. Gjelder alle videoopptak, uansett om maskinen koder

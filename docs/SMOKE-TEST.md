@@ -132,6 +132,12 @@ you ever denied it, re-enable under _System Settings → Privacy & Security →
 Microphone / Camera → SundayRec_ and relaunch. Without these strings macOS kills
 the app at capture time with no error — that is the symptom to watch for.
 
+It also ships `NSCameraUseContinuityCameraDeviceType` (C1a): on macOS 14+ an
+iPhone used as a webcam is then listed as a Continuity camera instead of as a
+built-in one. The native camera capture (`src-tauri/src/camera/`) is not used
+by recordings yet; its hardware check is RIG-DAY (c1a), a one-line
+`cargo test … -- --ignored` from a terminal that has camera access.
+
 ---
 
 ## 1. Pre-gate (headless, do this first)
