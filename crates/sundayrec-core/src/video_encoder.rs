@@ -680,7 +680,7 @@ mod tests {
             "-hide_banner", "-progress", "pipe:1", "-nostats",
             "-f", "dshow", "-framerate", "30", "-i", "video=Cam",
             "-f", "dshow", "-i", "audio=Mic", "-af",
-            "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=pipe\\:2",
+            "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=pipe\\\\:2",
         ]);
         let tail = s(&[
             "-pix_fmt",

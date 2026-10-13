@@ -409,17 +409,19 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # tauri-build verifies every `externalBin` resource EXISTS even for a
-      # plain `cargo check` — empty stubs satisfy it without downloading the
-      # ~80 MB real sidecars this job never executes (release.yml fetches the
-      # real, checksum-pinned ones).
-      - name: Stub ffmpeg sidecars for tauri-build's existence check
-        working-directory: src-tauri
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force binaries | Out-Null
-          New-Item -ItemType File -Force binaries/ffmpeg-x86_64-pc-windows-msvc.exe | Out-Null
-          New-Item -ItemType File -Force binaries/ffprobe-x86_64-pc-windows-msvc.exe | Out-Null
+      # The REAL, checksum-pinned ffmpeg/ffprobe sidecars (same script as
+      # release.yml; node is preinstalled, the script needs no npm packages).
+      # They used to be 0-byte stubs here, which satisfied tauri-build's
+      # `externalBin` existence check but made every real-ffmpeg `_or_skips`
+      # test skip itself on Windows — and hid real Windows bugs for as long as
+      # that lasted (e.g. the levels filter sink `pipe\:2`). Fetched BEFORE
+      # check/clippy/test so the existence check and the tests both see them.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Fetch real ffmpeg/ffprobe sidecars
+        run: node scripts/fetch-ffmpeg.mjs
 
       - name: cargo check + clippy (workspace, all targets)
         working-directory: src-tauri
@@ -427,16 +429,14 @@ jobs:
           cargo check --workspace --all-targets
           cargo clippy --workspace --all-targets -- -D warnings
 
-      # F2-W7: the actual test suite, not just a compile check. Deliberately
-      # NOT `SUNDAYREC_REQUIRE_SIDECAR=1` (unlike the ubuntu `check` job above)
-      # — the sidecars this job stubs above are 0-byte files that satisfy
-      # tauri-build's existence check but cannot run, so the real-ffmpeg
-      # `_or_skips` tests must take their tolerant skip path here rather than
-      # be forced to panic on a lane that never has a real binary. Downloading
-      # the real ~80 MB Windows ffmpeg the way release.yml does is not worth
-      # the per-run cost just for this lane.
+      # F2-W7: the actual test suite, not just a compile check. With the real
+      # sidecars fetched above this is `SUNDAYREC_REQUIRE_SIDECAR=1` like the
+      # ubuntu `check` job: a missing/unrunnable sidecar FAILS instead of letting
+      # the real-ffmpeg `_or_skips` tests report green over a SKIP.
       - name: cargo test (workspace)
         working-directory: src-tauri
+        env:
+          SUNDAYREC_REQUIRE_SIDECAR: "1"
         run: cargo test --workspace
 
       # Approximate the Windows RELEASE feature combo (release.yml builds

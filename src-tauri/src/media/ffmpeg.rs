@@ -382,7 +382,7 @@ pub(crate) mod tests {
             return;
         };
         let child = {
-            let _guard = ENV_LOCK.lock().unwrap();
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             // SAFETY: serialised by ENV_LOCK; restored before releasing the lock.
             unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &bin) };
             let result = spawn_ffmpeg(&["-version"]).await;
@@ -418,7 +418,7 @@ pub(crate) mod tests {
 
     #[test]
     fn ffprobe_version_runs_real_binary_or_skips() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let Some(bin) = fetched_sidecar("ffprobe") else {
             eprintln!("SKIP: no fetched ffprobe sidecar (run `npm run ffmpeg`)");
             return;
@@ -456,7 +456,7 @@ pub(crate) mod tests {
         use sundayrec_core::capture::audio_encode_args;
         use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
 
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
         else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
@@ -561,7 +561,7 @@ pub(crate) mod tests {
         use sundayrec_core::ffmpeg::build_levels_detect_filter;
         use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
 
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
         else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
@@ -660,7 +660,7 @@ pub(crate) mod tests {
         use sundayrec_core::progress::parse_size_kb;
         use sundayrec_core::selftest::parse_last_time_secs;
 
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
             eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
             return;
@@ -734,7 +734,7 @@ pub(crate) mod tests {
     fn the_real_binary_speaks_the_progress_protocol_or_skips() {
         use sundayrec_core::progress::{ProgressStream, PROGRESS_ARGS};
 
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
             eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
             return;
@@ -753,8 +753,9 @@ pub(crate) mod tests {
         // it is the load the 2026-07-31 sample-loss incident ran at.
         let af = format!(
             "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,{}",
+            // The host's own sink: `/dev/stderr` does not exist on Windows.
             sundayrec_core::ffmpeg::build_levels_detect_filter(
-                sundayrec_core::ffmpeg::Platform::MacOS
+                crate::recorder::engine::current_platform()
             )
         );
         let mut cmd = std::process::Command::new(&ffmpeg);
@@ -829,6 +830,39 @@ pub(crate) mod tests {
         eprintln!(
             "progress protocol: {} blocks, {bytes} bytes / {secs:.2} s",
             updates.len()
+        );
+    }
+
+    /// The WINDOWS levels filter (`file=pipe\\:2`) must be accepted by the real
+    /// ffmpeg and actually print peaks on stderr. With a single escaped colon
+    /// ffmpeg died with "No option name near '2'" before capturing a byte — a
+    /// string-compare golden could not see that. Runs on every OS: the filter
+    /// grammar is the same everywhere, and `pipe:2` is stderr on all of them.
+    #[test]
+    fn windows_levels_sink_parses_in_the_real_ffmpeg_or_skips() {
+        use sundayrec_core::ffmpeg::{build_levels_detect_filter, Platform};
+        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
+            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let out = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=0.5",
+            ])
+            .arg("-af")
+            .arg(build_levels_detect_filter(Platform::Windows))
+            .args(["-f", "null", "-"])
+            .output()
+            .expect("ffmpeg should run");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "ffmpeg rejected the filter: {stderr}");
+        assert!(
+            stderr.contains("lavfi.astats.1.Peak_level="),
+            "the levels must reach stderr through pipe:2: {stderr}"
         );
     }
 
@@ -1011,7 +1045,7 @@ pub(crate) mod tests {
     /// FREE. Skips without the sidecars.
     #[test]
     fn av_sync_output_is_cfr_and_streams_aligned_or_skips() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
         else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
@@ -1108,7 +1142,7 @@ pub(crate) mod tests {
 
     #[test]
     fn ffmpeg_version_and_health_against_real_binary_or_skip() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let Some(bin) = fetched_sidecar("ffmpeg") else {
             eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
             return;
@@ -1140,7 +1174,7 @@ pub(crate) mod tests {
         use sundayrec_core::capture::audio_encode_args;
         use sundayrec_core::recorder::Deliverable;
 
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
         else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
@@ -1268,7 +1302,7 @@ pub(crate) mod tests {
         use sundayrec_core::recorder::Deliverable;
         use sundayrec_core::recovery::DeliveryMode;
 
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
         else {
             eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");

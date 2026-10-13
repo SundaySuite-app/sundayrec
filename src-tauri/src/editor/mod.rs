@@ -6111,7 +6111,7 @@ mod tests {
             let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
             let sink = ticks.clone();
             let first = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(peaks(&src, move |f| sink.lock().unwrap().push(f)));
@@ -6198,7 +6198,7 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
 
             {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(peaks(&src, |_| {}));
@@ -6236,7 +6236,7 @@ mod tests {
             let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
             let sink = ticks.clone();
             let (computed, analysis) = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(segments(&src, false, move |f| sink.lock().unwrap().push(f)));
@@ -6313,7 +6313,7 @@ mod tests {
             // … and that «Analyser opptak» (force) redoes the work and refreshes
             // the cache with the real result.
             let forced = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(segments(&src, true, |_| {}));
@@ -6765,7 +6765,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let out_path = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let result = rt.block_on(export(&engine, &req, &req.inputs, false, on_progress));
@@ -6873,7 +6873,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let out = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let result = rt.block_on(export(&engine, &req, &req.inputs, false, on_progress));
@@ -7470,7 +7470,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let err = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe {
                     std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
@@ -7583,14 +7583,31 @@ mod tests {
                     let temp = temp.clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
+                        // Open the second connection (runs the migrations —
+                        // slow on a Windows runner) BEFORE the render starts, so
+                        // the time between "the temp has bytes" and the cancel is
+                        // only the probes themselves.
+                        let second = rt.block_on(async {
+                            crate::db::store::open_pool(&db_path)
+                                .await
+                                .expect("a second connection to the app database")
+                        });
                         for _ in 0..600 {
                             let wrote_something = std::fs::read_dir(&dir)
                                 .into_iter()
                                 .flatten()
                                 .flatten()
                                 .any(|e| {
+                                    // `std::fs::metadata(path)`, NOT `e.metadata()`:
+                                    // on Windows a DirEntry's size comes from the
+                                    // directory listing, which can lag
+                                    // while ffmpeg still holds the file open (it
+                                    // reads 0 until the render has finished), so the
+                                    // cancel arrived after the render was done.
                                     e.file_name().to_string_lossy().contains(".__editor_tmp.")
-                                        && e.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                                        && std::fs::metadata(e.path())
+                                            .map(|m| m.len() > 0)
+                                            .unwrap_or(false)
                                 });
                             if wrote_something {
                                 break;
@@ -7601,9 +7618,6 @@ mod tests {
                         // what this process's own background sweep, landing now,
                         // would do about it: nothing, the render is in flight.
                         let mid_render = rt.block_on(async {
-                            let second = crate::db::store::open_pool(&db_path)
-                                .await
-                                .expect("a second connection to the app database");
                             let before = journalled_paths(&second).await;
                             let swept = export_journal::sweep(
                                 &second,

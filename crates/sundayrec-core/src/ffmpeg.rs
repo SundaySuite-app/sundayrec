@@ -117,14 +117,19 @@ const _: () = assert!(LEVELS_BATCH_SAMPLES >= 1024);
 ///   platform. The sink path is the one thing that differs by platform:
 ///   `/dev/stderr` is a unix path (mac/linux); Windows has no such path, so it
 ///   uses ffmpeg's `pipe:` AVIO protocol addressed by file-descriptor NUMBER
-///   (`pipe\:2`, escaped because `:` is the filter-option separator) — ffmpeg's
+///   (`pipe\\:2` in the filter string, see below) — ffmpeg's
 ///   own CRT maps fd 2 to the process's real stderr handle on Windows too, so the
 ///   engine's existing stderr reader picks the lines up unchanged.
-///   ⚠️ HARDWARE-UNVERIFIED on Windows — verify on a rig before shipping the
-///   Windows dshow/cpal capture paths with live levels on.
+///   The colon needs TWO levels of escaping: the filtergraph parser strips one
+///   backslash level when it splits the chain, the option parser strips the
+///   second. With a single `pipe\:2` the first pass leaves `pipe:2`, the `:`
+///   then ends the option and ffmpeg dies with "No option name near '2'" before
+///   capturing a single byte (found by running the real ffmpeg on the Windows
+///   CI lane for the first time; reproduces on any OS).
+///   ⚠️ The pipe-to-stderr hand-off itself is still unverified on a Windows rig.
 pub fn build_levels_detect_filter(platform: Platform) -> String {
     let sink = match platform {
-        Platform::Windows => r"pipe\:2",
+        Platform::Windows => r"pipe\\:2",
         Platform::MacOS | Platform::Linux => "/dev/stderr",
     };
     // `p=0`: do NOT zero-pad the final partial batch — the recorded output must
@@ -175,11 +180,12 @@ mod tests {
     fn levels_filter_sink_is_platform_specific() {
         // mac/linux: the unix stderr path. Windows: no such path — ffmpeg's own
         // `pipe:` AVIO protocol addressed by fd NUMBER (2 = stderr), which the CRT
-        // maps to the real stderr handle even on Windows. Escaped `\:` because
-        // `:` is the filter-option separator.
+        // maps to the real stderr handle even on Windows. Escaped TWICE (`\\:`):
+        // `:` is the filter-option separator and the chain passes through two
+        // unescaping levels (filtergraph, then option).
         assert!(build_levels_detect_filter(Platform::MacOS).ends_with("file=/dev/stderr"));
         assert!(build_levels_detect_filter(Platform::Linux).ends_with("file=/dev/stderr"));
-        assert!(build_levels_detect_filter(Platform::Windows).ends_with(r"file=pipe\:2"));
+        assert!(build_levels_detect_filter(Platform::Windows).ends_with(r"file=pipe\\:2"));
     }
 
     #[test]

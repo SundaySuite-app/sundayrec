@@ -5,6 +5,11 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Live nivåmåler i ffmpeg-opptak på Windows avviste hele opptaket.** Filteret
+  som sender nivåene til måleren hadde feil tegnbeskyttelse for Windows, så
+  ffmpeg ga opp med «No option name near '2'» før ett eneste lydsegment var
+  tatt opp. Rettet; filteret er nå testet mot ekte ffmpeg på Windows.
+
 - **Appen sier nå fra hvorfor opptaket ikke startet.** Står ikke mikseren i,
   fikk du bare «Noe gikk galt»; nå står det at lydenheten ikke ble funnet. Det
   samme gjelder når mikrofonen er slått av i Windows eller brukes av et annet
