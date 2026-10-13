@@ -18,10 +18,7 @@
       "findings",
       "wakeFailures"
     ],
-    "optional": [
-      "corrections",
-      "companionOutcomes"
-    ]
+    "optional": ["corrections", "companionOutcomes"]
   },
   "settings": {
     "required": [
@@ -51,10 +48,7 @@
     "optional": []
   },
   "counters": {
-    "required": [
-      "name",
-      "value"
-    ],
+    "required": ["name", "value"],
     "optional": []
   },
   "crashes": {
@@ -89,33 +83,18 @@
       "verdict",
       "reasons"
     ],
-    "optional": [
-      "nativeXruns"
-    ]
+    "optional": ["nativeXruns"]
   },
   "findings": {
-    "required": [
-      "code",
-      "severity"
-    ],
+    "required": ["code", "severity"],
     "optional": []
   },
   "wakeFailures": {
-    "required": [
-      "kind",
-      "at",
-      "reason",
-      "deltaSec"
-    ],
+    "required": ["kind", "at", "reason", "deltaSec"],
     "optional": []
   },
   "corrections": {
-    "required": [
-      "signal",
-      "direction",
-      "band",
-      "count"
-    ],
+    "required": ["signal", "direction", "band", "count"],
     "optional": []
   }
 }
