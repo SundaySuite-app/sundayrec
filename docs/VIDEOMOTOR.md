@@ -162,6 +162,21 @@ ingen klokke, bare tall inn og tall ut, og alt testes.
 - **Proptest:** tilfeldig drift, jitter, hull og fps-fall gir aldri mer enn
   ±1 bilde (33 ms) avvik fra lydklokka over 3 timer simulert opptak.
 
+**Levert (C2).** `AudioClock::observe(sample, vertstid)` og
+`VideoConformer::{push_frame, advance, finish}`; detaljene står i modulhodene.
+Det C3 må vite:
+
+- Vertstiden til et lydpar skal være **fangsttiden til den samplen** (cpals
+  capture-tidsstempel på vertsklokka), ikke `Instant::now()` i callbacken. Et
+  vertstidshopp under 20 ms oppdages ikke, men absorberes av tilpasningen med
+  høyst omtrent hoppets størrelse som feil; det er derfor terskelen ligger
+  under ett bilde. Callback-tid med planleggerjitter på 10–40 ms ville brukt
+  opp den marginen.
+- En plass avgjøres først når lyden er 0,5 s forbi den (bilder må rekke fram
+  gjennom kamerakøen). Forhåndsvisningen (C4) skal ikke vente på konformeren.
+- `finish(total_samples)` gir nøyaktig `slot_count(total_samples)` plasser, så
+  videoen er like lang som WAV-en.
+
 ### C3 — den nye videoøkta
 
 Den native motorens segmentløper (`native_capture/segment.rs`) får et valgfritt
