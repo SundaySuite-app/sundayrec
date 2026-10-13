@@ -555,6 +555,11 @@ pub fn run() {
                 );
             }
 
+            // C0a: find this machine's hardware video encoder in the BACKGROUND
+            // (Windows without a stored choice only; returns at once elsewhere).
+            // Never in the recording start path — see `media::video_encoder`.
+            media::video_encoder::spawn_background_probe(app.handle().clone());
+
             // E3 opt-in telemetry. `startup` reads ONE settings row and returns
             // when consent is not active — no crash ring is scanned, no install
             // id is minted, and no sender task exists to spawn. The periodic
