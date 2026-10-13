@@ -13,6 +13,14 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   Et rent lydopptak venter heller ikke lenger på en enhetsliste det ikke bruker,
   så en henger i den ikke lenger kan hindre en planlagt gudstjeneste i å starte.
 
+- **«Test mikrofon» tester nå de samme kanalene som opptaket.** Testen tar opp
+  på samme måte som et ekte opptak, med de kanalene og den samplingsfrekvensen
+  du har valgt. Har du valgt kanal 4 og 5 på en digital mikser, måler testen
+  dem i stedet for kanal 1 og 2, så «signalet er bra» betyr at det du faktisk
+  tar opp har lyd. Mikrofoner som bare finnes som ASIO-enhet på Windows, blir
+  heller ikke lenger meldt som «fant ikke enheten» i testen når opptaket
+  fungerer fint.
+
 - **Videoopptak får et nøkkelbilde hvert 2. sekund.** Et krasj midt i en
   gudstjeneste koster dermed høyst et par sekunder bilde, og søking i
   redigeringen går raskere. Gjelder alle videoopptak, uansett om maskinen koder

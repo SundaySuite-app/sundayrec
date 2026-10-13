@@ -455,7 +455,12 @@ chosen device, microphone access, engine, the capture probe), the coded findings
 translated on their `code`, the audio-device list, this session's failed IPC
 calls, where the report was written, and «Kopier full rapport». There is also a
 **«Test-opptak (~10 s)»** button, which is OFF while a recording runs — it opens
-the device for real.
+the device for real. Since M1R #7 it records through the same native engine and
+with the same channel choice and sample rate as a real recording, so on a mixer
+with channel 4/5 selected, mute channel 4/5 (not 1/2) and the test must say
+«svakt/stille»; an ASIO-only device must test fine too (it used to be «fant ikke
+enheten»). If the pre-roll buffer was running it is released for the ten seconds
+and re-armed afterwards — check the meters come back.
 
 ⚠️ Findings show the engine's own `detail` line untranslated. That line carries
 the NUMBERS (free GB, «15,3 % av lyden mangler») and Rust only sends it as

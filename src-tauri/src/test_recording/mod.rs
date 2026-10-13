@@ -1,16 +1,27 @@
 //! Test-recording seam (P2b) — **HARDWARE-UNVERIFIED**.
 //!
-//! The impure half of the "Test mikrofon" button. Every decision (the ffmpeg
-//! argv, the size floor, the stderr error-kind classifier, the `astats` RMS →
-//! signal classifier) lives in the unit-tested [`sundayrec_core::test_recording`].
-//! This module performs the side effects the Electron `src/main/test-recorder.ts`
-//! did: enumerate devices, resolve the configured mic, spawn a short capture via
-//! the bundled ffmpeg sidecar, stat the output, run the astats pass, and clean up.
+//! The impure half of the "Test mikrofon" button. Every decision (the size
+//! floor, the error-kind classifier, the `astats` RMS → signal classifier) lives
+//! in the unit-tested [`sundayrec_core::test_recording`]. This module performs
+//! the side effects: run a short capture, stat the output, run the astats pass,
+//! and clean up.
 //!
-//! No new dependency or cargo feature: it reuses the ffmpeg sidecar the recorder
-//! already drives (`crate::media::ffmpeg`). It is annotated HARDWARE-UNVERIFIED —
-//! the spawn/stat path needs a real mic + the sidecar binary; only the core
-//! decisions are proven in the gate. See docs/SMOKE-TEST.md.
+//! ## The test goes down the recording's road (M1R #7)
+//!
+//! Since A5b every audio recording is captured by the native engine (cpal →
+//! ring → WAV writer), with its own channel routing and rate negotiation. The
+//! test used to capture through ffmpeg avfoundation/dshow instead, which has no
+//! channel choice and cannot see an ASIO-only device — so «OK» and «fant ikke
+//! enheten» described a different capture than the one a service would get.
+//! [`run_test_recording`] now opens the same cpal host, with the same channel
+//! mode, input-channel picks and sample rate as a recording
+//! ([`native_test_opts`]), and judges the signal on the native WAV it wrote —
+//! so it measures exactly the channels that would be recorded. ffmpeg is used
+//! only for the `astats` level pass over that finished file.
+//!
+//! It is annotated HARDWARE-UNVERIFIED — the capture path needs a real mic; only
+//! the core decisions and the option mapping are proven in the gate. See
+//! docs/SMOKE-TEST.md.
 
 use std::time::Duration;
 
@@ -18,12 +29,10 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use ts_rs::TS;
 
-use sundayrec_core::device_match::find_best_device_match;
-use sundayrec_core::ffmpeg::Platform;
+use sundayrec_core::settings::Settings;
 use sundayrec_core::test_recording::{
-    build_astats_args, build_test_args, classify_ffmpeg_error, classify_signal,
-    parse_strongest_rms, size_is_plausible, TestRecordingError, TestRecordingSignal,
-    TEST_DURATION_SEC,
+    build_astats_args, classify_ffmpeg_error, classify_signal, parse_strongest_rms,
+    size_is_plausible, TestRecordingError, TestRecordingSignal, TEST_DURATION_SEC,
 };
 
 /// Wait for a spawned ffmpeg `child` to exit, bounded by `timeout`. The capture
@@ -46,10 +55,8 @@ async fn wait_bounded(
     }
 }
 
-use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::error::AppResult;
 use crate::media::ffmpeg::spawn_ffmpeg;
-use crate::recorder::engine::current_platform;
 
 /// Precision capture bench — THE proof tool for the zero-loss acceptance
 /// criterion (2026-07-31: 15–56 % sample loss that every other instrument
@@ -314,83 +321,102 @@ pub struct TestRecordingResult {
     pub signal: Option<TestRecordingSignal>,
 }
 
-/// Resolve the platform capture format + the addressable device token for the
-/// configured mic name, matching the recorder's avfoundation/dshow model (NOT
-/// the Electron wasapi path — the Tauri recorder captures via avfoundation on
-/// mac / dshow on Windows). Returns `(format, device)` or `None` when no device
-/// matched.
-async fn resolve_input(audio_device_name: &str) -> AppResult<Option<(String, String)>> {
-    let inv = enumerate_ffmpeg_devices().await?;
-    let Some(dev) = find_best_device_match(&inv.audio_inputs, audio_device_name) else {
-        return Ok(None);
-    };
-    let (format, device) = match current_platform() {
-        Platform::MacOS | Platform::Linux => {
-            // avfoundation audio-only input is ":<index>".
-            let idx = dev.index.map(|i| i.to_string()).unwrap_or_default();
-            ("avfoundation".to_string(), format!(":{idx}"))
-        }
-        Platform::Windows => ("dshow".to_string(), format!("audio={}", dev.name)),
-    };
-    Ok(Some((format, device)))
+/// The `RecordingOpts` the test capture opens the device with: the ones a real
+/// audio-only recording gets from the settings — the same channel mode, the same
+/// explicit input-channel picks (a digital mixer's channels 4/5 are tested as
+/// 4/5, not as the first pair) and the same resolved sample rate. Nothing about
+/// splitting, silence-stop or pre-roll applies to a ten-second test.
+fn native_test_opts(
+    settings: &Settings,
+    output_path: &str,
+) -> crate::recorder::engine::RecordingOpts {
+    crate::recorder::engine::RecordingOpts {
+        channel_mode: settings.channels,
+        input_channel_l: settings.input_channel_l,
+        input_channel_r: settings.input_channel_r,
+        ..native_probe_opts(
+            settings.device_name.as_deref().unwrap_or_default(),
+            output_path,
+            settings.resolved_sample_rate(),
+        )
+    }
+}
+
+/// Why the native capture could not start, in the vocabulary the frontend
+/// already has. The native start errors are strings today, so this reuses the
+/// substring classifier the ffmpeg path used («not found», «permission») — a
+/// device the picker lists but the native host cannot find is
+/// [`TestRecordingError::DeviceNotFound`] exactly as before.
+fn classify_start_error(message: &str) -> TestRecordingError {
+    classify_ffmpeg_error(message)
 }
 
 /// Run a ~10 s test capture for the configured mic, returning size + signal.
-/// HARDWARE-UNVERIFIED: the spawn/stat/astats path is wired but unproven on a
-/// device — only the core argv/classifier decisions are gate-tested.
-pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecordingResult> {
-    let Some((format, device)) = resolve_input(audio_device_name).await? else {
-        return Ok(TestRecordingResult {
-            ok: false,
-            error: Some(TestRecordingError::DeviceNotFound),
-            size_bytes: None,
-            signal: None,
-        });
-    };
+///
+/// The capture goes through the native engine with the recording's own options
+/// (see the module header), then the level is measured on the WAV it wrote.
+/// HARDWARE-UNVERIFIED: the capture path needs a real device — the option
+/// mapping and the classifiers are gate-tested.
+///
+/// The caller ([`crate::commands::recorder::run_test_recording`]) must have
+/// released every other owner of the microphone first (VU meter, pre-roll
+/// buffer) and refused while a recording runs.
+pub async fn run_test_recording(settings: &Settings) -> AppResult<TestRecordingResult> {
+    use crate::recorder::native_capture::segment::{spawn_native_segment, stop_native_bounded};
+
+    let device = settings.device_name.as_deref().unwrap_or_default();
+    let host = crate::recorder::engine::audio_only_host(
+        cfg!(target_os = "windows"),
+        crate::audio::asio::is_asio_device(device),
+    );
 
     // Capture to a temp file under the OS temp dir (mirrors the Electron
-    // `os.tmpdir()/sundayrec-test`). We clean it up best-effort at the end; a
-    // crash mid-test leaves at most one small mp3 the OS reaps eventually.
+    // `os.tmpdir()/sundayrec-test`). Cleaned up best-effort at the end; a crash
+    // mid-test leaves at most one small WAV the OS reaps eventually.
     let tmp_dir = std::env::temp_dir().join("sundayrec-test");
     std::fs::create_dir_all(&tmp_dir)?;
-    let out = tmp_dir.join(format!("test_{}.mp3", crate::db::store::now_ms() as u64));
+    let out = tmp_dir.join(format!("test_{}.wav", crate::db::store::now_ms() as u64));
     let out_str = out.to_string_lossy().into_owned();
+    let opts = native_test_opts(settings, &out_str);
 
-    // The capture is `-t TEST_DURATION_SEC`; allow a generous margin for device
-    // open + encode flush before we treat a non-exit as a hang and kill it.
-    let capture_deadline = Duration::from_secs(TEST_DURATION_SEC as u64 + 15);
-
-    // 1. Run the capture. Drain stderr concurrently so a hung device-open can't
-    //    wedge the read (stderr only closes when ffmpeg exits) — the bounded wait
-    //    kills the child on timeout, which unblocks the drain.
-    let args = build_test_args(&format, &device, &out_str);
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = spawn_ffmpeg(&arg_refs).await?;
-    let stderr_drain = child.stderr.take().map(|mut stderr| {
-        tokio::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = stderr.read_to_end(&mut bytes).await;
-            String::from_utf8_lossy(&bytes).into_owned()
-        })
-    });
-    let status = wait_bounded(&mut child, capture_deadline).await;
-    let stderr_buf = match stderr_drain {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
+    // 1. Open the device and capture. The open is bounded (a device that hangs
+    //    on open must not wedge the command); the stop is bounded by the engine.
+    let open_deadline = Duration::from_secs(TEST_DURATION_SEC as u64 + 15);
+    let mut seg = match tokio::time::timeout(
+        open_deadline,
+        spawn_native_segment(host, &opts, &out_str, None),
+    )
+    .await
+    {
+        Ok(Ok(seg)) => seg,
+        Ok(Err(e)) => {
+            let _ = std::fs::remove_file(&out);
+            return Ok(TestRecordingResult {
+                ok: false,
+                error: Some(classify_start_error(&e.to_string())),
+                size_bytes: None,
+                signal: None,
+            });
+        }
+        Err(_) => {
+            tracing::warn!("test recording: opening the device exceeded {open_deadline:?}");
+            let _ = std::fs::remove_file(&out);
+            return Ok(TestRecordingResult {
+                ok: false,
+                error: Some(TestRecordingError::FfmpegError),
+                size_bytes: None,
+                signal: None,
+            });
+        }
     };
+    tokio::time::sleep(Duration::from_secs(TEST_DURATION_SEC as u64)).await;
+    stop_native_bounded(&mut seg).await;
 
-    if !status.map(|s| s.success()).unwrap_or(false) {
-        return Ok(TestRecordingResult {
-            ok: false,
-            error: Some(classify_ffmpeg_error(&stderr_buf)),
-            size_bytes: None,
-            signal: None,
-        });
-    }
-
-    // 2. Size sanity floor.
+    // 2. Size sanity floor. A WAV header exists even when no frame arrived, so
+    //    an empty capture is a tiny file → NoAudio.
     let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
     if !size_is_plausible(size) {
+        let _ = std::fs::remove_file(&out);
         return Ok(TestRecordingResult {
             ok: false,
             error: Some(TestRecordingError::NoAudio),
@@ -399,30 +425,10 @@ pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecord
         });
     }
 
-    // 3. Measure RMS via astats. A parse failure → Normal (don't flag a working
-    //    capture as silent), exactly the core's `classify_signal(None)` behaviour.
-    let astats_args = build_astats_args(&out_str);
-    let astats_refs: Vec<&str> = astats_args.iter().map(String::as_str).collect();
-    let signal = match spawn_ffmpeg(&astats_refs).await {
-        Ok(mut c) => {
-            let drain = c.stderr.take().map(|mut stderr| {
-                tokio::spawn(async move {
-                    let mut bytes = Vec::new();
-                    let _ = stderr.read_to_end(&mut bytes).await;
-                    String::from_utf8_lossy(&bytes).into_owned()
-                })
-            });
-            // astats reads a finite file and exits, but bound it anyway so a
-            // wedged sidecar can't hang the test command.
-            wait_bounded(&mut c, Duration::from_secs(30)).await;
-            let buf = match drain {
-                Some(h) => h.await.unwrap_or_default(),
-                None => String::new(),
-            };
-            classify_signal(parse_strongest_rms(&buf))
-        }
-        Err(_) => classify_signal(None),
-    };
+    // 3. Measure RMS via astats over the native WAV. A parse failure → Normal
+    //    (don't flag a working capture as silent), exactly the core's
+    //    `classify_signal(None)` behaviour.
+    let signal = classify_signal(run_astats_rms(&out_str).await);
 
     // Best-effort cleanup — the test file has served its purpose.
     let _ = std::fs::remove_file(&out);
@@ -438,6 +444,53 @@ pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecord
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sundayrec_core::settings::ChannelMode;
+
+    /// The test opens the device the way a recording does: the channel mode,
+    /// the explicit input-channel picks and the resolved rate come from the
+    /// settings, and nothing that only matters to a take (split, silence-stop,
+    /// video) leaks in.
+    #[test]
+    fn the_test_capture_uses_the_recordings_channels_and_rate() {
+        let settings = Settings {
+            device_name: Some("Behringer X32".into()),
+            channels: ChannelMode::MonoL,
+            input_channel_l: Some(4),
+            input_channel_r: Some(5),
+            ..Settings::default()
+        };
+        let o = native_test_opts(&settings, "/tmp/t.wav");
+        assert_eq!(o.audio_device_name, "Behringer X32");
+        assert_eq!(o.output_path, "/tmp/t.wav");
+        assert_eq!(o.channel_mode, ChannelMode::MonoL);
+        assert_eq!((o.input_channel_l, o.input_channel_r), (Some(4), Some(5)));
+        assert_eq!(o.sample_rate, settings.resolved_sample_rate());
+        assert_eq!(o.split_minutes, 0);
+        assert!(!o.stop_on_silence && o.video_device_name.is_none());
+    }
+
+    #[test]
+    fn an_unset_device_is_the_default_input() {
+        let o = native_test_opts(&Settings::default(), "/tmp/t.wav");
+        assert_eq!(o.audio_device_name, "");
+    }
+
+    /// The start errors the native engine produces keep their frontend codes.
+    #[test]
+    fn native_start_errors_keep_the_frontend_vocabulary() {
+        assert_eq!(
+            classify_start_error("recording error: input device not found: Qu-5"),
+            TestRecordingError::DeviceNotFound
+        );
+        assert_eq!(
+            classify_start_error("recording error: microphone permission denied"),
+            TestRecordingError::DevicePermissionDenied
+        );
+        assert_eq!(
+            classify_start_error("recording error: unsupported input sample format"),
+            TestRecordingError::FfmpegError
+        );
+    }
 
     /// A child that exits immediately, spawned from a NATIVE image on every
     /// platform.

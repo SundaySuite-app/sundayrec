@@ -734,21 +734,41 @@ pub async fn get_disk_space(app: AppHandle, db: State<'_, Db>) -> AppResult<Disk
 }
 
 /// Run a ~10 s test capture for the configured mic and report size + measured
-/// signal level. The argv + classifiers are the unit-tested core; the spawn/
-/// astats path is HARDWARE-UNVERIFIED (needs a real mic + the ffmpeg sidecar).
+/// signal level. The capture goes through the native engine with the SAME
+/// channel mode, input-channel picks and sample rate as a recording (M1R #7), so
+/// the level is the level of the channels that would actually be recorded.
+/// HARDWARE-UNVERIFIED (needs a real mic); the option mapping and classifiers
+/// are gate-tested.
+///
+/// The microphone must be free: the VU meter is released, and a running
+/// pre-roll buffer is released too and re-armed afterwards (a second opener
+/// would fail on an exclusive ASIO device, and starve the buffer's clip).
 #[tauri::command]
 pub async fn run_test_recording(
+    app: AppHandle,
     db: State<'_, Db>,
     vu: State<'_, crate::audio::vu::VuEngine>,
+    preroll: State<'_, NativePrerollEngine>,
     engine: State<'_, RecorderEngine>,
 ) -> AppResult<TestRecordingResult> {
     refuse_while_recording(engine.current_state())?;
     // Release the channel-grid/VU stream before opening the device for real.
     vu.stop();
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    let device = s.device_name.clone().unwrap_or_default();
+    // The pre-roll buffer is the device's owner (and the VU emitter) while it
+    // runs: let go and WAIT for the release, then hand it back after the test.
+    let preroll_was_running = preroll.is_active();
+    if preroll_was_running {
+        preroll.stop_and_release().await;
+    }
     crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingSelftest);
-    run_test(&device).await
+    let result = run_test(&s).await;
+    if preroll_was_running {
+        if let Some(ps) = preroll_settings_from(&s) {
+            preroll.start(app, ps);
+        }
+    }
+    result
 }
 
 /// Precision capture bench (the zero-loss proof tool): run the REAL native
