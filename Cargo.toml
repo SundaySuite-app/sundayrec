@@ -4,5 +4,11 @@
 # without a webview or a display, which is exactly where the recorder logic
 # (ffmpeg argument hardening, error classification, silence state machine)
 # belongs — see docs/MIGRATION-TAURI2.md, "Tverrgående standarder".
-members = ["src-tauri", "crates/sundayrec-core"]
+members = ["src-tauri", "crates/sundayrec-core", "crates/filmcraft-audio-dsp"]
 resolver = "2"
+
+# filmcraft-audio-dsp (B0a): upstream's realtime-factor and long spectral tests
+# are minutes slower in an unoptimised build, so this one package is optimised
+# in dev/test profiles (mirrors upstream's root Cargo.toml).
+[profile.dev.package.filmcraft-audio-dsp]
+opt-level = 3
