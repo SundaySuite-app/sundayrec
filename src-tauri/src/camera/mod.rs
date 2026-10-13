@@ -418,7 +418,7 @@ pub fn start(
     format: &VideoFormat,
     queue_frames: usize,
 ) -> Result<Capture, CameraError> {
-    let queue = Arc::new(FrameQueue::new(queue_frames));
+    let queue: Arc<FrameQueue<Frame>> = Arc::new(FrameQueue::new(queue_frames));
     #[cfg(target_os = "macos")]
     {
         let backend = macos_backend::start(camera_id, format, Arc::clone(&queue))?;
