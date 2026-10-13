@@ -206,6 +206,12 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace
 
+      # B0b: the same oracle again with --nocapture, so the measured deviations
+      # vs ffmpeg 9.0.1 ebur128 are in the log (cached build, ~1 s).
+      - name: Loudness oracle deviations (log evidence)
+        working-directory: src-tauri
+        run: cargo test -p filmcraft-audio-dsp --test loudness_oracle -- --nocapture
+
       # The ts-rs bindings are generated from the Rust types into the transient
       # src/lib/bindings/ and synced to the COMMITTED legacy/bindings/ (which
       # the renderer's legacy/types re-export). Regenerate and fail if the
@@ -439,6 +445,15 @@ jobs:
           SUNDAYREC_REQUIRE_SIDECAR: "1"
         run: cargo test --workspace
 
+      # B0b: loudness oracle (+/-0.1 LU vs ffmpeg 9.0.1 ebur128) MUST run for
+      # real here: REQUIRE_SIDECAR turns a missing/stub sidecar into a failure,
+      # and --nocapture prints the measured deviations into the log.
+      - name: Loudness oracle vs ffmpeg ebur128 (required)
+        working-directory: src-tauri
+        env:
+          SUNDAYREC_REQUIRE_SIDECAR: "1"
+        run: cargo test -p filmcraft-audio-dsp --test loudness_oracle -- --nocapture
+
       # Approximate the Windows RELEASE feature combo (release.yml builds
       # --no-default-features --features editor,tray,asio,updater;
       # asio needs the Steinberg SDK so it is left out here) — a feature-gate seam
@@ -478,15 +493,14 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # Same reason as the Windows lane: tauri-build only checks that every
-      # `externalBin` EXISTS. Empty stubs satisfy it; the real-ffmpeg tests take
-      # their tolerant skip path (no SUNDAYREC_REQUIRE_SIDECAR here either).
-      - name: Stub ffmpeg sidecars for tauri-build's existence check
-        working-directory: src-tauri
-        run: |
-          triple="$(rustc -vV | sed -n 's/^host: //p')"
-          mkdir -p binaries
-          touch "binaries/ffmpeg-${triple}" "binaries/ffprobe-${triple}"
+      # Same as the Windows lane (B0b): fetch the real pinned sidecars so the
+      # loudness oracle runs here; tauri-build's existence check is satisfied too.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Fetch ffmpeg/ffprobe sidecars
+        run: node scripts/fetch-ffmpeg.mjs
 
       - name: cargo clippy (workspace, all targets)
         working-directory: src-tauri
@@ -495,6 +509,13 @@ jobs:
       - name: cargo test (workspace)
         working-directory: src-tauri
         run: cargo test --workspace
+
+      # B0b: see the Windows lane. Must run for real; prints the deviations.
+      - name: Loudness oracle vs ffmpeg ebur128 (required)
+        working-directory: src-tauri
+        env:
+          SUNDAYREC_REQUIRE_SIDECAR: "1"
+        run: cargo test -p filmcraft-audio-dsp --test loudness_oracle -- --nocapture
 
       # The exact feature combo release.yml ships for macOS.
       - name: cargo check (macOS release feature combo)
