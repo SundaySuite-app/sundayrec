@@ -6,8 +6,11 @@
 //! bare I/O:
 //!
 //! - [`prepare_session`] — ved start av et VIDEOopptak: les valget lagret per
-//!   maskin, og hvis kjernen sier «prøv» (Windows uten gyldig valg), kjør
-//!   prøve-ffmpegen koder for koder og lagre vinneren.
+//!   maskin; finnes ingen, bruk `libx264` UMIDDELBART. Aldri en prøve i
+//!   startstien (den kan ta 32 s, og `engine.start` har 30 s).
+//! - [`spawn_background_probe`] — prøven (Windows uten gyldig valg) kjøres i
+//!   bakgrunnen en stund etter appstart, aldri under et opptak, og lagrer
+//!   vinneren til neste opptak.
 //! - [`active`] — det valget argv-byggerne leser (`recorder::engine::args`,
 //!   `recorder::two_process`, `recorder::cpal_capture`).
 //! - [`note_unexpected_exit`] — en uventet avslutning av et videoopptak: hvis
@@ -36,10 +39,10 @@ use serde::{Deserialize, Serialize};
 use sundayrec_core::errors::RecordingErrorCode;
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::video_encoder::{
-    conclude, next_probe, plan_session, probe_args, resolve_encoder, SessionPlan, VideoEncoder,
-    VideoEncoderSummary,
+    conclude, next_probe, plan_session, probe_args, resolve_encoder, start_encoder, SessionPlan,
+    VideoEncoder, VideoEncoderSummary,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::media::ffmpeg::ffmpeg_path;
 
@@ -49,6 +52,9 @@ const STORE_FILE: &str = "video-encoder.json";
 /// Tak per prøve. En driver som må vekkes (NVENC på en sovende diskret GPU) kan
 /// bruke noen sekunder; en som henger skal ikke holde opptaksstarten.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Ventetid fra appstart til bakgrunnsprøven kjører.
+const BACKGROUND_PROBE_DELAY: Duration = Duration::from_secs(60);
 
 /// Valget økta bruker. Satt av [`prepare_session`] og [`note_unexpected_exit`].
 static ACTIVE: Mutex<Option<VideoEncoder>> = Mutex::new(None);
@@ -138,8 +144,10 @@ async fn run_probe(platform: Platform) -> sundayrec_core::video_encoder::Encoder
 }
 
 /// Avgjør koderen for et VIDEOopptak som er i ferd med å starte. Kalles av
-/// `RecorderEngine::start` etter at kameraet er funnet. Ingen feil å returnere:
-/// det verste utfallet er programvare, som er det Windows alltid har brukt.
+/// `RecorderEngine::start` etter at kameraet er funnet. Ingen prøve her: den
+/// kan ta 32 s og planleggeren gir hele `engine.start` 30 s. Lagret valg brukes;
+/// finnes ingen, brukes `libx264` med en gang ([`start_encoder`]), og
+/// [`spawn_background_probe`] finner koderen til neste opptak.
 pub async fn prepare_session(app: &AppHandle) {
     let platform = crate::util::detect_platform();
     let hw = sundayrec_core::capture::RECORDING_HW_ACCEL;
@@ -147,28 +155,94 @@ pub async fn prepare_session(app: &AppHandle) {
         set_active(Some(VideoEncoder::Software));
         return;
     }
-    let path = store_path(app);
-    let stored = path.as_deref().and_then(read_stored);
-    match plan_session(platform, hw, stored.as_deref()) {
-        SessionPlan::Use(encoder) => {
-            tracing::info!(
-                encoder = encoder.h264_name(),
-                "video encoder: using stored choice"
-            );
-            set_active(Some(encoder));
-        }
-        SessionPlan::Probe => {
-            let selection = run_probe(platform).await;
+    let stored = store_path(app).as_deref().and_then(read_stored);
+    let encoder = start_encoder(platform, hw, stored.as_deref());
+    tracing::info!(
+        encoder = encoder.h264_name(),
+        stored = stored.is_some(),
+        "video encoder: using stored choice (no probe in the start path)"
+    );
+    set_active(Some(encoder));
+}
+
+/// Tilbakestilles når bakgrunnsprøven (eller diagnosens) er ferdig, så to
+/// prøver aldri kjører samtidig.
+static PROBING: AtomicBool = AtomicBool::new(false);
+
+struct ProbeGuard;
+impl ProbeGuard {
+    fn acquire() -> Option<Self> {
+        PROBING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| ProbeGuard)
+    }
+}
+impl Drop for ProbeGuard {
+    fn drop(&mut self) {
+        PROBING.store(false, Ordering::Release);
+    }
+}
+
+fn recording_is_active(app: &AppHandle) -> bool {
+    app.try_state::<crate::recorder::engine::RecorderEngine>()
+        .map(|e| e.current_state().is_active())
+        .unwrap_or(false)
+}
+
+/// Bakgrunnsprøven (C0a): kjøres en stund etter appstart når maskinen mangler et
+/// gyldig lagret valg, aldri mens et opptak pågår, og lagrer vinneren til NESTE
+/// opptak. Kjører ikke etter en koderfeil i denne appkjøringen, og endrer ikke
+/// koderen til en økt som er i gang.
+pub fn spawn_background_probe(app: AppHandle) {
+    let platform = crate::util::detect_platform();
+    let hw = sundayrec_core::capture::RECORDING_HW_ACCEL;
+    let Some(path) = store_path(&app) else {
+        return;
+    };
+    if !sundayrec_core::video_encoder::needs_background_probe(
+        platform,
+        hw,
+        read_stored(&path).as_deref(),
+    ) {
+        return;
+    }
+    crate::crash::watch_handle(
+        "video_encoder::background_probe",
+        tauri::async_runtime::spawn(async move {
+            // La oppstarten og en eventuell planlagt start få maskinen først.
+            tokio::time::sleep(BACKGROUND_PROBE_DELAY).await;
+            if DEMOTED.load(Ordering::Relaxed) || recording_is_active(&app) {
+                return;
+            }
+            let Some(_guard) = ProbeGuard::acquire() else {
+                return;
+            };
+            let mut tried: Vec<(VideoEncoder, bool)> = Vec::new();
+            while let Some(encoder) = next_probe(platform, &tried) {
+                // Et opptak som startet underveis eier GPU-en og CPU-en: avbryt
+                // uten å lagre noe; neste oppstart prøver på nytt.
+                if recording_is_active(&app) {
+                    tracing::info!("video encoder: background probe abandoned — recording started");
+                    return;
+                }
+                let ok = probe_one(encoder).await;
+                tracing::info!(encoder = encoder.h264_name(), ok, "video encoder probe");
+                tried.push((encoder, ok));
+            }
+            let selection = conclude(tried);
             tracing::info!(
                 chosen = selection.chosen.h264_name(),
-                "video encoder: probe finished"
+                "video encoder: background probe finished"
             );
-            if let Some(path) = &path {
-                write_stored(path, selection.chosen).await;
+            write_stored(&path, selection.chosen).await;
+            // Et opptak kan ha startet siden sist: da bruker det sin koder ut
+            // økta (og respawn leser `active()`), så ikke rør den.
+            if !recording_is_active(&app) && !DEMOTED.load(Ordering::Relaxed) {
+                set_active(Some(selection.chosen));
             }
-            set_active(Some(selection.chosen));
-        }
-    }
+        }),
+    );
 }
 
 /// Et videoopptak døde uventet (`last_error` er ffmpegs klassifisering, om noen).
@@ -206,7 +280,13 @@ pub async fn diagnose(app: &AppHandle, recording_active: bool) -> VideoEncoderSu
     let stored = path.as_deref().and_then(read_stored);
     let can_probe =
         !recording_active && matches!(plan_session(platform, hw, None), SessionPlan::Probe);
-    if can_probe {
+    // Holdes til prøven er ferdig, så den ikke kolliderer med bakgrunnsprøven.
+    let probe_guard = if can_probe {
+        ProbeGuard::acquire()
+    } else {
+        None
+    };
+    if probe_guard.is_some() {
         let selection = run_probe(platform).await;
         if let Some(path) = &path {
             write_stored(path, selection.chosen).await;

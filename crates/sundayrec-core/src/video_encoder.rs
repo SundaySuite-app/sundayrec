@@ -308,6 +308,26 @@ pub fn plan_session(platform: Platform, hw_accel: bool, stored: Option<&str>) ->
     }
 }
 
+/// Koderen et opptak bruker i STARTSTIEN: aldri en prøve der. Er det en lagret
+/// verdi som gjelder ([`SessionPlan::Use`]), brukes den; ellers (Windows uten
+/// gyldig valg) er svaret `libx264` UMIDDELBART. Prøven (opptil 4 × 8 s) hører
+/// ikke hjemme i `engine.start`, som planleggeren gir 30 s: et planlagt opptak
+/// ville time ut og gudstjenesten ville ikke bli tatt opp. Prøven kjøres i
+/// stedet i bakgrunnen ([`needs_background_probe`]) og lagrer svaret til neste
+/// opptak.
+pub fn start_encoder(platform: Platform, hw_accel: bool, stored: Option<&str>) -> VideoEncoder {
+    match plan_session(platform, hw_accel, stored) {
+        SessionPlan::Use(e) => e,
+        SessionPlan::Probe => VideoEncoder::Software,
+    }
+}
+
+/// Mangler maskinen et gyldig lagret valg, slik at en bakgrunnsprøve er verdt å
+/// kjøre (utenfor opptak)? Bare Windows med maskinvarekoding på.
+pub fn needs_background_probe(platform: Platform, hw_accel: bool, stored: Option<&str>) -> bool {
+    matches!(plan_session(platform, hw_accel, stored), SessionPlan::Probe)
+}
+
 /// Koderen et opptak faktisk får. `chosen` er økta sitt valg på Windows
 /// (`None` = ikke avgjort ennå → programvare, som før C0a).
 ///
@@ -405,6 +425,38 @@ mod tests {
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn no_stored_choice_in_the_start_path_means_software_without_a_probe() {
+        // Windows, ingenting lagret / ukjent tekst / VideoToolbox fra en kopiert
+        // mappe: startstien gir libx264 umiddelbart, og bakgrunnen får jobben.
+        for stored in [None, Some(""), Some("junk"), Some("h264_videotoolbox")] {
+            assert_eq!(
+                start_encoder(Platform::Windows, true, stored),
+                VideoEncoder::Software,
+                "{stored:?}"
+            );
+            assert!(needs_background_probe(Platform::Windows, true, stored));
+        }
+        // Et gyldig valg brukes som det er, og krever ingen prøve.
+        assert_eq!(
+            start_encoder(Platform::Windows, true, Some("h264_nvenc")),
+            VideoEncoder::Nvenc
+        );
+        assert!(!needs_background_probe(
+            Platform::Windows,
+            true,
+            Some("h264_nvenc")
+        ));
+        // Ingen maskinvarekoding / andre plattformer: aldri prøve.
+        assert!(!needs_background_probe(Platform::Windows, false, None));
+        assert!(!needs_background_probe(Platform::MacOS, true, None));
+        assert!(!needs_background_probe(Platform::Linux, true, None));
+        assert_eq!(
+            start_encoder(Platform::MacOS, true, None),
+            VideoEncoder::VideoToolbox
+        );
     }
 
     #[test]

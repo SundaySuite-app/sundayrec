@@ -278,12 +278,18 @@ faktisk skal se nå — sist.
       opptakstelemetrien). (2) Installer denne versjonen, slett
       `%LOCALAPPDATA%\no.sundayrec.app\video-encoder.json` om den finnes, og
       gjenta de 60 minuttene på samme maskin, samme kamera, samme scene.
-      **Forventet:** (a) Ved første videoopptak tar starten noen sekunder
-      ekstra (prøven), og `video-encoder.json` finnes etterpå med første
+      **Forventet:** (a) Prøven kjøres i BAKGRUNNEN, ca. ett minutt etter
+      appstart, aldri i opptaksstarten: det første videoopptaket etter
+      installasjon starter uten ekstra ventetid og bruker `libx264`
+      (loggen: «using stored choice (no probe in the start path)»,
+      `stored=false`). Etter prøven finnes `video-encoder.json` med første
       koder som virker på maskinen (NVIDIA: `h264_nvenc`, Intel:
       `h264_qsv`, AMD: `h264_amf`, ellers `h264_mf`; `libx264` bare hvis
       ingen virker). Loggen har `video encoder probe` per koder og
-      `video encoder: probe finished`. (b) **CPU under halvparten av basisen**
+      `video encoder: background probe finished`. Start et planlagt
+      videoopptak midt i det første minuttet: det skal starte som vanlig
+      (programvare), og loggen sier «background probe abandoned» om prøven
+      var i gang. Start appen på nytt, og mål (b)–(e) på NESTE opptak. (b) **CPU under halvparten av basisen**
       (snitt over de 60 minuttene) og **ingen tapte bilder** (`drop=0`). (c) Neste
       videoopptak starter UTEN ekstra ventetid (`using stored choice`). (d)
       Filen spiller i VLC og i Windows' egen spiller, har jevn 30 fps, og

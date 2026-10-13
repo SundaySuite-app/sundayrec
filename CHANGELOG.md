@@ -13,10 +13,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 - **Videoopptak på Windows bruker skjermkortet til å kode.** Tidligere ble
   1080p kodet i programvare på Windows, og på en eldre PC ga det høy
-  CPU-last, tapte bilder og hakking. Nå prøver appen ved første videoopptak
+  CPU-last, tapte bilder og hakking. Nå prøver appen
   NVIDIA, Intel, AMD og Media Foundation i den rekkefølgen, og husker den
-  første som virker på akkurat denne maskinen. Finnes ingen, brukes
-  programvare som før. Feiler den valgte koderen midt i et opptak, bytter
+  første som virker på akkurat denne maskinen. Prøven kjøres i bakgrunnen
+  et minutt etter at appen er startet, aldri når et opptak starter, så et
+  planlagt opptak aldri venter på den. Det første opptaket på en ny
+  maskin kodes derfor i programvare, og de neste bruker skjermkortet.
+  Finnes ingen, brukes programvare som før. Feiler den valgte koderen midt i et opptak, bytter
   appen til programvare og glemmer valget. Diagnosen viser hvilken koder som
   er i bruk.
 
