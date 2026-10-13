@@ -753,8 +753,9 @@ pub(crate) mod tests {
         // it is the load the 2026-07-31 sample-loss incident ran at.
         let af = format!(
             "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,{}",
+            // The host's own sink: `/dev/stderr` does not exist on Windows.
             sundayrec_core::ffmpeg::build_levels_detect_filter(
-                sundayrec_core::ffmpeg::Platform::MacOS
+                crate::recorder::engine::current_platform()
             )
         );
         let mut cmd = std::process::Command::new(&ffmpeg);

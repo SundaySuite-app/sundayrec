@@ -7583,14 +7583,31 @@ mod tests {
                     let temp = temp.clone();
                     std::thread::spawn(move || {
                         let rt = tokio::runtime::Runtime::new().unwrap();
+                        // Open the second connection (runs the migrations —
+                        // slow on a Windows runner) BEFORE the render starts, so
+                        // the time between "the temp has bytes" and the cancel is
+                        // only the probes themselves.
+                        let second = rt.block_on(async {
+                            crate::db::store::open_pool(&db_path)
+                                .await
+                                .expect("a second connection to the app database")
+                        });
                         for _ in 0..600 {
                             let wrote_something = std::fs::read_dir(&dir)
                                 .into_iter()
                                 .flatten()
                                 .flatten()
                                 .any(|e| {
+                                    // `std::fs::metadata(path)`, NOT `e.metadata()`:
+                                    // on Windows a DirEntry's size comes from the
+                                    // directory listing, which can lag
+                                    // while ffmpeg still holds the file open (it
+                                    // reads 0 until the render has finished), so the
+                                    // cancel arrived after the render was done.
                                     e.file_name().to_string_lossy().contains(".__editor_tmp.")
-                                        && e.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                                        && std::fs::metadata(e.path())
+                                            .map(|m| m.len() > 0)
+                                            .unwrap_or(false)
                                 });
                             if wrote_something {
                                 break;
@@ -7601,9 +7618,6 @@ mod tests {
                         // what this process's own background sweep, landing now,
                         // would do about it: nothing, the render is in flight.
                         let mid_render = rt.block_on(async {
-                            let second = crate::db::store::open_pool(&db_path)
-                                .await
-                                .expect("a second connection to the app database");
                             let before = journalled_paths(&second).await;
                             let swept = export_journal::sweep(
                                 &second,
