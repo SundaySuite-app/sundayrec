@@ -5004,6 +5004,7 @@ dependencies = [
  "chrono",
  "cpal",
  "dispatch2",
+ "filmcraft-audio-dsp",
  "fs4",
  "objc2",
  "objc2-app-kit",
