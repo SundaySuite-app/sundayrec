@@ -545,6 +545,20 @@ faktisk skal se nå — sist.
       cpal 0.18s «foretrekk 48 kHz» ikke gjelder WASAPI — bekreft det).
       Ingen `STATUS_ACCESS_VIOLATION` (se `audio::com_anchor`).
 
+- [ ] **(c1b) Caps kamera-crates finner kameraene (C1b,
+      `ombygging/c1b-kamera-windows`).** CI bygger cratene, men har ikke et
+      kamera. Koble til det vanlige USB-kameraet, opptakskortet (HDMI/SDI) og
+      start OBS' virtuelle kamera. I en klone av repoet:
+      `cargo run -p cap-camera-windows --example enumeration_leak -- formats 60 1000`.
+      **Forventet:** hver linje viser samme antall enheter (alle tre) og et
+      antall formater større enn null, og tiden per runde stiger ikke.
+      Følg prosessen i Oppgavebehandling (Detaljer → Tråder/Håndtak) mens den
+      går: tallene skal ligge flatt. Gjenta med `mf` og `ds` i stedet for
+      `formats`. **Rødt funn:** «No cameras found», et kamera mangler i én av
+      modusene, eller tråder/håndtak vokser for hver runde (lekkasjen Cap
+      rettet i #2132/#2143 er tilbake). Selve opptaket fra kameraet bevises i
+      C1c (`camera_probe`).
+
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
 respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_

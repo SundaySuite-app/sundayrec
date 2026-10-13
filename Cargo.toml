@@ -4,7 +4,20 @@
 # without a webview or a display, which is exactly where the recorder logic
 # (ffmpeg argument hardening, error classification, silence state machine)
 # belongs — see docs/MIGRATION-TAURI2.md, "Tverrgående standarder".
-members = ["src-tauri", "crates/sundayrec-core", "crates/filmcraft-audio-dsp"]
+#
+# `crates/camera-*` (C1b) er Caps kamera-crates for Windows (MIT), tatt inn
+# låst til én commit — se UPSTREAM.md i hver. `crates/mf-util` er vår egen
+# erstatning for Caps AGPL-lisensierte `cap-mediafoundation-utils`, skrevet fra
+# Microsofts dokumentasjon. Alle fire er `#![cfg(windows)]`: tomme på Mac/Linux.
+members = [
+    "src-tauri",
+    "crates/sundayrec-core",
+    "crates/filmcraft-audio-dsp",
+    "crates/camera-windows",
+    "crates/camera-mediafoundation",
+    "crates/camera-directshow",
+    "crates/mf-util",
+]
 resolver = "2"
 
 # filmcraft-audio-dsp (B0a): upstream's realtime-factor and long spectral tests

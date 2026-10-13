@@ -278,7 +278,9 @@ windows-sys = { version = "0.61", features = [
 #   this adds zero compiled code;
 # - a cpal bump must not move the version under our vtable silently. When cpal
 #   moves to another `windows`, bump these two pins in the SAME PR (and re-run
-#   the Windows CI jobs), or the tree carries two copies.
+#   the Windows CI jobs), or the tree carries two copies. The camera crates
+#   (`crates/camera-*`, `crates/mf-util`, C1b) carry the same exact pin — bump
+#   them in the same PR too.
 # `windows-core` is listed because the `#[implement]` macro expands to
 # `::windows_core::…` paths, so it must be a direct dependency; there is no
 # `implement` feature on `windows` 0.62 — the macro is always available.

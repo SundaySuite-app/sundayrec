@@ -1,0 +1,25 @@
+# Tatt inn fra Cap (MIT) — se UPSTREAM.md for commit og lokale endringer.
+[package]
+name = "cap-camera-directshow"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+tracing = "0.1"
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+# Samme eksakte pin som src-tauri (og cpal): én kopi av `windows` i treet.
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = [
+	"Win32_System_Com",
+	"Win32_Media_MediaFoundation",
+	"Win32_Media_DirectShow",
+	"Win32_System_Com_StructuredStorage",
+	"Win32_System_Ole",
+	"Win32_System_Variant",
+	"Win32_System_Performance",
+	"Win32_Media_KernelStreaming",
+] }
