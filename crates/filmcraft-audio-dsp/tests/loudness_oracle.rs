@@ -18,8 +18,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Local stand-ins for upstream's `filmcraft-testkit` (not vendored, see `UPSTREAM.md`).
-/// B0b rewrites this file to use the sidecar for good and drops the skip.
+/// The oracle is the shipped sidecar (`src-tauri/binaries`, pinned by `scripts/fetch-ffmpeg.mjs`).
 mod support {
+    /// Keep in step with `FFMPEG_VERSION` in `scripts/fetch-ffmpeg.mjs`.
+    const PINNED_FFMPEG: &str = "9.0.1";
+
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
@@ -37,6 +40,16 @@ mod support {
             .collect();
         found.sort();
         let ok = found.into_iter().find(|p| Command::new(p).arg("-version").output().is_ok_and(|o| o.status.success()));
+        if let Some(p) = &ok {
+            let out = Command::new(p).arg("-version").output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            let line = out.lines().next().unwrap_or("").to_string();
+            eprintln!("oracle: {} -> {line}", p.display());
+            // A pinned oracle: when the sidecar is required (CI), it must be the pinned release.
+            assert!(
+                std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none() || line.contains(PINNED_FFMPEG),
+                "oracle must be ffmpeg {PINNED_FFMPEG} (scripts/fetch-ffmpeg.mjs), got: {line}"
+            );
+        }
         if ok.is_none() {
             assert!(
                 std::env::var_os("SUNDAYREC_REQUIRE_SIDECAR").is_none(),

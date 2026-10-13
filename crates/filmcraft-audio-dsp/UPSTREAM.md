@@ -65,8 +65,11 @@ ingen endring i `src/`.
    `src-tauri/binaries/` (hopper over tomme stubber som ikke kan kjøres), skriver
    WAV selv og bruker OS-ets temp-katalog. Testen hopper over uten kjørbar
    sidecar, men **feiler** hvis `SUNDAYREC_REQUIRE_SIDECAR` er satt (`check`-jobben
-   i `ci.yml` setter den). Selve målingene og toleransene er uendret. B0b
-   fullfører dette (±0,1 LU mot 9.0.1-sidecaren på alle tre plattformer).
+   i `ci.yml` setter den). Selve målingene og toleransene er uendret (M/S/I
+   ±0,1 LU). B0b: `windows-check` og `macos-check` henter nå ekte pinnet sidecar
+   (`node scripts/fetch-ffmpeg.mjs`) og kjører oraklet i et eget steg med
+   `SUNDAYREC_REQUIRE_SIDECAR`; testen krever da at ffmpeg er 9.0.1 og skriver
+   versjonen og målt avvik i loggen.
 4. Rot-`Cargo.toml` fikk `[profile.dev.package.filmcraft-audio-dsp] opt-level = 3`
    (oppstrøms har samme linje) fordi sanntidsfaktor- og spektraltestene er
    minutter tregere uten.
