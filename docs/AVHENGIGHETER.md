@@ -98,28 +98,31 @@ ikke av seg selv, `build_*_stream` tar konfigurasjonen som verdi,
 _Når:_ egen PR, fulgt av en riggrunde på begge maskiner: gjenkobling
 ([RIG-DAY](RIG-DAY.md) (a)), ASIO (f) og et helt 90-minutters opptak (h).
 
-### Windows: lytter på endringer i enhetslista (pakke A4)
+### Windows: lytter på endringer i enhetslista (pakke A4) — levert
 
-`audio/device_watch.rs` har macOS-lytteren, men ikke Windows
-(`IMMNotificationClient`). Begrunnelsen i modulhodet er at det krever enten en
-håndskrevet COM-vtabell eller det mye større `windows`-cratet. Den andre
-halvdelen stemmer ikke lenger: `windows` 0.62.2 er allerede i `Cargo.lock`,
-fordi cpal bruker det. Dermed er `#[implement]`-makroen innen rekkevidde uten
-at noe nytt må kompileres. Men den står der **transitivt** — `src-tauri`
-erklærer bare `windows-sys` selv — så pakken må legge `windows` inn som en
-direkte og eksplisitt pinnet avhengighet. Ellers kan en cpal-oppgradering
-flytte versjonen under vtabellen vår.
+`audio/device_watch.rs` har nå en Windows-halvdel (`IMMNotificationClient`) ved
+siden av macOS-lytteren. Den gamle begrunnelsen for at Windows manglet — at det
+krevde enten en håndskrevet COM-vtabell eller det mye større `windows`-cratet —
+holdt ikke lenger: `windows` 0.62.2 lå allerede i `Cargo.lock` fordi cpal 0.18.2
+bruker det. A4 erklærer `windows` og `windows-core` **direkte**, pinnet med
+`=0.62.2` (samme versjon som cpal), slik at en cpal-oppgradering ikke kan flytte
+versjonen under vtabellen vår uten at noen ser det. Featurene
+(`Win32_Foundation`, `Win32_Media_Audio`, `Win32_System_Com`) er de cpal alt slår
+på, så ingenting nytt kompileres. `windows` 0.62 har ingen `implement`-feature;
+makroen trenger i stedet `windows-core` som direkte avhengighet.
 
-Forbildet er cpals egen `DefaultDeviceMonitor` i `src/host/wasapi/stream.rs`
-(Apache-2.0). Den er gjennomgått og har merknader om de to fellene: å
-avregistrere mens en tilbakekalling kjører gir vranglås, og håndtaket må ikke
-lukkes hvis avregistreringen feilet. Skriv vår egen etter mønsteret (den
-skal bare dytte `Notify`, slik macOS-halvdelen gjør) og krediter cpal i
-modulhodet.
+**Ved neste cpal-oppgradering:** sjekk `cargo tree -i windows --target
+x86_64-pc-windows-msvc`. Flytter cpal seg til en annen `windows`, flyttes begge
+pinnene i samme PR — ellers får treet to kopier.
 
-_Når:_ etter, eller samtidig med, cpal-oppgraderingen. Bevises på
-Windows-boksen med [RIG-DAY](RIG-DAY.md) (a): trekk ut og sett inn mikseren,
-og se at back-offen kuttes.
+Forbildet er cpals `DefaultDeviceMonitor` i `src/host/wasapi/stream.rs`
+(Apache-2.0), kreditert i modulhodet. Begge fellene derfra er håndtert:
+lytteren avregistreres aldri i drift (ingen vranglås mot en pågående
+tilbakekalling), og tilbakekallingen eier ikke noe rått håndtak som kan lukkes —
+feiler en avregistrering (bare i tester), lekkes klienten heller enn å slippes.
+
+_Gjenstår:_ bevises på Windows-boksen med [RIG-DAY](RIG-DAY.md) (a4): trekk ut og
+sett inn mikseren, og se at back-offen kuttes.
 
 ### Lisensvakt i CI og tredjepartsmerknader (pakke A1)
 

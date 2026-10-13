@@ -132,6 +132,15 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
   ikke lenger.
 - **Ferdig når:** RIG-DAY (a) på Windows viser at back-offen kuttes når mikseren
   settes inn igjen.
+- **Rettet i A4:** `windows` 0.62 har ingen `implement`-feature — makroen er
+  alltid med, men ekspanderer til `::windows_core::…`, så `windows-core` må også
+  erklæres direkte. Begge er pinnet med `=0.62.2` (samme som cpal 0.18.2), med
+  featurene `Win32_Foundation`, `Win32_Media_Audio` og `Win32_System_Com`, som
+  cpal alt slår på — ingen ny kode kompileres, `Cargo.lock` får bare to nye
+  kanter. Kamerameldingene (`CM_Register_Notification`) ligger fortsatt i C5a,
+  ikke i denne lytteren. Lytteren dytter bare ved _ankomst_ (ny enhet, tilstand
+  → `ACTIVE`, ny standard opptaksenhet); fjerning dytter ikke. RIG-DAY-punktet
+  er (a4) under Windows-boksen.
 
 **A5 — Lydnødlukene fjernes (S–M)**
 
