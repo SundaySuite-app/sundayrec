@@ -1449,6 +1449,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-audio-dsp"
+version = "0.7.2"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4964,6 +4968,7 @@ name = "sundayrec-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "filmcraft-audio-dsp",
  "proptest",
  "regex",
  "semver",

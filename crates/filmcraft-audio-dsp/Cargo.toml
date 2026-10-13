@@ -1,0 +1,23 @@
+[package]
+name = "filmcraft-audio-dsp"
+description = "Real-time audio DSP from FilmCraft: BS.1770 / EBU R128 loudness metering and audio effects (vendored, see UPSTREAM.md)"
+version = "0.7.2"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/storytold/filmcraft"
+publish = false
+
+# Intentionally dependency-free (layer L1): planar `&mut [f32]` slices in, planar slices out.
+# Upstream's `filmcraft-testkit` dev-dependency is NOT taken in; see UPSTREAM.md.
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+type_complexity = "allow"
