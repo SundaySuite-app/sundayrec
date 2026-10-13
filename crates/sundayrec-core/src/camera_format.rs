@@ -170,6 +170,120 @@ pub fn should_log_count(count: u64) -> bool {
 /// native format for the whole recording.
 pub const NATIVE_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(4);
 
+/// Windows' counterpart to [`mach_ticks_to_ns`] (C1c): a `QueryPerformanceCounter`
+/// value to nanoseconds, given `QueryPerformanceFrequency` (ticks per second).
+/// `None` for a zero frequency or an overflow past `u64`.
+pub fn qpc_ticks_to_ns(ticks: i64, frequency: i64) -> Option<u64> {
+    if frequency <= 0 || ticks < 0 {
+        return None;
+    }
+    u64::try_from(ticks as u128 * 1_000_000_000 / frequency as u128).ok()
+}
+
+/// What a camera-shaped device really is (C1c). Windows gets this from Cap's
+/// own name patterns; macOS has no such classifier, so the shell asks here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeviceClass {
+    /// An ordinary camera (built-in, USB webcam, phone).
+    Camera,
+    /// An HDMI/SDI capture card that shows up as a camera.
+    CaptureCard,
+    /// Software that publishes frames as a camera (OBS, NDI, Camo …).
+    Virtual,
+}
+
+/// Brand names of HDMI/SDI capture hardware.
+const CAPTURE_CARD_NAMES: &[&str] = &[
+    "elgato",
+    "cam link",
+    "avermedia",
+    "live gamer",
+    "magewell",
+    "blackmagic",
+    "decklink",
+    "ultrastudio",
+    "intensity",
+    "atomos",
+    "hauppauge",
+    "j5create",
+    "ripsaw",
+    "shadowcast",
+    "capture card",
+    "hdmi capture",
+    "video capture",
+];
+
+/// Names of virtual-camera software.
+const VIRTUAL_NAMES: &[&str] = &[
+    "obs",
+    "virtual",
+    "ndi",
+    "snap camera",
+    "manycam",
+    "xsplit",
+    "droidcam",
+    "iriun",
+    "epoccam",
+    "camtwist",
+    "mmhmm",
+    "camo",
+    "nvidia broadcast",
+];
+
+/// `transportType` of a virtual (CoreMediaIO plug-in / extension) device:
+/// `'virt'`.
+const TRANSPORT_VIRTUAL: &str = "virt";
+
+/// Classify a camera-shaped device from what the OS says about it. The
+/// transport (macOS `transportType` as a four-character code) is the strongest
+/// signal for virtual cameras; names decide the rest. Capture cards win over
+/// virtual when both match ("Elgato Virtual …" is still a card).
+///
+/// Substring matching on short names ("obs", "ndi", "camo") is deliberately
+/// word-bounded: "Webcam Obscura" or "Mondial" must not become virtual.
+pub fn classify_device(name: &str, model_id: Option<&str>, transport: Option<&str>) -> DeviceClass {
+    let haystacks = [Some(name), model_id];
+    let hit = |list: &[&str]| {
+        haystacks
+            .iter()
+            .flatten()
+            .any(|h| list.iter().any(|p| contains_word(&h.to_lowercase(), p)))
+    };
+    if hit(CAPTURE_CARD_NAMES) {
+        DeviceClass::CaptureCard
+    } else if transport == Some(TRANSPORT_VIRTUAL) || hit(VIRTUAL_NAMES) {
+        DeviceClass::Virtual
+    } else {
+        DeviceClass::Camera
+    }
+}
+
+/// `needle` in `haystack` (both lowercase) with a non-alphanumeric character (or
+/// the string edge) on each side. A multi-word needle matches as a unit.
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    let mut from = 0;
+    while let Some(pos) = haystack[from..].find(needle) {
+        let start = from + pos;
+        let end = start + needle.len();
+        let before_ok = haystack[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric());
+        let after_ok = haystack[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric());
+        if before_ok && after_ok {
+            return true;
+        }
+        from = end;
+        if from >= haystack.len() {
+            break;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,5 +407,67 @@ mod tests {
     fn skip_counters_log_the_first_and_every_hundredth() {
         let logged: Vec<u64> = (0..=300).filter(|&c| should_log_count(c)).collect();
         assert_eq!(logged, vec![1, 100, 200, 300]);
+    }
+
+    #[test]
+    fn qpc_ticks_convert_at_the_usual_10_mhz_and_reject_nonsense() {
+        assert_eq!(qpc_ticks_to_ns(10_000_000, 10_000_000), Some(1_000_000_000));
+        assert_eq!(qpc_ticks_to_ns(1, 10_000_000), Some(100));
+        // 3.0 GHz counter, no overflow on a long uptime.
+        assert_eq!(
+            qpc_ticks_to_ns(3_000_000_000_000_000, 3_000_000_000),
+            Some(1_000_000_000_000_000)
+        );
+        assert_eq!(qpc_ticks_to_ns(5, 0), None);
+        assert_eq!(qpc_ticks_to_ns(-5, 10_000_000), None);
+        assert_eq!(qpc_ticks_to_ns(i64::MAX, 1), None);
+    }
+
+    #[test]
+    fn classifies_cards_virtual_cameras_and_plain_cameras() {
+        use DeviceClass::*;
+        assert_eq!(
+            classify_device("FaceTime HD Camera", None, Some("bltn")),
+            Camera
+        );
+        assert_eq!(classify_device("Logitech BRIO", None, Some("usb ")), Camera);
+        assert_eq!(
+            classify_device("Cam Link 4K", None, Some("usb ")),
+            CaptureCard
+        );
+        assert_eq!(
+            classify_device("Elgato HD60 X", None, Some("usb ")),
+            CaptureCard
+        );
+        assert_eq!(
+            classify_device("USB Video", Some("Magewell Pro"), None),
+            CaptureCard
+        );
+        assert_eq!(
+            classify_device("OBS Virtual Camera", None, Some("virt")),
+            Virtual
+        );
+        assert_eq!(classify_device("Anything", None, Some("virt")), Virtual);
+        assert_eq!(classify_device("NDI Video", None, None), Virtual);
+        assert_eq!(
+            classify_device("Elgato Virtual Cam", None, Some("virt")),
+            CaptureCard
+        );
+    }
+
+    #[test]
+    fn short_virtual_names_match_whole_words_only() {
+        use DeviceClass::*;
+        assert_eq!(
+            classify_device("Webcam Obscura", None, Some("usb ")),
+            Camera
+        );
+        assert_eq!(classify_device("Mondial HD", None, Some("usb ")), Camera);
+        assert_eq!(
+            classify_device("Camouflage Cam", None, Some("usb ")),
+            Camera
+        );
+        assert_eq!(classify_device("OBS-Camera", None, None), Virtual);
+        assert_eq!(classify_device("Camo", None, None), Virtual);
     }
 }

@@ -259,6 +259,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_JobObjects",
+    "Win32_System_Performance",
     "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_Threading",
@@ -290,6 +291,15 @@ windows = { version = "=0.62.2", features = [
     "Win32_System_Com",
 ] }
 windows-core = "=0.62.2"
+
+# ── C1c: native camera capture on Windows ────────────────────────────────────
+# Cap's MIT Media Foundation / DirectShow crates (`crates/camera-*`, taken in by
+# C1b, locked to one Cap commit — see their UPSTREAM.md) and our own MF helpers
+# (`crates/mf-util`: `MFStartup(MF_VERSION)`, MMCSS, buffer lock). Used by
+# `camera::windows_backend`. Their MIT notice reaches THIRD-PARTY-NOTICES.html
+# through `npm run licenses:notices`.
+cap-camera-windows = { path = "../crates/camera-windows" }
+sundayrec-mf-util = { path = "../crates/mf-util" }
 
 # ── macOS-only: trackpad haptics (Force Touch) ───────────────────────────────
 # The editor fires subtle haptic taps via `NSHapticFeedbackManager`. These are
