@@ -1,0 +1,121 @@
+{
+  "_comment": "Kopi av Workerens godkjente nøkler (sunday-telemetry src/schema.ts). Én liste per objekt i pakken: 'required' = må sendes, 'optional' = kan mangle. Kontrolleres av telemetry.rs::every_client_key_is_known_to_the_worker. Worker-PR-en som endrer en liste MÅ endre denne filen i samme runde, og omvendt.",
+  "source": "sunday-telemetry origin/main + PR #20 (nativeXruns valgfri)",
+  "payload": {
+    "required": [
+      "schema",
+      "consentVersion",
+      "installId",
+      "builtAt",
+      "appVersion",
+      "os",
+      "arch",
+      "language",
+      "settings",
+      "counters",
+      "crashes",
+      "quality",
+      "findings",
+      "wakeFailures"
+    ],
+    "optional": [
+      "corrections",
+      "companionOutcomes"
+    ]
+  },
+  "settings": {
+    "required": [
+      "channels",
+      "sampleRateMode",
+      "sampleRate",
+      "format",
+      "bitrateKbps",
+      "filenamePattern",
+      "inputVolume",
+      "videoEnabled",
+      "stopOnSilence",
+      "silenceThreshold",
+      "splitMinutes",
+      "autoDeleteDays",
+      "trimSilence",
+      "prerollEnabled",
+      "showLiveLevels",
+      "classicFfmpegAudio",
+      "classicDirectshow",
+      "autoUpdate",
+      "launchAtLogin",
+      "wakeFromSleep",
+      "slotCount",
+      "specialCount"
+    ],
+    "optional": []
+  },
+  "counters": {
+    "required": [
+      "name",
+      "value"
+    ],
+    "optional": []
+  },
+  "crashes": {
+    "required": [
+      "kind",
+      "at",
+      "appVersion",
+      "os",
+      "message",
+      "location",
+      "task",
+      "backtracePresent"
+    ],
+    "optional": []
+  },
+  "quality": {
+    "required": [
+      "at",
+      "durationSec",
+      "expectedSec",
+      "measuredSec",
+      "lossPct",
+      "gapSec",
+      "drops",
+      "dups",
+      "xruns",
+      "levelsDropped",
+      "captureDropLines",
+      "msgsDropped",
+      "ringOverrunSamples",
+      "exitOk",
+      "verdict",
+      "reasons"
+    ],
+    "optional": [
+      "nativeXruns"
+    ]
+  },
+  "findings": {
+    "required": [
+      "code",
+      "severity"
+    ],
+    "optional": []
+  },
+  "wakeFailures": {
+    "required": [
+      "kind",
+      "at",
+      "reason",
+      "deltaSec"
+    ],
+    "optional": []
+  },
+  "corrections": {
+    "required": [
+      "signal",
+      "direction",
+      "band",
+      "count"
+    ],
+    "optional": []
+  }
+}

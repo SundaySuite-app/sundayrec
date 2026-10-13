@@ -1786,6 +1786,81 @@ mod tests {
         }
     }
 
+    /// SLIPPVAKT (M1R funn 1): every key the client sends must exist in the
+    /// Worker's schema, per object. The Worker answers an unknown key with 400
+    /// `unknown_field`, the sender treats 4xx as permanent and deletes the whole
+    /// packet (crash reports included) — silent, total data loss. `nativeXruns`
+    /// (A3c) was about to ship exactly that way.
+    ///
+    /// The Worker's key lists live in `tests/fixtures/telemetry-worker-keys.json`,
+    /// a checked-in copy of `sunday-telemetry/src/schema.ts` (`PAYLOAD_KEYS`,
+    /// `OPTIONAL_PAYLOAD_KEYS`, `QUALITY_KEYS`, `OPTIONAL_QUALITY_KEYS`, ...).
+    /// **When you add a payload field here, FIRST land it as an OPTIONAL key in
+    /// the Worker PR, deploy the Worker, and update that file in the same
+    /// sundayrec PR.** The Worker ships first, the client after. A required key
+    /// the client does not send is also checked (that is `missing_field` → 400).
+    #[test]
+    fn every_client_key_is_known_to_the_worker() {
+        let allowed: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/telemetry-worker-keys.json"))
+                .expect("worker key fixture is valid JSON");
+        let json = serde_json::to_value(maximal_payload()).expect("serialise");
+
+        let strings = |v: &Value, k: &str| -> Vec<String> {
+            v[k].as_array()
+                .unwrap_or_else(|| panic!("fixture lacks list {k}"))
+                .iter()
+                .map(|s| s.as_str().unwrap().to_string())
+                .collect()
+        };
+        let check = |what: &str, sent: Vec<&serde_json::Map<String, Value>>| {
+            let spec = &allowed[what];
+            let required = strings(spec, "required");
+            let optional = strings(spec, "optional");
+            assert!(
+                !sent.is_empty(),
+                "{what}: the maximal payload has no element to check"
+            );
+            for obj in sent {
+                for key in obj.keys() {
+                    assert!(
+                        required.contains(key) || optional.contains(key),
+                        "`{what}.{key}` is sent by the client but unknown to the Worker \
+                         schema -> 400 unknown_field -> the whole packet is deleted. Land \
+                         it as an OPTIONAL key in sunday-telemetry FIRST, deploy, then \
+                         update tests/fixtures/telemetry-worker-keys.json."
+                    );
+                }
+                for key in &required {
+                    assert!(
+                        obj.contains_key(key),
+                        "`{what}.{key}` is required by the Worker but not sent -> 400 missing_field"
+                    );
+                }
+            }
+        };
+
+        let root = json.as_object().expect("payload is an object");
+        check("payload", vec![root]);
+        check("settings", vec![root["settings"].as_object().unwrap()]);
+        for list in [
+            "counters",
+            "crashes",
+            "quality",
+            "findings",
+            "wakeFailures",
+            "corrections",
+        ] {
+            let items: Vec<_> = root[list]
+                .as_array()
+                .unwrap_or_else(|| panic!("{list} is not an array"))
+                .iter()
+                .map(|v| v.as_object().unwrap())
+                .collect();
+            check(list, items);
+        }
+    }
+
     #[test]
     fn no_excluded_key_can_appear_on_the_wire() {
         let json = serde_json::to_value(maximal_payload()).expect("serialise");
