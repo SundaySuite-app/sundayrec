@@ -33,6 +33,13 @@
 //! ffmpeg capture path — which is precisely the path E6.2 found was missing the
 //! RIFF-cap guard).
 //!
+//! **ffmpeg heritage (M1R #8).** After A5b every audio recording is written by
+//! the native WAV writer, not ffmpeg, so the ffmpeg-driven tests here are legacy
+//! evidence until C3. The shipping writer ↔ recovery seam is proven by
+//! `tests::native_writer_kill`: a stand-in process runs the real
+//! `spawn_wav_writer` on a synthetic ring (no audio device), is SIGKILLed
+//! mid-capture, and the real `recover_session` has to bring the audio back.
+//!
 //! ## Making 3.5 GiB cheap
 //!
 //! `SUNDAYREC_TEST_SPLIT_BYTES` (debug builds only, see
@@ -1495,5 +1502,219 @@ mod tests {
             "a SIGKILLed capture keeps ffmpeg's streaming 0xFFFFFFFF size — \
              `wav_data_bytes` and the concat demuxer both read it as 'to EOF'"
         );
+    }
+
+    /// M1R #8 — the SHIPPING writer, killed. Everything above drives ffmpeg's
+    /// WAV muxer, which is not what writes audio after A5b. These tests run the
+    /// real [`crate::recorder::native_capture::writer::spawn_wav_writer`] in a
+    /// stand-in process (this test binary re-spawned with an env var naming the
+    /// role, as `--exact` on `child_role`), feed it a synthetic ring so no audio
+    /// device is needed, SIGKILL it mid-capture and hand what it left behind to
+    /// the real `recover_session`.
+    #[cfg(unix)]
+    mod native_writer_kill {
+        use super::*;
+        use crate::recorder::native_capture::writer::{
+            spawn_wav_writer, WriterConfig, FLUSH_EVERY, SYNC_EVERY,
+        };
+        use ringbuf::traits::{Producer, Split};
+        use ringbuf::HeapRb;
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use sundayrec_core::silence::SilenceDetector;
+        use sundayrec_core::wav::WavSpec;
+
+        const ROLE_ENV: &str = "SUNDAYREC_NATIVE_WRITER_CHILD_PATH";
+        const CHILD_TEST: &str = "recorder::longrun::tests::native_writer_kill::child_role";
+        const NATIVE_RATE: u32 = 48_000;
+        const FRAME_BYTES: u64 = 4; // stereo s16
+        const PROGRESS_TAG: &str = "NATIVE_WRITER_FRAMES ";
+
+        /// The stand-in process. A no-op when run as an ordinary test (the env
+        /// var is absent); when the parent re-spawns this binary with the var
+        /// set, it writes a realtime-paced synthetic capture through the real
+        /// writer, reporting its frame counter on stdout, until it is killed.
+        #[test]
+        fn child_role() {
+            let Ok(path) = std::env::var(ROLE_ENV) else {
+                return;
+            };
+            // Never outlive a parent that died before it could kill us.
+            std::thread::spawn(|| {
+                std::thread::sleep(Duration::from_secs(120));
+                std::process::exit(3);
+            });
+            let spec = WavSpec {
+                channels: 2,
+                sample_rate: NATIVE_RATE,
+            };
+            let (mut prod, cons) = HeapRb::<f32>::new(1 << 17).split();
+            let stop = Arc::new(AtomicBool::new(false));
+            let segment_bytes = Arc::new(AtomicU64::new(0));
+            let frames_written = Arc::new(AtomicU64::new(0));
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            // Production cadences: the bound being proven is the shipping one.
+            let _join = spawn_wav_writer(
+                cons,
+                WriterConfig {
+                    path: PathBuf::from(path),
+                    spec,
+                    flush_every: FLUSH_EVERY,
+                    sync_every: SYNC_EVERY,
+                    silence: SilenceDetector::new(-50.0, NATIVE_RATE),
+                    sync_count: None,
+                },
+                Arc::clone(&stop),
+                segment_bytes,
+                Arc::clone(&frames_written),
+                tx,
+            )
+            .expect("spawn writer");
+
+            let block_frames = (NATIVE_RATE / 100) as usize; // 10 ms
+            let started = std::time::Instant::now();
+            let mut pushed: u64 = 0;
+            let mut last_report = std::time::Instant::now();
+            loop {
+                // Pace the producer on the wall clock, like a device callback.
+                let due = (started.elapsed().as_secs_f64() * f64::from(NATIVE_RATE)) as u64;
+                while pushed + block_frames as u64 <= due {
+                    let block: Vec<f32> = (0..block_frames)
+                        .flat_map(|i| {
+                            let t = (pushed + i as u64) as f32 / NATIVE_RATE as f32;
+                            let v = 0.5 * (t * 440.0 * std::f32::consts::TAU).sin();
+                            [v, v]
+                        })
+                        .collect();
+                    assert_eq!(prod.push_slice(&block), block.len(), "ring never fills");
+                    pushed += block_frames as u64;
+                }
+                if last_report.elapsed() >= Duration::from_millis(100) {
+                    println!("{PROGRESS_TAG}{}", frames_written.load(Ordering::Relaxed));
+                    last_report = std::time::Instant::now();
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+
+        /// Kills the stand-in on every exit path, including a failed assert.
+        struct ChildGuard(std::process::Child);
+        impl Drop for ChildGuard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        /// A native capture killed (SIGKILL) while the writer is mid-stream
+        /// comes back, whole, from the real recovery scan: the history row
+        /// exists, the operator is told it was salvaged, and the audio is as
+        /// long as what the writer had on disk — at most one flush period (plus
+        /// jitter) short of what it had accepted when it died.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_killed_native_capture_is_recovered_with_the_expected_length() {
+            let Some(_pin) = EnvPin::acquire(None) else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let save = tempfile::tempdir().expect("tempdir");
+            let pool = temp_pool(save.path()).await;
+            // The harness session is only the bookkeeping: where the capture
+            // lives and the manifest the app would have written for it.
+            let s = HeadlessSession::new(save.path(), NATIVE_RATE).expect("session");
+            let capture = s.current_fragment();
+
+            let mut child = Command::new(std::env::current_exe().expect("test exe"))
+                .args(["--exact", CHILD_TEST, "--nocapture", "--test-threads=1"])
+                .env(ROLE_ENV, &capture)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn the stand-in process");
+            let stdout = child.stdout.take().expect("piped stdout");
+            let mut guard = ChildGuard(child);
+
+            let latest = Arc::new(AtomicU64::new(0));
+            let reader = {
+                let latest = Arc::clone(&latest);
+                std::thread::spawn(move || {
+                    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        if let Some(n) = line.strip_prefix(PROGRESS_TAG) {
+                            if let Ok(n) = n.trim().parse::<u64>() {
+                                latest.store(n, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                })
+            };
+
+            // Let it capture ~3 s of audio, then pull the plug.
+            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            while latest.load(Ordering::Relaxed) < 3 * u64::from(NATIVE_RATE) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the stand-in never reported 3 s of captured audio"
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            let reported_before_kill = latest.load(Ordering::Relaxed);
+            guard.0.kill().expect("SIGKILL the stand-in");
+            guard.0.wait().expect("reap the stand-in");
+            reader.join().expect("reader thread");
+            let reported_after = latest.load(Ordering::Relaxed);
+
+            // What the dead writer left: a header the writer patched, no trailer.
+            let manifest = s.manifest("wav");
+            let on_disk = wav_data_bytes(Path::new(&capture)).expect("killed native wav");
+            assert!(on_disk > 0, "the killed native capture holds audio");
+            assert!(
+                crate::recorder::recovery::still_being_written(&manifest)
+                    .await
+                    .is_none(),
+                "a dead native writer must not look like a live one"
+            );
+
+            let recovered =
+                crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+            assert_eq!(recovered, 1, "the killed native capture is recovered");
+            let rows = list_recordings(&pool).await.expect("rows");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(
+                rows[0].note.as_deref(),
+                Some("Gjenopprettet etter uventet avslutning"),
+                "the operator is TOLD the recording was salvaged"
+            );
+            let delivered = wav_data_bytes(Path::new(&rows[0].file_path)).expect("delivered wav");
+
+            // Length bound. `frames_written` counts accepted frames, the file
+            // only advances at each flush (FLUSH_EVERY); the stdout report adds
+            // up to 100 ms of staleness and CI adds scheduling jitter.
+            let slack = Duration::from_millis(250); // jitter, on top of FLUSH_EVERY
+            let slack_frames =
+                ((FLUSH_EVERY + slack).as_secs_f64() * f64::from(NATIVE_RATE)) as u64;
+            let report_frames = u64::from(NATIVE_RATE) / 10; // 100 ms report cadence
+            let lower = reported_before_kill.saturating_sub(slack_frames) * FRAME_BYTES;
+            let upper = (reported_after + report_frames + slack_frames) * FRAME_BYTES;
+            assert!(
+                delivered >= lower && delivered <= upper,
+                "recovered {delivered} B, expected within [{lower}, {upper}] \
+                 (writer had accepted {reported_before_kill}..{reported_after} frames)"
+            );
+            // Recovery keeps everything the killed file itself holds.
+            assert!(
+                delivered.abs_diff(on_disk) <= 8,
+                "recovery delivered {delivered} B of the {on_disk} B the killed file held"
+            );
+            let secs = crate::media::ffmpeg::probe_duration_secs(&rows[0].file_path)
+                .await
+                .expect("ffprobe of the recovered file");
+            let expect_secs = delivered as f64 / (FRAME_BYTES * u64::from(NATIVE_RATE)) as f64;
+            assert!(
+                (secs - expect_secs).abs() < 0.05,
+                "ffprobe says {secs:.3} s, the payload says {expect_secs:.3} s"
+            );
+        }
     }
 }

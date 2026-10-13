@@ -1,5 +1,13 @@
 //! E6.1 — the soak / long-run harness.
 //!
+//! > **ffmpeg-arv til C3 (M1R #8).** The `lavfi` flavour below drives the
+//! > ffmpeg capture argv, which no audio recording uses after A5b: the shipping
+//! > audio path is the native cpal → ring → WAV writer. It still proves the
+//! > ffmpeg video/encode side, and the `Device` flavour still drives the native
+//! > path, but a green lavfi soak says nothing about the native writer. The
+//! > native writer's kill-and-recover bevis lives in
+//! > `recorder::longrun::tests::native_writer_kill`. Behaviour unchanged until C3.
+//!
 //! ## Why this exists
 //!
 //! SundayRec's defining workload is a 60–180 minute UNATTENDED single take, and
