@@ -491,7 +491,7 @@ blokkerer noe i dag; de ligger her så de ikke går tapt mellom rundene.
   goldentestene viser `-realtime 1` på opptak, ingenting på eksport,
   ingenting på Windows/Linux eller med maskinvareenkoder av, og en
   lyd-only-argv byte-lik som før. Flagget finnes i den medfølgende ffmpeg
-  8.1.2 (`-h encoder=h264_videotoolbox`). Gjenstår: ett langt videoopptak på
+  9.0.1 (`-h encoder=h264_videotoolbox`). Gjenstår: ett langt videoopptak på
   Mac under CPU-last på riggdagen (`docs/RIG-DAY.md`, Mac-boksen).
 - **`_redigert`-eksporter finnes ikke i biblioteket — ✅ AVGJORT
   2026-10-04: NEI.** En eksportert `*_redigert.<format>`-fil (Redigering →

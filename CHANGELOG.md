@@ -36,6 +36,9 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   som viser programvaren fra andre som SundayRec er bygget på. Det forteller
   også at ffmpeg er GPL-lisensiert og hvor kildekoden finnes. Den samme lista
   følger med i installasjonsfilene.
+- **Dokumentene sier nå riktig ffmpeg-versjon.** Appen har fulgt med ffmpeg 9.0.1
+  siden v0.21.0, men veiledningene sa fortsatt 8.1.2. Lydnormaliseringen er
+  målt på nytt mot 9.0.1 og oppfører seg som før.
 
 ## v0.25.3 — tryggere opptak og mange mindre rettelser
 
