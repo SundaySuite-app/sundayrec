@@ -2,10 +2,10 @@
 //! that rotates WAV segment files — and, while it runs, the app's `vu://levels`
 //! emitter.
 //!
-//! ## Why this replaces the ffmpeg buffer
+//! ## Why there is no ffmpeg buffer
 //!
-//! The classic buffer (`recorder::preroll`) ran an ffmpeg avfoundation/dshow
-//! capture in a 90-second loop, re-opening the device on every segment. That
+//! The classic buffer (deleted in A5a; it lived in `recorder::preroll`) ran an
+//! ffmpeg avfoundation/dshow capture in a 90-second loop, re-opening the device on every segment. That
 //! inherits every problem the 2026-08-01 rebuild removed from the recording
 //! path — avfoundation drops samples below ffmpeg's observability — and adds one
 //! of its own: it is a SECOND owner of the microphone, so the live meters and
@@ -41,7 +41,15 @@
 //! reports it, the supervisor tears the stack down, waits the tested
 //! [`preroll_restart_delay`](sundayrec_core::preroll::preroll_restart_delay)
 //! back-off and re-opens — warning the user ONCE per failure streak, exactly
-//! like the classic loop.
+//! like the classic loop did.
+//!
+//! ## What lives here besides the engine
+//!
+//! This file also holds the types the commands and the recorder share with the
+//! buffer — [`PrerollSettings`], [`PrerollClip`], [`PrerollStatus`] — and the
+//! startup [`sweep_stale_preroll_files`], which removes `sundayrec-preroll-*.wav`
+//! a crashed run left behind (the old ffmpeg buffer named its files the same way,
+//! so a database upgraded from it is swept too).
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -53,7 +61,9 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::StreamTrait;
 use ringbuf::traits::{Consumer, Split};
+use serde::{Deserialize, Serialize};
 use sundayrec_core::audio::MeterBanks;
+use sundayrec_core::notify::BackendWarning;
 use sundayrec_core::preroll::{
     fade_out_tail_s16le, harvest_trim_ms, preroll_captured_ms, preroll_fade_out_frames,
     preroll_keep_bytes, preroll_kept_ms, preroll_restart_delay, preroll_segments_to_drop,
@@ -63,6 +73,7 @@ use sundayrec_core::preroll::{
 };
 use sundayrec_core::wav::{self, WavSpec};
 use tauri::AppHandle;
+use ts_rs::TS;
 
 use crate::audio::asio::build_route_plan;
 use crate::audio::vu::{emit_vu_levels, VU_SAMPLE_INTERVAL};
@@ -71,9 +82,6 @@ use crate::recorder::native_capture::stream::{
     StreamSink,
 };
 use crate::recorder::native_capture::writer::{patch_sizes, FLUSH_EVERY};
-use crate::recorder::preroll::{
-    sleep_while_active, warn_preroll_dead, PrerollClip, PrerollSettings,
-};
 use crate::util::lock_recover;
 
 /// Bound on joining the stream thread (it polls its stop flag every sampler
@@ -86,6 +94,126 @@ const WRITER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 const IDLE_SLEEP: Duration = Duration::from_millis(2);
 /// Drain scratch size in samples (f32), mirroring the capture writer.
 const DRAIN_CHUNK: usize = 8192;
+
+/// Settings the pre-roll buffer needs to address + format a capture.
+#[derive(Debug, Clone)]
+pub struct PrerollSettings {
+    /// Stored mic/mixer name to fuzzy-match against the enumerated audio devices.
+    pub audio_device_name: String,
+    /// Capture sample rate (Hz), or `None` for the device's NATIVE rate. Must
+    /// mirror the main recorder (`Settings::resolved_sample_rate`) so the prepend
+    /// concat is a clean `-c copy` — see `sundayrec_core::preroll`.
+    pub sample_rate: Option<u32>,
+    /// Output channel count (1 = mono, 2 = stereo), derived from
+    /// [`Self::channel_mode`].
+    pub channels: u8,
+    /// The recording's channel layout, for the route plan
+    /// ([`crate::audio::asio::build_route_plan`]). The buffer MUST write the same
+    /// layout the capture will, or the harvested clip is dropped by the concat's
+    /// WAV-compatibility guard.
+    pub channel_mode: sundayrec_core::settings::ChannelMode,
+    /// Explicit input-channel picks (a digital mixer's L/R), mirroring the
+    /// recording's own `RecordingOpts`.
+    pub input_channel_l: Option<i32>,
+    pub input_channel_r: Option<i32>,
+}
+
+/// A harvested, trimmed pre-roll clip ready to prepend to a recording.
+///
+/// `raw_path` is the clip the harvest produced in the recording's own capture
+/// format (PCM `.wav`), so the prepend is a lossless `-c copy`. `trim_ms` and
+/// `start_offset_ms` are the core mat's verdict, kept on the clip for
+/// diagnostics.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "PrerollClip.ts")]
+pub struct PrerollClip {
+    /// Absolute path to the trimmed clip.
+    pub raw_path: String,
+    /// Milliseconds of audio kept (the prepend length).
+    #[ts(type = "number")]
+    pub trim_ms: u64,
+    /// Where in the buffered audio the kept window started, for diagnostics;
+    /// the clip already begins here.
+    #[ts(type = "number")]
+    pub start_offset_ms: u64,
+}
+
+/// The pre-roll status surfaced to the UI ("preroll aktiv").
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "PrerollStatus.ts")]
+pub struct PrerollStatus {
+    /// Whether the rolling capture loop is currently active.
+    pub active: bool,
+    /// The buffer's negotiated input-channel count while it is streaming
+    /// (0 = idle or retrying). This is the width of the `vu://levels` packets it
+    /// emits.
+    pub channels: u16,
+}
+
+/// Build [`PrerollSettings`] from the persisted core settings, returning `None`
+/// when pre-roll is off (`pre_roll_seconds == 0`) or no device is configured.
+pub fn preroll_settings_from(
+    settings: &sundayrec_core::settings::Settings,
+) -> Option<PrerollSettings> {
+    if settings.pre_roll_seconds <= 0 {
+        return None;
+    }
+    let audio_device_name = settings.device_name.clone()?;
+    if audio_device_name.is_empty() {
+        return None;
+    }
+    let channels = match settings.channels {
+        sundayrec_core::settings::ChannelMode::Stereo => 2,
+        _ => 1,
+    };
+    Some(PrerollSettings {
+        audio_device_name,
+        // Native by default (Auto → None), matching the main recorder. The dead
+        // back-compat `Settings::sample_rate` field is NOT used here anymore — it
+        // forced pre-roll to 48 kHz regardless of the device, mismatching a
+        // native recording at the `-c copy` join (NEEDS-RICHARD §settings-sync).
+        sample_rate: settings.resolved_sample_rate(),
+        channels,
+        // The buffer routes channels itself, so it needs the SAME layout inputs
+        // the recording's `RecordingOpts` carry.
+        channel_mode: settings.channels,
+        input_channel_l: settings.input_channel_l,
+        input_channel_r: settings.input_channel_r,
+    })
+}
+
+/// Tell the user the rolling buffer has given up.
+///
+/// The Home chip renders from [`PrerollStatus::active`], which is true for a
+/// loop that is merely failing forever — so "buffer running" and "buffer dead"
+/// looked identical, and the dead one looked like "pre-roll is switched off".
+/// `reason` distinguishes the give-up paths for the log/webhook without needing
+/// two locale strings.
+pub(crate) fn warn_preroll_dead(app: &tauri::AppHandle, reason: &str, msg: &str) {
+    crate::notify::warn(
+        app,
+        BackendWarning::warn(sundayrec_core::notify::code::PREROLL_DEAD)
+            .msg(msg)
+            .param("reason", reason),
+    );
+}
+
+/// Sleep `delay_ms`, but bail early (returning `false`) if the loop was
+/// deactivated while sleeping. Returns `true` if the full delay elapsed and the
+/// loop should continue.
+pub(crate) async fn sleep_while_active(active: &Arc<AtomicBool>, delay_ms: u64) -> bool {
+    // Poll the flag in small slices so a stop during a long back-off is prompt.
+    let mut remaining = delay_ms;
+    while remaining > 0 {
+        if !active.load(Ordering::SeqCst) {
+            return false;
+        }
+        let slice = remaining.min(100);
+        tokio::time::sleep(Duration::from_millis(slice)).await;
+        remaining -= slice;
+    }
+    active.load(Ordering::SeqCst)
+}
 
 /// One finalized rolling segment file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,8 +245,7 @@ struct PrerollRun {
     overrun: Arc<AtomicU64>,
 }
 
-/// The native rolling pre-roll engine. Held by the [`crate::recorder::preroll`]
-/// facade, which decides between this and the classic ffmpeg engine.
+/// The rolling pre-roll engine the commands hold in Tauri-managed state.
 #[derive(Default)]
 pub struct NativePrerollEngine {
     /// `true` while the buffer should keep running/retrying.
@@ -157,6 +284,45 @@ impl NativePrerollEngine {
     pub fn vu_channels(&self) -> Option<u16> {
         let n = self.channels.load(Ordering::SeqCst);
         (self.is_active() && n > 0).then_some(n)
+    }
+
+    /// Current status snapshot for the UI.
+    pub fn status(&self) -> PrerollStatus {
+        PrerollStatus {
+            active: self.is_active(),
+            channels: self.vu_channels().unwrap_or(0),
+        }
+    }
+
+    /// Harvest for a recording that captures in `audio_codec` / `container_ext`.
+    ///
+    /// The buffer copies bytes, it cannot transcode: it was started from the
+    /// same settings as the recording, so it already holds s16 PCM at the
+    /// recording's rate and channel layout. A request for anything else is
+    /// refused rather than answered with a clip in the wrong format. If the
+    /// device changed under the buffer, the clip's header simply won't match and
+    /// concat's `wav_prepend_compatible` guard drops it — the recording is never
+    /// at risk.
+    pub async fn harvest_in_format(
+        &self,
+        requested_seconds: u32,
+        audio_codec: &str,
+        container_ext: &str,
+    ) -> Option<PrerollClip> {
+        if !self.is_active() {
+            return None;
+        }
+        if audio_codec != "pcm_s16le" || container_ext != "wav" {
+            tracing::warn!(
+                audio_codec,
+                container_ext,
+                "preroll(native): asked for a format the byte-copy harvest cannot produce — \
+                 stopping the buffer without a clip"
+            );
+            self.stop_and_release().await;
+            return None;
+        }
+        self.harvest(requested_seconds).await
     }
 
     /// Start the rolling buffer. Stops any previous one first. Returns
@@ -241,6 +407,34 @@ impl NativePrerollEngine {
         }
         lock_recover(&self.run).take()
     }
+}
+
+/// Delete the pre-roll buffer's rolling segments / clips a previous run left in
+/// `dir`: the buffer deletes them on harvest and stop, but a crash or power loss
+/// mid-service skips both, and nothing else ever looks there — ~hundreds of MB of
+/// audio per crash, forever, in the app-data dir. Only files the pre-roll
+/// buffer names (`sundayrec-preroll-*.wav`) are touched. MUST run at startup,
+/// before any engine can write: it cannot tell a live segment from an orphan.
+/// `keep` names files to spare regardless — the clips a crash-recovery manifest
+/// still points at (recovery prepends them to the salvaged recording and deletes
+/// them itself). Returns how many files were removed (best-effort; a locked file is skipped).
+pub fn sweep_stale_preroll_files(
+    dir: &std::path::Path,
+    keep: &std::collections::HashSet<std::ffi::OsString>,
+) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.starts_with("sundayrec-preroll-")
+                && name.ends_with(".wav")
+                && !keep.contains(&e.file_name())
+        })
+        .filter(|e| e.path().is_file() && std::fs::remove_file(e.path()).is_ok())
+        .count()
 }
 
 /// The supervisor: keep a run alive while `active`, restarting on device loss.
@@ -979,6 +1173,179 @@ fn segment_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sundayrec_core::settings::{ChannelMode, SampleRate, Settings};
+
+    #[test]
+    fn engine_starts_inactive() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = NativePrerollEngine::new(dir.path().to_path_buf());
+        assert!(!engine.is_active());
+        let st = engine.status();
+        assert!(!st.active);
+        assert_eq!(st.channels, 0);
+        assert_eq!(engine.vu_channels(), None);
+    }
+
+    #[test]
+    fn stop_is_safe_when_idle() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = NativePrerollEngine::new(dir.path().to_path_buf());
+        engine.stop();
+        engine.stop();
+        assert!(!engine.is_active());
+    }
+
+    #[tokio::test]
+    async fn stop_and_release_and_harvest_are_safe_when_idle() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = NativePrerollEngine::new(dir.path().to_path_buf());
+        engine.stop_and_release().await;
+        // No buffer → no clip.
+        assert!(engine
+            .harvest_in_format(15, "pcm_s16le", "wav")
+            .await
+            .is_none());
+        assert!(!engine.is_active());
+    }
+
+    #[test]
+    fn settings_carry_the_channel_layout_for_the_route_plan() {
+        // The native buffer must write the SAME layout the recording will, so
+        // the mode and the explicit L/R picks travel with the settings.
+        let s = Settings {
+            pre_roll_seconds: 15,
+            device_name: Some("Qu-5".into()),
+            channels: ChannelMode::Stereo,
+            input_channel_l: Some(16),
+            input_channel_r: Some(17),
+            ..Default::default()
+        };
+        let p = preroll_settings_from(&s).unwrap();
+        assert_eq!(p.channel_mode, ChannelMode::Stereo);
+        assert_eq!(p.input_channel_l, Some(16));
+        assert_eq!(p.input_channel_r, Some(17));
+        assert_eq!(p.channels, 2);
+    }
+
+    #[test]
+    fn status_serialises_as_plain_fields() {
+        // The renderer reads `active`; `channels` is a diagnostic.
+        let st = PrerollStatus {
+            active: true,
+            channels: 32,
+        };
+        let json = serde_json::to_string(&st).unwrap();
+        assert!(json.contains("\"channels\":32"), "{json}");
+        let back: PrerollStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, st);
+    }
+
+    #[test]
+    fn settings_off_when_preroll_zero() {
+        let s = Settings {
+            pre_roll_seconds: 0,
+            device_name: Some("Mic".into()),
+            ..Default::default()
+        };
+        assert!(preroll_settings_from(&s).is_none());
+    }
+
+    #[test]
+    fn settings_off_when_no_device() {
+        let s = Settings {
+            pre_roll_seconds: 15,
+            device_name: None,
+            ..Default::default()
+        };
+        assert!(preroll_settings_from(&s).is_none());
+        let s2 = Settings {
+            pre_roll_seconds: 15,
+            device_name: Some(String::new()),
+            ..Default::default()
+        };
+        assert!(preroll_settings_from(&s2).is_none());
+    }
+
+    #[test]
+    fn settings_maps_channels_and_rate() {
+        // A forced rate (mode, not the dead back-compat field) flows through.
+        let s = Settings {
+            pre_roll_seconds: 30,
+            device_name: Some("Soundcraft".into()),
+            channels: ChannelMode::Stereo,
+            sample_rate_mode: SampleRate::R44100,
+            ..Default::default()
+        };
+        let p = preroll_settings_from(&s).unwrap();
+        assert_eq!(p.audio_device_name, "Soundcraft");
+        assert_eq!(p.channels, 2);
+        assert_eq!(p.sample_rate, Some(44_100));
+
+        // Default (Auto) → native (None), matching the main recorder. (The dead
+        // numeric `sample_rate` field this used to guard against left in v0.15.)
+        let native = Settings {
+            pre_roll_seconds: 30,
+            device_name: Some("Soundcraft".into()),
+            channels: ChannelMode::MonoMix,
+            ..Default::default()
+        };
+        let np = preroll_settings_from(&native).unwrap();
+        assert_eq!(np.channels, 1);
+        assert_eq!(np.sample_rate, None, "Auto mode → native (no forced rate)");
+    }
+
+    #[test]
+    fn preroll_clip_serde_roundtrip() {
+        let c = PrerollClip {
+            raw_path: "/tmp/pre.m4a".into(),
+            trim_ms: 15_000,
+            start_offset_ms: 75_000,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let back: PrerollClip = serde_json::from_str(&json).unwrap();
+        assert_eq!(c, back);
+    }
+
+    /// The crash-recovery manifest still needs the session's pre-roll clip (the
+    /// first ~15 s of the recording): the sweep must spare exactly that file.
+    #[test]
+    fn startup_sweep_spares_the_clip_a_recovery_manifest_points_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        let clip = p.join("sundayrec-preroll-clip-3c.wav");
+        std::fs::write(&clip, b"RIFF").unwrap();
+        std::fs::write(p.join("sundayrec-preroll-clip-old.wav"), b"RIFF").unwrap();
+        let keep: std::collections::HashSet<_> = [clip.file_name().unwrap().to_owned()].into();
+        assert_eq!(sweep_stale_preroll_files(p, &keep), 1);
+        assert!(clip.exists(), "the clip recovery needs was swept");
+        assert!(!p.join("sundayrec-preroll-clip-old.wav").exists());
+    }
+
+    #[test]
+    fn startup_sweep_removes_only_stale_preroll_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        for name in [
+            "sundayrec-preroll-native-1a-0.wav",
+            "sundayrec-preroll-9f.wav",
+            "sundayrec-preroll-clip-3c.wav",
+        ] {
+            std::fs::write(p.join(name), b"RIFF").unwrap();
+        }
+        // Not ours: must survive.
+        std::fs::write(p.join("notes.wav"), b"x").unwrap();
+        std::fs::write(p.join("sundayrec-preroll-readme.txt"), b"x").unwrap();
+        assert_eq!(sweep_stale_preroll_files(p, &Default::default()), 3);
+        assert!(p.join("notes.wav").exists());
+        assert!(p.join("sundayrec-preroll-readme.txt").exists());
+        assert_eq!(sweep_stale_preroll_files(p, &Default::default()), 0);
+        // A missing dir is not an error.
+        assert_eq!(
+            sweep_stale_preroll_files(&p.join("nope"), &Default::default()),
+            0
+        );
+    }
+
     use ringbuf::traits::Producer;
     use ringbuf::HeapRb;
 
@@ -1712,7 +2079,6 @@ mod tests {
             channel_mode: sundayrec_core::settings::ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
-            classic: false,
         }
     }
 

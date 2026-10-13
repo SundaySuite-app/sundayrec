@@ -21,7 +21,7 @@ use tauri::{AppHandle, Emitter};
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
 use crate::recorder::context::SessionContext;
-use crate::recorder::preroll::PrerollClip;
+use crate::recorder::native_capture::preroll::PrerollClip;
 use crate::util::lock_recover;
 
 use super::args::build_separate_audio_args;

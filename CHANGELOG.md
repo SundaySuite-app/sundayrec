@@ -20,6 +20,10 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   appen til programvare og glemmer valget. Diagnosen viser hvilken koder som
   er i bruk.
 
+- **Den gamle ffmpeg-bufferen for forhåndsopptak er fjernet.** Forhåndsopptaket
+  har brukt appens egen lydmotor siden august; den skjulte nødbryteren tilbake
+  til ffmpeg er borte. Gamle innstillinger leses som før, og rester av
+  forhåndsopptak etter et krasj ryddes fortsatt bort ved oppstart.
 - **Hakk i lyden telles nå av lydsystemet selv.** Opptaket teller hvert hakk
   macOS og Windows melder om, i stedet for å tolke tekst fra en loggfil. Tallet
   vises i diagnoserapporten, i lydtesten og i den anonyme helsestatistikken

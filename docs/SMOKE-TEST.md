@@ -427,7 +427,7 @@ time, and on «Stopp» it waits until the file is safely written before the
 process exits.
 
 > [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device
-> (preroll still runs via ffmpeg). A basic single-segment 30 s capture is the
+> (preroll runs on the native buffer only since A5a). A basic single-segment 30 s capture is the
 > smoke-test target here.
 
 ---

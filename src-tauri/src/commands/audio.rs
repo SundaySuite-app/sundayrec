@@ -189,7 +189,7 @@ pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
 pub async fn start_vu(
     app: AppHandle,
     engine: State<'_, VuEngine>,
-    preroll: State<'_, crate::recorder::preroll::PrerollEngine>,
+    preroll: State<'_, crate::recorder::native_capture::preroll::NativePrerollEngine>,
     recorder: State<'_, crate::recorder::engine::RecorderEngine>,
     device_name: Option<String>,
 ) -> AppResult<u16> {

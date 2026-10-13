@@ -959,6 +959,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_database_written_with_classic_ffmpeg_preroll_loads_without_error() {
+        // A5a: the pre-roll escape hatch was removed. A database from the
+        // versions that still had it (flag on or off) must load, keep its other
+        // choices, and drop the key when it is next saved.
+        for flag in ["true", "false"] {
+            let (pool, _d) = temp_pool().await;
+            store::set_setting(
+                &pool,
+                SETTINGS_KEY,
+                &format!(
+                    r#"{{"classicFfmpegPreroll":{flag},"preRollSeconds":25,"churchName":"Domkirken"}}"#
+                ),
+            )
+            .await
+            .unwrap();
+            let loaded = load(&pool).await.expect("an old blob must load");
+            assert_eq!(loaded.pre_roll_seconds, 25);
+            assert_eq!(loaded.church_name, "Domkirken");
+
+            save(&pool, loaded).await.unwrap();
+            let raw = store::get_setting(&pool, SETTINGS_KEY)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                !raw.contains("classicFfmpegPreroll"),
+                "the retired key must not be written back: {raw}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn load_returns_defaults_when_stored_blob_is_a_json_non_object() {
         // A syntactically-valid JSON value that isn't an object (e.g. an array or a
         // bare number) also can't populate the struct → defaults, no panic.

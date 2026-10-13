@@ -67,7 +67,7 @@ plattformer) direkte til WAV via den native motoren
 involvert i selve fangsten. `recorder::cpal_capture`s rå-PCM-pipe inn i
 ffmpeg-sidecaren lever videre bare for **video**-økter (kamera via dshow +
 cpal-lyd i samme ffmpeg-prosess) og den klassiske ffmpeg-hatchen
-(`classicFfmpegPreroll`). Bygg-oppsett for ASIO: se
+(`classicFfmpegAudio`). Bygg-oppsett for ASIO: se
 [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ### Tredjeparts-komponenter brukt av Windows-lyd-veien

@@ -898,7 +898,6 @@ const api: Record<string, unknown> = {
       undefined,
       {
         active: false,
-        engine: "native",
         channels: 0,
       },
     ),

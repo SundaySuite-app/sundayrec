@@ -40,7 +40,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   keepSeparateAudio: true,
   classicDirectshow: false,
   classicFfmpegAudio: false,
-  classicFfmpegPreroll: false,
 
   // Audio processing
   channels: "stereo",
