@@ -989,6 +989,19 @@ er, og fangst virker mot både FaceTime HD og Continuity-kameraet.
 **Hvor det bevises:** Macen (innebygd + Continuity). USB-kamera venter på
 riggen.
 
+**Utfall (2026-10-13, `ombygging/c1a-kamera-mac`):** portert fra Cap
+`8a1480262db2b54629806e936226ff06fbced9f1`; bare de to MIT-cratene ble lest.
+Tre ting planen ikke sa: (1) Info.plist trenger
+`NSCameraUseContinuityCameraDeviceType`, ellers melder macOS 14+ iPhonen som
+et innebygd kamera. (2) Konstantene for de nyere enhetstypene (macOS 13/14)
+kan ikke lenkes når minstekravet er 10.15; de sendes som strengverdier, og en
+test låser dem til rammeverkets konstanter. (3) Caps «modell-ID» (siste åtte
+tegn av `uniqueID`) er oppdiktet for innebygde og Continuity-kameraer; den
+leses nå bare for USB-kameraer, og `uniqueID` matches først. De rene
+beslutningene ligger i `sundayrec-core::camera_format`, og Caps MIT-merknad
+står i THIRD-PARTY-NOTICES. **Kameraprøven gjenstår:** økta kjørte uten
+skjerm og uten kameratilgang, så den står som RIG-DAY (c1a).
+
 **Startmelding:**
 
 > Les `docs/GJENNOMFORING.md` §C1a, `docs/VIDEOMOTOR.md` §Kildene og §C1, og

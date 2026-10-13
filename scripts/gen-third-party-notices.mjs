@@ -6,7 +6,8 @@
 //
 // Rust-delen kommer fra `cargo about --format json` (about.toml), npm-delen fra
 // package.json sine `dependencies` (det som havner i frontend-bunten), og
-// ffmpeg-/GPL-avsnittet står fast her.
+// ffmpeg-/GPL-avsnittet og avsnittet for portert kode (C1a: Cap, MIT) står
+// fast her.
 //
 // HTML-en bygges HER og ikke med en cargo-about-mal, fordi malens rekkefølge
 // følger katalogrekkefølgen i crate-kildene, og den er ulik på APFS og ext4
@@ -93,6 +94,40 @@ exact version and build):</p>
 <p>The GPL v3 text: <code>https://www.gnu.org/licenses/gpl-3.0.txt</code>.
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.</p>`;
 
+// Kode som er PORTERT inn (skrevet om, ikke tatt inn som crate), og derfor
+// ikke finnes i Cargo.lock: MIT krever opphavsmerknaden i kopier av koden,
+// også i binæren. Én oppføring per kilde, med commit og hvor porten bor.
+const PORTED = `<h2 id="ported">Code adapted from other projects</h2>
+<p>Parts of SundayRec are rewritten from other open-source projects rather than
+included as libraries. Their notices:</p>
+<h3>Cap — <code>cap-camera</code> and <code>cap-camera-avfoundation</code> (MIT)</h3>
+<p>The macOS camera capture (<code>src-tauri/src/camera/avfoundation.rs</code>)
+is ported from these two crates of Cap (<code>https://github.com/CapSoftware/Cap</code>,
+commit <code>8a1480262db2b54629806e936226ff06fbced9f1</code>). Cap's license file
+places the <code>cap-camera*</code> crates under the MIT License; the rest of Cap
+is AGPL and is not used.</p>
+<pre>MIT License
+
+Copyright (c) 2023 Cap Software, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>`;
+
 const HEAD = `<!doctype html>
 <html lang="en">
 <head>
@@ -170,6 +205,7 @@ try {
   const html =
     HEAD +
     FFMPEG +
+    `\n${PORTED}\n` +
     `\n<h2 id="frontend">User interface libraries (npm)</h2>\n${npmSection()}\n` +
     `<h2 id="rust">Rust libraries</h2>\n${rustSection(json)}\n</body>\n</html>\n`;
   if (check) {
@@ -197,7 +233,8 @@ try {
     const missing = [...b.crates].filter((c) => !a.crates.has(c));
     const extra = [...a.crates].filter((c) => !b.crates.has(c));
     if (a.head !== b.head || missing.length > 0 || extra.length > 0) {
-      if (a.head !== b.head) console.error("Forskjell i ffmpeg-/npm-delen.");
+      if (a.head !== b.head)
+        console.error("Forskjell i ffmpeg-/portert-/npm-delen.");
       for (const c of missing) console.error(`  mangler i fila: ${c}`);
       for (const c of extra) console.error(`  burde ikke stå i fila: ${c}`);
       console.error(

@@ -11,6 +11,12 @@
   Tauri 2 merges this file into the running app for BOTH `tauri dev` and
   `tauri build` on macOS (it is read from `src-tauri/Info.plist`). Keep it
   minimal: only the keys we actually need.
+
+  NSCameraUseContinuityCameraDeviceType (C1a, the native camera capture in
+  src/camera/avfoundation.rs): on macOS 14+ an iPhone used as a webcam is only
+  reported with its own device type (AVCaptureDeviceTypeContinuityCamera) when
+  the app opts in with this key; without it AVFoundation reports it as a
+  built-in camera and logs a deprecation warning. Ignored before macOS 14.
 -->
 <plist version="1.0">
   <dict>
@@ -18,5 +24,7 @@
     <string>SundayRec records the microphone so you can capture the audio of your church service.</string>
     <key>NSCameraUsageDescription</key>
     <string>SundayRec uses the camera to preview and record the video of your church service.</string>
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
   </dict>
 </plist>

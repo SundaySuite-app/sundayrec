@@ -11,6 +11,7 @@
 //! Modules:
 //!   - [`audio`]        — pure VU metering mat: block peak/RMS, dBFS, lock-free `PeakMeters`
 //!   - [`ffmpeg`]       — pure ffmpeg filter-string builders (drift, silencedetect)
+//!   - [`camera_format`] — native camera capture's pure decisions (C1a): which frame duration to pin for the chosen fps, a USB camera's vendor/product, host ticks → ns, when to fall back to compatibility mode
 //!   - [`capture`]      — unified ffmpeg capture-argument builder (Spike B)
 //!   - [`errors`]       — ffmpeg-stderr → stable error-code classification
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
@@ -51,6 +52,7 @@ pub mod ab_eval;
 pub mod alerts;
 pub mod audio;
 pub mod audio_analysis;
+pub mod camera_format;
 pub mod capture;
 pub mod church_calendar;
 pub mod detect;

@@ -238,6 +238,29 @@ faktisk skal se nå — sist.
       Gjør det på begge maskinene. (Macen kan også gjøres uten rigg, men
       installert utgivelse + signert bygg er det som beviser at bunten er riktig.)
 
+- [ ] **(c1a) Native kamerafangst på Macen: FaceTime HD og Continuity (C1a,
+      `ombygging/c1a-kamera-mac`).** AVFoundation-porten bygger og
+      enhetstestene er grønne, men den er IKKE kjørt mot et kamera: økta gikk
+      uten skjerm, terminalen hadde ikke kameratilgang (`NotDetermined`), og
+      tillatelsen ble ikke omgått — maskintesten fikk null bilder. Dette punktet
+      er beviset. Trenger ikke riggen, bare Macen og iPhonen. **Gjør:**
+      (1) Gi terminalen du kjører fra kameratilgang (Systeminnstillinger →
+      Personvern og sikkerhet → Kamera; eller svar ja på spørsmålet).
+      (2) Legg iPhonen låst i nærheten, samme Apple-ID, Wi-Fi og Bluetooth på.
+      (3) Kjør fra repoet:
+      `cargo test -p sundayrec --lib camera::avfoundation -- --ignored --nocapture`.
+      Bare ett kamera: `SUNDAYREC_CAMERA=iphone` (eller `facetime`) foran.
+      **Forventet:** for HVERT kamera en blokk med `mode Native`,
+      `delivered` > 100 på 5 s, `without_image: 0`, en latens
+      «pts→callback» mellom 0 og noen titalls ms (fiks 7: tidsstempelet er
+      på vertsklokka), og målt fps **ikke over** valgt fps (fiks 2: ikke
+      «strukket»). iPhonen skal stå som `Continuity`, FaceTime som `BuiltIn`.
+      **Rødt funn:** `mode Compatibility` (den native økta leverte ikke —
+      fiks 3 slo inn; noter kamera og format), fps over valgt, eller
+      testen henger i stedet for å feile. USB-kamera: gjenta på riggdagen med
+      et USB-kamera tilkoblet; det skal stå som `External` med `usb`
+      leverandør:produkt — det samme paret også etter bytte av USB-port.
+
 ## Windows-boksen
 
 - [ ] **(a4) Back-offen kuttes når mikseren settes inn igjen (A4).** Start et

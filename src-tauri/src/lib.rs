@@ -11,12 +11,17 @@
 //!
 //! Module map (most are placeholders until their phase):
 //!   audio     cpal backend — input-device enum + the VU metering engine
+//!   camera    native camera capture (C1): AVFoundation on macOS; not yet used by the recorder
 //!   commands  thin Tauri IPC handlers (`entity_verb`)
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
 pub mod appdata;
 pub mod audio;
+// C1a native camera capture (macOS AVFoundation via objc2). Not wired into the
+// recorder yet — C1c puts one API over it and the Windows backend, C3 records
+// through it. See `camera/mod.rs`.
+pub mod camera;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
 // `<app-data>/crashes/`. Featureless and dependency-free: a panic used to render

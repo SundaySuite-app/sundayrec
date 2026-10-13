@@ -309,13 +309,61 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "NSString",
+    # C1a camera capture (`camera::avfoundation`): the video-settings dictionary,
+    # `NSNumber` pixel formats, device arrays, and `NSError` text.
+    "NSArray",
+    "NSDictionary",
+    "NSError",
+    "NSValue",
 ] }
 dispatch2 = { version = "0.3", default-features = false, features = ["std"] }
 # Raw Objective-C messaging for the AVFoundation camera/mic authorization query
-# (no typed `objc2-av-foundation` binding is vendored, so we look the class up at
-# runtime and `msg_send!` `authorizationStatusForMediaType:`). Same objc2 0.6
-# lineage as the AppKit bindings above.
-objc2 = { version = "0.6", default-features = false, features = ["std"] }
+# (`media::permissions` looks the class up at runtime and `msg_send!`s
+# `authorizationStatusForMediaType:`). Same objc2 0.6 lineage as the AppKit
+# bindings above. `exception` (C1a): AVFoundation reports a bad format or frame
+# duration by THROWING an `NSException`, which must never unwind into Rust —
+# `objc2::exception::catch` turns it into an error. `objc2-exception-helper`
+# was already in Cargo.lock through Tauri's own objc2 use.
+objc2 = { version = "0.6", default-features = false, features = ["std", "exception"] }
+# ── C1a: native camera capture (AVFoundation) ────────────────────────────────
+# Cap's MIT `cap-camera` / `cap-camera-avfoundation`, PORTED to the objc2
+# family instead of taken in — Cap builds on its own `cidre` fork, this crate
+# already speaks objc2 (see `src/camera/avfoundation.rs` and docs/VIDEOMOTOR.md
+# §Kildene). Same 0.3 generation as `objc2-app-kit`/`objc2-foundation` above.
+# No macOS-14 symbol is linked: the newer device-type constants are passed as
+# their string values (see the module), so the 10.15 minimum still launches.
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "dispatch2",
+    "objc2-core-media",
+    "AVCaptureDevice",
+    "AVCaptureInput",
+    "AVCaptureOutputBase",
+    "AVCaptureSession",
+    "AVCaptureVideoDataOutput",
+    "AVMediaFormat",
+] }
+objc2-core-media = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-video",
+    "CMBase",
+    "CMFormatDescription",
+    "CMSampleBuffer",
+    "CMSync",
+    "CMTime",
+] }
+objc2-core-video = { version = "0.3", default-features = false, features = [
+    "std",
+    "CVBase",
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVReturn",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFString",
+] }
 [dev-dependencies]
 # Throwaway temp databases for the storage tests — no app, no device.
 tempfile = "3"
