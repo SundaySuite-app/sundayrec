@@ -349,9 +349,20 @@ export function nativeErrorSuffixFromText(text: string | null): string {
   if (!text) return "errorUnknown";
   const trimmed = text.trim();
   if (NATIVE_ERRORS[trimmed]) return NATIVE_ERRORS[trimmed];
+  // Motoren legger koden FØRST i teksten («device_not_found: input device not
+  // found: Qu-24»), så den tidligste treffer er den ekte; resten er detaljer
+  // som tilfeldigvis kan nevne en annen kode. Ved lik plass vinner den lengste.
+  let best: string | null = null;
+  let bestAt = Infinity;
   for (const code of Object.keys(NATIVE_ERRORS)) {
-    if (trimmed.includes(code)) return NATIVE_ERRORS[code];
+    const at = trimmed.indexOf(code);
+    if (at < 0) continue;
+    if (at < bestAt || (at === bestAt && code.length > (best?.length ?? 0))) {
+      best = code;
+      bestAt = at;
+    }
   }
+  if (best) return NATIVE_ERRORS[best];
   console.warn("[record] ukjent feiltekst fra motoren:", text);
   return "errorUnknown";
 }

@@ -268,6 +268,40 @@ describe("nativeErrorSuffix", () => {
     expect(nativeErrorSuffixFromText("")).toBe("errorUnknown");
   });
 
+  it("M1R #4: den native motorens startfeil gir riktig setning, ikke «Noe gikk galt»", () => {
+    // Nøyaktig teksten shimmen svarer med: `AppError`s Display, koden FØRST
+    // (`NativeStartError::into_app_error` i Rust).
+    expect(
+      nativeErrorSuffixFromText(
+        "recording error: device_not_found: input device not found: Behringer X32",
+      ),
+    ).toBe("errorDeviceNotFound");
+    expect(
+      nativeErrorSuffixFromText(
+        "recording error: device_permission_denied: building input stream: Permission denied.",
+      ),
+    ).toBe("errorPermission");
+    expect(
+      nativeErrorSuffixFromText(
+        "recording error: device_busy: building input stream: busy",
+      ),
+    ).toBe("errorNotReadable");
+    expect(
+      nativeErrorSuffixFromText(
+        "recording error: device_error: unsupported input sample format: I8",
+      ),
+    ).toBe("errorDeviceError");
+  });
+
+  it("M1R #4: koden som LEDER teksten vinner over en kode i detaljene", () => {
+    // Detaljen kan nevne en annen kode; den første er årsaken.
+    expect(
+      nativeErrorSuffixFromText(
+        "recording error: device_permission_denied: input device not found: device_busy",
+      ),
+    ).toBe("errorPermission");
+  });
+
   it("F1-M1: de fire kodene som falt på «ukjent» har hver sin setning", () => {
     // Alle fire kom fra ekte søndagsfeil og alle fire ble til «Noe gikk galt
     // under opptak»: startvakten som ga opp, ffmpeg som døde midt i,

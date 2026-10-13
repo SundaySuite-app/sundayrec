@@ -104,10 +104,9 @@ pub(crate) struct SessionContext {
     pub(crate) opts: RecordingOpts,
     /// The capture host platform, resolved once by `start()`.
     pub(crate) platform: Platform,
-    /// Which capture engine is running this session. MUTABLE across the
-    /// session: the native backend may demote itself to ffmpeg exactly once, on
-    /// a native start failure, and every later spawn/finalise must see the
-    /// demotion — which it does, because they read this field.
+    /// Which capture engine is running this session. Chosen once by `start()`
+    /// (audio-only → native, video → ffmpeg); there is no demotion from native
+    /// to ffmpeg any more (A5b), so a native start failure is a start error.
     pub(crate) backend: CaptureBackend,
     /// The ffmpeg-side audio device. MUTABLE across the session: a reconnect
     /// re-resolves the device index by name (the mixer can come back on a

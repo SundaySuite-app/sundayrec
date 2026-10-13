@@ -44,7 +44,7 @@ use sundayrec_core::wav::WavSpec;
 use tauri::{AppHandle, Emitter};
 
 use crate::audio::asio::build_route_plan;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::engine::{
     emit_error, emit_warning, error_code_str, now_ms, sleep_opt, wait_opt, RecordingLevels,
@@ -52,8 +52,9 @@ use crate::recorder::engine::{
     SILENCE_EVENT, STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, classify_stream_error_counting, find_device, find_device_exact,
-    negotiate, open_host, ring_capacity, CpalHostKind, StreamFaultReport, StreamSink,
+    build_input_stream_typed, classify_stream_error_counting, find_device_exact_typed,
+    find_device_typed, negotiate_typed, open_host, ring_capacity, CpalHostKind, NativeStartError,
+    StreamFaultReport, StreamSink,
 };
 use crate::recorder::native_capture::writer::{
     spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY, SYNC_EVERY,
@@ -102,7 +103,8 @@ pub struct NativeSegment {
 /// Open the device, negotiate its format, and start the full native stack
 /// (stream thread + ring + writer) writing to `output_path`. Returns once the
 /// stream is BUILT AND PLAYING (readiness discipline of `audio/vu.rs`) — a bad
-/// device fails the Start call so the supervisor can fall back to ffmpeg.
+/// device fails the Start call with a TYPED reason ([`NativeStartError`]); there
+/// is no ffmpeg reserve to fall back to (A5b).
 ///
 /// `pinned_rate` is the current deliverable's established rate (a reconnect
 /// reopen): it overrides the user's requested rate so the `_rN` fragment can
@@ -115,7 +117,9 @@ pub async fn spawn_native_segment(
     output_path: &str,
     pinned_rate: Option<u32>,
 ) -> AppResult<NativeSegment> {
-    spawn_native_segment_for(host, opts, output_path, pinned_rate, None).await
+    spawn_native_segment_for(host, opts, output_path, pinned_rate, None)
+        .await
+        .map_err(NativeStartError::into_app_error)
 }
 
 /// [`spawn_native_segment`] with the reconnect rule: when `reopen` is
@@ -123,13 +127,30 @@ pub async fn spawn_native_segment(
 /// opened) instead of the fuzzy ladder, and a miss fails the spawn so the
 /// supervisor's back-off keeps waiting for the real device. `None` is the first
 /// start, where the stored label legitimately needs the ladder.
+///
+/// The failure is typed ([`NativeStartError`]): its code is what the volunteer's
+/// sentence is picked by on a first start, and what the reconnect policy reads
+/// on a reopen (where a missing device is transient, a refused permission is not
+/// — see [`NativeStartError::for_reopen`]).
 pub async fn spawn_native_segment_for(
     host: CpalHostKind,
     opts: &RecordingOpts,
     output_path: &str,
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
-) -> AppResult<NativeSegment> {
+) -> Result<NativeSegment, NativeStartError> {
+    spawn_native_segment_typed(host, opts, output_path, pinned_rate, reopen)
+        .await
+        .map_err(|e| if reopen.is_some() { e.for_reopen() } else { e })
+}
+
+async fn spawn_native_segment_typed(
+    host: CpalHostKind,
+    opts: &RecordingOpts,
+    output_path: &str,
+    pinned_rate: Option<u32>,
+    reopen: Option<&str>,
+) -> Result<NativeSegment, NativeStartError> {
     let exact = reopen.map(str::to_owned);
     let device_name = exact
         .clone()
@@ -140,19 +161,18 @@ pub async fn spawn_native_segment_for(
     let (negotiated, opened_name) = {
         let name = device_name.clone();
         let exact = exact.is_some();
-        tokio::task::spawn_blocking(move || -> Result<_, String> {
-            let h = open_host(host)?;
+        tokio::task::spawn_blocking(move || -> Result<_, NativeStartError> {
+            let h = open_host(host).map_err(NativeStartError::other)?;
             let device = if exact {
-                find_device_exact(&h, &name)?
+                find_device_exact_typed(&h, &name)?
             } else {
-                find_device(&h, &name)?
+                find_device_typed(&h, &name)?
             };
             let opened = crate::audio::devices::device_name(&device);
-            Ok((negotiate(&device, requested_rate)?, opened))
+            Ok((negotiate_typed(&device, requested_rate)?, opened))
         })
         .await
-        .map_err(|e| AppError::Recording(format!("device probe task failed: {e}")))?
-        .map_err(AppError::Recording)?
+        .map_err(|e| NativeStartError::other(format!("device probe task failed: {e}")))??
     };
     // A first start that landed on a device whose name is not the stored one
     // (the ladder's substring/word-overlap strategies) is worth a trail: the
@@ -179,7 +199,12 @@ pub async fn spawn_native_segment_for(
             opts.input_channel_r,
             negotiated.channels,
         )
-        .map_err(|e| AppError::Recording(format!("input device not back: {e}")))?;
+        .map_err(|e| {
+            NativeStartError::new(
+                RecordingErrorCode::DeviceDisconnected,
+                format!("input device not back: {e}"),
+            )
+        })?;
     }
     let plan = build_route_plan(
         opts.channel_mode,
@@ -237,11 +262,11 @@ pub async fn spawn_native_segment_for(
         Arc::clone(&frames),
         event_tx,
     )
-    .map_err(|e| AppError::Recording(format!("could not spawn wav writer: {e}")))?;
+    .map_err(|e| NativeStartError::other(format!("could not spawn wav writer: {e}")))?;
 
     // Stream thread: reopen host+device (the Stream is !Send), build, play,
     // report readiness over an async oneshot, park until stopped.
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), NativeStartError>>();
     let st_stop = Arc::clone(&stream_stop);
     let st_meters = Arc::clone(&meters);
     let st_overrun = Arc::clone(&overrun);
@@ -251,12 +276,12 @@ pub async fn spawn_native_segment_for(
     let stream_join = std::thread::Builder::new()
         .name("native-capture".into())
         .spawn(move || {
-            let build = (|| -> Result<cpal::Stream, String> {
-                let h = open_host(host)?;
+            let build = (|| -> Result<cpal::Stream, NativeStartError> {
+                let h = open_host(host).map_err(NativeStartError::other)?;
                 let device = if exact_reopen {
-                    find_device_exact(&h, &st_name)?
+                    find_device_exact_typed(&h, &st_name)?
                 } else {
-                    find_device(&h, &st_name)?
+                    find_device_typed(&h, &st_name)?
                 };
                 let config = cpal::StreamConfig {
                     channels: negotiated.channels,
@@ -274,7 +299,7 @@ pub async fn spawn_native_segment_for(
                         let _ = err_tx.try_send(report);
                     }
                 };
-                let stream = build_input_stream_any(
+                let stream = build_input_stream_typed(
                     &device,
                     config,
                     negotiated.sample_format,
@@ -287,7 +312,9 @@ pub async fn spawn_native_segment_for(
                     },
                     err_fn,
                 )?;
-                stream.play().map_err(|e| format!("starting stream: {e}"))?;
+                stream
+                    .play()
+                    .map_err(|e| NativeStartError::from_cpal("starting stream", &e))?;
                 Ok(stream)
             })();
             match build {
@@ -303,7 +330,7 @@ pub async fn spawn_native_segment_for(
                 }
             }
         })
-        .map_err(|e| AppError::Recording(format!("could not spawn capture thread: {e}")))?;
+        .map_err(|e| NativeStartError::other(format!("could not spawn capture thread: {e}")))?;
 
     let mut seg = NativeSegment {
         stream_stop,
@@ -325,12 +352,12 @@ pub async fn spawn_native_segment_for(
         Ok(Ok(())) => Ok(seg),
         Ok(Err(e)) => {
             abort_native_segment(&mut seg, output_path).await;
-            Err(AppError::Recording(e))
+            Err(e)
         }
         Err(_) => {
             abort_native_segment(&mut seg, output_path).await;
-            Err(AppError::Recording(
-                "native capture thread exited before signalling".into(),
+            Err(NativeStartError::other(
+                "native capture thread exited before signalling",
             ))
         }
     }
