@@ -75,7 +75,7 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     // Audio device names: prefer the ffmpeg enumeration (what the recorder
     // addresses); fall back to the cpal input list when ffmpeg can't enumerate.
     let inventory = enumerate_ffmpeg_devices().await.ok();
-    let (mut audio_devices, video_devices) = match inventory {
+    let (mut audio_devices, ffmpeg_video_devices) = match inventory {
         Some(inv) => (
             inv.audio_inputs
                 .into_iter()
@@ -88,6 +88,10 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         ),
         None => (Vec::new(), Vec::new()),
     };
+    // C1c: the cameras come from the native camera list (AVFoundation / Media
+    // Foundation + DirectShow), not from ffmpeg's `-list_devices`. ffmpeg's
+    // names are only the fallback for a platform without a native backend.
+    let video_devices = camera_report_lines(ffmpeg_video_devices).await;
     if audio_devices.is_empty() {
         if let Ok(list) = list_input_devices() {
             audio_devices = list.inputs.into_iter().map(|d| d.name).collect();
@@ -198,6 +202,24 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         video_ok: probe.video_ok,
         capture_probe_skipped: probe.skipped_reason,
     })
+}
+
+/// The camera lines of the report, from the native camera list ("FaceTime HD
+/// Camera (innebygd)"). The enumeration is blocking (Windows talks to Media
+/// Foundation and DirectShow), so it runs off the async threads. `fallback` —
+/// ffmpeg's names — is used only when the native list is unavailable.
+async fn camera_report_lines(fallback: Vec<String>) -> Vec<String> {
+    match tokio::task::spawn_blocking(crate::camera::list).await {
+        Ok(Ok(cameras)) => cameras.iter().map(|c| c.report_line()).collect(),
+        Ok(Err(e)) => {
+            tracing::warn!("diagnostics: native camera list unavailable ({e}); using ffmpeg's");
+            fallback
+        }
+        Err(e) => {
+            tracing::warn!("diagnostics: camera list task failed ({e}); using ffmpeg's");
+            fallback
+        }
+    }
 }
 
 /// The outcome of [`run_capture_probe`].

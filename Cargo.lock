@@ -5000,6 +5000,7 @@ name = "sundayrec"
 version = "0.25.3"
 dependencies = [
  "base64 0.23.1",
+ "cap-camera-windows",
  "chrono",
  "cpal",
  "dispatch2",
@@ -5019,6 +5020,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx",
  "sundayrec-core",
+ "sundayrec-mf-util",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

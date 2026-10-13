@@ -261,6 +261,26 @@ faktisk skal se nå — sist.
       et USB-kamera tilkoblet; det skal stå som `External` med `usb`
       leverandør:produkt — det samme paret også etter bytte av USB-port.
 
+- [ ] **(c1c-m) `camera_probe` på Macen: opptak til rå fil, med statistikk
+      (C1c, `ombygging/c1c-kamera-api`).** Lista og formatene er kjørt
+      (FaceTime HD, iPhone og skrivebordsvisning), men selve opptaket er IKKE:
+      terminalen hadde ikke kameratilgang (`NotDetermined`, startforsøket ga
+      `NotAuthorized` etter 5 s) og tillatelsen ble ikke omgått. Gjør først
+      (c1a) over, så tilgangen finnes. **Gjør:** fra repoet
+      `cargo run --example camera_probe -- --camera facetime --seconds 10`, og
+      samme med `--camera iphone`. **Forventet:** per kamera «backend:
+      AVFoundation, Native mode», første bilde innen få sekunder (iPhonen
+      kan trenge 1–2 s), «measured fps» ved valgt fps (30), jitter under noen
+      få ms, «lost» 0 og «dropped» 0/0/0 (kø/OS/hoppet over). **Rødt funn:**
+      «Compatibility mode», «NEVER», tapte bilder eller kø-drop på et ellers
+      stille system, tidsstempler som går bakover (`NON-MONOTONIC`).
+      **USB-kamera (riggdagen):** `--list` skal vise det som «kamera» med
+      `model` (vendor:product) som er lik etter bytte av USB-port; deretter
+      samme 10 s-opptak mot det. Prøv også `--format 1920x1080@30` på alle tre.
+      **Opptakskort finnes ikke** (hverken her eller på Windows-boksen): at et
+      kort står som «opptakskort» og leverer bilder er IKKE bevist. Føres som
+      åpent, ikke blokkerende.
+
 ## Windows-boksen
 
 - [ ] **(a4) Back-offen kuttes når mikseren settes inn igjen (A4).** Start et
@@ -581,6 +601,29 @@ faktisk skal se nå — sist.
       modusene, eller tråder/håndtak vokser for hver runde (lekkasjen Cap
       rettet i #2132/#2143 er tilbake). Selve opptaket fra kameraet bevises i
       C1c (`camera_probe`).
+
+- [ ] **(c1c-w) `camera_probe` på Windows-boksen (C1c,
+      `ombygging/c1c-kamera-api`).** Windows-koden i `camera::windows_backend`
+      er bare bygget og clippy-sjekket i CI; ingen kamerabilder har gått
+      gjennom den. Koble til USB-kameraet (og OBS' virtuelle kamera).
+      **Gjør:** `cargo run --example camera_probe -- --list`, så
+      `cargo run --example camera_probe -- --camera <del av navnet> --seconds 10`
+      for USB-kameraet, og gjenta med `--format 1280x720@30` (NV12/YUY2) og
+      et MJPEG-format hvis kameraet tilbyr det. **Forventet:** kameraene står
+      med riktig type («kamera» / «virtuelt kamera»), formatlista er ikke
+      tom og har ingen doble linjer, «backend: Media Foundation» (DirectShow
+      bare for enheter MF ikke klarer), første bilde innen ~2 s, «measured
+      fps» ved valgt fps, jitter under noen få ms, «lost» 0, kø-drop 0, og
+      `raw bytes` = antall bilder × bildestørrelsen. Etter stopp skal
+      programmet avslutte uten henging. Kjør proben tre ganger rett etter
+      hverandre (start/stopp-syklus), og én gang mens et opptak i SundayRec
+      pågår (ingen krasj; kameraet kan være opptatt, og feilen skal da være
+      en ren melding). **Rødt funn:** «Media Foundation did not start»,
+      henger ved stopp, `STATUS_ACCESS_VIOLATION`, tidsstempler som går
+      bakover, eller at lista over kameraer mangler et som `c1b`-sjekken fant.
+      Åpne spørsmål det skal avgjøre: går Windows-bildene med NV12 uten
+      radfyll (`raw bytes` delt på bildeantall = bredde × høyde × 1,5)? Opptakskort
+      finnes ikke og står som åpent.
 
 _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
