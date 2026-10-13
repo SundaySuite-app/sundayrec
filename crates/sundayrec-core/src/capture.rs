@@ -2435,7 +2435,7 @@ mod tests {
             s(&[
                 "-hide_banner", "-progress", "pipe:1", "-nostats", "-f", "dshow",
                 "-i", "audio=Mic", "-af",
-                "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=pipe\\:2",
+                "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=pipe\\\\:2",
                 "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-avoid_negative_ts", "make_zero",
                 "-y", "/rec/a.m4a",
             ])

@@ -923,7 +923,9 @@ mod tests {
 
         let d = deliverable(&primary_s, &[&primary_s, &phantom_s, &later_s]);
         let out = {
-            let _guard = crate::media::ffmpeg::tests::ENV_LOCK.lock().unwrap();
+            let _guard = crate::media::ffmpeg::tests::ENV_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             // SAFETY: serialised by ENV_LOCK; restored before releasing the lock.
             unsafe {
                 std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
@@ -979,7 +981,9 @@ mod tests {
         };
         let d = deliverable(&wav_s, &[&wav_s]);
         let out = {
-            let _guard = crate::media::ffmpeg::tests::ENV_LOCK.lock().unwrap();
+            let _guard = crate::media::ffmpeg::tests::ENV_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             // SAFETY: serialised by ENV_LOCK; restored before releasing the lock.
             unsafe {
                 std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);

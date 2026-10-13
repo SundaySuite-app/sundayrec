@@ -6111,7 +6111,7 @@ mod tests {
             let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
             let sink = ticks.clone();
             let first = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(peaks(&src, move |f| sink.lock().unwrap().push(f)));
@@ -6198,7 +6198,7 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
 
             {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(peaks(&src, |_| {}));
@@ -6236,7 +6236,7 @@ mod tests {
             let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
             let sink = ticks.clone();
             let (computed, analysis) = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(segments(&src, false, move |f| sink.lock().unwrap().push(f)));
@@ -6313,7 +6313,7 @@ mod tests {
             // … and that «Analyser opptak» (force) redoes the work and refreshes
             // the cache with the real result.
             let forced = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let r = rt.block_on(segments(&src, true, |_| {}));
@@ -6765,7 +6765,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let out_path = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let result = rt.block_on(export(&engine, &req, &req.inputs, false, on_progress));
@@ -6873,7 +6873,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let out = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
                 let result = rt.block_on(export(&engine, &req, &req.inputs, false, on_progress));
@@ -7470,7 +7470,7 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let err = {
-                let _guard = ENV_LOCK.lock().unwrap();
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe {
                     std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
