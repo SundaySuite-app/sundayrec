@@ -1,0 +1,17 @@
+[package]
+name = "sundayrec-mf-util"
+version = "0.1.0"
+description = "Media Foundation-hjelpere (oppstart, MMCSS, bufferlås) for kamera-cratene. Egen kode, skrevet fra Microsofts dokumentasjon."
+authors = ["Richard Fossland"]
+license = "MIT"
+edition = "2024"
+publish = false
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+] }

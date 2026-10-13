@@ -1,0 +1,25 @@
+# Tatt inn fra Cap (MIT) — se UPSTREAM.md for commit og lokale endringer.
+[package]
+name = "cap-camera-mediafoundation"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+tracing = "0.1"
+thiserror = "2"
+parking_lot = "0.12"
+
+[target.'cfg(windows)'.dependencies]
+# Vår egen, skrevet fra Microsofts dokumentasjon — erstatter Caps AGPL-lisensierte
+# `cap-mediafoundation-utils`, som IKKE er lest. Se UPSTREAM.md.
+sundayrec-mf-util = { path = "../mf-util" }
+windows-core = "=0.62.2"
+windows = { version = "=0.62.2", features = [
+    "Win32_Media_MediaFoundation",
+    "Win32_Media_DirectShow",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
+    "Win32_System_Performance",
+] }
