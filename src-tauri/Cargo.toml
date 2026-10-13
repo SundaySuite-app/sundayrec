@@ -377,6 +377,8 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
     "CFString",
 ] }
 [dev-dependencies]
+# B0c: `examples/dsp_bench.rs` measures the vendored DSP crate against ffmpeg.
+filmcraft-audio-dsp = { path = "../crates/filmcraft-audio-dsp" }
 # Throwaway temp databases for the storage tests — no app, no device.
 tempfile = "3"
 # Test-only tokio features, on top of the ones in `[dependencies]`:

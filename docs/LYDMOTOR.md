@@ -41,7 +41,7 @@ retningen, ikke fasiten.
    | Sus: «talen»                | urørt                            | urørt                    |
 
    `afftdn` uten `tn=1` og med riktig `nf` tok −57 dB. Dagens innstillinger
-   gjør altså lite. Dette bør sjekkes med 9.0.1 når B0 starter, med målingene i vedlegget.
+   gjør altså lite. **Sjekket med 9.0.1 i B0c: bekreftet**, se vedlegget.
 
 4. **Standardprofilen renser ingenting.** «Tale» (`sound-profiles.ts`) er
    `speech-clear`: høypass, EQ, kompressor og `loudnorm`. Støy- og
@@ -242,7 +242,8 @@ løser et annet problem enn én frivillig med ett spørsmål.
 ## Vedlegg: målingene, og hvordan de gjentas
 
 Målt 2026-10-11 i en sky-container med 4 kjerner, Linux, ffmpeg 6.1, filmcraft
-`0800a8b0`. Gjentas på Macen med `src-tauri/binaries/ffmpeg-*` (9.0.1) før B1.
+`0800a8b0`. **Gjentatt på Macen 2026-10-13 med ffmpeg 9.0.1, se «Gjentatt på
+Macen (B0c)» under.**
 
 **Fart, én kjerne, 120 s stereo 48 kHz syntetisk tale-lignende signal:**
 
@@ -261,6 +262,93 @@ Målt 2026-10-11 i en sky-container med 4 kjerner, Linux, ffmpeg 6.1, filmcraft
 
 Dagens ffmpeg-kjede «voice-noisy-room» gikk 32× sanntid, og 10× med
 `loudnorm` (`-threads 1 -filter_threads 1`).
+
+### Gjentatt på Macen (B0c)
+
+Målt 2026-10-13 på MacBook Pro med **Apple M1 Pro** (10 kjerner), macOS 27.0.1
+(26A434), **ffmpeg 9.0.1** (`src-tauri/binaries`, martin-riedl.de-bygget),
+filmcraft `audio-dsp` 0.7.2 slik den ligger i `crates/filmcraft-audio-dsp`.
+Hentet med `cargo run --example dsp_bench --release` (`src-tauri/examples/dsp_bench.rs`).
+Medianer av fem kjøringer (ffmpeg: tre). Andre økter bygget i bakgrunnen, men
+spredningen var under 1 % (maks mot median), så tidene er rene. Samme
+oppskrift som under; to tolkninger er mine: «sus med topp på −46 dBFS» er
+jevn støy med topp −46 dBFS, og effektene kjører med standardparametre.
+
+**Fart, én kjerne, 120 s stereo 48 kHz:**
+
+| Effekt (filmcraft)        | × sanntid | Forsinkelse  | Før (sky, 4 kjerner) |
+| ------------------------- | --------- | ------------ | -------------------- |
+| `dehum`                   | 811       | 0            | 354                  |
+| `denoise`                 | 114       | 2048 samples | 60                   |
+| `dereverb`                | 123       | 2048 samples | 77                   |
+| `gate`                    | 2173      | 0            | 814                  |
+| `parametric_eq`           | 10067     | 0            | 210                  |
+| `compressor`              | 1082      | 0            | 538                  |
+| `deesser`                 | 963       | 0            | 382                  |
+| `limiter` (true peak)     | 329       | 248 samples  | 192                  |
+| **Hele kjeden**           | **42,5**  |              | 18–21                |
+| `LoudnessMeter` (BS.1770) | 611       |              | 200                  |
+
+ffmpeg 9.0.1 med SundayRecs egne strenger, samme fil, `-threads 1
+-filter_threads 1`, null-muxer (tid inkluderer start av prosess og dekoding):
+
+| Kjede                                                   | × sanntid |
+| ------------------------------------------------------- | --------- |
+| «voice-noisy-room» (`vocal_chain_presets()`)            | 120       |
+| «voice-noisy-room» + `loudnorm` (pass 1)                | 25,6      |
+| Master-forvalg, målepass (`build_measure_pass_filters`) | 29–32     |
+
+(Før: 32× og 10×. ffmpeg-kjeden er raskere enn filmcrafts, men den gjør også
+mindre: `afftdn` med `tn=1` rører knapt støyen, se under. `loudnorm` er
+fortsatt det som drar farten ned.)
+
+**Kvalitet (RMS i dB, kanal 0).** Inn: støygulv −45,0, pulser −23,0, romklang-
+hale −36,3, direktelyd −19,3. Pulser og direktelyd skal være urørt; gulv og
+hale skal ned.
+
+| Prosessor                                              | Støygulv      | Pulser | Hale          | Direkte       |
+| ------------------------------------------------------ | ------------- | ------ | ------------- | ------------- |
+| filmcraft `denoise` (standard, 12 dB)                  | −55,8         | −23,0  | −36,4         | −19,5         |
+| filmcraft `denoise`, `reduction=20`                    | −60,8         | −23,0  | −36,4         | −19,5         |
+| filmcraft `dereverb` (standard)                        | −49,5         | −30,7  | −42,5         | −19,4         |
+| filmcraft `dereverb`, `rt60=1.5`, `amount=100`         | −54,0         | −40,6  | −48,7         | −19,5         |
+| ffmpeg `afftdn=nr=10:nf=-25:tn=1` («voice-podcast»)    | −46,7         | −23,0  | −36,8         | −19,3         |
+| ffmpeg `afftdn=nr=20:nf=-20:tn=1` («voice-noisy-room») | −46,7         | −23,0  | −36,8         | −19,3         |
+| ffmpeg `afftdn=nr=20:nf=-45:tn=1`                      | −46,7         | −23,0  | −36,8         | −19,3         |
+| ffmpeg `afftdn=nr=12:nf=-45` (uten `tn`)               | −54,9         | −23,0  | −37,1         | −19,4         |
+| ffmpeg `afftdn=nr=20:nf=-45` (uten `tn`)               | −58,5         | −23,0  | −37,1         | −19,4         |
+| ffmpeg `afftdn=nr=30:nf=-45` (uten `tn`)               | −60,2         | −23,0  | −37,1         | −19,4         |
+| ffmpeg `afftdn=nr=20:nf=-50` (uten `tn`)               | −50,2         | −23,0  | −36,6         | −19,3         |
+| ffmpeg `afftdn=nr=20:nf=-40` (uten `tn`)               | −64,3         | −23,0  | −38,6         | −19,4         |
+| ffmpeg `afftdn=nr=20:nf=-20` (uten `tn`)               | −65,0         | −23,1  | −56,3         | −28,8         |
+| ffmpeg `agate`-«dereverb», styrke 0,5 / 1,0            | −48,6 / −57,1 | −23,0  | −36,5 / −37,5 | −19,3 / −19,4 |
+
+**`afftdn`-funnet: bekreftet.** Med `tn=1` (støysporing) tar `afftdn` bare
+1,7 dB av et stasjonært støygulv, uansett `nr` og `nf`, så dagens innstillinger
+«voice-podcast» og «voice-noisy-room» renser praktisk talt ingenting. Uten `tn=1`
+og med `nf` nær det faktiske gulvet (−45) tar `afftdn=nr=20` 13,5 dB og
+`nr=30` 15,2 dB, mot filmcrafts `denoise` på 10,8 dB (standard) og 15,8 dB
+(`reduction=20`), med pulsene urørt. ffmpeg er altså ikke dårlig på **støy**;
+innstillingene våre er feil. Forbehold: (1) støyen her er hvit og stasjonær,
+som er `afftdn`s beste tilfelle; ekte kirkestøy (vifte, folk, bevegelse) er
+ikke målt. (2) Uten `tn=1` må `nf` treffe: −50 gir bare 5,2 dB, −40 spiser
+allerede av halen, og dagens `nf=-20` uten `tn` fjerner −9,5 dB av **direktelyden**.
+`nf` må måles per opptak, noe `tn=1` slapp å gjøre. (3) Filmcrafts
+`denoise` trenger ingen `nf`.
+
+**Romklang:** `agate`-erstatningen rører ikke halen (−0,2 til −1,2 dB).
+Filmcrafts `dereverb` tar −6,2 dB med standardverdier og −12,4 dB med
+`rt60=1,5` og `amount=100`, direktelyden urørt. Men den dempet også de
+stasjonære 1 kHz-pulsene (−7,7 til −17,6 dB), som en stasjonær tone ikke
+skiller fra en hale; på ekte tale er dette ikke målt og må lyttes etter.
+Brumfjerning (`dehum`) finnes ikke i ffmpeg og er ikke målt mot noe.
+
+**Hva det endrer for B2 og B3:** farten er ikke lenger noe argument for å
+nøle (hele kjeden går 42× sanntid på M1 Pro, lydstyrkemåleren 611×, begge godt
+over det forhåndslytting og eksport trenger), og B3a må velge mellom filmcrafts
+`denoise` og en rettet `afftdn` uten `tn=1` på **støy** (omtrent likeverdige på
+syntetisk støy, `afftdn` må få målt `nf`), mens filmcraft fortsatt er eneste
+vei for romklang og brum og for sanntid i forhåndslyttingen.
 
 **Slik gjentas det:** en liten crate utenfor repoet med
 `filmcraft-audio-dsp = { path = "<filmcraft>/crates/audio-dsp" }` som:
