@@ -102,11 +102,11 @@ pub(crate) enum SegmentOutcome {
 /// Which capture engine records the audio for this session.
 ///
 /// `NativeAudio` = the cpal engine that writes the capture WAV directly
-/// (`recorder::native_capture`) — the standard path for audio-only sessions
-/// after the 2026-08-01 rebuild (avfoundation measurably drops samples below
-/// ffmpeg's observability). `Ffmpeg` = the legacy unified ffmpeg capture —
-/// still used for every video session and behind the `classic_ffmpeg_audio`
-/// escape hatch.
+/// (`recorder::native_capture`) — the ONLY engine for audio-only sessions since
+/// the 2026-08-01 rebuild (avfoundation measurably drops samples below
+/// ffmpeg's observability) and since A5b the escape hatch back to ffmpeg is
+/// gone. `Ffmpeg` = the unified ffmpeg capture, which now records VIDEO sessions
+/// only (until the native engine learns video, C3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CaptureBackend {
     Ffmpeg,
@@ -115,37 +115,38 @@ pub(crate) enum CaptureBackend {
 
 /// Pure routing decision for the session's capture backend.
 ///
-/// Audio-only sessions route to the native engine on BOTH platforms (CoreAudio
-/// on macOS; WASAPI, or ASIO for an ASIO device, on Windows). Video sessions
-/// keep the ffmpeg paths byte-for-byte (incl. Windows' cpal-pipe session).
-/// Escape hatches force ffmpeg: `classic_ffmpeg_audio` on any platform, and
-/// Windows' older `classic_directshow` (a user who forced DirectShow wants the
-/// legacy-est path — native must not override that).
+/// Audio-only sessions ALWAYS route to the native engine (CoreAudio on macOS;
+/// WASAPI, or ASIO for an ASIO device, on Windows; the default host elsewhere,
+/// which is only the Linux CI build). There is no way back to ffmpeg for them:
+/// not by setting (`classic_ffmpeg_audio` left in A5b), not by Windows'
+/// `classic_directshow` (it now only steers VIDEO sessions), and not by an
+/// automatic fallback when the native start fails — that is a start error the
+/// operator sees. Video sessions keep the ffmpeg paths byte-for-byte (incl.
+/// Windows' cpal-pipe session).
 pub(crate) fn select_capture_backend(
-    is_macos: bool,
     is_windows: bool,
     audio_only: bool,
-    classic_ffmpeg_audio: bool,
-    classic_directshow: bool,
     is_asio_device: bool,
 ) -> CaptureBackend {
-    if !audio_only || classic_ffmpeg_audio || (is_windows && classic_directshow) {
-        return CaptureBackend::Ffmpeg;
-    }
-    if is_macos {
+    if audio_only {
         CaptureBackend::NativeAudio {
-            host: CpalHostKind::Default,
-        }
-    } else if is_windows {
-        CaptureBackend::NativeAudio {
-            host: if is_asio_device {
-                CpalHostKind::Asio
-            } else {
-                CpalHostKind::Wasapi
-            },
+            host: audio_only_host(is_windows, is_asio_device),
         }
     } else {
         CaptureBackend::Ffmpeg
+    }
+}
+
+/// The cpal host the native engine opens for an audio-only session — the half
+/// of [`select_capture_backend`] that the capture bench and the diagnose probe
+/// share, since they never record video and so never need the `Ffmpeg` answer.
+pub(crate) fn audio_only_host(is_windows: bool, is_asio_device: bool) -> CpalHostKind {
+    if !is_windows {
+        CpalHostKind::Default
+    } else if is_asio_device {
+        CpalHostKind::Asio
+    } else {
+        CpalHostKind::Wasapi
     }
 }
 
@@ -242,7 +243,6 @@ pub(super) async fn run_session(
         video: _,
         preroll_clip: _,
         state: _,
-        audio_engine: _,
     } = &ctx;
     // F2-W5: hold the machine awake for the WHOLE session — this binding is
     // dropped (and the block released) by the normal return, by every early
@@ -354,9 +354,9 @@ pub(super) async fn run_session(
         }
         emit_state(RecorderState::Preparing, 0);
 
-        // Spawn the FIRST segment. A native-engine failure falls back to the
-        // ffmpeg capture automatically (recorded for the diagnose tool, never a
-        // fatal start); only a failure of the FALLBACK reaches the caller.
+        // Spawn the FIRST segment. A failure reaches the caller as a start
+        // error — an audio-only session has no second engine to fall back to
+        // (A5b), and a video session has only the ffmpeg capture.
         // The current deliverable's pinned capture rate (native backend): every
         // fragment of one deliverable must share it for the -c copy concat.
         let mut pinned_rate: Option<u32> = None;
@@ -378,47 +378,6 @@ pub(super) async fn run_session(
             Ok(c) => {
                 let _ = ready.send(Ok(()));
                 c
-            }
-            Err(native_err) if matches!(ctx.backend, CaptureBackend::NativeAudio { .. }) => {
-                tracing::warn!(
-                    "recorder: native capture start failed ({native_err}); falling back to ffmpeg"
-                );
-                *lock_recover(&ctx.audio_engine) = (
-                    Some(
-                        if cfg!(windows) {
-                            "directshow"
-                        } else {
-                            "avfoundation"
-                        }
-                        .to_string(),
-                    ),
-                    Some(native_err.to_string()),
-                );
-                ctx.backend = CaptureBackend::Ffmpeg;
-                match spawn_capture(
-                    ctx.backend,
-                    ctx.platform,
-                    &ctx.audio,
-                    ctx.video.as_ref(),
-                    &ctx.opts,
-                    session.primary_path(),
-                    None,
-                    None,
-                )
-                .await
-                {
-                    Ok(c) => {
-                        let _ = ready.send(Ok(()));
-                        c
-                    }
-                    Err(e) => {
-                        let _ = ready.send(Err(e));
-                        emit_state(RecorderState::Failed, 0);
-                        // The capture dir was just created and never written to — empty.
-                        let _ = tokio::fs::remove_dir(&cap_dir).await;
-                        break 'run;
-                    }
-                }
             }
             Err(e) => {
                 let _ = ready.send(Err(e));
@@ -1072,12 +1031,11 @@ async fn run_segment(
     // countdown restamps go through the very same generation guard the
     // supervisor's transitions do.
     let (app, opts, state) = (&ctx.app, &ctx.opts, &ctx.state);
-    // `deliverable_bytes` = bytes already captured into the current deliverable's
-    // PREVIOUS fragments (`_rN` reconnect pieces) — feeds the RIFF-cap forced
-    // split, exactly as on the native path.
+    // `deliverable_bytes` feeds the native RIFF-cap forced split only: the ffmpeg
+    // capture is VIDEO-only (Matroska, no 4 GiB ceiling) since A5b.
     let SegmentCounters {
         segment_bytes,
-        deliverable_bytes,
+        deliverable_bytes: _,
         telemetry,
     } = counters;
     let Some(stderr) = child.stderr.take() else {
@@ -1403,35 +1361,12 @@ async fn run_segment(
                     break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None };
                 }
             }
-            // RIFF-cap guard + low-disk guard (one 30 s tick, same order as the
-            // native twin in `native_capture::segment::run_native_segment`).
+            // Low-disk guard (one 30 s tick, same order as the native twin in
+            // `native_capture::segment::run_native_segment`). The 4 GiB RIFF-cap
+            // guard that used to sit here is gone with A5b: it covered ffmpeg WAV
+            // captures, and the ffmpeg capture is VIDEO-only now (Matroska has
+            // no such ceiling); the native engine carries its own.
             _ = disk_tick.tick() => {
-                // E6.2 BUG FIX: this guard existed ONLY on the native capture
-                // path. An ffmpeg WAV capture — reachable on Linux, under the
-                // `classic_ffmpeg_audio` hatch, and via the automatic
-                // native-start-failure fallback — had no ceiling at all, and
-                // ffmpeg's wav muxer defaults to `-rf64 never`: past 4 GiB it
-                // writes a plain RIFF header whose u32 size fields cannot
-                // describe the file. At 96 kHz stereo s16 that is ~2.7 h, i.e.
-                // INSIDE a long service. Video captures are Matroska, which has
-                // no such ceiling, so the guard is audio-only exactly like the
-                // native one.
-                if !video_active {
-                    let seg_bytes = segment_bytes.load(Ordering::Relaxed);
-                    if sundayrec_core::wav::should_force_split(
-                        deliverable_bytes.saturating_add(seg_bytes),
-                    ) {
-                        tracing::warn!(
-                            deliverable_bytes,
-                            seg_bytes,
-                            "recorder: deliverable approaching the 4 GiB WAV ceiling — forcing a split"
-                        );
-                        // Graceful `q` so the muxer patches its size fields and
-                        // the fragment is a complete, joinable WAV.
-                        stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
-                        break SegmentOutcome::Split;
-                    }
-                }
                 if let Some(folder) = &disk_folder {
                     if let Ok(free) = fs4::available_space(folder) {
                         let reserve = finalize_reserve_bytes(
@@ -1534,52 +1469,51 @@ mod tests {
     fn backend_routing_matrix() {
         // macOS audio-only → native engine (CoreAudio via the default host).
         assert!(matches!(
-            select_capture_backend(true, false, true, false, false, false),
+            select_capture_backend(false, true, false),
             CaptureBackend::NativeAudio {
                 host: CpalHostKind::Default
             }
         ));
         // Windows audio-only → native WASAPI; an ASIO device → native ASIO.
         assert!(matches!(
-            select_capture_backend(false, true, true, false, false, false),
+            select_capture_backend(true, true, false),
             CaptureBackend::NativeAudio {
                 host: CpalHostKind::Wasapi
             }
         ));
         assert!(matches!(
-            select_capture_backend(false, true, true, false, false, true),
+            select_capture_backend(true, true, true),
             CaptureBackend::NativeAudio {
                 host: CpalHostKind::Asio
             }
         ));
-        // The ffmpeg escape hatch forces the legacy path on both platforms.
+        // Video sessions stay on ffmpeg until the native engine gets video (C3).
         assert_eq!(
-            select_capture_backend(true, false, true, true, false, false),
+            select_capture_backend(false, false, false),
             CaptureBackend::Ffmpeg
         );
         assert_eq!(
-            select_capture_backend(false, true, true, true, false, false),
+            select_capture_backend(true, false, false),
             CaptureBackend::Ffmpeg
         );
-        // Windows' classic_directshow hatch also wins over native.
-        assert_eq!(
-            select_capture_backend(false, true, true, false, true, false),
-            CaptureBackend::Ffmpeg
-        );
-        // ...but on macOS classic_directshow means nothing.
-        assert!(matches!(
-            select_capture_backend(true, false, true, false, true, false),
-            CaptureBackend::NativeAudio { .. }
-        ));
-        // Video sessions stay on ffmpeg (owner decision: audio first).
-        assert_eq!(
-            select_capture_backend(true, false, false, false, false, false),
-            CaptureBackend::Ffmpeg
-        );
-        assert_eq!(
-            select_capture_backend(false, true, false, false, false, false),
-            CaptureBackend::Ffmpeg
-        );
+    }
+
+    /// A5b: NO combination of platform and device reaches ffmpeg for an
+    /// audio-only session. This is the test that fails the day someone adds the
+    /// hatch back (a setting, a `classic_*` parameter, an automatic fallback).
+    #[test]
+    fn no_audio_only_session_can_route_to_ffmpeg() {
+        for is_windows in [false, true] {
+            for is_asio in [false, true] {
+                assert!(
+                    matches!(
+                        select_capture_backend(is_windows, true, is_asio),
+                        CaptureBackend::NativeAudio { .. }
+                    ),
+                    "audio-only (windows={is_windows}, asio={is_asio}) must be native"
+                );
+            }
+        }
     }
 
     /// A reconnect that came back at another sample rate must not leave its `_rN`

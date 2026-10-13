@@ -237,11 +237,10 @@
         "lede": "Des choses que la plupart des gens n’ont jamais besoin de toucher. Tout ici a une valeur par défaut sûre.",
         "soundLink": "Son avancé",
         "engine": "Moteur d’enregistrement",
-        "engineDesc": "Ne changez que si le son est saccadé.",
+        "engineDesc": "Concerne les enregistrements vidéo. Ne changez que si le son est saccadé.",
         "engineConfirm": "Changer de moteur d’enregistrement",
         "engineChoice": {
           "native": "Intégré",
-          "ffmpeg": "Classique (ffmpeg)",
           "dshow": "Classique (DirectShow)"
         },
         "preroll": "Tampon de pré-enregistrement",

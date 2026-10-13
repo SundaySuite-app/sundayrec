@@ -2490,7 +2490,6 @@ mod tests {
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
             classic_directshow: false,
-            classic_ffmpeg_audio: false,
             video_input: None,
         }
     }

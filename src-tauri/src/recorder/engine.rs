@@ -114,7 +114,9 @@ pub use self::payloads::{
 pub(crate) use self::process::{sleep_opt, stop_and_wait_bounded, wait_opt};
 pub(crate) use self::reader::error_code_str;
 use self::supervisor::run_session;
-pub(crate) use self::supervisor::{select_capture_backend, CaptureBackend, SegmentOutcome};
+pub(crate) use self::supervisor::{
+    audio_only_host, select_capture_backend, CaptureBackend, SegmentOutcome,
+};
 // Every session loop takes the keep-awake block through this one door: the ffmpeg
 // supervisor and the Windows cpal video session (`recorder::cpal_capture`); the
 // two-process fallback runs inside the supervisor and inherits it.
@@ -699,24 +701,17 @@ impl RecorderEngine {
         // call signature is type-checked on macOS even though it only RUNS on
         // Windows (DCE'd elsewhere; `run_cpal_session` has a non-Windows stub).
         let is_asio = crate::audio::asio::is_asio_device(&opts.audio_device_name);
-        // Route the session's capture backend FIRST: audio-only sessions run on
-        // the native engine on both platforms (escape hatches force ffmpeg);
-        // video sessions keep the ffmpeg paths — including Windows' cpal-pipe
-        // session below, which is now VIDEO-ONLY (plus the legacy hatches).
-        let backend = select_capture_backend(
-            cfg!(target_os = "macos"),
-            cfg!(windows),
-            video.is_none(),
-            opts.classic_ffmpeg_audio,
-            opts.classic_directshow,
-            is_asio,
-        );
+        // Route the session's capture backend FIRST: audio-only sessions ALWAYS
+        // run on the native engine (A5b: no escape hatch, no fallback); video
+        // sessions keep the ffmpeg paths — including Windows' cpal-pipe session
+        // below, which is VIDEO-ONLY.
+        let backend = select_capture_backend(cfg!(windows), video.is_none(), is_asio);
         // Features that ONLY the full `run_session` implements on the legacy
         // Windows pipe path (preroll, split, stop-on-silence). For a normal
         // device we route such sessions to dshow so they're never silently
         // dropped; ASIO has no dshow alternative, so we still use cpal but warn
         // the user the feature isn't supported there. (The native engine
-        // supports all three, so this only matters behind the hatches.)
+        // supports all three, so this only matters for video sessions.)
         let needs_dshow_only =
             preroll_clip.is_some() || opts.split_minutes > 0 || opts.stop_on_silence;
         let use_cpal = cfg!(windows)
@@ -757,7 +752,6 @@ impl RecorderEngine {
             video,
             preroll_clip,
             state: self.state_writer(&app, generation),
-            audio_engine: Arc::clone(&self.audio_engine),
             opts,
         };
         let session_state = ctx.state.clone();

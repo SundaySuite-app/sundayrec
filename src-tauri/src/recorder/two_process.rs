@@ -156,7 +156,6 @@ pub(crate) async fn run_two_process_session(
         video: _,
         preroll_clip: _,
         state,
-        audio_engine: _,
     } = ctx;
     let video_temp = derive_temp_path(&opts.output_path, "_vtmp", "mkv");
     let audio_temp = derive_temp_path(&opts.output_path, "_atmp", "mkv");

@@ -88,7 +88,6 @@ pub const MACHINE_LOCAL: &[&str] = &[
     // ── Per-rig escape hatches for the capture engine ("flip on only if the
     //    native engine misbehaves on a specific rig" — their own docs).
     "classicDirectshow",
-    "classicFfmpegAudio",
     // ── The camera: which one, whether it records, and how it is mounted
     //    (`videoFlip` is "a per-machine preference" in its own doc).
     "videoEnabled",
@@ -378,7 +377,6 @@ mod tests {
             channels: ChannelMode::MonoL,
             sample_rate_mode: SampleRate::R48000,
             classic_directshow: true,
-            classic_ffmpeg_audio: true,
             video_enabled: true,
             video_device_name: Some("Logitech BRIO".into()),
             video_device_index: Some(1),
@@ -488,7 +486,6 @@ mod tests {
             "channels",
             "sampleRateMode",
             "classicDirectshow",
-            "classicFfmpegAudio",
             "videoEnabled",
             "videoDeviceName",
             "videoDeviceIndex",

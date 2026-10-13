@@ -991,6 +991,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_database_written_with_classic_ffmpeg_audio_loads_without_error() {
+        // A5b: the audio escape hatch was removed. A database from the versions
+        // that still had it (flag on or off) must load, keep its other choices
+        // (the DirectShow hatch lives until C3), and drop the key on next save.
+        for flag in ["true", "false"] {
+            let (pool, _d) = temp_pool().await;
+            store::set_setting(
+                &pool,
+                SETTINGS_KEY,
+                &format!(
+                    r#"{{"classicFfmpegAudio":{flag},"classicDirectshow":true,"preRollSeconds":25,"churchName":"Domkirken"}}"#
+                ),
+            )
+            .await
+            .unwrap();
+            let loaded = load(&pool).await.expect("an old blob must load");
+            assert!(loaded.classic_directshow);
+            assert_eq!(loaded.pre_roll_seconds, 25);
+            assert_eq!(loaded.church_name, "Domkirken");
+
+            save(&pool, loaded).await.unwrap();
+            let raw = store::get_setting(&pool, SETTINGS_KEY)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                !raw.contains("classicFfmpegAudio"),
+                "the retired key must not be written back: {raw}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn load_returns_defaults_when_stored_blob_is_a_json_non_object() {
         // A syntactically-valid JSON value that isn't an object (e.g. an array or a
         // bare number) also can't populate the struct → defaults, no panic.

@@ -150,7 +150,9 @@ test.describe("opptaksradene", () => {
       "data-anchor",
       "engine",
     );
-    await expect(page.getByTestId("adv-engine")).toBeVisible();
+    // Kortet ankeret peker på: motorraden selv finnes bare på Windows (A5b),
+    // så det er kortet som er beviset på at lenken landet.
+    await expect(page.getByTestId("advanced-recording")).toBeVisible();
   });
 
   test("Avansert er halve Innstillinger, ikke en lenke til et sjuende sted", async ({

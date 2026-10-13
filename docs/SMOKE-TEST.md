@@ -354,9 +354,9 @@ the device.
 ## 5. Record 30 s → stop → history row [HW]
 
 Since **v0.6.0** audio capture is the **native Rust engine** (cpal → ring
-buffer → own WAV writer) — ffmpeg is not in the audio capture path. ffmpeg
-still captures **video** sessions and serves the `classic_ffmpeg_audio` escape
-hatch.
+buffer → own WAV writer) — ffmpeg is not in the audio capture path, and since
+A5b there is no setting or fallback that puts it back (`classic_ffmpeg_audio` is
+gone). ffmpeg still captures **video** sessions.
 
 1. On **Opptak**, press **«Start opptak»** (there is no modal any more — the
    source, the camera and the filename are answered by the cards on this very
@@ -364,8 +364,8 @@ hatch.
    - **Expected:** the overlay comes up and the status line turns red («Tar
      opp» — red never means anything else in this app); with `RUST_LOG=debug`
      the progress you see comes from the **native writer's byte counter** (not
-     ffmpeg `size=` lines — those only appear in video /
-     `classic_ffmpeg_audio` sessions).
+     ffmpeg `size=` lines — those only appear in video
+     sessions).
    - **Also expected, before you press it:** with no source chosen the button
      is off AND says why («Start er sperret til lyden er valgt…») — it is
      `aria-disabled`, so a keyboard user can still reach it to hear the reason.
@@ -437,8 +437,8 @@ process exits.
 This is the **verification loop** for the 2026-06 perf/stability work. The app now
 records its own health automatically during every recording (Pillar 0).
 **Scope note (v0.6.0+):** the ffmpeg-stderr metrics — `drop=`/`dup=` and
-xrun/discontinuity lines — apply to **video / ffmpeg sessions only** (video
-capture and the `classic_ffmpeg_audio` escape hatch). **Native audio sessions**
+xrun/discontinuity lines — apply to **video / ffmpeg sessions only** (the
+ffmpeg audio escape hatch is gone since A5b). **Native audio sessions**
 instead report `ring_overrun_samples`, **`native_xruns`** (the glitches CoreAudio /
 WASAPI themselves report through cpal 0.18 — counted by the engine, no stderr
 involved; shown as part of `xruns` in the diagnose report) plus an **exact
@@ -504,7 +504,7 @@ round, not a bug to report.
 > them from the FIRST known-good capture on the Behringer rig (a clean 15 s take's
 > numbers are the reference). The parsers/verdict are pure + unit-tested; only the
 > real ffmpeg stderr wording + the thresholds need rig confirmation. (The
-> stderr-phrase matching only fires in video / `classic_ffmpeg_audio` sessions —
+> stderr-phrase matching only fires in video sessions —
 > native sessions are judged by overruns + the frame-count cross-check.)
 
 ---

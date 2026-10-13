@@ -237,11 +237,10 @@
         "lede": "Saker som de flesta aldrig behöver röra. Allt här har ett tryggt standardval.",
         "soundLink": "Avancerat ljud",
         "engine": "Inspelningsmotor",
-        "engineDesc": "Byt bara om ljudet hackar.",
+        "engineDesc": "Gäller videoinspelningar. Byt bara om ljudet hackar.",
         "engineConfirm": "Byta inspelningsmotor",
         "engineChoice": {
           "native": "Inbyggd",
-          "ffmpeg": "Klassisk (ffmpeg)",
           "dshow": "Klassisk (DirectShow)"
         },
         "preroll": "Förbuffert",

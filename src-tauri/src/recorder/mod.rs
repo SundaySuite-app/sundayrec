@@ -14,8 +14,10 @@
 //!     with [`cpal_capture`] as the Windows variant (cpal audio piped into the
 //!     ffmpeg that owns the camera) and [`two_process`] as the fallback when one
 //!     ffmpeg cannot hold camera + mic at once.
-//!   - The `classic_ffmpeg_audio` / `classic_directshow` hatches force the legacy
-//!     ffmpeg paths on any session.
+//!   - The `classic_directshow` hatch forces the legacy DirectShow audio on
+//!     Windows VIDEO sessions. (A5b removed `classic_ffmpeg_audio`: there is no
+//!     setting, and no automatic fallback, that sends an audio-only session to
+//!     ffmpeg.)
 //!
 //! Capture is DECOUPLED from delivery: every session writes a crash-tolerant
 //! capture (PCM WAV / Matroska) into a hidden per-session folder, and [`concat`]

@@ -300,7 +300,6 @@ Kolonnen «Leses av» er grep i `crates/` + `src-tauri/` + `legacy/renderer/`.
 | `btn-capture-bench`           | 📏 Presisjonstest (60 sek)         | `audio.captureBench`                                 | knapp       | —                         | —        | —        | —                                      |
 | `btn-audio-diagnose`          | Diagnose                           | `audio.diagnose`                                     | knapp       | —                         | —        | —        | —                                      |
 | radio `sampleRate` ×3         | Automatisk / 44 100 Hz / 48 000 Hz | `audio.sampleRate` (**Hz-navnene har ingen nøkkel**) | radio       | `sampleRateMode`          | `auto`   | rust     | —                                      |
-| `opt-classic-ffmpeg`          | Klassisk opptaksmotor (ffmpeg)     | `audio.classicFfmpeg`                                | bryter      | `classicFfmpegAudio`      | `false`  | rust     | **confirmIf** «Bytte opptaksmotor»     |
 | `opt-classic-dshow`           | Klassisk lyd-motor (DirectShow)    | `audio.classicDshow`                                 | bryter      | `classicDirectshow`       | `false`  | rust     | **confirmIf** · kun Windows            |
 
 ### 2.2 Video — 4 kontroller

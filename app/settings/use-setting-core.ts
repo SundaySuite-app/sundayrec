@@ -264,8 +264,7 @@ export function stepCommitQueue(
 //
 // `runCommit` eier én nøkkel, én forrige verdi og én kvittering. Noen valg er
 // ikke én nøkkel: enhetsvalget er `deviceId` + `deviceName` + `deviceChannels`,
-// opptaksmotoren er `classicFfmpegAudio` + `classicDirectshow`, og OS-varselet
-// er `notifyStart` + `notifyStop`. Tre skrivninger med tre kvitteringer ville
+// og OS-varselet er `notifyStart` + `notifyStop`. Tre skrivninger med tre kvitteringer ville
 // gitt et vindu der basen holder halve valget.
 //
 // Før dette hadde HVER av dem sin egen håndlagde lagringsmodell — patch, lagre,

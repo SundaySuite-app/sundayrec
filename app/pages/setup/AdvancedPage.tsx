@@ -83,7 +83,7 @@ const AUTO_DELETE_DEFAULT_DAYS = 90;
 const AUTO_DELETE_GUARD_DAYS = 30;
 
 /** De tre opptaksmotorene, som ett valg. */
-type Engine = "native" | "ffmpeg" | "dshow";
+type Engine = "native" | "dshow";
 
 export function AdvancedPage() {
   // Nivå 1 og de gamle dyplenkene peker på et sted INNE i denne lista
@@ -169,40 +169,40 @@ export function AdvancedPage() {
 }
 
 /**
- * Opptaksmotor — ett valg, to nøkler.
+ * Opptaksmotor — bare Windows, og bare for videoopptak.
  *
- * `classicFfmpegAudio` og `classicDirectshow` er to brytere i basen, men ETT
- * spørsmål: hvilken motor tar opp? To brytere kan dessuten stå PÅ samtidig,
- * som er en tilstand ingen har en mening om. Derfor én `Select` og én eksplisitt
- * skrivning av begge — samme mønster som OS-varselet på spørsmål 5 og
- * enhetsvalget på spørsmål 1, og av samme grunn: `useSetting` eier én nøkkel og
- * har én kvittering.
+ * Lydopptak har én motor (den innebygde) siden nødluka til ffmpeg gikk ut i A5b,
+ * så på macOS er det ikke noe å velge og raden er borte. På Windows står
+ * DirectShow-valget igjen fordi `classicDirectshow` fortsatt styrer
+ * VIDEOøkter på Windows; det dør sammen med resten av den klassiske videostien
+ * i C3. Valget gjelder bare det: et lydopptak bruker den innebygde motoren uansett
+ * hva raden står på. Raden går fortsatt gjennom `usePatch` (kvittering,
+ * tilbakerulling og bekreftelsen `confirmIfRecordingImminent`), som den gjorde
+ * da den også skrev `classicFfmpegAudio`.
  *
- * DirectShow-valget finnes bare på Windows, slik legacy også gjør det — men
- * avgjørelsen kommer fra `detectOs`, ikke fra en delstreng i UA-linja. En gate
- * som gjetter feil vei viser en bryter som skriver en verdi ingenting leser.
+ * Avgjørelsen om raden finnes kommer fra `detectOs`, ikke fra en delstreng i
+ * UA-linja. En gate som gjetter feil vei viser en bryter som skriver en verdi
+ * ingenting leser.
  *
  * ⚠️ Raden hadde sin EGEN lagringsmodell: patch, lagre, kvittering,
  * tilbakerulling og toast skrevet for hånd. Den manglet nedtellingen på
  * «Lagret ✓» (som ble stående for alltid) og leste tilbakerullingens
  * øyeblikksbilde fra render-lukningen, altså fra en tilstand som kunne være
- * foreldet. `usePatch` er den samme sekvensen som `useSetting` kjører, bare
- * over flere nøkler — og den finnes nettopp fordi «omtrent samme lagring, en
- * gang til» er hvordan de to begynner å oppføre seg forskjellig.
+ * foreldet. `usePatch` er den samme sekvensen som `useSetting` kjører — og den
+ * finnes nettopp fordi «omtrent samme lagring, en gang til» er hvordan de to
+ * begynner å oppføre seg forskjellig.
  */
 function EngineRow() {
   const s = settings.value;
   const os = currentOs();
   const engine = usePatch();
 
-  const current: Engine = s.classicDirectshow
-    ? "dshow"
-    : s.classicFfmpegAudio
-      ? "ffmpeg"
-      : "native";
+  // Ingenting å velge utenfor Windows. Hooken over kjører uansett (hooks kan
+  // ikke stå bak en tidlig retur).
+  if (os !== "win") return null;
 
-  const options: Engine[] =
-    os === "win" ? ["native", "ffmpeg", "dshow"] : ["native", "ffmpeg"];
+  const current: Engine = s.classicDirectshow ? "dshow" : "native";
+  const options: Engine[] = ["native", "dshow"];
 
   return (
     <SettingRow
@@ -220,10 +220,7 @@ function EngineRow() {
           }))}
           onChange={(next) =>
             void engine.write(
-              {
-                classicFfmpegAudio: next === "ffmpeg",
-                classicDirectshow: next === "dshow",
-              },
+              { classicDirectshow: next === "dshow" },
               {
                 // Å bytte motor fire minutter før gudstjenesten er endringen
                 // som stille koster opptaket. Samme vakt som lydenheten og

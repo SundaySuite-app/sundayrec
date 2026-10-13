@@ -726,8 +726,8 @@ pub async fn run_soak(cfg: SoakConfig) -> AppResult<SoakReport> {
 
 /// Delete leftover bench/soak captures under `$TMPDIR`.
 ///
-/// [`crate::test_recording::run_capture_bench`] and its native twin write
-/// `bench_*.wav` into `$TMPDIR/sundayrec-bench/` and remove them on the happy
+/// [`crate::test_recording::run_native_capture_bench`] writes `bench_*.wav`
+/// into `$TMPDIR/sundayrec-bench/` and removes them on the happy
 /// path — but a panic, a kill, or a `SUNDAYREC_BENCH_KEEP` run leaves them, and
 /// nothing ever swept the directory. A 60 s 96 kHz stereo bench is ~23 MB; a
 /// season of rig testing is gigabytes of invisible litter. See E6.5; called

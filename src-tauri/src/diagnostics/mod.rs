@@ -256,25 +256,20 @@ async fn run_capture_probe(
     }
 
     let device = s.device_name.clone().unwrap_or_default();
-    let capture_ok = match crate::test_recording::probe_audio_capture(
-        &device,
-        s.resolved_sample_rate(),
-        s.classic_ffmpeg_audio,
-    )
-    .await
-    {
-        Ok(ok) => Some(ok),
-        Err(e) => {
-            // A device that could not be resolved is already covered by
-            // SR-AUDIO-01/02; reporting `capture_ok: false` on top would claim
-            // the hardware is broken when it is simply absent.
-            tracing::warn!("capture probe skipped: {e}");
-            return CaptureProbeOutcome {
-                skipped_reason: Some(format!("the audio probe could not start: {e}")),
-                ..Default::default()
-            };
-        }
-    };
+    let capture_ok =
+        match crate::test_recording::probe_audio_capture(&device, s.resolved_sample_rate()).await {
+            Ok(ok) => Some(ok),
+            Err(e) => {
+                // A device that could not be resolved is already covered by
+                // SR-AUDIO-01/02; reporting `capture_ok: false` on top would claim
+                // the hardware is broken when it is simply absent.
+                tracing::warn!("capture probe skipped: {e}");
+                return CaptureProbeOutcome {
+                    skipped_reason: Some(format!("the audio probe could not start: {e}")),
+                    ..Default::default()
+                };
+            }
+        };
 
     // 3. Video only when it is actually on — opening the camera on a machine
     //    that records audio only would be a permission prompt for nothing.

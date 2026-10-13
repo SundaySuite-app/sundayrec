@@ -39,7 +39,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   videoFlip: false,
   keepSeparateAudio: true,
   classicDirectshow: false,
-  classicFfmpegAudio: false,
 
   // Audio processing
   channels: "stereo",

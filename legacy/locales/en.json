@@ -237,11 +237,10 @@
         "lede": "Things most people never need to touch. Everything here has a safe default.",
         "soundLink": "Advanced sound",
         "engine": "Recording engine",
-        "engineDesc": "Only switch if the sound stutters.",
+        "engineDesc": "Applies to video recordings. Only switch if the sound stutters.",
         "engineConfirm": "Change the recording engine",
         "engineChoice": {
           "native": "Built-in",
-          "ffmpeg": "Classic (ffmpeg)",
           "dshow": "Classic (DirectShow)"
         },
         "preroll": "Pre-roll buffer",

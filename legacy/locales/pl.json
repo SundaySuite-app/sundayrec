@@ -243,11 +243,10 @@
         "lede": "Rzeczy, których większość nigdy nie musi ruszać. Wszystko tutaj ma bezpieczne ustawienie domyślne.",
         "soundLink": "Zaawansowany dźwięk",
         "engine": "Silnik nagrywania",
-        "engineDesc": "Zmieniaj tylko, jeśli dźwięk się zacina.",
+        "engineDesc": "Dotyczy nagrań wideo. Zmieniaj tylko, jeśli dźwięk się zacina.",
         "engineConfirm": "Zmienić silnik nagrywania",
         "engineChoice": {
           "native": "Wbudowany",
-          "ffmpeg": "Klasyczny (ffmpeg)",
           "dshow": "Klasyczny (DirectShow)"
         },
         "preroll": "Bufor wstępny",

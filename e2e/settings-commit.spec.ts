@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
@@ -30,6 +30,21 @@ const SLOW_SAVE = (ms: number) =>
     (window.__settingsSaves = window.__settingsSaves || []).push(s);
     resolve(s);
   }, ${ms}))`);
+
+/**
+ * Motorraden finnes bare på Windows (A5b: lydopptak har én motor, og
+ * DirectShow-valget gjelder bare videoøkter). Desktop Chrome er aldri Windows
+ * her — `userAgentData.platform` vinner over enhver UA-overstyring — så
+ * plattformen settes før siden starter.
+ */
+async function asWindows(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgentData", {
+      get: () => ({ platform: "Windows", brands: [], mobile: false }),
+    });
+    Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+  });
+}
 
 test.describe("innstillinger — commit", () => {
   test("en redigering som lander midt i en skrivning går ikke tapt", async ({
@@ -81,9 +96,10 @@ test.describe("innstillinger — commit", () => {
     // noen nedtelling, så «Lagret ✓» ble stående ved siden av raden til siden
     // ble forlatt. En kvittering som aldri går bort svarer ikke lenger på «ble
     // DET du nettopp gjorde lagret?».
+    await asWindows(page);
     await boot(page, {
       fixtures: BOOT_FIXTURES,
-      settings: { ...SETTLED_SETTINGS, classicFfmpegAudio: false },
+      settings: { ...SETTLED_SETTINGS, classicDirectshow: false },
       goto: "settings:general",
     });
 
@@ -92,12 +108,12 @@ test.describe("innstillinger — commit", () => {
 
     await page
       .getByTestId("adv-engine-control-input")
-      .selectOption({ value: "ffmpeg" });
+      .selectOption({ value: "dshow" });
 
     await expect(receipt).toHaveText("Lagret ✓");
     // Skrivningen landet på ekte — kvitteringen er ikke bare pynt.
     await expect
-      .poll(async () => (await storedSettings(page)).classicFfmpegAudio)
+      .poll(async () => (await storedSettings(page)).classicDirectshow)
       .toBe(true);
     // …og så er den borte igjen.
     await expect(receipt).toHaveText("", { timeout: 10_000 });
@@ -108,17 +124,18 @@ test.describe("innstillinger — commit", () => {
     // øyeblikksbilde fra render-lukningen. Nå går den gjennom den samme
     // sekvensen som alt annet: en feilet skrivning ruller tilbake OG sier fra,
     // så skjermen aldri står og påstår noe basen ikke har.
+    await asWindows(page);
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
         settings_save: fn("() => { throw new Error('database is locked') }"),
       },
-      settings: { ...SETTLED_SETTINGS, classicFfmpegAudio: false },
+      settings: { ...SETTLED_SETTINGS, classicDirectshow: false },
       goto: "settings:general",
     });
 
     const select = page.getByTestId("adv-engine-control-input");
-    await select.selectOption({ value: "ffmpeg" });
+    await select.selectOption({ value: "dshow" });
 
     await expect(page.getByTestId("adv-engine-receipt")).toHaveText(
       "Ikke lagret",

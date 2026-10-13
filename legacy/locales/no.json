@@ -237,11 +237,10 @@
         "lede": "Ting de fleste aldri trenger å røre. Alt her har en trygg standard.",
         "soundLink": "Avansert lyd",
         "engine": "Opptaksmotor",
-        "engineDesc": "Bytt bare hvis lyden er hakkete.",
+        "engineDesc": "Gjelder videoopptak. Bytt bare hvis lyden er hakkete.",
         "engineConfirm": "Bytte opptaksmotor",
         "engineChoice": {
           "native": "Innebygd",
-          "ffmpeg": "Klassisk (ffmpeg)",
           "dshow": "Klassisk (DirectShow)"
         },
         "preroll": "Forhåndsbuffer",

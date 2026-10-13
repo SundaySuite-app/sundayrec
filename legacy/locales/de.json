@@ -237,11 +237,10 @@
         "lede": "Dinge, die die meisten nie anfassen müssen. Alles hier hat eine sichere Voreinstellung.",
         "soundLink": "Erweiterte Toneinstellungen",
         "engine": "Aufnahme-Engine",
-        "engineDesc": "Nur wechseln, wenn der Ton stottert.",
+        "engineDesc": "Gilt für Videoaufnahmen. Nur wechseln, wenn der Ton stottert.",
         "engineConfirm": "Aufnahme-Engine wechseln",
         "engineChoice": {
           "native": "Eingebaut",
-          "ffmpeg": "Klassisch (ffmpeg)",
           "dshow": "Klassisch (DirectShow)"
         },
         "preroll": "Vorlaufpuffer",
