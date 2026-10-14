@@ -136,6 +136,7 @@ mod tests {
             separate_audio_format: "wav".into(),
             classic_directshow: false,
             video_input: None,
+            video_flip: false,
         }
     }
 

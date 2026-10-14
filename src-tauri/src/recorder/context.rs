@@ -122,6 +122,16 @@ pub(crate) struct SessionContext {
     pub(crate) state: StateWriter,
 }
 
+impl SessionContext {
+    /// A NATIVE video session (C3a): the native engine records the sound and a
+    /// video track beside it. Until C3b retires the ffmpeg video paths, the
+    /// native engine only gets a camera when `start()` routed a video session
+    /// to it on purpose ([`crate::recorder::engine::native_video_enabled`]).
+    pub(crate) fn is_native_video(&self) -> bool {
+        self.video.is_some() && matches!(self.backend, CaptureBackend::NativeAudio { .. })
+    }
+}
+
 /// The three counters ONE segment is driven against.
 ///
 /// They travel together everywhere a segment does — `engine::run_segment`, the

@@ -22,6 +22,19 @@
 //!   `RecordingTelemetry::native_xruns` (A3c)
 //! - `q` + wait (finalize)    → stop flags + bounded joins (writer patches
 //!   the RIFF header and fsyncs)
+//!
+//! **The optional video track (C3a).** A native VIDEO session passes a
+//! [`NativeVideoPlan`]: the segment then also opens the camera and starts a
+//! [`VideoTrack`](super::video::VideoTrack) writing `<fragment>.mkv` beside the
+//! WAV, fed by a clock tap on this stream's callback. Nothing in the select!
+//! loop watches the video — a camera or encoder that dies is logged and
+//! counted, and the sound goes on. The stop order is #341's, carried over from
+//! `cpal_capture.rs`: the CAPTURES stop before the WRITERS (audio stream, then
+//! camera, then the WAV writer, then the video track, which needs the WAV's
+//! final frame count), and every wait has a time limit
+//! ([`stop_native_bounded`]). A writer that dies without a word is announced
+//! (#337's lesson from `two_process.rs`: the sound must never stop silently
+//! while the picture keeps going).
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -56,6 +69,11 @@ use crate::recorder::native_capture::stream::{
     find_device_typed, negotiate_typed, open_host, ring_capacity, CpalHostKind, NativeStartError,
     StreamFaultReport, StreamSink,
 };
+use crate::recorder::native_capture::stream::{CaptureTimeSource, ClockPair, ClockTap};
+use crate::recorder::native_capture::video::{
+    open_camera, FfmpegSink, NativeVideoPlan, SinkFactory, VideoSource, VideoTrack,
+    VideoTrackConfig, VideoTrackStats, ENCODER_EXIT_TIMEOUT, PAIR_RING,
+};
 use crate::recorder::native_capture::writer::{
     spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY, SYNC_EVERY,
 };
@@ -71,6 +89,15 @@ const LEVELS_EVERY: Duration = Duration::from_millis(33);
 /// Bound on joining the stream thread (it polls its stop flag every 50 ms and
 /// then just drops the stream — 5 s only trips on a wedged CoreAudio teardown).
 const STREAM_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Bound on opening the camera at a fragment's start, and on stopping it. A
+/// camera that takes longer is recorded as black — the audio never waits on it.
+const CAMERA_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Bound on the video track finishing: its last slots, then the encoder's own
+/// exit (itself bounded by [`ENCODER_EXIT_TIMEOUT`]). Past it the encoder is
+/// killed; the MKV is crash-tolerant and keeps what it has.
+const VIDEO_FINISH_TIMEOUT: Duration = Duration::from_secs(5 + ENCODER_EXIT_TIMEOUT.as_secs());
 
 /// One live native capture: the `!Send` stream on its own thread, the writer
 /// thread, and the channels/counters the runner selects over.
@@ -98,6 +125,10 @@ pub struct NativeSegment {
     /// RECONNECT must find again, exactly, rather than whatever the stored
     /// label fuzzy-matches (`None` only if cpal could not report a name).
     pub device_name: Option<String>,
+    /// The video track of a native VIDEO session (C3a); `None` for audio-only.
+    video: Option<VideoTrack>,
+    /// The video track's counters, read once it has stopped.
+    pub video_stats: Option<VideoTrackStats>,
 }
 
 /// Open the device, negotiate its format, and start the full native stack
@@ -117,7 +148,7 @@ pub async fn spawn_native_segment(
     output_path: &str,
     pinned_rate: Option<u32>,
 ) -> AppResult<NativeSegment> {
-    spawn_native_segment_for(host, opts, output_path, pinned_rate, None)
+    spawn_native_segment_for(host, opts, output_path, pinned_rate, None, None)
         .await
         .map_err(NativeStartError::into_app_error)
 }
@@ -132,14 +163,18 @@ pub async fn spawn_native_segment(
 /// sentence is picked by on a first start, and what the reconnect policy reads
 /// on a reopen (where a missing device is transient, a refused permission is not
 /// — see [`NativeStartError::for_reopen`]).
+///
+/// `video` is the session's [`NativeVideoPlan`] for a native VIDEO session
+/// (C3a): the fragment then also records `<output>.mkv`. `None` = audio-only.
 pub async fn spawn_native_segment_for(
     host: CpalHostKind,
     opts: &RecordingOpts,
     output_path: &str,
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
+    video: Option<&NativeVideoPlan>,
 ) -> Result<NativeSegment, NativeStartError> {
-    spawn_native_segment_typed(host, opts, output_path, pinned_rate, reopen)
+    spawn_native_segment_typed(host, opts, output_path, pinned_rate, reopen, video)
         .await
         .map_err(|e| if reopen.is_some() { e.for_reopen() } else { e })
 }
@@ -150,6 +185,7 @@ async fn spawn_native_segment_typed(
     output_path: &str,
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
+    video_plan: Option<&NativeVideoPlan>,
 ) -> Result<NativeSegment, NativeStartError> {
     let exact = reopen.map(str::to_owned);
     let device_name = exact
@@ -264,6 +300,26 @@ async fn spawn_native_segment_typed(
     )
     .map_err(|e| NativeStartError::other(format!("could not spawn wav writer: {e}")))?;
 
+    // The video track (C3a), before the stream: the stream's callback feeds
+    // its clock, and the camera should be delivering by the first slot. A
+    // camera that cannot open costs the PICTURE (black slots), never the start.
+    let (clock_tap, video) = match video_plan {
+        None => (None, None),
+        Some(plan) => {
+            let (pair_prod, pair_cons) = ringbuf::HeapRb::<ClockPair>::new(PAIR_RING).split();
+            let mkv = sundayrec_core::video_track::video_fragment_path(output_path);
+            let track = start_video_track(plan, &mkv, spec.sample_rate, pair_cons).await;
+            (
+                Some(ClockTap::new(
+                    pair_prod,
+                    CaptureTimeSource::for_host(host),
+                    spec.sample_rate,
+                )),
+                track,
+            )
+        }
+    };
+
     // Stream thread: reopen host+device (the Stream is !Send), build, play,
     // report readiness over an async oneshot, park until stopped.
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), NativeStartError>>();
@@ -309,6 +365,7 @@ async fn spawn_native_segment_typed(
                         plan,
                         prod,
                         overrun: st_overrun,
+                        clock: clock_tap,
                     },
                     err_fn,
                 )?;
@@ -346,6 +403,8 @@ async fn spawn_native_segment_typed(
         frames,
         spec,
         device_name: opened_name,
+        video,
+        video_stats: None,
     };
 
     match ready_rx.await {
@@ -363,20 +422,99 @@ async fn spawn_native_segment_typed(
     }
 }
 
+/// Open the camera (bounded) and start the fragment's video track. `None`
+/// only if the track's thread could not be spawned at all; a camera that will
+/// not open still gets a track (black slots), so the MKV matches the WAV.
+async fn start_video_track(
+    plan: &NativeVideoPlan,
+    mkv: &str,
+    sample_rate: u32,
+    pairs: ringbuf::HeapCons<ClockPair>,
+) -> Option<VideoTrack> {
+    let (name, w, h, fps) = (plan.camera_name.clone(), plan.width, plan.height, plan.fps);
+    let opened = tokio::time::timeout(
+        CAMERA_TIMEOUT,
+        tokio::task::spawn_blocking(move || open_camera(&name, w, h, fps)),
+    )
+    .await;
+    let mut spec = sundayrec_core::video_track::VideoTrackSpec {
+        width: plan.width,
+        height: plan.height,
+        fps_num: plan.fps.num,
+        fps_den: plan.fps.den,
+        input: sundayrec_core::video_track::RawPixelFormat::Nv12,
+        flip: plan.flip,
+    };
+    let source: Option<Box<dyn VideoSource>> = match opened {
+        Ok(Ok(Ok((capture, cam_spec)))) => {
+            spec = sundayrec_core::video_track::VideoTrackSpec {
+                flip: plan.flip,
+                ..cam_spec
+            };
+            Some(Box::new(capture))
+        }
+        Ok(Ok(Err(e))) => {
+            tracing::error!(camera = %plan.camera_name, "video track: the camera did not open ({e}) — recording black, the sound is unaffected");
+            None
+        }
+        _ => {
+            tracing::error!(camera = %plan.camera_name, "video track: the camera did not open in time — recording black, the sound is unaffected");
+            None
+        }
+    };
+    let mkv_path = std::path::PathBuf::from(mkv);
+    let factory_path = mkv_path.clone();
+    let child = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let factory_child = std::sync::Arc::clone(&child);
+    let make: SinkFactory = Box::new(move |spec, encoder| {
+        FfmpegSink::spawn(
+            spec,
+            encoder,
+            &factory_path,
+            std::sync::Arc::clone(&factory_child),
+        )
+    });
+    match VideoTrack::spawn_with_child(
+        VideoTrackConfig {
+            mkv_path,
+            spec,
+            encoder: plan.encoder,
+            sample_rate,
+        },
+        source,
+        pairs,
+        make,
+        child,
+    ) {
+        Ok(t) => Some(t),
+        Err(e) => {
+            tracing::error!("video track: could not start its thread ({e}) — recording sound only");
+            None
+        }
+    }
+}
+
 /// Tear down a stack that must not record (a failed spawn, or a reconnect that
 /// came back at an incompatible rate), and remove the WAV when it holds no
-/// audio so the next attempt starts from a clean capture dir.
+/// audio so the next attempt starts from a clean capture dir (and its MKV with
+/// it — a video fragment without its audio fragment is never delivered).
 pub(crate) async fn abort_native_segment(seg: &mut NativeSegment, output_path: &str) {
     stop_native_bounded(seg).await;
     if seg.frames.load(Ordering::Relaxed) == 0 {
         let _ = tokio::fs::remove_file(output_path).await;
+        let _ = tokio::fs::remove_file(sundayrec_core::video_track::video_fragment_path(
+            output_path,
+        ))
+        .await;
     }
 }
 
-/// Stop the stack in order — stream first (producer gone), then the writer
-/// (drains the ring, patches the header, fsyncs) — with bounded joins so a
-/// wedged teardown can never freeze the supervisor (the "UI stuck on
-/// Stopping" class of bug).
+/// Stop the stack in order — the CAPTURES first (audio stream, then camera:
+/// producers gone), then the WRITERS (the WAV writer drains the ring, patches
+/// the header, fsyncs; then the video track decides its last slots up to the
+/// WAV's final length and closes its encoder) — with a time limit on every
+/// wait so a wedged teardown can never freeze the supervisor (the "UI stuck on
+/// Stopping" class of bug). This is #341's order from `cpal_capture.rs`.
 pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
     seg.stream_stop.store(true, Ordering::Relaxed);
     if let Some(h) = seg.stream_join.take() {
@@ -388,6 +526,13 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
             .is_err()
         {
             tracing::warn!("native capture: stream thread did not stop in time — continuing");
+        }
+    }
+    // The camera next: a capture, so before any writer.
+    if let Some(source) = seg.video.as_mut().and_then(VideoTrack::take_source) {
+        let stop = tokio::task::spawn_blocking(move || source.stop());
+        if tokio::time::timeout(CAMERA_TIMEOUT, stop).await.is_err() {
+            tracing::warn!("video track: the camera did not stop in time — continuing");
         }
     }
     seg.writer_stop.store(true, Ordering::Relaxed);
@@ -413,6 +558,29 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
                 tracing::warn!("native capture: writer did not finalize in time");
             }
         }
+    }
+    // Last, the video track: it needs the WAV's final length to write exactly
+    // as many slots as the audio has (`slot_count`), so it finishes after the
+    // writer has drained.
+    if let Some(mut video) = seg.video.take() {
+        video.request_finish(seg.frames.load(Ordering::Relaxed));
+        if let Some(h) = video.take_join() {
+            let join = tokio::task::spawn_blocking(move || h.join());
+            let mut join = std::pin::pin!(join);
+            if tokio::time::timeout(VIDEO_FINISH_TIMEOUT, &mut join)
+                .await
+                .is_err()
+            {
+                // A wedged encoder that stopped reading: kill it, which fails
+                // the blocked write, and give the thread a moment to exit.
+                tracing::warn!("video track: did not finish in time — killing the encoder");
+                video.kill_encoder();
+                let _ = tokio::time::timeout(Duration::from_secs(2), join).await;
+            }
+        }
+        let stats = video.stats();
+        tracing::info!(?stats, mkv = %video.mkv_path.display(), "video track: fragment finished");
+        seg.video_stats = Some(stats);
     }
 }
 
@@ -552,6 +720,10 @@ pub(crate) trait SegmentSignals {
     fn take_peak_dbfs(&self, channel: usize) -> f32;
     /// Stop the stack with bounded joins (stream first, then writer).
     fn stop(&mut self) -> impl std::future::Future<Output = ()> + Send;
+    /// The video track's counters once stopped (C3a); `None` for audio-only.
+    fn video_stats(&self) -> Option<VideoTrackStats> {
+        None
+    }
 }
 
 impl SegmentSignals for NativeSegment {
@@ -601,6 +773,10 @@ impl SegmentSignals for NativeSegment {
 
     async fn stop(&mut self) {
         stop_native_bounded(self).await;
+    }
+
+    fn video_stats(&self) -> Option<VideoTrackStats> {
+        self.video_stats
     }
 }
 
@@ -918,7 +1094,15 @@ where
                     }
                     SegmentSignal::WriterGone => {
                         // Writer gone without an error event — treat as an
-                        // unexpected exit; the recovery policy decides.
+                        // unexpected exit; the recovery policy decides. SAY so
+                        // (#337, inherited from `two_process.rs`): in a video
+                        // session the picture can keep going while the sound
+                        // has stopped, and a silent reconnect would leave the
+                        // volunteer believing the sound was still recorded.
+                        sink.warning(
+                            "device_disconnected",
+                            "the audio capture stopped unexpectedly — reconnecting",
+                        );
                         seg.stop().await;
                         break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None };
                     }
@@ -1106,6 +1290,16 @@ where
     let xruns = seg.xruns();
     if xruns > 0 {
         tracing::warn!(xruns, "native capture: the audio system reported xruns");
+    }
+    // C3a: the video track's account of this fragment. The telemetry counter
+    // (`video.frames_dropped`) is C3c's; until then it is in the log.
+    if let Some(v) = seg.video_stats() {
+        if v.queue_dropped > 0 || v.encoder_failed {
+            tracing::warn!(
+                ?v,
+                "video track: frames dropped or the encoder failed this fragment"
+            );
+        }
     }
     {
         let mut t = lock_recover(&telemetry);
@@ -1770,7 +1964,9 @@ mod tests {
 
     /// The writer dying WITHOUT an error event — its channel simply closes.
     /// This must not be mistaken for a graceful stop: the supervisor has to see
-    /// an unexpected exit so the recovery policy runs.
+    /// an unexpected exit so the recovery policy runs. And it must be SAID
+    /// (#337): with a video track the picture keeps going, so a silent
+    /// reconnect would hide that the sound stopped.
     #[tokio::test(start_paused = true)]
     async fn a_writer_that_vanishes_is_an_unexpected_exit() {
         let mut r = rig();
@@ -1797,6 +1993,14 @@ mod tests {
             }
         );
         assert_eq!(r.stops.load(Ordering::Relaxed), 1);
+        assert!(
+            r.sink.has(&Ev::Warning("device_disconnected".into())),
+            "a dead audio writer is announced, not swallowed"
+        );
+        assert!(
+            !r.sink.has(&Ev::Error("device_disconnected".into())),
+            "…as a warning: the session reconnects"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -2518,6 +2722,7 @@ mod tests {
             separate_audio_format: "wav".into(),
             classic_directshow: false,
             video_input: None,
+            video_flip: false,
         }
     }
 
