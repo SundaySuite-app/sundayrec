@@ -1,7 +1,7 @@
 {
   "name": "sundayrec",
   "private": true,
-  "version": "0.25.3",
+  "version": "0.26.0-beta.1",
   "license": "MIT",
   "type": "module",
   "scripts": {

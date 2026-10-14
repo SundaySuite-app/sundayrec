@@ -5,6 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+## v0.26.0-beta.1 — én lydmotor, tydeligere feilmeldinger, til beta-ringen
+
+Første del av ombyggingen. Alle lydopptak går nå gjennom appens egen lydmotor,
+og appen sier fra hvorfor et opptak ikke startet. Kommer først til beta-ringen,
+fordi selve opptaket er bygd om innvendig: det skal bevises på en ekte søndag
+før stabil.
+
 - **Live nivåmåler i ffmpeg-opptak på Windows avviste hele opptaket.** Filteret
   som sender nivåene til måleren hadde feil tegnbeskyttelse for Windows, så
   ffmpeg ga opp med «No option name near '2'» før ett eneste lydsegment var
