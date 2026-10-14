@@ -115,8 +115,8 @@ pub(crate) use self::process::{sleep_opt, stop_and_wait_bounded, wait_opt};
 pub(crate) use self::reader::error_code_str;
 use self::supervisor::run_session;
 pub(crate) use self::supervisor::{
-    audio_only_host, needs_ffmpeg_device_enumeration, select_capture_backend, CaptureBackend,
-    SegmentOutcome,
+    audio_only_host, native_video_enabled, needs_ffmpeg_device_enumeration, select_capture_backend,
+    CaptureBackend, SegmentOutcome,
 };
 // Every session loop takes the keep-awake block through this one door: the ffmpeg
 // supervisor and the Windows cpal video session (`recorder::cpal_capture`); the
@@ -719,7 +719,18 @@ impl RecorderEngine {
         // run on the native engine (A5b: no escape hatch, no fallback); video
         // sessions keep the ffmpeg paths — including Windows' cpal-pipe session
         // below, which is VIDEO-ONLY.
-        let backend = select_capture_backend(cfg!(windows), video.is_none(), is_asio);
+        let backend = if video.is_some() && native_video_enabled() {
+            // C3a, behind the developer switch: the native engine records the
+            // sound and a camera track beside it. Not the default until C3b.
+            tracing::info!(
+                "recorder: video session routed to the NATIVE engine (SUNDAYREC_NATIVE_VIDEO=1)"
+            );
+            CaptureBackend::NativeAudio {
+                host: audio_only_host(cfg!(windows), is_asio),
+            }
+        } else {
+            select_capture_backend(cfg!(windows), video.is_none(), is_asio)
+        };
         // Features that ONLY the full `run_session` implements on the legacy
         // Windows pipe path (preroll, split, stop-on-silence). For a normal
         // device we route such sessions to dshow so they're never silently

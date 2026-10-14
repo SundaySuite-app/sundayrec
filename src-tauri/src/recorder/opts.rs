@@ -172,6 +172,9 @@ pub(crate) fn build_opts_in(
         classic_directshow: settings.classic_directshow,
         // Resolved server-side by the recorder's camera-mode probe at start.
         video_input: None,
+        // C3a: the native video track mirrors with `hflip` (the ffmpeg paths
+        // never did — the setting only flipped the preview).
+        video_flip: settings.video_flip,
     })
 }
 

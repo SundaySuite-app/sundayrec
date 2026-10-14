@@ -16,8 +16,9 @@
 //!                          meter routed chs)             header patch)
 //! ```
 //!
-//! ffmpeg keeps every *offline* job: delivery transcode (WAV→FLAC/mp3), the
-//! pre-roll clip, fragment concat, recovery finalise, and all video sessions.
+//! ffmpeg keeps every *offline* job — delivery transcode (WAV→FLAC/mp3), the
+//! pre-roll clip, fragment concat, recovery finalise — and, for a video
+//! session, ENCODING the picture (never capturing it, and never the sound).
 //! The capture fragments land at the exact paths the ffmpeg path used, so the
 //! recovery/concat/delivery pipeline is untouched.
 //!
@@ -32,8 +33,17 @@
 //! - [`preroll`] — the rolling PRE-ROLL buffer: the same stack writing rotating
 //!   segment files, doubling as the `vu://levels` emitter while it holds the
 //!   device.
+//! - [`video`] — the OPTIONAL video track (C3a): the camera's frames, locked to
+//!   this engine's audio clock by the core conformer, encoded by a video-only
+//!   ffmpeg into an MKV beside each WAV fragment. The sound never depends on
+//!   it. Delivery muxes WAV + MKV into the mp4 (`concat`).
+//!
+//! Video sessions still run on the ffmpeg engine by default; the native one
+//! takes them only behind `SUNDAYREC_NATIVE_VIDEO=1` until C3b retires the old
+//! paths.
 
 pub mod preroll;
 pub mod segment;
 pub mod stream;
+pub mod video;
 pub mod writer;

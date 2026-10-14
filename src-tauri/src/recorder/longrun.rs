@@ -431,6 +431,7 @@ impl HeadlessSession {
             bitrate_kbps: 192,
             mode: DeliveryMode::AudioEncode,
             hvc1_tag: false,
+            keep_audio_capture: false,
         };
         let mut delivered = true;
         let final_path = match finalize_deliverable(deliverable, None, Some(&spec)).await {
@@ -500,6 +501,7 @@ impl HeadlessSession {
                     primary_path: d.primary_path,
                     fragments: d.fragments,
                     started_at_ms: d.started_at_ms,
+                    video_fragments: Vec::new(),
                 })
                 .collect(),
         }
@@ -1066,6 +1068,7 @@ mod tests {
             bitrate_kbps: 192,
             mode: DeliveryMode::AudioEncode,
             hvc1_tag: false,
+            keep_audio_capture: false,
         };
 
         // Kill the moment the encode's temp appears — that is the encode, and
@@ -1149,6 +1152,7 @@ mod tests {
                 // `_r1` was merged into the primary and deleted by the concat.
                 fragments: vec![a.clone()],
                 started_at_ms: deliverable.started_at_ms,
+                video_fragments: Vec::new(),
             }],
         };
         let recovered = crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
@@ -1715,6 +1719,509 @@ mod tests {
                 (secs - expect_secs).abs() < 0.05,
                 "ffprobe says {secs:.3} s, the payload says {expect_secs:.3} s"
             );
+        }
+    }
+
+    /// C3a — the native VIDEO session, end to end with real files and a real
+    /// ffmpeg, no camera and no microphone: a synthetic NV12 source through
+    /// the same never-blocking queue a camera callback uses, a synthetic audio
+    /// stream through the real WAV writer, and the audio-clock pairs a cpal
+    /// callback would stamp, all on the host clock. What runs for real: the
+    /// WAV writer, the video track (conformer + encoder feed), the video-only
+    /// ffmpeg, the MKV, the stop order, the fragment join, the mux, the
+    /// manifest and the recovery scan.
+    ///
+    /// What does NOT run here (owner/rig: RIG-DAY «(v)»): a real camera, a
+    /// real sound card, and the cpal capture timestamp itself.
+    #[cfg(unix)]
+    mod native_video {
+        use super::*;
+        use crate::recorder::native_capture::stream::ClockPair;
+        use crate::recorder::native_capture::video::{
+            open_camera, FfmpegSink, SinkFactory, SyntheticSource, VideoSource, VideoTrack,
+            VideoTrackConfig, VideoTrackStats, PAIR_RING, QUEUE_FRAMES,
+        };
+        use crate::recorder::native_capture::writer::{
+            spawn_wav_writer, WriterConfig, FLUSH_EVERY, SYNC_EVERY,
+        };
+        use ringbuf::traits::{Producer, Split};
+        use ringbuf::HeapRb;
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        use sundayrec_core::recorder::Deliverable;
+        use sundayrec_core::recovery::{AudioEncodeManifest, DeliverableManifest, SessionManifest};
+        use sundayrec_core::silence::SilenceDetector;
+        use sundayrec_core::video_conform::{slot_count, Fps};
+        use sundayrec_core::video_encoder::VideoEncoder;
+        use sundayrec_core::video_track::{video_fragment_path, RawPixelFormat, VideoTrackSpec};
+        use sundayrec_core::wav::WavSpec;
+
+        const VRATE: u32 = 48_000;
+        const W: u32 = 320;
+        const H: u32 = 240;
+        const ROLE_ENV: &str = "SUNDAYREC_NATIVE_VIDEO_CHILD_PATH";
+        const CHILD_TEST: &str = "recorder::longrun::tests::native_video::child_role";
+        const PROGRESS_TAG: &str = "NATIVE_VIDEO_FRAMES ";
+        /// Set (to a camera name) by the owner-run real-camera test: the
+        /// stand-in then records from that camera instead of the synthetic one.
+        const CAMERA_ENV: &str = "SUNDAYREC_NATIVE_VIDEO_CHILD_CAMERA";
+
+        /// One live native video fragment.
+        struct LiveFragment {
+            audio_stop: Arc<AtomicBool>,
+            audio: Option<std::thread::JoinHandle<()>>,
+            writer_stop: Arc<AtomicBool>,
+            writer: Option<
+                std::thread::JoinHandle<
+                    Result<crate::recorder::native_capture::writer::WriterSummary, String>,
+                >,
+            >,
+            frames: Arc<AtomicU64>,
+            track: VideoTrack,
+        }
+
+        /// Start a fragment writing `wav` and its MKV, like
+        /// `spawn_native_segment` does with a video plan.
+        fn start_fragment(wav: &Path, camera: Option<&str>) -> LiveFragment {
+            let spec = WavSpec {
+                channels: 2,
+                sample_rate: VRATE,
+            };
+            let (mut prod, cons) = HeapRb::<f32>::new(1 << 18).split();
+            let writer_stop = Arc::new(AtomicBool::new(false));
+            let frames = Arc::new(AtomicU64::new(0));
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let writer = spawn_wav_writer(
+                cons,
+                WriterConfig {
+                    path: wav.to_path_buf(),
+                    spec,
+                    flush_every: FLUSH_EVERY,
+                    sync_every: SYNC_EVERY,
+                    silence: SilenceDetector::new(-50.0, VRATE),
+                    sync_count: None,
+                },
+                Arc::clone(&writer_stop),
+                Arc::new(AtomicU64::new(0)),
+                Arc::clone(&frames),
+                tx,
+            )
+            .expect("spawn writer");
+
+            let (mut pairs, pair_cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
+            let mkv = PathBuf::from(video_fragment_path(&wav.to_string_lossy()));
+            let child = Arc::new(std::sync::Mutex::new(None));
+            let make: SinkFactory = {
+                let (mkv, child) = (mkv.clone(), Arc::clone(&child));
+                Box::new(move |spec, enc| FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child)))
+            };
+            let (source, spec): (Box<dyn VideoSource>, VideoTrackSpec) = match camera {
+                None => (
+                    Box::new(SyntheticSource::start(W, H, 30.0, QUEUE_FRAMES)),
+                    VideoTrackSpec {
+                        width: W,
+                        height: H,
+                        fps_num: 30,
+                        fps_den: 1,
+                        input: RawPixelFormat::Nv12,
+                        flip: false,
+                    },
+                ),
+                Some(name) => {
+                    let (cap, spec) =
+                        open_camera(name, 1280, 720, Fps::new(30, 1)).expect("open the camera");
+                    (Box::new(cap), spec)
+                }
+            };
+            let track = VideoTrack::spawn_with_child(
+                VideoTrackConfig {
+                    mkv_path: mkv,
+                    spec,
+                    encoder: VideoEncoder::Software,
+                    sample_rate: VRATE,
+                },
+                Some(source),
+                pair_cons,
+                make,
+                child,
+            )
+            .expect("spawn track");
+
+            // The "sound card": realtime-paced 10 ms blocks into the ring, and
+            // one clock pair per block, stamped with the block's capture time
+            // on the host clock (what `ClockTap` does with cpal's timestamp).
+            let audio_stop = Arc::new(AtomicBool::new(false));
+            let audio = {
+                let stop = Arc::clone(&audio_stop);
+                std::thread::spawn(move || {
+                    let block = (VRATE / 100) as u64;
+                    let start_host = crate::camera::host_now_ns();
+                    let start = std::time::Instant::now();
+                    let mut sample = 0u64;
+                    while !stop.load(Ordering::Relaxed) {
+                        let due = (start.elapsed().as_secs_f64() * f64::from(VRATE)) as u64;
+                        while sample + block <= due {
+                            let data: Vec<f32> = (0..block)
+                                .flat_map(|i| {
+                                    let t = (sample + i) as f32 / VRATE as f32;
+                                    let v = 0.4 * (t * 440.0 * std::f32::consts::TAU).sin();
+                                    [v, v]
+                                })
+                                .collect();
+                            assert_eq!(prod.push_slice(&data), data.len(), "ring never fills");
+                            let _ = pairs.try_push(ClockPair {
+                                sample,
+                                host_ns: start_host + sample * 1_000_000_000 / u64::from(VRATE),
+                            });
+                            sample += block;
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                })
+            };
+            LiveFragment {
+                audio_stop,
+                audio: Some(audio),
+                writer_stop,
+                writer: Some(writer),
+                frames,
+                track,
+            }
+        }
+
+        /// Stop in #341's order: captures (audio, camera), then the WAV
+        /// writer, then the video track with the WAV's final length.
+        fn stop_fragment(mut f: LiveFragment) -> (u64, VideoTrackStats) {
+            f.audio_stop.store(true, Ordering::Relaxed);
+            f.audio.take().unwrap().join().unwrap();
+            if let Some(src) = f.track.take_source() {
+                src.stop();
+            }
+            f.writer_stop.store(true, Ordering::Relaxed);
+            let summary = f.writer.take().unwrap().join().unwrap().expect("writer");
+            f.track.request_finish(summary.frames);
+            f.track.take_join().unwrap().join().unwrap();
+            (summary.frames, f.track.stats())
+        }
+
+        fn ffprobe(args: &[&str], path: &Path) -> String {
+            let out = Command::new(crate::media::ffmpeg::ffprobe_path())
+                .args(["-v", "error"])
+                .args(args)
+                .arg(path)
+                .output()
+                .expect("ffprobe");
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        }
+
+        fn video_packets(path: &Path) -> u64 {
+            ffprobe(
+                &[
+                    "-count_packets",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=nb_read_packets",
+                    "-of",
+                    "csv=p=0",
+                ],
+                path,
+            )
+            .parse()
+            .unwrap_or(0)
+        }
+
+        /// `(video seconds, audio seconds)` of a delivered file.
+        fn stream_secs(path: &Path) -> (f64, f64) {
+            let get = |sel: &str| -> f64 {
+                ffprobe(
+                    &[
+                        "-select_streams",
+                        sel,
+                        "-show_entries",
+                        "stream=duration",
+                        "-of",
+                        "csv=p=0",
+                    ],
+                    path,
+                )
+                .parse()
+                .unwrap_or(0.0)
+            };
+            (get("v:0"), get("a:0"))
+        }
+
+        fn manifest_for(save: &Path, d: &Deliverable, start_ms: u64) -> SessionManifest {
+            SessionManifest {
+                recovery_attempts: 0,
+                session_id: start_ms.to_string(),
+                device_name: "synthetic".into(),
+                session_start_ms: start_ms,
+                preroll_clip_path: None,
+                delivery_encode: Some(AudioEncodeManifest {
+                    delivery_dir: save.to_string_lossy().into_owned(),
+                    ext: "mp4".into(),
+                    channels: 2,
+                    sample_rate: None,
+                    bitrate_kbps: 192,
+                    mode: DeliveryMode::MuxAudioVideo,
+                    hvc1_tag: false,
+                }),
+                deliverables: vec![DeliverableManifest::from_deliverable_with_video(d)],
+            }
+        }
+
+        /// A clean session of two fragments (a reconnect in between): each
+        /// fragment is a WAV AND an MKV with exactly one video frame per slot
+        /// of its audio; the manifest lists both; the delivery is ONE mp4 with
+        /// the video stream-copied and the sound in AAC, as long as the audio.
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_native_video_session_gives_wav_mkv_and_one_mp4() {
+            let Some(_pin) = EnvPin::acquire(None) else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let save = tempfile::tempdir().expect("tempdir");
+            let cap = save.path().join(".sundayrec-capture-1");
+            std::fs::create_dir_all(&cap).unwrap();
+            let wav0 = cap.join("service.wav");
+            let wav1 = cap.join("service_r1.wav");
+
+            let mut per_fragment = Vec::new();
+            for (wav, secs) in [(&wav0, 2.5), (&wav1, 1.5)] {
+                let live = start_fragment(wav, None);
+                tokio::time::sleep(Duration::from_secs_f64(secs)).await;
+                let (frames, stats) = tokio::task::spawn_blocking(move || stop_fragment(live))
+                    .await
+                    .unwrap();
+                let mkv = PathBuf::from(video_fragment_path(&wav.to_string_lossy()));
+                assert!(
+                    wav.exists() && mkv.exists(),
+                    "both files of the fragment exist"
+                );
+                let slots = slot_count(frames, VRATE, Fps::new(30, 1));
+                assert_eq!(stats.slots_written, slots, "{stats:?}");
+                assert_eq!(
+                    video_packets(&mkv),
+                    slots,
+                    "the MKV holds one frame per slot"
+                );
+                assert!(
+                    stats.new as f64 > slots as f64 * 0.8,
+                    "camera pictures, not black: {stats:?}"
+                );
+                assert_eq!(stats.queue_dropped, 0, "{stats:?}");
+                per_fragment.push(frames);
+            }
+
+            let d = Deliverable {
+                primary_path: wav0.to_string_lossy().into_owned(),
+                fragments: vec![
+                    wav0.to_string_lossy().into_owned(),
+                    wav1.to_string_lossy().into_owned(),
+                ],
+                started_at_ms: 1,
+            };
+            let manifest = manifest_for(save.path(), &d, 1);
+            let listed = sundayrec_core::recovery::all_fragment_paths(&manifest);
+            for f in [&wav0, &wav1] {
+                assert!(listed.contains(&f.to_string_lossy().into_owned()));
+                assert!(listed.contains(&video_fragment_path(&f.to_string_lossy())));
+            }
+
+            let spec = DeliverySpec::from_manifest(
+                manifest.delivery_encode.as_ref().unwrap(),
+                &d.primary_path,
+            );
+            let out = finalize_deliverable(&d, None, Some(&spec))
+                .await
+                .expect("delivered");
+            assert!(out.ends_with("service.mp4"), "{out}");
+            assert!(output_is_valid(Path::new(&out)).await);
+            let (v, a) = stream_secs(Path::new(&out));
+            let audio_secs = per_fragment.iter().sum::<u64>() as f64 / f64::from(VRATE);
+            assert!(
+                (a - audio_secs).abs() < 0.06,
+                "audio {a:.3} s vs captured {audio_secs:.3} s"
+            );
+            assert!((v - a).abs() < 0.1, "video {v:.3} s vs audio {a:.3} s");
+            // The capture folder is empty: the WAVs and MKVs became the mp4.
+            assert_eq!(
+                std::fs::read_dir(&cap).unwrap().count(),
+                0,
+                "capture files left behind"
+            );
+        }
+
+        /// The stand-in app process: a native video fragment that runs until
+        /// it is killed, reporting the WAV writer's frame count on stdout.
+        #[test]
+        fn child_role() {
+            let Ok(path) = std::env::var(ROLE_ENV) else {
+                return;
+            };
+            std::thread::spawn(|| {
+                std::thread::sleep(Duration::from_secs(120));
+                std::process::exit(3);
+            });
+            let camera = std::env::var(CAMERA_ENV).ok().filter(|c| !c.is_empty());
+            let live = start_fragment(Path::new(&path), camera.as_deref());
+            loop {
+                println!("{PROGRESS_TAG}{}", live.frames.load(Ordering::Relaxed));
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+
+        struct ChildGuard(std::process::Child);
+        impl Drop for ChildGuard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        fn encoder_alive(mkv: &Path) -> bool {
+            Command::new("pgrep")
+                .args(["-f", &mkv.to_string_lossy()])
+                .stdout(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        }
+
+        /// `kill -9` of the app mid-recording; `kill_encoder_too` also
+        /// SIGKILLs the video ffmpeg (the worst case: no trailer, no flush).
+        /// The real recovery scan must turn what is left into a playable mp4
+        /// with picture and sound, the sound whole.
+        async fn killed_mid_recording_is_recovered(kill_encoder_too: bool, camera: Option<&str>) {
+            let Some(_pin) = EnvPin::acquire(None) else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let save = tempfile::tempdir().expect("tempdir");
+            let pool = temp_pool(save.path()).await;
+            let cap = save.path().join(".sundayrec-capture-7");
+            std::fs::create_dir_all(&cap).unwrap();
+            let wav = cap.join("service.wav");
+            let mkv = PathBuf::from(video_fragment_path(&wav.to_string_lossy()));
+
+            let mut child = Command::new(std::env::current_exe().expect("test exe"))
+                .args(["--exact", CHILD_TEST, "--nocapture", "--test-threads=1"])
+                .env(ROLE_ENV, &wav)
+                .env(CAMERA_ENV, camera.unwrap_or_default())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn the stand-in app");
+            let stdout = child.stdout.take().unwrap();
+            let mut guard = ChildGuard(child);
+            let latest = Arc::new(AtomicU64::new(0));
+            let reader = {
+                let latest = Arc::clone(&latest);
+                std::thread::spawn(move || {
+                    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        if let Some(n) = line.strip_prefix(PROGRESS_TAG) {
+                            if let Ok(n) = n.trim().parse::<u64>() {
+                                latest.store(n, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                })
+            };
+            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            while latest.load(Ordering::Relaxed) < 4 * u64::from(VRATE) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the stand-in never recorded 4 s"
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            // kill -9, mid-recording.
+            guard.0.kill().expect("SIGKILL the app");
+            guard.0.wait().unwrap();
+            reader.join().unwrap();
+            if kill_encoder_too {
+                let _ = Command::new("pkill")
+                    .args(["-9", "-f", &mkv.to_string_lossy()])
+                    .status();
+            }
+            // An orphaned encoder sees EOF on stdin and finishes by itself.
+            let deadline = std::time::Instant::now() + Duration::from_secs(20);
+            while encoder_alive(&mkv) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the orphaned encoder never exited"
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            assert!(mkv.exists(), "the killed session left its MKV");
+            let wav_secs =
+                wav_data_bytes(&wav).expect("killed wav") as f64 / (4.0 * f64::from(VRATE));
+            assert!(
+                wav_secs > 3.0,
+                "the WAV holds the recording: {wav_secs:.2} s"
+            );
+
+            let d = Deliverable {
+                primary_path: wav.to_string_lossy().into_owned(),
+                fragments: vec![wav.to_string_lossy().into_owned()],
+                started_at_ms: 7,
+            };
+            let manifest = manifest_for(save.path(), &d, 7);
+            assert!(
+                crate::recorder::recovery::still_being_written(&manifest)
+                    .await
+                    .is_none(),
+                "nothing is writing any more"
+            );
+            let recovered =
+                crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+            assert_eq!(recovered, 1, "the killed video session is recovered");
+            let rows = list_recordings(&pool).await.expect("rows");
+            assert_eq!(rows.len(), 1);
+            let out = PathBuf::from(&rows[0].file_path);
+            assert_eq!(out.extension().and_then(|e| e.to_str()), Some("mp4"));
+            let (v, a) = stream_secs(&out);
+            assert!(
+                (a - wav_secs).abs() < 0.1,
+                "all the sound: {a:.2} s of {wav_secs:.2} s"
+            );
+            // The video ends early by at most the conformer's decide delay
+            // (0.5 s) plus what the encoder still held when it died.
+            assert!(v > 0.0 && v <= a + 0.1, "video {v:.2} s, audio {a:.2} s");
+            assert!(
+                a - v < 2.0,
+                "the picture survives up to the kill: video {v:.2} s, audio {a:.2} s"
+            );
+            eprintln!(
+                "kill -9 (encoder killed too: {kill_encoder_too}): wav {wav_secs:.2} s → mp4 video {v:.2} s, audio {a:.2} s"
+            );
+        }
+
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn an_app_killed_mid_video_recording_is_recovered_to_an_mp4() {
+            killed_mid_recording_is_recovered(false, None).await;
+        }
+
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        async fn app_and_encoder_killed_mid_recording_still_recover_to_an_mp4() {
+            killed_mid_recording_is_recovered(true, None).await;
+        }
+
+        /// The same `kill -9` with a REAL camera (the sound is still
+        /// synthetic). Needs camera permission for the process running the
+        /// tests, so it is the owner's (RIG-DAY «(v)»):
+        /// `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib
+        /// real_camera_killed -- --ignored --nocapture`
+        #[allow(clippy::await_holding_lock)]
+        #[tokio::test(flavor = "multi_thread")]
+        #[ignore = "needs a camera and camera permission"]
+        async fn real_camera_killed_mid_recording_is_recovered_to_an_mp4() {
+            let name = std::env::var("SUNDAYREC_REAL_CAMERA").unwrap_or_else(|_| "FaceTime".into());
+            killed_mid_recording_is_recovered(false, Some(&name)).await;
         }
     }
 }

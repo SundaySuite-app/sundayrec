@@ -1231,6 +1231,7 @@ pub(crate) mod tests {
             bitrate_kbps: 192,
             mode: sundayrec_core::recovery::DeliveryMode::AudioEncode,
             hvc1_tag: false,
+            keep_audio_capture: false,
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1368,7 +1369,8 @@ pub(crate) mod tests {
             sample_rate: None,
             bitrate_kbps: 192,
             mode: DeliveryMode::RemuxCopy,
-            hvc1_tag: false, // h264 needs no tag
+            hvc1_tag: false,
+            keep_audio_capture: false, // h264 needs no tag
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()

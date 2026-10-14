@@ -202,7 +202,7 @@ pub(super) fn formats(camera_id: &str) -> Result<Vec<VideoFormat>, CameraError> 
 struct Skipped(AtomicU64);
 
 /// `QueryPerformanceFrequency`, once.
-fn qpc_frequency() -> i64 {
+pub(crate) fn qpc_frequency() -> i64 {
     static FREQ: OnceLock<i64> = OnceLock::new();
     *FREQ.get_or_init(|| {
         let mut freq = 0i64;
