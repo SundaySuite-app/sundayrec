@@ -227,6 +227,50 @@ videospor.
   til kameraet trukket i 10 s midt i (lyden uten hull, bildet fryser og kommer
   tilbake), `kill -9` midt i (gjenopprettet mp4), og CPU-last som i C0.
 
+**Levert (C3a).** Videosporet ligger i
+`src-tauri/src/recorder/native_capture/video.rs` (skallet) og
+`sundayrec-core::video_track` (beslutningene); detaljene står i modulhodene.
+Det C3b og C3c må vite:
+
+- **Bak en bryter.** Den native motoren tar videoøkter bare med
+  `SUNDAYREC_NATIVE_VIDEO=1` (`engine::native_video_enabled`). Uten den går
+  videoøkter som før. C3b fjerner bryteren sammen med de gamle stiene.
+- **Lydklokka:** `stream::ClockTap` i lydcallbacken legger ett par (WAV-indeks,
+  fangsttid) per blokk i en låsfri ring. Fangsttiden er cpals
+  `InputCallbackInfo::timestamp().capture`, som på Mac er `mHostTime` (mach,
+  ns) og på Windows WASAPIs QPC-posisjon (ns) — samme klokke som
+  `Frame::host_time_ns`. **ASIO** gir `timeGetTime`, en annen klokke; der
+  stemples parene med vertsklokka i callbacken minus blokklengden
+  (`CaptureTimeSource::HostNowMinusBlock`). Det er riggubevist.
+- **Fast bildefrekvens:** videotråden skriver ett bilde per plass, i
+  plassrekkefølge (gjentak = samme bilde igjen, svart = svart ramme). MKV-en
+  har nøyaktig `slot_count(WAV-rammer)` bilder, bevist i testen.
+- **Køen:** kameraets `FrameQueue` på 30 bilder (≈1 s) dropper eldste og
+  teller (`VideoTrackStats::queue_dropped` — det C3c gjør til
+  `video.frames_dropped`). Tallene logges per fragment i dag.
+- **Et kamera som ikke åpner** gir svarte plasser, ikke en feil; en koder som
+  dør gir et kort MKV; lyden merker ingenting. En maskinvarekoder som feiler
+  på første bilde byttes til `libx264` én gang.
+- **Levering:** video-fragmentene skjøtes med concat-demuxerens
+  `duration` satt til hvert fragments LYD-lengde, så et kort eller manglende
+  MKV aldri drar resten av bildet foran lyden; så muxes WAV + MKV til mp4
+  (`-c:v copy`, lyd til AAC). Manifestet lister begge (`video_fragments`), og
+  gjenopprettingen går gjennom samme kode.
+- **Pre-roll — avvik fra planen:** videoen forskyves med pre-roll-lengden
+  (`-itsoffset`), så mp4-en starter med en tom redigering (edit list) i stedet
+  for kodede svarte bilder. Etter ISO-spesifikasjonen vises ingenting der
+  (svart); ffmpeg selv dekoder første bilde på de tidspunktene (målt). Kodet
+  svart ble valgt bort fordi koderen da må ta imot pre-roll-lengden med svart
+  i det kameraets kø renner over i starten. Ikke prøvd i QuickTime, VLC eller
+  redigereren — RIG-DAY (c3a) og C4 må se på det; blir det feil, er neste
+  steg en svart MKV kodet med samme argumenter ved leveringen.
+- **Kjent grense:** hvert fragment avrunder opp til helt bilde, så hver
+  gjenkobling kan legge til under ett bilde (33 ms) videolengde. Ved mange
+  gjenkoblinger i én leveranse summeres det; føres som åpent.
+- **#341 og #337 er arvet:** stoppen går lydstrøm → kamera → WAV-skriver →
+  videospor, med tidsgrense på hver venting; en WAV-skriver som dør uten
+  melding varsles nå (`device_disconnected`) i stedet for å gjenkoble stille.
+
 ### C4 — forhåndsvisning fra samme kameraøkt
 
 - Kameraøkta åpnes når Opptak-siden viser kamerakortet, og lever videre inn i
