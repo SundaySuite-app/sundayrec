@@ -280,6 +280,13 @@ faktisk skal se nå — sist.
       **Opptakskort finnes ikke** (hverken her eller på Windows-boksen): at et
       kort står som «opptakskort» og leverer bilder er IKKE bevist. Føres som
       åpent, ikke blokkerende.
+      **Kjørt på Macen 2026-10-14 (eierens terminal, med kameratilgang):**
+      FaceTime HD 1280x720 NV12 — Native mode, første bilde 0 ms, 302 bilder,
+      29,51 b/s, jitter 4,1 ms, 4 hull fra kameraet (maks 74 ms), dropp 0/0/0.
+      iPhone (Continuity) 1280x720 NV12 — Native mode, 309 bilder, 29,90 b/s,
+      jitter 4,3 ms, 2 hull (maks 100 ms), dropp 0/0/0. Hullene er kameraets
+      egne (lys), ikke våre; konformeren (C2) gjentar forrige bilde. Mac-delen
+      er dermed grønn; USB-kamera og `--format 1920x1080@30` gjenstår.
 
 - [ ] **(c3a) Den native videoøkta med ekte kamera, og `kill -9` midt i (C3a, `ombygging/c3a-videospor`).** Bevist i C3a med SYNTETISK bilde og lyd (WAV + MKV per fragment, én mp4, manifestet lister begge, `kill -9` av appen — og av appen OG koderen — gjenopprettet til mp4 med hele lyden, dropp-telleren øker når køen tvinges full). IKKE bevist: ekte kamera — terminalen hadde fortsatt ikke kameratilgang (`NotDetermined`) da økta ble kjørt. Gjør (c1a) først. **Gjør 1 (kamera, syntetisk lyd):** kjør `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_killed -- --ignored --nocapture` fra repoet. **Forventet:** testen går grønt og skriver `kill -9 … wav ~4 s → mp4 video ~3,5 s, audio ~4 s` (videoen slutter inntil ≈0,5 s før lyden: konformerens beslutningsvindu). **Gjør 2 (hele appen):** start appen fra terminalen med `SUNDAYREC_NATIVE_VIDEO=1` (bryteren som sender videoøkter til den native motoren fram til C3b), ta opp 2 min med FaceTime-kameraet og ekte mikrofon, klapp i starten og slutten, stopp. **Forventet:** én mp4 der klappet er synkront (±1 bilde) i begge ender, og en egen lydfil hvis «behold ren lydfil» er på. Med pre-roll på: de første sekundene har lyd og svart bilde i QuickTime, VLC og redigereren (mp4-en starter med en tom redigering, ikke kodet svart — se VIDEOMOTOR §C3 «Levert (C3a)»). Gjenta, men `kill -9` appen etter 1 min og start den igjen: opptaket kommer tilbake som mp4 med bilde og hele lyden. **Rødt funn:** bildet driver fra lyden, svart bilde med et kamera som virker, lyd som mangler, eller en opptaksøkt som henger på «Stopper».
 
