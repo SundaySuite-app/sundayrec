@@ -34,7 +34,7 @@ pub const SILENCE_FLOOR_LUFS: f64 = -50.0;
 /// How far under the preset's ceiling the limiter is told to aim. The limiter's true-peak
 /// detector is a 4x oversampling estimate, and a reference meter reads inter-sample peaks with
 /// a different interpolator; this margin keeps the *measured* peak at or under the ceiling.
-pub const LIMITER_MARGIN_DB: f64 = 0.3;
+pub const LIMITER_MARGIN_DB: f64 = 0.8;
 
 /// What a signal measures. `NEG_INFINITY` fields mean "nothing to measure".
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -104,6 +104,8 @@ pub struct GainPlan {
     pub limiter: Option<LimiterPlan>,
     /// Integrated loudness the plan aims for (the preset's target), LUFS.
     pub target_lufs: f64,
+    /// The preset's true-peak ceiling, dBTP (the limiter aims [`LIMITER_MARGIN_DB`] under it).
+    pub ceiling_dbtp: f64,
     /// By how many dB the gained peaks would pass the ceiling without a limiter (0 when they
     /// fit). This is the most the limiter ever has to take.
     pub peak_overshoot_db: f64,
@@ -132,6 +134,7 @@ pub fn plan_gain_to(measured: &Loudness, target_lufs: f64, ceiling_dbtp: f64) ->
             gain_db: 0.0,
             limiter: None,
             target_lufs,
+            ceiling_dbtp,
             peak_overshoot_db: 0.0,
             measurable: false,
         };
@@ -144,9 +147,44 @@ pub fn plan_gain_to(measured: &Loudness, target_lufs: f64, ceiling_dbtp: f64) ->
             ceiling_dbtp: ceiling_dbtp - LIMITER_MARGIN_DB,
         }),
         target_lufs,
+        ceiling_dbtp,
         peak_overshoot_db: overshoot,
         measurable: true,
     }
+}
+
+impl GainPlan {
+    /// The plan after seeing what it actually produced.
+    ///
+    /// Linear gain lands the target exactly *unless* the limiter had to take a lot of peak: it
+    /// then eats a little loudness too. `produced` is the loudness of the stage's output; the
+    /// shortfall (or surplus) is added to the gain and the limiter decision is redone. One round
+    /// is normally enough; [`apply_to_target`] does up to [`MAX_REFINEMENTS`].
+    pub fn refined(&self, input: &Loudness, produced: &Loudness) -> GainPlan {
+        if !self.measurable || !produced.integrated_lufs.is_finite() {
+            return *self;
+        }
+        let gain_db = self.gain_db + (self.target_lufs - produced.integrated_lufs);
+        let mut plan = plan_gain_to(input, input.integrated_lufs + gain_db, self.ceiling_dbtp);
+        plan.target_lufs = self.target_lufs;
+        plan
+    }
+}
+
+/// Upper bound on [`apply_to_target`]'s correction rounds.
+pub const MAX_REFINEMENTS: usize = 4;
+/// [`apply_to_target`] stops once the output is this close to the target, LU.
+pub const SETTLED_LU: f64 = 0.1;
+
+/// What [`apply_to_target`] ended up doing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Applied {
+    /// The plan that produced the final audio (the first plan, possibly refined).
+    pub plan: GainPlan,
+    /// What the final audio measures.
+    pub output: Loudness,
+    /// Correction rounds used beyond the first application (0 when the first plan was right).
+    pub refinements: usize,
 }
 
 /// The plan, applied: a linear gain and, when planned, the limiter after it.
@@ -200,7 +238,9 @@ impl GainStage {
                 *v *= self.gain;
             }
         }
-        let Some(lim) = self.limiter.as_mut() else { return };
+        let Some(lim) = self.limiter.as_mut() else {
+            return;
+        };
         let mut views: Vec<&mut [f32]> = chunk.iter_mut().map(|c| c.as_mut_slice()).collect();
         lim.process(&mut views);
         if self.skip > 0 {
@@ -235,6 +275,42 @@ pub fn apply_planar(plan: &GainPlan, sample_rate: u32, channels: &mut [Vec<f32>]
     }
 }
 
+/// Apply `plan` to a whole planar buffer in place, then check the result and, if the limiter
+/// ate more than [`SETTLED_LU`] of loudness, redo it with the gain corrected ([`GainPlan::refined`]).
+/// Works from a copy of the input, so each round starts from the untouched signal. For files too
+/// long to hold in memory the caller runs the same loop over two decodes (B1b).
+pub fn apply_to_target(
+    input: &Loudness,
+    plan: &GainPlan,
+    sample_rate: u32,
+    channels: &mut [Vec<f32>],
+) -> Applied {
+    let original: Vec<Vec<f32>> = channels.to_vec();
+    let mut plan = *plan;
+    let mut refinements = 0;
+    loop {
+        for (dst, src) in channels.iter_mut().zip(&original) {
+            dst.clone_from(src);
+        }
+        apply_planar(&plan, sample_rate, channels);
+        let views: Vec<&[f32]> = channels.iter().map(Vec::as_slice).collect();
+        let output = measure_planar(&views, sample_rate);
+        let settled = !plan.measurable
+            || plan.limiter.is_none()
+            || (output.integrated_lufs - plan.target_lufs).abs() <= SETTLED_LU
+            || !output.integrated_lufs.is_finite();
+        if settled || refinements == MAX_REFINEMENTS {
+            return Applied {
+                plan,
+                output,
+                refinements,
+            };
+        }
+        plan = plan.refined(input, &output);
+        refinements += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,7 +340,10 @@ mod tests {
         let p = get_preset_by_id("speech-clear").unwrap();
         // −24 → −16 is +8 dB; a −5 dBTP peak lands at +3: 4 dB over the −1 ceiling.
         let plan = plan_gain(&loud(-24.0, -5.0), &p);
-        assert!((plan.gain_db - 8.0).abs() < 1e-12, "the target is never traded for the peak");
+        assert!(
+            (plan.gain_db - 8.0).abs() < 1e-12,
+            "the target is never traded for the peak"
+        );
         let l = plan.limiter.expect("peaks need the limiter");
         assert!((l.ceiling_dbtp - (-1.0 - LIMITER_MARGIN_DB)).abs() < 1e-12);
         assert!((plan.peak_overshoot_db - 4.0).abs() < 1e-12);
@@ -274,7 +353,11 @@ mod tests {
     fn every_preset_uses_its_own_target_and_ceiling() {
         for p in crate::mastering::master_presets() {
             let plan = plan_gain(&loud(-30.0, -3.0), &p);
-            assert!((plan.gain_db - (p.target_lufs + 30.0)).abs() < 1e-12, "{}", p.id);
+            assert!(
+                (plan.gain_db - (p.target_lufs + 30.0)).abs() < 1e-12,
+                "{}",
+                p.id
+            );
             assert_eq!(plan.target_lufs, p.target_lufs);
             let over = -3.0 + plan.gain_db - p.true_peak_db;
             assert_eq!(plan.limiter.is_some(), over > 0.0, "{}", p.id);
@@ -284,7 +367,11 @@ mod tests {
     #[test]
     fn silence_and_room_tone_are_left_alone() {
         let p = get_preset_by_id("speech-clear").unwrap();
-        for m in [loud(f64::NEG_INFINITY, f64::NEG_INFINITY), loud(-57.2, -38.2), loud(f64::NAN, 0.0)] {
+        for m in [
+            loud(f64::NEG_INFINITY, f64::NEG_INFINITY),
+            loud(-57.2, -38.2),
+            loud(f64::NAN, 0.0),
+        ] {
             let plan = plan_gain(&m, &p);
             assert_eq!(plan.gain_db, 0.0);
             assert_eq!(plan.limiter, None);
@@ -332,7 +419,12 @@ mod tests {
         let ceiling = 10f32.powf(-1.0 / 20.0);
         assert!(audio[0].iter().all(|v| v.abs() <= ceiling + 1e-6));
         // The peak is still where it was (look-ahead delay removed): within a few ms.
-        let at = audio[0].iter().enumerate().max_by(|a, b| a.1.abs().total_cmp(&b.1.abs())).unwrap().0;
+        let at = audio[0]
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+            .unwrap()
+            .0;
         assert!(at.abs_diff(24_000) < 48, "peak moved to {at}");
     }
 
@@ -359,6 +451,29 @@ mod tests {
     }
 
     #[test]
+    fn heavy_limiting_is_corrected_back_to_the_target() {
+        // Quiet material with a few huge transients: the limiter takes ~12 dB off them and with
+        // them a little loudness; the refinement gives it back.
+        let sr = 48_000;
+        let mut l = tone(0.02, 10 * sr as usize);
+        for k in 1..8 {
+            l[k * 55_000] = 0.25;
+        }
+        let m = measure_planar(&[&l], sr);
+        let plan = plan_gain_to(&m, -16.0, -1.0);
+        assert!(plan.peak_overshoot_db > 8.0);
+        let mut audio = vec![l];
+        let done = apply_to_target(&m, &plan, sr, &mut audio);
+        assert!(
+            (done.output.integrated_lufs - -16.0).abs() <= 0.15,
+            "{:?}",
+            done
+        );
+        assert!(done.output.true_peak_dbtp <= -1.0, "{:?}", done);
+        assert!(done.refinements >= 1);
+    }
+
+    #[test]
     fn linear_gain_lands_the_measured_target() {
         // Pink-ish noise stands in for programme; no limiter needed at −3 dB of peak headroom.
         let sr = 48_000;
@@ -376,6 +491,10 @@ mod tests {
         let mut audio = vec![noise.clone(), noise];
         apply_planar(&plan, sr, &mut audio);
         let after = measure_planar(&[&audio[0], &audio[1]], sr);
-        assert!((after.integrated_lufs - -16.0).abs() < 0.05, "{}", after.integrated_lufs);
+        assert!(
+            (after.integrated_lufs - -16.0).abs() < 0.05,
+            "{}",
+            after.integrated_lufs
+        );
     }
 }
