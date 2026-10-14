@@ -56,18 +56,18 @@
 
 /// Largest compressor makeup we hand ffmpeg. `acompressor:makeup` accepts
 /// `[1, 64]` linear = `[0, 36.12] dB`; the mixer slider stops at 12 dB.
-const COMP_MAX_MAKEUP_DB: f64 = 36.0;
+pub(crate) const COMP_MAX_MAKEUP_DB: f64 = 36.0;
 /// Lowest limiter ceiling we hand ffmpeg. `alimiter:limit` accepts
 /// `[0.0625, 1]` linear = `[−24.08, 0] dB`; the mixer slider stops at −6 dB.
-const LIMITER_MIN_CEILING_DB: f64 = -24.0;
+pub(crate) const LIMITER_MIN_CEILING_DB: f64 = -24.0;
 /// Highest gate threshold we hand ffmpeg. `agate:threshold` accepts `[0, 1]`
 /// linear, i.e. anything at or below 0 dBFS; the mixer slider stops at −10 dB.
-const GATE_MAX_THRESHOLD_DB: f64 = 0.0;
+pub(crate) const GATE_MAX_THRESHOLD_DB: f64 = 0.0;
 /// Lowest compressor threshold we hand ffmpeg. `acompressor:threshold` accepts
 /// `[0.000976563, 1]` linear = `[−60.206, 0] dB` (rounds to −60.2); the mixer
 /// slider stops well above that, but a hand-rolled/legacy DTO is not bound by
 /// the slider — F2-C-A found this the same way it found the gate's.
-const COMP_MIN_THRESHOLD_DB: f64 = -60.2;
+pub(crate) const COMP_MIN_THRESHOLD_DB: f64 = -60.2;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ fn db_to_linear(db: f64) -> f64 {
 /// time constant, but NOT for a linear amplitude: `db_to_linear(-70)` is
 /// 0.000316, which rounds to `"0"`. That is why a dB value is printed as a dB
 /// value with the suffix (see the units note above) and never pre-converted.
-fn finite_or(v: f64, default: f64) -> f64 {
+pub(crate) fn finite_or(v: f64, default: f64) -> f64 {
     if v.is_finite() {
         v
     } else {
