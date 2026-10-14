@@ -43,6 +43,12 @@ pub enum DeliveryMode {
     AudioEncode,
     /// Stream-copy an MKV capture into the delivery video container.
     RemuxCopy,
+    /// The native video session (C3a): the capture is a WAV (the audio engine's,
+    /// the recording's timeline) plus a video-only MKV beside every WAV fragment
+    /// ([`crate::video_track::video_fragment_path`]). Finalisation joins each
+    /// side, then muxes them into the delivery mp4/mov — video stream-copied,
+    /// audio encoded to AAC ([`crate::video_track::mux_args`]).
+    MuxAudioVideo,
 }
 
 /// How to turn a decoupled session's capture fragments into the user's chosen
@@ -111,6 +117,14 @@ pub struct DeliverableManifest {
     pub fragments: Vec<String>,
     /// Epoch ms this deliverable's first fragment started.
     pub started_at_ms: u64,
+    /// [`DeliveryMode::MuxAudioVideo`] only: the video fragment beside each
+    /// audio fragment, PARALLEL to `fragments` (same length, same order).
+    /// Listed so the manifest names every file the session wrote — the
+    /// recovery scan's live-writer probe must see a video ffmpeg that outlived
+    /// the app still appending. Empty for every other mode, and absent from
+    /// manifests written before C3a.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub video_fragments: Vec<String>,
 }
 
 impl DeliverableManifest {
@@ -120,6 +134,20 @@ impl DeliverableManifest {
             primary_path: d.primary_path.clone(),
             fragments: d.fragments.clone(),
             started_at_ms: d.started_at_ms,
+            video_fragments: Vec::new(),
+        }
+    }
+
+    /// [`Self::from_deliverable`] for a native video session: every audio
+    /// fragment's MKV listed beside it.
+    pub fn from_deliverable_with_video(d: &Deliverable) -> Self {
+        Self {
+            video_fragments: d
+                .fragments
+                .iter()
+                .map(|f| crate::video_track::video_fragment_path(f))
+                .collect(),
+            ..Self::from_deliverable(d)
         }
     }
 
@@ -190,13 +218,23 @@ pub fn recoverable_deliverables<F: Fn(&str) -> bool>(
         .deliverables
         .iter()
         .filter_map(|d| {
-            let surviving: Vec<String> =
-                d.fragments.iter().filter(|f| exists(f)).cloned().collect();
+            // The AUDIO decides what survives (the audio clock is the boss); a
+            // video fragment stays paired with its audio fragment.
+            let keep: Vec<usize> = (0..d.fragments.len())
+                .filter(|&i| exists(&d.fragments[i]))
+                .collect();
+            let surviving: Vec<String> = keep.iter().map(|&i| d.fragments[i].clone()).collect();
+            let video_fragments: Vec<String> = if d.video_fragments.len() == d.fragments.len() {
+                keep.iter().map(|&i| d.video_fragments[i].clone()).collect()
+            } else {
+                Vec::new()
+            };
             let primary = surviving.first()?.clone();
             Some(DeliverableManifest {
                 primary_path: primary,
                 fragments: surviving,
                 started_at_ms: d.started_at_ms,
+                video_fragments,
             })
         })
         .collect()
@@ -216,7 +254,7 @@ pub fn all_fragment_paths(manifest: &SessionManifest) -> Vec<String> {
     manifest
         .deliverables
         .iter()
-        .flat_map(|d| d.fragments.iter().cloned())
+        .flat_map(|d| d.fragments.iter().chain(d.video_fragments.iter()).cloned())
         .collect()
 }
 
@@ -255,11 +293,13 @@ mod tests {
                     primary_path: "/rec/sermon.mp3".into(),
                     fragments: vec!["/rec/sermon.mp3".into(), "/rec/sermon_r1.mp3".into()],
                     started_at_ms: 1_700_000_000_000,
+                    video_fragments: Vec::new(),
                 },
                 DeliverableManifest {
                     primary_path: "/rec/sermon_2.mp3".into(),
                     fragments: vec!["/rec/sermon_2.mp3".into()],
                     started_at_ms: 1_700_000_600_000,
+                    video_fragments: Vec::new(),
                 },
             ],
         }
@@ -446,6 +486,7 @@ mod tests {
                     "/rec/a_r2.mp3".into(),
                 ],
                 started_at_ms: 10,
+                video_fragments: Vec::new(),
             }],
         };
         let rec = recoverable_deliverables(&m, |p| p != "/rec/a_r1.mp3");
@@ -491,6 +532,7 @@ mod tests {
                 primary_path: "/rec/ghost.mp3".into(),
                 fragments: vec![],
                 started_at_ms: 0,
+                video_fragments: Vec::new(),
             }],
         };
         assert!(recoverable_deliverables(&m, |_| true).is_empty());
@@ -544,5 +586,78 @@ mod tests {
         let after = vec![("/rec/new.wav".to_string(), 9000_u64)];
         assert!(growing_fragments(&before, &after).is_empty());
         assert!(growing_fragments(&[], &[]).is_empty());
+    }
+
+    fn video_deliverable() -> DeliverableManifest {
+        DeliverableManifest::from_deliverable_with_video(&Deliverable {
+            primary_path: "/cap/s.wav".into(),
+            fragments: vec![
+                "/cap/s.wav".into(),
+                "/cap/s_r1.wav".into(),
+                "/cap/s_r2.wav".into(),
+            ],
+            started_at_ms: 5,
+        })
+    }
+
+    #[test]
+    fn a_video_session_lists_both_files_of_every_fragment() {
+        let d = video_deliverable();
+        assert_eq!(
+            d.video_fragments,
+            vec!["/cap/s.mkv", "/cap/s_r1.mkv", "/cap/s_r2.mkv"]
+        );
+        let m = SessionManifest {
+            deliverables: vec![d],
+            ..manifest()
+        };
+        let all = all_fragment_paths(&m);
+        assert!(all.contains(&"/cap/s_r1.wav".to_string()));
+        assert!(
+            all.contains(&"/cap/s_r1.mkv".to_string()),
+            "the growth probe sees the video"
+        );
+        // Round-trips, and the mode survives.
+        let json = SessionManifest {
+            delivery_encode: Some(AudioEncodeManifest {
+                delivery_dir: "/rec".into(),
+                ext: "mp4".into(),
+                channels: 2,
+                sample_rate: None,
+                bitrate_kbps: 192,
+                mode: DeliveryMode::MuxAudioVideo,
+                hvc1_tag: false,
+            }),
+            ..m.clone()
+        }
+        .to_json()
+        .unwrap();
+        assert!(json.contains("mux_audio_video"));
+        let back = SessionManifest::from_json(&json).unwrap();
+        assert_eq!(back.deliverables, m.deliverables);
+    }
+
+    #[test]
+    fn an_audio_manifest_has_no_video_key_and_old_ones_still_parse() {
+        let json = manifest().to_json().unwrap();
+        assert!(!json.contains("video_fragments"));
+        assert!(SessionManifest::from_json(&json).unwrap().deliverables[0]
+            .video_fragments
+            .is_empty());
+    }
+
+    #[test]
+    fn the_audio_decides_which_video_fragments_survive() {
+        let m = SessionManifest {
+            deliverables: vec![video_deliverable()],
+            ..manifest()
+        };
+        // The middle WAV is gone (its MKV is irrelevant); the last MKV is gone
+        // but its WAV is not — the pair stays, the finaliser covers the hole.
+        let present = ["/cap/s.wav", "/cap/s.mkv", "/cap/s_r2.wav", "/cap/s_r1.mkv"];
+        let r = recoverable_deliverables(&m, |p| present.contains(&p));
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].fragments, vec!["/cap/s.wav", "/cap/s_r2.wav"]);
+        assert_eq!(r[0].video_fragments, vec!["/cap/s.mkv", "/cap/s_r2.mkv"]);
     }
 }
