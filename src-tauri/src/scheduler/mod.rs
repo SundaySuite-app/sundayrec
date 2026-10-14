@@ -2501,6 +2501,7 @@ mod tests {
                 primary_path: primary.clone(),
                 fragments: vec![primary],
                 started_at_ms: started.timestamp_millis() as u64,
+                video_fragments: Vec::new(),
             }],
         };
         std::fs::write(
@@ -2837,6 +2838,7 @@ mod tests {
                 primary_path: primary.clone(),
                 fragments: vec![primary],
                 started_at_ms: started.timestamp_millis() as u64,
+                video_fragments: Vec::new(),
             }],
         };
         std::fs::write(

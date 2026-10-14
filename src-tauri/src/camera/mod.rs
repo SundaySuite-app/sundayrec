@@ -313,7 +313,11 @@ struct BackendCounters {
     skipped: u64,
 }
 
-trait BackendHandle {
+/// `Send`: a capture is started on one thread and stopped on another (the
+/// recorder's stop path runs the stop on a blocking task it can time out).
+/// Both backends are: the macOS handle by its documented `unsafe impl Send`,
+/// the Windows one is plain ids and counters.
+trait BackendHandle: Send {
     /// `"AVFoundation, Native mode"`, `"Media Foundation"` …
     fn describe(&self) -> String;
     fn counters(&self) -> BackendCounters;
@@ -369,6 +373,46 @@ fn combine(queue: QueueStats, backend: BackendCounters) -> CaptureStats {
         queue_dropped: queue.dropped,
         dropped_by_os: backend.dropped_by_os,
         skipped: backend.skipped,
+    }
+}
+
+// ── The host clock ───────────────────────────────────────────────────────────
+
+/// "Now" on the clock [`Frame::host_time_ns`] is stamped with, in nanoseconds:
+/// `mach_absolute_time` on macOS, `QueryPerformanceCounter` on Windows. The
+/// native video track (C3a) reads it where cpal cannot give a capture time on
+/// this clock (the ASIO host, whose timestamps come from `timeGetTime`).
+/// Elsewhere (the Linux CI build) a process-local monotonic clock, which is
+/// all a synthetic test source needs.
+pub fn host_now_ns() -> u64 {
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn mach_absolute_time() -> u64;
+        }
+        let (n, d) = avfoundation::timebase();
+        // SAFETY: no arguments, no state.
+        let ticks = unsafe { mach_absolute_time() };
+        sundayrec_core::camera_format::mach_ticks_to_ns(ticks, n, d).unwrap_or(0)
+    }
+    #[cfg(windows)]
+    {
+        let mut ticks = 0i64;
+        // SAFETY: `ticks` is a valid out-pointer; cannot fail on XP and later.
+        unsafe { windows_sys::Win32::System::Performance::QueryPerformanceCounter(&mut ticks) };
+        sundayrec_core::camera_format::qpc_ticks_to_ns(ticks, windows_backend::qpc_frequency())
+            .unwrap_or(0)
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        use std::sync::OnceLock;
+        static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+        // Start well above zero, like the real host clocks (never a "time 0").
+        1_000_000_000_000
+            + EPOCH
+                .get_or_init(std::time::Instant::now)
+                .elapsed()
+                .as_nanos() as u64
     }
 }
 

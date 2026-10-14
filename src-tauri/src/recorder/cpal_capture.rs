@@ -322,6 +322,7 @@ impl VideoCapture {
                 primary_path: self.capture_path.clone(),
                 fragments: vec![self.capture_path.clone()],
                 started_at_ms: self.started_ms,
+                video_fragments: Vec::new(),
             }],
         }
     }
@@ -539,6 +540,7 @@ mod imp {
                     plan,
                     prod,
                     overrun,
+                    clock: None,
                 },
                 err_fn,
             )?;
@@ -970,8 +972,16 @@ mod imp {
             if has_video && opts.keep_separate_audio {
                 if let Some(pool) = &pool {
                     let audio = FfmpegDevice::new(device_name.clone(), "cpal", None);
-                    extract_separate_audio(pool, &final_path, start_ms, duration_ms, &opts, &audio)
-                        .await;
+                    extract_separate_audio(
+                        pool,
+                        &final_path,
+                        &final_path,
+                        start_ms,
+                        duration_ms,
+                        &opts,
+                        &audio,
+                    )
+                    .await;
                 }
             }
 
@@ -1086,6 +1096,7 @@ mod tests {
             separate_audio_format: "wav".into(),
             classic_directshow: false,
             video_input: None,
+            video_flip: false,
         }
     }
 

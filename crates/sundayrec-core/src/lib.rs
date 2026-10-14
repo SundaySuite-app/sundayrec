@@ -101,6 +101,7 @@ pub mod update;
 pub mod vad;
 pub mod video_conform;
 pub mod video_encoder;
+pub mod video_track;
 pub mod wake;
 pub mod wav;
 pub mod window;

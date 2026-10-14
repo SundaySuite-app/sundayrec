@@ -503,7 +503,7 @@ thread_local! {
 }
 
 /// The host clock's tick → nanosecond ratio.
-fn timebase() -> (u32, u32) {
+pub(crate) fn timebase() -> (u32, u32) {
     #[repr(C)]
     struct MachTimebaseInfo {
         numer: u32,

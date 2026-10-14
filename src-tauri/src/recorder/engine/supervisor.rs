@@ -46,12 +46,13 @@ use crate::audio::device_watch::BackoffOutcome;
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::native_capture::stream::{CpalHostKind, NativeStartError};
+use crate::recorder::native_capture::video::NativeVideoPlan;
 use crate::util::lock_recover;
 
 use super::args::{build_record_args, recording_preview_path};
 use super::emit::{emit_error, emit_failure, emit_warning, reconnecting_message};
 use super::finalize::{
-    capture_base_path, capture_dir, delivery_encode_for, finalize_pending,
+    capture_base_path, capture_dir, delivery_encode_for_session, finalize_pending,
     finalize_pending_with_first, finalize_session_telemetry, finished_receipt_path,
     session_manifest,
 };
@@ -123,6 +124,14 @@ pub(crate) enum CaptureBackend {
 /// `start()` uses to decide that a session wants a camera.
 pub(crate) fn needs_ffmpeg_device_enumeration(video_device_name: Option<&str>) -> bool {
     video_device_name.is_some_and(|n| !n.is_empty())
+}
+
+/// The developer switch that routes a VIDEO session to the native engine
+/// (C3a): `SUNDAYREC_NATIVE_VIDEO=1`. Off by default — video sessions keep the
+/// ffmpeg paths until C3b removes them and makes the native engine the only
+/// one. Read once per `start()`.
+pub(crate) fn native_video_enabled() -> bool {
+    std::env::var("SUNDAYREC_NATIVE_VIDEO").is_ok_and(|v| v.trim() == "1")
 }
 
 /// Pure routing decision for the session's capture backend.
@@ -212,6 +221,7 @@ async fn spawn_capture(
     output_path: &str,
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
+    video_plan: Option<&NativeVideoPlan>,
 ) -> Result<CaptureChild, SpawnFailure> {
     match backend {
         CaptureBackend::Ffmpeg => {
@@ -227,6 +237,7 @@ async fn spawn_capture(
                 output_path,
                 pinned_rate,
                 reopen,
+                video_plan,
             )
             .await?,
         ))),
@@ -345,6 +356,20 @@ pub(super) async fn run_session(
         // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
         // user's chosen delivery format.
         let audio_only = ctx.video.is_none();
+        // C3a: a NATIVE video session records the sound exactly like an
+        // audio-only one (a WAV per fragment) plus an MKV beside each WAV.
+        let native_video = ctx.is_native_video();
+        let video_plan = native_video.then(|| {
+            crate::recorder::native_capture::video::NativeVideoPlan::for_session(
+                ctx.opts
+                    .video_device_name
+                    .as_deref()
+                    .or(ctx.video.as_ref().map(|v| v.name.as_str()))
+                    .unwrap_or_default(),
+                ctx.opts.video_flip,
+                ctx.platform,
+            )
+        });
         let cap_dir = capture_dir(&ctx.opts.output_path, &session_id);
         if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
             tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
@@ -359,12 +384,16 @@ pub(super) async fn run_session(
         // real attribute or a volunteer browsing the save folder mid-service
         // finds — and can "tidy away" — the live capture fragments.
         crate::util::hide_dir_on_windows(&cap_dir);
-        let capture_ext = if audio_only { "wav" } else { "mkv" };
+        let capture_ext = if audio_only || native_video {
+            "wav"
+        } else {
+            "mkv"
+        };
         let session_output = capture_base_path(&cap_dir, &ctx.opts.output_path, capture_ext);
         // How to turn the capture into the delivery file — persisted in the
         // crash-recovery manifest so an interrupted recording can be finished on the
         // next launch.
-        let delivery_encode = Some(delivery_encode_for(&ctx.opts, audio_only));
+        let delivery_encode = Some(delivery_encode_for_session(&ctx));
         let mut session = RecordingSession::new(session_output, start_ms);
         // The OS device-list-change signal. Grabbed once per session (it installs
         // the platform listener on first use and is a process-wide singleton
@@ -408,6 +437,7 @@ pub(super) async fn run_session(
             session.primary_path(),
             None,
             None,
+            video_plan.as_ref(),
         )
         .await
         {
@@ -456,6 +486,7 @@ pub(super) async fn run_session(
                     &ctx.preroll_clip,
                     start_ms,
                     &delivery_encode,
+                    native_video,
                 ),
             )
             .await;
@@ -524,6 +555,7 @@ pub(super) async fn run_session(
                         &next,
                         None, // new deliverable — free to renegotiate the rate
                         None,
+                        video_plan.as_ref(),
                     )
                     .await
                     {
@@ -585,7 +617,10 @@ pub(super) async fn run_session(
                     // the two-process path (separate captures + mux). Narrow trigger
                     // (pure decision in core); anything else falls through to the
                     // normal reconnect policy below. HARDWARE-UNVERIFIED.
-                    if let Some(video_dev) = ctx.video.as_ref() {
+                    // Only the FFMPEG video capture can hand off: a native
+                    // video session records the sound on its own, so a start
+                    // that died is the audio's, and the normal policy decides.
+                    if let Some(video_dev) = ctx.video.as_ref().filter(|_| !native_video) {
                         if sundayrec_core::two_process::should_fallback_to_two_process(
                             true,
                             finalized == 0,
@@ -707,7 +742,9 @@ pub(super) async fn run_session(
                             // encoder takes the blame; if so every respawn below
                             // builds its argv with libx264 and the stored choice is
                             // forgotten.
-                            if ctx.video.is_some() {
+                            // (A native video session's exits are the SOUND's —
+                            // its encoder failing never ends a segment.)
+                            if ctx.video.is_some() && !native_video {
                                 crate::media::video_encoder::note_unexpected_exit(
                                     &ctx.app, last_error,
                                 );
@@ -806,6 +843,7 @@ pub(super) async fn run_session(
                                         // unless the device's format changed (above)
                                         respawn_rate,
                                         reopen_name,
+                                        video_plan.as_ref(),
                                     )
                                     .await
                                 } else {
@@ -868,6 +906,7 @@ pub(super) async fn run_session(
                                                     &split_path,
                                                     None,
                                                     reopen_name,
+                                                    video_plan.as_ref(),
                                                 )
                                                 .await
                                                 {
