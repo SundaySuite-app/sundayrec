@@ -72,6 +72,7 @@ pub mod filename;
 pub mod history;
 pub mod lang;
 pub mod levels;
+pub mod loudness;
 pub mod mastering;
 pub mod notify;
 pub mod preflight;
