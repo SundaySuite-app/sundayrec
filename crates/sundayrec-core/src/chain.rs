@@ -909,6 +909,7 @@ impl<R: Read> Read for ChainReader<R> {
 mod tests {
     use super::*;
     use crate::mastering::master_presets;
+    use crate::tale::{Mains, SpeechClean};
     use crate::processing::{
         vocal_chain_presets, DenoiseStage, EqBand, HighpassStage, LimiterStage,
     };
@@ -1332,6 +1333,76 @@ mod tests {
             worst < 1e-4,
             "reader differs from process_offline by {worst}"
         );
+    }
+
+    #[test]
+    fn a_gated_stage_is_time_aligned_with_the_plain_one_while_the_gate_is_open() {
+        // The gate forms no opinion in the first 0.2 s and stays open, so the
+        // gated stage must hand back exactly what the plain stage does: the dry
+        // path it mixes against is delayed by the effect's latency, or it would
+        // not.
+        let params = vec![("reduction".to_string(), 9.0f32)];
+        let plain = Chain::from_stages(vec![Stage::Fx {
+            id: "denoise",
+            params: params.clone(),
+        }]);
+        let gated = Chain::from_stages(vec![Stage::SpeechGated {
+            inner: Box::new(Stage::Fx {
+                id: "denoise",
+                params,
+            }),
+            floor_db: -60.0,
+        }]);
+        let x = noise(0.15, -30.0, 3);
+        let a = plain.build(SR, 1).unwrap().process_offline(&[x.clone()]);
+        let b = gated.build(SR, 1).unwrap();
+        assert!(b.latency() > 0);
+        let b = { b }.process_offline(&[x]);
+        let worst = a[0]
+            .iter()
+            .zip(&b[0])
+            .map(|(p, q)| (p - q).abs())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-5, "{worst}");
+    }
+
+    #[test]
+    fn a_gated_chain_read_in_awkward_slices_equals_the_offline_run() {
+        let c = Chain::speech_clean(&SpeechClean {
+            hum: Some(Mains::Hz50),
+            denoise: true,
+            dereverb: Some(50.0),
+            declick: false,
+            floor_db: -60.0,
+        });
+        let l = noise(2.3, -30.0, 5);
+        let r = noise(2.3, -33.0, 8);
+        let want = c
+            .build(SR, 2)
+            .unwrap()
+            .process_offline(&[l.clone(), r.clone()]);
+        let built = c.build(SR, 2).unwrap();
+        let bytes = interleave(&[l.clone(), r]);
+        let mut rd = ChainReader::new(bytes.as_slice(), built);
+        let mut got = Vec::new();
+        let mut buf = [0u8; 3001 * 4];
+        loop {
+            let n = rd.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(got.len(), l.len() * 8);
+        let want_bytes = interleave(&want);
+        let worst = got
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(want_bytes.as_chunks::<4>().0)
+            .map(|(a, b)| (f32::from_le_bytes(*a) - f32::from_le_bytes(*b)).abs())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-4, "{worst}");
     }
 
     #[test]

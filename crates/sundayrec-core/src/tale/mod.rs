@@ -237,6 +237,8 @@ pub struct SpeechAnalyzer {
 }
 
 const HIST_LO: f64 = -120.0;
+/// Frames under this level are digital silence, not a noise floor, dBFS.
+const DIGITAL_SILENCE_DB: f64 = -95.0;
 const HIST_STEP: f64 = 0.5;
 const HIST_BINS: usize = 241;
 const LEVEL_WIN: usize = (ANALYSIS_RATE as usize) / 20; // 50 ms
@@ -376,14 +378,18 @@ impl SpeechAnalyzer {
         }
     }
 
+    /// Percentile `p` of the 50 ms levels, over the frames that are not digital
+    /// silence (under [`DIGITAL_SILENCE_DB`]): a recording cut from a longer
+    /// one has gaps of exact zeros that say nothing about the room.
     fn hist_percentile(&self, p: f64) -> f64 {
-        let total: u64 = self.lvl_hist.iter().map(|v| u64::from(*v)).sum();
+        let from = (((DIGITAL_SILENCE_DB - HIST_LO) / HIST_STEP).ceil()) as usize;
+        let total: u64 = self.lvl_hist[from..].iter().map(|v| u64::from(*v)).sum();
         if total == 0 {
             return HIST_LO;
         }
         let target = (p * total as f64).ceil().max(1.0) as u64;
         let mut acc = 0u64;
-        for (i, c) in self.lvl_hist.iter().enumerate() {
+        for (i, c) in self.lvl_hist.iter().enumerate().skip(from) {
             acc += u64::from(*c);
             if acc >= target {
                 return HIST_LO + i as f64 * HIST_STEP;
@@ -488,7 +494,12 @@ fn estimate_rt60(env_raw: &[f32]) -> Option<f64> {
         .collect();
     let mut sorted = env.clone();
     sorted.sort_by(|a, b| a.total_cmp(b));
-    let floor = sorted[(sorted.len() as f64 * 0.05) as usize];
+    let p5 = sorted[(sorted.len() as f64 * 0.05) as usize];
+    let loud = sorted[(sorted.len() as f64 * 0.95) as usize];
+    // In a long room the tails fill the pauses, and the 5th percentile climbs
+    // with them (measured: -58 dB became -44 dB with an RT60 of 1.8 s). The
+    // floor is therefore never taken higher than 45 dB under the loud speech.
+    let floor = p5.min(loud - 45.0);
     const SPAN: usize = 3; // a peak is the maximum within +-60 ms
     const MAX_FRAMES: usize = 150; // and the fall must finish within 3 s
     let mut rts: Vec<f64> = Vec::new();
@@ -498,12 +509,11 @@ fn estimate_rt60(env_raw: &[f32]) -> Option<f64> {
         let lo = i.saturating_sub(SPAN);
         let hi = (i + SPAN).min(env.len() - 1);
         let is_peak = env[lo..=hi].iter().all(|v| *v <= peak);
-        if !is_peak || peak < floor + 35.0 {
+        if !is_peak || peak < (floor + 35.0).max(loud - 25.0) {
             i += 1;
             continue;
         }
-        let mut t5 = None;
-        let mut t20 = None;
+        let (mut t5, mut tm, mut t20) = (None, None, None);
         let mut lowest = peak;
         let mut j = i + 1;
         while j < env.len() && j - i <= MAX_FRAMES {
@@ -515,15 +525,20 @@ fn estimate_rt60(env_raw: &[f32]) -> Option<f64> {
             if t5.is_none() && v <= peak - 5.0 {
                 t5 = Some(j);
             }
+            if tm.is_none() && v <= peak - 12.5 {
+                tm = Some(j);
+            }
             if v <= peak - 20.0 {
                 t20 = Some(j);
                 break;
             }
             j += 1;
         }
-        if let (Some(a), Some(b)) = (t5, t20) {
-            // The tail must still be over the floor, or the floor flattens the slope.
-            if env[b] >= floor + 6.0 && b > a {
+        if let (Some(a), Some(m), Some(b)) = (t5, tm, t20) {
+            // The fall must be straight (a line in dB): the noise floor, or the
+            // next sound, bends the end of it, and the bend reads as a slow room.
+            let (t1, t2) = ((m - a) as f64, (b - m) as f64);
+            if env[b] >= floor + 6.0 && b > a && t2 <= 2.0 * t1 + 2.0 {
                 rts.push(4.0 * (b - a) as f64 * ENV_HOP_S);
             }
             i = b; // one event per fall
@@ -537,39 +552,43 @@ fn estimate_rt60(env_raw: &[f32]) -> Option<f64> {
     Some(rts[rts.len() / 10])
 }
 
-/// Counts isolated spikes: a sample whose second difference is far over the
-/// local scale AND with quiet neighbourhoods on both sides. A speech onset is
-/// loud on the right of its first sample; a click is not.
+/// Counts isolated spikes: a sample far over the signal around it (not just
+/// over the local second difference, which voiced speech's glottal pulses and
+/// sibilants also exceed), with quiet neighbourhoods on both sides. A speech
+/// onset is loud on the right of its first sample; a click is not.
 struct ClickDetector {
-    /// |second difference|, the last two samples carried over.
+    /// The signal.
+    x: Vec<f32>,
+    /// |second difference| of `x`.
     d: Vec<f32>,
-    /// Scale (running mean of |d|, robust against spikes) per kept sample.
-    scale: Vec<f32>,
     x1: f32,
     x2: f32,
-    s: f32,
-    /// Index (in `d`) of the next sample to judge.
+    /// Index (in `x`) of the next sample to judge.
     next: usize,
-    /// Frames since the start the first kept sample sits at (for the refractory).
     last_hit: Option<u64>,
     base: u64,
     count: usize,
 }
 
+/// Samples either side that have to be quiet.
 const CLICK_SIDE: usize = 32;
+/// ...but for this many next to the spike (its own ringing).
 const CLICK_NEAR: usize = 8;
-const CLICK_FACTOR: f32 = 8.0;
+/// Samples either side the signal's level is read over.
+const CLICK_CONTEXT: usize = 256;
+/// A spike's height must be this many times the local RMS.
+const CLICK_REL: f32 = 6.0;
+/// ...and at least this high, absolute (-26 dBFS).
 const CLICK_MIN_ABS: f32 = 0.05;
 const CLICK_REFRACTORY: u64 = 64;
 
 impl ClickDetector {
     fn new() -> Self {
         Self {
+            x: Vec::new(),
             d: Vec::new(),
-            scale: Vec::new(),
             x1: 0.0,
             x2: 0.0,
-            s: 1e-4,
             next: 0,
             last_hit: None,
             base: 0,
@@ -583,29 +602,39 @@ impl ClickDetector {
 
     fn push(&mut self, x: &[f32]) {
         for v in x {
-            let d = (v - 2.0 * self.x1 + self.x2).abs();
+            self.d.push((v - 2.0 * self.x1 + self.x2).abs());
             self.x2 = self.x1;
             self.x1 = *v;
-            // The scale follows the signal but not the spikes.
-            self.s += (d.min(3.0 * self.s.max(1e-4)) - self.s) / 2048.0;
-            self.d.push(d);
-            self.scale.push(self.s);
+            self.x.push(*v);
         }
-        let end = self.d.len().saturating_sub(CLICK_SIDE);
+        let end = self.x.len().saturating_sub(CLICK_CONTEXT);
         while self.next < end {
             let i = self.next;
             self.next += 1;
             let a = self.d[i];
-            if i < CLICK_SIDE || a < CLICK_MIN_ABS || a < CLICK_FACTOR * self.scale[i] {
+            // The spike sits one sample before the second difference peaks.
+            if i < CLICK_CONTEXT + 1 || a < 2.0 * CLICK_MIN_ABS {
                 continue;
             }
-            // A peak among its closest neighbours.
-            if self.d[i - 3..=i + 3].iter().any(|v| *v > a) {
+            let c = i - 1; // the spike's own sample
+            let h = self.x[c].abs();
+            if h < CLICK_MIN_ABS || self.d[i - 4..=i + 4].iter().any(|v| *v > a) {
+                continue;
+            }
+            let mut e = 0.0f32;
+            let mut n = 0usize;
+            for (k, v) in self.x[c - CLICK_CONTEXT..=c + CLICK_CONTEXT].iter().enumerate() {
+                if k.abs_diff(CLICK_CONTEXT) > 4 {
+                    e += v * v;
+                    n += 1;
+                }
+            }
+            let rms = (e / n as f32).sqrt();
+            if h < CLICK_REL * rms {
                 continue;
             }
             let quiet = |range: std::ops::Range<usize>| {
-                let m = self.d[range.clone()].iter().sum::<f32>() / range.len() as f32;
-                m <= 0.2 * a && m <= 4.0 * self.scale[i]
+                self.d[range.clone()].iter().sum::<f32>() / range.len() as f32 <= 0.2 * a
             };
             if !quiet(i - CLICK_SIDE..i - CLICK_NEAR) || !quiet(i + CLICK_NEAR..i + CLICK_SIDE) {
                 continue;
@@ -616,11 +645,10 @@ impl ClickDetector {
             }
             self.last_hit = Some(at);
         }
-        // Drop what is no longer needed.
-        let keep_from = self.next.saturating_sub(CLICK_SIDE);
+        let keep_from = self.next.saturating_sub(CLICK_CONTEXT + 1);
         if keep_from > 65_536 {
+            self.x.drain(..keep_from);
             self.d.drain(..keep_from);
-            self.scale.drain(..keep_from);
             self.next -= keep_from;
             self.base += keep_from as u64;
         }

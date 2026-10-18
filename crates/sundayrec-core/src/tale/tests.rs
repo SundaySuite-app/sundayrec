@@ -114,8 +114,8 @@ fn analyze16(sr: usize, x: &[f32]) -> SpeechAnalysis {
 }
 
 fn speech16(db: f64, rt60: f64, secs: f64, seed: u64) -> Vec<f32> {
-    // Six seconds of room tone first, as a recording that starts before the service does.
-    let mut x = speechish(16_000.0, secs, db, rt60, &[(0.0, 6.0)], seed);
+    // Twelve seconds of room tone first, as a recording that starts before the service does.
+    let mut x = speechish(16_000.0, secs, db, rt60, &[(0.0, 12.0)], seed);
     add(&mut x, &floor_noise(16_000.0, secs, -60.0, seed + 7));
     x
 }
@@ -208,9 +208,9 @@ fn dereverb_switches_on_for_a_long_room_and_not_for_a_dry_one() {
 #[test]
 fn dereverb_estimate_follows_the_room() {
     let r = |rt: f64| analyze(&speech16(-20.0, rt, 120.0, 21)).rt60_s.unwrap_or(0.0);
-    let (a, b) = (r(0.9), r(2.5));
+    let (a, b) = (r(0.9), r(1.8));
     assert!(b > a, "{a} {b}");
-    assert!((b - 2.5).abs() < 0.8, "{b}");
+    assert!((b - 1.8).abs() < 0.5, "{b}");
 }
 
 // ── click removal ──────────────────────────────────────────────────────────
