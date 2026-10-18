@@ -55,6 +55,7 @@
 //! chain shapes tone and dynamics; the delivery loudness is set after it.
 
 use std::fmt;
+use std::io::{self, Read};
 
 use filmcraft_audio_dsp::{create_effect, AudioEffect};
 
@@ -180,6 +181,24 @@ impl Chain {
     /// True when the chain does nothing.
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
+    }
+
+    /// This chain followed by `next` (the vocal chain, then the mastering
+    /// preset's chain: the order the export has always had).
+    pub fn then(mut self, next: Chain) -> Chain {
+        self.stages.extend(next.stages);
+        self
+    }
+
+    /// A plain gain stage in front of everything (the editor's "Normalize"
+    /// volume, which goes first so the chain's limiter keeps the last word over
+    /// the peak). A gain that is zero or not finite adds nothing.
+    pub fn with_leading_gain(mut self, gain_db: Option<f64>) -> Chain {
+        if let Some(g) = gain_db.filter(|g| g.is_finite() && g.abs() > f64::EPSILON) {
+            self.stages
+                .insert(0, Stage::fx("amplify", &[("gain", g as f32)]));
+        }
+        self
     }
 
     /// The same stage order as [`VocalChain::build_filters`]: channel repair,
@@ -551,6 +570,144 @@ impl BuiltChain {
     }
 }
 
+/// A raw interleaved-f32 stream run through a [`BuiltChain`], as a [`Read`].
+///
+/// The export, the loudness analysis and the preview all take their audio from
+/// ffmpeg as raw `f32le` (decode + cut only, no `-af`) and put it through here.
+/// What comes out is time-aligned with what went in (the stages' latency is
+/// removed and the tail flushed, as in [`BuiltChain::process_offline`]) and has
+/// [`BuiltChain::out_channels`] channels, so the output is exactly as long as the
+/// input. One block of memory, never the whole file.
+pub struct ChainReader<R> {
+    inner: R,
+    chain: BuiltChain,
+    /// Output frames still to drop (the chain's latency).
+    skip: usize,
+    /// Bytes read but not yet a whole frame.
+    carry: Vec<u8>,
+    /// Processed interleaved bytes waiting to be read.
+    out: Vec<u8>,
+    out_pos: usize,
+    flushed: bool,
+}
+
+/// Input frames per block through the chain.
+const READER_BLOCK_FRAMES: usize = 16_384;
+
+impl<R: Read> ChainReader<R> {
+    pub fn new(inner: R, chain: BuiltChain) -> Self {
+        let skip = chain.latency();
+        Self {
+            inner,
+            chain,
+            skip,
+            carry: Vec::new(),
+            out: Vec::new(),
+            out_pos: 0,
+            flushed: false,
+        }
+    }
+
+    /// Channels of the stream this reader produces.
+    pub fn out_channels(&self) -> usize {
+        self.chain.out_channels()
+    }
+
+    /// Process `planar` and queue it as interleaved bytes, after dropping the
+    /// leading latency.
+    fn queue(&mut self, mut planar: Vec<Vec<f32>>) {
+        self.chain.process_block(&mut planar);
+        let frames = planar.first().map_or(0, Vec::len);
+        let drop = self.skip.min(frames);
+        self.skip -= drop;
+        self.out.clear();
+        self.out_pos = 0;
+        self.out.reserve((frames - drop) * planar.len() * 4);
+        for i in drop..frames {
+            for ch in &planar {
+                self.out.extend_from_slice(&ch[i].to_le_bytes());
+            }
+        }
+    }
+
+    /// Fill `self.out` with the next processed block. `false` at the end.
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    fn refill(&mut self) -> io::Result<bool> {
+        let in_ch = self.chain.in_channels();
+        let frame_bytes = in_ch * 4;
+        loop {
+            if self.flushed {
+                return Ok(false);
+            }
+            let mut buf = vec![0u8; READER_BLOCK_FRAMES * frame_bytes];
+            let have = self.carry.len();
+            buf[..have].copy_from_slice(&self.carry);
+            let mut filled = have;
+            loop {
+                match self.inner.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        filled += n;
+                        if filled == buf.len() {
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            let eof = filled < buf.len();
+            let frames = filled / frame_bytes;
+            self.carry = buf[frames * frame_bytes..filled].to_vec();
+            if frames > 0 {
+                let mut planar: Vec<Vec<f32>> = vec![Vec::with_capacity(frames); in_ch];
+                for frame in buf[..frames * frame_bytes].chunks_exact(frame_bytes) {
+                    for (c, s) in frame.chunks_exact(4).enumerate() {
+                        planar[c].push(f32::from_le_bytes([s[0], s[1], s[2], s[3]]));
+                    }
+                }
+                self.queue(planar);
+            }
+            if eof {
+                // End of input: push the latency through as silence so the last
+                // real samples leave the stages. A partial trailing frame is
+                // dropped, as everywhere else in the PCM path.
+                self.flushed = true;
+                let tail_frames = self.chain.latency();
+                if tail_frames > 0 {
+                    let mut kept = self.out.split_off(self.out_pos);
+                    let tail = vec![vec![0.0f32; tail_frames]; in_ch];
+                    self.queue(tail);
+                    kept.extend_from_slice(&self.out);
+                    self.out = kept;
+                    self.out_pos = 0;
+                }
+                return Ok(self.out_pos < self.out.len());
+            }
+            if self.out_pos < self.out.len() {
+                return Ok(true);
+            }
+        }
+    }
+}
+
+impl<R: Read> Read for ChainReader<R> {
+    fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
+        if dst.is_empty() {
+            return Ok(0);
+        }
+        while self.out_pos >= self.out.len() {
+            if !self.refill()? {
+                return Ok(0);
+            }
+        }
+        let n = dst.len().min(self.out.len() - self.out_pos);
+        dst[..n].copy_from_slice(&self.out[self.out_pos..self.out_pos + n]);
+        self.out_pos += n;
+        Ok(n)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -917,5 +1074,84 @@ mod tests {
             .map(|(p, q)| (p - q).abs())
             .fold(0.0f32, f32::max);
         assert!(worst < 1e-4, "block-size dependence {worst}");
+    }
+
+    fn interleave(planar: &[Vec<f32>]) -> Vec<u8> {
+        let mut v = Vec::new();
+        crate::pcm_stream::write_interleaved(&mut v, planar).unwrap();
+        v
+    }
+
+    #[test]
+    fn chain_reader_matches_process_offline_and_keeps_the_length() {
+        // A stream that is not a multiple of any block, through a chain with
+        // latency (denoise + limiter), read in awkward slices.
+        let p = vocal_chain_presets()
+            .into_iter()
+            .find(|p| p.id == "voice-podcast")
+            .expect("preset");
+        let chain = Chain::from_vocal_chain(&p.chain);
+        let l = noise(1.7, -30.0, 5);
+        let r = noise(1.7, -32.0, 9);
+        let want = chain
+            .build(SR, 2)
+            .expect("build")
+            .process_offline(&[l.clone(), r.clone()]);
+        let bytes = interleave(&[l.clone(), r]);
+        let built = chain.build(SR, 2).expect("build");
+        assert!(built.latency() > 0, "the test needs a chain with latency");
+        let mut rd = ChainReader::new(bytes.as_slice(), built);
+        let mut got = Vec::new();
+        let mut buf = [0u8; 4093];
+        loop {
+            let n = rd.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(got.len(), l.len() * 2 * 4, "same number of frames out as in");
+        let want_bytes = interleave(&want);
+        let worst = got
+            .chunks_exact(4)
+            .zip(want_bytes.chunks_exact(4))
+            .map(|(a, b)| {
+                (f32::from_le_bytes([a[0], a[1], a[2], a[3]])
+                    - f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .abs()
+            })
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-4, "reader differs from process_offline by {worst}");
+    }
+
+    #[test]
+    fn chain_reader_upmixes_mono_and_drops_a_partial_frame() {
+        let mut v = VocalChain::default();
+        v.channel_repair = ChannelRepair::DuplicateLeft;
+        v.highpass.enabled = false;
+        v.compressor.enabled = false;
+        let x = sine(1000.0, 0.5, 0.3);
+        let mut bytes = interleave(std::slice::from_ref(&x));
+        bytes.extend_from_slice(&[1, 2]); // half a sample
+        let built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+        let mut rd = ChainReader::new(bytes.as_slice(), built);
+        assert_eq!(rd.out_channels(), 2);
+        let mut got = Vec::new();
+        rd.read_to_end(&mut got).unwrap();
+        assert_eq!(got.len(), x.len() * 2 * 4);
+    }
+
+    #[test]
+    fn a_leading_gain_goes_first_and_zero_adds_nothing() {
+        let c = Chain::from_filter_string("highpass=f=80")
+            .unwrap()
+            .with_leading_gain(Some(6.0));
+        assert_eq!(c.stages()[0].id(), "amplify");
+        assert_eq!(c.stages()[0].param("gain"), Some(6.0));
+        assert_eq!(c.stages().len(), 2);
+        let c = Chain::default().with_leading_gain(Some(0.0));
+        assert!(c.is_empty());
+        let c = Chain::default().with_leading_gain(Some(f64::NAN));
+        assert!(c.is_empty());
     }
 }
