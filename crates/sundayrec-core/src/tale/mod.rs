@@ -52,9 +52,21 @@
 //! [`GATE_DEPTH_DB`] between the tenth and ninetieth percentile, and the
 //! upper end is clearly above the floor. Speech does this (syllables, phrase
 //! pauses); an organ chord, a pad, a fan, a hum do not. "At the floor" is the
-//! measured floor from the analysis plus [`GATE_NEAR_FLOOR_DB`]: it is a
-//! *fixed* number, so the gate cannot be fooled into reading a long note as
-//! floor the way a tracking estimate would be. Wet attacks in 30 ms and goes
+//! floor plus [`GATE_NEAR_FLOOR_DB`], and the floor is read **by the gate off the
+//! signal it gates** (M2R #1, #2): the 5th percentile of its own 10 ms levels over
+//! the last 30 s (`FloorTracker`). The analysis' floor is only the prior for the
+//! first 2 s and the input to the decision. The first version compared with the
+//! analysis' floor, which is measured on another signal (the whole uncut file, 16 kHz,
+//! before channel repair and before `dehum`): hum was taken for the floor and
+//! ate a held chord by 9 dB, and a quiet lead-in, a doubled channel or hiss above
+//! 8 kHz put the number below the floor the gate saw, so the gate fell dry
+//! in every pause over 0.8 s and the de-noiser pumped. The tracker is a long-window
+//! *percentile*, not a minimum follower, so a note must fill 95 % of 30 s to
+//! become the floor (a service's held chords last 10-20 s with pauses around
+//! them); beyond that it is learned as floor, as the de-noiser would have learned
+//! it anyway. The analysis still reads the floor for the decision with the mains
+//! notched out when it found hum, i.e. on what the de-noiser will see after
+//! `dehum`. Wet attacks in 30 ms and goes
 //! dry in 200 ms after a 0.6 s hold. The hold is shorter than the 1.5 s the
 //! de-noiser needs to learn a note as floor, so a chord that follows speech
 //! is never reduced.
@@ -226,10 +238,12 @@ pub struct SpeechAnalyzer {
     /// Per valid block, per mains family (50, 60), per harmonic: line stood out.
     hum_hits: [[u32; HUM_HARMONICS]; 2],
     hum_blocks: u32,
-    // levels
-    lvl_acc: f64,
+    // levels: as heard, and with the 50 Hz and 60 Hz families notched out, so
+    // the floor can be read off what the chain sees after `dehum` (M2R #1)
+    lvl_acc: [f64; 3],
     lvl_n: usize,
-    lvl_hist: Vec<u32>,
+    lvl_hist: [Vec<u32>; 3],
+    notches: [NotchBank; 2],
     // envelope for the decays
     env_acc: f64,
     env_n: usize,
@@ -264,9 +278,10 @@ impl SpeechAnalyzer {
             hum_win: win,
             hum_hits: [[0; HUM_HARMONICS]; 2],
             hum_blocks: 0,
-            lvl_acc: 0.0,
+            lvl_acc: [0.0; 3],
             lvl_n: 0,
-            lvl_hist: vec![0; HIST_BINS],
+            lvl_hist: [vec![0; HIST_BINS], vec![0; HIST_BINS], vec![0; HIST_BINS]],
+            notches: [NotchBank::new(50.0), NotchBank::new(60.0)],
             env_acc: 0.0,
             env_n: 0,
             env: Vec::new(),
@@ -299,14 +314,18 @@ impl SpeechAnalyzer {
             }
             let mono = mono / ch as f64;
             let sq = mono * mono;
-            self.lvl_acc += sq;
+            let n50 = self.notches[0].process(mono);
+            let n60 = self.notches[1].process(mono);
+            self.lvl_acc[0] += sq;
+            self.lvl_acc[1] += n50 * n50;
+            self.lvl_acc[2] += n60 * n60;
             self.lvl_n += 1;
             if self.lvl_n == LEVEL_WIN {
-                let db = ms_db(self.lvl_acc / LEVEL_WIN as f64);
-                let bin =
-                    (((db - HIST_LO) / HIST_STEP).round().max(0.0) as usize).min(HIST_BINS - 1);
-                self.lvl_hist[bin] += 1;
-                self.lvl_acc = 0.0;
+                for (acc, hist) in self.lvl_acc.iter_mut().zip(&mut self.lvl_hist) {
+                    let db = ms_db(*acc / LEVEL_WIN as f64);
+                    hist[hist_bin(db)] += 1;
+                    *acc = 0.0;
+                }
                 self.lvl_n = 0;
             }
             self.env_acc += sq;
@@ -387,15 +406,15 @@ impl SpeechAnalyzer {
     /// Percentile `p` of the 50 ms levels, over the frames that are not digital
     /// silence (under [`DIGITAL_SILENCE_DB`]): a recording cut from a longer
     /// one has gaps of exact zeros that say nothing about the room.
-    fn hist_percentile(&self, p: f64) -> f64 {
+    fn hist_percentile(hist: &[u32], p: f64) -> f64 {
         let from = (((DIGITAL_SILENCE_DB - HIST_LO) / HIST_STEP).ceil()) as usize;
-        let total: u64 = self.lvl_hist[from..].iter().map(|v| u64::from(*v)).sum();
+        let total: u64 = hist[from..].iter().map(|v| u64::from(*v)).sum();
         if total == 0 {
             return HIST_LO;
         }
         let target = (p * total as f64).ceil().max(1.0) as u64;
         let mut acc = 0u64;
-        for (i, c) in self.lvl_hist.iter().enumerate().skip(from) {
+        for (i, c) in hist.iter().enumerate().skip(from) {
             acc += u64::from(*c);
             if acc >= target {
                 return HIST_LO + i as f64 * HIST_STEP;
@@ -407,9 +426,6 @@ impl SpeechAnalyzer {
     /// Close the analysis.
     pub fn finish(self) -> SpeechAnalysis {
         let duration_s = self.frames as f64 / f64::from(ANALYSIS_RATE);
-        let noise_floor_db = self.hist_percentile(0.05);
-        let speech_db = self.hist_percentile(0.95);
-
         let hum = if self.hum_blocks >= 1 {
             let mut best: Option<(Mains, f64)> = None;
             for (fam, mains) in [(0, Mains::Hz50), (1, Mains::Hz60)] {
@@ -423,6 +439,18 @@ impl SpeechAnalyzer {
         } else {
             None
         };
+
+        // The levels the chain will see: with hum found, the hum is gone by the time
+        // the de-noiser looks, so the floor is read with the mains notched out. Read
+        // as heard, a 50 Hz line at -50 dBFS is «the floor» and the real room (-66)
+        // never shows (M2R #1).
+        let hist = match hum {
+            Some((Mains::Hz50, _)) => &self.lvl_hist[1],
+            Some((Mains::Hz60, _)) => &self.lvl_hist[2],
+            None => &self.lvl_hist[0],
+        };
+        let noise_floor_db = Self::hist_percentile(hist, 0.05);
+        let speech_db = Self::hist_percentile(hist, 0.95);
 
         let rt60_s = estimate_rt60(&self.env);
 
@@ -481,6 +509,69 @@ pub fn analyze_stream<R: std::io::Read + ?Sized>(
         Ok(())
     })?;
     Ok(a.finish())
+}
+
+fn hist_bin(db: f64) -> usize {
+    (((db - HIST_LO) / HIST_STEP).round().max(0.0) as usize).min(HIST_BINS - 1)
+}
+
+/// Notches at the first four harmonics of a mains frequency, in series: what
+/// `dehum` (`harmonics` 4) takes out of the signal before the de-noiser, to
+/// read the floor on. Q 10 is wider than the chain's 30, so a hum that drifts a
+/// little is still gone; the room's own energy in those four narrow bands is nil.
+struct NotchBank {
+    sections: Vec<Biquad>,
+}
+
+impl NotchBank {
+    fn new(f0: f64) -> Self {
+        Self {
+            sections: (1..=4)
+                .map(|h| Biquad::notch(f0 * f64::from(h), HUM_NOTCH_Q))
+                .collect(),
+        }
+    }
+
+    fn process(&mut self, x: f64) -> f64 {
+        self.sections.iter_mut().fold(x, |v, s| s.process(v))
+    }
+}
+
+/// Notch width for the analysis, quality factor.
+const HUM_NOTCH_Q: f64 = 10.0;
+
+/// A biquad notch (RBJ cookbook), transposed direct form II.
+struct Biquad {
+    b0: f64,
+    b1: f64,
+    a1: f64,
+    a2: f64,
+    z1: f64,
+    z2: f64,
+}
+
+impl Biquad {
+    fn notch(f: f64, q: f64) -> Self {
+        let w = 2.0 * std::f64::consts::PI * f / f64::from(ANALYSIS_RATE);
+        let alpha = w.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        Self {
+            b0: 1.0 / a0,
+            b1: -2.0 * w.cos() / a0,
+            a1: -2.0 * w.cos() / a0,
+            a2: (1.0 - alpha) / a0,
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+
+    fn process(&mut self, x: f64) -> f64 {
+        // b2 equals b0 for a notch.
+        let y = self.b0 * x + self.z1;
+        self.z1 = self.b1 * x - self.a1 * y + self.z2;
+        self.z2 = self.b0 * x - self.a2 * y;
+        y
+    }
 }
 
 /// Mean square to dB, floored so digital silence is a number.
@@ -681,7 +772,10 @@ pub struct SpeechGate {
     acc: f64,
     n: usize,
     levels: VecDeque<f32>,
+    /// The floor the analysis measured: the prior, used until the gate has heard enough.
     floor_db: f32,
+    /// The floor as this gate hears it, from the signal it is gating (M2R #2).
+    track: FloorTracker,
     hold_left: usize,
     hold_hops: usize,
     target: f32,
@@ -700,6 +794,7 @@ impl SpeechGate {
             n: 0,
             levels: VecDeque::with_capacity(64),
             floor_db,
+            track: FloorTracker::new(),
             hold_left: 0,
             hold_hops: 60,
             target: 1.0, // until it has heard anything, treat as speech: the start of a file
@@ -740,6 +835,7 @@ impl SpeechGate {
             self.levels.pop_front();
         }
         self.levels.push_back(db);
+        self.track.push(db);
         if self.levels.len() < 20 {
             return; // 0.2 s to form an opinion
         }
@@ -747,10 +843,9 @@ impl SpeechGate {
         v.sort_by(f32::total_cmp);
         let p10 = v[v.len() / 10];
         let p90 = v[v.len() * 9 / 10];
-        let speech_like =
-            p90 - p10 >= GATE_DEPTH_DB && p90 >= self.floor_db + GATE_SPEECH_ABOVE_FLOOR_DB;
-        let at_floor =
-            db <= self.floor_db + GATE_NEAR_FLOOR_DB && p90 <= self.floor_db + GATE_QUIET_SPAN_DB;
+        let floor = self.track.floor().unwrap_or(self.floor_db);
+        let speech_like = p90 - p10 >= GATE_DEPTH_DB && p90 >= floor + GATE_SPEECH_ABOVE_FLOOR_DB;
+        let at_floor = db <= floor + GATE_NEAR_FLOOR_DB && p90 <= floor + GATE_QUIET_SPAN_DB;
         if speech_like {
             self.hold_left = self.hold_hops;
         } else {
@@ -761,6 +856,78 @@ impl SpeechGate {
         } else {
             0.0
         };
+    }
+}
+
+/// The floor of the signal the gate is gating: the 5th percentile of its own 10 ms
+/// levels over the last [`TRACK_WINDOW_HOPS`] hops (30 s), in the same samples, rate and
+/// level the de-noiser sees. M2R #1 and #2: a floor measured earlier on another signal
+/// (the whole uncut file, 16 kHz, before channel repair and before `dehum`) was wrong by
+/// as much as the hum, the cut-away lead-in, the doubled channel or the missing band above
+/// 8 kHz, and «at the floor» never fired, so the de-noiser pumped in every long pause.
+///
+/// Why this cannot be fooled the way a tracking estimate would: it is a *percentile*,
+/// not a minimum follower, and the window is long. A note has to fill 95 % of 30 s (the
+/// quietest 5 % of the hops are the floor) before it becomes the floor. A held chord of
+/// 10-20 s, the longest a service has, leaves the speech pauses around it in the window.
+/// The limit is stated, not hidden: a tone held for more than ~28 s without a single pause
+/// is learned as floor, as the de-noiser would have learned it anyway (B2b).
+struct FloorTracker {
+    hist: Vec<u32>,
+    ring: VecDeque<u16>,
+    est: Option<f32>,
+    since: usize,
+}
+
+/// 30 s of 10 ms hops.
+const TRACK_WINDOW_HOPS: usize = 3000;
+/// The least data (2 s) before the estimate is used; until then the analysis' floor is.
+const TRACK_MIN_HOPS: usize = 200;
+/// The estimate is recomputed every this many hops (100 ms).
+const TRACK_EVERY: usize = 10;
+/// Levels under this are digital silence (a cut), not a floor, dBFS.
+const TRACK_SILENCE_DB: f32 = -95.0;
+
+impl FloorTracker {
+    fn new() -> Self {
+        Self {
+            hist: vec![0; HIST_BINS],
+            ring: VecDeque::with_capacity(TRACK_WINDOW_HOPS + 1),
+            est: None,
+            since: 0,
+        }
+    }
+
+    fn push(&mut self, db: f32) {
+        if db <= TRACK_SILENCE_DB {
+            return;
+        }
+        let bin = hist_bin(f64::from(db));
+        self.hist[bin] += 1;
+        self.ring.push_back(bin as u16);
+        if self.ring.len() > TRACK_WINDOW_HOPS {
+            if let Some(old) = self.ring.pop_front() {
+                self.hist[old as usize] -= 1;
+            }
+        }
+        self.since += 1;
+        if self.since >= TRACK_EVERY && self.ring.len() >= TRACK_MIN_HOPS {
+            self.since = 0;
+            let target = (self.ring.len() as f64 * 0.05).ceil().max(1.0) as u32;
+            let mut acc = 0u32;
+            for (i, c) in self.hist.iter().enumerate() {
+                acc += c;
+                if acc >= target {
+                    self.est = Some((HIST_LO + i as f64 * HIST_STEP) as f32);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// The floor as heard so far, once there is enough to say.
+    fn floor(&self) -> Option<f32> {
+        self.est
     }
 }
 

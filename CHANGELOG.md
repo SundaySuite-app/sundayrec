@@ -12,6 +12,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   nivå som passer akkurat de sekundene. Første gang du trykker «Etter» måler appen
   hele programmet (omtrent ett minutt for 45 minutter lyd); deretter går det raskt.
 
+- **«Tale» tar ikke lenger brum for bakgrunnsstøy, og støyfjerningen pumper ikke
+  i lange pauser.** Støyfjerningen leser nå selv hvor stille rommet er, i selve
+  lyden den renser. Før kunne et opptak med brum få svake holdte toner, som en
+  pad under bønn, dempet med 9 dB, og et opptak som var startet lenge før
+  gudstjenesten (eller hadde en død kanal) kunne få støyen til å hoppe opp og ned
+  i hver lang pause. Et opptak med sterk brum får nå også støyfjerning.
+
 - **Lyd-steget sier hva som ble gjort.** Står profilen på «Tale», viser Rediger →
   Lyd nå i korte setninger hva appen fant og tok bort i akkurat dette opptaket:
   «Vi fjernet brum fra strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet
