@@ -1434,23 +1434,19 @@ mod tests {
             })
         };
 
-        std::thread::sleep(Duration::from_millis(1_200));
+        // Deadlines, not sleeps: a shared CI runner (debug build) may write
+        // fewer than 30 pictures a second; the proof is that they flow.
+        wait_for("pictures before the outage", || track.stats().new > 5);
         let new_before = track.stats().new;
-        assert!(
-            new_before > 5,
-            "pictures before the outage: {:?}",
-            track.stats()
-        );
 
         // THE CABLE: out for long enough that the 2 s hold runs out.
         world.unplug(true);
-        std::thread::sleep(Duration::from_millis(4_000));
+        let black_before = track.stats().black;
+        wait_for("the hole goes black after the 2 s hold", || {
+            track.stats().black >= black_before + 20
+        });
         let sent_in_outage = sent.load(Ordering::Relaxed);
         let health = track.stats();
-        assert!(
-            health.black > 0,
-            "the hole went black after the hold: {health:?}"
-        );
         assert!(!health.encoder_failed);
 
         // …and back, on the same id.
