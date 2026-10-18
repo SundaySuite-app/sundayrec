@@ -5033,6 +5033,7 @@ name = "sundayrec"
 version = "0.26.0-beta.1"
 dependencies = [
  "base64 0.23.1",
+ "block2",
  "cap-camera-windows",
  "chrono",
  "cpal",

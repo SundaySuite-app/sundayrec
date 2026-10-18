@@ -35,8 +35,12 @@
 //! keeps its retained `CVPixelBuffer`, so a queue of many frames holds many pool
 //! buffers; keep the queue short and copy out promptly (C3 decides the depth).
 //!
-//! Nothing records through this module yet: the recorder still drives ffmpeg's
-//! own capture until C3. The pure decisions (which frame duration to pin, a
+//! **Reconnect (C5a).** [`start_resilient`] adds a supervisor that re-opens the
+//! camera on the same stable id after an outage (see [`Capture`] and
+//! `reconnect.rs`); the pure decisions are `sundayrec_core::camera_reconnect`.
+//! [`start`] is the plain one-shot session (probe, diagnosis).
+//!
+//! The pure decisions (which frame duration to pin, a
 //! USB camera's vendor/product, host ticks → ns, what is a capture card) live in
 //! `sundayrec_core::camera_format`, so they are tested on every platform.
 //!
@@ -49,6 +53,7 @@ use std::sync::Arc;
 
 pub mod preview;
 pub mod queue;
+pub(crate) mod reconnect;
 pub mod stats;
 
 #[cfg(target_os = "macos")]
@@ -59,6 +64,7 @@ mod macos_backend;
 mod windows_backend;
 
 use queue::{FrameQueue, QueueStats};
+use reconnect::CameraPlatform as _;
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -190,6 +196,37 @@ pub struct VideoFormat {
     mac: avfoundation::CameraFormat,
 }
 
+#[cfg(test)]
+impl VideoFormat {
+    /// A made-up format for tests of the code around cameras.
+    pub(crate) fn synthetic(
+        width: u32,
+        height: u32,
+        fps: f64,
+        pixel_format: PixelFormat,
+        native_code: &str,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            fps,
+            pixel_format,
+            native_code: native_code.to_owned(),
+            #[cfg(target_os = "macos")]
+            mac: avfoundation::CameraFormat {
+                width,
+                height,
+                pixel_format: 0,
+                min_frame_duration: sundayrec_core::camera_format::FrameDuration {
+                    value: 1,
+                    timescale: fps as i32,
+                },
+                fps,
+            },
+        }
+    }
+}
+
 impl fmt::Display for VideoFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -309,28 +346,49 @@ pub struct CaptureStats {
 
 /// A running capture. Frames arrive in [`Capture::frames`]; dropping the capture
 /// stops it.
+///
+/// **The queue outlives the camera session (C5a).** A capture started with
+/// [`start_resilient`] has a supervisor thread beside it
+/// (`camera/reconnect.rs`): when the camera drops out it closes the OS session,
+/// and when the SAME stable id is listed again it opens a new one that pushes
+/// into the SAME [`FrameQueue`]. Everything attached to the queue — the video
+/// track reading it, the preview's tap, the counters — carries on without
+/// noticing anything but a gap in the frames, which the conformer fills (the last
+/// picture for 2 s, then black). Nothing here touches the audio.
 pub struct Capture {
     queue: Arc<FrameQueue<Frame>>,
-    backend: Option<Box<dyn BackendHandle>>,
+    shared: Arc<reconnect::Shared>,
 }
 
 /// What a backend reports about its own session.
 #[derive(Clone, Copy, Debug, Default)]
-struct BackendCounters {
-    dropped_by_os: u64,
-    skipped: u64,
+pub(crate) struct BackendCounters {
+    pub(crate) dropped_by_os: u64,
+    pub(crate) skipped: u64,
 }
 
 /// `Send`: a capture is started on one thread and stopped on another (the
 /// recorder's stop path runs the stop on a blocking task it can time out).
 /// Both backends are: the macOS handle by its documented `unsafe impl Send`,
 /// the Windows one is plain ids and counters.
-trait BackendHandle: Send {
+pub(crate) trait BackendHandle: Send {
     /// `"AVFoundation, Native mode"`, `"Media Foundation"` …
     fn describe(&self) -> String;
     fn counters(&self) -> BackendCounters;
     /// Stop the session; no callback runs after this returns.
     fn stop(self: Box<Self>) -> BackendCounters;
+}
+
+/// Whether the camera is delivering, as far as the reconnect watch can tell.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CaptureHealth {
+    /// `Some(how long)` while the camera is gone or silent and the session is
+    /// being re-opened; `None` while it delivers (and always for a capture
+    /// without a reconnect watch).
+    pub lost_for: Option<std::time::Duration>,
+    /// How many times the camera has dropped out and been re-opened (or is
+    /// still waiting to be).
+    pub outages: u32,
 }
 
 impl Capture {
@@ -339,21 +397,19 @@ impl Capture {
         &self.queue
     }
 
-    /// Which backend and mode the session runs in.
+    /// Which backend and mode the session runs in (empty while the camera is
+    /// lost).
     pub fn describe(&self) -> String {
-        self.backend
-            .as_ref()
-            .map(|b| b.describe())
-            .unwrap_or_default()
+        self.shared.describe()
     }
 
     pub fn stats(&self) -> CaptureStats {
-        let counters = self
-            .backend
-            .as_ref()
-            .map(|b| b.counters())
-            .unwrap_or_default();
-        combine(self.queue.stats(), counters)
+        combine(self.queue.stats(), self.shared.counters())
+    }
+
+    /// Is the camera delivering? See [`CaptureHealth`].
+    pub fn health(&self) -> CaptureHealth {
+        self.shared.health()
     }
 
     /// Stop the capture and return its final counters. The queue is closed;
@@ -363,7 +419,7 @@ impl Capture {
     }
 
     fn shutdown(&mut self) -> CaptureStats {
-        let counters = self.backend.take().map(|b| b.stop()).unwrap_or_default();
+        let counters = self.shared.shutdown();
         self.queue.close();
         combine(self.queue.stats(), counters)
     }
@@ -465,33 +521,55 @@ pub fn formats(camera_id: &str) -> Result<Vec<VideoFormat>, CameraError> {
 /// Start capturing `format` (one of the camera's [`formats`]) into a bounded
 /// queue of at most `queue_frames` frames. See the module docs: the camera
 /// callback only ever pushes to that queue.
+///
+/// The session ends if the camera does. For a recording use
+/// [`start_resilient`].
 pub fn start(
     camera_id: &str,
     format: &VideoFormat,
     queue_frames: usize,
 ) -> Result<Capture, CameraError> {
     let queue: Arc<FrameQueue<Frame>> = Arc::new(FrameQueue::new(queue_frames));
-    #[cfg(target_os = "macos")]
-    {
-        let backend = macos_backend::start(camera_id, format, Arc::clone(&queue))?;
-        Ok(Capture {
-            queue,
-            backend: Some(backend),
-        })
-    }
-    #[cfg(windows)]
-    {
-        let backend = windows_backend::start(camera_id, format, Arc::clone(&queue))?;
-        Ok(Capture {
-            queue,
-            backend: Some(backend),
-        })
-    }
-    #[cfg(not(any(target_os = "macos", windows)))]
-    {
-        let _ = (camera_id, format, queue);
-        Err(CameraError::Unsupported)
-    }
+    let backend = reconnect::OsPlatform.open(camera_id, format, Arc::clone(&queue))?;
+    Ok(Capture {
+        shared: reconnect::Shared::new(backend),
+        queue,
+    })
+}
+
+/// [`start`], plus a reconnect watch (C5a): if the camera drops out — unplugged,
+/// out of range, silent — the session is closed, and when the SAME stable id
+/// (never a number, never "some other camera") is listed again it is opened
+/// again on the same format into the same queue. See [`Capture`].
+pub fn start_resilient(
+    camera_id: &str,
+    format: &VideoFormat,
+    queue_frames: usize,
+) -> Result<Capture, CameraError> {
+    start_with(
+        Arc::new(reconnect::OsPlatform),
+        camera_id,
+        format,
+        queue_frames,
+    )
+}
+
+/// [`start_resilient`] over any platform: the real cameras, or a test's camera
+/// that comes and goes on command.
+pub(crate) fn start_with(
+    platform: Arc<dyn reconnect::CameraPlatform>,
+    camera_id: &str,
+    format: &VideoFormat,
+    queue_frames: usize,
+) -> Result<Capture, CameraError> {
+    let queue: Arc<FrameQueue<Frame>> = Arc::new(FrameQueue::new(queue_frames));
+    let backend = platform.open(camera_id, format, Arc::clone(&queue))?;
+    let capture = Capture {
+        shared: reconnect::Shared::new(backend),
+        queue,
+    };
+    reconnect::supervise(platform, &capture.shared, camera_id, format, &capture.queue);
+    Ok(capture)
 }
 
 #[cfg(test)]
@@ -568,7 +646,7 @@ mod tests {
         ));
         let cap = Capture {
             queue: Arc::clone(&queue),
-            backend: Some(Box::new(Fake(stopped.clone()))),
+            shared: reconnect::Shared::new(Box::new(Fake(stopped.clone()))),
         };
         assert_eq!(cap.describe(), "fake");
         let stats = cap.stop();
