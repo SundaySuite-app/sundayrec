@@ -495,6 +495,34 @@ dette: den skrives av en annen tråd fra en annen ring. Det C5b må vite:
   stabil mellom tilkoblinger — bestemmer om gjenkoblingen i det hele tatt finner
   det igjen (v7 skriver ut ID-en før og etter). Vi kjenner ikke igjen på navn.
 
+**Levert (C5b).** Helsen fra C5a når den frivillige. Det som er nytt:
+
+- **Veien ut.** `VideoTrack::lost_for()` (fra `VideoSource::health().lost_for`)
+  leses på segmentets 1 Hz-tikk og legges på `recording://progress` som
+  `video_lost_ms: number | null` (`RecordingProgress`, ts-rs-binding).
+  `null` = kameraet leverer (og alltid for lydopptak). Samme kanal som
+  «Kameraet henger litt etter …» (C3c), ingen ny hendelse.
+- **Meldingen** («Kameraet falt ut — lyden tas fortsatt opp», `app.overlay.cameraLost`,
+  sju språk) vises i opptaksoverlegget med en gang kameraet uteblir og går når
+  neste hjerteslag igjen har `null`. `sessionCameraLost` (`app/state/recording.ts`)
+  er hjerteslagets siste ord, ikke en teller som bare går oppover, og skrives
+  bare når verdien skifter. `role="status"`, ikke en alarm.
+- **Varselet** er `sundayrec_core::notify::CameraOutageWatch`: ren, tar `lost_for`
+  og sier «forfalt» fra og med nøyaktig 60 s (`CAMERA_LOST_ALERT_AFTER`), og
+  ikke før. `notify::take` lytter på progress-hendelsen; varselet går ut bare når
+  vinduet ikke er i fokus, og utfallet merkes som sagt først da (passerer det
+  60 s mens du ser på appen, sies det når du går til lysbildene). Gjenkobling
+  gjør vakten klar til neste utfall, så et nytt utfall i samme opptak varsles
+  på nytt. Reset følger kameraet, ikke fragmentgrensene.
+- **Bevis.** `notify::tests` (5: 59,999 s ingen, 60 s forfalt, ikke hvert
+  sekund, gjenkobling, utfall før 60 s), `notify::take::tests` (60 s-grensen,
+  én gang per utfall, vindu i fokus), `native_capture::segment::tests::
+the_camera_outage_rides_the_progress_event_and_clears_on_return` (helse →
+  statushendelse under pauset tid), vitest i `app/state/recording.test.ts`,
+  e2e «kameraet faller ut …» i `e2e/record.spec.ts`. Ingen test sover på ekte
+  klokke: varigheten er en verdi testen setter.
+- **Ikke prøvd:** ekte Continuity-kamera (RIG-DAY (v9)), og Windows.
+
 ## Notert, ikke planlagt
 
 - **Helt native koding.** filmcrafts VideoToolbox- og NVENC-kodere (MIT/Apache)

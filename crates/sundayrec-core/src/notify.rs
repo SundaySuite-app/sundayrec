@@ -254,6 +254,57 @@ pub enum TakeAlert {
     Reconnecting,
     /// Free space fell below the graduated warning threshold.
     DiskLow,
+    /// The camera has been gone for [`CAMERA_LOST_ALERT_AFTER`] while the audio
+    /// keeps recording (C5b). Said once per OUTAGE, not once per take: see
+    /// [`CameraOutageWatch`].
+    CameraLost,
+}
+
+/// How long the camera must have been gone before the operator is told
+/// natively (C5b). The in-app note shows at once; a cable that is plugged back
+/// in within a minute is not worth a notification.
+pub const CAMERA_LOST_ALERT_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// What the progress heartbeat says about the camera, and what to do about it.
+///
+/// The reconnect watch (`camera::reconnect`) owns the clock: it reports how
+/// long the camera has been gone (`lost_for`), `None` while it delivers. This
+/// type only decides, from that duration, whether the alert is DUE — so the
+/// 60 s line is testable with plain durations, no sleeping and no clock.
+///
+/// The alert is due once per outage. It stays due until the caller says it was
+/// actually sent ([`Self::mark_alerted`]): a native notification is only raised
+/// when the window is out of view, and an outage that crosses the line while
+/// the operator is looking at the app is still news if they switch to the
+/// slides a minute later (same rule as `notify::take::raise`). A recovery
+/// (`None`) re-arms it, so a SECOND outage in the same take is told again.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CameraOutageWatch {
+    alerted: bool,
+}
+
+impl CameraOutageWatch {
+    /// A watch with nothing told yet (usable in a `static`).
+    pub const fn new() -> Self {
+        Self { alerted: false }
+    }
+
+    /// `lost_for` from the latest heartbeat. `true` while the 60 s alert is
+    /// due and has not been sent for this outage.
+    pub fn observe(&mut self, lost_for: Option<std::time::Duration>) -> bool {
+        match lost_for {
+            None => {
+                self.alerted = false;
+                false
+            }
+            Some(d) => !self.alerted && d >= CAMERA_LOST_ALERT_AFTER,
+        }
+    }
+
+    /// The alert for the current outage was sent; do not say it again.
+    pub fn mark_alerted(&mut self) {
+        self.alerted = true;
+    }
 }
 
 /// Whether THIS degradation should also raise a native notification.
@@ -447,5 +498,58 @@ mod tests {
             let back: FailureSource = serde_json::from_str(&json).expect("round-trip");
             assert_eq!(back, source);
         }
+    }
+    // ── C5b: the camera outage alert ─────────────────────────────────────────
+
+    fn secs(n: u64) -> Option<std::time::Duration> {
+        Some(std::time::Duration::from_secs(n))
+    }
+
+    #[test]
+    fn the_camera_alert_is_not_due_at_59_s_and_due_at_60_s() {
+        let mut w = CameraOutageWatch::default();
+        assert!(!w.observe(secs(0)));
+        assert!(!w.observe(secs(30)));
+        assert!(!w.observe(Some(
+            std::time::Duration::from_secs(59) + std::time::Duration::from_millis(999)
+        )));
+        assert!(w.observe(secs(60)));
+    }
+
+    #[test]
+    fn a_sent_alert_is_not_repeated_every_second() {
+        let mut w = CameraOutageWatch::default();
+        assert!(w.observe(secs(60)));
+        w.mark_alerted();
+        for s in 61..200 {
+            assert!(!w.observe(secs(s)), "second {s}");
+        }
+    }
+
+    #[test]
+    fn an_alert_that_was_not_sent_stays_due() {
+        // The window was in view, so nothing was raised and nothing marked.
+        let mut w = CameraOutageWatch::default();
+        assert!(w.observe(secs(60)));
+        assert!(w.observe(secs(61)));
+        assert!(w.observe(secs(90)));
+    }
+
+    #[test]
+    fn a_recovery_rearms_it_for_the_next_outage() {
+        let mut w = CameraOutageWatch::default();
+        assert!(w.observe(secs(75)));
+        w.mark_alerted();
+        assert!(!w.observe(None), "the camera is back");
+        assert!(!w.observe(secs(5)), "a new outage starts below the line");
+        assert!(w.observe(secs(60)), "…and is told again at 60 s");
+    }
+
+    #[test]
+    fn a_recovery_before_the_line_never_alerts() {
+        let mut w = CameraOutageWatch::default();
+        assert!(!w.observe(secs(59)));
+        assert!(!w.observe(None));
+        assert!(!w.observe(secs(2)));
     }
 }

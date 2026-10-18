@@ -275,6 +275,12 @@ impl VideoTrack {
         }
     }
 
+    /// How long the camera has been gone (C5b): `None` while it delivers, when
+    /// the track has no camera of its own, or once the source has been taken.
+    pub fn lost_for(&self) -> Option<Duration> {
+        self.source.as_ref().and_then(|s| s.health().lost_for)
+    }
+
     pub fn stats(&self) -> VideoTrackStats {
         let q = self.queue.stats();
         let c = *lock_recover(&self.counters.conform);

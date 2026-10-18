@@ -1545,6 +1545,56 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await expect(page.locator('[role="alert"]')).toHaveCount(0);
   });
 
+  test("kameraet faller ut: meldingen står mens det er borte og går ved gjenkobling", async ({
+    page,
+  }) => {
+    // C5b: lyden tas opp videre, så meldingen er en rolig status, ikke en
+    // alarm. Den vises med en gang (ikke først etter 60 s; det er systemvarselets
+    // grense, og den bor i Rust) og forsvinner når hjerteslaget igjen er `null`.
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await pushColorFrame(page, "#ff0000");
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      reconnect_count: 0,
+      scheduled_stop_ms: null,
+    });
+    const note = page.getByTestId("overlay-camera-lost");
+    await emit(page, "recording-progress", {
+      bytes_written: 1_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: null,
+    });
+    await expect(note).toHaveCount(0);
+
+    await emit(page, "recording-progress", {
+      bytes_written: 2_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: 1_000,
+    });
+    await expect(note).toHaveText("Kameraet falt ut — lyden tas fortsatt opp");
+    await expect(page.locator('[role="alert"]')).toHaveCount(0);
+
+    // Mange sekunder senere: fortsatt samme melding, ikke flere.
+    await emit(page, "recording-progress", {
+      bytes_written: 3_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: 75_000,
+    });
+    await expect(note).toHaveCount(1);
+
+    await emit(page, "recording-progress", {
+      bytes_written: 4_000_000,
+      video_frames_dropped: 0,
+      video_lost_ms: null,
+    });
+    await expect(note).toHaveCount(0);
+  });
+
   test("uten kamera i dette opptaket er det ingen ramme", async ({ page }) => {
     await spyEvents(page);
     await boot(page, {

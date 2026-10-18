@@ -31,6 +31,7 @@ import {
   recorderState,
   reconnecting,
   scheduledStopMs,
+  sessionCameraLost,
   sessionVideoDropped,
   silenceActive,
 } from "./recording";
@@ -470,6 +471,53 @@ describe("tapte kamerabilder (C3c)", () => {
     expect(sessionVideoDropped.value).toBe(5);
     markSessionStarted();
     expect(sessionVideoDropped.value).toBe(0);
+    h.off();
+  });
+});
+
+describe("kameraet er borte (C5b)", () => {
+  it("vises ved utfall, forsvinner ved gjenkobling, og nullstilles av en ny økt", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    expect(sessionCameraLost.value).toBe(false);
+    // Kameraet leverer: feltet er null.
+    h.emit("recording-progress", { bytes_written: 10, video_lost_ms: null });
+    expect(sessionCameraLost.value).toBe(false);
+    // Utfall: meldingen skal opp med en gang, lenge før 60 s.
+    h.emit("recording-progress", { bytes_written: 20, video_lost_ms: 1_000 });
+    expect(sessionCameraLost.value).toBe(true);
+    // Hvert sekund sier det samme; verdien endrer seg ikke.
+    h.emit("recording-progress", { bytes_written: 30, video_lost_ms: 2_000 });
+    h.emit("recording-progress", { bytes_written: 40, video_lost_ms: 61_000 });
+    expect(sessionCameraLost.value).toBe(true);
+    // Et event uten feltet (lydopptak, eldre motor) rører det ikke.
+    h.emit("recording-progress", { bytes_written: 45 });
+    expect(sessionCameraLost.value).toBe(true);
+    // Gjenkobling: borte igjen.
+    h.emit("recording-progress", { bytes_written: 50, video_lost_ms: null });
+    expect(sessionCameraLost.value).toBe(false);
+    // Nytt utfall, og en ny økt midt i det skal ikke arve det.
+    h.emit("recording-progress", { bytes_written: 60, video_lost_ms: 500 });
+    expect(sessionCameraLost.value).toBe(true);
+    markSessionStarted();
+    expect(sessionCameraLost.value).toBe(false);
+    h.off();
+  });
+
+  it("signalet skrives bare når verdien skifter, ikke hvert sekund", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    let writes = 0;
+    const off = sessionCameraLost.subscribe(() => writes++);
+    const base = writes; // abonnementet kaller én gang med startverdien
+    for (let s = 1; s <= 90; s++) {
+      h.emit("recording-progress", {
+        bytes_written: s,
+        video_lost_ms: s * 1000,
+      });
+    }
+    expect(writes - base).toBe(1);
+    off();
     h.off();
   });
 });

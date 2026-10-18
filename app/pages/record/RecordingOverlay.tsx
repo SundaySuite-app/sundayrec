@@ -77,6 +77,7 @@ import {
   scheduledStopMs,
   sessionStartedAtMs,
   silenceActive,
+  sessionCameraLost,
   sessionVideoDropped,
   silenceDetail,
 } from "../../state/recording";
@@ -259,6 +260,15 @@ function Overlay() {
           class={styles.hint}
         >
           {t("app.overlay.videoSkipped")}
+        </p>
+      ) : null}
+
+      {/* C5b: kameraet er borte nå. Sagt med en gang og borte igjen ved
+          gjenkobling; selve opptaket går videre, og det er det setningen
+          forteller. `role=status`, ikke alert: det er ingenting å gjøre. */}
+      {camera && sessionCameraLost.value ? (
+        <p data-testid="overlay-camera-lost" role="status" class={styles.hint}>
+          {t("app.overlay.cameraLost")}
         </p>
       ) : null}
 

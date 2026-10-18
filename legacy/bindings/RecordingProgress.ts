@@ -13,4 +13,11 @@ bytes_written: number,
  * because the encoder could not keep up. 0 for audio-only sessions. The
  * overlay shows a calm note when it is above 0; the audio is never affected.
  */
-video_frames_dropped: number, };
+video_frames_dropped: number, 
+/**
+ * How long the camera has been gone, in milliseconds, while the session
+ * keeps recording audio (C5b); `null` while it delivers and for audio-only
+ * sessions. The overlay says «Kameraet falt ut — lyden tas fortsatt opp»
+ * for as long as this is set, and the notification waits for 60 s of it.
+ */
+video_lost_ms: number | null, };
