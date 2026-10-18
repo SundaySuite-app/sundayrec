@@ -1488,7 +1488,9 @@ mod tests {
         // Counters add up across both sessions: nothing the camera pushed is
         // missing from the queue's count, and nothing was dropped.
         assert_eq!(stats.queue_dropped, 0, "{stats:?}");
-        assert!(stats.delivered > 30, "{stats:?}");
+        // Both sessions delivered (each waited for above); how many is the
+        // runner's speed (24 on a busy macOS runner), not the property.
+        assert!(stats.delivered > 10, "{stats:?}");
         assert!(stats.black >= 20, "{stats:?}");
         assert!(stats.new > new_before + 5, "{stats:?}");
         assert!(Arc::ptr_eq(&source.frames(), &queue));
