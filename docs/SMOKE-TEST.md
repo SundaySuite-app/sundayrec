@@ -134,8 +134,10 @@ the app at capture time with no error — that is the symptom to watch for.
 
 It also ships `NSCameraUseContinuityCameraDeviceType` (C1a): on macOS 14+ an
 iPhone used as a webcam is then listed as a Continuity camera instead of as a
-built-in one. The native camera capture (`src-tauri/src/camera/`) is not used
-by recordings yet; its hardware check is RIG-DAY (c1a), a one-line
+built-in one. The native camera capture (`src-tauri/src/camera/`) is what
+every video recording reads the camera through since C3b — and the camera
+picker, its «what this camera delivers» line and the diagnose camera check read
+the same list. Its hardware check is RIG-DAY (c1a), a one-line
 `cargo test … -- --ignored` from a terminal that has camera access.
 
 ---
@@ -289,7 +291,9 @@ different sources — because the camera can only have one owner at a time:
   stream (`ui/CameraPreview/LiveCameraPreview.tsx`).
 - **During the recording**, in the overlay: the engine owns the device, so the
   overlay polls the preview JPEG the recorder writes
-  (`recording_preview_frame`, 12 Hz).
+  (`recording_preview_frame`, 12 Hz). Since C3b that JPEG is the second output
+  of the video track's own ffmpeg (`video_track_args`), not of an ffmpeg that
+  owns the camera — every video session records through the native engine.
 
 The handover is the part a rig has to see: pressing **Start** must make the
 Opptak preview let go BEFORE `start_recording` runs, or the recorder never gets
@@ -334,8 +338,10 @@ the device.
      takes a few seconds longer that one time; the next start does not. Task
      Manager shows far less CPU than software x264 did. The probe cannot run on
      a Mac (no such encoders in the macOS sidecar); the argv per encoder is
-     covered by golden tests in `capture.rs`/`video_encoder.rs`, the CPU claim
-     by `docs/RIG-DAY.md` (c0a).
+     covered by golden tests in `video_encoder.rs`, the CPU claim by
+     `docs/RIG-DAY.md` (c0a). If the stored hardware encoder fails on the first
+     frame, the video track falls back to libx264 by itself and the stored
+     choice is forgotten (C3b, `note_encoder_fallback`).
    - **Keyframe every 2 s (C0b):** every video recording is encoded with
      `-g <2×fps> -keyint_min <fps>`, whatever the encoder. **Check:** after a
      30 s video recording, `ffprobe -v error -select_streams v -skip_frame nokey
@@ -362,16 +368,17 @@ the device.
 Since **v0.6.0** audio capture is the **native Rust engine** (cpal → ring
 buffer → own WAV writer) — ffmpeg is not in the audio capture path, and since
 A5b there is no setting or fallback that puts it back (`classic_ffmpeg_audio` is
-gone). ffmpeg still captures **video** sessions.
+gone). Since **C3b** video sessions record the same way: the sound through the
+native engine, the camera read natively beside it, and ffmpeg only encoding the
+picture (one video-only ffmpeg per fragment). There is no ffmpeg capture left.
 
 1. On **Opptak**, press **«Start opptak»** (there is no modal any more — the
    source, the camera and the filename are answered by the cards on this very
    screen, so start is one button).
    - **Expected:** the overlay comes up and the status line turns red («Tar
      opp» — red never means anything else in this app); with `RUST_LOG=debug`
-     the progress you see comes from the **native writer's byte counter** (not
-     ffmpeg `size=` lines — those only appear in video
-     sessions).
+     the progress you see comes from the **native writer's byte counter** (for
+     video sessions too, since C3b).
    - **Also expected, before you press it:** with no source chosen the button
      is off AND says why («Start er sperret til lyden er valgt…») — it is
      `aria-disabled`, so a keyboard user can still reach it to hear the reason.
@@ -442,10 +449,9 @@ process exits.
 
 This is the **verification loop** for the 2026-06 perf/stability work. The app now
 records its own health automatically during every recording (Pillar 0).
-**Scope note (v0.6.0+):** the ffmpeg-stderr metrics — `drop=`/`dup=` and
-xrun/discontinuity lines — apply to **video / ffmpeg sessions only** (the
-ffmpeg audio escape hatch is gone since A5b). **Native audio sessions**
-instead report `ring_overrun_samples`, **`native_xruns`** (the glitches CoreAudio /
+**Scope note (C3b):** the ffmpeg-stderr metrics — `drop=`/`dup=` and
+xrun/discontinuity lines — only exist in history rows recorded BEFORE C3b (the
+ffmpeg capture is gone). **Every session now** reports `ring_overrun_samples`, **`native_xruns`** (the glitches CoreAudio /
 WASAPI themselves report through cpal 0.18 — counted by the engine, no stderr
 involved; shown as part of `xruns` in the diagnose report) plus an **exact
 frame-count cross-check**
@@ -490,7 +496,8 @@ round, not a bug to report.
    - **Healthy target:** `IPC-overbelastning 0` + clean exit, and per session
      type: **native audio** → `ring_overrun_samples 0`, `xruns 0` (this is
      `native_xruns` — a real count from the audio system) + the frame-count
-     cross-check verdict exact; **video / ffmpeg** → `Dropp 0`, `xruns 0`.
+     cross-check verdict exact (video sessions too, since C3b; `Dropp` stays 0 —
+     it only ever counted the ffmpeg capture).
    - A degraded recording also raises finding **SR-CAPTURE-01** with the counts.
 
 **Prove the telemetry has teeth (it must DETECT a bad recording):**
@@ -510,13 +517,12 @@ round, not a bug to report.
 | **A** forced sample-rate surfacing       | resampling = a stutter cause          | finding **SR-RATE-01** + the report's `sampleRateMode` | `auto` = no finding; a forced rate flags |
 | **C/D/E** (data-gated)                   | buffer/back-pressure/disk             | only pursue if the above numbers stay high             | —                                        |
 
-> [HW] Drop/xrun phrase matching (`selftest::XRUN_PHRASES`) and the Pass/Warn/Fail
-> thresholds (`selftest::FAIL_GAP_SEC` …) are conservative defaults — calibrate
-> them from the FIRST known-good capture on the Behringer rig (a clean 15 s take's
-> numbers are the reference). The parsers/verdict are pure + unit-tested; only the
-> real ffmpeg stderr wording + the thresholds need rig confirmation. (The
-> stderr-phrase matching only fires in video sessions —
-> native sessions are judged by overruns + the frame-count cross-check.)
+> [HW] The Pass/Warn/Fail thresholds (`selftest::FAIL_GAP_SEC` …) are
+> conservative defaults — calibrate them from the FIRST known-good capture on the
+> Behringer rig (a clean 15 s take's numbers are the reference). The verdict is
+> pure + unit-tested; only the thresholds need rig confirmation. Sessions are
+> judged by overruns, the OS's xruns and the frame-count cross-check (the ffmpeg
+> stderr-phrase matching left with the ffmpeg capture in C3b).
 
 ---
 

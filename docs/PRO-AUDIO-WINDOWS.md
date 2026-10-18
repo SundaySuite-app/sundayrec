@@ -28,21 +28,16 @@ som før, uendret.
    **kanalvelger** (Venstre / Høyre). Velg hvilke inn-kanaler opptaket skal bruke.
 4. **Ta opp som vanlig.** Lyd-only og lyd + video fungerer begge.
 
-## Robusthet og fallback
+## Robusthet
 
 Skulle den moderne motoren ikke klare å starte (driveren opptatt, kortet
-frakoblet i det opptaket begynner), faller SundayRec **automatisk tilbake til den
-gamle DirectShow-veien** og gir en melding om det, slik at opptaket ikke ryker.
-Trekkes lydkortet ut midt i et opptak, avsluttes opptaket pent (filen blir lagret)
-med en tydelig melding.
+frakoblet i det opptaket begynner), starter ikke opptaket, og appen sier hvorfor
+(for eksempel at lydenheten er i bruk av et annet program). Trekkes lydkortet ut
+midt i et opptak, prøver appen å koble til igjen; kommer det ikke tilbake,
+avsluttes opptaket pent (filen blir lagret) med en tydelig melding.
 
-## Hvis noe oppfører seg rart: «Klassisk lyd-motor»
-
-Under **Oppsett → Avansert → «Opptaksmotor»** finnes tre valg: **Innebygd**
-(standard), **Klassisk (ffmpeg)** og **Klassisk (DirectShow)** — det siste kun
-på Windows. Velg DirectShow for å tvinge den gamle veien hvis den moderne
-motoren oppfører seg dårlig på en bestemt maskin. De fleste skal la den stå på
-Innebygd.
+Den gamle DirectShow-veien og valget «Klassisk lyd-motor» er borte (lydopptak i
+A5b, videoopptak i C3b): det finnes én opptaksmotor.
 
 ## macOS
 
@@ -51,9 +46,9 @@ siden beskriver: Core Audio viser allerede et samle-lydkort som én enhet med
 alle kanaler. Et **lyd-only**-opptak skriver siden 2026-08-01 direkte til WAV
 via den samme native cpal-motoren som Windows-siden (cpal → CoreAudio → ring →
 WAV-skriver, ingen ffmpeg i selve fangsten) — den gamle ffmpeg/avfoundation-veien
-mistet målbart samples, og det gjaldt begge plattformer. Et opptak **med
-video** (kamera + lyd) bruker fortsatt ffmpeg/avfoundation for begge sporene,
-uendret.
+mistet målbart samples, og det gjaldt begge plattformer. Siden C3b gjør et opptak
+**med video** det samme: lyden tas opp av den native motoren, og kameraet leses
+av appen selv ved siden av (ffmpeg koder bare bildet).
 
 ---
 
@@ -64,10 +59,11 @@ feature; **ASIO** er en valgfri Cargo-feature (`asio`) fordi den lenker mot
 Steinberg ASIO SDK. **Siden 2026-08-01** skriver et lyd-only-opptak (på begge
 plattformer) direkte til WAV via den native motoren
 (`recorder::native_capture`: cpal → ring → WAV-skriver) — INGEN ffmpeg
-involvert i selve fangsten. `recorder::cpal_capture`s rå-PCM-pipe inn i
-ffmpeg-sidecaren lever videre bare for **video**-økter (kamera via dshow +
-cpal-lyd i samme ffmpeg-prosess). Nødbryteren som sendte et lydopptak
-tilbake til ffmpeg (`classicFfmpegAudio`) er fjernet (A5b). Bygg-oppsett for ASIO: se
+involvert i selve fangsten. Siden C3b gjelder det også **video**-økter:
+`recorder::cpal_capture`s rå-PCM-pipe inn i ffmpeg er slettet, og kameraet leses
+av `crate::camera` (Media Foundation / DirectShow) og kodes av en egen
+video-ffmpeg. Nødbryterne som sendte opptak tilbake til ffmpeg
+(`classicFfmpegAudio`, A5b) og DirectShow (`classicDirectshow`, C3b) er fjernet. Bygg-oppsett for ASIO: se
 [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ### Tredjeparts-komponenter brukt av Windows-lyd-veien

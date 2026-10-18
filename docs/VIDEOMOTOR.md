@@ -232,9 +232,9 @@ videospor.
 `sundayrec-core::video_track` (beslutningene); detaljene står i modulhodene.
 Det C3b og C3c må vite:
 
-- **Bak en bryter.** Den native motoren tar videoøkter bare med
-  `SUNDAYREC_NATIVE_VIDEO=1` (`engine::native_video_enabled`). Uten den går
-  videoøkter som før. C3b fjerner bryteren sammen med de gamle stiene.
+- **Bak en bryter.** Den native motoren tok videoøkter bare med
+  `SUNDAYREC_NATIVE_VIDEO=1` (`engine::native_video_enabled`). C3b fjernet
+  bryteren sammen med de gamle stiene.
 - **Lydklokka:** `stream::ClockTap` i lydcallbacken legger ett par (WAV-indeks,
   fangsttid) per blokk i en låsfri ring. Fangsttiden er cpals
   `InputCallbackInfo::timestamp().capture`, som på Mac er `mHostTime` (mach,
@@ -271,6 +271,43 @@ Det C3b og C3c må vite:
   videospor, med tidsgrense på hver venting; en WAV-skriver som dør uten
   melding varsles nå (`device_disconnected`) i stedet for å gjenkoble stille.
 
+**Levert (C3b).** Én opptaksmotor. `RecorderEngine::start` slår opp kameraet i
+den native kameralista (`find_camera`, samme regel som videosporet åpner
+med) og sender ALLE økter til `run_session`, som nå bare kjenner den native
+segmentløperen. Det C3c, C4 og C5 må vite:
+
+- **Kameraet ved start:** finnes navnet i lista → videoøkt med det navnet;
+  lista leses, men navnet finnes ikke → rent lydopptak (som før, når det
+  lagrede kameraet ikke var der); lista kan ikke leses → videoøkt med det
+  lagrede navnet (sporet åpner selv, og et kamera som ikke åpner gir svart,
+  aldri tapt lyd). Ren beslutning: `engine::session_camera`, testet.
+- **Forhåndsvisningen under opptak** lever videre til C4: videosporets ffmpeg
+  har fått den andre utgangen ffmpeg-fangsten hadde (`video_track_args(…,
+preview_jpg)`: `scale=720:-2,fps=12`, `-update 1`, til
+  `recording_preview_path`). Bevist mot den ekte binæren
+  (`media::ffmpeg::tests::video_track_writes_its_mkv_and_the_preview_jpeg_or_skips`).
+  C4 sletter utgangen sammen med `recording_preview_frame`.
+- **Kameralista, kameraegenskapene, preflight og diagnosen** leser de native
+  listene: `list_devices` svarer fra `camera::list` (samme form,
+  `video_inputs: [{name, index}]`), `get_camera_capabilities` fra
+  `camera::formats` (virker nå også på Windows), preflightens «finnes enheten»
+  fra cpal/ASIO-lista, diagnosens kamerasjekk åpner kameraet med videosporets
+  egen `open_camera` og venter på ett bilde.
+- **C0a-koderen:** en maskinvarekoder som feiler på første bilde gjør at
+  videosporet bytter til `libx264` (som i C3a), og nå glemmes også det lagrede
+  valget (`media::video_encoder::note_encoder_fallback`). Resten av den økta
+  prøver fortsatt den planlagte koderen først per fragment; neste opptak
+  starter på `libx264`.
+- **Gamle data:** `classicDirectshow` i en gammel database eller profil leses
+  uten feil og skrives ikke tilbake (testet); telemetrifeltet er frosset til
+  `false` (Workeren krever det). Et krasjmanifest fra en eldre versjon med
+  `DeliveryMode::RemuxCopy` (ffmpeg-fangstens ene MKV) gjenopprettes fortsatt
+  — ingen ny økt skriver den modusen.
+- **Lavfi-soaken er pensjonert** (`soak.yml` slettet): den kjørte
+  ffmpeg-fangstens argv, som ikke finnes lenger. Enhetssoaken (rigg) står
+  igjen; `longrun.rs` bruker en ren lavfi-WAV-skriver som stedfortreder for
+  fangstbytes. En native soak med syntetisk kilde er ikke laget.
+
 ### C4 — forhåndsvisning fra samme kameraøkt
 
 - Kameraøkta åpnes når Opptak-siden viser kamerakortet, og lever videre inn i
@@ -280,7 +317,9 @@ Det C3b og C3c må vite:
   ren Rust). Bildene sendes på en Tauri-kanal, cirka 4 bilder i sekundet.
 - **Det som slettes:** `LiveCameraPreview.tsx` og `getUserMedia`,
   `ownership.ts`, `PolledCameraPreview.tsx`, `frame-poll-core.ts`, ffmpegs
-  ekstra JPEG-utgang (`preview_jpg`) og `PREVIEW_RESTART_MS`.
+  ekstra JPEG-utgang (siden C3b videosporets: `video_track_args`'
+  `preview_jpg`, med `recording_preview_frame`/`recording_preview_path`) og
+  `PREVIEW_RESTART_MS`.
 - **Ferdig når:** bildet før og under opptaket kommer fra samme økt, uten
   avbrudd ved Start og Stopp (e2e med fixture-bilder, og på Macen).
 

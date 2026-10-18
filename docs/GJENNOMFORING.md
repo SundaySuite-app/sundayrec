@@ -1243,6 +1243,24 @@ leses uten feil, og `reachability` viser at ingen kommando ble uoppnåelig.
 
 **Hvor det bevises:** Macen + CI. Riggbeviset er C3c.
 
+**Levert (C3b).** ≈13 500 Rust-linjer ut (netto ≈11 500). Planen var feil på ett
+punkt, rettet her: `recorder/engine/` (7 filer) kunne ikke slettes i sin helhet.
+`supervisor.rs`s `run_session` er den generelle økta native-opptak alltid har
+gått gjennom, og `finalize.rs`, `emit.rs` og `payloads.rs` er den native
+øktas levering, hendelser og IPC-typer. Slettet ble `args.rs`, `process.rs` og
+`reader.rs` (ffmpeg-argv, ffmpeg-prosess, stderr-leser) og ffmpeg-delene av
+`supervisor.rs` (`run_segment`, rutingen, to-prosess-reserven, ffmpeg-
+gjenoppslaget ved gjenkobling). Flyttet, med begrunnelse i PR-en:
+`SupervisorPanicGuard` til `supervisor.rs` ved `spawn_supervisor` (den ene
+stedet en økt startes), `error_code_str` til `emit.rs`, `sleep_opt`/`wait_opt`
+til `native_capture/segment.rs`, `build_separate_audio_args` til
+`finalize.rs`, `current_platform`/`recording_preview_path` til `engine.rs`,
+`AudioDiagnostics` til kjernens `diagnostics.rs`. Ut over lista gikk også det
+bare den slettede fangsten nådde: kjernens `progress.rs`, `selftest::parse_*`
+og stderr-telleren, filterbyggerne i kjernens `ffmpeg.rs`, diagnosefunnet
+`SR-AUDIO-10` (reserve til DirectShow) og lavfi-soaken. Detaljene står i
+VIDEOMOTOR §C3 «Levert (C3b)».
+
 **Startmelding:**
 
 > Les `docs/GJENNOMFORING.md` §C3b og `docs/VIDEOMOTOR.md` §C3. Gjennomfør økta

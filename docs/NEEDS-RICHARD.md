@@ -304,8 +304,8 @@ re-discovering these bullets one at a time.
 
 - **Record** (smoke §3–§6): a Mac/Windows box with a real mic + camera; prove
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
-  permission prompts. Reconnect/split/preroll/two-process-fallback paths are
-  wired but unproven on a device.
+  permission prompts. Reconnect/split/preroll paths are wired but unproven on
+  a device (the two-process fallback left with the ffmpeg capture in C3b).
 - **F2's Windows-only fixes** (`docs/RIG-DAY.md` (w1)/(w2)/(w3)/(w5)/(w6)/(w14)):
   six fixes touched real Windows-only code paths and are unproven beyond a
   cross-compiled `cargo check`/`clippy` and CI's `windows-check` lane (which

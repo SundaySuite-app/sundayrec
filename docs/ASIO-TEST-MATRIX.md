@@ -4,11 +4,11 @@ På Windows tar SundayRec opp lyd via **cpal** (WASAPI som standard, ASIO for pr
 i stedet for ffmpeg/DirectShow. Hele cpal-capture-stien er **HARDWARE-UVERIFISERT**
 til den kjøres på en ekte Windows-maskin. Alt pure (arg-bygging, kanal-ruting,
 generisk sample-konvertering, enhets-merge) er enhetstestet og grønt i CI + på mac;
-capture-stien kan KUN verifiseres på rigg. **Siden 2026-08-01** er det bare
-**video**-økter (og den klassiske ffmpeg-hatchen) som fortsatt piper cpal-PCM
-inn i ffmpeg (`recorder::cpal_capture`) — et lyd-only-opptak skriver direkte
-til WAV via `recorder::native_capture` (cpal → ring → WAV-skriver), ingen
-ffmpeg i selve fangsten. Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
+capture-stien kan KUN verifiseres på rigg. **Siden C3b** går alle opptak — også
+**video**-økter — gjennom `recorder::native_capture` (cpal → ring → WAV-skriver,
+og kameraets videospor ved siden av); cpal-PCM-pipen inn i ffmpeg
+(`recorder::cpal_capture`), DirectShow-reserven og «Klassisk (DirectShow)» er
+borte. ffmpeg brukes bare til å kode bildet og til leveringen. Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 
 ## Bygg (forutsetning)
 
@@ -42,9 +42,9 @@ ffmpeg i selve fangsten. Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
       produseres ved siden av videoen (H2).
 - [ ] **Live auto-stopp:** sett manual-max → nedtelling vises; «+30 min» forlenger;
       «avbryt» fjerner (H3 — watch-kanal).
-- [ ] **Ruting:** vanlig enhet + preroll/oppdeling/stopp-på-stillhet → opptaket går via
-      DirectShow (full funksjon), IKKE cpal. ASIO + slik funksjon → cpal kjører +
-      «feature_unsupported_asio»-varsel (ikke stille tap).
+- [ ] **Ruting:** preroll/oppdeling/stopp-på-stillhet virker på alle enheter, også
+      ASIO og i videoopptak — den native motoren har alle tre (siden C3b går
+      ingen økt via DirectShow).
 
 ## Windows — ASIO (pro-lydkort, f.eks. Soundcraft MADI-USB)
 
@@ -56,27 +56,25 @@ ffmpeg i selve fangsten. Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
       «dropped»-advarsel i loggen, ingen hakking.
 - [ ] **Stereo med custom kanaler:** ta opp valgt V/H-par → begge kanaler korrekt.
 - [ ] **Lyd + video:** opptak med kamera + ASIO-lyd → sjekk **lepp-synk** over et
-      lengre opptak (dual-klokke er den høyeste risikoen — se
-      `build_cpal_pipe_video_args`).
+      lengre opptak. ASIO-klokka stemples med vertsklokka i callbacken
+      (`CaptureTimeSource::HostNowMinusBlock`, VIDEOMOTOR §C3) — riggubevist.
 - [ ] **USB-uttrekk midt i opptak:** trekk ut kortet → appen finaliserer pent med
       «device_disconnected»-melding, henger IKKE.
 - [ ] **Auto-stopp (manual-max):** sett en kort grense → opptaket stopper selv.
 
 ## Fallback + sikkerhetsbryter
 
-- [ ] **cpal feiler ved start** (åpne kortet i et annet program først) →
-      SundayRec faller tilbake til DirectShow + viser «cpal_fallback»-melding,
-      opptaket fungerer.
-- [ ] **«Opptaksmotor»-valget** (Oppsett → Avansert → «Opptaksmotor»): velg
-      «Klassisk (DirectShow)» → opptak bruker dshow-veien; tilbake til
-      «Innebygd» → cpal igjen. Raden er ETT valg av tre nå, ikke to brytere, og
-      DirectShow-alternativet finnes bare på Windows.
+- [ ] **cpal feiler ved start** (åpne kortet i et annet program først) → opptaket
+      starter IKKE, og appen sier hvorfor («enheten er i bruk»). Det finnes ingen
+      reserve å falle til (A5b for lyd, C3b for video).
+- [ ] **«Opptaksmotor»-valget er borte** (C3b): Oppsett → Avansert har ingen
+      motorrad, heller ikke på Windows.
 - [ ] **ASIO4ALL** fungerer som generisk ASIO-driver.
 
 ## macOS — regresjon (skal være uendret)
 
 - [ ] Lydkort via Core Audio (ffmpeg avfoundation): enumerering + opptak som før.
-- [ ] Ingen ASIO/WASAPI-merke eller «klassisk lyd-motor»-bryter vises (Windows-only).
+- [ ] Ingen ASIO/WASAPI-merke vises (Windows-only).
 - [ ] `asio_spike`-eksempelet skriver «no-op»-meldingen og avslutter 0.
 
 ## Utgivelse
@@ -84,8 +82,8 @@ ffmpeg i selve fangsten. Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 - [ ] Bump versjon (package.json + `src-tauri/tauri.conf.json` + `Cargo.toml`).
 - [ ] Changelog:
       _«Windows: moderne lyd-motor (WASAPI som standard, ASIO for pro-lydkort med
-      flerkanals + lav latens) erstatter DirectShow. Faller automatisk tilbake til
-      DirectShow, og kan tvinges via «Klassisk lyd-motor».»_
+      flerkanals + lav latens) erstatter DirectShow.»_ (Reserven og «Klassisk
+      lyd-motor» er borte siden C3b.)
 - [ ] Bekreft Steinberg-attribusjonen vises i Windows-bygget (Oppsett →
       Avansert, nederst — «Lyd-teknologi»). Kortet forsvant med legacy-skallet i
       fase B og er bygget opp igjen; `AsioAttribution.test.tsx` pinner ordlyden,
