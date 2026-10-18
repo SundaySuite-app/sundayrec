@@ -6990,6 +6990,49 @@ mod tests {
             );
         }
 
+        /// B1b: wall-clock of one mastered export of a REAL recording.
+        /// `SUNDAYREC_BENCH_FILE=<fil> SUNDAYREC_BENCH_SECS=<varighet>` (and
+        /// optionally `SUNDAYREC_BENCH_FORMAT`, default `mp3`) and
+        /// `cargo test --release -p sundayrec --lib bench_mastered_export -- --ignored --nocapture`.
+        /// Reads the file, writes only into a temp dir that is removed after.
+        #[test]
+        #[ignore = "manual benchmark: needs SUNDAYREC_BENCH_FILE"]
+        fn bench_mastered_export() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let Ok(file) = std::env::var("SUNDAYREC_BENCH_FILE") else {
+                eprintln!("SKIP: SUNDAYREC_BENCH_FILE not set");
+                return;
+            };
+            let secs: f64 = std::env::var("SUNDAYREC_BENCH_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .expect("SUNDAYREC_BENCH_SECS");
+            let format = std::env::var("SUNDAYREC_BENCH_FORMAT").unwrap_or_else(|_| "mp3".into());
+            let dir = tempfile::tempdir().unwrap();
+            let mut req = export_request(
+                &file,
+                &dir.path().to_string_lossy(),
+                &format,
+                &[(60.0, 120.0)],
+                secs,
+            );
+            req.master_preset = Some("speech-clear".into());
+            let started = std::time::Instant::now();
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let took = started.elapsed();
+            let out = result.expect("bench export");
+            let bytes = std::fs::metadata(&out.output_path).map(|m| m.len()).unwrap_or(0);
+            eprintln!(
+                "BENCH mastered export: {:.1} s wall ({bytes} bytes out) — {:?}",
+                took.as_secs_f64(),
+                out.loudness
+            );
+        }
+
         // ── F2-C-B: the mastering must be LINEAR, not a gain rider ───────────
         //
         // Landing on the target (above) says nothing about HOW. `loudnorm`
