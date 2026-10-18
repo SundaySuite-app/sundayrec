@@ -2678,6 +2678,7 @@ pub async fn tale_said(_input_path: &str) -> AppResult<EditorTaleSaid> {
 }
 
 /// The DTO for a decision (or for none). Pure.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 fn tale_said_from(clean: Option<&sundayrec_core::tale::SpeechClean>) -> EditorTaleSaid {
     EditorTaleSaid {
         analysed: clean.is_some(),
