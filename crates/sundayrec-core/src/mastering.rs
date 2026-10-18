@@ -182,14 +182,13 @@ pub fn clamp_preview_start(requested: f64) -> f64 {
     s.max(0.0)
 }
 
-/// ffmpeg args that decode a `[start, start+dur]` window of `input_path`, run the preset's
-/// tone/dynamics chain and stream the result as raw f32 PCM on stdout (the preview's measure
-/// stage; the level is then set in Rust). `-ss`/`-t` come BEFORE `-i` for an accurate
+/// ffmpeg args that decode a `[start, start+dur]` window of `input_path` and stream it as raw
+/// f32 PCM on stdout, with NO audio filter (B2b: the preset's tone/dynamics chain runs in Rust,
+/// `crate::chain`; the level is then set in Rust too). `-ss`/`-t` come BEFORE `-i` for an accurate
 /// container-index seek; `start`/`dur` are formatted to 3 decimals. The seam supplies the
 /// clamped values (via [`clamp_preview_start`]/[`clamp_preview_duration`]).
 pub fn preview_decode_args(
     input_path: &str,
-    preset: &MasterPreset,
     start: f64,
     dur: f64,
     fmt: crate::pcm_stream::PcmFormat,
@@ -204,8 +203,6 @@ pub fn preview_decode_args(
         "-i",
         input_path,
         "-vn",
-        "-af",
-        &preset.filters,
     ]
     .into_iter()
     .map(String::from)
@@ -454,17 +451,16 @@ mod tests {
     #[test]
     fn preview_decode_seeks_before_input_and_streams_raw_pcm() {
         use crate::pcm_stream::PcmFormat;
-        let p = get_preset_by_id("speech-clear").unwrap();
         let fmt = PcmFormat {
             sample_rate: 44_100,
             channels: 1,
         };
-        let a = preview_decode_args("/rec/a.mp3", &p, 12.3456, 20.0, fmt);
+        let a = preview_decode_args("/rec/a.mp3", 12.3456, 20.0, fmt);
         let at = |s: &str| a.iter().position(|x| x == s).unwrap();
         assert!(at("-ss") < at("-i") && at("-t") < at("-i"));
         assert_eq!(a[at("-ss") + 1], "12.346");
         assert_eq!(a[at("-t") + 1], "20.000");
-        assert_eq!(a[at("-af") + 1], p.filters, "the chain, no loudness filter");
+        assert!(!a.iter().any(|x| x == "-af"), "no audio filter: the chain is Rust");
         let joined = a.join(" ");
         assert!(joined.contains("-f f32le"));
         assert!(joined.contains("-ar 44100 -ac 1"));

@@ -697,7 +697,6 @@
         "gain": "Output level",
         "freq": "Frequency",
         "reduction": "Reduction",
-        "floor": "Noise floor",
         "strength": "Strength",
         "threshold": "Threshold",
         "ratio": "Ratio",

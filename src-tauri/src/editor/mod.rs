@@ -2665,16 +2665,24 @@ pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<E
         info.as_ref().and_then(|i| i.sample_rate),
         info.as_ref().and_then(|i| i.channels),
     );
+    // ffmpeg decodes (no `-af`); the preset's chain runs in Rust, the same one the export runs.
+    let chain = sundayrec_core::chain::Chain::from_master_preset(&preset)
+        .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?;
+    let built = chain
+        .build(fmt.sample_rate as f32, fmt.channels)
+        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
     let mut args: Vec<String> = vec![
         "-nostdin".into(),
         "-hide_banner".into(),
         "-i".into(),
         input_path.to_string(),
         "-vn".into(),
-        "-af".into(),
-        preset.filters.clone(),
     ];
     args.extend(sundayrec_core::pcm_stream::output_args(fmt));
+    let fmt = sundayrec_core::pcm_stream::PcmFormat {
+        sample_rate: fmt.sample_rate,
+        channels: built.out_channels(),
+    };
     let duration = duration_hint(input_path).await.unwrap_or(0.0);
     // Not an export: a private engine nobody can cancel; the stall budget still applies.
     let engine = ExportEngine::new();
@@ -2687,7 +2695,8 @@ pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<E
         EXPORT_PHASE_MEASURING,
         &|_, _| {},
         move |r, done| {
-            sundayrec_core::pcm_stream::measure(r, fmt, None, |n| {
+            let mut processed = sundayrec_core::chain::ChainReader::new(r, built);
+            sundayrec_core::pcm_stream::measure(&mut processed, fmt, None, |n| {
                 done.store(n, std::sync::atomic::Ordering::Relaxed)
             })
         },
@@ -2749,8 +2758,18 @@ pub async fn master_preview(
     let stall_ms = sundayrec_core::editor::editor_op_timeout(None).as_millis() as u64;
     let engine = ExportEngine::new();
 
-    // 1. The window through the preset's chain, to PCM in memory (at most 60 s).
-    let decode = preview_decode_args(input_path, &preset, start, dur, fmt);
+    // 1. The window through the preset's chain, to PCM in memory (at most 60 s): ffmpeg decodes
+    //    (no `-af`), the chain runs in Rust.
+    let chain = sundayrec_core::chain::Chain::from_master_preset(&preset)
+        .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?;
+    let built = chain
+        .build(fmt.sample_rate as f32, fmt.channels)
+        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
+    let decode = preview_decode_args(input_path, start, dur, fmt);
+    let fmt = sundayrec_core::pcm_stream::PcmFormat {
+        sample_rate: fmt.sample_rate,
+        channels: built.out_channels(),
+    };
     let pcm_bytes: Vec<u8> = pcm::run_chain(
         &engine,
         &decode,
@@ -2759,9 +2778,12 @@ pub async fn master_preview(
         (0.0, 0.0),
         EXPORT_PHASE_MEASURING,
         &|_, _| {},
-        |r, _| {
+        move |r, _| {
             let mut v = Vec::new();
-            std::io::Read::read_to_end(r, &mut v)?;
+            std::io::Read::read_to_end(
+                &mut sundayrec_core::chain::ChainReader::new(r, built),
+                &mut v,
+            )?;
             Ok(v)
         },
     )
@@ -2806,38 +2828,36 @@ pub async fn master_preview(
     })
 }
 
-/// Build the pre-level filter graph, in order: normalize gain, THEN the
-/// vocal chain, THEN the mastering preset's own filters.
+/// Build the pre-level audio chain, in order: normalize gain, THEN the vocal
+/// chain, THEN the mastering preset's own chain (B2b: a Rust [`Chain`], run by
+/// `sundayrec_core::chain::ChainReader` over the decoded PCM — ffmpeg gets no `-af`).
 ///
-/// T12: the gain (the editor's "Normalize" button, a `volume=…dB` filter) goes
-/// FIRST, ahead of `chain`'s filters — the vocal chain's compressor/limiter is
-/// its LAST stage, so this order leaves the limiter with final say over the
-/// rendered peak. The previous order (gain appended AFTER the chain) let a
-/// positive gain push the already-limited signal back over 0 dBFS, undoing the
-/// limiter entirely. Gain is SKIPPED when a mastering preset is active:
-/// the preset's level step sets the delivery level, so a volume shift ahead of it changes
-/// nothing but the measured input (the export modal says so instead of
-/// claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
+/// T12: the gain (the editor's "Normalize" button) goes FIRST, ahead of
+/// `chain`'s stages — the vocal chain's compressor/limiter is its LAST stage, so this
+/// order leaves the limiter with final say over the rendered peak. The previous order
+/// (gain appended AFTER the chain) let a positive gain push the already-limited signal
+/// back over 0 dBFS, undoing the limiter entirely. Gain is SKIPPED when a mastering
+/// preset is active: the preset's level step sets the delivery level, so a volume shift
+/// ahead of it changes nothing but the measured input (the export modal says so instead
+/// of claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
 /// without ffmpeg.
 #[cfg(feature = "editor")]
-fn build_pre_filters(
+fn build_pre_chain(
     chain: Option<sundayrec_core::processing::VocalChain>,
     gain_db: Option<f64>,
     preset: Option<&sundayrec_core::mastering::MasterPreset>,
-) -> Vec<String> {
-    let mut pre_filters: Vec<String> = Vec::new();
-    if preset.is_none() {
-        if let Some(g) = gain_db {
-            if g.is_finite() && g.abs() > f64::EPSILON {
-                pre_filters.push(format!("volume={g:.2}dB"));
-            }
-        }
-    }
-    pre_filters.extend(chain.map(|c| c.build_filters()).unwrap_or_default());
-    if let Some(p) = preset {
-        pre_filters.push(p.filters.clone());
-    }
-    pre_filters
+) -> AppResult<sundayrec_core::chain::Chain> {
+    use sundayrec_core::chain::Chain;
+    let gain = if preset.is_none() { gain_db } else { None };
+    let vocal = chain
+        .map(|c| Chain::from_vocal_chain(&c))
+        .unwrap_or_default();
+    let mastering = match preset {
+        Some(p) => Chain::from_master_preset(p)
+            .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?,
+        None => Chain::default(),
+    };
+    Ok(vocal.then(mastering).with_leading_gain(gain))
 }
 
 /// Render the cut-plan + optional mastering gain to the requested format. The
@@ -3062,7 +3082,7 @@ where
     //    delivery loudness is set:
     //      (normalize gain, only without a preset) → vocal chain → preset chain.
     //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
-    //    final say over the peak — see `build_pre_filters`.
+    //    final say over the peak — see `build_pre_chain`.
     //
     //    An empty preset id is "no mastering" (the renderer sends `undefined`,
     //    but a stray '' must not read as an unknown preset).
@@ -3124,7 +3144,7 @@ where
             }
         }
     }
-    let pre_filters = build_pre_filters(chain, req.gain_db, preset.as_ref());
+    let pre_chain = build_pre_chain(chain, req.gain_db, preset.as_ref())?;
 
     // The stall budget for EACH ffmpeg pass: no progress for this long = wedged.
     // Deliberately NOT scaled by the media length — see `export_stall_ms`.
@@ -3144,20 +3164,22 @@ where
     //     cost in loudness is corrected by dry runs over the parked copy. Pass 2 then feeds the
     //     encoder from that copy. Intro/outro are deliberately absent from the measured signal:
     //     they are concatenated after the level is set, so a jingle cannot skew the target.
-    let mut proc_filters = pre_filters.clone();
-    // The levelled PCM the encoder will be fed, once measured. `None` without a preset, and
-    // `None` for a recording that measures as silence.
+    // B2b: ffmpeg gets no `-af`. Whenever there is anything to do to the tone or the level, the
+    // audio is decoded + cut by ffmpeg, run through the Rust chain, and (with a preset)
+    // levelled, all in the staged PCM the encoder is then fed from.
+    // The levelled PCM the encoder will be fed, once processed. `None` for an export that
+    // changes nothing (just the cut).
     let mut master: Option<pcm::MasteredPcm> = None;
-    if let Some(p) = &preset {
+    if !pre_chain.is_empty() || preset.is_some() {
         // A full-file measure on a long service takes a while with NOTHING to show for it; say
         // so instead of leaving the bar at 0.
         on_progress(0.0, EXPORT_PHASE_MEASURING);
-        master = pcm::measure_and_plan(
+        let m = pcm::measure_and_plan(
             engine,
             &inputs.source,
-            p,
+            &pre_chain,
+            preset.as_ref(),
             &keeps,
-            &pre_filters,
             req.duration,
             kept_duration,
             pcm::pcm_format(source_rate, probed.as_ref().and_then(|i| i.channels)),
@@ -3165,7 +3187,7 @@ where
             &on_progress,
         )
         .await?;
-        if master.is_none() {
+        if let (Some(p), false) = (&preset, m.levelled) {
             // Silence has no loudness to normalise: export the cut as it is (chain applied,
             // no gain), rather than fail the whole export with an error that blames the
             // measurement.
@@ -3174,13 +3196,12 @@ where
                 "the export measures as silence — skipping the mastering gain"
             );
         }
-        if master.is_some() {
-            // The chain already ran, once, in the measured PCM; the encoder must not run it
-            // a second time.
-            proc_filters.clear();
-        }
+        master = Some(m);
         on_progress(50.0, EXPORT_PHASE_ENCODING);
     }
+    // No filter string reaches ffmpeg any more (the cut, the join fades and the dither are the
+    // only graph left; the chain is Rust).
+    let proc_filters: Vec<String> = Vec::new();
     // The dither (16-bit PCM targets only) is a POST filter: it must see the
     // finished signal, jingles included, on its way into the encoder.
     let post_filters: Vec<String> = dither_filter_for(fmt, req.bit_depth)
@@ -3387,9 +3408,9 @@ where
             .await
             .unwrap_or(0.0);
     }
-    // With a mastering preset the measure pass already spent the first half of
+    // With a processed programme the measure pass already spent the first half of
     // the bar; without one the render owns all of it.
-    let span = if preset.is_some() {
+    let span = if master.is_some() {
         (50.0, 99.0)
     } else {
         (0.0, 99.0)
@@ -3473,7 +3494,7 @@ where
     // What actually happened to the level: the loudness of the PCM the encoder was handed,
     // metered on its way out. `None` without a preset, for a silent recording, and when the
     // feed did not report — "we did not measure it" must not render as "it hit the target".
-    let loudness = master.as_ref().and_then(|m| {
+    let loudness = master.as_ref().filter(|m| m.levelled).and_then(|m| {
         let achieved = measured_out
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -5182,76 +5203,70 @@ mod tests {
 
     // ── T12: the "Normalize" gain must lead the chain, not trail it ──────────────
     //
-    // `build_pre_filters` decides the one thing T12 fixed: the export-level
+    // `build_pre_chain` decides the one thing T12 fixed: the export-level
     // gain's position relative to the vocal chain. Pure — no ffmpeg — asserted
-    // on the returned filter STRINGS and their order, not on rendered audio.
+    // on the returned stages and their order, not on rendered audio.
+
+    #[cfg(feature = "editor")]
+    fn stage_ids(c: &sundayrec_core::chain::Chain) -> Vec<String> {
+        c.stages().iter().map(|s| s.id().to_string()).collect()
+    }
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_filters_puts_gain_before_the_chains_limiter() {
+    fn build_pre_chain_puts_gain_before_the_chains_limiter() {
         let mut chain = sundayrec_core::processing::VocalChain::default();
         chain.limiter.enabled = true;
-        let filters = build_pre_filters(Some(chain), Some(6.0), None);
-        let gain_at = filters
-            .iter()
-            .position(|f| f == "volume=6.00dB")
-            .expect("gain filter present");
-        let limiter_at = filters
-            .iter()
-            .position(|f| f.starts_with("alimiter="))
-            .expect("limiter filter present");
+        let c = build_pre_chain(Some(chain), Some(6.0), None).unwrap();
+        let ids = stage_ids(&c);
+        let gain_at = ids.iter().position(|f| f == "amplify").expect("gain stage");
+        let limiter_at = ids.iter().position(|f| f == "limiter").expect("limiter");
         assert!(
             gain_at < limiter_at,
-            "T12: gain must run BEFORE the chain's limiter, not after (filters: {filters:?})"
+            "T12: gain must run BEFORE the chain's limiter, not after (stages: {ids:?})"
         );
+        assert_eq!(c.stages()[gain_at].param("gain"), Some(6.0));
     }
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_filters_skips_gain_when_a_preset_is_active() {
+    fn build_pre_chain_skips_gain_when_a_preset_is_active() {
         let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-        let filters = build_pre_filters(None, Some(6.0), Some(&preset));
+        let c = build_pre_chain(None, Some(6.0), Some(&preset)).unwrap();
         assert_eq!(
-            filters,
-            vec![preset.filters.clone()],
-            "the preset owns the level with a preset active — no gain filter"
+            c,
+            sundayrec_core::chain::Chain::from_master_preset(&preset).unwrap(),
+            "the preset owns the level with a preset active — no gain stage"
         );
     }
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_filters_skips_zero_and_nonfinite_gain() {
-        assert!(build_pre_filters(None, Some(0.0), None).is_empty());
-        assert!(build_pre_filters(None, Some(f64::NAN), None).is_empty());
-        assert!(build_pre_filters(None, None, None).is_empty());
+    fn build_pre_chain_skips_zero_and_nonfinite_gain() {
+        assert!(build_pre_chain(None, Some(0.0), None).unwrap().is_empty());
+        assert!(build_pre_chain(None, Some(f64::NAN), None)
+            .unwrap()
+            .is_empty());
+        assert!(build_pre_chain(None, None, None).unwrap().is_empty());
     }
 
     #[cfg(feature = "editor")]
     #[test]
-    fn build_pre_filters_orders_gain_then_chain_then_preset() {
-        // Default chain is highpass+compressor "on"; drop the compressor so the
-        // chain renders to exactly ONE filter and the expected list stays simple.
+    fn build_pre_chain_orders_gain_then_chain_then_preset() {
+        use sundayrec_core::chain::Chain;
         let mut chain = sundayrec_core::processing::VocalChain::default();
         chain.compressor.enabled = false;
         let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        let vocal = Chain::from_vocal_chain(&chain);
         // No preset: gain leads, chain follows.
-        let no_preset = build_pre_filters(Some(chain.clone()), Some(3.0), None);
-        assert_eq!(
-            no_preset,
-            vec![
-                "volume=3.00dB".to_string(),
-                format!("highpass=f={}", chain.highpass.freq_hz)
-            ]
-        );
+        let no_preset = build_pre_chain(Some(chain.clone()), Some(3.0), None).unwrap();
+        assert_eq!(no_preset.stages()[0].id(), "amplify");
+        assert_eq!(&no_preset.stages()[1..], vocal.stages());
         // With a preset: gain is skipped, chain still runs, preset trails.
-        let with_preset = build_pre_filters(Some(chain.clone()), Some(3.0), Some(&preset));
-        assert_eq!(
-            with_preset,
-            vec![
-                format!("highpass=f={}", chain.highpass.freq_hz),
-                preset.filters.clone()
-            ]
-        );
+        let with_preset =
+            build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset)).unwrap();
+        let want = vocal.then(Chain::from_master_preset(&preset).unwrap());
+        assert_eq!(with_preset, want);
     }
 
     // ── derived caches (P3): the peaks + segments sidecars ───────────────────────

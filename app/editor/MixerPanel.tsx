@@ -80,18 +80,10 @@ const STAGES: readonly StageSpec[] = [
   {
     id: "denoise",
     enableKey: "denoiseEnabled",
+    // B2b: ingen «Støygulv»-glider. Filmcrafts støyfjerner lærer gulvet selv; verdien
+    // `denoiseFloorDb` (ffmpegs `afftdn:nf`) leses ikke lenger av noe.
     sliders: [
       { id: "reduction", key: "denoiseDb", min: 0, max: 40, step: 1, unit: DB },
-      {
-        id: "floor",
-        key: "denoiseFloorDb",
-        min: -60,
-        // afftdn rejects nf above −20 (the whole export dies), so the slider
-        // stops there; the Rust chain clamps as well.
-        max: -20,
-        step: 1,
-        unit: DB,
-      },
     ],
   },
   {
