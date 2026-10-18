@@ -1739,9 +1739,7 @@ mod tests {
             let child = Arc::new(std::sync::Mutex::new(None));
             let make: SinkFactory = {
                 let (mkv, child) = (mkv.clone(), Arc::clone(&child));
-                Box::new(move |spec, enc| {
-                    FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child), None)
-                })
+                Box::new(move |spec, enc| FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child)))
             };
             let (source, spec): (Box<dyn VideoSource>, VideoTrackSpec) = match camera {
                 None => (

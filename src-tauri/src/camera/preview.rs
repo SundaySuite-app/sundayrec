@@ -24,7 +24,7 @@
 //! (`video_conform`) holds each slot back 0.5 s for the audio; the preview does
 //! not go through it, so it is as live as the camera.
 //!
-//! # One session, no hand-over
+//! # One session, no hand-over, in either direction
 //!
 //! [`start`] opens the camera when the Opptak page shows the camera card. When
 //! a recording starts, [`take_for_recording`] hands the *running* capture to the
@@ -32,6 +32,17 @@
 //! picture). Until then nothing consumes the queue, and a full queue would pin
 //! its pool buffers (the camera would start dropping), so an idle [`Drain`]
 //! thread discards frames; the track takes over by stopping the drain first.
+//!
+//! **And back (C4b).** When the recording stops — and at every fragment
+//! boundary, which is a stop followed by a start — the track gives the camera
+//! back with [`release_after_recording`] instead of closing it, if a page is
+//! still watching: the queue is reopened, the drain takes over, and the next
+//! fragment (or the page, once the recording is over) finds the same running
+//! session. A recording whose camera the page never opened is *adopted*
+//! ([`adopt_for_recording`]) so the recording overlay can show the picture of
+//! the camera that is recording. A camera nobody watches is closed at the end,
+//! as before. The sound is never involved: the camera callback only ever pushes
+//! into the bounded queue, and the tap never waits.
 //!
 //! # Picture
 //!
@@ -253,13 +264,15 @@ pub struct Preview {
     queue: Arc<FrameQueue<Frame>>,
     mailbox: Arc<Mailbox>,
     counters: Arc<Counters>,
-    sink: Arc<Mutex<Sink>>,
+    /// Where the pictures go. `None` = nobody is watching: the worker then
+    /// makes no picture at all (the camera stays open for the recording).
+    sink: Arc<Mutex<Option<Sink>>>,
     join: Option<JoinHandle<()>>,
 }
 
 impl Preview {
     /// Watch `queue` (a camera at `camera_fps`) and send pictures to `sink`.
-    pub fn attach(queue: &Arc<FrameQueue<Frame>>, _camera_fps: f64, sink: Sink) -> Self {
+    pub fn attach(queue: &Arc<FrameQueue<Frame>>, _camera_fps: f64, sink: Option<Sink>) -> Self {
         let sink = Arc::new(Mutex::new(sink));
         // Only the camera's callback thread touches it; atomic for `Sync`.
         let due = AtomicU64::new(0);
@@ -320,12 +333,21 @@ impl Preview {
                                     .0;
                             }
                         };
+                        if lock(&sink).is_none() {
+                            // Nobody is watching: no scaling, no JPEG.
+                            continue;
+                        }
                         match encoder.encode(&frame) {
                             Some(jpeg) => {
                                 drop(frame);
                                 counters.sent.fetch_add(1, Ordering::Relaxed);
-                                if !(lock(&sink))(jpeg) {
-                                    return;
+                                let mut slot = lock(&sink);
+                                // A page that is gone says so by refusing the
+                                // picture; the preview then idles until the
+                                // next page asks (the camera is not its to
+                                // close).
+                                if slot.as_mut().is_some_and(|send| !send(jpeg)) {
+                                    *slot = None;
                                 }
                             }
                             None => {
@@ -346,9 +368,24 @@ impl Preview {
     }
 
     /// Send the pictures somewhere else from now on (the page was reopened
-    /// while the recording kept the camera).
-    pub fn set_sink(&self, sink: Sink) {
+    /// while the camera stayed open), or nowhere (`None`: the page went away).
+    pub fn set_sink(&self, sink: Option<Sink>) {
         *lock(&self.sink) = sink;
+    }
+
+    /// Whether a page is watching.
+    pub fn has_sink(&self) -> bool {
+        lock(&self.sink).is_some()
+    }
+
+    /// Whether this preview taps `queue`.
+    fn taps(&self, queue: &Arc<FrameQueue<Frame>>) -> bool {
+        Arc::ptr_eq(&self.queue, queue)
+    }
+
+    /// Take the sink out (a session that closes hands its watcher on).
+    fn take_sink(&self) -> Option<Sink> {
+        lock(&self.sink).take()
     }
 
     pub fn stats(&self) -> PreviewStats {
@@ -450,8 +487,14 @@ enum Session {
         preview: Preview,
         drain: Drain,
     },
-    /// A recording took the camera. The preview keeps watching its queue.
-    Recording { key: SessionKey, preview: Preview },
+    /// A recording holds the camera (the track owns the source). The preview
+    /// keeps watching its queue; `spec` is kept so the camera can be offered to
+    /// the next fragment, or back to the page, as it was opened.
+    Recording {
+        key: SessionKey,
+        spec: VideoTrackSpec,
+        preview: Preview,
+    },
 }
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
@@ -459,31 +502,43 @@ static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 /// A camera opened for the preview.
 pub type Opened = (Box<dyn VideoSource>, VideoTrackSpec);
 
-/// Show the camera: open it (`open`), and start the preview on it. Replaces
-/// any earlier session (its camera is stopped first — a camera opens once).
-/// `fps` is what the camera delivers, for the decimation.
+/// Show the camera: open it (`open`), and start the preview on it. `fps` is
+/// what the camera delivers, for the decimation.
+///
+/// A camera that is already open on the same `key` — held by a recording, or
+/// idle for an earlier page — is NOT reopened: the picture just goes to the new
+/// `sink`. Any other session is closed first (a camera opens once).
 pub fn start(
     key: SessionKey,
     open: impl FnOnce() -> Result<Opened, String>,
     sink: Sink,
 ) -> Result<(), String> {
     {
-        // A recording holds this camera and its preview is still running: the
-        // reopened page just takes over the picture.
         let guard = lock(&SESSION);
-        if let Some(Session::Recording { key: k, preview }) = guard.as_ref() {
-            if k == &key {
-                preview.set_sink(sink);
+        match guard.as_ref() {
+            Some(Session::Recording {
+                key: k, preview, ..
+            }) => {
+                if k == &key {
+                    preview.set_sink(Some(sink));
+                    return Ok(());
+                }
+                return Err("a recording is using the camera".into());
+            }
+            Some(Session::Idle {
+                key: k, preview, ..
+            }) if k == &key => {
+                preview.set_sink(Some(sink));
                 return Ok(());
             }
-            return Err("a recording is using the camera".into());
+            _ => {}
         }
     }
-    stop();
+    stop_all();
     let (source, spec) = open()?;
     let queue = source.frames();
     let fps = f64::from(spec.fps_num) / f64::from(spec.fps_den.max(1));
-    let preview = Preview::attach(&queue, fps, sink);
+    let preview = Preview::attach(&queue, fps, Some(sink));
     let drain = Drain::start(queue);
     *lock(&SESSION) = Some(Session::Idle {
         key,
@@ -495,32 +550,45 @@ pub fn start(
     Ok(())
 }
 
-/// Stop the preview and release the camera (when no recording holds it).
+/// The page stopped looking. An idle camera is released; a camera a recording
+/// holds is not touched — only the picture stops (the sink is dropped, the
+/// session stays so a page that comes back, or the overlay, can attach again).
 pub fn stop() -> Option<PreviewStats> {
-    let taken = lock(&SESSION).take();
-    match taken {
-        Some(Session::Idle {
-            source,
-            preview,
-            drain,
-            ..
-        }) => {
-            let queue = source.frames();
-            let stats = preview.stop();
-            drain.finish(&queue);
-            source.stop();
-            Some(stats)
-        }
-        Some(Session::Recording { preview, .. }) => Some(preview.stop()),
-        None => None,
+    let mut guard = lock(&SESSION);
+    if let Some(Session::Recording { preview, .. }) = guard.as_ref() {
+        preview.set_sink(None);
+        return Some(preview.stats());
     }
+    let taken = guard.take();
+    drop(guard);
+    taken.map(close)
+}
+
+/// Close whatever is open, a recording's session included. Used when a new
+/// session replaces the old one (never while a recording runs: [`start`]
+/// refuses that first).
+fn stop_all() {
+    let taken = lock(&SESSION).take();
+    if let Some(s) = taken {
+        close(s);
+    }
+}
+
+/// What [`take_for_recording`] found.
+pub struct Taken {
+    /// The running camera, when it matched the recording's key exactly.
+    pub opened: Option<Opened>,
+    /// The page's sink when a session on ANOTHER camera or format was closed
+    /// to make room: the recording opens its own camera and adopts the sink,
+    /// so the page's picture follows (see [`adopt_for_recording`]).
+    pub carried: Option<Sink>,
 }
 
 /// The recording asks for its camera. On an exact match the running session is
 /// handed over (the drain stops, the tap stays) and the track records from it;
 /// otherwise a session on another camera/format is closed — the recording then
-/// opens its own. `None` when there is nothing to take.
-pub fn take_for_recording(key: &SessionKey) -> Option<Opened> {
+/// opens its own.
+pub fn take_for_recording(key: &SessionKey) -> Taken {
     let mut guard = lock(&SESSION);
     match guard.take() {
         Some(Session::Idle {
@@ -531,19 +599,104 @@ pub fn take_for_recording(key: &SessionKey) -> Option<Opened> {
             drain,
         }) if &k == key => {
             drain.finish(&source.frames());
-            *guard = Some(Session::Recording { key: k, preview });
-            Some((source, spec))
+            *guard = Some(Session::Recording {
+                key: k,
+                spec: spec.clone(),
+                preview,
+            });
+            Taken {
+                opened: Some((source, spec)),
+                carried: None,
+            }
         }
         Some(other) => {
             drop(guard);
+            let carried = match &other {
+                Session::Idle { preview, .. } | Session::Recording { preview, .. } => {
+                    preview.take_sink()
+                }
+            };
             close(other);
-            None
+            Taken {
+                opened: None,
+                carried,
+            }
         }
-        None => None,
+        None => Taken {
+            opened: None,
+            carried: None,
+        },
     }
 }
 
-fn close(s: Session) {
+/// A recording opened its own camera (no page had it open, or another one):
+/// put a preview on it, so the recording overlay can show the picture of the
+/// camera that is recording. `carried` is the sink [`take_for_recording`]
+/// returned. No picture is made until a page attaches (`start`). Does nothing
+/// when a session exists already.
+pub fn adopt_for_recording(
+    key: SessionKey,
+    queue: &Arc<FrameQueue<Frame>>,
+    spec: &VideoTrackSpec,
+    carried: Option<Sink>,
+) {
+    let mut guard = lock(&SESSION);
+    if guard.is_some() {
+        return;
+    }
+    let fps = f64::from(spec.fps_num) / f64::from(spec.fps_den.max(1));
+    *guard = Some(Session::Recording {
+        key,
+        spec: spec.clone(),
+        preview: Preview::attach(queue, fps, carried),
+    });
+}
+
+/// The recording is over (the last fragment, or a boundary between two): give
+/// the camera back. If a page is still watching, the camera stays open and the
+/// session goes back to idle — the next fragment takes it again, or the page
+/// keeps its picture; if nobody watches, or the session is gone, the camera is
+/// stopped, as it always was. The caller must have finished with the queue (the
+/// video track has joined).
+pub fn release_after_recording(source: Box<dyn VideoSource>) {
+    let queue = source.frames();
+    let mut guard = lock(&SESSION);
+    match guard.take() {
+        Some(Session::Recording { key, spec, preview })
+            if preview.taps(&queue) && preview.has_sink() =>
+        {
+            // The recording closed the queue when it stopped; the camera did
+            // not stop. Start from a clean queue, drained until the next taker.
+            queue.reopen();
+            let drain = Drain::start(queue);
+            *guard = Some(Session::Idle {
+                key,
+                source,
+                spec,
+                preview,
+                drain,
+            });
+        }
+        Some(Session::Recording { key, spec, preview }) if !preview.taps(&queue) => {
+            // Not this camera's session: leave it alone.
+            *guard = Some(Session::Recording { key, spec, preview });
+            drop(guard);
+            source.stop();
+        }
+        Some(Session::Recording { preview, .. }) => {
+            drop(guard);
+            preview.stop();
+            source.stop();
+        }
+        other => {
+            *guard = other;
+            drop(guard);
+            source.stop();
+        }
+    }
+}
+
+fn close(s: Session) -> PreviewStats {
     match s {
         Session::Idle {
             source,
@@ -552,13 +705,12 @@ fn close(s: Session) {
             ..
         } => {
             let q = source.frames();
-            preview.stop();
+            let stats = preview.stop();
             drain.finish(&q);
             source.stop();
+            stats
         }
-        Session::Recording { preview, .. } => {
-            preview.stop();
-        }
+        Session::Recording { preview, .. } => preview.stop(),
     }
 }
 
@@ -567,6 +719,22 @@ pub fn current_key() -> Option<SessionKey> {
     match lock(&SESSION).as_ref()? {
         Session::Idle { key, .. } | Session::Recording { key, .. } => Some(key.clone()),
     }
+}
+
+/// Whether the open session is held by a recording (tests, diagnostics).
+pub fn is_recording() -> bool {
+    matches!(lock(&SESSION).as_ref(), Some(Session::Recording { .. }))
+}
+
+/// Whether a recording that is stopping should leave `source` running: a
+/// recording session taps its queue and a page is watching. The track still
+/// closes its own queue; the camera just does not stop.
+pub fn keeps_camera(source: &dyn VideoSource) -> bool {
+    let queue = source.frames();
+    matches!(
+        lock(&SESSION).as_ref(),
+        Some(Session::Recording { preview, .. }) if preview.taps(&queue) && preview.has_sink()
+    )
 }
 
 /// Stats of the live preview, if any.
@@ -589,6 +757,10 @@ mod tests {
     use std::time::Instant;
     use sundayrec_core::video_conform::{slot_count, Fps};
     use sundayrec_core::video_encoder::VideoEncoder;
+
+    /// The one camera session is a process-wide singleton; tests that use it
+    /// take turns.
+    static SERIAL: Mutex<()> = Mutex::new(());
 
     fn nv12(w: u32, h: u32, y: u8, u: u8, v: u8) -> Frame {
         let mut bytes = vec![y; (w * h) as usize];
@@ -782,13 +954,17 @@ mod tests {
         phase: Duration,
         meter: Option<&Mutex<Option<Arc<Mutex<Duration>>>>>,
         min_sent: f64,
+        max_gap: Duration,
     ) -> (f64, f64) {
         let sent = Arc::new(AtomicU64::new(0));
         let sizes = Arc::new(Mutex::new(Vec::new()));
+        let stamps = Arc::new(Mutex::new(Vec::<Instant>::new()));
         let sink: Sink = {
-            let (sent, sizes) = (Arc::clone(&sent), Arc::clone(&sizes));
+            let (sent, sizes, stamps) =
+                (Arc::clone(&sent), Arc::clone(&sizes), Arc::clone(&stamps));
             Box::new(move |jpeg| {
                 sent.fetch_add(1, Ordering::Relaxed);
+                lock(&stamps).push(Instant::now());
                 lock(&sizes).push(jpeg_size(&jpeg));
                 true
             })
@@ -823,7 +999,9 @@ mod tests {
         );
 
         // The recording takes the running session.
-        let (source, spec) = take_for_recording(key).expect("the recording takes the session");
+        let (source, spec) = take_for_recording(key)
+            .opened
+            .expect("the recording takes the session");
         let written = Arc::new(AtomicU64::new(0));
         let (mut prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
         let make: SinkFactory = {
@@ -872,10 +1050,11 @@ mod tests {
         let preview_stats = current_stats().expect("still previewing");
         assert_eq!(preview_stats.failed, 0, "{preview_stats:?}");
 
-        let cam_stats = track
-            .take_source()
-            .expect("the track holds the source")
-            .stop();
+        // Stopp, as the production stop path does it: the camera is NOT
+        // stopped (a page watches), only the track's queue closes.
+        let source = track.take_source().expect("the track holds the source");
+        assert!(keeps_camera(source.as_ref()), "a watched camera stays open");
+        source.frames().close();
         track.request_finish(sample);
         track.take_join().unwrap().join().unwrap();
         let stats = track.stats();
@@ -884,12 +1063,43 @@ mod tests {
             slot_count(sample, RATE, Fps::new(key.fps_num, key.fps_den)),
             "one frame per audio slot: {stats:?}"
         );
-        assert_eq!(
-            cam_stats.queue_dropped, 0,
-            "the recording lost frames: {cam_stats:?}"
-        );
-        assert_eq!(stats.queue_dropped, 0);
+        assert_eq!(stats.queue_dropped, 0, "{stats:?}");
         assert!(stats.new > 0, "real pictures were recorded: {stats:?}");
+        let queue = source.frames();
+        release_after_recording(source);
+        assert!(!is_recording(), "the session is idle again");
+        assert_eq!(current_key().as_ref(), Some(key));
+        assert!(!queue.is_closed(), "the queue takes frames again");
+
+        // …and the picture goes on from the same camera, with no new open.
+        let after_stop = sent.load(Ordering::Relaxed);
+        std::thread::sleep(phase / 2);
+        let still = sent.load(Ordering::Relaxed) - after_stop;
+        assert!(still >= 1, "no picture after Stopp ({still})");
+
+        // A second fragment (rollover): the same session is taken again.
+        let second = take_for_recording(key)
+            .opened
+            .expect("the next fragment takes the same session");
+        assert!(Arc::ptr_eq(&second.0.frames(), &queue), "the same camera");
+        // (No track runs in this stand-in for fragment two, so only wait for
+        // one picture — a full second of frames would overflow its queue.)
+        let before_second_stop = sent.load(Ordering::Relaxed);
+        wait_for("a picture while fragment two records", || {
+            sent.load(Ordering::Relaxed) > before_second_stop
+        });
+        second.0.frames().close();
+        release_after_recording(second.0);
+        assert!(!is_recording());
+        let cam_stats = {
+            // The proof is over: close the camera like a page that left.
+            let q = queue.stats();
+            stop();
+            q
+        };
+        assert!(current_key().is_none());
+
+        assert_eq!(cam_stats.dropped, 0, "the camera queue lost frames");
         if let Some(m) = meter.and_then(|m| lock(m).clone()) {
             assert!(
                 *lock(&m) < Duration::from_millis(20),
@@ -897,6 +1107,18 @@ mod tests {
                 *lock(&m)
             );
         }
+
+        // THE BLINK: the longest silence between two pictures, over the whole
+        // run — the page's start, the recording, Stopp and the rollover.
+        let gaps: Vec<Duration> = {
+            let t = lock(&stamps);
+            t.windows(2).map(|w| w[1] - w[0]).collect()
+        };
+        let worst = gaps.iter().max().copied().unwrap_or_default();
+        assert!(
+            worst < max_gap,
+            "the picture stopped for {worst:?} (limit {max_gap:?}) — gaps {gaps:?}"
+        );
         // Every picture was 640 wide.
         assert!(
             lock(&sizes)
@@ -907,15 +1129,16 @@ mod tests {
         );
         println!(
             "C4a: {rate_before:.2} pictures/s before, {rate_during:.2} during; \
-             {} recorded slots, camera queue_dropped {}, preview {preview_stats:?}",
+             {} recorded slots, camera queue_dropped {}, longest gap {worst:?}, preview {preview_stats:?}",
             written.load(Ordering::Relaxed),
-            cam_stats.queue_dropped
+            cam_stats.dropped
         );
         (rate_before, rate_during)
     }
 
     #[test]
     fn the_preview_holds_four_a_second_from_one_session_through_a_recording() {
+        let _serial = lock(&SERIAL);
         let key = SessionKey {
             camera: "Synthetic".into(),
             width: 1280,
@@ -946,24 +1169,169 @@ mod tests {
             Some(&meter),
             // A shared CI runner may not JPEG-encode every pick in time.
             2.0,
+            Duration::from_millis(1500),
+        );
+    }
+
+    fn synthetic_spec() -> VideoTrackSpec {
+        VideoTrackSpec {
+            width: 640,
+            height: 360,
+            fps_num: 30,
+            fps_den: 1,
+            input: RawPixelFormat::Nv12,
+            flip: false,
+        }
+    }
+
+    fn synthetic_key() -> SessionKey {
+        SessionKey {
+            camera: "Synthetic".into(),
+            width: 640,
+            height: 360,
+            fps_num: 30,
+            fps_den: 1,
+        }
+    }
+
+    fn open_synthetic() -> Result<Opened, String> {
+        Ok((
+            Box::new(SyntheticSource::start(640, 360, 30.0, QUEUE_FRAMES)) as Box<dyn VideoSource>,
+            synthetic_spec(),
+        ))
+    }
+
+    /// A sink that counts pictures.
+    fn counting_sink() -> (Sink, Arc<AtomicU64>) {
+        let n = Arc::new(AtomicU64::new(0));
+        let n2 = Arc::clone(&n);
+        (
+            Box::new(move |_| {
+                n2.fetch_add(1, Ordering::Relaxed);
+                true
+            }),
+            n,
+        )
+    }
+
+    fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
+        let t = Instant::now();
+        while !ready() {
+            assert!(t.elapsed() < Duration::from_secs(10), "timed out: {what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn a_page_that_leaves_and_returns_during_a_recording_keeps_one_camera() {
+        let _serial = lock(&SERIAL);
+        let key = synthetic_key();
+        let (sink, _) = counting_sink();
+        start(key.clone(), open_synthetic, sink).unwrap();
+        let (source, _) = take_for_recording(&key).opened.expect("takes it");
+        assert!(is_recording());
+
+        // The page goes away: the picture stops, the session and the camera stay.
+        assert!(stop().is_some());
+        assert!(is_recording(), "the recording still holds its session");
+        assert!(!keeps_camera(source.as_ref()), "nobody watches now");
+        let sent_then = current_stats().unwrap().sent;
+        std::thread::sleep(Duration::from_millis(700));
+        assert_eq!(
+            current_stats().unwrap().sent,
+            sent_then,
+            "no picture is made for nobody"
         );
 
-        // While a recording holds the camera a reopened page re-points the
-        // picture — no second camera — and another format is refused.
+        // The page returns (or the overlay mounts): no second camera, a picture.
+        let (sink, got) = counting_sink();
+        start(key.clone(), || Err("must not open".into()), sink)
+            .expect("a held camera's picture goes to the new channel");
+        wait_for("a picture after the page returned", || {
+            got.load(Ordering::Relaxed) >= 1
+        });
+        assert!(keeps_camera(source.as_ref()));
+        // Another camera or format is refused while the recording holds this one.
         let mut other = key.clone();
-        other.width = 640;
-        assert!(current_key().is_some());
-        start(
-            key.clone(),
-            || Err("must not open".into()),
-            Box::new(|_| true),
-        )
-        .expect("a held camera's preview takes the new channel");
-        // (The recording above is finished; its leftover session is closed by
-        // the next start with another key.)
+        other.width = 1280;
+        assert!(start(other, || Err("must not open".into()), Box::new(|_| true)).is_err());
+
+        // The recording ends with a page watching: the camera goes back to idle.
+        let queue = source.frames();
+        queue.close();
+        release_after_recording(source);
+        assert!(!is_recording());
+        assert!(!queue.is_closed());
+        let before = got.load(Ordering::Relaxed);
+        wait_for("pictures after Stopp", || {
+            got.load(Ordering::Relaxed) > before + 1
+        });
+        // A page started again on an idle session reuses it too.
+        let (sink, again) = counting_sink();
+        start(key.clone(), || Err("must not reopen".into()), sink).expect("reuses the idle camera");
+        wait_for("a picture on the replacement channel", || {
+            again.load(Ordering::Relaxed) >= 1
+        });
+        assert!(stop().is_some());
+        assert!(current_key().is_none(), "an idle camera is released");
+        assert!(queue.is_closed(), "…and really stopped");
+    }
+
+    #[test]
+    fn a_recording_nobody_watches_closes_its_camera_at_the_end() {
+        let _serial = lock(&SERIAL);
+        let key = synthetic_key();
+        // The recording opened its own camera (no page had one): adopted, so a
+        // page that comes later can see it — but silent until then.
+        let source = SyntheticSource::start(640, 360, 30.0, QUEUE_FRAMES);
+        let queue = source.frames();
+        adopt_for_recording(key.clone(), &queue, &synthetic_spec(), None);
+        assert!(is_recording());
+        std::thread::sleep(Duration::from_millis(700));
+        let st = current_stats().unwrap();
+        assert!(st.offered >= 1, "the tap sees the camera: {st:?}");
+        assert_eq!(st.sent, 0, "nobody watches, nothing is made: {st:?}");
+
+        let (sink, got) = counting_sink();
+        start(key.clone(), || Err("must not open".into()), sink).unwrap();
+        wait_for("the overlay's picture", || got.load(Ordering::Relaxed) >= 1);
+
+        // The overlay leaves, then the recording ends: nobody watches → stop.
+        stop();
+        let source: Box<dyn VideoSource> = Box::new(source);
+        queue.close();
+        release_after_recording(source);
+        assert!(current_key().is_none());
+        assert!(queue.is_closed());
+    }
+
+    #[test]
+    fn a_session_closed_for_another_camera_hands_its_watcher_on() {
+        let _serial = lock(&SERIAL);
+        let key = synthetic_key();
+        let (sink, got) = counting_sink();
+        start(key.clone(), open_synthetic, sink).unwrap();
+        // The recording wants another format: the idle camera closes…
+        let mut wanted = key.clone();
+        wanted.width = 1280;
+        let taken = take_for_recording(&wanted);
+        assert!(taken.opened.is_none());
+        assert!(current_key().is_none());
+        let carried = taken.carried.expect("the page's channel comes along");
+        // …and the recording's own camera is adopted with that channel.
+        let source = SyntheticSource::start(640, 360, 30.0, QUEUE_FRAMES);
+        let queue = source.frames();
+        let before = got.load(Ordering::Relaxed);
+        adopt_for_recording(wanted, &queue, &synthetic_spec(), Some(carried));
+        wait_for("the picture follows to the recording's camera", || {
+            got.load(Ordering::Relaxed) > before
+        });
+        queue.close();
+        release_after_recording(Box::new(source));
+        // It had a watcher: the camera is kept for it.
+        assert!(current_key().is_some() && !is_recording());
         assert!(stop().is_some());
         assert!(current_key().is_none());
-        let _ = other;
     }
 
     /// With a REAL camera, from the owner's own terminal (this session's has no
@@ -972,6 +1340,7 @@ mod tests {
     #[test]
     #[ignore = "needs a real camera and camera permission for the terminal"]
     fn real_camera_preview_holds_four_a_second_through_a_recording() {
+        let _serial = lock(&SERIAL);
         let name = std::env::var("SUNDAYREC_REAL_CAMERA").expect("SUNDAYREC_REAL_CAMERA");
         let cams = crate::camera::list().expect("camera list");
         let cam = crate::recorder::native_capture::video::find_camera(&cams, &name)
@@ -998,6 +1367,7 @@ mod tests {
             Duration::from_secs(8),
             None,
             3.0,
+            Duration::from_millis(800),
         );
         stop();
         println!("real camera {}: {rb:.2} / {rd:.2} pictures/s", key.camera);

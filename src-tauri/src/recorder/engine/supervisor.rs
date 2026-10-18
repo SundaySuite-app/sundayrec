@@ -52,10 +52,7 @@ use super::finalize::{
     session_manifest,
 };
 use super::payloads::{RecordingEvent, RecordingFinished};
-use super::{
-    now_ms, recording_preview_path, StateWriter, FINISHED_EVENT, RECONNECTED_EVENT,
-    RECONNECTING_EVENT,
-};
+use super::{now_ms, StateWriter, FINISHED_EVENT, RECONNECTED_EVENT, RECONNECTING_EVENT};
 
 /// Why the current segment's capture stopped — drives what the supervisor does
 /// next. Returned by the native `run_native_segment`.
@@ -347,12 +344,6 @@ async fn run_session(
         // alive at the clean stop — otherwise its capture is deleted with the
         // manifest and the retry is forfeited.
         let mut all_delivered = true;
-        // Clear any stale preview frame from a previous video recording so the tile
-        // doesn't briefly show last time's image before the video track's ffmpeg
-        // writes a fresh one.
-        if ctx.camera.is_some() {
-            let _ = std::fs::remove_file(recording_preview_path());
-        }
         emit_state(RecorderState::Preparing, 0);
 
         // Spawn the FIRST segment. A failure reaches the caller as a start

@@ -629,7 +629,6 @@ pub fn run() {
             commands::audio::stop_vu,
             commands::media::ffmpeg_health,
             commands::media::media_permissions,
-            commands::recorder::recording_preview_frame,
             commands::recorder::start_recording,
             commands::recorder::stop_recording,
             commands::recorder::recording_scheduled_stop_ms,

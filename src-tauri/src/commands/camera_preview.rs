@@ -4,9 +4,12 @@
 //! file only opens the camera by the recorder's own rule and wires the channel.
 //!
 //! The camera session opened here is the one the recording then records from
-//! ([`crate::camera::preview::take_for_recording`]) — Start and Stop do not
-//! reopen it. While a recording holds the camera, `camera_preview_start` only
-//! re-points the picture at the new channel (a page that was reopened).
+//! ([`crate::camera::preview::take_for_recording`]) and the one it gives back
+//! when it ends ([`crate::camera::preview::release_after_recording`]) — Start,
+//! Stopp and the fragment boundaries in between do not reopen it. While the
+//! camera is open for a recording (or idle), `camera_preview_start` only
+//! re-points the picture at the new channel (a page that was reopened, or the
+//! recording overlay), and `camera_preview_stop` only stops the picture.
 //!
 //! ⚠️ HARDWARE-UNVERIFIED — see docs/RIG-DAY.md (v5).
 
@@ -100,8 +103,8 @@ pub async fn camera_preview_start(
     }
 }
 
-/// Close the preview and release the camera. A camera a recording holds is
-/// not touched — only its picture stops.
+/// Stop the picture and release the camera. A camera a recording holds is not
+/// touched — only its picture stops, and the session stays for the recording.
 #[tauri::command]
 pub async fn camera_preview_stop() -> AppResult<()> {
     tokio::task::spawn_blocking(preview::stop)
