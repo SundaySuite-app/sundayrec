@@ -23,9 +23,11 @@
 //! - **The machine slept:** the host clock jumped; [`AudioClock`] restarts its
 //!   fit and keeps the old line for frames captured before the jump. Here that
 //!   only means a frame is not placed until the clock has accepted a pair at
-//!   least as new as the frame ([`AudioClock::newest_host`]): a frame stamped
+//!   least as new as the frame ([`AudioClock::trusted_host`]): a frame stamped
 //!   after a jump the clock has not confirmed yet waits instead of landing an
-//!   hour in the future.
+//!   hour in the future. The same holds at the start: no frame is placed until
+//!   the clock has a line of several agreeing pairs, so one bad first
+//!   timestamp cannot misplace a camera that started before the audio.
 //!
 //! # When a slot is decided
 //!
@@ -216,10 +218,10 @@ impl<T> VideoConformer<T> {
     }
 
     /// Move frames from `unplaced` to `placed`. Normally only frames no newer
-    /// than the clock's newest accepted pair; `all` (at finish) places the rest
+    /// than the clock's newest accepted pair on a trusted line; `all` (at finish) places the rest
     /// by extrapolation.
     fn place(&mut self, clock: &AudioClock, all: bool) {
-        let newest_host = clock.newest_host();
+        let newest_host = clock.trusted_host();
         while let Some(&(host, _)) = self.unplaced.front() {
             if !all && newest_host.is_none_or(|h| host > h) {
                 break;
@@ -431,6 +433,43 @@ mod tests {
     }
 
     #[test]
+    fn a_bad_first_audio_timestamp_does_not_misplace_early_frames() {
+        // The camera runs from 0.3 s before the audio; its frames are queued
+        // when the first audio pair arrives — 319 ms late. Placed on that
+        // one-pair line, the frame from 0.3 s would land on slot 0. They wait
+        // for a line of agreeing pairs instead. Id: capture time + 1 s in ms.
+        let mut clock = AudioClock::new(RATE);
+        let mut conf = VideoConformer::new(RATE, FPS30);
+        let mut out = vec![];
+        let id = |t: f64| ((t + 1.0) * 1000.0).round() as u64;
+        let mut f = -9i64; // frame f at f/30 s: −0.3 s …
+        let mut push_upto = |conf: &mut VideoConformer<u64>, upto: f64| {
+            while (f as f64 / 30.0) <= upto {
+                let t = f as f64 / 30.0;
+                conf.push_frame(host(t - PHASE), id(t));
+                f += 1;
+            }
+        };
+        push_upto(&mut conf, 0.4);
+        clock.observe(0, host(0.0) + 319_000_000);
+        conf.advance(&clock, &mut out);
+        let total = 2 * RATE as u64;
+        let mut s = BUF;
+        while s < total {
+            let t = s as f64 / RATE as f64;
+            push_upto(&mut conf, t);
+            clock.observe(s, host(t));
+            conf.advance(&clock, &mut out);
+            s += BUF;
+        }
+        conf.finish(&clock, total, &mut out);
+        assert_eq!(clock.resets(), 0);
+        assert_eq!(clock.outliers(), 1);
+        assert_eq!(out[0].picture, Picture::New(id(0.0)));
+        assert_eq!(out[9].picture, Picture::New(id(0.3)));
+    }
+
+    #[test]
     fn a_host_clock_jump_from_sleep_keeps_pictures_on_the_audio() {
         // 10 s of audio, then the machine sleeps for an hour (the host clock
         // jumps, the sample count does not), then 10 s more. The camera keeps
@@ -513,6 +552,7 @@ mod tests {
 
     mod simulation {
         use super::super::*;
+        use crate::av_clock::{JUMP_THRESHOLD_NS, WINDOW_NS};
         use proptest::prelude::*;
 
         /// splitmix64 — the scenario's own randomness, seeded by proptest, so a
@@ -661,7 +701,7 @@ mod tests {
             let mut measure = |upto: usize, measured: &mut usize, clock: &AudioClock, all: bool| {
                 while *measured < upto {
                     let i = *measured;
-                    if !all && clock.newest_host().is_none_or(|h| stamp[i] > h) {
+                    if !all && clock.trusted_host().is_none_or(|h| stamp[i] > h) {
                         break;
                     }
                     let pos = clock.sample_at(stamp[i]).expect("clock has pairs");
@@ -716,6 +756,27 @@ mod tests {
                     (i - 1) as i64
                 }
             };
+            // Is the oracle black at some instant of [a, b]? Black after frame
+            // i is (true_t[i] + hold, true_t[i + 1]); one that starts before
+            // `a` shows at `a`, so only those starting in [a, b) need a look.
+            let oracle_black_within = |a: f64, b: f64| -> bool {
+                if oracle(a) < 0 {
+                    return true;
+                }
+                let first = true_t.partition_point(|&f| f + hold < a);
+                (first..true_t.len())
+                    .take_while(|&i| true_t[i] + hold < b)
+                    .any(|i| {
+                        true_t
+                            .get(i + 1)
+                            .is_none_or(|&next| next > true_t[i] + hold)
+                    })
+            };
+            // Does the oracle show a picture at some instant of [a, b]?
+            let oracle_picture_within = |a: f64, b: f64| -> bool {
+                let i = true_t.partition_point(|&f| f <= a);
+                oracle(a) >= 0 || true_t.get(i).is_some_and(|&f| f <= b)
+            };
             let mut conf_first: Vec<i64> = vec![-1; true_t.len()];
             let mut oracle_first: Vec<i64> = vec![-1; true_t.len()];
             let mut last_id = -1i64;
@@ -723,13 +784,19 @@ mod tests {
                 let tk = k as f64 * period;
                 let o = oracle(tk);
                 if (id < 0) != (o < 0) {
-                    // Black against a picture: only where a shift of one slot
-                    // flips the oracle too (2 s hold edge, first frame).
-                    let near = [oracle(tk - period), oracle(tk + period)];
-                    assert!(
-                        near.iter().any(|&x| (x < 0) == (id < 0)),
-                        "slot {k} ({tk:.3} s): showed {id}, oracle {o}"
-                    );
+                    // Black against a picture: only where the oracle itself
+                    // shows the same somewhere within one slot either side (2 s
+                    // hold edge, first frame). The whole interval, not just its
+                    // ends: a camera back just after the hold ran out leaves a
+                    // black stretch narrower than a slot, which a placement
+                    // error far below one slot can land a slot in.
+                    let (a, b) = (tk - period, tk + period);
+                    let ok = if id < 0 {
+                        oracle_black_within(a, b)
+                    } else {
+                        oracle_picture_within(a, b)
+                    };
+                    assert!(ok, "slot {k} ({tk:.3} s): showed {id}, oracle {o}");
                 }
                 if id >= 0 {
                     assert!(id >= last_id, "slot {k}: picture went back in time");
@@ -751,19 +818,42 @@ mod tests {
             let resets = clock.resets();
             // Every sleep restarts the fit exactly once, and nothing else does —
             // drift, jitter, bad timestamps and small steps must be absorbed by
-            // the fit, not papered over by restarts. Not countable: a jump
-            // before the first pair or in the last second, two within a second
-            // (may be confirmed as one), one a small step partly cancels.
-            let mut at: Vec<f64> = sc.sleeps.iter().map(|s| snap(s.0)).collect();
-            at.sort_by(f64::total_cmp);
-            at.dedup_by(|b, a| *b - *a < 1.0);
-            let visible: Vec<f64> = at
-                .into_iter()
-                .filter(|&t| t > 0.0 && t < end_s - 1.0)
+            // the fit, not papered over by restarts. Never seen: a jump at or
+            // before the first pair, or after the last. Maybe seen (counted in
+            // the upper bound only): one in the last second (confirmed or not
+            // before the end), two within a second (may be confirmed as one),
+            // one a small step partly cancels, and small steps that add up past
+            // the jump threshold within one fit window (each alone is absorbed,
+            // but the window has only partly followed the first when the next
+            // comes: the sum is a real step the clock may restart on).
+            let mut at: Vec<f64> = sc
+                .sleeps
+                .iter()
+                .map(|s| snap(s.0))
+                .filter(|&t| t > 0.0 && t < end_s)
                 .collect();
+            at.sort_by(f64::total_cmp);
+            let window_s = WINDOW_NS as f64 / 1e9;
+            let stacking_steps = sc
+                .small_steps
+                .iter()
+                .filter(|&&(t, d)| {
+                    let sum: f64 = sc
+                        .small_steps
+                        .iter()
+                        .filter(|&&(u, e)| (u - t).abs() < window_s && e.signum() == d.signum())
+                        .map(|s| s.1)
+                        .sum();
+                    sum.abs() > JUMP_THRESHOLD_NS as f64
+                })
+                .count() as u32;
+            let maybe = at.len() as u32 + stacking_steps;
+            at.dedup_by(|b, a| *b - *a < 1.0);
             let near_step = |t: f64| sc.small_steps.iter().any(|s| (snap(s.0) - t).abs() < 1.0);
-            let sure = visible.iter().filter(|&&t| !near_step(t)).count() as u32;
-            let maybe = visible.len() as u32;
+            let sure = at
+                .iter()
+                .filter(|&&t| t < end_s - 1.0 && !near_step(t))
+                .count() as u32;
             assert!(
                 (sure..=maybe).contains(&resets),
                 "{resets} resets for {sure}..={maybe} sleeps"
@@ -881,6 +971,187 @@ mod tests {
                 prop_assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
                 prop_assert!(o.max_place_err_ms < period_ms, "placement error {} ms", o.max_place_err_ms);
             }
+        }
+
+        /// The case proptest found (regression seed `cc c297fed8…`): the
+        /// machine sleeps at 935.28 s (the host clock jumps ~6 h) and the camera
+        /// is back 2.0046 s later, so the last picture before the gap is 2.021 s
+        /// old when the next arrives — 21 ms past the 2 s hold. The oracle's
+        /// black stretch is narrower than a 25 fps slot and holds none; the
+        /// conformer, ~1 ms off on both frames, lands slot 23432 (937.280 s) in
+        /// it and shows black there. That is within one slot, and the check
+        /// must accept it.
+        fn camera_back_just_past_the_hold_after_a_sleep() -> Scenario {
+            Scenario {
+                seed: 14_375_585_711_776_970,
+                secs: 3.0 * 3600.0,
+                rate: 48_000,
+                fps: Fps::new(25, 1),
+                buf: 1024,
+                cam_fps: 60.0,
+                drift_ppm: -207.395_670_272_507_9,
+                wobble_ppm: 0.820_397_421_187_904_4,
+                wobble_period_s: 3_245.260_873_421_877_5,
+                audio_jitter_ns: 2_286_460.982_533_921,
+                frame_jitter_ns: 1_492_068.136_998_755_2,
+                delivery_s: (0.117_175_295_390_737_93, 0.089_846_865_176_144_14),
+                outlier_p: 5.877_540_590_347_608e-5,
+                video_start_s: 5.725_272_761_096_951,
+                holes: vec![
+                    (1_068.895_740_910_397_8, 81.621_355_168_369_04),
+                    (5_487.389_188_809_23, 29.432_495_548_844_92),
+                    (1_732.548_448_446_179_7, 98.329_731_450_644_15),
+                    (3_072.518_500_605_394, 107.856_921_173_837_8),
+                    (10_264.834_403_005_416, 95.047_000_132_117_52),
+                ],
+                fps_drops: vec![
+                    (4_132.918_017_153_882, 392.769_161_357_057_25, 4),
+                    (10_331.234_319_899_264, 295.922_444_827_360_4, 4),
+                    (1_098.506_870_123_693_7, 190.536_458_384_343_94, 2),
+                    (8_742.471_262_575_94, 242.985_596_926_562_83, 4),
+                ],
+                sleeps: vec![
+                    (
+                        8_816.200_255_175_794,
+                        566_954_012.029_645_1,
+                        3.245_744_434_443_013_3,
+                    ),
+                    (
+                        935.283_973_679_955,
+                        21_900_000_051_853.617,
+                        2.004_562_458_535_596_6,
+                    ),
+                ],
+                small_steps: vec![
+                    (4_910.288_089_088_366, 4_742_265.449_413_051),
+                    (6_352.829_625_104_408, -3_671_676.931_176_415_6),
+                    (6_548.809_165_167_648, -10_471_659.696_444_346),
+                    (5_082.568_966_084_262, 12_885_745.055_271_948),
+                ],
+            }
+        }
+
+        #[test]
+        fn a_sleep_with_the_camera_back_just_past_the_hold_stays_within_one_slot() {
+            let sc = camera_back_just_past_the_hold_after_a_sleep();
+            let o = simulate(&sc);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+            assert!(o.max_place_err_ms < 40.0, "{}", o.max_place_err_ms);
+            assert_eq!(o.resets, 2);
+        }
+
+        /// The same gap without the sleep (a plain camera hole, no host-clock
+        /// jump) gives the same black slot: the jump and the clock's segments
+        /// play no part, it is the hold edge alone.
+        #[test]
+        fn the_same_gap_without_a_sleep_is_the_same_hold_edge() {
+            let mut sc = camera_back_just_past_the_hold_after_a_sleep();
+            let (at, _, reinit) = sc.sleeps.pop().expect("the sleep at 935 s");
+            // The simulation snaps a sleep to a buffer boundary; the hole must
+            // start on the same one to drop the same frames.
+            let per_buf = sc.buf as f64 / sc.rate as f64;
+            sc.holes.push(((at / per_buf).round() * per_buf, reinit));
+            let o = simulate(&sc);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+            assert_eq!(o.resets, 1);
+        }
+
+        /// Proptest regression `cc 5d24cd87…`: a 40 ms jump 0.7 s before the
+        /// end is seen and confirmed — one reset, which the check must allow.
+        #[test]
+        fn a_jump_in_the_last_second_may_reset() {
+            let sc = Scenario {
+                seed: 0,
+                secs: 3.0 * 3600.0,
+                rate: 44_100,
+                fps: Fps::new(30, 1),
+                buf: 1024,
+                cam_fps: 30.0,
+                drift_ppm: 0.0,
+                wobble_ppm: 0.0,
+                wobble_period_s: 300.0,
+                audio_jitter_ns: 0.0,
+                frame_jitter_ns: 0.0,
+                delivery_s: (0.0, 0.0),
+                outlier_p: 0.0,
+                video_start_s: 0.0,
+                holes: vec![],
+                fps_drops: vec![],
+                sleeps: vec![(10_799.264_737_537_813, 40e6, 0.0)],
+                small_steps: vec![],
+            };
+            let o = simulate(&sc);
+            assert_eq!(o.resets, 1);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+        }
+
+        /// Proptest regression `cc` in the file for this case: the camera
+        /// starts 2.56 s before the audio and the very first audio pair is
+        /// 319 ms off. Frames placed on that one-pair line would stay 319 ms
+        /// (≈ 10 slots) wrong; they must wait for a line of agreeing pairs.
+        #[test]
+        fn a_bad_first_timestamp_does_not_misplace_a_camera_that_started_first() {
+            let sc = Scenario {
+                seed: 1_525_568_686_406_554_132,
+                secs: 3.0 * 3600.0,
+                rate: 44_100,
+                fps: Fps::new(30, 1),
+                buf: 2048,
+                cam_fps: 30_000.0 / 1001.0,
+                drift_ppm: 0.0,
+                wobble_ppm: 0.0,
+                wobble_period_s: 300.0,
+                audio_jitter_ns: 0.0,
+                frame_jitter_ns: 0.0,
+                delivery_s: (0.0, 0.0),
+                outlier_p: 0.000_112_913_845_181_734_76,
+                video_start_s: -2.561_706_775_641_192_6,
+                holes: vec![
+                    (4_783.974_056_871_886, 52.640_721_457_600_5),
+                    (4_760.066_895_267_420_5, 61.856_349_677_345_55),
+                ],
+                fps_drops: vec![(0.0, 492.377_326_120_127_6, 4)],
+                sleeps: vec![],
+                small_steps: vec![],
+            };
+            let o = simulate(&sc);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+            assert!(o.max_place_err_ms < 33.4, "{}", o.max_place_err_ms);
+            assert_eq!(o.resets, 0);
+        }
+
+        /// Proptest regression: two small steps (−10.5 ms, −13.7 ms) 1.9 s
+        /// apart add up to more than the jump threshold before the window has
+        /// followed the first. One reset is allowed there, and the pictures
+        /// stay within a slot.
+        #[test]
+        fn small_steps_that_add_up_may_reset() {
+            let sc = Scenario {
+                seed: 0,
+                secs: 3.0 * 3600.0,
+                rate: 44_100,
+                fps: Fps::new(30, 1),
+                buf: 1024,
+                cam_fps: 30.0,
+                drift_ppm: 0.0,
+                wobble_ppm: 0.0,
+                wobble_period_s: 300.0,
+                audio_jitter_ns: 0.0,
+                frame_jitter_ns: 0.0,
+                delivery_s: (0.0, 0.0),
+                outlier_p: 0.0,
+                video_start_s: 0.0,
+                holes: vec![],
+                fps_drops: vec![],
+                sleeps: vec![],
+                small_steps: vec![
+                    (3_085.753_721_410_438_6, -10_462_177.618_287_023),
+                    (3_087.691_800_559_606, -13_749_697.955_894_647),
+                ],
+            };
+            let o = simulate(&sc);
+            assert_eq!(o.resets, 1);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
         }
 
         /// The worst plausible case, pinned: 50 ppm the "wrong" way, jitter
