@@ -618,8 +618,8 @@ fn a_dead_channel_repaired_by_duplicating_the_other_does_not_make_it_pump() {
     let analysis_in: Vec<Vec<f32>> = [&left, &right]
         .iter()
         .map(|c| {
-            c.chunks_exact(3)
-                .map(|k| k.iter().sum::<f32>() / 3.0)
+            (0..c.len() / 3)
+                .map(|i| (c[3 * i] + c[3 * i + 1] + c[3 * i + 2]) / 3.0)
                 .collect()
         })
         .collect();

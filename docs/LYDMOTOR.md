@@ -298,6 +298,17 @@ Testene som beviser det (`tale/tests.rs`) feiler på gammel kode og er grønne n
 «ved gulvet»-grenen er strammet: pausen er 3,5 s og vinduet 5,5–7,4 s ligger utenfor holdetiden, og
 porten får et feil oppgitt gulv (−90 og −30) uten at pausen eller akkorden skifter oppførsel.
 
+**90-minutterseksport etter B2b/B3a (M2R funn 6), målt.** Hele eksportstien (`export`, ikke bare
+kjeden): `2026.01.04.mp3`, 5400 s, ett kutt, `speech-clear` («Tale»), mp3 256k, `--release`, M1,
+ffmpeg 9.0.1. Analysen valgte bare støyfjerning (ingen brum, ingen lang romklang). Analysen selv:
+2,5 s (2128× sanntid). Hele eksporten: **234 s** ved maskinlast ca. 25 (andre økter kjørte), og
+**219 s** ved last 9→5. Før M2 var tallet 222 s (B1b-tabellen over), så en «Tale»-eksport uten romklang er
+omtrent på nivå med i dag, ikke raskere; B1b-kravet «raskere enn i dag» er ikke oppfylt for «Tale»
+(95 s var uten rensing). Med `dereverb` på (stort kirkerom) legger M2R-målingen til ca. 50 s i
+kjeden, altså rundt 270 s, trolig tregere enn før. Ikke målt ende til ende med dereverb (ingen ekte
+fil med lang etterklang tilgjengelig). Kjeden er enkelttrådet og er det som tar tiden: `denoise`
+(minimumsstatistikk) og `dereverb` kan kjøres parallelt per kanal eller på egen tråd; ikke gjort.
+
 **Kjent grense:** lyd der nivået beveger seg som tale (trommer, strummet gitar) åpner porten, og en
 holdt tone under den møter støyfjerneren på inntil 9 dB. «Tale og musikk» bruker ikke denne rensingen.
 Ikke hørt etter: hørbarheten (brumopptak, stort kirkerom, rent opptak uendret) hører til B3b/Ørene.
