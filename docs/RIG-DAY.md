@@ -785,10 +785,10 @@ during; … camera queue_dropped 0, longest gap …`. Begge tallene mellom 3 og
       terminalen du startet fra, Windows: `%LOCALAPPDATA%\…\logs\sundayrec.log`). Start et videoopptak med
       et USB-kamera, la det gå ett minutt, **trekk kabelen**, vent 10 s og
       **sett den inn igjen**, la opptaket gå ett minutt til, og stopp.
-      **Forventet:** loggen sier `camera reconnect: the camera has dropped out
-    — closing its session; the recording goes on` innen et par sekunder etter
-      trekket og `camera reconnect: the camera is back — session re-opened on
-    the same id` etter at kabelen sitter; **ingen** nytt fragment på grunn av
+      **Forventet:** loggen sier `the camera has dropped out` (linjen
+      begynner med `camera reconnect:`) innen et par sekunder etter trekket,
+      og `the camera is back` etter at kabelen sitter (samme linje sier at
+      økta er åpnet på samme id); **ingen** nytt fragment på grunn av
       kameraet (kameraet har ikke noe med lydfragmentene å gjøre), lyden er
       sammenhengende, og mp4-en har bilde på begge sider av hullet:
       to sekunder frosset og deretter svart til kameraet er tilbake.
