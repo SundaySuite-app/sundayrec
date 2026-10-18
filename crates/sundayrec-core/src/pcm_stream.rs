@@ -179,8 +179,8 @@ pub fn render<R: Read + ?Sized>(
     let mut stage = GainStage::new(plan, fmt.sample_rate, fmt.channels);
     let mut meter = measure_output.then(|| Meter::new(fmt.sample_rate, fmt.channels));
     let emit = |block: &[Vec<f32>],
-                    sink: &mut Option<&mut dyn Write>,
-                    meter: &mut Option<Meter>|
+                sink: &mut Option<&mut dyn Write>,
+                meter: &mut Option<Meter>|
      -> io::Result<()> {
         if block.first().is_none_or(Vec::is_empty) {
             return Ok(());
@@ -245,7 +245,9 @@ pub fn settle<R: Read>(
     loop {
         let mut src = open()?;
         let round = rounds;
-        let (out, _) = render(&mut src, fmt, &plan, None, true, |f| round_progress(round, f))?;
+        let (out, _) = render(&mut src, fmt, &plan, None, true, |f| {
+            round_progress(round, f)
+        })?;
         rounds += 1;
         let out = out.expect("metered");
         let settled = !out.integrated_lufs.is_finite()
@@ -338,8 +340,15 @@ mod tests {
         let plan = plan_gain_to(&m, m.integrated_lufs + 6.0, -1.0);
         assert!(plan.limiter.is_none());
         let mut out = Vec::new();
-        let (o, frames) = render(&mut bytes.as_slice(), FMT, &plan, Some(&mut out), true, |_| {})
-            .unwrap();
+        let (o, frames) = render(
+            &mut bytes.as_slice(),
+            FMT,
+            &plan,
+            Some(&mut out),
+            true,
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(frames, 70_000);
         assert_eq!(out.len(), bytes.len());
         assert!((o.unwrap().integrated_lufs - (m.integrated_lufs + 6.0)).abs() < 0.01);
@@ -357,8 +366,15 @@ mod tests {
         let s = plan_and_settle(&m, -16.0, -1.0, FMT, || Ok(bytes.as_slice()), |_, _| {}).unwrap();
         assert!(s.rounds >= 2, "needed a correction: {s:?}");
         let mut out = Vec::new();
-        let (o, _) = render(&mut bytes.as_slice(), FMT, &s.plan, Some(&mut out), true, |_| {})
-            .unwrap();
+        let (o, _) = render(
+            &mut bytes.as_slice(),
+            FMT,
+            &s.plan,
+            Some(&mut out),
+            true,
+            |_| {},
+        )
+        .unwrap();
         let o = o.unwrap();
         assert!((o.integrated_lufs - -16.0).abs() <= 0.15, "{o:?}");
         assert!(o.true_peak_dbtp <= -1.0, "{o:?}");
@@ -377,7 +393,10 @@ mod tests {
     fn ffmpeg_pcm_options_are_symmetric() {
         let a = output_args(FMT).join(" ");
         assert_eq!(a, "-f f32le -c:a pcm_f32le -ar 48000 -ac 2 pipe:1");
-        assert_eq!(input_args(FMT).join(" "), "-f f32le -ar 48000 -ac 2 -i pipe:0");
+        assert_eq!(
+            input_args(FMT).join(" "),
+            "-f f32le -ar 48000 -ac 2 -i pipe:0"
+        );
     }
 
     #[test]

@@ -1199,7 +1199,9 @@ async fn startup_sweep_in(
 }
 
 /// Sweep the OS temp dir for leftover mastering-preview mp3s
-/// (`sundayrec-master-preview-*.mp3`, written by [`master_preview`]). Each is
+/// (`sundayrec-master-preview-*.mp3`, written by [`master_preview`]) and for the
+/// staged copy of a crashed mastered export (`sundayrec-export-pcm-*.f32`, ~2 GB
+/// for 90 minutes; an export that ends any other way deletes its own). Each preview is
 /// ~800 kB (20 s @ 320 kbps) and the Lyd step renders one per sound profile per
 /// recording, so a machine that auditions freely accumulates megabytes that
 /// nothing ever reclaimed — `is_preview_temp_name` existed with zero callers
@@ -1208,13 +1210,16 @@ async fn startup_sweep_in(
 /// readdir/unlink, best-effort, never panics. Returns how many were removed.
 pub fn cleanup_preview_temp_files(dir: &std::path::Path) -> usize {
     use sundayrec_core::mastering::is_preview_temp_name;
+    use sundayrec_core::pcm_stream::is_staged_pcm_name;
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
     let mut removed = 0usize;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if is_preview_temp_name(&name) && std::fs::remove_file(entry.path()).is_ok() {
+        if (is_preview_temp_name(&name) || is_staged_pcm_name(&name))
+            && std::fs::remove_file(entry.path()).is_ok()
+        {
             removed += 1;
         }
     }
@@ -3764,7 +3769,9 @@ where
 /// cost the recorder 15–56 % of its samples (2026-07-31). The tail is what an ffmpeg failure
 /// message lives in.
 #[cfg(feature = "editor")]
-fn spawn_stderr_tail(stderr: Option<tokio::process::ChildStderr>) -> tokio::task::JoinHandle<String> {
+fn spawn_stderr_tail(
+    stderr: Option<tokio::process::ChildStderr>,
+) -> tokio::task::JoinHandle<String> {
     use tokio::io::AsyncReadExt;
     tokio::spawn(async move {
         let mut tail = String::new();
@@ -4735,9 +4742,16 @@ mod tests {
         std::fs::write(d.join("unrelated-preview.mp3"), b"keep").unwrap();
         std::fs::write(d.join("service.mp3"), b"keep").unwrap();
         std::fs::create_dir(d.join("sundayrec-master-preview-imadir.mp3")).unwrap();
+        // …and the staged PCM of a crashed mastered export goes too, but only by its exact shape.
+        std::fs::write(d.join("sundayrec-export-pcm-0192abc.f32"), b"x").unwrap();
+        std::fs::write(d.join("sundayrec-export-pcm-0192abc.wav"), b"keep").unwrap();
+        std::fs::write(d.join("somebody-elses.f32"), b"keep").unwrap();
 
         let removed = cleanup_preview_temp_files(d);
-        assert_eq!(removed, 2);
+        assert_eq!(removed, 3);
+        assert!(!d.join("sundayrec-export-pcm-0192abc.f32").exists());
+        assert!(d.join("sundayrec-export-pcm-0192abc.wav").exists());
+        assert!(d.join("somebody-elses.f32").exists());
         assert!(!d.join("sundayrec-master-preview-abc123.mp3").exists());
         assert!(!d.join("sundayrec-master-preview-def456.mp3").exists());
         assert!(d.join("sundayrec-master-preview-half.wav").exists());
@@ -6302,16 +6316,22 @@ mod tests {
             src.to_string_lossy().into_owned()
         }
 
-        /// The FULL EBU R128 measurement of a file — integrated, range, true
-        /// peak, threshold. The same analysis pass a broadcaster would run on the
-        /// delivered file. `window` restricts it to `(start, duration)` seconds.
+        /// What ffmpeg's `ebur128` says a file measures — the external oracle the
+        /// in-Rust meter is checked against (B1a's `loudness_oracle` does the same
+        /// for the core). `window` restricts it to `(start, duration)` seconds.
+        struct Ebu {
+            input_i: f64,
+            input_lra: f64,
+            input_tp: f64,
+        }
+
         fn measure_ebu_r128(
             ffmpeg: &std::path::Path,
             path: &std::path::Path,
             window: Option<(f64, f64)>,
-        ) -> sundayrec_core::mastering::LoudnessMeasurement {
+        ) -> Ebu {
             let mut cmd = std::process::Command::new(ffmpeg);
-            cmd.args(["-nostdin", "-hide_banner"]);
+            cmd.args(["-nostdin", "-hide_banner", "-nostats", "-v", "error"]);
             if let Some((start, dur)) = window {
                 cmd.args(["-ss", &format!("{start}"), "-t", &format!("{dur}")]);
             }
@@ -6320,16 +6340,41 @@ mod tests {
                 .arg(path)
                 .args([
                     "-af",
-                    "loudnorm=I=-16:LRA=8:TP=-1:print_format=json",
+                    "ebur128=peak=true:metadata=1,ametadata=mode=print:file=-",
                     "-f",
                     "null",
                     "-",
                 ])
                 .output()
                 .expect("ffmpeg should run the verification measure pass");
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            sundayrec_core::mastering::parse_loudnorm_json(&stderr)
-                .unwrap_or_else(|| panic!("no loudnorm JSON in verification pass: {stderr}"))
+            assert!(
+                out.status.success(),
+                "ebur128 pass failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let text = String::from_utf8_lossy(&out.stdout);
+            let (mut i, mut lra, mut tp) = (f64::NAN, f64::NAN, f64::NAN);
+            // The metadata is printed per frame; the last values are the final ones.
+            for line in text.lines() {
+                if let Some((k, v)) = line
+                    .strip_prefix("lavfi.r128.")
+                    .and_then(|l| l.split_once('='))
+                {
+                    let v: f64 = v.trim().parse().unwrap_or(f64::NAN);
+                    match k {
+                        "I" => i = v,
+                        "LRA" => lra = v,
+                        "true_peak" => tp = 20.0 * v.log10(),
+                        _ => {}
+                    }
+                }
+            }
+            assert!(i.is_finite(), "no ebur128 loudness in: {text}");
+            Ebu {
+                input_i: i,
+                input_lra: lra,
+                input_tp: tp,
+            }
         }
 
         /// Just the integrated loudness (LUFS) of [`measure_ebu_r128`].
@@ -6670,7 +6715,7 @@ mod tests {
                 12.0,
             );
             req.master_preset = Some("speech-clear".into());
-            // A normalize gain the export must IGNORE — loudnorm owns the level.
+            // A normalize gain the export must IGNORE — the preset's level step owns the level.
             req.gain_db = Some(6.0);
 
             let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
@@ -6680,7 +6725,7 @@ mod tests {
             let measured = measure_integrated_lufs(&ffmpeg, path, None);
             let delta = measured - target;
             assert!(
-                delta.abs() <= 1.0,
+                delta.abs() <= 0.5,
                 "mastered export missed its target: measured {measured:.2} LUFS vs target \
                  {target:.2} (Δ {delta:+.2} LU) — the two-pass measured the wrong signal \
                  (whole file {whole_file:.2}, kept half {kept_part:.2})"
@@ -6736,7 +6781,9 @@ mod tests {
             let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
             let took = started.elapsed();
             let out = result.expect("bench export");
-            let bytes = std::fs::metadata(&out.output_path).map(|m| m.len()).unwrap_or(0);
+            let bytes = std::fs::metadata(&out.output_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             eprintln!(
                 "BENCH mastered export: {:.1} s wall ({bytes} bytes out) — {:?}",
                 took.as_secs_f64(),
@@ -6744,26 +6791,21 @@ mod tests {
             );
         }
 
-        // ── F2-C-B: the mastering must be LINEAR, not a gain rider ───────────
+        // ── F2-C-B, B1b: the mastering is ONE gain, and says what it landed on ─
         //
-        // Landing on the target (above) says nothing about HOW. `loudnorm`
-        // reaches −16 LUFS just as happily by riding the gain in 3-second steps
-        // — which compresses, which is the one thing `music-speech`'s "Bevarer
-        // dynamikk" promises not to do, and which no string test can see.
-        //
-        // So these two run the real bundled ffmpeg over material chosen to trip
-        // each of `linear=true`'s two gates and read `Normalization Type` back
-        // out of the pass-2 summary. They are the ears we don't have.
+        // Landing on the target (above) says nothing about HOW. A rider that reaches
+        // −16 LUFS by moving the level in short steps compresses, which is the one thing
+        // `music-speech`'s "Bevarer dynamikk" promises not to do, and no string test can
+        // see it. Since B1b the level is a plain linear gain (plus a limiter only for the
+        // rare peak), measured in Rust; these two run the real bundled ffmpeg over
+        // material chosen to make each half of that claim visible, and read the answer
+        // back with ffmpeg's own `ebur128`. They are the ears we don't have.
 
-        /// GATE 1 — the LRA gate. A recording whose loudness range (15 LU) is
-        /// wider than the preset's `LRA` was normalised DYNAMICALLY: the preset's
-        /// LRA is loudnorm's permission slip for linear mode, not a setting.
-        ///
-        /// `plan_pass2` raises the gate to clear the measurement (inert in linear
-        /// mode — one gain changes no range), and the summary must then say
-        /// `Linear` while still landing on −16.
+        /// A recording whose loudness range (15 LU) is wider than every preset's range
+        /// target is levelled by ONE gain: it lands on the target and its range comes out
+        /// as it went in.
         #[test]
-        fn a_wide_range_mastered_export_is_linear_not_gain_ridden_or_skips() {
+        fn a_wide_range_mastered_export_lands_on_target_with_one_gain_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
                 (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
@@ -6773,13 +6815,13 @@ mod tests {
             let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "wide.wav", 20.0, 5.0);
 
             let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-            // The fixture only proves anything while its range OVERSHOOTS the
-            // preset's gate — that overshoot IS the bug.
+            // The fixture only proves anything while its range is wide: a gain rider would
+            // have squeezed it.
             let m = measure_ebu_r128(&ffmpeg, std::path::Path::new(&src), None);
             assert!(
                 m.input_lra > preset.target_lra,
                 "fixture no longer exercises the bug: measured LRA {:.2} is inside \
-                 speech-clear's LRA {:.2} gate, so linear mode was never at risk",
+                 speech-clear's LRA {:.2}, so a rider would not have been tempted",
                 m.input_lra,
                 preset.target_lra
             );
@@ -6792,43 +6834,43 @@ mod tests {
             let loudness = out
                 .loudness
                 .expect("a mastered export must report what the normalisation did");
-            assert_eq!(
-                loudness.mode,
-                EditorLoudnessMode::Linear,
-                "loudnorm gain-rode a {:.1} LU recording instead of levelling it \
-                 (asked for {:.1} LUFS, reported {:?}) — the LRA gate was not cleared",
-                m.input_lra,
-                loudness.target_lufs,
-                loudness
-            );
             assert!(!loudness.peak_limited, "there is 20 dB of headroom here");
-            assert_eq!(loudness.achieved_lufs, preset.target_lufs);
             assert_eq!(loudness.target_lufs, preset.target_lufs);
 
-            // …and it still lands where it says it does.
-            let measured =
-                measure_integrated_lufs(&ffmpeg, std::path::Path::new(&out.output_path), None);
-            let delta = measured - loudness.achieved_lufs;
+            // …and it lands where it says it does, as an independent meter reads it.
+            let done = measure_ebu_r128(&ffmpeg, std::path::Path::new(&out.output_path), None);
             assert!(
-                delta.abs() <= 1.0,
-                "linear master measured {measured:.2} LUFS against its own reported \
-                 {:.2} (Δ {delta:+.2} LU)",
-                loudness.achieved_lufs
+                (done.input_i - preset.target_lufs).abs() <= 0.5,
+                "linear master measured {:.2} LUFS against the preset's {:.2}",
+                done.input_i,
+                preset.target_lufs
+            );
+            assert!(
+                (done.input_i - loudness.achieved_lufs).abs() <= 0.3,
+                "the receipt says {:.2} LUFS, the file measures {:.2}",
+                loudness.achieved_lufs,
+                done.input_i
+            );
+            // One gain moves no range. (The preset's compressor sits above both levels.)
+            assert!(
+                (done.input_lra - m.input_lra).abs() <= 1.5,
+                "the loudness range went from {:.2} to {:.2} LU — that is not one gain",
+                m.input_lra,
+                done.input_lra
             );
             eprintln!(
-                "editor export smoke: wide-range master ({:.1} LU) normalised {:?} at \
-                 {measured:.2} LUFS",
-                m.input_lra, loudness.mode
+                "editor export smoke: wide-range master ({:.1} LU) levelled to {:.2} LUFS, \
+                 range {:.1} LU",
+                m.input_lra, done.input_i, done.input_lra
             );
         }
 
-        /// GATE 2 — the true-peak gate. A recording at −25 LUFS whose transients
-        /// already reach −5 dBTP cannot be lifted to −16 by one gain: +9 LU would
-        /// put the peaks at +4 dBTP. loudnorm's answer was to ride the gain;
-        /// ours is to land at the loudest level a single gain CAN reach and to
-        /// say which one that is, on the receipt.
+        /// A recording at −25 LUFS whose transients already reach −5 dBTP cannot be lifted
+        /// to −16 by gain alone: +9 LU would put the peaks at +4 dBTP. The old answer was
+        /// to land quieter; the answer now is the target, with a true-peak limiter taking
+        /// the rare peaks — and the true-peak ceiling HOLDS as an independent meter reads it.
         #[test]
-        fn a_peaky_mastered_export_lands_quieter_and_says_so_or_skips() {
+        fn a_peaky_mastered_export_keeps_the_target_and_the_ceiling_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
                 (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
@@ -6838,8 +6880,8 @@ mod tests {
             let src = lavfi_peaky_tone(&ffmpeg, dir.path(), "peaky.wav", 12.0);
 
             let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-            // The fixture only proves anything while the gain the target implies
-            // does NOT fit under the ceiling.
+            // The fixture only proves anything while the gain the target implies does NOT
+            // fit under the ceiling.
             let m = measure_ebu_r128(&ffmpeg, std::path::Path::new(&src), None);
             let crest = m.input_tp - m.input_i;
             let needed = preset.target_lufs - preset.true_peak_db;
@@ -6857,48 +6899,290 @@ mod tests {
             let loudness = out
                 .loudness
                 .expect("a mastered export must report what the normalisation did");
-            assert_eq!(
-                loudness.mode,
-                EditorLoudnessMode::Linear,
-                "loudnorm compressed a hot recording to reach a target it cannot \
-                 reach cleanly, instead of landing quieter: {loudness:?}"
-            );
-            assert!(
-                loudness.peak_limited,
-                "the ceiling bound here (crest {crest:.2} dB) — the receipt must say so"
-            );
-            assert!(
-                loudness.achieved_lufs < loudness.target_lufs,
-                "a peak-limited export must report a QUIETER level than the preset's: \
-                 {loudness:?}"
-            );
 
-            // The claim on the receipt has to survive a re-measure of the file,
-            // and the ceiling it was traded for has to actually hold.
+            // The claim on the receipt has to survive a re-measure of the file…
             let done = measure_ebu_r128(&ffmpeg, std::path::Path::new(&out.output_path), None);
-            let delta = done.input_i - loudness.achieved_lufs;
             assert!(
-                delta.abs() <= 1.0,
-                "the receipt says {:.2} LUFS, the file measures {:.2} (Δ {delta:+.2} LU)",
+                (done.input_i - loudness.achieved_lufs).abs() <= 0.3,
+                "the receipt says {:.2} LUFS, the file measures {:.2}",
                 loudness.achieved_lufs,
                 done.input_i
             );
+            // …the target is kept (or the receipt owns up to missing it)…
             assert!(
-                done.input_tp <= preset.true_peak_db + 0.5,
-                "the export peaked at {:.2} dBTP, over the {:.2} dBTP ceiling the \
-                 quieter target was traded for",
+                (done.input_i - preset.target_lufs).abs() <= 0.5 || loudness.peak_limited,
+                "landed at {:.2} LUFS against {:.2} without saying why: {loudness:?}",
+                done.input_i,
+                preset.target_lufs
+            );
+            // …and the ceiling holds.
+            assert!(
+                done.input_tp <= preset.true_peak_db,
+                "the export peaked at {:.2} dBTP, over the {:.2} dBTP ceiling",
                 done.input_tp,
                 preset.true_peak_db
             );
             eprintln!(
-                "editor export smoke: peaky master normalised {:?}, capped at \
-                 {:.2} LUFS (asked {:.2}); file measures {:.2} LUFS / {:.2} dBTP",
-                loudness.mode,
-                loudness.achieved_lufs,
-                loudness.target_lufs,
-                done.input_i,
-                done.input_tp
+                "editor export smoke: peaky master (crest {crest:.1} dB) levelled to \
+                 {:.2} LUFS / {:.2} dBTP (asked {:.2}); limited: {}",
+                done.input_i, done.input_tp, preset.target_lufs, loudness.peak_limited
             );
+        }
+
+        /// B1b: `mastering_analyze` reads the same meter the export levels with: its
+        /// numbers agree with ffmpeg's `ebur128` over the same preset chain.
+        #[test]
+        fn mastering_analyze_agrees_with_ebur128_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "wide.wav", 20.0, 5.0);
+            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+
+            // The oracle: the preset chain rendered to a wav, read by ebur128.
+            let processed = dir.path().join("processed.wav");
+            let status = std::process::Command::new(&ffmpeg)
+                .args(["-nostdin", "-hide_banner", "-v", "error", "-i", &src, "-af"])
+                .arg(&preset.filters)
+                .arg("-y")
+                .arg(&processed)
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let oracle = measure_ebu_r128(&ffmpeg, &processed, None);
+
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let got = rt.block_on(mastering_analyze(&src, "speech-clear"));
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            let got = got.expect("analysis should succeed");
+            assert!(
+                (got.input_i - oracle.input_i).abs() <= 0.1,
+                "{got:?} vs {:.2}",
+                oracle.input_i
+            );
+            assert!(
+                (got.input_tp - oracle.input_tp).abs() <= 0.15,
+                "{got:?} vs {:.2}",
+                oracle.input_tp
+            );
+            assert!(
+                (got.input_lra - oracle.input_lra).abs() <= 0.5,
+                "{got:?} vs {:.2}",
+                oracle.input_lra
+            );
+            assert_eq!(got.target_lufs, preset.target_lufs);
+        }
+
+        /// B1b: the preview is levelled like the export: a window of a quiet recording
+        /// comes out on the preset's target.
+        #[test]
+        fn master_preview_is_levelled_like_the_export_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "dyn.wav", 48_000, 24.0);
+            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+            let req = EditorMasterPreviewRequest {
+                source_token: "t".into(),
+                preset_id: "speech-clear".into(),
+                start_sec: 2.0,
+                duration_sec: 8.0, // inside the quiet half
+            };
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let got = rt.block_on(master_preview(&req, &src));
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            let got = got.expect("preview should succeed");
+            let preview = std::path::PathBuf::from(&got.preview_path);
+            let measured = measure_ebu_r128(&ffmpeg, &preview, None);
+            let _ = std::fs::remove_file(&preview);
+            assert!(
+                (measured.input_i - preset.target_lufs).abs() <= 0.7,
+                "the preview measures {:.2} LUFS, the preset asks {:.2}",
+                measured.input_i,
+                preset.target_lufs
+            );
+        }
+
+        /// B1b: a mastered VIDEO export takes its picture from the source and its sound
+        /// from the levelled PCM on a second input. Both streams survive, the cut is
+        /// honoured, and the audio lands on the preset's target.
+        #[test]
+        fn a_mastered_video_export_keeps_the_picture_and_levels_the_sound_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_source(&ffmpeg, dir.path());
+            let mut req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.75, 1.25)],
+                2.0,
+            );
+            req.master_preset = Some("speech-clear".into());
+            req.title = Some("Søndag".into()); // the metadata input must not collide
+            let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a mastered video export should succeed");
+            let path = std::path::Path::new(&out.output_path);
+
+            let streams = probe_report_streams(&ffprobe, path);
+            assert!(streams.contains("video"), "no video stream: {streams}");
+            assert!(streams.contains("audio"), "no audio stream: {streams}");
+            let dur: f64 = probe_report(&ffprobe, path)
+                .lines()
+                .find_map(|l| l.trim().parse::<f64>().ok())
+                .expect("ffprobe should report a numeric duration");
+            assert!(
+                (1.0..1.9).contains(&dur),
+                "cut video export duration {dur}s should be ~1.5 s"
+            );
+            let target = sundayrec_core::mastering::get_preset_by_id("speech-clear")
+                .unwrap()
+                .target_lufs;
+            let loudness = out.loudness.expect("a mastered export reports its level");
+            assert!(
+                (loudness.achieved_lufs - target).abs() <= 0.5,
+                "the sound was levelled to {:.2} LUFS, not {target}",
+                loudness.achieved_lufs
+            );
+            assert_monotonic(&ticks);
+        }
+
+        /// B1b: the level is set on the SERMON. A jingle louder than the sermon is
+        /// concatenated after the level is set, so it cannot pull the measure (and the
+        /// gain) towards itself.
+        #[test]
+        fn a_mastered_export_levels_the_sermon_not_the_jingles_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "main.wav", 48_000, 12.0);
+            // 1 s jingles, a lot louder than the quiet half of the sermon that is kept.
+            let jingle = lavfi_tone(&ffmpeg, dir.path(), "jingle.wav", 1.0, "1.0");
+            let mut case = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "wav",
+                &[(6.0, 12.0)],
+                12.0,
+            );
+            case.master_preset = Some("speech-clear".into());
+            case.inputs.intro = Some(jingle.clone());
+            case.inputs.outro = Some(jingle);
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &case);
+            let out = result.expect("a mastered export with jingles should succeed");
+            let path = std::path::Path::new(&out.output_path);
+
+            let target = sundayrec_core::mastering::get_preset_by_id("speech-clear")
+                .unwrap()
+                .target_lufs;
+            // The sermon sits between the two 1 s jingles.
+            let sermon = measure_integrated_lufs(&ffmpeg, path, Some((1.0, 6.0)));
+            assert!(
+                (sermon - target).abs() <= 0.7,
+                "the sermon measures {sermon:.2} LUFS against the preset's {target:.2}: \
+                 the jingles leaked into the measure"
+            );
+            let dur: f64 = probe_report(&ffprobe, path)
+                .lines()
+                .find_map(|l| l.trim().parse::<f64>().ok())
+                .expect("ffprobe should report a numeric duration");
+            assert!(
+                (7.5..8.5).contains(&dur),
+                "intro + 6 s sermon + outro should be ~8 s, got {dur}"
+            );
+        }
+
+        /// B1b: a cancel during the measure pass stops the export and leaves nothing
+        /// behind — no output, no render temp, no staged copy of the processed audio.
+        #[test]
+        fn cancelling_a_mastered_export_leaves_no_staged_audio_or_output_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "long.wav", 48_000, 1200.0);
+            let mut req = export_request(&src, &dir.path().to_string_lossy(), "flac", &[], 1200.0);
+            req.master_preset = Some("speech-clear".into());
+
+            let staged_now = || -> Vec<String> {
+                std::fs::read_dir(std::env::temp_dir())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .filter(|n| sundayrec_core::pcm_stream::is_staged_pcm_name(n))
+                    .collect()
+            };
+
+            let engine = Arc::new(ExportEngine::new());
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let before = staged_now();
+            let canceller = {
+                let engine = Arc::clone(&engine);
+                let before = before.clone();
+                std::thread::spawn(move || {
+                    // Wait for the measure pass to have parked some audio, then cancel.
+                    for _ in 0..400 {
+                        if staged_now().len() > before.len() {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(25));
+                    }
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    let _ = rt.block_on(cancel_export(&engine));
+                })
+            };
+            let result = rt.block_on(export(&engine, &req, &req.inputs, false, |_, _| {}));
+            canceller.join().unwrap();
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            let err = result.expect_err("a cancelled export must not succeed");
+            assert!(err.to_string().contains("cancelled"), "got: {err}");
+            assert_eq!(staged_now(), before, "the staged PCM was left behind");
+            let left = leftovers(dir.path());
+            assert!(left.is_empty(), "a cancelled mastered export left {left:?}");
         }
 
         /// An UNMASTERED export has no loudness claim to make, and must not

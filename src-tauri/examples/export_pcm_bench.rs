@@ -115,9 +115,26 @@ fn main() {
     let ff = ffmpeg();
     let spawn_chain = || -> ChildReader {
         let mut child = Command::new(&ff)
-            .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i", &file])
+            .args([
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                &file,
+            ])
             .args(["-filter_complex", &fc, "-map", &map])
-            .args(["-f", "f32le", "-c:a", "pcm_f32le", "-ar", "48000", "-ac", "2", "pipe:1"])
+            .args([
+                "-f",
+                "f32le",
+                "-c:a",
+                "pcm_f32le",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "pipe:1",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -159,9 +176,18 @@ fn main() {
     // ── dry runs
     let t = Instant::now();
     let settled = if disk {
-        settle(&input, plan, fmt, || {
-            Ok(BufReader::with_capacity(1 << 20, std::fs::File::open(&staged)?))
-        }, |_, _| {})
+        settle(
+            &input,
+            plan,
+            fmt,
+            || {
+                Ok(BufReader::with_capacity(
+                    1 << 20,
+                    std::fs::File::open(&staged)?,
+                ))
+            },
+            |_, _| {},
+        )
         .unwrap()
     } else {
         settle(&input, plan, fmt, || Ok(spawn_chain()), |_, _| {}).unwrap()
@@ -171,14 +197,18 @@ fn main() {
         "settle: {t_settle:.1} s, {} dry run(s), gain {:+.2} dB, predicted {:?}",
         settled.rounds,
         settled.plan.gain_db,
-        settled.dry_run_output.map(|o| (o.integrated_lufs, o.true_peak_dbtp))
+        settled
+            .dry_run_output
+            .map(|o| (o.integrated_lufs, o.true_peak_dbtp))
     );
 
     // ── final: source → gain → encoder
     let t = Instant::now();
     let mut enc = Command::new(&ff)
         .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
-        .args(["-f", "f32le", "-ar", "48000", "-ac", "2", "-i", "pipe:0", "-vn"])
+        .args([
+            "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", "pipe:0", "-vn",
+        ])
         .args(codec_args(&format, None, None, Some(48_000)))
         .arg("-y")
         .arg(&out_file)
@@ -189,10 +219,14 @@ fn main() {
     let mut stdin = BufWriter::with_capacity(1 << 20, enc.stdin.take().unwrap());
     let out = if disk {
         let mut src = BufReader::with_capacity(1 << 20, std::fs::File::open(&staged).unwrap());
-        render(&mut src, fmt, &settled.plan, Some(&mut stdin), true, |_| {}).unwrap().0
+        render(&mut src, fmt, &settled.plan, Some(&mut stdin), true, |_| {})
+            .unwrap()
+            .0
     } else {
         let mut src = spawn_chain();
-        render(&mut src, fmt, &settled.plan, Some(&mut stdin), true, |_| {}).unwrap().0
+        render(&mut src, fmt, &settled.plan, Some(&mut stdin), true, |_| {})
+            .unwrap()
+            .0
     };
     stdin.flush().unwrap();
     drop(stdin);

@@ -221,7 +221,15 @@ where
         tokio::task::spawn_blocking(move || job(f, a))
     };
     drive(
-        engine, handle, &frames, &abort, total, stall_ms, span, phase, on_progress,
+        engine,
+        handle,
+        &frames,
+        &abort,
+        total,
+        stall_ms,
+        span,
+        phase,
+        on_progress,
     )
     .await?
     .map_err(|e| AppError::Recording(format!("export pcm: {e}")))
@@ -305,14 +313,15 @@ where
         }
     };
     let status = match child {
-        Some(mut c) => match tokio::time::timeout(Duration::from_millis(stall_ms), c.wait()).await
-        {
-            Ok(r) => r.map_err(|e| AppError::Recording(format!("export wait: {e}")))?,
-            Err(_elapsed) => {
-                let _ = c.kill().await;
-                return Err(AppError::Recording("timeout".into()));
+        Some(mut c) => {
+            match tokio::time::timeout(Duration::from_millis(stall_ms), c.wait()).await {
+                Ok(r) => r.map_err(|e| AppError::Recording(format!("export wait: {e}")))?,
+                Err(_elapsed) => {
+                    let _ = c.kill().await;
+                    return Err(AppError::Recording("timeout".into()));
+                }
             }
-        },
+        }
         None => return Err(AppError::Recording("cancelled".into())),
     };
     let tail = stderr_task.await.unwrap_or_default();
@@ -383,7 +392,11 @@ where
     let need = staged_bytes(fmt, kept_duration);
     if let Ok(free) = fs4::available_space(std::env::temp_dir()) {
         if free < need.saturating_add(STAGING_MARGIN_BYTES) {
-            tracing::warn!(free_bytes = free, need_bytes = need, "export refused: no room to stage the processed audio");
+            tracing::warn!(
+                free_bytes = free,
+                need_bytes = need,
+                "export refused: no room to stage the processed audio"
+            );
             return Err(AppError::Recording(format!(
                 "disk_low_for_export: {} MB free, ~{} MB needed",
                 free / 1_000_000,
@@ -428,9 +441,8 @@ where
         move |r, done| {
             let file = std::fs::File::create(&path)?;
             let mut w = std::io::BufWriter::with_capacity(1 << 20, file);
-            let out = pcm_stream::measure(r, fmt, Some(&mut w), |n| {
-                done.store(n, Ordering::Relaxed)
-            })?;
+            let out =
+                pcm_stream::measure(r, fmt, Some(&mut w), |n| done.store(n, Ordering::Relaxed))?;
             w.flush()?;
             Ok(out)
         },
