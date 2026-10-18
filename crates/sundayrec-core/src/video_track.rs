@@ -159,20 +159,7 @@ impl VideoTrackSpec {
 /// and crash-tolerant Matroska out. `-flush_packets 1` hands every packet to
 /// the OS at once, so a killed app leaves at most the encoder's own delay
 /// unwritten.
-///
-/// `preview_jpg`, when set, adds a SECOND output: a small, low-rate JPEG that
-/// ffmpeg keeps overwriting (`-update 1`) for the recording screen's live
-/// picture (`recording_preview_frame` polls it). A file sink, never a pipe, so
-/// a slow or absent reader can never back-pressure the encoder. This is the
-/// preview the old ffmpeg capture wrote (C3b moved it here so the picture does
-/// not go dark while recording); C4 replaces it with frames from the camera
-/// session itself.
-pub fn video_track_args(
-    spec: &VideoTrackSpec,
-    encoder: VideoEncoder,
-    output: &str,
-    preview_jpg: Option<&str>,
-) -> Vec<String> {
+pub fn video_track_args(spec: &VideoTrackSpec, encoder: VideoEncoder, output: &str) -> Vec<String> {
     let mut a: Vec<String> = ["-nostdin", "-hide_banner", "-loglevel", "error"]
         .iter()
         .map(|s| s.to_string())
@@ -220,27 +207,6 @@ pub fn video_track_args(
         "-y".into(),
         output.into(),
     ]);
-    if let Some(preview) = preview_jpg {
-        let scale = "scale=720:-2,fps=12";
-        a.extend([
-            "-map".into(),
-            "0:v".into(),
-            "-an".into(),
-            "-vf".into(),
-            if spec.flip {
-                format!("hflip,{scale}")
-            } else {
-                scale.to_string()
-            },
-            // mjpeg `-q:v` is 2 (best) … 31: crisp, not blocky.
-            "-q:v".into(),
-            "4".into(),
-            "-update".into(),
-            "1".into(),
-            "-y".into(),
-            preview.into(),
-        ]);
-    }
     a
 }
 
@@ -475,7 +441,6 @@ mod tests {
             &spec(RawPixelFormat::Nv12, false),
             VideoEncoder::Software,
             "/cap/s.mkv",
-            None,
         );
         assert!(has_pair(&a, "-f", "rawvideo"));
         assert!(has_pair(&a, "-pix_fmt", "nv12"));
@@ -500,7 +465,6 @@ mod tests {
             &spec(RawPixelFormat::Mjpeg, true),
             VideoEncoder::VideoToolbox,
             "o.mkv",
-            None,
         );
         assert!(has_pair(&a, "-f", "mjpeg"));
         assert!(!a.iter().any(|x| x == "rawvideo" || x == "-video_size"));
@@ -509,46 +473,17 @@ mod tests {
     }
 
     #[test]
-    fn the_live_preview_is_a_second_file_output_after_the_matroska() {
-        // Without a preview path the MKV is the only output, and last.
-        let plain = video_track_args(
-            &spec(RawPixelFormat::Nv12, false),
-            VideoEncoder::Software,
-            "/cap/s.mkv",
-            None,
-        );
-        assert_eq!(plain.last().unwrap(), "/cap/s.mkv");
-        assert!(!plain.iter().any(|x| x == "-update"));
-
+    fn the_matroska_is_the_only_output_and_the_last_argument() {
+        // The live picture comes from the camera session in Rust (C4), so
+        // ffmpeg writes nothing but the MKV.
         let a = video_track_args(
             &spec(RawPixelFormat::Nv12, true),
             VideoEncoder::Software,
             "/cap/s.mkv",
-            Some("/tmp/preview.jpg"),
         );
-        let mkv = a.iter().position(|x| x == "/cap/s.mkv").unwrap();
-        // The recording's own output is untouched and comes FIRST…
-        assert_eq!(&a[mkv - 1..=mkv], ["-y", "/cap/s.mkv"]);
-        // …then the preview: video only, small and slow, overwritten in place,
-        // mirrored like the recording, into a FILE (never a pipe).
-        let tail = &a[mkv + 1..];
-        assert_eq!(
-            tail,
-            [
-                "-map",
-                "0:v",
-                "-an",
-                "-vf",
-                "hflip,scale=720:-2,fps=12",
-                "-q:v",
-                "4",
-                "-update",
-                "1",
-                "-y",
-                "/tmp/preview.jpg"
-            ]
-        );
-        assert!(!a.iter().any(|x| x.starts_with("pipe:1")));
+        assert_eq!(&a[a.len() - 2..], ["-y", "/cap/s.mkv"]);
+        assert!(!a.iter().any(|x| x == "-update" || x == "-map"), "{a:?}");
+        assert_eq!(a.iter().filter(|x| x.as_str() == "-f").count(), 2);
     }
 
     #[test]

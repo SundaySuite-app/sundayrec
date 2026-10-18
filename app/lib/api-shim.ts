@@ -218,8 +218,8 @@ const ipcFailures = createIpcFailureState();
  *     there would turn opening the page in Chrome into an error storm and
  *     teach everyone to ignore the toast that matters.
  *  2. The dedup/rate-limit in `ipc-failures-core`: one toast per command per
- *     minute, at most three per minute overall. `recording_preview_frame`
- *     alone polls ~4×/s; without this a down backend would stack a hundred
+ *     minute, at most three per minute overall. A polled command
+ *     alone runs ~4×/s; without this a down backend would stack a hundred
  *     toasts a minute over the UI, which is not surfacing a problem, it is a
  *     second outage.
  *
@@ -846,38 +846,6 @@ const api: Record<string, unknown> = {
   // stop. The caller leaves its belief alone on `null`.
   recordingSnapshot: async () =>
     call<RecorderStatePayload | null>("recording_snapshot", undefined, null),
-  // ── The camera picture DURING a recording ──────────────────────────────
-  //
-  // The engine has written this file since v0.11 (`recorder/engine.rs` —
-  // ONE fixed path, overwritten ~12×/s) and the command to read it back has
-  // been registered all along. Nothing called it: the door was missing on this
-  // side, so `recording_preview_frame` sat in the reachability baseline's
-  // `unreachable` list and the overlay showed a CHIP naming the camera instead
-  // of the camera. A chip looks identical whether the lens cap is on
-  // (docs/SMOKE-TEST.md §"The live camera picture").
-  //
-  // `null` is a normal answer, not a failure: it means the engine has not
-  // written a frame yet (the first one lands a moment after the recording
-  // starts). The caller's placeholder stays up — see
-  // ui/CameraPreview/PolledCameraPreview.tsx.
-  //
-  // ⚠️ NOT through `call()`, and this is the one place that is right.
-  //
-  // The poll runs at 12 Hz for the whole service. `call()` appends every
-  // failure to the 50-entry ring unconditionally (the rate limit is only on
-  // the TOAST), so a backend that stopped answering would overwrite the entire
-  // diagnostic history in four seconds — erasing the record of the very
-  // recording that is going wrong, plus a `console.warn` twelve times a
-  // second. A lost preview frame is cosmetic; the honest surface for "the
-  // camera is dead" is the frame itself never leaving «Starter kamera…»,
-  // which is what the person at the machine actually looks at.
-  recordingPreviewFrame: async () => {
-    try {
-      return (await invoke<string | null>("recording_preview_frame")) ?? null;
-    } catch {
-      return null;
-    }
-  },
   // ── Pre-roll rolling buffer ────────────────────────────────────────────
   // `start_recording` has always harvested a pre-roll clip, but nothing ever
   // started the loop that produces one — so `preRollSeconds` captured nothing.
@@ -1374,22 +1342,40 @@ const api: Record<string, unknown> = {
   getCameraCapabilities: async (token: string) =>
     call("get_camera_capabilities", { deviceToken: token }, null),
   // The live camera picture, made in Rust from the camera session the recording
-  // then records from (C4a). Each message on `onFrame` is one JPEG, at most
-  // 640 px wide, ~4 per second. Nothing in the UI calls these yet — C4b moves
-  // the camera tile over and deletes getUserMedia.
+  // records from (C4a/C4b) — before AND during a recording, one session. Each
+  // message on `onFrame` is one JPEG, at most 640 px wide, ~4 per second.
+  //
+  // ⚠️ NOT through `call()`: a failure here is not "something in the
+  // background did not answer" (the generic toast) — the picture says what
+  // went wrong itself («Kameratilgang nektet», «svarte ikke»), so the error
+  // text is returned for it to read. The failure still lands in the ring.
+  // Callers share ONE session (`ui/CameraPreview/camera-feed.ts`).
   cameraPreviewStart: async (
     token: string,
     onFrame: (jpeg: ArrayBuffer) => void,
-  ) => {
-    const onFrameChannel = new Channel<ArrayBuffer>();
-    onFrameChannel.onmessage = onFrame;
-    return call(
-      "camera_preview_start",
-      { deviceToken: token, onFrame: onFrameChannel },
-      null,
-    );
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    try {
+      const onFrameChannel = new Channel<ArrayBuffer>();
+      onFrameChannel.onmessage = onFrame;
+      await invoke<void>("camera_preview_start", {
+        deviceToken: token,
+        onFrame: onFrameChannel,
+      });
+      return { ok: true };
+    } catch (e) {
+      console.warn("[api-shim] camera_preview_start failed", e);
+      recordFailure(
+        ipcFailures,
+        "camera_preview_start",
+        ipcErrText(e),
+        Date.now(),
+      );
+      return { ok: false, error: ipcErrText(e) };
+    }
   },
-  cameraPreviewStop: async () => call("camera_preview_stop", undefined, null),
+  cameraPreviewStop: async (): Promise<void> => {
+    await quietAction("camera_preview_stop");
+  },
 
   // ── Wake from sleep (wake_* commands) ───────────────────────────────────
   // Fallbacks must match the real WakeCapabilities / WakeStatus shapes — the

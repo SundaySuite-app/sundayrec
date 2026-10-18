@@ -136,6 +136,16 @@ impl<T> FrameQueue<T> {
         }
     }
 
+    /// Take frames again after a [`close`](Self::close), with the old ones
+    /// thrown away. The camera behind the queue never stopped (C4b): a
+    /// recording that ends gives its running camera back to the live picture,
+    /// and the next consumer starts from a clean queue.
+    pub fn reopen(&self) {
+        let old: Vec<T> = self.lock().drain(..).collect();
+        self.closed.store(false, Ordering::Release);
+        drop(old);
+    }
+
     /// No more frames will be accepted; waiting consumers wake up.
     pub fn close(&self) {
         self.closed.store(true, Ordering::Release);
@@ -279,6 +289,20 @@ mod tests {
         assert_eq!(q.pop_timeout(Duration::from_secs(1)), Some(1));
         assert_eq!(q.pop_timeout(Duration::from_secs(1)), Some(2));
         assert_eq!(q.pop_timeout(Duration::from_secs(1)), None);
+    }
+
+    #[test]
+    fn reopen_takes_frames_again_and_throws_the_old_ones_away() {
+        let q = FrameQueue::new(4);
+        q.push(1);
+        q.close();
+        q.push(2);
+        assert!(q.is_closed());
+        q.reopen();
+        assert!(!q.is_closed());
+        assert!(q.is_empty(), "the frames from before the reopen are gone");
+        q.push(3);
+        assert_eq!(q.try_pop(), Some(3));
     }
 
     #[test]

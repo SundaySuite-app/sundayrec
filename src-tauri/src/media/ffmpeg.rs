@@ -546,16 +546,14 @@ pub(crate) mod tests {
         eprintln!("format matrix: all 4 formats × mono/stereo encoded + ffprobed OK");
     }
 
-    /// THE VIDEO TRACK'S REAL ARGV, WITH THE LIVE PREVIEW (C3b). The video
-    /// track's ffmpeg gets a SECOND output — a small JPEG written to a FILE that
-    /// ffmpeg keeps overwriting (`-update 1`) for the recording screen. A second-
-    /// output arg the real binary rejects would kill the encoder, and with it
-    /// the whole picture of the recording, so this feeds frames into the EXACT
-    /// `video_track_args` argv on stdin (as the track does) and asserts BOTH a
-    /// decodable Matroska AND a JPEG (SOI `FF D8`) came out, with no hang.
-    /// RUNS when the bundled sidecar is present; hardware-free.
+    /// THE VIDEO TRACK'S REAL ARGV (C3b). Feeds frames into the EXACT
+    /// `video_track_args` argv on stdin (as the track does) and asserts a
+    /// decodable Matroska came out, with no hang. (Until C4b the argv had a
+    /// second JPEG output for the recording screen; the picture now comes from
+    /// the camera session in Rust.) RUNS when the bundled sidecar is present;
+    /// hardware-free.
     #[test]
-    fn video_track_writes_its_mkv_and_the_preview_jpeg_or_skips() {
+    fn video_track_writes_its_mkv_or_skips() {
         use std::io::Write;
         use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
         use sundayrec_core::video_encoder::VideoEncoder;
@@ -570,7 +568,6 @@ pub(crate) mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let mkv = dir.path().join("track.mkv");
-        let prev = dir.path().join("preview.jpg");
         let spec = VideoTrackSpec {
             width: 320,
             height: 240,
@@ -579,12 +576,7 @@ pub(crate) mod tests {
             input: RawPixelFormat::Nv12,
             flip: true,
         };
-        let args = video_track_args(
-            &spec,
-            VideoEncoder::Software,
-            &mkv.to_string_lossy(),
-            Some(&prev.to_string_lossy()),
-        );
+        let args = video_track_args(&spec, VideoEncoder::Software, &mkv.to_string_lossy());
         let mut child = std::process::Command::new(&ffmpeg)
             .args(&args)
             .stdin(std::process::Stdio::piped())
@@ -602,17 +594,11 @@ pub(crate) mod tests {
         let out = child.wait_with_output().expect("ffmpeg exits");
         assert!(
             out.status.success(),
-            "the video-track argv with the preview output must run cleanly \
-             (a bad second-output arg would kill the picture): {}",
+            "the video-track argv must run cleanly: {}",
             String::from_utf8_lossy(&out.stderr)
         );
         let len = std::fs::metadata(&mkv).expect("mkv exists").len();
         assert!(len >= MIN_VALID_OUTPUT_BYTES, "mkv too small: {len} bytes");
-        let jpg = std::fs::read(&prev).expect("preview jpg exists");
-        assert!(
-            jpg.len() > 2 && jpg[0] == 0xFF && jpg[1] == 0xD8,
-            "preview must be a JPEG"
-        );
     }
 
     #[test]

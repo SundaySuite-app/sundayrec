@@ -2821,6 +2821,11 @@ Sju av de ni tekstene er portert ordrett fra `d982012`s
 `noResponse` sa «trykk oppdater» / «prøv å oppdatere», og den knappen finnes ikke
 i dette skallet.
 
+> **Foreldet (C4b).** `getUserMedia`, constraints-regelen under, eierskapsregisteret
+> og pollen av `recording_preview_frame` er slettet; Opptak og overlegget viser
+> nå samme kameraøkt fra bakenden (`ui/CameraPreview/CameraPreview.tsx`,
+> `docs/VIDEOMOTOR.md` §C4). Teksten under er historikk.
+
 ### ⚠️ Constraints-regelen: ALDRI `height`
 
 ```ts
@@ -3412,7 +3417,8 @@ De som er mer enn opprydding:
   innstillingen selv, så en parameter her hadde vært en løgn typesystemet så
   håndhevet.
 
-- ~~**Kamerabildet.**~~ **LUKKET** i D2/PR2 (`feat/d2-camera-preview`).
+- ~~**Kamerabildet.**~~ **LUKKET** i D2/PR2 (`feat/d2-camera-preview`), og
+  **bygget om i C4b** til én kameraøkt i bakenden (gUM og pollen er slettet).
   Overlegget hadde en brikke som NAVNGIR kameraet, og en brikke ser helt lik ut
   med lokk på linsen — et dødt kamera ble først oppdaget når fila ble åpnet.
   Nå er det to bilder: `ui/CameraPreview/LiveCameraPreview` viser webviewets

@@ -458,13 +458,16 @@ async fn start_video_track(
         fps_num: fps.num,
         fps_den: fps.den,
     };
-    let from_preview = crate::camera::preview::take_for_recording(&key);
-    let opened = match from_preview {
+    let taken = crate::camera::preview::take_for_recording(&key);
+    let mut carried = taken.carried;
+    let mut own_camera = false;
+    let opened = match taken.opened {
         Some((source, spec)) => {
             tracing::info!(camera = %name, "video track: recording from the preview's camera session");
             Ok(Ok(Ok((source, spec))))
         }
         None => {
+            own_camera = true;
             tokio::time::timeout(
                 CAMERA_TIMEOUT,
                 tokio::task::spawn_blocking(move || {
@@ -489,6 +492,17 @@ async fn start_video_track(
                 flip: plan.flip,
                 ..cam_spec
             };
+            if own_camera {
+                // No page had this camera open: let the recording overlay show
+                // the picture of the camera that records (C4b). The preview
+                // makes no picture until a page attaches.
+                crate::camera::preview::adopt_for_recording(
+                    key,
+                    &capture.frames(),
+                    &spec,
+                    carried.take(),
+                );
+            }
             Some(capture)
         }
         Ok(Ok(Err(e))) => {
@@ -510,8 +524,6 @@ async fn start_video_track(
             encoder,
             &factory_path,
             std::sync::Arc::clone(&factory_child),
-            // The recording screen's live picture (C3b; C4 replaces it).
-            Some(&crate::recorder::engine::recording_preview_path()),
         )
     });
     match VideoTrack::spawn_with_child(
@@ -569,11 +581,21 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
             tracing::warn!("native capture: stream thread did not stop in time — continuing");
         }
     }
-    // The camera next: a capture, so before any writer.
+    // The camera next: a capture, so before any writer. Unless a page is
+    // watching it (C4b): then the camera keeps running for the live picture,
+    // and only the track's queue closes — exactly what stopping would have done
+    // to the track — so Stopp and every fragment boundary leave the picture
+    // alone. It goes back to the preview once the track has finished.
+    let mut parked: Option<Box<dyn VideoSource>> = None;
     if let Some(source) = seg.video.as_mut().and_then(VideoTrack::take_source) {
-        let stop = tokio::task::spawn_blocking(move || source.stop());
-        if tokio::time::timeout(CAMERA_TIMEOUT, stop).await.is_err() {
-            tracing::warn!("video track: the camera did not stop in time — continuing");
+        if crate::camera::preview::keeps_camera(source.as_ref()) {
+            source.frames().close();
+            parked = Some(source);
+        } else {
+            let stop = tokio::task::spawn_blocking(move || source.stop());
+            if tokio::time::timeout(CAMERA_TIMEOUT, stop).await.is_err() {
+                tracing::warn!("video track: the camera did not stop in time — continuing");
+            }
         }
     }
     seg.writer_stop.store(true, Ordering::Relaxed);
@@ -622,6 +644,19 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
         let stats = video.stats();
         tracing::info!(?stats, mkv = %video.mkv_path.display(), "video track: fragment finished");
         seg.video_stats = Some(stats);
+    }
+    // The track is done with the queue: the camera goes back to the live
+    // picture (or is stopped there, if the page left meanwhile).
+    if let Some(source) = parked {
+        let give_back = tokio::task::spawn_blocking(move || {
+            crate::camera::preview::release_after_recording(source);
+        });
+        if tokio::time::timeout(CAMERA_TIMEOUT, give_back)
+            .await
+            .is_err()
+        {
+            tracing::warn!("video track: the camera did not hand back in time — continuing");
+        }
     }
 }
 

@@ -1634,7 +1634,10 @@ mod tests {
             // Length bound. `frames_written` counts accepted frames, the file
             // only advances at each flush (FLUSH_EVERY); the stdout report adds
             // up to 100 ms of staleness and CI adds scheduling jitter.
-            let slack = Duration::from_millis(250); // jitter, on top of FLUSH_EVERY
+            // Jitter on top of FLUSH_EVERY. 250 ms was 34 kB short once on a
+            // macOS runner busy with the camera-preview tests (#390); what the
+            // file itself holds is checked exactly below.
+            let slack = Duration::from_millis(750);
             let slack_frames =
                 ((FLUSH_EVERY + slack).as_secs_f64() * f64::from(NATIVE_RATE)) as u64;
             let report_frames = u64::from(NATIVE_RATE) / 10; // 100 ms report cadence
@@ -1753,9 +1756,7 @@ mod tests {
             let child = Arc::new(std::sync::Mutex::new(None));
             let make: SinkFactory = {
                 let (mkv, child) = (mkv.clone(), Arc::clone(&child));
-                Box::new(move |spec, enc| {
-                    FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child), None)
-                })
+                Box::new(move |spec, enc| FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child)))
             };
             let (source, spec): (Box<dyn VideoSource>, VideoTrackSpec) = match camera {
                 None => (

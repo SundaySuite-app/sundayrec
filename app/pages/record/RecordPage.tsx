@@ -161,11 +161,7 @@ import { Chip } from "../../ui/Chip/Chip";
 import { ConsentCard } from "../../ui/ConsentCard/ConsentCard";
 import { ControlCard } from "../../ui/ControlCard/ControlCard";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
-import { LiveCameraPreview } from "../../ui/CameraPreview/LiveCameraPreview";
-import {
-  releaseCameraPreview,
-  resumeCameraPreview,
-} from "../../ui/CameraPreview/ownership";
+import { CameraPreview } from "../../ui/CameraPreview/CameraPreview";
 import { alertDialog } from "../../ui/dialog";
 import { reveal } from "../../ui/reveal";
 import { toast } from "../../ui/toast";
@@ -255,16 +251,10 @@ export function RecordPage() {
     if (starting || live || !source.canStart) return;
     setStarting(true);
     try {
-      // ⚠️ KAMERAET FØRST, og eksplisitt.
-      //
-      // macOS gir ÉN klient om gangen tilgang til en kameraenhet. Previewen
-      // slipper også når `isRecording` blir sann — men det signalet settes
-      // ETTER at motoren har svart ja (`markSessionStarted`), altså etter at
-      // ffmpeg allerede har prøvd å åpne enheten mens webviewet holdt den.
-      // Rekkefølgen er hele forskjellen mellom et videoopptak og en tom fil, og
-      // den er pinnet i `e2e/record.spec.ts` («slipper kameraet FØR
-      // start_recording»). Se `ui/CameraPreview/ownership.ts`.
-      releaseCameraPreview();
+      // Kameraet trenger ingen forberedelse: bildet kommer fra bakendens
+      // egen økt (`ui/CameraPreview/CameraPreview.tsx`), og opptaket tar opp
+      // fra den samme — ingen overlevering, ingen ventetid, og bildet står
+      // gjennom hele Start. Pinnet i `e2e/record.spec.ts` («bildet blinker ikke»).
       // Gi Preact rammen den trenger til å faktisk avmontere måleren, så
       // VU-strømmen er sluppet FØR opptaksmotoren ber om enheten. Den harde
       // garantien er Rust-sidens eget `vu.stop()` inne i `start_recording`;
@@ -298,10 +288,6 @@ export function RecordPage() {
       );
     } finally {
       setStarting(false);
-      // Ble det ikke noe opptak likevel — motoren sa nei, eller kallet feilet —
-      // skal kamerabildet tilbake. En svart rute etter et trykk som ikke førte
-      // fram er en app som ser ødelagt ut av å ha sagt fra.
-      if (!isRecording.peek()) resumeCameraPreview();
     }
   }
 
@@ -861,7 +847,7 @@ function CameraPreviewBlock() {
   if (settings.value.videoEnabled !== true) return null;
   return (
     <div class={styles.preview}>
-      <LiveCameraPreview />
+      <CameraPreview />
     </div>
   );
 }

@@ -166,6 +166,10 @@ pub struct VideoTrack {
     join: Option<JoinHandle<()>>,
     child: Arc<Mutex<Option<Child>>>,
     counters: Arc<VideoCounters>,
+    /// The queue's counters when this track began. A camera that outlives its
+    /// fragment (C4b: the live picture keeps it) hands the same queue to the
+    /// next track, so a fragment reports only what happened during itself.
+    queue_base: crate::camera::queue::QueueStats,
     pub mkv_path: PathBuf,
 }
 
@@ -205,6 +209,7 @@ impl VideoTrack {
         };
         let finish_at = Arc::new(AtomicU64::new(RUNNING));
         let counters = Arc::new(VideoCounters::default());
+        let queue_base = queue.stats();
         let mkv_path = cfg.mkv_path.clone();
         let join = {
             let queue = Arc::clone(&queue);
@@ -221,6 +226,7 @@ impl VideoTrack {
             join: Some(join),
             child,
             counters,
+            queue_base,
             mkv_path,
         })
     }
@@ -256,8 +262,8 @@ impl VideoTrack {
         let q = self.queue.stats();
         let c = *lock_recover(&self.counters.conform);
         VideoTrackStats {
-            delivered: q.pushed,
-            queue_dropped: q.dropped,
+            delivered: q.pushed.saturating_sub(self.queue_base.pushed),
+            queue_dropped: q.dropped.saturating_sub(self.queue_base.dropped),
             slots_written: self.counters.slots_written.load(Ordering::Relaxed),
             new: c.new,
             repeated: c.repeated,
@@ -548,18 +554,14 @@ pub struct FfmpegSink {
 
 impl FfmpegSink {
     /// Spawn `ffmpeg <video_track_args>` writing `mkv`, parking the child in
-    /// `slot` (see [`VideoTrack::spawn_with_child`]). `preview` adds the live
-    /// preview JPEG the recording screen polls (production: the engine's
-    /// `recording_preview_path`; tests: `None`).
+    /// `slot` (see [`VideoTrack::spawn_with_child`]).
     pub fn spawn(
         spec: &VideoTrackSpec,
         encoder: VideoEncoder,
         mkv: &std::path::Path,
         slot: Arc<Mutex<Option<Child>>>,
-        preview: Option<&std::path::Path>,
     ) -> std::io::Result<Box<dyn SlotSink>> {
-        let preview = preview.map(|p| p.to_string_lossy().into_owned());
-        let args = video_track_args(spec, encoder, &mkv.to_string_lossy(), preview.as_deref());
+        let args = video_track_args(spec, encoder, &mkv.to_string_lossy());
         tracing::info!(?args, "video track: starting the encoder");
         let mut child = crate::util::hidden_std_command(crate::media::ffmpeg::ffmpeg_path())
             .args(&args)

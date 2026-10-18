@@ -708,16 +708,6 @@ pub fn current_platform() -> Platform {
     crate::util::detect_platform()
 }
 
-/// Shared path of the live in-recording preview JPEG: a single file in the OS
-/// temp dir that a video session's video-track ffmpeg auto-overwrites
-/// (`-update 1`, see `sundayrec_core::video_track::video_track_args`) and the
-/// `recording_preview_frame` command reads. One fixed path is fine — at most one
-/// recording runs at a time. (Moved here from the deleted `engine/args.rs`,
-/// C3b; C4 replaces the file with frames from the camera session itself.)
-pub fn recording_preview_path() -> std::path::PathBuf {
-    std::env::temp_dir().join("sundayrec-recording-preview.jpg")
-}
-
 /// How long `start()` waits for the native camera list. Media Foundation and
 /// DirectShow are asked on Windows, and a wedged driver must not hold a
 /// scheduled start past the scheduler's own bound.
@@ -1178,18 +1168,6 @@ pub(crate) mod tests {
         // An empty name is no camera, whatever the list says.
         assert_eq!(session_camera(Some(&cams), ""), None);
         assert_eq!(session_camera(None, "  "), None);
-    }
-
-    #[test]
-    fn recording_preview_path_is_a_stable_temp_jpeg() {
-        let p = recording_preview_path();
-        assert_eq!(
-            p.extension().and_then(|e| e.to_str()),
-            Some("jpg"),
-            "the in-recording preview is a JPEG file sink (deadlock-proof, not a pipe)"
-        );
-        // Stable across calls (one fixed path; at most one recording at a time).
-        assert_eq!(p, recording_preview_path());
     }
 
     #[test]

@@ -3,8 +3,7 @@
  *
  * ## Hvorfor ikke bare la bildet finne den selv
  *
- * Overleggets kamerabilde er en `<img>` som får en ny `data:`-URL ~12 ganger i
- * sekundet. Uten en kjent størrelse har rammen ingen høyde før det FØRSTE
+ * Kamerabildet er en `<img>` som får en ny `blob:`-URL ~4 ganger i sekundet. Uten en kjent størrelse har rammen ingen høyde før det FØRSTE
  * bildet er dekodet, og flaten hopper — midt i en gudstjeneste, på den ene
  * skjermen ingen skal trenge å se på. Headeren gir svaret på de første ~300
  * bytene, altså før bildet er lastet, og rammen reserverer plassen med
@@ -12,10 +11,9 @@
  *
  * ## Ett svar, ikke ett per frame
  *
- * Kalleren spør ÉN gang (`PolledCameraPreview` husker at den har svaret).
+ * Kalleren spør ÉN gang (`CameraPreview` husker at den har svaret).
  * Kameraet bytter ikke oppløsning midt i et opptak, og en parsing per frame
- * ville vært 12 base64-dekodinger i sekundet på hovedtråden for et svar som
- * ikke endrer seg.
+ * ville vært arbeid på hovedtråden for et svar som ikke endrer seg.
  *
  * ## Skanningen
  *
@@ -78,32 +76,4 @@ export function readJpegDims(arr: Uint8Array): JpegDims | null {
     i += 2;
   }
   return null;
-}
-
-/**
- * Hvor mye av base64-strengen som dekodes før headeren letes fram.
- *
- * Legacys tall, og det MÅ være delelig på fire: `atob` på en base64-streng
- * kuttet midt i en firergruppe kaster. 1400 tegn er 1050 byte, som er godt
- * forbi enhver realistisk JFIF/Huffman-header og langt fra en hel frame.
- */
-export const HEADER_B64_CHARS = 1400;
-
-/**
- * Samme svar, fra bakendens base64-frame.
- *
- * Skilt fra `readJpegDims` fordi dekodingen er det eneste her som kan kaste:
- * en avkortet eller ødelagt streng skal gi `null`, ikke ta ned overlegget midt
- * i et opptak.
- */
-export function jpegDimsFromBase64(b64: string): JpegDims | null {
-  try {
-    const head = b64.slice(0, HEADER_B64_CHARS);
-    const binary = atob(head);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return readJpegDims(bytes);
-  } catch {
-    return null;
-  }
 }

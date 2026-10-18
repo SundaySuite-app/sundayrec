@@ -30,9 +30,9 @@ import {
   PREV_SUNDAY_MS,
   settleVu,
   SPECIAL_DATE,
-  stubCamera,
   stubClipboard,
 } from "./harness";
+import { cameraFixtures, FRAME_16_9, pushFrame } from "../camera-feed";
 
 /**
  * THE SCENE TABLE — every screen and state the atlas photographs.
@@ -184,24 +184,6 @@ const CAMERA_FIXTURES: Fixtures = {
   ...DEVICES,
   list_devices: { video_inputs: [{ name: "Logitech BRIO", index: 0 }] },
 };
-
-/**
- * A real, tiny 160×90 JPEG (ImageMagick, quality 70).
- *
- * The overlay reads the aspect ratio out of the SOF0 header and paints the
- * bytes into an `<img>`, so a header-only stub would measure correctly and then
- * render as a broken image. This one decodes.
- */
-const FRAME_16_9 =
-  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIf" +
-  "IiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7" +
-  "Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCABaAKADASIA" +
-  "AhEBAxEB/8QAFwABAQEBAAAAAAAAAAAAAAAAAAIBB//EABUQAQEAAAAAAAAAAAAAAAAAAAAR/8QA" +
-  "FwEBAQEBAAAAAAAAAAAAAAAAAAEEAv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/" +
-  "AOdUqaVuZ1UqaUFUqaUFUqaUFUqaUFUqaUFUqaUFUqaUFUqaUFUqaUGCRBQkBQkBQkBQkBQkBQkB" +
-  "QkBQkBQkBlKmlcqqlTSgqlTSgqlTSgqlTSgqlTSgqlTSgqlTSgqlTSgqlTSgylTSoqqVNKCqVNKC" +
-  "qVNKCqVNKCqVNKCqVNKCqVNKCqVNKCqVNKDKVNKiqpU0oKpU0oKpU0oKpU0oKpU0oKpU0oKpU0oK" +
-  "pU0oKpU0oJpWCDaVgDaVgDaVgDaVgDaVgDaVgDaVgDaVgDaVgD//2Q==";
 
 /** The library rows the atlas keeps showing. FIXED timestamps, so «Søndag 16.
  *  august · 11:00» is the same string on every run. */
@@ -497,15 +479,15 @@ export const SCENES: Scene[] = [
     recipe:
       "`?goto=settings:video` + `videoEnabled:true` — kortet kan BARE foldes ut når tillegget er på",
     boot: {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
       goto: "settings:video",
     },
-    pre: (page) => stubCamera(page),
     // ⚠️ `setup-camera-*`, ikke `control-camera-*`: CameraCard gir ControlCard
     // sin egen testId. Samme for auto-kortet.
     wait: "setup-camera-body",
     act: async (page) => {
+      await pushFrame(page, FRAME_16_9);
       await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
         "data-phase",
         "live",
@@ -557,22 +539,22 @@ export const SCENES: Scene[] = [
     id: "opptak--kamera-live",
     page: "Opptak",
     state: "Kamerabildet står — fasen `live`",
-    recipe: "`videoEnabled:true` + stubbet `getUserMedia` (canvas-strøm)",
-    boot: { fixtures: CAMERA_FIXTURES, settings: WITH_CAMERA, goto: "home" },
-    pre: (page) => stubCamera(page),
+    recipe:
+      "`videoEnabled:true` + `camera_preview_start`-fixtur og en ekte JPEG ned kanalen",
+    boot: {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "home",
+    },
     wait: "record-camera-preview",
     act: async (page) => {
+      await pushFrame(page, FRAME_16_9);
       // Vent til rammen SIER at bildet er der. Aldri en assertion på piksler:
       // `data-phase` er appens egen påstand, og det er den som kan være feil.
       await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
         "data-phase",
         "live",
       );
-      // …og til målingen har landet, ellers fotograferes brikka mens den
-      // fortsatt sier 0 × 0.
-      await expect(
-        page.getByTestId("record-camera-preview-badge"),
-      ).toContainText("320");
       await settleVu(page);
     },
     full: true,
@@ -581,9 +563,12 @@ export const SCENES: Scene[] = [
     id: "opptak--kamera-nektet",
     page: "Opptak",
     state: "Kamerabildet — fasen `denied` (OS-et sa nei)",
-    recipe: "stubbet `getUserMedia` som kaster `NotAllowedError`",
-    boot: { fixtures: CAMERA_FIXTURES, settings: WITH_CAMERA, goto: "home" },
-    pre: (page) => stubCamera(page, "NotAllowedError"),
+    recipe: "`camera_preview_start` som svarer «camera access is not allowed»",
+    boot: {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("denied") },
+      settings: WITH_CAMERA,
+      goto: "home",
+    },
     wait: "record-camera-preview",
     act: async (page) => {
       await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
@@ -597,13 +582,12 @@ export const SCENES: Scene[] = [
     id: "opptak--kamera-borte",
     page: "Opptak",
     state: "Kamerabildet — det lagrede kameraet finnes ikke",
-    recipe: "`videoDeviceName` som ikke er blant `enumerateDevices`",
+    recipe: "`videoDeviceName` som ikke er i bakendens kameraliste",
     boot: {
       fixtures: CAMERA_FIXTURES,
       settings: { ...WITH_CAMERA, videoDeviceName: "Sony HandyCam" },
       goto: "home",
     },
-    pre: (page) => stubCamera(page),
     wait: "record-camera-preview",
     act: async (page) => {
       await expect(
@@ -750,19 +734,24 @@ export const SCENES: Scene[] = [
     page: "Opptaksoverlegget",
     state: "Det tas opp — klokke, måler, kamerabilde og fakta",
     recipe:
-      "`emit('recording-overlay-stop', {state:'recording'})`, klokka +42 min, ekte JPEG-frame",
+      "`emit('recording-overlay-stop', {state:'recording'})`, klokka +42 min, ekte JPEG ned kamerakanalen",
     boot: {
       fixtures: {
         ...CAMERA_FIXTURES,
         ...DEVICES,
-        recording_preview_frame: FRAME_16_9,
+        ...cameraFixtures(),
       },
       settings: WITH_CAMERA,
       goto: "home",
     },
-    pre: (page) => stubCamera(page),
     wait: "record-source",
     act: async (page) => {
+      // Bildet står FØR opptaket, og overlegget arver det (samme økt).
+      await pushFrame(page, FRAME_16_9);
+      await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+        "data-phase",
+        "live",
+      );
       await emitAt(page, "recording-overlay-stop", {
         state: "recording",
         scheduled_stop_ms: null,

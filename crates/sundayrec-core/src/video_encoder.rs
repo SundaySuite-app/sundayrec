@@ -706,22 +706,16 @@ mod tests {
                     push_video_encoder_args_with(&mut a, encoder, codec, None, fps, false);
                     keyint(&a, fps);
                 }
-                // Videosporet (C3a) — med og uten forhåndsvisningen: den andre
-                // utgangen er en JPEG og får ingen nøkkelbilde-flagg.
-                for preview in [None, Some("/tmp/p.jpg")] {
-                    let spec = VideoTrackSpec {
-                        width: 1920,
-                        height: 1080,
-                        fps_num: fps,
-                        fps_den: 1,
-                        input: RawPixelFormat::Nv12,
-                        flip: false,
-                    };
-                    keyint(
-                        &video_track_args(&spec, encoder, "/cap/v.mkv", preview),
-                        fps,
-                    );
-                }
+                // Videosporet (C3a).
+                let spec = VideoTrackSpec {
+                    width: 1920,
+                    height: 1080,
+                    fps_num: fps,
+                    fps_den: 1,
+                    input: RawPixelFormat::Nv12,
+                    flip: false,
+                };
+                keyint(&video_track_args(&spec, encoder, "/cap/v.mkv"), fps);
             }
         }
     }

@@ -1,5 +1,5 @@
 /*
- * Kamerarammen. Én flate, to kilder — se CameraFrame.tsx.
+ * Kamerarammen. Én flate, to steder (Opptak og overlegget) — se CameraFrame.tsx.
  *
  * `aspect-ratio` og ikke en fast høyde: da har rammen riktig størrelse FØR
  * første bilde er dekodet, og flaten hopper ikke i det bildet lander.
@@ -20,13 +20,12 @@
 }
 
 /*
- * Bildet — `<video>` eller `<img>`, samme regler.
+ * Bildet.
  *
  * `contain` og ikke `cover`: en frivillig som ser på previewen sjekker
  * BILLEDUTSNITTET, og en ramme som beskjærer for å fylle seg selv ville skjult
  * nøyaktig det hun ser etter.
  */
-.frame > video,
 .frame > img {
   display: block;
   width: 100%;
@@ -35,9 +34,16 @@
 }
 
 /* Ingen strøm ⇒ ingen tom svart boks oppå plassholderen. */
-.frame:not([data-phase="live"]) > video,
 .frame:not([data-phase="live"]) > img {
   display: none;
+}
+
+/*
+ * Speilvendt som opptaket (`videoFlip`). `transform` på bildet selv: det har
+ * ingen `position: fixed`-etterkommere som kunne fått en ny containing block.
+ */
+.frame[data-flip="true"] > img {
+  transform: scaleX(-1);
 }
 
 .message {
@@ -47,21 +53,4 @@
   font-size: var(--fs-sm);
   text-align: center;
   text-wrap: balance;
-}
-
-/*
- * Merket ligger OPPÅ bildet, nede til høyre. Det er et faktum om det man ser
- * på, ikke en etikett ved siden av — og på en preview som fyller kortet er det
- * ingen annen plass som ikke stjeler høyde fra bildet.
- */
-.badge {
-  position: absolute;
-  right: var(--sp-2);
-  bottom: var(--sp-2);
-  padding: 2px var(--sp-2);
-  border-radius: var(--r-sm);
-  background: var(--scrim);
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
 }

@@ -284,20 +284,15 @@ question a volunteer actually has — _do we hear it?_
 
 ## 4. Camera — the picture, and then the file [HW]
 
-Since **D2/PR2** there IS a live camera picture, in two places and from two
-different sources — because the camera can only have one owner at a time:
-
-- **Before the recording**, on **Opptak**: the webview's own `getUserMedia`
-  stream (`ui/CameraPreview/LiveCameraPreview.tsx`).
-- **During the recording**, in the overlay: the engine owns the device, so the
-  overlay polls the preview JPEG the recorder writes
-  (`recording_preview_frame`, 12 Hz). Since C3b that JPEG is the second output
-  of the video track's own ffmpeg (`video_track_args`), not of an ffmpeg that
-  owns the camera — every video session records through the native engine.
-
-The handover is the part a rig has to see: pressing **Start** must make the
-Opptak preview let go BEFORE `start_recording` runs, or the recorder never gets
-the device.
+There is a live camera picture in two places — **Opptak** and the recording
+overlay — and since **C4b** both come from the SAME source: the backend's one
+camera session (`camera_preview_start`). The backend opens the camera when the
+Opptak page shows the camera card, makes a small JPEG (≤ 640 px, ~4 per second)
+from it, and the recording then records from that very session. Nothing hands
+the camera over: not at **Start**, not at **Stopp**, and not at the fragment
+boundaries of a long recording. The webview never opens the camera
+(`getUserMedia` is gone), so the picture you see and the file you get come from
+the same camera by construction.
 
 1. On **Opptak**, turn on the **«Ta med kamera»** card's toggle and pick the
    camera in the body that folds out under it.
@@ -314,23 +309,24 @@ the device.
 2. Look at the top of the right-hand column (you are already on **Opptak** —
    nothing to navigate to).
    - **Expected:** a 16:9 frame above the card stack showing what the camera
-     sees, with a badge in the corner naming the size and frame rate it is
-     ACTUALLY delivering («1920×1080 · 30 fps») — not what the profile asked
-     for. A 720p webcam under a 1080p profile is supposed to be visible here.
+     sees, moving (~4 pictures a second). With «speilvend» on in the camera
+     body the picture is mirrored, as the recording will be.
    - **Expected on a denied permission:** «Kameratilgang nektet — sjekk
      Systeminnstillinger», never a blank box and never «Ingen kameraer funnet»
      (§0).
-   - VERIFIED-BY: e2e/record.spec.ts::kamera på og valgt: rammen blir «live», og merket sier hva som kom
+   - VERIFIED-BY: e2e/record.spec.ts::kamera på og valgt: bakenden bes om kameraet ved NAVN, og bildet fra økta står i rammen
+   - VERIFIED-BY: e2e/record.spec.ts::speilvendt opptak ⇒ speilvendt bilde: det som vises er det som tas opp
    - VERIFIED-BY: e2e/record.spec.ts::nektet tilgang og «svarte ikke» er TO svar, ikke ett
 3. Start a recording (§5 with video) and let it run ~30 s.
-   - **Expected:** the Opptak preview goes away as the overlay comes up, and
-     the overlay shows a MOVING picture next to the meter (plus the «Kamera
-     <name>» chip, which is still only a claim about the setting).
+   - **Expected:** the picture does NOT blink as you press Start: the overlay
+     comes up with the picture already in its frame, next to the meter (plus
+     the «Kamera <name>» chip, which is still only a claim about the setting),
+     and it keeps moving. No «Starter kamera…», no black gap.
    - **Expected if the picture never arrives:** the frame keeps saying «Starter
-     kamera…». That is the honest state — the engine has written no frame — and
-     it is now the first place a dead camera shows up.
-   - VERIFIED-BY: e2e/record.spec.ts::⚠️ previewen slipper kameraet FØR start_recording
-   - VERIFIED-BY: e2e/record.spec.ts::poller motorens frames og måler seg på headeren
+     kamera…». That is the honest state — the camera session has delivered no
+     frame — and it is the first place a dead camera shows up.
+   - VERIFIED-BY: e2e/record.spec.ts::⚠️ bildet blinker IKKE ved Start og Stopp: én økt, aldri lukket, aldri «Starter kamera…»
+   - VERIFIED-BY: e2e/record.spec.ts::viser økta sitt bilde og måler seg på headeren
    - **Windows (C0a):** the FIRST video recording on a machine probes the
      hardware encoders (`h264_nvenc` → `h264_qsv` → `h264_amf` → `h264_mf` →
      `libx264`) with a 0.2 s test clip and stores the first that works in
@@ -361,10 +357,13 @@ the device.
    - **Expected:** the mp4 has a video stream with picture in it. The preview is
      evidence that frames reached the ENGINE; only the file proves they were
      written.
-5. Stop, wait ~3 s on **Opptak**.
-   - **Expected:** the live preview comes back by itself. The delay is
-     deliberate (`PREVIEW_RESTART_MS`) — the engine releases the camera after it
-     finishes writing, not when the overlay disappears.
+5. Stop, and look at **Opptak** straight away.
+   - **Expected:** the picture is already there and never went away — no 3 s
+     wait (`PREVIEW_RESTART_MS` is gone): the recording gives the same running
+     camera back to the preview when it stops.
+   - **Expected on a long recording:** the picture does not stutter at a
+     fragment boundary (a reconnect or the 4 GiB split); the next fragment
+     records from the same session.
 6. App still alive but no video in the file = check camera permission (§0). App
    vanishes = permission string missing/denied and the OS killed it.
 
@@ -1970,7 +1969,7 @@ The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet�
 | **The «backend OK» header**                                              | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | **The wake ADMIN prompt** (`wake_reschedule`)                            | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | **`healStoredDeviceId`**                                                 | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ~~**The live camera picture** (`recording_preview_frame`)~~              | **BACK** in D2/PR2 — a live `getUserMedia` frame on Opptak and the engine's polled JPEG in the overlay (§4). The chip stays; it names the setting, the picture proves the frames.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ~~**The live camera picture** (`recording_preview_frame`)~~              | **BACK** in D2/PR2, **replaced by one camera session in C4b** — `camera_preview_start` feeds Opptak and the overlay alike (§4). The chip stays; it names the setting, the picture proves the frames.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **«+30 min» / «Avbryt auto-stopp»** on the overlay                       | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **The stereo / mono / «Miks L+R» channel-mode picker**                   | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so.                                                                                                                                                                                                                                                                                                                                                           |
 | ~~⚠️ **Automatic deletion of old recordings** (NOT a removal — a SEAM)~~ | **WIRED** after the owner decision 2026-08-31: retention MOVES recordings older than `autoDeleteDays` into the Papirkurv — exactly what both UI texts always promised — and the trash's own 30-day purge is the delete, so the full window is n + 30 days. `recordings_prune` routes through `crate::trash` (a source ratchet forbids a hard delete from returning), the pass runs at boot + every 12 h (`initRetention` in `app/main.tsx`), and a pass that moved something says so in a toast with «Vis papirkurven». The first pass after updating can move everything that piled up while the promise was broken — that is the toast's whole job. |
