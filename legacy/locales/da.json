@@ -622,6 +622,7 @@
       "reconnect": "Lyden fra {name} forsvandt — prøver at genoprette forbindelsen",
       "reconnectAnon": "Lyden forsvandt — prøver at genoprette forbindelsen",
       "autoStop": "Stopper af sig selv om {left}",
+      "videoSkipped": "Kameraet halter lidt bagud, så nogle billeder er sprunget over. Lyden er upåvirket.",
       "finalizingHint": "Optagelsen skrives til disken. Det tager nogle sekunder, og filen er tryg i mellemtiden."
     },
     "done": {

@@ -175,6 +175,12 @@ pub struct RecordingProgress {
     /// Total bytes ffmpeg has written to the current segment so far.
     #[ts(type = "number")]
     pub bytes_written: u64,
+    /// Camera frames the video track has dropped so far this SESSION (C3c),
+    /// because the encoder could not keep up. 0 for audio-only sessions. The
+    /// overlay shows a calm note when it is above 0; the audio is never affected.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub video_frames_dropped: u64,
 }
 
 /// Live per-channel peak audio levels (dBFS) sent to the renderer, parsed from
@@ -237,6 +243,7 @@ mod tests {
     fn recording_progress_serde_roundtrip() {
         let p = RecordingProgress {
             bytes_written: 2_097_152,
+            video_frames_dropped: 7,
         };
         let json = serde_json::to_string(&p).unwrap();
         let back: RecordingProgress = serde_json::from_str(&json).unwrap();

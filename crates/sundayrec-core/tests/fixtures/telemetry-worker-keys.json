@@ -1,6 +1,6 @@
 {
-  "_comment": "Kopi av Workerens godkjente nøkler (sunday-telemetry src/schema.ts). Én liste per objekt i pakken: 'required' = må sendes, 'optional' = kan mangle. Kontrolleres av telemetry.rs::every_client_key_is_known_to_the_worker. Worker-PR-en som endrer en liste MÅ endre denne filen i samme runde, og omvendt.",
-  "source": "sunday-telemetry origin/main + PR #20 (nativeXruns valgfri)",
+  "_comment": "Kopi av Workerens godkjente nøkler (sunday-telemetry src/schema.ts). Én liste per objekt i pakken: 'required' = må sendes, 'optional' = kan mangle. Kontrolleres av telemetry.rs::every_client_key_is_known_to_the_worker. Worker-PR-en som endrer en liste MÅ endre denne filen i samme runde, og omvendt. counterNames = COUNTER_NAMES (verdier, ikke nøkler): hver CounterName i klienten må stå her.",
+  "source": "sunday-telemetry origin/main + PR #20 (nativeXruns valgfri) + PR #21 (video.frames_dropped)",
   "payload": {
     "required": [
       "schema",
@@ -96,5 +96,42 @@
   "corrections": {
     "required": ["signal", "direction", "band", "count"],
     "optional": []
+  },
+  "counterNames": {
+    "names": [
+      "recording.started.manual",
+      "recording.started.scheduled",
+      "recording.stopped",
+      "recording.preroll.started",
+      "recording.selftest",
+      "editor.opened",
+      "editor.export.mp3",
+      "editor.export.wav",
+      "editor.export.flac",
+      "editor.export.video",
+      "editor.export.other",
+      "editor.master.applied",
+      "editor.chapters.detected",
+      "transcribe.run",
+      "companion.build",
+      "review.published",
+      "review.discarded",
+      "publish.feed.generated",
+      "trash.moved",
+      "trash.restored",
+      "streaming.started",
+      "diagnose.run",
+      "update.installed",
+      "cloud.upload.ok",
+      "editor.publish.soundcloud",
+      "editor.publish.youtube",
+      "editor.publish.spotify",
+      "editor.publish.custom",
+      "appdata.move.moved",
+      "appdata.move.fallback",
+      "appdata.move.already",
+      "appdata.move.fresh",
+      "video.frames_dropped"
+    ]
   }
 }

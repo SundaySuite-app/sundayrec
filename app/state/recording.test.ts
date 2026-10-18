@@ -31,6 +31,7 @@ import {
   recorderState,
   reconnecting,
   scheduledStopMs,
+  sessionVideoDropped,
   silenceActive,
 } from "./recording";
 import { toasts } from "../ui/toast";
@@ -444,6 +445,31 @@ describe("ferdig-melding og fullfører-frist", () => {
     vi.advanceTimersByTime(FINALIZE_TIMEOUT_MS + 1);
     expect(isRecording.value).toBe(false);
     expect(finalizing.value).toBe(false);
+    h.off();
+  });
+});
+
+describe("tapte kamerabilder (C3c)", () => {
+  it("følger framdriftshendelsen oppover, og nullstilles av en ny økt", () => {
+    const h = withFakeApi();
+    markSessionStarted();
+    expect(sessionVideoDropped.value).toBe(0);
+    h.emit("recording-progress", {
+      bytes_written: 10,
+      video_frames_dropped: 5,
+    });
+    expect(sessionVideoDropped.value).toBe(5);
+    // Et sent eller gammelt event skal aldri skru tallet ned midt i økta.
+    h.emit("recording-progress", {
+      bytes_written: 20,
+      video_frames_dropped: 3,
+    });
+    expect(sessionVideoDropped.value).toBe(5);
+    // Et event uten feltet (lydopptak, eldre motor) rører det ikke.
+    h.emit("recording-progress", { bytes_written: 30 });
+    expect(sessionVideoDropped.value).toBe(5);
+    markSessionStarted();
+    expect(sessionVideoDropped.value).toBe(0);
     h.off();
   });
 });

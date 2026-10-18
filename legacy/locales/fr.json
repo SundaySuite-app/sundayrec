@@ -622,6 +622,7 @@
       "reconnect": "Le son de {name} a disparu — tentative de reconnexion",
       "reconnectAnon": "Le son a disparu — tentative de reconnexion",
       "autoStop": "S’arrête tout seul dans {left}",
+      "videoSkipped": "La caméra a un peu de retard, quelques images ont été sautées. Le son n’est pas affecté.",
       "finalizingHint": "L’enregistrement est écrit sur le disque. Cela prend quelques secondes, et le fichier est en sécurité pendant ce temps."
     },
     "done": {

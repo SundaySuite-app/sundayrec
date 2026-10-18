@@ -622,6 +622,7 @@
       "reconnect": "Der Ton von {name} ist weg — es wird neu verbunden",
       "reconnectAnon": "Der Ton ist weg — es wird neu verbunden",
       "autoStop": "Stoppt von selbst in {left}",
+      "videoSkipped": "Die Kamera kommt nicht ganz mit, daher wurden einige Bilder übersprungen. Der Ton ist nicht betroffen.",
       "finalizingHint": "Die Aufnahme wird auf die Festplatte geschrieben. Das dauert ein paar Sekunden, und die Datei ist derweil sicher."
     },
     "done": {

@@ -368,6 +368,14 @@ pub enum CounterName {
     /// No database anywhere: a new installation, which starts in Local.
     #[serde(rename = "appdata.move.fresh")]
     AppdataFresh,
+    // ── Video track (C3c) ────────────────────────────────────────────────────
+    /// Camera frames the video track threw away because the encoder could not
+    /// keep up (its ~1 s queue was full). A COUNT OF FRAMES, added when a
+    /// fragment ends — not one per session. No device name, no timestamps.
+    /// The Worker must know this name BEFORE a client that sends it is
+    /// promoted: an unknown name is a 400 the client never retries.
+    #[serde(rename = "video.frames_dropped")]
+    VideoFramesDropped,
 }
 
 /// Every [`CounterName`], in wire order. The single source of truth for the
@@ -397,6 +405,7 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::AppdataFellBack,
     CounterName::AppdataAlreadyLocal,
     CounterName::AppdataFresh,
+    CounterName::VideoFramesDropped,
 ];
 
 impl CounterName {
@@ -431,6 +440,7 @@ impl CounterName {
             Self::AppdataFellBack => "appdata.move.fallback",
             Self::AppdataAlreadyLocal => "appdata.move.already",
             Self::AppdataFresh => "appdata.move.fresh",
+            Self::VideoFramesDropped => "video.frames_dropped",
         }
     }
 
@@ -1842,6 +1852,22 @@ mod tests {
                 }
             }
         };
+
+        // Counter NAMES are values, not keys, so the key check above cannot see
+        // them — and an unknown name is the same 400 → whole packet lost
+        // (`appdata.move.*` and `editor.publish.*` both shipped that way once).
+        let known_counters = strings(&allowed["counterNames"], "names");
+        for c in ALL_COUNTERS {
+            assert!(
+                known_counters.iter().any(|k| k == c.as_wire()),
+                "counter `{}` is sent by the client but unknown to the Worker \
+                 (COUNTER_NAMES in sunday-telemetry src/schema.ts) -> 400 \
+                 not_in_enum -> the whole packet is deleted. Land it in the Worker \
+                 FIRST, deploy, then add it to counterNames in \
+                 tests/fixtures/telemetry-worker-keys.json.",
+                c.as_wire()
+            );
+        }
 
         let root = json.as_object().expect("payload is an object");
         check("payload", vec![root]);

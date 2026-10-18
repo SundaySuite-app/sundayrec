@@ -84,12 +84,20 @@ pub fn is_active() -> bool {
 /// Infallible and cheap by design: a seam should be able to call this without
 /// handling an error or thinking about cost, or the seams will not get added.
 pub fn count(name: CounterName) {
-    if !is_active() {
+    count_by(name, 1);
+}
+
+/// Add `n` to one counter (a counter that counts THINGS, such as dropped
+/// frames, rather than events). A no-op without active consent, and for `n == 0`
+/// — a zero must not create a map entry, or the snapshot would carry a header
+/// with nothing under it.
+pub fn count_by(name: CounterName, n: u64) {
+    if n == 0 || !is_active() {
         return;
     }
     let mut map = lock_recover(counts());
     let slot = map.entry(name).or_insert(0);
-    *slot = slot.saturating_add(1);
+    *slot = slot.saturating_add(n);
 }
 
 /// The non-zero counters, ready for a payload. Does not reset — the drain only
@@ -225,6 +233,23 @@ mod tests {
         set_active(true);
         count(CounterName::EditorOpened);
         assert_eq!(snapshot().len(), 1);
+    }
+
+    #[test]
+    fn count_by_adds_n_and_a_zero_leaves_no_trace() {
+        let _g = guard();
+        count_by(CounterName::VideoFramesDropped, 0);
+        assert!(snapshot().is_empty(), "a zero must not create an entry");
+        count_by(CounterName::VideoFramesDropped, 30);
+        count_by(CounterName::VideoFramesDropped, 12);
+        let snap = snapshot();
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].name, CounterName::VideoFramesDropped);
+        assert_eq!(snap[0].value, 42);
+        // Without consent, nothing — same as `count`.
+        set_active(false);
+        count_by(CounterName::VideoFramesDropped, 5);
+        assert!(snapshot().is_empty());
     }
 
     #[test]

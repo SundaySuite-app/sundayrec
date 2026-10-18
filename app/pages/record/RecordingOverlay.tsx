@@ -76,6 +76,7 @@ import {
   scheduledStopMs,
   sessionStartedAtMs,
   silenceActive,
+  sessionVideoDropped,
   silenceDetail,
 } from "../../state/recording";
 import { settings } from "../../state/settings";
@@ -245,6 +246,20 @@ function Overlay() {
           </>
         ) : null}
       </div>
+
+      {/* C3c: kameraet rakk ikke alle bildene. En rolig merknad i hint-stilen, ikke
+          en banner: videoen mister noen bilder, lyden er urørt (lydklokka
+          styrer), og det er ingenting å gjøre midt i en gudstjeneste. Bare når
+          kamera er med og tallet er over null; selve antallet vises ikke. */}
+      {camera && sessionVideoDropped.value > 0 ? (
+        <p
+          data-testid="overlay-video-skipped"
+          role="status"
+          class={styles.hint}
+        >
+          {t("app.overlay.videoSkipped")}
+        </p>
+      ) : null}
 
       <Button
         variant="secondary"
