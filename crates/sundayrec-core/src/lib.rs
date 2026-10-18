@@ -86,6 +86,7 @@ pub mod settings;
 pub mod shadow;
 pub mod silence;
 pub mod stream_fault;
+pub mod tale;
 pub mod telemetry;
 pub mod test_recording;
 pub mod timeouts;

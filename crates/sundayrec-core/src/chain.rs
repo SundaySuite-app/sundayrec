@@ -100,6 +100,7 @@
 //! The loudness target is not part of the chain (it is B1's meter and gain). The
 //! chain shapes tone and dynamics; the delivery loudness is set after it.
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, Read};
 
@@ -110,6 +111,7 @@ use crate::processing::{
     finite_or, ChannelRepair, VocalChain, COMP_MAX_MAKEUP_DB, COMP_MIN_THRESHOLD_DB,
     GATE_MAX_THRESHOLD_DB, LIMITER_MIN_CEILING_DB,
 };
+use crate::tale::{Mains, SpeechClean, SpeechGate, DENOISE_TALE_DB};
 
 /// The DSP crate, re-exported so a shell that builds a chain can reach the
 /// meter and the limiter without a dependency of its own.
@@ -165,6 +167,11 @@ pub enum Stage {
     /// Left channel to both outputs. On mono input this upmixes to stereo
     /// (what `pan=stereo|c0=c0|c1=c0` does); on stereo it is `fill_right`.
     DuplicateLeft,
+    /// B3a: an `Fx` stage that only counts where the signal is speech-like or
+    /// down at the measured floor (`floor_db`, dBFS). The effect runs on the
+    /// whole signal; its output is mixed in by [`SpeechGate`]. Used for the
+    /// de-noise and de-reverb of «Tale», which otherwise eat held notes.
+    SpeechGated { inner: Box<Stage>, floor_db: f32 },
 }
 
 impl Stage {
@@ -181,6 +188,7 @@ impl Stage {
             Stage::Fx { id, .. } => id,
             Stage::MonoMix => "mono_mix",
             Stage::DuplicateLeft => "duplicate_left",
+            Stage::SpeechGated { inner, .. } => inner.id(),
         }
     }
 
@@ -188,6 +196,7 @@ impl Stage {
     pub fn param(&self, key: &str) -> Option<f32> {
         match self {
             Stage::Fx { params, .. } => params.iter().find(|(k, _)| k == key).map(|(_, v)| *v),
+            Stage::SpeechGated { inner, .. } => inner.param(key),
             _ => None,
         }
     }
@@ -372,6 +381,46 @@ impl Chain {
         Chain { stages }
     }
 
+    /// B3a: the stages «Tale» adds in front of the `speech-clear` chain for one
+    /// recording, as decided by the analysis ([`crate::tale`]): hum removal,
+    /// click removal, then the two stages that would eat held notes, wrapped in
+    /// the speech gate. Empty when there is nothing to do.
+    pub fn speech_clean(c: &SpeechClean) -> Chain {
+        let mut stages = Vec::new();
+        if let Some(m) = c.hum {
+            let idx = if m == Mains::Hz60 { 1.0 } else { 0.0 };
+            stages.push(Stage::fx(
+                "dehum",
+                &[
+                    ("frequency", idx),
+                    ("harmonics", 4.0),
+                    ("q", 30.0),
+                    ("amount", 100.0),
+                ],
+            ));
+        }
+        if c.declick {
+            stages.push(Stage::fx("click_remover", &[]));
+        }
+        let gated = |inner: Stage| Stage::SpeechGated {
+            inner: Box::new(inner),
+            floor_db: c.floor_db,
+        };
+        if c.denoise {
+            stages.push(gated(Stage::fx(
+                "denoise",
+                &[("reduction", DENOISE_TALE_DB as f32)],
+            )));
+        }
+        if let Some(amount) = c.dereverb {
+            stages.push(gated(Stage::fx(
+                "dereverb",
+                &[("amount", amount), ("rt60", DEREVERB_RT60_S)],
+            )));
+        }
+        Chain { stages }
+    }
+
     /// The chain a mastering preset's `filters` string describes (the part
     /// before the level is set). The strings are the ones in
     /// [`crate::mastering::master_presets`]; this reads them, it does not
@@ -434,6 +483,18 @@ impl Chain {
                     } else {
                         nodes.push(Node::Fx(make_fx("fill_right", &[], sample_rate, ch)?));
                     }
+                }
+                Stage::SpeechGated { inner, floor_db } => {
+                    let Stage::Fx { id, params } = inner.as_ref() else {
+                        return Err(ChainError::UnknownEffect("speech_gated"));
+                    };
+                    let fx = make_fx(id, params, sample_rate, ch)?;
+                    latency += fx.latency();
+                    nodes.push(Node::Gated(Box::new(GatedFx::new(
+                        fx,
+                        SpeechGate::new(sample_rate, *floor_db),
+                        ch,
+                    ))));
                 }
                 Stage::Fx { id, params } => {
                     // The channel-repair fx read a second channel; ffmpeg drops
@@ -551,8 +612,70 @@ fn make_fx(
 
 enum Node {
     Fx(Box<dyn AudioEffect>),
+    Gated(Box<GatedFx>),
     MonoMix,
     UpmixMono,
+}
+
+/// An effect whose output is mixed with its own (delayed) input by a
+/// [`SpeechGate`]. The effect always sees the whole signal, so its statistics
+/// are never interrupted; the gate only decides how much of the result is heard.
+struct GatedFx {
+    fx: Box<dyn AudioEffect>,
+    gate: SpeechGate,
+    /// The input, delayed by the effect's latency, per channel.
+    dry: Vec<VecDeque<f32>>,
+    wet: Vec<f32>,
+    mono: Vec<f32>,
+}
+
+impl GatedFx {
+    fn new(fx: Box<dyn AudioEffect>, gate: SpeechGate, channels: usize) -> Self {
+        let latency = fx.latency();
+        Self {
+            fx,
+            gate,
+            dry: (0..channels)
+                .map(|_| std::iter::repeat_n(0.0, latency).collect())
+                .collect(),
+            wet: Vec::new(),
+            mono: Vec::new(),
+        }
+    }
+
+    fn process(&mut self, block: &mut [Vec<f32>]) {
+        let n = block.first().map_or(0, Vec::len);
+        if n == 0 {
+            return;
+        }
+        self.mono.clear();
+        self.mono.extend((0..n).map(|i| {
+            block.iter().map(|c| c[i]).sum::<f32>() / block.len().max(1) as f32
+        }));
+        self.wet.resize(n, 0.0);
+        self.gate.process(&self.mono, &mut self.wet);
+        // Dry, delayed to line up with what the effect hands back.
+        let mut delayed: Vec<Vec<f32>> = Vec::with_capacity(block.len());
+        let last = self.dry.len() - 1;
+        for (c, ch) in block.iter().enumerate() {
+            let q = &mut self.dry[c.min(last)];
+            let mut d = Vec::with_capacity(n);
+            for v in ch {
+                q.push_back(*v);
+                d.push(q.pop_front().unwrap_or(0.0));
+            }
+            delayed.push(d);
+        }
+        {
+            let mut refs: Vec<&mut [f32]> = block.iter_mut().map(|c| c.as_mut_slice()).collect();
+            self.fx.process(&mut refs);
+        }
+        for (ch, d) in block.iter_mut().zip(&delayed) {
+            for ((o, dry), g) in ch.iter_mut().zip(d).zip(&self.wet) {
+                *o = dry + (*o - dry) * g;
+            }
+        }
+    }
 }
 
 /// A chain instantiated for one sample rate and channel count.
@@ -590,6 +713,7 @@ impl BuiltChain {
                         block.iter_mut().map(|c| c.as_mut_slice()).collect();
                     fx.process(&mut refs);
                 }
+                Node::Gated(g) => g.process(block),
                 Node::MonoMix => {
                     if block.len() >= 2 {
                         let (a, b) = block.split_at_mut(1);

@@ -370,6 +370,28 @@ pub fn diagnose_channels(levels: ChannelLevelsDb) -> ChannelDiagnosis {
     verdict(recommended, "imbalance")
 }
 
+/// True when [`diagnose_channels`] would call a channel dead because it is all
+/// transients (the crackling-cable case: crest factor over [`CRACKLE_CREST_DB`]
+/// while the other channel carries programme material), as opposed to merely
+/// quiet. B3a reads this as «the recording crackles» and switches click removal
+/// on. Needs RMS; without it a crackle cannot be told from a quiet channel and
+/// the answer is `false`.
+pub fn channel_crackles(levels: ChannelLevelsDb) -> bool {
+    let (Some(rl), Some(rr)) = (levels.rms_left_db, levels.rms_right_db) else {
+        return false;
+    };
+    let left = Chan {
+        peak_db: levels.peak_left_db,
+        rms_db: Some(rl),
+    };
+    let right = Chan {
+        peak_db: levels.peak_right_db,
+        rms_db: Some(rr),
+    };
+    let spiky = |c: &Chan, rms: f64| rms >= DEAD_RMS_FLOOR_DB && c.peak_db - rms > CRACKLE_CREST_DB;
+    (spiky(&left, rl) && right.healthy()) || (spiky(&right, rr) && left.healthy())
+}
+
 // ── vocal-chain stages ──────────────────────────────────────────────────────
 
 /// High-pass (low-cut) — removes rumble, handling noise, AC hum fundamentals and
@@ -860,6 +882,29 @@ mod tests {
     use super::*;
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn channel_crackles_sees_the_crackling_cable_and_nothing_else() {
+        let l = |peak_r: f64, rms_r: f64| ChannelLevelsDb {
+            peak_left_db: -6.0,
+            peak_right_db: peak_r,
+            rms_left_db: Some(-24.0),
+            rms_right_db: Some(rms_r),
+        };
+        // Pops at -20 dBFS over -55 dBFS RMS: crest 35 dB, partner healthy.
+        assert!(channel_crackles(l(-20.0, -55.0)));
+        // A healthy pair, a merely quiet channel and a dead one are not crackle.
+        assert!(!channel_crackles(l(-8.0, -26.0)));
+        assert!(!channel_crackles(l(-45.0, -62.0)));
+        assert!(!channel_crackles(l(-40.0, -50.0)));
+        // Without RMS a crackle cannot be told from a quiet channel.
+        assert!(!channel_crackles(ChannelLevelsDb {
+            peak_left_db: -6.0,
+            peak_right_db: -20.0,
+            rms_left_db: None,
+            rms_right_db: None,
+        }));
+    }
 
     #[test]
     fn db_to_linear_reference_points() {
