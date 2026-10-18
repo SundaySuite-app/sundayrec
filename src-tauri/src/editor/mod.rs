@@ -1289,9 +1289,25 @@ pub struct EditorMasterPreviewRequest {
     /// The recording to preview, as the File token that stands for it — never a
     /// path; the command resolves it and hands [`master_preview`] the place.
     pub source_token: String,
-    pub preset_id: String,
+    /// The mastering preset the export would carry. `None` when the mixer is on: the mixer
+    /// replaces the profile, so the export carries `processing` and no preset.
+    #[serde(default)]
+    pub preset_id: Option<String>,
     pub start_sec: f64,
     pub duration_sec: f64,
+    /// The mixer's chain, exactly as the export request would carry it (M2R #3a).
+    #[serde(default)]
+    pub processing: Option<EditorProcessing>,
+    /// The channel repair the export would carry (M2R #3b).
+    #[serde(default)]
+    pub channel_repair: Option<EditorChannelRepair>,
+    /// The cuts and the length of the whole recording, as the export request carries them: the
+    /// level the window is given is the level of the PROGRAMME that is left after the cuts
+    /// (M2R #3c). No cuts and no length = the whole file.
+    #[serde(default)]
+    pub cut_regions: Vec<EditorCutRegion>,
+    #[serde(default)]
+    pub full_length_sec: Option<f64>,
 }
 
 /// Where the rendered preview mp3 landed (a temp file the renderer plays).
@@ -2766,25 +2782,31 @@ pub async fn probe_streams(input_path: &str) -> AppResult<EditorStreamInfo> {
     })
 }
 
-/// Render a windowed mastering preview to a temp mp3: the preset's chain over the window, then
-/// the same level step as the export (measure the window, one linear gain to the preset's
-/// target, a true-peak limiter only where the peaks need it), encoded at 320k. The renderer
-/// A/B-plays the result against the original. HARDWARE-UNVERIFIED.
+/// Render a windowed mastering preview to a temp mp3 that plays what the export makes (M2R #3):
+///
+/// * the chain comes from [`resolve_audio_params`] + [`pre_chain_for`], the same two functions the
+///   export calls — the preset or the mixer, the channel repair and «Tale»'s decision;
+/// * the level is the PROGRAMME's, not the window's: the loudness of the whole recording after
+///   the cuts, through that chain, planned against the preset's target ([`program_plan`]). A
+///   window from a quiet part comes out quieter than one from a loud part, as it does in the file.
+///
+/// Encoded at 320k. The renderer A/B-plays the result against the original. HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn master_preview(
     req: &EditorMasterPreviewRequest,
     input_path: &str,
 ) -> AppResult<EditorMasterPreviewResult> {
     use sundayrec_core::mastering::{
-        clamp_preview_duration, clamp_preview_start, get_preset_by_id, preview_decode_args,
-        preview_encode_args, PREVIEW_TEMP_PREFIX,
+        clamp_preview_duration, clamp_preview_start, preview_decode_args, preview_encode_args,
+        PREVIEW_TEMP_PREFIX,
     };
 
     if !std::path::Path::new(input_path).exists() {
         return Err(AppError::Validation("file_not_found".into()));
     }
-    let preset = get_preset_by_id(&req.preset_id)
-        .ok_or_else(|| AppError::Validation(format!("unknown_preset: {}", req.preset_id)))?;
+    let info = load_recording(input_path).await.ok();
+    let channels = info.as_ref().and_then(|i| i.channels);
+    let params = req.audio_params(channels)?;
     let start = clamp_preview_start(req.start_sec);
     let dur = clamp_preview_duration(req.duration_sec);
     let out_path = std::env::temp_dir().join(format!(
@@ -2793,24 +2815,47 @@ pub async fn master_preview(
     ));
     let out_str = out_path.to_string_lossy().into_owned();
 
-    let info = load_recording(input_path).await.ok();
-    let fmt = pcm::pcm_format(
-        info.as_ref().and_then(|i| i.sample_rate),
-        info.as_ref().and_then(|i| i.channels),
-    );
-    // A preview renders one clamped window (seconds of media), so the stall floor is the
-    // whole budget — no probe needed just to time a 60-second render.
-    let stall_ms = sundayrec_core::editor::editor_op_timeout(None).as_millis() as u64;
+    let fmt = pcm::pcm_format(info.as_ref().and_then(|i| i.sample_rate), channels);
+    // The stall floor is the budget of one windowed render. The programme measure below is a
+    // full-length pass, but its progress counts frames like the export's, so a stall is a stall.
+    let stall_ms = export_stall_ms();
     let engine = ExportEngine::new();
 
-    // 1. The window through the preset's chain, to PCM in memory (at most 60 s): ffmpeg decodes
-    //    (no `-af`), the chain runs in Rust.
-    let clean = if preset.id == TALE_PRESET_ID {
-        tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?
-    } else {
-        None
+    // 1. The chain — the export's — and the programme's level plan.
+    let chain = pre_chain_for(&engine, input_path, channels, &params).await?;
+    let plan = match &params.preset {
+        Some(preset) => {
+            let cuts: Vec<sundayrec_core::editor::CutRegion> = req
+                .cut_regions
+                .iter()
+                .map(|c| sundayrec_core::editor::CutRegion {
+                    start: c.start,
+                    end: c.end,
+                })
+                .collect();
+            let source_duration = req
+                .full_length_sec
+                .filter(|d| d.is_finite() && *d > 0.0)
+                .or(info.as_ref().map(|i| i.duration_sec))
+                .filter(|d| d.is_finite() && *d > 0.0)
+                .ok_or_else(|| AppError::Validation("invalid_duration".into()))?;
+            program_plan(
+                &engine,
+                input_path,
+                &chain,
+                preset,
+                &cuts,
+                source_duration,
+                fmt,
+                &format!("{:?}|{:?}", params, req.cut_regions),
+            )
+            .await?
+        }
+        None => pcm::unity_plan(),
     };
-    let chain = build_pre_chain(None, None, Some(&preset), clean.as_ref())?;
+
+    // 2. The window through the chain, to PCM in memory (at most 60 s): ffmpeg decodes
+    //    (no `-af`), the chain runs in Rust.
     let built = chain
         .build(fmt.sample_rate as f32, fmt.channels)
         .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
@@ -2838,22 +2883,11 @@ pub async fn master_preview(
     )
     .await?;
 
-    // 2. Level it exactly as the export does, and 3. encode it.
-    let target = (preset.target_lufs, preset.true_peak_db);
+    // 3. Apply the programme's plan to the window, and encode it.
     let encode = preview_encode_args(fmt, &out_str);
     let feed: pcm::Feed = std::sync::Arc::new(move |w, _abort| {
         let mut src = pcm_bytes.as_slice();
-        let (input, _) = sundayrec_core::pcm_stream::measure(&mut src, fmt, None, |_| {})?;
-        let planned = sundayrec_core::loudness::plan_gain_to(&input, target.0, target.1);
-        let settled = sundayrec_core::pcm_stream::settle(
-            &input,
-            planned,
-            fmt,
-            || Ok(pcm_bytes.as_slice()),
-            |_, _| {},
-        )?;
-        let mut src = pcm_bytes.as_slice();
-        sundayrec_core::pcm_stream::render(&mut src, fmt, &settled.plan, Some(w), false, |_| {})?;
+        sundayrec_core::pcm_stream::render(&mut src, fmt, &plan, Some(w), false, |_| {})?;
         Ok(())
     });
     run_export_ffmpeg(
@@ -2875,6 +2909,71 @@ pub async fn master_preview(
     Ok(EditorMasterPreviewResult {
         preview_path: out_str,
     })
+}
+
+/// What the preview needs to know about the programme: the gain the export would give it.
+/// Measured once per recording + chain + cuts, then kept — a second profile tab, or the same
+/// window at another start, costs nothing. The first measure is one full pass of the chain over
+/// the cut programme (≈ 42× realtime on an M1 Pro, so ~1 min for 45 min of programme).
+///
+/// Not [`pcm::measure_and_plan`]: that stages the whole processed signal on disk and settles the
+/// limiter against it, which a preview must not do. The plan is therefore the first-round plan
+/// (one gain, plus the limiter where the programme's peaks need it); the export's limiter
+/// correction (`pcm_stream::settle`) can lift the gain a little further, only when the programme
+/// peaks past the ceiling.
+#[cfg(feature = "editor")]
+#[allow(clippy::too_many_arguments)] // one call site; each argument is a different fact
+async fn program_plan(
+    engine: &ExportEngine,
+    source: &str,
+    chain: &sundayrec_core::chain::Chain,
+    preset: &sundayrec_core::mastering::MasterPreset,
+    cuts: &[sundayrec_core::editor::CutRegion],
+    source_duration: f64,
+    fmt: sundayrec_core::pcm_stream::PcmFormat,
+    params_key: &str,
+) -> AppResult<sundayrec_core::loudness::GainPlan> {
+    static PLAN_CACHE: std::sync::Mutex<Vec<(String, sundayrec_core::loudness::GainPlan)>> =
+        std::sync::Mutex::new(Vec::new());
+
+    let keeps = sundayrec_core::editor::build_keeps(cuts, source_duration);
+    if keeps.is_empty() {
+        return Err(AppError::Validation("no_audio_remaining".into()));
+    }
+    let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
+    let key = tale_cache_key(source).map(|k| format!("{k:?}|{source_duration}|{params_key}"));
+    if let Some(k) = &key {
+        if let Ok(cache) = PLAN_CACHE.lock() {
+            if let Some((_, p)) = cache.iter().find(|(ck, _)| ck == k) {
+                return Ok(*p);
+            }
+        }
+    }
+    let loud = pcm::measure_program(
+        engine,
+        source,
+        chain,
+        &keeps,
+        source_duration,
+        kept_duration,
+        fmt,
+        export_stall_ms(),
+    )
+    .await?;
+    let plan = sundayrec_core::loudness::plan_gain(&loud, preset);
+    // Silence has no loudness to normalise: the export skips the gain, so the preview does too.
+    let plan = if plan.measurable {
+        plan
+    } else {
+        pcm::unity_plan()
+    };
+    if let (Some(k), Ok(mut cache)) = (key, PLAN_CACHE.lock()) {
+        if cache.len() >= 8 {
+            cache.remove(0);
+        }
+        cache.push((k, plan));
+    }
+    Ok(plan)
 }
 
 /// The mastering preset behind the «Tale» profile (`app/editor/sound-profiles.ts`,
@@ -2979,6 +3078,155 @@ async fn tale_clean_for(
         cache.push((k, clean.clone()));
     }
     Ok(Some(clean))
+}
+
+/// What the volunteer chose in the sound step, as the export request and the preview request
+/// both carry it. Borrowed, so neither request type has to be cloned to be read.
+#[cfg(feature = "editor")]
+struct AudioChoice<'a> {
+    preset_id: Option<&'a str>,
+    processing: Option<&'a EditorProcessing>,
+    vocal_chain_preset: Option<&'a str>,
+    channel_repair: Option<&'a EditorChannelRepair>,
+    gain_db: Option<f64>,
+}
+
+#[cfg(feature = "editor")]
+impl EditorExportRequest {
+    /// The audio decisions this export carries — see [`resolve_audio_params`].
+    fn audio_params(&self, channels: Option<u32>) -> AppResult<AudioParams> {
+        resolve_audio_params(
+            &AudioChoice {
+                preset_id: self.master_preset.as_deref(),
+                processing: self.processing.as_ref(),
+                vocal_chain_preset: self.vocal_chain_preset.as_deref(),
+                channel_repair: self.channel_repair.as_ref(),
+                gain_db: self.gain_db,
+            },
+            channels,
+        )
+    }
+}
+
+#[cfg(feature = "editor")]
+impl EditorMasterPreviewRequest {
+    /// The audio decisions the preview carries: the same fields as the export, which the sound
+    /// step sends from the same state. A preview has no `vocalChainPreset` and no normalize
+    /// gain (the UI sends neither, to either).
+    fn audio_params(&self, channels: Option<u32>) -> AppResult<AudioParams> {
+        resolve_audio_params(
+            &AudioChoice {
+                preset_id: self.preset_id.as_deref(),
+                processing: self.processing.as_ref(),
+                vocal_chain_preset: None,
+                channel_repair: self.channel_repair.as_ref(),
+                gain_db: None,
+            },
+            channels,
+        )
+    }
+}
+
+/// The decisions behind the audio chain, made once for the export AND the windowed preview
+/// (M2R #3: «det du hører er det du får»). Two callers that each made these decisions had
+/// already drifted apart — the preview ignored the mixer and the channel repair.
+#[cfg(feature = "editor")]
+#[derive(Debug, Clone, PartialEq)]
+struct AudioParams {
+    preset: Option<sundayrec_core::mastering::MasterPreset>,
+    chain: Option<sundayrec_core::processing::VocalChain>,
+    gain_db: Option<f64>,
+    /// «Tale» on its own (the `speech-clear` preset, no mixer chain): the chain takes along
+    /// what the analysis of the file finds.
+    tale: bool,
+}
+
+/// Resolve the preset, the vocal chain (mixer or one-click preset, with the channel repair laid
+/// over it) and the «Tale» decision. `channels` is the probed channel count of the source.
+/// Pure; unit-tested without ffmpeg.
+#[cfg(feature = "editor")]
+fn resolve_audio_params(choice: &AudioChoice<'_>, channels: Option<u32>) -> AppResult<AudioParams> {
+    // An empty preset id is "no mastering" (the renderer sends `undefined`, but a stray ''
+    // must not read as an unknown preset).
+    let preset = match choice.preset_id.map(str::trim) {
+        Some(id) if !id.is_empty() => Some(
+            sundayrec_core::mastering::get_preset_by_id(id)
+                .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?,
+        ),
+        _ => None,
+    };
+
+    // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering level step:
+    // shape the tone/dynamics first, set delivery loudness last. A full `processing` object
+    // wins; otherwise resolve the one-click preset id.
+    //
+    // F2-C-E T5: `vocal_chain_preset_by_id` takes a measured noise floor for `afftdn:nf`. No
+    // caller reaches this branch with one today — the app shell never sends `vocalChainPreset`
+    // (`app/editor/sound-profiles.ts`: "vocalChainPreset sendes ALDRI"), so it stays `None`.
+    let mut chain = choice.processing.map(|p| p.to_core()).or_else(|| {
+        choice
+            .vocal_chain_preset
+            .and_then(|id| sundayrec_core::processing::vocal_chain_preset_by_id(id, None))
+            .map(|p| p.chain)
+    });
+    // A top-level channel repair overrides the chain's repair, and applies on its own (in an
+    // otherwise-empty chain) when no vocal processing was requested.
+    let requested_repair = choice.channel_repair.map(|r| r.to_core());
+    // …but a repair that reads `c1` on a MONO source is nonsense, and ffmpeg does not say so:
+    // it drops the missing term and renders 6 dB down (see `channel_repair_needs_stereo`,
+    // which carries the measurement). Refuse, rather than hand back a quietly attenuated file
+    // the UI calls "repaired". `auto_process` answers `None` for mono, so this only catches a
+    // stale or hand-rolled request.
+    if let (Some(cr), Some(1)) = (requested_repair, channels) {
+        if sundayrec_core::processing::channel_repair_needs_stereo(cr) {
+            return Err(AppError::Validation("channel_repair_needs_stereo".into()));
+        }
+    }
+    if let Some(cr) = requested_repair {
+        match &mut chain {
+            Some(c) => c.channel_repair = cr,
+            None => {
+                let mut empty = sundayrec_core::processing::VocalChain::default();
+                empty.highpass.enabled = false;
+                empty.compressor.enabled = false;
+                empty.channel_repair = cr;
+                chain = Some(empty);
+            }
+        }
+    }
+    // B3a: «Tale» (the `speech-clear` preset on its own, no mixer chain) cleans what the
+    // analysis finds: hum, noise, a long room, clicks.
+    let tale = preset.as_ref().is_some_and(|p| p.id == TALE_PRESET_ID)
+        && choice.processing.is_none()
+        && choice.vocal_chain_preset.is_none();
+    Ok(AudioParams {
+        preset,
+        chain,
+        gain_db: choice.gain_db,
+        tale,
+    })
+}
+
+/// The pre-level chain for `params` — with «Tale»'s decision from the shared cache
+/// ([`tale_clean_for`]) when `params.tale`. Export and preview both build the chain here.
+#[cfg(feature = "editor")]
+async fn pre_chain_for(
+    engine: &ExportEngine,
+    source: &str,
+    channels: Option<u32>,
+    params: &AudioParams,
+) -> AppResult<sundayrec_core::chain::Chain> {
+    let clean = if params.tale {
+        tale_clean_for(engine, source, channels).await?
+    } else {
+        None
+    };
+    build_pre_chain(
+        params.chain.clone(),
+        params.gain_db,
+        params.preset.as_ref(),
+        clean.as_ref(),
+    )
 }
 
 /// Build the pre-level audio chain, in order: normalize gain, THEN the vocal
@@ -3105,7 +3353,7 @@ where
         ffmetadata, is_simple_audio_export, metadata_args, video_export_estimated_bytes,
         video_filter_complex, video_only_filter_complex, CutRegion, RecordingMetadata,
     };
-    use sundayrec_core::mastering::{dither_filter_for, get_preset_by_id};
+    use sundayrec_core::mastering::dither_filter_for;
 
     if !Path::new(&inputs.source).exists() {
         return Err(AppError::Validation("file_not_found".into()));
@@ -3241,83 +3489,21 @@ where
     //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
     //    final say over the peak — see `build_pre_chain`.
     //
-    //    An empty preset id is "no mastering" (the renderer sends `undefined`,
-    //    but a stray '' must not read as an unknown preset).
-    let preset = match req.master_preset.as_deref().map(str::trim) {
-        Some(id) if !id.is_empty() => Some(
-            get_preset_by_id(id)
-                .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?,
-        ),
-        _ => None,
-    };
-
-    // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
-    // level step: shape the tone/dynamics first, set delivery loudness last. A full
-    // `processing` object wins; otherwise resolve the one-click preset id.
-    //
-    // F2-C-E T5: `vocal_chain_preset_by_id` now takes a measured noise floor and
-    // uses it for `afftdn:nf` instead of the preset's baked-in guess. No caller
-    // reaches this branch with one today — the app shell never sends
-    // `vocalChainPreset` at all (`app/editor/sound-profiles.ts`: "vocalChainPreset
-    // sendes ALDRI", it only ever sends a mastering preset or a full `processing`
-    // chain), so this stays `None` until a future caller (`auto_process`, which
-    // already measures the floor) threads its own measurement through the
-    // request. `None` here keeps `voice-podcast`'s `nf` exactly as before (its
-    // guess already WAS −25, `resolve_noise_floor_db`'s fallback); the only
-    // behaviour change is `voice-noisy-room`'s no-measurement `nf` moving from
-    // its old −20 guess to the same −25 fallback — both sit at the noisy end of
-    // afftdn's range, and nothing today calls this branch with that preset id
-    // (see the file search noted above), so there is no live regression.
-    let mut chain = req.processing.as_ref().map(|p| p.to_core()).or_else(|| {
-        req.vocal_chain_preset
-            .as_deref()
-            .and_then(|id| sundayrec_core::processing::vocal_chain_preset_by_id(id, None))
-            .map(|p| p.chain)
-    });
-    // A top-level channel repair overrides the chain's repair, and applies on its
-    // own (in an otherwise-empty chain) when no vocal processing was requested.
-    let requested_repair = req.channel_repair.as_ref().map(|r| r.to_core());
-    // …but a repair that reads `c1` on a MONO source is nonsense, and ffmpeg
-    // does not say so: it drops the missing term and renders 6 dB down (see
-    // `channel_repair_needs_stereo`, which carries the measurement). Refuse,
-    // rather than hand back a quietly attenuated file the UI calls "repaired".
-    // `auto_process` answers `None` for mono, so this only catches a stale or
-    // hand-rolled request — which is exactly when a silent 6 dB would be
-    // hardest to explain.
-    if let (Some(cr), Some(1)) = (requested_repair, probed.as_ref().and_then(|i| i.channels)) {
-        if sundayrec_core::processing::channel_repair_needs_stereo(cr) {
-            return Err(AppError::Validation("channel_repair_needs_stereo".into()));
-        }
-    }
-    if let Some(cr) = requested_repair {
-        match &mut chain {
-            Some(c) => c.channel_repair = cr,
-            None => {
-                let mut empty = sundayrec_core::processing::VocalChain::default();
-                empty.highpass.enabled = false;
-                empty.compressor.enabled = false;
-                empty.channel_repair = cr;
-                chain = Some(empty);
-            }
-        }
-    }
-    // B3a: «Tale» (the `speech-clear` preset on its own, no mixer chain) cleans what the
-    // analysis finds: hum, noise, a long room, clicks.
-    let tale = preset.as_ref().is_some_and(|p| p.id == TALE_PRESET_ID)
-        && req.processing.is_none()
-        && req.vocal_chain_preset.is_none();
-    let clean = if tale {
+    //    M2R #3: the decisions (preset, mixer chain, channel repair, «Tale») are made by
+    //    `resolve_audio_params`, the one function the windowed preview calls too — what the
+    //    volunteer hears is what this builds.
+    let params = req.audio_params(probed.as_ref().and_then(|i| i.channels))?;
+    if params.tale {
         on_progress(0.0, EXPORT_PHASE_MEASURING);
-        tale_clean_for(
-            engine,
-            &inputs.source,
-            probed.as_ref().and_then(|i| i.channels),
-        )
-        .await?
-    } else {
-        None
-    };
-    let pre_chain = build_pre_chain(chain, req.gain_db, preset.as_ref(), clean.as_ref())?;
+    }
+    let pre_chain = pre_chain_for(
+        engine,
+        &inputs.source,
+        probed.as_ref().and_then(|i| i.channels),
+        &params,
+    )
+    .await?;
+    let preset = params.preset;
 
     // The stall budget for EACH ffmpeg pass: no progress for this long = wedged.
     // Deliberately NOT scaled by the media length — see `export_stall_ms`.
@@ -4465,9 +4651,13 @@ mod tests {
             .contains("feature_disabled"));
         let prev = EditorMasterPreviewRequest {
             source_token: "t".into(),
-            preset_id: "speech-clear".into(),
+            preset_id: Some("speech-clear".into()),
             start_sec: 0.0,
             duration_sec: 15.0,
+            processing: None,
+            channel_repair: None,
+            cut_regions: Vec::new(),
+            full_length_sec: None,
         };
         assert!(master_preview(&prev, "/x.mp4")
             .await
@@ -5423,6 +5613,150 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(build_pre_chain(None, None, None, None).unwrap().is_empty());
+    }
+
+    /// M2R #3: the windowed preview and the export decide the chain from the same choice. For
+    /// each thing the sound step can send — a profile with no mixer, the mixer, a dead channel,
+    /// «Tale» with cleaning — both request types give the same parameters and, built, the same
+    /// chain. Before this the preview ignored the mixer (it played `speech-clear` with «Tale»'s
+    /// cleaning while the export carried the mixer) and the channel repair (one ear).
+    #[cfg(feature = "editor")]
+    #[test]
+    fn preview_and_export_get_identical_chain_params() {
+        use sundayrec_core::tale::{Mains, SpeechClean};
+        struct Case {
+            name: &'static str,
+            preset: Option<&'static str>,
+            processing: Option<EditorProcessing>,
+            repair: Option<EditorChannelRepair>,
+        }
+        let mixer = EditorProcessing {
+            denoise_enabled: true,
+            ..EditorProcessing::default()
+        };
+        let dead = EditorChannelRepair {
+            mode: "duplicateLeft".into(),
+            left_db: 0.0,
+            right_db: 0.0,
+        };
+        let cases = [
+            Case {
+                name: "preset, no mixer",
+                preset: Some("music-speech"),
+                processing: None,
+                repair: None,
+            },
+            Case {
+                name: "mixer on (no preset)",
+                preset: None,
+                processing: Some(mixer),
+                repair: None,
+            },
+            Case {
+                name: "dead channel",
+                preset: Some("speech-clear"),
+                processing: None,
+                repair: Some(dead.clone()),
+            },
+            Case {
+                name: "Tale with cleaning",
+                preset: Some("speech-clear"),
+                processing: None,
+                repair: None,
+            },
+        ];
+        let clean = SpeechClean {
+            hum: Some(Mains::Hz50),
+            denoise: true,
+            dereverb: None,
+            declick: false,
+            floor_db: -60.0,
+        };
+        for c in cases {
+            let mut export = export_request_for_params();
+            export.master_preset = c.preset.map(str::to_string);
+            export.processing = c.processing.clone();
+            export.channel_repair = c.repair.clone();
+            let preview = EditorMasterPreviewRequest {
+                source_token: "t".into(),
+                preset_id: c.preset.map(str::to_string),
+                start_sec: 0.0,
+                duration_sec: 20.0,
+                processing: c.processing,
+                channel_repair: c.repair,
+                cut_regions: Vec::new(),
+                full_length_sec: None,
+            };
+            let e = export.audio_params(Some(2)).unwrap();
+            let p = preview.audio_params(Some(2)).unwrap();
+            assert_eq!(e, p, "{}: the parameters differ", c.name);
+            let build = |a: &AudioParams| {
+                let clean = a.tale.then_some(&clean);
+                build_pre_chain(a.chain.clone(), a.gain_db, a.preset.as_ref(), clean).unwrap()
+            };
+            assert_eq!(build(&e), build(&p), "{}: the chains differ", c.name);
+        }
+
+        // …and each carries what it should, so the test cannot pass by both being empty.
+        let mut ex = export_request_for_params();
+        ex.processing = Some(EditorProcessing::default());
+        let a = ex.audio_params(Some(2)).unwrap();
+        assert!(a.preset.is_none() && !a.tale && a.chain.is_some());
+        let mut ex = export_request_for_params();
+        ex.master_preset = Some("speech-clear".into());
+        ex.channel_repair = Some(dead);
+        let a = ex.audio_params(Some(2)).unwrap();
+        assert!(a.tale, "speech-clear on its own is «Tale»");
+        assert_eq!(
+            a.chain.unwrap().channel_repair,
+            sundayrec_core::processing::ChannelRepair::DuplicateLeft
+        );
+        // The mono guard is shared too: a stereo-only repair on a mono file is refused by both.
+        let mut ex = export_request_for_params();
+        ex.channel_repair = Some(EditorChannelRepair {
+            mode: "duplicateRight".into(),
+            left_db: 0.0,
+            right_db: 0.0,
+        });
+        let pv = EditorMasterPreviewRequest {
+            source_token: "t".into(),
+            preset_id: None,
+            start_sec: 0.0,
+            duration_sec: 20.0,
+            processing: None,
+            channel_repair: ex.channel_repair.clone(),
+            cut_regions: Vec::new(),
+            full_length_sec: None,
+        };
+        assert!(ex.audio_params(Some(1)).is_err());
+        assert!(pv.audio_params(Some(1)).is_err());
+    }
+
+    /// A bare export request for the parameter tests (nothing but the fields they set).
+    #[cfg(feature = "editor")]
+    fn export_request_for_params() -> EditorExportRequest {
+        EditorExportRequest {
+            source_token: "t".into(),
+            cut_regions: Vec::new(),
+            duration: 60.0,
+            format: "wav".into(),
+            output_folder_token: None,
+            bitrate: None,
+            bit_depth: None,
+            master_preset: None,
+            use_intro: false,
+            use_outro: false,
+            gain_db: None,
+            title: None,
+            speaker: None,
+            description: None,
+            album: None,
+            date: None,
+            vocal_chain_preset: None,
+            processing: None,
+            channel_repair: None,
+            video_codec: None,
+        }
     }
 
     #[cfg(feature = "editor")]
@@ -7417,10 +7751,12 @@ mod tests {
             assert_eq!(got.target_lufs, preset.target_lufs);
         }
 
-        /// B1b: the preview is levelled like the export: a window of a quiet recording
-        /// comes out on the preset's target.
+        /// M2R #3c: the preview is levelled like the EXPORT, i.e. by the programme and not by
+        /// the window. A window from the quiet half and one from the loud half of the same
+        /// programme come out where the export puts those same seconds (within a small
+        /// tolerance); the old window-alone levelling put both on the preset's target.
         #[test]
-        fn master_preview_is_levelled_like_the_export_or_skips() {
+        fn master_preview_gets_the_gain_the_export_gives_the_programme_or_skips() {
             let (Some(ffmpeg), Some(ffprobe)) =
                 (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
             else {
@@ -7428,35 +7764,51 @@ mod tests {
             };
             let dir = tempfile::tempdir().unwrap();
             let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "dyn.wav", 48_000, 24.0);
-            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-            let req = EditorMasterPreviewRequest {
-                source_token: "t".into(),
-                preset_id: "speech-clear".into(),
-                start_sec: 2.0,
-                duration_sec: 8.0, // inside the quiet half
-            };
-            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-            unsafe {
-                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            let out_dir = tempfile::tempdir().unwrap();
+            let mut ex = export_request(&src, &out_dir.path().to_string_lossy(), "wav", &[], 24.0);
+            ex.master_preset = Some("speech-clear".into());
+            let (result, _) = run_export_blocking(&ffmpeg, &ffprobe, &ex);
+            let exported = result.expect("the export should succeed");
+            let exported = std::path::PathBuf::from(&exported.output_path);
+
+            for (start, label) in [(2.0, "quiet"), (14.0, "loud")] {
+                let req = EditorMasterPreviewRequest {
+                    source_token: "t".into(),
+                    preset_id: Some("speech-clear".into()),
+                    start_sec: start,
+                    duration_sec: 8.0,
+                    processing: None,
+                    channel_repair: None,
+                    cut_regions: Vec::new(),
+                    full_length_sec: Some(24.0),
+                };
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe {
+                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                    std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+                }
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let got = rt.block_on(master_preview(&req, &src));
+                unsafe {
+                    std::env::remove_var("SUNDAYREC_FFMPEG");
+                    std::env::remove_var("SUNDAYREC_FFPROBE");
+                }
+                drop(_guard);
+                let got = got.expect("preview should succeed");
+                let preview = std::path::PathBuf::from(&got.preview_path);
+                let heard = measure_ebu_r128(&ffmpeg, &preview, Some((1.0, 6.0))).input_i;
+                let _ = std::fs::remove_file(&preview);
+                // Skip the first and last second of the window: the chain starts cold at its
+                // first sample (funn 9) and the export's own seconds are mid-programme.
+                let exported_here =
+                    measure_ebu_r128(&ffmpeg, &exported, Some((start + 1.0, 6.0))).input_i;
+                assert!(
+                    (heard - exported_here).abs() <= 1.0,
+                    "the {label} window previews at {heard:.2} LUFS, the export has \
+                     {exported_here:.2} LUFS at the same seconds"
+                );
             }
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let got = rt.block_on(master_preview(&req, &src));
-            unsafe {
-                std::env::remove_var("SUNDAYREC_FFMPEG");
-                std::env::remove_var("SUNDAYREC_FFPROBE");
-            }
-            let got = got.expect("preview should succeed");
-            let preview = std::path::PathBuf::from(&got.preview_path);
-            let measured = measure_ebu_r128(&ffmpeg, &preview, None);
-            let _ = std::fs::remove_file(&preview);
-            assert!(
-                (measured.input_i - preset.target_lufs).abs() <= 0.7,
-                "the preview measures {:.2} LUFS, the preset asks {:.2}",
-                measured.input_i,
-                preset.target_lufs
-            );
         }
 
         /// B1b: a mastered VIDEO export takes its picture from the source and its sound

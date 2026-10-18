@@ -17,9 +17,12 @@
  *
  * ## «Etter» er en EKTE gjengivelse, ikke en simulering
  *
- * `editor_master_preview` kjører profilens filterkjede og samme nivåsteg som
- * eksporten (måling og én forsterkning i Rust) over et klemt utsnitt og skriver en mp3 i `std::env::temp_dir()` — ALDRI ved siden av
- * originalen. `_mastert`-fila fra atlasets sted 2 finnes ikke i dette skallet,
+ * `editor_master_preview` bygger kjeden fra de samme valgene som eksporten
+ * (profilen eller mikseren, kanalreparasjonen og «Tale»-beslutningen — én felles
+ * Rust-funksjon) og setter nivået fra HELE programmet slik eksporten gjør, over et
+ * klemt utsnitt, og skriver en mp3 i `std::env::temp_dir()` — ALDRI ved siden av
+ * originalen. Første gjengivelse måler programmet (et helt kjedepass, ca. ett
+ * minutt per 45 minutters program); neste er raske. `_mastert`-fila fra atlasets sted 2 finnes ikke i dette skallet,
  * og den er heller ikke det som lages her.
  *
  * ⚠️ Utsnittet blir liggende i OS-ens temp-mappe til OS-en selv rydder den.
@@ -34,7 +37,10 @@
  */
 
 import { signal } from "@preact/signals";
-import type { ExportChannelRepair } from "@lib/pages/editor/export-params";
+import type {
+  ExportChannelRepair,
+  MasterPreviewParams,
+} from "@lib/pages/editor/export-params";
 import { defaultProcessing, type Processing } from "@lib/pages/editor/mixer";
 
 import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
@@ -44,7 +50,7 @@ import {
   DEFAULT_SOUND_PROFILE,
   LISTEN_SPAN_SEC,
   listenStartSec,
-  specFor,
+  soundExportFields,
   type SoundProfile,
 } from "./sound-profiles";
 
@@ -188,7 +194,7 @@ export const listenError = signal(false);
 /** Utsnittets startsekund, for linja «0:21:08 — 20 sekunder fra prekenen». */
 export const listenStart = signal(0);
 
-/** Ferdige «Etter»-utsnitt, nøklet på preset-id. Å be bakenden gjengi de
+/** Ferdige «Etter»-utsnitt, nøklet på hele forespørselen (valg, utsnitt og kutt). Å be bakenden gjengi de
  *  samme tjue sekundene på nytt hver gang man bytter fane er en ffmpeg-kjøring
  *  for et svar vi allerede har. */
 const previews = new Map<string, string>();
@@ -251,16 +257,23 @@ export async function toggleListen(): Promise<void> {
     stopListen();
     return;
   }
-  const spec = specFor(soundProfile.value);
   const side = listenSide.value;
   const start = listenStart.value;
   listenError.value = false;
 
   if (side === "after") {
-    const preset = spec.masterPreset;
-    if (!preset) return;
-    const ready = previews.get(preset);
-    const path = ready ?? (await renderPreview(preset, start));
+    // Eksporten venter på kanalanalysen; det gjør «Etter» også, ellers hører man
+    // et opptak med død kanal på ett øre som eksporten så reparerer.
+    await ensureSoundAnalysis();
+    const request = listenRequest(start);
+    // Ingen preset og ingen mikser = «Ingen»: ingenting å gjengi.
+    if (!request) return;
+    // Samme valg, samme utsnitt, samme kutt = samme lyd. Nøkkelen er selve
+    // forespørselen, så en endring i mikseren, en ny kanalanbefaling eller et nytt
+    // kutt gjengir på nytt i stedet for å spille et utsnitt som ikke lenger stemmer.
+    const key = JSON.stringify(request);
+    const ready = previews.get(key);
+    const path = ready ?? (await renderPreview(key, request));
     if (!path) {
       listenError.value = true;
       return;
@@ -278,20 +291,40 @@ export async function toggleListen(): Promise<void> {
   await playFile(E.filePath, start, LISTEN_SPAN_SEC);
 }
 
+/**
+ * Forespørselen «Etter» sender: lydfeltene fra `soundExportFields` — den ENE
+ * funksjonen eksporten også leser lyd-steget gjennom — og kuttene og lengden
+ * eksporten sender, slik at bakenden kan måle programmet og ikke bare utsnittet.
+ * `null` når valget ikke gir noe å gjengi («Ingen»).
+ */
+export function listenRequest(start: number): MasterPreviewParams | null {
+  const fields = soundExportFields({
+    profile: soundProfile.value,
+    useMixer: useMixer.value,
+    processing: useMixer.value ? mixerProcessing() : undefined,
+    repair: channelRepair.value,
+  });
+  if (!fields.masterPreset && !fields.processing) return null;
+  return {
+    presetId: fields.masterPreset,
+    processing: fields.processing,
+    channelRepair: fields.channelRepair,
+    cutRegions: E.cuts.map((c) => ({ start: c.start, end: c.end })),
+    fullLengthSec: E.duration,
+    startSec: start,
+    durationSec: LISTEN_SPAN_SEC,
+  };
+}
+
 async function renderPreview(
-  preset: string,
-  start: number,
+  key: string,
+  request: MasterPreviewParams,
 ): Promise<string | null> {
   listenBusy.value = true;
   try {
-    const res = await window.api.masterPreview(
-      E.sourceToken,
-      preset,
-      start,
-      LISTEN_SPAN_SEC,
-    );
+    const res = await window.api.masterPreview(E.sourceToken, request);
     if (!res?.ok || !res.previewPath) return null;
-    previews.set(preset, res.previewPath);
+    previews.set(key, res.previewPath);
     return res.previewPath;
   } catch {
     return null;

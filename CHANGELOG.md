@@ -5,6 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Forhåndslyttingen spiller det eksporten lager.** «Etter» i Rediger → Lyd er nå
+  bygget av nøyaktig de samme valgene som eksporten: er den avanserte mikseren på,
+  hører du mikserens lyd (ikke «Tale»), et opptak med en død kanal spilles reparert
+  på begge ører, og de tjue sekundene får det nivået hele prekenen får, ikke et
+  nivå som passer akkurat de sekundene. Første gang du trykker «Etter» måler appen
+  hele programmet (omtrent ett minutt for 45 minutter lyd); deretter går det raskt.
+
 - **Lyd-steget sier hva som ble gjort.** Står profilen på «Tale», viser Rediger →
   Lyd nå i korte setninger hva appen fant og tok bort i akkurat dette opptaket:
   «Vi fjernet brum fra strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet
