@@ -759,8 +759,9 @@ pub fn open_camera(
 
 // ── The synthetic source (tests, probes) ────────────────────────────────────
 
-/// A stand-in camera: NV12 frames at `fps`, stamped with
-/// [`crate::camera::host_now_ns`] — the clock the audio pairs use. Each
+/// A stand-in camera: NV12 frames at `fps`, stamped with their scheduled
+/// capture time on [`crate::camera::host_now_ns`]'s clock — the clock the
+/// audio pairs use. Each
 /// frame's luma is a level that moves with the frame number, so a decoded
 /// recording shows motion. Pushes through the same never-blocking
 /// [`FrameQueue`] a real camera callback does.
@@ -785,6 +786,13 @@ impl SyntheticSource {
                 .spawn(move || {
                     let period = Duration::from_secs_f64(1.0 / fps.max(1.0));
                     let start = Instant::now();
+                    // Stamp each frame with its CAPTURE time on the host
+                    // clock (start + n·period), as a real camera does — not
+                    // the moment the thread got round to delivering it. A
+                    // stalled runner then delivers late frames in a burst
+                    // with their true times instead of one shared "now",
+                    // which the conformer would rightly drop as extras.
+                    let start_host = crate::camera::host_now_ns();
                     let mut n: u64 = 0;
                     let luma = (width * height) as usize;
                     while !stop.load(Ordering::Relaxed) {
@@ -795,7 +803,7 @@ impl SyntheticSource {
                         let mut bytes = vec![16 + (n % 200) as u8; luma];
                         bytes.resize(luma * 3 / 2, 128);
                         let frame = Frame::from_bytes(
-                            crate::camera::host_now_ns(),
+                            start_host + period.mul_f64(n as f64).as_nanos() as u64,
                             width,
                             height,
                             PixelFormat::Nv12,
