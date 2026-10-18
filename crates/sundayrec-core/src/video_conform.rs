@@ -23,9 +23,11 @@
 //! - **The machine slept:** the host clock jumped; [`AudioClock`] restarts its
 //!   fit and keeps the old line for frames captured before the jump. Here that
 //!   only means a frame is not placed until the clock has accepted a pair at
-//!   least as new as the frame ([`AudioClock::newest_host`]): a frame stamped
+//!   least as new as the frame ([`AudioClock::trusted_host`]): a frame stamped
 //!   after a jump the clock has not confirmed yet waits instead of landing an
-//!   hour in the future.
+//!   hour in the future. The same holds at the start: no frame is placed until
+//!   the clock has a line of several agreeing pairs, so one bad first
+//!   timestamp cannot misplace a camera that started before the audio.
 //!
 //! # When a slot is decided
 //!
@@ -216,10 +218,10 @@ impl<T> VideoConformer<T> {
     }
 
     /// Move frames from `unplaced` to `placed`. Normally only frames no newer
-    /// than the clock's newest accepted pair; `all` (at finish) places the rest
+    /// than the clock's newest accepted pair on a trusted line; `all` (at finish) places the rest
     /// by extrapolation.
     fn place(&mut self, clock: &AudioClock, all: bool) {
-        let newest_host = clock.newest_host();
+        let newest_host = clock.trusted_host();
         while let Some(&(host, _)) = self.unplaced.front() {
             if !all && newest_host.is_none_or(|h| host > h) {
                 break;
@@ -428,6 +430,43 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].picture, Picture::New(9));
         assert_eq!(conf.stats().dropped_surplus, 9);
+    }
+
+    #[test]
+    fn a_bad_first_audio_timestamp_does_not_misplace_early_frames() {
+        // The camera runs from 0.3 s before the audio; its frames are queued
+        // when the first audio pair arrives — 319 ms late. Placed on that
+        // one-pair line, the frame from 0.3 s would land on slot 0. They wait
+        // for a line of agreeing pairs instead. Id: capture time + 1 s in ms.
+        let mut clock = AudioClock::new(RATE);
+        let mut conf = VideoConformer::new(RATE, FPS30);
+        let mut out = vec![];
+        let id = |t: f64| ((t + 1.0) * 1000.0).round() as u64;
+        let mut f = -9i64; // frame f at f/30 s: −0.3 s …
+        let mut push_upto = |conf: &mut VideoConformer<u64>, upto: f64| {
+            while (f as f64 / 30.0) <= upto {
+                let t = f as f64 / 30.0;
+                conf.push_frame(host(t - PHASE), id(t));
+                f += 1;
+            }
+        };
+        push_upto(&mut conf, 0.4);
+        clock.observe(0, host(0.0) + 319_000_000);
+        conf.advance(&clock, &mut out);
+        let total = 2 * RATE as u64;
+        let mut s = BUF;
+        while s < total {
+            let t = s as f64 / RATE as f64;
+            push_upto(&mut conf, t);
+            clock.observe(s, host(t));
+            conf.advance(&clock, &mut out);
+            s += BUF;
+        }
+        conf.finish(&clock, total, &mut out);
+        assert_eq!(clock.resets(), 0);
+        assert_eq!(clock.outliers(), 1);
+        assert_eq!(out[0].picture, Picture::New(id(0.0)));
+        assert_eq!(out[9].picture, Picture::New(id(0.3)));
     }
 
     #[test]
@@ -661,7 +700,7 @@ mod tests {
             let mut measure = |upto: usize, measured: &mut usize, clock: &AudioClock, all: bool| {
                 while *measured < upto {
                     let i = *measured;
-                    if !all && clock.newest_host().is_none_or(|h| stamp[i] > h) {
+                    if !all && clock.trusted_host().is_none_or(|h| stamp[i] > h) {
                         break;
                     }
                     let pos = clock.sample_at(stamp[i]).expect("clock has pairs");
@@ -1026,6 +1065,41 @@ mod tests {
             let o = simulate(&sc);
             assert_eq!(o.resets, 1);
             assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+        }
+
+        /// Proptest regression `cc` in the file for this case: the camera
+        /// starts 2.56 s before the audio and the very first audio pair is
+        /// 319 ms off. Frames placed on that one-pair line would stay 319 ms
+        /// (≈ 10 slots) wrong; they must wait for a line of agreeing pairs.
+        #[test]
+        fn a_bad_first_timestamp_does_not_misplace_a_camera_that_started_first() {
+            let sc = Scenario {
+                seed: 1_525_568_686_406_554_132,
+                secs: 3.0 * 3600.0,
+                rate: 44_100,
+                fps: Fps::new(30, 1),
+                buf: 2048,
+                cam_fps: 30_000.0 / 1001.0,
+                drift_ppm: 0.0,
+                wobble_ppm: 0.0,
+                wobble_period_s: 300.0,
+                audio_jitter_ns: 0.0,
+                frame_jitter_ns: 0.0,
+                delivery_s: (0.0, 0.0),
+                outlier_p: 0.000_112_913_845_181_734_76,
+                video_start_s: -2.561_706_775_641_192_6,
+                holes: vec![
+                    (4_783.974_056_871_886, 52.640_721_457_600_5),
+                    (4_760.066_895_267_420_5, 61.856_349_677_345_55),
+                ],
+                fps_drops: vec![(0.0, 492.377_326_120_127_6, 4)],
+                sleeps: vec![],
+                small_steps: vec![],
+            };
+            let o = simulate(&sc);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+            assert!(o.max_place_err_ms < 33.4, "{}", o.max_place_err_ms);
+            assert_eq!(o.resets, 0);
         }
 
         /// The worst plausible case, pinned: 50 ppm the "wrong" way, jitter
