@@ -2600,14 +2600,18 @@ mod tests {
             ALL_COUNTERS.len()
         );
         // Every name is a dotted, lowercase namespace — the endpoint aggregates
-        // by prefix, and a stray capital or space would break that silently.
+        // by prefix, and a stray capital or space would break that silently. An
+        // underscore inside a segment (`video.frames_dropped`) is fine: the prefix
+        // is split on dots.
         for c in ALL_COUNTERS {
             let w = c.as_wire();
             assert!(w.contains('.'), "{w} is not namespaced");
             assert!(
-                w.chars()
-                    .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '.'),
-                "{w} has characters outside [a-z0-9.]"
+                w.chars().all(|ch| ch.is_ascii_lowercase()
+                    || ch.is_ascii_digit()
+                    || ch == '.'
+                    || ch == '_'),
+                "{w} has characters outside [a-z0-9._]"
             );
         }
     }
