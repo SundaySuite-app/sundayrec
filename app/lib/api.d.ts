@@ -39,6 +39,7 @@
 // without importing anything.
 
 import type { Settings, EditorSegment } from "../../legacy/types";
+import type { MasterPreviewParams } from "./pages/editor/export-params";
 import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 import type { TestWakeResult } from "../../legacy/bindings/TestWakeResult";
 import type { WakeFailureEntry } from "../../legacy/bindings/WakeFailureEntry";
@@ -394,9 +395,7 @@ declare global {
       editorExportVideo: (params: unknown) => Promise<EditorExportOutcome>;
       masterPreview: (
         sourceToken: string,
-        presetId: string,
-        startSec: number,
-        durationSec: number,
+        listen: MasterPreviewParams,
       ) => Promise<{ ok: boolean; previewPath?: string; error?: string }>;
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —

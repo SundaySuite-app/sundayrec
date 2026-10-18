@@ -47,7 +47,10 @@ import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import type { ChosenPlace } from "../../legacy/bindings/ChosenPlace";
 import type { OpenedRecording } from "../../legacy/bindings/OpenedRecording";
 import type { DroppedRecording } from "../../legacy/bindings/DroppedRecording";
-import { toEditorExportRequest } from "./pages/editor/export-params";
+import {
+  toEditorExportRequest,
+  type MasterPreviewParams,
+} from "./pages/editor/export-params";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
@@ -1671,14 +1674,9 @@ const api: Record<string, unknown> = {
   // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────
   // editor_master_preview/apply take a single `request` struct; cancel takes jobId.
   // Mastering commands return bare structs; the consumer expects { ok, … }.
-  masterPreview: async (
-    sourceToken: string,
-    presetId: string,
-    startSec: number,
-    durationSec: number,
-  ) =>
+  masterPreview: async (sourceToken: string, listen: MasterPreviewParams) =>
     editorCall("editor_master_preview", {
-      request: { sourceToken, presetId, startSec, durationSec },
+      request: { sourceToken, ...listen },
     }),
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────

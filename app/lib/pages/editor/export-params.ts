@@ -85,6 +85,22 @@ export interface ExportCutRegion {
  *  looking green. */
 export type ExportChannelRepair = EditorChannelRepair;
 
+/**
+ * What «Etter»-lyttingen ber bakenden gjengi (`editor_master_preview`). Lydfeltene
+ * (`presetId`, `processing`, `channelRepair`) er de SAMME som eksportforespørselen
+ * bærer (`masterPreset`, `processing`, `channelRepair`), og kutt og lengde er de
+ * samme som eksportens: nivået utsnittet får er nivået programmet får (M2R #3).
+ */
+export interface MasterPreviewParams {
+  presetId?: string;
+  processing?: unknown;
+  channelRepair?: ExportChannelRepair;
+  cutRegions: readonly ExportCutRegion[];
+  sourceDurationSec: number;
+  startSec: number;
+  durationSec: number;
+}
+
 /** Everything `buildExportRequest` needs, read out of the editor state + DOM by
  *  the caller. `kind` picks the audio-format fields or the video-codec ones. */
 export interface ExportRequestInput {
