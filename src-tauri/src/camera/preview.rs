@@ -1116,7 +1116,11 @@ mod tests {
         assert_eq!(cam_stats.dropped, 0, "the camera queue lost frames");
         if let Some(m) = meter.and_then(|m| lock(m).clone()) {
             assert!(
-                *lock(&m) < Duration::from_millis(20),
+                // Waiting on the encoder would cost a debug-build JPEG
+                // (hundreds of ms); a loaded Windows runner preempts the
+                // callback thread for tens (30.5 ms seen), so 100 ms tells the
+                // two apart without failing on the scheduler.
+                *lock(&m) < Duration::from_millis(100),
                 "a camera push waited {:?}",
                 *lock(&m)
             );
@@ -1181,8 +1185,11 @@ mod tests {
             },
             Duration::from_secs(3),
             Some(&meter),
-            // A shared CI runner may not JPEG-encode every pick in time.
-            2.0,
+            // A shared CI runner, in a debug build, may not JPEG-encode every
+            // 720p pick in time (2.00/s seen on Linux). The tap's 4/s is held
+            // by the `offered` bound above; the sent rate is proved on a real
+            // camera (3.0). Here it only proves pictures keep flowing.
+            1.0,
             Duration::from_millis(1500),
         );
     }
