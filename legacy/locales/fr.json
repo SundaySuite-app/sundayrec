@@ -697,7 +697,6 @@
         "gain": "Niveau de sortie",
         "freq": "Fréquence",
         "reduction": "Réduction",
-        "floor": "Plancher de bruit",
         "strength": "Intensité",
         "threshold": "Seuil",
         "ratio": "Taux",

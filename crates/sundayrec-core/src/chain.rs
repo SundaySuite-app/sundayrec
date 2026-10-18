@@ -25,11 +25,11 @@
 //! | channel repair | `pan=` | `swap_channels`, `fill_left`, `fill_right`, `channel_volume`, native mono-mix | exact (`MonoMix` is `0.5*(L+R)` on both) |
 //! | high-pass | `highpass=f=F` (2 poles, Q 0.707) | `parametric_eq`, band 1 = High Pass | exact: same RBJ biquad, `f` and Q 0.707 |
 //! | EQ band | `equalizer=f:t=q:w=Q:g=G` | `parametric_eq`, one Peaking band each | exact: same RBJ peaking filter, `Q = w` |
-//! | denoise | `afftdn=nr=N:nf=F:tn=1` | `denoise` | `reduction = N`. **`nf` is dropped**: filmcraft learns the floor itself. `threshold` and `smoothing` stay at filmcraft's defaults (6 dB, 50 %) |
-//! | dereverb | `agate` expander, `threshold = -45+15s`, `ratio = 1.5+1.5s` | `dereverb` | `amount = 100*s` (so s = 0.5 is filmcraft's own default 50 %). `rt60` stays at its default 0.8 s. A different algorithm (spectral, not a level expander) |
+//! | denoise | `afftdn=nr=N:nf=F:tn=1` | `denoise` | `reduction = N` (at most [`DENOISE_MAX_DB`]). **`nf` is dropped**: filmcraft learns the floor itself. `threshold` and `smoothing` stay at filmcraft's defaults (6 dB, 50 %) |
+//! | dereverb | `agate` expander, `threshold = -45+15s`, `ratio = 1.5+1.5s` | `dereverb` | `amount = 100*s`, **`rt60 = 0.4 s`** (B2b, see below). A different algorithm (spectral, not a level expander) |
 //! | gate | `agate=threshold:ratio:attack:release` | `gate` | `threshold`, `ratio`, `attack`, `release` carried over. `range = 24.2 dB` (agate's default `range=0.06125`), `hold = 0 ms` (agate has none) |
-//! | compressor | `acompressor=threshold:ratio:attack:release:makeup` | `compressor` | all five carried over. `knee = 9.0 dB` (acompressor's default 2.828 linear = 9.03 dB), `detector = RMS` (acompressor's default). The detector time constants are not the same, so this is an approximation |
-//! | de-esser | `deesser=i=I` (`m` and `f` at defaults) | `deesser` | `reduction = 20*I` dB (I = 0.4 gives filmcraft's default 8 dB), `frequency = 6000 Hz`, `threshold = -12 dB`. **An invention**: `i` has no direct counterpart, ears decide in B2b |
+//! | compressor | `acompressor=threshold:ratio:attack:release:makeup` | `compressor` | ratio, attack, release and makeup carried over; **`threshold` lowered by [`COMPRESSOR_DETECTOR_OFFSET_DB`] = 3 dB** (B2b, see below). `knee = 9.0 dB` (acompressor's default 2.828 linear = 9.03 dB), `detector = RMS` (acompressor's default) |
+//! | de-esser | `deesser=i=I` (`m` and `f` at defaults) | `deesser` | `reduction = 20*I` dB (I = 0.4 gives filmcraft's default 8 dB), `frequency = 6000 Hz`, `threshold = -12 dB`. **An invention**: `i` has no direct counterpart. Measured in B2b (see below), kept |
 //! | limiter | `alimiter=limit=L:level=0` (5 ms attack, 50 ms release, sample peak) | `limiter` | `ceiling = L`, `release = 50 ms`, `true_peak = on` (stricter than `alimiter`, which sees only samples; look-ahead is filmcraft's fixed 5 ms) |
 //! | makeup gain | `volume=GdB` | `amplify` | exact |
 //!
@@ -46,6 +46,52 @@
 //! not that the filters differ. Whether "Tale" keeps filmcraft's `denoise` or a
 //! corrected `afftdn` is B3a's decision, not this file's.
 //!
+//! ## What B2b measured, and set
+//!
+//! The numbers below are from three real recordings (30 s excerpts of
+//! `2026-05-17_2.mp3`, `31.5.26.mp3`, `2026.01.04.mp3`, all quiet rooms with a
+//! floor around -60 dBFS) and a few synthetic signals, all through `chain_ab`.
+//! The final setting is the owner's ears' (B2c); these are the measured reasons
+//! for where it starts.
+//!
+//! * **Compressor: threshold -3 dB.** With identical numbers filmcraft's
+//!   compressor barely compressed (loudness range 9.2 LU against 8.6 for
+//!   ffmpeg on speech-clear). The detectors differ: ffmpeg's follows the
+//!   squared signal with the attack time, so it reads close to the signal's
+//!   peak; filmcraft's is a true 10 ms mean square, which for a sine reads
+//!   3 dB lower. Lowering filmcraft's threshold by that 3 dB gave the same
+//!   loudness range as ffmpeg on all three recordings and on all four presets
+//!   that have a compressor (within 0.3 LU; a threshold shift of -6 dB went
+//!   up to 0.6 LU below). Ratio, attack, release and makeup are unchanged.
+//! * **De-esser: kept at `20*I` dB.** On sibilant frames (more than -12 dB of
+//!   the energy above 6 kHz) the band is cut by about 3 dB; on the vowel
+//!   frames around them it moves by 0.2 dB. Softer settings (threshold -8,
+//!   reduction 6) cut sibilants by 2 dB and change nothing else, so the
+//!   present setting is the middle of a flat curve.
+//! * **De-reverb: `rt60 = 0.4 s`.** filmcraft's de-reverb cannot tell a late
+//!   reverb tail from a steady tone, which is what a held organ chord is.
+//!   On a synthetic held chord between two speech passages, relative to the
+//!   speech: amount 50 % at rt60 0.8 s (the earlier mapping) took the chord
+//!   down 5.4 dB while taking 2.3 dB off the reverb tail; rt60 0.4 s takes
+//!   the chord 0.8 dB and the tail 1.6 dB; amount 100 % at 0.4 s is 1.5 dB
+//!   on the chord and 1.8 dB on the tail. A lone pure sine, the worst case,
+//!   lost 7 to 14 dB over the slider at 0.8 s and loses 2 to 3 dB at 0.4 s.
+//!   A shorter assumed decay is a much better trade. The price is a gentler
+//!   effect on a real tail: this stage is subtle, and a very reverberant room
+//!   is B3a's problem to judge.
+//! * **De-noise: carried over, but it eats held notes.** The floor comes down
+//!   by `reduction` and a *stationary* tone comes down by the same amount:
+//!   the same chord is taken down 9.6 dB at `reduction = 10`, after about
+//!   1.5 s (the minimum-statistics window), while a note shorter than that
+//!   passes untouched. This cannot be tuned away with the parameters the
+//!   effect has. It is why de-noise stays an opt-in stage (the mixer, the
+//!   "voice-noisy-room" preset) in B2b; B3a, which wants a mild de-noise
+//!   always on, has to deal with it (for example by gating on speech).
+//!   Capped at [`DENOISE_MAX_DB`] = 12 dB for that reason: "voice-noisy-room"
+//!   asks for 20 and the held chord then came out 30 dB under the speech (the
+//!   gate and the de-reverb add to it), where the old chain left it alone. At 12
+//!   the floor still comes down about 11 dB (the old chain took 1.7).
+//!
 //! The two compressors of "speech-punchy" and the like are translated one by
 //! one, in order, exactly as the filter string lists them.
 //!
@@ -55,6 +101,7 @@
 //! chain shapes tone and dynamics; the delivery loudness is set after it.
 
 use std::fmt;
+use std::io::{self, Read};
 
 use filmcraft_audio_dsp::{create_effect, AudioEffect};
 
@@ -83,6 +130,21 @@ const DEESSER_FREQ_HZ: f32 = 6000.0;
 const DEESSER_THRESHOLD_DB: f32 = -12.0;
 /// Maximum de-ess reduction at intensity 1.0, dB. 0.4 lands on filmcraft's 8 dB.
 const DEESSER_REDUCTION_AT_FULL_DB: f64 = 20.0;
+/// B2b: how much lower filmcraft's compressor threshold is set than the
+/// `acompressor` threshold it translates. ffmpeg's detector follows the squared
+/// signal with the attack time, so it reads close to the peak of the signal;
+/// filmcraft's is a 10 ms mean square, which reads a sine 3 dB lower. Measured:
+/// this gives the same loudness range as ffmpeg (module docs).
+pub const COMPRESSOR_DETECTOR_OFFSET_DB: f64 = 3.0;
+/// Lowest threshold filmcraft's compressor accepts, dB.
+const FILMCRAFT_COMP_MIN_DB: f64 = -60.0;
+/// The most `reduction` the de-noise stage is given: filmcraft's own default,
+/// 12 dB. A held note loses exactly what the floor loses (module docs), so this
+/// is "mild" until B3a can tell a held note from a floor.
+pub const DENOISE_MAX_DB: f64 = 12.0;
+/// The de-reverb's assumed reverb time, seconds (filmcraft's default is 0.8).
+/// Measured in B2b: a shorter decay model leaves held notes alone (module docs).
+const DEREVERB_RT60_S: f32 = 0.4;
 /// Q of `highpass`'s default two-pole filter.
 const HIGHPASS_Q: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
@@ -177,9 +239,33 @@ impl Chain {
         &self.stages
     }
 
+    /// A chain from stages already made (what `chain_ab --set` uses to try a
+    /// tuning without editing the tables).
+    pub fn from_stages(stages: Vec<Stage>) -> Chain {
+        Chain { stages }
+    }
+
     /// True when the chain does nothing.
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
+    }
+
+    /// This chain followed by `next` (the vocal chain, then the mastering
+    /// preset's chain: the order the export has always had).
+    pub fn then(mut self, next: Chain) -> Chain {
+        self.stages.extend(next.stages);
+        self
+    }
+
+    /// A plain gain stage in front of everything (the editor's "Normalize"
+    /// volume, which goes first so the chain's limiter keeps the last word over
+    /// the peak). A gain that is zero or not finite adds nothing.
+    pub fn with_leading_gain(mut self, gain_db: Option<f64>) -> Chain {
+        if let Some(g) = gain_db.filter(|g| g.is_finite() && g.abs() > f64::EPSILON) {
+            self.stages
+                .insert(0, Stage::fx("amplify", &[("gain", g as f32)]));
+        }
+        self
     }
 
     /// The same stage order as [`VocalChain::build_filters`]: channel repair,
@@ -210,13 +296,16 @@ impl Chain {
         if v.denoise.enabled {
             // `nr` -> `reduction`. `nf` has no counterpart and is dropped on
             // purpose (module docs). Same clamp as the ffmpeg builder.
-            let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, 97.0);
+            let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, DENOISE_MAX_DB);
             stages.push(Stage::fx("denoise", &[("reduction", nr as f32)]));
         }
 
         if v.dereverb.enabled {
             let s = v.dereverb.strength.clamp(0.0, 1.0);
-            stages.push(Stage::fx("dereverb", &[("amount", (100.0 * s) as f32)]));
+            stages.push(Stage::fx(
+                "dereverb",
+                &[("amount", (100.0 * s) as f32), ("rt60", DEREVERB_RT60_S)],
+            ));
         }
 
         if v.gate.enabled {
@@ -402,7 +491,10 @@ fn compressor_stage(
     Stage::fx(
         "compressor",
         &[
-            ("threshold", threshold_db as f32),
+            (
+                "threshold",
+                (threshold_db - COMPRESSOR_DETECTOR_OFFSET_DB).max(FILMCRAFT_COMP_MIN_DB) as f32,
+            ),
             ("ratio", ratio as f32),
             ("knee", ACOMPRESSOR_DEFAULT_KNEE_DB),
             ("attack", attack_ms as f32),
@@ -551,6 +643,144 @@ impl BuiltChain {
     }
 }
 
+/// A raw interleaved-f32 stream run through a [`BuiltChain`], as a [`Read`].
+///
+/// The export, the loudness analysis and the preview all take their audio from
+/// ffmpeg as raw `f32le` (decode + cut only, no `-af`) and put it through here.
+/// What comes out is time-aligned with what went in (the stages' latency is
+/// removed and the tail flushed, as in [`BuiltChain::process_offline`]) and has
+/// [`BuiltChain::out_channels`] channels, so the output is exactly as long as the
+/// input. One block of memory, never the whole file.
+pub struct ChainReader<R> {
+    inner: R,
+    chain: BuiltChain,
+    /// Output frames still to drop (the chain's latency).
+    skip: usize,
+    /// Bytes read but not yet a whole frame.
+    carry: Vec<u8>,
+    /// Processed interleaved bytes waiting to be read.
+    out: Vec<u8>,
+    out_pos: usize,
+    flushed: bool,
+}
+
+/// Input frames per block through the chain.
+const READER_BLOCK_FRAMES: usize = 16_384;
+
+impl<R: Read> ChainReader<R> {
+    pub fn new(inner: R, chain: BuiltChain) -> Self {
+        let skip = chain.latency();
+        Self {
+            inner,
+            chain,
+            skip,
+            carry: Vec::new(),
+            out: Vec::new(),
+            out_pos: 0,
+            flushed: false,
+        }
+    }
+
+    /// Channels of the stream this reader produces.
+    pub fn out_channels(&self) -> usize {
+        self.chain.out_channels()
+    }
+
+    /// Process `planar` and queue it as interleaved bytes, after dropping the
+    /// leading latency.
+    fn queue(&mut self, mut planar: Vec<Vec<f32>>) {
+        self.chain.process_block(&mut planar);
+        let frames = planar.first().map_or(0, Vec::len);
+        let drop = self.skip.min(frames);
+        self.skip -= drop;
+        self.out.clear();
+        self.out_pos = 0;
+        self.out.reserve((frames - drop) * planar.len() * 4);
+        for i in drop..frames {
+            for ch in &planar {
+                self.out.extend_from_slice(&ch[i].to_le_bytes());
+            }
+        }
+    }
+
+    /// Fill `self.out` with the next processed block. `false` at the end.
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    fn refill(&mut self) -> io::Result<bool> {
+        let in_ch = self.chain.in_channels();
+        let frame_bytes = in_ch * 4;
+        loop {
+            if self.flushed {
+                return Ok(false);
+            }
+            let mut buf = vec![0u8; READER_BLOCK_FRAMES * frame_bytes];
+            let have = self.carry.len();
+            buf[..have].copy_from_slice(&self.carry);
+            let mut filled = have;
+            loop {
+                match self.inner.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        filled += n;
+                        if filled == buf.len() {
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            let eof = filled < buf.len();
+            let frames = filled / frame_bytes;
+            self.carry = buf[frames * frame_bytes..filled].to_vec();
+            if frames > 0 {
+                let mut planar: Vec<Vec<f32>> = vec![Vec::with_capacity(frames); in_ch];
+                for frame in buf[..frames * frame_bytes].chunks_exact(frame_bytes) {
+                    for (c, s) in frame.chunks_exact(4).enumerate() {
+                        planar[c].push(f32::from_le_bytes([s[0], s[1], s[2], s[3]]));
+                    }
+                }
+                self.queue(planar);
+            }
+            if eof {
+                // End of input: push the latency through as silence so the last
+                // real samples leave the stages. A partial trailing frame is
+                // dropped, as everywhere else in the PCM path.
+                self.flushed = true;
+                let tail_frames = self.chain.latency();
+                if tail_frames > 0 {
+                    let mut kept = self.out.split_off(self.out_pos);
+                    let tail = vec![vec![0.0f32; tail_frames]; in_ch];
+                    self.queue(tail);
+                    kept.extend_from_slice(&self.out);
+                    self.out = kept;
+                    self.out_pos = 0;
+                }
+                return Ok(self.out_pos < self.out.len());
+            }
+            if self.out_pos < self.out.len() {
+                return Ok(true);
+            }
+        }
+    }
+}
+
+impl<R: Read> Read for ChainReader<R> {
+    fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
+        if dst.is_empty() {
+            return Ok(0);
+        }
+        while self.out_pos >= self.out.len() {
+            if !self.refill()? {
+                return Ok(0);
+            }
+        }
+        let n = dst.len().min(self.out.len() - self.out_pos);
+        dst[..n].copy_from_slice(&self.out[self.out_pos..self.out_pos + n]);
+        self.out_pos += n;
+        Ok(n)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,8 +859,15 @@ mod tests {
                 "compressor"
             ]
         );
-        assert_eq!(c.stages()[4].param("threshold"), Some(-24.0));
-        assert_eq!(c.stages()[5].param("threshold"), Some(-12.0));
+        // The preset's -24 / -12 dB, each lowered by the detector offset (B2b).
+        assert_eq!(
+            c.stages()[4].param("threshold"),
+            Some(-24.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
+        );
+        assert_eq!(
+            c.stages()[5].param("threshold"),
+            Some(-12.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
+        );
         assert_eq!(c.stages()[5].param("makeup"), Some(1.0));
     }
 
@@ -643,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn vocal_denoise_carries_nr_over_and_drops_nf() {
+    fn vocal_denoise_carries_nr_over_up_to_the_cap_and_drops_nf() {
         let p = vocal_chain_presets()
             .into_iter()
             .find(|p| p.id == "voice-noisy-room")
@@ -654,7 +891,8 @@ mod tests {
             .iter()
             .find(|s| s.id() == "denoise")
             .expect("denoise");
-        assert_eq!(dn.param("reduction"), Some(20.0));
+        // The preset asks for 20 dB; the stage is capped (B2b, module docs).
+        assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
         // nf (-20) is not a parameter of the filmcraft stage.
         assert_eq!(dn.param("noise_floor"), None);
         let dr = c
@@ -917,5 +1155,141 @@ mod tests {
             .map(|(p, q)| (p - q).abs())
             .fold(0.0f32, f32::max);
         assert!(worst < 1e-4, "block-size dependence {worst}");
+    }
+
+    fn interleave(planar: &[Vec<f32>]) -> Vec<u8> {
+        let mut v = Vec::new();
+        crate::pcm_stream::write_interleaved(&mut v, planar).unwrap();
+        v
+    }
+
+    #[test]
+    fn chain_reader_matches_process_offline_and_keeps_the_length() {
+        // A stream that is not a multiple of any block, through a chain with
+        // latency (denoise + limiter), read in awkward slices.
+        let p = vocal_chain_presets()
+            .into_iter()
+            .find(|p| p.id == "voice-podcast")
+            .expect("preset");
+        let chain = Chain::from_vocal_chain(&p.chain);
+        let l = noise(1.7, -30.0, 5);
+        let r = noise(1.7, -32.0, 9);
+        let want = chain
+            .build(SR, 2)
+            .expect("build")
+            .process_offline(&[l.clone(), r.clone()]);
+        let bytes = interleave(&[l.clone(), r]);
+        let built = chain.build(SR, 2).expect("build");
+        assert!(built.latency() > 0, "the test needs a chain with latency");
+        let mut rd = ChainReader::new(bytes.as_slice(), built);
+        let mut got = Vec::new();
+        let mut buf = [0u8; 4093];
+        loop {
+            let n = rd.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(
+            got.len(),
+            l.len() * 2 * 4,
+            "same number of frames out as in"
+        );
+        let want_bytes = interleave(&want);
+        let worst = got
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(want_bytes.as_chunks::<4>().0)
+            .map(|(a, b)| (f32::from_le_bytes(*a) - f32::from_le_bytes(*b)).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            worst < 1e-4,
+            "reader differs from process_offline by {worst}"
+        );
+    }
+
+    #[test]
+    fn chain_reader_upmixes_mono_and_drops_a_partial_frame() {
+        let mut v = VocalChain {
+            channel_repair: ChannelRepair::DuplicateLeft,
+            ..VocalChain::default()
+        };
+        v.highpass.enabled = false;
+        v.compressor.enabled = false;
+        let x = sine(1000.0, 0.5, 0.3);
+        let mut bytes = interleave(std::slice::from_ref(&x));
+        bytes.extend_from_slice(&[1, 2]); // half a sample
+        let built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+        let mut rd = ChainReader::new(bytes.as_slice(), built);
+        assert_eq!(rd.out_channels(), 2);
+        let mut got = Vec::new();
+        rd.read_to_end(&mut got).unwrap();
+        assert_eq!(got.len(), x.len() * 2 * 4);
+    }
+
+    #[test]
+    fn a_leading_gain_goes_first_and_zero_adds_nothing() {
+        let c = Chain::from_filter_string("highpass=f=80")
+            .unwrap()
+            .with_leading_gain(Some(6.0));
+        assert_eq!(c.stages()[0].id(), "amplify");
+        assert_eq!(c.stages()[0].param("gain"), Some(6.0));
+        assert_eq!(c.stages().len(), 2);
+        let c = Chain::default().with_leading_gain(Some(0.0));
+        assert!(c.is_empty());
+        let c = Chain::default().with_leading_gain(Some(f64::NAN));
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn the_compressor_threshold_never_leaves_filmcrafts_range() {
+        let c = Chain::from_filter_string(
+            "acompressor=threshold=-60dB:ratio=2:attack=5:release=50:makeup=0dB",
+        )
+        .unwrap();
+        assert_eq!(c.stages()[0].param("threshold"), Some(-60.0));
+    }
+
+    #[test]
+    fn de_noise_is_capped_and_de_reverb_assumes_a_short_decay() {
+        let mut v = VocalChain::default();
+        v.highpass.enabled = false;
+        v.compressor.enabled = false;
+        v.denoise.enabled = true;
+        v.denoise.reduction_db = 80.0; // a mixer value far out of range
+        v.dereverb.enabled = true;
+        v.dereverb.strength = 0.6;
+        let c = Chain::from_vocal_chain(&v);
+        let dn = c.stages().iter().find(|s| s.id() == "denoise").unwrap();
+        assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
+        let dr = c.stages().iter().find(|s| s.id() == "dereverb").unwrap();
+        assert_eq!(dr.param("amount"), Some(60.0));
+        assert_eq!(dr.param("rt60"), Some(DEREVERB_RT60_S));
+    }
+
+    /// B2b: a lone pure tone is the worst case for the de-reverb (it is the
+    /// most "reverb-tail-like" signal there is). At `rt60 = 0.4 s` it loses 2.2 /
+    /// 2.4 / 3.3 dB at strength 0.4 / 0.5 / 1.0; at filmcraft's default 0.8 s it
+    /// lost 7.1 / 7.9 / 13.8 dB.
+    #[test]
+    fn de_reverb_leaves_a_held_note_alone_across_the_slider() {
+        let note = sine(392.0, 6.0, 0.2);
+        for strength in [0.4, 0.5, 1.0] {
+            let mut v = VocalChain::default();
+            v.highpass.enabled = false;
+            v.compressor.enabled = false;
+            v.dereverb.enabled = true;
+            v.dereverb.strength = strength;
+            let mut built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+            let y = built.process_offline(std::slice::from_ref(&note));
+            let tail = |x: &[f32]| rms_db(&x[(SR as usize * 3)..]);
+            let lost = tail(&note) - tail(&y[0]);
+            assert!(
+                lost < 4.0,
+                "strength {strength}: the held note lost {lost:.1} dB"
+            );
+        }
     }
 }

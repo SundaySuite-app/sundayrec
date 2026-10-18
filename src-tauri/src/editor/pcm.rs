@@ -5,8 +5,8 @@
 //! A mastered export is three steps (the decision between "stage the processed PCM on disk" and
 //! "run the chain twice" is in docs/LYDMOTOR.md: disk won, 95 s against 111 s on 90 minutes):
 //!
-//! 1. [`run_chain`]: ffmpeg decodes + cuts + runs the preset chain to raw PCM on stdout; Rust
-//!    meters it and copies it to a [`StagedPcm`] file.
+//! 1. [`run_chain`]: ffmpeg decodes + cuts to raw PCM on stdout (no `-af`); Rust runs the audio
+//!    chain over it ([`ChainReader`], B2b), meters it and copies it to a [`StagedPcm`] file.
 //! 2. [`run_blocking`]: dry runs of the gain stage over the staged file until the limiter's cost
 //!    in loudness is corrected (only when a limiter is planned).
 //! 3. the encode (in `run_export_ffmpeg`): a [`Feed`] reads the staged file, applies the plan and
@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use std::sync::Mutex;
 
+use sundayrec_core::chain::{Chain, ChainReader};
 use sundayrec_core::editor::{audio_export_filter_complex, ConcatFormat};
 use sundayrec_core::loudness::{self, GainPlan, Loudness};
 use sundayrec_core::mastering::MasterPreset;
@@ -339,8 +340,11 @@ pub(super) struct MasteredPcm {
     pub(super) plan: GainPlan,
     /// Frames in the staged copy.
     pub(super) frames: u64,
-    /// The preset's loudness target, LUFS.
+    /// The preset's loudness target, LUFS (0 without a preset).
     pub(super) target_lufs: f64,
+    /// True when a mastering preset levelled the programme. False for a chain-only export (the
+    /// plan is then "leave the level alone") and for a programme that measured as silence.
+    pub(super) levelled: bool,
 }
 
 impl MasteredPcm {
@@ -366,27 +370,41 @@ impl MasteredPcm {
     }
 }
 
-/// Pass 1 and the plan (B1b): decode + cut + run the pre-level graph to raw PCM, meter it while
-/// parking a copy, plan the gain and settle the limiter's cost in loudness.
+/// Pass 1 and the plan (B1b, chain in Rust since B2b): ffmpeg decodes + cuts to raw PCM (no
+/// `-af`), the audio chain runs in Rust ([`ChainReader`]), the result is metered while a copy is
+/// parked, and with a mastering preset the gain is planned and the limiter's cost in loudness
+/// settled. Without a preset the plan is "leave the level alone" (chain-only export).
 ///
-/// `Ok(None)` means the programme measured as silence or room tone: the caller exports the cut
-/// as it is. Progress: 0–45 % for the measure, 45–50 % for the dry runs, both `measuring`.
+/// A programme that measures as silence or room tone is returned with the chain applied and no
+/// gain (`levelled == false`): the caller exports the cut as it is. Progress: 0–45 % for the
+/// measure, 45–50 % for the dry runs, both `measuring`.
 #[allow(clippy::too_many_arguments)] // one call site; each argument is a different fact
 pub(super) async fn measure_and_plan<P>(
     engine: &ExportEngine,
     source: &str,
-    preset: &MasterPreset,
+    chain: &Chain,
+    preset: Option<&MasterPreset>,
     keeps: &[sundayrec_core::editor::KeepSegment],
-    pre_filters: &[String],
     source_duration: f64,
     kept_duration: f64,
     fmt: PcmFormat,
     stall_ms: u64,
     on_progress: &P,
-) -> AppResult<Option<MasteredPcm>>
+) -> AppResult<MasteredPcm>
 where
     P: Fn(f32, &str),
 {
+    // The chain is built for the decoded format; an out-channel count that differs (a mono
+    // source upmixed by channel repair) is the format of everything after it.
+    let built = chain
+        .build(fmt.sample_rate as f32, fmt.channels)
+        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
+    let fmt_in = fmt;
+    let fmt = PcmFormat {
+        sample_rate: fmt_in.sample_rate,
+        channels: built.out_channels(),
+    };
+
     // The parked copy needs room too. Refuse BEFORE spending minutes on the measure, with the
     // same code the output-folder guard uses.
     let need = staged_bytes(fmt, kept_duration);
@@ -405,27 +423,7 @@ where
         }
     }
 
-    let (fc, map) = audio_export_filter_complex(
-        keeps,
-        0,
-        pre_filters,
-        &[],
-        false,
-        false,
-        source_duration,
-        ConcatFormat::default(),
-    );
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        source.to_string(),
-        "-filter_complex".into(),
-        fc,
-        "-map".into(),
-        map,
-    ];
-    args.extend(pcm_stream::output_args(fmt));
+    let args = decode_args(source, keeps, source_duration, fmt_in);
 
     let staged = StagedPcm::new();
     let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
@@ -441,17 +439,37 @@ where
         move |r, done| {
             let file = std::fs::File::create(&path)?;
             let mut w = std::io::BufWriter::with_capacity(1 << 20, file);
-            let out =
-                pcm_stream::measure(r, fmt, Some(&mut w), |n| done.store(n, Ordering::Relaxed))?;
+            let mut processed = ChainReader::new(r, built);
+            let out = pcm_stream::measure(&mut processed, fmt, Some(&mut w), |n| {
+                done.store(n, Ordering::Relaxed)
+            })?;
             w.flush()?;
             Ok(out)
         },
     )
     .await?;
 
+    let Some(preset) = preset else {
+        // Chain only: the signal keeps the level the chain gave it.
+        return Ok(MasteredPcm {
+            staged,
+            fmt,
+            plan: unity_plan(),
+            frames,
+            target_lufs: 0.0,
+            levelled: false,
+        });
+    };
     let plan = loudness::plan_gain(&input, preset);
     if !plan.measurable {
-        return Ok(None);
+        return Ok(MasteredPcm {
+            staged,
+            fmt,
+            plan: unity_plan(),
+            frames,
+            target_lufs: preset.target_lufs,
+            levelled: false,
+        });
     }
     tracing::info!(
         preset = %preset.id,
@@ -506,13 +524,59 @@ where
         dry_runs = settled.rounds,
         "mastering plan settled"
     );
-    Ok(Some(MasteredPcm {
+    Ok(MasteredPcm {
         staged,
         fmt,
         plan: settled.plan,
         frames,
         target_lufs: preset.target_lufs,
-    }))
+        levelled: true,
+    })
+}
+
+/// The decode of the export's first pass: ffmpeg cuts the source (trim, join fades, concat) and
+/// puts the programme on stdout as raw f32 PCM. No tone or dynamics filter: that is the Rust
+/// chain's job since B2b.
+pub(super) fn decode_args(
+    source: &str,
+    keeps: &[sundayrec_core::editor::KeepSegment],
+    source_duration: f64,
+    fmt: PcmFormat,
+) -> Vec<String> {
+    let (fc, map) = audio_export_filter_complex(
+        keeps,
+        0,
+        &[],
+        &[],
+        false,
+        false,
+        source_duration,
+        ConcatFormat::default(),
+    );
+    let mut args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-i".into(),
+        source.to_string(),
+        "-filter_complex".into(),
+        fc,
+        "-map".into(),
+        map,
+    ];
+    args.extend(pcm_stream::output_args(fmt));
+    args
+}
+
+/// The plan that leaves the level alone: no gain, no limiter.
+fn unity_plan() -> GainPlan {
+    GainPlan {
+        gain_db: 0.0,
+        limiter: None,
+        target_lufs: 0.0,
+        ceiling_dbtp: 0.0,
+        peak_overshoot_db: 0.0,
+        measurable: false,
+    }
 }
 
 /// Headroom kept free beyond the staged copy itself.
@@ -585,5 +649,50 @@ mod tests {
         assert_eq!(r.read(&mut buf).unwrap(), 2);
         abort.store(true, Ordering::Relaxed);
         assert!(r.read(&mut buf).is_err());
+    }
+
+    #[test]
+    fn the_decode_cuts_but_runs_no_tone_or_dynamics_filter() {
+        use sundayrec_core::editor::KeepSegment;
+        let keeps = [
+            KeepSegment {
+                start: 0.0,
+                end: 10.0,
+            },
+            KeepSegment {
+                start: 20.0,
+                end: 30.0,
+            },
+        ];
+        let a = decode_args(
+            "/rec/a.mp3",
+            &keeps,
+            60.0,
+            PcmFormat {
+                sample_rate: 44_100,
+                channels: 2,
+            },
+        );
+        let joined = a.join(" ");
+        assert!(!a.iter().any(|x| x == "-af"), "no -af: {joined}");
+        for chain_filter in [
+            "highpass",
+            "equalizer",
+            "acompressor",
+            "afftdn",
+            "agate",
+            "alimiter",
+            "deesser",
+            "loudnorm",
+            "volume=",
+            "pan=",
+        ] {
+            assert!(
+                !joined.contains(chain_filter),
+                "`{chain_filter}` is the Rust chain's job: {joined}"
+            );
+        }
+        assert!(joined.contains("atrim") && joined.contains("concat"));
+        assert!(joined.ends_with("-f f32le -c:a pcm_f32le -ar 44100 -ac 2 pipe:1"));
     }
 }

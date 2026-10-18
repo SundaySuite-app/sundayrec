@@ -49,7 +49,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use sundayrec_core::chain::dsp::loudness::LoudnessMeter;
-use sundayrec_core::chain::{dsp, Chain};
+use sundayrec_core::chain::{dsp, Chain, Stage};
 use sundayrec_core::mastering::master_presets;
 use sundayrec_core::processing::vocal_chain_presets;
 use sundayrec_core::wav::{encode_s16le, header, WavSpec};
@@ -286,9 +286,65 @@ fn report(label: &str, gain_db: f64, ch: &[Vec<f32>], file: &Path) {
     );
 }
 
+/// `--set <stage>[:n].<param>=<value>`: change one parameter of the `n`th (default first)
+/// stage with that id in the NEW chain, to try a tuning without touching the tables.
+struct Override {
+    stage: String,
+    nth: usize,
+    param: String,
+    value: f32,
+}
+
+fn parse_override(s: &str) -> Result<Override, String> {
+    let bad = || format!("--set `{s}`: forventet <stadium>[:n].<parameter>=<verdi>");
+    let (lhs, value) = s.split_once('=').ok_or_else(bad)?;
+    let (stage_n, param) = lhs.split_once('.').ok_or_else(bad)?;
+    let (stage, nth) = match stage_n.split_once(':') {
+        Some((st, n)) => (st, n.parse::<usize>().map_err(|_| bad())?),
+        None => (stage_n, 0),
+    };
+    Ok(Override {
+        stage: stage.to_string(),
+        nth,
+        param: param.to_string(),
+        value: value.parse().map_err(|_| bad())?,
+    })
+}
+
+fn apply_overrides(chain: &Chain, set: &[Override]) -> Result<Chain, String> {
+    let mut stages: Vec<Stage> = chain.stages().to_vec();
+    for o in set {
+        let mut seen = 0;
+        let mut done = false;
+        for st in &mut stages {
+            if st.id() != o.stage {
+                continue;
+            }
+            if seen == o.nth {
+                if let Stage::Fx { params, .. } = st {
+                    match params.iter_mut().find(|(k, _)| *k == o.param) {
+                        Some(p) => p.1 = o.value,
+                        None => params.push((o.param.clone(), o.value)),
+                    }
+                    done = true;
+                }
+                break;
+            }
+            seen += 1;
+        }
+        if !done {
+            return Err(format!(
+                "--set: fant ikke stadium `{}` nr {} i kjeden",
+                o.stage, o.nth
+            ));
+        }
+    }
+    Ok(Chain::from_stages(stages))
+}
+
 fn usage() -> ExitCode {
     eprintln!(
-        "bruk: chain_ab <fil> <start_s> <lengde_s> [--profile <id>|all] [--out <mappe>] [--target-lufs <n>]"
+        "bruk: chain_ab <fil> <start_s> <lengde_s> [--profile <id>|all] [--out <mappe>] [--target-lufs <n>] [--set <stadium>[:n].<param>=<verdi>]..."
     );
     ExitCode::from(2)
 }
@@ -298,11 +354,13 @@ fn run() -> Result<(), String> {
     let mut profile = "voice-podcast".to_string();
     let mut out_dir: Option<PathBuf> = None;
     let mut target: Option<f64> = None;
+    let mut set: Vec<Override> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--profile" => profile = args.next().ok_or("--profile mangler verdi")?,
             "--out" => out_dir = Some(args.next().ok_or("--out mangler verdi")?.into()),
+            "--set" => set.push(parse_override(&args.next().ok_or("--set mangler verdi")?)?),
             "--target-lufs" => {
                 target = Some(
                     args.next()
@@ -374,8 +432,8 @@ fn run() -> Result<(), String> {
 
         let old = old_version(&raw, &p.old_filters, secs)?;
         let new = {
-            let mut built = p
-                .chain
+            let chain = apply_overrides(&p.chain, &set)?;
+            let mut built = chain
                 .build(SR as f32, CH)
                 .map_err(|e| format!("{}: {e}", p.id))?;
             built.process_offline(&excerpt)
