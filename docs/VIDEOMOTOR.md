@@ -366,11 +366,8 @@ i `commands/camera_preview.rs`). Det C4b og C5 må vite:
   i opptaket. Før opptak tømmer en `Drain`-tråd køen (en kø full av
   kamerabuffere sulter poolen); sporet overtar etter at den er stoppet. Åpnes
   siden på nytt mens opptaket holder kameraet, bytter `start` bare kanal.
-- **Det som ikke er gjort (C4b):** økta stoppes fortsatt av opptakets stopp
-  (og ved hver fragmentgrense — et nytt fragment åpner kameraet selv), så
-  bildet har et opphold der; siden må kalle `camera_preview_start` igjen.
-  Ingenting er slettet: `getUserMedia`, `PolledCameraPreview`, ffmpegs
-  JPEG-utgang og `recording_preview_frame` lever til C4b.
+- **Det som ikke var gjort i C4a (lukket i C4b, se under):** økta ble stoppet
+  av opptakets stopp og ved hver fragmentgrense, og ingenting var slettet.
 - **Lisens:** `jpeg-encoder` er «(MIT OR Apache-2.0) AND IJG». IJG er libjpegs
   BSD-lignende lisens og er lagt til i `deny.toml`/`about.toml`; teksten står i
   THIRD-PARTY-NOTICES. (0.6.0 står som ren MIT/Apache, men 0.6.1 rettet lisensen
@@ -379,6 +376,56 @@ i `commands/camera_preview.rs`). Det C4b og C5 må vite:
   (syntetisk kilde, 1280×720@30: 3–5 b/s før og under et opptak, nøyaktig én
   ramme per lydplass, 0 droppede, kamerapush under 20 ms) og den ignorerte
   `real_camera_preview_…` for ekte kamera (RIG-DAY (v5)).
+
+**Levert (C4b).** `getUserMedia` er ute av webviewet. Det C5 må vite:
+
+- **Slettet:** `LiveCameraPreview.tsx`, `PolledCameraPreview.tsx`,
+  `ownership.ts`, `frame-poll-core.ts` (med tester), `PREVIEW_RESTART_MS` og
+  resten av gUM-kravene i `live-preview-core.ts` (som ble
+  `camera-preview-core.ts`: bare fasetabellen er igjen). I Rust:
+  `preview_jpg` i `video_track_args`, `FfmpegSink::spawn`s siste parameter,
+  `recording_preview_frame`, `recording_preview_path` og fjerningen av fila i
+  supervisoren. ffmpeg skriver nå ingenting annet enn MKV-en.
+- **UI.** `CameraPreview.tsx` er den ene komponenten, på Opptak og i overlegget.
+  De deler ÉN økt gjennom `camera-feed.ts` (`camera-feed-core.ts`: første som
+  ber om bildet starter, siste som slipper stopper etter 400 ms frist,
+  `start`/`stop` i rekkefølge). Siste bilde følger med til en ramme som
+  monteres midt i økta, og leses i FØRSTE render, så overlegget aldri står tomt
+  ved Start. Bildene er delte `blob:`-URL-er (fire holdes). Rammen leser
+  sideforholdet fra JPEG-headeren, og MJPEG-kameraers uskalerte bilder skaleres
+  av CSS (`object-fit: contain`).
+- **Speilvending** er UI-ets jobb: `videoFlip` gir `data-flip` og
+  `transform: scaleX(-1)` på `<img>`. (Rust-forhåndsbildet er ikke speilet;
+  opptaket speiles av ffmpeg.) Merket «1920×1080 · 30 fps» er borte: det kom fra
+  gUM-sporet, og bildet på kanalen er bare 640 px. Åpent spørsmål i PR-en.
+- **Økta gis tilbake.** `stop_native_bounded` lukker bare videosporets kø når
+  `preview::keeps_camera` (opptaket er en `Recording`-økt og en side ser på) —
+  kameraet stoppes ikke, og tappen går videre (den kalles også på en lukket
+  kø). Når sporet er ferdig, kaller segmentet `release_after_recording`: køen
+  åpnes igjen (`FrameQueue::reopen`), `Drain` tar over, og økta er `Idle`. Det
+  neste fragmentet (fragmentgrense, gjenoppkobling) tar den med
+  `take_for_recording` som før. Ingen side som ser på ⇒ kameraet stoppes ved
+  slutten, som før. `VideoTrack` teller bare fra køens stilling ved start
+  (`queue_base`), siden køen nå går på tvers av fragmenter.
+- **Opptak uten side.** Åpner opptaket sitt eget kamera (planlagt opptak, eller
+  siden viste et annet kamera/format), `adopt_for_recording` legger en
+  forhåndsvisning på det, uten bilder til noen ser på. Overlegget kan da vise
+  bildet av kameraet som tas opp. En side som ble stengt for å gi plass, leverer
+  kanalen sin videre (`Taken::carried`).
+- **`camera_preview_stop` under opptak** fjerner bare bildet (sinken), ikke
+  økta: en side som kommer tilbake, eller overlegget, kobler seg på igjen.
+  `camera_preview_start` på en økt som allerede er åpen på samme nøkkel bytter
+  bare kanal (ingen ny åpning).
+- **Lyden.** Kamerakallbacken er uendret: den skyver til den begrensede køen og
+  kaller tappen (`try_lock`). Gi-tilbake skjer etter at lyden er ferdig skrevet
+  og sporet har joinet, og berører ikke lydklokka.
+- **Bevis.** Rust: `the_preview_holds_four_a_second_from_one_session_through_a_recording`
+  måler nå også lengste opphold mellom to bilder over start, opptak, stopp og en
+  fragmentgrense (syntetisk kilde); tre nye livssyklustester. e2e (301 grønne):
+  `⚠️ bildet blinker IKKE ved Start og Stopp…` logger tilstandene til begge
+  rammene med en MutationObserver og teller `camera_preview_start`/`_stop`
+  (1/0). Mutasjonsbevist: uten «siste bilde følger med» blir overlegget stående
+  på «Starter kamera…». Mac: `docs/RIG-DAY.md` (v5), (v6).
 
 ### C5 — kameraet kobles til på nytt uavhengig av lyden
 

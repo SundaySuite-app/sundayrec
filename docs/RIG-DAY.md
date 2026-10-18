@@ -720,20 +720,44 @@ ikke vise den. Står den der: noter koder, CPU-bruk og tallet i loggen
       loggen sier ble sluppet — det er tallet `video.frames_dropped` vil vise
       i feltet. Windows: sammenlign med (c0a)-basisen.
       **Rødt funn:** hakk i lyden under last, eller et opptak som slutter.
-- [ ] **(v5) Forhåndsvisningen fra samme kameraøkt (C4a).** Terminalen må ha
-      kameratilgang; kjør i din egen terminalfane, fra repoet:
+- [ ] **(v5) Forhåndsvisningen fra samme kameraøkt (C4a, C4b).** Terminalen må
+      ha kameratilgang; kjør i din egen terminalfane, fra repoet:
       `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_preview -- --ignored --nocapture`
       (bytt til `iPhone` for Continuity-kameraet).
       Testen åpner kameraet slik Opptak-sida gjør, lar forhåndsvisningen gå i
-      8 s, lar videosporet overta samme økt og tar opp 8 s til.
+      8 s, lar videosporet overta samme økt og tar opp 8 s, stopper opptaket
+      slik produksjonsstien gjør (kameraet blir stående, siden en side ser
+      på), og lar et nytt fragment ta den samme økta (fragmentgrensen).
       **Forventet:** grønn, og en linje `C4a: 4.xx pictures/s before, 4.xx
-during; … camera queue_dropped 0`. Begge tallene mellom 3 og 5, ingen
-      tapte bilder, ingen feilede forhåndsbilder.
-      I appen er kommandoene `camera_preview_start`/`camera_preview_stop`
-      (ingen UI bruker dem før C4b), så selve bildet kan ikke sees ennå.
+during; … camera queue_dropped 0, longest gap …`. Begge tallene mellom 3 og
+      5, ingen tapte bilder, ingen feilede forhåndsbilder, og lengste opphold
+      mellom to bilder under 800 ms over hele løpet (start, opptak, stopp,
+      fragmentgrense).
       **Rødt funn:** under 3 b/s (tappen eller JPEG-koden henger), tapte
-      bilder i opptaket mens forhåndsvisningen går, eller at kameraet må
-      åpnes på nytt ved opptaksstart.
+      bilder i opptaket mens forhåndsvisningen går, kameraet som må åpnes på
+      nytt ved opptaksstart eller ved stopp/fragmentgrense, eller et opphold
+      over 800 ms.
+- [ ] **(v6) Bildet blinker ikke i appen (C4b, med ekte kamera).** Bygg og
+      kjør appen fra din egen terminalfane (kameratilgang): `npm run tauri dev`
+      i repoet. Skru på «Ta med kamera», velg FaceTime og senere iPhone. 1. **Opptak-sida:** bildet kommer innen 1–2 s og beveger seg (~4 b/s;
+      det er et lite bilde, ikke 30 fps). Slå «speilvend» av og på i
+      kamerakortet: bildet speilvendes umiddelbart. 2. **Start** et opptak med video. **Forventet:** overlegget kommer opp
+      med bildet allerede i rammen. Ingen «Starter kamera…», ingen svart
+      ruter, ingen pause. Bildet fortsetter å bevege seg hele opptaket
+      (se også lampa ved kameraet: den slukkes aldri og tennes aldri på nytt). 3. **Stopp** (bekreft). **Forventet:** Opptak-sida har bildet med en
+      gang, ingen 3 s venting. 4. **Fragmentgrense:** sett `SUNDAYREC_TEST_SPLIT_BYTES` lavt (se (w)) og
+      ta opp et par minutter, eller trekk lydkabelen og sett den i igjen
+      (gjenoppkobling = nytt fragment). **Forventet:** bildet i overlegget
+      stopper ikke ved grensen, og mp4-en har bilde på begge sider. 5. **Speilvending i fila:** ta opp 10 s med «speilvend» på og åpne fila.
+      **Forventet:** bildet i fila er speilvendt akkurat som det du så i
+      overlegget. 6. **iPhone/Continuity:** dra ut og sett inn igjen kabelen midt i
+      visningen (C5 gjør gjenopprettingen; her skal bare ikke appen
+      krasje, og bildet skal komme tilbake når kameraet er tilbake etter
+      at Opptak-sida åpnes på nytt).
+      **Rødt funn:** bildet forsvinner (selv et blink) ved Start, Stopp eller
+      fragmentgrense; kameralampa slukkes og tennes under et opptak; bildet i
+      overlegget er av et annet kamera enn det som ble tatt opp; speilvendingen
+      er motsatt av fila.
 
 ## Ørene
 

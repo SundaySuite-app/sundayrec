@@ -16,6 +16,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   stemmelignende variasjon, som trommer, kan få litt støyfjerning; «Tale og
   musikk» bruker ikke denne rensingen.
 
+- **Kamerabildet blinker ikke lenger ved start og stopp.** Bildet kommer nå
+  fra samme kameraøkt som opptaket, både på Opptak og i opptaksvinduet, så det
+  står uavbrutt når du trykker Start, mens opptaket går, når du stopper og
+  ved delingen av lange opptak. Før måtte appen slippe kameraet ved Start og
+  vente rundt tre sekunder etter Stopp før bildet kom tilbake. Det som vises er
+  det som tas opp: samme kamera, og speilvending vises likt i bildet og i fila.
+
 - **Opptaksvinduet sier fra hvis kameraet ikke henger med.** Klarer ikke
   maskinen å kode alle bildene, hopper appen over noen få og viser en rolig
   merknad: «Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er
