@@ -5,14 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
-<<<<<<< HEAD
 - **Opptaksvinduet sier fra hvis kameraet ikke henger med.** Klarer ikke
   maskinen å kode alle bildene, hopper appen over noen få og viser en rolig
   merknad: «Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er
   ikke berørt.» Lyden påvirkes aldri. Hvis du har slått på anonym
   kvalitetsrapportering, telles antall hoppede bilder (bare tallet, ingen
   kameranavn) slik at vi kan se om det skjer på ekte maskiner.
-=======
+
 - **Lydbehandlingen i redigeringen gjøres nå av appen selv.** Høypass, EQ,
   kompressor og resten av kjeden (både «Tale»-profilene og mikseren) kjøres i
   appen, og ffmpeg dekoder, klipper og koder bare. Mikseren og eksporten bruker
@@ -23,7 +22,7 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   begrenset til 12 dB, og glideren «Støygulv» i mikseren er borte fordi den nye
   støyfjerneren finner gulvet selv. Merk at støyfjerning også demper toner som
   holdes lenger enn ca. 1,5 sekunder.
->>>>>>> 68e2e582 (feat(lyd): denoise-tak, mikser-test, dokumentasjon og endringslogg (B2b))
+
 - **Eksport med mastring er mer enn dobbelt så rask, og treffer nivået.** Nivået
   settes nå av appen selv i stedet for av ffmpegs `loudnorm`: lyden måles etter
   at klippene og lydkjeden er lagt på, og får én jevn forsterkning til
