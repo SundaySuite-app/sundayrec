@@ -22,7 +22,7 @@ retningen, ikke fasiten.
 
 1. **Fila leses mange ganger.** Bølgeformen (`peaks`, 8 kHz-dekoding),
    prekensøket (`segments`, 16 kHz), kanalanalysen (`auto_process`/`astats`),
-   lydstyrkemålingen (`mastering_analyze`) og eksportens to runder (måling av
+   og eksportens to runder (måling av
    det kuttede signalet, så påføring) dekoder hver for seg.
 2. **`loudnorm` er treg og treffer ikke alltid.** Kjeden «voice-noisy-room» gikk
    32× sanntid uten `loudnorm` og 10× med. `mastering.rs` dokumenterer at
@@ -146,7 +146,7 @@ kommer først.
   programmet komprimeres ikke.
 - Eksporten måler det kuttede, behandlede signalet i Rust og koder i samme
   runde (behandlet PCM mellomlagres som f32 i temp, eller kjeden kjøres to
-  ganger; det avgjøres på målt tid). `mastering_analyze` bruker samme måler.
+  ganger; det avgjøres på målt tid). (M2R #8: den frittstående `mastering_analyze` er slettet; den hadde ingen kaller og målte ukuttet fil.)
 - **Det som forsvinner:** `loudnorm` (måle- og påføringsstrengene), JSON-parseren,
   `plan_pass2` og «Normalization Type»-sjekken.
 - **Ferdig når:** hver fil i en testmappe med ekte opptak treffer målet
@@ -156,8 +156,7 @@ kommer først.
 **Gjort (B1a + B1b).** `loudnorm`, JSON-parseren, `plan_pass2`, «Normalization Type»-sjekken
 og alle `loudnorm`-strengene er borte. Eksporten måler det kuttede, behandlede signalet i Rust
 (`sundayrec_core::pcm_stream`), planlegger én lineær forsterkning (`loudness::plan_gain`), og
-koder fra det jevnede signalet. `mastering_analyze` og forhåndslyttingen bruker samme måler og
-samme nivåsteg.
+koder fra det jevnede signalet. Forhåndslyttingen bruker samme måler og samme nivåsteg.
 
 **Avgjort på målt tid (B1b): behandlet PCM mellomlagres som f32 i temp.** Ekte 90-minutters
 fil (`2026.01.04.mp3`, 5400 s, `speech-clear`, ett kutt, mp3 256k, `--release`, Mac,

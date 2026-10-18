@@ -59,7 +59,7 @@ use super::media_filters::{media_filter_names, AUDIO_EXT, VIDEO_EXT};
 use crate::db::{store, Db};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorLoudness, EditorMasterPreviewRequest,
+    EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar,
     ExportEngine, ExportFolder, MasterEngine, ResolvedExport,
 };
@@ -589,17 +589,6 @@ pub async fn editor_tale_said(
     editor::tale_said(&source).await
 }
 
-/// Measure the recording's loudness against a mastering preset (pass 1 only).
-#[tauri::command]
-pub async fn editor_mastering_analyze(
-    chosen: State<'_, ChosenPaths>,
-    source_token: String,
-    preset_id: String,
-) -> AppResult<EditorLoudness> {
-    let source = resolve_source(&chosen, &source_token).await?;
-    editor::mastering_analyze(&source, &preset_id).await
-}
-
 /// The sentence-carrying error for a picked export folder that cannot be used.
 /// Codes, never the path: the renderer maps each to its own line
 /// (`app/editor/export-core.ts`, `EXPORT_ERROR_KEYS`).
@@ -1085,8 +1074,7 @@ pub async fn editor_sermon_pick(
 // `editor_cleanup_temp_files` er BORTE som Tauri-kommandoer. Ingen av dem ble
 // noen gang kalt fra skallet, og hver enkelt hadde en levende erstatter:
 //
-//   - probe_peak    → `editor_mastering_analyze` svarer med true-peak som ÉN av
-//                     flere målinger; Normaliser leser den derfra.
+//   - probe_peak    → true-peak kommer fra eksportens egen måler (`measure_and_plan`).
 //   - probe_streams → `editor_load_recording` returnerer alt `hasVideo`/
 //                     `hasAudio` i `EditorMediaInfo` (loader.ts sier det rett
 //                     ut: «et eget `editor_probe_streams` ville vært en ny

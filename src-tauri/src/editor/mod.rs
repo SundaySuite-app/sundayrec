@@ -137,23 +137,6 @@ pub struct EditorSegment {
     pub confidence: Option<f64>,
 }
 
-/// The measured loudness the mastering UI shows before/after a preset: what
-/// `sundayrec_core::loudness` measures over the preset's processed signal, the same meter the
-/// export levels with.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorLoudness.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorLoudness {
-    /// Measured integrated loudness (LUFS).
-    pub input_i: f64,
-    /// Loudness range.
-    pub input_lra: f64,
-    /// True peak (dBTP).
-    pub input_tp: f64,
-    /// The preset this was measured against (its target LUFS for the delta UI).
-    pub target_lufs: f64,
-}
-
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
 /// `CutRegion`; converted to [`sundayrec_core::editor::CutRegion`] in the seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
@@ -1814,12 +1797,6 @@ pub async fn diagnose_channels(_input_path: &str) -> AppResult<EditorChannelDiag
     disabled("diagnoseChannels")
 }
 
-/// Measure the recording's loudness against a mastering preset (pass 1 only).
-#[cfg(not(feature = "editor"))]
-pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult<EditorLoudness> {
-    disabled("masteringAnalyze")
-}
-
 /// What the export command passes for `hw_first` (v0.15): always try the
 /// hardware encoder where the platform has one. A toggle for this was a setting
 /// nobody could reason about ("is my Mac's VideoToolbox good?") guarding a
@@ -2720,73 +2697,6 @@ fn tale_said_from(clean: Option<&sundayrec_core::tale::SpeechClean>) -> EditorTa
             .map(|c| c.said().into_iter().map(String::from).collect())
             .unwrap_or_default(),
     }
-}
-
-/// Measure loudness: run the preset's chain over the whole recording to raw PCM and meter it in
-/// Rust ([`sundayrec_core::loudness`]) — the SAME meter, the same chain and the same channel
-/// handling the export levels with, so the figure shown before an export is the figure the
-/// export starts from. HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<EditorLoudness> {
-    use sundayrec_core::mastering::get_preset_by_id;
-
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    let preset = get_preset_by_id(preset_id)
-        .ok_or_else(|| AppError::Validation(format!("unknown_preset: {preset_id}")))?;
-    let info = load_recording(input_path).await.ok();
-    let fmt = pcm::pcm_format(
-        info.as_ref().and_then(|i| i.sample_rate),
-        info.as_ref().and_then(|i| i.channels),
-    );
-    // ffmpeg decodes (no `-af`); the preset's chain runs in Rust, the same one the export runs.
-    let engine = ExportEngine::new();
-    let clean = if preset.id == TALE_PRESET_ID {
-        tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?
-    } else {
-        None
-    };
-    let chain = build_pre_chain(None, None, Some(&preset), clean.as_ref())?;
-    let built = chain
-        .build(fmt.sample_rate as f32, fmt.channels)
-        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        input_path.to_string(),
-        "-vn".into(),
-    ];
-    args.extend(sundayrec_core::pcm_stream::output_args(fmt));
-    let fmt = sundayrec_core::pcm_stream::PcmFormat {
-        sample_rate: fmt.sample_rate,
-        channels: built.out_channels(),
-    };
-    let duration = duration_hint(input_path).await.unwrap_or(0.0);
-    // Not an export: a private engine nobody can cancel; the stall budget still applies.
-    let (m, _frames) = pcm::run_chain(
-        &engine,
-        &args,
-        (duration * f64::from(fmt.sample_rate)) as u64,
-        export_stall_ms(),
-        (0.0, 99.0),
-        EXPORT_PHASE_MEASURING,
-        &|_, _| {},
-        move |r, done| {
-            let mut processed = sundayrec_core::chain::ChainReader::new(r, built);
-            sundayrec_core::pcm_stream::measure(&mut processed, fmt, None, |n| {
-                done.store(n, std::sync::atomic::Ordering::Relaxed)
-            })
-        },
-    )
-    .await?;
-    Ok(EditorLoudness {
-        input_i: m.integrated_lufs,
-        input_lra: m.range_lu,
-        input_tp: m.true_peak_dbtp,
-        target_lufs: preset.target_lufs,
-    })
 }
 
 /// Probe just has_video/has_audio — reuses the full load probe and projects the
@@ -4839,11 +4749,6 @@ mod tests {
             .to_string()
             .contains("feature_disabled"));
         assert!(segments("/x.mp4", false, |_| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        assert!(mastering_analyze("/x.mp4", "speech-clear")
             .await
             .unwrap_err()
             .to_string()
@@ -8000,62 +7905,6 @@ mod tests {
             );
             assert!(!c.declick && c.dereverb.is_none(), "{c:?}");
             assert_eq!(again.unwrap(), Some(h));
-        }
-
-        /// B1b: `mastering_analyze` reads the same meter the export levels with: its
-        /// numbers agree with ffmpeg's `ebur128` over the same preset chain.
-        #[test]
-        fn mastering_analyze_agrees_with_ebur128_or_skips() {
-            let (Some(ffmpeg), Some(ffprobe)) =
-                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
-            else {
-                return;
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "wide.wav", 20.0, 5.0);
-            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-
-            // The oracle: the preset chain rendered to a wav, read by ebur128.
-            let processed = dir.path().join("processed.wav");
-            let status = std::process::Command::new(&ffmpeg)
-                .args(["-nostdin", "-hide_banner", "-v", "error", "-i", &src, "-af"])
-                .arg(&preset.filters)
-                .arg("-y")
-                .arg(&processed)
-                .status()
-                .unwrap();
-            assert!(status.success());
-            let oracle = measure_ebu_r128(&ffmpeg, &processed, None);
-
-            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-            unsafe {
-                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-            }
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let got = rt.block_on(mastering_analyze(&src, "speech-clear"));
-            unsafe {
-                std::env::remove_var("SUNDAYREC_FFMPEG");
-                std::env::remove_var("SUNDAYREC_FFPROBE");
-            }
-            let got = got.expect("analysis should succeed");
-            assert!(
-                (got.input_i - oracle.input_i).abs() <= 0.1,
-                "{got:?} vs {:.2}",
-                oracle.input_i
-            );
-            assert!(
-                (got.input_tp - oracle.input_tp).abs() <= 0.15,
-                "{got:?} vs {:.2}",
-                oracle.input_tp
-            );
-            assert!(
-                (got.input_lra - oracle.input_lra).abs() <= 0.5,
-                "{got:?} vs {:.2}",
-                oracle.input_lra
-            );
-            assert_eq!(got.target_lufs, preset.target_lufs);
         }
 
         /// M2R #3c: the preview is levelled like the EXPORT, i.e. by the programme and not by
