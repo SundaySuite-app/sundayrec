@@ -3,8 +3,10 @@
 //! The markdown *layout* (sections, GB formatting, the "ikke testet" tri-state,
 //! the secrets-cannot-leak settings summary) lives in
 //! [`sundayrec_core::diagnostics`] and carries the tests. This module only does
-//! the probing the core can't: the ffmpeg version banner, device enumeration,
-//! and writing the finished report to a file under the app-data dir.
+//! the probing the core can't: the ffmpeg version banner, device enumeration
+//! (the native lists the recorder itself opens from — cpal, ASIO and the camera
+//! list; C3b retired the ffmpeg `-list_devices` names), and writing the finished
+//! report to a file under the app-data dir.
 //!
 //! ## Capture test — restored in E2.5
 //!
@@ -15,9 +17,10 @@
 //! answered "ikke testet" on every run, which reads like an unfinished feature
 //! because it was one.
 //!
-//! [`run_capture_probe`] restores it, through the SAME backend selection a real
-//! recording uses ([`crate::test_recording::probe_audio_capture`] and the live
-//! preview's own path for video). It is bounded, it always releases the device,
+//! [`run_capture_probe`] restores it, through the SAME capture a real recording
+//! uses ([`crate::test_recording::probe_audio_capture`] for the sound, and the
+//! video track's own camera open, [`probe_video_frame`], for the picture). It
+//! is bounded, it always releases the device,
 //! and it REFUSES to run when something else legitimately owns the microphone or
 //! the camera — returning `None` plus a reason, so "ikke testet" now says why.
 
@@ -28,7 +31,6 @@ use sundayrec_core::diagnostics::{
 };
 use tauri::{AppHandle, Manager};
 
-use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::audio::devices::list_input_devices;
 use crate::error::AppResult;
 use crate::media::ffmpeg::ffmpeg_version;
@@ -72,31 +74,19 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     // ffmpeg version banner (None when the binary doesn't resolve).
     let ffmpeg_version = ffmpeg_version().ok();
 
-    // Audio device names: prefer the ffmpeg enumeration (what the recorder
-    // addresses); fall back to the cpal input list when ffmpeg can't enumerate.
-    let inventory = enumerate_ffmpeg_devices().await.ok();
-    let (mut audio_devices, ffmpeg_video_devices) = match inventory {
-        Some(inv) => (
-            inv.audio_inputs
-                .into_iter()
-                .map(|d| d.name)
-                .collect::<Vec<_>>(),
-            inv.video_inputs
-                .into_iter()
-                .map(|d| d.name)
-                .collect::<Vec<_>>(),
-        ),
-        None => (Vec::new(), Vec::new()),
-    };
+    // Audio device names: the host's cpal inputs — the list the recorder opens
+    // the device from (ASIO devices are reported separately below). C3b retired
+    // the ffmpeg `-list_devices` names this used to prefer: no recording reads
+    // them any more.
+    let audio_devices: Vec<String> = tokio::task::spawn_blocking(list_input_devices)
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .map(|list| list.inputs.into_iter().map(|d| d.name).collect())
+        .unwrap_or_default();
     // C1c: the cameras come from the native camera list (AVFoundation / Media
-    // Foundation + DirectShow), not from ffmpeg's `-list_devices`. ffmpeg's
-    // names are only the fallback for a platform without a native backend.
-    let video_devices = camera_report_lines(ffmpeg_video_devices).await;
-    if audio_devices.is_empty() {
-        if let Ok(list) = list_input_devices() {
-            audio_devices = list.inputs.into_iter().map(|d| d.name).collect();
-        }
-    }
+    // Foundation + DirectShow).
+    let video_devices = camera_report_lines().await;
 
     // ── Extended facts (the comprehensive diagnose) ──────────────────────────
     // ASIO devices (Windows + feature; empty otherwise). The enumeration is
@@ -171,9 +161,6 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         audio_engine: app
             .try_state::<crate::recorder::engine::RecorderEngine>()
             .and_then(|e| e.last_audio_engine()),
-        audio_engine_fallback: app
-            .try_state::<crate::recorder::engine::RecorderEngine>()
-            .and_then(|e| e.last_audio_fallback()),
         asio_devices,
         last_error,
         orphan_guard_active: Some(crate::platform::orphan_guard_active()),
@@ -206,20 +193,63 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
 
 /// The camera lines of the report, from the native camera list ("FaceTime HD
 /// Camera (innebygd)"). The enumeration is blocking (Windows talks to Media
-/// Foundation and DirectShow), so it runs off the async threads. `fallback` —
-/// ffmpeg's names — is used only when the native list is unavailable.
-async fn camera_report_lines(fallback: Vec<String>) -> Vec<String> {
+/// Foundation and DirectShow), so it runs off the async threads. An unavailable
+/// list reports no cameras (and says why in the log).
+async fn camera_report_lines() -> Vec<String> {
     match tokio::task::spawn_blocking(crate::camera::list).await {
         Ok(Ok(cameras)) => cameras.iter().map(|c| c.report_line()).collect(),
         Ok(Err(e)) => {
-            tracing::warn!("diagnostics: native camera list unavailable ({e}); using ffmpeg's");
-            fallback
+            tracing::warn!("diagnostics: native camera list unavailable ({e})");
+            Vec::new()
         }
         Err(e) => {
-            tracing::warn!("diagnostics: camera list task failed ({e}); using ffmpeg's");
-            fallback
+            tracing::warn!("diagnostics: camera list task failed ({e})");
+            Vec::new()
         }
     }
+}
+
+/// How long the diagnose video probe waits for a frame before giving up. Long
+/// enough for a camera to open and negotiate, short enough that a missing
+/// camera does not hold the Diagnose button hostage.
+const VIDEO_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Open the camera the recording would open and wait for ONE frame (E2.5) — the
+/// diagnose report's `video_ok`.
+///
+/// Since C3b this goes through the video track's own camera open
+/// ([`crate::recorder::native_capture::video::open_camera`]: the same name
+/// match, the same format choice) instead of a one-shot ffmpeg MJPEG grab, so
+/// "the camera works" means "the recording's camera path works".
+///
+/// A denied camera answers `false` at once (it is a permission, not a frame
+/// that failed to arrive). A camera that is not listed is an `Err`, so the
+/// report does not claim broken hardware for a camera that is simply absent.
+/// The camera is always stopped before returning.
+async fn probe_video_frame(device: Option<String>) -> AppResult<bool> {
+    use crate::media::permissions::{blocked_message, status};
+    let cam = status(MediaKind::Camera);
+    if blocked_message(MediaKind::Camera, cam).is_some() {
+        return Ok(false);
+    }
+    let name = device.unwrap_or_default();
+    let (w, h) = sundayrec_core::capture::resolution_dims(
+        sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
+    );
+    let fps =
+        sundayrec_core::video_conform::Fps::new(sundayrec_core::capture::RECORDING_FRAMERATE, 1);
+    let probe = tokio::task::spawn_blocking(move || {
+        let (capture, _spec) =
+            crate::recorder::native_capture::video::open_camera(&name, w, h, fps)?;
+        let frame = capture.frames().pop_timeout(VIDEO_PROBE_TIMEOUT);
+        capture.stop();
+        Ok::<bool, String>(frame.is_some())
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Recording(format!("video probe task failed: {e}")))?;
+    let saw_frame = probe.map_err(|e| crate::error::AppError::Recording(format!("probe: {e}")))?;
+    tracing::info!(saw_frame, "video probe complete");
+    Ok(saw_frame)
 }
 
 /// The outcome of [`run_capture_probe`].
@@ -297,7 +327,7 @@ async fn run_capture_probe(
     //    that records audio only would be a permission prompt for nothing.
     let mut video_ok = None;
     if s.video_enabled {
-        match crate::media::video_probe::probe_video_frame(s.video_device_name.clone()).await {
+        match probe_video_frame(s.video_device_name.clone()).await {
             Ok(ok) => video_ok = Some(ok),
             Err(e) => tracing::warn!("video probe skipped: {e}"),
         }

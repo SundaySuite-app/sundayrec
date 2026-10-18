@@ -19,7 +19,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The two events we extract from ffmpeg's `silencedetect` stderr output.
+/// The two silence events: a silent stretch began, or ended. Emitted by the
+/// in-process [`SilenceDetector`] (until C3b also parsed from ffmpeg's
+/// `silencedetect` stderr).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "SilenceEvent.ts")]
 #[serde(rename_all = "snake_case")]
@@ -28,21 +30,6 @@ pub enum SilenceEvent {
     Start,
     /// A `silence_end` marker — the silent stretch has ended.
     End,
-}
-
-impl SilenceEvent {
-    /// Classify a chunk of ffmpeg stderr. Returns `None` if the chunk contains
-    /// neither marker. `silence_end` takes precedence if a chunk somehow
-    /// contains both (the stretch has resolved).
-    pub fn from_stderr(chunk: &str) -> Option<SilenceEvent> {
-        if chunk.contains("silence_end") {
-            Some(SilenceEvent::End)
-        } else if chunk.contains("silence_start") {
-            Some(SilenceEvent::Start)
-        } else {
-            None
-        }
-    }
 }
 
 /// A timer instruction the host layer should act on. Arming an already-armed
@@ -134,10 +121,10 @@ impl SilenceWatcher {
     }
 }
 
-/// The detection threshold in dBFS, mirroring
-/// [`crate::ffmpeg::build_silence_detect_filter`] exactly: the user's clamped
-/// value when stop-on-silence is on, else a fixed permissive −55 dB — detection
-/// always runs because the warning path always needs markers.
+/// The detection threshold in dBFS: the user's clamped value when
+/// stop-on-silence is on, else a fixed permissive −55 dB — detection always
+/// runs because the warning path always needs markers. (The same rule the
+/// ffmpeg `silencedetect` filter used until C3b.)
 pub fn silence_threshold_db(stop_on_silence: bool, silence_threshold_db: Option<i32>) -> f32 {
     if stop_on_silence {
         silence_threshold_db.unwrap_or(-50).clamp(-70, -10) as f32
@@ -147,7 +134,8 @@ pub fn silence_threshold_db(stop_on_silence: bool, silence_threshold_db: Option<
 }
 
 /// How long a stretch must stay below threshold before `Start` is emitted —
-/// parity with the ffmpeg filter's `duration=1` (debounces inter-sentence gaps).
+/// one second, debouncing inter-sentence gaps (the old ffmpeg filter's
+/// `duration=1`).
 pub const SILENCE_DEBOUNCE_SECS: f64 = 1.0;
 
 /// In-process replacement for ffmpeg's `silencedetect` filter: the native
@@ -206,19 +194,6 @@ impl SilenceDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_stderr_markers() {
-        assert_eq!(
-            SilenceEvent::from_stderr("[silencedetect] silence_start: 12.3"),
-            Some(SilenceEvent::Start)
-        );
-        assert_eq!(
-            SilenceEvent::from_stderr("[silencedetect] silence_end: 18.0 | silence_duration: 5.7"),
-            Some(SilenceEvent::End)
-        );
-        assert_eq!(SilenceEvent::from_stderr("size=  1024kB time=..."), None);
-    }
 
     #[test]
     fn start_arms_warn_and_stop_when_stop_on() {
@@ -307,8 +282,8 @@ mod tests {
     // ── SilenceDetector (in-process silencedetect parity) ────────────────────
 
     #[test]
-    fn threshold_rules_mirror_ffmpeg_filter_builder() {
-        // Mirrors the table in ffmpeg.rs: default, clamp both ends, off → −55.
+    fn threshold_rules_default_clamp_and_fixed_warn_level() {
+        // Default, clamp both ends, off → −55.
         assert_eq!(silence_threshold_db(true, None), -50.0);
         assert_eq!(silence_threshold_db(true, Some(-60)), -60.0);
         assert_eq!(silence_threshold_db(true, Some(-100)), -70.0);

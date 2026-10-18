@@ -68,14 +68,12 @@ micPermission: string | null,
  */
 cameraPermission: string | null, 
 /**
- * Which audio engine the recorder LAST used (`"wasapi"`/`"asio"`/
- * `"directshow"`/`"coreaudio"`), or `None` if it hasn't recorded yet.
+ * Which cpal host the recorder LAST opened (`"coreaudio"`/`"wasapi"`/
+ * `"asio"`), or `None` if it hasn't recorded yet. (The fallback reason that
+ * sat beside it left in C3b: no session can fall back from one engine to
+ * another any more.)
  */
 audioEngine: string | null, 
-/**
- * If the modern engine fell back, WHY (human text). `None` = no fallback.
- */
-audioEngineFallback: string | null, 
 /**
  * ASIO devices seen (Windows + `asio` feature). Empty otherwise.
  */

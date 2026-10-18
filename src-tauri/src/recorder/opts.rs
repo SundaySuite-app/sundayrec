@@ -168,11 +168,7 @@ pub(crate) fn build_opts_in(
         separate_audio_format: format_ext(settings.format).to_string(),
         // (Resolution / frame rate / codec / encoder: the recording constants in
         // `sundayrec_core::capture`, read by the engine — v0.15.)
-        // Windows: force legacy DirectShow audio instead of cpal (WASAPI/ASIO).
-        classic_directshow: settings.classic_directshow,
-        // Resolved server-side by the recorder's camera-mode probe at start.
-        video_input: None,
-        // C3a: the native video track mirrors with `hflip` (the ffmpeg paths
+        // C3a: the video track mirrors with `hflip` (the old ffmpeg paths
         // never did — the setting only flipped the preview).
         video_flip: settings.video_flip,
     })

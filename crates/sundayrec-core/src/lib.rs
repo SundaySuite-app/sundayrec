@@ -12,24 +12,21 @@
 //!   - [`audio`]        — pure VU metering mat: block peak/RMS, dBFS, lock-free `PeakMeters`
 //!   - [`ffmpeg`]       — pure ffmpeg filter-string builders (drift, silencedetect)
 //!   - [`camera_format`] — native camera capture's pure decisions (C1a): which frame duration to pin for the chosen fps, a USB camera's vendor/product, host ticks → ns, when to fall back to compatibility mode
-//!   - [`capture`]      — unified ffmpeg capture-argument builder (Spike B)
+//!   - [`capture`]      — the recording's constants, the audio-encode/codec seam, the channel maps, the video-encoder argv and the camera-capability summary (the ffmpeg capture builders left in C3b)
 //!   - [`errors`]       — ffmpeg-stderr → stable error-code classification
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
-//!   - [`device_enum`]  — pure ffmpeg `-list_devices` stderr parsers (audio + video)
 //!   - [`lang`]          — the seven UI languages the backend speaks in (`Lang`), for the native notifications' catalogue
 //!   - [`alerts`]        — the sentences the NATIVE notification says, in the 7 languages (F1 A8). One `AlertText` variant per sentence; the `(variant, language)` match is exhaustive, so a new alert cannot ship in Norwegian only
 //!   - [`notify`]        — the notification decisions: warning codes, once-semantics for the repeating observers, and the "we already said this" ledger for missed recordings
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
-//!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
 //!   - [`reconnect`]    — watchdog (stuck-progress) + reconnect back-off decisions
 //!   - [`recorder`]     — the recorder state machine + session recovery/split policy (Fase 3)
 //!   - [`stream_fault`] — what a live capture-stream fault (cpal 0.18 `ErrorKind`) makes the recorder do: keep recording, reconnect, retry or stop (A3b)
 //!   - [`schedule`]     — scheduler recurrence/occurrence/missed-recording decisions (Fase 5)
 //!   - [`wake`]         — wake-from-sleep capability/parse/schedule-command decisions (Fase 5)
 //!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
-//!   - [`two_process`]  — two-process audio+video fallback: per-process capture args + A/V mux/offset (Fase 3.3b)
 //!   - [`av_clock`]     — the audio clock (C2): host-clock instant → audio sample position, a sliding least-squares fit that follows sound-card drift and restarts when the host clock jumps (sleep)
 //!   - [`video_conform`] — the conformer (C2): camera frames → a fixed frame rate locked to the audio clock (newest frame per slot, repeat, 2 s hold then black), proptested over 3 simulated hours
 //!   - [`video_encoder`] — which video encoder a recording gets: the Windows hardware probe order (nvenc → qsv → amf → mf → libx264), the golden-tested argv per encoder, and the fall-back-on-failure decision (C0a)
@@ -61,7 +58,6 @@ pub mod capture;
 pub mod chain;
 pub mod church_calendar;
 pub mod detect;
-pub mod device_enum;
 pub mod device_match;
 pub mod diagnostics;
 pub mod editor;
@@ -79,7 +75,6 @@ pub mod pcm_stream;
 pub mod preflight;
 pub mod preroll;
 pub mod processing;
-pub mod progress;
 pub mod publish;
 pub mod reconnect;
 pub mod recorder;
@@ -97,7 +92,6 @@ pub mod timeouts;
 pub mod tray;
 pub mod trim_feedback;
 pub mod tuning;
-pub mod two_process;
 pub mod update;
 pub mod vad;
 pub mod video_conform;

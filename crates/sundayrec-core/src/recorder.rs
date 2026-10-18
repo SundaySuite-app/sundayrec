@@ -35,11 +35,9 @@
 //!     ([`may_reconnect`] + the back-off schedule). The state machine itself is
 //!     new — Electron used a loose `_phase` string; this rejects illegal
 //!     transitions.
-//!   - **Deferred (documented, not silently dropped):** the two-process
-//!     audio+video fallback (Electron's separate `videoHandle` / `_vtmp.mp4`
-//!     merge path) is NOT modelled here — Fase 3 targets the *unified* single
-//!     ffmpeg pipeline. NDI / streaming likewise stay out (later phases). See
-//!     the engine module header for the matching plumbing note.
+//!   - **Deferred (documented, not silently dropped):** NDI / streaming stay
+//!     out (later phases). (The two-process audio+video fallback that once sat
+//!     beside this model left with the ffmpeg capture in C3b.)
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

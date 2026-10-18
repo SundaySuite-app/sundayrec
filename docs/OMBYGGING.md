@@ -168,6 +168,11 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
   `recorder/longrun.rs` kjører fortsatt ffmpeg-lydargv mot en lavfi-kilde; det er
   testkode, ikke en vei appen kan ta, og den må skrives om til den native
   motoren (egen økt) før `build_unified_capture_args` kan miste lydgrenen.
+- **Gjort i C3b:** `classic_directshow`, `cpal_capture.rs` og hele
+  `build_unified_capture_args` er slettet (videoøktene går gjennom den native
+  motoren). Lavfi-soaken (`soak.yml`) er pensjonert, og `longrun.rs` bruker en
+  ren lavfi-WAV-skriver som stedfortreder for fangstbytes — se VIDEOMOTOR §C3
+  «Levert (C3b)».
 
 ### B — Lydmotoren (detaljer i [LYDMOTOR.md](LYDMOTOR.md))
 

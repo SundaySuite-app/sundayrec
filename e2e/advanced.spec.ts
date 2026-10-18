@@ -150,7 +150,7 @@ test.describe("opptaksradene", () => {
       "data-anchor",
       "engine",
     );
-    // Kortet ankeret peker på: motorraden selv finnes bare på Windows (A5b),
+    // Kortet ankeret peker på: motorraden er borte (C3b — én opptaksmotor),
     // så det er kortet som er beviset på at lenken landet.
     await expect(page.getByTestId("advanced-recording")).toBeVisible();
   });

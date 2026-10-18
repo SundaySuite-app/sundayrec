@@ -17,6 +17,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   før den starter hvis det ikke er plass.
 - **Forhåndslytting og nivåmåling i «Lyd» bruker samme nivåsteg som eksporten**,
   så det du hører og måler før du eksporterer er det eksporten starter fra.
+- **Videoopptak går nå alltid gjennom appens egen opptaksmotor.** Lyden i et
+  videoopptak tas opp på samme måte som et rent lydopptak, og appen leser
+  kameraet selv ved siden av. Bildet følger lyden: faller kameraet ut, blir
+  bildet stående eller svart, men lyden tas opp uten hull. Den gamle veien
+  gjennom ffmpeg er borte.
+- **Valget «Opptaksmotor» under Avansert er borte**, også på Windows. Det
+  finnes bare én motor nå, så det er ingenting å velge. Hadde du valgt
+  «Klassisk (DirectShow)», brukes den nye motoren uten at du trenger å gjøre
+  noe.
+- **Kamerakortet sier nå hva kameraet leverer også på Windows** (for eksempel
+  «maks 1080p · 30 bilder i sekundet»). Kameralista, systemsjekken før opptak og
+  Diagnose bruker de samme listene som opptaket, så de sier ikke lenger at en
+  enhet mangler når opptaket faktisk finner den.
 
 ## v0.26.0-beta.1 — én lydmotor, tydeligere feilmeldinger, til beta-ringen
 

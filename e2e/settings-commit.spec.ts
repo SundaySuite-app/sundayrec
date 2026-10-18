@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
@@ -30,21 +30,6 @@ const SLOW_SAVE = (ms: number) =>
     (window.__settingsSaves = window.__settingsSaves || []).push(s);
     resolve(s);
   }, ${ms}))`);
-
-/**
- * Motorraden finnes bare på Windows (A5b: lydopptak har én motor, og
- * DirectShow-valget gjelder bare videoøkter). Desktop Chrome er aldri Windows
- * her — `userAgentData.platform` vinner over enhver UA-overstyring — så
- * plattformen settes før siden starter.
- */
-async function asWindows(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "userAgentData", {
-      get: () => ({ platform: "Windows", brands: [], mobile: false }),
-    });
-    Object.defineProperty(navigator, "platform", { get: () => "Win32" });
-  });
-}
 
 test.describe("innstillinger — commit", () => {
   test("en redigering som lander midt i en skrivning går ikke tapt", async ({
@@ -96,55 +81,58 @@ test.describe("innstillinger — commit", () => {
     // noen nedtelling, så «Lagret ✓» ble stående ved siden av raden til siden
     // ble forlatt. En kvittering som aldri går bort svarer ikke lenger på «ble
     // DET du nettopp gjorde lagret?».
-    await asWindows(page);
+    //
+    // Motorraden er borte (C3b: én opptaksmotor, ingen DirectShow-luke), så
+    // beviset kjøres på «Del opp»-bryteren — den andre raden på siden som går
+    // gjennom `usePatch`, den samme sekvensen motorraden gikk gjennom.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
-      settings: { ...SETTLED_SETTINGS, classicDirectshow: false },
+      settings: { ...SETTLED_SETTINGS, splitMinutes: 0 },
       goto: "settings:general",
     });
 
-    const receipt = page.getByTestId("adv-engine-receipt");
+    const receipt = page.getByTestId("adv-split-receipt");
     await expect(receipt).toHaveText("");
 
-    await page
-      .getByTestId("adv-engine-control-input")
-      .selectOption({ value: "dshow" });
+    await page.getByTestId("adv-split-control-input").click();
 
     await expect(receipt).toHaveText("Lagret ✓");
     // Skrivningen landet på ekte — kvitteringen er ikke bare pynt.
     await expect
-      .poll(async () => (await storedSettings(page)).classicDirectshow)
-      .toBe(true);
+      .poll(async () => (await storedSettings(page)).splitMinutes)
+      .toBe(60);
     // …og så er den borte igjen.
     await expect(receipt).toHaveText("", { timeout: 10_000 });
   });
 
-  test("motorvalget ruller tilbake når basen sier nei", async ({ page }) => {
-    // Raden hadde sin egen lagringsmodell, og den leste tilbakerullingens
-    // øyeblikksbilde fra render-lukningen. Nå går den gjennom den samme
-    // sekvensen som alt annet: en feilet skrivning ruller tilbake OG sier fra,
-    // så skjermen aldri står og påstår noe basen ikke har.
-    await asWindows(page);
+  test("en usePatch-rad ruller tilbake når basen sier nei", async ({
+    page,
+  }) => {
+    // Motorraden hadde sin egen lagringsmodell, og den leste tilbakerullingens
+    // øyeblikksbilde fra render-lukningen. Nå går alle flernøkkel-radene
+    // gjennom den samme sekvensen som alt annet: en feilet skrivning ruller
+    // tilbake OG sier fra, så skjermen aldri står og påstår noe basen ikke har.
+    // (Motorraden selv gikk ut i C3b; «Del opp» er den samme `usePatch`.)
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
         settings_save: fn("() => { throw new Error('database is locked') }"),
       },
-      settings: { ...SETTLED_SETTINGS, classicDirectshow: false },
+      settings: { ...SETTLED_SETTINGS, splitMinutes: 0 },
       goto: "settings:general",
     });
 
-    const select = page.getByTestId("adv-engine-control-input");
-    await select.selectOption({ value: "dshow" });
+    const toggle = page.getByTestId("adv-split-control-input");
+    await toggle.click();
 
-    await expect(page.getByTestId("adv-engine-receipt")).toHaveText(
+    await expect(page.getByTestId("adv-split-receipt")).toHaveText(
       "Ikke lagret",
     );
     await expect(page.getByTestId("toast-host")).toContainText(
       /Kunne ikke lagre/,
     );
-    // Tilbake på motoren som faktisk står lagret.
-    await expect(select).toHaveValue("native");
+    // Tilbake på det som faktisk står lagret.
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
   test("R2: pagehide tømmer en ventende lagring — ⌘W utenfor et opptak skal ikke miste den siste endringen", async ({

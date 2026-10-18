@@ -3,78 +3,63 @@ import type { SelfTestReport } from "./SelfTestReport";
 
 /**
  * Health counters accumulated AUTOMATICALLY during a real recording — the
- * passive-logging path. The recorder's stderr reader feeds every line through
- * [`RecordingTelemetry::observe_line`] and flags a starved IPC channel via
- * [`RecordingTelemetry::note_levels_dropped`]; the host stamps `duration_sec`/
- * `timestamp`/`exit_ok` at session end and persists it. Surfaced in the
- * diagnose report so the user pastes a *trend*, not a guess.
+ * passive-logging path. The native engine folds each segment's counts in at
+ * the segment's end (ring overruns, the xruns the audio system reported, the
+ * writer's exact frame count); the finaliser adds the expected and measured
+ * seconds per deliverable; the host stamps `duration_sec`/`timestamp`/
+ * `exit_ok` at session end and persists it. Surfaced in the diagnose report
+ * so the user pastes a *trend*, not a guess.
  *
- * ## Accumulation semantics, field by field (E6.3)
+ * ## The ffmpeg-era fields (C3b)
  *
- * A session is not one ffmpeg process. A split opens a new deliverable with a
- * new capture process; a reconnect opens a new `_rN` fragment with another.
- * Two different kinds of counter live in here, and they aggregate differently:
+ * `drops`, `dups`, `xruns`, `levels_dropped`, `capture_drop_lines` and
+ * `msgs_dropped` were filled from the ffmpeg capture's stderr and its reader
+ * channel. That capture left in C3b, so a new session leaves them at 0 — but
+ * they stay: the history ring on disk (`recording-telemetry-history.json`)
+ * holds sessions recorded by older versions, and the diagnose trend and the
+ * verdict must keep reading those exactly as they were read.
  *
- * - **`drops`/`dups` are ffmpeg's own CUMULATIVE counters**, re-printed in full
- *   on every progress line. Within one process the right fold is `max` (take
- *   the latest/highest); ACROSS processes the right fold is `sum` — the second
- *   process's `drop=` restarts at zero and knows nothing about the first's.
- *   Folding with `max` for the whole session, as this used to, reported the
- *   worst SINGLE segment: a 3-hour service that dropped 40 frames in each of
- *   four segments reported 40, not 160. The fix is a per-process window
- *   ([`RecordingTelemetry::seal_process`], called at each segment end) whose
- *   maximum is added to the session total.
- * - **`xruns`, `native_xruns`, `capture_drop_lines`, `levels_dropped`,
- *   `msgs_dropped` are EVENT counts** — one increment per matching stderr line / dropped message. They
- *   already accumulate correctly across any number of processes, because
- *   nothing about them restarts; they were checked for the same flaw and do not
- *   have it.
- * - **`ring_overrun_samples`, `native_frames_sec`, `expected_sec`,
- *   `measured_sec`** are summed by the engine per segment / per deliverable and
- *   are likewise correct.
+ * The live ones — `native_xruns`, `ring_overrun_samples`, `native_frames_sec`,
+ * `expected_sec`, `measured_sec` — are event counts and sums the engine adds
+ * per segment / per deliverable, so they accumulate correctly across any
+ * number of splits and reconnects.
  */
 export type RecordingTelemetry = { 
 /**
- * Frames ffmpeg DISCARDED across the whole session (an avfoundation/USB
- * overflow signal): the sum over capture processes of each one's final
- * `drop=`. Excludes the process currently running — see
- * [`Self::drops_total`].
+ * Frames the ffmpeg capture DISCARDED (summed `drop=` over its capture
+ * processes). ffmpeg-era: 0 since C3b; older rows keep theirs.
  */
 drops: bigint, 
 /**
- * Frames ffmpeg DUPLICATED across the whole session (a clock-mismatch
- * signal), summed over capture processes like [`Self::drops`].
+ * Frames the ffmpeg capture DUPLICATED (summed `dup=`). ffmpeg-era: 0
+ * since C3b; older rows keep theirs.
  */
 dups: bigint, 
 /**
- * xrun/overrun-class stderr lines seen — the direct stutter signal on the
- * ffmpeg path. Always 0 on the native engine, which reads no stderr; see
- * [`Self::native_xruns`].
+ * xrun/overrun-class lines in the ffmpeg capture's stderr. ffmpeg-era: 0
+ * since C3b (see [`Self::native_xruns`]); older rows keep theirs.
  */
 xruns: bigint, 
 /**
  * Xruns the audio system itself reported to the NATIVE engine (A3c): cpal
  * 0.18 delivers a CoreAudio/WASAPI buffer glitch through the stream's
  * error callback as `ErrorKind::Xrun`, and the engine counts each one.
- * A real count from the OS, not a phrase scraped from a log; 0 on the
- * ffmpeg path (which has [`Self::xruns`] instead).
+ * A real count from the OS, not a phrase scraped from a log.
  */
 nativeXruns: bigint, 
 /**
- * Times the live-levels IPC `try_send` hit a FULL channel — the direct
- * renderer/IPC-starvation signal ("recording mode lags"). A rising count
- * means the UI couldn't keep up and back-pressure was building.
+ * Times the ffmpeg reader's live-levels `try_send` hit a FULL channel.
+ * ffmpeg-era: 0 since C3b; older rows keep theirs.
  */
 levelsDropped: bigint, 
 /**
- * Capture back-pressure / sample-drop warnings from ffmpeg's own stderr
- * ([`CAPTURE_DROP_PHRASES`]) — the direct "samples were thrown away" count.
+ * Sample-drop warnings in the ffmpeg capture's stderr. ffmpeg-era: 0
+ * since C3b; older rows keep theirs.
  */
 captureDropLines: bigint, 
 /**
- * Non-levels reader messages (Progress/Silence/Error/Started) dropped on a
- * full channel. Observability loss only — NEVER capture loss (the whole
- * point of the all-`try_send` reader).
+ * ffmpeg reader messages dropped on a full channel (observability loss
+ * only). ffmpeg-era: 0 since C3b; older rows keep theirs.
  */
 msgsDropped: bigint, 
 /**
@@ -95,8 +80,7 @@ measuredSec: number,
 lossPct: number, 
 /**
  * Samples the NATIVE engine's real-time callback dropped on ring overrun
- * (whole frames' worth of f32 samples). The native analogue of the
- * xrun/capture-drop stderr counters; 0 on the ffmpeg path.
+ * (whole frames' worth of f32 samples).
  */
 ringOverrunSamples: bigint, 
 /**

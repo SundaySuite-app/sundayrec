@@ -46,17 +46,17 @@
  * Hver kode `sundayrec_core::diagnostics::detect_issues` kan sende, og
  * nøkkelsuffikset den oversettes med under `app.diagnose.f`.
  *
- * ⚠️ Kilden er `crates/sundayrec-core/src/diagnostics.rs` — 19 `SR-*`-koder
+ * ⚠️ Kilden er `crates/sundayrec-core/src/diagnostics.rs` — 18 `SR-*`-koder
  * pluss `REC-LOSS` (varighetstapet, som med vilje har sitt eget navnerom fordi
  * det kommer fra `selftest`, ikke fra enumereringen). Legges en kode til der,
  * er den riktige rekkefølgen: rad her → nøkler i no.json + en.json → rad i
- * tabelltesten.
+ * tabelltesten. (`SR-AUDIO-10`, «falt tilbake til DirectShow», gikk ut i C3b:
+ * det finnes ingen motor å falle tilbake til.)
  */
 export const FINDING_SLUGS: Readonly<Record<string, string>> = Object.freeze({
   "SR-FFMPEG-01": "ffmpeg01",
   "SR-AUDIO-01": "audio01",
   "SR-AUDIO-02": "audio02",
-  "SR-AUDIO-10": "audio10",
   "SR-RATE-01": "rate01",
   "SR-VIDEO-01": "video01",
   "SR-VIDEO-02": "video02",

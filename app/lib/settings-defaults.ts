@@ -38,7 +38,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   videoDeviceIndex: null,
   videoFlip: false,
   keepSeparateAudio: true,
-  classicDirectshow: false,
 
   // Audio processing
   channels: "stereo",

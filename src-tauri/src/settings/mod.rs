@@ -993,21 +993,20 @@ mod tests {
     #[tokio::test]
     async fn a_database_written_with_classic_ffmpeg_audio_loads_without_error() {
         // A5b: the audio escape hatch was removed. A database from the versions
-        // that still had it (flag on or off) must load, keep its other choices
-        // (the DirectShow hatch lives until C3), and drop the key on next save.
+        // that still had it (flag on or off) must load, keep its other choices,
+        // and drop the key on next save.
         for flag in ["true", "false"] {
             let (pool, _d) = temp_pool().await;
             store::set_setting(
                 &pool,
                 SETTINGS_KEY,
                 &format!(
-                    r#"{{"classicFfmpegAudio":{flag},"classicDirectshow":true,"preRollSeconds":25,"churchName":"Domkirken"}}"#
+                    r#"{{"classicFfmpegAudio":{flag},"preRollSeconds":25,"churchName":"Domkirken"}}"#
                 ),
             )
             .await
             .unwrap();
             let loaded = load(&pool).await.expect("an old blob must load");
-            assert!(loaded.classic_directshow);
             assert_eq!(loaded.pre_roll_seconds, 25);
             assert_eq!(loaded.church_name, "Domkirken");
 
@@ -1018,6 +1017,40 @@ mod tests {
                 .unwrap();
             assert!(
                 !raw.contains("classicFfmpegAudio"),
+                "the retired key must not be written back: {raw}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_database_written_with_classic_directshow_loads_without_error() {
+        // C3b: the DirectShow hatch left with the ffmpeg video paths. A
+        // database from the versions that still had it (flag on or off) must
+        // load, keep the camera choice beside it, and drop the key on next save.
+        for flag in ["true", "false"] {
+            let (pool, _d) = temp_pool().await;
+            store::set_setting(
+                &pool,
+                SETTINGS_KEY,
+                &format!(
+                    r#"{{"classicDirectshow":{flag},"videoEnabled":true,"videoDeviceName":"Logitech BRIO","preRollSeconds":25,"churchName":"Domkirken"}}"#
+                ),
+            )
+            .await
+            .unwrap();
+            let loaded = load(&pool).await.expect("an old blob must load");
+            assert!(loaded.video_enabled);
+            assert_eq!(loaded.video_device_name.as_deref(), Some("Logitech BRIO"));
+            assert_eq!(loaded.pre_roll_seconds, 25);
+            assert_eq!(loaded.church_name, "Domkirken");
+
+            save(&pool, loaded).await.unwrap();
+            let raw = store::get_setting(&pool, SETTINGS_KEY)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                !raw.contains("classicDirectshow"),
                 "the retired key must not be written back: {raw}"
             );
         }

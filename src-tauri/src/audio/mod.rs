@@ -4,8 +4,8 @@
 //! level in Rust via cpal and push it to React over a Tauri event, so the
 //! webview never needs `getUserMedia`.
 //!
-//!   - [`devices`]     enumerate input devices + capabilities (cpal, for the VU)
-//!   - [`device_enum`] real ffmpeg `-list_devices` enumeration (recorder addressing)
+//!   - [`devices`]     enumerate input devices + capabilities (cpal — the VU, and
+//!     since C3b the only input list: the recorder opens from it too)
 //!   - [`asio`]        Windows ASIO device + channel enumeration (Fase 2)
 //!   - [`com_anchor`]  Windows: keeps cpal's WASAPI device enumerator in a COM
 //!     apartment that lives as long as the process (see its header)
@@ -21,7 +21,6 @@
 
 pub mod asio;
 pub mod com_anchor;
-pub mod device_enum;
 pub mod device_watch;
 pub mod devices;
 pub mod vu;

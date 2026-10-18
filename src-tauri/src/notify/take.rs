@@ -98,8 +98,8 @@ pub fn wire(app: &AppHandle) {
 
     let handle = app.clone();
     app.listen(RECONNECTING_EVENT, move |ev| {
-        // The same channel also announces the planned switch to two-process
-        // capture (`two_process_fallback`), which is not a dropout.
+        // Only `reconnecting` is a dropout on this channel. (Until C3b it also
+        // carried the two-process fallback's `two_process_fallback`.)
         let Ok(e) = serde_json::from_str::<RecordingEvent>(ev.payload()) else {
             return;
         };
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn only_a_real_dropout_counts_as_reconnecting() {
         assert!(is_dropout("reconnecting"));
-        assert!(!is_dropout("two_process_fallback"));
+        assert!(!is_dropout("reconnected"));
     }
 
     #[test]

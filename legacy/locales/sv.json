@@ -236,13 +236,6 @@
         "title": "Avancerat",
         "lede": "Saker som de flesta aldrig behöver röra. Allt här har ett tryggt standardval.",
         "soundLink": "Avancerat ljud",
-        "engine": "Inspelningsmotor",
-        "engineDesc": "Gäller videoinspelningar. Byt bara om ljudet hackar.",
-        "engineConfirm": "Byta inspelningsmotor",
-        "engineChoice": {
-          "native": "Inbyggd",
-          "dshow": "Klassisk (DirectShow)"
-        },
         "preroll": "Förbuffert",
         "prerollDesc": "Ljud som tas med från innan du tryckte på Start. Bufferten håller mikrofonen öppen i bakgrunden så länge appen är redo att spela in.",
         "prerollChoice": {
@@ -519,10 +512,6 @@
         "audio02": {
           "title": "Den valda ljudenheten hittades inte",
           "hint": "Anslut enheten, eller välj en annan under ”Vilket ljud?” på Inspelning."
-        },
-        "audio10": {
-          "title": "Föll tillbaka på den klassiska ljudmotorn",
-          "hint": "Inspelning fungerar fortfarande. Vill du ha den moderna motorn, kontrollera drivrutinen och att inget annat program håller enheten."
         },
         "rate01": {
           "title": "En fast samplingsfrekvens är vald",

@@ -236,13 +236,6 @@
         "title": "Avancé",
         "lede": "Des choses que la plupart des gens n’ont jamais besoin de toucher. Tout ici a une valeur par défaut sûre.",
         "soundLink": "Son avancé",
-        "engine": "Moteur d’enregistrement",
-        "engineDesc": "Concerne les enregistrements vidéo. Ne changez que si le son est saccadé.",
-        "engineConfirm": "Changer de moteur d’enregistrement",
-        "engineChoice": {
-          "native": "Intégré",
-          "dshow": "Classique (DirectShow)"
-        },
         "preroll": "Tampon de pré-enregistrement",
         "prerollDesc": "Le son capté avant que vous appuyiez sur Démarrer. La mémoire tampon garde le microphone ouvert en arrière-plan aussi longtemps que l’application est prête à enregistrer.",
         "prerollChoice": {
@@ -519,10 +512,6 @@
         "audio02": {
           "title": "Le périphérique audio choisi n’a pas été trouvé",
           "hint": "Branchez le périphérique, ou choisissez-en un autre dans « Quel son ? » sur la page Enregistrement."
-        },
-        "audio10": {
-          "title": "Repli sur le moteur audio classique",
-          "hint": "L’enregistrement fonctionne toujours. Si vous voulez le moteur moderne, vérifiez le pilote et qu’aucun autre programme ne retient le périphérique."
         },
         "rate01": {
           "title": "Une fréquence d’échantillonnage fixe est sélectionnée",

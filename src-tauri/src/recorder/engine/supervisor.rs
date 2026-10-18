@@ -1,76 +1,64 @@
-//! The supervisor: capture-backend routing, the per-session [`run_session`]
-//! loop and the per-segment [`run_segment`] `select!`. Split out of
-//! `engine.rs`; see the parent module docs.
+//! The supervisor: the per-session [`run_session`] loop, the one place a
+//! supervisor task is spawned ([`spawn_supervisor`]) and the panic guard every
+//! supervisor runs under ([`SupervisorPanicGuard`]). Split out of `engine.rs`;
+//! see the parent module docs.
+//!
+//! **One engine since C3b.** Every session — audio-only or with a camera —
+//! runs on the native engine (`native_capture`): cpal → ring → WAV writer, plus
+//! the camera's video track beside each WAV fragment for a video session. The
+//! ffmpeg capture supervisor (`run_segment`), the Windows cpal-pipe session and
+//! the two-process fallback that used to sit beside it are gone.
 //!
 //! **How a dying capture is classified (A3b).** Every segment ends in a
 //! [`SegmentOutcome`]; an [`SegmentOutcome::UnexpectedExit`] carries the error
 //! code the recovery policy (`RecordingSession::on_unexpected_exit`) decides
 //! on — fatal codes end the session, everything else reconnects on the back-off
-//! ladder. The ffmpeg path gets its code from stderr (`reader`); the native
-//! path gets it from cpal's TYPED fault through the core table
+//! ladder. The code comes from cpal's TYPED fault through the core table
 //! `sundayrec_core::stream_fault` (unplugged / format changed → reconnect,
 //! busy → retry as `device_busy`, permission → fatal; xruns and reroutes never
-//! end a segment). A native exit also carries the fault itself, because one
-//! class needs more than a code: after `StreamInvalidated` (macOS: the
-//! device's sample rate changed) the reconnect opens at the device's CURRENT
-//! rate instead of forcing the deliverable's pinned one back onto it
+//! end a segment). An exit also carries the fault itself, because one class
+//! needs more than a code: after `StreamInvalidated` (macOS: the device's
+//! sample rate changed) the reconnect opens at the device's CURRENT rate
+//! instead of forcing the deliverable's pinned one back onto it
 //! (`reconnect_keeps_rate_pin`), and the rate-mismatch check turns the change
 //! into a new deliverable. A failed respawn carries its own typed cause
-//! ([`SpawnFailure::code`], from `native_capture::stream::NativeStartError`):
-//! a permission refused at REOPEN is fatal at once, a device that is not back
-//! yet stays transient, and the first start's code leads the `AppError` text
-//! so the volunteer gets the matching sentence.
+//! ([`NativeStartError`]'s code): a permission refused at REOPEN is fatal at
+//! once, a device that is not back yet stays transient, and the first start's
+//! code leads the `AppError` text so the volunteer gets the matching sentence.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use sundayrec_core::alerts::AlertText;
-use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::errors::RecordingErrorCode;
-use sundayrec_core::ffmpeg::Platform;
-use sundayrec_core::levels::{ChannelLevels, SILENCE_FLOOR_DB};
-use sundayrec_core::preflight::{
-    finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
-};
-use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::selftest::RecordingTelemetry;
-use sundayrec_core::silence::{SilenceAction, SilenceWatcher};
 use sundayrec_core::stream_fault::{reconnect_keeps_rate_pin, StreamFault};
-use sundayrec_core::timeouts::RecorderTimeouts;
-use tauri::Emitter;
-use tokio::io::{AsyncReadExt, BufReader};
+use tauri::{AppHandle, Emitter};
 
 use crate::audio::device_watch::BackoffOutcome;
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::{SegmentCounters, SessionContext};
+use crate::recorder::native_capture::segment::NativeSegment;
 use crate::recorder::native_capture::stream::{CpalHostKind, NativeStartError};
 use crate::recorder::native_capture::video::NativeVideoPlan;
 use crate::util::lock_recover;
 
-use super::args::{build_record_args, recording_preview_path};
-use super::emit::{emit_error, emit_failure, emit_warning, reconnecting_message};
+use super::emit::{emit_error, emit_failure, error_code_str, reconnecting_message};
 use super::finalize::{
-    capture_base_path, capture_dir, delivery_encode_for_session, finalize_pending,
+    capture_base_path, capture_dir, delivery_encode_for, finalize_pending,
     finalize_pending_with_first, finalize_session_telemetry, finished_receipt_path,
     session_manifest,
 };
-use super::payloads::{
-    RecordingEvent, RecordingFinished, RecordingLevels, RecordingOpts, RecordingProgress,
-};
-use super::process::{sleep_opt, spawn_ffmpeg_owned, stop_and_wait_bounded_draining, wait_opt};
-use super::reader::{
-    classify_progress_chunk, classify_stderr_line, error_code_str, LevelMeter, ProgressCtx,
-    ReaderCtx, ReaderMsg,
-};
+use super::payloads::{RecordingEvent, RecordingFinished};
 use super::{
-    now_ms, FINISHED_EVENT, LEVELS_EVENT, PROGRESS_EVENT, RECONNECTED_EVENT, RECONNECTING_EVENT,
-    SILENCE_EVENT, STARTED_EVENT,
+    now_ms, recording_preview_path, StateWriter, FINISHED_EVENT, RECONNECTED_EVENT,
+    RECONNECTING_EVENT,
 };
 
 /// Why the current segment's capture stopped — drives what the supervisor does
-/// next. Shared by the ffmpeg `run_segment` and the native `run_native_segment`.
+/// next. Returned by the native `run_native_segment`.
 ///
 /// `Debug`/`PartialEq` so a test can assert on the outcome of a driven segment
 /// (`native_capture::segment::drive_native_segment`).
@@ -91,77 +79,23 @@ pub(crate) enum SegmentOutcome {
     /// last classified error (for the fatal-error short-circuit).
     UnexpectedExit {
         last_error: Option<RecordingErrorCode>,
-        /// The typed cpal fault that ended a NATIVE segment (A3b), when that is
-        /// what ended it. The code above already carries the recovery class;
-        /// this adds what the code cannot say — e.g. that the device's format
+        /// The typed cpal fault that ended the segment (A3b), when that is what
+        /// ended it. The code above already carries the recovery class; this
+        /// adds what the code cannot say — e.g. that the device's format
         /// changed under the stream, so the reconnect must not force the old
-        /// rate back onto it ([`reconnect_keeps_rate_pin`]). `None` for the
-        /// ffmpeg path and for every other way a segment dies.
+        /// rate back onto it ([`reconnect_keeps_rate_pin`]). `None` for every
+        /// other way a segment dies (a watchdog, a writer that stopped).
         stream_fault: Option<StreamFault>,
     },
 }
 
-/// Which capture engine records the audio for this session.
-///
-/// `NativeAudio` = the cpal engine that writes the capture WAV directly
-/// (`recorder::native_capture`) — the ONLY engine for audio-only sessions since
-/// the 2026-08-01 rebuild (avfoundation measurably drops samples below
-/// ffmpeg's observability) and since A5b the escape hatch back to ffmpeg is
-/// gone. `Ffmpeg` = the unified ffmpeg capture, which now records VIDEO sessions
-/// only (until the native engine learns video, C3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CaptureBackend {
-    Ffmpeg,
-    NativeAudio { host: CpalHostKind },
-}
-
-/// `true` when `start()` must list the ffmpeg devices before it can start.
-///
-/// Only a VIDEO session does: the camera (and, on the ffmpeg paths, the mic) is
-/// addressed through avfoundation/dshow's list. An audio-only session runs on
-/// the native engine, which finds the mic by name through cpal, so it must not
-/// wait for — or fail on — `ffmpeg -list_devices` (M1R #5). Mirrors the test
-/// `start()` uses to decide that a session wants a camera.
-pub(crate) fn needs_ffmpeg_device_enumeration(video_device_name: Option<&str>) -> bool {
-    video_device_name.is_some_and(|n| !n.is_empty())
-}
-
-/// The developer switch that routes a VIDEO session to the native engine
-/// (C3a): `SUNDAYREC_NATIVE_VIDEO=1`. Off by default — video sessions keep the
-/// ffmpeg paths until C3b removes them and makes the native engine the only
-/// one. Read once per `start()`.
-pub(crate) fn native_video_enabled() -> bool {
-    std::env::var("SUNDAYREC_NATIVE_VIDEO").is_ok_and(|v| v.trim() == "1")
-}
-
-/// Pure routing decision for the session's capture backend.
-///
-/// Audio-only sessions ALWAYS route to the native engine (CoreAudio on macOS;
-/// WASAPI, or ASIO for an ASIO device, on Windows; the default host elsewhere,
-/// which is only the Linux CI build). There is no way back to ffmpeg for them:
-/// not by setting (`classic_ffmpeg_audio` left in A5b), not by Windows'
-/// `classic_directshow` (it now only steers VIDEO sessions), and not by an
-/// automatic fallback when the native start fails — that is a start error the
-/// operator sees. Video sessions keep the ffmpeg paths byte-for-byte (incl.
-/// Windows' cpal-pipe session).
-pub(crate) fn select_capture_backend(
-    is_windows: bool,
-    audio_only: bool,
-    is_asio_device: bool,
-) -> CaptureBackend {
-    if audio_only {
-        CaptureBackend::NativeAudio {
-            host: audio_only_host(is_windows, is_asio_device),
-        }
-    } else {
-        CaptureBackend::Ffmpeg
-    }
-}
-
-/// The cpal host the native engine opens for an audio-only session — the half
-/// of [`select_capture_backend`] that the capture bench and the diagnose probe
-/// share, since they never record video and so never need the `Ffmpeg` answer.
-pub(crate) fn audio_only_host(is_windows: bool, is_asio_device: bool) -> CpalHostKind {
+/// The cpal host the native engine opens for a session: CoreAudio on macOS
+/// (cpal's default host), WASAPI on Windows, or ASIO for an ASIO device; the
+/// default host elsewhere, which is only the Linux CI build. Every session uses
+/// it — audio-only or with a camera (C3b) — and so do the capture bench, the
+/// «Test mikrofon» capture and the diagnose probe, which is what makes them
+/// test the road a recording takes.
+pub(crate) fn capture_host(is_windows: bool, is_asio_device: bool) -> CpalHostKind {
     if !is_windows {
         CpalHostKind::Default
     } else if is_asio_device {
@@ -171,87 +105,113 @@ pub(crate) fn audio_only_host(is_windows: bool, is_asio_device: bool) -> CpalHos
     }
 }
 
-/// One spawned capture attempt — the ffmpeg child or the native stack.
-/// Both variants are boxed: on Windows a `tokio::process::Child` is ~272 bytes
-/// (process handles), which trips `clippy::large_enum_variant` there while
-/// staying invisible on macOS/Linux CI.
-pub(crate) enum CaptureChild {
-    Ffmpeg(Box<tokio::process::Child>),
-    Native(Box<crate::recorder::native_capture::segment::NativeSegment>),
-}
-
-/// A failed [`spawn_capture`]: the error for the caller/UI, plus the stable code
-/// when the native engine could name the cause (M1R #4). `code` is what the
-/// reconnect policy is consulted with — `None` (the ffmpeg arm, or a native
-/// failure with no typed cause) stays the old "transient" reading.
-pub(crate) struct SpawnFailure {
-    pub error: AppError,
-    pub code: Option<RecordingErrorCode>,
-}
-
-impl From<AppError> for SpawnFailure {
-    fn from(error: AppError) -> Self {
-        Self { error, code: None }
-    }
-}
-
-impl From<NativeStartError> for SpawnFailure {
-    fn from(e: NativeStartError) -> Self {
-        let code = Some(e.code);
-        Self {
-            error: e.into_app_error(),
-            code,
-        }
-    }
-}
-
-/// Spawn a capture for `backend` writing to `output_path`. The ffmpeg arm
-/// builds the argv from the resolved devices; the native arm resolves the
-/// device itself (fuzzy, by NAME — so every spawn re-resolves, covering the
-/// index-reshuffle class of bug for free). `reopen` is `Some(name)` for a
-/// RECONNECT spawn: the native arm then finds exactly that device (the one the
-/// first segment opened) instead of fuzzy-matching the stored label.
-#[allow(clippy::too_many_arguments)]
+/// Spawn one native capture fragment writing to `output_path`. The native
+/// engine resolves the device itself (fuzzy, by NAME — so every spawn
+/// re-resolves, covering the index-reshuffle class of bug for free). `reopen`
+/// is `Some(name)` for a RECONNECT spawn: the device is then found exactly (the
+/// one the first segment opened) instead of fuzzy-matching the stored label.
+/// `video_plan` adds the camera's video track for a video session.
 async fn spawn_capture(
-    backend: CaptureBackend,
-    platform: Platform,
-    audio: &FfmpegDevice,
-    video: Option<&FfmpegDevice>,
-    opts: &RecordingOpts,
+    ctx: &SessionContext,
     output_path: &str,
     pinned_rate: Option<u32>,
     reopen: Option<&str>,
     video_plan: Option<&NativeVideoPlan>,
-) -> Result<CaptureChild, SpawnFailure> {
-    match backend {
-        CaptureBackend::Ffmpeg => {
-            let args = build_record_args(platform, audio, video, opts, output_path);
-            Ok(CaptureChild::Ffmpeg(Box::new(
-                spawn_ffmpeg_owned(&args).await?,
-            )))
-        }
-        CaptureBackend::NativeAudio { host } => Ok(CaptureChild::Native(Box::new(
-            crate::recorder::native_capture::segment::spawn_native_segment_for(
-                host,
-                opts,
-                output_path,
-                pinned_rate,
-                reopen,
-                video_plan,
-            )
-            .await?,
-        ))),
-    }
+) -> Result<NativeSegment, NativeStartError> {
+    crate::recorder::native_capture::segment::spawn_native_segment_for(
+        ctx.host,
+        &ctx.opts,
+        output_path,
+        pinned_rate,
+        reopen,
+        video_plan,
+    )
+    .await
 }
 
 /// The keep-awake block a live session holds (F2-W5).
 ///
 /// Its own function so the seam can be driven by a fake blocker in
-/// `crate::power`'s tests — `run_session` itself needs an `AppHandle`, a device
-/// and an ffmpeg, so the three shapes a session ends in (returns, fails early,
-/// is aborted by `stop()`'s backstop) are asserted there instead.
+/// `crate::power`'s tests — `run_session` itself needs an `AppHandle` and a
+/// device, so the three shapes a session ends in (returns, fails early, is
+/// aborted by `stop()`'s backstop) are asserted there instead.
 pub(crate) fn session_keep_awake() -> crate::power::PowerBlock {
     crate::power::hold("recording in progress")
+}
+
+/// Spawn the session's supervisor task under its [`SupervisorPanicGuard`] — the
+/// one place a supervisor is spawned, so no session can run unguarded.
+///
+/// `RecorderEngine::start` used to spawn two kinds of supervisor (this one and
+/// the Windows cpal-pipe video session), each with its own guard at its own
+/// spawn site. With one engine left (C3b) there is one spawn, and the guard
+/// moved here beside it (#341).
+pub(super) fn spawn_supervisor(
+    ctx: SessionContext,
+    stop_rx: tokio::sync::mpsc::Receiver<()>,
+    ready: tokio::sync::oneshot::Sender<AppResult<()>>,
+) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        let _panic_guard = SupervisorPanicGuard::announcing(ctx.state.clone(), ctx.app.clone());
+        run_session(ctx, stop_rx, ready).await;
+    })
+}
+
+/// Held by a supervisor task for its whole life. If the task PANICS, the guard is
+/// dropped while the thread is unwinding and sets the terminal `Failed` state —
+/// without it the engine sat in `Recording`/`Stopping` forever (nobody left to
+/// emit a terminal state), `start_recording` refused with `already_recording`,
+/// and the UI hung. A normal exit or the stop backstop's `abort()` is not a
+/// panic: the guard does nothing then (the abort path has `fail_stuck_stop` in
+/// the parent module).
+pub(crate) struct SupervisorPanicGuard {
+    state: StateWriter,
+    /// Runs after the state was set to `Failed` (production: announce the error
+    /// to the UI). A callback rather than an `AppHandle`, so the guard itself
+    /// does not drag the whole Tauri runtime into every test binary that
+    /// constructs one (that broke the Windows test exe at load time).
+    on_failed: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl SupervisorPanicGuard {
+    pub(crate) fn new(state: StateWriter, on_failed: Option<Box<dyn FnOnce() + Send>>) -> Self {
+        Self { state, on_failed }
+    }
+
+    /// The production guard: on a panic also emits the terminal error event.
+    fn announcing(state: StateWriter, app: AppHandle) -> Self {
+        Self::new(
+            state,
+            Some(Box::new(move || {
+                emit_failure(&app, "supervisor_panic", "recorder supervisor panicked")
+            })),
+        )
+    }
+}
+
+impl Drop for SupervisorPanicGuard {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            return;
+        }
+        if fail_panicked_supervisor(&self.state) {
+            if let Some(f) = self.on_failed.take() {
+                f();
+            }
+        }
+    }
+}
+
+/// The supervisor panicked: if its session is still the engine's current one and
+/// never reached a terminal state, mark it `Failed`. Returns whether it did (a
+/// newer session or an already-terminal state is left alone).
+fn fail_panicked_supervisor(state: &StateWriter) -> bool {
+    if !state.is_current() || state.last_state_is_terminal() {
+        return false;
+    }
+    tracing::error!("recorder: the supervisor panicked — marking the session failed");
+    state.set(RecorderState::Failed, 0);
+    true
 }
 
 /// The supervisor: owns the [`RecordingSession`] + [`RecorderState`] and runs
@@ -261,33 +221,27 @@ pub(crate) fn session_keep_awake() -> crate::power::PowerBlock {
 /// Everything the session runs against arrives in ONE [`SessionContext`]
 /// (F2-T2) — this used to be twelve loose parameters, and that friction is why
 /// the cpal path was forgotten when `session_generation` was added (F1-A5).
-/// `ctx` is `mut` because a reconnect re-resolves the ffmpeg-side audio device
-/// by name. Writing it back into the context (rather than into a local) is what
-/// makes every later spawn, manifest and history row see it.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — drives real captures over a long runtime.
-pub(super) async fn run_session(
-    mut ctx: SessionContext,
+async fn run_session(
+    ctx: SessionContext,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
 ) {
     // The exhaustiveness gate (see `SessionContext`'s doc): every field is named
     // here, with no `..`. A field added to the context stops THIS path compiling
-    // until someone has decided what the ffmpeg supervisor does with it — the
-    // same gate `run_cpal_session` and `run_two_process_session` open with.
+    // until someone has decided what the supervisor does with it.
     //
-    // Unlike those two, this path ignores NOTHING: it is the full supervisor, and
-    // all ten fields are used below (`pool` and `preroll_clip` inside
-    // `finalize_pending`, which now takes the context too). So the bindings are
-    // `_` and the body reads — and writes — through `ctx` itself.
+    // This path ignores NOTHING: every field is used below (`pool` and
+    // `preroll_clip` inside `finalize_pending`, which takes the context too). So
+    // the bindings are `_` and the body reads through `ctx` itself.
     let SessionContext {
         app: _,
         pool: _,
         opts: _,
         platform: _,
-        backend: _,
-        audio: _,
-        video: _,
+        host: _,
+        camera: _,
         preroll_clip: _,
         state: _,
     } = &ctx;
@@ -298,15 +252,15 @@ pub(super) async fn run_session(
     // leaves no instant where nothing is asking the OS to stay up.
     let _keep_awake = session_keep_awake();
     // The ONE door to shared state, cloned out of the context so the long-lived
-    // `emit_state` closure below doesn't hold a borrow on `ctx` (which the
-    // backend demotion and the reconnect device re-resolve must be able to
-    // mutate). A cloned `StateWriter` shares the very same `Arc`s — including
+    // `emit_state` closure below owns its own handle. A cloned `StateWriter`
+    // shares the very same `Arc`s — including
     // the `session_generation` counter — so this is the same door, not a second
     // one; pinned by `a_cloned_state_writer_shares_the_same_generation_guard`.
     let state = ctx.state.clone();
     let start_ms = now_ms();
-    // Session-wide health counters, fed per-line by each segment's stderr reader
-    // (drops/xruns/IPC-starvation) and persisted at session end via `emit_state`.
+    // Session-wide health counters, fed at the end of every segment (ring
+    // overruns, the audio system's xruns, the writer's exact frame count) and
+    // persisted at session end.
     let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
     // Sum of delivered (finalised) file sizes — feeds the session verdict's
     // "did we capture anything at all" floor.
@@ -347,29 +301,15 @@ pub(super) async fn run_session(
         let session_id = start_ms.to_string();
         // Decoupled capture (the anti-"hakkete" + crash-safety fix). EVERY recording
         // captures to a crash-tolerant, back-pressure-free container in a per-session
-        // hidden folder BESIDE the delivery file:
-        //   - audio-only → lossless PCM WAV: a real-time lossy encoder can never fall
-        //     behind and push avfoundation into dropping samples;
-        //   - video → Matroska (.mkv): playable up to a crash point, unlike an mp4/mov
-        //     whose moov atom only exists after a clean stop — and stopping no longer
-        //     pays the `+faststart` whole-file rewrite.
-        // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
-        // user's chosen delivery format.
-        let audio_only = ctx.video.is_none();
-        // C3a: a NATIVE video session records the sound exactly like an
-        // audio-only one (a WAV per fragment) plus an MKV beside each WAV.
-        let native_video = ctx.is_native_video();
-        let video_plan = native_video.then(|| {
-            crate::recorder::native_capture::video::NativeVideoPlan::for_session(
-                ctx.opts
-                    .video_device_name
-                    .as_deref()
-                    .or(ctx.video.as_ref().map(|v| v.name.as_str()))
-                    .unwrap_or_default(),
-                ctx.opts.video_flip,
-                ctx.platform,
-            )
-        });
+        // hidden folder BESIDE the delivery file: lossless PCM WAV per fragment,
+        // written by the native writer, and — for a video session (C3a; the only
+        // video path since C3b) — a Matroska (.mkv) video track beside each WAV,
+        // playable up to a crash point. Finalisation encodes the WAV (audio-only)
+        // or muxes WAV + MKV into the user's chosen delivery format.
+        let video_plan = ctx
+            .camera
+            .as_deref()
+            .map(|camera| NativeVideoPlan::for_session(camera, ctx.opts.video_flip, ctx.platform));
         let cap_dir = capture_dir(&ctx.opts.output_path, &session_id);
         if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
             tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
@@ -384,16 +324,11 @@ pub(super) async fn run_session(
         // real attribute or a volunteer browsing the save folder mid-service
         // finds — and can "tidy away" — the live capture fragments.
         crate::util::hide_dir_on_windows(&cap_dir);
-        let capture_ext = if audio_only || native_video {
-            "wav"
-        } else {
-            "mkv"
-        };
-        let session_output = capture_base_path(&cap_dir, &ctx.opts.output_path, capture_ext);
+        let session_output = capture_base_path(&cap_dir, &ctx.opts.output_path, "wav");
         // How to turn the capture into the delivery file — persisted in the
         // crash-recovery manifest so an interrupted recording can be finished on the
         // next launch.
-        let delivery_encode = Some(delivery_encode_for_session(&ctx));
+        let delivery_encode = Some(delivery_encode_for(&ctx.opts, ctx.camera.is_some()));
         let mut session = RecordingSession::new(session_output, start_ms);
         // The OS device-list-change signal. Grabbed once per session (it installs
         // the platform listener on first use and is a process-wide singleton
@@ -413,27 +348,20 @@ pub(super) async fn run_session(
         // manifest and the retry is forfeited.
         let mut all_delivered = true;
         // Clear any stale preview frame from a previous video recording so the tile
-        // doesn't briefly show last time's image before ffmpeg writes a fresh one.
-        if ctx.opts.video_device_name.is_some() {
+        // doesn't briefly show last time's image before the video track's ffmpeg
+        // writes a fresh one.
+        if ctx.camera.is_some() {
             let _ = std::fs::remove_file(recording_preview_path());
         }
         emit_state(RecorderState::Preparing, 0);
 
         // Spawn the FIRST segment. A failure reaches the caller as a start
-        // error — an audio-only session has no second engine to fall back to
-        // (A5b), and a video session has only the ffmpeg capture.
-        // The current deliverable's pinned capture rate (native backend): every
-        // fragment of one deliverable must share it for the -c copy concat.
-        let mut pinned_rate: Option<u32> = None;
+        // error — there is no second engine to fall back to (A5b, C3b).
         // Bytes already captured into the current deliverable's PREVIOUS
         // fragments (reconnects) — feeds the native RIFF-cap forced split.
         let mut deliverable_bytes: u64 = 0;
         let mut child = match spawn_capture(
-            ctx.backend,
-            ctx.platform,
-            &ctx.audio,
-            ctx.video.as_ref(),
-            &ctx.opts,
+            &ctx,
             session.primary_path(),
             None,
             None,
@@ -446,7 +374,7 @@ pub(super) async fn run_session(
                 c
             }
             Err(e) => {
-                let _ = ready.send(Err(e.error));
+                let _ = ready.send(Err(e.into_app_error()));
                 emit_state(RecorderState::Failed, 0);
                 // The capture dir was just created and never written to — empty.
                 let _ = tokio::fs::remove_dir(&cap_dir).await;
@@ -455,20 +383,18 @@ pub(super) async fn run_session(
         };
 
         // The device the FIRST segment really opened: every reconnect must find
-        // exactly this one again (see `find_exact_device_match`). For ffmpeg it is
-        // `ctx.audio` (read per reconnect); for the native engine it is the cpal
-        // name the segment reports.
-        let mut native_device: Option<String> = None;
-        if let CaptureChild::Native(seg) = &child {
-            pinned_rate = Some(seg.spec.sample_rate);
-            native_device = seg.device_name.clone();
-        }
+        // exactly this one again (see `find_exact_device_match`) — the cpal name
+        // the segment reports.
+        // The current deliverable's pinned capture rate: every fragment of one
+        // deliverable must share it for the -c copy concat.
+        let mut pinned_rate: Option<u32> = Some(child.spec.sample_rate);
+        let opened_device: Option<String> = child.device_name.clone();
         // A START match may have settled for a looser candidate than the stored
         // device (reconnects never do). Say so, once, before the first block —
         // the recording may be from a microphone the user did not pick.
-        let opened_name = native_device
+        let opened_name = opened_device
             .clone()
-            .unwrap_or_else(|| ctx.audio.name.clone());
+            .unwrap_or_else(|| ctx.opts.audio_device_name.clone());
         super::emit::emit_device_substitution(&ctx.app, &ctx.opts.audio_device_name, &opened_name);
         emit_state(RecorderState::Recording, 0);
 
@@ -482,11 +408,11 @@ pub(super) async fn run_session(
                 &session_manifest(
                     &session_id,
                     &session,
-                    &ctx.audio,
+                    &ctx.opts.audio_device_name,
                     &ctx.preroll_clip,
                     start_ms,
                     &delivery_encode,
-                    native_video,
+                    ctx.camera.is_some(),
                 ),
             )
             .await;
@@ -504,22 +430,15 @@ pub(super) async fn run_session(
                 deliverable_bytes,
                 telemetry: Arc::clone(&telemetry),
             };
-            let outcome = match child {
-                CaptureChild::Ffmpeg(c) => {
-                    run_segment(&ctx, *c, &session, counters, &mut stop_rx, &mut stop_watch).await
-                }
-                CaptureChild::Native(seg) => {
-                    crate::recorder::native_capture::segment::run_native_segment(
-                        &ctx,
-                        *seg,
-                        &session,
-                        counters,
-                        &mut stop_rx,
-                        &mut stop_watch,
-                    )
-                    .await
-                }
-            };
+            let outcome = crate::recorder::native_capture::segment::run_native_segment(
+                &ctx,
+                child,
+                &session,
+                counters,
+                &mut stop_rx,
+                &mut stop_watch,
+            )
+            .await;
 
             match outcome {
                 SegmentOutcome::GracefulStop
@@ -547,11 +466,7 @@ pub(super) async fn run_session(
                     let next = session.begin_split_segment(close_ms);
                     tracing::info!(segment = %next, "recorder: split — starting new segment");
                     match spawn_capture(
-                        ctx.backend,
-                        ctx.platform,
-                        &ctx.audio,
-                        ctx.video.as_ref(),
-                        &ctx.opts,
+                        &ctx,
                         &next,
                         None, // new deliverable — free to renegotiate the rate
                         None,
@@ -561,14 +476,12 @@ pub(super) async fn run_session(
                     {
                         Ok(c) => {
                             deliverable_bytes = 0;
-                            if let CaptureChild::Native(seg) = &c {
-                                pinned_rate = Some(seg.spec.sample_rate);
-                            }
+                            pinned_rate = Some(c.spec.sample_rate);
                             child = c;
                         }
                         Err(e) => {
-                            tracing::error!("recorder: split respawn failed: {}", e.error);
-                            emit_failure(&ctx.app, "device_error", &e.error.to_string());
+                            tracing::error!("recorder: split respawn failed: {e}");
+                            emit_failure(&ctx.app, "device_error", &e.to_string());
                             emit_state(RecorderState::Failed, session.reconnect_count());
                             // A failing exit keeps the manifest either way (only the
                             // clean stop deletes it), so the verdict is moot here.
@@ -610,92 +523,6 @@ pub(super) async fn run_session(
                     // its bytes count toward the native RIFF-cap forced split.
                     deliverable_bytes =
                         deliverable_bytes.saturating_add(segment_bytes.load(Ordering::Relaxed));
-                    // F3.3b auto-fallback: a video session whose FIRST capture died
-                    // at startup without producing output usually means the camera +
-                    // mic can't share one ffmpeg process. Rather than burn the
-                    // reconnect budget on a pairing that will never work, hand off to
-                    // the two-process path (separate captures + mux). Narrow trigger
-                    // (pure decision in core); anything else falls through to the
-                    // normal reconnect policy below. HARDWARE-UNVERIFIED.
-                    // Only the FFMPEG video capture can hand off: a native
-                    // video session records the sound on its own, so a start
-                    // that died is the audio's, and the normal policy decides.
-                    if let Some(video_dev) = ctx.video.as_ref().filter(|_| !native_video) {
-                        if sundayrec_core::two_process::should_fallback_to_two_process(
-                            true,
-                            finalized == 0,
-                            session.reconnect_count(),
-                            segment_bytes.load(Ordering::Relaxed),
-                            (now_ms() - start_ms) as i64,
-                        ) {
-                            tracing::warn!(
-                                "recorder: unified video startup failed with no output — \
-                             switching to two-process fallback"
-                            );
-                            let _ = ctx.app.emit(
-                                RECONNECTING_EVENT,
-                                RecordingEvent {
-                                    code: "two_process_fallback".into(),
-                                    message: "Kamera og mikrofon kan ikke deles i én prosess — \
-                                          bytter til to-prosess-opptak"
-                                        .into(),
-                                },
-                            );
-                            // Drop the empty/broken unified file + its now-stale
-                            // recovery manifest before the fallback writes its own
-                            // temps + muxed output — the two-process path doesn't
-                            // extend this manifest, so it would otherwise sit as
-                            // harmless litter until a future startup scan skips it.
-                            let _ = std::fs::remove_file(session.primary_path());
-                            crate::recorder::recovery::delete_manifest(&ctx.app, &session_id).await;
-
-                            let result = crate::recorder::two_process::run_two_process_session(
-                                ctx.clone(),
-                                video_dev.clone(),
-                                stop_rx,
-                                stop_watch.clone(),
-                            )
-                            .await;
-                            match result {
-                                Ok(()) => {
-                                    // Record→edit hand-off, same as the unified path
-                                    // (this branch used to `break 'run` past it, so a
-                                    // two-process recording never offered "open in
-                                    // editor"). Same guard: only a real, non-empty
-                                    // muxed file — a mux failure or a camera that
-                                    // never opened leaves `output_path` absent, and
-                                    // those return Ok(()) too.
-                                    if tokio::fs::metadata(&ctx.opts.output_path)
-                                        .await
-                                        .map(|m| m.len() > 0)
-                                        .unwrap_or(false)
-                                    {
-                                        let finished = RecordingFinished::for_delivered(
-                                            ctx.pool.as_ref(),
-                                            ctx.opts.output_path.clone(),
-                                            true,
-                                            !ctx.state.is_current(),
-                                        )
-                                        .await;
-                                        let _ = ctx.app.emit(FINISHED_EVENT, finished);
-                                    }
-                                    emit_state(RecorderState::Stopped, 0)
-                                }
-                                Err(e) => {
-                                    emit_failure(&ctx.app, "device_error", &e.to_string());
-                                    emit_state(RecorderState::Failed, 0);
-                                }
-                            }
-                            // The unified attempt's capture dir held only the just-
-                            // removed empty/broken primary (no fragments — the
-                            // fallback trigger requires zero bytes produced) — empty
-                            // now. The two-process fallback owns its own temps
-                            // elsewhere, so this cleanup is unrelated to its outcome.
-                            let _ = tokio::fs::remove_dir(&cap_dir).await;
-                            break 'run;
-                        }
-                    }
-
                     // Consult the pure recovery policy.
                     match session.on_unexpected_exit(now_ms(), last_error) {
                         RecoveryDecision::GiveUp => {
@@ -737,18 +564,10 @@ pub(super) async fn run_session(
                             // the SAME reconnect budget as device exits. (This replaces a
                             // hand-inlined duplicate of this match that gave up after
                             // exactly one respawn retry.)
-                            // C0a: a video recording that died may have been killed
-                            // by its hardware encoder. The core decides whether the
-                            // encoder takes the blame; if so every respawn below
-                            // builds its argv with libx264 and the stored choice is
-                            // forgotten.
-                            // (A native video session's exits are the SOUND's —
-                            // its encoder failing never ends a segment.)
-                            if ctx.video.is_some() && !native_video {
-                                crate::media::video_encoder::note_unexpected_exit(
-                                    &ctx.app, last_error,
-                                );
-                            }
+                            // (A video session's exits are the SOUND's: an encoder
+                            // that fails never ends a segment — the video track
+                            // falls back to libx264 on its own, see
+                            // `native_capture::video`.)
                             let mut delay_ms = delay_ms;
                             let mut attempt = attempt;
                             let mut next_segment = next_segment;
@@ -790,148 +609,95 @@ pub(super) async fn run_session(
                                     }
                                 }
 
-                                // Re-resolve the device by NAME before every
-                                // ffmpeg respawn: avfoundation indices reshuffle
-                                // when virtual/Continuity devices (Teams, iPhone)
-                                // come and go, and a stale index opens the
-                                // WRONG device — rig-observed as a 20 s
-                                // zero-byte recording (2026-07-31). The native
-                                // backend re-resolves by name inside its own
-                                // spawn, so this ffmpeg enumeration is skipped.
-                                //
-                                // A RECONNECT matches by exact name only (the device
-                                // the first segment opened, case-insensitive): the
-                                // fuzzy ladder would swap a dropped USB mixer for
-                                // the laptop mic on a shared word like "microphone"
-                                // and record the rest of the service from it. No
-                                // exact hit = "not back yet", and the back-off goes on.
-                                let mut device_back = true;
-                                if ctx.backend == CaptureBackend::Ffmpeg
-                                    && !ctx.audio.name.trim().is_empty()
-                                {
-                                    if let Ok(inv) =
-                                        crate::audio::device_enum::enumerate_ffmpeg_devices().await
-                                    {
-                                        match sundayrec_core::device_match::find_exact_device_match(
-                                            &inv.audio_inputs,
-                                            &ctx.audio.name,
-                                        ) {
-                                            Some(fresh) => {
-                                                if fresh.index != ctx.audio.index {
-                                                    tracing::warn!(
-                                                        old = ?ctx.audio.index,
-                                                        new = ?fresh.index,
-                                                        "recorder: device index moved — re-resolved before respawn"
-                                                    );
-                                                }
-                                                ctx.audio = fresh.clone();
-                                            }
-                                            None => device_back = false,
-                                        }
-                                    }
-                                }
-                                let reopen_name = native_device.as_deref();
-                                let respawned = if device_back {
-                                    spawn_capture(
-                                        ctx.backend,
-                                        ctx.platform,
-                                        &ctx.audio,
-                                        ctx.video.as_ref(),
-                                        &ctx.opts,
-                                        &next_segment,
-                                        // an _rN fragment must match its siblings —
-                                        // unless the device's format changed (above)
-                                        respawn_rate,
-                                        reopen_name,
-                                        video_plan.as_ref(),
-                                    )
-                                    .await
-                                } else {
-                                    Err(SpawnFailure::from(AppError::Recording(format!(
-                                        "input device not back: {}",
-                                        ctx.audio.name
-                                    ))))
-                                };
+                                // The native engine re-resolves the device by NAME
+                                // inside its own spawn — and a RECONNECT matches by
+                                // exact name only (the device the first segment
+                                // opened, case-insensitive): the fuzzy ladder would
+                                // swap a dropped USB mixer for the laptop mic on a
+                                // shared word like "microphone" and record the rest
+                                // of the service from it. No exact hit = "not back
+                                // yet", and the back-off goes on.
+                                let reopen_name = opened_device.as_deref();
+                                let respawned = spawn_capture(
+                                    &ctx,
+                                    &next_segment,
+                                    // an _rN fragment must match its siblings —
+                                    // unless the device's format changed (above)
+                                    respawn_rate,
+                                    reopen_name,
+                                    video_plan.as_ref(),
+                                )
+                                .await;
                                 match respawned {
                                     Ok(mut c) => {
-                                        // Native: the device may have come back at a
+                                        // The device may have come back at a
                                         // DIFFERENT rate than the deliverable's pinned
                                         // one — a -c copy _rN join would then corrupt.
                                         // Close the deliverable and continue in a NEW
                                         // one (the split machinery) instead.
-                                        if let CaptureChild::Native(seg) = &mut c {
-                                            if pinned_rate
-                                                .is_some_and(|pin| seg.spec.sample_rate != pin)
+                                        if pinned_rate.is_some_and(|pin| c.spec.sample_rate != pin)
+                                        {
+                                            tracing::warn!(
+                                                pinned = ?pinned_rate,
+                                                got = c.spec.sample_rate,
+                                                "recorder: device rate changed across reconnect — starting a new deliverable"
+                                            );
+                                            crate::recorder::native_capture::segment::abort_native_segment(
+                                                    &mut c,
+                                                    &next_segment,
+                                                )
+                                                .await;
+                                            // The wrong-rate `_rN` is a fragment
+                                            // of the deliverable being closed
+                                            // (and may hold audio, so the abort
+                                            // kept it): left there, the `-c copy`
+                                            // join below would splice two rates.
+                                            discard_wrong_rate_fragment(
+                                                &mut session,
+                                                &next_segment,
+                                            )
+                                            .await;
+                                            // The session CONTINUES in a new
+                                            // deliverable — this one's verdict
+                                            // must reach the clean stop.
+                                            all_delivered &= finalize_pending(
+                                                &ctx,
+                                                &session,
+                                                &mut finalized,
+                                                now_ms(),
+                                                &telemetry,
+                                                &delivered_bytes,
+                                            )
+                                            .await;
+                                            let split_path = session.begin_split_segment(now_ms());
+                                            match spawn_capture(
+                                                &ctx,
+                                                &split_path,
+                                                None,
+                                                reopen_name,
+                                                video_plan.as_ref(),
+                                            )
+                                            .await
                                             {
-                                                tracing::warn!(
-                                                    pinned = ?pinned_rate,
-                                                    got = seg.spec.sample_rate,
-                                                    "recorder: device rate changed across reconnect — starting a new deliverable"
-                                                );
-                                                crate::recorder::native_capture::segment::abort_native_segment(
-                                                    seg,
-                                                    &next_segment,
-                                                )
-                                                .await;
-                                                // The wrong-rate `_rN` is a fragment
-                                                // of the deliverable being closed
-                                                // (and may hold audio, so the abort
-                                                // kept it): left there, the `-c copy`
-                                                // join below would splice two rates.
-                                                discard_wrong_rate_fragment(
-                                                    &mut session,
-                                                    &next_segment,
-                                                )
-                                                .await;
-                                                // The session CONTINUES in a new
-                                                // deliverable — this one's verdict
-                                                // must reach the clean stop.
-                                                all_delivered &= finalize_pending(
-                                                    &ctx,
-                                                    &session,
-                                                    &mut finalized,
-                                                    now_ms(),
-                                                    &telemetry,
-                                                    &delivered_bytes,
-                                                )
-                                                .await;
-                                                let split_path =
-                                                    session.begin_split_segment(now_ms());
-                                                match spawn_capture(
-                                                    ctx.backend,
-                                                    ctx.platform,
-                                                    &ctx.audio,
-                                                    ctx.video.as_ref(),
-                                                    &ctx.opts,
-                                                    &split_path,
-                                                    None,
-                                                    reopen_name,
-                                                    video_plan.as_ref(),
-                                                )
-                                                .await
-                                                {
-                                                    Ok(c2) => {
-                                                        deliverable_bytes = 0;
-                                                        c = c2;
-                                                    }
-                                                    Err(e) => {
-                                                        emit_failure(
-                                                            &ctx.app,
-                                                            "device_error",
-                                                            &e.error.to_string(),
-                                                        );
-                                                        emit_state(
-                                                            RecorderState::Failed,
-                                                            session.reconnect_count(),
-                                                        );
-                                                        break 'run;
-                                                    }
+                                                Ok(c2) => {
+                                                    deliverable_bytes = 0;
+                                                    c = c2;
+                                                }
+                                                Err(e) => {
+                                                    emit_failure(
+                                                        &ctx.app,
+                                                        "device_error",
+                                                        &e.to_string(),
+                                                    );
+                                                    emit_state(
+                                                        RecorderState::Failed,
+                                                        session.reconnect_count(),
+                                                    );
+                                                    break 'run;
                                                 }
                                             }
                                         }
-                                        if let CaptureChild::Native(seg) = &c {
-                                            pinned_rate = Some(seg.spec.sample_rate);
-                                        }
+                                        pinned_rate = Some(c.spec.sample_rate);
                                         child = c;
                                         // The capture is alive again: close the
                                         // reconnect STREAK. Both the time budget and
@@ -958,15 +724,14 @@ pub(super) async fn run_session(
                                     Err(e) => {
                                         tracing::warn!(
                                             code = ?e.code,
-                                            "recorder: reconnect respawn failed: {}",
-                                            e.error
+                                            "recorder: reconnect respawn failed: {e}"
                                         );
                                         // M1R #4: the reopen's TYPED cause reaches the
                                         // policy, so a refused permission ends the session
                                         // with its sentence instead of "reconnecting" for
                                         // the whole time budget. A missing device arrives
                                         // as the transient `DeviceDisconnected`.
-                                        match session.on_unexpected_exit(now_ms(), e.code) {
+                                        match session.on_unexpected_exit(now_ms(), Some(e.code)) {
                                             RecoveryDecision::Reconnect {
                                                 delay_ms: next_delay,
                                                 attempt: next_attempt,
@@ -981,11 +746,8 @@ pub(super) async fn run_session(
                                             RecoveryDecision::GiveUp => {
                                                 emit_failure(
                                                     &ctx.app,
-                                                    e.code.map_or(
-                                                        "device_disconnected",
-                                                        error_code_str,
-                                                    ),
-                                                    &e.error.to_string(),
+                                                    error_code_str(e.code),
+                                                    &e.to_string(),
                                                 );
                                                 emit_state(
                                                     RecorderState::Failed,
@@ -1069,7 +831,7 @@ pub(super) async fn run_session(
             let finished = RecordingFinished::for_delivered(
                 ctx.pool.as_ref(),
                 finished_path,
-                ctx.opts.video_device_name.is_some(),
+                ctx.camera.is_some(),
                 !ctx.state.is_current(),
             )
             .await;
@@ -1091,453 +853,6 @@ pub(super) async fn run_session(
     );
 }
 
-/// Run ONE ffmpeg segment to completion. Owns the child, spawns its stderr
-/// reader, and runs the `select!` over reader events + the stop request + the
-/// timer ticks (watchdog poll, split, manual-max, silence stop/warn). Returns
-/// the [`SegmentOutcome`] telling the supervisor what to do next. On any
-/// graceful path (stop / split / auto-stop / silence-stop) it sends ffmpeg `q`
-/// and waits for it to finalise before returning.
-///
-/// ⚠️ HARDWARE-UNVERIFIED.
-///
-/// Its ten former parameters are now two groups plus the segment's own three
-/// (F2-T2): the session's app handle / options / state door arrive in `ctx`, and
-/// the byte + telemetry counters in [`SegmentCounters`] — the same grouping the
-/// native path's [`run_native_segment`](crate::recorder::native_capture::segment::run_native_segment)
-/// takes, so the two segment loops read alike.
-async fn run_segment(
-    ctx: &SessionContext,
-    mut child: tokio::process::Child,
-    session: &RecordingSession,
-    counters: SegmentCounters,
-    stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
-    stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
-) -> SegmentOutcome {
-    // Read the three session fields this loop needs out of the context once. The
-    // `StateWriter` is the context's OWN (not a second one), so the segment's
-    // countdown restamps go through the very same generation guard the
-    // supervisor's transitions do.
-    let (app, opts, state) = (&ctx.app, &ctx.opts, &ctx.state);
-    // `deliverable_bytes` feeds the native RIFF-cap forced split only: the ffmpeg
-    // capture is VIDEO-only (Matroska, no 4 GiB ceiling) since A5b.
-    let SegmentCounters {
-        segment_bytes,
-        deliverable_bytes: _,
-        telemetry,
-    } = counters;
-    let Some(stderr) = child.stderr.take() else {
-        return SegmentOutcome::UnexpectedExit {
-            last_error: None,
-            stream_fault: None,
-        };
-    };
-    // stdout carries the `-progress` blocks (see `capture::PROGRESS_ARGS`). It
-    // is now LOAD-BEARING: with `-nostats` the periodic stats line is gone from
-    // stderr, so this pipe is where startup and the heartbeat come from.
-    let Some(stdout) = child.stdout.take() else {
-        return SegmentOutcome::UnexpectedExit {
-            last_error: None,
-            stream_fault: None,
-        };
-    };
-    let mut stdin = child.stdin.take();
-
-    // The in-recording live preview is now a DEADLOCK-PROOF file sink: the
-    // recording ffmpeg auto-overwrites a low-fps JPEG (see `CaptureOpts.preview_jpg`
-    // / `recording_preview_path`) that the `recording_preview_frame` command reads
-    // on a poll. There is NO stdout pipe to drain here (a full pipe was what froze
-    // the capture), so the segment reader only owns stderr.
-
-    // Reader task: drain stderr → atomics/watch/try_send so the supervisor's
-    // select! owns all decisions. THE ZERO-BACK-PRESSURE INVARIANT: this task's
-    // only await is the stderr `read()` itself — no consumer (channel, IPC,
-    // disk, UI) can ever stall it, so ffmpeg's stderr pipe can never fill and
-    // avfoundation can never be pushed into dropping samples (the 2026-07-31
-    // incident). A full channel costs a counted message, never capture.
-    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
-    // Live levels ride a `watch` (latest-wins by construction, never queues).
-    let (levels_tx, mut levels_rx) =
-        tokio::sync::watch::channel(ChannelLevels::peaks(SILENCE_FLOOR_DB, None));
-    // PROGRESS reader task: drains ffmpeg's `-progress` stdout → the startup
-    // latch, the watchdog byte atomic, and the coalesced UI counter. Same
-    // zero-back-pressure discipline as the stderr reader: its only await is the
-    // `read()` itself, so no consumer can stall it and let the pipe fill.
-    //
-    // Draining is not optional. With stdout previously nulled the channel cost
-    // nothing; now ffmpeg writes ~120 bytes into it twice a second, and a
-    // stalled reader would fill the pipe buffer in minutes and block the
-    // capture — the 2026-07-31 failure mode. Hence: no locks, no channels that
-    // can block, and a task that only ends at EOF.
-    //
-    // ⚠️ HARDWARE-UNVERIFIED. The protocol itself is proven against the real
-    // bundled binary (`media::ffmpeg`'s
-    // `the_real_binary_speaks_the_progress_protocol_or_skips`) and the
-    // dispatcher against the exact blocks it emits, but this task has only ever
-    // been run against a lavfi source: an avfoundation/dshow capture on a real
-    // rig is what would show whether the first block still arrives inside
-    // `STARTUP_TIMEOUT_MS` when a device (not a filter) has to open first.
-    let progress_bytes = Arc::clone(&segment_bytes);
-    let progress_telemetry = Arc::clone(&telemetry);
-    let progress_tx = msg_tx.clone();
-    let progress_reader = tauri::async_runtime::spawn(async move {
-        let mut ctx = ProgressCtx::new();
-        let mut stdout = BufReader::new(stdout);
-        let mut chunk = [0u8; 4096];
-        loop {
-            let n = match stdout.read(&mut chunk).await {
-                Ok(0) => break, // stdout closed → ffmpeg exited
-                Ok(n) => n,
-                Err(e) => {
-                    tracing::warn!("recorder progress read error: {e}");
-                    break;
-                }
-            };
-            // The block parser owns line reassembly, so a chunk that ends
-            // mid-key is held rather than dropped — no framing logic here.
-            let text = String::from_utf8_lossy(&chunk[..n]);
-            classify_progress_chunk(
-                &text,
-                &mut ctx,
-                &progress_tx,
-                &progress_bytes,
-                &progress_telemetry,
-            );
-        }
-    });
-
-    let reader_bytes = Arc::clone(&segment_bytes);
-    // The reader task takes ownership of the telemetry handle; keep our own so
-    // the end of this segment can seal the capture process's drop/dup window.
-    let seg_telemetry = Arc::clone(&telemetry);
-    let reader = tauri::async_runtime::spawn(async move {
-        let mut ctx = ReaderCtx::new();
-
-        // CRITICAL: ffmpeg writes its `size=…` progress line with CARRIAGE
-        // RETURNS (`\r`) and NO trailing newline until the process exits, so a
-        // newline-based reader (`.lines()`/`next_line()`) blocks forever and
-        // never observes progress → the UI is stuck at "Starter …" while ffmpeg
-        // records fine. Read raw bytes and split on EITHER `\r` or `\n` so every
-        // progress update + every banner/astats line is delivered live.
-        let mut stderr = BufReader::new(stderr);
-        let mut chunk = [0u8; 4096];
-        let mut line_buf: Vec<u8> = Vec::with_capacity(256);
-        loop {
-            let n = match stderr.read(&mut chunk).await {
-                Ok(0) => break, // stderr closed → ffmpeg exited
-                Ok(n) => n,
-                Err(e) => {
-                    tracing::warn!("recorder stderr read error: {e}");
-                    break;
-                }
-            };
-            for &b in &chunk[..n] {
-                if b == b'\r' || b == b'\n' {
-                    if !line_buf.is_empty() {
-                        let line = String::from_utf8_lossy(&line_buf).into_owned();
-                        line_buf.clear();
-                        classify_stderr_line(
-                            &line,
-                            &mut ctx,
-                            &levels_tx,
-                            &msg_tx,
-                            &reader_bytes,
-                            &telemetry,
-                        );
-                    }
-                } else {
-                    line_buf.push(b);
-                }
-            }
-        }
-        // A final progress chunk may arrive without a terminator — classify it.
-        if !line_buf.is_empty() {
-            let line = String::from_utf8_lossy(&line_buf).into_owned();
-            classify_stderr_line(
-                &line,
-                &mut ctx,
-                &levels_tx,
-                &msg_tx,
-                &reader_bytes,
-                &telemetry,
-            );
-        }
-        // Exit is the ONE blocking send — legal: stderr is EOF, so there is no
-        // pipe left to back-pressure; the reader has nothing further to drain.
-        let _ = msg_tx
-            .send(ReaderMsg::Exit {
-                last_error: ctx.last_error,
-            })
-            .await;
-    });
-
-    // Levels forwarder: the ONLY place recording levels cross into the webview.
-    // Paces IPC to ~30/s regardless of the astats print rate, off the
-    // supervisor's select! so a slow `app.emit` can never delay control
-    // messages. Ends when the reader (and its `levels_tx`) is dropped.
-    let levels_forwarder = {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            while levels_rx.changed().await.is_ok() {
-                let lv = *levels_rx.borrow_and_update();
-                let _ = app.emit(LEVELS_EVENT, RecordingLevels::from(lv));
-                tokio::time::sleep(LevelMeter::EMIT_EVERY).await;
-            }
-        })
-    };
-
-    // Silence watcher + its (host-owned) timers.
-    let mut silence = SilenceWatcher::new(opts.stop_on_silence);
-    let silence_stop_after =
-        Duration::from_secs(u64::from(opts.silence_timeout_minutes.max(1)) * 60);
-    let silence_warn_after = Duration::from_millis(RecorderTimeouts::SILENCE_WARN_MS);
-
-    // Watchdog: poll the segment byte count against the core WatchdogState.
-    let mut wd = WatchdogState::new(RecorderTimeouts::STUCK_PROGRESS_MS, now_ms());
-    let mut wd_tick = tokio::time::interval(Duration::from_millis(RecorderTimeouts::STUCK_POLL_MS));
-    wd_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-    // Low-disk guard: every 30 s, probe free space on the save volume and stop
-    // GRACEFULLY before ffmpeg hits ENOSPC and leaves a corrupt container. The
-    // base headroom matches the pre-flight threshold (4 GB with video, else
-    // 500 MB); the decoupled-capture delivery step (WAV encode / MKV remux) needs
-    // its OWN transient headroom on top — see `finalize_reserve_bytes` — so the
-    // per-tick threshold grows with the current segment's captured size instead
-    // of staying fixed regardless of how much has been captured so far.
-    let disk_folder = std::path::Path::new(&opts.output_path)
-        .parent()
-        .map(|p| p.to_path_buf());
-    let video_active = opts.video_device_name.is_some();
-    let disk_headroom = min_disk_headroom_bytes(video_active);
-    let mut disk_tick = tokio::time::interval(Duration::from_secs(30));
-    disk_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-    // Split + manual-max timers fire relative to NOW (this segment for split,
-    // whole session for auto-stop). We arm one-shot sleeps, recomputed each loop.
-    let split_deadline = if opts.split_minutes > 0 {
-        Some(Duration::from_secs(u64::from(opts.split_minutes) * 60))
-    } else {
-        None
-    };
-    // Auto-stop fires at an ABSOLUTE deadline (epoch ms) carried in the shared
-    // `stop_watch`, so splits + reconnects re-pin the SAME stop time and a live
-    // extend/cancel moves/clears the real timer. `None` = no auto-stop. We pin one
-    // sleep and `reset()` it whenever the deadline changes.
-    let auto_stop_remaining = |deadline: Option<u64>| -> Option<Duration> {
-        deadline.map(|d| Duration::from_millis(d.saturating_sub(now_ms())))
-    };
-    // Snapshot the current deadline (re-read each time the watch signals a change).
-    let mut auto_deadline: Option<u64> = *stop_watch.borrow();
-
-    // Pin the timers. We use a helper that yields "never" when disabled.
-    let split_sleep = sleep_opt(split_deadline);
-    tokio::pin!(split_sleep);
-    let auto_sleep = sleep_opt(auto_stop_remaining(auto_deadline));
-    tokio::pin!(auto_sleep);
-    // Silence timers, initially disarmed.
-    let mut silence_stop: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
-    let mut silence_warn: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
-
-    // STARTUP WATCHDOG: ffmpeg has opened the device(s) but if it never produces
-    // its first `size=` progress within this window, the start FAILED (a wedged
-    // output, an unavailable device, a bad arg). Instead of hanging on "STARTING"
-    // forever, we kill it, surface a clear error, and give up. Disarmed the moment
-    // the first progress (`Started`) is observed.
-    let mut started_seen = false;
-    let startup_sleep =
-        tokio::time::sleep(Duration::from_millis(RecorderTimeouts::STARTUP_TIMEOUT_MS));
-    tokio::pin!(startup_sleep);
-
-    let outcome = loop {
-        tokio::select! {
-            // Reader events.
-            msg = msg_rx.recv() => {
-                match msg {
-                    Some(ReaderMsg::Started) => {
-                        started_seen = true;
-                        let _ = app.emit(STARTED_EVENT, ());
-                    }
-                    Some(ReaderMsg::Progress(b)) => {
-                        // Byte count already lives in the shared atomic (written
-                        // by the reader); this message only feeds the UI counter.
-                        let _ = app.emit(PROGRESS_EVENT, RecordingProgress { bytes_written: b });
-                    }
-                    Some(ReaderMsg::Silence(ev)) => {
-                        for action in silence.feed(ev) {
-                            match action {
-                                SilenceAction::ArmStop => {
-                                    silence_stop = Some(Box::pin(tokio::time::sleep(silence_stop_after)));
-                                }
-                                SilenceAction::ArmWarn => {
-                                    silence_warn = Some(Box::pin(tokio::time::sleep(silence_warn_after)));
-                                }
-                                SilenceAction::CancelStop => { silence_stop = None; }
-                                SilenceAction::CancelWarn => { silence_warn = None; }
-                            }
-                        }
-                    }
-                    Some(ReaderMsg::Error(code, line)) => {
-                        // Do NOT end the segment — ffmpeg usually dies right
-                        // after, and the Exit branch carries the last_error to
-                        // the recovery policy. Only a FATAL code (no reconnect
-                        // coming) may go out on the terminal ERROR_EVENT; a
-                        // transient one goes out as a warning so the UI keeps
-                        // the overlay up while the reconnect policy retries.
-                        if sundayrec_core::recorder::is_fatal_reconnect_error(code) {
-                            emit_failure(app, error_code_str(code), &line);
-                        } else {
-                            emit_warning(app, error_code_str(code), &line);
-                        }
-                    }
-                    Some(ReaderMsg::Exit { last_error }) => {
-                        break SegmentOutcome::UnexpectedExit { last_error, stream_fault: None };
-                    }
-                    None => break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None },
-                }
-            }
-            // Graceful stop request.
-            _ = stop_rx.recv() => {
-                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
-                break SegmentOutcome::GracefulStop;
-            }
-            // Startup watchdog: no first progress in time → the start failed.
-            _ = &mut startup_sleep, if !started_seen => {
-                emit_error(
-                    app,
-                    "start_timeout",
-                    &AlertText::RecordingStartTimeout.text(crate::ui_lang::current()),
-                );
-                let _ = child.start_kill();
-                let _ = child.wait().await;
-                // A fatal code so the supervisor gives up cleanly instead of
-                // reconnect-looping a start that won't fix itself.
-                break SegmentOutcome::UnexpectedExit {
-                    last_error: Some(RecordingErrorCode::DeviceNotFound),
-                    stream_fault: None,
-                };
-            }
-            // Watchdog poll.
-            _ = wd_tick.tick() => {
-                if wd.observe(segment_bytes.load(Ordering::Relaxed), now_ms()) == WatchdogVerdict::Stuck {
-                    // WARNING, not error: this arm kills the encoder and breaks
-                    // to `UnexpectedExit`, which the recovery policy answers with
-                    // `Reconnect`. The session is NOT over, so the rule at
-                    // `ERROR_EVENT` applies — transient + retry goes out on
-                    // `WARNING_EVENT`. It used to be an error, and two things
-                    // rode on that channel: the UI tore the overlay down mid
-                    // service, and `notify::wire_failure_sources` (which listens
-                    // ONLY to `ERROR_EVENT`) fired a native alert AND an e-mail
-                    // saying the recording had failed — while the engine was
-                    // already reconnecting. If the reconnect really does give up,
-                    // the `GiveUp` arm emits the terminal error itself.
-                    emit_warning(
-                        app,
-                        "stuck_recording",
-                        // ENGLISH reserve: `stuck_recording` is a code the
-                        // shell knows, and `state/recording.ts` draws its own
-                        // reconnect banner from `app.overlay.reconnect*`. This
-                        // text reaches the log and the event payload, never a
-                        // screen.
-                        &format!(
-                            "no progress for {} s — reconnecting",
-                            RecorderTimeouts::STUCK_PROGRESS_MS / 1000
-                        ),
-                    );
-                    // A wedged encoder: kill it so the reconnect path respawns.
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
-                    break SegmentOutcome::UnexpectedExit { last_error: None, stream_fault: None };
-                }
-            }
-            // Low-disk guard (one 30 s tick, same order as the native twin in
-            // `native_capture::segment::run_native_segment`). The 4 GiB RIFF-cap
-            // guard that used to sit here is gone with A5b: it covered ffmpeg WAV
-            // captures, and the ffmpeg capture is VIDEO-only now (Matroska has
-            // no such ceiling); the native engine carries its own.
-            _ = disk_tick.tick() => {
-                if let Some(folder) = &disk_folder {
-                    if let Ok(free) = fs4::available_space(folder) {
-                        let reserve = finalize_reserve_bytes(
-                            video_active,
-                            segment_bytes.load(Ordering::Relaxed),
-                        );
-                        if low_disk_should_stop(free, disk_headroom + reserve) {
-                            emit_error(
-                                app,
-                                "disk_full",
-                                &AlertText::RecordingDiskFull.text(crate::ui_lang::current()),
-                            );
-                            // Graceful stop so the container is finalised + playable.
-                            stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
-                            break SegmentOutcome::DiskStop;
-                        }
-                    }
-                }
-            }
-            // Split timer.
-            _ = &mut split_sleep, if split_deadline.is_some() => {
-                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
-                break SegmentOutcome::Split;
-            }
-            // Auto-stop deadline reached (guarded so a `None` deadline — the
-            // 100-year "never" sleep — can never actually fire).
-            _ = &mut auto_sleep, if auto_deadline.is_some() => {
-                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
-                break SegmentOutcome::AutoStop;
-            }
-            // The auto-stop deadline was moved or cleared (live extend/cancel, or
-            // the initial arm). Re-pin the real timer to the new remaining time and
-            // re-emit state so the UI countdown re-syncs immediately.
-            changed = stop_watch.changed() => {
-                if changed.is_ok() {
-                    auto_deadline = *stop_watch.borrow();
-                    match auto_stop_remaining(auto_deadline) {
-                        Some(rem) => auto_sleep.as_mut().reset(tokio::time::Instant::now() + rem),
-                        // Cleared: push the deadline far out so the guarded arm idles.
-                        None => auto_sleep.as_mut().reset(
-                            tokio::time::Instant::now()
-                                + Duration::from_secs(60 * 60 * 24 * 365 * 100),
-                        ),
-                    }
-                    state.restamp(session.reconnect_count(), auto_deadline);
-                }
-            }
-            // Stop-on-silence fired.
-            () = wait_opt(&mut silence_stop), if silence_stop.is_some() => {
-                silence.on_stop_fired();
-                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
-                break SegmentOutcome::SilenceStop;
-            }
-            // Silence warning fired.
-            () = wait_opt(&mut silence_warn), if silence_warn.is_some() => {
-                silence.on_warn_fired();
-                silence_warn = None;
-                let _ = app.emit(
-                    SILENCE_EVENT,
-                    RecordingEvent {
-                        code: "silence_detected".into(),
-                        message: "Stillhet oppdaget i lydsignalet".into(),
-                    },
-                );
-            }
-        }
-    };
-
-    // Make sure the readers + levels forwarder are done (the stderr reader sends
-    // Exit then returns; dropping its `levels_tx` also ends the forwarder loop).
-    // The progress reader ends on its own at stdout EOF; aborting it here covers
-    // the paths where the child was killed rather than allowed to finish.
-    reader.abort();
-    progress_reader.abort();
-    levels_forwarder.abort();
-    // E6.3: this capture PROCESS is over. Fold its cumulative `drop=`/`dup=`
-    // maxima into the session totals so the next segment's counters (which
-    // restart at zero) ADD to them instead of being max'd against them. Without
-    // this a multi-split service reported its worst single segment as the whole
-    // session's loss.
-    lock_recover(&seg_telemetry).seal_process();
-    outcome
-}
-
 /// A reconnect came back at a different sample rate: take its `_rN` fragment out
 /// of the current deliverable and delete the file, so finalising that deliverable
 /// never joins audio of two rates. Only the first ms of the new capture are lost
@@ -1552,110 +867,93 @@ async fn discard_wrong_rate_fragment(session: &mut RecordingSession, path: &str)
 mod tests {
     use super::*;
 
+    use crate::recorder::engine::tests::two_generations;
+
     /// M1R #4: the typed cause of a failed spawn survives to the reconnect
     /// loop (it used to be flattened to a string and read as "transient"), and
     /// the first start's code LEADS the text the UI is picked from.
     #[test]
     fn a_spawn_failure_keeps_its_typed_cause() {
-        let denied: SpawnFailure =
-            NativeStartError::new(RecordingErrorCode::DevicePermissionDenied, "no access")
-                .for_reopen()
-                .into();
-        assert_eq!(
-            denied.code,
-            Some(RecordingErrorCode::DevicePermissionDenied)
-        );
+        let denied = NativeStartError::new(RecordingErrorCode::DevicePermissionDenied, "no access")
+            .for_reopen();
+        assert_eq!(denied.code, RecordingErrorCode::DevicePermissionDenied);
         assert!(
-            sundayrec_core::recorder::is_fatal_reconnect_error(denied.code.unwrap()),
+            sundayrec_core::recorder::is_fatal_reconnect_error(denied.code),
             "a refused permission must end the reconnect loop"
         );
         assert!(denied
-            .error
+            .into_app_error()
             .to_string()
             .contains("device_permission_denied: no access"));
 
-        let gone: SpawnFailure = NativeStartError::new(
+        let gone = NativeStartError::new(
             RecordingErrorCode::DeviceNotFound,
             "input device not back: X",
         )
-        .for_reopen()
-        .into();
-        assert_eq!(gone.code, Some(RecordingErrorCode::DeviceDisconnected));
+        .for_reopen();
+        assert_eq!(gone.code, RecordingErrorCode::DeviceDisconnected);
         assert!(!sundayrec_core::recorder::is_fatal_reconnect_error(
-            gone.code.unwrap()
-        ));
-
-        // The ffmpeg arm has no typed cause: the old reading.
-        assert_eq!(
-            SpawnFailure::from(AppError::Recording("x".into())).code,
-            None
-        );
-    }
-
-    /// M1R #5, in pure decision form: an audio-only session needs NO ffmpeg
-    /// device listing (its start must not wait on, or fail with, a hung
-    /// avfoundation/dshow enumeration); only a session that asks for a camera does.
-    #[test]
-    fn audio_only_needs_no_ffmpeg_enumeration() {
-        assert!(!needs_ffmpeg_device_enumeration(None));
-        assert!(!needs_ffmpeg_device_enumeration(Some("")));
-        assert!(needs_ffmpeg_device_enumeration(Some("FaceTime HD Camera")));
-        // Consistent with the router: whatever skips the listing is native.
-        assert!(matches!(
-            select_capture_backend(false, !needs_ffmpeg_device_enumeration(None), false),
-            CaptureBackend::NativeAudio { .. }
+            gone.code
         ));
     }
 
     #[test]
-    fn backend_routing_matrix() {
-        // macOS audio-only → native engine (CoreAudio via the default host).
-        assert!(matches!(
-            select_capture_backend(false, true, false),
-            CaptureBackend::NativeAudio {
-                host: CpalHostKind::Default
-            }
-        ));
-        // Windows audio-only → native WASAPI; an ASIO device → native ASIO.
-        assert!(matches!(
-            select_capture_backend(true, true, false),
-            CaptureBackend::NativeAudio {
-                host: CpalHostKind::Wasapi
-            }
-        ));
-        assert!(matches!(
-            select_capture_backend(true, true, true),
-            CaptureBackend::NativeAudio {
-                host: CpalHostKind::Asio
-            }
-        ));
-        // Video sessions stay on ffmpeg until the native engine gets video (C3).
+    fn capture_host_matrix() {
+        // macOS (and the Linux CI build) → cpal's default host (CoreAudio).
+        assert_eq!(capture_host(false, false), CpalHostKind::Default);
+        assert_eq!(capture_host(false, true), CpalHostKind::Default);
+        // Windows → WASAPI; an ASIO device → ASIO.
+        assert_eq!(capture_host(true, false), CpalHostKind::Wasapi);
+        assert_eq!(capture_host(true, true), CpalHostKind::Asio);
+    }
+
+    /// A panic inside the supervisor task must not leave the engine in
+    /// `Recording` forever: the guard sets `Failed` as the future unwinds. Runs on a
+    /// real runtime, because WHERE the future is dropped (inside the unwind or
+    /// after tokio caught it) is exactly what the guard depends on.
+    #[tokio::test]
+    async fn a_panicking_supervisor_leaves_the_engine_failed_not_recording_forever() {
+        let g = two_generations(RecorderState::Recording, None);
+        let state = g.fresh.clone();
+        let task = tokio::spawn(async move {
+            let _guard = SupervisorPanicGuard::new(state, None);
+            tokio::task::yield_now().await;
+            panic!("boom in the supervisor");
+        });
+        let joined = task.await;
+        assert!(joined.is_err_and(|e| e.is_panic()));
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Failed);
         assert_eq!(
-            select_capture_backend(false, false, false),
-            CaptureBackend::Ffmpeg
-        );
-        assert_eq!(
-            select_capture_backend(true, false, false),
-            CaptureBackend::Ffmpeg
+            g.sink.payloads().last().unwrap().state,
+            RecorderState::Failed
         );
     }
 
-    /// A5b: NO combination of platform and device reaches ffmpeg for an
-    /// audio-only session. This is the test that fails the day someone adds the
-    /// hatch back (a setting, a `classic_*` parameter, an automatic fallback).
-    #[test]
-    fn no_audio_only_session_can_route_to_ffmpeg() {
-        for is_windows in [false, true] {
-            for is_asio in [false, true] {
-                assert!(
-                    matches!(
-                        select_capture_backend(is_windows, true, is_asio),
-                        CaptureBackend::NativeAudio { .. }
-                    ),
-                    "audio-only (windows={is_windows}, asio={is_asio}) must be native"
-                );
-            }
-        }
+    /// Only a panic fails the session: a clean exit leaves the state alone.
+    #[tokio::test]
+    async fn a_supervisor_that_exits_normally_leaves_the_state_alone() {
+        let g = two_generations(RecorderState::Stopped, None);
+        let state = g.fresh.clone();
+        tokio::spawn(async move {
+            let _guard = SupervisorPanicGuard::new(state, None);
+        })
+        .await
+        .unwrap();
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Stopped);
+        assert!(g.sink.payloads().is_empty());
+    }
+
+    /// A panic in an OLD session must not fail the one that replaced it.
+    #[tokio::test]
+    async fn a_panic_in_a_superseded_supervisor_does_not_fail_the_new_session() {
+        let g = two_generations(RecorderState::Recording, None);
+        let stale = g.stale.clone();
+        let _ = tokio::spawn(async move {
+            let _guard = SupervisorPanicGuard::new(stale, None);
+            panic!("old session dies");
+        })
+        .await;
+        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Recording);
     }
 
     /// A reconnect that came back at another sample rate must not leave its `_rN`

@@ -15,9 +15,8 @@
 //! ([`probe_order`]), argumentene til selve prøven ([`probe_args`]), hvilken
 //! koder som vinner ([`select_encoder`]), om en lagret verdi kan brukes eller en
 //! ny prøve trengs ([`plan_session`]), hvilken koder et gitt opptak faktisk får
-//! ([`resolve_encoder`]), hvordan koderens argumenter ser ut
-//! ([`push_encoder_args`]) og om en uventet avslutning skal lastes koderen
-//! ([`blames_encoder`]).
+//! ([`resolve_encoder`]) og hvordan koderens argumenter ser ut
+//! ([`push_encoder_args`]).
 //!
 //! Skallet (`src-tauri/src/media/video_encoder.rs`) gjør bare I/O: starter
 //! prøve-ffmpegen, leser og skriver valget per maskin, og kaller kjernen.
@@ -26,9 +25,11 @@
 //!
 //! `h264_nvenc` → `h264_qsv` → `h264_amf` → `h264_mf` → `libx264`. Første som
 //! virker, lagres per maskin. `libx264` prøves aldri: den er sluttstoppet og
-//! finnes i alle bygg. Feiler den valgte koderen **under** et opptak, faller
-//! økta til `libx264` ved gjenkoblingen, og det lagrede valget nullstilles
-//! ([`blames_encoder`] avgjør om feilen er koderens).
+//! finnes i alle bygg. Feiler den valgte koderen når videosporet starter
+//! (første bilde), bytter sporet til `libx264` (`native_capture::video`), og
+//! skallet nullstiller det lagrede valget. (Til C3b var det ffmpeg-fangstens
+//! uventede avslutning som avgjorde det, med en egen skyldregel; videosporet
+//! vet selv at det var koderen som feilet, så regelen gikk ut.)
 //!
 //! macOS og Linux prøver ingenting: macOS bruker VideoToolbox når `hw_accel` er
 //! på (som før), alt annet er programvare.
@@ -40,7 +41,8 @@
 //! `capture::push_video_encoder_args_with` rett etter de koderspesifikke
 //! argumentene. Golden-testen
 //! `every_encoder_and_path_gets_a_keyframe_every_two_seconds` pinner det for hver
-//! koder og hver sti. Prøven ([`probe_args`]) får det ikke: den er 0,2 s lang.
+//! koder, i sømmen og i videosporets argv. Prøven ([`probe_args`]) får det ikke:
+//! den er 0,2 s lang.
 //!
 //! ## HARDWARE-UNVERIFIED
 //!
@@ -52,7 +54,6 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::editor::VideoCodec;
-use crate::errors::RecordingErrorCode;
 use crate::ffmpeg::Platform;
 
 /// En videokoder SundayRec kan velge for opptak.
@@ -352,32 +353,6 @@ pub fn resolve_encoder(
     }
 }
 
-/// Skal en uventet avslutning lastes koderen — slik at økta faller til
-/// `libx264` ved gjenkoblingen og det lagrede valget nullstilles?
-///
-/// Bare Windows-maskinvarekoderne kan lastes (programvare har ikke noe å falle
-/// til; VideoToolbox er ikke noe C0a rører). En feil som er klassifisert som
-/// enhetens (kamera borte, opptaker opptatt, full disk, nektet tilgang) er ikke
-/// koderens, og da beholdes valget. Alt annet — «ukjent» (`DeviceError`) og
-/// ingen klassifisering (`None`, f.eks. en koder som henger uten fremdrift) —
-/// regnes som koderens: å bli stående på en koder som feiler midt i en
-/// gudstjeneste er verre enn å miste litt CPU-hvile.
-pub fn blames_encoder(encoder: VideoEncoder, last_error: Option<RecordingErrorCode>) -> bool {
-    if !encoder.is_windows_hardware() {
-        return false;
-    }
-    !matches!(
-        last_error,
-        Some(
-            RecordingErrorCode::DeviceNotFound
-                | RecordingErrorCode::DevicePermissionDenied
-                | RecordingErrorCode::DeviceBusy
-                | RecordingErrorCode::DiskFull
-                | RecordingErrorCode::DeviceDisconnected
-        )
-    )
-}
-
 /// Ett prøveutfall slik diagnoserapporten viser det.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "VideoEncoderProbeResult.ts")]
@@ -421,7 +396,7 @@ impl VideoEncoderSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capture::{build_unified_capture_args, CaptureOpts};
+    use crate::capture::push_video_encoder_args_with;
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
@@ -622,30 +597,6 @@ mod tests {
     }
 
     #[test]
-    fn only_a_windows_hardware_encoder_is_blamed_and_never_for_a_device_error() {
-        for e in [
-            VideoEncoder::Nvenc,
-            VideoEncoder::Qsv,
-            VideoEncoder::Amf,
-            VideoEncoder::MediaFoundation,
-        ] {
-            assert!(blames_encoder(e, None), "{e:?}");
-            assert!(blames_encoder(e, Some(RecordingErrorCode::DeviceError)));
-            for device in [
-                RecordingErrorCode::DeviceNotFound,
-                RecordingErrorCode::DevicePermissionDenied,
-                RecordingErrorCode::DeviceBusy,
-                RecordingErrorCode::DiskFull,
-                RecordingErrorCode::DeviceDisconnected,
-            ] {
-                assert!(!blames_encoder(e, Some(device)), "{e:?} {device:?}");
-            }
-        }
-        assert!(!blames_encoder(VideoEncoder::Software, None));
-        assert!(!blames_encoder(VideoEncoder::VideoToolbox, None));
-    }
-
-    #[test]
     fn setting_values_roundtrip() {
         for e in [
             VideoEncoder::VideoToolbox,
@@ -660,28 +611,18 @@ mod tests {
         assert_eq!(VideoEncoder::from_setting_value("nvenc"), None);
     }
 
-    /// Den ene linja hele C0a handler om: argv per koder, byte for byte. Windows,
-    /// video, mp4, ingen forhåndsvisning — alt unntatt koderen er likt.
+    /// Den ene linja hele C0a handler om: argv per koder, byte for byte —
+    /// koderens kjøring og den felles halen (`-pix_fmt … -keyint_min`), slik
+    /// videosporet får den. (Til C3b pinnet denne hele ffmpeg-fangstens argv;
+    /// fangsten er borte, koderens del er den samme.)
     #[test]
     fn windows_video_argv_per_encoder_is_byte_identical_golden() {
-        let run = |encoder: Option<VideoEncoder>| {
-            build_unified_capture_args(
-                Platform::Windows,
-                Some("Cam"),
-                "Mic",
-                "/rec/v.mp4",
-                &CaptureOpts {
-                    hw_encoder: encoder,
-                    ..CaptureOpts::default()
-                },
-            )
+        let run = |stored: Option<VideoEncoder>| {
+            let encoder = resolve_encoder(Platform::Windows, true, VideoCodec::H264, stored);
+            let mut a = Vec::new();
+            push_video_encoder_args_with(&mut a, encoder, VideoCodec::H264, None, 30, false);
+            a
         };
-        let head = s(&[
-            "-hide_banner", "-progress", "pipe:1", "-nostats",
-            "-f", "dshow", "-framerate", "30", "-i", "video=Cam",
-            "-f", "dshow", "-i", "audio=Mic", "-af",
-            "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=pipe\\\\:2",
-        ]);
         let tail = s(&[
             "-pix_fmt",
             "yuv420p",
@@ -693,20 +634,8 @@ mod tests {
             "60",
             "-keyint_min",
             "30",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ac",
-            "2",
-            "-avoid_negative_ts",
-            "make_zero",
-            "-movflags",
-            "+faststart",
-            "-y",
-            "/rec/v.mp4",
         ]);
-        let with = |mid: &[&str]| [head.clone(), s(mid), tail.clone()].concat();
+        let with = |head: &[&str]| [s(head), tail.clone()].concat();
 
         // Ikke avgjort / libx264: IDENTISK med argv før C0a.
         let software = with(&["-c:v", "libx264", "-preset", "veryfast"]);
@@ -731,14 +660,12 @@ mod tests {
         );
     }
 
-    /// C0b: nøkkelbilde hvert 2. sekund i ALLE videoopptak — hver koder, hver
-    /// sti. `-g` er 2×fps og `-keyint_min` er fps, rett etter `-fps_mode cfr`.
+    /// C0b: nøkkelbilde hvert 2. sekund i ALLE videoopptak — hver koder, i
+    /// sømmen og i videosporets argv. `-g` er 2×fps og `-keyint_min` er fps,
+    /// rett etter `-fps_mode cfr`.
     #[test]
     fn every_encoder_and_path_gets_a_keyframe_every_two_seconds() {
-        use crate::capture::{
-            build_cpal_pipe_video_args_with_encoder, push_video_encoder_args_with, VideoCaptureMode,
-        };
-        use crate::two_process::build_video_capture_args_with_encoder;
+        use crate::video_track::{video_track_args, RawPixelFormat, VideoTrackSpec};
 
         let keyint = |args: &[String], fps: u32| {
             let at = args
@@ -778,122 +705,31 @@ mod tests {
                     let mut a = Vec::new();
                     push_video_encoder_args_with(&mut a, encoder, codec, None, fps, false);
                     keyint(&a, fps);
-
-                    // Totrinns-fallbackens videoprosess (mkv-temp).
-                    let mode = VideoCaptureMode {
+                }
+                // Videosporet (C3a) — med og uten forhåndsvisningen: den andre
+                // utgangen er en JPEG og får ingen nøkkelbilde-flagg.
+                for preview in [None, Some("/tmp/p.jpg")] {
+                    let spec = VideoTrackSpec {
                         width: 1920,
                         height: 1080,
-                        input_fps: 30,
+                        fps_num: fps,
+                        fps_den: 1,
+                        input: RawPixelFormat::Nv12,
+                        flip: false,
                     };
-                    for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
-                        let a = build_video_capture_args_with_encoder(
-                            platform,
-                            "Cam",
-                            "/rec/v.mkv",
-                            mode,
-                            fps,
-                            encoder,
-                            codec,
-                        );
-                        keyint(&a, fps);
-                    }
-
-                    // Windows' cpal-rør (dshow-kamera + PCM på pipe).
-                    for out in ["/rec/v.mkv", "/rec/v.mp4"] {
-                        let a = build_cpal_pipe_video_args_with_encoder(
-                            "Cam", fps, 48_000, 2, out, None, 192, codec, encoder, None,
-                        );
-                        keyint(&a, fps);
-                    }
+                    keyint(
+                        &video_track_args(&spec, encoder, "/cap/v.mkv", preview),
+                        fps,
+                    );
                 }
             }
         }
-
-        // Den samlede stien på Mac (VideoToolbox og programvare) og Windows.
-        for (platform, hw_accel, dev) in [
-            (Platform::MacOS, true, "0"),
-            (Platform::MacOS, false, "0"),
-            (Platform::Windows, true, "Cam"),
-            (Platform::Linux, true, "/dev/video0"),
-        ] {
-            for fps in [25_u32, 30, 60] {
-                let a = build_unified_capture_args(
-                    platform,
-                    Some(dev),
-                    "1",
-                    "/rec/v.mp4",
-                    &CaptureOpts {
-                        hw_accel,
-                        framerate: fps,
-                        ..CaptureOpts::default()
-                    },
-                );
-                keyint(&a, fps);
-            }
-        }
-
-        // Kun lyd: ingen nøkkelbilder å snakke om.
-        let audio = build_unified_capture_args(
-            Platform::MacOS,
-            None,
-            "1",
-            "/rec/a.m4a",
-            &CaptureOpts::default(),
-        );
-        assert!(!audio.iter().any(|a| a == "-g" || a == "-keyint_min"));
     }
 
     /// Prøven skal ikke ha nøkkelbilde-flaggene: den er 0,2 s lang.
     #[test]
     fn probe_argv_is_unchanged_by_the_keyframe_interval() {
         assert!(!probe_args(VideoEncoder::Nvenc).iter().any(|a| a == "-g"));
-    }
-
-    #[test]
-    fn windows_encoder_choice_never_leaks_into_mac_or_audio_only() {
-        // Mac: VideoToolbox som før, uansett hva som ligger i hw_encoder.
-        let base = |enc| {
-            build_unified_capture_args(
-                Platform::MacOS,
-                Some("0"),
-                "1",
-                "/rec/v.mp4",
-                &CaptureOpts {
-                    hw_encoder: enc,
-                    ..CaptureOpts::default()
-                },
-            )
-        };
-        assert_eq!(base(None), base(Some(VideoEncoder::Nvenc)));
-        // Kun lyd: ingen koder i det hele tatt.
-        let audio = build_unified_capture_args(
-            Platform::Windows,
-            None,
-            "Mic",
-            "/rec/a.m4a",
-            &CaptureOpts {
-                hw_encoder: Some(VideoEncoder::Nvenc),
-                ..CaptureOpts::default()
-            },
-        );
-        assert!(!audio.iter().any(|a| a == "-c:v" || a == "h264_nvenc"));
-    }
-
-    #[test]
-    fn hw_accel_off_beats_a_stored_windows_choice() {
-        let args = build_unified_capture_args(
-            Platform::Windows,
-            Some("Cam"),
-            "Mic",
-            "/rec/v.mp4",
-            &CaptureOpts {
-                hw_accel: false,
-                hw_encoder: Some(VideoEncoder::Nvenc),
-                ..CaptureOpts::default()
-            },
-        );
-        assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
-        assert!(!args.iter().any(|a| a == "h264_nvenc"));
     }
 
     #[test]

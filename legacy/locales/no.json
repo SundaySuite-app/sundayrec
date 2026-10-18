@@ -236,13 +236,6 @@
         "title": "Avansert",
         "lede": "Ting de fleste aldri trenger å røre. Alt her har en trygg standard.",
         "soundLink": "Avansert lyd",
-        "engine": "Opptaksmotor",
-        "engineDesc": "Gjelder videoopptak. Bytt bare hvis lyden er hakkete.",
-        "engineConfirm": "Bytte opptaksmotor",
-        "engineChoice": {
-          "native": "Innebygd",
-          "dshow": "Klassisk (DirectShow)"
-        },
         "preroll": "Forhåndsbuffer",
         "prerollDesc": "Lyd som tas med fra før du trykket Start. Bufferen holder mikrofonen åpen i bakgrunnen så lenge appen er klar til opptak.",
         "prerollChoice": {
@@ -519,10 +512,6 @@
         "audio02": {
           "title": "Den valgte lydenheten ble ikke funnet",
           "hint": "Koble til enheten, eller velg en annen i «Hvilken lyd?» på Opptak."
-        },
-        "audio10": {
-          "title": "Falt tilbake til klassisk lydmotor",
-          "hint": "Opptak virker fortsatt. Vil du ha den moderne motoren, så sjekk driveren og at ingen andre programmer holder enheten."
         },
         "rate01": {
           "title": "Fast samplingsrate er valgt",

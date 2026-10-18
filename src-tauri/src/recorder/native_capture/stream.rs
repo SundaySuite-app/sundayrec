@@ -31,9 +31,8 @@ use crate::audio::asio::{route_frame, ChannelRoute};
 
 /// Which cpal host to open. `Default` is the platform's default host —
 /// CoreAudio on macOS, WASAPI on Windows — and is the arm the macOS native
-/// engine and the VU engine use. The explicit Windows kinds mirror the historic
-/// `cpal_capture` behavior (WASAPI as the dshow replacement, ASIO for pro
-/// interfaces).
+/// engine and the VU engine use. The explicit Windows kinds pick WASAPI or, for
+/// a pro interface, ASIO (`engine::capture_host`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpalHostKind {
     /// The platform default host (CoreAudio on macOS, WASAPI on Windows).
@@ -294,9 +293,8 @@ pub fn find_device_exact_typed(
 /// The DECISION half of [`find_device`]: which cpal device name should be opened
 /// for the user's stored label?
 ///
-/// Split out so it can be exercised without a sound card, and so the ffmpeg
-/// pipe path (`recorder::cpal_capture`) resolves through exactly the same rule
-/// as the native engine instead of a second copy of it.
+/// Split out so it can be exercised without a sound card. (Until C3b the
+/// Windows cpal-pipe video path resolved through it too; one rule, no copy.)
 ///
 /// Falls back to the requested name VERBATIM when nothing matches, so the caller
 /// reports "input device not found: <what the user asked for>" rather than the
@@ -493,8 +491,8 @@ pub fn negotiate_typed(
 // ── The one typed stream-builder set ─────────────────────────────────────────
 
 /// Where a stream's samples go. One enum so the VU engine and the capture
-/// engine share the same typed builders (previously duplicated in `vu.rs` and
-/// `cpal_capture.rs`).
+/// engine share the same typed builders (once duplicated in `vu.rs` and the
+/// now-deleted `cpal_capture.rs`).
 pub enum StreamSink {
     /// Meter-only (the VU engine): observe peak+RMS on every native channel.
     Meters(Arc<MeterBanks>),

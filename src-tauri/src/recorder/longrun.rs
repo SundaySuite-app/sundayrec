@@ -3,8 +3,8 @@
 //!
 //! ## Why a harness rather than `run_session` itself
 //!
-//! Every arm of the real supervisor ([`super::engine::run_session`],
-//! [`super::engine::run_segment`], [`super::native_capture::segment::run_native_segment`])
+//! Every arm of the real supervisor (`engine::supervisor::run_session`,
+//! [`super::native_capture::segment::run_native_segment`])
 //! takes a `tauri::AppHandle<Wry>` so it can emit events, and a `Wry` handle
 //! cannot be constructed without a windowing runtime. There is no test seam for
 //! it and inventing one would mean generic-ising the whole recorder over the
@@ -16,9 +16,9 @@
 //!
 //! | Piece                        | Production code actually executed          |
 //! |------------------------------|--------------------------------------------|
-//! | capture argv                 | `crate::soak::lavfi_capture_args` → the production tail |
+//! | capture bytes                | a paced `-f lavfi` WAV writer ([`lavfi_wav_args`]) — a stand-in byte producer |
 //! | capture process              | `crate::media::ffmpeg::spawn_ffmpeg`       |
-//! | graceful stop                | `engine::stop_and_wait_bounded` (`q` + bounded wait) |
+//! | graceful stop                | `q` + a bounded wait, then a kill           |
 //! | split decision               | `sundayrec_core::wav::should_force_split`  |
 //! | deliverable/fragment model   | `sundayrec_core::recorder::RecordingSession` |
 //! | reconnect policy             | `RecordingSession::on_unexpected_exit`     |
@@ -29,16 +29,17 @@
 //! | history rows                 | `db::store::insert_recording`              |
 //!
 //! What is NOT covered, and is therefore still rig-only: the Tauri event emits,
-//! the UI state machine, and the native cpal capture (this harness drives the
-//! ffmpeg capture path — which is precisely the path E6.2 found was missing the
-//! RIFF-cap guard).
+//! the UI state machine, and the native cpal capture itself.
 //!
-//! **ffmpeg heritage (M1R #8).** After A5b every audio recording is written by
-//! the native WAV writer, not ffmpeg, so the ffmpeg-driven tests here are legacy
-//! evidence until C3. The shipping writer ↔ recovery seam is proven by
-//! `tests::native_writer_kill`: a stand-in process runs the real
+//! **The byte producer is a stand-in (M1R #8, C3b).** Every recording is
+//! written by the native WAV writer; the ffmpeg capture argv this harness used
+//! to drive (and its stderr telemetry) left in C3b. The plain `-f lavfi` WAV
+//! writer here only supplies REAL, killable capture bytes for the split /
+//! concat / recovery pieces under test. The shipping writer ↔ recovery seam is
+//! proven by `tests::native_writer_kill`: a stand-in process runs the real
 //! `spawn_wav_writer` on a synthetic ring (no audio device), is SIGKILLed
-//! mid-capture, and the real `recover_session` has to bring the audio back.
+//! mid-capture, and the real `recover_session` has to bring the audio back —
+//! and the video side by `tests::native_video`.
 //!
 //! ## Making 3.5 GiB cheap
 //!
@@ -114,6 +115,34 @@ pub(crate) struct DeliveredRecord {
     pub duration_ms: f64,
     /// Whether the delivery reached the user's chosen format.
     pub delivered: bool,
+}
+
+/// The stand-in capture: a 440 Hz sine at `rate` Hz, stereo 16-bit, written as
+/// a WAV to `output_path` for at most `secs` seconds. `-re` paces it at
+/// realtime, so bytes accrue at a known rate and a kill lands mid-capture,
+/// exactly like a live recording. Nothing here is production argv.
+pub(crate) fn lavfi_wav_args(secs: u32, rate: u32, output_path: &str) -> Vec<String> {
+    [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-re",
+        "-f",
+        "lavfi",
+        "-i",
+        &format!("sine=frequency=440:sample_rate={rate}:duration={secs}"),
+        "-t",
+        &secs.to_string(),
+        "-c:a",
+        "pcm_s16le",
+        "-ac",
+        "2",
+        "-y",
+        output_path,
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 
 /// Payload bytes of the `data` chunk in a RIFF/WAVE file.
@@ -196,7 +225,7 @@ pub(crate) struct HeadlessSession {
     /// Bytes already captured into the CURRENT deliverable's previous fragments.
     deliverable_bytes: u64,
     /// Session-wide health counters — the same type the real engine folds
-    /// stderr lines into.
+    /// each segment's counts into.
     pub telemetry: Arc<Mutex<RecordingTelemetry>>,
     /// Every fragment captured, in order, with its pre-concat byte count.
     pub fragments: Vec<FragmentRecord>,
@@ -243,47 +272,22 @@ impl HeadlessSession {
         self.session.deliverables().len()
     }
 
-    /// Capture one segment into `path` through the REAL ffmpeg capture argv and
-    /// end it per `stop`. Returns why it ended.
-    ///
-    /// The stderr drain is not optional hygiene: at 96 kHz the `astats` filter
-    /// in the production chain fills the 64 kB pipe buffer in well under a
-    /// second, and a blocked ffmpeg stops capturing. It is also where the
-    /// telemetry is fed, exactly like `engine::classify_stderr_line` does.
+    /// Capture one segment into `path` with the stand-in byte producer
+    /// ([`lavfi_wav_args`]) and end it per `stop`. Returns why it ended.
     pub async fn capture_segment(&mut self, path: &str, stop: StopMode) -> HeadlessOutcome {
-        use tokio::io::AsyncReadExt;
+        use tokio::io::AsyncWriteExt;
 
-        // A generous `-t` so the harness's own stop always wins; `-re` paces the
-        // synthetic source at realtime so bytes accrue at a known rate.
-        let args = crate::soak::lavfi_capture_args(
-            crate::recorder::engine::current_platform(),
-            600,
-            self.rate,
-            Some(self.rate),
-            true,
-            path,
-        );
+        // A generous `-t` so the harness's own stop always wins.
+        let args = lavfi_wav_args(600, self.rate, path);
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
         let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs)
             .await
             .expect("harness capture spawns");
         let mut stdin = child.stdin.take();
-        let telemetry = Arc::clone(&self.telemetry);
+        // Drained so a chatty ffmpeg can never block on a full pipe.
         let drain = child.stderr.take().map(|mut stderr| {
             tokio::spawn(async move {
-                let mut buf = [0u8; 8192];
-                let mut carry = String::new();
-                while let Ok(n) = stderr.read(&mut buf).await {
-                    if n == 0 {
-                        break;
-                    }
-                    carry.push_str(&String::from_utf8_lossy(&buf[..n]));
-                    // ffmpeg separates progress with \r and logs with \n.
-                    while let Some(i) = carry.find(['\r', '\n']) {
-                        let line: String = carry.drain(..=i).collect();
-                        lock_recover(&telemetry).observe_line(line.trim());
-                    }
-                }
+                let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
             })
         });
 
@@ -318,18 +322,23 @@ impl HeadlessSession {
                 let _ = child.kill().await;
             }
             _ => {
-                // The REAL graceful stop: `q` on stdin, bounded wait, kill only
-                // on timeout.
-                crate::recorder::engine::stop_and_wait_bounded(&mut child, &mut stdin).await;
+                // A graceful stop: `q` on stdin so the WAV trailer is written,
+                // a bounded wait, a kill only on timeout.
+                if let Some(mut pipe) = stdin.take() {
+                    let _ = pipe.write_all(b"q\n").await;
+                    let _ = pipe.flush().await;
+                }
+                if tokio::time::timeout(Duration::from_secs(10), child.wait())
+                    .await
+                    .is_err()
+                {
+                    let _ = child.kill().await;
+                }
             }
         }
         if let Some(h) = drain {
             let _ = tokio::time::timeout(Duration::from_secs(5), h).await;
         }
-
-        // E6.3: this capture PROCESS is over — close its drop/dup window, the
-        // same thing `engine::run_segment` does before it returns its outcome.
-        lock_recover(&self.telemetry).seal_process();
 
         let data_bytes = wav_data_bytes(Path::new(path)).unwrap_or(0);
         self.fragments.push(FragmentRecord {
@@ -338,17 +347,6 @@ impl HeadlessSession {
             outcome,
         });
         outcome
-    }
-
-    /// Feed one line into the session telemetry exactly as the production
-    /// stderr reader (`engine::classify_stderr_line`) does.
-    ///
-    /// A synthetic lavfi capture legitimately drops nothing, so the only honest
-    /// way to prove the CROSS-PROCESS accumulation over a real split is to hand
-    /// the real telemetry real ffmpeg-shaped progress lines at the point the
-    /// real reader would have.
-    pub fn observe_stderr(&self, line: &str) {
-        lock_recover(&self.telemetry).observe_line(line);
     }
 
     /// Reconnect: append an `_rN` fragment to the CURRENT deliverable, exactly
@@ -798,82 +796,16 @@ mod tests {
         );
     }
 
-    /// E6.3 BUG FIX, pinned against a REAL split rather than arithmetic alone.
-    ///
-    /// The core test proves `seal_process` sums; this proves the PLUMBING
-    /// survives a session that really does span three capture processes — two
-    /// fragments of deliverable 1 (split by a kill) and one of deliverable 2
-    /// (split by the RIFF guard). Each process reports its own cumulative
-    /// `drop=`/`dup=`, restarting at zero, exactly as ffmpeg does.
-    ///
-    /// With the old whole-session `max` fold this reported 40 drops. The truth
-    /// is 75 — and `FAIL_DROPS` is 10, so both numbers fail the verdict, but
-    /// only one of them tells the operator how bad Sunday actually was.
-    #[allow(clippy::await_holding_lock)]
-    #[tokio::test(flavor = "multi_thread")]
-    async fn drops_sum_across_a_real_split_instead_of_reporting_the_worst_segment() {
-        let Some(_pin) = EnvPin::acquire(Some(TEST_SPLIT_BYTES)) else {
-            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let save = tempfile::tempdir().expect("tempdir");
-        let mut s = HeadlessSession::new(save.path(), RATE).expect("session");
-
-        // Process 1 — dies mid-capture having dropped 40 frames.
-        let f1 = s.current_fragment();
-        s.observe_stderr("frame=100 dup=2 drop=12 speed=1x");
-        s.observe_stderr("frame=900 dup=4 drop=40 speed=1x");
-        s.capture_segment(&f1, StopMode::Kill(Duration::from_millis(400)))
-            .await;
-
-        // Process 2 — the `_r1` reconnect fragment; its counters START OVER.
-        let f2 = s.begin_reconnect();
-        s.observe_stderr("frame=50 dup=1 drop=9 speed=1x");
-        s.observe_stderr("frame=800 dup=3 drop=25 speed=1x");
-        let o2 = s
-            .capture_segment(&f2, StopMode::UntilForcedSplit(Duration::from_secs(20)))
-            .await;
-        assert_eq!(o2, HeadlessOutcome::ForcedSplit);
-
-        // Process 3 — the new deliverable after the split. Counters start over
-        // again, and this is the process the old `max` fold would have thrown
-        // away entirely (10 < 40).
-        let f3 = s.begin_split(crate::db::store::now_ms() as u64);
-        s.observe_stderr("frame=40 dup=2 drop=10 speed=1x");
-        s.capture_segment(&f3, StopMode::Graceful(Duration::from_millis(300)))
-            .await;
-
-        let t = lock_recover(&s.telemetry).clone();
-        assert_eq!(
-            t.drops, 75,
-            "40 + 25 + 10 across three capture processes — the old fold reported 40"
-        );
-        assert_eq!(t.dups, 9, "4 + 3 + 2");
-        assert_eq!(t.cur_drops, 0, "every process window was sealed");
-        assert_eq!(t.cur_dups, 0);
-
-        // And the verdict engine — the thing that actually tells the operator —
-        // now judges the session on the real figure.
-        let facts = sundayrec_core::selftest::facts_from_recording(&t, 1_000_000);
-        assert_eq!(facts.drops, 75);
-        assert!(
-            t.is_degraded(),
-            "75 dropped frames must register as a degraded recording"
-        );
-    }
-
     /// E6.2 BUG FIX, pinned: the WAV capture path consults the RIFF-cap guard.
     ///
     /// The guard first lived only in `native_capture::segment::run_native_segment`
     /// while an ffmpeg WAV capture — then reachable under the
     /// `classic_ffmpeg_audio` hatch, through the automatic native-start-failure
     /// fallback, and on Linux — had none. E6.2 gave the ffmpeg arm one too; A5b
-    /// removed both the hatch and the fallback, so the ffmpeg capture records
-    /// VIDEO only (Matroska, no 4 GiB ceiling) and its copy of the guard went
-    /// with them. What stays pinned is the native path: ffmpeg's wav muxer
-    /// defaults to `-rf64 never`, and a native WAV writer past 4 GiB would hit
-    /// the same unreadable RIFF header at ~2.7 h of 96 kHz stereo s16 — inside a
-    /// long service.
+    /// and C3b removed the ffmpeg capture entirely and its copy of the guard
+    /// went with it. What stays pinned is the native path: a WAV past 4 GiB has
+    /// an unreadable RIFF header, reached at ~2.7 h of 96 kHz stereo s16 —
+    /// inside a long service.
     ///
     /// A source-level assertion because the arm itself needs a `Wry` AppHandle
     /// (see the module docs); the guard's BEHAVIOUR on real bytes is proven by
@@ -1204,14 +1136,7 @@ mod tests {
                 let _ = self.0.wait();
             }
         }
-        let args = crate::soak::lavfi_capture_args(
-            crate::recorder::engine::current_platform(),
-            60,
-            48_000,
-            Some(48_000),
-            false,
-            &fragment,
-        );
+        let args = lavfi_wav_args(60, 48_000, &fragment);
         let mut child = Reaper(
             std::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
                 .args(&args)
@@ -1814,7 +1739,9 @@ mod tests {
             let child = Arc::new(std::sync::Mutex::new(None));
             let make: SinkFactory = {
                 let (mkv, child) = (mkv.clone(), Arc::clone(&child));
-                Box::new(move |spec, enc| FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child)))
+                Box::new(move |spec, enc| {
+                    FfmpegSink::spawn(spec, enc, &mkv, Arc::clone(&child), None)
+                })
             };
             let (source, spec): (Box<dyn VideoSource>, VideoTrackSpec) = match camera {
                 None => (

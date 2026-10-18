@@ -1097,7 +1097,9 @@ pub struct WireSettings {
     /// WIRE-FROZEN since A5b (see `input_volume`): the escape hatch back to
     /// ffmpeg audio capture is gone, so the constant is `false`.
     pub classic_ffmpeg_audio: bool,
-    /// The Windows DirectShow escape hatch, same question.
+    /// WIRE-FROZEN since C3b (see `input_volume`): the Windows DirectShow
+    /// escape hatch left with the ffmpeg video paths, so the constant is
+    /// `false`.
     pub classic_directshow: bool,
     /// Automatic updates on/off. (An update CHANNEL — stable/beta — exists too,
     /// see [`crate::settings::UpdateChannel`], but it does not travel here.
@@ -1122,15 +1124,16 @@ pub struct WireSettings {
     pub special_count: u32,
 }
 
-/// The three WIRE-FROZEN settings values (see the field docs on
-/// [`WireSettings`]): the settings left the app in v0.15, the keys the Worker
-/// requires did not. These are the values every install reported before the
+/// The WIRE-FROZEN settings values (see the field docs on [`WireSettings`]):
+/// the settings left the app (v0.15, A5b, C3b), the keys the Worker requires
+/// did not. These are the values every install reported before the
 /// fields were removed, i.e. the defaults — so the aggregate's distribution
 /// for them simply stops moving rather than shifting.
 pub const WIRE_INPUT_VOLUME: i32 = 100;
 pub const WIRE_TRIM_SILENCE: bool = false;
 pub const WIRE_SHOW_LIVE_LEVELS: bool = true;
 pub const WIRE_CLASSIC_FFMPEG_AUDIO: bool = false;
+pub const WIRE_CLASSIC_DIRECTSHOW: bool = false;
 
 impl WireSettings {
     /// Project the full [`Settings`] down to the wire-safe subset. The single,
@@ -1154,7 +1157,7 @@ impl WireSettings {
             preroll_enabled: s.pre_roll_seconds > 0,
             show_live_levels: WIRE_SHOW_LIVE_LEVELS,
             classic_ffmpeg_audio: WIRE_CLASSIC_FFMPEG_AUDIO,
-            classic_directshow: s.classic_directshow,
+            classic_directshow: WIRE_CLASSIC_DIRECTSHOW,
             auto_update: s.auto_update,
             launch_at_login: s.launch_at_login,
             wake_from_sleep: s.wake_from_sleep,

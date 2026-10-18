@@ -17,7 +17,17 @@
 //! Og `list_video_devices`, som var en ren delmengde av [`list_devices`]:
 //! kameralista går via shimmens `listVideoDevices` → `invoke("list_devices")` →
 //! `video_inputs`, og kommandonavnet fantes ikke som strenglitteral noe sted i
-//! skallet. Den ble FREDET i PR3 fordi den ikke sto i slettevedtaket — men
+//! skallet.
+//!
+//! ## C3b — ingen ffmpeg-enumerering igjen
+//!
+//! [`list_devices`], [`get_camera_capabilities`] og [`diagnose_audio`] spurte
+//! ffmpeg (`-list_devices`, og avfoundations «Supported modes»-feilmelding).
+//! Opptaket leser ikke ffmpegs lister lenger — kameraet åpnes av den native
+//! kamerafangsten (C1c) og lyden av cpal — så kommandoene svarer nå fra de
+//! samme listene opptaket bruker: [`crate::camera::list`]/[`crate::camera::formats`]
+//! og cpal-lista til [`list_audio_devices`]. Navnene og formen på svaret er de
+//! samme, så skallet merker ingen forskjell. Den ble FREDET i PR3 fordi den ikke sto i slettevedtaket — men
 //! fredningen hvilte på premisset «CameraCard bruker den», og PR3s egen
 //! doc-kommentar slo fast at det premisset var feil. Med premisset borte var
 //! det ingenting igjen å frede, så den gikk i denne runden.
@@ -33,13 +43,13 @@
 
 use tauri::{AppHandle, State};
 
+use serde::{Deserialize, Serialize};
 use sundayrec_core::audio::{mic_owner, vu_start_action, VuStartAction};
-use sundayrec_core::device_enum::{build_audio_diagnostics, AudioDiagnostics};
+use sundayrec_core::capture::CameraMode;
+use sundayrec_core::diagnostics::AudioDiagnostics;
+use ts_rs::TS;
 
 use crate::audio::asio::{list_asio_devices, merge_audio_inputs, TaggedAudioInput};
-use crate::audio::device_enum::{
-    enumerate_ffmpeg_devices, enumerate_ffmpeg_devices_cached, DeviceInventory,
-};
 use crate::audio::devices::list_input_devices as enumerate_inputs;
 use crate::audio::vu::VuEngine;
 use crate::error::AppResult;
@@ -92,18 +102,52 @@ pub(crate) fn enumerate_tagged_inputs(include_asio: bool) -> AppResult<Vec<Tagge
     Ok(merge_audio_inputs(asio, &host.inputs))
 }
 
-/// Enumerate the capture devices ffmpeg can see (audio + video), for the F2.1
-/// device picker. The recorder addresses these (avfoundation index / dshow name);
-/// the VU meter still uses the cpal `list_input_devices` list. See
-/// [`crate::audio::device_enum`].
+/// One camera in the picker: its listed name and its position in the native
+/// camera list. The renderer stores the NAME (the recorder opens the camera by
+/// it, `native_capture::video::find_camera`); the index is only the picker's
+/// option value and the token [`get_camera_capabilities`] takes.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[ts(export, export_to = "ListedCamera.ts")]
+pub struct ListedCamera {
+    pub name: String,
+    pub index: u32,
+}
+
+/// The camera list for the picker. The key is `video_inputs` because that is
+/// what the renderer has always read (`listVideoDevices` in the api shim); the
+/// list itself is the native one since C3b (it was ffmpeg's `-list_devices`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Default)]
+#[ts(export, export_to = "CameraInventory.ts")]
+pub struct CameraInventory {
+    pub video_inputs: Vec<ListedCamera>,
+}
+
+/// The native camera list (C1c), off the async threads: Windows asks Media
+/// Foundation and DirectShow, which block.
+async fn native_cameras() -> AppResult<Vec<crate::camera::CameraInfo>> {
+    tokio::task::spawn_blocking(crate::camera::list)
+        .await
+        .map_err(|e| crate::error::AppError::Recording(format!("camera list task failed: {e}")))?
+        .map_err(|e| crate::error::AppError::Recording(format!("camera list: {e}")))
+}
+
+/// The cameras for the picker — the SAME native list the recorder opens the
+/// camera from, so a camera the picker offers is one the recording can find.
 ///
-/// ⚠️ HARDWARE/GUI-UNVERIFIED — the underlying `ffmpeg -list_devices` spawn needs
-/// real devices; only the pure argument/parse helpers are tested.
+/// ⚠️ HARDWARE/GUI-UNVERIFIED — needs real cameras; the shaping is trivial.
 #[tauri::command]
-pub async fn list_devices() -> AppResult<DeviceInventory> {
-    // Cached (1.5 s): the picker often asks for audio + video back-to-back; this
-    // folds those into one spawn. Record/diagnose use the uncached path.
-    enumerate_ffmpeg_devices_cached().await
+pub async fn list_devices() -> AppResult<CameraInventory> {
+    let cameras = native_cameras().await?;
+    Ok(CameraInventory {
+        video_inputs: cameras
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| ListedCamera {
+                name: c.name,
+                index: i as u32,
+            })
+            .collect(),
+    })
 }
 
 /// What a camera can actually capture, for gating the resolution/fps UI to modes
@@ -119,24 +163,86 @@ pub struct CameraCapabilities {
     pub supported_framerates: Vec<u32>,
 }
 
-/// Probe a camera's advertised modes and summarise which resolutions / frame
-/// rates it can actually deliver, so the settings UI can disable the ones it
-/// can't (a camera that only does 720p@30 must not offer 1080p/60). `device_token`
-/// is the avfoundation index (macOS) or dshow name (Windows). On a failed probe
-/// (or non-macOS where modes aren't listed) every list is empty → the UI falls
-/// back to offering everything.
+/// Fold a camera's native formats — `(width, height, fps)` — into the
+/// per-size mode list the core summariser takes: one entry per width × height,
+/// with every frame rate the camera offers at that size (rounded to whole fps,
+/// sorted, deduplicated — the pixel formats do not matter here). Pure.
+fn camera_modes(formats: impl IntoIterator<Item = (u32, u32, f64)>) -> Vec<CameraMode> {
+    let mut modes: Vec<CameraMode> = Vec::new();
+    for (width, height, fps) in formats {
+        let fps = fps.round().max(0.0) as u32;
+        match modes
+            .iter_mut()
+            .find(|m| m.width == width && m.height == height)
+        {
+            Some(m) => {
+                if !m.framerates.contains(&fps) {
+                    m.framerates.push(fps);
+                }
+            }
+            None => modes.push(CameraMode {
+                width,
+                height,
+                framerates: vec![fps],
+            }),
+        }
+    }
+    for m in &mut modes {
+        m.framerates.sort_unstable();
+    }
+    modes
+}
+
+/// Which listed camera a capability `device_token` means: the picker's index
+/// (`ListedCamera::index`), or else a name / stable id by the recorder's own
+/// matching rule. Pure.
+fn camera_for_token<'a>(
+    cams: &'a [crate::camera::CameraInfo],
+    token: &str,
+) -> Option<&'a crate::camera::CameraInfo> {
+    token
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .and_then(|i| cams.get(i))
+        .or_else(|| crate::recorder::native_capture::video::find_camera(cams, token))
+}
+
+/// Read a camera's advertised formats and summarise which resolutions / frame
+/// rates it can actually deliver, so the settings UI can say what the camera
+/// gives. `device_token` is the picker's index (or a camera name). A camera that
+/// is gone, or whose formats cannot be read, gives empty lists → the UI says it
+/// could not ask.
 ///
-/// ⚠️ HARDWARE-UNVERIFIED — opens the real camera to list its modes.
+/// Since C3b the formats come from the native camera backend (AVFoundation /
+/// Media Foundation + DirectShow) — the formats the recorder chooses from —
+/// instead of ffmpeg's avfoundation error text, so this now answers on Windows
+/// too.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — reads the real camera's formats.
 #[tauri::command]
 pub async fn get_camera_capabilities(
     recorder: State<'_, crate::recorder::engine::RecorderEngine>,
     device_token: String,
 ) -> AppResult<CameraCapabilities> {
-    // The probe opens the camera; a live recording may own it.
+    // Reading the formats may activate the camera's source (Windows); a live
+    // recording owns the camera.
     super::recorder::refuse_while_recording(recorder.current_state())?;
-    let platform = crate::recorder::engine::current_platform();
-    let modes = crate::media::camera::probe_camera_modes(&device_token, platform).await;
-    let c = sundayrec_core::capture::summarize_camera_capabilities(&modes);
+    let cams = native_cameras().await.unwrap_or_default();
+    let formats = match camera_for_token(&cams, &device_token) {
+        Some(cam) => {
+            let id = cam.id.clone();
+            tokio::task::spawn_blocking(move || crate::camera::formats(&id))
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default()
+        }
+        None => Vec::new(),
+    };
+    let c = sundayrec_core::capture::summarize_camera_capabilities(&camera_modes(
+        formats.iter().map(|f| (f.width, f.height, f.fps)),
+    ));
     Ok(CameraCapabilities {
         max_width: c.max_width,
         max_height: c.max_height,
@@ -146,22 +252,27 @@ pub async fn get_camera_capabilities(
     })
 }
 
-/// Combined audio-probe for the settings device dropdown: enumerate the audio
-/// inputs once and shape them into the flat name lists the panel renders, in a
-/// single round-trip. Mirrors the Electron `diagnose-audio` handler.
+/// Combined audio-probe for the settings device dropdown: the input names in a
+/// single round-trip. Since C3b these are the NATIVE inputs — the same list
+/// [`list_audio_devices`] shows and the recorder opens (cpal, plus ASIO on
+/// Windows) — where it used to be ffmpeg's avfoundation/dshow list, which the
+/// recorder no longer reads. The wire keeps its names (`dshow`, `wasapi`,
+/// `wasapiAvailable`) because the renderer reads them.
 ///
-/// The WASAPI loopback bridge (a Windows-native-recorder feature) is not ported,
-/// so `wasapi` is empty and `wasapi_available` is `false`; the shaping is the
-/// unit-tested [`build_audio_diagnostics`]. On a spawn failure the audio list is
-/// empty (the panel shows "no devices found" rather than erroring), matching the
-/// Electron `.catch(() => [])`.
+/// On an enumeration failure the list is empty (the panel shows "no devices
+/// found" rather than erroring), matching the Electron `.catch(() => [])`.
 ///
-/// ⚠️ HARDWARE-UNVERIFIED — the enumeration needs real devices + the ffmpeg
-/// sidecar; the shaping is pure + tested.
+/// ⚠️ HARDWARE-UNVERIFIED — the enumeration needs real devices.
 #[tauri::command]
 pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
-    let inv = enumerate_ffmpeg_devices().await.unwrap_or_default();
-    Ok(build_audio_diagnostics(&inv.audio_inputs, &[], false))
+    let inputs = tokio::task::spawn_blocking(|| enumerate_tagged_inputs(true))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_default();
+    Ok(AudioDiagnostics::from_input_names(
+        inputs.into_iter().map(|d| d.name).collect(),
+    ))
 }
 
 /// Start the VU engine on `device_name` (or the host default when `None`).
@@ -222,4 +333,64 @@ pub async fn start_vu(
 pub fn stop_vu(engine: State<'_, VuEngine>) -> AppResult<()> {
     engine.stop();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::camera::{CameraInfo, CameraKind};
+
+    #[test]
+    fn camera_modes_fold_formats_per_size_with_whole_fps() {
+        // Two pixel formats at 1080p30 (NV12 and MJPEG, say) are one mode.
+        let modes = camera_modes([
+            (1920, 1080, 30.0),
+            (1920, 1080, 29.97),
+            (1920, 1080, 15.0),
+            (1280, 720, 60.0),
+        ]);
+        assert_eq!(modes.len(), 2);
+        assert_eq!((modes[0].width, modes[0].height), (1920, 1080));
+        // 29.97 rounds to 30 and is not counted twice; sorted.
+        assert_eq!(modes[0].framerates, vec![15, 30]);
+        assert_eq!(modes[1].framerates, vec![60]);
+        // …and the core summary reads it as a 1080p30 camera.
+        let c = sundayrec_core::capture::summarize_camera_capabilities(&modes);
+        assert_eq!(c.max_height, 1080);
+        assert_eq!(c.max_fps, 60);
+        assert!(c.supported_resolutions.contains(&"1080p".to_string()));
+    }
+
+    #[test]
+    fn a_capability_token_is_the_pickers_index_or_a_name() {
+        let cams = [
+            CameraInfo {
+                id: "a".into(),
+                name: "FaceTime HD Camera".into(),
+                model_id: None,
+                kind: CameraKind::BuiltIn,
+            },
+            CameraInfo {
+                id: "b".into(),
+                name: "Logitech BRIO".into(),
+                model_id: None,
+                kind: CameraKind::Camera,
+            },
+        ];
+        assert_eq!(camera_for_token(&cams, "1").unwrap().name, "Logitech BRIO");
+        assert_eq!(
+            camera_for_token(&cams, "0").unwrap().name,
+            "FaceTime HD Camera"
+        );
+        assert_eq!(
+            camera_for_token(&cams, "logitech brio").unwrap().id,
+            "b",
+            "a name works too"
+        );
+        assert!(
+            camera_for_token(&cams, "7").is_none(),
+            "a camera that is gone"
+        );
+        assert!(camera_for_token(&cams, "").is_none());
+    }
 }

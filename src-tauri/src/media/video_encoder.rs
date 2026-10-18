@@ -11,14 +11,12 @@
 //! - [`spawn_background_probe`] — prøven (Windows uten gyldig valg) kjøres i
 //!   bakgrunnen en stund etter appstart, aldri under et opptak, og lagrer
 //!   vinneren til neste opptak.
-//! - [`active`] — det valget argv-byggerne leser (`recorder::engine::args`,
-//!   `recorder::two_process`, `recorder::cpal_capture`).
-//! - [`note_unexpected_exit`] — en uventet avslutning av et videoopptak: hvis
-//!   kjernen lar koderen få skylda, faller økta til `libx264` og det lagrede
-//!   valget nullstilles. Resten av DENNE appkjøringen prøves ikke maskinvare på
-//!   nytt (ellers ville en koder som består prøven men feiler under last blitt
-//!   valgt igjen ved neste opptak, midt i en gudstjeneste); neste oppstart prøver
-//!   på nytt.
+//! - [`active`] — det valget videosporet leser (`NativeVideoPlan::for_session`).
+//! - [`note_encoder_fallback`] — videosporet måtte bytte til `libx264` fordi
+//!   maskinvarekoderen feilet på første bilde: resten av DENNE appkjøringen
+//!   bruker `libx264`, og det lagrede valget nullstilles. Ellers ville en koder
+//!   som består prøven men feiler under last blitt valgt igjen ved hvert
+//!   opptak; neste oppstart prøver på nytt.
 //! - [`diagnose`] — diagnosen kjører prøven på nytt og oppdaterer valget.
 //!
 //! Lagringen er `video-encoder.json` i appens datamappe
@@ -36,7 +34,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sundayrec_core::errors::RecordingErrorCode;
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::video_encoder::{
     conclude, next_probe, plan_session, probe_args, resolve_encoder, start_encoder, SessionPlan,
@@ -245,20 +242,25 @@ pub fn spawn_background_probe(app: AppHandle) {
     );
 }
 
-/// Et videoopptak døde uventet (`last_error` er ffmpegs klassifisering, om noen).
-/// Lar kjernen avgjøre om koderen får skylda; i så fall faller økta til
-/// `libx264` — neste respawn bygger argv på nytt og leser [`active`] — og det
-/// lagrede valget nullstilles. Returnerer `true` når den falt tilbake.
-pub fn note_unexpected_exit(app: &AppHandle, last_error: Option<RecordingErrorCode>) -> bool {
+/// Videosporet falt til `libx264` fordi maskinvarekoderen feilet på første
+/// bilde (`VideoTrackStats::encoder_fallback`). Neste opptak i denne
+/// appkjøringen starter på `libx264` (det leser [`active`] når planen lages),
+/// og det lagrede valget nullstilles. Resten av DENNE økta har planen sin
+/// allerede: hvert nytt fragment prøver den planlagte koderen og faller selv
+/// til `libx264` på første bilde, slik sporet alltid gjør. Returnerer `true`
+/// når det faktisk endret noe.
+///
+/// (Til C3b var det ffmpeg-fangstens uventede avslutning som avgjorde dette,
+/// gjennom kjernens skyldregel. Videosporet vet selv at det var koderen.)
+pub fn note_encoder_fallback(app: &AppHandle) -> bool {
     let Some(encoder) = active() else {
         return false;
     };
-    if !sundayrec_core::video_encoder::blames_encoder(encoder, last_error) {
+    if !encoder.is_windows_hardware() {
         return false;
     }
     tracing::warn!(
         encoder = encoder.h264_name(),
-        ?last_error,
         "video encoder failed during a recording — falling back to libx264 and forgetting the choice"
     );
     set_active(Some(VideoEncoder::Software));

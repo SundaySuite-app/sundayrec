@@ -5,22 +5,19 @@
 //! watcher, the watchdog + reconnect schedule, the deliverable/fragment model)
 //! into a real recording, and emits the Tauri events the renderer renders.
 //!
-//! ## Which engine captures what (since v0.6.0)
+//! ## One engine (since C3b)
 //!
-//!   - **Audio-only sessions** capture NATIVELY on both platforms
-//!     ([`native_capture`]: cpal → ring → our own WAV writer). ffmpeg measurably
-//!     lost samples under avfoundation, so it is no longer in the capture path.
-//!   - **Video sessions** still capture through ffmpeg ([`engine::run_session`]),
-//!     with [`cpal_capture`] as the Windows variant (cpal audio piped into the
-//!     ffmpeg that owns the camera) and [`two_process`] as the fallback when one
-//!     ffmpeg cannot hold camera + mic at once.
-//!   - The `classic_directshow` hatch forces the legacy DirectShow audio on
-//!     Windows VIDEO sessions. (A5b removed `classic_ffmpeg_audio`: there is no
-//!     setting, and no automatic fallback, that sends an audio-only session to
-//!     ffmpeg.)
+//! Every session captures NATIVELY on both platforms ([`native_capture`]:
+//! cpal → ring → our own WAV writer). ffmpeg measurably lost samples under
+//! avfoundation, so it left the audio path in v0.6.0 (and its escape hatch in
+//! A5b). A video session adds the camera's video track beside each WAV
+//! fragment (`native_capture::video`, C3a): the camera is read natively and
+//! ffmpeg only ENCODES the frames it is handed. The ffmpeg capture that used to
+//! record video sessions — with its Windows cpal-pipe variant, the
+//! two-process fallback and the `classic_directshow` hatch — left in C3b.
 //!
 //! Capture is DECOUPLED from delivery: every session writes a crash-tolerant
-//! capture (PCM WAV / Matroska) into a hidden per-session folder, and [`concat`]
+//! capture (PCM WAV, plus Matroska video) into a hidden per-session folder, and [`concat`]
 //! stitches the fragments and encodes/remuxes them into the user's chosen format
 //! at the end. [`recovery`] finishes that job on the next launch when the app
 //! died mid-session; [`native_capture::preroll`] supplies the audio captured before the button
@@ -38,12 +35,10 @@ pub mod concat;
 // every finalisation step is run against — one struct instead of the 12–16
 // loose parameters that made the cpal path easy to forget (F1-A5).
 pub(crate) mod context;
-pub mod cpal_capture;
 pub mod engine;
 // v0.15: the opts composition (save folder / filename / formats) the manual
 // and scheduled paths share — moved here from the scheduler.
 pub mod opts;
-pub mod stderr_tail;
 // E6.2/E6.4 — the headless long-run harness (forced-split + fault injection).
 // Test-only: it re-implements the supervisor's control flow around the REAL
 // capture/concat/finalize/history pieces, because those take a `Wry` AppHandle
@@ -53,4 +48,3 @@ pub mod stderr_tail;
 mod longrun;
 pub mod native_capture;
 pub mod recovery;
-pub mod two_process;

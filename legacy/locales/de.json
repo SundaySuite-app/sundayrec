@@ -236,13 +236,6 @@
         "title": "Erweitert",
         "lede": "Dinge, die die meisten nie anfassen müssen. Alles hier hat eine sichere Voreinstellung.",
         "soundLink": "Erweiterte Toneinstellungen",
-        "engine": "Aufnahme-Engine",
-        "engineDesc": "Gilt für Videoaufnahmen. Nur wechseln, wenn der Ton stottert.",
-        "engineConfirm": "Aufnahme-Engine wechseln",
-        "engineChoice": {
-          "native": "Eingebaut",
-          "dshow": "Klassisch (DirectShow)"
-        },
         "preroll": "Vorlaufpuffer",
         "prerollDesc": "Ton von vor dem Druck auf Start, der mit aufgenommen wird. Der Puffer hält das Mikrofon im Hintergrund offen, solange die App aufnahmebereit ist.",
         "prerollChoice": {
@@ -519,10 +512,6 @@
         "audio02": {
           "title": "Das gewählte Audiogerät wurde nicht gefunden",
           "hint": "Schließen Sie das Gerät an, oder wählen Sie unter „Welcher Ton?“ auf Aufnahme ein anderes."
-        },
-        "audio10": {
-          "title": "Auf die klassische Audio-Engine zurückgefallen",
-          "hint": "Aufnehmen funktioniert weiterhin. Wollen Sie die moderne Engine, prüfen Sie den Treiber und dass kein anderes Programm das Gerät belegt."
         },
         "rate01": {
           "title": "Eine feste Abtastrate ist gewählt",

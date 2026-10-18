@@ -48,14 +48,15 @@ deviceChannels: { [key in string]: DeviceChannels },
  */
 videoEnabled: boolean, 
 /**
- * Stored camera human-readable name — the device-match moat input for video
- * (matched with [`crate::device_enum::find_best_video_device_match`]).
+ * Stored camera human-readable name — the recorder opens the camera by it
+ * in the native camera list (`native_capture::video::find_camera`).
  */
 videoDeviceName: string | null, 
 /**
- * Last-known avfoundation index for the chosen camera. A fallback for when
- * the name lookup fails (e.g. after a reconnect); the name match wins when
- * it succeeds. dshow cameras are addressed by name, so this stays `None`.
+ * The camera picker's index for the chosen camera (its position in the
+ * camera list when it was picked). Only the "is video on" checks read it;
+ * the recorder opens the camera by NAME (indices move when cameras come
+ * and go).
  */
 videoDeviceIndex: number | null, 
 /**
@@ -73,13 +74,6 @@ videoFlip: boolean,
  * the first bridge sync.
  */
 keepSeparateAudio: boolean, 
-/**
- * Windows ONLY escape hatch: force the legacy ffmpeg **DirectShow** audio
- * capture instead of the modern cpal (WASAPI/ASIO) path. Default `false` —
- * cpal is the standard Windows capture (more stable, full multichannel via
- * ASIO). Flip on only if cpal misbehaves on a specific rig. No effect on macOS.
- */
-classicDirectshow: boolean, 
 /**
  * Input channel layout.
  */

@@ -242,13 +242,6 @@
         "title": "Zaawansowane",
         "lede": "Rzeczy, których większość nigdy nie musi ruszać. Wszystko tutaj ma bezpieczne ustawienie domyślne.",
         "soundLink": "Zaawansowany dźwięk",
-        "engine": "Silnik nagrywania",
-        "engineDesc": "Dotyczy nagrań wideo. Zmieniaj tylko, jeśli dźwięk się zacina.",
-        "engineConfirm": "Zmienić silnik nagrywania",
-        "engineChoice": {
-          "native": "Wbudowany",
-          "dshow": "Klasyczny (DirectShow)"
-        },
         "preroll": "Bufor wstępny",
         "prerollDesc": "Dźwięk zachowany z czasu przed naciśnięciem Start. Bufor trzyma mikrofon otwarty w tle tak długo, jak aplikacja jest gotowa do nagrywania.",
         "prerollChoice": {
@@ -525,10 +518,6 @@
         "audio02": {
           "title": "Nie znaleziono wybranego urządzenia audio",
           "hint": "Podłącz urządzenie albo wybierz inne w „Jaki dźwięk?” na stronie Nagrywanie."
-        },
-        "audio10": {
-          "title": "Przełączono na klasyczny silnik dźwięku",
-          "hint": "Nagrywanie nadal działa. Jeśli chcesz nowoczesnego silnika, sprawdź sterownik i to, czy żaden inny program nie zajmuje urządzenia."
         },
         "rate01": {
           "title": "Wybrano stałą częstotliwość próbkowania",

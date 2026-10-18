@@ -231,13 +231,14 @@ pub struct Settings {
     /// common church-recording case).
     #[serde(default)]
     pub video_enabled: bool,
-    /// Stored camera human-readable name — the device-match moat input for video
-    /// (matched with [`crate::device_enum::find_best_video_device_match`]).
+    /// Stored camera human-readable name — the recorder opens the camera by it
+    /// in the native camera list (`native_capture::video::find_camera`).
     #[serde(default)]
     pub video_device_name: Option<String>,
-    /// Last-known avfoundation index for the chosen camera. A fallback for when
-    /// the name lookup fails (e.g. after a reconnect); the name match wins when
-    /// it succeeds. dshow cameras are addressed by name, so this stays `None`.
+    /// The camera picker's index for the chosen camera (its position in the
+    /// camera list when it was picked). Only the "is video on" checks read it;
+    /// the recorder opens the camera by NAME (indices move when cameras come
+    /// and go).
     #[serde(default)]
     pub video_device_index: Option<i32>,
     // (v0.15 — «lyd + video, ett valg»: `videoResolution`, `videoFramerate`,
@@ -257,17 +258,13 @@ pub struct Settings {
     /// the first bridge sync.
     #[serde(default = "default_true")]
     pub keep_separate_audio: bool,
-    /// Windows ONLY escape hatch: force the legacy ffmpeg **DirectShow** audio
-    /// capture instead of the modern cpal (WASAPI/ASIO) path. Default `false` —
-    /// cpal is the standard Windows capture (more stable, full multichannel via
-    /// ASIO). Flip on only if cpal misbehaves on a specific rig. No effect on macOS.
-    #[serde(default)]
-    pub classic_directshow: bool,
-    // (A5a: `classicFfmpegPreroll` and A5b: `classicFfmpegAudio` left — the
-    // native engine has been the only audio-only recorder, and the only pre-roll
-    // buffer, since 2026-08-01. Old blobs carrying them are dropped tolerantly
-    // like every retired key; see
-    // `legacy_blob_with_classic_ffmpeg_preroll_imports_cleanly`.)
+    // (A5a: `classicFfmpegPreroll`, A5b: `classicFfmpegAudio` and C3b:
+    // `classicDirectshow` left — the native engine has been the only audio-only
+    // recorder, and the only pre-roll buffer, since 2026-08-01, and since C3b it
+    // records every video session too, so there is no DirectShow path left to
+    // force. Old blobs carrying them are dropped tolerantly like every retired
+    // key; see `legacy_blob_with_classic_ffmpeg_preroll_imports_cleanly` and
+    // `legacy_blob_with_classic_directshow_imports_cleanly`.)
     // (v0.15: `separateAudioFormat` left — the separate audio sidecar now
     // follows `format`, the one audio-format choice the app has; `avSync`,
     // `videoBitrate` and `outputMode` left as dead fields with no reader. Old
@@ -581,7 +578,6 @@ impl Default for Settings {
             video_device_index: None,
             video_flip: false,
             keep_separate_audio: true,
-            classic_directshow: false,
 
             channels: default_channels(),
             input_channel_l: None,
@@ -1698,20 +1694,17 @@ mod tests {
     #[test]
     fn legacy_blob_with_classic_ffmpeg_audio_imports_cleanly() {
         // A5b: the audio escape hatch is gone. A database written while it
-        // existed (on or off) must still load, keep its neighbours — including
-        // the DirectShow hatch beside it, which lives until C3 — and not write
-        // the key back.
+        // existed (on or off) must still load, keep its neighbours and not
+        // write the key back.
         for flag in ["true", "false"] {
             let s = Settings::from_json_merged(&format!(
                 r#"{{
                     "classicFfmpegAudio": {flag},
-                    "classicDirectshow": true,
                     "preRollSeconds": 20,
                     "churchName": "Domkirken"
                 }}"#
             ))
             .validated();
-            assert!(s.classic_directshow, "the DirectShow hatch is C3's");
             assert_eq!(s.pre_roll_seconds, 20);
             assert_eq!(s.church_name, "Domkirken");
             let json = serde_json::to_value(&s).unwrap();
@@ -1719,6 +1712,38 @@ mod tests {
                 !json.as_object().unwrap().contains_key("classicFfmpegAudio"),
                 "the retired key must not be written back"
             );
+        }
+    }
+
+    #[test]
+    fn legacy_blob_with_classic_directshow_imports_cleanly() {
+        // C3b: the DirectShow hatch is gone with the ffmpeg video paths it
+        // steered. A database written while it existed (on or off, beside the
+        // A5b key that left before it) must still load, keep its neighbours and
+        // not write either key back.
+        for flag in ["true", "false"] {
+            let s = Settings::from_json_merged(&format!(
+                r#"{{
+                    "classicDirectshow": {flag},
+                    "classicFfmpegAudio": {flag},
+                    "videoEnabled": true,
+                    "videoDeviceName": "Logitech BRIO",
+                    "preRollSeconds": 20,
+                    "churchName": "Domkirken"
+                }}"#
+            ))
+            .validated();
+            assert!(s.video_enabled);
+            assert_eq!(s.video_device_name.as_deref(), Some("Logitech BRIO"));
+            assert_eq!(s.pre_roll_seconds, 20);
+            assert_eq!(s.church_name, "Domkirken");
+            let json = serde_json::to_value(&s).unwrap();
+            let obj = json.as_object().unwrap();
+            assert!(
+                !obj.contains_key("classicDirectshow"),
+                "the retired key must not be written back"
+            );
+            assert!(!obj.contains_key("classicFfmpegAudio"));
         }
     }
 

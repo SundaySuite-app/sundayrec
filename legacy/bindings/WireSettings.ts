@@ -64,7 +64,9 @@ showLiveLevels: boolean,
  */
 classicFfmpegAudio: boolean, 
 /**
- * The Windows DirectShow escape hatch, same question.
+ * WIRE-FROZEN since C3b (see `input_volume`): the Windows DirectShow
+ * escape hatch left with the ffmpeg video paths, so the constant is
+ * `false`.
  */
 classicDirectshow: boolean, 
 /**
