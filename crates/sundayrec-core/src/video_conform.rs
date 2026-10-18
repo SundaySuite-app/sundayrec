@@ -232,6 +232,7 @@ impl<T> VideoConformer<T> {
             // Older than what is already on screen, or would be shown more
             // than one slot after it belongs: drop.
             let stale = self.last_shown.is_some_and(|l| pos <= l);
+            if (25347334000000..25347352000000).contains(&host) { eprintln!("DBGP host {host} pos_s {:.6} next_slot {} last_shown_s {:?} newest_sample_s {:?} newest_host {:?}", pos/self.rate as f64, self.next_slot, self.last_shown.map(|l| l/self.rate as f64), clock.newest_sample().map(|x| x as f64/self.rate as f64), clock.newest_host()); }
             let too_late = self.next_slot >= 2 && pos <= self.slot_pos(self.next_slot - 2);
             if stale || too_late {
                 self.stats.dropped_late += 1;
@@ -252,6 +253,7 @@ impl<T> VideoConformer<T> {
             }
             newest = self.placed.pop_front();
         }
+        if (23430..23434).contains(&k) { eprintln!("DBGE k {k} slot_s {:.6} newest {:?} last_shown_s {:?} placed_front {:?}", slot/self.rate as f64, newest.as_ref().map(|n| n.0/self.rate as f64), self.last_shown.map(|l| l/self.rate as f64), self.placed.front().map(|n| n.0/self.rate as f64)); }
         let picture = match newest {
             Some((pos, frame)) if slot - pos <= self.hold_samples => {
                 self.last_shown = Some(pos);
@@ -716,6 +718,12 @@ mod tests {
                     (i - 1) as i64
                 }
             };
+            if std::env::var("C2DBG").is_ok() {
+                for i in 55765..55780usize {
+                    eprintln!("DBG frame {i} true {:.6} stamp {} deliver {:.4} est {:.6}", true_t[i], stamp[i], deliver[i], clock.sample_at(stamp[i]).unwrap()/rate);
+                }
+                for k in 23425..23440usize { eprintln!("DBG slot {k} t {:.3} shown {} oracle {}", k as f64*period, shown[k], oracle(k as f64*period)); }
+            }
             let mut conf_first: Vec<i64> = vec![-1; true_t.len()];
             let mut oracle_first: Vec<i64> = vec![-1; true_t.len()];
             let mut last_id = -1i64;

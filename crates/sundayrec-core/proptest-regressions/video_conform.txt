@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c297fed8a00244e69650750e66219d108e9978ee899aab96e9dab1c5887c3305 # shrinks to sc = Scenario { seed: 12873449299097705, secs: 10800.0, rate: 48000, fps: Fps { num: 25, den: 1 }, buf: 1024, cam_fps: 60.0, drift_ppm: -207.40, .. } — sleep at 935.28 s (~6 h host jump), slot 23432 black against the oracle
