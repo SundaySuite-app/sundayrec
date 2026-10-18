@@ -47,6 +47,7 @@ import type { WakeStatus } from "../../legacy/bindings/WakeStatus";
 import type { EditorExportResult } from "../../legacy/bindings/EditorExportResult";
 import type { EditorMediaInfo } from "../../legacy/bindings/EditorMediaInfo";
 import type { EditorAutoProcess } from "../../legacy/bindings/EditorAutoProcess";
+import type { EditorTaleSaid } from "../../legacy/bindings/EditorTaleSaid";
 import type { RecorderStatePayload } from "../../legacy/bindings/RecorderStatePayload";
 import type { PreflightFinding } from "../../legacy/bindings/PreflightFinding";
 import type { ChosenPlace } from "../../legacy/bindings/ChosenPlace";
@@ -331,6 +332,9 @@ declare global {
       editorAutoProcess: (
         sourceToken: string,
       ) => Promise<EditorAutoProcess | null>;
+      /** B3b: what «Tale» did to the recording — codes (`hum`, `noise`,
+       *  `reverb`, `clicks`), never prose. Null outside the Tauri shell. */
+      editorTaleSaid: (sourceToken: string) => Promise<EditorTaleSaid | null>;
       /** The liturgical day on a `YYYY-MM-DD` date («1. påskedag»), or null
        *  for an ordinary Sunday — the «Innhold» card's title on a feast day. */
       editorChurchDayName: (date: string) => Promise<string | null>;

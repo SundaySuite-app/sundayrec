@@ -680,6 +680,13 @@
       "sample": "{at} — 20 sekunder fra prekenen",
       "rendering": "Lager smakebiten …",
       "listenFailed": "Kunne ikke lage smakebiten. Eksporten går som vanlig.",
+      "said": {
+        "hum": "Vi fjernet brum fra strømnettet",
+        "noise": "Vi dempet bakgrunnsstøyen",
+        "reverb": "Vi dempet ekkoet i rommet",
+        "clicks": "Vi fjernet klikk og knitring",
+        "clean": "Opptaket var rent."
+      },
       "advancedMixer": "Avansert: åpne mikseren",
       "hideMixer": "Skjul mikseren",
       "mixerTitle": "Avansert lydmikser",

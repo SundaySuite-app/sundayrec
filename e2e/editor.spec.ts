@@ -740,6 +740,38 @@ test.describe("editor", () => {
     });
   });
 
+  test("lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting", async ({
+    page,
+  }) => {
+    // B3b: bakenden sender koder, skjermen eier ordene.
+    await openEditor(page, {
+      editor_tale_said: { analysed: true, said: ["hum", "reverb"] },
+    });
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect(page.getByTestId("editor-tale-said")).toContainText(
+      "Vi fjernet brum fra strømnettet",
+    );
+    await expect(page.getByTestId("editor-tale-said")).toContainText(
+      "Vi dempet ekkoet i rommet",
+    );
+    await expect(page.getByTestId("editor-tale-said-noise")).toHaveCount(0);
+
+    await page.getByTestId("editor-auto-toggle").click();
+    await expect(page.getByTestId("editor-tale-said")).toHaveCount(0);
+  });
+
+  test("et rent opptak får den rolige linja, et uleselig ingen", async ({
+    page,
+  }) => {
+    await openEditor(page, {
+      editor_tale_said: { analysed: true, said: [] },
+    });
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect(page.getByTestId("editor-tale-said")).toHaveText(
+      "Opptaket var rent.",
+    );
+  });
+
   test("«Etter» ber om en ekte gjengivelse av de samme tjue sekundene", async ({
     page,
   }) => {

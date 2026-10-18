@@ -686,6 +686,13 @@
       "sample": "{at} — 20 sekund z kazania",
       "rendering": "Przygotowywanie próbki …",
       "listenFailed": "Nie udało się przygotować próbki. Eksport działa normalnie.",
+      "said": {
+        "hum": "Usunęliśmy buczenie z sieci",
+        "noise": "Wyciszyliśmy szum tła",
+        "reverb": "Stłumiliśmy pogłos w sali",
+        "clicks": "Usunęliśmy trzaski i kliknięcia",
+        "clean": "Nagranie było czyste."
+      },
       "advancedMixer": "Zaawansowane: otwórz mikser",
       "hideMixer": "Ukryj mikser",
       "mixerTitle": "Zaawansowany mikser dźwięku",

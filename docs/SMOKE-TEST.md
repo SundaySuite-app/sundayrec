@@ -1159,6 +1159,13 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      first 20 seconds of the file, which is often an empty room) renders and
      plays. It is a real render through the real chain — and it writes to a
      temp file, never next to the original.
+   - **Expected (B3b):** with **Tale** chosen, a calm list under the cards says
+     in plain words what was done to THIS recording («Vi fjernet brum fra
+     strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet ekkoet i rommet»,
+     «Vi fjernet klikk og knitring»), or «Opptaket var rent.» when nothing was.
+     Nothing shows for **Tale og musikk**, **Ingen**, with the mixer on, or
+     when the file could not be read.
+   - VERIFIED-BY: e2e/editor.spec.ts::lyd-steget sier i tre ord hva «Tale» gjorde — og «rent» når ingenting
    - **«Avansert: åpne mikseren»** opens the full chain (low cut, denoise,
      dereverb, gate, compressor, de-esser, limiter, output level, three EQ
      bands).
