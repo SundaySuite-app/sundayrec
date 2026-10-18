@@ -295,6 +295,19 @@ impl HeadlessSession {
         // compresses it to 100 ms so a threshold measured in hundreds of kB is
         // crossed in a fraction of a second rather than half a minute.
         const POLL: Duration = Duration::from_millis(100);
+        // Every `StopMode` duration counts from the first captured sample, not
+        // from spawn: on a cold Windows runner ffmpeg can take longer than a
+        // short segment to write its WAV header, and killing it before then
+        // leaves a file with no `data` chunk — a harness artefact, not the
+        // crash the test models.
+        let spawned = tokio::time::Instant::now();
+        while wav_data_bytes(Path::new(path)).unwrap_or(0) == 0 {
+            assert!(
+                spawned.elapsed() < Duration::from_secs(30),
+                "{path}: the harness ffmpeg wrote no audio within 30 s"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         let started = tokio::time::Instant::now();
         let outcome = loop {
             tokio::time::sleep(POLL).await;
@@ -1400,7 +1413,8 @@ mod tests {
 
         for path in [&clean, &killed] {
             let file_len = std::fs::metadata(path).unwrap().len();
-            let data = wav_data_bytes(Path::new(path)).expect("a data chunk");
+            let data =
+                wav_data_bytes(Path::new(path)).unwrap_or_else(|| panic!("{path}: no data chunk"));
             assert!(data > 0, "{path}: non-empty payload");
             assert!(
                 data < file_len && file_len - data < 128,
