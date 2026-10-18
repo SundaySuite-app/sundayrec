@@ -235,6 +235,39 @@ akkompagnement med mindre B3a gater støyfjerningen på tale.
 - **Ferdig når:** et ekte brumopptak og et ekte opptak fra et stort kirkerom
   er hørbart bedre (Ørene), og et rent opptak er hørbart uendret.
 
+**Gjort (B3a).** «Tale» (`speech-clear`, uten mikser) leser opptaket én gang på 16 kHz
+(`sundayrec_core::tale`, ca. 3000× sanntid; ffmpeg dekoder) og tar bare med det analysen finner.
+Resultatet bufres per fil, så forhåndslytting, lydstyrketallet og eksporten leser filen én gang.
+Stegene settes inn mellom kanalreparasjonen og presettets egen kjede. Ingen nye knapper; Tale-
+kjeden er `Chain::speech_clean`, og `SpeechClean::said()` gir kodene B3b skal oversette.
+
+| Trinn                          | Slås på når                                                                                                                                             | Måling                                                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| brum (`dehum`)                 | en linje på 50/100/150 Hz står ≥ 15 dB over båndene ±4 Hz i ≥ 60 % av 2 s-blokkene; 50 eller 60 Hz velges                                               | ekte opptak + 50 Hz på −34 dB og 60 Hz på −40 dB: riktig familie funnet på alle tre; uten brum: aldri                                                                                                                             |
+| støy (`denoise`, 9 dB)         | nesten alltid: ikke når gulvet er under −85 dBFS, når gulvet er > 60 dB under talen, eller når det ikke finnes noe gulv ved siden av signalet (< 20 dB) | `2026-05-17_2` (gulv −83,5): av og urørt (±0,0 dB); `31.5.26` og `2026.01.04`: på, gulv −3,7 / −2,1 dB, talen −0,0 / −0,1 dB                                                                                                      |
+| romklang (`dereverb`, 30–70 %) | anslått RT60 ≥ 1,0 s (den raskeste tiendedelen av fallene, −5 til −20 dB)                                                                               | de tre ekte opptakene tørre: 0,16 s, av. Med påført hale (RT60 → anslag, tre opptak): 0,5 → 0,4–0,5; 0,9 → 0,7–0,8; 1,8 → 1,5–1,7; 3,0 → 2,6–2,8. Av for 0,5 og 0,9, på fra 1,2 (`2026.01.04`, `2026-05-17_2`) og 1,8 (`31.5.26`) |
+| klikk (`click_remover`)        | kanaldiagnosen ser knitring (`processing::channel_crackles`) eller ≥ 20 isolerte pigger i minuttet                                                      | ekte opptak: 1 til 5 i minuttet; 1 pigg/s påført: 56 i minuttet                                                                                                                                                                   |
+
+**Støyfjerneren, og hvordan musikk beskyttes.** Valget står i modulhodene til `chain.rs` og `tale`. Kort:
+filmcrafts `denoise` beholdes, mildt (9 dB), og **gates på tale**: `denoise` og `dereverb` kjører
+på hele signalet, men utgangen blandes inn bare mens inngangen er talelignende (10 ms-nivået
+spenner ≥ 9 dB over de siste 0,6 s, godt over gulvet) eller ligger på det målte gulvet. Gulvet er
+et fast tall fra analysen, så en lang tone kan ikke forveksles med det. `afftdn` ble ikke valgt:
+ffmpeg skal ikke ha noe lydfilter (B2b), og B0c målte den bare mot gulv, aldri mot holdte toner.
+Målt på en syntetisk gudstjeneste (tale, 12 s holdt firetoners akkord på −26 dBFS, gulv −55 dBFS,
+tale), samme 48 kHz-signal:
+
+|                                       | holdt akkord | gulvet i en 1,4 s pause |
+| ------------------------------------- | ------------ | ----------------------- |
+| `denoise` 9 dB uten gate              | **−9,00 dB** |                         |
+| `Chain::speech_clean` (støy, gatet)   | **+0,00 dB** | −8,8 dB                 |
+| `dereverb` 70 %, rt60 0,4 s uten gate | −2,71 dB     |                         |
+| `dereverb` 70 %, gatet                | **+0,00 dB** |                         |
+
+**Kjent grense:** lyd der nivået beveger seg som tale (trommer, strummet gitar) åpner porten, og en
+holdt tone under den møter støyfjerneren på inntil 9 dB. «Tale og musikk» bruker ikke denne rensingen.
+Ikke hørt etter: hørbarheten (brumopptak, stort kirkerom, rent opptak uendret) hører til B3b/Ørene.
+
 ### Fase 4 — én dekoding når fila åpnes
 
 - Ett ffmpeg-rør i opptakets egen samplingsfrekvens. I samme runde fordeles

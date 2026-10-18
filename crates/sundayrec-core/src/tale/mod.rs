@@ -13,7 +13,7 @@
 //! | Stage | Switched on when | Measured by |
 //! | ----- | ---------------- | ----------- |
 //! | hum removal (`dehum`) | a line on 50/100/150 Hz stands at least [`HUM_RATIO_DB`] above the bands 4 Hz either side, in at least [`HUM_BLOCK_FRACTION`] of the 2 s blocks. 50 or 60 Hz is the family with the stronger line | Hann-windowed Goertzel at 18 frequencies on the 16 kHz stream |
-//! | de-noise | **almost always**: unless the recording has no floor to speak of (floor under [`NO_FLOOR_DB`]) or the floor is already [`CLEAN_SNR_DB`] under the speech. Always mild ([`DENOISE_TALE_DB`]) and **only where it is safe**, see below | 50 ms RMS histogram: 5th percentile = floor, 95th = speech |
+//! | de-noise | **almost always**: unless the recording has no floor to speak of (floor under [`NO_FLOOR_DB`]), no floor apart from the signal (less than [`MIN_FLOOR_GAP_DB`] between floor and loud end: continuous music) or the floor is already [`CLEAN_SNR_DB`] under the speech. Always mild ([`DENOISE_TALE_DB`]) and **only where it is safe**, see below | 50 ms RMS histogram: 5th percentile = floor, 95th = speech |
 //! | de-reverb | the slowest-decaying tenth of the speech decays implies an RT60 of at least [`LONG_RT60_S`] | envelope decays: time from -5 to -20 dB below a peak, over at least [`MIN_DECAY_EVENTS`] events |
 //! | click removal | the channel diagnosis sees crackle ([`crate::processing::channel_crackles`]: a channel that is all transients while the other carries programme material), or isolated single-sample spikes come at [`CLICKS_PER_MIN`] a minute or more | per-channel peak/RMS, and a spike detector on the second difference |
 //!
@@ -92,6 +92,10 @@ const HUM_SILENT_DB: f64 = -75.0;
 pub const NO_FLOOR_DB: f64 = -85.0;
 /// De-noise: a floor this far (dB) under the speech is already inaudible.
 pub const CLEAN_SNR_DB: f64 = 60.0;
+/// De-noise: a floor closer than this (dB) to the loud end is not a floor but
+/// the signal itself (continuous music or a steady tone with no pauses): the
+/// recording has nothing the de-noiser could learn as noise.
+pub const MIN_FLOOR_GAP_DB: f64 = 20.0;
 /// The reduction «Tale» asks `denoise` for, dB: mild, and under the stage's own cap.
 pub const DENOISE_TALE_DB: f64 = 9.0;
 
@@ -192,8 +196,9 @@ impl SpeechClean {
 impl SpeechAnalysis {
     /// The triggers (module docs).
     pub fn decide(&self) -> SpeechClean {
+        let gap = self.speech_db - self.noise_floor_db;
         let denoise = self.noise_floor_db > NO_FLOOR_DB
-            && self.speech_db - self.noise_floor_db < CLEAN_SNR_DB
+            && (MIN_FLOOR_GAP_DB..CLEAN_SNR_DB).contains(&gap)
             && self.duration_s >= 1.0;
         let dereverb = self.rt60_s.filter(|r| *r >= LONG_RT60_S).map(|r| {
             // Mild, and a little more the longer the room: 30 % at 1 s, 70 % at 3 s.

@@ -4,8 +4,11 @@
 //!
 //! ```text
 //! cargo run --release --example tale_probe -- <file> [--start S] [--len S]
-//!     [--hum 50:-34] [--reverb 1.8] [--clicks 1.0]
+//!     [--hum 50:-34] [--reverb 1.8] [--clicks 1.0] [--apply]
 //! ```
+//!
+//! `--apply` also runs the decided stages over a 48 kHz decode of the same span
+//! and prints how the quietest and loudest 50 ms frames moved.
 //!
 //! `--hum f:dB` adds a mains line with two harmonics, `--reverb rt60` convolves
 //! with an exponentially decaying noise tail, `--clicks n` adds n isolated
@@ -147,6 +150,62 @@ fn run() -> Result<(), String> {
         an.duration_s,
         an.duration_s / t.elapsed().as_secs_f64()
     );
+    if a.iter().any(|v| v == "--apply") {
+        let mut args48: Vec<String> = Vec::new();
+        if let Some(s) = opt("--start") {
+            args48.extend(["-ss".into(), s.clone()]);
+        }
+        if let Some(l) = opt("--len") {
+            args48.extend(["-t".into(), l.clone()]);
+        }
+        args48.extend(
+            [
+                "-i", file, "-vn", "-ar", "48000", "-ac", "1", "-f", "f32le", "pipe:1", "-v",
+                "error",
+            ]
+            .map(String::from),
+        );
+        let out = Command::new(ffmpeg())
+            .args(&args48)
+            .output()
+            .map_err(|e| e.to_string())?;
+        let x48: Vec<f32> = out
+            .stdout
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
+            .collect();
+        let chain = sundayrec_core::chain::Chain::speech_clean(&d);
+        let y48 = chain
+            .build(48_000.0, 1)
+            .map_err(|e| e.to_string())?
+            .process_offline(std::slice::from_ref(&x48))
+            .remove(0);
+        let frames = |v: &[f32]| -> Vec<f64> {
+            v.as_chunks::<2400>()
+                .0
+                .iter()
+                .map(|c| {
+                    10.0 * (c.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / 2400.0)
+                        .max(1e-12)
+                        .log10()
+                })
+                .collect()
+        };
+        let pct = |f: &[f64], p: f64| {
+            let mut s: Vec<f64> = f.iter().copied().filter(|v| *v > -95.0).collect();
+            s.sort_by(f64::total_cmp);
+            s[((s.len() as f64 * p) as usize).min(s.len().saturating_sub(1))]
+        };
+        let (fx, fy) = (frames(&x48), frames(&y48));
+        println!(
+            "apply: gulv (p10) {:.1} -> {:.1} dB ({:+.1}), tale (p90) {:.1} -> {:.1} dB ({:+.1}), median {:+.1}",
+            pct(&fx, 0.1), pct(&fy, 0.1), pct(&fy, 0.1) - pct(&fx, 0.1),
+            pct(&fx, 0.9), pct(&fy, 0.9), pct(&fy, 0.9) - pct(&fx, 0.9),
+            pct(&fy, 0.5) - pct(&fx, 0.5),
+        );
+    }
     Ok(())
 }
 

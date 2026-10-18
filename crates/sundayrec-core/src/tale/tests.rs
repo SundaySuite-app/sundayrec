@@ -198,6 +198,14 @@ fn denoise_is_off_when_there_is_no_floor_or_it_is_already_far_under_the_speech()
     add(&mut y, &floor_noise(16_000.0, 30.0, -95.0, 9));
     let a = analyze(&y);
     assert!(!a.decide().denoise, "{a:?}");
+    // A steady chord with no pauses has no floor apart from itself: leave it alone.
+    let mut z = floor_noise(16_000.0, 30.0, -50.0, 4);
+    for f in [110.0, 164.81, 220.0] {
+        add(&mut z, &sine(16_000.0, f, 30.0, amp(-30.0)));
+    }
+    let a = analyze(&z);
+    assert!(a.speech_db - a.noise_floor_db < MIN_FLOOR_GAP_DB, "{a:?}");
+    assert!(!a.decide().denoise);
 }
 
 // ── de-reverb ──────────────────────────────────────────────────────────────
@@ -404,10 +412,19 @@ fn the_dereverb_leaves_the_same_chord_alone_too() {
         declick: false,
         floor_db: -55.0,
     };
-    let y = run(&Chain::speech_clean(&c), &x);
-    let d = rms_db(span(&y, 14.0, 19.0)) - rms_db(span(&x, 14.0, 19.0));
-    println!("chord through the gated dereverb: {d:+.2} dB");
-    assert!(d > -1.5, "{d}");
+    let chord = |y: &[f32]| rms_db(span(y, 14.0, 19.0)) - rms_db(span(&x, 14.0, 19.0));
+    let gated = chord(&run(&Chain::speech_clean(&c), &x));
+    let plain = Chain::from_stages(vec![Stage::Fx {
+        id: "dereverb",
+        params: vec![("amount".into(), 70.0), ("rt60".into(), 0.4)],
+    }]);
+    let ungated = chord(&run(&plain, &x));
+    println!("chord through the dereverb at 70 %: gated {gated:+.2} dB, ungated {ungated:+.2} dB");
+    assert!(gated > -1.5, "{gated}");
+    assert!(
+        ungated < gated,
+        "the gate must be doing something: {ungated} vs {gated}"
+    );
 }
 
 #[test]

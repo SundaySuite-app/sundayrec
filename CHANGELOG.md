@@ -5,6 +5,17 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **«Tale» renser av seg selv.** Profilen «Tale — tydelig» hører nå på
+  opptaket før den behandler det, og tar bare med det som trengs: brum fra
+  strømnettet (50 eller 60 Hz, velges automatisk), jevn bakgrunnsstøy, en lang
+  etterklang i et stort rom, og knitring eller klikk. Et rent opptak slipper
+  gjennom uten rensing. Det er ingen nye knapper. Støy- og romklangfjerningen
+  virker bare mens noen snakker eller det er stille i rommet, så orgel, holdte
+  akkorder og akkompagnement dempes ikke (en holdt akkord kom gjennom med 0,0 dB
+  endring, mot 9 dB med vanlig støyfjerning). Merk at lyd med mye rytme og
+  stemmelignende variasjon, som trommer, kan få litt støyfjerning; «Tale og
+  musikk» bruker ikke denne rensingen.
+
 - **Opptaksvinduet sier fra hvis kameraet ikke henger med.** Klarer ikke
   maskinen å kode alle bildene, hopper appen over noen få og viser en rolig
   merknad: «Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er

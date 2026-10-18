@@ -43,8 +43,8 @@
 //! filmcraft DO what the number says (about 11 dB at 12, about 16 dB at 20 on the
 //! same signal). The new chain will therefore sound cleaner than the old one,
 //! and part of the difference heard in B2b is that the old chain did not clean,
-//! not that the filters differ. Whether "Tale" keeps filmcraft's `denoise` or a
-//! corrected `afftdn` is B3a's decision, not this file's.
+//! not that the filters differ. B3a kept filmcraft's `denoise` and decided it
+//! (see "What B3a decided" below).
 //!
 //! ## What B2b measured, and set
 //!
@@ -86,11 +86,45 @@
 //!   passes untouched. This cannot be tuned away with the parameters the
 //!   effect has. It is why de-noise stays an opt-in stage (the mixer, the
 //!   "voice-noisy-room" preset) in B2b; B3a, which wants a mild de-noise
-//!   always on, has to deal with it (for example by gating on speech).
+//!   always on, has to deal with it (for example by gating on speech: it did,
+//!   see "What B3a decided").
 //!   Capped at [`DENOISE_MAX_DB`] = 12 dB for that reason: "voice-noisy-room"
 //!   asks for 20 and the held chord then came out 30 dB under the speech (the
 //!   gate and the de-reverb add to it), where the old chain left it alone. At 12
 //!   the floor still comes down about 11 dB (the old chain took 1.7).
+//!
+//! ## What B3a decided: «Tale» cleans by itself, and music is protected
+//!
+//! `Chain::speech_clean` builds the stages «Tale» (`speech-clear`) adds in front
+//! of the preset's own chain, from what the analysis in [`crate::tale`] found in
+//! the recording: `dehum` (hum), `click_remover` (crackle), `denoise` and
+//! `dereverb`. The two that eat held notes are wrapped in a `Stage::SpeechGated`.
+//! The decisions and the measurements, in one place:
+//!
+//! * **De-noiser: filmcraft's `denoise`, gated on speech, mild (9 dB).** Not a
+//!   targeted `afftdn` (B0c: no `tn=1`, measured `nf`, 13.5 dB of the floor and
+//!   the pulses untouched). It was measured on the floor only, never on a held
+//!   chord, and it is an ffmpeg filter: B2b's point is that the chain, in the
+//!   preview and in the export, runs in Rust and ffmpeg gets no audio filter
+//!   (`afftdn`'s fixed `nf` is also the thing B0c found fragile: -50 gave 5.2 dB
+//!   of -45, -40 ate the tail). So the choice is (a) in the brief: gate it.
+//! * **The gate** ([`crate::tale::SpeechGate`]) lets the effect's output through
+//!   only while the input is speech-like (its 10 ms level spans 9 dB or more
+//!   over the last 0.6 s, well over the measured floor) or sits at the measured
+//!   floor (the floor comes from the analysis as a fixed number, so a long note
+//!   cannot be mistaken for it). Both effects run on the whole signal; only the
+//!   mix is gated, with the dry path delayed by the effect's latency.
+//! * **Measured on a synthetic service** (speech bursts, a held four-note chord
+//!   for 12 s at -26 dBFS, -55 dBFS room tone, speech again; 48 kHz): the chord
+//!   comes through `Chain::speech_clean` at **+0.00 dB**; the same `denoise` at
+//!   9 dB without the gate takes it down **9.00 dB**; the floor in a 1.4 s pause
+//!   between phrases falls **8.8 dB**. The de-reverb at 70 %, rt60 0.4 s: see
+//!   `docs/LYDMOTOR.md` «Gjort (B3a)». The tests
+//!   `a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it` and
+//!   `the_dereverb_leaves_the_same_chord_alone_too` hold the numbers.
+//! * **Known limit.** A signal whose level moves like speech (drums, a strummed
+//!   guitar) opens the gate, and a pad held under it meets the de-noiser at up
+//!   to 9 dB. «Tale og musikk» (`music-speech`) does not use this at all.
 //!
 //! The two compressors of "speech-punchy" and the like are translated one by
 //! one, in order, exactly as the filter string lists them.
