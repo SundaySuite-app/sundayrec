@@ -232,6 +232,8 @@ tract-onnx = { version = "0.23.4", optional = true }
 # real update needs a signed release + keypair, so it stays out of the default
 # build + CI gate. NETWORK/GUI-UNVERIFIED.
 tauri-plugin-updater = { version = "2", optional = true }
+fast_image_resize = "6"
+jpeg-encoder = "0.7"
 
 [target.'cfg(windows)'.dependencies]
 # Win32 Job Object APIs for the orphan-guard (`platform::guard_child_processes`):

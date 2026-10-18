@@ -47,6 +47,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+pub mod preview;
 pub mod queue;
 pub mod stats;
 
@@ -215,6 +216,12 @@ pub enum CameraError {
 
 /// One frame from a camera. Plain data or a retained OS buffer — either way,
 /// read it with [`Frame::with_planes`] and drop it promptly.
+///
+/// `Clone` is a SHARE, never a copy of the pixels: a reference count on the
+/// retained buffer (macOS) or on the owned bytes (Windows, synthetic). The
+/// live preview (C4a) holds a share of one frame in a few while the recorder
+/// holds the original.
+#[derive(Clone)]
 pub struct Frame {
     /// Capture time on the host clock in nanoseconds: `mach_absolute_time` on
     /// macOS (CoreAudio's `mHostTime` clock), `QueryPerformanceCounter` on
@@ -230,10 +237,11 @@ pub struct Frame {
     data: FrameData,
 }
 
+#[derive(Clone)]
 enum FrameData {
     #[cfg(target_os = "macos")]
     Native(avfoundation::CameraFrame),
-    Owned(Vec<u8>),
+    Owned(Arc<Vec<u8>>),
 }
 
 impl fmt::Debug for Frame {
@@ -263,7 +271,7 @@ impl Frame {
             height,
             pixel_format,
             bottom_up,
-            data: FrameData::Owned(bytes),
+            data: FrameData::Owned(Arc::new(bytes)),
         }
     }
 

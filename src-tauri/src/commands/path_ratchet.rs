@@ -534,13 +534,22 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
 /// rule that guessed which tokens count (it used to ask for a path-shaped word
 /// in front of `_token`, which `source_token` is not) is how one slips by. So
 /// a token that is not a place says so here.
-const NOT_PLACE_TOKENS: &[(&str, &str, &str)] = &[(
-    "get_camera_capabilities",
-    "device_token",
-    "the camera's id as ffmpeg's device list names it (`avfoundation` index or \
+const NOT_PLACE_TOKENS: &[(&str, &str, &str)] = &[
+    (
+        "get_camera_capabilities",
+        "device_token",
+        "the camera's id as ffmpeg's device list names it (`avfoundation` index or \
      `dshow` name), handed to the camera probe as a device argument — it names \
      hardware, not a file or a folder",
-)];
+    ),
+    (
+        "camera_preview_start",
+        "device_token",
+        "the camera picker's index or the camera's name, matched against the \
+     native camera list the recorder opens from — it names hardware, not a file \
+     or a folder",
+    ),
+];
 
 /// Field names that do not LOOK like paths but become part of one, so they
 /// are judged as paths too.
