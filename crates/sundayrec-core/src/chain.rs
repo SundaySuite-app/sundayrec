@@ -25,11 +25,11 @@
 //! | channel repair | `pan=` | `swap_channels`, `fill_left`, `fill_right`, `channel_volume`, native mono-mix | exact (`MonoMix` is `0.5*(L+R)` on both) |
 //! | high-pass | `highpass=f=F` (2 poles, Q 0.707) | `parametric_eq`, band 1 = High Pass | exact: same RBJ biquad, `f` and Q 0.707 |
 //! | EQ band | `equalizer=f:t=q:w=Q:g=G` | `parametric_eq`, one Peaking band each | exact: same RBJ peaking filter, `Q = w` |
-//! | denoise | `afftdn=nr=N:nf=F:tn=1` | `denoise` | `reduction = N`. **`nf` is dropped**: filmcraft learns the floor itself. `threshold` and `smoothing` stay at filmcraft's defaults (6 dB, 50 %) |
-//! | dereverb | `agate` expander, `threshold = -45+15s`, `ratio = 1.5+1.5s` | `dereverb` | `amount = 100*s` (so s = 0.5 is filmcraft's own default 50 %). `rt60` stays at its default 0.8 s. A different algorithm (spectral, not a level expander) |
+//! | denoise | `afftdn=nr=N:nf=F:tn=1` | `denoise` | `reduction = N` (at most [`DENOISE_MAX_DB`]). **`nf` is dropped**: filmcraft learns the floor itself. `threshold` and `smoothing` stay at filmcraft's defaults (6 dB, 50 %) |
+//! | dereverb | `agate` expander, `threshold = -45+15s`, `ratio = 1.5+1.5s` | `dereverb` | `amount = 100*s`, **`rt60 = 0.4 s`** (B2b, see below). A different algorithm (spectral, not a level expander) |
 //! | gate | `agate=threshold:ratio:attack:release` | `gate` | `threshold`, `ratio`, `attack`, `release` carried over. `range = 24.2 dB` (agate's default `range=0.06125`), `hold = 0 ms` (agate has none) |
-//! | compressor | `acompressor=threshold:ratio:attack:release:makeup` | `compressor` | all five carried over. `knee = 9.0 dB` (acompressor's default 2.828 linear = 9.03 dB), `detector = RMS` (acompressor's default). The detector time constants are not the same, so this is an approximation |
-//! | de-esser | `deesser=i=I` (`m` and `f` at defaults) | `deesser` | `reduction = 20*I` dB (I = 0.4 gives filmcraft's default 8 dB), `frequency = 6000 Hz`, `threshold = -12 dB`. **An invention**: `i` has no direct counterpart, ears decide in B2b |
+//! | compressor | `acompressor=threshold:ratio:attack:release:makeup` | `compressor` | ratio, attack, release and makeup carried over; **`threshold` lowered by [`COMPRESSOR_DETECTOR_OFFSET_DB`] = 3 dB** (B2b, see below). `knee = 9.0 dB` (acompressor's default 2.828 linear = 9.03 dB), `detector = RMS` (acompressor's default) |
+//! | de-esser | `deesser=i=I` (`m` and `f` at defaults) | `deesser` | `reduction = 20*I` dB (I = 0.4 gives filmcraft's default 8 dB), `frequency = 6000 Hz`, `threshold = -12 dB`. **An invention**: `i` has no direct counterpart. Measured in B2b (see below), kept |
 //! | limiter | `alimiter=limit=L:level=0` (5 ms attack, 50 ms release, sample peak) | `limiter` | `ceiling = L`, `release = 50 ms`, `true_peak = on` (stricter than `alimiter`, which sees only samples; look-ahead is filmcraft's fixed 5 ms) |
 //! | makeup gain | `volume=GdB` | `amplify` | exact |
 //!
@@ -45,6 +45,50 @@
 //! and part of the difference heard in B2b is that the old chain did not clean,
 //! not that the filters differ. Whether "Tale" keeps filmcraft's `denoise` or a
 //! corrected `afftdn` is B3a's decision, not this file's.
+//!
+//! ## What B2b measured, and set
+//!
+//! The numbers below are from three real recordings (30 s excerpts of
+//! `2026-05-17_2.mp3`, `31.5.26.mp3`, `2026.01.04.mp3`, all quiet rooms with a
+//! floor around -60 dBFS) and a few synthetic signals, all through `chain_ab`.
+//! The final setting is the owner's ears' (B2c); these are the measured reasons
+//! for where it starts.
+//!
+//! * **Compressor: threshold -3 dB.** With identical numbers filmcraft's
+//!   compressor barely compressed (loudness range 9.2 LU against 8.6 for
+//!   ffmpeg on speech-clear). The detectors differ: ffmpeg's follows the
+//!   squared signal with the attack time, so it reads close to the signal's
+//!   peak; filmcraft's is a true 10 ms mean square, which for a sine reads
+//!   3 dB lower. Lowering filmcraft's threshold by that 3 dB gave the same
+//!   loudness range as ffmpeg on all three recordings and on all four presets
+//!   that have a compressor (within 0.3 LU; a threshold shift of -6 dB went
+//!   0.7 LU below). Ratio, attack, release and makeup are unchanged.
+//! * **De-esser: kept at `20*I` dB.** On sibilant frames (more than -12 dB of
+//!   the energy above 6 kHz) the band is cut by about 3 dB; on the vowel
+//!   frames around them it moves by 0.2 dB. Softer settings (threshold -8,
+//!   reduction 6) cut sibilants by 2 dB and change nothing else, so the
+//!   present setting is the middle of a flat curve.
+//! * **De-reverb: `rt60 = 0.4 s`.** filmcraft's de-reverb cannot tell a late
+//!   reverb tail from a steady tone, which is what a held organ chord is.
+//!   On a synthetic held chord between two speech passages, relative to the
+//!   speech: amount 50 % at rt60 0.8 s (the earlier mapping) took the chord
+//!   down 5.4 dB while taking 2.3 dB off the reverb tail; rt60 0.4 s takes
+//!   the chord 0.8 dB and the tail 1.6 dB; amount 100 % at 0.4 s is 1.5 dB
+//!   on the chord and 1.8 dB on the tail. A lone pure sine, the worst case,
+//!   lost 7 to 14 dB over the slider at 0.8 s and loses 2 to 3 dB at 0.4 s.
+//!   A shorter assumed decay is a much better trade. The price is a gentler
+//!   effect on a real tail: this stage is subtle, and a very reverberant room
+//!   is B3a's problem to judge.
+//! * **De-noise: carried over, but it eats held notes.** The floor comes down
+//!   by `reduction` and a *stationary* tone comes down by the same amount:
+//!   the same chord is taken down 9.6 dB at `reduction = 10`, after about
+//!   1.5 s (the minimum-statistics window), while a note shorter than that
+//!   passes untouched. This cannot be tuned away with the parameters the
+//!   effect has. It is why de-noise stays an opt-in stage (the mixer, the
+//!   "voice-noisy-room" preset) in B2b; B3a, which wants a mild de-noise
+//!   always on, has to deal with it (for example by gating on speech).
+//!   Capped at [`DENOISE_MAX_DB`]: beyond it the floor gains almost nothing
+//!   (22 dB at 30) and held notes lose everything.
 //!
 //! The two compressors of "speech-punchy" and the like are translated one by
 //! one, in order, exactly as the filter string lists them.
@@ -84,6 +128,20 @@ const DEESSER_FREQ_HZ: f32 = 6000.0;
 const DEESSER_THRESHOLD_DB: f32 = -12.0;
 /// Maximum de-ess reduction at intensity 1.0, dB. 0.4 lands on filmcraft's 8 dB.
 const DEESSER_REDUCTION_AT_FULL_DB: f64 = 20.0;
+/// B2b: how much lower filmcraft's compressor threshold is set than the
+/// `acompressor` threshold it translates. ffmpeg's detector follows the squared
+/// signal with the attack time, so it reads close to the peak of the signal;
+/// filmcraft's is a 10 ms mean square, which reads a sine 3 dB lower. Measured:
+/// this gives the same loudness range as ffmpeg (module docs).
+pub const COMPRESSOR_DETECTOR_OFFSET_DB: f64 = 3.0;
+/// Lowest threshold filmcraft's compressor accepts, dB.
+const FILMCRAFT_COMP_MIN_DB: f64 = -60.0;
+/// The most `reduction` the de-noise stage is given. Beyond ~30 dB the floor
+/// gains almost nothing, and a held note loses the same amount (module docs).
+pub const DENOISE_MAX_DB: f64 = 30.0;
+/// The de-reverb's assumed reverb time, seconds (filmcraft's default is 0.8).
+/// Measured in B2b: a shorter decay model leaves held notes alone (module docs).
+const DEREVERB_RT60_S: f32 = 0.4;
 /// Q of `highpass`'s default two-pole filter.
 const HIGHPASS_Q: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
@@ -178,6 +236,12 @@ impl Chain {
         &self.stages
     }
 
+    /// A chain from stages already made (what `chain_ab --set` uses to try a
+    /// tuning without editing the tables).
+    pub fn from_stages(stages: Vec<Stage>) -> Chain {
+        Chain { stages }
+    }
+
     /// True when the chain does nothing.
     pub fn is_empty(&self) -> bool {
         self.stages.is_empty()
@@ -229,13 +293,16 @@ impl Chain {
         if v.denoise.enabled {
             // `nr` -> `reduction`. `nf` has no counterpart and is dropped on
             // purpose (module docs). Same clamp as the ffmpeg builder.
-            let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, 97.0);
+            let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, DENOISE_MAX_DB);
             stages.push(Stage::fx("denoise", &[("reduction", nr as f32)]));
         }
 
         if v.dereverb.enabled {
             let s = v.dereverb.strength.clamp(0.0, 1.0);
-            stages.push(Stage::fx("dereverb", &[("amount", (100.0 * s) as f32)]));
+            stages.push(Stage::fx(
+                "dereverb",
+                &[("amount", (100.0 * s) as f32), ("rt60", DEREVERB_RT60_S)],
+            ));
         }
 
         if v.gate.enabled {
@@ -421,7 +488,10 @@ fn compressor_stage(
     Stage::fx(
         "compressor",
         &[
-            ("threshold", threshold_db as f32),
+            (
+                "threshold",
+                (threshold_db - COMPRESSOR_DETECTOR_OFFSET_DB).max(FILMCRAFT_COMP_MIN_DB) as f32,
+            ),
             ("ratio", ratio as f32),
             ("knee", ACOMPRESSOR_DEFAULT_KNEE_DB),
             ("attack", attack_ms as f32),
@@ -786,8 +856,15 @@ mod tests {
                 "compressor"
             ]
         );
-        assert_eq!(c.stages()[4].param("threshold"), Some(-24.0));
-        assert_eq!(c.stages()[5].param("threshold"), Some(-12.0));
+        // The preset's -24 / -12 dB, each lowered by the detector offset (B2b).
+        assert_eq!(
+            c.stages()[4].param("threshold"),
+            Some(-24.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
+        );
+        assert_eq!(
+            c.stages()[5].param("threshold"),
+            Some(-12.0 - COMPRESSOR_DETECTOR_OFFSET_DB as f32)
+        );
         assert_eq!(c.stages()[5].param("makeup"), Some(1.0));
     }
 
@@ -1153,5 +1230,55 @@ mod tests {
         assert!(c.is_empty());
         let c = Chain::default().with_leading_gain(Some(f64::NAN));
         assert!(c.is_empty());
+    }
+
+    #[test]
+    fn the_compressor_threshold_never_leaves_filmcrafts_range() {
+        let c = Chain::from_filter_string(
+            "acompressor=threshold=-60dB:ratio=2:attack=5:release=50:makeup=0dB",
+        )
+        .unwrap();
+        assert_eq!(c.stages()[0].param("threshold"), Some(-60.0));
+    }
+
+    #[test]
+    fn de_noise_is_capped_and_de_reverb_assumes_a_short_decay() {
+        let mut v = VocalChain::default();
+        v.highpass.enabled = false;
+        v.compressor.enabled = false;
+        v.denoise.enabled = true;
+        v.denoise.reduction_db = 80.0;
+        v.dereverb.enabled = true;
+        v.dereverb.strength = 0.6;
+        let c = Chain::from_vocal_chain(&v);
+        let dn = c.stages().iter().find(|s| s.id() == "denoise").unwrap();
+        assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
+        let dr = c.stages().iter().find(|s| s.id() == "dereverb").unwrap();
+        assert_eq!(dr.param("amount"), Some(60.0));
+        assert_eq!(dr.param("rt60"), Some(DEREVERB_RT60_S));
+    }
+
+    /// B2b: a lone pure tone is the worst case for the de-reverb (it is the
+    /// most "reverb-tail-like" signal there is). At `rt60 = 0.4 s` it loses 2.2 /
+    /// 2.4 / 3.3 dB at strength 0.4 / 0.5 / 1.0; at filmcraft's default 0.8 s it
+    /// lost 7.1 / 7.9 / 13.8 dB.
+    #[test]
+    fn de_reverb_leaves_a_held_note_alone_across_the_slider() {
+        let note = sine(392.0, 6.0, 0.2);
+        for strength in [0.4, 0.5, 1.0] {
+            let mut v = VocalChain::default();
+            v.highpass.enabled = false;
+            v.compressor.enabled = false;
+            v.dereverb.enabled = true;
+            v.dereverb.strength = strength;
+            let mut built = Chain::from_vocal_chain(&v).build(SR, 1).expect("build");
+            let y = built.process_offline(std::slice::from_ref(&note));
+            let tail = |x: &[f32]| rms_db(&x[(SR as usize * 3)..]);
+            let lost = tail(&note) - tail(&y[0]);
+            assert!(
+                lost < 4.0,
+                "strength {strength}: the held note lost {lost:.1} dB"
+            );
+        }
     }
 }

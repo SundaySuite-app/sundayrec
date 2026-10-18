@@ -6763,6 +6763,47 @@ mod tests {
             );
         }
 
+        /// B2b: an export with a vocal chain / a normalize gain and NO mastering preset used to
+        /// hand ffmpeg a filter string. It now goes through the Rust chain like the mastered
+        /// one does: decode + cut in ffmpeg, the chain in Rust, encode. The normalize gain is the
+        /// easiest stage to prove from the outside: +6 dB must come out as +6 dB, and the first
+        /// stage of a chain-only export must not stall the progress bar.
+        #[test]
+        fn chain_only_export_runs_the_chain_in_rust_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "dynamic.wav", 48_000, 8.0);
+            let out_dir = dir.path().to_string_lossy().into_owned();
+
+            let plain = export_request(&src, &out_dir, "wav", &[(6.0, 8.0)], 8.0);
+            let (plain_res, _) = run_export_blocking(&ffmpeg, &ffprobe, &plain);
+            let plain_path = plain_res.expect("plain export").output_path;
+
+            let mut gained = export_request(&src, &out_dir, "wav", &[(6.0, 8.0)], 8.0);
+            gained.gain_db = Some(6.0);
+            let (gained_res, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &gained);
+            let gained_path = gained_res.expect("chain-only export").output_path;
+
+            let a = measure_integrated_lufs(&ffmpeg, std::path::Path::new(&plain_path), None);
+            let b = measure_integrated_lufs(&ffmpeg, std::path::Path::new(&gained_path), None);
+            assert!(
+                ((b - a) - 6.0).abs() < 0.3,
+                "+6 dB gain came out as {:+.2} dB ({a:.2} -> {b:.2} LUFS)",
+                b - a
+            );
+            assert_monotonic(&ticks);
+            let seen = ticks.lock().unwrap();
+            assert!(
+                seen.iter()
+                    .any(|(_, phase)| phase == EXPORT_PHASE_MEASURING),
+                "a chain-only export reports the processing phase; ticks: {seen:?}"
+            );
+        }
+
         /// B1b: wall-clock of one mastered export of a REAL recording.
         /// `SUNDAYREC_BENCH_FILE=<fil> SUNDAYREC_BENCH_SECS=<varighet>` (and
         /// optionally `SUNDAYREC_BENCH_FORMAT`, default `mp3`) and

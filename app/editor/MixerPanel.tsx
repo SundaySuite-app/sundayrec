@@ -83,7 +83,7 @@ const STAGES: readonly StageSpec[] = [
     // B2b: ingen «Støygulv»-glider. Filmcrafts støyfjerner lærer gulvet selv; verdien
     // `denoiseFloorDb` (ffmpegs `afftdn:nf`) leses ikke lenger av noe.
     sliders: [
-      { id: "reduction", key: "denoiseDb", min: 0, max: 40, step: 1, unit: DB },
+      { id: "reduction", key: "denoiseDb", min: 0, max: 30, step: 1, unit: DB },
     ],
   },
   {

@@ -423,27 +423,7 @@ where
         }
     }
 
-    let (fc, map) = audio_export_filter_complex(
-        keeps,
-        0,
-        &[],
-        &[],
-        false,
-        false,
-        source_duration,
-        ConcatFormat::default(),
-    );
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        source.to_string(),
-        "-filter_complex".into(),
-        fc,
-        "-map".into(),
-        map,
-    ];
-    args.extend(pcm_stream::output_args(fmt_in));
+    let args = decode_args(source, keeps, source_duration, fmt_in);
 
     let staged = StagedPcm::new();
     let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
@@ -554,6 +534,39 @@ where
     })
 }
 
+/// The decode of the export's first pass: ffmpeg cuts the source (trim, join fades, concat) and
+/// puts the programme on stdout as raw f32 PCM. No tone or dynamics filter: that is the Rust
+/// chain's job since B2b.
+pub(super) fn decode_args(
+    source: &str,
+    keeps: &[sundayrec_core::editor::KeepSegment],
+    source_duration: f64,
+    fmt: PcmFormat,
+) -> Vec<String> {
+    let (fc, map) = audio_export_filter_complex(
+        keeps,
+        0,
+        &[],
+        &[],
+        false,
+        false,
+        source_duration,
+        ConcatFormat::default(),
+    );
+    let mut args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-i".into(),
+        source.to_string(),
+        "-filter_complex".into(),
+        fc,
+        "-map".into(),
+        map,
+    ];
+    args.extend(pcm_stream::output_args(fmt));
+    args
+}
+
 /// The plan that leaves the level alone: no gain, no limiter.
 fn unity_plan() -> GainPlan {
     GainPlan {
@@ -636,5 +649,50 @@ mod tests {
         assert_eq!(r.read(&mut buf).unwrap(), 2);
         abort.store(true, Ordering::Relaxed);
         assert!(r.read(&mut buf).is_err());
+    }
+
+    #[test]
+    fn the_decode_cuts_but_runs_no_tone_or_dynamics_filter() {
+        use sundayrec_core::editor::KeepSegment;
+        let keeps = [
+            KeepSegment {
+                start: 0.0,
+                end: 10.0,
+            },
+            KeepSegment {
+                start: 20.0,
+                end: 30.0,
+            },
+        ];
+        let a = decode_args(
+            "/rec/a.mp3",
+            &keeps,
+            60.0,
+            PcmFormat {
+                sample_rate: 44_100,
+                channels: 2,
+            },
+        );
+        let joined = a.join(" ");
+        assert!(!a.iter().any(|x| x == "-af"), "no -af: {joined}");
+        for chain_filter in [
+            "highpass",
+            "equalizer",
+            "acompressor",
+            "afftdn",
+            "agate",
+            "alimiter",
+            "deesser",
+            "loudnorm",
+            "volume=",
+            "pan=",
+        ] {
+            assert!(
+                !joined.contains(chain_filter),
+                "`{chain_filter}` is the Rust chain's job: {joined}"
+            );
+        }
+        assert!(joined.contains("atrim") && joined.contains("concat"));
+        assert!(joined.ends_with("-f f32le -c:a pcm_f32le -ar 44100 -ac 2 pipe:1"));
     }
 }
