@@ -649,9 +649,9 @@ impl GatedFx {
             return;
         }
         self.mono.clear();
-        self.mono.extend((0..n).map(|i| {
-            block.iter().map(|c| c[i]).sum::<f32>() / block.len().max(1) as f32
-        }));
+        self.mono.extend(
+            (0..n).map(|i| block.iter().map(|c| c[i]).sum::<f32>() / block.len().max(1) as f32),
+        );
         self.wet.resize(n, 0.0);
         self.gate.process(&self.mono, &mut self.wet);
         // Dry, delayed to line up with what the effect hands back.
@@ -909,10 +909,10 @@ impl<R: Read> Read for ChainReader<R> {
 mod tests {
     use super::*;
     use crate::mastering::master_presets;
-    use crate::tale::{Mains, SpeechClean};
     use crate::processing::{
         vocal_chain_presets, DenoiseStage, EqBand, HighpassStage, LimiterStage,
     };
+    use crate::tale::{Mains, SpeechClean};
 
     const SR: f32 = 48_000.0;
 
@@ -1354,7 +1354,10 @@ mod tests {
             floor_db: -60.0,
         }]);
         let x = noise(0.15, -30.0, 3);
-        let a = plain.build(SR, 1).unwrap().process_offline(&[x.clone()]);
+        let a = plain
+            .build(SR, 1)
+            .unwrap()
+            .process_offline(std::slice::from_ref(&x));
         let b = gated.build(SR, 1).unwrap();
         assert!(b.latency() > 0);
         let b = { b }.process_offline(&[x]);

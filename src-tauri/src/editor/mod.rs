@@ -2845,11 +2845,14 @@ const TALE_PRESET_ID: &str = "speech-clear";
 /// of the same recording read the file once, not three times. Keyed on path, size and mtime, so
 /// an edited or replaced file is read again.
 #[cfg(feature = "editor")]
-static TALE_CACHE: std::sync::Mutex<Vec<((String, u64, u128), sundayrec_core::tale::SpeechClean)>> =
+type TaleKey = (String, u64, u128);
+
+#[cfg(feature = "editor")]
+static TALE_CACHE: std::sync::Mutex<Vec<(TaleKey, sundayrec_core::tale::SpeechClean)>> =
     std::sync::Mutex::new(Vec::new());
 
 #[cfg(feature = "editor")]
-fn tale_cache_key(path: &str) -> Option<(String, u64, u128)> {
+fn tale_cache_key(path: &str) -> Option<TaleKey> {
     let m = std::fs::metadata(path).ok()?;
     let mtime = m
         .modified()
@@ -5372,7 +5375,9 @@ mod tests {
     #[cfg(feature = "editor")]
     #[test]
     fn build_pre_chain_skips_zero_and_nonfinite_gain() {
-        assert!(build_pre_chain(None, Some(0.0), None, None).unwrap().is_empty());
+        assert!(build_pre_chain(None, Some(0.0), None, None)
+            .unwrap()
+            .is_empty());
         assert!(build_pre_chain(None, Some(f64::NAN), None, None)
             .unwrap()
             .is_empty());
@@ -5392,7 +5397,8 @@ mod tests {
         assert_eq!(no_preset.stages()[0].id(), "amplify");
         assert_eq!(&no_preset.stages()[1..], vocal.stages());
         // With a preset: gain is skipped, chain still runs, preset trails.
-        let with_preset = build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset), None).unwrap();
+        let with_preset =
+            build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset), None).unwrap();
         let want = vocal.then(Chain::from_master_preset(&preset).unwrap());
         assert_eq!(with_preset, want);
     }
@@ -7197,6 +7203,93 @@ mod tests {
                  {:.2} LUFS / {:.2} dBTP (asked {:.2}); limited: {}",
                 done.input_i, done.input_tp, preset.target_lufs, loudness.peak_limited
             );
+        }
+
+        /// B3a: the analysis reads a real file through the real ffmpeg: a 50 Hz hum under
+        /// speech-like bursts is found, a clean take of the same bursts is left alone, and the
+        /// second read of the same file comes from the cache.
+        #[test]
+        fn tale_finds_hum_in_a_real_file_and_leaves_a_clean_one_alone_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let sr = 48_000usize;
+            let secs = 24usize;
+            let mut seed = 0x2545f4914f6cdd1du64;
+            let mut clean = vec![0.0f32; sr * secs];
+            let mut lp = 0.0f32;
+            for (i, v) in clean.iter_mut().enumerate() {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let n = (seed >> 11) as f32 / (1u64 << 53) as f32 * 2.0 - 1.0;
+                lp = 0.6 * lp + 0.4 * n;
+                // Syllables: 0.25 s on, 0.15 s off, a longer pause every fourth.
+                let t = i as f32 / sr as f32;
+                let phase = (t % 1.9).min(1.9);
+                let on =
+                    phase < 0.25 || (0.4..0.65).contains(&phase) || (0.8..1.05).contains(&phase);
+                let level = if on { 0.25 } else { 0.0 };
+                *v = lp * level + n * 0.0006; // room tone ~ -64 dBFS
+            }
+            let mut hummed = clean.clone();
+            for (i, v) in hummed.iter_mut().enumerate() {
+                let t = i as f64 / sr as f64;
+                for h in 1..=2 {
+                    *v += (0.02 / f64::from(h)
+                        * (2.0 * std::f64::consts::PI * 50.0 * f64::from(h) * t).sin())
+                        as f32;
+                }
+            }
+            let dir = tempfile::tempdir().unwrap();
+            let write = |name: &str, x: &[f32]| {
+                let mut bytes = Vec::new();
+                sundayrec_core::wav::encode_s16le(x, &mut bytes);
+                let mut f = Vec::from(sundayrec_core::wav::header(
+                    sundayrec_core::wav::WavSpec {
+                        channels: 1,
+                        sample_rate: sr as u32,
+                    },
+                    bytes.len() as u32,
+                ));
+                f.extend_from_slice(&bytes);
+                let p = dir.path().join(name);
+                std::fs::write(&p, f).unwrap();
+                p.to_string_lossy().into_owned()
+            };
+            let hum_path = write("hum.wav", &hummed);
+            let clean_path = write("clean.wav", &clean);
+
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let engine = ExportEngine::new();
+            let (h, c, again) = rt.block_on(async {
+                let h = tale_clean_for(&engine, &hum_path, Some(1)).await;
+                let c = tale_clean_for(&engine, &clean_path, Some(1)).await;
+                let again = tale_clean_for(&engine, &hum_path, Some(1)).await;
+                (h, c, again)
+            });
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            let h = h.unwrap().expect("analysed");
+            let c = c.unwrap().expect("analysed");
+            assert_eq!(h.hum, Some(sundayrec_core::tale::Mains::Hz50), "{h:?}");
+            assert_eq!(c.hum, None, "{c:?}");
+            assert!(
+                c.denoise,
+                "a -64 dBFS floor under -20 dBFS speech is worth cleaning: {c:?}"
+            );
+            assert!(!c.declick && c.dereverb.is_none(), "{c:?}");
+            assert_eq!(again.unwrap(), Some(h));
         }
 
         /// B1b: `mastering_analyze` reads the same meter the export levels with: its

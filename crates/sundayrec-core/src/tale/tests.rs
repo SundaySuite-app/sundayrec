@@ -48,14 +48,7 @@ fn floor_noise(sr: f64, secs: f64, db: f64, seed: u64) -> Vec<f32> {
 /// 60-200 ms between syllables and 0.8 s between phrases. `rt60` is the room:
 /// the burst envelope dies no faster than that (a leaky maximum, which is what
 /// a reverb tail does to a level envelope). `pauses` are silent spans (s).
-fn speechish(
-    sr: f64,
-    secs: f64,
-    db: f64,
-    rt60: f64,
-    pauses: &[(f64, f64)],
-    seed: u64,
-) -> Vec<f32> {
+fn speechish(sr: f64, secs: f64, db: f64, rt60: f64, pauses: &[(f64, f64)], seed: u64) -> Vec<f32> {
     let n = (sr * secs) as usize;
     let mut r = Rng(seed | 1);
     let mut env = vec![0.0f64; n];
@@ -66,13 +59,18 @@ fn speechish(
         let level = 0.6 + 0.4 * (r.next() * 0.5 + 0.5);
         let (a0, a1) = ((t * sr) as usize, ((t + len) * sr) as usize);
         let (att, rel) = ((0.015 * sr) as usize, (0.020 * sr) as usize);
-        for i in a0..a1.min(n) {
+        for (i, e) in env.iter_mut().enumerate().take(a1.min(n)).skip(a0) {
             let up = ((i - a0) as f64 / att as f64).min(1.0);
             let down = ((a1 - i) as f64 / rel as f64).min(1.0);
-            env[i] = level * up.min(down);
+            *e = level * up.min(down);
         }
         syll += 1;
-        t += len + if syll % 3 == 0 { 0.8 } else { 0.06 + 0.14 * (r.next() * 0.5 + 0.5) };
+        t += len
+            + if syll % 3 == 0 {
+                0.8
+            } else {
+                0.06 + 0.14 * (r.next() * 0.5 + 0.5)
+            };
     }
     for (a, b) in pauses {
         for e in env
@@ -127,7 +125,12 @@ fn with_hum(mut x: Vec<f32>, f0: f64, level_db: f64) -> Vec<f32> {
     for h in 1..=3 {
         add(
             &mut x,
-            &sine(16_000.0, f0 * f64::from(h), secs, amp(level_db) / f64::from(h)),
+            &sine(
+                16_000.0,
+                f0 * f64::from(h),
+                secs,
+                amp(level_db) / f64::from(h),
+            ),
         );
     }
     x
@@ -170,7 +173,10 @@ fn hum_stays_off_for_speech_for_music_near_the_mains_and_for_silence() {
 #[test]
 fn denoise_is_on_for_a_normal_recording() {
     let a = analyze(&speech16(-20.0, 0.1, 30.0, 4));
-    assert!(a.noise_floor_db > -70.0 && a.noise_floor_db < -50.0, "{a:?}");
+    assert!(
+        a.noise_floor_db > -70.0 && a.noise_floor_db < -50.0,
+        "{a:?}"
+    );
     assert!(a.decide().denoise);
 }
 
@@ -182,7 +188,10 @@ fn denoise_is_off_when_there_is_no_floor_or_it_is_already_far_under_the_speech()
         *v = (*v * 1e4).round() / 1e4; // no noise at all, only the speech
     }
     let a = analyze(&x);
-    assert!(a.noise_floor_db <= NO_FLOOR_DB || !a.decide().denoise, "{a:?}");
+    assert!(
+        a.noise_floor_db <= NO_FLOOR_DB || !a.decide().denoise,
+        "{a:?}"
+    );
     assert!(!a.decide().denoise);
     // A floor at -95 dBFS under -20 dBFS speech is 75 dB down: inaudible.
     let mut y = speechish(16_000.0, 30.0, -20.0, 0.1, &[], 6);
@@ -207,7 +216,11 @@ fn dereverb_switches_on_for_a_long_room_and_not_for_a_dry_one() {
 
 #[test]
 fn dereverb_estimate_follows_the_room() {
-    let r = |rt: f64| analyze(&speech16(-20.0, rt, 120.0, 21)).rt60_s.unwrap_or(0.0);
+    let r = |rt: f64| {
+        analyze(&speech16(-20.0, rt, 120.0, 21))
+            .rt60_s
+            .unwrap_or(0.0)
+    };
     let (a, b) = (r(0.9), r(1.8));
     assert!(b > a, "{a} {b}");
     assert!((b - 1.8).abs() < 0.5, "{b}");
@@ -301,7 +314,10 @@ fn a_clean_recording_adds_nothing_and_a_bad_one_adds_the_stages_in_order() {
     let ids: Vec<&str> = c.stages().iter().map(Stage::id).collect();
     assert_eq!(ids, ["dehum", "click_remover", "denoise", "dereverb"]);
     assert_eq!(c.stages()[0].param("frequency"), Some(1.0));
-    assert_eq!(c.stages()[2].param("reduction"), Some(DENOISE_TALE_DB as f32));
+    assert_eq!(
+        c.stages()[2].param("reduction"),
+        Some(DENOISE_TALE_DB as f32)
+    );
     assert!(matches!(c.stages()[2], Stage::SpeechGated { .. }));
     assert!(c.build(48_000.0, 2).is_ok());
 }
@@ -321,7 +337,8 @@ fn service() -> Vec<f32> {
     for f in [110.0, 164.81, 220.0, 277.18] {
         let s = sine(SR, f, 12.0, amp(-31.0));
         for (i, v) in s.iter().enumerate() {
-            let fade = ((i as f64 / (0.3 * SR)).min(1.0)).min(((s.len() - i) as f64 / (0.3 * SR)).min(1.0));
+            let fade = ((i as f64 / (0.3 * SR)).min(1.0))
+                .min(((s.len() - i) as f64 / (0.3 * SR)).min(1.0));
             chord[(8.0 * SR) as usize + i] += *v * fade as f32;
         }
     }
@@ -366,9 +383,15 @@ fn a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it() {
         "chord: tale {tale_chord:+.2} dB, plain denoise {plain_chord:+.2} dB; \
          floor in the pause: tale {tale_floor:+.2} dB"
     );
-    assert!(plain_chord < -5.0, "the test must be able to see the damage: {plain_chord}");
+    assert!(
+        plain_chord < -5.0,
+        "the test must be able to see the damage: {plain_chord}"
+    );
     assert!(tale_chord > -1.5, "a held chord lost {tale_chord} dB");
-    assert!(tale_floor < -5.0, "the floor in a pause only fell {tale_floor} dB");
+    assert!(
+        tale_floor < -5.0,
+        "the floor in a pause only fell {tale_floor} dB"
+    );
 }
 
 #[test]

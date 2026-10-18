@@ -298,7 +298,8 @@ impl SpeechAnalyzer {
             self.lvl_n += 1;
             if self.lvl_n == LEVEL_WIN {
                 let db = ms_db(self.lvl_acc / LEVEL_WIN as f64);
-                let bin = (((db - HIST_LO) / HIST_STEP).round().max(0.0) as usize).min(HIST_BINS - 1);
+                let bin =
+                    (((db - HIST_LO) / HIST_STEP).round().max(0.0) as usize).min(HIST_BINS - 1);
                 self.lvl_hist[bin] += 1;
                 self.lvl_acc = 0.0;
                 self.lvl_n = 0;
@@ -316,8 +317,8 @@ impl SpeechAnalyzer {
                 self.hum_buf.clear();
             }
         }
-        for c in 0..ch {
-            self.clicks[c].push(&block[c][..n]);
+        for (det, b) in self.clicks.iter_mut().zip(block).take(ch) {
+            det.push(&b[..n]);
         }
         self.frames += n as u64;
     }
@@ -426,7 +427,13 @@ impl SpeechAnalyzer {
             .iter()
             .take(self.channels)
             .map(|c| c.count() as f64)
-            .map(|n| if n < MIN_CLICKS as f64 { 0.0 } else { n * 60.0 / secs })
+            .map(|n| {
+                if n < MIN_CLICKS as f64 {
+                    0.0
+                } else {
+                    n * 60.0 / secs
+                }
+            })
             .fold(0.0, f64::max);
 
         let channel_crackle = if self.channels == 2 && self.frames > 0 {
@@ -623,7 +630,10 @@ impl ClickDetector {
             }
             let mut e = 0.0f32;
             let mut n = 0usize;
-            for (k, v) in self.x[c - CLICK_CONTEXT..=c + CLICK_CONTEXT].iter().enumerate() {
+            for (k, v) in self.x[c - CLICK_CONTEXT..=c + CLICK_CONTEXT]
+                .iter()
+                .enumerate()
+            {
                 if k.abs_diff(CLICK_CONTEXT) > 4 {
                     e += v * v;
                     n += 1;
@@ -710,7 +720,11 @@ impl SpeechGate {
                 self.n = 0;
                 self.hop_done(db);
             }
-            let a = if self.target > self.g { self.a_up } else { self.a_down };
+            let a = if self.target > self.g {
+                self.a_up
+            } else {
+                self.a_down
+            };
             self.g += (self.target - self.g) * a;
             *o = self.g;
         }
@@ -728,9 +742,10 @@ impl SpeechGate {
         v.sort_by(f32::total_cmp);
         let p10 = v[v.len() / 10];
         let p90 = v[v.len() * 9 / 10];
-        let speech_like = p90 - p10 >= GATE_DEPTH_DB && p90 >= self.floor_db + GATE_SPEECH_ABOVE_FLOOR_DB;
-        let at_floor = db <= self.floor_db + GATE_NEAR_FLOOR_DB
-            && p90 <= self.floor_db + GATE_QUIET_SPAN_DB;
+        let speech_like =
+            p90 - p10 >= GATE_DEPTH_DB && p90 >= self.floor_db + GATE_SPEECH_ABOVE_FLOOR_DB;
+        let at_floor =
+            db <= self.floor_db + GATE_NEAR_FLOOR_DB && p90 <= self.floor_db + GATE_QUIET_SPAN_DB;
         if speech_like {
             self.hold_left = self.hold_hops;
         } else {

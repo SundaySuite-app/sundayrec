@@ -62,7 +62,10 @@ fn reverberate(x: &[f32], rt60: f64) -> Vec<f32> {
         ai[i] = -im;
     }
     fft(&mut ar, &mut ai);
-    ar[..x.len()].iter().map(|v| (*v / n as f64) as f32).collect()
+    ar[..x.len()]
+        .iter()
+        .map(|v| (*v / n as f64) as f32)
+        .collect()
 }
 
 fn run() -> Result<(), String> {
@@ -77,8 +80,10 @@ fn run() -> Result<(), String> {
         args.extend(["-t".into(), l.clone()]);
     }
     args.extend(
-        ["-i", file, "-vn", "-ar", "16000", "-ac", "1", "-f", "f32le", "pipe:1", "-v", "error"]
-            .map(String::from),
+        [
+            "-i", file, "-vn", "-ar", "16000", "-ac", "1", "-f", "f32le", "pipe:1", "-v", "error",
+        ]
+        .map(String::from),
     );
     let out = Command::new(ffmpeg())
         .args(&args)
@@ -89,12 +94,16 @@ fn run() -> Result<(), String> {
     }
     let mut x: Vec<f32> = out
         .stdout
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect();
     if let Some(r) = opt("--reverb") {
         let y = reverberate(&x, r.parse().map_err(|_| "--reverb")?);
-        let e = |v: &[f32]| (v.iter().map(|a| f64::from(*a).powi(2)).sum::<f64>() / v.len() as f64).sqrt();
+        let e = |v: &[f32]| {
+            (v.iter().map(|a| f64::from(*a).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
+        };
         eprintln!("reverb: rms {:.4} -> {:.4}", e(&x), e(&y));
         x = y;
     }
