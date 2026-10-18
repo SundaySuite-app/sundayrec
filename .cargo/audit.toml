@@ -5,6 +5,16 @@
 
 [advisories]
 ignore = [
-  # (empty — the RUSTSEC-2023-0071 rsa ignore was removed when sqlx 0.9
-  # dropped the transitive rsa dependency entirely.)
+  # zip 4.6.1, pulled in ONLY by tauri-plugin-updater's `zip` feature. No
+  # updater release (2.11 → 2.14, nor 3.0 alpha as of 2026-10-18) allows
+  # zip >= 9, and the feature can't be turned off: it also gates the
+  # tar/flate2 the macOS `.app.tar.gz` update path needs. Unreachable here:
+  # `Update::download` verifies the minisign signature against our pubkey
+  # BEFORE install, and the zip branch only runs on Windows when the signed
+  # bytes ARE a zip — our Windows updates are NSIS `-setup.exe`, never zip.
+  # An attacker would need our updater signing key. REMOVE when
+  # tauri-plugin-updater accepts zip >= 9.
+  "RUSTSEC-2026-0367", # SUID/SGID bits preserved on extract
+  "RUSTSEC-2026-0368", # symlink targets outside the destination
+  "RUSTSEC-2026-0369", # permissions applied through symlinks
 ]
