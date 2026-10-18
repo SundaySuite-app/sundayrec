@@ -346,7 +346,7 @@ fn run(
                         failures += 1;
                         // First failure and every tenth after: a long outage with
                         // a camera that will not open must not fill the log.
-                        if failures == 1 || failures % 10 == 0 {
+                        if failures == 1 || failures.is_multiple_of(10) {
                             tracing::warn!(
                                 camera = %id, failures,
                                 "camera reconnect: the camera is listed but did not open: {e}"

@@ -214,3 +214,112 @@ fn stopping_a_healthy_capture_stops_its_session_once() {
         Arc::strong_count(&world) == 1
     });
 }
+
+/// THE proof on a real camera (C5a, RIG-DAY (c5a)). Needs a person with a cable
+/// (or a Continuity iPhone) and camera permission for the terminal, so it is
+/// never part of `cargo test`. From the owner's own terminal:
+///
+/// ```text
+/// SUNDAYREC_REAL_CAMERA=iPhone cargo test -p sundayrec --lib \
+///     real_camera_comes_back_on_the_same_id -- --ignored --nocapture
+/// ```
+///
+/// (`SUNDAYREC_REAL_CAMERA` is a part of the camera's name or its id;
+/// `SUNDAYREC_OUTAGE_WINDOW_SECS` is how long the test waits, default 120.)
+/// It opens the camera with the recorder's own `open_camera`, prints what it
+/// sees every second, and passes once the camera has dropped out and come back
+/// on the SAME id, with frames flowing into the SAME queue again.
+#[test]
+#[ignore = "needs a real camera, a person to pull its cable, and camera permission"]
+fn real_camera_comes_back_on_the_same_id() {
+    use crate::recorder::native_capture::video::open_camera;
+    use sundayrec_core::video_conform::Fps;
+
+    let name = std::env::var("SUNDAYREC_REAL_CAMERA").expect("set SUNDAYREC_REAL_CAMERA");
+    let window = std::env::var("SUNDAYREC_OUTAGE_WINDOW_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(120);
+    let cams = crate::camera::list().expect("camera list");
+    let cam = crate::recorder::native_capture::video::find_camera(&cams, &name)
+        .unwrap_or_else(|| panic!("no camera matching {name}: {cams:?}"));
+    println!("camera: {} — id {}", cam.report_line(), cam.id);
+    let (capture, spec) = open_camera(&name, 1920, 1080, Fps::new(30, 1)).expect("opens");
+    println!(
+        "session: {} ({}x{})",
+        capture.describe(),
+        spec.width,
+        spec.height
+    );
+    let queue = Arc::clone(capture.frames());
+    let drain = {
+        let queue = Arc::clone(&queue);
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let s2 = Arc::clone(&stop);
+        let join = std::thread::spawn(move || {
+            while !s2.load(Ordering::Relaxed) {
+                drop(queue.pop_timeout(Duration::from_millis(50)));
+            }
+        });
+        (stop, join)
+    };
+
+    println!(">>> Frames flow now. In the next {window} s: switch the camera OFF (pull the USB cable / unlock-and-move the iPhone away),");
+    println!(">>> wait for LOST, then switch it back ON. The test ends by itself.");
+    let t0 = Instant::now();
+    let (mut last_frames, mut last_t) = (queue.stats().pushed, Instant::now());
+    let (mut lost_seen, mut back_seen) = (false, false);
+    let mut frames_after_back = 0u64;
+    while t0.elapsed() < Duration::from_secs(window) {
+        std::thread::sleep(Duration::from_secs(1));
+        let frames = queue.stats().pushed;
+        let fps = (frames - last_frames) as f64 / last_t.elapsed().as_secs_f64();
+        (last_frames, last_t) = (frames, Instant::now());
+        let h = capture.health();
+        let listed: Vec<String> = crate::camera::list()
+            .map(|l| l.into_iter().map(|c| c.id).collect())
+            .unwrap_or_default();
+        let state = match h.lost_for {
+            Some(d) => format!("LOST for {:.1}s", d.as_secs_f64()),
+            None => "live".into(),
+        };
+        println!(
+            "[{:5.1}s] {state:<16} {fps:5.1} fps  outages={} session={:?}  our id listed: {}  (list: {listed:?})",
+            t0.elapsed().as_secs_f64(),
+            h.outages,
+            capture.describe(),
+            listed.contains(&cam.id)
+        );
+        if h.lost_for.is_some() {
+            lost_seen = true;
+        }
+        if lost_seen && h.lost_for.is_none() && fps > 5.0 {
+            back_seen = true;
+        }
+        if back_seen {
+            frames_after_back += (fps) as u64;
+            if frames_after_back >= 90 {
+                break;
+            }
+        }
+    }
+    drain.0.store(true, Ordering::Relaxed);
+    let _ = drain.1.join();
+    let health = capture.health();
+    let stats = capture.stop();
+    println!("final: {health:?} {stats:?}");
+    assert!(
+        lost_seen,
+        "the camera was never seen to drop out — did you pull the cable?"
+    );
+    assert!(
+        back_seen,
+        "the camera dropped out but did not come back on id {}",
+        cam.id
+    );
+    assert!(health.outages >= 1);
+    println!(
+        "RESULT: PASS — the camera came back on the same id ({})",
+        cam.id
+    );
+}

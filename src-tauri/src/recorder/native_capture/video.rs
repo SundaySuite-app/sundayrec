@@ -28,6 +28,15 @@
 //!   another thread from another ring and does not know the video exists. The
 //!   slots go black (no camera) or are dropped (no encoder); the audio
 //!   fragment is unaffected.
+//! - **A camera that drops out comes back (C5a).** The camera the track reads is
+//!   a [`crate::camera::Capture`] started with `start_resilient`; its QUEUE
+//!   outlives its OS session. If the camera is unplugged or goes silent, a
+//!   supervisor beside the capture closes the dead session and, when the same
+//!   stable id is listed again, opens a new one into the same queue
+//!   (`camera/reconnect.rs`). This thread never knows: it sees a hole in the
+//!   camera's timestamps, and the conformer fills it (the last picture for 2 s,
+//!   then black). The counters (`delivered`, `queue_dropped`) are the queue's, so
+//!   they run on across the reconnect.
 //! - **Stop order (#341, inherited):** the capture stops before the writers —
 //!   audio stream, then camera, then the WAV writer, then this track (which
 //!   needs the WAV's final frame count to finish its last slots) — and every
@@ -85,6 +94,11 @@ pub trait VideoSource: Send {
     fn frames(&self) -> Arc<FrameQueue<Frame>>;
     /// Stop delivering; the queue is closed (frames in it can still be read).
     fn stop(self: Box<Self>) -> CaptureStats;
+    /// Is the camera delivering? A source with a reconnect watch (C5a) reports
+    /// how long it has been gone; the others are always fine.
+    fn health(&self) -> crate::camera::CaptureHealth {
+        crate::camera::CaptureHealth::default()
+    }
 }
 
 impl VideoSource for crate::camera::Capture {
@@ -93,6 +107,9 @@ impl VideoSource for crate::camera::Capture {
     }
     fn stop(self: Box<Self>) -> CaptureStats {
         crate::camera::Capture::stop(*self)
+    }
+    fn health(&self) -> crate::camera::CaptureHealth {
+        crate::camera::Capture::health(self)
     }
 }
 
@@ -738,7 +755,10 @@ pub fn find_camera<'a>(
 }
 
 /// Open the camera the session asked for ([`find_camera`]). Returns the
-/// running capture and the spec it will deliver.
+/// running capture and the spec it will deliver. The capture is
+/// **resilient** (C5a): if the camera drops out it is re-opened on the same
+/// stable id into the same queue, so everything reading that queue — this
+/// track, the preview's tap — carries on, and the conformer fills the hole.
 pub fn open_camera(
     name: &str,
     want_w: u32,
@@ -761,7 +781,8 @@ pub fn open_camera(
     })?;
     let format = &formats[i];
     tracing::info!(camera = %cam.name, %format, "video track: opening the camera");
-    let capture = crate::camera::start(&cam.id, format, QUEUE_FRAMES).map_err(|e| e.to_string())?;
+    let capture =
+        crate::camera::start_resilient(&cam.id, format, QUEUE_FRAMES).map_err(|e| e.to_string())?;
     let spec = VideoTrackSpec {
         width: format.width,
         height: format.height,

@@ -687,10 +687,11 @@ ikke vise den. Står den der: noter koder, CPU-bruk og tallet i loggen
       La opptaket gå videre i minst 2 minutter til, klapp igjen og stopp.
       **Forventet:** **lyden har ingen hull** (lytt gjennom hele stedet; i
       redigereren er bølgeformen sammenhengende), bildet **fryser** (siste
-      bilde står) eller blir **svart** mens kameraet er borte, og
-      **kommer tilbake** — senest ved neste fragment (gjenkobling av kameraet
-      midt i et fragment er C5, ikke C3). Klappet på slutten er fortsatt
-      innenfor ±1 bilde. Opptaket stopper ikke og viser ingen feil.
+      bilde står i to sekunder) og blir så **svart** mens kameraet er borte,
+      og **kommer tilbake i løpet av noen sekunder etter at kabelen sitter**
+      — midt i fragmentet, uten at opptaket deles (C5a; se (v8) for
+      kabeltrekket med loggen åpen). Klappet på slutten er fortsatt innenfor
+      ±1 bilde. Opptaket stopper ikke og viser ingen feil.
       **Rødt funn:** hull i lyden, et opptak som ender, eller bilde som aldri
       kommer tilbake.
 - [ ] **(v3) `kill -9` midt i et videoopptak.** Start et videoopptak, la det
@@ -751,13 +752,59 @@ during; … camera queue_dropped 0, longest gap …`. Begge tallene mellom 3 og
       stopper ikke ved grensen, og mp4-en har bilde på begge sider. 5. **Speilvending i fila:** ta opp 10 s med «speilvend» på og åpne fila.
       **Forventet:** bildet i fila er speilvendt akkurat som det du så i
       overlegget. 6. **iPhone/Continuity:** dra ut og sett inn igjen kabelen midt i
-      visningen (C5 gjør gjenopprettingen; her skal bare ikke appen
-      krasje, og bildet skal komme tilbake når kameraet er tilbake etter
-      at Opptak-sida åpnes på nytt).
+      visningen (C5a gjør gjenopprettingen: bildet fryser og kommer tilbake
+      av seg selv innen noen sekunder uten at siden åpnes på nytt; se (v7) og
+      (v8)).
       **Rødt funn:** bildet forsvinner (selv et blink) ved Start, Stopp eller
       fragmentgrense; kameralampa slukkes og tennes under et opptak; bildet i
       overlegget er av et annet kamera enn det som ble tatt opp; speilvendingen
       er motsatt av fila.
+- [ ] **(v7) Kameraet kobler seg til igjen på samme id (C5a, ekte kamera, Mac).**
+      Terminalen må ha kameratilgang; kjør i din egen terminalfane, fra repoet:
+      `SUNDAYREC_REAL_CAMERA=iPhone cargo test -p sundayrec --lib real_camera_comes_back_on_the_same_id -- --ignored --nocapture`
+      (bytt til et USB-kamera for kabeltrekk; FaceTime-kameraet kan ikke
+      trekkes). Testen åpner kameraet med opptakets egen `open_camera`, skriver
+      én linje i sekundet (`live`/`LOST`, bilder per sekund, om ID-en står i
+      kameralista) og venter i 120 s (`SUNDAYREC_OUTAGE_WINDOW_SECS`).
+      **Mens den går:** slå kameraet AV (iPhone: dra ut USB-kabelen eller lås
+      og legg den bort fra Macen; Continuity-kameraet kommer og går også av seg
+      selv), vent til linjen sier `LOST for …`, og slå det PÅ igjen.
+      **Forventet:** `LOST` innen 1–2 s etter at bildene stopper, `live` igjen
+      innen noen få sekunder etter at kameraet er tilbake, med
+      `our id listed: true` hele veien, og til slutt
+      `RESULT: PASS — the camera came back on the same id (…)`.
+      **Rødt funn:** `our id listed: false` etter at kameraet er tilbake (ID-en
+      endrer seg ved hver tilkobling — da kjenner gjenkoblingen det aldri igjen,
+      og vi må bestemme om navn skal være reserve; skriv ned begge ID-ene), `LOST`
+      som aldri kommer (varslene og bildetellingen ser ikke utfallet), eller
+      `live` som aldri kommer tilbake selv om ID-en står i lista (loggen
+      `camera reconnect: the camera is listed but did not open`).
+- [ ] **(v8) USB-kabeltrekk midt i et opptak, Mac og Windows (C5a).** Samme
+      oppsett som (v2), men med appen (`npm run tauri dev`, eller en
+      beta-bygning) og loggen åpen (standard loggnivå `info` er nok; macOS:
+      terminalen du startet fra, Windows: `%LOCALAPPDATA%\…\logs\sundayrec.log`). Start et videoopptak med
+      et USB-kamera, la det gå ett minutt, **trekk kabelen**, vent 10 s og
+      **sett den inn igjen**, la opptaket gå ett minutt til, og stopp.
+      **Forventet:** loggen sier `camera reconnect: the camera has dropped out
+    — closing its session; the recording goes on` innen et par sekunder etter
+      trekket og `camera reconnect: the camera is back — session re-opened on
+    the same id` etter at kabelen sitter; **ingen** nytt fragment på grunn av
+      kameraet (kameraet har ikke noe med lydfragmentene å gjøre), lyden er
+      sammenhengende, og mp4-en har bilde på begge sider av hullet:
+      to sekunder frosset og deretter svart til kameraet er tilbake.
+      **Windows (c5a-w):** i tillegg til det over skal loggen ved oppstart ha
+      `device_watch: camera interface-notification listener installed`, og
+      kameraet skal komme tilbake **raskere enn 2 s** etter at kabelen sitter
+      (signalet fra `CM_Register_Notification` kutter ventetiden; uten det tar
+      det opptil 1 s til for lista leses). **Mac:** loggen har
+      `AVFoundation camera connect/disconnect observers installed`.
+      **Prøv også:** et annet USB-kamera (annen ID) i samme port mens det første
+      er ute — det skal IKKE overta; sett det første tilbake og se at det er
+      det som kommer tilbake. Og: trekk kabelen og **stopp opptaket** mens
+      kameraet er ute — Stopp skal gå like fort som ellers.
+      **Rødt funn:** hull i lyden, et opptak som splittes eller feiler, bilde
+      som aldri kommer tilbake, et annet kamera som tas over, Stopp som henger,
+      eller på Windows at tilkoblingen tar flere sekunder (lytteren virker ikke).
 
 ## Ørene
 

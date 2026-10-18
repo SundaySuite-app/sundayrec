@@ -44,6 +44,13 @@
 //! as before. The sound is never involved: the camera callback only ever pushes
 //! into the bounded queue, and the tap never waits.
 //!
+//! **A camera that drops out (C5a).** Nothing here changes: the session holds a
+//! resilient [`super::Capture`], whose queue outlives its OS session (see
+//! `reconnect.rs`). When the camera comes back on the same id the new session
+//! pushes into the SAME queue, so the tap keeps seeing frames and the picture
+//! resumes by itself; the page does not have to reopen anything. While the
+//! camera is gone the last picture simply stays on screen.
+//!
 //! # Picture
 //!
 //! Everything is turned into tight NV12 first (the recorder's own
@@ -1353,6 +1360,160 @@ mod tests {
         assert!(current_key().is_some() && !is_recording());
         assert!(stop().is_some());
         assert!(current_key().is_none());
+    }
+
+    /// C5a, end to end: a recording from the one preview session, the camera
+    /// drops out in the middle and comes back on the same id. The recording
+    /// does not stop, the audio clock is untouched (it is the boss: the video
+    /// still has exactly one frame per audio slot), the conformer fills the hole
+    /// (black once the 2 s hold is over), the preview's tap sees the new
+    /// session's frames, and the frame counters add up across both sessions.
+    #[test]
+    fn a_camera_that_drops_out_mid_recording_leaves_the_recording_and_the_preview_running() {
+        use crate::camera::reconnect::testkit::FakeWorld;
+        let _serial = serial();
+        let world = FakeWorld::new("usb-cam-1", 640, 360, 30.0);
+        let key = synthetic_key();
+        let (sink, sent) = counting_sink();
+        let w = Arc::clone(&world);
+        start(
+            key.clone(),
+            move || {
+                let cap = crate::camera::start_with(w.clone(), &w.id, &w.format(), QUEUE_FRAMES)
+                    .map_err(|e| e.to_string())?;
+                Ok((Box::new(cap) as Box<dyn VideoSource>, synthetic_spec()))
+            },
+            sink,
+        )
+        .expect("preview starts");
+        wait_for("a first picture", || sent.load(Ordering::Relaxed) >= 1);
+
+        // The recording takes the running session.
+        let (source, spec) = take_for_recording(&key).opened.expect("takes the session");
+        let queue = source.frames();
+        let written = Arc::new(AtomicU64::new(0));
+        let (mut prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
+        let make: SinkFactory = {
+            let written = Arc::clone(&written);
+            Box::new(move |_, _| Ok(Box::new(Count(Arc::clone(&written))) as Box<dyn SlotSink>))
+        };
+        let mut track = VideoTrack::spawn(
+            VideoTrackConfig {
+                mkv_path: std::path::PathBuf::from("unused.mkv"),
+                spec,
+                encoder: VideoEncoder::Software,
+                sample_rate: RATE,
+            },
+            Some(source),
+            cons,
+            make,
+        )
+        .expect("spawn track");
+
+        // The audio: pairs on the host clock, like a 10 ms callback, from a
+        // thread of its own for the whole run. Nothing below touches it.
+        let audio_stop = Arc::new(AtomicBool::new(false));
+        let audio = {
+            let stop = Arc::clone(&audio_stop);
+            std::thread::spawn(move || {
+                let start_host = crate::camera::host_now_ns();
+                let t = Instant::now();
+                let mut sample = 0u64;
+                while !stop.load(Ordering::Relaxed) {
+                    let due = (t.elapsed().as_secs_f64() * f64::from(RATE)) as u64;
+                    while sample + 480 <= due {
+                        let _ = prod.try_push(ClockPair {
+                            sample,
+                            host_ns: start_host + sample * 1_000_000_000 / u64::from(RATE),
+                        });
+                        sample += 480;
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                sample
+            })
+        };
+
+        std::thread::sleep(Duration::from_millis(1_200));
+        let new_before = track.stats().new;
+        assert!(
+            new_before > 5,
+            "pictures before the outage: {:?}",
+            track.stats()
+        );
+
+        // THE CABLE: out for long enough that the 2 s hold runs out.
+        world.unplug(true);
+        std::thread::sleep(Duration::from_millis(4_000));
+        let sent_in_outage = sent.load(Ordering::Relaxed);
+        let health = track.stats();
+        assert!(
+            health.black > 0,
+            "the hole went black after the hold: {health:?}"
+        );
+        assert!(!health.encoder_failed);
+
+        // …and back, on the same id.
+        let seen_before = current_stats().unwrap().seen;
+        world.replug(true);
+        wait_for("the preview sees the new session", || {
+            current_stats().unwrap().seen > seen_before + 5
+        });
+        wait_for("the preview sends pictures again", || {
+            sent.load(Ordering::Relaxed) > sent_in_outage + 1
+        });
+        let new_at_return = track.stats().new;
+        wait_for("the recording gets new pictures again", || {
+            track.stats().new > new_at_return + 5
+        });
+        assert_eq!(
+            *world.opened_ids.lock().unwrap(),
+            ["usb-cam-1", "usb-cam-1"]
+        );
+
+        // Stopp, as the production path does it.
+        audio_stop.store(true, Ordering::Relaxed);
+        let total = audio.join().unwrap();
+        let source = track.take_source().expect("the track holds the source");
+        assert_eq!(source.health().outages, 1);
+        assert!(keeps_camera(source.as_ref()), "a watched camera stays open");
+        source.frames().close();
+        track.request_finish(total);
+        track.take_join().unwrap().join().unwrap();
+        let stats = track.stats();
+
+        // The audio is the boss: exactly one frame per slot of the audio.
+        assert_eq!(
+            written.load(Ordering::Relaxed),
+            slot_count(total, RATE, Fps::new(30, 1)),
+            "{stats:?}"
+        );
+        assert_eq!(stats.slots_written, written.load(Ordering::Relaxed));
+        // Counters add up across both sessions: nothing the camera pushed is
+        // missing from the queue's count, and nothing was dropped.
+        assert_eq!(stats.queue_dropped, 0, "{stats:?}");
+        assert!(stats.delivered > 30, "{stats:?}");
+        assert!(stats.black >= 20, "{stats:?}");
+        assert!(stats.new > new_before + 5, "{stats:?}");
+        assert!(Arc::ptr_eq(&source.frames(), &queue));
+
+        release_after_recording(source);
+        assert!(!is_recording());
+        stop();
+        assert_eq!(world.live_sessions.load(Ordering::SeqCst), 0);
+        // Every frame either session pushed went through the one queue and was
+        // counted there — the count `video.frames_dropped` is built on does not
+        // restart at a reconnect.
+        assert_eq!(queue.stats().pushed, world.pushed.load(Ordering::SeqCst));
+        assert!(queue.stats().pushed >= stats.delivered);
+        println!(
+            "C5a: black {} new {} repeat {} delivered {} preview {:?}",
+            stats.black,
+            stats.new,
+            stats.repeated,
+            stats.delivered,
+            world.opened_ids.lock().unwrap()
+        );
     }
 
     /// With a REAL camera, from the owner's own terminal (this session's has no
