@@ -552,6 +552,7 @@ mod tests {
 
     mod simulation {
         use super::super::*;
+        use crate::av_clock::{JUMP_THRESHOLD_NS, WINDOW_NS};
         use proptest::prelude::*;
 
         /// splitmix64 — the scenario's own randomness, seeded by proptest, so a
@@ -821,7 +822,10 @@ mod tests {
             // before the first pair, or after the last. Maybe seen (counted in
             // the upper bound only): one in the last second (confirmed or not
             // before the end), two within a second (may be confirmed as one),
-            // one a small step partly cancels.
+            // one a small step partly cancels, and small steps that add up past
+            // the jump threshold within one fit window (each alone is absorbed,
+            // but the window has only partly followed the first when the next
+            // comes: the sum is a real step the clock may restart on).
             let mut at: Vec<f64> = sc
                 .sleeps
                 .iter()
@@ -829,7 +833,21 @@ mod tests {
                 .filter(|&t| t > 0.0 && t < end_s)
                 .collect();
             at.sort_by(f64::total_cmp);
-            let maybe = at.len() as u32;
+            let window_s = WINDOW_NS as f64 / 1e9;
+            let stacking_steps = sc
+                .small_steps
+                .iter()
+                .filter(|&&(t, d)| {
+                    let sum: f64 = sc
+                        .small_steps
+                        .iter()
+                        .filter(|&&(u, e)| (u - t).abs() < window_s && e.signum() == d.signum())
+                        .map(|s| s.1)
+                        .sum();
+                    sum.abs() > JUMP_THRESHOLD_NS as f64
+                })
+                .count() as u32;
+            let maybe = at.len() as u32 + stacking_steps;
             at.dedup_by(|b, a| *b - *a < 1.0);
             let near_step = |t: f64| sc.small_steps.iter().any(|s| (snap(s.0) - t).abs() < 1.0);
             let sure = at
@@ -1100,6 +1118,40 @@ mod tests {
             assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
             assert!(o.max_place_err_ms < 33.4, "{}", o.max_place_err_ms);
             assert_eq!(o.resets, 0);
+        }
+
+        /// Proptest regression: two small steps (−10.5 ms, −13.7 ms) 1.9 s
+        /// apart add up to more than the jump threshold before the window has
+        /// followed the first. One reset is allowed there, and the pictures
+        /// stay within a slot.
+        #[test]
+        fn small_steps_that_add_up_may_reset() {
+            let sc = Scenario {
+                seed: 0,
+                secs: 3.0 * 3600.0,
+                rate: 44_100,
+                fps: Fps::new(30, 1),
+                buf: 1024,
+                cam_fps: 30.0,
+                drift_ppm: 0.0,
+                wobble_ppm: 0.0,
+                wobble_period_s: 300.0,
+                audio_jitter_ns: 0.0,
+                frame_jitter_ns: 0.0,
+                delivery_s: (0.0, 0.0),
+                outlier_p: 0.0,
+                video_start_s: 0.0,
+                holes: vec![],
+                fps_drops: vec![],
+                sleeps: vec![],
+                small_steps: vec![
+                    (3_085.753_721_410_438_6, -10_462_177.618_287_023),
+                    (3_087.691_800_559_606, -13_749_697.955_894_647),
+                ],
+            };
+            let o = simulate(&sc);
+            assert_eq!(o.resets, 1);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
         }
 
         /// The worst plausible case, pinned: 50 ppm the "wrong" way, jitter

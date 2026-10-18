@@ -8,3 +8,4 @@ cc c297fed8a00244e69650750e66219d108e9978ee899aab96e9dab1c5887c3305 # sleep at 9
 cc 564b96b07d0dc9e145a5e335f110155e21cdb75e31f60cf5c93f8af6523f4843 # very first audio pair a wild timestamp: counted as a jump, 3 resets for 2 sleeps (av_clock fixed; pinned as a_bad_first_timestamp_is_an_outlier_not_a_jump)
 cc 5d24cd87db49450ec2023fae78a07f681f31a8081908336b8c6b1bdf2c2a18d2 # 40 ms jump 0.7 s before the end: 1 reset, test allowed 0..=0 (reset accounting fixed)
 cc ad029839ead1a4b32e2e1c6c11087063c9de3323ed3bfefdf2ed6009ea0ef0bc # camera before the audio, first audio pair 319 ms off: frames placed on the one-pair line, 7 slots off (av_clock::trusted_host)
+cc 480dcddfb2ee86140a1d1d122dcc69b5ccf67f26daeed710d00e3d2d485ca257 # two small steps (-10.5, -13.7 ms) 1.9 s apart add up past the jump threshold: a correct reset the test did not allow
