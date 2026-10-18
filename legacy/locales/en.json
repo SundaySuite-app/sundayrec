@@ -680,6 +680,13 @@
       "sample": "{at} — 20 seconds from the sermon",
       "rendering": "Preparing the sample …",
       "listenFailed": "Could not prepare the sample. The export still runs.",
+      "said": {
+        "hum": "We removed mains hum",
+        "noise": "We reduced background noise",
+        "reverb": "We reduced the room echo",
+        "clicks": "We removed clicks and crackle",
+        "clean": "The recording was clean."
+      },
       "advancedMixer": "Advanced: open the mixer",
       "hideMixer": "Hide the mixer",
       "mixerTitle": "Advanced sound mixer",

@@ -203,3 +203,29 @@ export function channelCodeKey(code: string | undefined): string | null {
   if (!code) return null;
   return CHANNEL_CODE_KEYS[code] ?? null;
 }
+
+/**
+ * B3b — tre ord til den frivillige: hva «Tale» gjorde med akkurat dette opptaket.
+ *
+ * Bakenden (`editor_tale_said`) svarer med stabile koder i kjedens rekkefølge,
+ * aldri prosa. Her blir de til nøkler under `app.editor.said`:
+ *
+ *   `hum` `noise` `reverb` `clicks` → én linje hver («Vi fjernet brum fra strømnettet»)
+ *   ingenting gjort                 → `clean` («Opptaket var rent.»)
+ *   analysen feilet, eller en annen profil enn «Tale» → ingenting. Å si «rent» om
+ *   en fil vi ikke fikk lest er en løgn, og «Tale og musikk» renser ikke av seg selv.
+ *
+ * En ukjent kode (en ny trigger i en nyere bakende) hoppes over, så skjermen
+ * aldri maler en råkode.
+ */
+const SAID_CODES = ["hum", "noise", "reverb", "clicks"] as const;
+
+export function taleSaidKeys(
+  profile: SoundProfile,
+  usesMixer: boolean,
+  said: { analysed: boolean; said: readonly string[] } | null,
+): string[] {
+  if (profile !== "speech" || usesMixer || !said?.analysed) return [];
+  const known = SAID_CODES.filter((c) => said.said.includes(c));
+  return known.length > 0 ? known : ["clean"];
+}

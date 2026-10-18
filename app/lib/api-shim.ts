@@ -1539,6 +1539,9 @@ const api: Record<string, unknown> = {
   // One-click "best result": diagnose + recommended preset bundle.
   editorAutoProcess: async (sourceToken: string) =>
     call("editor_auto_process", { sourceToken }, null),
+  // B3b: hva «Tale» gjorde med opptaket (koder, ikke tekst).
+  editorTaleSaid: async (sourceToken: string) =>
+    call("editor_tale_said", { sourceToken }, null),
   // Kill the in-flight export's ffmpeg. Returns whether one was running; the
   // export itself then rejects with `cancelled`, which the editor maps to a
   // calm "Eksport avbrutt." (This was a stub returning `true` — the Avbryt

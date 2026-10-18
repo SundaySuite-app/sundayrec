@@ -524,6 +524,20 @@ pub struct EditorChannelDiagnosis {
     pub recommended: EditorChannelRepair,
 }
 
+/// B3b: what «Tale» did to this recording, as the stable codes the sound step turns into
+/// three words each (`app.editor.said.*`). The DATA is the contract; no prose crosses.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "EditorTaleSaid.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct EditorTaleSaid {
+    /// The analysis ran. `false` when the file could not be read: the profile then runs without
+    /// it, and the screen says nothing (not «the recording was clean»).
+    pub analysed: bool,
+    /// `hum`, `clicks`, `noise`, `reverb` — in the order of the chain
+    /// ([`sundayrec_core::tale::SpeechClean::said`]). Empty: nothing was done.
+    pub said: Vec<String>,
+}
+
 /// The one-click "auto-improve" recommendation: the channel diagnosis plus the
 /// vocal-chain + mastering presets to apply for the best out-of-the-box result.
 /// The renderer applies these to its export settings in a single click.
@@ -2645,6 +2659,33 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
 #[cfg(not(feature = "editor"))]
 pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
     disabled("autoProcess")
+}
+
+/// B3b: what «Tale» takes along for this recording, for the explanation in the sound step.
+/// It is the SAME decision the preview, the loudness figure and the export read
+/// ([`tale_clean_for`], cached per file), so the sentence on screen is the chain that runs.
+#[cfg(feature = "editor")]
+pub async fn tale_said(input_path: &str) -> AppResult<EditorTaleSaid> {
+    let info = load_recording(input_path).await.ok();
+    let engine = ExportEngine::new();
+    let clean = tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?;
+    Ok(tale_said_from(clean.as_ref()))
+}
+
+#[cfg(not(feature = "editor"))]
+pub async fn tale_said(_input_path: &str) -> AppResult<EditorTaleSaid> {
+    disabled("taleSaid")
+}
+
+/// The DTO for a decision (or for none). Pure.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
+fn tale_said_from(clean: Option<&sundayrec_core::tale::SpeechClean>) -> EditorTaleSaid {
+    EditorTaleSaid {
+        analysed: clean.is_some(),
+        said: clean
+            .map(|c| c.said().into_iter().map(String::from).collect())
+            .unwrap_or_default(),
+    }
 }
 
 /// Measure loudness: run the preset's chain over the whole recording to raw PCM and meter it in
@@ -5405,6 +5446,34 @@ mod tests {
 
     /// B3a: what the analysis found goes between the channel repair and the preset's own chain,
     /// and nothing is added when it found nothing.
+    #[test]
+    fn tale_said_carries_the_codes_in_chain_order_and_marks_an_unread_file() {
+        use sundayrec_core::tale::{Mains, SpeechClean};
+        let all = SpeechClean {
+            hum: Some(Mains::Hz50),
+            denoise: true,
+            dereverb: Some(40.0),
+            declick: true,
+            floor_db: -60.0,
+        };
+        let d = tale_said_from(Some(&all));
+        assert!(d.analysed);
+        assert_eq!(d.said, ["hum", "clicks", "noise", "reverb"]);
+
+        let clean = SpeechClean {
+            hum: None,
+            denoise: false,
+            dereverb: None,
+            declick: false,
+            floor_db: -60.0,
+        };
+        let d = tale_said_from(Some(&clean));
+        assert!(d.analysed && d.said.is_empty(), "analysed, nothing done");
+
+        let d = tale_said_from(None);
+        assert!(!d.analysed && d.said.is_empty(), "unread is not «clean»");
+    }
+
     #[cfg(feature = "editor")]
     #[test]
     fn build_pre_chain_puts_the_tale_cleaning_between_the_repair_and_the_preset() {

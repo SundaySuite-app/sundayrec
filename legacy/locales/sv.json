@@ -680,6 +680,13 @@
       "sample": "{at} — 20 sekunder från predikan",
       "rendering": "Förbereder smakprovet …",
       "listenFailed": "Kunde inte skapa smakprovet. Exporten går som vanligt.",
+      "said": {
+        "hum": "Vi tog bort brum från elnätet",
+        "noise": "Vi dämpade bakgrundsbruset",
+        "reverb": "Vi dämpade ekot i rummet",
+        "clicks": "Vi tog bort klick och knaster",
+        "clean": "Inspelningen var ren."
+      },
       "advancedMixer": "Avancerat: öppna mixern",
       "hideMixer": "Dölj mixern",
       "mixerTitle": "Avancerad ljudmixer",

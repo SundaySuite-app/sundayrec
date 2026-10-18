@@ -805,6 +805,25 @@ gudstjeneste-opptak eller -materiale for hånden.
       skjøten klikker ikke — klippet rampes ned til digital null de siste
       10 ms.
 
+- [ ] **(B3b) «Tale» renser av seg selv, og sier hva den gjorde.** Tre
+      opptak, hvert i **Rediger → Lyd** med standardprofilen «Tale»; trykk
+      **Lytt → Før / Etter** på hvert. 1. **Et ekte brumopptak** (et miksebord eller en lysdemper på samme
+      krets, gjerne fra en kirke). **Forventet:** under profilkortene står
+      «Vi fjernet brum fra strømnettet», og «Etter» har hørbart mindre
+      brum uten at stemmen blir tynn. 2. **Et ekte opptak fra et stort kirkerom** (lang etterklang, helst
+      over ett sekund). **Forventet:** «Vi dempet ekkoet i rommet», og
+      «Etter» er hørbart tørrere og mer forståelig, uten
+      «undervannsklang» på stavelsene. Prøv også en bit med orgel eller
+      en holdt akkord rett etter tale: akkorden skal ikke dempes. 3. **Et rent opptak** (stille rom, god mikrofon). **Forventet:** at
+      «Før» og «Etter» er **hørbart uendret** (annet enn nivået). Står det
+      «Vi dempet bakgrunnsstøyen», skal forskjellen være umulig å høre;
+      ofte står det bare «Opptaket var rent.».
+      Skriv ned hvilke linjer som sto, og om noen av dem var feil: sier den
+      «brum» uten brum, eller «ekko» i et tørt rom, er terskelen (RT60 ≥ 1,0 s,
+      stilt på syntetiske signaler) for lav. **Kjent svakhet:** musikk med
+      talelignende nivåvariasjon (trommer) kan åpne støyporten, så ta også
+      en bit med band og lytt etter at en holdt tone ikke krymper.
+
 **Ikke en egen sjekk lenger:** kanaldiagnosen (dødt/knitrende kabel,
 kanal-duplisering) var tidligere en lytte-sjekk, men er nå fullt
 mutasjonstestet mot ekte ffmpeg-sidecar-målinger på kjente L/R-nivåer

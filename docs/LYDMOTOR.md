@@ -268,6 +268,14 @@ tale), samme 48 kHz-signal:
 holdt tone under den møter støyfjerneren på inntil 9 dB. «Tale og musikk» bruker ikke denne rensingen.
 Ikke hørt etter: hørbarheten (brumopptak, stort kirkerom, rent opptak uendret) hører til B3b/Ørene.
 
+**Gjort (B3b).** Lyd-steget forteller den frivillige hva «Tale» gjorde, uten fagord. Kommandoen
+`editor_tale_said` (kildelapp inn, `EditorTaleSaid { analysed, said }` ut) leser samme bufrede
+beslutning som forhåndslytting og eksport (`tale_clean_for`), så setningen på skjermen er kjeden
+som kjører. Bare kodene krysser (`hum`, `clicks`, `noise`, `reverb`); ordene eies av skallet
+(`app.editor.said.*`, sju språk). Én linje per ting; ble ingenting gjort på en lest fil: «Opptaket
+var rent.»; kunne fila ikke leses, mikseren er på eller profilen ikke er «Tale»: ingenting.
+Hørbarheten er ikke prøvd (Ørene, RIG-DAY (B3b)).
+
 ### Fase 4 — én dekoding når fila åpnes
 
 - Ett ffmpeg-rør i opptakets egen samplingsfrekvens. I samme runde fordeles

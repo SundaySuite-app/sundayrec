@@ -680,6 +680,13 @@
       "sample": "{at} — 20 sekunder fra prædikenen",
       "rendering": "Laver smagsprøven …",
       "listenFailed": "Kunne ikke lave smagsprøven. Eksporten kører som normalt.",
+      "said": {
+        "hum": "Vi fjernede brum fra elnettet",
+        "noise": "Vi dæmpede baggrundsstøjen",
+        "reverb": "Vi dæmpede ekkoet i rummet",
+        "clicks": "Vi fjernede klik og knitren",
+        "clean": "Optagelsen var ren."
+      },
       "advancedMixer": "Avanceret: åbn mixeren",
       "hideMixer": "Skjul mixeren",
       "mixerTitle": "Avanceret lydmixer",

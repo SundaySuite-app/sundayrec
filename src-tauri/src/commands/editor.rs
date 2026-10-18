@@ -578,6 +578,17 @@ pub async fn editor_auto_process(
     editor::auto_process(&source).await
 }
 
+/// B3b: what «Tale» did to this recording (hum, noise, reverb, clicks), as codes. Reads the
+/// same cached decision the preview and the export run on.
+#[tauri::command]
+pub async fn editor_tale_said(
+    chosen: State<'_, ChosenPaths>,
+    source_token: String,
+) -> AppResult<editor::EditorTaleSaid> {
+    let source = resolve_source(&chosen, &source_token).await?;
+    editor::tale_said(&source).await
+}
+
 /// Measure the recording's loudness against a mastering preset (pass 1 only).
 #[tauri::command]
 pub async fn editor_mastering_analyze(

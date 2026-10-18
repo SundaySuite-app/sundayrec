@@ -680,6 +680,13 @@
       "sample": "{at} — 20 Sekunden aus der Predigt",
       "rendering": "Die Hörprobe wird erstellt …",
       "listenFailed": "Die Hörprobe konnte nicht erstellt werden. Der Export läuft wie gewohnt.",
+      "said": {
+        "hum": "Wir haben das Netzbrummen entfernt",
+        "noise": "Wir haben das Hintergrundrauschen gedämpft",
+        "reverb": "Wir haben den Hall im Raum gedämpft",
+        "clicks": "Wir haben Knacken und Knistern entfernt",
+        "clean": "Die Aufnahme war sauber."
+      },
       "advancedMixer": "Erweitert: Audiomixer öffnen",
       "hideMixer": "Audiomixer ausblenden",
       "mixerTitle": "Erweiterter Audiomixer",

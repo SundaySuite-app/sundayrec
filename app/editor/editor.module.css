@@ -202,6 +202,17 @@
   margin: 0;
 }
 
+/* B3b: «Vi fjernet brum fra strømnettet» — rolig, én linje per ting. */
+.saidList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--ink-3);
+  font-size: var(--fs-base);
+}
+
 .cutList {
   display: flex;
   flex-direction: column;

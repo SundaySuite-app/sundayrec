@@ -60,9 +60,11 @@ import {
   soundProfile,
   soundVisited,
   stopListen,
+  taleSaid,
   toggleListen,
+  useMixer,
 } from "./sound";
-import { channelCodeKey, SOUND_PROFILES } from "./sound-profiles";
+import { channelCodeKey, SOUND_PROFILES, taleSaidKeys } from "./sound-profiles";
 import styles from "./editor.module.css";
 
 export function SoundStep() {
@@ -123,6 +125,7 @@ export function SoundStep() {
       />
 
       <ChannelNote />
+      <TaleSaid />
       {on ? <ListenCard /> : null}
 
       <div class={styles.toolbar}>
@@ -160,6 +163,28 @@ function ChannelNote() {
     <p data-testid="editor-channel-note" class={styles.hint}>
       {tDyn("editor", suffix)}
     </p>
+  );
+}
+
+/**
+ * Tre ord om hva «Tale» gjorde med akkurat dette opptaket (B3b).
+ *
+ * Én linje per ting: «Vi fjernet brum fra strømnettet». Ble ingenting gjort, står
+ * den rolige «Opptaket var rent.» — og ikke noe som helst før analysen har svart,
+ * for den som ikke fikk lese fila (`taleSaidKeys`). Setningene er kortere enn en
+ * linje og har ingen fagord: «brum», «ekko», «klikk», ikke «dehum» eller «RT60».
+ */
+function TaleSaid() {
+  const keys = taleSaidKeys(soundProfile.value, useMixer.value, taleSaid.value);
+  if (keys.length === 0) return null;
+  return (
+    <ul data-testid="editor-tale-said" class={styles.saidList}>
+      {keys.map((k) => (
+        <li key={k} data-testid={`editor-tale-said-${k}`}>
+          {tDyn("app.editor.said", k)}
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -466,6 +466,14 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
         },
     ),
     (
+        "editor_tale_said",
+        "source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
+    (
         "editor_mastering_analyze",
         "source_token",
         Token {

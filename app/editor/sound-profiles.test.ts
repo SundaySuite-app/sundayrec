@@ -21,6 +21,7 @@ import {
   SOUND_PROFILES,
   specFor,
   SPEECH_MASTER_PRESET,
+  taleSaidKeys,
 } from "./sound-profiles";
 
 const REPAIR = { mode: "gainDb", leftDb: 0, rightDb: -2.4 };
@@ -157,5 +158,39 @@ describe("kanaldiagnosen", () => {
   it("en ukjent kode gir ingenting — ikke en råkode på skjermen", () => {
     expect(channelCodeKey("noe_nytt")).toBeNull();
     expect(channelCodeKey(undefined)).toBeNull();
+  });
+});
+
+describe("tre ord om hva «Tale» gjorde (B3b)", () => {
+  const said = (codes: string[], analysed = true) => ({
+    analysed,
+    said: codes,
+  });
+
+  it("én linje per ting, i kjedens rekkefølge, og ukjente koder hoppes over", () => {
+    expect(
+      taleSaidKeys(
+        "speech",
+        false,
+        said(["hum", "noise", "ny_ting", "reverb"]),
+      ),
+    ).toEqual(["hum", "noise", "reverb"]);
+    expect(taleSaidKeys("speech", false, said(["clicks"]))).toEqual(["clicks"]);
+  });
+
+  it("ingenting gjort på en analysert fil er «rent» — ikke tomt", () => {
+    expect(taleSaidKeys("speech", false, said([]))).toEqual(["clean"]);
+    expect(taleSaidKeys("speech", false, said(["ny_ting"]))).toEqual(["clean"]);
+  });
+
+  it("sier ingenting uten en analyse: «rent» om en fil vi ikke fikk lest er en løgn", () => {
+    expect(taleSaidKeys("speech", false, null)).toEqual([]);
+    expect(taleSaidKeys("speech", false, said([], false))).toEqual([]);
+  });
+
+  it("sier ingenting for profiler som ikke renser av seg selv, eller med mikseren på", () => {
+    expect(taleSaidKeys("mixed", false, said(["hum"]))).toEqual([]);
+    expect(taleSaidKeys("none", false, said(["hum"]))).toEqual([]);
+    expect(taleSaidKeys("speech", true, said(["hum"]))).toEqual([]);
   });
 });

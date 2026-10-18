@@ -37,6 +37,7 @@ import { signal } from "@preact/signals";
 import type { ExportChannelRepair } from "@lib/pages/editor/export-params";
 import { defaultProcessing, type Processing } from "@lib/pages/editor/mixer";
 
+import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
 import { E } from "./model";
 import { sermonWindow } from "./editor-core";
 import {
@@ -116,6 +117,9 @@ export const channelRepair = signal<ExportChannelRepair | null>(null);
 /** Diagnosens kode (`balanced`, `dead_left`, …), for den ene ærlige linja. */
 export const channelCode = signal<string | null>(null);
 export const analyzingSound = signal(false);
+/** B3b: hva «Tale» gjorde med fila — kodene fra `editor_tale_said`, eller `null`
+ *  før svaret er inne (og når analysen ikke kunne kjøres). */
+export const taleSaid = signal<EditorTaleSaid | null>(null);
 
 let analysisFor = "";
 let analysis: Promise<void> | null = null;
@@ -140,6 +144,17 @@ export function ensureSoundAnalysis(): Promise<void> {
   if (analysisFor === token && analysis) return analysis;
   analysisFor = token;
   analyzingSound.value = true;
+  // «Tale»-analysen (B3b) kjører ved siden av kanalanalysen og deler cache med
+  // forhåndslytting og eksport. Den får ikke holde igjen kanalnotatet, og en
+  // feil her er bare en setning som uteblir.
+  void (async () => {
+    try {
+      const said = await window.api.editorTaleSaid(token);
+      if (E.sourceToken === token) taleSaid.value = said;
+    } catch {
+      /* ingen forklaring er et gyldig svar */
+    }
+  })();
   analysis = (async () => {
     try {
       const res = await window.api.editorAutoProcess(token);
@@ -331,6 +346,7 @@ export function resetSound(): void {
   mixer.value = defaultProcessing();
   channelRepair.value = null;
   channelCode.value = null;
+  taleSaid.value = null;
   analyzingSound.value = false;
   listenSide.value = "after";
   listenError.value = false;

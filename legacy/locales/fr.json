@@ -680,6 +680,13 @@
       "sample": "{at} — 20 secondes de la prédication",
       "rendering": "Préparation de l’extrait…",
       "listenFailed": "Impossible de préparer l’extrait. L’export se déroule normalement.",
+      "said": {
+        "hum": "Nous avons retiré le ronflement du secteur",
+        "noise": "Nous avons atténué le bruit de fond",
+        "reverb": "Nous avons atténué l’écho de la salle",
+        "clicks": "Nous avons retiré les clics et crépitements",
+        "clean": "L’enregistrement était propre."
+      },
       "advancedMixer": "Avancé : ouvrir le mixeur",
       "hideMixer": "Masquer le mixeur",
       "mixerTitle": "Mixeur audio avancé",

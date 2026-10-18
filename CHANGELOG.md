@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Lyd-steget sier hva som ble gjort.** Står profilen på «Tale», viser Rediger →
+  Lyd nå i korte setninger hva appen fant og tok bort i akkurat dette opptaket:
+  «Vi fjernet brum fra strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet
+  ekkoet i rommet» eller «Vi fjernet klikk og knitring». Var opptaket rent,
+  står det «Opptaket var rent.». Teksten finnes på alle sju språk.
+
 - **«Tale» renser av seg selv.** Profilen «Tale — tydelig» hører nå på
   opptaket før den behandler det, og tar bare med det som trengs: brum fra
   strømnettet (50 eller 60 Hz, velges automatisk), jevn bakgrunnsstøy, en lang
