@@ -52,7 +52,9 @@ class FakeAudio {
 }
 
 /** La tidtakerne og lovnadene kjøre ferdig; `ms` er fakeklokka, ikke veggklokka. */
-const settle = (ms = 0): Promise<void> => vi.advanceTimersByTimeAsync(ms);
+const settle = async (ms = 0): Promise<void> => {
+  await vi.advanceTimersByTimeAsync(ms);
+};
 
 beforeEach(() => {
   vi.useFakeTimers();

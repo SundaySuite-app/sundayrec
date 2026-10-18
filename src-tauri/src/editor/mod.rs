@@ -4595,21 +4595,22 @@ mod tests {
         let runs = std::sync::atomic::AtomicUsize::new(0);
         let never = tokio::sync::Notify::new();
         // The first ask measures and is dropped (a superseded preparation)…
-        let first = book.get_or_measure(Some("k".into()), || async {
+        let mut first = Box::pin(book.get_or_measure(Some("k".into()), || async {
             runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             never.notified().await;
             Ok(some_plan(9.0))
-        });
+        }));
         // …while the second one waits on it, and then measures for itself.
-        let second = book.get_or_measure(Some("k".into()), || async {
+        let mut second = Box::pin(book.get_or_measure(Some("k".into()), || async {
             runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(some_plan(4.0))
-        });
-        tokio::pin!(first);
-        tokio::pin!(second);
+        }));
         tokio::select! {
+            // In order: the first ask must be the one that starts measuring.
+            biased;
             _ = &mut first => panic!("the gate never opens"),
-            _ = yield_a_few() => {}
+            _ = &mut second => panic!("the second ask must wait for the first"),
+            () = yield_a_few() => {}
         }
         drop(first);
         assert_eq!(second.await.unwrap().gain_db, 4.0);
