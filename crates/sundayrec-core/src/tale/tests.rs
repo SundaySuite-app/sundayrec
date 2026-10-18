@@ -437,7 +437,9 @@ fn the_mixers_denoise_leaves_a_held_chord_alone_but_cleans_the_pause() {
     v.denoise.reduction_db = 12.0;
     let c = Chain::from_vocal_chain(&v);
     assert!(
-        c.stages().iter().any(|s| matches!(s, Stage::SpeechGated { .. })),
+        c.stages()
+            .iter()
+            .any(|s| matches!(s, Stage::SpeechGated { .. })),
         "the mixer's de-noiser must sit behind the speech gate"
     );
     let y = run(&c, &x);

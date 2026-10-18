@@ -506,3 +506,11 @@ musikkbeskyttelsen. Porten leser gulvet selv; mikseren har ingen analyse og gir 
 pausen −11,2 dB. Test: `the_mixers_denoise_leaves_a_held_chord_alone_but_cleans_the_pause`.
 `dereverb` i mikseren er fortsatt ugatet (B2b: −2,2 til −3,3 dB på en holdt tone). Samme kjente
 grense som «Tale»: trommer åpner porten.
+
+**M2R #10: «Tales» analyse leser fila én gang.** `tale_clean_for` går nå gjennom `TALE_BOOK`
+(samme `Book`/`OnceCell`-mønster som `PLAN_BOOK`): setningen i lydsteget (`editor_tale_said`),
+«Etter» og eksporten som spør samtidig deler én lesing, og den som kommer sist venter på den
+første (tar over om den første droppes). En analyse som ikke kunne lese fila deles med dem som
+venter, men huskes ikke. `tale_said` kan nå avbrytes: en nyere forespørsel (annen fil), en
+eksport eller et opptak som starter avslutter den (egen epoke, `tale_epoch`; en lytteforberedelse
+påvirker den ikke), og den svarer «ikke analysert».

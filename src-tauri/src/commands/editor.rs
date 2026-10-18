@@ -59,9 +59,9 @@ use super::media_filters::{media_filter_names, AUDIO_EXT, VIDEO_EXT};
 use crate::db::{store, Db};
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorDecodeProgress, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest,
-    EditorMasterPreviewResult, EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar,
-    ExportEngine, ExportFolder, MasterEngine, ResolvedExport,
+    EditorExportRequest, EditorExportResult, EditorMasterPreviewRequest, EditorMasterPreviewResult,
+    EditorMediaInfo, EditorPeaks, EditorSegment, EditorSidecar, ExportEngine, ExportFolder,
+    MasterEngine, ResolvedExport,
 };
 use crate::error::{AppError, AppResult};
 use crate::settings;
