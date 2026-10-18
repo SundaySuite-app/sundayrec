@@ -28,9 +28,7 @@ use filmcraft_audio_dsp::{create_effect, LoudnessMeter};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
-use sundayrec_core::mastering::{
-    build_measure_pass_filters, loudnorm_measure_filter, master_presets,
-};
+use sundayrec_core::mastering::master_presets;
 use sundayrec_core::processing::vocal_chain_presets;
 
 const SR: usize = 48_000;
@@ -424,20 +422,10 @@ fn speed(ff: &Path, dir: &Path) {
     let chain = noisy.chain.to_filter_string().expect("chain");
     println!("  voice-noisy-room = {chain}");
     let masters = master_presets();
-    let clear = masters
-        .iter()
-        .find(|p| p.id == "speech-clear")
-        .expect("preset");
-    let with_ln = format!("{chain},{}", loudnorm_measure_filter(clear));
-    let mut rows: Vec<(String, String)> = vec![
-        ("voice-noisy-room".into(), chain.clone()),
-        ("voice-noisy-room + loudnorm (pass 1)".into(), with_ln),
-    ];
+    // Since B1b the level is set in Rust, so there is no loudness filter to time: the chains.
+    let mut rows: Vec<(String, String)> = vec![("voice-noisy-room".into(), chain.clone())];
     for p in &masters {
-        rows.push((
-            format!("master {} measure pass", p.id),
-            build_measure_pass_filters(p),
-        ));
+        rows.push((format!("master {} chain", p.id), p.filters.clone()));
     }
     for (name, f) in rows {
         let xs: Vec<f64> = (0..3)

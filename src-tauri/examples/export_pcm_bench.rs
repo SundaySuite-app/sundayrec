@@ -105,7 +105,7 @@ fn main() {
     let (fc, map) = audio_export_filter_complex(
         &keeps,
         0,
-        &[preset.filters.clone()],
+        std::slice::from_ref(&preset.filters),
         &[],
         false,
         false,

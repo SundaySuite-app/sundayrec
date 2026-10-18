@@ -88,6 +88,8 @@ pub fn is_staged_pcm_name(name: &str) -> bool {
 
 /// Read `r` to the end in blocks of [`BLOCK_FRAMES`] planar frames, handing each to `f`.
 /// A trailing partial frame (a cut-off stream) is dropped. Returns the number of frames read.
+// Byte-to-f32 decoding reads clearer with `chunks_exact(4)`; MSRV-neutral.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn for_each_block<R: Read + ?Sized>(
     r: &mut R,
     channels: usize,

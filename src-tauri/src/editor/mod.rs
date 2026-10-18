@@ -3639,6 +3639,7 @@ where
 /// Errors carry the same bare codes the renderer's `describeExportError` maps:
 /// `"timeout"` when the kill-timer fired, `"cancelled"` when the user aborted.
 #[cfg(feature = "editor")]
+#[allow(clippy::too_many_arguments)] // one spawn, every pass a different fact
 async fn run_export_ffmpeg<F>(
     engine: &ExportEngine,
     args: &[String],
