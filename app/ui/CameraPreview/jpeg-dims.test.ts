@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { jpegDimsFromBase64, readJpegDims } from "./jpeg-dims";
+import { readJpegDims } from "./jpeg-dims";
 
 /**
- * De første 384 bytene av en EKTE JPEG — 1920×1080, skrevet av den samme
- * ffmpeg-en som bakendens preview-sink bruker
+ * De første 384 bytene av en EKTE JPEG — 1920×1080, skrevet av ffmpeg
  * (`ffmpeg -f lavfi -i testsrc=size=1920x1080 -frames:v 1`).
  *
  * En håndlaget bytesekvens ville bevist at parseren leser sin egen fixtur.
  * Dette er fila: JFIF-header, Lavc-kommentar, kvantiseringstabell,
  * Huffman-tabeller, og SOF0 på offset 293 — nøyaktig den rekkefølgen og de
  * segmentlengdene overlegget faktisk får servert. Strengen er et EKTE prefiks
- * av filas base64, altså formen `recording_preview_frame` svarer med.
+ * av filas base64.
  */
 const REAL_JPEG_1080P_HEAD =
   "/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYyLjI4LjEwMgD/2wBDAAgYGBwY" +
@@ -56,11 +55,11 @@ describe("readJpegDims — ekte header", () => {
     });
   });
 
-  it("finner den også gjennom base64-veien overlegget bruker", () => {
-    expect(jpegDimsFromBase64(REAL_JPEG_1080P_HEAD)).toEqual({
-      w: 1920,
-      h: 1080,
-    });
+  it("leser bare hodet: en bred frame trenger ikke dekodes", () => {
+    // `CameraPreview` gir bare de første kilobytene til parseren.
+    const frame = new Uint8Array(4_000_000);
+    frame.set(bytesOf(REAL_JPEG_1080P_HEAD));
+    expect(readJpegDims(frame.subarray(0, 2048))).toEqual({ w: 1920, h: 1080 });
   });
 });
 
@@ -116,21 +115,5 @@ describe("readJpegDims — formene skanningen må tåle", () => {
   it("en SOF med null i seg er ikke et svar", () => {
     const bytes = new Uint8Array([0xff, 0xd8, ...sof(0xc0, 0, 0)]);
     expect(readJpegDims(bytes)).toBeNull();
-  });
-});
-
-describe("jpegDimsFromBase64", () => {
-  it("gir null i stedet for å kaste på søppel", () => {
-    expect(jpegDimsFromBase64("ikke base64 i det hele tatt !!!")).toBeNull();
-    expect(jpegDimsFromBase64("")).toBeNull();
-  });
-
-  it("leser bare hodet, uansett hvor stor framen er", () => {
-    // 4 MB base64 foran: en parsing som dekodet ALT ville brukt hovedtråden på
-    // 12 slike i sekundet.
-    const padded = REAL_JPEG_1080P_HEAD + "A".repeat(4_000_000);
-    const before = Date.now();
-    expect(jpegDimsFromBase64(padded)).toEqual({ w: 1920, h: 1080 });
-    expect(Date.now() - before).toBeLessThan(200);
   });
 });

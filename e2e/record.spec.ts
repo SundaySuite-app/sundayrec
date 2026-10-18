@@ -10,6 +10,14 @@ import {
   type Fixtures,
 } from "./harness";
 import { emit, emitEvent, spyEvents } from "./events";
+import {
+  cameraCalls,
+  cameraFixtures,
+  pushColorFrame,
+  tileColor,
+  tileStates,
+  trackTiles,
+} from "./camera-feed";
 
 // OPPTAK — jobb nr. 1, sett utenfra.
 //
@@ -1083,75 +1091,17 @@ test.describe("nedtellingen rehydreres når overlegget monteres uten den", () =>
 // ── Kamerabildet (D2/PR2) ───────────────────────────────────────────────────
 //
 // Det som bare kan bevises i en ekte nettleser: at rammen SIER hvilken av de
-// åtte tilstandene den står i, at kravene som sendes til `getUserMedia` er de
-// som ikke kollapser i WKWebView, at previewen SLIPPER kameraet FØR motoren
-// ber om det — og at overlegget faktisk maler bakendens frames.
+// sju tilstandene den står i, at bildet fra bakendens kameraøkt faktisk når
+// <img> — og at det IKKE blinker ved Start og Stopp (C4b).
 //
-// ⚠️ INGEN assertion på levende video noe sted. En journeytest som venter på
-// piksler venter på maskinvare som ikke finnes i CI; `data-phase` er appens
-// egen påstand om hva som skjer, og det er den som kan være feil.
-// Fase-TABELLEN er node-testet (`app/ui/CameraPreview/live-preview-core.ts`).
-
-/**
- * Et kamera i webviewet, uten maskinvare.
- *
- * `navigator.mediaDevices` byttes ut med en dubletter som svarer med en
- * canvas-strøm — en EKTE `MediaStream`, så `<video>.srcObject` og `play()` går
- * den vanlige veien. Sporenes `stop()` er wrappet, og det er hele grunnen til
- * at rekkefølge-testen under kan finnes: den er det observerbare øyeblikket
- * previewen gir slipp på enheten.
- *
- * Ikke `--use-fake-device-for-media-stream`: et nettleserflagg ville gitt en
- * ekte kameramotor med ekte oppstartstid, altså nøyaktig den timingen som gjør
- * medietester flakete. Dette er determinstisk.
- */
-async function stubCamera(
-  page: Page,
-  fail?: "NotAllowedError" | "NotFoundError",
-): Promise<void> {
-  await page.addInitScript((mode: string) => {
-    const w = window as unknown as Record<string, unknown>;
-    w.__E2E_ORDER__ = [];
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        enumerateDevices: async () => [
-          {
-            kind: "videoinput",
-            label: "Logitech BRIO (046d:085e)",
-            deviceId: "brio-id",
-            groupId: "g1",
-          },
-        ],
-        getUserMedia: async (constraints: unknown) => {
-          w.__E2E_CONSTRAINTS__ = JSON.parse(JSON.stringify(constraints));
-          if (mode) {
-            const err = new Error("stub");
-            err.name = mode;
-            throw err;
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = 320;
-          canvas.height = 180;
-          canvas.getContext("2d")?.fillRect(0, 0, 320, 180);
-          const stream = (
-            canvas as HTMLCanvasElement & {
-              captureStream: (fps?: number) => MediaStream;
-            }
-          ).captureStream(5);
-          for (const track of stream.getTracks()) {
-            const original = track.stop.bind(track);
-            track.stop = () => {
-              (w.__E2E_ORDER__ as string[]).push("preview-stop");
-              original();
-            };
-          }
-          return stream;
-        },
-      },
-    });
-  }, fail ?? "");
-}
+// Kameraet er bakendens: `camera_preview_start` åpner én økt og sender JPEG-er
+// ned en kanal. Her svarer `cameraFixtures()` på de to kommandoene, og
+// `pushColorFrame` spiller kameraøkta ved å levere ekte JPEG-bytes ned
+// akkurat den kanalen appen ga (se `e2e/camera-feed.ts`).
+//
+// ⚠️ Fasen (`data-phase`) er appens egen påstand, og tabellen bak den er
+// node-testet (`app/ui/CameraPreview/camera-preview-core.ts`). Piksler leses
+// bare der de ER beviset: at det nye bildet er det som står på skjermen.
 
 /** Ett kamera, slik bakendens `list_devices` svarer. */
 const CAMERA_FIXTURES: Fixtures = {
@@ -1166,67 +1116,141 @@ const WITH_CAMERA = {
   videoDeviceIndex: 0,
 };
 
-/**
- * En minimal, GYLDIG JPEG-header: SOI + SOF0 som sier 1920×1080.
- *
- * Overlegget leser sideforholdet ut av headeren og aldri ut av bildet, så
- * dette er alt en frame trenger å være for at rammen skal måle seg riktig.
- * (Parseren selv er testet mot en ekte ffmpeg-JPEG i `jpeg-dims.test.ts`.)
- */
-const FRAME_1080P = Buffer.from([
-  0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x04, 0x38, 0x07, 0x80, 0x01, 0x01,
-  0x11, 0x00,
-]).toString("base64");
+/** Start-trykket slik motoren svarer, og `recording://finished` som avslutter. */
+const FINISHED = {
+  path: "/Users/test/Opptak/2026-08-23.mp4",
+  file_path: "/Users/test/Opptak/2026-08-23.mp4",
+  has_video: true,
+};
+
+/** En farge i midten av bildet er «nær» den som ble sendt (JPEG er tapsfull). */
+function near(
+  got: [number, number, number],
+  want: [number, number, number],
+): void {
+  for (let i = 0; i < 3; i++) {
+    expect(Math.abs(got[i] - want[i]), `${got} vs ${want}`).toBeLessThan(40);
+  }
+}
+const RED: [number, number, number] = [255, 0, 0];
+const BLUE: [number, number, number] = [0, 0, 255];
 
 test.describe("kamera-preview på Opptak", () => {
   test("ingen ramme når tillegget er av", async ({ page }) => {
-    await stubCamera(page);
     await boot(page, {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: CHOSEN,
       goto: "home",
     });
     await expect(page.getByTestId("record-start")).toBeVisible();
     await expect(page.getByTestId("record-camera-preview")).toHaveCount(0);
+    expect((await cameraCalls(page)).starts).toBe(0);
   });
 
-  test("kamera på og valgt: rammen blir «live», og merket sier hva som kom", async ({
+  test("kamera på og valgt: bakenden bes om kameraet ved NAVN, og bildet fra økta står i rammen", async ({
     page,
   }) => {
-    await stubCamera(page);
     await boot(page, {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
       goto: "home",
     });
+    const frame = page.getByTestId("record-camera-preview");
+    // Ingen bilder ennå: rammen sier det, i stedet for å stå tom.
+    await expect(frame).toHaveAttribute("data-phase", "starting");
+    await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
+      "Starter kamera…",
+    );
 
+    await pushColorFrame(page, "#ff0000");
+    await expect(frame).toHaveAttribute("data-phase", "live");
+    near(await tileColor(page, "record-camera-preview"), RED);
+    // Det neste bildet erstatter det forrige.
+    await pushColorFrame(page, "#0000ff");
+    await expect
+      .poll(async () => (await tileColor(page, "record-camera-preview"))[2])
+      .toBeGreaterThan(200);
+
+    // Navnet er det samme som opptaket bruker; webviewet åpner ikke kameraet.
+    expect((await cameraCalls(page)).log).toEqual([
+      "camera_preview_start Logitech BRIO",
+    ]);
+  });
+
+  test("sideforholdet kommer fra bildets header, også for et stort MJPEG-bilde som skaleres ned", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    // Et MJPEG-kamera sender sin egen uskalerte JPEG (C4a).
+    await pushColorFrame(page, "#00aa00", [1920, 1080]);
     const frame = page.getByTestId("record-camera-preview");
     await expect(frame).toHaveAttribute("data-phase", "live");
-
-    // Kravene som ble sendt: bredde + sideforhold, og ALDRI høyde — tre
-    // uoppfyllbare idealer er det som kollapset previewen til et beskåret
-    // kvadrat i WKWebView. Enheten er et ØNSKE, slått opp på etiketten.
-    const constraints = await page.evaluate(
-      () =>
-        (window as unknown as Record<string, unknown>)
-          .__E2E_CONSTRAINTS__ as Record<string, unknown>,
+    await expect(frame).toHaveAttribute(
+      "style",
+      /--rec-video-ar:\s*1920 \/ 1080/,
     );
-    expect(constraints).toEqual({
-      audio: false,
-      video: {
-        width: { ideal: 1920 },
-        aspectRatio: { ideal: 16 / 9 },
-        deviceId: { ideal: "brio-id" },
-      },
+    // …og UI-et skalerer: bildet er aldri bredere enn rammen.
+    const { frameW, imgW } = await page.evaluate(() => {
+      const f = document.querySelector(
+        '[data-testid="record-camera-preview"]',
+      ) as HTMLElement;
+      const i = f.querySelector("img") as HTMLImageElement;
+      return {
+        frameW: f.getBoundingClientRect().width,
+        imgW: i.getBoundingClientRect().width,
+      };
     });
+    expect(imgW).toBeLessThanOrEqual(frameW);
+  });
+
+  test("speilvendt opptak ⇒ speilvendt bilde: det som vises er det som tas opp", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: { ...WITH_CAMERA, videoFlip: true },
+      goto: "home",
+    });
+    await pushColorFrame(page, "#ff0000");
+    const frame = page.getByTestId("record-camera-preview");
+    await expect(frame).toHaveAttribute("data-phase", "live");
+    await expect(frame).toHaveAttribute("data-flip", "true");
+    const matrix = await page.evaluate(
+      () =>
+        getComputedStyle(
+          document.querySelector(
+            '[data-testid="record-camera-preview"] img',
+          ) as Element,
+        ).transform,
+    );
+    expect(matrix).toBe("matrix(-1, 0, 0, 1, 0, 0)");
+
+    // Uten speiling står bildet som det kom.
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await pushColorFrame(page, "#ff0000");
+    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+      "data-phase",
+      "live",
+    );
+    await expect(page.getByTestId("record-camera-preview")).not.toHaveAttribute(
+      "data-flip",
+      /.*/,
+    );
   });
 
   test("nektet tilgang og «svarte ikke» er TO svar, ikke ett", async ({
     page,
   }) => {
-    await stubCamera(page, "NotAllowedError");
     await boot(page, {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("denied") },
       settings: WITH_CAMERA,
       goto: "home",
     });
@@ -1236,9 +1260,8 @@ test.describe("kamera-preview på Opptak", () => {
       "Kameratilgang nektet — sjekk Systeminnstillinger",
     );
 
-    await stubCamera(page, "NotFoundError");
     await boot(page, {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures("failed") },
       settings: WITH_CAMERA,
       goto: "home",
     });
@@ -1248,12 +1271,11 @@ test.describe("kamera-preview på Opptak", () => {
     );
   });
 
-  test("et lagret kamera som ikke er i listen får sitt eget svar", async ({
+  test("et lagret kamera som ikke er i listen får sitt eget svar — og bakenden bes ikke om det", async ({
     page,
   }) => {
-    await stubCamera(page);
     await boot(page, {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: { ...WITH_CAMERA, videoDeviceName: "Blackmagic ATEM" },
       goto: "home",
     });
@@ -1264,6 +1286,7 @@ test.describe("kamera-preview på Opptak", () => {
     await expect(page.getByTestId("record-camera-preview-message")).toHaveText(
       "Kamera «Blackmagic ATEM» ikke funnet — velg et annet",
     );
+    expect((await cameraCalls(page)).starts).toBe(0);
   });
 
   test("en FEILET kameralesning sier ikke «ingen kameraer funnet»", async ({
@@ -1271,10 +1294,10 @@ test.describe("kamera-preview på Opptak", () => {
   }) => {
     // De to har hvert sitt neste steg: en kabel å sjekke, eller en tillatelse å
     // gi. Shimmen svarte før med tom liste på begge (se `listVideoDevices`).
-    await stubCamera(page);
     await boot(page, {
       fixtures: {
         ...CAMERA_FIXTURES,
+        ...cameraFixtures(),
         list_devices: fn("() => { throw new Error('ffmpeg svarte ikke') }"),
       },
       settings: WITH_CAMERA,
@@ -1289,7 +1312,11 @@ test.describe("kamera-preview på Opptak", () => {
 
     // Og den ekte tomme listen sier fortsatt det den skal.
     await boot(page, {
-      fixtures: { ...CAMERA_FIXTURES, list_devices: { video_inputs: [] } },
+      fixtures: {
+        ...CAMERA_FIXTURES,
+        ...cameraFixtures(),
+        list_devices: { video_inputs: [] },
+      },
       settings: WITH_CAMERA,
       goto: "home",
     });
@@ -1298,94 +1325,147 @@ test.describe("kamera-preview på Opptak", () => {
     );
   });
 
-  test("⚠️ previewen slipper kameraet FØR start_recording", async ({
+  test("⚠️ bildet blinker IKKE ved Start og Stopp: én økt, aldri lukket, aldri «Starter kamera…»", async ({
     page,
   }) => {
-    // macOS gir ÉN klient om gangen tilgang til kameraet. Slipper ikke
-    // webviewet enheten før motoren ber om den, får opptaket den ikke — og
-    // fila blir uten bilde. `isRecording` settes FØRST etter at motoren har
-    // svart ja, så den alene er for sent.
+    // C4b: før hadde webviewet kameraet FØR opptaket (og slapp det ved Start),
+    // og overlegget pollet en JPEG fra ffmpeg — bildet var borte et par
+    // sekunder i begge overgangene. Nå er det bakendens ene økt hele veien.
     //
-    // Fjernes `releaseCameraPreview()` fra `handleStart`, snur denne
-    // rekkefølgen (stoppen kommer da fra `isRecording`-effekten, ETTER
-    // start_recording) og testen blir rød.
-    await stubCamera(page);
+    // Tilstandene til begge rammene logges av en MutationObserver (en enkelt
+    // committet «Starter kamera…»-ramme kan ikke gli mellom to målinger), og
+    // økta telles: ett `camera_preview_start`, ingen `camera_preview_stop`.
+    await trackTiles(page);
+    await spyEvents(page);
     await boot(page, {
       fixtures: {
         ...CAMERA_FIXTURES,
-        // Spied so a plan call would show up in the order — it must not.
-        plan_recording_opts: fn(`() => {
-          (window.__E2E_ORDER__ ||= []).push("plan_recording_opts");
-          return { planned: true };
-        }`),
-        start_recording: fn(`(args) => {
-          (window.__E2E_ORDER__ ||= []).push("start_recording");
-          (window.__E2E_START_ARGS__ ||= []).push(args);
-          return null;
-        }`),
+        ...cameraFixtures(),
+        ...CALL_SPIES,
       },
       settings: WITH_CAMERA,
       goto: "home",
     });
+    const tile = page.getByTestId("record-camera-preview");
+    await expect(tile).toHaveAttribute("data-phase", "starting");
 
-    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
-      "data-phase",
-      "live",
-    );
+    // Før opptaket.
+    await pushColorFrame(page, "#ff0000");
+    await expect(tile).toHaveAttribute("data-phase", "live");
+    near(await tileColor(page, "record-camera-preview"), RED);
+
+    // START. Overlegget kommer opp med bildet allerede i rammen, fra SAMME økt.
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
-
+    const overlay = page.getByTestId("overlay-camera-preview");
+    await expect(overlay).toHaveAttribute("data-phase", "live");
+    near(await tileColor(page, "overlay-camera-preview"), RED);
+    // Bildene går videre under opptaket, til begge rammene.
+    await pushColorFrame(page, "#0000ff");
     await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            ((window as unknown as Record<string, unknown>).__E2E_ORDER__ ??
-              []) as string[],
-        ),
-      )
-      .toEqual(["preview-stop", "start_recording"]);
-    // The camera's NAME is a Setup decision Rust reads from the profile; the
-    // page sends only the toggle (and still no path).
+      .poll(async () => (await tileColor(page, "overlay-camera-preview"))[2])
+      .toBeGreaterThan(200);
+    near(await tileColor(page, "record-camera-preview"), BLUE);
+
+    // STOPP. Motoren er ferdig; økta gis tilbake til Opptak.
+    await emit(page, "recording-finished", FINISHED);
+    await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
+    await expect(tile).toHaveAttribute("data-phase", "live");
+    near(await tileColor(page, "record-camera-preview"), BLUE);
+    await pushColorFrame(page, "#ff0000");
+    await expect
+      .poll(async () => (await tileColor(page, "record-camera-preview"))[0])
+      .toBeGreaterThan(200);
+
+    // Beviset. Hver ramme passerte bare tilstander som er «bilde står».
+    const states = await tileStates(page);
+    const rec = states["record-camera-preview"];
+    const ov = states["overlay-camera-preview"];
+    // Opptak-rammen: fra første bilde og ut skjedde det ingenting.
+    expect(rec.slice(rec.indexOf("live+img"))).toEqual(["live+img"]);
+    // Overlegget: ikke til stede, så bilde. Aldri «starting», aldri tom.
+    expect(ov.filter((x) => x !== "absent")).toEqual(["live+img"]);
+    // …og ÉN kameraøkt: aldri stoppet, aldri åpnet på nytt.
+    const cam = await cameraCalls(page);
+    expect(cam.starts).toBe(1);
+    expect(cam.stops).toBe(0);
+    expect(await calls(page)).toEqual(STARTED_ONCE);
+    // Siden sender bare bryteren, og fremdeles ingen sti.
     expect(await startArgs(page)).toEqual([
       { request: { customName: null, maxMinutes: null, video: true } },
     ]);
   });
 
-  test("motoren sa nei: kamerabildet kommer tilbake", async ({ page }) => {
+  test("motoren sa nei: bildet står hele veien, uten å ha vært borte", async ({
+    page,
+  }) => {
     // En svart rute etter et trykk som ikke førte fram er en app som ser
-    // ødelagt ut av å ha sagt fra.
-    await stubCamera(page);
+    // ødelagt ut av å ha sagt fra. Nå er det ingenting som tas bort å gi
+    // tilbake: kameraet ble aldri rørt.
+    await trackTiles(page);
     await boot(page, {
       fixtures: {
         ...CAMERA_FIXTURES,
+        ...cameraFixtures(),
         start_recording: fn("() => { throw { code: 'no_save_folder' } }"),
       },
       settings: WITH_CAMERA,
       goto: "home",
     });
     const frame = page.getByTestId("record-camera-preview");
+    await pushColorFrame(page, "#ff0000");
     await expect(frame).toHaveAttribute("data-phase", "live");
 
     await page.getByTestId("record-start").click();
     await expect(page.getByTestId("recording-overlay")).toHaveCount(0);
     await expect(frame).toHaveAttribute("data-phase", "live");
+    const rec = (await tileStates(page))["record-camera-preview"];
+    expect(rec.slice(rec.indexOf("live+img"))).toEqual(["live+img"]);
+    const cam = await cameraCalls(page);
+    expect([cam.starts, cam.stops]).toEqual([1, 0]);
+  });
+
+  test("forlater man Opptak og kommer tilbake, åpnes kameraet ikke på nytt innenfor fristen", async ({
+    page,
+  }) => {
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await pushColorFrame(page, "#ff0000");
+    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+      "data-phase",
+      "live",
+    );
+    // Siden skiftes (rammen avmonteres), og kommer tilbake med én gang.
+    await page.evaluate(async () => {
+      const w = window as unknown as { showPage: (id: string) => void };
+      w.showPage("schedule");
+      await new Promise((r) => setTimeout(r, 80));
+      w.showPage("home");
+    });
+    await expect(page.getByTestId("record-start")).toBeVisible();
+    await expect(page.getByTestId("record-camera-preview")).toHaveAttribute(
+      "data-phase",
+      "live",
+    );
+    const cam = await cameraCalls(page);
+    expect([cam.starts, cam.stops]).toEqual([1, 0]);
   });
 });
 
 test.describe("kamerabildet i opptaksoverlegget", () => {
-  test("poller motorens frames og måler seg på headeren", async ({ page }) => {
+  test("viser økta sitt bilde og måler seg på headeren", async ({ page }) => {
     // Overlegget hadde en BRIKKE som navnga kameraet. Den ser helt lik ut med
     // lokk på linsen (docs/SMOKE-TEST.md §«The live camera picture»).
     await spyEvents(page);
-    await stubCamera(page);
     await boot(page, {
-      fixtures: {
-        ...CAMERA_FIXTURES,
-        recording_preview_frame: FRAME_1080P,
-      },
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
       goto: "home",
     });
+    await pushColorFrame(page, "#00aa00", [1920, 1080]);
     await emit(page, "recording-overlay-stop", {
       state: "recording",
       reconnect_count: 0,
@@ -1404,15 +1484,16 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     await expect(page.getByTestId("overlay-camera")).toContainText(
       "Logitech BRIO",
     );
+    // …og dette er ÉN økt: overlegget åpnet ikke et kamera selv.
+    expect((await cameraCalls(page)).starts).toBe(1);
   });
 
   test("ingen frame ennå: rammen sier det, i stedet for å stå tom", async ({
     page,
   }) => {
     await spyEvents(page);
-    await stubCamera(page);
     await boot(page, {
-      fixtures: { ...CAMERA_FIXTURES, recording_preview_frame: null },
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
       goto: "home",
     });
@@ -1436,12 +1517,12 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     // urørt, så merknaden skal ikke være en banner (`role=alert`) og ikke vise
     // et tall — og den skal ikke være der før noe faktisk er sluppet.
     await spyEvents(page);
-    await stubCamera(page);
     await boot(page, {
-      fixtures: { ...CAMERA_FIXTURES, recording_preview_frame: FRAME_1080P },
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: WITH_CAMERA,
       goto: "home",
     });
+    await pushColorFrame(page, "#ff0000");
     await emit(page, "recording-overlay-stop", {
       state: "recording",
       reconnect_count: 0,
@@ -1467,7 +1548,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
   test("uten kamera i dette opptaket er det ingen ramme", async ({ page }) => {
     await spyEvents(page);
     await boot(page, {
-      fixtures: CAMERA_FIXTURES,
+      fixtures: { ...CAMERA_FIXTURES, ...cameraFixtures() },
       settings: CHOSEN,
       goto: "home",
     });
@@ -1478,6 +1559,7 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     });
     await expect(page.getByTestId("recording-overlay")).toBeVisible();
     await expect(page.getByTestId("overlay-camera-preview")).toHaveCount(0);
+    expect((await cameraCalls(page)).starts).toBe(0);
   });
 });
 

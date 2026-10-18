@@ -53,8 +53,7 @@
 /*
  * Kamerabildet. Smalere enn måleren med vilje: lyden er det som ryker, og et
  * bilde som var det største på skjermen ville flyttet blikket bort fra
- * stolpene. Se PolledCameraPreview.tsx for hvorfor det er en poll og ikke en
- * strøm.
+ * stolpene. Se CameraPreview.tsx.
  */
 .camera {
   width: min(420px, 100%);

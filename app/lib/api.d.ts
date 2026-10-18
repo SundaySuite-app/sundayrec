@@ -135,10 +135,17 @@ declare global {
        *  answer, which is «vi vet ikke» and NOT «idle» — the caller leaves its
        *  belief alone. See `hydrateRecordingState()` in `app/state/recording.ts`. */
       recordingSnapshot: () => Promise<RecorderStatePayload | null>;
-      /** One base64 JPEG from the engine's preview sink, or `null` when it has
-       *  not written a frame yet. Only meaningful DURING a recording — the
-       *  recorder owns the camera then, so this is the only way to see it. */
-      recordingPreviewFrame: () => Promise<string | null>;
+      /** Show the camera `token` (its name): the backend opens it ONCE and
+       *  streams a small JPEG (≤ 640 px, ~4/s) on `onFrame` — the same session
+       *  the recording then records from and hands back at Stopp. Resolves
+       *  `{ ok:false, error }` when the camera would not open. Callers go
+       *  through `ui/CameraPreview/camera-feed.ts`, which shares the session. */
+      cameraPreviewStart: (
+        token: string,
+        onFrame: (jpeg: ArrayBuffer) => void,
+      ) => Promise<{ ok: true } | { ok: false; error: string }>;
+      /** Stop the picture and release an idle camera. */
+      cameraPreviewStop: () => Promise<void>;
       /** Start the rolling pre-roll buffer. Resolves false when the backend
        *  declined (pre-roll off in its settings copy, or no device matched). */
       prerollStart?: () => Promise<boolean>;

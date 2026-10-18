@@ -185,63 +185,6 @@ export async function advanceClock(page: Page, minutes: number): Promise<void> {
 }
 
 /**
- * A camera in the webview, without hardware.
- *
- * `navigator.mediaDevices` is replaced with a stand-in that answers with a
- * canvas stream — a REAL `MediaStream`, so `<video>.srcObject` and `play()`
- * take the ordinary route. Lifted from `e2e/record.spec.ts`, where the same
- * stub is what makes the ownership assertions possible.
- *
- * Not `--use-fake-device-for-media-stream`: a browser flag would give a real
- * camera pipeline with a real start-up time, which is exactly the timing that
- * makes media tests flaky. This is deterministic, and a photographer needs that
- * more than a test does.
- */
-export async function stubCamera(
-  page: Page,
-  fail?: "NotAllowedError" | "NotFoundError",
-): Promise<void> {
-  await page.addInitScript((mode: string) => {
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        enumerateDevices: async () => [
-          {
-            kind: "videoinput",
-            label: "Logitech BRIO (046d:085e)",
-            deviceId: "brio-id",
-            groupId: "g1",
-          },
-        ],
-        getUserMedia: async () => {
-          if (mode) {
-            const err = new Error("stub");
-            err.name = mode;
-            throw err;
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = 320;
-          canvas.height = 180;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            // A flat, dark rectangle — not noise and not a gradient. The point
-            // of the picture is that there IS one; anything with detail would
-            // be detail that has to be identical on the next run.
-            ctx.fillStyle = "#16202f";
-            ctx.fillRect(0, 0, 320, 180);
-          }
-          return (
-            canvas as HTMLCanvasElement & {
-              captureStream: (fps?: number) => MediaStream;
-            }
-          ).captureStream(5);
-        },
-      },
-    });
-  }, fail ?? "");
-}
-
-/**
  * A clipboard that records instead of writing.
  *
  * Only needed so «Kopier full rapport» can be photographed with its toast: the

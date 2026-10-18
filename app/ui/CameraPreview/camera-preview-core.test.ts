@@ -1,20 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildConstraints,
-  feedBadge,
-  matchCamera,
+  classifyStartError,
   previewState,
   type CameraPhase,
   type CameraTextKey,
   type PreviewInput,
-} from "./live-preview-core";
+} from "./camera-preview-core";
 
 /** Utgangspunktet: tillegget er på, ett kamera finnes, og det er valgt. */
 function input(over: Partial<PreviewInput> = {}): PreviewInput {
   return {
     enabled: true,
-    recording: false,
     savedName: "FaceTime HD Camera",
     devices: [{ name: "FaceTime HD Camera" }],
     devicesFailed: false,
@@ -44,12 +41,6 @@ describe("previewState — fase-tabellen", () => {
       key: null,
     },
     {
-      name: "et opptak går: motoren eier kameraet",
-      over: { recording: true, stream: "live" },
-      phase: "paused",
-      key: null,
-    },
-    {
       name: "nektet tilgang",
       over: { error: "denied" },
       phase: "denied",
@@ -62,7 +53,7 @@ describe("previewState — fase-tabellen", () => {
       key: "denied",
     },
     {
-      name: "annen feil fra getUserMedia",
+      name: "annen feil fra bakenden",
       over: { error: "other" },
       phase: "noResponse",
       key: "noResponse",
@@ -144,71 +135,18 @@ describe("previewState — fase-tabellen", () => {
   });
 });
 
-describe("buildConstraints", () => {
-  it("ber om bredde og sideforhold — ALDRI høyde", () => {
-    for (const id of [null, "abc123"]) {
-      const c = buildConstraints(id);
-      // Nøkkelen skal ikke FINNES; `undefined` ville vært like feil å skrive.
-      expect(Object.prototype.hasOwnProperty.call(c, "height")).toBe(false);
-      expect(JSON.stringify(c)).not.toContain("height");
-      expect(c.width).toEqual({ ideal: 1920 });
-      expect(c.aspectRatio).toEqual({ ideal: 16 / 9 });
-    }
-  });
-
-  it("enheten er et ØNSKE, så en bom faller til standardkameraet", () => {
-    expect(buildConstraints("abc123").deviceId).toEqual({ ideal: "abc123" });
-    expect(buildConstraints(null).deviceId).toBeUndefined();
+describe("classifyStartError", () => {
+  it("skiller en nektet tillatelse fra alt annet", () => {
     expect(
-      Object.prototype.hasOwnProperty.call(buildConstraints(""), "deviceId"),
-    ).toBe(false);
-  });
-});
-
-describe("matchCamera", () => {
-  const devices = [
-    { kind: "audioinput", label: "FaceTime HD Camera", deviceId: "mic" },
-    { kind: "videoinput", label: "", deviceId: "unlabelled" },
-    {
-      kind: "videoinput",
-      label: "Logitech BRIO (046d:085e)",
-      deviceId: "brio",
-    },
-    { kind: "videoinput", label: "FaceTime HD Camera", deviceId: "facetime" },
-  ];
-
-  it("finner kameraet på etiketten, ikke på likhet", () => {
-    expect(matchCamera(devices, "Logitech BRIO")).toBe("brio");
-  });
-
-  it("ser bare på videoinput", () => {
-    // Mikrofonen bærer samme etikett; en `find` uten kind-vakten hadde festet
-    // previewen til en lydenhet.
-    expect(matchCamera(devices, "FaceTime HD Camera")).toBe("facetime");
-  });
-
-  it("gir null når ingenting treffer, uten navn, og på tomme etiketter", () => {
-    expect(matchCamera(devices, "Blackmagic")).toBeNull();
-    expect(matchCamera(devices, "   ")).toBeNull();
-    expect(
-      matchCamera([{ kind: "videoinput", label: "", deviceId: "x" }], "x"),
-    ).toBeNull();
-  });
-});
-
-describe("feedBadge", () => {
-  it("sier hva kameraet faktisk leverte", () => {
-    expect(feedBadge(1920, 1080, 30)).toBe("1920×1080 · 30 fps");
-    expect(feedBadge(1280, 720, 29.97)).toBe("1280×720 · 30 fps");
-  });
-
-  it("utelater bildefrekvensen når den ikke er kjent", () => {
-    expect(feedBadge(1920, 1080, null)).toBe("1920×1080");
-    expect(feedBadge(1920, 1080, 0)).toBe("1920×1080");
-  });
-
-  it("sier ingenting heller enn «0×0»", () => {
-    expect(feedBadge(0, 0, 30)).toBeNull();
-    expect(feedBadge(1920, 0, 30)).toBeNull();
+      classifyStartError(
+        "camera_open_failed: camera access is not allowed (Denied)",
+      ),
+    ).toBe("denied");
+    expect(classifyStartError("camera_open_failed: no camera named 'X'")).toBe(
+      "other",
+    );
+    expect(classifyStartError("camera_open_timeout")).toBe("other");
+    expect(classifyStartError("already_recording")).toBe("other");
+    expect(classifyStartError("")).toBe("other");
   });
 });
