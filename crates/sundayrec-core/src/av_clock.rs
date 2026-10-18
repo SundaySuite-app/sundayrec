@@ -40,7 +40,10 @@
 //! [`CONFIRM_POINTS`] suspects in a row agree with each other, the jump is real:
 //! the fit restarts as a new **segment** seeded with them. A suspect followed by
 //! a pair back on the line was a single bad timestamp and is dropped
-//! ([`AudioClock::outliers`]). While suspects are pending the clock does not
+//! ([`AudioClock::outliers`]). Suspects that agree against a line of fewer
+//! pairs than [`CONFIRM_POINTS`] — the recording's very first pair was a bad
+//! timestamp — replace that line instead: no jump, the first pair is the
+//! outlier. While suspects are pending the clock does not
 //! advance ([`AudioClock::newest_sample`] stands still), so nothing downstream
 //! decides on a line that may be wrong.
 //!
@@ -270,13 +273,26 @@ impl AudioClock {
         if self.suspects.len() < CONFIRM_POINTS {
             return Observed::Suspect;
         }
-        // Confirmed: the host clock jumped. New segment from the suspects.
+        // The suspects agree. Against a line of fewer pairs than that — only
+        // ever the first segment, which starts from one pair — it is the line
+        // that was wrong: the recording began on a bad timestamp. Replace it
+        // and count its pairs as outliers; kept, it would own every instant
+        // before the audio (a camera that started first) with a wrong line.
+        let line_was_wrong = seg.points.len() < CONFIRM_POINTS;
         let mut pts = std::mem::take(&mut self.suspects).into_iter();
         let (s0, h0) = pts.next().expect("CONFIRM_POINTS > 0");
         let mut fresh = Segment::new(s0, h0, nominal);
         for (s, h) in pts {
             fresh.push(s, h, nominal);
         }
+        if line_was_wrong {
+            let bad = self.segments.pop_back().expect("seg is the last segment");
+            self.outliers += bad.points.len() as u64;
+            self.segments.push_back(fresh);
+            self.newest_host = Some(host_ns);
+            return Observed::Accepted;
+        }
+        // Confirmed: the host clock jumped. New segment from the suspects.
         self.segments.push_back(fresh);
         while self.segments.len() > MAX_SEGMENTS {
             self.segments.pop_front();
@@ -438,6 +454,33 @@ mod tests {
         // A frame captured 5 ms before the sleep still lands just before `next`.
         let old = c.sample_at(before_jump).unwrap();
         assert!((old - (next as f64 - 240.0)).abs() < 5.0, "{old}");
+    }
+
+    #[test]
+    fn a_bad_first_timestamp_is_an_outlier_not_a_jump() {
+        // Proptest regression `cc 564b96b0…`: the very first pair is 316 ms
+        // early. The three good pairs after it agree with each other, not
+        // with the one-pair line; the line was the outlier.
+        let mut c = AudioClock::new(RATE);
+        let host0 = 1_000_000_000_000u64;
+        let host = |s: u64| host0 + s * 1_000_000_000 / RATE as u64;
+        assert_eq!(c.observe(0, host(0) - 316_000_000), Observed::Accepted);
+        assert_eq!(c.observe(1024, host(1024)), Observed::Suspect);
+        assert_eq!(c.observe(2048, host(2048)), Observed::Suspect);
+        assert_eq!(c.observe(3072, host(3072)), Observed::Accepted);
+        assert_eq!(c.resets(), 0);
+        assert_eq!(c.outliers(), 1);
+        // A camera frame 0.3 s before the audio started lands 0.3 s before
+        // sample 0, not on the bad line (which would put it at +16 ms).
+        let pre = c.sample_at(host0 - 300_000_000).unwrap();
+        assert!((pre + 0.3 * RATE as f64).abs() < 1.0, "{pre}");
+        // And the clock goes on as normal: a real jump later is still one.
+        let next = feed(&mut c, 4096, host(4096), 10, 0.0);
+        let slept = 3_600_000_000_000u64;
+        for i in 0..CONFIRM_POINTS as u64 {
+            c.observe(next + i * 1024, host(next + i * 1024) + slept);
+        }
+        assert_eq!(c.resets(), 1);
     }
 
     #[test]
