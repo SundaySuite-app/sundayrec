@@ -2668,8 +2668,7 @@ pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
 pub async fn tale_said(input_path: &str) -> AppResult<EditorTaleSaid> {
     let info = load_recording(input_path).await.ok();
     let engine = ExportEngine::new();
-    let clean =
-        tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?;
+    let clean = tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?;
     Ok(tale_said_from(clean.as_ref()))
 }
 
