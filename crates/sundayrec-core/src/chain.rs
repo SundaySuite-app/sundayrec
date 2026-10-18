@@ -43,8 +43,8 @@
 //! filmcraft DO what the number says (about 11 dB at 12, about 16 dB at 20 on the
 //! same signal). The new chain will therefore sound cleaner than the old one,
 //! and part of the difference heard in B2b is that the old chain did not clean,
-//! not that the filters differ. Whether "Tale" keeps filmcraft's `denoise` or a
-//! corrected `afftdn` is B3a's decision, not this file's.
+//! not that the filters differ. B3a kept filmcraft's `denoise` and decided it
+//! (see "What B3a decided" below).
 //!
 //! ## What B2b measured, and set
 //!
@@ -86,11 +86,45 @@
 //!   passes untouched. This cannot be tuned away with the parameters the
 //!   effect has. It is why de-noise stays an opt-in stage (the mixer, the
 //!   "voice-noisy-room" preset) in B2b; B3a, which wants a mild de-noise
-//!   always on, has to deal with it (for example by gating on speech).
+//!   always on, has to deal with it (for example by gating on speech: it did,
+//!   see "What B3a decided").
 //!   Capped at [`DENOISE_MAX_DB`] = 12 dB for that reason: "voice-noisy-room"
 //!   asks for 20 and the held chord then came out 30 dB under the speech (the
 //!   gate and the de-reverb add to it), where the old chain left it alone. At 12
 //!   the floor still comes down about 11 dB (the old chain took 1.7).
+//!
+//! ## What B3a decided: «Tale» cleans by itself, and music is protected
+//!
+//! `Chain::speech_clean` builds the stages «Tale» (`speech-clear`) adds in front
+//! of the preset's own chain, from what the analysis in [`crate::tale`] found in
+//! the recording: `dehum` (hum), `click_remover` (crackle), `denoise` and
+//! `dereverb`. The two that eat held notes are wrapped in a `Stage::SpeechGated`.
+//! The decisions and the measurements, in one place:
+//!
+//! * **De-noiser: filmcraft's `denoise`, gated on speech, mild (9 dB).** Not a
+//!   targeted `afftdn` (B0c: no `tn=1`, measured `nf`, 13.5 dB of the floor and
+//!   the pulses untouched). It was measured on the floor only, never on a held
+//!   chord, and it is an ffmpeg filter: B2b's point is that the chain, in the
+//!   preview and in the export, runs in Rust and ffmpeg gets no audio filter
+//!   (`afftdn`'s fixed `nf` is also the thing B0c found fragile: -50 gave 5.2 dB
+//!   of -45, -40 ate the tail). So the choice is (a) in the brief: gate it.
+//! * **The gate** ([`crate::tale::SpeechGate`]) lets the effect's output through
+//!   only while the input is speech-like (its 10 ms level spans 9 dB or more
+//!   over the last 0.6 s, well over the measured floor) or sits at the measured
+//!   floor (the floor comes from the analysis as a fixed number, so a long note
+//!   cannot be mistaken for it). Both effects run on the whole signal; only the
+//!   mix is gated, with the dry path delayed by the effect's latency.
+//! * **Measured on a synthetic service** (speech bursts, a held four-note chord
+//!   for 12 s at -26 dBFS, -55 dBFS room tone, speech again; 48 kHz): the chord
+//!   comes through `Chain::speech_clean` at **+0.00 dB**; the same `denoise` at
+//!   9 dB without the gate takes it down **9.00 dB**; the floor in a 1.4 s pause
+//!   between phrases falls **8.8 dB**. The de-reverb at 70 %, rt60 0.4 s: see
+//!   `docs/LYDMOTOR.md` «Gjort (B3a)». The tests
+//!   `a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it` and
+//!   `the_dereverb_leaves_the_same_chord_alone_too` hold the numbers.
+//! * **Known limit.** A signal whose level moves like speech (drums, a strummed
+//!   guitar) opens the gate, and a pad held under it meets the de-noiser at up
+//!   to 9 dB. «Tale og musikk» (`music-speech`) does not use this at all.
 //!
 //! The two compressors of "speech-punchy" and the like are translated one by
 //! one, in order, exactly as the filter string lists them.
@@ -100,6 +134,7 @@
 //! The loudness target is not part of the chain (it is B1's meter and gain). The
 //! chain shapes tone and dynamics; the delivery loudness is set after it.
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, Read};
 
@@ -110,6 +145,7 @@ use crate::processing::{
     finite_or, ChannelRepair, VocalChain, COMP_MAX_MAKEUP_DB, COMP_MIN_THRESHOLD_DB,
     GATE_MAX_THRESHOLD_DB, LIMITER_MIN_CEILING_DB,
 };
+use crate::tale::{Mains, SpeechClean, SpeechGate, DENOISE_TALE_DB};
 
 /// The DSP crate, re-exported so a shell that builds a chain can reach the
 /// meter and the limiter without a dependency of its own.
@@ -165,6 +201,11 @@ pub enum Stage {
     /// Left channel to both outputs. On mono input this upmixes to stereo
     /// (what `pan=stereo|c0=c0|c1=c0` does); on stereo it is `fill_right`.
     DuplicateLeft,
+    /// B3a: an `Fx` stage that only counts where the signal is speech-like or
+    /// down at the measured floor (`floor_db`, dBFS). The effect runs on the
+    /// whole signal; its output is mixed in by [`SpeechGate`]. Used for the
+    /// de-noise and de-reverb of «Tale», which otherwise eat held notes.
+    SpeechGated { inner: Box<Stage>, floor_db: f32 },
 }
 
 impl Stage {
@@ -181,6 +222,7 @@ impl Stage {
             Stage::Fx { id, .. } => id,
             Stage::MonoMix => "mono_mix",
             Stage::DuplicateLeft => "duplicate_left",
+            Stage::SpeechGated { inner, .. } => inner.id(),
         }
     }
 
@@ -188,6 +230,7 @@ impl Stage {
     pub fn param(&self, key: &str) -> Option<f32> {
         match self {
             Stage::Fx { params, .. } => params.iter().find(|(k, _)| k == key).map(|(_, v)| *v),
+            Stage::SpeechGated { inner, .. } => inner.param(key),
             _ => None,
         }
     }
@@ -372,6 +415,46 @@ impl Chain {
         Chain { stages }
     }
 
+    /// B3a: the stages «Tale» adds in front of the `speech-clear` chain for one
+    /// recording, as decided by the analysis ([`crate::tale`]): hum removal,
+    /// click removal, then the two stages that would eat held notes, wrapped in
+    /// the speech gate. Empty when there is nothing to do.
+    pub fn speech_clean(c: &SpeechClean) -> Chain {
+        let mut stages = Vec::new();
+        if let Some(m) = c.hum {
+            let idx = if m == Mains::Hz60 { 1.0 } else { 0.0 };
+            stages.push(Stage::fx(
+                "dehum",
+                &[
+                    ("frequency", idx),
+                    ("harmonics", 4.0),
+                    ("q", 30.0),
+                    ("amount", 100.0),
+                ],
+            ));
+        }
+        if c.declick {
+            stages.push(Stage::fx("click_remover", &[]));
+        }
+        let gated = |inner: Stage| Stage::SpeechGated {
+            inner: Box::new(inner),
+            floor_db: c.floor_db,
+        };
+        if c.denoise {
+            stages.push(gated(Stage::fx(
+                "denoise",
+                &[("reduction", DENOISE_TALE_DB as f32)],
+            )));
+        }
+        if let Some(amount) = c.dereverb {
+            stages.push(gated(Stage::fx(
+                "dereverb",
+                &[("amount", amount), ("rt60", DEREVERB_RT60_S)],
+            )));
+        }
+        Chain { stages }
+    }
+
     /// The chain a mastering preset's `filters` string describes (the part
     /// before the level is set). The strings are the ones in
     /// [`crate::mastering::master_presets`]; this reads them, it does not
@@ -434,6 +517,18 @@ impl Chain {
                     } else {
                         nodes.push(Node::Fx(make_fx("fill_right", &[], sample_rate, ch)?));
                     }
+                }
+                Stage::SpeechGated { inner, floor_db } => {
+                    let Stage::Fx { id, params } = inner.as_ref() else {
+                        return Err(ChainError::UnknownEffect("speech_gated"));
+                    };
+                    let fx = make_fx(id, params, sample_rate, ch)?;
+                    latency += fx.latency();
+                    nodes.push(Node::Gated(Box::new(GatedFx::new(
+                        fx,
+                        SpeechGate::new(sample_rate, *floor_db),
+                        ch,
+                    ))));
                 }
                 Stage::Fx { id, params } => {
                     // The channel-repair fx read a second channel; ffmpeg drops
@@ -551,8 +646,70 @@ fn make_fx(
 
 enum Node {
     Fx(Box<dyn AudioEffect>),
+    Gated(Box<GatedFx>),
     MonoMix,
     UpmixMono,
+}
+
+/// An effect whose output is mixed with its own (delayed) input by a
+/// [`SpeechGate`]. The effect always sees the whole signal, so its statistics
+/// are never interrupted; the gate only decides how much of the result is heard.
+struct GatedFx {
+    fx: Box<dyn AudioEffect>,
+    gate: SpeechGate,
+    /// The input, delayed by the effect's latency, per channel.
+    dry: Vec<VecDeque<f32>>,
+    wet: Vec<f32>,
+    mono: Vec<f32>,
+}
+
+impl GatedFx {
+    fn new(fx: Box<dyn AudioEffect>, gate: SpeechGate, channels: usize) -> Self {
+        let latency = fx.latency();
+        Self {
+            fx,
+            gate,
+            dry: (0..channels)
+                .map(|_| std::iter::repeat_n(0.0, latency).collect())
+                .collect(),
+            wet: Vec::new(),
+            mono: Vec::new(),
+        }
+    }
+
+    fn process(&mut self, block: &mut [Vec<f32>]) {
+        let n = block.first().map_or(0, Vec::len);
+        if n == 0 {
+            return;
+        }
+        self.mono.clear();
+        self.mono.extend(
+            (0..n).map(|i| block.iter().map(|c| c[i]).sum::<f32>() / block.len().max(1) as f32),
+        );
+        self.wet.resize(n, 0.0);
+        self.gate.process(&self.mono, &mut self.wet);
+        // Dry, delayed to line up with what the effect hands back.
+        let mut delayed: Vec<Vec<f32>> = Vec::with_capacity(block.len());
+        let last = self.dry.len() - 1;
+        for (c, ch) in block.iter().enumerate() {
+            let q = &mut self.dry[c.min(last)];
+            let mut d = Vec::with_capacity(n);
+            for v in ch {
+                q.push_back(*v);
+                d.push(q.pop_front().unwrap_or(0.0));
+            }
+            delayed.push(d);
+        }
+        {
+            let mut refs: Vec<&mut [f32]> = block.iter_mut().map(|c| c.as_mut_slice()).collect();
+            self.fx.process(&mut refs);
+        }
+        for (ch, d) in block.iter_mut().zip(&delayed) {
+            for ((o, dry), g) in ch.iter_mut().zip(d).zip(&self.wet) {
+                *o = dry + (*o - dry) * g;
+            }
+        }
+    }
 }
 
 /// A chain instantiated for one sample rate and channel count.
@@ -590,6 +747,7 @@ impl BuiltChain {
                         block.iter_mut().map(|c| c.as_mut_slice()).collect();
                     fx.process(&mut refs);
                 }
+                Node::Gated(g) => g.process(block),
                 Node::MonoMix => {
                     if block.len() >= 2 {
                         let (a, b) = block.split_at_mut(1);
@@ -788,6 +946,7 @@ mod tests {
     use crate::processing::{
         vocal_chain_presets, DenoiseStage, EqBand, HighpassStage, LimiterStage,
     };
+    use crate::tale::{Mains, SpeechClean};
 
     const SR: f32 = 48_000.0;
 
@@ -1208,6 +1367,79 @@ mod tests {
             worst < 1e-4,
             "reader differs from process_offline by {worst}"
         );
+    }
+
+    #[test]
+    fn a_gated_stage_is_time_aligned_with_the_plain_one_while_the_gate_is_open() {
+        // The gate forms no opinion in the first 0.2 s and stays open, so the
+        // gated stage must hand back exactly what the plain stage does: the dry
+        // path it mixes against is delayed by the effect's latency, or it would
+        // not.
+        let params = vec![("reduction".to_string(), 9.0f32)];
+        let plain = Chain::from_stages(vec![Stage::Fx {
+            id: "denoise",
+            params: params.clone(),
+        }]);
+        let gated = Chain::from_stages(vec![Stage::SpeechGated {
+            inner: Box::new(Stage::Fx {
+                id: "denoise",
+                params,
+            }),
+            floor_db: -60.0,
+        }]);
+        let x = noise(0.15, -30.0, 3);
+        let a = plain
+            .build(SR, 1)
+            .unwrap()
+            .process_offline(std::slice::from_ref(&x));
+        let b = gated.build(SR, 1).unwrap();
+        assert!(b.latency() > 0);
+        let b = { b }.process_offline(&[x]);
+        let worst = a[0]
+            .iter()
+            .zip(&b[0])
+            .map(|(p, q)| (p - q).abs())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-5, "{worst}");
+    }
+
+    #[test]
+    fn a_gated_chain_read_in_awkward_slices_equals_the_offline_run() {
+        let c = Chain::speech_clean(&SpeechClean {
+            hum: Some(Mains::Hz50),
+            denoise: true,
+            dereverb: Some(50.0),
+            declick: false,
+            floor_db: -60.0,
+        });
+        let l = noise(2.3, -30.0, 5);
+        let r = noise(2.3, -33.0, 8);
+        let want = c
+            .build(SR, 2)
+            .unwrap()
+            .process_offline(&[l.clone(), r.clone()]);
+        let built = c.build(SR, 2).unwrap();
+        let bytes = interleave(&[l.clone(), r]);
+        let mut rd = ChainReader::new(bytes.as_slice(), built);
+        let mut got = Vec::new();
+        let mut buf = [0u8; 3001 * 4];
+        loop {
+            let n = rd.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            got.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(got.len(), l.len() * 8);
+        let want_bytes = interleave(&want);
+        let worst = got
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(want_bytes.as_chunks::<4>().0)
+            .map(|(a, b)| (f32::from_le_bytes(*a) - f32::from_le_bytes(*b)).abs())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-4, "{worst}");
     }
 
     #[test]

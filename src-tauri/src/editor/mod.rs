@@ -2666,8 +2666,13 @@ pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<E
         info.as_ref().and_then(|i| i.channels),
     );
     // ffmpeg decodes (no `-af`); the preset's chain runs in Rust, the same one the export runs.
-    let chain = sundayrec_core::chain::Chain::from_master_preset(&preset)
-        .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?;
+    let engine = ExportEngine::new();
+    let clean = if preset.id == TALE_PRESET_ID {
+        tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?
+    } else {
+        None
+    };
+    let chain = build_pre_chain(None, None, Some(&preset), clean.as_ref())?;
     let built = chain
         .build(fmt.sample_rate as f32, fmt.channels)
         .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
@@ -2685,7 +2690,6 @@ pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<E
     };
     let duration = duration_hint(input_path).await.unwrap_or(0.0);
     // Not an export: a private engine nobody can cancel; the stall budget still applies.
-    let engine = ExportEngine::new();
     let (m, _frames) = pcm::run_chain(
         &engine,
         &args,
@@ -2760,8 +2764,12 @@ pub async fn master_preview(
 
     // 1. The window through the preset's chain, to PCM in memory (at most 60 s): ffmpeg decodes
     //    (no `-af`), the chain runs in Rust.
-    let chain = sundayrec_core::chain::Chain::from_master_preset(&preset)
-        .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?;
+    let clean = if preset.id == TALE_PRESET_ID {
+        tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?
+    } else {
+        None
+    };
+    let chain = build_pre_chain(None, None, Some(&preset), clean.as_ref())?;
     let built = chain
         .build(fmt.sample_rate as f32, fmt.channels)
         .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
@@ -2828,6 +2836,110 @@ pub async fn master_preview(
     })
 }
 
+/// The mastering preset behind the «Tale» profile (`app/editor/sound-profiles.ts`,
+/// `SPEECH_MASTER_PRESET`). B3a: it is the one that cleans by itself.
+#[cfg(feature = "editor")]
+const TALE_PRESET_ID: &str = "speech-clear";
+
+/// What the analysis decided, kept per file so the preview, the loudness figure and the export
+/// of the same recording read the file once, not three times. Keyed on path, size and mtime, so
+/// an edited or replaced file is read again.
+#[cfg(feature = "editor")]
+type TaleKey = (String, u64, u128);
+
+#[cfg(feature = "editor")]
+static TALE_CACHE: std::sync::Mutex<Vec<(TaleKey, sundayrec_core::tale::SpeechClean)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(feature = "editor")]
+fn tale_cache_key(path: &str) -> Option<TaleKey> {
+    let m = std::fs::metadata(path).ok()?;
+    let mtime = m
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    Some((path.to_string(), m.len(), mtime))
+}
+
+/// B3a: read the recording once at 16 kHz and decide what «Tale» takes along
+/// ([`sundayrec_core::tale`]). `None` when the file cannot be analysed: the profile then
+/// runs as before, and the export is never lost to an analysis that failed. A cancel or a
+/// stall still ends the export.
+#[cfg(feature = "editor")]
+async fn tale_clean_for(
+    engine: &ExportEngine,
+    input_path: &str,
+    channels: Option<u32>,
+) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
+    use sundayrec_core::pcm_stream::{output_args, PcmFormat};
+    use sundayrec_core::tale::{analyze_stream, ANALYSIS_RATE};
+
+    let key = tale_cache_key(input_path);
+    if let Some(k) = &key {
+        if let Ok(cache) = TALE_CACHE.lock() {
+            if let Some((_, c)) = cache.iter().find(|(ck, _)| ck == k) {
+                return Ok(Some(c.clone()));
+            }
+        }
+    }
+    let fmt = PcmFormat {
+        sample_rate: ANALYSIS_RATE,
+        channels: if channels == Some(1) { 1 } else { 2 },
+    };
+    let mut args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-i".into(),
+        input_path.to_string(),
+        "-vn".into(),
+    ];
+    args.extend(output_args(fmt));
+    let res = pcm::run_chain(
+        engine,
+        &args,
+        0,
+        export_stall_ms(),
+        (0.0, 0.0),
+        EXPORT_PHASE_MEASURING,
+        &|_, _| {},
+        move |r, done| {
+            analyze_stream(r, fmt, |n| {
+                done.store(n, std::sync::atomic::Ordering::Relaxed)
+            })
+        },
+    )
+    .await;
+    let analysis = match res {
+        Ok(a) => a,
+        Err(AppError::Recording(code)) if code == "cancelled" || code == "timeout" => {
+            return Err(AppError::Recording(code));
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "tale analysis failed — the profile runs without it");
+            return Ok(None);
+        }
+    };
+    let clean = analysis.decide();
+    tracing::info!(
+        floor_db = analysis.noise_floor_db,
+        speech_db = analysis.speech_db,
+        rt60_s = ?analysis.rt60_s,
+        clicks_per_min = analysis.clicks_per_min,
+        did = ?clean.said(),
+        "tale analysis"
+    );
+    if let (Some(k), Ok(mut cache)) = (key, TALE_CACHE.lock()) {
+        cache.retain(|(ck, _)| ck != &k);
+        if cache.len() >= 4 {
+            cache.remove(0);
+        }
+        cache.push((k, clean.clone()));
+    }
+    Ok(Some(clean))
+}
+
 /// Build the pre-level audio chain, in order: normalize gain, THEN the vocal
 /// chain, THEN the mastering preset's own chain (B2b: a Rust [`Chain`], run by
 /// `sundayrec_core::chain::ChainReader` over the decoded PCM — ffmpeg gets no `-af`).
@@ -2846,6 +2958,7 @@ fn build_pre_chain(
     chain: Option<sundayrec_core::processing::VocalChain>,
     gain_db: Option<f64>,
     preset: Option<&sundayrec_core::mastering::MasterPreset>,
+    clean: Option<&sundayrec_core::tale::SpeechClean>,
 ) -> AppResult<sundayrec_core::chain::Chain> {
     use sundayrec_core::chain::Chain;
     let gain = if preset.is_none() { gain_db } else { None };
@@ -2857,7 +2970,10 @@ fn build_pre_chain(
             .map_err(|e| AppError::Validation(format!("unknown_preset_chain: {e}")))?,
         None => Chain::default(),
     };
-    Ok(vocal.then(mastering).with_leading_gain(gain))
+    // B3a: what the analysis found wrong with this recording goes between the channel repair
+    // and the preset's own chain.
+    let clean = clean.map(Chain::speech_clean).unwrap_or_default();
+    Ok(vocal.then(clean).then(mastering).with_leading_gain(gain))
 }
 
 /// Render the cut-plan + optional mastering gain to the requested format. The
@@ -3144,7 +3260,23 @@ where
             }
         }
     }
-    let pre_chain = build_pre_chain(chain, req.gain_db, preset.as_ref())?;
+    // B3a: «Tale» (the `speech-clear` preset on its own, no mixer chain) cleans what the
+    // analysis finds: hum, noise, a long room, clicks.
+    let tale = preset.as_ref().is_some_and(|p| p.id == TALE_PRESET_ID)
+        && req.processing.is_none()
+        && req.vocal_chain_preset.is_none();
+    let clean = if tale {
+        on_progress(0.0, EXPORT_PHASE_MEASURING);
+        tale_clean_for(
+            engine,
+            &inputs.source,
+            probed.as_ref().and_then(|i| i.channels),
+        )
+        .await?
+    } else {
+        None
+    };
+    let pre_chain = build_pre_chain(chain, req.gain_db, preset.as_ref(), clean.as_ref())?;
 
     // The stall budget for EACH ffmpeg pass: no progress for this long = wedged.
     // Deliberately NOT scaled by the media length — see `export_stall_ms`.
@@ -5217,7 +5349,7 @@ mod tests {
     fn build_pre_chain_puts_gain_before_the_chains_limiter() {
         let mut chain = sundayrec_core::processing::VocalChain::default();
         chain.limiter.enabled = true;
-        let c = build_pre_chain(Some(chain), Some(6.0), None).unwrap();
+        let c = build_pre_chain(Some(chain), Some(6.0), None, None).unwrap();
         let ids = stage_ids(&c);
         let gain_at = ids.iter().position(|f| f == "amplify").expect("gain stage");
         let limiter_at = ids.iter().position(|f| f == "limiter").expect("limiter");
@@ -5232,7 +5364,7 @@ mod tests {
     #[test]
     fn build_pre_chain_skips_gain_when_a_preset_is_active() {
         let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-        let c = build_pre_chain(None, Some(6.0), Some(&preset)).unwrap();
+        let c = build_pre_chain(None, Some(6.0), Some(&preset), None).unwrap();
         assert_eq!(
             c,
             sundayrec_core::chain::Chain::from_master_preset(&preset).unwrap(),
@@ -5243,11 +5375,13 @@ mod tests {
     #[cfg(feature = "editor")]
     #[test]
     fn build_pre_chain_skips_zero_and_nonfinite_gain() {
-        assert!(build_pre_chain(None, Some(0.0), None).unwrap().is_empty());
-        assert!(build_pre_chain(None, Some(f64::NAN), None)
+        assert!(build_pre_chain(None, Some(0.0), None, None)
             .unwrap()
             .is_empty());
-        assert!(build_pre_chain(None, None, None).unwrap().is_empty());
+        assert!(build_pre_chain(None, Some(f64::NAN), None, None)
+            .unwrap()
+            .is_empty());
+        assert!(build_pre_chain(None, None, None, None).unwrap().is_empty());
     }
 
     #[cfg(feature = "editor")]
@@ -5259,13 +5393,54 @@ mod tests {
         let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
         let vocal = Chain::from_vocal_chain(&chain);
         // No preset: gain leads, chain follows.
-        let no_preset = build_pre_chain(Some(chain.clone()), Some(3.0), None).unwrap();
+        let no_preset = build_pre_chain(Some(chain.clone()), Some(3.0), None, None).unwrap();
         assert_eq!(no_preset.stages()[0].id(), "amplify");
         assert_eq!(&no_preset.stages()[1..], vocal.stages());
         // With a preset: gain is skipped, chain still runs, preset trails.
-        let with_preset = build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset)).unwrap();
+        let with_preset =
+            build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset), None).unwrap();
         let want = vocal.then(Chain::from_master_preset(&preset).unwrap());
         assert_eq!(with_preset, want);
+    }
+
+    /// B3a: what the analysis found goes between the channel repair and the preset's own chain,
+    /// and nothing is added when it found nothing.
+    #[cfg(feature = "editor")]
+    #[test]
+    fn build_pre_chain_puts_the_tale_cleaning_between_the_repair_and_the_preset() {
+        use sundayrec_core::chain::Chain;
+        use sundayrec_core::tale::{Mains, SpeechClean};
+        let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
+        let mut repair = sundayrec_core::processing::VocalChain::default();
+        repair.highpass.enabled = false;
+        repair.compressor.enabled = false;
+        repair.channel_repair = sundayrec_core::processing::ChannelRepair::SwapLr;
+        let clean = SpeechClean {
+            hum: Some(Mains::Hz50),
+            denoise: true,
+            dereverb: None,
+            declick: false,
+            floor_db: -60.0,
+        };
+        let c = build_pre_chain(Some(repair.clone()), None, Some(&preset), Some(&clean)).unwrap();
+        let ids: Vec<&str> = c.stages().iter().map(|s| s.id()).collect();
+        assert_eq!(&ids[..3], ["swap_channels", "dehum", "denoise"]);
+        assert_eq!(
+            &c.stages()[3..],
+            Chain::from_master_preset(&preset).unwrap().stages()
+        );
+        // Nothing found: the chain is exactly what it was.
+        let none = SpeechClean {
+            hum: None,
+            denoise: false,
+            dereverb: None,
+            declick: false,
+            floor_db: -60.0,
+        };
+        assert_eq!(
+            build_pre_chain(Some(repair.clone()), None, Some(&preset), Some(&none)).unwrap(),
+            build_pre_chain(Some(repair), None, Some(&preset), None).unwrap()
+        );
     }
 
     /// B2b: the mixer and the presets are ONE chain. The mixer's request type converts to the
@@ -5280,7 +5455,7 @@ mod tests {
             .unwrap()
             .chain;
         let from_mixer = EditorProcessing::default().to_core();
-        let export_chain = build_pre_chain(Some(from_mixer.clone()), None, None).unwrap();
+        let export_chain = build_pre_chain(Some(from_mixer.clone()), None, None, None).unwrap();
         assert_eq!(export_chain, Chain::from_vocal_chain(&light));
 
         let mixer = EditorProcessing {
@@ -5291,7 +5466,7 @@ mod tests {
             limiter_enabled: true,
             ..EditorProcessing::default()
         };
-        let c = build_pre_chain(Some(mixer.to_core()), None, None).unwrap();
+        let c = build_pre_chain(Some(mixer.to_core()), None, None, None).unwrap();
         assert_eq!(
             stage_ids(&c),
             [
@@ -7028,6 +7203,93 @@ mod tests {
                  {:.2} LUFS / {:.2} dBTP (asked {:.2}); limited: {}",
                 done.input_i, done.input_tp, preset.target_lufs, loudness.peak_limited
             );
+        }
+
+        /// B3a: the analysis reads a real file through the real ffmpeg: a 50 Hz hum under
+        /// speech-like bursts is found, a clean take of the same bursts is left alone, and the
+        /// second read of the same file comes from the cache.
+        #[test]
+        fn tale_finds_hum_in_a_real_file_and_leaves_a_clean_one_alone_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
+            else {
+                return;
+            };
+            let sr = 48_000usize;
+            let secs = 24usize;
+            let mut seed = 0x2545f4914f6cdd1du64;
+            let mut clean = vec![0.0f32; sr * secs];
+            let mut lp = 0.0f32;
+            for (i, v) in clean.iter_mut().enumerate() {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let n = (seed >> 11) as f32 / (1u64 << 53) as f32 * 2.0 - 1.0;
+                lp = 0.6 * lp + 0.4 * n;
+                // Syllables: 0.25 s on, 0.15 s off, a longer pause every fourth.
+                let t = i as f32 / sr as f32;
+                let phase = (t % 1.9).min(1.9);
+                let on =
+                    phase < 0.25 || (0.4..0.65).contains(&phase) || (0.8..1.05).contains(&phase);
+                let level = if on { 0.25 } else { 0.0 };
+                *v = lp * level + n * 0.0006; // room tone ~ -64 dBFS
+            }
+            let mut hummed = clean.clone();
+            for (i, v) in hummed.iter_mut().enumerate() {
+                let t = i as f64 / sr as f64;
+                for h in 1..=2 {
+                    *v += (0.02 / f64::from(h)
+                        * (2.0 * std::f64::consts::PI * 50.0 * f64::from(h) * t).sin())
+                        as f32;
+                }
+            }
+            let dir = tempfile::tempdir().unwrap();
+            let write = |name: &str, x: &[f32]| {
+                let mut bytes = Vec::new();
+                sundayrec_core::wav::encode_s16le(x, &mut bytes);
+                let mut f = Vec::from(sundayrec_core::wav::header(
+                    sundayrec_core::wav::WavSpec {
+                        channels: 1,
+                        sample_rate: sr as u32,
+                    },
+                    bytes.len() as u32,
+                ));
+                f.extend_from_slice(&bytes);
+                let p = dir.path().join(name);
+                std::fs::write(&p, f).unwrap();
+                p.to_string_lossy().into_owned()
+            };
+            let hum_path = write("hum.wav", &hummed);
+            let clean_path = write("clean.wav", &clean);
+
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let engine = ExportEngine::new();
+            let (h, c, again) = rt.block_on(async {
+                let h = tale_clean_for(&engine, &hum_path, Some(1)).await;
+                let c = tale_clean_for(&engine, &clean_path, Some(1)).await;
+                let again = tale_clean_for(&engine, &hum_path, Some(1)).await;
+                (h, c, again)
+            });
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            let h = h.unwrap().expect("analysed");
+            let c = c.unwrap().expect("analysed");
+            assert_eq!(h.hum, Some(sundayrec_core::tale::Mains::Hz50), "{h:?}");
+            assert_eq!(c.hum, None, "{c:?}");
+            assert!(
+                c.denoise,
+                "a -64 dBFS floor under -20 dBFS speech is worth cleaning: {c:?}"
+            );
+            assert!(!c.declick && c.dereverb.is_none(), "{c:?}");
+            assert_eq!(again.unwrap(), Some(h));
         }
 
         /// B1b: `mastering_analyze` reads the same meter the export levels with: its
