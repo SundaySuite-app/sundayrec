@@ -252,11 +252,18 @@ jpeg-encoder = "0.7"
 # `Win32_System_Registry`: `RegGetValueW` for `notify::permission` — whether
 # Windows shows SundayRec's notifications is two DWORDs under HKCU.
 #
+# `Win32_Devices_DeviceAndDriverInstallation` + `Win32_Media_KernelStreaming`
+# (C5a): `CM_Register_Notification` on the `KSCATEGORY_VIDEO_CAMERA` device
+# interface class, the camera half of `audio::device_watch`. Features of the
+# `windows-sys` already in the tree — no new crate.
+#
 # `Win32_System_Com`: `CoInitializeEx` for `audio::com_anchor`, the thread that
 # keeps cpal's process-wide WASAPI device enumerator in a COM apartment that
 # never ends (see that module for the use-after-free it prevents).
 windows-sys = { version = "0.61", features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Foundation",
+    "Win32_Media_KernelStreaming",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
@@ -329,7 +336,15 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSDictionary",
     "NSError",
     "NSValue",
+    # C5a camera reconnect (`audio::device_watch`): a block observer on the
+    # default notification center for AVCaptureDeviceWasConnected/Disconnected.
+    "NSNotification",
+    "NSOperation",
+    "block2",
 ] }
+# The block type the notification observer takes (`RcBlock::new`). Already in
+# Cargo.lock through objc2-foundation/tauri; declared so this crate can name it.
+block2 = { version = "0.6", default-features = false, features = ["std"] }
 dispatch2 = { version = "0.3", default-features = false, features = ["std"] }
 # Raw Objective-C messaging for the AVFoundation camera/mic authorization query
 # (`media::permissions` looks the class up at runtime and `msg_send!`s

@@ -19,6 +19,14 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
   gudstjenesten (eller hadde en død kanal) kunne få støyen til å hoppe opp og ned
   i hver lang pause. Et opptak med sterk brum får nå også støyfjerning.
 
+- **Faller kameraet ut under opptaket, kommer bildet tilbake av seg selv.**
+  Trekkes USB-kabelen til kameraet, eller en iPhone som brukes som kamera går
+  utenfor rekkevidde, fortsetter opptaket som før og lyden merker ingenting.
+  Bildet står stille i to sekunder og blir så svart. Når akkurat det samme
+  kameraet er tilbake, tas det i bruk igjen etter noen sekunder, uten at du
+  trenger å gjøre noe og uten at opptaket deles. Et annet kamera som settes i
+  samme port blir ikke tatt for det som falt ut.
+
 - **Lyd-steget sier hva som ble gjort.** Står profilen på «Tale», viser Rediger →
   Lyd nå i korte setninger hva appen fant og tok bort i akkurat dette opptaket:
   «Vi fjernet brum fra strømnettet», «Vi dempet bakgrunnsstøyen», «Vi dempet

@@ -12,6 +12,7 @@
 //!   - [`audio`]        — pure VU metering mat: block peak/RMS, dBFS, lock-free `PeakMeters`
 //!   - [`ffmpeg`]       — pure ffmpeg filter-string builders (drift, silencedetect)
 //!   - [`camera_format`] — native camera capture's pure decisions (C1a): which frame duration to pin for the chosen fps, a USB camera's vendor/product, host ticks → ns, when to fall back to compatibility mode
+//!   - [`camera_reconnect`] — when a camera has dropped out and when to open it again (C5a): gone vs. stalled, the SAME stable id only, a back-off without an end
 //!   - [`capture`]      — the recording's constants, the audio-encode/codec seam, the channel maps, the video-encoder argv and the camera-capability summary (the ffmpeg capture builders left in C3b)
 //!   - [`errors`]       — ffmpeg-stderr → stable error-code classification
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
@@ -54,6 +55,7 @@ pub mod audio;
 pub mod audio_analysis;
 pub mod av_clock;
 pub mod camera_format;
+pub mod camera_reconnect;
 pub mod capture;
 pub mod chain;
 pub mod church_calendar;

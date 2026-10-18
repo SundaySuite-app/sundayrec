@@ -438,6 +438,63 @@ i `commands/camera_preview.rs`). Det C4b og C5 må vite:
 - **Ferdig når:** kabeltrekket i C3 gir et gjenopprettet bilde uten at
   opptaket stopper, på begge plattformer.
 
+**Levert (C5a).** Kameraøkta overlever kameraet. Lyden er ikke med i noe av
+dette: den skrives av en annen tråd fra en annen ring. Det C5b må vite:
+
+- **Køen er det som lever, ikke OS-økta.** `camera::start_resilient` (som
+  `open_camera` bruker) setter en tilsynstråd (`camera/reconnect.rs`) ved siden
+  av `Capture`. Faller kameraet ut, lukker tilsynet den døde OS-økta, og når
+  **samme stabile ID** står i kameralista igjen, åpnes en ny økt som skyver inn
+  i **samme `FrameQueue`**. Videosporet leser den samme køen, forhåndsvisningens
+  tapp sitter på den, og `video.frames_dropped` bygger på køens egne tellere —
+  ingen av dem merker annet enn et hull i kameraets tidsstempler, som
+  konformeren fyller (siste bilde i 2 s, så svart). `Capture::stats` summerer
+  tellerne til sesjonene som tok slutt. Økta, tappen og sporet bytter altså
+  ikke kilde; det er bare kilden bak køen som byttes.
+- **Beslutningene** er `sundayrec_core::camera_reconnect` (ren, 13 tester):
+  _borte_ (id-en er ute av lista og bildene har uteblitt i 0,5 s; en liste som
+  hikker mens bildene kommer, ignoreres) eller _stanset_ (id-en er i lista, men
+  ingen bilder på 3 s, 10 s for et første bilde). Ny åpning bare når SAMME id er
+  listet (eller lista ikke kan leses), med tilbakeslag 0 – 0,5 – 1 – 2 – 3 – 5 s
+  uten slutt (tre timer med lenger utfall er ikke et mål å gi opp på).
+- **Hvordan utfall oppdages.** Bildetellingen (`queue.stats().pushed`) er
+  beviset som alltid finnes. Kameralista leses når OS-et signaliserer en endring
+  (`audio::device_watch::camera_change_signal`) og ellers når bildene har
+  uteblitt i 1 s; mens kameraet er borte hvert sekund. Signalet sier aldri HVILKET
+  kamera — det er bare en grunn til å se tidligere.
+  Mac: `AVCaptureDeviceWasConnected/…WasDisconnectedNotification` på
+  standard-`NSNotificationCenter` (blokkobservatør, strengverdiene — ingen
+  eksterne symboler). Windows: `CM_Register_Notification` på
+  `KSCATEGORY_VIDEO_CAMERA` (ankomst og fjerning; callbacken teller bare opp).
+  Begge installeres én gang og fjernes aldri, så avregistrerings-vranglåsen fra
+  A4 kan ikke oppstå.
+- **Samme ID, ikke et nummer.** `open_camera` løser navnet til `CameraInfo::id`
+  én gang; tilsynet åpner bare den. Et annet kamera i samme port overtar ikke
+  (testet). Er formatet ikke lenger tilbudt, tas samme størrelse og pikselformat
+  på nærmeste bildefrekvens (`camera_reconnect::same_picture`); er også det borte,
+  blir kameraet stående borte (svart over feil bilde). Videosporets spec er
+  fastlagt av første bilde, og bilder med annen størrelse avvises.
+- **Helse til C5b.** `VideoSource::health()` / `Capture::health()` gir
+  `CaptureHealth { lost_for: Option<Duration>, outages }`: «Kameraet falt ut —
+  lyden tas fortsatt opp» og 60 s-varselet kan leses derfra (C5b kobler det til
+  `recording://progress`; ikke gjort her).
+- **Stopp.** `Capture::stop` setter et flagg og tar økta under samme lås som
+  tilsynet lagrer en nyåpnet med, så en Stopp midt i en åpning verken lekker
+  eller stopper to ganger. Tilsynet joines ikke; lukking av en død økt har 3 s
+  tidsgrense (en driver som henger på vei ut forlates).
+- **Bevis.** `camera::reconnect::tests` (8, syntetisk kamera som kommer og går:
+  samme kø, bare samme id, uten OS-signal, «listet men ikke klar», stanset,
+  format borte, Stopp midt i utfall) og
+  `camera::preview::tests::a_camera_that_drops_out_mid_recording_…` (ende til
+  ende: opptak fra den ene økta, kabeltrekk i 4 s, tilbake; sporet skriver nøyaktig
+  ett bilde per lydplass, svart etter 2 s, forhåndsvisningen ser den nye økta, 0
+  droppede, tellerne summerer). Ekte kamera: `real_camera_comes_back_on_the_same_id`
+  (`#[ignore]`, RIG-DAY (v7)); kabeltrekk Mac + Windows: (v8).
+- **Ikke prøvd:** noen ekte maskinvare (Claudes terminal har ikke kameratilgang),
+  Windows-oppførselen (kun bygg i CI), og om Continuity-kameraets `uniqueID` er
+  stabil mellom tilkoblinger — bestemmer om gjenkoblingen i det hele tatt finner
+  det igjen (v7 skriver ut ID-en før og etter). Vi kjenner ikke igjen på navn.
+
 ## Notert, ikke planlagt
 
 - **Helt native koding.** filmcrafts VideoToolbox- og NVENC-kodere (MIT/Apache)

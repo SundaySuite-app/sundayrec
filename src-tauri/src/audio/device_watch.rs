@@ -53,7 +53,9 @@
 //! registers an `IMMNotificationClient` the same way for default-device
 //! streams. Ours is our own, smaller code and does ONE thing: poke the same
 //! [`Notify`] the macOS half pokes. The camera half of a device watcher
-//! (`CM_Register_Notification`) belongs to C5a, not here.
+//! (C5a) is further down, under "Cameras": a separate signal for a separate
+//! consumer, so a camera plugged in never cuts an audio back-off short and a
+//! microphone never wakes the camera session.
 //!
 //! The two traps cpal documents, and how this module stays out of them:
 //!
@@ -83,6 +85,28 @@
 //! released on another thread, and COM can never be torn down underneath them.
 //! It is independent of cpal's cached enumerator: neither creates, uses nor
 //! releases the other's.
+//!
+//! ## Cameras (C5a)
+//!
+//! [`camera_change_signal`] is the same idea for the camera session's own
+//! reconnect (`camera::Capture`, docs/VIDEOMOTOR.md §C5): ONE process-wide
+//! listener that says "a camera appeared or disappeared", and nothing else. It
+//! never says WHICH — the camera session reads the device list and looks for its
+//! own stable id (`sundayrec_core::camera_reconnect`), so a signal is only ever a
+//! reason to look sooner.
+//!
+//! | platform | listener | status |
+//! |---|---|---|
+//! | macOS | `AVCaptureDeviceWasConnectedNotification` / `…WasDisconnectedNotification` on the default `NSNotificationCenter` | ⚠️ HARDWARE-UNVERIFIED — RIG-DAY (c5a) |
+//! | Windows | `CM_Register_Notification`, device-interface class `KSCATEGORY_VIDEO_CAMERA` (arrival and removal) | ⚠️ HARDWARE-UNVERIFIED — RIG-DAY (c5a-w) on the Windows box |
+//! | other | — | no-op (the session still sees a camera go by its frames stopping) |
+//!
+//! The signal is a generation counter with a condition variable
+//! ([`CameraChanges`]), not a tokio [`Notify`]: the camera session is a plain
+//! thread. The OS callbacks only bump the counter, taking a lock that is never
+//! held across anything else; they never call back into the OS. Like the audio
+//! listeners it is registered once and never removed — and so the Windows
+//! unregister-from-a-callback deadlock cannot arise: there is no unregister.
 //!
 //! The waiting half ([`wait_reconnect_backoff`]) is platform-independent and
 //! unit-tested under `tokio::time::pause()`; only the listener registration is
@@ -616,6 +640,185 @@ fn install_listener(_notify: &Arc<Notify>) {
     );
 }
 
+// ── Cameras (C5a) ────────────────────────────────────────────────────────────
+
+/// "A camera appeared or disappeared": a generation counter that OS callbacks
+/// bump and a camera session waits on. See the module header, "Cameras".
+///
+/// A counter rather than a flag so that a change that lands while the session
+/// is busy opening a camera is not lost: the session remembers the generation
+/// it last looked at and [`wait_change`](Self::wait_change) returns at once if
+/// it has moved on.
+#[derive(Default)]
+pub struct CameraChanges {
+    generation: std::sync::Mutex<u64>,
+    changed: std::sync::Condvar,
+}
+
+impl CameraChanges {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, u64> {
+        self.generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Say a camera came or went. Called from OS callback threads: a counter
+    /// bump and a wake, nothing else.
+    pub fn poke(&self) {
+        *self.lock() += 1;
+        self.changed.notify_all();
+    }
+
+    /// The current generation, to pass to [`wait_change`](Self::wait_change).
+    pub fn generation(&self) -> u64 {
+        *self.lock()
+    }
+
+    /// Wait until the generation differs from `seen`, or `timeout` passes.
+    /// Returns the generation now (equal to `seen` on a timeout).
+    pub fn wait_change(&self, seen: u64, timeout: Duration) -> u64 {
+        let guard = self.lock();
+        if *guard != seen {
+            return *guard;
+        }
+        let (guard, _) = self
+            .changed
+            .wait_timeout_while(guard, timeout, |g| *g == seen)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard
+    }
+}
+
+/// The process-wide camera-change signal, installing the OS listener on first
+/// use (once, never removed — see the module header).
+pub fn camera_change_signal() -> Arc<CameraChanges> {
+    static SIGNAL: std::sync::OnceLock<Arc<CameraChanges>> = std::sync::OnceLock::new();
+    Arc::clone(SIGNAL.get_or_init(|| {
+        let changes = Arc::new(CameraChanges::new());
+        install_camera_listener(&changes);
+        changes
+    }))
+}
+
+/// macOS: `AVCaptureDeviceWasConnected` / `…WasDisconnected` are posted by
+/// AVFoundation when a capture device (a USB camera, a Continuity camera)
+/// appears or vanishes. A block observer with no queue runs on the posting
+/// thread; it only calls [`CameraChanges::poke`].
+///
+/// The notification names are passed as their string values, as
+/// `camera::avfoundation` does for the newer device types: the constants are
+/// documented to be their own names, and a string needs no extern symbol.
+#[cfg(target_os = "macos")]
+fn install_camera_listener(changes: &Arc<CameraChanges>) {
+    use std::ptr::NonNull;
+
+    use block2::RcBlock;
+    use objc2_foundation::{ns_string, NSNotification, NSNotificationCenter};
+
+    let center = NSNotificationCenter::defaultCenter();
+    for name in [
+        ns_string!("AVCaptureDeviceWasConnectedNotification"),
+        ns_string!("AVCaptureDeviceWasDisconnectedNotification"),
+    ] {
+        let changes = Arc::clone(changes);
+        let block = RcBlock::new(move |_n: NonNull<NSNotification>| changes.poke());
+        // SAFETY: `name` is a valid notification name; no object filter and no
+        // operation queue (the block runs on the posting thread); the block is
+        // `Fn + 'static` and only touches an `Arc` of a `Sync` type, so it is
+        // safe to run on any thread.
+        let token = unsafe {
+            center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block)
+        };
+        // Never removed (see the module header): keep the observer token alive
+        // for the life of the process.
+        std::mem::forget(token);
+    }
+    tracing::info!("device_watch: AVFoundation camera connect/disconnect observers installed");
+}
+
+/// Windows: `CM_Register_Notification` on the video-camera device-interface
+/// class. The callback runs on a thread-pool thread owned by the configuration
+/// manager; it only pokes the counter. Never unregistered (see the module
+/// header), so there is no handle to close and nothing to deadlock.
+#[cfg(windows)]
+fn install_camera_listener(changes: &Arc<CameraChanges>) {
+    use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
+        CM_Register_Notification, CM_NOTIFY_FILTER, CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_0,
+        CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE, CR_SUCCESS, HCMNOTIFICATION,
+    };
+    use windows_sys::Win32::Media::KernelStreaming::KSCATEGORY_VIDEO_CAMERA;
+
+    // The `Arc` handed to the configuration manager is leaked ON PURPOSE: the
+    // registration is never removed, so the pointer must stay valid for the
+    // life of the process.
+    let context = Arc::into_raw(Arc::clone(changes)).cast::<core::ffi::c_void>();
+    let filter = CM_NOTIFY_FILTER {
+        cbSize: std::mem::size_of::<CM_NOTIFY_FILTER>() as u32,
+        Flags: 0,
+        FilterType: CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE,
+        Reserved: 0,
+        u: CM_NOTIFY_FILTER_0 {
+            DeviceInterface: CM_NOTIFY_FILTER_0_0 {
+                ClassGuid: KSCATEGORY_VIDEO_CAMERA,
+            },
+        },
+    };
+    let mut handle: HCMNOTIFICATION = std::ptr::null_mut();
+    // SAFETY: `filter` is a fully initialised `CM_NOTIFY_FILTER` that outlives
+    // the call (the API copies it); `context` is a leaked `Arc<CameraChanges>`
+    // pointer valid for the life of the process; `on_camera_interface_change`
+    // matches `PCM_NOTIFY_CALLBACK` exactly; `handle` is a valid out-pointer.
+    let status = unsafe {
+        CM_Register_Notification(
+            &filter,
+            context,
+            Some(on_camera_interface_change),
+            &mut handle,
+        )
+    };
+    if status == CR_SUCCESS {
+        tracing::info!("device_watch: camera interface-notification listener installed");
+    } else {
+        tracing::warn!(
+            status,
+            "device_watch: could not register for camera arrival/removal — \
+             a dropped camera is still seen by its frames stopping"
+        );
+        // SAFETY: registration failed, so nothing kept the pointer; reclaim the
+        // leaked Arc.
+        unsafe { drop(Arc::from_raw(context.cast::<CameraChanges>())) };
+    }
+}
+
+/// The configuration manager's callback for camera interface arrival/removal.
+/// Does nothing but bump the counter; takes no other lock and calls nothing in
+/// the OS, so it cannot take part in a deadlock with whoever unregisters.
+#[cfg(windows)]
+unsafe extern "system" fn on_camera_interface_change(
+    _notify: windows_sys::Win32::Devices::DeviceAndDriverInstallation::HCMNOTIFICATION,
+    context: *const core::ffi::c_void,
+    _action: windows_sys::Win32::Devices::DeviceAndDriverInstallation::CM_NOTIFY_ACTION,
+    _event_data: *const windows_sys::Win32::Devices::DeviceAndDriverInstallation::CM_NOTIFY_EVENT_DATA,
+    _event_data_size: u32,
+) -> u32 {
+    if !context.is_null() {
+        // SAFETY: `context` is the leaked `Arc<CameraChanges>` pointer from
+        // `install_camera_listener`, valid for the life of the process.
+        // Borrowed, never reclaimed here.
+        unsafe { &*context.cast::<CameraChanges>() }.poke();
+    }
+    0 // ERROR_SUCCESS
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn install_camera_listener(_changes: &Arc<CameraChanges>) {
+    tracing::debug!("device_watch: no camera connect/disconnect listener on this platform");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,6 +959,52 @@ mod tests {
         // every wake.
         let a = device_change_signal();
         let b = device_change_signal();
+        assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn a_camera_change_wakes_a_waiting_session_at_once() {
+        let changes = Arc::new(CameraChanges::new());
+        let seen = changes.generation();
+        let poker = Arc::clone(&changes);
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(30));
+            poker.poke();
+        });
+        let start = std::time::Instant::now();
+        let now = changes.wait_change(seen, Duration::from_secs(30));
+        assert_ne!(now, seen);
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "woke only after {:?}",
+            start.elapsed()
+        );
+        t.join().unwrap();
+    }
+
+    #[test]
+    fn a_change_while_the_session_was_busy_is_not_lost() {
+        let changes = CameraChanges::new();
+        let seen = changes.generation();
+        changes.poke();
+        changes.poke();
+        // The session comes back to wait: it returns immediately.
+        let start = std::time::Instant::now();
+        assert_eq!(changes.wait_change(seen, Duration::from_secs(30)), seen + 2);
+        assert!(start.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_quiet_wait_times_out_with_the_same_generation() {
+        let changes = CameraChanges::new();
+        let seen = changes.generation();
+        assert_eq!(changes.wait_change(seen, Duration::from_millis(20)), seen);
+    }
+
+    #[test]
+    fn the_camera_signal_is_a_singleton() {
+        let a = camera_change_signal();
+        let b = camera_change_signal();
         assert!(Arc::ptr_eq(&a, &b));
     }
 }

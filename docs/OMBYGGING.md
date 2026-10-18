@@ -137,8 +137,8 @@ Størrelse: S (en dag), M (noen dager), L (en uke eller mer).
   erklæres direkte. Begge er pinnet med `=0.62.2` (samme som cpal 0.18.2), med
   featurene `Win32_Foundation`, `Win32_Media_Audio` og `Win32_System_Com`, som
   cpal alt slår på — ingen ny kode kompileres, `Cargo.lock` får bare to nye
-  kanter. Kamerameldingene (`CM_Register_Notification`) ligger fortsatt i C5a,
-  ikke i denne lytteren. Lytteren dytter bare ved _ankomst_ (ny enhet, tilstand
+  kanter. Kamerameldingene (`CM_Register_Notification`) ligger i C5a (levert:
+  `camera_change_signal` i samme modul, eget signal), ikke i denne lytteren. Lytteren dytter bare ved _ankomst_ (ny enhet, tilstand
   → `ACTIVE`, ny standard opptaksenhet); fjerning dytter ikke. RIG-DAY-punktet
   er (a4) under Windows-boksen.
 

@@ -346,6 +346,17 @@ the same camera by construction.
      later than 2 s after the previous). Proven on a Mac with `testsrc2`
      through the exact argv (see the PR); the real-camera run is the
      `docs/RIG-DAY.md` (c0b) item.
+   - **Camera drops out and comes back (C5a):** pull the USB cable of the
+     recording camera (or, on a Mac, move the Continuity iPhone away) and put
+     it back after ~10 s, while the recording runs. **Expected:** the sound has
+     no gap and the recording does not stop or split; the picture freezes for 2 s,
+     goes black, and returns by itself within a few seconds of the camera being
+     back, on the SAME camera (a different camera in the same port is not taken
+     over). The log says `camera reconnect: the camera has dropped out …` and
+     `… is back — session re-opened on the same id`. Unit-proven with a synthetic
+     camera (`camera::reconnect::tests`, and the end-to-end
+     `camera::preview::tests::a_camera_that_drops_out_mid_recording_…`); the
+     real-camera runs are `docs/RIG-DAY.md` (v7) and (v8).
    - **Dropped frames (C3c):** if the encoder falls behind, the video track
      drops the oldest camera frame (never the audio) and counts it. The
      recording overlay then shows a calm note, «Kameraet henger litt etter, så
