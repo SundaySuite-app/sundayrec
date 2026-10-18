@@ -232,7 +232,6 @@ impl<T> VideoConformer<T> {
             // Older than what is already on screen, or would be shown more
             // than one slot after it belongs: drop.
             let stale = self.last_shown.is_some_and(|l| pos <= l);
-            if (25347334000000..25347352000000).contains(&host) { eprintln!("DBGP host {host} pos_s {:.6} next_slot {} last_shown_s {:?} newest_sample_s {:?} newest_host {:?}", pos/self.rate as f64, self.next_slot, self.last_shown.map(|l| l/self.rate as f64), clock.newest_sample().map(|x| x as f64/self.rate as f64), clock.newest_host()); }
             let too_late = self.next_slot >= 2 && pos <= self.slot_pos(self.next_slot - 2);
             if stale || too_late {
                 self.stats.dropped_late += 1;
@@ -253,7 +252,6 @@ impl<T> VideoConformer<T> {
             }
             newest = self.placed.pop_front();
         }
-        if (23430..23434).contains(&k) { eprintln!("DBGE k {k} slot_s {:.6} newest {:?} last_shown_s {:?} placed_front {:?}", slot/self.rate as f64, newest.as_ref().map(|n| n.0/self.rate as f64), self.last_shown.map(|l| l/self.rate as f64), self.placed.front().map(|n| n.0/self.rate as f64)); }
         let picture = match newest {
             Some((pos, frame)) if slot - pos <= self.hold_samples => {
                 self.last_shown = Some(pos);
@@ -718,12 +716,27 @@ mod tests {
                     (i - 1) as i64
                 }
             };
-            if std::env::var("C2DBG").is_ok() {
-                for i in 55765..55780usize {
-                    eprintln!("DBG frame {i} true {:.6} stamp {} deliver {:.4} est {:.6}", true_t[i], stamp[i], deliver[i], clock.sample_at(stamp[i]).unwrap()/rate);
+            // Is the oracle black at some instant of [a, b]? Black after frame
+            // i is (true_t[i] + hold, true_t[i + 1]); one that starts before
+            // `a` shows at `a`, so only those starting in [a, b) need a look.
+            let oracle_black_within = |a: f64, b: f64| -> bool {
+                if oracle(a) < 0 {
+                    return true;
                 }
-                for k in 23425..23440usize { eprintln!("DBG slot {k} t {:.3} shown {} oracle {}", k as f64*period, shown[k], oracle(k as f64*period)); }
-            }
+                let first = true_t.partition_point(|&f| f + hold < a);
+                (first..true_t.len())
+                    .take_while(|&i| true_t[i] + hold < b)
+                    .any(|i| {
+                        true_t
+                            .get(i + 1)
+                            .is_none_or(|&next| next > true_t[i] + hold)
+                    })
+            };
+            // Does the oracle show a picture at some instant of [a, b]?
+            let oracle_picture_within = |a: f64, b: f64| -> bool {
+                let i = true_t.partition_point(|&f| f <= a);
+                oracle(a) >= 0 || true_t.get(i).is_some_and(|&f| f <= b)
+            };
             let mut conf_first: Vec<i64> = vec![-1; true_t.len()];
             let mut oracle_first: Vec<i64> = vec![-1; true_t.len()];
             let mut last_id = -1i64;
@@ -731,13 +744,19 @@ mod tests {
                 let tk = k as f64 * period;
                 let o = oracle(tk);
                 if (id < 0) != (o < 0) {
-                    // Black against a picture: only where a shift of one slot
-                    // flips the oracle too (2 s hold edge, first frame).
-                    let near = [oracle(tk - period), oracle(tk + period)];
-                    assert!(
-                        near.iter().any(|&x| (x < 0) == (id < 0)),
-                        "slot {k} ({tk:.3} s): showed {id}, oracle {o}"
-                    );
+                    // Black against a picture: only where the oracle itself
+                    // shows the same somewhere within one slot either side (2 s
+                    // hold edge, first frame). The whole interval, not just its
+                    // ends: a camera back just after the hold ran out leaves a
+                    // black stretch narrower than a slot, which a placement
+                    // error far below one slot can land a slot in.
+                    let (a, b) = (tk - period, tk + period);
+                    let ok = if id < 0 {
+                        oracle_black_within(a, b)
+                    } else {
+                        oracle_picture_within(a, b)
+                    };
+                    assert!(ok, "slot {k} ({tk:.3} s): showed {id}, oracle {o}");
                 }
                 if id >= 0 {
                     assert!(id >= last_id, "slot {k}: picture went back in time");
@@ -889,6 +908,89 @@ mod tests {
                 prop_assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
                 prop_assert!(o.max_place_err_ms < period_ms, "placement error {} ms", o.max_place_err_ms);
             }
+        }
+
+        /// The case proptest found (regression seed `cc c297fed8…`): the
+        /// machine sleeps at 935.28 s (the host clock jumps ~6 h) and the camera
+        /// is back 2.0046 s later, so the last picture before the gap is 2.021 s
+        /// old when the next arrives — 21 ms past the 2 s hold. The oracle's
+        /// black stretch is narrower than a 25 fps slot and holds none; the
+        /// conformer, ~1 ms off on both frames, lands slot 23432 (937.280 s) in
+        /// it and shows black there. That is within one slot, and the check
+        /// must accept it.
+        fn camera_back_just_past_the_hold_after_a_sleep() -> Scenario {
+            Scenario {
+                seed: 14_375_585_711_776_970,
+                secs: 3.0 * 3600.0,
+                rate: 48_000,
+                fps: Fps::new(25, 1),
+                buf: 1024,
+                cam_fps: 60.0,
+                drift_ppm: -207.395_670_272_507_9,
+                wobble_ppm: 0.820_397_421_187_904_4,
+                wobble_period_s: 3_245.260_873_421_877_5,
+                audio_jitter_ns: 2_286_460.982_533_921,
+                frame_jitter_ns: 1_492_068.136_998_755_2,
+                delivery_s: (0.117_175_295_390_737_93, 0.089_846_865_176_144_14),
+                outlier_p: 5.877_540_590_347_608e-5,
+                video_start_s: 5.725_272_761_096_951,
+                holes: vec![
+                    (1_068.895_740_910_397_8, 81.621_355_168_369_04),
+                    (5_487.389_188_809_23, 29.432_495_548_844_92),
+                    (1_732.548_448_446_179_7, 98.329_731_450_644_15),
+                    (3_072.518_500_605_394, 107.856_921_173_837_8),
+                    (10_264.834_403_005_416, 95.047_000_132_117_52),
+                ],
+                fps_drops: vec![
+                    (4_132.918_017_153_882, 392.769_161_357_057_25, 4),
+                    (10_331.234_319_899_264, 295.922_444_827_360_4, 4),
+                    (1_098.506_870_123_693_7, 190.536_458_384_343_94, 2),
+                    (8_742.471_262_575_94, 242.985_596_926_562_83, 4),
+                ],
+                sleeps: vec![
+                    (
+                        8_816.200_255_175_794,
+                        566_954_012.029_645_1,
+                        3.245_744_434_443_013_3,
+                    ),
+                    (
+                        935.283_973_679_955,
+                        21_900_000_051_853.617,
+                        2.004_562_458_535_596_6,
+                    ),
+                ],
+                small_steps: vec![
+                    (4_910.288_089_088_366, 4_742_265.449_413_051),
+                    (6_352.829_625_104_408, -3_671_676.931_176_415_6),
+                    (6_548.809_165_167_648, -10_471_659.696_444_346),
+                    (5_082.568_966_084_262, 12_885_745.055_271_948),
+                ],
+            }
+        }
+
+        #[test]
+        fn a_sleep_with_the_camera_back_just_past_the_hold_stays_within_one_slot() {
+            let sc = camera_back_just_past_the_hold_after_a_sleep();
+            let o = simulate(&sc);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+            assert!(o.max_place_err_ms < 40.0, "{}", o.max_place_err_ms);
+            assert_eq!(o.resets, 2);
+        }
+
+        /// The same gap without the sleep (a plain camera hole, no host-clock
+        /// jump) gives the same black slot: the jump and the clock's segments
+        /// play no part, it is the hold edge alone.
+        #[test]
+        fn the_same_gap_without_a_sleep_is_the_same_hold_edge() {
+            let mut sc = camera_back_just_past_the_hold_after_a_sleep();
+            let (at, _, reinit) = sc.sleeps.pop().expect("the sleep at 935 s");
+            // The simulation snaps a sleep to a buffer boundary; the hole must
+            // start on the same one to drop the same frames.
+            let per_buf = sc.buf as f64 / sc.rate as f64;
+            sc.holes.push(((at / per_buf).round() * per_buf, reinit));
+            let o = simulate(&sc);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
+            assert_eq!(o.resets, 1);
         }
 
         /// The worst plausible case, pinned: 50 ppm the "wrong" way, jitter
