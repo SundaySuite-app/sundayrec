@@ -720,6 +720,20 @@ ikke vise den. Står den der: noter koder, CPU-bruk og tallet i loggen
       loggen sier ble sluppet — det er tallet `video.frames_dropped` vil vise
       i feltet. Windows: sammenlign med (c0a)-basisen.
       **Rødt funn:** hakk i lyden under last, eller et opptak som slutter.
+- [ ] **(v5) Forhåndsvisningen fra samme kameraøkt (C4a).** Terminalen må ha
+      kameratilgang; kjør i din egen terminalfane, fra repoet:
+      `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_preview -- --ignored --nocapture`
+      (bytt til `iPhone` for Continuity-kameraet).
+      Testen åpner kameraet slik Opptak-sida gjør, lar forhåndsvisningen gå i
+      8 s, lar videosporet overta samme økt og tar opp 8 s til.
+      **Forventet:** grønn, og en linje `C4a: 4.xx pictures/s before, 4.xx
+during; … camera queue_dropped 0`. Begge tallene mellom 3 og 5, ingen
+      tapte bilder, ingen feilede forhåndsbilder.
+      I appen er kommandoene `camera_preview_start`/`camera_preview_stop`
+      (ingen UI bruker dem før C4b), så selve bildet kan ikke sees ennå.
+      **Rødt funn:** under 3 b/s (tappen eller JPEG-koden henger), tapte
+      bilder i opptaket mens forhåndsvisningen går, eller at kameraet må
+      åpnes på nytt ved opptaksstart.
 
 ## Ørene
 

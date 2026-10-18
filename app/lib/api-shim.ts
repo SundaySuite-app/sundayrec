@@ -27,6 +27,7 @@
 
 import {
   invoke as tauriInvoke,
+  Channel,
   convertFileSrc,
   isTauri,
 } from "@tauri-apps/api/core";
@@ -1372,6 +1373,23 @@ const api: Record<string, unknown> = {
   // Returns null on failure → caller offers everything.
   getCameraCapabilities: async (token: string) =>
     call("get_camera_capabilities", { deviceToken: token }, null),
+  // The live camera picture, made in Rust from the camera session the recording
+  // then records from (C4a). Each message on `onFrame` is one JPEG, at most
+  // 640 px wide, ~4 per second. Nothing in the UI calls these yet — C4b moves
+  // the camera tile over and deletes getUserMedia.
+  cameraPreviewStart: async (
+    token: string,
+    onFrame: (jpeg: ArrayBuffer) => void,
+  ) => {
+    const onFrameChannel = new Channel<ArrayBuffer>();
+    onFrameChannel.onmessage = onFrame;
+    return call(
+      "camera_preview_start",
+      { deviceToken: token, onFrame: onFrameChannel },
+      null,
+    );
+  },
+  cameraPreviewStop: async () => call("camera_preview_stop", undefined, null),
 
   // ── Wake from sleep (wake_* commands) ───────────────────────────────────
   // Fallbacks must match the real WakeCapabilities / WakeStatus shapes — the

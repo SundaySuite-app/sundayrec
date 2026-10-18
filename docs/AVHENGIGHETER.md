@@ -14,7 +14,7 @@ KI-agent.
 
 | Lisens                                       | I SundayRec (MIT)?                                                                  |
 | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| MIT, Apache-2.0, BSD, ISC, Zlib              | ✅ Ja. Opphavsmerknaden og lisensteksten skal følge med.                            |
+| MIT, Apache-2.0, BSD, ISC, Zlib, IJG         | ✅ Ja. Opphavsmerknaden og lisensteksten skal følge med.                            |
 | MPL-2.0 (f.eks. Symphonia)                   | ⚠️ Som avhengighet, ja. Kopiert inn i våre filer blir de filene MPL.                |
 | GPL, AGPL                                    | ❌ Nei. Hele appen måtte blitt GPL/AGPL. (ffmpeg går fordi det er en egen prosess.) |
 | Ingen lisens, «all rights reserved»          | ❌ Nei. Alle rettigheter er forbeholdt, uansett hvor synlig koden er.               |

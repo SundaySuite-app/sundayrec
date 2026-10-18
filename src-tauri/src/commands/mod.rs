@@ -6,6 +6,8 @@
 
 pub mod app;
 pub mod audio;
+// C4a — the live camera picture, scaled and JPEG-coded in Rust, on a channel.
+pub mod camera_preview;
 // A2 — places the operator picked in a native dialog RUST opened, held for the
 // webview as opaque session tokens (the editor's export folder). No path in.
 pub mod chosen_paths;

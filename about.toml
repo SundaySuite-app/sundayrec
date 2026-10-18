@@ -10,6 +10,7 @@ accepted = [
   "BSD-3-Clause",
   "ISC",
   "Zlib",
+  "IJG",
   "Unicode-3.0",
   "CDLA-Permissive-2.0",
   "MPL-2.0",

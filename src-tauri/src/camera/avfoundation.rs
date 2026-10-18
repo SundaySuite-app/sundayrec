@@ -216,6 +216,7 @@ pub struct CaptureStats {
 /// One frame from the camera. Holds a retained `CVPixelBuffer` from the
 /// camera's pool — hand it on quickly and drop it; holding many starves the
 /// pool and the camera starts dropping frames.
+#[derive(Clone)]
 pub struct CameraFrame {
     pixels: PixelBuffer,
     /// Presentation time in host-clock ticks (`mach_absolute_time` units).
@@ -240,7 +241,9 @@ impl std::fmt::Debug for CameraFrame {
     }
 }
 
-/// A retained pixel buffer that may cross threads.
+/// A retained pixel buffer that may cross threads. Cloning retains again (a
+/// reference count, not a copy of the pixels).
+#[derive(Clone)]
 struct PixelBuffer(CFRetained<CVPixelBuffer>);
 
 // SAFETY: CoreFoundation retain/release is thread-safe, and a capture output's

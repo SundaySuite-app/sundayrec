@@ -623,6 +623,8 @@ pub fn run() {
             commands::audio::list_devices,
             commands::audio::get_camera_capabilities,
             commands::audio::diagnose_audio,
+            commands::camera_preview::camera_preview_start,
+            commands::camera_preview::camera_preview_stop,
             commands::audio::start_vu,
             commands::audio::stop_vu,
             commands::media::ffmpeg_health,

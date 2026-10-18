@@ -449,11 +449,32 @@ async fn start_video_track(
     pairs: ringbuf::HeapCons<ClockPair>,
 ) -> Option<VideoTrack> {
     let (name, w, h, fps) = (plan.camera_name.clone(), plan.width, plan.height, plan.fps);
-    let opened = tokio::time::timeout(
-        CAMERA_TIMEOUT,
-        tokio::task::spawn_blocking(move || open_camera(&name, w, h, fps)),
-    )
-    .await;
+    // C4a: the Opptak page may already have the camera open for its live
+    // picture. Record from THAT session — same capture, same tap, no reopen.
+    let key = crate::camera::preview::SessionKey {
+        camera: name.clone(),
+        width: w,
+        height: h,
+        fps_num: fps.num,
+        fps_den: fps.den,
+    };
+    let from_preview = crate::camera::preview::take_for_recording(&key);
+    let opened = match from_preview {
+        Some((source, spec)) => {
+            tracing::info!(camera = %name, "video track: recording from the preview's camera session");
+            Ok(Ok(Ok((source, spec))))
+        }
+        None => {
+            tokio::time::timeout(
+                CAMERA_TIMEOUT,
+                tokio::task::spawn_blocking(move || {
+                    open_camera(&name, w, h, fps)
+                        .map(|(c, spec)| (Box::new(c) as Box<dyn VideoSource>, spec))
+                }),
+            )
+            .await
+        }
+    };
     let mut spec = sundayrec_core::video_track::VideoTrackSpec {
         width: plan.width,
         height: plan.height,
@@ -468,7 +489,7 @@ async fn start_video_track(
                 flip: plan.flip,
                 ..cam_spec
             };
-            Some(Box::new(capture))
+            Some(capture)
         }
         Ok(Ok(Err(e))) => {
             tracing::error!(camera = %plan.camera_name, "video track: the camera did not open ({e}) — recording black, the sound is unaffected");

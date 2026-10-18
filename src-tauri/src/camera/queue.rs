@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
 /// A bounded, drop-oldest, multi-producer queue.
@@ -23,7 +23,14 @@ pub struct FrameQueue<T> {
     pushed: AtomicU64,
     dropped: AtomicU64,
     closed: AtomicBool,
+    /// A read-only observer called with every pushed frame (see
+    /// [`FrameQueue::set_tap`]).
+    tap: RwLock<Option<Tap<T>>>,
 }
+
+/// What [`FrameQueue::set_tap`] takes: called on the camera's thread with a
+/// borrow of each frame, BEFORE the frame is queued.
+pub type Tap<T> = Arc<dyn Fn(&T) + Send + Sync>;
 
 /// The counters of a [`FrameQueue`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -45,7 +52,22 @@ impl<T> FrameQueue<T> {
             pushed: AtomicU64::new(0),
             dropped: AtomicU64::new(0),
             closed: AtomicBool::new(false),
+            tap: RwLock::new(None),
         }
+    }
+
+    /// Install (or, with `None`, remove) a TAP: a function the producer calls
+    /// with a borrow of every frame it pushes, before queueing it. It is how the
+    /// live preview (C4a) watches the camera WITHOUT reading from this queue —
+    /// the recorder's single consumer is never disturbed, and a preview that is
+    /// slow or gone costs the recording nothing.
+    ///
+    /// The tap runs on the camera's callback thread, so it has the callback's
+    /// rule: **cheap, no I/O, never waits.** (The preview's tap counts frames
+    /// and, for one in a few, clones a handle into a one-slot mailbox.) It is
+    /// called even when the queue is closed, but not after it is removed.
+    pub fn set_tap(&self, tap: Option<Tap<T>>) {
+        *self.tap.write().unwrap_or_else(PoisonError::into_inner) = tap;
     }
 
     fn lock(&self) -> MutexGuard<'_, VecDeque<T>> {
@@ -58,6 +80,15 @@ impl<T> FrameQueue<T> {
     /// After [`close`](Self::close) the frame is discarded.
     pub fn push(&self, item: T) {
         self.pushed.fetch_add(1, Ordering::Relaxed);
+        // Clone the Arc out so the callback runs without holding the lock.
+        let tap = self
+            .tap
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(tap) = tap {
+            tap(&item);
+        }
         if self.closed.load(Ordering::Acquire) {
             return;
         }
@@ -266,5 +297,26 @@ mod tests {
         assert_eq!(q.stats().dropped, 1);
         // Break the Arc cycle so the test does not leak.
         while q.try_pop().is_some() {}
+    }
+
+    #[test]
+    fn a_tap_sees_every_pushed_frame_and_stops_when_removed() {
+        let q = FrameQueue::new(2);
+        let seen = Arc::new(AtomicU64::new(0));
+        let s = Arc::clone(&seen);
+        q.set_tap(Some(Arc::new(move |_: &i32| {
+            s.fetch_add(1, Ordering::Relaxed);
+        })));
+        for i in 0..5 {
+            q.push(i);
+        }
+        // The tap watched all five; the queue (capacity 2) kept two and
+        // counted three dropped — the tap is not a consumer.
+        assert_eq!(seen.load(Ordering::Relaxed), 5);
+        assert_eq!(q.stats().dropped, 3);
+        assert_eq!(q.try_pop(), Some(3));
+        q.set_tap(None);
+        q.push(9);
+        assert_eq!(seen.load(Ordering::Relaxed), 5);
     }
 }
