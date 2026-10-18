@@ -6,7 +6,7 @@
 //! ```text
 //! camera callback ─push─▶ FrameQueue ─▶ (drain | video track)     ← the recorder's
 //!                    │                                                only consumer
-//!                    └─ tap: every Nth frame, a SHARE of it ─▶ mailbox (1 slot)
+//!                    └─ tap: 4/s by capture time, a SHARE ─▶ mailbox (1 slot)
 //!                                                                 │
 //!                          preview worker: scale to 640 px, JPEG ◀┘
 //!                                                                 │
@@ -15,7 +15,8 @@
 //!
 //! **The preview never reads the recorder's queue and never slows it.** The tap
 //! ([`FrameQueue::set_tap`]) runs on the camera's callback thread and does
-//! three cheap things: count, and — for one frame in `every` — `try_lock` a
+//! three cheap things: count, and — for one frame per 250 ms of capture time
+//! ([`preview_due`]) — `try_lock` a
 //! one-slot mailbox and put a *clone* of the frame in it (a reference count,
 //! [`Frame`]'s `Clone` never copies pixels). A busy mailbox or a slow worker
 //! just means a preview frame is replaced or skipped; the recording sees
@@ -64,14 +65,27 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Every how-manyth camera frame becomes a preview frame: the camera rate
-/// over [`TARGET_FPS`], rounded DOWN so the picture is never slower than 4/s —
-/// 30 fps → 7 (4.3/s), 25 → 6, 60 → 15. At least 1.
-pub fn every_nth(camera_fps: f64) -> u64 {
-    if !camera_fps.is_finite() || camera_fps <= TARGET_FPS {
-        return 1;
+/// The time between preview pictures: 1 / [`TARGET_FPS`].
+pub const PREVIEW_PERIOD_NS: u64 = (1_000_000_000.0 / TARGET_FPS) as u64;
+
+/// Whether the frame captured at `t_ns` becomes a preview picture, given the
+/// next due time `due_ns` (0 = none yet); returns the new due time when it
+/// does. Chosen by the frame's CAPTURE time, not by counting frames: a camera
+/// that slows down in poor light (FaceTime HD at ~22 fps) still gives ~4/s,
+/// where "every 7th frame" gave 3.1/s. The due time advances by one period per
+/// picture, so the AVERAGE is exactly 4/s at any camera rate ≥ 4 fps; after a
+/// gap longer than a period it restarts from the frame instead of catching
+/// up with a burst.
+pub fn preview_due(t_ns: u64, due_ns: u64) -> Option<u64> {
+    if due_ns != 0 && t_ns < due_ns {
+        return None;
     }
-    (camera_fps / TARGET_FPS).floor().max(1.0) as u64
+    let next = due_ns.saturating_add(PREVIEW_PERIOD_NS);
+    Some(if due_ns == 0 || t_ns >= next {
+        t_ns.saturating_add(PREVIEW_PERIOD_NS)
+    } else {
+        next
+    })
 }
 
 // ── Making the picture ──────────────────────────────────────────────────────
@@ -245,9 +259,10 @@ pub struct Preview {
 
 impl Preview {
     /// Watch `queue` (a camera at `camera_fps`) and send pictures to `sink`.
-    pub fn attach(queue: &Arc<FrameQueue<Frame>>, camera_fps: f64, sink: Sink) -> Self {
+    pub fn attach(queue: &Arc<FrameQueue<Frame>>, _camera_fps: f64, sink: Sink) -> Self {
         let sink = Arc::new(Mutex::new(sink));
-        let every = every_nth(camera_fps);
+        // Only the camera's callback thread touches it; atomic for `Sync`.
+        let due = AtomicU64::new(0);
         let mailbox = Arc::new(Mailbox {
             slot: Mutex::new(None),
             ready: Condvar::new(),
@@ -257,9 +272,10 @@ impl Preview {
         {
             let (mailbox, counters) = (Arc::clone(&mailbox), Arc::clone(&counters));
             queue.set_tap(Some(Arc::new(move |frame: &Frame| {
-                let n = counters.seen.fetch_add(1, Ordering::Relaxed);
-                if n % every != 0 {
-                    return;
+                counters.seen.fetch_add(1, Ordering::Relaxed);
+                match preview_due(frame.host_time_ns, due.load(Ordering::Relaxed)) {
+                    Some(next) => due.store(next, Ordering::Relaxed),
+                    None => return,
                 }
                 // The callback never waits: a busy mailbox loses this offer.
                 match mailbox.slot.try_lock() {
@@ -600,15 +616,37 @@ mod tests {
     }
 
     #[test]
-    fn the_tap_takes_about_four_frames_a_second_from_any_camera_rate() {
-        assert_eq!(every_nth(30.0), 7); // 4.3 per second
-        assert_eq!(every_nth(29.97), 7);
-        assert_eq!(every_nth(25.0), 6);
-        assert_eq!(every_nth(60.0), 15);
-        assert_eq!(every_nth(24.0), 6);
-        assert_eq!(every_nth(4.0), 1);
-        assert_eq!(every_nth(0.0), 1);
-        assert_eq!(every_nth(f64::NAN), 1);
+    fn the_tap_takes_four_pictures_a_second_from_any_camera_rate() {
+        // Count picks over 60 s of frames at `fps`, stamped on their capture
+        // times; the average is 4/s whether the camera runs at 60, 30, a
+        // dim-light 22 or 12.5 fps.
+        for fps in [60.0, 30.0, 29.97, 25.0, 22.0, 12.5] {
+            let period = 1e9 / fps;
+            let (mut due, mut picks) = (0u64, 0u32);
+            let mut k = 0u64;
+            while (k as f64) * period < 60e9 {
+                if let Some(next) = preview_due(((k as f64) * period) as u64, due) {
+                    due = next;
+                    picks += 1;
+                }
+                k += 1;
+            }
+            let rate = f64::from(picks) / 60.0;
+            assert!((3.8..=4.2).contains(&rate), "{fps} fps → {rate:.2}/s");
+        }
+        // Slower than 4 fps: every frame.
+        let (mut due, mut picks) = (0u64, 0u32);
+        for k in 0..20u64 {
+            if let Some(next) = preview_due(k * 500_000_000, due) {
+                due = next;
+                picks += 1;
+            }
+        }
+        assert_eq!(picks, 20);
+        // After a 5 s gap: one picture, not a burst of 20 to catch up.
+        let due = preview_due(0, 0).unwrap();
+        let after_gap = preview_due(5_000_000_000, due).unwrap();
+        assert!(preview_due(5_010_000_000, after_gap).is_none());
     }
 
     #[test]
@@ -757,10 +795,16 @@ mod tests {
         start(key.clone(), open, sink).expect("preview starts");
         assert_eq!(current_key().as_ref(), Some(key));
 
-        // Before any recording.
+        // Before any recording. The clock starts at the FIRST picture, so a
+        // slow camera open (or a loaded CI runner) is not counted as rate.
+        let wait = Instant::now();
+        while sent.load(Ordering::Relaxed) == 0 && wait.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let first = sent.load(Ordering::Relaxed);
         let t0 = Instant::now();
         std::thread::sleep(phase);
-        let before = sent.load(Ordering::Relaxed);
+        let before = sent.load(Ordering::Relaxed) - first;
         let rate_before = before as f64 / t0.elapsed().as_secs_f64();
         assert!(
             (3.0..=5.0).contains(&rate_before),
