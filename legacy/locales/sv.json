@@ -679,6 +679,7 @@
       "after": "Efter",
       "sample": "{at} — 20 sekunder från predikan",
       "rendering": "Förbereder smakprovet …",
+      "listenPreparing": "Gör lyssningen redo – första gången tar det en stund …",
       "listenFailed": "Kunde inte skapa smakprovet. Exporten går som vanligt.",
       "said": {
         "hum": "Vi tog bort brum från elnätet",

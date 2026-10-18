@@ -2324,6 +2324,14 @@ til å bruke**, over 20 sekunder fra midten av prekenvinduet. Bakenden rendrer
 til `std::env::temp_dir()` — aldri ved siden av opptaket. `_mastert`-veien
 (`editor_master_apply`) brukes ikke av dette skallet i det hele tatt.
 
+Programmet måles i bakgrunnen (`editor_prepare_listen`, samme forespørsel og samme
+cache-nøkkel som `editor_master_preview`) så snart steget åpnes og, med 800 ms
+ventetid, når valget, mikseren, kanalreparasjonen eller kuttene endres. Bakenden
+måler ÉN gang per nøkkel: kommer «Etter» mens målingen går, venter den på den.
+En ny forberedelse avbryter den forrige; en eksport eller et opptak som starter
+avbryter alle, og ingen starter mens et opptak går eller en eksport kjører.
+Teksten «Gjør klar lytting …» står så lenge programmet ikke er målt.
+
 «Før» er originalen fra det samme sekundet, stoppet av en timer etter tjue
 (det finnes ingen «spill fra … til …» på et medieelement). Lyttingen har sitt
 EGET `<audio>`: transporten i steg 1 eier `E.playerEl` og skriver `playheadSec`

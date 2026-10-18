@@ -108,6 +108,10 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
       (window.__E2E_PREVIEWS__ ||= []).push(args.request);
       return { previewPath: "/tmp/sundayrec-master-preview-e2e.mp3" };
     }`),
+    editor_prepare_listen: fn(`(args) => {
+      (window.__E2E_PREPARES__ ||= []).push(args.request);
+      return true;
+    }`),
     editor_export: EXPORT_OK,
     editor_cancel_export: fn(`() => {
       (window.__E2E_CANCELS__ ||= []).push(1);

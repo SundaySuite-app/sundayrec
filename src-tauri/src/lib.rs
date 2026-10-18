@@ -720,6 +720,7 @@ pub fn run() {
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
             commands::editor::editor_master_preview,
+            commands::editor::editor_prepare_listen,
             commands::editor::editor_master_cancel,
             // The one-time "e-mail alerts were removed" banner.
             commands::notice::notice_email_removed_pending,

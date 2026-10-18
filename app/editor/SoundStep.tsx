@@ -49,6 +49,7 @@ import {
   ensureSoundAnalysis,
   listenBusy,
   listenError,
+  listenPreparing,
   listenPlaying,
   listenSide,
   listenStart,
@@ -63,6 +64,7 @@ import {
   taleSaid,
   toggleListen,
   useMixer,
+  watchListenPrepare,
 } from "./sound";
 import { channelCodeKey, SOUND_PROFILES, taleSaidKeys } from "./sound-profiles";
 import styles from "./editor.module.css";
@@ -80,7 +82,13 @@ export function SoundStep() {
     void ensureSoundAnalysis();
     // Å forlate steget stopper lyttingen. Uten dette går de tjue sekundene
     // videre på en side ingen ser — den samme regelen `stopPlay` har.
-    return stopListen;
+    // Gjør «Etter» klar i bakgrunnen: programmet måles nå, og på nytt når valget eller
+    // kuttene endres, så første trykk på «Etter» som regel finner målingen ferdig.
+    const unwatch = watchListenPrepare();
+    return () => {
+      unwatch();
+      stopListen();
+    };
   }, []);
 
   const options: RadioOption[] = SOUND_PROFILES.map((id) => ({
@@ -260,7 +268,9 @@ function ListenCard() {
       </div>
       {listenBusy.value ? (
         <p data-testid="editor-listen-busy" class={styles.hint}>
-          {t("app.editor.rendering")}
+          {listenPreparing.value
+            ? t("app.editor.listenPreparing")
+            : t("app.editor.rendering")}
         </p>
       ) : listenError.value ? (
         <p data-testid="editor-listen-error" class={styles.hint}>
