@@ -460,7 +460,10 @@ mod tests {
         assert!(at("-ss") < at("-i") && at("-t") < at("-i"));
         assert_eq!(a[at("-ss") + 1], "12.346");
         assert_eq!(a[at("-t") + 1], "20.000");
-        assert!(!a.iter().any(|x| x == "-af"), "no audio filter: the chain is Rust");
+        assert!(
+            !a.iter().any(|x| x == "-af"),
+            "no audio filter: the chain is Rust"
+        );
         let joined = a.join(" ");
         assert!(joined.contains("-f f32le"));
         assert!(joined.contains("-ar 44100 -ac 1"));

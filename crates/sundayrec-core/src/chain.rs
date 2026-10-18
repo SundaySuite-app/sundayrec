@@ -87,8 +87,10 @@
 //!   effect has. It is why de-noise stays an opt-in stage (the mixer, the
 //!   "voice-noisy-room" preset) in B2b; B3a, which wants a mild de-noise
 //!   always on, has to deal with it (for example by gating on speech).
-//!   Capped at [`DENOISE_MAX_DB`]: beyond it the floor gains almost nothing
-//!   (22 dB at 30) and held notes lose everything.
+//!   Capped at [`DENOISE_MAX_DB`] = 12 dB for that reason: "voice-noisy-room"
+//!   asks for 20 and the held chord then came out 30 dB under the speech (the
+//!   gate and the de-reverb add to it), where the old chain left it alone. At 12
+//!   the floor still comes down about 11 dB (the old chain took 1.7).
 //!
 //! The two compressors of "speech-punchy" and the like are translated one by
 //! one, in order, exactly as the filter string lists them.
@@ -136,9 +138,10 @@ const DEESSER_REDUCTION_AT_FULL_DB: f64 = 20.0;
 pub const COMPRESSOR_DETECTOR_OFFSET_DB: f64 = 3.0;
 /// Lowest threshold filmcraft's compressor accepts, dB.
 const FILMCRAFT_COMP_MIN_DB: f64 = -60.0;
-/// The most `reduction` the de-noise stage is given. Beyond ~30 dB the floor
-/// gains almost nothing, and a held note loses the same amount (module docs).
-pub const DENOISE_MAX_DB: f64 = 30.0;
+/// The most `reduction` the de-noise stage is given: filmcraft's own default,
+/// 12 dB. A held note loses exactly what the floor loses (module docs), so this
+/// is "mild" until B3a can tell a held note from a floor.
+pub const DENOISE_MAX_DB: f64 = 12.0;
 /// The de-reverb's assumed reverb time, seconds (filmcraft's default is 0.8).
 /// Measured in B2b: a shorter decay model leaves held notes alone (module docs).
 const DEREVERB_RT60_S: f32 = 0.4;
@@ -877,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn vocal_denoise_carries_nr_over_and_drops_nf() {
+    fn vocal_denoise_carries_nr_over_up_to_the_cap_and_drops_nf() {
         let p = vocal_chain_presets()
             .into_iter()
             .find(|p| p.id == "voice-noisy-room")
@@ -888,7 +891,8 @@ mod tests {
             .iter()
             .find(|s| s.id() == "denoise")
             .expect("denoise");
-        assert_eq!(dn.param("reduction"), Some(20.0));
+        // The preset asks for 20 dB; the stage is capped (B2b, module docs).
+        assert_eq!(dn.param("reduction"), Some(DENOISE_MAX_DB as f32));
         // nf (-20) is not a parameter of the filmcraft stage.
         assert_eq!(dn.param("noise_floor"), None);
         let dr = c
@@ -1187,24 +1191,31 @@ mod tests {
             }
             got.extend_from_slice(&buf[..n]);
         }
-        assert_eq!(got.len(), l.len() * 2 * 4, "same number of frames out as in");
+        assert_eq!(
+            got.len(),
+            l.len() * 2 * 4,
+            "same number of frames out as in"
+        );
         let want_bytes = interleave(&want);
         let worst = got
-            .chunks_exact(4)
-            .zip(want_bytes.chunks_exact(4))
-            .map(|(a, b)| {
-                (f32::from_le_bytes([a[0], a[1], a[2], a[3]])
-                    - f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                .abs()
-            })
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(want_bytes.as_chunks::<4>().0)
+            .map(|(a, b)| (f32::from_le_bytes(*a) - f32::from_le_bytes(*b)).abs())
             .fold(0.0f32, f32::max);
-        assert!(worst < 1e-4, "reader differs from process_offline by {worst}");
+        assert!(
+            worst < 1e-4,
+            "reader differs from process_offline by {worst}"
+        );
     }
 
     #[test]
     fn chain_reader_upmixes_mono_and_drops_a_partial_frame() {
-        let mut v = VocalChain::default();
-        v.channel_repair = ChannelRepair::DuplicateLeft;
+        let mut v = VocalChain {
+            channel_repair: ChannelRepair::DuplicateLeft,
+            ..VocalChain::default()
+        };
         v.highpass.enabled = false;
         v.compressor.enabled = false;
         let x = sine(1000.0, 0.5, 0.3);
@@ -1247,7 +1258,7 @@ mod tests {
         v.highpass.enabled = false;
         v.compressor.enabled = false;
         v.denoise.enabled = true;
-        v.denoise.reduction_db = 80.0;
+        v.denoise.reduction_db = 80.0; // a mixer value far out of range
         v.dereverb.enabled = true;
         v.dereverb.strength = 0.6;
         let c = Chain::from_vocal_chain(&v);

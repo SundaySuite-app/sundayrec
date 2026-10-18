@@ -196,6 +196,31 @@ mot mål −16 / tak −1,0. Målet nås med én dry-run (limiteren tok 5,6 dB a
   profilene på minst tre ekte gudstjenester, gammel mot ny, og eieren har sagt
   ja.
 
+**Gjort (B2b).** Eksport, nivåanalyse og forhåndslytting tar lyden fra ffmpeg som rå f32
+uten noe `-af` (bare klipp, skjøtefades og konkatenering gjenstår i grafen) og kjører kjeden i
+Rust (`chain::ChainReader`, strømmende, ett blokk i minnet). Det gjelder også eksport uten
+mastring-preset (vokalkjede eller «Normaliser»-gain): den går samme vei og mellomlagres som
+mastret eksport. Mikseren (`processing`) og presetene bygger samme `Chain`. `chain_ab` kan
+prøve en endring uten å røre tabellene: `--set <stadium>[:n].<param>=<verdi>`. Filterstreng-
+byggerne står igjen til B2c.
+
+Innstillingen er målt på tre ekte opptak (30 s fra `2026-05-17_2`, `31.5.26`, `2026.01.04`, alle
+stille rom, gulv rundt −60 dBFS) og tre syntetiske signaler (holdt akkord mellom to talepartier,
+tale med romklanghale, tale med stasjonær støy). Begrunnelsene står i `chain.rs`' modulhode.
+Kort:
+
+| Stadium      | Endring                          | Måling                                                                  |
+| ------------ | -------------------------------- | ----------------------------------------------------------------------- |
+| kompressor   | terskel −3 dB                    | samme lydstyrkespenn (LRA) som ffmpeg innen 0,3 LU, alle fire presetene |
+| romklang     | `rt60` 0,4 s (før 0,8)           | ren sinus mister 2–3 dB over hele glideren (før 7–14 dB)                |
+| støyfjerning | maks 12 dB (preset ba om 20)     | gulvet −11 dB (før −1,7), men holdt akkord mister det samme             |
+| de-esser     | uendret (20·i dB, 6 kHz, −12 dB) | sibilanter −3 dB, vokalrammene rundt −0,2 dB                            |
+
+**Funn til B3a:** filmcrafts `denoise` kan ikke skille en holdt tone fra støygulv. Toner som
+varer under ca. 1,5 s (minimumsstatistikkens vindu) slipper gjennom urørt; lengre toner dempes
+like mye som gulvet. En «Tale» som alltid støyfjerner mildt vil derfor spise orgel og
+akkompagnement med mindre B3a gater støyfjerningen på tale.
+
 ### Fase 3 — «Tale» renser av seg selv
 
 - Analysen fra fase 4 (eller eksportens egen) avgjør hva «Tale» tar med:

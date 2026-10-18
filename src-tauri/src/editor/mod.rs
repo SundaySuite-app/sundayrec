@@ -5263,10 +5263,47 @@ mod tests {
         assert_eq!(no_preset.stages()[0].id(), "amplify");
         assert_eq!(&no_preset.stages()[1..], vocal.stages());
         // With a preset: gain is skipped, chain still runs, preset trails.
-        let with_preset =
-            build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset)).unwrap();
+        let with_preset = build_pre_chain(Some(chain.clone()), Some(3.0), Some(&preset)).unwrap();
         let want = vocal.then(Chain::from_master_preset(&preset).unwrap());
         assert_eq!(with_preset, want);
+    }
+
+    /// B2b: the mixer and the presets are ONE chain. The mixer's request type converts to the
+    /// core `VocalChain` and from there to the same `Chain` the presets give; a mixer left on
+    /// its defaults is exactly "voice-light", and a mixer with the stages switched on builds the
+    /// stages in the canonical order, through the one builder the export runs.
+    #[cfg(feature = "editor")]
+    #[test]
+    fn the_mixer_maps_to_the_same_chain_as_the_presets() {
+        use sundayrec_core::chain::Chain;
+        let light = sundayrec_core::processing::vocal_chain_preset_by_id("voice-light", None)
+            .unwrap()
+            .chain;
+        let from_mixer = EditorProcessing::default().to_core();
+        let export_chain = build_pre_chain(Some(from_mixer.clone()), None, None).unwrap();
+        assert_eq!(export_chain, Chain::from_vocal_chain(&light));
+
+        let mixer = EditorProcessing {
+            denoise_enabled: true,
+            dereverb_enabled: true,
+            gate_enabled: true,
+            deesser_enabled: true,
+            limiter_enabled: true,
+            ..EditorProcessing::default()
+        };
+        let c = build_pre_chain(Some(mixer.to_core()), None, None).unwrap();
+        assert_eq!(
+            stage_ids(&c),
+            [
+                "parametric_eq",
+                "denoise",
+                "dereverb",
+                "gate",
+                "compressor",
+                "deesser",
+                "limiter"
+            ]
+        );
     }
 
     // ── derived caches (P3): the peaks + segments sidecars ───────────────────────
