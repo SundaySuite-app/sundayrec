@@ -32,4 +32,4 @@ channelRepair: EditorChannelRepair | null,
  * level the window is given is the level of the PROGRAMME that is left after the cuts
  * (M2R #3c). No cuts and no length = the whole file.
  */
-cutRegions: Array<EditorCutRegion>, sourceDurationSec: number | null, };
+cutRegions: Array<EditorCutRegion>, fullLengthSec: number | null, };

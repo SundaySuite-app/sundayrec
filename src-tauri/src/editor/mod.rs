@@ -1307,7 +1307,7 @@ pub struct EditorMasterPreviewRequest {
     #[serde(default)]
     pub cut_regions: Vec<EditorCutRegion>,
     #[serde(default)]
-    pub source_duration_sec: Option<f64>,
+    pub full_length_sec: Option<f64>,
 }
 
 /// Where the rendered preview mp3 landed (a temp file the renderer plays).
@@ -2834,7 +2834,7 @@ pub async fn master_preview(
                 })
                 .collect();
             let source_duration = req
-                .source_duration_sec
+                .full_length_sec
                 .filter(|d| d.is_finite() && *d > 0.0)
                 .or(info.as_ref().map(|i| i.duration_sec))
                 .filter(|d| d.is_finite() && *d > 0.0)
@@ -4657,7 +4657,7 @@ mod tests {
             processing: None,
             channel_repair: None,
             cut_regions: Vec::new(),
-            source_duration_sec: None,
+            full_length_sec: None,
         };
         assert!(master_preview(&prev, "/x.mp4")
             .await
@@ -5685,7 +5685,7 @@ mod tests {
                 processing: c.processing,
                 channel_repair: c.repair,
                 cut_regions: Vec::new(),
-                source_duration_sec: None,
+                full_length_sec: None,
             };
             let e = export.audio_params(Some(2)).unwrap();
             let p = preview.audio_params(Some(2)).unwrap();
@@ -5726,7 +5726,7 @@ mod tests {
             processing: None,
             channel_repair: ex.channel_repair.clone(),
             cut_regions: Vec::new(),
-            source_duration_sec: None,
+            full_length_sec: None,
         };
         assert!(ex.audio_params(Some(1)).is_err());
         assert!(pv.audio_params(Some(1)).is_err());
@@ -7780,7 +7780,7 @@ mod tests {
                     processing: None,
                     channel_repair: None,
                     cut_regions: Vec::new(),
-                    source_duration_sec: Some(24.0),
+                    full_length_sec: Some(24.0),
                 };
                 let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.

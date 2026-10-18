@@ -124,7 +124,7 @@ describe("«Etter» sender det eksporten sender", () => {
       rightDb: 0,
     });
     expect(sent.cutRegions).toEqual([{ start: 10, end: 20 }]);
-    expect(sent.sourceDurationSec).toBe(3600);
+    expect(sent.fullLengthSec).toBe(3600);
     expect(sent.startSec).toBe(1800);
   });
 

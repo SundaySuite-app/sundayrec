@@ -96,7 +96,7 @@ export interface MasterPreviewParams {
   processing?: unknown;
   channelRepair?: ExportChannelRepair;
   cutRegions: readonly ExportCutRegion[];
-  sourceDurationSec: number;
+  fullLengthSec: number;
   startSec: number;
   durationSec: number;
 }

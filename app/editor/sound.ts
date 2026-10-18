@@ -310,7 +310,7 @@ export function listenRequest(start: number): MasterPreviewParams | null {
     processing: fields.processing,
     channelRepair: fields.channelRepair,
     cutRegions: E.cuts.map((c) => ({ start: c.start, end: c.end })),
-    sourceDurationSec: E.duration,
+    fullLengthSec: E.duration,
     startSec: start,
     durationSec: LISTEN_SPAN_SEC,
   };
