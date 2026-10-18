@@ -251,8 +251,8 @@ kjeden er `Chain::speech_clean`, og `SpeechClean::said()` gir kodene B3b skal ov
 **Støyfjerneren, og hvordan musikk beskyttes.** Valget står i modulhodene til `chain.rs` og `tale`. Kort:
 filmcrafts `denoise` beholdes, mildt (9 dB), og **gates på tale**: `denoise` og `dereverb` kjører
 på hele signalet, men utgangen blandes inn bare mens inngangen er talelignende (10 ms-nivået
-spenner ≥ 9 dB over de siste 0,6 s, godt over gulvet) eller ligger på det målte gulvet. Gulvet er
-et fast tall fra analysen, så en lang tone kan ikke forveksles med det. `afftdn` ble ikke valgt:
+spenner ≥ 9 dB over de siste 0,6 s, godt over gulvet) eller ligger på gulvet. Gulvet måler porten
+selv, på signalet den gater (se «M2R-rettelse» under). `afftdn` ble ikke valgt:
 ffmpeg skal ikke ha noe lydfilter (B2b), og B0c målte den bare mot gulv, aldri mot holdte toner.
 Målt på en syntetisk gudstjeneste (tale, 12 s holdt firetoners akkord på −26 dBFS, gulv −55 dBFS,
 tale), samme 48 kHz-signal:
@@ -263,6 +263,51 @@ tale), samme 48 kHz-signal:
 | `Chain::speech_clean` (støy, gatet)   | **+0,00 dB** | −8,8 dB                 |
 | `dereverb` 70 %, rt60 0,4 s uten gate | −2,71 dB     |                         |
 | `dereverb` 70 %, gatet                | **+0,00 dB** |                         |
+
+**M2R-rettelse: porten måler gulvet på signalet den ser (funn 1, 2 og 4).** Første versjon
+sammenlignet med gulvet fra analysen, og det er målt på et annet signal enn porten ser: hele den
+ukuttede fila, 16 kHz, før kanalreparasjon og før `dehum`. To feil fulgte av det, begge rettet:
+
+- _Brum ble tatt for gulvet._ Brum −52…−45 dBFS la analysens gulv på −54…−47, porten regnet alt
+  jevnt under «brum + 6 dB» som gulv, og en holdt akkord ~25 dB under talen ble dempet −8,3…−9,0 dB.
+  Ved brum −38 sank avstanden til talen under 20 dB og støyfjerningen ble slått helt av.
+- _Støyfjerningen pumpet i pauser over ca. 0,8 s_ når analysens gulv lå under portens (stille
+  forspill som klippes bort, død kanal + `DuplicateLeft`, hvit sus over 8 kHz).
+
+Valg: **porten måler gulvet selv** (`FloorTracker`, 5. persentil av portens egne 10 ms-nivåer
+over de siste 30 s), i samme samplinger, rate og nivå som støyfjerneren ser, altså etter
+kanalreparasjon og `dehum`, og bare av det som faktisk eksporteres. Analysens gulv er bare
+startverdi de første 2 s. Alternativene var å kalibrere analysen gjennom samme forkjede (en ekstra
+dekoding av det kuttede programmet i full rate, dvs. ett pass til på 90 minutter, og en cache nøklet
+på kuttene), eller en minimumsfølger (kan lære en holdt tone som gulv). En persentil over 30 s er
+begge deler billig og trygg: en tone må fylle 95 % av 30 s for å bli gulv; en holdt akkord er
+10–20 s med pauser rundt. Grensen står i koden: en tone holdt over ca. 28 s uten en eneste pause
+læres som gulv (det ville støyfjerneren gjort uansett, B2b). Beslutningen (`decide()`) leser
+fortsatt gulvet fra analysen, men med 50/60 Hz-familiene og tre overtoner notchet ut når brum er
+funnet (Q 10), så den ser det støyfjerneren ser etter `dehum`.
+
+|                                              | før                  | etter                      |
+| -------------------------------------------- | -------------------- | -------------------------- |
+| holdt akkord, brum −52 dBFS                  | −8,57 dB             | 0,00 dB                    |
+| holdt akkord, brum −45 dBFS                  | −9,0 dB (målt i M2R) | 0,00 dB                    |
+| brum −38 dBFS: analysens gulv / støyfjerning | −39,5 / av           | −71,0 / på, akkord 0,00 dB |
+| stille forspill: gulv sent i pausen          | 0,0 dB (pumping 8,7) | −8,5 dB (pumping 0)        |
+| død kanal + `DuplicateLeft`: sent i pausen   | −0,05 dB             | −8,55 dB                   |
+
+Testene som beviser det (`tale/tests.rs`) feiler på gammel kode og er grønne nå. B3a-testen for
+«ved gulvet»-grenen er strammet: pausen er 3,5 s og vinduet 5,5–7,4 s ligger utenfor holdetiden, og
+porten får et feil oppgitt gulv (−90 og −30) uten at pausen eller akkorden skifter oppførsel.
+
+**90-minutterseksport etter B2b/B3a (M2R funn 6), målt.** Hele eksportstien (`export`, ikke bare
+kjeden): `2026.01.04.mp3`, 5400 s, ett kutt, `speech-clear` («Tale»), mp3 256k, `--release`, M1,
+ffmpeg 9.0.1. Analysen valgte bare støyfjerning (ingen brum, ingen lang romklang). Analysen selv:
+2,5 s (2128× sanntid). Hele eksporten: **234 s** ved maskinlast ca. 25 (andre økter kjørte), og
+**219 s** ved last 9→5. Før M2 var tallet 222 s (B1b-tabellen over), så en «Tale»-eksport uten romklang er
+omtrent på nivå med i dag, ikke raskere; B1b-kravet «raskere enn i dag» er ikke oppfylt for «Tale»
+(95 s var uten rensing). Med `dereverb` på (stort kirkerom) legger M2R-målingen til ca. 50 s i
+kjeden, altså rundt 270 s, trolig tregere enn før. Ikke målt ende til ende med dereverb (ingen ekte
+fil med lang etterklang tilgjengelig). Kjeden er enkelttrådet og er det som tar tiden: `denoise`
+(minimumsstatistikk) og `dereverb` kan kjøres parallelt per kanal eller på egen tråd; ikke gjort.
 
 **Kjent grense:** lyd der nivået beveger seg som tale (trommer, strummet gitar) åpner porten, og en
 holdt tone under den møter støyfjerneren på inntil 9 dB. «Tale og musikk» bruker ikke denne rensingen.

@@ -110,9 +110,9 @@
 //!   of -45, -40 ate the tail). So the choice is (a) in the brief: gate it.
 //! * **The gate** ([`crate::tale::SpeechGate`]) lets the effect's output through
 //!   only while the input is speech-like (its 10 ms level spans 9 dB or more
-//!   over the last 0.6 s, well over the measured floor) or sits at the measured
-//!   floor (the floor comes from the analysis as a fixed number, so a long note
-//!   cannot be mistaken for it). Both effects run on the whole signal; only the
+//!   over the last 0.6 s, well over the floor) or sits at the floor (the gate
+//!   measures the floor itself on the signal it sees, as a 30 s percentile, M2R
+//!   #1/#2; a note shorter than ~28 s cannot be mistaken for it). Both effects run on the whole signal; only the
 //!   mix is gated, with the dry path delayed by the effect's latency.
 //! * **Measured on a synthetic service** (speech bursts, a held four-note chord
 //!   for 12 s at -26 dBFS, -55 dBFS room tone, speech again; 48 kHz): the chord

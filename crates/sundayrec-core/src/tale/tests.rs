@@ -337,7 +337,7 @@ const SR: f64 = 48_000.0;
 /// Speech 0-8 s (with a 1.4 s pause at 4.1 s), a held four-note chord 8-20 s,
 /// speech again 20-26 s, a -55 dBFS floor under all of it.
 fn service() -> Vec<f32> {
-    let mut x = speechish(SR, 26.0, -20.0, 0.1, &[(4.1, 5.5), (8.0, 20.0)], 51);
+    let mut x = speechish(SR, 26.0, -20.0, 0.1, &[(4.1, 7.6), (8.0, 20.0)], 51);
     for v in &mut x[(20.0 * SR) as usize..] {
         *v *= 1.0;
     }
@@ -375,7 +375,7 @@ fn a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it() {
     let tale = run(&Chain::speech_clean(&decided), &x);
 
     let chord = |y: &[f32]| rms_db(span(y, 14.0, 19.0));
-    let floor = |y: &[f32]| rms_db(span(y, 4.5, 5.4));
+    let floor = |y: &[f32]| rms_db(span(y, 5.5, 7.4));
     let tale_chord = chord(&tale) - chord(&x);
     let tale_floor = floor(&tale) - floor(&x);
 
@@ -400,6 +400,27 @@ fn a_held_chord_is_not_eaten_by_tale_but_a_plain_denoise_does_eat_it() {
         tale_floor < -5.0,
         "the floor in a pause only fell {tale_floor} dB"
     );
+}
+
+/// M2R #4: the pause is 3.5 s, so the 0.8 s the gate holds after the last syllable cannot
+/// cover the window (5.5-7.4 s). A floor handed to the gate that is a lie (-90 dBFS: «at
+/// the floor» can never fire on the number) must still open the gate in the pause, because the
+/// gate reads the floor off the signal it sees. The old test measured 4.5-5.4 s, inside the
+/// hold, and stayed green with a dead branch (the floor fell 5.75 dB with `floor_db = -90`).
+#[test]
+fn the_gate_finds_the_floor_itself_whatever_floor_it_is_told() {
+    let x = service();
+    for told in [-90.0f32, -30.0] {
+        let mut g = SpeechGate::new(SR as f32, told);
+        let mut amount = vec![0.0f32; x.len()];
+        g.process(&x, &mut amount);
+        let s = span(&amount, 5.5, 7.4);
+        let pause = s.iter().sum::<f32>() / s.len() as f32;
+        let c = span(&amount, 12.0, 19.0);
+        let chord = c.iter().sum::<f32>() / c.len() as f32;
+        assert!(pause > 0.9, "told {told}: the pause is dry ({pause})");
+        assert!(chord < 0.1, "told {told}: the chord is wet ({chord})");
+    }
 }
 
 #[test]
@@ -438,7 +459,223 @@ fn the_gate_lets_speech_and_the_floor_through_and_holds_a_chord_back() {
         s.iter().sum::<f32>() / s.len() as f32
     };
     assert!(mean(1.0, 4.0) > 0.8, "speech {}", mean(1.0, 4.0));
-    assert!(mean(4.6, 5.4) > 0.8, "pause {}", mean(4.6, 5.4));
+    assert!(mean(5.5, 7.4) > 0.8, "pause {}", mean(5.5, 7.4));
     assert!(mean(12.0, 19.0) < 0.1, "chord {}", mean(12.0, 19.0));
     assert!(mean(21.0, 25.0) > 0.8, "speech again {}", mean(21.0, 25.0));
+}
+
+// ── M2R #1 and #2: the floor the gate compares with is the floor it sees ───
+
+/// One decibel figure for «what the cleaning did to this stretch»: the stretch's level
+/// out of the cleaned chain minus the same stretch out of the reference chain (the
+/// same repair and hum removal, no de-noise).
+fn effect(clean: &[f32], reference: &[f32], a: f64, b: f64) -> f64 {
+    rms_db(span(clean, a, b)) - rms_db(span(reference, a, b))
+}
+
+fn mix_chord(x: &mut [f32], from: f64, secs: f64, tone_db: f64) {
+    for f in [110.0, 164.81, 220.0, 277.18] {
+        let s = sine(SR, f, secs, amp(tone_db));
+        for (i, v) in s.iter().enumerate() {
+            let fade = ((i as f64 / (0.3 * SR)).min(1.0))
+                .min(((s.len() - i) as f64 / (0.3 * SR)).min(1.0));
+            x[(from * SR) as usize + i] += *v * fade as f32;
+        }
+    }
+}
+
+/// 40 s: speech to 8 s, a 4-tone chord 12-24 s at -52 dBFS per tone (about 29 dB under the
+/// speech), speech again from 28 s; 50 Hz hum with two overtones all through.
+fn hum_recording(hum_db: f64) -> Vec<f32> {
+    let mut x = speechish(SR, 40.0, -20.0, 0.1, &[(8.0, 28.0)], 77);
+    mix_chord(&mut x, 12.0, 12.0, -52.0);
+    add(&mut x, &floor_noise(SR, 40.0, -66.0, 78));
+    for h in 1..=3 {
+        let hum = sine(SR, 50.0 * f64::from(h), 40.0, amp(hum_db) / f64::from(h));
+        add(&mut x, &hum);
+    }
+    x
+}
+
+fn chord_loss_with_hum(hum_db: f64) -> (SpeechClean, f64) {
+    let x = hum_recording(hum_db);
+    let decided = analyze16(48_000, &x).decide();
+    assert_eq!(decided.hum, Some(Mains::Hz50), "{decided:?}");
+    let tale = run(&Chain::speech_clean(&decided), &x);
+    // Hum removal alone leaves the chord untouched (M2R: -0.14 / 0.00 dB).
+    let dehum_only = SpeechClean {
+        denoise: false,
+        dereverb: None,
+        declick: false,
+        ..decided.clone()
+    };
+    let reference = run(&Chain::speech_clean(&dehum_only), &x);
+    let loss = effect(&tale, &reference, 14.0, 22.0);
+    println!(
+        "hum {hum_db} dBFS: floor {:.1}, denoise {}, chord {loss:+.2} dB",
+        decided.floor_db, decided.denoise
+    );
+    (decided, loss)
+}
+
+#[test]
+fn a_held_chord_survives_a_hum_recording() {
+    for hum_db in [-52.0, -45.0] {
+        let (decided, loss) = chord_loss_with_hum(hum_db);
+        assert!(decided.denoise, "{decided:?}");
+        assert!(
+            loss > -1.5,
+            "hum {hum_db}: the chord lost {loss} dB (the hum was taken for the floor)"
+        );
+    }
+}
+
+#[test]
+fn a_strong_hum_does_not_switch_the_de_noising_off() {
+    // The floor under -38 dBFS of hum is the room, not the hum: the gap to the speech is
+    // 40+ dB, not the 18 dB the raw histogram gave.
+    let (decided, loss) = chord_loss_with_hum(-38.0);
+    assert!(decided.denoise, "{decided:?}");
+    assert!(loss > -1.5, "the chord lost {loss} dB under a strong hum");
+}
+
+/// What the cleaning does to the floor 1.5-2.5 s into a pause and 2.5 s to its end (the gate's
+/// hold is 0.8 s, the 200 ms release done long before). A de-noiser that only works while the gate holds is pumping.
+fn pause_effect(clean: &[f32], reference: &[f32], pause: (f64, f64)) -> (f64, f64) {
+    (
+        effect(clean, reference, pause.0 + 1.5, pause.0 + 2.5),
+        effect(clean, reference, pause.0 + 2.5, pause.1 - 0.1),
+    )
+}
+
+/// 40 s: 15 s of empty church at -68 dBFS (the recording was started early), then a
+/// service with a -55 dBFS floor and two 4 s pauses at 22 and 31 s.
+fn early_start() -> Vec<f32> {
+    let mut x = speechish(
+        SR,
+        40.0,
+        -20.0,
+        0.1,
+        &[(0.0, 15.0), (22.0, 26.0), (31.0, 35.0)],
+        91,
+    );
+    let n = x.len();
+    let (quiet, loud) = (
+        floor_noise(SR, 15.0, -68.0, 92),
+        floor_noise(SR, 25.0, -55.0, 93),
+    );
+    for (i, v) in x.iter_mut().enumerate() {
+        *v += if i < quiet.len() {
+            quiet[i]
+        } else {
+            loud[(i - quiet.len()).min(loud.len() - 1)]
+        };
+    }
+    assert_eq!(x.len(), n);
+    x
+}
+
+#[test]
+fn a_quiet_lead_in_does_not_make_the_de_noiser_pump_in_the_pauses() {
+    let x = early_start();
+    // The analysis reads the file as recorded, lead-in and all; the export cuts it.
+    let decided = analyze16(48_000, &x).decide();
+    assert!(decided.denoise, "{decided:?}");
+    let kept = &x[(15.0 * SR) as usize..];
+    let tale = run(&Chain::speech_clean(&decided), kept);
+    let none = SpeechClean {
+        denoise: false,
+        dereverb: None,
+        hum: None,
+        declick: false,
+        ..decided.clone()
+    };
+    let reference = run(&Chain::speech_clean(&none), kept);
+    for pause in [(7.0, 11.0), (16.0, 20.0)] {
+        let (mid, late) = pause_effect(&tale, &reference, pause);
+        println!(
+            "lead-in: floor {:.1}; pause {pause:?}: mid {mid:+.2} dB, late {late:+.2} dB",
+            decided.floor_db
+        );
+        assert!(
+            late < -5.0,
+            "late in the pause the floor is back ({late} dB)"
+        );
+        assert!((late - mid).abs() < 1.5, "pumping: {mid} -> {late}");
+    }
+}
+
+#[test]
+fn a_dead_channel_repaired_by_duplicating_the_other_does_not_make_it_pump() {
+    // Left carries everything, right is dead. The analysis reads (L+0)/2; the chain, after
+    // `DuplicateLeft`, reads (L+L)/2: 6 dB more.
+    let left = {
+        let mut x = speechish(SR, 40.0, -20.0, 0.1, &[(22.0, 26.0), (31.0, 35.0)], 95);
+        add(&mut x, &floor_noise(SR, 40.0, -58.0, 96));
+        x
+    };
+    let right = vec![0.0f32; left.len()];
+    let analysis_in: Vec<Vec<f32>> = [&left, &right]
+        .iter()
+        .map(|c| {
+            (0..c.len() / 3)
+                .map(|i| (c[3 * i] + c[3 * i + 1] + c[3 * i + 2]) / 3.0)
+                .collect()
+        })
+        .collect();
+    let mut a = SpeechAnalyzer::new(2);
+    for i in (0..analysis_in[0].len()).step_by(5000) {
+        let e = (i + 5000).min(analysis_in[0].len());
+        a.push(&[analysis_in[0][i..e].to_vec(), analysis_in[1][i..e].to_vec()]);
+    }
+    let decided = a.finish().decide();
+    assert!(decided.denoise, "{decided:?}");
+    let run2 = |chain: Chain| {
+        chain
+            .build(SR as f32, 2)
+            .expect("builds")
+            .process_offline(&[left.clone(), right.clone()])
+            .remove(0)
+    };
+    let repair = || Chain::from_stages(vec![Stage::DuplicateLeft]);
+    let tale = run2(repair().then(Chain::speech_clean(&decided)));
+    let reference = run2(repair());
+    for pause in [(22.0, 26.0), (31.0, 35.0)] {
+        let (mid, late) = pause_effect(&tale, &reference, pause);
+        println!(
+            "dead channel: floor {:.1}; pause {pause:?}: mid {mid:+.2} dB, late {late:+.2} dB",
+            decided.floor_db
+        );
+        assert!(
+            late < -5.0,
+            "late in the pause the floor is back ({late} dB)"
+        );
+        assert!((late - mid).abs() < 1.5, "pumping: {mid} -> {late}");
+    }
+}
+
+#[test]
+fn white_hiss_is_not_read_lower_than_the_chain_sees_it() {
+    // 16 kHz has nothing above 8 kHz: white hiss is measured 3-5 dB low by the analysis.
+    let mut x = speechish(SR, 30.0, -20.0, 0.1, &[(10.0, 14.0), (20.0, 24.0)], 97);
+    add(&mut x, &floor_noise(SR, 30.0, -55.0, 98));
+    let decided = analyze16(48_000, &x).decide();
+    assert!(decided.denoise, "{decided:?}");
+    let tale = run(&Chain::speech_clean(&decided), &x);
+    let none = SpeechClean {
+        denoise: false,
+        dereverb: None,
+        hum: None,
+        declick: false,
+        ..decided.clone()
+    };
+    let reference = run(&Chain::speech_clean(&none), &x);
+    for pause in [(10.0, 14.0), (20.0, 24.0)] {
+        let (mid, late) = pause_effect(&tale, &reference, pause);
+        println!(
+            "hiss: floor {:.1}; mid {mid:+.2}, late {late:+.2}",
+            decided.floor_db
+        );
+        assert!(late < -5.0 && (late - mid).abs() < 1.5, "{mid} -> {late}");
+    }
 }
