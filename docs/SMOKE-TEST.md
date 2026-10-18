@@ -350,6 +350,13 @@ the device.
      later than 2 s after the previous). Proven on a Mac with `testsrc2`
      through the exact argv (see the PR); the real-camera run is the
      `docs/RIG-DAY.md` (c0b) item.
+   - **Dropped frames (C3c):** if the encoder falls behind, the video track
+     drops the oldest camera frame (never the audio) and counts it. The
+     recording overlay then shows a calm note, «Kameraet henger litt etter, så
+     noen bilder er hoppet over. Lyden er ikke berørt.», without a number and
+     without an alert. On a healthy machine it must NOT appear during a smoke
+     test. The count also feeds the opt-in `video.frames_dropped` telemetry
+     counter. The long runs are `docs/RIG-DAY.md` (v).
 4. Stop, and open the file.
    - **Expected:** the mp4 has a video stream with picture in it. The preview is
      evidence that frames reached the ENGINE; only the file proves they were

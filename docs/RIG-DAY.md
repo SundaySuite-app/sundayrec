@@ -642,6 +642,85 @@ _(w4, w8–w13, w15 hører til andre F2-Windows-funn som løper i egne
 runder — skjulte mapper + OneDrive-varsel, m.fl. Fylles inn her når de
 respektive PR-ene er merget; se `docs/NEEDS-RICHARD.md` §«Eierbeslutninger fra F2».)_
 
+## (v) Videomotor
+
+Den nye videoøkta (C3a–C3c): WAV + MKV per fragment, lydklokka som sjef,
+konformer som fyller hullene. Fire punkter, i denne rekkefølgen, på **både Mac
+og Windows**. Mac-halvdelen kan gjøres på Macen med Continuity-kameraet
+(iPhone) eller FaceTime-kameraet; Windows-halvdelen, USB-kabelen og
+CPU-lasten venter på riggen. **Terminalen må ha kameratilgang** (Systeminnstillinger →
+Personvern og sikkerhet → Kamera) for kommandoene under; Claudes egen terminal
+har det ikke, så kjør dem i din egen terminalfane.
+
+**Før du begynner (Mac, 1 min):** `cargo run -p sundayrec --example camera_probe -- --camera iphone --seconds 10`
+fra repoet. **Forventet:** «frames» rundt 300, null hull i intervallstatistikken.
+Gjør det med FaceTime også (`--camera facetime`). Rødt funn her er C1c, ikke
+videomotoren.
+
+**Telleren `video.frames_dropped`.** Ingen sjekk under er grønn hvis overlegget
+viser merknaden «Kameraet henger litt etter, så noen bilder er hoppet over».
+Merknaden er laget for å være rolig, men et rigg-opptak på en frisk maskin skal
+ikke vise den. Står den der: noter koder, CPU-bruk og tallet i loggen
+(`video track: frames dropped or the encoder failed this fragment`).
+
+- [ ] **(v1) 90 minutter med klapp i start og slutt: synk innenfor ±1 bilde.**
+      Slå på «Ta med kamera», sett kameraet foran en klokke eller en skjerm
+      med løpende tidskode, og start et opptak. Klapp **tydelig foran kameraet
+      og mikrofonen** de første sekundene. La det gå **90 minutter** (en hel
+      gudstjeneste). Klapp igjen de siste sekundene, og stopp.
+      **Forventet:** én mp4. Åpne i redigereren eller VLC og gå bilde for
+      bilde (`,` og `.` i VLC) til klappet: lydtoppen og bildet der hendene
+      treffer hverandre er **høyst ett bilde (33 ms) fra hverandre**, i
+      begge ender. Videoen er like lang som lyden (`ffprobe` med `-show_entries stream=duration`, innenfor ett bilde). Overlegget viser
+      ingen merknad om tapte bilder. Er «behold ren lydfil» på: en egen WAV
+      ligger ved siden av.
+      **Mac-delen:** kan kjøres med Continuity-kameraet. **Windows-delen:**
+      USB-webkamera + USB-mikser (og gjenta med ASIO-kort om det finnes).
+      **Rødt funn:** driv som vokser over opptaket (klappet er 1 bilde unna
+      ved start og 5 ved slutt), eller bilde som henger etter lyden fra første
+      sekund.
+- [ ] **(v2) USB-kabelen til kameraet trekkes i 10 sekunder midt i.** Start et
+      videoopptak med klapp i starten. Etter ca. 5 minutter: **trekk kabelen
+      til kameraet** (på Macen: ta iPhonen ut av Continuity ved å koble fra
+      kabelen/slå av Wi-Fi på telefonen; med FaceTime-kameraet kan det ikke
+      trekkes, bruk et USB-kamera), vent **10 sekunder**, sett den i igjen.
+      La opptaket gå videre i minst 2 minutter til, klapp igjen og stopp.
+      **Forventet:** **lyden har ingen hull** (lytt gjennom hele stedet; i
+      redigereren er bølgeformen sammenhengende), bildet **fryser** (siste
+      bilde står) eller blir **svart** mens kameraet er borte, og
+      **kommer tilbake** — senest ved neste fragment (gjenkobling av kameraet
+      midt i et fragment er C5, ikke C3). Klappet på slutten er fortsatt
+      innenfor ±1 bilde. Opptaket stopper ikke og viser ingen feil.
+      **Rødt funn:** hull i lyden, et opptak som ender, eller bilde som aldri
+      kommer tilbake.
+- [ ] **(v3) `kill -9` midt i et videoopptak.** Start et videoopptak, la det
+      gå 2 minutter (klapp i starten). Finn prosessen (`pgrep -x sundayrec`
+      eller Oppgavebehandling på Windows) og drep den hardt: `kill -9 <pid>`
+      (Windows: `taskkill /F /PID <pid>`). Start appen på nytt.
+      **Forventet:** appen tilbyr å gjenopprette opptaket (se (w6) og
+      (c3a)), og resultatet er en **mp4 med bilde og nesten hele lyden**
+      (høyst et par sekunder tapt i halen). Klappet i starten er synkront.
+      Spiller i VLC og QuickTime/Windows' spiller. Kjør også den
+      automatiserte varianten med ekte kamera (Mac, fra din egen terminal):
+      `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_killed -- --ignored --nocapture`
+      (bytt til `iPhone` for Continuity-kameraet). **Forventet:** grønn, og
+      den skriver `kill -9 … wav ~4 s → mp4 video ~3,5 s, audio ~4 s`.
+      **Rødt funn:** opptaket forsvinner, mp4-en har lyd uten bilde, eller
+      bildet er forskjøvet mot lyden.
+- [ ] **(v4) CPU-last som i C0.** Samme oppsett som (e2) (Mac) og (c0a)
+      (Windows): belast CPU-en (`yes > /dev/null` i fire til åtte
+      terminalvinduer, eller en tung eksport) mens et **60–90 minutters**
+      videoopptak går. Mål CPU i Aktivitetsmonitor / Oppgavebehandling
+      (`sundayrec` + `ffmpeg`). **Forventet:** lyden har ingen hull, bildet
+      henger med (jevn 30 fps i fila: `ffprobe` med `-select_streams v` og
+      `-show_entries stream=avg_frame_rate`), og **telleren står på 0**:
+      overlegget viser ingen merknad. Hvis merknaden dukker opp: det er
+      riktig oppførsel under overbelastning (kameraet droppet bilder, lyden
+      er urørt), men noter hvor mye CPU som skulle til og hvor mange bilder
+      loggen sier ble sluppet — det er tallet `video.frames_dropped` vil vise
+      i feltet. Windows: sammenlign med (c0a)-basisen.
+      **Rødt funn:** hakk i lyden under last, eller et opptak som slutter.
+
 ## Ørene
 
 Lydkjede-funn som verken CI eller en sidecar-måling kan avgjøre alene — de

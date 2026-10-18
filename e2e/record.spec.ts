@@ -1429,6 +1429,41 @@ test.describe("kamerabildet i opptaksoverlegget", () => {
     );
   });
 
+  test("tapte kamerabilder gir en rolig merknad, aldri en alarm", async ({
+    page,
+  }) => {
+    // C3c: videosporet slipper bilder når koderen ikke henger med. Lyden er
+    // urørt, så merknaden skal ikke være en banner (`role=alert`) og ikke vise
+    // et tall — og den skal ikke være der før noe faktisk er sluppet.
+    await spyEvents(page);
+    await stubCamera(page);
+    await boot(page, {
+      fixtures: { ...CAMERA_FIXTURES, recording_preview_frame: FRAME_1080P },
+      settings: WITH_CAMERA,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      reconnect_count: 0,
+      scheduled_stop_ms: null,
+    });
+    await emit(page, "recording-progress", {
+      bytes_written: 1_000_000,
+      video_frames_dropped: 0,
+    });
+    await expect(page.getByTestId("overlay-video-skipped")).toHaveCount(0);
+
+    await emit(page, "recording-progress", {
+      bytes_written: 2_000_000,
+      video_frames_dropped: 17,
+    });
+    const note = page.getByTestId("overlay-video-skipped");
+    await expect(note).toContainText("Kameraet henger litt etter");
+    await expect(note).toContainText("Lyden er ikke berørt");
+    await expect(note).not.toContainText("17");
+    await expect(page.locator('[role="alert"]')).toHaveCount(0);
+  });
+
   test("uten kamera i dette opptaket er det ingen ramme", async ({ page }) => {
     await spyEvents(page);
     await boot(page, {

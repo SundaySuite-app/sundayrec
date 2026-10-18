@@ -352,6 +352,13 @@ pub struct RecordingTelemetry {
     /// (whole frames' worth of f32 samples).
     #[serde(default)]
     pub ring_overrun_samples: u64,
+    /// Camera frames the video track threw away this session because the
+    /// encoder could not keep up (C3c; summed per fragment, so it carries across
+    /// splits and reconnects). The same number the `video.frames_dropped`
+    /// counter adds, and the one the recording overlay shows as a calm note.
+    /// Audio is never touched by it. 0 for audio-only sessions and old rows.
+    #[serde(default)]
+    pub video_frames_dropped: u64,
     /// Media seconds implied by the native writer's EXACT frame count
     /// (frames/rate, summed per segment). Capture-side cross-check against the
     /// ffprobe-measured `measured_sec`: disagreement localizes a fault to

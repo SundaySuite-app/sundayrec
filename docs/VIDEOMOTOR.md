@@ -308,6 +308,25 @@ preview_jpg)`: `scale=720:-2,fps=12`, `-update 1`, til
   igjen; `longrun.rs` bruker en ren lavfi-WAV-skriver som stedfortreder for
   fangstbytes. En native soak med syntetisk kilde er ikke laget.
 
+**Levert (C3c).** Tellerne og runbooken. Det C4 og C5 må vite:
+
+- **`video.frames_dropped`** (`CounterName::VideoFramesDropped`) legges til
+  med `queue_dropped` når et fragment er ferdig (`counters::count_by`, en
+  no-op uten samtykke). Verdien er et antall bilder, ikke antall økter. Navnet
+  må stå i telemetri-Workerens `COUNTER_NAMES` (sunday-telemetry#21) FØR
+  klienten promoteres: et ukjent navn er en 400 klienten aldri prøver på nytt,
+  og hele pakken går tapt. Slippvakta sjekker nå også tellernavnene (ikke bare
+  nøklene) mot `tests/fixtures/telemetry-worker-keys.json` (`counterNames`).
+- **Økttotalen** ligger i `RecordingTelemetry::video_frames_dropped` (summert
+  per fragment, så den overlever splitt og gjenkobling) og følger
+  `recording://progress` hvert sekund (`RecordingProgress::video_frames_dropped`:
+  tidligere fragmenter pluss dette fragmentets levende tall).
+- **Overlegget** viser en rolig merknad i hint-stilen (ikke en banner, ikke et
+  tall) så lenge totalen er over 0 og kamera er med. Den nullstilles ved ny økt.
+- **Riggen:** `docs/RIG-DAY.md` (v), de fire punktene fra GJENNOMFORING §C3c.
+  Ikke kjørt: terminalen i økta har ikke kameratilgang (TCC), og USB-kabel,
+  Windows-boks og 90-minuttersløp er riggarbeid.
+
 ### C4 — forhåndsvisning fra samme kameraøkt
 
 - Kameraøkta åpnes når Opptak-siden viser kamerakortet, og lever videre inn i

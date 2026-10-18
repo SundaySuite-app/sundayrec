@@ -744,6 +744,11 @@ pub(crate) trait SegmentSignals {
     fn video_stats(&self) -> Option<VideoTrackStats> {
         None
     }
+    /// Camera frames this fragment's video track has dropped SO FAR (C3c) — live,
+    /// read at the 1 Hz progress tick. 0 for audio-only.
+    fn video_frames_dropped(&self) -> u64 {
+        self.video_stats().map_or(0, |v| v.queue_dropped)
+    }
 }
 
 impl SegmentSignals for NativeSegment {
@@ -798,6 +803,15 @@ impl SegmentSignals for NativeSegment {
     fn video_stats(&self) -> Option<VideoTrackStats> {
         self.video_stats
     }
+
+    fn video_frames_dropped(&self) -> u64 {
+        // While the track runs it owns the number; once it has stopped, the
+        // stats it left behind do.
+        match &self.video {
+            Some(v) => v.stats().queue_dropped,
+            None => self.video_stats.map_or(0, |v| v.queue_dropped),
+        }
+    }
 }
 
 /// Where the runner's user-visible output goes.
@@ -825,8 +839,9 @@ pub(crate) trait EventSink {
     fn started(&self);
     /// `recording://silence` — the silence warning fired.
     fn silence(&self, code: &str, message: &str);
-    /// `recording://progress` — the 1 Hz byte counter.
-    fn progress(&self, bytes_written: u64);
+    /// `recording://progress` — the 1 Hz byte counter, plus the session's
+    /// running count of dropped camera frames (0 without video).
+    fn progress(&self, bytes_written: u64, video_frames_dropped: u64);
     /// `recording://levels` — the 33 ms meters.
     fn levels(&self, peak_db_left: f64, peak_db_right: Option<f64>);
     /// `recording://state` — re-stamped when the auto-stop deadline moves.
@@ -886,10 +901,14 @@ impl EventSink for AppEventSink<'_> {
             },
         );
     }
-    fn progress(&self, bytes_written: u64) {
-        let _ = self
-            .app
-            .emit(PROGRESS_EVENT, RecordingProgress { bytes_written });
+    fn progress(&self, bytes_written: u64, video_frames_dropped: u64) {
+        let _ = self.app.emit(
+            PROGRESS_EVENT,
+            RecordingProgress {
+                bytes_written,
+                video_frames_dropped,
+            },
+        );
     }
     fn levels(&self, peak_db_left: f64, peak_db_right: Option<f64>) {
         let _ = self.app.emit(
@@ -1023,6 +1042,9 @@ where
         deliverable_bytes,
         telemetry,
     } = counters;
+    // Frames the video track dropped in the session's EARLIER fragments: the
+    // overlay shows a session total, so this fragment's live count is added to it.
+    let video_dropped_before = lock_recover(&telemetry).video_frames_dropped;
     // Silence watcher + its (host-owned) timers — identical to the ffmpeg path.
     let mut silence = SilenceWatcher::new(opts.stop_on_silence);
     let silence_stop_after =
@@ -1293,7 +1315,10 @@ where
                 let b = seg.bytes();
                 segment_bytes.store(b, Ordering::Relaxed);
                 if started_seen {
-                    sink.progress(b);
+                    sink.progress(
+                        b,
+                        video_dropped_before.saturating_add(seg.video_frames_dropped()),
+                    );
                 }
             }
             // 33 ms level meters over the routed banks.
@@ -1317,8 +1342,10 @@ where
     if xruns > 0 {
         tracing::warn!(xruns, "native capture: the audio system reported xruns");
     }
-    // C3a: the video track's account of this fragment. The telemetry counter
-    // (`video.frames_dropped`) is C3c's; until then it is in the log.
+    // C3a: the video track's account of this fragment. C3c: the frames it
+    // dropped are counted (`video.frames_dropped`, opt-in telemetry — a no-op
+    // without consent) and added to the session's total.
+    let video_dropped = seg.video_stats().map_or(0, |v| v.queue_dropped);
     if let Some(v) = seg.video_stats() {
         if v.queue_dropped > 0 || v.encoder_failed {
             tracing::warn!(
@@ -1327,8 +1354,13 @@ where
             );
         }
     }
+    crate::telemetry::counters::count_by(
+        sundayrec_core::telemetry::CounterName::VideoFramesDropped,
+        video_dropped,
+    );
     {
         let mut t = lock_recover(&telemetry);
+        t.video_frames_dropped = t.video_frames_dropped.saturating_add(video_dropped);
         t.ring_overrun_samples = t.ring_overrun_samples.saturating_add(overrun);
         t.native_xruns = t.native_xruns.saturating_add(xruns);
         t.native_frames_sec += seg.frames() as f64 / f64::from(seg.spec().sample_rate.max(1));
@@ -1554,6 +1586,7 @@ mod tests {
         Started,
         Silence,
         Progress(u64),
+        VideoDropped(u64),
         Levels(f64, Option<f64>),
         State(Option<u64>),
     }
@@ -1588,8 +1621,11 @@ mod tests {
         fn silence(&self, _c: &str, _m: &str) {
             self.push(Ev::Silence);
         }
-        fn progress(&self, b: u64) {
+        fn progress(&self, b: u64, dropped: u64) {
             self.push(Ev::Progress(b));
+            if dropped > 0 {
+                self.push(Ev::VideoDropped(dropped));
+            }
         }
         fn levels(&self, l: f64, r: Option<f64>) {
             self.push(Ev::Levels(l, r));
@@ -1609,6 +1645,8 @@ mod tests {
         peak: f32,
         spec: WavSpec,
         stops: Arc<AtomicU64>,
+        /// Frames the (pretend) video track has dropped so far.
+        video_dropped: Arc<AtomicU64>,
     }
 
     impl SegmentSignals for Scripted {
@@ -1643,6 +1681,13 @@ mod tests {
         async fn stop(&mut self) {
             self.stops.fetch_add(1, Ordering::Relaxed);
         }
+        fn video_stats(&self) -> Option<VideoTrackStats> {
+            let queue_dropped = self.video_dropped.load(Ordering::Relaxed);
+            (queue_dropped > 0).then(|| VideoTrackStats {
+                queue_dropped,
+                ..VideoTrackStats::default()
+            })
+        }
     }
 
     /// The scripted rig: a capture, the channel that feeds it, its counters,
@@ -1655,6 +1700,7 @@ mod tests {
         overrun: Arc<AtomicU64>,
         xruns: Arc<AtomicU64>,
         stops: Arc<AtomicU64>,
+        video_dropped: Arc<AtomicU64>,
         sink: Recorder,
     }
 
@@ -1665,6 +1711,7 @@ mod tests {
         let overrun = Arc::new(AtomicU64::new(0));
         let xruns = Arc::new(AtomicU64::new(0));
         let stops = Arc::new(AtomicU64::new(0));
+        let video_dropped = Arc::new(AtomicU64::new(0));
         Rig {
             seg: Scripted {
                 rx,
@@ -1678,6 +1725,7 @@ mod tests {
                     sample_rate: 48_000,
                 },
                 stops: Arc::clone(&stops),
+                video_dropped: Arc::clone(&video_dropped),
             },
             tx,
             bytes,
@@ -1685,6 +1733,7 @@ mod tests {
             overrun,
             xruns,
             stops,
+            video_dropped,
             sink: Recorder::default(),
         }
     }
@@ -2691,6 +2740,94 @@ mod tests {
         assert_eq!(t.ring_overrun_samples, 2_000);
         assert_eq!(t.native_xruns, 4);
         assert!((t.native_frames_sec - 2.0).abs() < 1e-9);
+    }
+
+    /// C3c: dropped camera frames reach three places — the session total in
+    /// telemetry, the `video.frames_dropped` counter (when consent is on), and
+    /// the 1 Hz progress event, where they are the SESSION's running total (the
+    /// earlier fragments' frames plus this fragment's live count).
+    #[tokio::test(start_paused = true)]
+    #[allow(clippy::await_holding_lock)]
+    async fn dropped_video_frames_are_counted_summed_and_shown() {
+        let _g = crate::telemetry::counters::test_lock();
+        crate::telemetry::counters::set_active(true);
+        let tel = telemetry();
+        let opts = test_opts("/tmp/x.wav");
+        // Fragment 1: 30 frames lost. Fragment 2: 12, and the progress tick
+        // must show 30 + 12 while it runs.
+        for (dropped, expect_shown) in [(30u64, 30u64), (12, 42)] {
+            let mut r = rig();
+            let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+            r.video_dropped.store(dropped, Ordering::Relaxed);
+            r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+                .unwrap();
+            let ender = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                stop_tx.send(()).await.unwrap();
+            });
+            let out = drive(
+                &mut r,
+                &opts,
+                counters_with(tel.clone()),
+                Some(u64::MAX / 2),
+                FakeClock::default().handle(),
+                &mut stop_rx,
+                &mut w_rx,
+            )
+            .await;
+            ender.await.unwrap();
+            assert_eq!(out, SegmentOutcome::GracefulStop);
+            assert!(
+                r.sink.has(&Ev::VideoDropped(expect_shown)),
+                "progress must carry the session total {expect_shown}: {:?}",
+                r.sink.seen()
+            );
+        }
+        assert_eq!(tel.lock().expect("telemetry").video_frames_dropped, 42);
+        let snap = crate::telemetry::counters::snapshot();
+        let counted = snap
+            .iter()
+            .find(|c| c.name == sundayrec_core::telemetry::CounterName::VideoFramesDropped)
+            .map(|c| c.value);
+        assert_eq!(counted, Some(42));
+        crate::telemetry::counters::set_active(false);
+    }
+
+    /// An audio-only fragment, or a video one that lost nothing, leaves no
+    /// trace: no counter entry, no `VideoDropped` in the progress events.
+    #[tokio::test(start_paused = true)]
+    #[allow(clippy::await_holding_lock)]
+    async fn a_session_without_dropped_frames_counts_nothing() {
+        let _g = crate::telemetry::counters::test_lock();
+        crate::telemetry::counters::set_active(true);
+        let tel = telemetry();
+        let mut r = rig();
+        let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
+        let ender = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            stop_tx.send(()).await.unwrap();
+        });
+        drive(
+            &mut r,
+            &test_opts("/tmp/x.wav"),
+            counters_with(tel.clone()),
+            Some(u64::MAX / 2),
+            FakeClock::default().handle(),
+            &mut stop_rx,
+            &mut w_rx,
+        )
+        .await;
+        ender.await.unwrap();
+        assert!(!r
+            .sink
+            .seen()
+            .iter()
+            .any(|e| matches!(e, Ev::VideoDropped(_))));
+        assert_eq!(tel.lock().expect("telemetry").video_frames_dropped, 0);
+        assert!(crate::telemetry::counters::snapshot().is_empty());
+        crate::telemetry::counters::set_active(false);
     }
 
     /// A graceful stop is the one path that must NOT emit an error and must

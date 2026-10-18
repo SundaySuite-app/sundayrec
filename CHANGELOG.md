@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Opptaksvinduet sier fra hvis kameraet ikke henger med.** Klarer ikke
+  maskinen å kode alle bildene, hopper appen over noen få og viser en rolig
+  merknad: «Kameraet henger litt etter, så noen bilder er hoppet over. Lyden er
+  ikke berørt.» Lyden påvirkes aldri. Hvis du har slått på anonym
+  kvalitetsrapportering, telles antall hoppede bilder (bare tallet, ingen
+  kameranavn) slik at vi kan se om det skjer på ekte maskiner.
 - **Eksport med mastring er mer enn dobbelt så rask, og treffer nivået.** Nivået
   settes nå av appen selv i stedet for av ffmpegs `loudnorm`: lyden måles etter
   at klippene og lydkjeden er lagt på, og får én jevn forsterkning til

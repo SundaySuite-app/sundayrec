@@ -628,6 +628,7 @@
       "reconnect": "Dźwięk z {name} zniknął — próbujemy połączyć ponownie",
       "reconnectAnon": "Dźwięk zniknął — próbujemy połączyć ponownie",
       "autoStop": "Zatrzyma się samo za {left}",
+      "videoSkipped": "Kamera trochę nie nadąża, więc kilka klatek zostało pominiętych. Dźwięk nie jest naruszony.",
       "finalizingHint": "Nagranie jest zapisywane na dysk. Zajmie to kilka sekund, a plik jest w tym czasie bezpieczny."
     },
     "done": {

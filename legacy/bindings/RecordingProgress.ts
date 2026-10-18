@@ -7,4 +7,10 @@ export type RecordingProgress = {
 /**
  * Total bytes ffmpeg has written to the current segment so far.
  */
-bytes_written: number, };
+bytes_written: number, 
+/**
+ * Camera frames the video track has dropped so far this SESSION (C3c),
+ * because the encoder could not keep up. 0 for audio-only sessions. The
+ * overlay shows a calm note when it is above 0; the audio is never affected.
+ */
+video_frames_dropped: number, };

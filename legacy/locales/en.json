@@ -622,6 +622,7 @@
       "reconnect": "Sound from {name} disappeared — trying to reconnect",
       "reconnectAnon": "The sound disappeared — trying to reconnect",
       "autoStop": "Stops by itself in {left}",
+      "videoSkipped": "The camera is falling a little behind, so a few frames were skipped. The audio is not affected.",
       "finalizingHint": "The recording is being written to disk. It takes a few seconds, and the file is safe meanwhile."
     },
     "done": {

@@ -63,6 +63,13 @@ export const sessionStartedAtMs = signal<number | null>(null);
 /** Byte skrevet så langt, fra `recording://progress`. `null` = ikke målt. */
 export const sessionBytes = signal<number | null>(null);
 
+/**
+ * Kamerabilder videosporet har sluppet så langt i økta (C3c), fordi koderen ikke
+ * rakk dem. Fra `recording://progress`. 0 = ingen (eller ikke video). Lyden
+ * berøres aldri av tallet; overlegget viser bare en rolig merknad når det er over 0.
+ */
+export const sessionVideoDropped = signal(0);
+
 /** Motorens auto-stopp-frist (absolutt epoke-ms), eller `null` for ingen. */
 export const scheduledStopMs = signal<number | null>(null);
 
@@ -125,6 +132,7 @@ export function endSessionLocally(): void {
   isRecording.value = false;
   sessionStartedAtMs.value = null;
   sessionBytes.value = null;
+  sessionVideoDropped.value = 0;
   scheduledStopMs.value = null;
   reconnecting.value = false;
   clearSilence();
@@ -140,6 +148,7 @@ export function markSessionStarted(): void {
   isRecording.value = true;
   sessionStartedAtMs.value = Date.now();
   sessionBytes.value = null;
+  sessionVideoDropped.value = 0;
   reconnecting.value = false;
   clearSilence();
   exitFinalizing();
@@ -515,9 +524,21 @@ export function initRecording(): () => void {
       if (levelWordFor(left, right) !== "nothing") clearSilence();
     }),
     window.api.on("recording-progress", (data: unknown) => {
-      const d = data as { bytes?: number; bytes_written?: number } | undefined;
+      const d = data as
+        | {
+            bytes?: number;
+            bytes_written?: number;
+            video_frames_dropped?: number;
+          }
+        | undefined;
       const bytes = d?.bytes ?? d?.bytes_written;
       if (typeof bytes === "number") sessionBytes.value = bytes;
+      // Bare opp: et tall som peker nedover er en ny økt, og den nullstilles
+      // der (`markSessionStarted`), ikke her.
+      const dropped = d?.video_frames_dropped;
+      if (typeof dropped === "number" && dropped > sessionVideoDropped.peek()) {
+        sessionVideoDropped.value = dropped;
+      }
     }),
   ];
 
