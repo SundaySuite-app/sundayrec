@@ -548,14 +548,18 @@ pub struct FfmpegSink {
 
 impl FfmpegSink {
     /// Spawn `ffmpeg <video_track_args>` writing `mkv`, parking the child in
-    /// `slot` (see [`VideoTrack::spawn_with_child`]).
+    /// `slot` (see [`VideoTrack::spawn_with_child`]). `preview` adds the live
+    /// preview JPEG the recording screen polls (production: the engine's
+    /// `recording_preview_path`; tests: `None`).
     pub fn spawn(
         spec: &VideoTrackSpec,
         encoder: VideoEncoder,
         mkv: &std::path::Path,
         slot: Arc<Mutex<Option<Child>>>,
+        preview: Option<&std::path::Path>,
     ) -> std::io::Result<Box<dyn SlotSink>> {
-        let args = video_track_args(spec, encoder, &mkv.to_string_lossy());
+        let preview = preview.map(|p| p.to_string_lossy().into_owned());
+        let args = video_track_args(spec, encoder, &mkv.to_string_lossy(), preview.as_deref());
         tracing::info!(?args, "video track: starting the encoder");
         let mut child = crate::util::hidden_std_command(crate::media::ffmpeg::ffmpeg_path())
             .args(&args)
@@ -712,9 +716,27 @@ pub fn choose_format(
         .map(|(i, _)| i)
 }
 
-/// Open the camera the session asked for, by the name the user picked: exact
-/// (case-insensitive) first, then the first whose name contains it. Returns
-/// the running capture and the spec it will deliver.
+/// The camera the user picked, by the name stored in the settings: exact
+/// (case-insensitive) name or stable id first, then the first whose name
+/// contains it. An empty name matches nothing. Pure — the ONE matching rule
+/// the recorder's start, the track, the camera picker's capability line and
+/// the diagnose probe share, so they can never disagree about which camera a
+/// name means.
+pub fn find_camera<'a>(
+    cams: &'a [crate::camera::CameraInfo],
+    name: &str,
+) -> Option<&'a crate::camera::CameraInfo> {
+    let lower = name.trim().to_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+    cams.iter()
+        .find(|c| c.name.to_lowercase() == lower || c.id == name)
+        .or_else(|| cams.iter().find(|c| c.name.to_lowercase().contains(&lower)))
+}
+
+/// Open the camera the session asked for ([`find_camera`]). Returns the
+/// running capture and the spec it will deliver.
 pub fn open_camera(
     name: &str,
     want_w: u32,
@@ -722,15 +744,7 @@ pub fn open_camera(
     fps: Fps,
 ) -> Result<(crate::camera::Capture, VideoTrackSpec), String> {
     let cams = crate::camera::list().map_err(|e| e.to_string())?;
-    let lower = name.to_lowercase();
-    let cam = cams
-        .iter()
-        .find(|c| c.name.to_lowercase() == lower || c.id == name)
-        .or_else(|| {
-            cams.iter()
-                .find(|c| !lower.is_empty() && c.name.to_lowercase().contains(&lower))
-        })
-        .ok_or_else(|| format!("no camera named '{name}'"))?;
+    let cam = find_camera(&cams, name).ok_or_else(|| format!("no camera named '{name}'"))?;
     let formats = crate::camera::formats(&cam.id).map_err(|e| e.to_string())?;
     let want_fps = f64::from(fps.num) / f64::from(fps.den);
     let tuples: Vec<_> = formats

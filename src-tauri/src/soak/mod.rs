@@ -1,41 +1,34 @@
 //! E6.1 — the soak / long-run harness.
 //!
-//! > **ffmpeg-arv til C3 (M1R #8).** The `lavfi` flavour below drives the
-//! > ffmpeg capture argv, which no audio recording uses after A5b: the shipping
-//! > audio path is the native cpal → ring → WAV writer. It still proves the
-//! > ffmpeg video/encode side, and the `Device` flavour still drives the native
-//! > path, but a green lavfi soak says nothing about the native writer. The
-//! > native writer's kill-and-recover bevis lives in
-//! > `recorder::longrun::tests::native_writer_kill`. Behaviour unchanged until C3.
+//! > **The lavfi soak is retired (C3b, M1R #8).** It drove the ffmpeg capture
+//! > argv with the device input swapped for an `-f lavfi` source, and C3b
+//! > removed that argv: every recording is captured natively now (cpal → ring
+//! > → WAV writer, plus the native video track). A green lavfi soak had stopped
+//! > proving anything about the shipping path after A5b; with the argv gone it
+//! > could not run at all. Its nightly workflow (`.github/workflows/soak.yml`)
+//! > left with it. What remains is the DEVICE soak below, which drives the real
+//! > shipping stack on a rig. The native writer's kill-and-recover proof lives
+//! > in `recorder::longrun::tests::native_writer_kill`, the video track's in
+//! > `recorder::longrun::tests::native_video`.
 //!
 //! ## Why this exists
 //!
 //! SundayRec's defining workload is a 60–180 minute UNATTENDED single take, and
 //! until this module the longest automated run in the repo was
 //! [`crate::test_recording`]'s 60-second `native_bench_60s_machine_proof` — one
-//! minute, `#[ignore]`d, and device-bound. Nothing in the gate ever asked the
-//! question the product lives or dies on: *does the capture stay honest, and does
-//! the process stay the same size, over hours?*
+//! minute, `#[ignore]`d, and device-bound. Nothing ever asked the question the
+//! product lives or dies on: *does the capture stay honest, and does the
+//! process stay the same size, over hours?*
 //!
 //! This harness answers it in the `BENCH60:` tradition — one machine-parseable
-//! line per iteration plus a results JSON — and it does so in TWO flavours:
-//!
-//! - **Device** ([`SoakSource::NativeDevice`]) — drives the real shipping stack
-//!   (`cpal` → ring → WAV writer) against the machine's microphone through the
-//!   existing [`crate::test_recording::run_native_capture_bench`]. This is the
-//!   only variant that can prove anything about real hardware: ring overruns,
-//!   the xruns CoreAudio/WASAPI report (A3c — counted natively, no stderr),
-//!   CoreAudio drift, a USB interface that stops delivering after 90 minutes.
-//!   It needs a rig, so it is `#[ignore]`d.
-//! - **lavfi** ([`SoakSource::Lavfi`]) — drives the REAL production capture
-//!   argv with the device input swapped for an `-f lavfi` synthetic source (see
-//!   [`lavfi_capture_args`]). It cannot prove anything about a microphone, but
-//!   it CAN prove everything downstream of one: the filter chain, the encoder,
-//!   the stderr-telemetry volume that starved the reader in the 2026-07-31
-//!   incident, the ffprobe-vs-wall-clock truth measurement, the verdict engine,
-//!   and — crucially — that none of it leaks memory or file descriptors when
-//!   repeated for hours. It needs no hardware at all, which is what makes it
-//!   runnable on a CI schedule (`.github/workflows/soak.yml`).
+//! line per iteration plus a results JSON — by driving the real shipping stack
+//! (`cpal` → ring → WAV writer) against the machine's microphone through
+//! [`crate::test_recording::run_native_capture_bench`], iteration after
+//! iteration. It can prove what only real hardware shows: ring overruns, the
+//! xruns CoreAudio/WASAPI report (A3c — counted natively), CoreAudio drift, a
+//! USB interface that stops delivering after 90 minutes — and that nothing
+//! leaks memory or file descriptors over hours. It needs a rig, so it is
+//! `#[ignore]`d.
 //!
 //! ## Machine-parseable output
 //!
@@ -47,14 +40,13 @@
 //!
 //! ## Resource sampling
 //!
-//! RSS and open-FD counts are sampled from OUR OWN process (not ffmpeg's): a
-//! leak in the harness/app is what a soak is for, and the capture child is
-//! reaped every iteration by construction. Sampling is deliberately SPARSE
+//! RSS and open-FD counts are sampled from OUR OWN process: a leak in the
+//! harness/app is what a soak is for, and every iteration's capture is torn
+//! down by construction. Sampling is deliberately SPARSE
 //! (default 15 s) because `lsof` is expensive; the point is a trend across
 //! hours, not a profile.
 //!
-//! ⚠️ HARDWARE-UNVERIFIED for the device variant; the lavfi variant needs only
-//! the ffmpeg sidecar.
+//! ⚠️ HARDWARE-UNVERIFIED — it needs a microphone.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,43 +64,23 @@ pub const SOAK_LINE_PREFIX: &str = "SOAK:";
 /// Prefix of the end-of-run summary line.
 pub const SOAK_SUMMARY_PREFIX: &str = "SOAK-SUMMARY:";
 
+/// The one source a soak drives since C3b: the native capture on a real device.
+const SOAK_SOURCE: &str = "native-device";
+
 /// Default gap between resource samples. `lsof` costs ~50–150 ms, so anything
 /// denser would measure the sampler instead of the capture.
 pub const DEFAULT_SAMPLE_EVERY: Duration = Duration::from_secs(15);
-
-/// Where a soak iteration's audio comes from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SoakSource {
-    /// Synthetic `-f lavfi` source through the real production capture argv.
-    /// Device-free, therefore CI-runnable.
-    Lavfi,
-    /// The real cpal → ring → WAV-writer stack against the default input
-    /// device. Rig-only.
-    NativeDevice,
-}
-
-impl SoakSource {
-    fn label(self) -> &'static str {
-        match self {
-            SoakSource::Lavfi => "lavfi",
-            SoakSource::NativeDevice => "native-device",
-        }
-    }
-}
 
 /// One soak run's parameters: `iterations` captures of `secs` seconds each.
 #[derive(Debug, Clone)]
 pub struct SoakConfig {
     /// Free-form run label (goes into the JSON + the summary line).
     pub label: String,
-    /// Where the audio comes from.
-    pub source: SoakSource,
     /// How many capture iterations to run back to back.
     pub iterations: u32,
     /// Seconds of audio per iteration.
     pub secs: u32,
-    /// Device name for [`SoakSource::NativeDevice`] (empty = host default).
+    /// Device name (empty = host default).
     pub device_name: String,
     /// Forced sample rate, or `None` for the source's native rate.
     pub sample_rate: Option<u32>,
@@ -122,7 +94,6 @@ impl Default for SoakConfig {
     fn default() -> Self {
         Self {
             label: "soak".into(),
-            source: SoakSource::Lavfi,
             iterations: 1,
             secs: 60,
             device_name: String::new(),
@@ -168,9 +139,8 @@ pub struct SoakIteration {
     pub drops: u64,
     /// ffmpeg `dup=`.
     pub dups: u64,
-    /// xrun/capture-drop class events. On the device (native) flavour this is
-    /// the audio system's own count (cpal `ErrorKind::Xrun`) plus one for any
-    /// ring overrun; on lavfi it is still the ffmpeg stderr-derived count.
+    /// xrun-class events: the audio system's own count (cpal `ErrorKind::Xrun`)
+    /// plus one for any ring overrun.
     pub xruns: u64,
     /// Output size in bytes.
     pub size_bytes: u64,
@@ -229,7 +199,8 @@ impl SoakIteration {
 pub struct SoakReport {
     /// The run label from the config.
     pub label: String,
-    /// Which source drove the captures.
+    /// Which source drove the captures (`native-device`; the field stays so
+    /// archived reports from the lavfi era still read the same).
     pub source: String,
     /// Requested iteration count.
     pub iterations: u32,
@@ -382,225 +353,6 @@ fn spawn_sampler(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//   The lavfi capture: the production argv with a synthetic input
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The lavfi source string for `secs` seconds of test audio at `rate` Hz.
-///
-/// A 440 Hz sine at −6 dBFS, not silence: the verdict engine legitimately WARNs
-/// on a silent capture ("svakt signal"), so a soak driven by silence would
-/// report a warning every iteration and teach the operator to ignore it.
-fn lavfi_source(secs: u32, rate: u32) -> String {
-    format!("sine=frequency=440:sample_rate={rate}:duration={secs}")
-}
-
-/// Build the lavfi capture argv: the EXACT production capture arguments from
-/// [`sundayrec_core::capture::build_unified_capture_args`] with only the device
-/// INPUT block swapped for an `-f lavfi` source.
-///
-/// The whole value of this harness rests on that "only": everything after the
-/// input — the `-af` drift/pan/silencedetect/astats chain, the codec choice, the
-/// sample-rate and channel flags, `-avoid_negative_ts make_zero` — is the
-/// production tail, byte for byte. That tail is where the 2026-07-31 sample-loss
-/// bug lived (astats stderr volume starving the capture reader), so a harness
-/// that rebuilt it by hand would be testing a lookalike. The unit test
-/// `lavfi_args_keep_the_production_tail` pins the equality.
-///
-/// The input block is everything up to and including the `-i <token>` pair.
-pub fn lavfi_capture_args(
-    platform: sundayrec_core::ffmpeg::Platform,
-    secs: u32,
-    rate: u32,
-    sample_rate: Option<u32>,
-    live_levels: bool,
-    output_path: &str,
-) -> Vec<String> {
-    use sundayrec_core::capture::{build_unified_capture_args, CaptureOpts};
-
-    let opts = CaptureOpts {
-        sample_rate,
-        live_levels,
-        ..CaptureOpts::default()
-    };
-    let production = build_unified_capture_args(platform, None, "0", output_path, &opts);
-    // Everything from `-i` onward is the production tail; the head is the
-    // platform's device-input block, which is what lavfi replaces.
-    let tail_start = production
-        .iter()
-        .position(|a| a == "-i")
-        .map(|i| i + 2)
-        .unwrap_or(0);
-
-    let mut args: Vec<String> = vec!["-hide_banner".into()];
-    // THE HEARTBEAT CHANNEL. `-progress pipe:1 -nostats` is part of the
-    // production head (`build_unified_capture_args`), and it is what the
-    // recorder's startup latch and watchdog actually read. A harness that
-    // rebuilt the head by hand and kept only the tail was no longer exercising
-    // that path at all — the one thing a soak is for is proving the real
-    // plumbing survives an hour. Taken from the shared const so it cannot drift.
-    args.extend(
-        sundayrec_core::progress::PROGRESS_ARGS
-            .iter()
-            .map(|s| (*s).to_string()),
-    );
-    args.extend([
-        "-f".into(),
-        "lavfi".into(),
-        // `-re` is what turns a fast render into a SOAK. Without it lavfi
-        // renders as fast as the CPU allows — a "600 second" iteration finished
-        // in 0.1 s and proved nothing about a long run: not the process living
-        // for an hour, not the reader draining an hour of astats stderr at the
-        // production cadence (the exact load that starved it in the 2026-07-31
-        // sample-loss incident), not a descriptor held open across it. With
-        // `-re` the source is paced at realtime, so wall clock ≈ media time,
-        // exactly like a microphone.
-        "-re".into(),
-        "-i".into(),
-        lavfi_source(secs, rate),
-        // `-t` bounds MEDIA time exactly (the lavfi source is also bounded, so
-        // this is belt AND braces): any shortfall in the probed duration is
-        // therefore lost samples, with no startup allowance needed.
-        "-t".into(),
-        secs.to_string(),
-    ]);
-    args.extend_from_slice(&production[tail_start..]);
-    args
-}
-
-/// Run one lavfi capture iteration through the real ffmpeg sidecar and judge it
-/// with the SAME [`sundayrec_core::selftest::selftest_verdict`] a live session
-/// and the device bench use.
-///
-/// Device-free by construction. Returns the report plus the produced file's
-/// size so the caller can record it.
-pub async fn run_lavfi_capture_bench(
-    secs: u32,
-    sample_rate: Option<u32>,
-    output_path: &str,
-) -> AppResult<(st::SelfTestReport, u64)> {
-    use tokio::io::AsyncReadExt;
-
-    let rate = sample_rate.unwrap_or(48_000);
-    let args = lavfi_capture_args(
-        crate::recorder::engine::current_platform(),
-        secs,
-        rate,
-        sample_rate,
-        true,
-        output_path,
-    );
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let drain = child.stderr.take().map(|mut stderr| {
-        tokio::spawn(async move {
-            let mut bytes = Vec::new();
-            let _ = stderr.read_to_end(&mut bytes).await;
-            String::from_utf8_lossy(&bytes).into_owned()
-        })
-    });
-    // stdout now carries the `-progress` blocks, and it MUST be drained: an
-    // unread pipe fills, ffmpeg blocks on the write, and a blocked ffmpeg drops
-    // capture samples — the 2026-07-31 failure mode, which is precisely what
-    // this harness exists to catch. Folding the blocks through the REAL
-    // `ProgressStream` also means the soak exercises the recorder's heartbeat
-    // parser rather than a lookalike, and gives back the drop/dup counters
-    // `-nostats` removes from stderr.
-    let progress = child.stdout.take().map(|mut stdout| {
-        tokio::spawn(async move {
-            let mut stream = sundayrec_core::progress::ProgressStream::new();
-            let mut buf = [0u8; 4096];
-            let mut last = sundayrec_core::progress::ProgressUpdate::default();
-            let mut blocks = 0u64;
-            loop {
-                match stdout.read(&mut buf).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        for u in stream.push(&String::from_utf8_lossy(&buf[..n])) {
-                            blocks += 1;
-                            last = u;
-                        }
-                    }
-                }
-            }
-            (last, blocks)
-        })
-    });
-    // Generous: lavfi renders far faster than realtime, but `-t` still paces the
-    // encode on some builds. A wedged child is killed rather than hanging the run.
-    let deadline = Duration::from_secs(u64::from(secs) + 60);
-    let status = match tokio::time::timeout(deadline, child.wait()).await {
-        Ok(s) => s.ok(),
-        Err(_) => {
-            let _ = child.kill().await;
-            None
-        }
-    };
-    let stderr_buf = match drain {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
-    };
-    let (progress_last, progress_blocks) = match progress {
-        Some(h) => h.await.unwrap_or_default(),
-        None => Default::default(),
-    };
-    if !status.map(|s| s.success()).unwrap_or(false) {
-        return Err(AppError::Recording(format!(
-            "soak: lavfi capture failed — {}",
-            stderr_buf
-                .lines()
-                .rev()
-                .take(3)
-                .collect::<Vec<_>>()
-                .join(" | ")
-        )));
-    }
-
-    // The heartbeat itself is now part of what the soak proves. Zero blocks on
-    // a capture that otherwise succeeded means the recorder's startup latch
-    // would never fire and its watchdog would never see the file grow — a
-    // perfectly healthy recording looking dead, which is the exact failure the
-    // `-progress` channel was introduced to end. A soak that passed through
-    // that would be worse than no soak.
-    if progress_blocks == 0 {
-        return Err(AppError::Recording(
-            "soak: ffmpeg produced no -progress blocks — the recorder's startup latch and \
-             watchdog heartbeat would both be dead on this build"
-                .into(),
-        ));
-    }
-
-    let measured_sec = crate::media::ffmpeg::probe_duration_secs(output_path)
-        .await
-        .unwrap_or(0.0);
-    let size_bytes = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
-    let capture_drop_lines = stderr_buf
-        .lines()
-        .filter(|l| st::is_capture_drop_line(&l.to_lowercase()))
-        .count() as u64;
-    let silence = st::parse_silence_segments(&stderr_buf, Some(f64::from(secs)));
-
-    let facts = st::SelfTestFacts {
-        expected_sec: f64::from(secs),
-        measured_sec,
-        // From the `-progress` channel, not stderr: `-nostats` (which the
-        // production argv carries) deletes the human line `drop=`/`dup=` were
-        // scraped from, so scraping stderr here would report a flat zero for a
-        // capture that dropped every second frame.
-        drops: progress_last.drop_frames,
-        dups: progress_last.dup_frames,
-        xruns: st::parse_xrun_count(&stderr_buf).saturating_add(capture_drop_lines),
-        size_bytes,
-        // A synthetic full-scale-ish sine: report it as measured so the verdict
-        // doesn't warn "weak signal" on a source we chose the level of.
-        strongest_rms_db: Some(-6.0),
-        silence_total_sec: st::silence_total_sec(&silence),
-        native_sample_rate: Some(rate),
-        forced_sample_rate: sample_rate,
-    };
-    Ok((st::selftest_verdict(&facts), size_bytes))
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //   The driver
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -608,7 +360,7 @@ pub async fn run_lavfi_capture_bench(
 /// resources throughout, printing one `SOAK:` line per iteration and one
 /// `SOAK-SUMMARY:` line at the end, and (optionally) writing the results JSON.
 ///
-/// An iteration that fails to RUN (no device, ffmpeg spawn error) is recorded
+/// An iteration that fails to RUN (no device, a capture that will not open) is recorded
 /// with `error` set and a `Fail` verdict rather than aborting the soak — the
 /// whole point is to find the iteration that breaks after two hours, so one bad
 /// iteration must not throw away the evidence from the others.
@@ -622,15 +374,16 @@ pub async fn run_soak(cfg: SoakConfig) -> AppResult<SoakReport> {
     for index in 1..=cfg.iterations {
         let iter_start = Instant::now();
         let (samples, stop) = spawn_sampler(cfg.sample_every, iter_start);
-        let out = dir.join(format!("soak_{}_{index}.wav", cfg.source.label()));
-        let out_str = out.to_string_lossy().into_owned();
+        let out = dir.join(format!("soak_{SOAK_SOURCE}_{index}.wav"));
 
-        let outcome: Result<(st::SelfTestReport, u64), String> = match cfg.source {
-            SoakSource::Lavfi => run_lavfi_capture_bench(cfg.secs, cfg.sample_rate, &out_str)
-                .await
-                .map_err(|e| e.to_string()),
-            SoakSource::NativeDevice => crate::test_recording::run_native_capture_bench(
-                crate::recorder::native_capture::stream::CpalHostKind::Default,
+        // The SAME host selection as a real recording.
+        let host = crate::recorder::engine::capture_host(
+            cfg!(windows),
+            crate::audio::asio::is_asio_device(&cfg.device_name),
+        );
+        let outcome: Result<(st::SelfTestReport, u64), String> =
+            crate::test_recording::run_native_capture_bench(
+                host,
                 &cfg.device_name,
                 cfg.sample_rate,
                 cfg.secs,
@@ -642,8 +395,7 @@ pub async fn run_soak(cfg: SoakConfig) -> AppResult<SoakReport> {
                 let size = r.size_bytes;
                 (r, size)
             })
-            .map_err(|e| e.to_string()),
-        };
+            .map_err(|e| e.to_string());
 
         stop.store(true, Ordering::Relaxed);
         let wall_sec = iter_start.elapsed().as_secs_f64();
@@ -705,7 +457,7 @@ pub async fn run_soak(cfg: SoakConfig) -> AppResult<SoakReport> {
 
     let report = SoakReport {
         label: cfg.label.clone(),
-        source: cfg.source.label().to_string(),
+        source: SOAK_SOURCE.to_string(),
         iterations: cfg.iterations,
         secs_per_iteration: cfg.secs,
         started_at,
@@ -768,119 +520,7 @@ pub fn sweep_bench_temp() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sundayrec_core::capture::{build_unified_capture_args, CaptureOpts};
-    use sundayrec_core::ffmpeg::Platform;
 
-    /// THE fidelity guarantee of the lavfi variant: everything after the input
-    /// block is the production capture argv, unchanged. If someone edits the
-    /// filter chain, the codec selection or `-avoid_negative_ts` and the soak
-    /// keeps passing, this test is what should have failed.
-    #[test]
-    fn lavfi_args_keep_the_production_tail() {
-        for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
-            let opts = CaptureOpts {
-                sample_rate: Some(48_000),
-                live_levels: true,
-                ..CaptureOpts::default()
-            };
-            let production = build_unified_capture_args(platform, None, "0", "/tmp/x.wav", &opts);
-            let tail_start = production.iter().position(|a| a == "-i").unwrap() + 2;
-            let soak = lavfi_capture_args(platform, 30, 48_000, Some(48_000), true, "/tmp/x.wav");
-
-            // The soak head is the production progress flags + the
-            // realtime-paced lavfi input + the media bound.
-            assert_eq!(
-                &soak[..11],
-                &[
-                    "-hide_banner",
-                    "-progress",
-                    "pipe:1",
-                    "-nostats",
-                    "-f",
-                    "lavfi",
-                    "-re",
-                    "-i",
-                    "sine=frequency=440:sample_rate=48000:duration=30",
-                    "-t",
-                    "30",
-                ],
-                "{platform:?}: lavfi input block"
-            );
-            assert_eq!(
-                &soak[11..],
-                &production[tail_start..],
-                "{platform:?}: the tail must be the PRODUCTION capture argv, byte for byte"
-            );
-            // Sanity: the tail really is the load-bearing part.
-            assert!(
-                production[tail_start..].iter().any(|a| a == "-af"),
-                "{platform:?}: the production tail carries the filter chain"
-            );
-        }
-    }
-
-    /// The soak must ask for the SAME machine-readable progress channel the
-    /// recorder does. Rebuilding the head by hand silently dropped these three
-    /// flags, and with them the only part of the recorder's heartbeat path the
-    /// harness could have exercised: the startup latch and the watchdog both
-    /// read `-progress`, not the tail.
-    #[test]
-    fn lavfi_args_carry_the_production_progress_flags() {
-        for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
-            let soak = lavfi_capture_args(platform, 5, 48_000, None, true, "/tmp/x.wav");
-            for flag in sundayrec_core::progress::PROGRESS_ARGS {
-                assert!(
-                    soak.iter().any(|a| a == flag),
-                    "{platform:?}: the soak argv dropped `{flag}`"
-                );
-            }
-            // …and BEFORE the input, exactly where the production head puts them.
-            let i = soak.iter().position(|a| a == "-progress").unwrap();
-            let input = soak.iter().position(|a| a == "-i").unwrap();
-            assert!(i < input, "{platform:?}: -progress must be a global flag");
-        }
-    }
-
-    /// Every global flag the production head carries must survive into the soak
-    /// head. The input block (`-f <backend> … -i <token>`) is the ONLY thing
-    /// lavfi is allowed to replace — this is the guard that caught `-progress`
-    /// going missing, and it will catch the next one too.
-    #[test]
-    fn the_soak_head_keeps_every_production_global_flag() {
-        for platform in [Platform::MacOS, Platform::Windows, Platform::Linux] {
-            let opts = CaptureOpts::default();
-            let production = build_unified_capture_args(platform, None, "0", "/tmp/x.wav", &opts);
-            let input_start = production
-                .iter()
-                .position(|a| a == "-f")
-                .expect("the production head opens the device with -f");
-            let soak = lavfi_capture_args(platform, 5, 48_000, None, true, "/tmp/x.wav");
-            for flag in &production[..input_start] {
-                assert!(
-                    soak.contains(flag),
-                    "{platform:?}: the soak head dropped the production global flag `{flag}`"
-                );
-            }
-        }
-    }
-
-    /// The `-af` chain follows `live_levels`, so a soak with the meters off
-    /// really does drop the astats pass (the 2026-07-31 starvation knob).
-    #[test]
-    fn lavfi_args_track_the_live_levels_switch() {
-        let with = lavfi_capture_args(Platform::MacOS, 5, 48_000, None, true, "/tmp/x.wav");
-        let without = lavfi_capture_args(Platform::MacOS, 5, 48_000, None, false, "/tmp/x.wav");
-        let joined_with = with.join(" ");
-        let joined_without = without.join(" ");
-        assert!(joined_with.contains("astats"), "meters on ⇒ astats present");
-        assert!(
-            !joined_without.contains("astats"),
-            "meters off ⇒ astats dropped from the chain"
-        );
-    }
-
-    /// The reported lines are machine-parseable and carry the stable prefixes a
-    /// nightly job greps for.
     #[test]
     fn bench_lines_are_machine_parseable() {
         let iter = SoakIteration {
@@ -953,7 +593,7 @@ mod tests {
         ];
         let report = SoakReport {
             label: "t".into(),
-            source: "lavfi".into(),
+            source: "native-device".into(),
             iterations: 2,
             secs_per_iteration: 60,
             started_at: "now".into(),
@@ -1011,109 +651,10 @@ mod tests {
         }
     }
 
-    // ── The long runs. Both stay OUT of the default gate. ────────────────────
+    // ── The long run. It stays OUT of the default gate. ──────────────────────
 
-    /// THE headless soak — the one a schedule can run. Drives the production
-    /// capture argv against a synthetic lavfi source for
-    /// `SUNDAYREC_SOAK_SECS` × `SUNDAYREC_SOAK_ITERATIONS`, then asserts the
-    /// verdict engine passed every iteration and that neither RSS nor the open
-    /// descriptor count grew.
-    ///
-    /// ```sh
-    /// SUNDAYREC_SOAK_ITERATIONS=6 SUNDAYREC_SOAK_SECS=600 \
-    ///   cargo test -p sundayrec soak_lavfi -- --ignored --nocapture
-    /// ```
-    ///
-    /// `SUNDAYREC_SOAK_JSON=/path/report.json` writes the archived artifact.
-    #[allow(clippy::await_holding_lock)]
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "long-running soak — run with --ignored (see .github/workflows/soak.yml)"]
-    async fn soak_lavfi_headless() {
-        let _guard = crate::media::ffmpeg::tests::ENV_LOCK.lock().unwrap();
-        let Some(bin) = crate::media::ffmpeg::tests::fetched_sidecar("ffmpeg") else {
-            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let Some(probe) = crate::media::ffmpeg::tests::fetched_sidecar("ffprobe") else {
-            eprintln!("SKIP: no fetched ffprobe sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        // SAFETY: serialised by ENV_LOCK; both restored before releasing it.
-        // Pinning the sidecar is load-bearing, not hygiene: a PATH homebrew
-        // ffmpeg masks a missing sidecar locally and not in CI (2026-08-04).
-        unsafe {
-            std::env::set_var("SUNDAYREC_FFMPEG", &bin);
-            std::env::set_var("SUNDAYREC_FFPROBE", &probe);
-        }
-
-        let env_u32 = |k: &str, d: u32| {
-            std::env::var(k)
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(d)
-        };
-        let cfg = SoakConfig {
-            label: "lavfi-headless".into(),
-            source: SoakSource::Lavfi,
-            iterations: env_u32("SUNDAYREC_SOAK_ITERATIONS", 2),
-            secs: env_u32("SUNDAYREC_SOAK_SECS", 60),
-            sample_every: Duration::from_secs(u64::from(env_u32("SUNDAYREC_SOAK_SAMPLE_SEC", 15))),
-            out_json: std::env::var("SUNDAYREC_SOAK_JSON").ok().map(PathBuf::from),
-            ..SoakConfig::default()
-        };
-        let report = run_soak(cfg).await.expect("soak run completes");
-
-        unsafe {
-            std::env::remove_var("SUNDAYREC_FFMPEG");
-            std::env::remove_var("SUNDAYREC_FFPROBE");
-        }
-
-        for it in &report.results {
-            assert!(
-                it.error.is_none(),
-                "iteration {} could not run: {:?}",
-                it.index,
-                it.error
-            );
-            assert!(
-                it.verdict != SelfTestVerdict::Fail,
-                "iteration {} FAILED the verdict: {:?}",
-                it.index,
-                it.reasons
-            );
-            // `-t` bounds media time exactly, so any shortfall is lost samples.
-            assert!(
-                it.loss_pct < st::DURATION_LOSS_FAIL_PCT,
-                "iteration {} lost {:.2}% of its audio",
-                it.index,
-                it.loss_pct
-            );
-            // `-re` must actually be pacing: an iteration that finished far
-            // faster than its media time was a fast render, and a fast render
-            // is not a soak. This is the guard against silently losing `-re`.
-            assert!(
-                it.wall_sec >= f64::from(it.expected_sec as u32) * 0.85,
-                "iteration {} took {:.2}s of wall clock for {:.0}s of audio — \
-                 the source was not realtime-paced, so this proved nothing",
-                it.index,
-                it.wall_sec,
-                it.expected_sec
-            );
-        }
-        // Descriptor leaks are the failure a soak is uniquely able to see: every
-        // iteration opens and closes the same handles, so the count must return
-        // to where it started. A small tolerance covers the sampler's own churn.
-        if let Some(growth) = report.open_fd_growth() {
-            assert!(
-                growth <= 4,
-                "open descriptors grew by {growth} across {} iterations — a leak",
-                report.results.len()
-            );
-        }
-    }
-
-    /// The DEVICE soak: the same driver against the real cpal → ring → writer
-    /// stack. Rig-only (it holds the microphone for the whole run).
+    /// The DEVICE soak: the driver against the real cpal → ring → writer stack.
+    /// Rig-only (it holds the microphone for the whole run).
     ///
     /// ```sh
     /// SUNDAYREC_SOAK_ITERATIONS=2 SUNDAYREC_SOAK_SECS=1800 \
@@ -1130,7 +671,6 @@ mod tests {
         };
         let cfg = SoakConfig {
             label: "native-device".into(),
-            source: SoakSource::NativeDevice,
             iterations: env_u32("SUNDAYREC_SOAK_ITERATIONS", 2),
             secs: env_u32("SUNDAYREC_SOAK_SECS", 300),
             device_name: std::env::var("SUNDAYREC_SOAK_DEVICE").unwrap_or_default(),

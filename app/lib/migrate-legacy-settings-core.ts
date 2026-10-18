@@ -181,7 +181,6 @@ export function mapLegacyBlob(raw: string): Dict | null {
   if (s.videoKeepAudio !== undefined) {
     put("keepSeparateAudio", s.videoKeepAudio !== false);
   }
-  put("classicDirectshow", bool(s.classicDirectshow));
 
   // Audio processing
   put("channels", oneOf(s.channels, ["stereo", "monoL", "monoR", "monoMix"]));

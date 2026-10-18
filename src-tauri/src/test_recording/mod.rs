@@ -109,8 +109,6 @@ pub async fn run_native_capture_bench(
         live_levels: false,
         keep_separate_audio: false,
         separate_audio_format: "wav".into(),
-        classic_directshow: false,
-        video_input: None,
         video_flip: false,
     };
 
@@ -197,8 +195,6 @@ fn native_probe_opts(
         live_levels: false,
         keep_separate_audio: false,
         separate_audio_format: "wav".into(),
-        classic_directshow: false,
-        video_input: None,
         video_flip: false,
     }
 }
@@ -207,7 +203,7 @@ fn native_probe_opts(
 ///
 /// This is what makes the diagnose report's `capture_ok` stop saying "ikke
 /// testet". It opens the same cpal host a real audio-only recording would
-/// ([`crate::recorder::engine::audio_only_host`]), so it exercises the same
+/// ([`crate::recorder::engine::capture_host`]), so it exercises the same
 /// stack — the native engine, which since A5b is the only one.
 ///
 /// ## What it does NOT do
@@ -229,7 +225,7 @@ pub async fn probe_audio_capture(
     audio_device_name: &str,
     sample_rate: Option<u32>,
 ) -> AppResult<bool> {
-    let host = crate::recorder::engine::audio_only_host(
+    let host = crate::recorder::engine::capture_host(
         cfg!(target_os = "windows"),
         crate::audio::asio::is_asio_device(audio_device_name),
     );
@@ -367,7 +363,7 @@ pub async fn run_test_recording(settings: &Settings) -> AppResult<TestRecordingR
     use crate::recorder::native_capture::segment::{spawn_native_segment, stop_native_bounded};
 
     let device = settings.device_name.as_deref().unwrap_or_default();
-    let host = crate::recorder::engine::audio_only_host(
+    let host = crate::recorder::engine::capture_host(
         cfg!(target_os = "windows"),
         crate::audio::asio::is_asio_device(device),
     );
@@ -588,8 +584,6 @@ mod tests {
             live_levels: false,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            classic_directshow: false,
-            video_input: None,
             video_flip: false,
         };
 

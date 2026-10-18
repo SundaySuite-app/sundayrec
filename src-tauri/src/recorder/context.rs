@@ -9,10 +9,8 @@
 //! through as loose parameters: `run_session` took 12, `run_cpal_session` 8,
 //! `run_native_segment` 10, `finalize_pending`/`finalize_one` 10 each, and the
 //! repo carried ten `#[allow(clippy::too_many_arguments)]` inside
-//! `recorder/**` to say so. Nine of those ten are gone now; the tenth
-//! (`cpal_capture`'s `stream_thread`) stays, because its twelve arguments are
-//! cpal stream plumbing — a ring producer, a meter bank, two reply channels —
-//! and not one of them is session context.
+//! `recorder/**` to say so. All ten are gone now (the last one went with
+//! `cpal_capture.rs` in C3b).
 //!
 //! That was not a cosmetic problem. It is exactly WHY the cpal path was
 //! forgotten when `session_generation` was added (F1-A5): threading one more
@@ -22,55 +20,49 @@
 //! when two sessions overlap.
 //!
 //! So the session's context is ONE value now. Adding a field here reaches every
-//! call site that already takes the context, and — because all three supervisors
-//! account for the fields EXHAUSTIVELY (see [`SessionContext`]'s own doc) — no
-//! path can silently skip a newcomer.
+//! call site that already takes the context, and — because the supervisor
+//! accounts for the fields EXHAUSTIVELY (see [`SessionContext`]'s own doc) — no
+//! path can silently skip a newcomer. (There were three supervisors when this
+//! was written; since C3b there is one, the native `run_session`.)
 
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use sqlx::SqlitePool;
-use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::selftest::RecordingTelemetry;
 use tauri::AppHandle;
 
-use crate::recorder::engine::{CaptureBackend, RecordingOpts, StateWriter};
+use crate::recorder::engine::{RecordingOpts, StateWriter};
 use crate::recorder::native_capture::preroll::PrerollClip;
+use crate::recorder::native_capture::stream::CpalHostKind;
 
-/// Everything ONE recording session is run against, whichever capture path runs
-/// it: the ffmpeg supervisor (`engine::run_session`), the Windows cpal-pipe
-/// supervisor ([`crate::recorder::cpal_capture::run_cpal_session`]) and the
-/// two-process video fallback
-/// ([`crate::recorder::two_process::run_two_process_session`]).
+/// Everything ONE recording session is run against: the native supervisor
+/// (`engine::supervisor::run_session`) and every finalisation step it calls.
 ///
-/// Built exactly ONCE per `RecorderEngine::start`, before the capture path is
-/// routed, and handed to whichever supervisor wins the routing. That is what
-/// makes the [`StateWriter`] — and therefore the `session_generation` guard
-/// inside it — provably the same source on every path: there is one writer, in
-/// one field, of one value. Cloning the context (the cpal attempt gets a clone
-/// so the originals survive a fall-through to DirectShow) clones the writer,
-/// which shares the same `Arc`s and the same generation counter — pinned by
-/// `a_cloned_state_writer_shares_the_same_generation_guard` in
+/// Built exactly ONCE per `RecorderEngine::start` and handed to the supervisor.
+/// That is what makes the [`StateWriter`] — and therefore the
+/// `session_generation` guard inside it — provably the same source everywhere:
+/// there is one writer, in one field, of one value. Cloning the context clones
+/// the writer, which shares the same `Arc`s and the same generation counter —
+/// pinned by `a_cloned_state_writer_shares_the_same_generation_guard` in
 /// `engine`'s tests.
 ///
 /// ## The exhaustiveness rule
 ///
-/// All three supervisors ACCOUNT FOR EVERY FIELD in a destructuring `let` with
-/// no `..` rest pattern. That is deliberate and load-bearing: a field added here
-/// stops every path compiling until each one has said, in writing, what it does
+/// The supervisor ACCOUNTS FOR EVERY FIELD in a destructuring `let` with no
+/// `..` rest pattern. That is deliberate and load-bearing: a field added here
+/// stops the supervisor compiling until it has said, in writing, what it does
 /// with it. Reading `ctx.<field>` alone would not do that — a new field would
-/// be merely *available* to a path, which is precisely the state F1-A5 was born
-/// in.
+/// be merely *available*, which is precisely the state F1-A5 was born in.
 ///
 /// ## What is NOT in here, and why
 ///
 /// The two channels — `stop_rx` (the stop request) and `ready` (the start
 /// handshake's reply address) — stay as separate parameters. They are not
 /// context but SINGLE-CONSUMER endpoints: `stop_rx` is `&mut`-borrowed by every
-/// segment loop and MOVED whole into the two-process fallback, so living in a
-/// struct that everything else reads through `&` would make every read site
-/// fight the segment loop's borrow; and `ready` is a `oneshot::Sender` consumed
+/// segment loop, so living in a struct that everything else reads through `&`
+/// would make every read site fight the segment loop's borrow; and `ready` is a `oneshot::Sender` consumed
 /// exactly once, before the session proper begins, so as a field it would be an
 /// `Option` that every later reader has to ignore plus a "have we answered yet?"
 /// state to reason about. Keeping them out is the choice with the fewest
@@ -88,7 +80,7 @@ use crate::recorder::native_capture::preroll::PrerollClip;
 ///   thing that happens more than once per session.
 /// - the capture folder and the crash-recovery manifest (F1/#246). Both are
 ///   derived inside the session from `opts.output_path` + the session id, which
-///   is itself stamped after the routing. Deriving beats carrying: there is no
+///   is itself stamped when the session starts. Deriving beats carrying: there is no
 ///   window in which the folder in the struct and the folder on disk can differ.
 /// - the segment's counters. They live one SEGMENT, not one session — see
 ///   [`SegmentCounters`].
@@ -102,19 +94,16 @@ pub(crate) struct SessionContext {
     /// routing). Owned per session: the engine resolves the camera input mode
     /// into it before the session starts.
     pub(crate) opts: RecordingOpts,
-    /// The capture host platform, resolved once by `start()`.
+    /// The capture host platform, resolved once by `start()` (the video
+    /// track's encoder choice depends on it).
     pub(crate) platform: Platform,
-    /// Which capture engine is running this session. Chosen once by `start()`
-    /// (audio-only → native, video → ffmpeg); there is no demotion from native
-    /// to ffmpeg any more (A5b), so a native start failure is a start error.
-    pub(crate) backend: CaptureBackend,
-    /// The ffmpeg-side audio device. MUTABLE across the session: a reconnect
-    /// re-resolves the device index by name (the mixer can come back on a
-    /// different avfoundation/dshow index), and every later spawn + the history
-    /// row must see the fresh one.
-    pub(crate) audio: FfmpegDevice,
-    /// The camera, when the session records video. `None` = audio-only.
-    pub(crate) video: Option<FfmpegDevice>,
+    /// The cpal host the native engine opens — CoreAudio, WASAPI or ASIO —
+    /// chosen once by `start()` (`engine::capture_host`). Every session runs on
+    /// the native engine since C3b; a start failure is a start error.
+    pub(crate) host: CpalHostKind,
+    /// The camera, by its listed name, when the session records video (the
+    /// native video track beside each WAV fragment). `None` = audio-only.
+    pub(crate) camera: Option<String>,
     /// The harvested pre-roll clip, prepended to the FIRST deliverable.
     pub(crate) preroll_clip: Option<PrerollClip>,
     /// The ONE generation-guarded door to the recorder's shared state and
@@ -122,21 +111,11 @@ pub(crate) struct SessionContext {
     pub(crate) state: StateWriter,
 }
 
-impl SessionContext {
-    /// A NATIVE video session (C3a): the native engine records the sound and a
-    /// video track beside it. Until C3b retires the ffmpeg video paths, the
-    /// native engine only gets a camera when `start()` routed a video session
-    /// to it on purpose ([`crate::recorder::engine::native_video_enabled`]).
-    pub(crate) fn is_native_video(&self) -> bool {
-        self.video.is_some() && matches!(self.backend, CaptureBackend::NativeAudio { .. })
-    }
-}
-
 /// The three counters ONE segment is driven against.
 ///
-/// They travel together everywhere a segment does — `engine::run_segment`, the
-/// native `run_native_segment` and its unit-tested core `drive_native_segment`
-/// — and they are the difference between those functions needing an
+/// They travel together everywhere a segment does — the native
+/// `run_native_segment` and its unit-tested core `drive_native_segment` — and
+/// they are the difference between those functions needing an
 /// `#[allow(clippy::too_many_arguments)]` and not. Grouped rather than
 /// context-ified because their lifetime is the SEGMENT's, not the session's:
 /// `segment_bytes` is a fresh counter per fragment, and `deliverable_bytes` is

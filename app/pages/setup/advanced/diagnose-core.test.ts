@@ -25,7 +25,6 @@ const RUST_CODES = [
   "SR-FFMPEG-01",
   "SR-AUDIO-01",
   "SR-AUDIO-02",
-  "SR-AUDIO-10",
   "SR-RATE-01",
   "SR-VIDEO-01",
   "SR-VIDEO-02",

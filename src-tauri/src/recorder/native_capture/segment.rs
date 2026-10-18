@@ -60,9 +60,9 @@ use crate::audio::asio::build_route_plan;
 use crate::error::AppResult;
 use crate::recorder::context::{SegmentCounters, SessionContext};
 use crate::recorder::engine::{
-    emit_error, emit_warning, error_code_str, now_ms, sleep_opt, wait_opt, RecordingLevels,
-    RecordingOpts, RecordingProgress, SegmentOutcome, StateWriter, LEVELS_EVENT, PROGRESS_EVENT,
-    SILENCE_EVENT, STARTED_EVENT,
+    emit_error, emit_warning, error_code_str, now_ms, RecordingLevels, RecordingOpts,
+    RecordingProgress, SegmentOutcome, StateWriter, LEVELS_EVENT, PROGRESS_EVENT, SILENCE_EVENT,
+    STARTED_EVENT,
 };
 use crate::recorder::native_capture::stream::{
     build_input_stream_typed, classify_stream_error_counting, find_device_exact_typed,
@@ -83,8 +83,26 @@ use sundayrec_core::errors::RecordingErrorCode;
 use sundayrec_core::stream_fault::{stream_fault_action, StreamFault, StreamFaultAction};
 
 /// How often the levels sampler reads the meters and emits (parity with the
-/// ffmpeg path's `LevelMeter::EMIT_EVERY` and the VU engine).
+/// VU engine; ~30/s).
 const LEVELS_EVERY: Duration = Duration::from_millis(33);
+
+/// A `Sleep` that fires after `d`, or never (a 100-year sleep) when `d` is None.
+/// Lets the `select!` arm exist unconditionally; the arm's `if` guard gates it.
+/// (Moved here from the deleted `engine/process.rs`, C3b — this loop is its
+/// only user now.)
+fn sleep_opt(d: Option<Duration>) -> tokio::time::Sleep {
+    tokio::time::sleep(d.unwrap_or(Duration::from_secs(60 * 60 * 24 * 365 * 100)))
+}
+
+/// Await an optional pinned sleep; when `None`, never resolves. The `select!`
+/// arm guards on `is_some()` so the `None` branch is never actually polled to
+/// completion.
+async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>) {
+    match s {
+        Some(sleep) => sleep.as_mut().await,
+        None => std::future::pending::<()>().await,
+    }
+}
 
 /// Bound on joining the stream thread (it polls its stop flag every 50 ms and
 /// then just drops the stream — 5 s only trips on a wedged CoreAudio teardown).
@@ -472,6 +490,8 @@ async fn start_video_track(
             encoder,
             &factory_path,
             std::sync::Arc::clone(&factory_child),
+            // The recording screen's live picture (C3b; C4 replaces it).
+            Some(&crate::recorder::engine::recording_preview_path()),
         )
     });
     match VideoTrack::spawn_with_child(
@@ -930,10 +950,17 @@ pub(crate) async fn run_native_segment(
         free_bytes: &free_bytes,
         reconnecting: session.reconnect_count() > 0,
     };
-    drive_native_segment(
+    let outcome = drive_native_segment(
         &mut seg, &sink, &env, &ctx.opts, counters, stop_rx, stop_watch,
     )
-    .await
+    .await;
+    // C0a, through the video track (C3b): a hardware encoder that failed at
+    // the first frame made the track fall back to libx264 — forget the stored
+    // choice so the next recording does not try it again.
+    if seg.video_stats.is_some_and(|v| v.encoder_fallback) {
+        crate::media::video_encoder::note_encoder_fallback(&ctx.app);
+    }
+    outcome
 }
 
 /// Wrap a BLOCKING free-space probe so calling it from the async segment loop
@@ -2720,8 +2747,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            classic_directshow: false,
-            video_input: None,
             video_flip: false,
         }
     }

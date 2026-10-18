@@ -9,7 +9,6 @@ use std::time::Duration;
 
 use sqlx::SqlitePool;
 use sundayrec_core::alerts::AlertText;
-use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::recorder::{RecorderState, RecordingSession};
 use sundayrec_core::recovery::{
     AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
@@ -24,7 +23,6 @@ use crate::recorder::context::SessionContext;
 use crate::recorder::native_capture::preroll::PrerollClip;
 use crate::util::lock_recover;
 
-use super::args::build_separate_audio_args;
 use super::emit::emit_error;
 use super::payloads::RecordingOpts;
 use super::{now_ms, QUALITY_EVENT};
@@ -35,10 +33,7 @@ use super::{now_ms, QUALITY_EVENT};
 /// PERSISTENT — deliberately NOT OS-temp — so a crash leaves the WAV fragments on
 /// disk for the next-launch recovery scan to finish.
 ///
-/// `pub(crate)` since F2-W4: the Windows cpal VIDEO session
-/// ([`crate::recorder::cpal_capture`]) captures into the SAME folder shape, and a
-/// second copy of this decision is exactly how the two paths would drift apart.
-pub(crate) fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
+pub(super) fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
     std::path::Path::new(delivery)
         .parent()
         .map(std::path::Path::to_path_buf)
@@ -48,9 +43,11 @@ pub(crate) fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBu
 
 /// The capture base path inside `cap_dir`, carrying the SAME file stem as the
 /// delivery file so [`delivery_path_for`] maps it straight back (and splits derive
-/// `<stem>_2.<ext>` etc). `capture_ext` is `wav` (audio) or `mkv` (video).
+/// `<stem>_2.<ext>` etc). `capture_ext` is `wav` — every session captures its
+/// sound as WAV fragments (a video session's MKV sits beside each one, named by
+/// `sundayrec_core::video_track::video_fragment_path`).
 /// E.g. delivery `/rec/sermon.mp3` → `<cap>/sermon.wav`.
-pub(crate) fn capture_base_path(
+pub(super) fn capture_base_path(
     cap_dir: &std::path::Path,
     delivery: &str,
     capture_ext: &str,
@@ -85,16 +82,21 @@ fn delivery_ext(delivery: &str) -> String {
 
 /// How a session's decoupled CAPTURE becomes the user's delivery file: the save
 /// folder, the container, the audio settings, and whether finalisation encodes
-/// (audio-only → WAV capture) or stream-copies (video → MKV capture).
+/// the WAV (audio-only, [`DeliveryMode::AudioEncode`]) or muxes the WAV with the
+/// video track's MKV (a video session, [`DeliveryMode::MuxAudioVideo`]).
 ///
 /// THE one place this is decided. It is persisted verbatim in the crash-recovery
 /// manifest and read back by [`crate::recorder::recovery::recover_session`] on the
 /// next launch, and it is what [`DeliverySpec::from_manifest`] turns into the live
-/// stop's finalise arguments — so a copy of this literal in a second capture path
-/// is a silent way for a recovered recording to come back in a different format
-/// than a cleanly-stopped one. F2-W4 gave the Windows cpal video path the same
-/// decoupled shape; it calls this rather than repeating it.
-pub(crate) fn delivery_encode_for(opts: &RecordingOpts, audio_only: bool) -> AudioEncodeManifest {
+/// stop's finalise arguments — so a copy of this literal in a second place is a
+/// silent way for a recovered recording to come back in a different format than
+/// a cleanly-stopped one.
+///
+/// (C3b: no new session produces [`DeliveryMode::RemuxCopy`] any more — that was
+/// the ffmpeg video capture's single MKV. The mode stays in the manifest schema
+/// and in `concat`, because a crash manifest written by an older version can
+/// still be waiting on disk for the next launch's recovery.)
+pub(crate) fn delivery_encode_for(opts: &RecordingOpts, with_video: bool) -> AudioEncodeManifest {
     AudioEncodeManifest {
         delivery_dir: delivery_dir_of(&opts.output_path),
         ext: delivery_ext(&opts.output_path),
@@ -104,17 +106,16 @@ pub(crate) fn delivery_encode_for(opts: &RecordingOpts, audio_only: bool) -> Aud
         },
         sample_rate: opts.sample_rate,
         bitrate_kbps: opts.bitrate_kbps,
-        mode: if audio_only {
-            DeliveryMode::AudioEncode
+        mode: if with_video {
+            DeliveryMode::MuxAudioVideo
         } else {
-            DeliveryMode::RemuxCopy
+            DeliveryMode::AudioEncode
         },
-        // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
-        // reject hev1); the tag is NOT applied to the mkv capture itself.
-        // v0.15: the recording codec is the constant H.264, so this is never
-        // set — kept as an expression of the constant rather than a bare
-        // `false` so the day the codec changes, the remux follows.
-        hvc1_tag: !audio_only
+        // HEVC into mp4/mov must be tagged hvc1 at the mux (Apple players
+        // reject hev1). v0.15: the recording codec is the constant H.264, so
+        // this is never set — kept as an expression of the constant rather than
+        // a bare `false` so the day the codec changes, the mux follows.
+        hvc1_tag: with_video
             && matches!(
                 sundayrec_core::capture::RECORDING_VIDEO_CODEC,
                 sundayrec_core::editor::VideoCodec::H265
@@ -122,34 +123,13 @@ pub(crate) fn delivery_encode_for(opts: &RecordingOpts, audio_only: bool) -> Aud
     }
 }
 
-/// [`delivery_encode_for`] for a NATIVE video session (C3a): the capture is a
-/// WAV plus an MKV beside every fragment, and finalisation muxes the two
-/// ([`DeliveryMode::MuxAudioVideo`]). Same folder, extension and audio
-/// settings as the other modes — only the mode differs.
-pub(crate) fn delivery_encode_for_native_video(opts: &RecordingOpts) -> AudioEncodeManifest {
-    AudioEncodeManifest {
-        mode: DeliveryMode::MuxAudioVideo,
-        ..delivery_encode_for(opts, false)
-    }
-}
-
-/// The delivery spec of THIS session's capture shape: audio-only (encode the
-/// WAV), native video (mux WAV + MKV) or ffmpeg video (remux the MKV).
-pub(crate) fn delivery_encode_for_session(ctx: &SessionContext) -> AudioEncodeManifest {
-    if ctx.is_native_video() {
-        delivery_encode_for_native_video(&ctx.opts)
-    } else {
-        delivery_encode_for(&ctx.opts, ctx.opts.video_device_name.is_none())
-    }
-}
-
 /// Snapshot the live session into a persistable crash-recovery manifest.
-/// `with_video`: a native video session — every deliverable lists the MKV
-/// beside each WAV fragment too.
+/// `with_video`: a video session — every deliverable lists the MKV beside each
+/// WAV fragment too.
 pub(super) fn session_manifest(
     session_id: &str,
     session: &RecordingSession,
-    audio: &FfmpegDevice,
+    device_name: &str,
     preroll_clip: &Option<PrerollClip>,
     start_ms: u64,
     delivery_encode: &Option<AudioEncodeManifest>,
@@ -158,7 +138,7 @@ pub(super) fn session_manifest(
     SessionManifest {
         recovery_attempts: 0,
         session_id: session_id.to_string(),
-        device_name: audio.name.clone(),
+        device_name: device_name.to_string(),
         session_start_ms: start_ms,
         preroll_clip_path: preroll_clip.as_ref().map(|c| c.raw_path.clone()),
         delivery_encode: delivery_encode.clone(),
@@ -196,9 +176,8 @@ pub(super) fn finalize_session_telemetry(
 
     let final_state = *lock_recover(final_state);
 
-    // Snapshot + stamp the host-known fields. The defensive seal covers any path
-    // that reached session end without a segment sealing itself (a start that
-    // failed before `run_segment`, a two-process hand-off); `seal_process` is
+    // Snapshot + stamp the host-known fields. The defensive seal covers a start
+    // that failed before its first segment could seal itself; `seal_process` is
     // idempotent, so a segment that already sealed adds nothing.
     let mut t = lock_recover(telemetry).clone();
     t.seal_process();
@@ -387,18 +366,21 @@ async fn finalize_one(
         None
     };
 
-    // Decoupled capture: the deliverable's primary is a WAV (audio) or MKV (video)
-    // capture, so ask `finalize_deliverable` to encode/remux it to the user's
-    // format. The capture stem (carrying any `_partN` split suffix) maps back into the
-    // save folder with the delivery extension.
+    // Decoupled capture: the deliverable's primary is a WAV capture (with an MKV
+    // beside each fragment for a video session), so ask `finalize_deliverable` to
+    // encode/mux it to the user's format. The capture stem (carrying any `_partN`
+    // split suffix) maps back into the save folder with the delivery extension.
     // The SAME spec the crash-recovery manifest carries — a live stop and a
     // next-launch recovery must deliver identically (see `delivery_encode_for`).
-    let native_video = ctx.is_native_video();
+    let with_video = ctx.camera.is_some();
     let delivery_spec = DeliverySpec {
-        // Native video + `keep_separate_audio`: the WAV stays for the
-        // separate audio file below (lossless source), then goes.
-        keep_audio_capture: native_video && ctx.opts.keep_separate_audio,
-        ..DeliverySpec::from_manifest(&delivery_encode_for_session(ctx), &deliverable.primary_path)
+        // Video + `keep_separate_audio`: the WAV stays for the separate audio
+        // file below (lossless source), then goes.
+        keep_audio_capture: with_video && ctx.opts.keep_separate_audio,
+        ..DeliverySpec::from_manifest(
+            &delivery_encode_for(&ctx.opts, with_video),
+            &deliverable.primary_path,
+        )
     };
 
     // `delivered` = the recording reached the user's chosen format. A fallback to
@@ -448,7 +430,7 @@ async fn finalize_one(
     }
     delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
-    // The WAV kept for the separate audio file (native video only): it is
+    // The WAV kept for the separate audio file (video sessions only): it is
     // the source below, and is removed after, whatever happens.
     let kept_wav =
         (delivered && delivery_spec.keep_audio_capture).then(|| deliverable.primary_path.clone());
@@ -463,7 +445,7 @@ async fn finalize_one(
     let row = RecordingRow {
         id: String::new(),
         file_path: final_path.clone(),
-        device_name: Some(ctx.audio.name.clone()),
+        device_name: Some(ctx.opts.audio_device_name.clone()),
         started_at: started_at as f64,
         duration_ms: Some(duration_ms),
         byte_size,
@@ -475,14 +457,16 @@ async fn finalize_one(
     }
 
     // FIX 3 — separate audio sidecar. For a VIDEO recording the finished file is a
-    // video container; when the user opted into `keep_separate_audio` we extract a
+    // video container; when the user opted into `keep_separate_audio` we make a
     // standalone audio file next to it and write a SECOND history row. Guarded on
     // the recording actually having video (audio-only recordings are already the
     // audio, so there's nothing to extract).
     //
-    // C3a: a native video session already HAS the audio as a lossless WAV —
-    // the separate file is made from that, not re-extracted from the mp4's AAC.
-    if ctx.opts.keep_separate_audio && ctx.opts.video_device_name.is_some() {
+    // C3a: a video session already HAS the audio as a lossless WAV — the
+    // separate file is made from that, not re-extracted from the mp4's AAC (the
+    // finished file is only the source when the delivery failed and the WAV was
+    // not kept).
+    if ctx.opts.keep_separate_audio && with_video {
         extract_separate_audio(
             pool,
             &final_path,
@@ -490,7 +474,6 @@ async fn finalize_one(
             started_at,
             duration_ms,
             &ctx.opts,
-            &ctx.audio,
         )
         .await;
     }
@@ -500,7 +483,7 @@ async fn finalize_one(
     (delivered, landed)
 }
 
-/// Extract a standalone audio sidecar from a finished VIDEO recording and write a
+/// Make a standalone audio sidecar for a finished VIDEO recording and write a
 /// second history row for it. Runs a one-shot ffmpeg `-vn -map 0:a:0` through the
 /// SAME `audio_encode_args` seam the recorder uses (so channels/sample-rate/bitrate
 /// match the recording's settings), writing `<stem>.<format>` via `make_unique_path`
@@ -508,18 +491,17 @@ async fn finalize_one(
 /// gate as the main file; a failed/empty extract is logged and skipped, never fatal.
 ///
 /// `final_path` names the file (and the folder) the sidecar goes beside;
-/// `source` is what it is encoded FROM — the finished video, or (native video,
-/// C3a) the lossless capture WAV.
+/// `source` is what it is encoded FROM — the lossless capture WAV (C3a), or the
+/// finished file when the WAV was not kept.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg against a real finished file.
-pub(crate) async fn extract_separate_audio(
+async fn extract_separate_audio(
     pool: &SqlitePool,
     final_path: &str,
     source: &str,
     started_at: u64,
     duration_ms: f64,
     opts: &RecordingOpts,
-    audio: &FfmpegDevice,
 ) {
     let src = std::path::Path::new(final_path);
     let dir = src.parent().unwrap_or_else(|| std::path::Path::new("."));
@@ -587,7 +569,7 @@ pub(crate) async fn extract_separate_audio(
     let row = RecordingRow {
         id: String::new(),
         file_path: sep_path,
-        device_name: Some(audio.name.clone()),
+        device_name: Some(opts.audio_device_name.clone()),
         started_at: started_at as f64,
         duration_ms: Some(duration_ms),
         byte_size,
@@ -599,10 +581,127 @@ pub(crate) async fn extract_separate_audio(
     }
 }
 
+/// Build the one-shot ffmpeg args that make a standalone audio file from a
+/// finished recording or its capture WAV: `ffmpeg -i <src> -vn -map 0:a:0
+/// <audio_encode_args> -y <dst>`. The encode args come from the SHARED
+/// `audio_encode_args` seam (codec from the sidecar extension, channels from
+/// `channel_mode`, sample-rate + bitrate from the recording's opts) so the
+/// sidecar matches the recording's chosen audio settings. Pure so the argument
+/// shape is unit-tested without a process. (Moved here from the deleted
+/// `engine/args.rs`, C3b — this file is its only user.)
+fn build_separate_audio_args(src: &str, dst: &str, opts: &RecordingOpts) -> Vec<String> {
+    let sep_ext = opts.separate_audio_format.trim_start_matches('.');
+    let channels = match opts.channel_mode {
+        ChannelMode::Stereo => 2,
+        _ => 1,
+    };
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-i".into(),
+        src.to_string(),
+        // Drop video, take only the first audio stream.
+        "-vn".into(),
+        "-map".into(),
+        "0:a:0".into(),
+    ];
+    args.extend(sundayrec_core::capture::audio_encode_args(
+        sep_ext,
+        channels,
+        opts.sample_rate,
+        opts.bitrate_kbps,
+    ));
+    args.push("-y".into());
+    args.push(dst.to_string());
+    args
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sundayrec_core::recovery::delivery_path_for;
+
+    fn opts() -> RecordingOpts {
+        RecordingOpts {
+            audio_device_name: "Soundcraft USB Audio".into(),
+            video_device_name: None,
+            output_path: "/tmp/rec.m4a".into(),
+            stop_on_silence: false,
+            silence_threshold_db: None,
+            silence_timeout_minutes: 5,
+            channel_mode: ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
+            sample_rate: Some(48_000),
+            bitrate_kbps: 192,
+            split_minutes: 0,
+            manual_max_minutes: 0,
+            live_levels: true,
+            keep_separate_audio: false,
+            separate_audio_format: "wav".into(),
+            video_flip: false,
+        }
+    }
+
+    #[test]
+    fn separate_audio_args_extract_audio_only_to_chosen_format() {
+        // A stereo wav sidecar from an mp4: drop video, take audio stream 0, encode
+        // to pcm_s16le (wav), stereo, native rate (no -ar), output last after -y.
+        let mut o = opts();
+        o.video_device_name = Some("FaceTime HD".into());
+        o.channel_mode = ChannelMode::Stereo;
+        o.sample_rate = None;
+        o.separate_audio_format = "wav".into();
+        let args = build_separate_audio_args("/tmp/service.mp4", "/tmp/service.wav", &o);
+        // Source in, video dropped, first audio stream mapped.
+        assert!(args.windows(2).any(|w| w == ["-i", "/tmp/service.mp4"]));
+        assert!(args.iter().any(|a| a == "-vn"), "must drop video");
+        assert!(args.windows(2).any(|w| w == ["-map", "0:a:0"]));
+        // wav → pcm_s16le, no bitrate, stereo, native (no -ar).
+        assert!(args.windows(2).any(|w| w == ["-c:a", "pcm_s16le"]));
+        assert!(!args.iter().any(|a| a == "-b:a"), "pcm takes no bitrate");
+        assert!(args.windows(2).any(|w| w == ["-ac", "2"]));
+        assert!(!args.iter().any(|a| a == "-ar"), "native rate omits -ar");
+        // Overwrite + output path always last.
+        let n = args.len();
+        assert_eq!(args[n - 2], "-y");
+        assert_eq!(args.last().unwrap(), "/tmp/service.wav");
+    }
+
+    #[test]
+    fn separate_audio_args_honour_format_channels_and_rate() {
+        // An mp3 mono sidecar at a forced 44.1 kHz with a 256k bitrate.
+        let mut o = opts();
+        o.channel_mode = ChannelMode::MonoMix;
+        o.sample_rate = Some(44_100);
+        o.bitrate_kbps = 256;
+        o.separate_audio_format = ".mp3".into(); // leading dot tolerated
+        let args = build_separate_audio_args("/tmp/x.mp4", "/tmp/x.mp3", &o);
+        assert!(args.windows(2).any(|w| w == ["-c:a", "libmp3lame"]));
+        assert!(args.windows(2).any(|w| w == ["-b:a", "256k"]));
+        assert!(args.windows(2).any(|w| w == ["-ac", "1"]), "mono → -ac 1");
+        assert!(args.windows(2).any(|w| w == ["-ar", "44100"]));
+    }
+
+    #[test]
+    fn a_session_with_a_camera_muxes_and_one_without_encodes() {
+        // C3b: the two shapes a new session can have. The ffmpeg video
+        // capture's `RemuxCopy` is never produced any more (old manifests may
+        // still carry it — `concat` keeps reading it).
+        let mut o = opts();
+        o.output_path = "/rec/service.mp4".into();
+        assert_eq!(
+            delivery_encode_for(&o, true).mode,
+            DeliveryMode::MuxAudioVideo
+        );
+        assert_eq!(
+            delivery_encode_for(&o, false).mode,
+            DeliveryMode::AudioEncode
+        );
+        let enc = delivery_encode_for(&o, true);
+        assert_eq!(enc.ext, "mp4");
+        assert_eq!(enc.channels, 2);
+        assert!(!enc.hvc1_tag, "the recording codec is H.264");
+    }
 
     #[test]
     fn capture_dir_is_hidden_per_session_folder_beside_delivery() {
@@ -649,10 +748,10 @@ mod tests {
             capture_base_path(&cap, "/rec/sermon.mp3", "wav"),
             cap.join("sermon.wav").to_string_lossy()
         );
-        // Video sessions capture to crash-tolerant Matroska.
+        // A video session's sound is a WAV too (its MKV sits beside it).
         assert_eq!(
-            capture_base_path(&cap, "/rec/service.mp4", "mkv"),
-            cap.join("service.mkv").to_string_lossy()
+            capture_base_path(&cap, "/rec/service.mp4", "wav"),
+            cap.join("service.wav").to_string_lossy()
         );
         // Round-trip: capture base → delivery path reproduces the user's file.
         let base = capture_base_path(&cap, "/rec/sermon.mp3", "wav");

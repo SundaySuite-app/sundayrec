@@ -1,133 +1,87 @@
-//! The production unified recorder engine (Fase 3).
+//! The production recorder engine: the engine handle, its shared-state door
+//! and the event channels.
 //!
-//! Lifts the Spike-B prototype into a state-machine-driven, self-healing
-//! recorder. ALL decisions live in the pure `sundayrec-core` crate
-//! ([`RecorderState`], [`RecordingSession`], the silence/watchdog/reconnect
-//! policies); this module owns only the I/O: ffmpeg processes, tokio timers,
+//! ALL decisions live in the pure `sundayrec-core` crate ([`RecorderState`],
+//! `RecordingSession`, the silence/watchdog/reconnect policies); this module
+//! and its children own only the I/O: the native capture, tokio timers,
 //! channels and Tauri events.
 //!
-//! ## Architecture — one supervisor, many helpers
+//! ## One engine (since C3b)
 //!
-//! A single **supervisor task** ([`run_session`]) owns the [`RecordingSession`]
-//! and the current [`RecorderState`]. It:
-//!   1. resolves the device with the REAL ffmpeg enumerator
-//!      ([`crate::audio::device_enum::enumerate_ffmpeg_devices`]) + the core
-//!      fuzzy match,
-//!   2. spawns ffmpeg for the current segment and a per-segment **reader task**
-//!      that streams stderr lines back over a channel,
-//!   3. drives a `select!` loop over: reader events (progress / silence / error
-//!      / ffmpeg-exit), the stop request, and the timer ticks (watchdog poll,
-//!      split, manual-max, silence stop/warn),
-//!   4. on an UNEXPECTED ffmpeg exit asks the core
-//!      [`RecordingSession::on_unexpected_exit`] → reconnect (sleep the back-off,
-//!      respawn against the next segment) or give up (fail-stop),
-//!   5. on a split tick gracefully finalises the current segment and starts a
-//!      fresh one WITHOUT ending the session,
-//!   6. on a manual-max tick or a silence-stop tick performs a graceful stop,
-//!   7. on each split boundary FINALISES the just-closed deliverable (concat its
-//!      reconnect fragments into one lossless file) and writes its history row;
-//!      on completion finalises the last deliverable too — so a split session
-//!      yields N files and N history rows (Fase 3.3a).
+//! Every session — audio-only or with a camera — records on the native engine
+//! (`recorder::native_capture`: cpal → ring → WAV writer, plus the camera's
+//! video track beside each WAV fragment). `start()` resolves the camera in the
+//! native camera list (C1c), builds the session context and spawns the ONE
+//! supervisor ([`supervisor`]: `run_session`, under its panic guard), which
+//! drives the session segment by segment across splits and reconnects and
+//! finalises every deliverable.
+//!
+//! What C3b removed from here: the ffmpeg device enumeration and camera-mode
+//! probe in `start()`, the routing between ffmpeg, the Windows cpal-pipe
+//! session (`cpal_capture`) and the native engine, the DirectShow fallback and
+//! its `classic_directshow` hatch, and the ffmpeg segment loop with its argv,
+//! process and stderr-reader helpers (`engine/{args,process,reader}.rs`). What
+//! it KEPT, and why: the handle, the generation-guarded [`StateWriter`] and the
+//! stop backstop below (every session needs them), the supervisor's panic
+//! guard (moved beside the one spawn in [`supervisor`], #341), and
+//! `emit`/`finalize`/`payloads` (the native session's events, delivery and IPC
+//! types).
 //!
 //! Every state change emits `recording://state`.
 //!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
-//! Everything pure is unit-tested ([`build_record_args`], event-channel
-//! constants, the device-token shaping). Everything that touches a process —
-//! [`run_session`], the reader task, the reconnect/split/stop paths and the
-//! watchdog — opens a real mic/camera and runs for a long time; it is NOT
-//! exercised by the test suite and MUST be smoke-tested on a rig (see
-//! `docs/MIGRATION-TAURI2.md` Fase 3 exit). The core decisions it delegates to
-//! ARE fully tested.
+//! Everything pure is unit-tested (the state door, the generation guard, the
+//! camera choice, the event-channel constants). Everything that opens a real
+//! mic/camera and runs for a long time — `start()`, `run_session`, the
+//! reconnect/split/stop paths — is exercised by the native segment's own
+//! driven tests and the long-run harness, but MUST still be smoke-tested on a
+//! rig (docs/SMOKE-TEST.md, docs/RIG-DAY.md).
 //!
-//! ## Done in Fase 3.3a (was deferred)
-//!
-//!   - **Reconnect-segment concat merge + pre-roll prepend.** Each deliverable's
-//!     reconnect `_rN` fragments are now stitched into one lossless file
-//!     (`-c copy`, [`crate::recorder::concat::finalize_deliverable`]) at the
-//!     deliverable's close, and the harvested pre-roll clip is prepended to the
-//!     FIRST deliverable's first fragment. The core
-//!     [`RecordingSession::deliverables`] groups split-vs-reconnect for it.
-//!
-//! ## Done in Fase 3.3b (partial)
-//!
-//!   - **Two-process audio+video fallback** (Electron's separate `videoHandle` /
-//!     `_vtmp.mp4` merge): implemented as a SELF-CONTAINED simple path in
-//!     [`crate::recorder::two_process`] — two ffmpeg processes (video + audio),
-//!     muxed at stop with start_time head-alignment + `aresample` drift
-//!     correction. Scoped to a SIMPLE video session (NO split, NO reconnect);
-//!     this engine still owns the unified split/reconnect machinery. It is now
-//!     AUTO-SELECTED: when a video session's first unified capture dies at
-//!     startup with no output (`two_process::should_fallback_to_two_process`),
-//!     the `UnexpectedExit` branch hands off to `run_two_process_session`
-//!     instead of burning the reconnect budget. Fusing the two-process path
-//!     fully INTO the reconnect/split state machine (each side reconnecting
-//!     independently, N×N fragment mux) remains the Fase-3-continuation TODO.
-//!
-//! ## Deferred (honest scope)
-//!
-//!   - **NDI, streaming, lossless master:** later phases.
-//!
-//! [`RecordingSession`]: sundayrec_core::recorder::RecordingSession
-//! [`RecordingSession::on_unexpected_exit`]: sundayrec_core::recorder::RecordingSession::on_unexpected_exit
-//! [`RecordingSession::deliverables`]: sundayrec_core::recorder::RecordingSession::deliverables
+//! [`RecorderState`]: sundayrec_core::recorder::RecorderState
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use sqlx::SqlitePool;
-use sundayrec_core::capture::resolve_camera_mode;
-use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
+use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::timeouts::RecorderTimeouts;
 use tauri::{AppHandle, Emitter};
 
-use crate::audio::device_enum::{enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE};
 use crate::error::{AppError, AppResult};
 use crate::recorder::context::SessionContext;
 use crate::recorder::native_capture::preroll::PrerollClip;
+use crate::recorder::native_capture::video::find_camera;
 use crate::util::lock_recover;
 
 // The engine is split by concern; this file keeps the engine handle, its
 // shared-state door and the event channels. What the rest of the crate uses is
 // re-exported below, so every `crate::recorder::engine::X` path is unchanged.
-mod args; // ffmpeg argv shaping + the device token
-mod emit; // error/warning/failure events + last-error.json
+mod emit; // error/warning/failure events + last-error.json + the error-code table
 mod finalize; // capture folder, crash manifest, deliverable finalisation, telemetry
 mod payloads; // the ts-rs IPC payload types
-mod process; // ffmpeg spawn + bounded graceful stop
-mod reader; // stderr/-progress classification on the zero-back-pressure reader
-mod supervisor; // run_session + run_segment (the select! loops)
+mod supervisor; // run_session, its one spawn site and its panic guard
 
-use self::args::device_token;
-pub use self::args::{build_record_args, current_platform, recording_preview_path};
-pub(crate) use self::emit::{emit_error, emit_failure, emit_warning};
-pub(crate) use self::finalize::{
-    capture_base_path, capture_dir, delivery_encode_for, extract_separate_audio,
-};
+pub(crate) use self::emit::{emit_error, emit_failure, emit_warning, error_code_str};
 pub use self::payloads::{
     RecorderStatePayload, RecordingEvent, RecordingFinished, RecordingLevels, RecordingOpts,
     RecordingProgress,
 };
-pub(crate) use self::process::{sleep_opt, stop_and_wait_bounded, wait_opt};
-pub(crate) use self::reader::error_code_str;
-use self::supervisor::run_session;
-pub(crate) use self::supervisor::{
-    audio_only_host, native_video_enabled, needs_ffmpeg_device_enumeration, select_capture_backend,
-    CaptureBackend, SegmentOutcome,
-};
-// Every session loop takes the keep-awake block through this one door: the ffmpeg
-// supervisor and the Windows cpal video session (`recorder::cpal_capture`); the
-// two-process fallback runs inside the supervisor and inherits it.
+use self::supervisor::spawn_supervisor;
+pub(crate) use self::supervisor::{capture_host, SegmentOutcome};
+// The session takes the keep-awake block through this one door; `crate::power`'s
+// tests drive the same door with a fake blocker.
+#[cfg(test)]
 pub(crate) use self::supervisor::session_keep_awake;
 
 /// Event channel: a progress heartbeat (bytes written so far).
 pub const PROGRESS_EVENT: &str = "recording://progress";
-/// Event channel: fired once, when ffmpeg's first `size=` line proves encoding.
+/// Event channel: fired once, when the capture's first block proves it is
+/// recording.
 pub const STARTED_EVENT: &str = "recording://started";
-/// Event channel: a classified fatal error from ffmpeg's stderr (or the watchdog).
+/// Event channel: a classified fatal error from the capture (or the watchdog).
 /// The UI treats this as TERMINAL (tears the recording overlay down), so it must
 /// only fire when the session is actually over — transient errors that the
 /// reconnect policy will retry go out on [`WARNING_EVENT`] instead. (The rig
@@ -193,11 +147,11 @@ pub struct RecorderEngine {
     /// supervisor task share the one sender — the supervisor side reaches it
     /// only through its [`StateWriter`].
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
-    /// Which audio engine the LAST `start()` used (`"wasapi"`/`"asio"`/
-    /// `"directshow"`/`"avfoundation"`) + any fallback reason. Surfaced by the
-    /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
-    /// fell back, and why. `(engine, fallback_reason)`.
-    audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
+    /// Which cpal host the LAST `start()` opened (`"coreaudio"`/`"wasapi"`/
+    /// `"asio"`). Surfaced by the diagnose tool so support can see whether ASIO
+    /// actually engaged. (There is no fallback reason to keep any more: since
+    /// C3b no session can fall back from one engine to another.)
+    audio_engine: Arc<Mutex<Option<String>>>,
     /// The `reconnect_count` of the LAST emitted `recording://state` payload.
     ///
     /// The count itself lives in the running session (`SessionState`), which is
@@ -309,6 +263,13 @@ impl StateWriter {
         is_current_session(self.generation, &self.session_generation)
     }
 
+    /// Has the shared state already reached a terminal state (Stopped/Failed)?
+    /// The stop backstop and the panic guard both leave a finished session
+    /// alone.
+    pub(crate) fn last_state_is_terminal(&self) -> bool {
+        lock_recover(&self.last_state).is_terminal()
+    }
+
     /// The generation guard, in the one place every write passes through.
     fn may_write(&self, write: &str) -> bool {
         if self.is_current() {
@@ -407,7 +368,7 @@ impl RecorderEngine {
             session: Mutex::new(None),
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
-            audio_engine: Arc::new(Mutex::new((None, None))),
+            audio_engine: Arc::new(Mutex::new(None)),
             last_reconnect_count: Arc::new(AtomicU32::new(0)),
             session_generation: Arc::new(AtomicU64::new(0)),
         }
@@ -479,22 +440,14 @@ impl RecorderEngine {
         )
     }
 
-    /// Record which audio engine `start()` chose (+ optional fallback reason), for
-    /// the diagnose tool. `fallback` is `Some(reason)` only when a VIDEO session's
-    /// Windows cpal pipe (WASAPI/ASIO) couldn't start and fell back to DirectShow;
-    /// audio-only sessions never fall back (A5b).
-    pub(crate) fn set_audio_engine(&self, engine: &str, fallback: Option<String>) {
-        *lock_recover(&self.audio_engine) = (Some(engine.to_string()), fallback);
+    /// Record which cpal host `start()` opened, for the diagnose tool.
+    pub(crate) fn set_audio_engine(&self, engine: &str) {
+        *lock_recover(&self.audio_engine) = Some(engine.to_string());
     }
 
     /// The audio engine the last recording used (diagnose tool).
     pub fn last_audio_engine(&self) -> Option<String> {
-        lock_recover(&self.audio_engine).0.clone()
-    }
-
-    /// Why the last recording fell back from the modern engine, if it did.
-    pub fn last_audio_fallback(&self) -> Option<String> {
-        lock_recover(&self.audio_engine).1.clone()
+        lock_recover(&self.audio_engine).clone()
     }
 
     /// The generation of the session `start()` last began. A caller that
@@ -526,10 +479,11 @@ impl RecorderEngine {
         self.scheduled_stop.send_replace(None);
     }
 
-    /// Start a recording. Resolves the device, then launches the supervisor task
-    /// which spawns ffmpeg and drives the whole session. `pool`, when present,
-    /// receives the history row on completion. Returns once the session has
-    /// launched ffmpeg, so a failure to launch surfaces to the caller.
+    /// Start a recording. Resolves the camera (for a video session), then
+    /// launches the supervisor task that opens the native capture and drives
+    /// the whole session. `pool`, when present, receives the history row on
+    /// completion. Returns once the first capture fragment is running, so a
+    /// failure to open the device surfaces to the caller.
     ///
     /// ⚠️ HARDWARE-UNVERIFIED — see module header.
     pub async fn start(
@@ -551,23 +505,23 @@ impl RecorderEngine {
         // correct — the previous session is stopped either way.
         let generation = self.session_generation.fetch_add(1, Ordering::SeqCst) + 1;
 
+        let wants_video = opts
+            .video_device_name
+            .as_deref()
+            .is_some_and(|n| !n.trim().is_empty());
+
         // Fail FAST + CLEAR on blocked TCC access: the microphone (always needed)
-        // and the camera (only when video is on). avfoundation on a denied device
-        // hangs or errors opaquely, so an actionable "open System Settings" beats a
-        // confusing device-probe timeout. NotDetermined/Unknown fall through —
-        // opening the device is what triggers the OS prompt, and Unknown means we
-        // couldn't tell, so we behave exactly as before.
+        // and the camera (only when video is on). A denied device hangs or errors
+        // opaquely, so an actionable "open System Settings" beats a confusing
+        // open failure. NotDetermined/Unknown fall through — opening the device
+        // is what triggers the OS prompt, and Unknown means we couldn't tell, so
+        // we behave exactly as before.
         {
             use crate::media::permissions::{blocked_message, status, MediaKind};
             let mic = status(MediaKind::Microphone);
             if let Some(msg) = blocked_message(MediaKind::Microphone, mic) {
                 return Err(AppError::Recording(msg));
             }
-            let wants_video = opts
-                .video_device_name
-                .as_deref()
-                .map(|n| !n.is_empty())
-                .unwrap_or(false);
             if wants_video {
                 let cam = status(MediaKind::Camera);
                 if let Some(msg) = blocked_message(MediaKind::Camera, cam) {
@@ -577,10 +531,10 @@ impl RecorderEngine {
         }
 
         // Pre-roll prepend (F3.2 + F3.3a). When the caller harvested a pre-roll
-        // clip we have a real, playable clip (in the recording's codec/container)
-        // of the audio captured BEFORE the record press. The supervisor prepends
-        // it to the FIRST deliverable's concat at finalisation (see
-        // `finalize_one`); the clip travels into `run_session`.
+        // clip we have a real, playable clip of the audio captured BEFORE the
+        // record press. The supervisor prepends it to the FIRST deliverable's
+        // concat at finalisation (see `finalize_one`); the clip travels into
+        // `run_session`.
         if let Some(clip) = &preroll_clip {
             tracing::info!(
                 clip = %clip.raw_path,
@@ -589,289 +543,55 @@ impl RecorderEngine {
             );
         }
 
-        let platform = current_platform();
-        // Only a VIDEO session talks to ffmpeg at all (audio-only runs on the
-        // native engine, which addresses the mic by name through cpal), so only
-        // a video session may wait for `ffmpeg -list_devices`. An audio-only
-        // session used to wait for it anyway — up to the 8 s cap below — and a
-        // hung avfoundation/dshow listing then cancelled a service cpal could
-        // have recorded without trouble (M1R #5).
-        //
-        // Bound the device probe: `ffmpeg -list_devices` (avfoundation) can stall
-        // if the mic is momentarily contended (e.g. the VU cpal stream hasn't
-        // released yet), and a stalled start is worse than a clear error.
-        //
-        // R4: reuse a very-recent enumeration (warmed when the record modal opened)
-        // instead of always re-spawning ffmpeg — saves 50–500 ms off the felt start.
-        // The window is short (RECORD_START_ENUM_MAX_AGE); past it we enumerate
-        // fresh, preserving the "don't decide on a stale list" intent.
-        let inv = if !needs_ffmpeg_device_enumeration(opts.video_device_name.as_deref()) {
-            None
+        // The camera, for a video session: the name the user picked, looked up
+        // in the native camera list (C1c) with the same rule the video track
+        // opens it by (`find_camera`). An audio-only session lists nothing — it
+        // must not wait for, or fail on, a camera it does not use (M1R #5).
+        let camera = if wants_video {
+            resolve_session_camera(opts.video_device_name.as_deref().unwrap_or_default()).await
         } else {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(8),
-                enumerate_ffmpeg_devices_within(RECORD_START_ENUM_MAX_AGE),
-            )
-            .await
-            {
-                Ok(result) => Some(result?),
-                Err(_) => {
-                    // The message LEADS with the stable code, the way
-                    // `settings.rs`'s `no_save_folder` does: the shim answers with
-                    // `AppError`'s text, and `nativeErrorSuffixFromText` finds the
-                    // code inside it. Without one the renderer fell through to
-                    // `errorUnknown` and appended this Norwegian line verbatim —
-                    // engine prose, shown to a volunteer, in one of seven
-                    // languages. `start_timeout` already has its sentence in all
-                    // seven.
-                    return Err(AppError::Recording(
-                        "start_timeout: timed out while looking for the device — try again".into(),
-                    ));
-                }
-            }
-        };
-        // Match the selected mic against ffmpeg's dshow/avfoundation list. Only a
-        // VIDEO session (Windows cpal-pipe or the ffmpeg path) addresses the mic
-        // through that list; the native engine resolves the device BY NAME via
-        // cpal, so an audio-only session gets `None` here and a name-only entry
-        // below (`name_only_audio`) for its manifest/history metadata.
-        let dshow_audio: Option<FfmpegDevice> = inv.as_ref().and_then(|i| {
-            find_best_device_match(&i.audio_inputs, &opts.audio_device_name).cloned()
-        });
-        if let Some(d) = &dshow_audio {
-            if !opts.audio_device_name.is_empty()
-                && !sundayrec_core::device_match::names_match_exactly(
-                    &d.name,
-                    &opts.audio_device_name,
-                )
-            {
-                tracing::warn!(
-                    requested = %opts.audio_device_name,
-                    matched = %d.name,
-                    "recorder: stored input device matched loosely, not by exact name"
-                );
-            }
-        }
-        // Video resolution uses the dedicated video-input list + the video match
-        // ladder (F2.1). None unless the user enabled video AND a name matches.
-        let video = match (&opts.video_device_name, inv.as_ref()) {
-            (Some(name), Some(inv)) if !name.is_empty() => {
-                sundayrec_core::device_enum::find_best_video_device_match(&inv.video_inputs, name)
-                    .cloned()
-            }
-            _ => None,
+            None
         };
 
-        // For a video session, PROBE the camera's advertised modes and resolve a
-        // size/rate it actually supports — avfoundation refuses an unsupported
-        // one (the bug: a camera that does only 15/30 rejecting the requested 25,
-        // so the camera never opened and the recording died with a downstream
-        // "mux_failed"). The OUTPUT still conforms to the user's target fps.
-        let mut opts = opts;
-        if let Some(v) = &video {
-            let modes = crate::media::camera::probe_camera_modes(&device_token(v), platform).await;
-            let (target_w, target_h) = sundayrec_core::capture::resolution_dims(
-                sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
-            );
-            match resolve_camera_mode(
-                &modes,
-                target_w,
-                target_h,
-                sundayrec_core::capture::RECORDING_FRAMERATE,
-            ) {
-                Some(m) => {
-                    tracing::info!(
-                        width = m.width,
-                        height = m.height,
-                        input_fps = m.input_fps,
-                        target_fps = sundayrec_core::capture::RECORDING_FRAMERATE,
-                        target_res = sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
-                        "recorder: resolved camera capture mode from probe"
-                    );
-                    opts.video_input = Some(m);
-                }
-                None => tracing::warn!(
-                    modes = modes.len(),
-                    "recorder: camera-mode probe found nothing — using legacy 720p guess"
-                ),
-            }
-        }
-
-        // C0a: settle which video encoder this machine uses (Windows: probe the
-        // hardware encoders once and remember the winner; elsewhere instant).
-        if video.is_some() {
+        // C0a: settle which video encoder this machine uses (Windows: the stored
+        // probe winner; elsewhere instant).
+        if camera.is_some() {
             crate::media::video_encoder::prepare_session(&app).await;
         }
 
-        // ── Windows: capture audio via cpal (modern API), not ffmpeg/dshow ──────
-        // dshow is an old API that splits pro interfaces into stereo pairs and is
-        // the source of the Windows instability. So on Windows we capture audio
-        // ourselves with cpal — WASAPI for normal devices, ASIO for pro interfaces
-        // — and pipe it into ffmpeg (which still does the camera via dshow + all
-        // encoding). dshow audio remains only as an automatic fallback if cpal
-        // can't start, and the `classic_directshow` setting forces it. macOS keeps
-        // the ffmpeg avfoundation path (run_session) entirely.
-        // `cfg!(windows)` (not `#[cfg]`) so this compiles on every platform — the
-        // call signature is type-checked on macOS even though it only RUNS on
-        // Windows (DCE'd elsewhere; `run_cpal_session` has a non-Windows stub).
-        let is_asio = crate::audio::asio::is_asio_device(&opts.audio_device_name);
-        // Route the session's capture backend FIRST: audio-only sessions ALWAYS
-        // run on the native engine (A5b: no escape hatch, no fallback); video
-        // sessions keep the ffmpeg paths — including Windows' cpal-pipe session
-        // below, which is VIDEO-ONLY.
-        let backend = if video.is_some() && native_video_enabled() {
-            // C3a, behind the developer switch: the native engine records the
-            // sound and a camera track beside it. Not the default until C3b.
+        // ONE engine since C3b: every session — audio-only or with a camera —
+        // records on the native engine (cpal → ring → WAV writer, plus the
+        // camera's video track beside each fragment). CoreAudio on macOS; WASAPI,
+        // or ASIO for an ASIO device, on Windows. There is no ffmpeg capture to
+        // route to and no fallback: a native start failure is a start error the
+        // operator sees.
+        let host = capture_host(
+            cfg!(windows),
+            crate::audio::asio::is_asio_device(&opts.audio_device_name),
+        );
+        if camera.is_some() {
             tracing::info!(
-                "recorder: video session routed to the NATIVE engine (SUNDAYREC_NATIVE_VIDEO=1)"
+                host = host.label(),
+                "recorder: video session on the native engine"
             );
-            CaptureBackend::NativeAudio {
-                host: audio_only_host(cfg!(windows), is_asio),
-            }
-        } else {
-            select_capture_backend(cfg!(windows), video.is_none(), is_asio)
-        };
-        // Features that ONLY the full `run_session` implements on the legacy
-        // Windows pipe path (preroll, split, stop-on-silence). For a normal
-        // device we route such sessions to dshow so they're never silently
-        // dropped; ASIO has no dshow alternative, so we still use cpal but warn
-        // the user the feature isn't supported there. (The native engine
-        // supports all three, so this only matters for video sessions.)
-        let needs_dshow_only =
-            preroll_clip.is_some() || opts.split_minutes > 0 || opts.stop_on_silence;
-        let use_cpal = cfg!(windows)
-            && !opts.classic_directshow
-            && (is_asio || !needs_dshow_only)
-            && !matches!(backend, CaptureBackend::NativeAudio { .. });
+        }
+        // The diagnose tool shows which audio engine the last recording used.
+        self.set_audio_engine(host.label());
+
         // ── The session context (F2-T2) ─────────────────────────────────────
-        // Built ONCE, before the capture path is routed, so every supervisor
-        // gets the very same fields — above all the very same generation-guarded
-        // `StateWriter`. It used to be twelve loose arguments to `run_session`
-        // and eight (a DIFFERENT eight) to `run_cpal_session`, which is exactly
-        // why `session_generation` reached only one of them (F1-A5).
-        //
-        // `audio` is the ffmpeg-side device. A path that addresses the mic BY
-        // NAME through cpal — the native engine, and the Windows cpal-pipe path
-        // below — needs it only for manifest/history metadata, so an ASIO-only
-        // device with no dshow shadow gets a name-only entry instead of failing
-        // the start. The PURE-ffmpeg path does need a real match, and that check
-        // stays on its own branch below, unchanged: a cpal attempt that falls
-        // through to DirectShow still gets the honest "no audio device matched".
-        let name_only_audio = || {
-            FfmpegDevice::new(
-                opts.audio_device_name.clone(),
-                if cfg!(windows) {
-                    "dshow"
-                } else {
-                    "avfoundation"
-                },
-                None,
-            )
-        };
+        // Built ONCE, so the supervisor gets every field — above all the very
+        // same generation-guarded `StateWriter` — in one value.
         let ctx = SessionContext {
             app: app.clone(),
             pool,
-            platform,
-            backend,
-            audio: dshow_audio.clone().unwrap_or_else(name_only_audio),
-            video,
+            platform: current_platform(),
+            host,
+            camera,
             preroll_clip,
             state: self.state_writer(&app, generation),
             opts,
         };
         let session_state = ctx.state.clone();
-        // Why the modern engine fell back, if it did — recorded into the engine
-        // status (read by the diagnose tool), NOT surfaced as a fatal recording
-        // error (the recording proceeds fine on DirectShow).
-        let mut cpal_fallback_reason: Option<String> = None;
-        if use_cpal {
-            use crate::recorder::cpal_capture::{run_cpal_session, CpalHostKind};
-            let host_kind = if is_asio {
-                CpalHostKind::Asio
-            } else {
-                CpalHostKind::Wasapi
-            };
-            // ASIO + a dshow-only feature: we can't fall back (dshow can't open
-            // ASIO), so the feature is inactive. This is informational, not a
-            // recording failure — log it (the diagnose tool can surface it) rather
-            // than emitting a fatal `recording://error` that would tear down the UI.
-            if is_asio && needs_dshow_only {
-                tracing::warn!(
-                    "recorder: preroll/split/silence not supported on the ASIO path — recording without them"
-                );
-            }
-            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
-            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
-            // CLONE the whole context so the original survives for the dshow
-            // fallback below if cpal fails to start. The clone shares every `Arc`
-            // the context holds — the `StateWriter`'s state/countdown handles and
-            // its `session_generation` counter included — so the cpal supervisor
-            // gets the SAME generation-guarded door as the unified path: a
-            // stopped-but-still-finalising cpal session can no longer write
-            // "Stopped" over the recording that replaced it.
-            let cpal_ctx = ctx.clone();
-            let supervisor = tauri::async_runtime::spawn(async move {
-                let _panic_guard =
-                    SupervisorPanicGuard::announcing(cpal_ctx.state.clone(), cpal_ctx.app.clone());
-                run_cpal_session(host_kind, cpal_ctx, stop_rx, ready_tx).await;
-            });
-            match ready_rx.await {
-                Ok(Ok(())) => {
-                    self.set_audio_engine(if is_asio { "asio" } else { "wasapi" }, None);
-                    *lock_recover(&self.session) = Some(RecorderSession {
-                        supervisor,
-                        stop_tx,
-                        state: session_state,
-                    });
-                    return Ok(());
-                }
-                ready => {
-                    // cpal couldn't start (driver busy/absent, device vanished, or
-                    // the supervisor died). Don't fail the recording — fall back to
-                    // the dshow capture automatically. The reason goes into the
-                    // engine status (diagnose tool), NOT a fatal recording error.
-                    supervisor.abort();
-                    let err = match ready {
-                        Ok(Err(e)) => e,
-                        _ => AppError::Recording(
-                            "cpal recorder supervisor exited before signalling".into(),
-                        ),
-                    };
-                    tracing::warn!(
-                        "recorder: cpal {host_kind:?} start failed ({err}); falling back to dshow"
-                    );
-                    cpal_fallback_reason = Some(err.to_string());
-                    // fall through to the dshow run_session path below.
-                }
-            }
-        }
-
-        // The PURE-ffmpeg path needs a REAL ffmpeg device match — it has no other
-        // way to address the mic. (The native backend resolves its own device
-        // fuzzily, by name, via cpal, so `ctx.audio` already carries the
-        // name-only entry its manifest/history metadata needs; the same is true
-        // of the cpal-pipe attempt above, which is why this check sits HERE and
-        // not before the routing.)
-        if dshow_audio.is_none() && !matches!(ctx.backend, CaptureBackend::NativeAudio { .. }) {
-            return Err(AppError::Recording(format!(
-                "no audio device matched '{}'",
-                ctx.opts.audio_device_name
-            )));
-        }
-        // Record the engine label for the diagnose tool. A native start failure
-        // does not change it: there is no fallback engine for audio (A5b), the
-        // failure reaches the caller as a typed start error.
-        let engine_label = match ctx.backend {
-            CaptureBackend::NativeAudio { host } => host.label(),
-            CaptureBackend::Ffmpeg => {
-                if cfg!(windows) {
-                    "directshow"
-                } else {
-                    "avfoundation"
-                }
-            }
-        };
-        self.set_audio_engine(engine_label, cpal_fallback_reason);
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
         // The "ready" handshake MUST be async: the command awaits it on a Tauri
@@ -882,10 +602,9 @@ impl RecorderEngine {
         // progress. (The supervisor signals exactly once — a perfect oneshot.)
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
-        let supervisor = tauri::async_runtime::spawn(async move {
-            let _panic_guard = SupervisorPanicGuard::announcing(ctx.state.clone(), ctx.app.clone());
-            run_session(ctx, stop_rx, ready_tx).await;
-        });
+        // The supervisor runs under its panic guard (#341) — see
+        // `supervisor::spawn_supervisor`, the one place a supervisor is spawned.
+        let supervisor = spawn_supervisor(ctx, stop_rx, ready_tx);
 
         match ready_rx.await {
             Ok(Ok(())) => {}
@@ -949,67 +668,11 @@ impl RecorderEngine {
 /// instead. A newer session (generation moved on) or an already-terminal state
 /// is left alone.
 fn fail_stuck_stop(state: &StateWriter) {
-    if !state.is_current() || lock_recover(&state.last_state).is_terminal() {
+    if !state.is_current() || state.last_state_is_terminal() {
         return;
     }
     tracing::error!("recorder: stop backstop aborted the supervisor — marking the session failed");
     state.set(RecorderState::Failed, 0);
-}
-
-/// Held by a supervisor task for its whole life. If the task PANICS, the guard is
-/// dropped while the thread is unwinding and sets the terminal `Failed` state —
-/// without it the engine sat in `Recording`/`Stopping` forever (nobody left to
-/// emit a terminal state), `start_recording` refused with `already_recording`,
-/// and the UI hung. A normal exit or the stop backstop's `abort()` is not a
-/// panic: the guard does nothing then (the abort path has [`fail_stuck_stop`]).
-pub(crate) struct SupervisorPanicGuard {
-    state: StateWriter,
-    /// Runs after the state was set to `Failed` (production: announce the error
-    /// to the UI). A callback rather than an `AppHandle`, so the guard itself
-    /// does not drag the whole Tauri runtime into every test binary that
-    /// constructs one (that broke the Windows test exe at load time).
-    on_failed: Option<Box<dyn FnOnce() + Send>>,
-}
-
-impl SupervisorPanicGuard {
-    pub(crate) fn new(state: StateWriter, on_failed: Option<Box<dyn FnOnce() + Send>>) -> Self {
-        Self { state, on_failed }
-    }
-
-    /// The production guard: on a panic also emits the terminal error event.
-    fn announcing(state: StateWriter, app: AppHandle) -> Self {
-        Self::new(
-            state,
-            Some(Box::new(move || {
-                emit_failure(&app, "supervisor_panic", "recorder supervisor panicked")
-            })),
-        )
-    }
-}
-
-impl Drop for SupervisorPanicGuard {
-    fn drop(&mut self) {
-        if !std::thread::panicking() {
-            return;
-        }
-        if fail_panicked_supervisor(&self.state) {
-            if let Some(f) = self.on_failed.take() {
-                f();
-            }
-        }
-    }
-}
-
-/// The supervisor panicked: if its session is still the engine's current one and
-/// never reached a terminal state, mark it `Failed`. Returns whether it did (a
-/// newer session or an already-terminal state is left alone).
-fn fail_panicked_supervisor(state: &StateWriter) -> bool {
-    if !state.is_current() || lock_recover(&state.last_state).is_terminal() {
-        return false;
-    }
-    tracing::error!("recorder: the supervisor panicked — marking the session failed");
-    state.set(RecorderState::Failed, 0);
-    true
 }
 
 /// The auto-stop deadline after the user extends by `minutes`: add to the current
@@ -1038,8 +701,82 @@ pub(crate) fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Map the running OS to the core [`Platform`] enum. Public for the recorder's
+/// consumers (the wake planner, the media helpers); the logic lives in
+/// [`crate::util`]. (Moved here from the deleted `engine/args.rs`, C3b.)
+pub fn current_platform() -> Platform {
+    crate::util::detect_platform()
+}
+
+/// Shared path of the live in-recording preview JPEG: a single file in the OS
+/// temp dir that a video session's video-track ffmpeg auto-overwrites
+/// (`-update 1`, see `sundayrec_core::video_track::video_track_args`) and the
+/// `recording_preview_frame` command reads. One fixed path is fine — at most one
+/// recording runs at a time. (Moved here from the deleted `engine/args.rs`,
+/// C3b; C4 replaces the file with frames from the camera session itself.)
+pub fn recording_preview_path() -> std::path::PathBuf {
+    std::env::temp_dir().join("sundayrec-recording-preview.jpg")
+}
+
+/// How long `start()` waits for the native camera list. Media Foundation and
+/// DirectShow are asked on Windows, and a wedged driver must not hold a
+/// scheduled start past the scheduler's own bound.
+const CAMERA_LIST_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Which camera a video session records, given the native camera list
+/// (`None` = the list could not be read) and the name the user picked.
+///
+/// - A camera matches ([`find_camera`]) → its listed name.
+/// - The list was read and nothing matches → `None`: the session records the
+///   sound only, as it always has when the stored camera is not there.
+/// - The list could not be read → the stored name. The video track opens the
+///   camera itself per fragment, and a camera that does not open gives black
+///   slots, never a lost sound — so the session keeps its picture's chance
+///   instead of failing the start.
+///
+/// Pure → tested.
+fn session_camera(listed: Option<&[crate::camera::CameraInfo]>, name: &str) -> Option<String> {
+    match listed {
+        Some(cams) => find_camera(cams, name).map(|c| c.name.clone()),
+        None => (!name.trim().is_empty()).then(|| name.to_string()),
+    }
+}
+
+/// [`session_camera`] against the live native camera list (bounded by
+/// [`CAMERA_LIST_TIMEOUT`]).
+async fn resolve_session_camera(name: &str) -> Option<String> {
+    let listed = tokio::time::timeout(
+        CAMERA_LIST_TIMEOUT,
+        tokio::task::spawn_blocking(crate::camera::list),
+    )
+    .await;
+    let cams = match listed {
+        Ok(Ok(Ok(cams))) => Some(cams),
+        Ok(Ok(Err(e))) => {
+            tracing::warn!("recorder: the camera list is unavailable ({e}) — opening by name");
+            None
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("recorder: the camera list task failed ({e}) — opening by name");
+            None
+        }
+        Err(_) => {
+            tracing::warn!("recorder: the camera list timed out — opening by name");
+            None
+        }
+    };
+    let camera = session_camera(cams.as_deref(), name);
+    if camera.is_none() {
+        tracing::warn!(
+            requested = %name,
+            "recorder: no camera matches the stored name — recording the sound only"
+        );
+    }
+    camera
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1061,55 +798,6 @@ mod tests {
         fail_stuck_stop(&done.fresh);
         assert_eq!(*done.last_state.lock().unwrap(), RecorderState::Stopped);
         assert!(done.sink.payloads().is_empty());
-    }
-
-    /// A panic inside the supervisor task must not leave the engine in
-    /// `Recording` forever: the guard sets `Failed` as the future unwinds. Runs on a
-    /// real runtime, because WHERE the future is dropped (inside the unwind or
-    /// after tokio caught it) is exactly what the guard depends on.
-    #[tokio::test]
-    async fn a_panicking_supervisor_leaves_the_engine_failed_not_recording_forever() {
-        let g = two_generations(RecorderState::Recording, None);
-        let state = g.fresh.clone();
-        let task = tokio::spawn(async move {
-            let _guard = SupervisorPanicGuard::new(state, None);
-            tokio::task::yield_now().await;
-            panic!("boom in the supervisor");
-        });
-        let joined = task.await;
-        assert!(joined.is_err_and(|e| e.is_panic()));
-        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Failed);
-        assert_eq!(
-            g.sink.payloads().last().unwrap().state,
-            RecorderState::Failed
-        );
-    }
-
-    /// Only a panic fails the session: a clean exit leaves the state alone.
-    #[tokio::test]
-    async fn a_supervisor_that_exits_normally_leaves_the_state_alone() {
-        let g = two_generations(RecorderState::Stopped, None);
-        let state = g.fresh.clone();
-        tokio::spawn(async move {
-            let _guard = SupervisorPanicGuard::new(state, None);
-        })
-        .await
-        .unwrap();
-        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Stopped);
-        assert!(g.sink.payloads().is_empty());
-    }
-
-    /// A panic in an OLD session must not fail the one that replaced it.
-    #[tokio::test]
-    async fn a_panic_in_a_superseded_supervisor_does_not_fail_the_new_session() {
-        let g = two_generations(RecorderState::Recording, None);
-        let stale = g.stale.clone();
-        let _ = tokio::spawn(async move {
-            let _guard = SupervisorPanicGuard::new(stale, None);
-            panic!("old session dies");
-        })
-        .await;
-        assert_eq!(*g.last_state.lock().unwrap(), RecorderState::Recording);
     }
 
     #[test]
@@ -1203,7 +891,7 @@ mod tests {
     /// A [`StateSink`] that keeps what it was handed, so the guard can be proven
     /// end-to-end without an `AppHandle` (which cannot exist in a unit test).
     #[derive(Default)]
-    struct RecordingSink(Mutex<Vec<RecorderStatePayload>>);
+    pub(crate) struct RecordingSink(Mutex<Vec<RecorderStatePayload>>);
 
     impl StateSink for RecordingSink {
         fn emit_state(&self, payload: RecorderStatePayload) {
@@ -1212,28 +900,28 @@ mod tests {
     }
 
     impl RecordingSink {
-        fn payloads(&self) -> Vec<RecorderStatePayload> {
+        pub(crate) fn payloads(&self) -> Vec<RecorderStatePayload> {
             self.0.lock().expect("sink lock").clone()
         }
     }
 
     /// The shared handles the engine owns, plus the two writers on them: one
     /// from the superseded session, one from the live one.
-    struct TwoGenerations {
-        sink: Arc<RecordingSink>,
-        last_state: Arc<Mutex<RecorderState>>,
-        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    pub(crate) struct TwoGenerations {
+        pub(crate) sink: Arc<RecordingSink>,
+        pub(crate) last_state: Arc<Mutex<RecorderState>>,
+        pub(crate) scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
         /// The remembered reconnect count `snapshot()` reads back.
-        last_reconnect_count: Arc<AtomicU32>,
-        stale: StateWriter,
-        fresh: StateWriter,
+        pub(crate) last_reconnect_count: Arc<AtomicU32>,
+        pub(crate) stale: StateWriter,
+        pub(crate) fresh: StateWriter,
     }
 
     /// Build what `start()` builds twice over: the 11:00 service claims
     /// generation 1; at 12:05 the operator stops it and starts the evening
     /// meeting, which claims generation 2 while the first supervisor is still
     /// finalising.
-    fn two_generations(state: RecorderState, deadline: Option<u64>) -> TwoGenerations {
+    pub(crate) fn two_generations(state: RecorderState, deadline: Option<u64>) -> TwoGenerations {
         let sink = Arc::new(RecordingSink::default());
         let last_state = Arc::new(Mutex::new(state));
         let (tx, _rx) = tokio::sync::watch::channel(deadline);
@@ -1263,11 +951,11 @@ mod tests {
     }
 
     /// F2-T2's load-bearing clone property. `SessionContext` derives `Clone`,
-    /// and `start()` USES that: the Windows cpal attempt is handed a clone so
-    /// the original survives a fall-through to DirectShow. If cloning the
-    /// context minted a SECOND, independently-guarded door, the two capture
-    /// paths would once again be writing state through different plumbing —
-    /// which is the exact shape of the F1-A5 bug the struct exists to prevent.
+    /// and the supervisor clones its `StateWriter` out of it (and the C3b-era
+    /// Windows cpal attempt used to get a whole context clone). If cloning
+    /// minted a SECOND, independently-guarded door, two holders would once
+    /// again be writing state through different plumbing — which is the exact
+    /// shape of the F1-A5 bug the struct exists to prevent.
     ///
     /// A `StateWriter` clone shares every `Arc` — the sink, the shared state,
     /// the countdown AND the engine's live generation counter — and keeps its
@@ -1277,8 +965,8 @@ mod tests {
     fn a_cloned_state_writer_shares_the_same_generation_guard() {
         let deadline = Some(1_700_000_000_000);
         let g = two_generations(RecorderState::Recording, deadline);
-        // The 11:00 service's writer, and the copy `start()` would have handed
-        // to the cpal attempt. Both were current when they were made.
+        // The 11:00 service's writer, and a copy of it (what the supervisor
+        // clones out of its context). Both were current when they were made.
         let clone = g.stale.clone();
 
         // …and then the evening meeting claimed generation 2 (that is what
@@ -1306,7 +994,7 @@ mod tests {
         assert!(g.sink.payloads().is_empty(), "and it emits nothing");
 
         // The other direction: a CURRENT writer's clone writes, through the very
-        // same shared handles — one door, reachable from both capture paths.
+        // same shared handles — one door, whoever holds it.
         let live = g.fresh.clone();
         assert!(live.is_current());
         live.set(RecorderState::Stopping, 1);
@@ -1444,6 +1132,64 @@ mod tests {
         assert_eq!(*g.scheduled_stop.borrow(), None);
         g.fresh.arm_autostop(Some(1_700_000_000_000));
         assert_eq!(*g.scheduled_stop.borrow(), Some(1_700_000_000_000));
+    }
+
+    fn cam(id: &str, name: &str) -> crate::camera::CameraInfo {
+        crate::camera::CameraInfo {
+            id: id.into(),
+            name: name.into(),
+            model_id: None,
+            kind: crate::camera::CameraKind::Camera,
+        }
+    }
+
+    /// C3b: which camera a video session records, decided against the NATIVE
+    /// camera list (the ffmpeg `-list_devices` match is gone).
+    #[test]
+    fn a_video_session_records_the_listed_camera_or_the_sound_only() {
+        let cams = [
+            cam("0x1424000046d085e", "Logitech BRIO"),
+            cam("FaceTime-1", "FaceTime HD Camera"),
+        ];
+        // Exact (case-insensitive) name → the listed name.
+        assert_eq!(
+            session_camera(Some(&cams), "logitech brio").as_deref(),
+            Some("Logitech BRIO")
+        );
+        // The stable id works too, and a contained name is the fallback.
+        assert_eq!(
+            session_camera(Some(&cams), "FaceTime-1").as_deref(),
+            Some("FaceTime HD Camera")
+        );
+        assert_eq!(
+            session_camera(Some(&cams), "FaceTime").as_deref(),
+            Some("FaceTime HD Camera")
+        );
+        // Listed, but not there → the sound only (as it always was).
+        assert_eq!(session_camera(Some(&cams), "Elgato Facecam"), None);
+        assert_eq!(session_camera(Some(&[]), "Logitech BRIO"), None);
+        // The list could not be read → keep the stored name: the track opens
+        // the camera itself, and a camera that does not open records black,
+        // never costing the sound.
+        assert_eq!(
+            session_camera(None, "Logitech BRIO").as_deref(),
+            Some("Logitech BRIO")
+        );
+        // An empty name is no camera, whatever the list says.
+        assert_eq!(session_camera(Some(&cams), ""), None);
+        assert_eq!(session_camera(None, "  "), None);
+    }
+
+    #[test]
+    fn recording_preview_path_is_a_stable_temp_jpeg() {
+        let p = recording_preview_path();
+        assert_eq!(
+            p.extension().and_then(|e| e.to_str()),
+            Some("jpg"),
+            "the in-recording preview is a JPEG file sink (deadlock-proof, not a pipe)"
+        );
+        // Stable across calls (one fixed path; at most one recording at a time).
+        assert_eq!(p, recording_preview_path());
     }
 
     #[test]

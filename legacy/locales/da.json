@@ -236,13 +236,6 @@
         "title": "Avanceret",
         "lede": "Ting, de fleste aldrig behøver at røre. Alt her har en tryg standard.",
         "soundLink": "Avanceret lyd",
-        "engine": "Optagelsesmotor",
-        "engineDesc": "Gælder videooptagelser. Skift kun, hvis lyden hakker.",
-        "engineConfirm": "Skifte optagelsesmotor",
-        "engineChoice": {
-          "native": "Indbygget",
-          "dshow": "Klassisk (DirectShow)"
-        },
         "preroll": "Forbuffer",
         "prerollDesc": "Lyd fra før, du trykkede på Start, tages med. Bufferen holder mikrofonen åben i baggrunden, så længe appen er klar til at optage.",
         "prerollChoice": {
@@ -519,10 +512,6 @@
         "audio02": {
           "title": "Den valgte lydenhed blev ikke fundet",
           "hint": "Tilslut enheden, eller vælg en anden i »Hvilken lyd?« på Optagelse."
-        },
-        "audio10": {
-          "title": "Faldt tilbage til den klassiske lydmotor",
-          "hint": "Optagelse virker stadig. Vil du have den moderne motor, så tjek driveren, og at ingen andre programmer holder enheden."
         },
         "rate01": {
           "title": "Der er valgt en fast samplingsrate",

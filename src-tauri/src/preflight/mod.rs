@@ -20,17 +20,17 @@
 //!
 //! [`run_preflight`] itself needs a real machine: a real ffmpeg, a real volume
 //! with real free space. The writable-folder probe, the free-space read and the
-//! ffmpeg health-check are exercised here only against whatever the dev box has.
+//! ffmpeg health-check (ffmpeg still encodes every delivery) are exercised here
+//! only against whatever the dev box has.
 //! The pure decision over the facts is what the tests cover.
 
 use sqlx::SqlitePool;
-use sundayrec_core::device_match::find_best_device_match;
+use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::preflight::{
     assemble_findings_for, looks_like_onedrive, planned_capture_bytes, video_active,
     PreflightFacts, PreflightFinding,
 };
 
-use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
 use crate::media::ffmpeg::ffmpeg_health;
 use crate::media::permissions::{status, MediaKind};
 use crate::settings;
@@ -72,29 +72,47 @@ fn permission_blocked(kind: MediaKind) -> bool {
 /// Whether the audio device named in settings is among the enumerated inputs.
 ///
 /// Answers `true` for every case where we CANNOT establish absence — no device
-/// configured, or the enumeration itself failed (no ffmpeg, a permission wall).
-/// Only a configured name that the same fuzzy matcher the recorder uses
-/// ([`find_best_device_match`]) fails to resolve counts as missing. Getting that
-/// asymmetry right is the whole safety of this check: a false alarm on a Sunday
-/// morning sends a volunteer hunting for a cable that is already plugged in.
+/// configured, or the enumeration itself failed (a permission wall, a driver
+/// that would not answer). Only a configured name that the same fuzzy matcher
+/// the recorder uses ([`find_best_device_match`]) fails to resolve counts as
+/// missing. Getting that asymmetry right is the whole safety of this check: a
+/// false alarm on a Sunday morning sends a volunteer hunting for a cable that
+/// is already plugged in.
 ///
-/// Uses the SHORT-TTL enumeration cache, so a preflight run right after the
-/// device picker (or the record modal's warm-up) costs nothing.
+/// The list is the NATIVE one (C3b) — the cpal inputs, plus ASIO on Windows —
+/// the very list the recorder opens the device from
+/// ([`crate::commands::audio::enumerate_tagged_inputs`]). It used to be
+/// ffmpeg's `-list_devices`, which no recording reads any more: it could miss
+/// an ASIO-only interface the recording opens fine.
 async fn device_present(configured: Option<&str>) -> bool {
     let Some(name) = configured.map(str::trim).filter(|n| !n.is_empty()) else {
         return true; // nothing configured — the OS default is used, nothing to check
     };
-    let Ok(inventory) = enumerate_ffmpeg_devices_cached().await else {
+    // The ASIO half LOADS every installed ASIO driver (memoised, but a sweep
+    // when cold), so it is asked only for a device that is an ASIO one — the
+    // same economy the scheduler's own lookup keeps (rig item w14).
+    let wanted = name.to_string();
+    let listed = tokio::task::spawn_blocking(move || {
+        let include_asio = crate::audio::asio::is_asio_device(&wanted);
+        crate::commands::audio::enumerate_tagged_inputs(include_asio)
+    })
+    .await;
+    let Ok(Ok(inputs)) = listed else {
         return true; // could not enumerate — unknown, not absent
     };
-    if inventory.audio_inputs.is_empty() {
-        // An empty list means the enumeration produced nothing usable, which on
-        // a machine that manifestly has a microphone means the probe failed, not
-        // that every input vanished. The ffmpeg-missing finding covers the real
-        // version of this.
-        return true;
-    }
-    find_best_device_match(&inventory.audio_inputs, name).is_some()
+    let candidates: Vec<FfmpegDevice> = inputs
+        .into_iter()
+        .map(|d| FfmpegDevice::new(d.name, "native", None))
+        .collect();
+    device_listed(&candidates, name)
+}
+
+/// The pure half of [`device_present`]: is `name` in `inputs` by the recorder's
+/// fuzzy rule? An EMPTY list answers `true` — on a machine that manifestly has
+/// a microphone it means the enumeration produced nothing usable, not that every
+/// input vanished.
+fn device_listed(inputs: &[FfmpegDevice], name: &str) -> bool {
+    inputs.is_empty() || find_best_device_match(inputs, name).is_some()
 }
 
 /// Which audio device a preflight run checks.
@@ -257,6 +275,20 @@ pub async fn run_preflight(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_device_counts_as_missing_only_when_the_list_says_so() {
+        let inputs = [
+            FfmpegDevice::new("Behringer UMC204HD 192k", "native", None),
+            FfmpegDevice::new("MacBook Pro-mikrofon", "native", None),
+        ];
+        // The recorder's fuzzy rule: a stored label finds its device.
+        assert!(device_listed(&inputs, "Behringer UMC204HD"));
+        // Not in the list → missing.
+        assert!(!device_listed(&inputs, "Allen & Heath Qu-5"));
+        // An empty list proves nothing — never a false alarm.
+        assert!(device_listed(&[], "Allen & Heath Qu-5"));
+    }
 
     // Save-folder resolution itself is the canonical
     // `sundayrec_core::settings::resolve_save_folder` and is tested there.

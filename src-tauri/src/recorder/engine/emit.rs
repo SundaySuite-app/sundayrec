@@ -1,8 +1,11 @@
 //! The recorder's error/warning/failure events to the renderer, mirrored to
-//! `last-error.json` for Lydhjelp. Split out of `engine.rs`; see the parent
+//! `last-error.json` for Lydhjelp, and the error-code table every emit site
+//! derives its code from ([`error_code_str`], moved here from the deleted
+//! ffmpeg stderr reader in C3b). Split out of `engine.rs`; see the parent
 //! module docs.
 
 use sundayrec_core::alerts::AlertText;
+use sundayrec_core::errors::RecordingErrorCode;
 use tauri::{AppHandle, Emitter};
 
 use super::payloads::RecordingEvent;
@@ -69,8 +72,8 @@ pub(crate) fn emit_error(app: &AppHandle, code: &str, message: &str) {
     skriv_siste_feil_til_disk(app, code, message);
 }
 
-/// A terminal failure whose only words are diagnostics — the last ffmpeg
-/// stderr line, a Rust `io::Error`, a camera classifier's tag.
+/// A terminal failure whose only words are diagnostics — a cpal error, a Rust
+/// `io::Error`, a writer's own report.
 ///
 /// Those words used to be the event's `message`, and the native notification
 /// shows the message verbatim: a volunteer in Polish got «Input/output error»
@@ -106,6 +109,24 @@ pub(crate) fn emit_warning(app: &AppHandle, code: &str, message: &str) {
     skriv_siste_feil_til_disk(app, code, message);
 }
 
+/// The stable snake_case wire code for a [`RecordingErrorCode`] — the same
+/// strings as the enum's serde rename so the renderer's localisation switch
+/// lines up with the bindings.
+///
+/// `pub(crate)` so every emit site derives its code from the SAME table: the
+/// native capture path used to hardcode literals, which silently mislabelled
+/// every non-disk writer failure.
+pub(crate) fn error_code_str(code: RecordingErrorCode) -> &'static str {
+    match code {
+        RecordingErrorCode::DeviceNotFound => "device_not_found",
+        RecordingErrorCode::DevicePermissionDenied => "device_permission_denied",
+        RecordingErrorCode::DeviceBusy => "device_busy",
+        RecordingErrorCode::DiskFull => "disk_full",
+        RecordingErrorCode::DeviceDisconnected => "device_disconnected",
+        RecordingErrorCode::DeviceError => "device_error",
+    }
+}
+
 /// Best-effort write of the most recent classified error to
 /// `<app_data_dir>/last-error.json` (atomic temp+rename). Never fails the
 /// recorder — any I/O error is logged and swallowed.
@@ -113,7 +134,7 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
     let Ok(dir) = crate::appdata::dir(app) else {
         return;
     };
-    // Keep the file small — the diagnostic only needs the code + a stderr snippet.
+    // Keep the file small — the diagnostic only needs the code + a snippet.
     let msg: String = message.chars().take(2000).collect();
     let body = serde_json::json!({
         "code": code,
@@ -150,6 +171,40 @@ mod tests {
         assert_eq!(ev.message, "Microphone Array (Realtek(R) Audio)");
         assert!(device_substitution_notice("Behringer UMC204HD", "behringer umc204hd").is_none());
         assert!(device_substitution_notice("", "Built-in Microphone").is_none());
+    }
+
+    #[test]
+    fn error_code_str_matches_serde_names() {
+        assert_eq!(
+            error_code_str(RecordingErrorCode::DeviceDisconnected),
+            "device_disconnected"
+        );
+        assert_eq!(error_code_str(RecordingErrorCode::DiskFull), "disk_full");
+    }
+
+    #[test]
+    fn error_code_str_covers_every_variant() {
+        // Every variant maps to a distinct snake_case string (the renderer's
+        // localisation switch depends on this enumeration).
+        let all = [
+            (RecordingErrorCode::DeviceNotFound, "device_not_found"),
+            (
+                RecordingErrorCode::DevicePermissionDenied,
+                "device_permission_denied",
+            ),
+            (RecordingErrorCode::DeviceBusy, "device_busy"),
+            (RecordingErrorCode::DiskFull, "disk_full"),
+            (
+                RecordingErrorCode::DeviceDisconnected,
+                "device_disconnected",
+            ),
+            (RecordingErrorCode::DeviceError, "device_error"),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for (code, want) in all {
+            assert_eq!(error_code_str(code), want);
+            assert!(seen.insert(want), "duplicate mapping for {want}");
+        }
     }
 
     #[test]

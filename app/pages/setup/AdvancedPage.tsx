@@ -44,7 +44,6 @@ import { useEffect } from "preact/hooks";
 
 import { t, tDyn } from "../../i18n";
 import { route } from "../../router/router";
-import { confirmIfRecordingImminent } from "../../settings/guards";
 import { usePatch } from "../../settings/use-patch";
 import { settings, type Settings } from "../../state/settings";
 import {
@@ -53,7 +52,6 @@ import {
   BoundToggle,
 } from "../../ui/Bound/Bound";
 import { Card } from "../../ui/Card/Card";
-import { Select } from "../../ui/Select/Select";
 import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { AsioAttribution } from "./advanced/AsioAttribution";
@@ -61,7 +59,6 @@ import { DiagnoseRow } from "./advanced/DiagnoseRow";
 import { LicensesCard } from "./advanced/LicensesCard";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
 import { PublishCard } from "./advanced/PublishCard";
-import { currentOs } from "../../state/platform-core";
 import { ScheduleCard } from "./advanced/ScheduleCard";
 import { TelemetryRow } from "./advanced/TelemetryRow";
 import { UpdateRow } from "./advanced/UpdateRow";
@@ -82,9 +79,6 @@ const AUTO_DELETE_DEFAULT_DAYS = 90;
 /** Under dette spør vi først — samme grense som legacy. */
 const AUTO_DELETE_GUARD_DAYS = 30;
 
-/** De tre opptaksmotorene, som ett valg. */
-type Engine = "native" | "dshow";
-
 export function AdvancedPage() {
   // Nivå 1 og de gamle dyplenkene peker på et sted INNE i denne lista
   // (`?goto=settings:general` → toppen, «Flere tider …» → `schedule`). Uten
@@ -98,8 +92,12 @@ export function AdvancedPage() {
 
   return (
     <SubPage lede={t("app.setup.advanced.lede")} testId="setup-advanced">
+      {/*
+        Ankeret heter fortsatt «engine»: Lyd-sida lenker hit for «Avansert
+        lyd», og lenka skal lande på opptaksinnstillingene. Selve motorvalget
+        (Windows' DirectShow-luke) gikk ut i C3b — det er én opptaksmotor nå.
+      */}
       <Card testId="advanced-recording" anchor="engine">
-        <EngineRow />
         <BoundSelect
           setting="preRollSeconds"
           label={t("app.setup.advanced.preroll")}
@@ -165,80 +163,6 @@ export function AdvancedPage() {
       <AsioAttribution />
       <LicensesCard />
     </SubPage>
-  );
-}
-
-/**
- * Opptaksmotor — bare Windows, og bare for videoopptak.
- *
- * Lydopptak har én motor (den innebygde) siden nødluka til ffmpeg gikk ut i A5b,
- * så på macOS er det ikke noe å velge og raden er borte. På Windows står
- * DirectShow-valget igjen fordi `classicDirectshow` fortsatt styrer
- * VIDEOøkter på Windows; det dør sammen med resten av den klassiske videostien
- * i C3. Valget gjelder bare det: et lydopptak bruker den innebygde motoren uansett
- * hva raden står på. Raden går fortsatt gjennom `usePatch` (kvittering,
- * tilbakerulling og bekreftelsen `confirmIfRecordingImminent`), som den gjorde
- * da den også skrev `classicFfmpegAudio`.
- *
- * Avgjørelsen om raden finnes kommer fra `detectOs`, ikke fra en delstreng i
- * UA-linja. En gate som gjetter feil vei viser en bryter som skriver en verdi
- * ingenting leser.
- *
- * ⚠️ Raden hadde sin EGEN lagringsmodell: patch, lagre, kvittering,
- * tilbakerulling og toast skrevet for hånd. Den manglet nedtellingen på
- * «Lagret ✓» (som ble stående for alltid) og leste tilbakerullingens
- * øyeblikksbilde fra render-lukningen, altså fra en tilstand som kunne være
- * foreldet. `usePatch` er den samme sekvensen som `useSetting` kjører — og den
- * finnes nettopp fordi «omtrent samme lagring, en gang til» er hvordan de to
- * begynner å oppføre seg forskjellig.
- */
-function EngineRow() {
-  const s = settings.value;
-  const os = currentOs();
-  const engine = usePatch();
-
-  // Ingenting å velge utenfor Windows. Hooken over kjører uansett (hooks kan
-  // ikke stå bak en tidlig retur).
-  if (os !== "win") return null;
-
-  const current: Engine = s.classicDirectshow ? "dshow" : "native";
-  const options: Engine[] = ["native", "dshow"];
-
-  return (
-    <SettingRow
-      label={t("app.setup.advanced.engine")}
-      description={t("app.setup.advanced.engineDesc")}
-      receipt={engine.receipt}
-      testId="adv-engine"
-    >
-      {(ids) => (
-        <Select
-          value={current}
-          options={options.map((id) => ({
-            value: id,
-            label: tDyn("app.setup.advanced.engineChoice", id),
-          }))}
-          onChange={(next) =>
-            void engine.write(
-              { classicDirectshow: next === "dshow" },
-              {
-                // Å bytte motor fire minutter før gudstjenesten er endringen
-                // som stille koster opptaket. Samme vakt som lydenheten og
-                // kameraet, samme terskel som alt annet.
-                confirm: () =>
-                  confirmIfRecordingImminent(
-                    t("app.setup.advanced.engineConfirm"),
-                  ),
-              },
-            )
-          }
-          disabled={engine.busy}
-          labelId={ids.labelId}
-          describedBy={ids.describedBy}
-          testId="adv-engine-control-input"
-        />
-      )}
-    </SettingRow>
   );
 }
 

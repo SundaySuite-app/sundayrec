@@ -137,15 +137,10 @@ pub struct RecordingOpts {
     /// chosen from `Settings::separate_audio_format`. Drives the extract codec via
     /// the shared `audio_encode_args` seam.
     pub separate_audio_format: String,
-    /// Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
-    /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
-    pub classic_directshow: bool,
-    /// The camera INPUT mode the recorder probed at start (a size + framerate the
-    /// device actually advertises). NOT sent by the frontend — it's resolved
-    /// server-side so avfoundation doesn't reject an unsupported size/rate. `None`
-    /// → audio-only, or the probe yielded nothing (legacy 720p guess).
-    #[serde(skip)]
-    pub video_input: Option<sundayrec_core::capture::VideoCaptureMode>,
+    // (C3b: `classic_directshow` — the Windows DirectShow hatch — and
+    // `video_input` — the ffmpeg camera-mode probe's answer — left with the
+    // ffmpeg video paths. The video track picks the camera's format itself,
+    // `native_capture::video::choose_format`.)
     /// Mirror the recorded picture (`Settings::video_flip`). Read only by the
     /// native video track (C3a), which encodes with `hflip`. NOT sent by the
     /// frontend and not part of the golden JSON.
@@ -337,8 +332,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: true,
             separate_audio_format: "wav".into(),
-            classic_directshow: false,
-            video_input: None,
             video_flip: false,
         };
         let json = serde_json::to_string(&o).unwrap();
@@ -349,8 +342,8 @@ mod tests {
             json.contains("\"output_path\":\"/tmp/rec.mp4\""),
             "got: {json}"
         );
-        // The probed camera mode is server-side state, never on the wire.
-        assert!(!json.contains("video_input"), "got: {json}");
+        // The mirror flag is server-side state, never on the wire.
+        assert!(!json.contains("video_flip"), "got: {json}");
     }
 
     #[test]

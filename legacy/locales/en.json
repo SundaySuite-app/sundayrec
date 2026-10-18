@@ -236,13 +236,6 @@
         "title": "Advanced",
         "lede": "Things most people never need to touch. Everything here has a safe default.",
         "soundLink": "Advanced sound",
-        "engine": "Recording engine",
-        "engineDesc": "Applies to video recordings. Only switch if the sound stutters.",
-        "engineConfirm": "Change the recording engine",
-        "engineChoice": {
-          "native": "Built-in",
-          "dshow": "Classic (DirectShow)"
-        },
         "preroll": "Pre-roll buffer",
         "prerollDesc": "Sound kept from before you pressed Start. The buffer holds the microphone open in the background for as long as the app is ready to record.",
         "prerollChoice": {
@@ -519,10 +512,6 @@
         "audio02": {
           "title": "The chosen audio device was not found",
           "hint": "Connect the device, or pick another one under “Which sound?” on Record."
-        },
-        "audio10": {
-          "title": "Fell back to the classic audio engine",
-          "hint": "Recording still works. If you want the modern engine, check the driver and that no other program is holding the device."
         },
         "rate01": {
           "title": "A fixed sample rate is selected",

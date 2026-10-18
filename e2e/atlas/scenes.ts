@@ -63,10 +63,10 @@ import {
  *    `position: fixed; inset: 0` on purpose — while a recording runs, the
  *    overlay IS the app. The sentence exists; the pixel cannot.
  *    `overlegg--pagar` is what a recording actually looks like.
- *  - **The ASIO attribution card** and the engine row (A5b: it holds only the
- *    `dshow` choice now, so it exists on Windows alone): both gate on
- *    `currentOs() === "win"`, and `navigator.userAgentData.platform` beats any
- *    user-agent override, so Desktop Chrome can never be Windows here.
+ *  - **The ASIO attribution card** (the engine row beside it left in C3b —
+ *    there is one recording engine now): it gates on `currentOs() === "win"`,
+ *    and `navigator.userAgentData.platform` beats any user-agent override, so
+ *    Desktop Chrome can never be Windows here.
  *  - **Native pickers** («Åpne fil…», «Velg mappe», profil-import/-eksport).
  *    All of them are opened by Rust itself (`editor_open_recording`,
  *    `settings_pick_save_folder`, `settings_export_profile`/

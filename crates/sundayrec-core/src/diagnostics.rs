@@ -23,6 +23,39 @@ use ts_rs::TS;
 
 use crate::selftest::RecordingTelemetry;
 
+/// The shaped result of the settings "diagnose audio" probe (mirrors the
+/// Electron `diagnose-audio` handler). The renderer renders one populated
+/// dropdown from this in a single round-trip.
+///
+/// `dshow` carries the audio-input names — since C3b the NATIVE inputs the
+/// recorder opens (cpal, plus ASIO on Windows); the key kept its Electron-era
+/// name because the renderer reads it. `wasapi` (the WASAPI loopback names)
+/// and `wasapi_available` stay empty/`false`: the loopback bridge was never
+/// ported. (Moved here from the deleted `device_enum` module, C3b.)
+// mirrors src/main/ipc/audio-devices.ts diagnose-audio
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+#[ts(export, export_to = "AudioDiagnostics.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDiagnostics {
+    /// The audio-input device names (the native list, see the type's doc).
+    pub dshow: Vec<String>,
+    /// WASAPI loopback device names (never populated — see the type's doc).
+    pub wasapi: Vec<String>,
+    /// Whether the WASAPI loopback bridge is available on this host.
+    pub wasapi_available: bool,
+}
+
+impl AudioDiagnostics {
+    /// The probe's answer for these input names: the names, and no loopback.
+    pub fn from_input_names(inputs: Vec<String>) -> Self {
+        Self {
+            dshow: inputs,
+            wasapi: Vec::new(),
+            wasapi_available: false,
+        }
+    }
+}
+
 /// A non-secret summary of the user's settings for the report. EVERY field here
 /// is safe to print. Secrets (cloud tokens, e-mail/SMTP credentials, stream
 /// keys) are intentionally absent — see the module docs: the report cannot leak
@@ -129,13 +162,12 @@ pub struct DiagnosticsInput {
     /// Camera permission, same vocabulary. `None` when not probed / video off.
     #[serde(default)]
     pub camera_permission: Option<String>,
-    /// Which audio engine the recorder LAST used (`"wasapi"`/`"asio"`/
-    /// `"directshow"`/`"coreaudio"`), or `None` if it hasn't recorded yet.
+    /// Which cpal host the recorder LAST opened (`"coreaudio"`/`"wasapi"`/
+    /// `"asio"`), or `None` if it hasn't recorded yet. (The fallback reason that
+    /// sat beside it left in C3b: no session can fall back from one engine to
+    /// another any more.)
     #[serde(default)]
     pub audio_engine: Option<String>,
-    /// If the modern engine fell back, WHY (human text). `None` = no fallback.
-    #[serde(default)]
-    pub audio_engine_fallback: Option<String>,
     /// ASIO devices seen (Windows + `asio` feature). Empty otherwise.
     #[serde(default)]
     pub asio_devices: Vec<String>,
@@ -356,16 +388,8 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         }
     }
 
-    // Audio-engine fallback (ASIO/WASAPI → DirectShow) — informational.
-    if let Some(reason) = input.audio_engine_fallback.as_deref() {
-        out.push(DiagnosticFinding::new(
-            "SR-AUDIO-10",
-            Info,
-            "Fell back to DirectShow",
-            format!("The modern audio engine (WASAPI/ASIO) did not start: {reason}"),
-            "Recording still works. To force the modern engine, check the driver/ASIO and that the device is not busy.",
-        ));
-    }
+    // (`SR-AUDIO-10`, "fell back to DirectShow", is retired since C3b: there is
+    // one recording engine and nothing to fall back to. The code is not reused.)
 
     // Forced sample rate — a known stutter cause when it doesn't match the
     // device's native rate (ffmpeg then resamples and can drop samples). Only
@@ -688,15 +712,9 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     lines.push(String::new());
 
     // ── Audio engine ──────────────────────────────────────────────────────────
-    if input.audio_engine.is_some() || input.audio_engine_fallback.is_some() {
+    if let Some(engine) = input.audio_engine.as_deref() {
         lines.push("## Audio engine".to_string());
-        lines.push(format!(
-            "- **Last used:** {}",
-            input.audio_engine.as_deref().unwrap_or("unknown")
-        ));
-        if let Some(reason) = &input.audio_engine_fallback {
-            lines.push(format!("- **Fallback:** {reason}"));
-        }
+        lines.push(format!("- **Last used:** {engine}"));
         lines.push(String::new());
     }
 
@@ -1007,16 +1025,17 @@ mod tests {
     }
 
     #[test]
-    fn audio_engine_fallback_is_info() {
-        let mut input = sample_input();
-        input.audio_engine_fallback = Some("driveren var opptatt".to_string());
-        let f = detect_issues(&input);
-        let e = f
-            .iter()
-            .find(|x| x.code == "SR-AUDIO-10")
-            .expect("fallback finding");
-        assert_eq!(e.severity, DiagnosticSeverity::Info);
-        assert!(e.detail.contains("driveren var opptatt"));
+    fn audio_diagnostics_carry_the_input_names_and_no_loopback() {
+        let d = AudioDiagnostics::from_input_names(vec![
+            "MacBook Pro-mikrofon".into(),
+            "Behringer UMC204HD".into(),
+        ]);
+        assert_eq!(d.dshow, vec!["MacBook Pro-mikrofon", "Behringer UMC204HD"]);
+        assert!(d.wasapi.is_empty());
+        assert!(!d.wasapi_available);
+        // The wire keys the renderer reads.
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("\"wasapiAvailable\":false"), "got: {json}");
     }
 
     #[test]
@@ -1353,7 +1372,6 @@ mod tests {
             "SR-FFMPEG-01",
             "SR-AUDIO-01",
             "SR-AUDIO-02",
-            "SR-AUDIO-10",
             "SR-RATE-01",
             "SR-VIDEO-01",
             "SR-VIDEO-02",

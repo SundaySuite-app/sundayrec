@@ -85,9 +85,6 @@ pub const MACHINE_LOCAL: &[&str] = &[
     "channels",
     // A forced rate is one THIS interface supports; another card may refuse it.
     "sampleRateMode",
-    // ── Per-rig escape hatches for the capture engine ("flip on only if the
-    //    native engine misbehaves on a specific rig" — their own docs).
-    "classicDirectshow",
     // ── The camera: which one, whether it records, and how it is mounted
     //    (`videoFlip` is "a per-machine preference" in its own doc).
     "videoEnabled",
@@ -376,7 +373,6 @@ mod tests {
             input_channel_r: Some(17),
             channels: ChannelMode::MonoL,
             sample_rate_mode: SampleRate::R48000,
-            classic_directshow: true,
             video_enabled: true,
             video_device_name: Some("Logitech BRIO".into()),
             video_device_index: Some(1),
@@ -485,7 +481,6 @@ mod tests {
             "inputChannelR",
             "channels",
             "sampleRateMode",
-            "classicDirectshow",
             "videoEnabled",
             "videoDeviceName",
             "videoDeviceIndex",
