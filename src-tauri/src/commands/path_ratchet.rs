@@ -482,14 +482,6 @@ const PARAM_TOKENS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
         },
     ),
-    (
-        "editor_mastering_analyze",
-        "source_token",
-        Token {
-            resolver: "resolve_source(&chosen",
-            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
-        },
-    ),
     // ── The sidecars and the sermon pick (A3/A4, PR-D): the same File token,
     //    and the sidecar's path is derived in Rust from what it resolves to.
     //    `with_source` resolves the token and only then runs the seam.

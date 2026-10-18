@@ -1671,7 +1671,7 @@ const api: Record<string, unknown> = {
       request: toEditorExportRequest("video", o),
     });
   },
-  // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────
+  // ── Mastering (editor_master_*) ──────────────
   // editor_master_preview/apply take a single `request` struct; cancel takes jobId.
   // Mastering commands return bare structs; the consumer expects { ok, … }.
   masterPreview: async (sourceToken: string, listen: MasterPreviewParams) =>

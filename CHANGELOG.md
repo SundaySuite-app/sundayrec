@@ -5,6 +5,12 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Mikserens støyfjerning skåner nå musikken.** «Støyfjerning» i den avanserte
+  mikseren er blitt like varsom som i «Tale»: den virker på tale og på rommets
+  stillhet i pausene, men lar en holdt akkord eller en pad stå urørt (før kunne den
+  ta ned slike toner med nesten hele innstillingen, ca. 10 dB). Støyen i pausene
+  fjernes som før.
+
 - **«Etter» er som regel klar når du trykker.** Appen begynner å måle hele
   programmet så snart du åpner Rediger → Lyd, og måler på nytt et øyeblikk etter at
   du endrer valget, mikseren eller kuttene. Første «Etter» trenger derfor som

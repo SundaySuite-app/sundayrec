@@ -152,6 +152,8 @@ use crate::tale::{Mains, SpeechClean, SpeechGate, DENOISE_TALE_DB};
 pub use filmcraft_audio_dsp as dsp;
 
 /// Frames per processing block in [`BuiltChain::process_offline`].
+/// The floor the mixer's gated de-noiser assumes for its first seconds, dBFS (M2R #11).
+const MIXER_DENOISE_FLOOR_PRIOR_DB: f32 = -60.0;
 const BLOCK: usize = 4096;
 
 /// `agate`'s default `range` (0.06125 linear) in dB: how far it closes.
@@ -340,7 +342,14 @@ impl Chain {
             // `nr` -> `reduction`. `nf` has no counterpart and is dropped on
             // purpose (module docs). Same clamp as the ffmpeg builder.
             let nr = finite_or(v.denoise.reduction_db, 12.0).clamp(0.01, DENOISE_MAX_DB);
-            stages.push(Stage::fx("denoise", &[("reduction", nr as f32)]));
+            // M2R #11: gated like «Tale»'s. The same `denoise` ungated takes a held chord
+            // down by the whole reduction (B2b: -9.6 dB at 10); behind the speech gate the
+            // chord passes at its dry level. The gate reads the floor off the signal it
+            // sees; the prior only covers its first 2 s (the mixer has no analysis).
+            stages.push(Stage::SpeechGated {
+                inner: Box::new(Stage::fx("denoise", &[("reduction", nr as f32)])),
+                floor_db: MIXER_DENOISE_FLOOR_PRIOR_DB,
+            });
         }
 
         if v.dereverb.enabled {

@@ -423,6 +423,33 @@ fn the_gate_finds_the_floor_itself_whatever_floor_it_is_told() {
     }
 }
 
+/// M2R #11: the mixer's «Støyfjerning» is the same de-noiser as «Tale»'s and now sits behind
+/// the same gate. At the slider's top (12 dB) a held chord keeps its level; the floor in a
+/// long pause still falls. Without the gate (`Chain::from_vocal_chain` building the plain
+/// stage) the chord lost the whole reduction: B2b measured -9.6 dB at 10.
+#[test]
+fn the_mixers_denoise_leaves_a_held_chord_alone_but_cleans_the_pause() {
+    let x = service();
+    let mut v = crate::processing::VocalChain::default();
+    v.highpass.enabled = false;
+    v.compressor.enabled = false;
+    v.denoise.enabled = true;
+    v.denoise.reduction_db = 12.0;
+    let c = Chain::from_vocal_chain(&v);
+    assert!(
+        c.stages()
+            .iter()
+            .any(|s| matches!(s, Stage::SpeechGated { .. })),
+        "the mixer's de-noiser must sit behind the speech gate"
+    );
+    let y = run(&c, &x);
+    let chord = rms_db(span(&y, 14.0, 19.0)) - rms_db(span(&x, 14.0, 19.0));
+    let floor = rms_db(span(&y, 5.5, 7.4)) - rms_db(span(&x, 5.5, 7.4));
+    println!("mixer denoise at 12 dB: chord {chord:+.2} dB, floor in the pause {floor:+.2} dB");
+    assert!(chord > -1.5, "a held chord lost {chord} dB");
+    assert!(floor < -5.0, "the floor in a pause only fell {floor} dB");
+}
+
 #[test]
 fn the_dereverb_leaves_the_same_chord_alone_too() {
     let x = service();

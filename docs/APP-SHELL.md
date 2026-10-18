@@ -3449,7 +3449,7 @@ De som er mer enn opprydding:
   nytt i V1/PR3 og BEHOLDT: eieren har ikke svart, og en notatkolonne som
   finnes i basen er billigere å koble opp enn å skrive om igjen.
 - **Mastringspanelet** (`editor_master_apply`, `editor_master_cancel`,
-  `editor_master_presets`, `editor_mastering_analyze`) — erstattet av tre ord
+  `editor_master_presets`) — erstattet av tre ord
   og mikseren. BEHOLDT i V1/PR3: kvartetten bor i `editor/mod.rs` (5407
   linjer), delt med eksport- og analysestien, og kirurgi der er feil risiko å
   ta i en opprydding. Vurderes for seg når editoren neste gang åpnes.

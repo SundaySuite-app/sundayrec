@@ -137,23 +137,6 @@ pub struct EditorSegment {
     pub confidence: Option<f64>,
 }
 
-/// The measured loudness the mastering UI shows before/after a preset: what
-/// `sundayrec_core::loudness` measures over the preset's processed signal, the same meter the
-/// export levels with.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorLoudness.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorLoudness {
-    /// Measured integrated loudness (LUFS).
-    pub input_i: f64,
-    /// Loudness range.
-    pub input_lra: f64,
-    /// True peak (dBTP).
-    pub input_tp: f64,
-    /// The preset this was measured against (its target LUFS for the delta UI).
-    pub target_lufs: f64,
-}
-
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
 /// `CutRegion`; converted to [`sundayrec_core::editor::CutRegion`] in the seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
@@ -1814,12 +1797,6 @@ pub async fn diagnose_channels(_input_path: &str) -> AppResult<EditorChannelDiag
     disabled("diagnoseChannels")
 }
 
-/// Measure the recording's loudness against a mastering preset (pass 1 only).
-#[cfg(not(feature = "editor"))]
-pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult<EditorLoudness> {
-    disabled("masteringAnalyze")
-}
-
 /// What the export command passes for `hw_first` (v0.15): always try the
 /// hardware encoder where the platform has one. A toggle for this was a setting
 /// nobody could reason about ("is my Mac's VideoToolbox good?") guarding a
@@ -2699,11 +2676,26 @@ pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
 /// It is the SAME decision the preview, the loudness figure and the export read
 /// ([`tale_clean_for`], cached per file), so the sentence on screen is the chain that runs.
 #[cfg(feature = "editor")]
+///
+/// M2R #10: the analysis can be ended. A newer ask (another recording opened in the sound
+/// step), an export and a starting recording all supersede it; it then answers «not analysed»,
+/// which the page shows as nothing, and its ffmpeg dies with the dropped future. An analysis
+/// the preview or the export is waiting on is taken over by them ([`TALE_BOOK`]).
 pub async fn tale_said(input_path: &str) -> AppResult<EditorTaleSaid> {
-    let info = load_recording(input_path).await.ok();
-    let engine = ExportEngine::new();
-    let clean = tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?;
-    Ok(tale_said_from(clean.as_ref()))
+    let work = async {
+        let info = load_recording(input_path).await.ok();
+        let engine = ExportEngine::new();
+        let clean =
+            tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?;
+        Ok::<_, AppError>(tale_said_from(clean.as_ref()))
+    };
+    match until_superseded(tale_epoch(), work).await {
+        Some(r) => r,
+        None => {
+            tracing::info!("tale sentence superseded");
+            Ok(tale_said_from(None))
+        }
+    }
 }
 
 #[cfg(not(feature = "editor"))]
@@ -2720,73 +2712,6 @@ fn tale_said_from(clean: Option<&sundayrec_core::tale::SpeechClean>) -> EditorTa
             .map(|c| c.said().into_iter().map(String::from).collect())
             .unwrap_or_default(),
     }
-}
-
-/// Measure loudness: run the preset's chain over the whole recording to raw PCM and meter it in
-/// Rust ([`sundayrec_core::loudness`]) — the SAME meter, the same chain and the same channel
-/// handling the export levels with, so the figure shown before an export is the figure the
-/// export starts from. HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<EditorLoudness> {
-    use sundayrec_core::mastering::get_preset_by_id;
-
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    let preset = get_preset_by_id(preset_id)
-        .ok_or_else(|| AppError::Validation(format!("unknown_preset: {preset_id}")))?;
-    let info = load_recording(input_path).await.ok();
-    let fmt = pcm::pcm_format(
-        info.as_ref().and_then(|i| i.sample_rate),
-        info.as_ref().and_then(|i| i.channels),
-    );
-    // ffmpeg decodes (no `-af`); the preset's chain runs in Rust, the same one the export runs.
-    let engine = ExportEngine::new();
-    let clean = if preset.id == TALE_PRESET_ID {
-        tale_clean_for(&engine, input_path, info.as_ref().and_then(|i| i.channels)).await?
-    } else {
-        None
-    };
-    let chain = build_pre_chain(None, None, Some(&preset), clean.as_ref())?;
-    let built = chain
-        .build(fmt.sample_rate as f32, fmt.channels)
-        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        input_path.to_string(),
-        "-vn".into(),
-    ];
-    args.extend(sundayrec_core::pcm_stream::output_args(fmt));
-    let fmt = sundayrec_core::pcm_stream::PcmFormat {
-        sample_rate: fmt.sample_rate,
-        channels: built.out_channels(),
-    };
-    let duration = duration_hint(input_path).await.unwrap_or(0.0);
-    // Not an export: a private engine nobody can cancel; the stall budget still applies.
-    let (m, _frames) = pcm::run_chain(
-        &engine,
-        &args,
-        (duration * f64::from(fmt.sample_rate)) as u64,
-        export_stall_ms(),
-        (0.0, 99.0),
-        EXPORT_PHASE_MEASURING,
-        &|_, _| {},
-        move |r, done| {
-            let mut processed = sundayrec_core::chain::ChainReader::new(r, built);
-            sundayrec_core::pcm_stream::measure(&mut processed, fmt, None, |n| {
-                done.store(n, std::sync::atomic::Ordering::Relaxed)
-            })
-        },
-    )
-    .await?;
-    Ok(EditorLoudness {
-        input_i: m.integrated_lufs,
-        input_lra: m.range_lu,
-        input_tp: m.true_peak_dbtp,
-        target_lufs: preset.target_lufs,
-    })
 }
 
 /// Probe just has_video/has_audio — reuses the full load probe and projects the
@@ -2958,10 +2883,22 @@ fn prepare_epoch() -> &'static tokio::sync::watch::Sender<u64> {
     EPOCH.get_or_init(|| tokio::sync::watch::channel(0).0)
 }
 
-/// End every background listen preparation (an export or a recording wants the CPU).
+/// Which «Tale» sentence analysis is the latest (see [`tale_said`]). Bumped by a newer ask and
+/// by [`cancel_listen_prepare`]; NOT by a listen preparation, which runs next to it.
+#[cfg(any(feature = "editor", test))]
+fn tale_epoch() -> &'static tokio::sync::watch::Sender<u64> {
+    static EPOCH: std::sync::OnceLock<tokio::sync::watch::Sender<u64>> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(|| tokio::sync::watch::channel(0).0)
+}
+
+/// End every background listen preparation and sentence analysis (an export or a recording
+/// wants the CPU).
 pub fn cancel_listen_prepare() {
     #[cfg(any(feature = "editor", test))]
-    prepare_epoch().send_modify(|v| *v += 1);
+    {
+        prepare_epoch().send_modify(|v| *v += 1);
+        tale_epoch().send_modify(|v| *v += 1);
+    }
 }
 
 /// Race `work` against a newer epoch; `None` = superseded, `work` dropped.
@@ -3055,54 +2992,66 @@ async fn program_plan(
         .await
 }
 
-/// The programme plans already measured, and the measurements under way (M2R #3 follow-up).
+/// Results already computed, and the computations under way (M2R #3 follow-up, #10).
 ///
-/// One measurement per key, however many callers ask: «Etter» and the background
-/// preparation ([`prepare_listen`]) both come here, and whoever arrives second waits for the
-/// first instead of running a second full chain pass over the same programme. If the
-/// measuring caller goes away (a superseded preparation is dropped), a waiter takes over and
-/// measures itself — the cell is only ever filled by a measurement that finished.
+/// One computation per key, however many callers ask: «Etter» and the background
+/// preparation ([`prepare_listen`]) both come to [`PLAN_BOOK`], and the sound step's
+/// sentence, the preview and the export all come to [`TALE_BOOK`]; whoever arrives second
+/// waits for the first instead of running a second full pass over the same file. If the
+/// computing caller goes away (a superseded preparation is dropped), a waiter takes over and
+/// computes itself — the cell is only ever filled by a computation that finished.
 #[cfg(any(feature = "editor", test))]
-struct PlanBook {
-    done: std::sync::Mutex<Vec<(String, sundayrec_core::loudness::GainPlan)>>,
-    flights: std::sync::Mutex<Vec<(String, PlanFlight)>>,
+struct Book<V, const CAP: usize> {
+    done: std::sync::Mutex<Vec<(String, V)>>,
+    flights: std::sync::Mutex<Vec<(String, std::sync::Arc<tokio::sync::OnceCell<V>>)>>,
+    /// Whether a finished value is worth keeping (a failed analysis is shared with those
+    /// already waiting, but asked again next time).
+    keep: fn(&V) -> bool,
 }
 
+/// The programme plans: one per recording + choice + cuts.
 #[cfg(any(feature = "editor", test))]
-type PlanFlight = std::sync::Arc<tokio::sync::OnceCell<sundayrec_core::loudness::GainPlan>>;
+type PlanBook = Book<sundayrec_core::loudness::GainPlan, 8>;
 
-/// How many plans are kept (one per recording + choice + cuts).
+/// What «Tale»'s analysis decided: one per file (path, size, mtime). `None` = not analysed.
 #[cfg(any(feature = "editor", test))]
-const PLAN_CACHE_SIZE: usize = 8;
+type TaleBook = Book<Option<sundayrec_core::tale::SpeechClean>, 4>;
 
 #[cfg(feature = "editor")]
 static PLAN_BOOK: PlanBook = PlanBook::new();
 
+#[cfg(feature = "editor")]
+static TALE_BOOK: TaleBook = TaleBook::with_keep(|c| c.is_some());
+
 #[cfg(any(feature = "editor", test))]
 impl PlanBook {
     const fn new() -> Self {
+        Self::with_keep(|_| true)
+    }
+}
+
+#[cfg(any(feature = "editor", test))]
+impl<V: Clone, const CAP: usize> Book<V, CAP> {
+    const fn with_keep(keep: fn(&V) -> bool) -> Self {
         Self {
             done: std::sync::Mutex::new(Vec::new()),
             flights: std::sync::Mutex::new(Vec::new()),
+            keep,
         }
     }
 
-    /// The finished plan for `key`, if there is one.
-    fn cached(&self, key: &str) -> Option<sundayrec_core::loudness::GainPlan> {
+    /// The finished value for `key`, if there is one.
+    fn cached(&self, key: &str) -> Option<V> {
         let done = self.done.lock().unwrap_or_else(|e| e.into_inner());
-        done.iter().find(|(k, _)| k == key).map(|(_, p)| *p)
+        done.iter().find(|(k, _)| k == key).map(|(_, p)| p.clone())
     }
 
-    /// The plan for `key`: from the cache, from the measurement already running, or from
+    /// The value for `key`: from the cache, from the computation already running, or from
     /// `measure`. `None` (the file is gone) is never shared or kept.
-    async fn get_or_measure<F, Fut>(
-        &self,
-        key: Option<String>,
-        measure: F,
-    ) -> AppResult<sundayrec_core::loudness::GainPlan>
+    async fn get_or_measure<F, Fut>(&self, key: Option<String>, measure: F) -> AppResult<V>
     where
         F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = AppResult<sundayrec_core::loudness::GainPlan>>,
+        Fut: std::future::Future<Output = AppResult<V>>,
     {
         let Some(key) = key else {
             return measure().await;
@@ -3115,7 +3064,7 @@ impl PlanBook {
             match flights.iter().find(|(k, _)| k == &key) {
                 Some((_, f)) => f.clone(),
                 None => {
-                    let f = PlanFlight::default();
+                    let f = std::sync::Arc::<tokio::sync::OnceCell<V>>::default();
                     flights.push((key.clone(), f.clone()));
                     f
                 }
@@ -3123,18 +3072,21 @@ impl PlanBook {
         };
         let res = flight
             .get_or_try_init(|| async {
-                let plan = measure().await?;
-                let mut done = self.done.lock().unwrap_or_else(|e| e.into_inner());
-                if done.len() >= PLAN_CACHE_SIZE {
-                    done.remove(0);
+                let value = measure().await?;
+                if (self.keep)(&value) {
+                    let mut done = self.done.lock().unwrap_or_else(|e| e.into_inner());
+                    done.retain(|(k, _)| k != &key);
+                    if done.len() >= CAP {
+                        done.remove(0);
+                    }
+                    done.push((key.clone(), value.clone()));
                 }
-                done.push((key.clone(), plan));
-                Ok(plan)
+                Ok(value)
             })
             .await
-            .copied();
+            .cloned();
         // Finished or failed: the flight is over (a waiter that took over a dropped
-        // measurement finds the cell empty and measures; a later caller starts afresh).
+        // computation finds the cell empty and computes; a later caller starts afresh).
         if res.is_ok() || flight.get().is_none() {
             let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
             flights.retain(|(k, f)| !(k == &key && std::sync::Arc::ptr_eq(f, &flight)));
@@ -3148,15 +3100,12 @@ impl PlanBook {
 #[cfg(feature = "editor")]
 const TALE_PRESET_ID: &str = "speech-clear";
 
-/// What the analysis decided, kept per file so the preview, the loudness figure and the export
-/// of the same recording read the file once, not three times. Keyed on path, size and mtime, so
-/// an edited or replaced file is read again.
+/// What the analysis decided, kept per file ([`TALE_BOOK`]) so the preview, the loudness
+/// figure, the sentence in the sound step and the export of the same recording read the
+/// file once, not once each, and not twice at once (M2R #10). Keyed on path, size and mtime,
+/// so an edited or replaced file is read again.
 #[cfg(feature = "editor")]
 type TaleKey = (String, u64, u128);
-
-#[cfg(feature = "editor")]
-static TALE_CACHE: std::sync::Mutex<Vec<(TaleKey, sundayrec_core::tale::SpeechClean)>> =
-    std::sync::Mutex::new(Vec::new());
 
 #[cfg(feature = "editor")]
 fn tale_cache_key(path: &str) -> Option<TaleKey> {
@@ -3174,8 +3123,24 @@ fn tale_cache_key(path: &str) -> Option<TaleKey> {
 /// ([`sundayrec_core::tale`]). `None` when the file cannot be analysed: the profile then
 /// runs as before, and the export is never lost to an analysis that failed. A cancel or a
 /// stall still ends the export.
+///
+/// Asked by several callers at once (the sentence and the «Etter» preview open together),
+/// the file is still read once: the second waits for the first ([`TALE_BOOK`]).
 #[cfg(feature = "editor")]
 async fn tale_clean_for(
+    engine: &ExportEngine,
+    input_path: &str,
+    channels: Option<u32>,
+) -> AppResult<Option<sundayrec_core::tale::SpeechClean>> {
+    let key = tale_cache_key(input_path).map(|k| format!("{k:?}|{channels:?}"));
+    TALE_BOOK
+        .get_or_measure(key, || analyse_for_tale(engine, input_path, channels))
+        .await
+}
+
+/// The analysis itself: one read of the file. See [`tale_clean_for`].
+#[cfg(feature = "editor")]
+async fn analyse_for_tale(
     engine: &ExportEngine,
     input_path: &str,
     channels: Option<u32>,
@@ -3183,14 +3148,6 @@ async fn tale_clean_for(
     use sundayrec_core::pcm_stream::{output_args, PcmFormat};
     use sundayrec_core::tale::{analyze_stream, ANALYSIS_RATE};
 
-    let key = tale_cache_key(input_path);
-    if let Some(k) = &key {
-        if let Ok(cache) = TALE_CACHE.lock() {
-            if let Some((_, c)) = cache.iter().find(|(ck, _)| ck == k) {
-                return Ok(Some(c.clone()));
-            }
-        }
-    }
     let fmt = PcmFormat {
         sample_rate: ANALYSIS_RATE,
         channels: if channels == Some(1) { 1 } else { 2 },
@@ -3237,13 +3194,6 @@ async fn tale_clean_for(
         did = ?clean.said(),
         "tale analysis"
     );
-    if let (Some(k), Ok(mut cache)) = (key, TALE_CACHE.lock()) {
-        cache.retain(|(ck, _)| ck != &k);
-        if cache.len() >= 4 {
-            cache.remove(0);
-        }
-        cache.push((k, clean.clone()));
-    }
     Ok(Some(clean))
 }
 
@@ -4579,6 +4529,60 @@ mod tests {
         assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
+    /// M2R #10: «Tale»'s analysis, asked twice at once (the sound step's sentence and the
+    /// «Etter» preview open together), runs once, and both get the same decision.
+    #[tokio::test]
+    async fn two_concurrent_asks_for_the_same_analysis_read_the_file_once() {
+        let book = TaleBook::with_keep(|c| c.is_some());
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        let gate = tokio::sync::Notify::new();
+        let decision = || sundayrec_core::tale::SpeechClean {
+            hum: None,
+            denoise: true,
+            dereverb: None,
+            declick: false,
+            floor_db: -60.0,
+        };
+        let ask = || {
+            book.get_or_measure(Some("f".into()), || async {
+                runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                gate.notified().await;
+                Ok(Some(decision()))
+            })
+        };
+        let (a, b, ()) = tokio::join!(ask(), ask(), async {
+            yield_a_few().await;
+            gate.notify_waiters();
+            gate.notify_one();
+        });
+        assert_eq!(a.unwrap(), Some(decision()));
+        assert_eq!(b.unwrap(), Some(decision()));
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // And a later ask is served from the cache.
+        let c = book
+            .get_or_measure(Some("f".into()), || async { panic!("read again") })
+            .await;
+        assert_eq!(c.unwrap(), Some(decision()));
+    }
+
+    /// An analysis that could not read the file is shared with those already waiting, but is
+    /// not kept: the next ask tries again (the export is never lost to a failed analysis).
+    #[tokio::test]
+    async fn a_failed_analysis_is_not_kept() {
+        let book = TaleBook::with_keep(|c| c.is_some());
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        for _ in 0..2 {
+            let r = book
+                .get_or_measure(Some("f".into()), || async {
+                    runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(None)
+                })
+                .await;
+            assert_eq!(r.unwrap(), None);
+        }
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
     #[tokio::test]
     async fn a_finished_plan_is_not_measured_again() {
         let book = PlanBook::new();
@@ -4839,11 +4843,6 @@ mod tests {
             .to_string()
             .contains("feature_disabled"));
         assert!(segments("/x.mp4", false, |_| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        assert!(mastering_analyze("/x.mp4", "speech-clear")
             .await
             .unwrap_err()
             .to_string()
@@ -8000,62 +7999,6 @@ mod tests {
             );
             assert!(!c.declick && c.dereverb.is_none(), "{c:?}");
             assert_eq!(again.unwrap(), Some(h));
-        }
-
-        /// B1b: `mastering_analyze` reads the same meter the export levels with: its
-        /// numbers agree with ffmpeg's `ebur128` over the same preset chain.
-        #[test]
-        fn mastering_analyze_agrees_with_ebur128_or_skips() {
-            let (Some(ffmpeg), Some(ffprobe)) =
-                (sidecar_or_skip("ffmpeg"), sidecar_or_skip("ffprobe"))
-            else {
-                return;
-            };
-            let dir = tempfile::tempdir().unwrap();
-            let src = lavfi_wide_range_tone(&ffmpeg, dir.path(), "wide.wav", 20.0, 5.0);
-            let preset = sundayrec_core::mastering::get_preset_by_id("speech-clear").unwrap();
-
-            // The oracle: the preset chain rendered to a wav, read by ebur128.
-            let processed = dir.path().join("processed.wav");
-            let status = std::process::Command::new(&ffmpeg)
-                .args(["-nostdin", "-hide_banner", "-v", "error", "-i", &src, "-af"])
-                .arg(&preset.filters)
-                .arg("-y")
-                .arg(&processed)
-                .status()
-                .unwrap();
-            assert!(status.success());
-            let oracle = measure_ebu_r128(&ffmpeg, &processed, None);
-
-            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-            unsafe {
-                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
-                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
-            }
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let got = rt.block_on(mastering_analyze(&src, "speech-clear"));
-            unsafe {
-                std::env::remove_var("SUNDAYREC_FFMPEG");
-                std::env::remove_var("SUNDAYREC_FFPROBE");
-            }
-            let got = got.expect("analysis should succeed");
-            assert!(
-                (got.input_i - oracle.input_i).abs() <= 0.1,
-                "{got:?} vs {:.2}",
-                oracle.input_i
-            );
-            assert!(
-                (got.input_tp - oracle.input_tp).abs() <= 0.15,
-                "{got:?} vs {:.2}",
-                oracle.input_tp
-            );
-            assert!(
-                (got.input_lra - oracle.input_lra).abs() <= 0.5,
-                "{got:?} vs {:.2}",
-                oracle.input_lra
-            );
-            assert_eq!(got.target_lufs, preset.target_lufs);
         }
 
         /// M2R #3c: the preview is levelled like the EXPORT, i.e. by the programme and not by

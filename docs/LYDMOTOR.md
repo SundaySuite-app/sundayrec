@@ -22,7 +22,7 @@ retningen, ikke fasiten.
 
 1. **Fila leses mange ganger.** Bølgeformen (`peaks`, 8 kHz-dekoding),
    prekensøket (`segments`, 16 kHz), kanalanalysen (`auto_process`/`astats`),
-   lydstyrkemålingen (`mastering_analyze`) og eksportens to runder (måling av
+   og eksportens to runder (måling av
    det kuttede signalet, så påføring) dekoder hver for seg.
 2. **`loudnorm` er treg og treffer ikke alltid.** Kjeden «voice-noisy-room» gikk
    32× sanntid uten `loudnorm` og 10× med. `mastering.rs` dokumenterer at
@@ -146,7 +146,7 @@ kommer først.
   programmet komprimeres ikke.
 - Eksporten måler det kuttede, behandlede signalet i Rust og koder i samme
   runde (behandlet PCM mellomlagres som f32 i temp, eller kjeden kjøres to
-  ganger; det avgjøres på målt tid). `mastering_analyze` bruker samme måler.
+  ganger; det avgjøres på målt tid). (M2R #8: den frittstående `mastering_analyze` er slettet; den hadde ingen kaller og målte ukuttet fil.)
 - **Det som forsvinner:** `loudnorm` (måle- og påføringsstrengene), JSON-parseren,
   `plan_pass2` og «Normalization Type»-sjekken.
 - **Ferdig når:** hver fil i en testmappe med ekte opptak treffer målet
@@ -156,8 +156,7 @@ kommer først.
 **Gjort (B1a + B1b).** `loudnorm`, JSON-parseren, `plan_pass2`, «Normalization Type»-sjekken
 og alle `loudnorm`-strengene er borte. Eksporten måler det kuttede, behandlede signalet i Rust
 (`sundayrec_core::pcm_stream`), planlegger én lineær forsterkning (`loudness::plan_gain`), og
-koder fra det jevnede signalet. `mastering_analyze` og forhåndslyttingen bruker samme måler og
-samme nivåsteg.
+koder fra det jevnede signalet. Forhåndslyttingen bruker samme måler og samme nivåsteg.
 
 **Avgjort på målt tid (B1b): behandlet PCM mellomlagres som f32 i temp.** Ekte 90-minutters
 fil (`2026.01.04.mp3`, 5400 s, `speech-clear`, ett kutt, mp3 256k, `--release`, Mac,
@@ -498,3 +497,20 @@ avtagende hale (RT60 1,5 s), RMS målt i halen (0,3–0,95 s) og i direktelyden
 (0–0,05 s). Samme filer kjøres gjennom ffmpeg med SundayRecs egne
 filterstrenger. De hentes ut med `processing::vocal_chain_presets()` og
 `mastering::build_measure_pass_filters()`.
+
+**M2R #11: mikserens støyfjerning er gatet (samme `SpeechGate` som «Tale»).** `Chain::from_vocal_chain`
+pakker `denoise` inn i `Stage::SpeechGated`, så «mer støyfjerning» i mikseren ikke lenger mister
+musikkbeskyttelsen. Porten leser gulvet selv; mikseren har ingen analyse og gir bare et forhåndsgulv
+(−60 dBFS) for de to første sekundene. Målt på samme syntetiske gudstjeneste som B3a ved 12 dB
+(skyvens topp): akkorden +0,00 dB (ugatet: tapte hele reduksjonen, B2b −9,6 dB ved 10), gulvet i
+pausen −11,2 dB. Test: `the_mixers_denoise_leaves_a_held_chord_alone_but_cleans_the_pause`.
+`dereverb` i mikseren er fortsatt ugatet (B2b: −2,2 til −3,3 dB på en holdt tone). Samme kjente
+grense som «Tale»: trommer åpner porten.
+
+**M2R #10: «Tales» analyse leser fila én gang.** `tale_clean_for` går nå gjennom `TALE_BOOK`
+(samme `Book`/`OnceCell`-mønster som `PLAN_BOOK`): setningen i lydsteget (`editor_tale_said`),
+«Etter» og eksporten som spør samtidig deler én lesing, og den som kommer sist venter på den
+første (tar over om den første droppes). En analyse som ikke kunne lese fila deles med dem som
+venter, men huskes ikke. `tale_said` kan nå avbrytes: en nyere forespørsel (annen fil), en
+eksport eller et opptak som starter avslutter den (egen epoke, `tale_epoch`; en lytteforberedelse
+påvirker den ikke), og den svarer «ikke analysert».
