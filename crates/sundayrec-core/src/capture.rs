@@ -296,8 +296,8 @@ pub fn resolution_dims(tag: &str) -> (u32, u32) {
 }
 
 /// Push the video-encoder argument run (`-c:v … [-tag:v hvc1] [-b:v … -realtime 1
-/// | -preset veryfast] -pix_fmt yuv420p -r <fps> -fps_mode cfr`) shared by the
-/// unified single-process capture and the two-process video-only fallback capture.
+/// | -preset veryfast] -pix_fmt yuv420p -r <fps> -fps_mode cfr`) the video
+/// track ([`crate::video_track::video_track_args`]) and the editor export use.
 /// Hardware (VideoToolbox) encoding is honoured ONLY on macOS — the realtime path
 /// for live 4K H.265; elsewhere (or when `hw_accel` is false) this falls back to
 /// software x264/x265. `iso_container` gates the `hvc1` FourCC tag: pass `false`
@@ -363,8 +363,8 @@ pub const KEYFRAME_INTERVAL_SECS: u32 = 2;
 /// libx264/libx265 and by VideoToolbox, NVENC, QSV, AMF and Media Foundation
 /// alike; `-keyint_min` only bites on x264/x265 (the hardware encoders ignore
 /// it). It sits after the encoder args in every path because it is emitted by
-/// [`push_video_encoder_args_with`], the single seam shared by the Mac/Linux
-/// unified path, the two-process video process and the Windows cpal pipe.
+/// [`push_video_encoder_args_with`], the single seam every video encode goes
+/// through (the video track; until C3b also the ffmpeg capture paths).
 fn push_keyframe_interval_args(args: &mut Vec<String>, framerate: u32) {
     let fps = framerate.max(1);
     args.push("-g".into());

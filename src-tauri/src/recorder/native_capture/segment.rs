@@ -1,14 +1,13 @@
 //! The native segment runner: one capture-fragment life (device open →
-//! stream → ring → writer → finalized WAV), plugged into `run_session`'s
-//! supervisor loop as a drop-in sibling of the ffmpeg `run_segment`.
+//! stream → ring → writer → finalized WAV), driven by `run_session`'s
+//! supervisor loop. Since C3b it is the ONLY segment loop: the ffmpeg
+//! `run_segment` it was built as a sibling of is gone.
 //!
-//! The select! arms deliberately MIRROR `engine::run_segment`'s (startup
-//! watchdog, byte watchdog, disk guard, split/auto-stop timers, silence
-//! timers, stop) rather than being generic over the child — the stop
-//! semantics differ (flag+join vs `q`+wait), and the duplication keeps both
-//! paths reviewable against each other.
+//! The select! arms are the ones that loop had (startup watchdog, byte
+//! watchdog, disk guard, split/auto-stop timers, silence timers, stop), with
+//! native stop semantics (flags + bounded joins instead of `q` + wait).
 //!
-//! Signal mapping vs the ffmpeg path:
+//! Signal mapping from the old ffmpeg path, for the archaeology:
 //! - `size=` progress lines   → the writer's `segment_bytes` atomic
 //! - first `size=` (Started)  → `WriterEvent::Started` (first block flushed)
 //! - astats levels lines      → 33 ms sampler over the routed `MeterBanks`
@@ -29,11 +28,11 @@
 //! WAV, fed by a clock tap on this stream's callback. Nothing in the select!
 //! loop watches the video — a camera or encoder that dies is logged and
 //! counted, and the sound goes on. The stop order is #341's, carried over from
-//! `cpal_capture.rs`: the CAPTURES stop before the WRITERS (audio stream, then
+//! the deleted `cpal_capture.rs`: the CAPTURES stop before the WRITERS (audio stream, then
 //! camera, then the WAV writer, then the video track, which needs the WAV's
 //! final frame count), and every wait has a time limit
 //! ([`stop_native_bounded`]). A writer that dies without a word is announced
-//! (#337's lesson from `two_process.rs`: the sound must never stop silently
+//! (#337's lesson from the deleted `two_process.rs`: the sound must never stop silently
 //! while the picture keeps going).
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -534,7 +533,8 @@ pub(crate) async fn abort_native_segment(seg: &mut NativeSegment, output_path: &
 /// the header, fsyncs; then the video track decides its last slots up to the
 /// WAV's final length and closes its encoder) — with a time limit on every
 /// wait so a wedged teardown can never freeze the supervisor (the "UI stuck on
-/// Stopping" class of bug). This is #341's order from `cpal_capture.rs`.
+/// Stopping" class of bug). This is #341's order from the deleted
+/// `cpal_capture.rs`.
 pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
     seg.stream_stop.store(true, Ordering::Relaxed);
     if let Some(h) = seg.stream_join.take() {
@@ -905,8 +905,8 @@ impl EventSink for AppEventSink<'_> {
     }
 }
 
-/// Run one native segment to completion. Mirrors `engine::run_segment`'s arms;
-/// see the module header for the signal mapping.
+/// Run one native segment to completion; see the module header for the arms
+/// and the signal mapping.
 ///
 /// `deliverable_bytes` is the sum of the current deliverable's PREVIOUS
 /// fragments (`_rN` reconnect pieces) — the RIFF-cap guard forces a split
@@ -919,9 +919,8 @@ impl EventSink for AppEventSink<'_> {
 ///
 /// F2-T2: the session half of its inputs (the app handle, the options and the
 /// generation-guarded [`StateWriter`]) arrives in `ctx`, and the segment's three
-/// counters in [`SegmentCounters`] — the SAME two groups `engine::run_segment`
-/// takes, which is the point: the two segment loops now demonstrably read the
-/// same state door, rather than each being handed its own set of loose arguments.
+/// counters in [`SegmentCounters`] — so the segment demonstrably reads the
+/// session's own state door rather than a set of loose arguments.
 pub(crate) async fn run_native_segment(
     ctx: &SessionContext,
     mut seg: NativeSegment,
@@ -1122,7 +1121,7 @@ where
                     SegmentSignal::WriterGone => {
                         // Writer gone without an error event — treat as an
                         // unexpected exit; the recovery policy decides. SAY so
-                        // (#337, inherited from `two_process.rs`): in a video
+                        // (#337, inherited from the deleted `two_process.rs`): in a video
                         // session the picture can keep going while the sound
                         // has stopped, and a silent reconnect would leave the
                         // volunteer believing the sound was still recorded.
@@ -1333,12 +1332,6 @@ where
         t.ring_overrun_samples = t.ring_overrun_samples.saturating_add(overrun);
         t.native_xruns = t.native_xruns.saturating_add(xruns);
         t.native_frames_sec += seg.frames() as f64 / f64::from(seg.spec().sample_rate.max(1));
-        // E6.3 symmetry with the ffmpeg twin: close this capture process's
-        // drop/dup window. The native engine parses no ffmpeg stderr, so the
-        // window is always empty and this is a no-op — but a session that mixes
-        // the two backends (a native start that fell back to ffmpeg) must not
-        // depend on which arm happened to run.
-        t.seal_process();
     }
     segment_bytes.store(seg.bytes(), Ordering::Relaxed);
     outcome

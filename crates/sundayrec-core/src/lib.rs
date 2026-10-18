@@ -21,7 +21,6 @@
 //!   - [`notify`]        — the notification decisions: warning codes, once-semantics for the repeating observers, and the "we already said this" ledger for missed recordings
 //!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
-//!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
 //!   - [`reconnect`]    — watchdog (stuck-progress) + reconnect back-off decisions
 //!   - [`recorder`]     — the recorder state machine + session recovery/split policy (Fase 3)
 //!   - [`stream_fault`] — what a live capture-stream fault (cpal 0.18 `ErrorKind`) makes the recorder do: keep recording, reconnect, retry or stop (A3b)
@@ -76,7 +75,6 @@ pub mod pcm_stream;
 pub mod preflight;
 pub mod preroll;
 pub mod processing;
-pub mod progress;
 pub mod publish;
 pub mod reconnect;
 pub mod recorder;

@@ -231,13 +231,14 @@ pub struct Settings {
     /// common church-recording case).
     #[serde(default)]
     pub video_enabled: bool,
-    /// Stored camera human-readable name — the device-match moat input for video
-    /// (matched with [`crate::device_enum::find_best_video_device_match`]).
+    /// Stored camera human-readable name — the recorder opens the camera by it
+    /// in the native camera list (`native_capture::video::find_camera`).
     #[serde(default)]
     pub video_device_name: Option<String>,
-    /// Last-known avfoundation index for the chosen camera. A fallback for when
-    /// the name lookup fails (e.g. after a reconnect); the name match wins when
-    /// it succeeds. dshow cameras are addressed by name, so this stays `None`.
+    /// The camera picker's index for the chosen camera (its position in the
+    /// camera list when it was picked). Only the "is video on" checks read it;
+    /// the recorder opens the camera by NAME (indices move when cameras come
+    /// and go).
     #[serde(default)]
     pub video_device_index: Option<i32>,
     // (v0.15 — «lyd + video, ett valg»: `videoResolution`, `videoFramerate`,

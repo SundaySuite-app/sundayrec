@@ -1457,8 +1457,7 @@ mod tests {
     #[test]
     fn every_raw_text_code_the_engine_emits_has_its_own_sentence() {
         // The codes that reach `recording://error` with diagnostics as their
-        // message (engine.rs, cpal_capture.rs, two_process.rs, the native
-        // capture's writer). Falling through to the generic sentence would be
+        // message (the supervisor, the native capture's stream and writer). Falling through to the generic sentence would be
         // honest but vague; each of these has a specific one.
         for code in [
             "device_not_found",

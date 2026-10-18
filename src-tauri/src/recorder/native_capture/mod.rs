@@ -28,8 +28,8 @@
 //!   engine in `audio/vu.rs`.
 //! - [`writer`] — the WAV writer thread (f32→s16, 250 ms flush + in-place
 //!   header patching, byte/frame counters, in-process silence feed).
-//! - [`segment`] — the segment runner: one capture-fragment life, mirroring
-//!   `engine::run_segment`'s select! arms with native stop semantics.
+//! - [`segment`] — the segment runner: one capture-fragment life (the only
+//!   segment loop since C3b), with native stop semantics.
 //! - [`preroll`] — the rolling PRE-ROLL buffer: the same stack writing rotating
 //!   segment files, doubling as the `vu://levels` emitter while it holds the
 //!   device.
@@ -38,9 +38,9 @@
 //!   ffmpeg into an MKV beside each WAV fragment. The sound never depends on
 //!   it. Delivery muxes WAV + MKV into the mp4 (`concat`).
 //!
-//! Video sessions still run on the ffmpeg engine by default; the native one
-//! takes them only behind `SUNDAYREC_NATIVE_VIDEO=1` until C3b retires the old
-//! paths.
+//! Since C3b every session runs here — audio-only and video alike. The ffmpeg
+//! capture paths (and the `SUNDAYREC_NATIVE_VIDEO` switch that let video in
+//! during C3a) are gone.
 
 pub mod preroll;
 pub mod segment;

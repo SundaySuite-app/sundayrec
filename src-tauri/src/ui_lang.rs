@@ -16,7 +16,7 @@
 //!     `recorder::native_capture::segment` emit their terminal failures from
 //!     inside a `tokio::select!` that is draining a reader channel. A database
 //!     round-trip there is the back-pressure bug of 2026-07-31 all over again,
-//!     and threading a language parameter through `run_segment` would edit the
+//!     and threading a language parameter through the segment loop would edit the
 //!     hardware-verified capture path — the one thing this codebase's own rules
 //!     say not to do for a reporting reason.
 //!   - **`supervise::TaskAlert`.** The alert fires from a supervisor loop that

@@ -546,119 +546,22 @@ pub(crate) mod tests {
         eprintln!("format matrix: all 4 formats × mono/stereo encoded + ffprobed OK");
     }
 
-    /// LEVELS-CHAIN REGRESSION: encode a 2 s tone through the FULL live-levels
-    /// `astats` filter + the recorder's real `audio_encode_args` with a NATIVE
-    /// (`None`) sample rate, then ffprobe the result. This catches arg/filter
-    /// regressions — a malformed `-af` chain, a filter ffmpeg rejects, or a
-    /// `None`-sample-rate path that produces a zero/short file. For the lavfi
-    /// `sine` source the "native" rate is the requested 48000, so omitting `-ar`
-    /// still yields a 48000 Hz file. NOTE: this proves the args are VALID and the
-    /// output is whole; it cannot prove the audio is glitch-free — that needs real
-    /// hardware. Skips cleanly when the sidecars aren't fetched (CI).
+    /// THE VIDEO TRACK'S REAL ARGV, WITH THE LIVE PREVIEW (C3b). The video
+    /// track's ffmpeg gets a SECOND output — a small JPEG written to a FILE that
+    /// ffmpeg keeps overwriting (`-update 1`) for the recording screen. A second-
+    /// output arg the real binary rejects would kill the encoder, and with it
+    /// the whole picture of the recording, so this feeds frames into the EXACT
+    /// `video_track_args` argv on stdin (as the track does) and asserts BOTH a
+    /// decodable Matroska AND a JPEG (SOI `FF D8`) came out, with no hang.
+    /// RUNS when the bundled sidecar is present; hardware-free.
     #[test]
-    fn levels_chain_records_glitch_free_or_skips() {
-        use sundayrec_core::capture::audio_encode_args;
-        use sundayrec_core::ffmpeg::build_levels_detect_filter;
+    fn video_track_writes_its_mkv_and_the_preview_jpeg_or_skips() {
+        use std::io::Write;
         use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
-
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
-        else {
-            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
-            return;
+        use sundayrec_core::video_encoder::VideoEncoder;
+        use sundayrec_core::video_track::{
+            black_frame, video_track_args, RawPixelFormat, VideoTrackSpec,
         };
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("levels.wav");
-        let out_s = out.to_string_lossy().into_owned();
-
-        let mut args: Vec<String> = vec![
-            "-hide_banner".into(),
-            "-f".into(),
-            "lavfi".into(),
-            "-i".into(),
-            "sine=frequency=440:duration=2:sample_rate=48000".into(),
-            "-af".into(),
-            build_levels_detect_filter(crate::recorder::engine::current_platform()),
-            "-t".into(),
-            "2".into(),
-        ];
-        // None exercises the native-rate path (omit -ar); 2 stereo channels.
-        args.extend(audio_encode_args("wav", 2, None, 192));
-        args.push("-y".into());
-        args.push(out_s.clone());
-
-        let status = std::process::Command::new(&ffmpeg)
-            .args(&args)
-            .output()
-            .expect("ffmpeg should run");
-        assert!(
-            status.status.success(),
-            "ffmpeg failed for the levels chain: {}",
-            String::from_utf8_lossy(&status.stderr)
-        );
-
-        // STDERR BUDGET — the anti-backpressure contract, locked forever. The
-        // pre-v0.5.0 chain emitted ~4,000 lines over this 2 s run (astats
-        // printed 22 lines per ~10 ms device frame); that firehose filled the
-        // 16–64 KB stderr pipe whenever the reader lagged → ffmpeg stalled →
-        // avfoundation silently dropped 15–56 % of samples (2026-07-31). The
-        // batched chain emits well under 400.
-        let stderr_lines = String::from_utf8_lossy(&status.stderr).lines().count();
-        assert!(
-            stderr_lines < 400,
-            "levels chain stderr budget blown: {stderr_lines} lines over 2 s — \
-             the astats print rate has regressed toward the capture-starving firehose"
-        );
-
-        let len = std::fs::metadata(&out).expect("output exists").len();
-        assert!(
-            len >= MIN_VALID_OUTPUT_BYTES,
-            "levels-chain output too small: {len} bytes"
-        );
-
-        // Duration ≈ 2.0 s (±0.15) proves the chain didn't truncate the stream.
-        let probe = std::process::Command::new(&ffprobe)
-            .args([
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "csv=p=0",
-            ])
-            .arg(&out)
-            .output()
-            .expect("ffprobe should run");
-        assert!(
-            probe.status.success(),
-            "ffprobe failed for the levels chain"
-        );
-        let dur: f64 = String::from_utf8_lossy(&probe.stdout)
-            .trim()
-            .parse()
-            .expect("ffprobe should report a numeric duration");
-        assert!(
-            (dur - 2.0).abs() <= 0.15,
-            "levels-chain duration off: {dur} s (expected ≈ 2.0)"
-        );
-        eprintln!("levels chain: encoded + ffprobed OK ({dur:.3} s, {len} bytes)");
-    }
-
-    /// HEARTBEAT REGRESSION — the parsers that read ffmpeg's own progress line,
-    /// run against the REAL bundled binary rather than a fixture.
-    ///
-    /// `parse_size_kb` is the recorder's startup latch (`recording://started`)
-    /// AND its watchdog heartbeat; `parse_last_time_secs` is how the truth
-    /// measurement learns how far the capture got. Both key on the free-form
-    /// stats line, which ffmpeg is free to reword between releases — and did:
-    /// 7.1 renamed the size unit `kB` → `KiB`, which against a `kB`-only parser
-    /// means a perfectly healthy recording never announces that it started and
-    /// never appears to grow. Every fixture in the suite still said `kB`, so
-    /// nothing was red; only the real binary tells the truth. This test asks it.
-    #[test]
-    fn the_real_binary_still_prints_a_heartbeat_we_can_read_or_skips() {
-        use sundayrec_core::progress::parse_size_kb;
-        use sundayrec_core::selftest::parse_last_time_secs;
 
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
@@ -666,478 +569,50 @@ pub(crate) mod tests {
             return;
         };
         let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("heartbeat.wav");
-
-        // No -nostats, no -loglevel: exactly the verbosity the recorder runs at,
-        // so stderr carries the periodic + final progress lines.
-        let run = std::process::Command::new(&ffmpeg)
-            .args([
-                "-hide_banner",
-                "-nostdin",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:sample_rate=48000:duration=3",
-                "-c:a",
-                "pcm_s16le",
-                "-y",
-            ])
-            .arg(&out)
-            .output()
-            .expect("ffmpeg should run");
-        assert!(run.status.success(), "ffmpeg -version-of-a-render failed");
-        let stderr = String::from_utf8_lossy(&run.stderr).into_owned();
-
-        let bytes = parse_size_kb(&stderr).unwrap_or_else(|| {
-            panic!(
-                "parse_size_kb found no size in this ffmpeg's progress output — \
-                 the stats line changed shape. The recorder would never fire \
-                 recording://started and its watchdog would see a dead file.\n\
-                 stderr was:\n{stderr}"
-            )
-        });
-        let on_disk = std::fs::metadata(&out).expect("output exists").len();
-        // The reported size trails the final flush a little; it must be in the
-        // right ORDER OF MAGNITUDE, which a wrong unit multiplier would not be.
-        assert!(
-            bytes > on_disk / 2 && bytes < on_disk * 2,
-            "heartbeat reported {bytes} bytes for a {on_disk}-byte file — \
-             the size unit's multiplier is wrong"
-        );
-
-        let secs = parse_last_time_secs(&stderr)
-            .unwrap_or_else(|| panic!("parse_last_time_secs found no time= in:\n{stderr}"));
-        assert!(
-            (secs - 3.0).abs() <= 0.15,
-            "progress time= read as {secs} s for a 3 s render"
-        );
-        eprintln!("heartbeat: {bytes} bytes / {secs:.2} s read from the real progress line");
-    }
-
-    /// HEARTBEAT REGRESSION, MACHINE CHANNEL — the same question as the test
-    /// above, asked of the channel the recorder now actually depends on.
-    ///
-    /// Since the migration the recording argv carries `-progress pipe:1
-    /// -nostats`: stdout is where `recording://started` and the watchdog's byte
-    /// growth come from, and stderr no longer prints the periodic stats line at
-    /// all. Fixtures prove the parser handles the bytes we captured; only the
-    /// real binary proves the bytes still come. If a future sidecar bump
-    /// reworded the progress vocabulary the way 7.1 reworded stderr, every
-    /// fixture in the suite would still be green and only this test would fail.
-    ///
-    /// Asserts, against the ACTUALLY BUNDLED binary: blocks arrive at all; the
-    /// byte count is real bytes (not kB — a wrong scale is what the whole
-    /// migration is about); `progress=end` terminates; `out_time_ms` is
-    /// microseconds; and `-nostats` really does clear the periodic stats line
-    /// off stderr.
-    #[test]
-    fn the_real_binary_speaks_the_progress_protocol_or_skips() {
-        use sundayrec_core::progress::{ProgressStream, PROGRESS_ARGS};
-
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("progress.wav");
-
-        // `-re` paces the encode in real time so ffmpeg emits SEVERAL blocks
-        // (one per `-stats_period`, default 0.5 s) rather than a single closing
-        // one — the growth the watchdog reads is only observable across blocks.
-        //
-        // The production `-af` chain rides along on purpose: `ametadata` writes
-        // the level lines straight to stderr at ~94 prints/s while the progress
-        // blocks go to stdout. The two channels must not interleave into each
-        // other — that is the one thing fixtures alone cannot demonstrate, and
-        // it is the load the 2026-07-31 sample-loss incident ran at.
-        let af = format!(
-            "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,{}",
-            // The host's own sink: `/dev/stderr` does not exist on Windows.
-            sundayrec_core::ffmpeg::build_levels_detect_filter(
-                crate::recorder::engine::current_platform()
-            )
-        );
-        let mut cmd = std::process::Command::new(&ffmpeg);
-        cmd.args(["-hide_banner", "-nostdin"])
-            .args(PROGRESS_ARGS)
-            .args([
-                "-re",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:sample_rate=48000:duration=2",
-                "-af",
-                &af,
-                "-c:a",
-                "pcm_s16le",
-                "-y",
-            ])
-            .arg(&out);
-        let run = cmd.output().expect("ffmpeg should run");
-        assert!(run.status.success(), "ffmpeg -progress render failed");
-
-        let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&run.stderr).into_owned();
-        let updates = ProgressStream::new().push(&stdout);
-        assert!(
-            !updates.is_empty(),
-            "this ffmpeg produced no parseable -progress blocks — the recorder \
-             would never fire recording://started and its watchdog would see a \
-             dead file.\nstdout was:\n{stdout}"
-        );
-        let last = *updates.last().unwrap();
-        assert!(last.done, "the stream must end with progress=end: {stdout}");
-
-        // BYTES, not kB. The on-disk file is the ground truth; a wrong scale
-        // would be off by ~1024×, which this bracket cannot absorb.
-        let on_disk = std::fs::metadata(&out).expect("output exists").len();
-        let bytes = last
-            .total_size
-            .expect("the final block must carry a byte count");
-        assert!(
-            bytes > on_disk / 2 && bytes < on_disk * 2,
-            "progress reported {bytes} bytes for a {on_disk}-byte file"
-        );
-        // Growth is what the watchdog actually polls.
-        assert!(
-            updates.first().unwrap().total_size < last.total_size,
-            "byte count must GROW across blocks: {updates:?}"
-        );
-
-        // MICROseconds, not milliseconds (ffmpeg trac #7345). 2 s of media.
-        let us = last.out_time_us.expect("the final block must carry a time");
-        let secs = us as f64 / 1_000_000.0;
-        assert!(
-            (secs - 2.0).abs() <= 0.15,
-            "out_time read as {secs} s for a 2 s render — the µs/ms scale is wrong"
-        );
-
-        // …and `-nostats` really did take the PERIODIC stats line off stderr.
-        // ffmpeg still prints ONE closing `size=` summary when the muxer shuts
-        // down (verified on 6.0 and 8.1.2); more than that means the flag
-        // stopped working and stderr is carrying the old heartbeat again.
-        assert!(
-            stderr.matches("size=").count() <= 1,
-            "-nostats no longer suppresses the periodic stats line:\n{stderr}"
-        );
-        // …while the levels the meters need are still there, on stderr, where
-        // the reader expects them.
-        assert!(
-            stderr.contains("lavfi.astats.1.Peak_level="),
-            "the ametadata levels must survive -nostats:\n{stderr}"
-        );
-        eprintln!(
-            "progress protocol: {} blocks, {bytes} bytes / {secs:.2} s",
-            updates.len()
-        );
-    }
-
-    /// The WINDOWS levels filter (`file=pipe\\:2`) must be accepted by the real
-    /// ffmpeg and actually print peaks on stderr. With a single escaped colon
-    /// ffmpeg died with "No option name near '2'" before capturing a byte — a
-    /// string-compare golden could not see that. Runs on every OS: the filter
-    /// grammar is the same everywhere, and `pipe:2` is stderr on all of them.
-    #[test]
-    fn windows_levels_sink_parses_in_the_real_ffmpeg_or_skips() {
-        use sundayrec_core::ffmpeg::{build_levels_detect_filter, Platform};
-        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let out = std::process::Command::new(&ffmpeg)
-            .args([
-                "-hide_banner",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:duration=0.5",
-            ])
-            .arg("-af")
-            .arg(build_levels_detect_filter(Platform::Windows))
-            .args(["-f", "null", "-"])
-            .output()
-            .expect("ffmpeg should run");
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(out.status.success(), "ffmpeg rejected the filter: {stderr}");
-        assert!(
-            stderr.contains("lavfi.astats.1.Peak_level="),
-            "the levels must reach stderr through pipe:2: {stderr}"
-        );
-    }
-
-    /// 96 kHz DURATION-EXACT REAL-FFMPEG TEST — the sample-loss regression
-    /// guard at the rate where the 2026-07-31 incident lost up to 56 %. Runs a
-    /// 10 s lavfi sine at 96 kHz through the EXACT recording chain (levels +
-    /// silencedetect + native-rate encode) and asserts the produced WAV holds
-    /// 10 s of media within ±0.15 s, plus the stderr budget at double the data
-    /// rate. RUNS when the bundled sidecar is present; hardware-free.
-    #[test]
-    fn levels_chain_96k_duration_exact_or_skips() {
-        use sundayrec_core::capture::audio_encode_args;
-        use sundayrec_core::ffmpeg::build_levels_detect_filter;
-
-        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
-        else {
-            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("chain96k.wav");
-        let out_s = out.to_string_lossy().into_owned();
-
-        let mut args: Vec<String> = vec![
-            "-hide_banner".into(),
-            "-f".into(),
-            "lavfi".into(),
-            "-i".into(),
-            "sine=frequency=440:duration=10:sample_rate=96000".into(),
-            "-af".into(),
-            format!(
-                "silencedetect=noise=-55dB:duration=1,{}",
-                build_levels_detect_filter(crate::recorder::engine::current_platform())
-            ),
-            "-t".into(),
-            "10".into(),
-        ];
-        args.extend(audio_encode_args("wav", 2, None, 192));
-        args.push("-y".into());
-        args.push(out_s);
-
-        let status = std::process::Command::new(&ffmpeg)
-            .args(&args)
-            .output()
-            .expect("ffmpeg should run");
-        assert!(
-            status.status.success(),
-            "ffmpeg failed for the 96k chain: {}",
-            String::from_utf8_lossy(&status.stderr)
-        );
-        let stderr_lines = String::from_utf8_lossy(&status.stderr).lines().count();
-        assert!(
-            stderr_lines < 800,
-            "96k stderr budget blown: {stderr_lines} lines over 10 s"
-        );
-
-        let probe = std::process::Command::new(&ffprobe)
-            .args([
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "csv=p=0",
-            ])
-            .arg(&out)
-            .output()
-            .expect("ffprobe should run");
-        let dur: f64 = String::from_utf8_lossy(&probe.stdout)
-            .trim()
-            .parse()
-            .expect("numeric duration");
-        assert!(
-            (dur - 10.0).abs() <= 0.15,
-            "96k chain lost samples: {dur} s (expected ≈ 10.0)"
-        );
-        eprintln!("96k chain: duration-exact OK ({dur:.3} s, {stderr_lines} stderr lines)");
-    }
-
-    /// DUAL-OUTPUT (recording + DEADLOCK-PROOF live preview) REAL-FFMPEG TEST. A
-    /// video recording adds a SECOND ffmpeg output — a downscaled JPEG written to a
-    /// FILE that ffmpeg auto-overwrites (`-update 1`), NOT a stdout pipe (a full
-    /// pipe was what froze the capture). A wrong second-output arg that makes ffmpeg
-    /// refuse to start would break recording, so this drives the EXACT shape from
-    /// `build_unified_capture_args` against two `-f lavfi` sources (testsrc video +
-    /// sine audio) and asserts BOTH a valid mp4 AND a valid JPEG file (SOI `FF D8`)
-    /// are produced, with no hang. RUNS when the bundled sidecar is present.
-    /// HARDWARE-FREE: lavfi needs no devices.
-    #[tokio::test]
-    async fn dual_output_records_mp4_and_writes_preview_jpeg_or_skips() {
-        use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
-
-        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
-            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("dual.mp4");
+        let mkv = dir.path().join("track.mkv");
         let prev = dir.path().join("preview.jpg");
-
-        // Two `-f lavfi` inputs (video + audio), `-t 1` per input so both outputs
-        // terminate. The mp4 keeps DEFAULT stream selection (no -map); the preview
-        // second output maps only video, downscales, caps fps, and `-update 1`-
-        // overwrites a JPEG FILE — exactly the recorder's deadlock-proof tail.
-        let status = std::process::Command::new(&ffmpeg)
-            .args([
-                "-hide_banner",
-                "-f",
-                "lavfi",
-                "-t",
-                "1",
-                "-i",
-                "testsrc=size=320x240:rate=15",
-                "-f",
-                "lavfi",
-                "-t",
-                "1",
-                "-i",
-                "sine=frequency=440:sample_rate=48000",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-pix_fmt",
-                "yuv420p",
-                "-r",
-                "30",
-                "-fps_mode",
-                "cfr",
-                "-c:a",
-                "aac",
-                "-movflags",
-                "+faststart",
-                "-y",
-            ])
-            .arg(&out)
-            // The preview second output (file sink).
-            .args([
-                "-map",
-                "0:v",
-                "-an",
-                "-vf",
-                "scale=480:-2,fps=4",
-                "-update",
-                "1",
-                "-y",
-            ])
-            .arg(&prev)
-            .output()
-            .expect("ffmpeg should run the dual file-output command");
-        assert!(
-            status.status.success(),
-            "the dual-output command must start AND finish cleanly (a bad \
-             second-output arg would break recording): {}",
-            String::from_utf8_lossy(&status.stderr)
+        let spec = VideoTrackSpec {
+            width: 320,
+            height: 240,
+            fps_num: 30,
+            fps_den: 1,
+            input: RawPixelFormat::Nv12,
+            flip: true,
+        };
+        let args = video_track_args(
+            &spec,
+            VideoEncoder::Software,
+            &mkv.to_string_lossy(),
+            Some(&prev.to_string_lossy()),
         );
-
-        // (a) A valid, non-zero mp4 was written despite the second output.
-        let len = std::fs::metadata(&out).expect("mp4 output exists").len();
-        assert!(len >= MIN_VALID_OUTPUT_BYTES, "mp4 too small: {len} bytes");
-
-        // (b) A valid JPEG preview FILE was written (starts with the SOI marker).
+        let mut child = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("ffmpeg should start the video-track argv");
+        let frame = black_frame(RawPixelFormat::Nv12, 320, 240).unwrap();
+        {
+            let mut stdin = child.stdin.take().unwrap();
+            for _ in 0..30 {
+                stdin.write_all(&frame).expect("ffmpeg takes the frames");
+            }
+        } // EOF
+        let out = child.wait_with_output().expect("ffmpeg exits");
+        assert!(
+            out.status.success(),
+            "the video-track argv with the preview output must run cleanly \
+             (a bad second-output arg would kill the picture): {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let len = std::fs::metadata(&mkv).expect("mkv exists").len();
+        assert!(len >= MIN_VALID_OUTPUT_BYTES, "mkv too small: {len} bytes");
         let jpg = std::fs::read(&prev).expect("preview jpg exists");
         assert!(
             jpg.len() > 2 && jpg[0] == 0xFF && jpg[1] == 0xD8,
             "preview must be a JPEG"
         );
-        eprintln!(
-            "dual-output: wrote a {len}-byte mp4 AND a {}-byte preview JPEG (file sink)",
-            jpg.len()
-        );
-    }
-
-    /// A/V SYNC: the recorder's sync lock is `-r <fps> -fps_mode cfr` on the video
-    /// output + `aresample=async=1000:first_pts=0` on the audio. This RUNS the real
-    /// combo against lavfi sources (a deliberately VFR-ish video — `fps` filter
-    /// re-times it — plus sine audio) and ffprobes that the output video is TRUE
-    /// constant frame rate (`r_frame_rate == avg_frame_rate == 30/1`) and that the
-    /// audio + video durations match within a tight epsilon (no drift). HARDWARE-
-    /// FREE. Skips without the sidecars.
-    #[test]
-    fn av_sync_output_is_cfr_and_streams_aligned_or_skips() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
-        else {
-            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
-            return;
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("sync.mp4");
-
-        // A 2 s clip: input video re-timed to a jittery rate, audio a sine. The
-        // output applies the recorder's exact sync args.
-        let status = std::process::Command::new(&ffmpeg)
-            .args([
-                "-hide_banner",
-                "-f",
-                "lavfi",
-                "-t",
-                "2",
-                "-i",
-                "testsrc=size=320x240:rate=24",
-                "-f",
-                "lavfi",
-                "-t",
-                "2",
-                "-i",
-                "sine=frequency=440:sample_rate=48000",
-                "-map",
-                "0:v",
-                "-map",
-                "1:a",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                // the recorder's video sync lock
-                "-r",
-                "30",
-                "-fps_mode",
-                "cfr",
-                "-c:a",
-                "aac",
-                // the recorder's audio drift correction
-                "-af",
-                "aresample=async=1000:first_pts=0",
-            ])
-            .arg("-y")
-            .arg(&out)
-            .output()
-            .expect("ffmpeg should run the sync command");
-        assert!(
-            status.status.success(),
-            "sync command failed: {}",
-            String::from_utf8_lossy(&status.stderr)
-        );
-
-        let probe = |stream: &str, entry: &str| -> String {
-            let o = std::process::Command::new(&ffprobe)
-                .args([
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    stream,
-                    "-show_entries",
-                    entry,
-                    "-of",
-                    "csv=p=0",
-                ])
-                .arg(&out)
-                .output()
-                .expect("ffprobe runs");
-            String::from_utf8_lossy(&o.stdout).trim().to_string()
-        };
-
-        // Video is TRUE constant frame rate at 30 fps (no VFR drift).
-        assert_eq!(
-            probe("v:0", "stream=r_frame_rate"),
-            "30/1",
-            "video must be locked 30 fps CFR"
-        );
-        assert_eq!(
-            probe("v:0", "stream=avg_frame_rate"),
-            "30/1",
-            "CFR: avg == nominal frame rate"
-        );
-
-        // Audio and video durations match within 50 ms — no A/V drift.
-        let vdur: f64 = probe("v:0", "stream=duration").parse().unwrap_or(0.0);
-        let adur: f64 = probe("a:0", "stream=duration").parse().unwrap_or(0.0);
-        assert!(
-            (vdur - adur).abs() < 0.05,
-            "A/V durations must align: video={vdur}s audio={adur}s"
-        );
-        eprintln!("av-sync: CFR 30fps, video={vdur}s audio={adur}s (aligned)");
     }
 
     #[test]

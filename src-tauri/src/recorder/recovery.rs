@@ -53,7 +53,8 @@ const SESSION_ID_MAX_LEN: usize = 20;
 /// Is `id` a session id the recorder could have made?
 ///
 /// The recorder has named every session by its start time in epoch ms
-/// (`start_ms.to_string()`: `engine::supervisor`, `cpal_capture`), so an id is
+/// (`start_ms.to_string()` in `engine::supervisor`; until C3b also the Windows
+/// `cpal_capture` session), so an id is
 /// ASCII digits and nothing else. The rule is that narrow on purpose: the id
 /// ends up inside a file name, and the sidecar commands can write any JSON into
 /// the app data folder under `<stem>.meta.json` — a free-text id would let a

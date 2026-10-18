@@ -1,12 +1,12 @@
 //! Pure parser for the per-channel peak-level telemetry that ffmpeg's `astats`
 //! filter prints to stderr.
 //!
-//! WHY: the "Opptaksmodus" UI shows live L/R level meters. Instead of opening a
-//! second audio stream (which would grab the mic twice), the recorder's OWN
-//! ffmpeg carries an `astats` pass-through filter
-//! ([`crate::ffmpeg::build_levels_detect_filter`]) that emits periodic
-//! per-channel peak levels to stderr. This module turns those stderr blocks into
-//! a small [`ChannelLevels`] value the engine forwards to the renderer.
+//! WHY: [`ChannelLevels`] is the small per-channel level value the recording
+//! screen's meters are fed (the native engine fills it from its own peaks), and
+//! the editor's channel diagnosis runs `astats` over a finished file and reads
+//! the summary back through [`parse_levels`]. (Until C3b the recorder's own
+//! ffmpeg also printed live `ametadata` level lines for the meters; that capture
+//! and its line parser are gone.)
 //!
 //! ## What astats stderr looks like
 //!
@@ -181,50 +181,6 @@ pub fn parse_levels(chunk: &str) -> Option<ChannelLevels> {
     })
 }
 
-/// Parse ONE `ametadata=mode=print` line into `(channel, dBFS)`.
-///
-/// WHY a second parser: the live meter is driven by ffmpeg's `ametadata` print
-/// (see [`crate::ffmpeg::build_levels_detect_filter`]), which emits one line PER
-/// CHANNEL PER FRAME — a flat `key=value`, NOT the multi-line `Channel:` /
-/// `Peak level dB:` block [`parse_levels`] consumes. The lines look like:
-///
-/// ```text
-/// lavfi.astats.1.Peak_level=-12.500000     // channel 1 = left
-/// lavfi.astats.2.Peak_level=-9.300000      // channel 2 = right
-/// lavfi.astats.Overall.Peak_level=-9.300000   // ignored (we meter per-channel)
-/// ```
-///
-/// Returns `None` for any line that is not a per-channel `Peak_level` reading
-/// (the interleaved `frame:N`/`pts_time:` headers, the `Overall` rollup, and all
-/// unrelated stderr noise). `-inf` / `nan` / non-finite values map to
-/// [`SILENCE_FLOOR_DB`] so a silent buffer reads as a pinned-low meter, never
-/// `-inf`.
-pub fn parse_ametadata_peak(line: &str) -> Option<(u8, f64)> {
-    // `lavfi.astats.<chan>.Peak_level=<value>` — tolerate leading whitespace and
-    // any `[…]` prefix ffmpeg may attach by scanning to the marker.
-    let marker = "lavfi.astats.";
-    let start = line.find(marker)? + marker.len();
-    let rest = &line[start..];
-    let (chan_str, after) = rest.split_once('.')?;
-    // "Overall" (the rollup) fails the u8 parse → `?` returns None → skipped.
-    let chan: u8 = chan_str.parse().ok()?;
-    let value = after.strip_prefix("Peak_level=")?;
-    Some((chan, parse_db_token(value)))
-}
-
-/// Map a raw dB token (`-12.5`, `-inf`, `nan`, `inf`) to a finite dBFS value,
-/// flooring any non-finite reading at [`SILENCE_FLOOR_DB`].
-fn parse_db_token(token: &str) -> f64 {
-    let t = token.trim().to_ascii_lowercase();
-    if t.contains("inf") || t.contains("nan") {
-        return SILENCE_FLOOR_DB;
-    }
-    match t.parse::<f64>() {
-        Ok(v) if v.is_finite() => v,
-        _ => SILENCE_FLOOR_DB,
-    }
-}
-
 /// Parse the file-wide **noise floor** (dBFS) from an astats summary, used to
 /// pick a one-click processing preset (clean vs noisy recording). astats prints
 /// `Noise floor dB: <value>` per-channel and once in its `Overall` block; the
@@ -304,49 +260,6 @@ fn parse_labeled_db(line: &str, marker: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ametadata_parses_left_and_right_channels() {
-        assert_eq!(
-            parse_ametadata_peak("lavfi.astats.1.Peak_level=-12.500000"),
-            Some((1, -12.5))
-        );
-        assert_eq!(
-            parse_ametadata_peak("lavfi.astats.2.Peak_level=-9.300000"),
-            Some((2, -9.3))
-        );
-    }
-
-    #[test]
-    fn ametadata_floors_inf_and_nan() {
-        assert_eq!(
-            parse_ametadata_peak("lavfi.astats.1.Peak_level=-inf"),
-            Some((1, SILENCE_FLOOR_DB))
-        );
-        assert_eq!(
-            parse_ametadata_peak("lavfi.astats.2.Peak_level=nan"),
-            Some((2, SILENCE_FLOOR_DB))
-        );
-    }
-
-    #[test]
-    fn ametadata_ignores_overall_and_non_level_lines() {
-        // The `Overall` rollup is not a per-channel meter reading.
-        assert_eq!(
-            parse_ametadata_peak("lavfi.astats.Overall.Peak_level=-9.3"),
-            None
-        );
-        // ametadata's interleaved frame headers carry no peak level.
-        assert_eq!(
-            parse_ametadata_peak("frame:42 pts:512 pts_time:0.0106667"),
-            None
-        );
-        assert_eq!(
-            parse_ametadata_peak("size=    1024kB time=00:00:05.00 bitrate=..."),
-            None
-        );
-        assert_eq!(parse_ametadata_peak(""), None);
-    }
 
     #[test]
     fn parses_stereo_two_channels() {
@@ -463,16 +376,6 @@ frame= 300 fps= 30";
         let lv = parse_levels(chunk).expect("headerless peak");
         assert_eq!(lv.peak_db_left, -15.0);
         assert_eq!(lv.peak_db_right, None);
-    }
-
-    #[test]
-    fn ametadata_passes_through_clipping_value() {
-        // A full-scale / clipping reading (0 dBFS) is finite and must pass through
-        // verbatim — only -inf/nan get floored.
-        assert_eq!(
-            parse_ametadata_peak("lavfi.astats.1.Peak_level=0.000000"),
-            Some((1, 0.0))
-        );
     }
 
     /// VERBATIM stderr from the bundled sidecar (ffmpeg 8.1.2,

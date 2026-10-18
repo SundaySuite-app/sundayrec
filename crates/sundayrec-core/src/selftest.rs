@@ -1,16 +1,20 @@
 //! Capture self-test decisions — pure, GUI-free, fs/network-free.
 //!
-//! Completes the long-deferred "Fase 3" capture verification. Given the **stderr
-//! of a short capture run through the REAL recording argv**
-//! ([`crate::capture::build_unified_capture_args`]) plus a few facts about the
-//! produced file, this module decides `Pass | Warn | Fail` with concrete numbers
-//! — so audio health becomes *measurable* and a stutter fix becomes *provable* on
-//! the rig instead of a guess. The impure shell (`src-tauri/test_recording`)
-//! spawns ffmpeg, stats the file, runs the `astats`/`silencedetect` passes, and
-//! feeds the parsed facts into [`selftest_verdict`] here.
+//! Completes the long-deferred "Fase 3" capture verification. Given the facts
+//! of a capture — the native engine's own counts (frames, ring overruns, the
+//! xruns the audio system reported) and the produced file (ffprobe's duration,
+//! size, astats level) — this module decides `Pass | Warn | Fail` with concrete
+//! numbers, so audio health becomes *measurable* and a stutter fix becomes
+//! *provable* on the rig instead of a guess. The impure shell
+//! (`src-tauri/test_recording`, the recorder's session end) gathers the facts
+//! and feeds them into [`selftest_verdict`] here.
 //!
-//! Everything here is deterministic and unit-tested over canned ffmpeg-stderr
-//! blobs — the same pattern as [`crate::progress`] / [`crate::test_recording`].
+//! (Until C3b this module also parsed ffmpeg's capture stderr — `drop=`/`dup=`,
+//! xrun phrases, `time=`, `silencedetect` — for the ffmpeg capture. That capture
+//! is gone, and the parsers with it; [`RecordingTelemetry`] keeps the fields
+//! they filled so recording history written by older versions still reads.)
+//!
+//! Everything here is deterministic and unit-tested.
 //!
 //! ## Thresholds are a starting point — calibrate on the rig
 //!
@@ -24,177 +28,6 @@ use ts_rs::TS;
 
 use crate::telemetry::QualityReason;
 use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
-
-// ── Stderr stat parsers (pure) ──────────────────────────────────────────────
-
-/// Parse the LAST `<field>N` unsigned-integer value out of an ffmpeg stderr blob
-/// (e.g. `drop=`, `dup=`). ffmpeg right-pads these in the progress line
-/// (`... dup=0 drop=12 speed=...`); we tolerate leading whitespace and take the
-/// leading digit run. Returns `0` when the field never appears (the common case
-/// for an audio-only capture, which has no video frame accounting). Mirrors
-/// [`crate::progress::parse_size_kb`]'s scan-for-token approach.
-fn parse_last_uint_field(stderr: &str, field: &str) -> u64 {
-    let mut last: u64 = 0;
-    let mut search = stderr;
-    while let Some(pos) = search.find(field) {
-        let after = &search[pos + field.len()..];
-        let digits: String = after
-            .trim_start()
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
-        if let Ok(v) = digits.parse::<u64>() {
-            last = v;
-        }
-        search = &search[pos + field.len()..];
-    }
-    last
-}
-
-/// ffmpeg's `drop=N` — frames it discarded. On an avfoundation/USB-clock
-/// overflow this rises; for pure audio it usually stays 0 (no video frame
-/// accounting), so it's mainly a video-capture + defense-in-depth signal.
-pub fn parse_drop_count(stderr: &str) -> u64 {
-    parse_last_uint_field(stderr, "drop=")
-}
-
-/// ffmpeg's `dup=N` — duplicated/padded frames (a CFR-padding / clock-mismatch
-/// signal). Same audio caveat as [`parse_drop_count`].
-pub fn parse_dup_count(stderr: &str) -> u64 {
-    parse_last_uint_field(stderr, "dup=")
-}
-
-/// Phrases ffmpeg / the macOS+Windows capture backends print when the real-time
-/// input buffer overruns or the clock jumps — the direct stutter signal for an
-/// audio-only capture. CONSERVATIVE + lowercase-matched; refine against real rig
-/// stderr (avfoundation's exact wording is what we calibrate here). Kept a plain
-/// reviewable list rather than a regex so additions are obvious in review.
-pub const XRUN_PHRASES: &[&str] = &[
-    "too full",           // avfoundation: "... buffer ... too full, frame dropped!"
-    "frame dropped",      // generic drop notice
-    "overrun",            // coreaudio/wasapi overrun
-    "underflow",          // buffer underflow
-    "buffer is full",     // thread_queue full
-    "non-monotonous dts", // timestamp jump / discontinuity
-    "discontinuity",      // stream discontinuity
-    "rtbufsize",          // "Real-time buffer ... full" mentions rtbufsize
-];
-
-/// Count xrun/overrun-class lines in an ffmpeg stderr blob (case-insensitive).
-/// Each matching line counts once (a line mentioning two phrases still counts
-/// once) so the number tracks *events*, not phrase hits.
-pub fn parse_xrun_count(stderr: &str) -> u64 {
-    stderr
-        .lines()
-        .filter(|line| {
-            let lower = line.to_lowercase();
-            XRUN_PHRASES.iter().any(|p| lower.contains(p))
-        })
-        .count() as u64
-}
-
-/// The phrasings ffmpeg / avfoundation actually print when the CAPTURE side
-/// back-pressures or drops samples — the machine-observable signature of the
-/// "hakkete" bug (2026-07-31: 15–56 % sample loss registered as a fully CLEAN
-/// recording because these lines were logged but never counted; this list and
-/// [`XRUN_PHRASES`] were disjoint). Single source of truth — the engine's
-/// warning log and the telemetry counter both match against THIS list.
-pub const CAPTURE_DROP_PHRASES: &[&str] = &[
-    "thread message queue blocking",
-    "consider raising the thread_queue_size",
-    "audio queue overflow",
-    "queue input is backward in time",
-    "past duration",
-    "non monotonically increasing dts",
-    "packets dropped",
-];
-
-/// `true` if a PRE-LOWERCASED stderr line is a capture-drop warning.
-pub fn is_capture_drop_line(lower: &str) -> bool {
-    CAPTURE_DROP_PHRASES.iter().any(|p| lower.contains(p))
-}
-
-/// `true` if a PRE-LOWERCASED stderr line is an xrun/overrun-class event.
-pub fn is_xrun_line(lower: &str) -> bool {
-    XRUN_PHRASES.iter().any(|p| lower.contains(p))
-}
-
-/// Parse the LAST `time=HH:MM:SS.ss` value out of an ffmpeg stderr blob into
-/// seconds — the captured duration. `time=N/A` (printed before the first frame)
-/// is skipped. Returns `None` when no parseable `time=` appears. The continuity
-/// check (expected − measured) is the primary audio-dropout signal.
-pub fn parse_last_time_secs(stderr: &str) -> Option<f64> {
-    const FIELD: &str = "time=";
-    let mut last: Option<f64> = None;
-    let mut search = stderr;
-    while let Some(pos) = search.find(FIELD) {
-        let after = &search[pos + FIELD.len()..].trim_start();
-        // Leading token up to whitespace, e.g. "00:00:04.00".
-        let token: &str = after.split_whitespace().next().unwrap_or("");
-        if let Some(secs) = parse_hhmmss(token) {
-            last = Some(secs);
-        }
-        search = &search[pos + FIELD.len()..];
-    }
-    last
-}
-
-/// Parse `HH:MM:SS.ss` (or `MM:SS.ss` / `SS.ss`) into seconds. Returns `None` for
-/// `N/A` or anything non-numeric.
-fn parse_hhmmss(token: &str) -> Option<f64> {
-    if token.is_empty() || token.eq_ignore_ascii_case("n/a") {
-        return None;
-    }
-    let mut secs = 0.0f64;
-    for part in token.split(':') {
-        let v: f64 = part.parse().ok()?;
-        secs = secs * 60.0 + v;
-    }
-    Some(secs)
-}
-
-/// Parse `silence_start: X` / `silence_end: Y` pairs from a `silencedetect`
-/// stderr pass into `(start, end)` segments. An unmatched trailing
-/// `silence_start` (silence ran to EOF) is closed at `eof_sec` when provided.
-/// A take of continuous tone/speech that comes back with interior silence has
-/// gaps — dropped audio.
-pub fn parse_silence_segments(stderr: &str, eof_sec: Option<f64>) -> Vec<(f64, f64)> {
-    let mut out: Vec<(f64, f64)> = Vec::new();
-    let mut open_start: Option<f64> = None;
-    for line in stderr.lines() {
-        if let Some(v) = field_after(line, "silence_start:") {
-            open_start = Some(v);
-        } else if let Some(v) = field_after(line, "silence_end:") {
-            if let Some(s) = open_start.take() {
-                if v > s {
-                    out.push((s, v));
-                }
-            }
-        }
-    }
-    if let (Some(s), Some(eof)) = (open_start, eof_sec) {
-        if eof > s {
-            out.push((s, eof));
-        }
-    }
-    out
-}
-
-/// Total seconds covered by silence segments.
-pub fn silence_total_sec(segments: &[(f64, f64)]) -> f64 {
-    segments.iter().map(|(s, e)| (e - s).max(0.0)).sum()
-}
-
-/// Parse the leading float after a `marker:` in a line (e.g. `silence_start: 3.20`).
-fn field_after(line: &str, marker: &str) -> Option<f64> {
-    let idx = line.find(marker)?;
-    let tail = line[idx + marker.len()..].trim_start();
-    let token: String = tail
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.' || *c == '+')
-        .collect();
-    token.parse::<f64>().ok().filter(|v| v.is_finite())
-}
 
 // ── Verdict ─────────────────────────────────────────────────────────────────
 
@@ -452,82 +285,54 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
 // ── Always-on recording telemetry ───────────────────────────────────────────
 
 /// Health counters accumulated AUTOMATICALLY during a real recording — the
-/// passive-logging path. The recorder's stderr reader feeds every line through
-/// [`RecordingTelemetry::observe_line`] and flags a starved IPC channel via
-/// [`RecordingTelemetry::note_levels_dropped`]; the host stamps `duration_sec`/
-/// `timestamp`/`exit_ok` at session end and persists it. Surfaced in the
-/// diagnose report so the user pastes a *trend*, not a guess.
+/// passive-logging path. The native engine folds each segment's counts in at
+/// the segment's end (ring overruns, the xruns the audio system reported, the
+/// writer's exact frame count); the finaliser adds the expected and measured
+/// seconds per deliverable; the host stamps `duration_sec`/`timestamp`/
+/// `exit_ok` at session end and persists it. Surfaced in the diagnose report
+/// so the user pastes a *trend*, not a guess.
 ///
-/// ## Accumulation semantics, field by field (E6.3)
+/// ## The ffmpeg-era fields (C3b)
 ///
-/// A session is not one ffmpeg process. A split opens a new deliverable with a
-/// new capture process; a reconnect opens a new `_rN` fragment with another.
-/// Two different kinds of counter live in here, and they aggregate differently:
+/// `drops`, `dups`, `xruns`, `levels_dropped`, `capture_drop_lines` and
+/// `msgs_dropped` were filled from the ffmpeg capture's stderr and its reader
+/// channel. That capture left in C3b, so a new session leaves them at 0 — but
+/// they stay: the history ring on disk (`recording-telemetry-history.json`)
+/// holds sessions recorded by older versions, and the diagnose trend and the
+/// verdict must keep reading those exactly as they were read.
 ///
-/// - **`drops`/`dups` are ffmpeg's own CUMULATIVE counters**, re-printed in full
-///   on every progress line. Within one process the right fold is `max` (take
-///   the latest/highest); ACROSS processes the right fold is `sum` — the second
-///   process's `drop=` restarts at zero and knows nothing about the first's.
-///   Folding with `max` for the whole session, as this used to, reported the
-///   worst SINGLE segment: a 3-hour service that dropped 40 frames in each of
-///   four segments reported 40, not 160. The fix is a per-process window
-///   ([`RecordingTelemetry::seal_process`], called at each segment end) whose
-///   maximum is added to the session total.
-/// - **`xruns`, `native_xruns`, `capture_drop_lines`, `levels_dropped`,
-///   `msgs_dropped` are EVENT counts** — one increment per matching stderr line / dropped message. They
-///   already accumulate correctly across any number of processes, because
-///   nothing about them restarts; they were checked for the same flaw and do not
-///   have it.
-/// - **`ring_overrun_samples`, `native_frames_sec`, `expected_sec`,
-///   `measured_sec`** are summed by the engine per segment / per deliverable and
-///   are likewise correct.
+/// The live ones — `native_xruns`, `ring_overrun_samples`, `native_frames_sec`,
+/// `expected_sec`, `measured_sec` — are event counts and sums the engine adds
+/// per segment / per deliverable, so they accumulate correctly across any
+/// number of splits and reconnects.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "RecordingTelemetry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingTelemetry {
-    /// Frames ffmpeg DISCARDED across the whole session (an avfoundation/USB
-    /// overflow signal): the sum over capture processes of each one's final
-    /// `drop=`. Excludes the process currently running — see
-    /// [`Self::drops_total`].
+    /// Frames the ffmpeg capture DISCARDED (summed `drop=` over its capture
+    /// processes). ffmpeg-era: 0 since C3b; older rows keep theirs.
     pub drops: u64,
-    /// Frames ffmpeg DUPLICATED across the whole session (a clock-mismatch
-    /// signal), summed over capture processes like [`Self::drops`].
+    /// Frames the ffmpeg capture DUPLICATED (summed `dup=`). ffmpeg-era: 0
+    /// since C3b; older rows keep theirs.
     pub dups: u64,
-    /// Highest `drop=` seen so far in the CURRENT capture process. Folded into
-    /// [`Self::drops`] by [`Self::seal_process`] when that process ends.
-    ///
-    /// In-flight scratch, deliberately not part of the persisted/wire record:
-    /// every consumer reads a FINISHED session, by which time this is zero and
-    /// `drops` holds the whole truth.
-    #[serde(skip)]
-    #[ts(skip)]
-    pub cur_drops: u64,
-    /// [`Self::cur_drops`] for `dup=`.
-    #[serde(skip)]
-    #[ts(skip)]
-    pub cur_dups: u64,
-    /// xrun/overrun-class stderr lines seen — the direct stutter signal on the
-    /// ffmpeg path. Always 0 on the native engine, which reads no stderr; see
-    /// [`Self::native_xruns`].
+    /// xrun/overrun-class lines in the ffmpeg capture's stderr. ffmpeg-era: 0
+    /// since C3b (see [`Self::native_xruns`]); older rows keep theirs.
     pub xruns: u64,
     /// Xruns the audio system itself reported to the NATIVE engine (A3c): cpal
     /// 0.18 delivers a CoreAudio/WASAPI buffer glitch through the stream's
     /// error callback as `ErrorKind::Xrun`, and the engine counts each one.
-    /// A real count from the OS, not a phrase scraped from a log; 0 on the
-    /// ffmpeg path (which has [`Self::xruns`] instead).
+    /// A real count from the OS, not a phrase scraped from a log.
     #[serde(default)]
     pub native_xruns: u64,
-    /// Times the live-levels IPC `try_send` hit a FULL channel — the direct
-    /// renderer/IPC-starvation signal ("recording mode lags"). A rising count
-    /// means the UI couldn't keep up and back-pressure was building.
+    /// Times the ffmpeg reader's live-levels `try_send` hit a FULL channel.
+    /// ffmpeg-era: 0 since C3b; older rows keep theirs.
     pub levels_dropped: u64,
-    /// Capture back-pressure / sample-drop warnings from ffmpeg's own stderr
-    /// ([`CAPTURE_DROP_PHRASES`]) — the direct "samples were thrown away" count.
+    /// Sample-drop warnings in the ffmpeg capture's stderr. ffmpeg-era: 0
+    /// since C3b; older rows keep theirs.
     #[serde(default)]
     pub capture_drop_lines: u64,
-    /// Non-levels reader messages (Progress/Silence/Error/Started) dropped on a
-    /// full channel. Observability loss only — NEVER capture loss (the whole
-    /// point of the all-`try_send` reader).
+    /// ffmpeg reader messages dropped on a full channel (observability loss
+    /// only). ffmpeg-era: 0 since C3b; older rows keep theirs.
     #[serde(default)]
     pub msgs_dropped: u64,
     /// Wall-clock seconds the session SHOULD have captured (sum of segment
@@ -544,8 +349,7 @@ pub struct RecordingTelemetry {
     #[serde(default)]
     pub loss_pct: f64,
     /// Samples the NATIVE engine's real-time callback dropped on ring overrun
-    /// (whole frames' worth of f32 samples). The native analogue of the
-    /// xrun/capture-drop stderr counters; 0 on the ffmpeg path.
+    /// (whole frames' worth of f32 samples).
     #[serde(default)]
     pub ring_overrun_samples: u64,
     /// Media seconds implied by the native writer's EXACT frame count
@@ -566,86 +370,19 @@ pub struct RecordingTelemetry {
 }
 
 impl RecordingTelemetry {
-    /// Fold one ffmpeg stderr line into the counters. Cheap; call on the
-    /// low-rate lines (NOT the high-rate per-frame level lines, which carry no
-    /// drop/dup/xrun fields anyway).
-    pub fn observe_line(&mut self, line: &str) {
-        self.observe_line_prelowered(&line.to_lowercase());
-    }
-
-    /// [`Self::observe_line`] for a caller that already lowercased the line —
-    /// the recorder's reader classifies every line against several phrase lists
-    /// and must pay for AT MOST one allocation per line (it drains the pipe
-    /// ffmpeg blocks on; per-line cost is capture-health-critical).
-    pub fn observe_line_prelowered(&mut self, lower: &str) {
-        // `max` WITHIN the process (ffmpeg re-prints its cumulative total on
-        // every progress line); the cross-process sum happens in `seal_process`.
-        self.cur_drops = self.cur_drops.max(parse_drop_count(lower));
-        self.cur_dups = self.cur_dups.max(parse_dup_count(lower));
-        if is_xrun_line(lower) {
-            self.xruns = self.xruns.saturating_add(1);
-        }
-        if is_capture_drop_line(lower) {
-            self.capture_drop_lines = self.capture_drop_lines.saturating_add(1);
-        }
-    }
-
-    /// Record that a live-levels message was dropped because the IPC channel was
-    /// full (the renderer/event loop couldn't drain fast enough).
-    pub fn note_levels_dropped(&mut self) {
-        self.levels_dropped = self.levels_dropped.saturating_add(1);
-    }
-
-    /// Record that a non-levels reader message was dropped on a full channel
-    /// (observability loss, deliberately preferred over reader back-pressure).
-    pub fn note_msg_dropped(&mut self) {
-        self.msgs_dropped = self.msgs_dropped.saturating_add(1);
-    }
-
-    /// Close the CURRENT capture process's drop/dup window: add its maximum to
-    /// the session totals and reset it. Call once per capture process, when that
-    /// process has exited — the engine does it at the end of each segment.
-    ///
-    /// Idempotent: a second call with nothing observed since adds zero, so the
-    /// defensive seal at session end can never double-count a segment that
-    /// already sealed itself.
-    ///
-    /// For a SINGLE-process session (the common single-take sermon) this is
-    /// exactly the old behaviour: one seal of one window whose max is that
-    /// process's final `drop=`.
-    pub fn seal_process(&mut self) {
-        self.drops = self.drops.saturating_add(self.cur_drops);
-        self.dups = self.dups.saturating_add(self.cur_dups);
-        self.cur_drops = 0;
-        self.cur_dups = 0;
-    }
-
-    /// Session `drop=` total INCLUDING the process still running. Use this for
-    /// any live judgement; the persisted `drops` field is the same number once
-    /// the last process has been sealed.
-    pub fn drops_total(&self) -> u64 {
-        self.drops.saturating_add(self.cur_drops)
-    }
-
-    /// Every xrun the session saw, whichever engine counted it: the ffmpeg
-    /// path's stderr-derived [`Self::xruns`] plus the native engine's
-    /// OS-reported [`Self::native_xruns`]. One engine fills one of them; a
-    /// session that fell back from native to ffmpeg mid-way fills both. Use
-    /// this wherever the number is shown to a person.
+    /// Every xrun the session saw: the native engine's OS-reported
+    /// [`Self::native_xruns`] plus, on a row recorded before C3b, the ffmpeg
+    /// capture's stderr-derived [`Self::xruns`]. Use this wherever the number
+    /// is shown to a person.
     pub fn xruns_total(&self) -> u64 {
         self.xruns.saturating_add(self.native_xruns)
-    }
-
-    /// [`Self::drops_total`] for `dup=`.
-    pub fn dups_total(&self) -> u64 {
-        self.dups.saturating_add(self.cur_dups)
     }
 
     /// Whether these counters indicate a degraded recording (dropped audio,
     /// capture back-pressure, measured duration loss, or IPC starvation). Used
     /// to raise a diagnose finding.
     pub fn is_degraded(&self) -> bool {
-        self.drops_total() > 0
+        self.drops > 0
             || self.xruns > 0
             || self.native_xruns > 0
             || self.levels_dropped > 0
@@ -655,7 +392,7 @@ impl RecordingTelemetry {
     }
 }
 
-/// Wall-clock allowance for ffmpeg spawn + device open before the first sample
+/// Wall-clock allowance for the capture's device open before the first sample
 /// lands (measured 0.3–2 s on the rig). Subtracted from the wall-clock span
 /// before loss is computed so a healthy recording is 0 % loss, not 0.5–2 s
 /// "missing".
@@ -683,10 +420,10 @@ pub fn facts_from_recording(t: &RecordingTelemetry, size_bytes: u64) -> SelfTest
     SelfTestFacts {
         expected_sec: (t.expected_sec - CAPTURE_STARTUP_ALLOWANCE_SEC).max(0.0),
         measured_sec: t.measured_sec,
-        // Totals, not the sealed fields: a verdict computed while a capture
-        // process is still open must still see that process's drops.
-        drops: t.drops_total(),
-        dups: t.dups_total(),
+        // ffmpeg-era counters: 0 for every session since C3b, but an older
+        // history row keeps judging the way it was judged.
+        drops: t.drops,
+        dups: t.dups,
         // Capture-drop lines ARE xrun-class events for verdict purposes; the
         // native engine's OS-reported xruns are the same class, counted for
         // real; a native ring overrun counts as one xrun event (its MAGNITUDE
@@ -722,27 +459,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn drop_dup_parse_last_and_default_zero() {
-        let s = "frame=10 dup=0 drop=2 speed=1x\nframe=20 dup=1 drop=5 speed=1x";
-        assert_eq!(parse_drop_count(s), 5);
-        assert_eq!(parse_dup_count(s), 1);
-        // Audio-only capture has no frame accounting → fields absent → 0.
-        assert_eq!(parse_drop_count("size=256kB time=00:00:05.00"), 0);
-    }
-
-    #[test]
-    fn xrun_counts_events_not_phrases() {
-        let s = "\
-[avfoundation @ 0x1] real-time buffer too full, frame dropped!
-normal progress line size=10kB
-[avfoundation @ 0x1] Non-monotonous DTS in output stream
-clean line";
-        // line 1 matches two phrases ("too full" + "frame dropped") → counts once.
-        assert_eq!(parse_xrun_count(s), 2);
-        assert_eq!(parse_xrun_count("all good here"), 0);
-    }
-
-    #[test]
     fn native_telemetry_fields_default_and_degrade() {
         // Old persisted rows (no native fields) must still deserialize.
         let legacy = r#"{"drops":0,"dups":0,"xruns":0,"levelsDropped":0,
@@ -759,35 +475,6 @@ clean line";
         assert!(t.is_degraded());
         let facts = facts_from_recording(&t, 1_000_000);
         assert_eq!(facts.xruns, 1);
-    }
-
-    #[test]
-    fn time_parses_last_and_skips_na() {
-        let s = "time=N/A\nsize=10kB time=00:00:04.00\nsize=20kB time=00:00:09.50";
-        assert_eq!(parse_last_time_secs(s), Some(9.5));
-        assert_eq!(parse_last_time_secs("no time here"), None);
-    }
-
-    #[test]
-    fn hhmmss_forms() {
-        assert_eq!(parse_hhmmss("00:00:04.00"), Some(4.0));
-        assert_eq!(parse_hhmmss("01:02:03"), Some(3723.0));
-        assert_eq!(parse_hhmmss("12.5"), Some(12.5));
-        assert_eq!(parse_hhmmss("N/A"), None);
-    }
-
-    #[test]
-    fn silence_segments_pairs_and_eof_close() {
-        let s = "\
-[silencedetect] silence_start: 2.0
-[silencedetect] silence_end: 2.5 | silence_duration: 0.5
-[silencedetect] silence_start: 8.0";
-        // closed pair (0.5) + open one closed at eof 10.0 (2.0)
-        let segs = parse_silence_segments(s, Some(10.0));
-        assert_eq!(segs, vec![(2.0, 2.5), (8.0, 10.0)]);
-        assert!((silence_total_sec(&segs) - 2.5).abs() < 1e-9);
-        // without eof, the trailing open start is dropped
-        assert_eq!(parse_silence_segments(s, None), vec![(2.0, 2.5)]);
     }
 
     fn good_facts() -> SelfTestFacts {
@@ -873,111 +560,6 @@ clean line";
     }
 
     #[test]
-    fn telemetry_observe_line_accumulates() {
-        let mut t = RecordingTelemetry::default();
-        t.observe_line("frame=10 dup=1 drop=3 speed=1x");
-        t.observe_line("frame=20 dup=0 drop=2 speed=1x"); // drop/dup are max, not last
-        t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
-        t.observe_line("size=256kB time=00:00:05.00"); // clean progress line
-        assert_eq!(t.drops_total(), 3, "max drop across lines");
-        assert_eq!(t.dups_total(), 1);
-        assert_eq!(t.xruns, 1, "one xrun-class line");
-        assert!(t.is_degraded());
-        // Sealing one process leaves the persisted fields holding exactly what
-        // the old max-fold produced — single-take behaviour is unchanged.
-        t.seal_process();
-        assert_eq!(t.drops, 3);
-        assert_eq!(t.dups, 1);
-    }
-
-    /// E6.3 BUG FIX — a session is not one ffmpeg process.
-    ///
-    /// `drop=`/`dup=` are CUMULATIVE per process and restart at zero in the next
-    /// one. Folding the whole session with `max`, as this used to, reported the
-    /// worst SINGLE segment: a service that split three times and dropped 40,
-    /// 25 and 10 frames reported 40 frames lost instead of 75. The verdict
-    /// engine then judged a badly degraded recording against one segment's
-    /// damage — and `FAIL_DROPS` is 10, so the difference is not academic.
-    #[test]
-    fn telemetry_sums_drops_across_capture_processes() {
-        let mut t = RecordingTelemetry::default();
-
-        // Process 1: ffmpeg re-prints its running total each line.
-        t.observe_line("frame=10 dup=2 drop=12 speed=1x");
-        t.observe_line("frame=99 dup=4 drop=40 speed=1x");
-        assert_eq!(t.drops_total(), 40, "within one process the fold is max");
-        t.seal_process();
-
-        // Process 2 (a split): its counters START OVER at zero.
-        t.observe_line("frame=10 dup=1 drop=9 speed=1x");
-        t.observe_line("frame=88 dup=3 drop=25 speed=1x");
-        assert_eq!(
-            t.drops_total(),
-            65,
-            "the second process ADDS to the first, it does not compete with it"
-        );
-        t.seal_process();
-
-        // Process 3 (a reconnect fragment).
-        t.observe_line("frame=5 dup=2 drop=10 speed=1x");
-        t.seal_process();
-
-        assert_eq!(t.drops, 75, "40 + 25 + 10 — the sum, not the max (40)");
-        assert_eq!(t.dups, 9, "4 + 3 + 2");
-        // The verdict now sees the real damage. With the old max-fold this
-        // session reported 40 drops; the truth is 75.
-        let facts = facts_from_recording(&t, 1_000_000);
-        assert_eq!(facts.drops, 75);
-        assert_eq!(facts.dups, 9);
-
-        // Sealing again adds nothing — the defensive seal at session end can
-        // never double-count a segment that already sealed itself.
-        t.seal_process();
-        t.seal_process();
-        assert_eq!(t.drops, 75);
-    }
-
-    /// The fields that were CHECKED for the same flaw and do not have it: they
-    /// are event counts, incremented once per occurrence, so they already span
-    /// processes correctly. Sealing must leave them completely alone.
-    #[test]
-    fn event_counters_already_span_processes_and_sealing_does_not_touch_them() {
-        let mut t = RecordingTelemetry::default();
-        // Process 1.
-        t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
-        t.observe_line("[aist#0:0] 100 packets dropped");
-        t.note_levels_dropped();
-        t.note_msg_dropped();
-        t.ring_overrun_samples += 480; // the engine sums this per segment
-        t.seal_process();
-        // Process 2 sees the same events again.
-        t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
-        t.observe_line("[aist#0:0] 100 packets dropped");
-        t.note_levels_dropped();
-        t.note_msg_dropped();
-        t.ring_overrun_samples += 960;
-        t.seal_process();
-
-        assert_eq!(t.xruns, 2, "xruns are events — they already summed");
-        assert_eq!(t.capture_drop_lines, 2);
-        assert_eq!(t.levels_dropped, 2);
-        assert_eq!(t.msgs_dropped, 2);
-        assert_eq!(t.ring_overrun_samples, 1440);
-    }
-
-    #[test]
-    fn telemetry_counts_capture_drop_lines() {
-        // The 2026-07-31 blindness: these avfoundation phrasings were logged but
-        // never counted — 28 % sample loss registered as a clean recording.
-        let mut t = RecordingTelemetry::default();
-        t.observe_line("[avfoundation @ 0x0] Thread message queue blocking; consider raising the thread_queue_size option");
-        t.observe_line("[aist#0:0] 100 packets dropped");
-        t.observe_line("size=256kB time=00:00:05.00");
-        assert_eq!(t.capture_drop_lines, 2);
-        assert!(t.is_degraded(), "capture drops must degrade the verdict");
-    }
-
-    #[test]
     fn native_xruns_degrade_and_reach_the_verdict() {
         let t = RecordingTelemetry {
             expected_sec: 62.0,
@@ -987,7 +569,7 @@ clean line";
         };
         assert!(t.is_degraded(), "an OS-reported xrun is a glitch");
         assert_eq!(t.xruns_total(), 3);
-        // Both engines' counters add up; stderr lines are not needed for it.
+        // An older (ffmpeg-era) row's stderr count still adds up with it.
         let both = RecordingTelemetry {
             xruns: 2,
             native_xruns: 3,
@@ -996,10 +578,23 @@ clean line";
         assert_eq!(both.xruns_total(), 5);
         let f = facts_from_recording(&t, 1_000_000);
         assert_eq!(f.xruns, 3);
-        // A native engine feeds no stderr, so observe_line never touches it.
-        let mut quiet = RecordingTelemetry::default();
-        quiet.observe_line("[avfoundation @ 0x1] real-time buffer too full");
-        assert_eq!(quiet.native_xruns, 0);
+    }
+
+    /// C3b: a history row written by an ffmpeg-era version (with the stderr
+    /// counters it carried) still reads, and is still judged the same way.
+    #[test]
+    fn an_ffmpeg_era_history_row_still_reads_and_still_degrades() {
+        let row: RecordingTelemetry = serde_json::from_str(
+            r#"{"drops":40,"dups":4,"xruns":2,"levelsDropped":1,"captureDropLines":3,
+                "msgsDropped":0,"expectedSec":62.0,"measuredSec":60.0,"lossPct":0.0,
+                "durationSec":62.0,"timestamp":"2026-08-01T11:00:00+02:00","exitOk":true}"#,
+        )
+        .expect("an old row deserialises");
+        assert_eq!(row.drops, 40);
+        assert!(row.is_degraded());
+        let f = facts_from_recording(&row, 1_000_000);
+        assert_eq!(f.drops, 40);
+        assert_eq!(f.xruns, 2 + 3, "stderr xruns + capture-drop lines");
     }
 
     #[test]
@@ -1071,16 +666,6 @@ clean line";
             report.reasons
         );
         assert!(duration_loss_pct(f.expected_sec, f.measured_sec) < DURATION_LOSS_FAIL_PCT);
-    }
-
-    #[test]
-    fn telemetry_levels_dropped_counts() {
-        let mut t = RecordingTelemetry::default();
-        assert!(!t.is_degraded());
-        t.note_levels_dropped();
-        t.note_levels_dropped();
-        assert_eq!(t.levels_dropped, 2);
-        assert!(t.is_degraded());
     }
 
     #[test]
@@ -1262,78 +847,5 @@ clean line";
         let r: SelfTestReport = serde_json::from_value(json).unwrap();
         assert!(r.reason_codes.is_empty());
         assert_eq!(r.reasons.len(), 1);
-    }
-}
-
-/// Property tests (E5.8) — [`RecordingTelemetry::observe_line`] is on the
-/// recorder's hot path: EVERY line ffmpeg writes to stderr for the life of a
-/// real recording is folded through it (see its own doc comment on the
-/// per-line allocation budget). A panic here would take capture down mid-take;
-/// this is the same "stderr is unstructured free text we don't control" case
-/// [`crate::progress::parse_size_kb`] guards, just for the drop/dup/xrun/time/
-/// silence side of the same stream.
-#[cfg(test)]
-mod proptests {
-    use super::*;
-    use proptest::prelude::*;
-
-    proptest! {
-        /// Arbitrary stderr-shaped lines must never panic the always-on telemetry
-        /// path — this runs unconditionally on every recording, not just self-tests.
-        #[test]
-        fn observe_line_never_panics(line in ".{0,500}") {
-            let mut t = RecordingTelemetry::default();
-            t.observe_line(&line);
-        }
-
-        /// [`parse_last_time_secs`] and [`parse_silence_segments`] see the exact
-        /// same unstructured stderr; neither may panic on it.
-        #[test]
-        fn time_and_silence_parsers_never_panic(blob in ".{0,500}") {
-            let _ = parse_last_time_secs(&blob);
-            let _ = parse_silence_segments(&blob, Some(1.0));
-            let _ = parse_silence_segments(&blob, None);
-        }
-
-        /// Every segment [`parse_silence_segments`] emits must be a genuine,
-        /// positive-duration span (`end > start`) — the same non-negative-gap
-        /// invariant the hand-written `silence_start`/`silence_end` pairing
-        /// already enforces (`if v > s`), now checked over arbitrary blobs
-        /// instead of only the hand-picked fixtures.
-        #[test]
-        fn silence_segments_are_always_positive_duration(blob in ".{0,500}", eof in prop::option::of(0.0f64..1e6)) {
-            for (start, end) in parse_silence_segments(&blob, eof) {
-                prop_assert!(end > start);
-            }
-        }
-
-        /// The always-on drop/dup counters must read identically whichever size
-        /// unit spelling (`kB` vs the ffmpeg-7.1-renamed `KiB`) happens to sit
-        /// elsewhere on the SAME line — the unit rename that once broke
-        /// [`crate::progress::parse_size_kb`] must not have a sibling bug here,
-        /// since `observe_line` folds the whole line, not just the `size=` field.
-        ///
-        /// Read through `drops_total`/`dups_total`, not the `drops`/`dups` fields:
-        /// those hold only the SEALED total across finished capture processes, and
-        /// the line just observed belongs to the process still running. The totals
-        /// include that open window, which is what a mid-session verdict needs.
-        #[test]
-        fn drop_dup_counts_are_unaffected_by_the_size_unit_spelling(
-            drop in 0u64..=10_000_000,
-            dup in 0u64..=10_000_000,
-            unit in prop_oneof![Just("kB"), Just("KiB")],
-        ) {
-            let line = format!(
-                "frame=1 drop={drop} dup={dup} size=  100{unit} time=00:00:01.00 bitrate=1.0kbits/s"
-            );
-            let mut t = RecordingTelemetry::default();
-            t.observe_line(&line);
-            prop_assert_eq!(t.drops_total(), drop);
-            prop_assert_eq!(t.dups_total(), dup);
-            // And sealing the process must move the same numbers into the totals.
-            t.seal_process();
-            prop_assert_eq!(t.drops, drop);
-            prop_assert_eq!(t.dups, dup);
-        }
     }
 }

@@ -176,11 +176,8 @@ pub(super) fn finalize_session_telemetry(
 
     let final_state = *lock_recover(final_state);
 
-    // Snapshot + stamp the host-known fields. The defensive seal covers a start
-    // that failed before its first segment could seal itself; `seal_process` is
-    // idempotent, so a segment that already sealed adds nothing.
+    // Snapshot + stamp the host-known fields.
     let mut t = lock_recover(telemetry).clone();
-    t.seal_process();
     t.duration_sec = now_ms().saturating_sub(start_ms) as f64 / 1000.0;
     t.timestamp = chrono::Local::now().to_rfc3339();
     t.exit_ok = matches!(final_state, RecorderState::Stopped);
