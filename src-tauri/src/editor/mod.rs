@@ -1720,6 +1720,15 @@ pub async fn master_preview(
     disabled("masterPreview")
 }
 
+/// Nothing to prepare without the editor: not ready, and not an error.
+#[cfg(not(feature = "editor"))]
+pub async fn prepare_listen(
+    _req: &EditorMasterPreviewRequest,
+    _input_path: &str,
+) -> AppResult<bool> {
+    Ok(false)
+}
+
 /// Abort an in-flight mastering apply by job id. Returns whether it was live.
 /// Compiles in both states — the registry bookkeeping is pure, so even the
 /// default build answers "nothing to cancel" rather than erroring.
@@ -4532,7 +4541,11 @@ mod tests {
     fn some_plan(gain_db: f64) -> sundayrec_core::loudness::GainPlan {
         sundayrec_core::loudness::GainPlan {
             gain_db,
-            ..crate::editor::pcm::unity_plan()
+            limiter: None,
+            target_lufs: 0.0,
+            ceiling_dbtp: 0.0,
+            peak_overshoot_db: 0.0,
+            measurable: true,
         }
     }
 
