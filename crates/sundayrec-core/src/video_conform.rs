@@ -778,19 +778,25 @@ mod tests {
             let resets = clock.resets();
             // Every sleep restarts the fit exactly once, and nothing else does —
             // drift, jitter, bad timestamps and small steps must be absorbed by
-            // the fit, not papered over by restarts. Not countable: a jump
-            // before the first pair or in the last second, two within a second
-            // (may be confirmed as one), one a small step partly cancels.
-            let mut at: Vec<f64> = sc.sleeps.iter().map(|s| snap(s.0)).collect();
-            at.sort_by(f64::total_cmp);
-            at.dedup_by(|b, a| *b - *a < 1.0);
-            let visible: Vec<f64> = at
-                .into_iter()
-                .filter(|&t| t > 0.0 && t < end_s - 1.0)
+            // the fit, not papered over by restarts. Never seen: a jump at or
+            // before the first pair, or after the last. Maybe seen (counted in
+            // the upper bound only): one in the last second (confirmed or not
+            // before the end), two within a second (may be confirmed as one),
+            // one a small step partly cancels.
+            let mut at: Vec<f64> = sc
+                .sleeps
+                .iter()
+                .map(|s| snap(s.0))
+                .filter(|&t| t > 0.0 && t < end_s)
                 .collect();
+            at.sort_by(f64::total_cmp);
+            let maybe = at.len() as u32;
+            at.dedup_by(|b, a| *b - *a < 1.0);
             let near_step = |t: f64| sc.small_steps.iter().any(|s| (snap(s.0) - t).abs() < 1.0);
-            let sure = visible.iter().filter(|&&t| !near_step(t)).count() as u32;
-            let maybe = visible.len() as u32;
+            let sure = at
+                .iter()
+                .filter(|&&t| t < end_s - 1.0 && !near_step(t))
+                .count() as u32;
             assert!(
                 (sure..=maybe).contains(&resets),
                 "{resets} resets for {sure}..={maybe} sleeps"
@@ -991,6 +997,35 @@ mod tests {
             let o = simulate(&sc);
             assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
             assert_eq!(o.resets, 1);
+        }
+
+        /// Proptest regression `cc 5d24cd87…`: a 40 ms jump 0.7 s before the
+        /// end is seen and confirmed — one reset, which the check must allow.
+        #[test]
+        fn a_jump_in_the_last_second_may_reset() {
+            let sc = Scenario {
+                seed: 0,
+                secs: 3.0 * 3600.0,
+                rate: 44_100,
+                fps: Fps::new(30, 1),
+                buf: 1024,
+                cam_fps: 30.0,
+                drift_ppm: 0.0,
+                wobble_ppm: 0.0,
+                wobble_period_s: 300.0,
+                audio_jitter_ns: 0.0,
+                frame_jitter_ns: 0.0,
+                delivery_s: (0.0, 0.0),
+                outlier_p: 0.0,
+                video_start_s: 0.0,
+                holes: vec![],
+                fps_drops: vec![],
+                sleeps: vec![(10_799.264_737_537_813, 40e6, 0.0)],
+                small_steps: vec![],
+            };
+            let o = simulate(&sc);
+            assert_eq!(o.resets, 1);
+            assert!(o.max_slot_dev <= 1, "slot deviation {}", o.max_slot_dev);
         }
 
         /// The worst plausible case, pinned: 50 ppm the "wrong" way, jitter
