@@ -62,7 +62,7 @@
 //!   3 dB lower. Lowering filmcraft's threshold by that 3 dB gave the same
 //!   loudness range as ffmpeg on all three recordings and on all four presets
 //!   that have a compressor (within 0.3 LU; a threshold shift of -6 dB went
-//!   0.7 LU below). Ratio, attack, release and makeup are unchanged.
+//!   up to 0.6 LU below). Ratio, attack, release and makeup are unchanged.
 //! * **De-esser: kept at `20*I` dB.** On sibilant frames (more than -12 dB of
 //!   the energy above 6 kHz) the band is cut by about 3 dB; on the vowel
 //!   frames around them it moves by 0.2 dB. Softer settings (threshold -8,
