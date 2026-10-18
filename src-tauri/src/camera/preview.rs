@@ -781,6 +781,7 @@ mod tests {
         open: impl FnOnce() -> Result<Opened, String>,
         phase: Duration,
         meter: Option<&Mutex<Option<Arc<Mutex<Duration>>>>>,
+        min_sent: f64,
     ) -> (f64, f64) {
         let sent = Arc::new(AtomicU64::new(0));
         let sizes = Arc::new(Mutex::new(Vec::new()));
@@ -802,12 +803,22 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         let first = sent.load(Ordering::Relaxed);
+        let offered0 = current_stats().map_or(0, |s| s.offered);
         let t0 = Instant::now();
         std::thread::sleep(phase);
         let before = sent.load(Ordering::Relaxed) - first;
-        let rate_before = before as f64 / t0.elapsed().as_secs_f64();
+        let secs0 = t0.elapsed().as_secs_f64();
+        let rate_before = before as f64 / secs0;
+        // The SELECTION is by capture time and holds ~4/s on any machine; how
+        // many of those a slow runner manages to JPEG-encode in time is the
+        // machine's business (`min_sent`: 3 on a real Mac, 2 on CI).
+        let offered_before = (current_stats().map_or(0, |s| s.offered) - offered0) as f64 / secs0;
         assert!(
-            (3.0..=5.0).contains(&rate_before),
+            (3.0..=5.0).contains(&offered_before),
+            "{offered_before:.2} pictures/s offered before the recording"
+        );
+        assert!(
+            (min_sent..=5.0).contains(&rate_before),
             "{rate_before:.2} pictures/s before the recording ({before})"
         );
 
@@ -832,6 +843,7 @@ mod tests {
         )
         .expect("spawn track");
         let mid = sent.load(Ordering::Relaxed);
+        let offered1 = current_stats().map_or(0, |s| s.offered);
         let t1 = Instant::now();
         let start_host = crate::camera::host_now_ns();
         let mut sample = 0u64;
@@ -846,9 +858,15 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-        let rate_during = (sent.load(Ordering::Relaxed) - mid) as f64 / t1.elapsed().as_secs_f64();
+        let secs1 = t1.elapsed().as_secs_f64();
+        let rate_during = (sent.load(Ordering::Relaxed) - mid) as f64 / secs1;
+        let offered_during = (current_stats().map_or(0, |s| s.offered) - offered1) as f64 / secs1;
         assert!(
-            (3.0..=5.0).contains(&rate_during),
+            (3.0..=5.0).contains(&offered_during),
+            "{offered_during:.2} pictures/s offered DURING the recording"
+        );
+        assert!(
+            (min_sent..=5.0).contains(&rate_during),
             "{rate_during:.2} pictures/s DURING the recording"
         );
         let preview_stats = current_stats().expect("still previewing");
@@ -926,6 +944,8 @@ mod tests {
             },
             Duration::from_secs(3),
             Some(&meter),
+            // A shared CI runner may not JPEG-encode every pick in time.
+            2.0,
         );
 
         // While a recording holds the camera a reopened page re-points the
@@ -977,6 +997,7 @@ mod tests {
             },
             Duration::from_secs(8),
             None,
+            3.0,
         );
         stop();
         println!("real camera {}: {rb:.2} / {rd:.2} pictures/s", key.camera);
