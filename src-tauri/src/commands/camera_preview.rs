@@ -8,7 +8,7 @@
 //! reopen it. While a recording holds the camera, `camera_preview_start` only
 //! re-points the picture at the new channel (a page that was reopened).
 //!
-//! ⚠️ HARDWARE-UNVERIFIED — see docs/RIG-DAY.md (w).
+//! ⚠️ HARDWARE-UNVERIFIED — see docs/RIG-DAY.md (v5).
 
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;

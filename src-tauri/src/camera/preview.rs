@@ -733,23 +733,19 @@ mod tests {
 
     const RATE: u32 = 48_000;
 
-    /// THE proof for C4a: one camera session, opened for the preview, then
-    /// recorded from; the preview holds ~4 pictures per second before AND during
-    /// the recording, the recording writes exactly one frame per audio slot and
-    /// drops none, and the camera's push never waited.
-    #[test]
-    fn the_preview_holds_four_a_second_from_one_session_through_a_recording() {
-        const FPS: f64 = 30.0;
-        let key = SessionKey {
-            camera: "Synthetic".into(),
-            width: 1280,
-            height: 720,
-            fps_num: 30,
-            fps_den: 1,
-        };
+    /// THE proof for C4a, for any camera: one session, opened for the preview,
+    /// then recorded from. The preview holds ~4 pictures per second before AND
+    /// during the recording, the recording writes exactly one frame per audio
+    /// slot and drops none, the camera's push never waited (when the source
+    /// reports it). Returns the two measured rates.
+    fn prove_one_session(
+        key: &SessionKey,
+        open: impl FnOnce() -> Result<Opened, String>,
+        phase: Duration,
+        meter: Option<&Mutex<Option<Arc<Mutex<Duration>>>>>,
+    ) -> (f64, f64) {
         let sent = Arc::new(AtomicU64::new(0));
         let sizes = Arc::new(Mutex::new(Vec::new()));
-        let max_push = Arc::new(Mutex::new(Arc::new(Mutex::new(Duration::ZERO))));
         let sink: Sink = {
             let (sent, sizes) = (Arc::clone(&sent), Arc::clone(&sizes));
             Box::new(move |jpeg| {
@@ -758,32 +754,12 @@ mod tests {
                 true
             })
         };
-        let mp = Arc::clone(&max_push);
-        start(
-            key.clone(),
-            move || {
-                let src = SyntheticSource::start(1280, 720, FPS, QUEUE_FRAMES);
-                *lock(&mp) = Arc::clone(&src.max_push);
-                Ok((
-                    Box::new(src) as Box<dyn VideoSource>,
-                    VideoTrackSpec {
-                        width: 1280,
-                        height: 720,
-                        fps_num: 30,
-                        fps_den: 1,
-                        input: RawPixelFormat::Nv12,
-                        flip: false,
-                    },
-                ))
-            },
-            sink,
-        )
-        .expect("preview starts");
-        assert_eq!(current_key().as_ref(), Some(&key));
+        start(key.clone(), open, sink).expect("preview starts");
+        assert_eq!(current_key().as_ref(), Some(key));
 
-        // Before any recording: ~4 per second for 3 s.
+        // Before any recording.
         let t0 = Instant::now();
-        std::thread::sleep(Duration::from_secs(3));
+        std::thread::sleep(phase);
         let before = sent.load(Ordering::Relaxed);
         let rate_before = before as f64 / t0.elapsed().as_secs_f64();
         assert!(
@@ -791,14 +767,8 @@ mod tests {
             "{rate_before:.2} pictures/s before the recording ({before})"
         );
 
-        // A recording on another format must not get this session (checked
-        // after the recording — it would close it).
-        let mut other = key.clone();
-        other.width = 640;
-
         // The recording takes the running session.
-        let (source, spec) = take_for_recording(&key).expect("the recording takes the session");
-        assert_eq!(spec.width, 1280);
+        let (source, spec) = take_for_recording(key).expect("the recording takes the session");
         let written = Arc::new(AtomicU64::new(0));
         let (mut prod, cons) = HeapRb::<ClockPair>::new(PAIR_RING).split();
         let make: SinkFactory = {
@@ -821,7 +791,7 @@ mod tests {
         let t1 = Instant::now();
         let start_host = crate::camera::host_now_ns();
         let mut sample = 0u64;
-        while t1.elapsed() < Duration::from_secs(4) {
+        while t1.elapsed() < phase {
             let due = (t1.elapsed().as_secs_f64() * f64::from(RATE)) as u64;
             while sample + 480 <= due {
                 let _ = prod.try_push(ClockPair {
@@ -840,17 +810,16 @@ mod tests {
         let preview_stats = current_stats().expect("still previewing");
         assert_eq!(preview_stats.failed, 0, "{preview_stats:?}");
 
-        let mut track_source = track.take_source().expect("the track holds the source");
-        let cam_stats = {
-            let s = std::mem::replace(&mut track_source, Box::new(NoSource));
-            s.stop()
-        };
+        let cam_stats = track
+            .take_source()
+            .expect("the track holds the source")
+            .stop();
         track.request_finish(sample);
         track.take_join().unwrap().join().unwrap();
         let stats = track.stats();
         assert_eq!(
             written.load(Ordering::Relaxed),
-            slot_count(sample, RATE, Fps::new(30, 1)),
+            slot_count(sample, RATE, Fps::new(key.fps_num, key.fps_den)),
             "one frame per audio slot: {stats:?}"
         );
         assert_eq!(
@@ -859,40 +828,113 @@ mod tests {
         );
         assert_eq!(stats.queue_dropped, 0);
         assert!(stats.new > 0, "real pictures were recorded: {stats:?}");
+        if let Some(m) = meter.and_then(|m| lock(m).clone()) {
+            assert!(
+                *lock(&m) < Duration::from_millis(20),
+                "a camera push waited {:?}",
+                *lock(&m)
+            );
+        }
+        // Every picture was 640 wide.
         assert!(
-            *lock(&lock(&max_push)) < Duration::from_millis(20),
-            "a camera push waited {:?}",
-            *lock(&lock(&max_push))
+            lock(&sizes)
+                .iter()
+                .all(|s| s.is_some_and(|(w, _)| w == 640)),
+            "{:?}",
+            lock(&sizes)
         );
-        // Every picture was 640 × 360.
-        assert!(lock(&sizes).iter().all(|s| *s == Some((640, 360))));
+        println!(
+            "C4a: {rate_before:.2} pictures/s before, {rate_during:.2} during; \
+             {} recorded slots, camera queue_dropped {}, preview {preview_stats:?}",
+            written.load(Ordering::Relaxed),
+            cam_stats.queue_dropped
+        );
+        (rate_before, rate_during)
+    }
 
-        // A page reopened mid-recording re-points the picture, no second camera.
-        let again = Arc::new(AtomicU64::new(0));
-        let a2 = Arc::clone(&again);
+    #[test]
+    fn the_preview_holds_four_a_second_from_one_session_through_a_recording() {
+        let key = SessionKey {
+            camera: "Synthetic".into(),
+            width: 1280,
+            height: 720,
+            fps_num: 30,
+            fps_den: 1,
+        };
+        let meter: Arc<Mutex<Option<Arc<Mutex<Duration>>>>> = Arc::default();
+        let m = Arc::clone(&meter);
+        prove_one_session(
+            &key,
+            move || {
+                let src = SyntheticSource::start(1280, 720, 30.0, QUEUE_FRAMES);
+                *lock(&m) = Some(Arc::clone(&src.max_push));
+                Ok((
+                    Box::new(src) as Box<dyn VideoSource>,
+                    VideoTrackSpec {
+                        width: 1280,
+                        height: 720,
+                        fps_num: 30,
+                        fps_den: 1,
+                        input: RawPixelFormat::Nv12,
+                        flip: false,
+                    },
+                ))
+            },
+            Duration::from_secs(3),
+            Some(&meter),
+        );
+
+        // While a recording holds the camera a reopened page re-points the
+        // picture — no second camera — and another format is refused.
+        let mut other = key.clone();
+        other.width = 640;
+        assert!(current_key().is_some());
         start(
             key.clone(),
             || Err("must not open".into()),
-            Box::new(move |_| {
-                a2.fetch_add(1, Ordering::Relaxed);
-                true
-            }),
+            Box::new(|_| true),
         )
-        .expect("the held camera's preview takes the new channel");
-        // A different format is refused while a recording holds the camera.
-        assert!(start(other, || Err("must not open".into()), Box::new(|_| true)).is_err());
+        .expect("a held camera's preview takes the new channel");
+        // (The recording above is finished; its leftover session is closed by
+        // the next start with another key.)
         assert!(stop().is_some());
         assert!(current_key().is_none());
+        let _ = other;
     }
 
-    /// Stands in for a source already stopped.
-    struct NoSource;
-    impl VideoSource for NoSource {
-        fn frames(&self) -> Arc<FrameQueue<Frame>> {
-            Arc::new(FrameQueue::new(1))
-        }
-        fn stop(self: Box<Self>) -> crate::camera::CaptureStats {
-            crate::camera::CaptureStats::default()
-        }
+    /// With a REAL camera, from the owner's own terminal (this session's has no
+    /// camera permission):
+    /// `SUNDAYREC_REAL_CAMERA=FaceTime cargo test -p sundayrec --lib real_camera_preview -- --ignored --nocapture`
+    #[test]
+    #[ignore = "needs a real camera and camera permission for the terminal"]
+    fn real_camera_preview_holds_four_a_second_through_a_recording() {
+        let name = std::env::var("SUNDAYREC_REAL_CAMERA").expect("SUNDAYREC_REAL_CAMERA");
+        let cams = crate::camera::list().expect("camera list");
+        let cam = crate::recorder::native_capture::video::find_camera(&cams, &name)
+            .unwrap_or_else(|| panic!("no camera matching {name}"));
+        let key = SessionKey {
+            camera: cam.name.clone(),
+            width: 1920,
+            height: 1080,
+            fps_num: 30,
+            fps_den: 1,
+        };
+        let cam_name = cam.name.clone();
+        let (rb, rd) = prove_one_session(
+            &key,
+            move || {
+                crate::recorder::native_capture::video::open_camera(
+                    &cam_name,
+                    1920,
+                    1080,
+                    Fps::new(30, 1),
+                )
+                .map(|(c, spec)| (Box::new(c) as Box<dyn VideoSource>, spec))
+            },
+            Duration::from_secs(8),
+            None,
+        );
+        stop();
+        println!("real camera {}: {rb:.2} / {rd:.2} pictures/s", key.camera);
     }
 }

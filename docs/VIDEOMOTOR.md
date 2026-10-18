@@ -342,6 +342,44 @@ preview_jpg)`: `scale=720:-2,fps=12`, `-update 1`, til
 - **Ferdig når:** bildet før og under opptaket kommer fra samme økt, uten
   avbrudd ved Start og Stopp (e2e med fixture-bilder, og på Macen).
 
+**Levert (C4a).** Forhåndsvisningen kodes i Rust fra kameraøkta
+(`src-tauri/src/camera/preview.rs`, kommandoene `camera_preview_start`/`_stop`
+i `commands/camera_preview.rs`). Det C4b og C5 må vite:
+
+- **Tappen, ikke køen.** `FrameQueue::set_tap` lar kamerakallbacken vise hvert
+  bilde til en observatør FØR det legges i køen. Forhåndsvisningens tapp
+  teller, og for ett av `floor(fps / 4)` bilder (30 fps: hvert sjuende, 4,3 b/s)
+  legger den en _deling_ av bildet (`Frame: Clone` teller referanser, kopierer
+  aldri piksler) i en postkasse med én plass via `try_lock`. Opptakets kø har
+  fortsatt én leser; en sen eller død forhåndsvisning koster opptaket null.
+  Forhåndsvisningen går ikke gjennom konformeren (som holder hver plass 0,5 s).
+- **Arbeidet** gjøres på en egen tråd: pakk til tett NV12 (`pack_tight`),
+  skaler plan for plan med `fast_image_resize` (luma `U8`, chroma `U8x2`, til
+  640 px), YUV→RGB (BT.601, videoområde) på 640×360, JPEG-kod med
+  `jpeg-encoder` (kvalitet 70). MJPEG-kameraer sendes videre som kameraets egen
+  JPEG (uskalert; ingen dekoder i treet). Bilder som ikke kan brukes (nedfra-og-
+  opp, odde størrelse) telles som `failed`.
+- **Én økt, ingen overlevering.** `preview::start` åpner kameraet med
+  opptaksformatet (1080p30); `take_for_recording` (kalt fra
+  `start_video_track`) gir videosporet den løpende `Capture`-en ved eksakt
+  samsvar på kamera og format. Tappen blir sittende, så bildet går uavbrutt inn
+  i opptaket. Før opptak tømmer en `Drain`-tråd køen (en kø full av
+  kamerabuffere sulter poolen); sporet overtar etter at den er stoppet. Åpnes
+  siden på nytt mens opptaket holder kameraet, bytter `start` bare kanal.
+- **Det som ikke er gjort (C4b):** økta stoppes fortsatt av opptakets stopp
+  (og ved hver fragmentgrense — et nytt fragment åpner kameraet selv), så
+  bildet har et opphold der; siden må kalle `camera_preview_start` igjen.
+  Ingenting er slettet: `getUserMedia`, `PolledCameraPreview`, ffmpegs
+  JPEG-utgang og `recording_preview_frame` lever til C4b.
+- **Lisens:** `jpeg-encoder` er «(MIT OR Apache-2.0) AND IJG». IJG er libjpegs
+  BSD-lignende lisens og er lagt til i `deny.toml`/`about.toml`; teksten står i
+  THIRD-PARTY-NOTICES. (0.6.0 står som ren MIT/Apache, men 0.6.1 rettet lisensen
+  fordi koden bærer IJG-tabeller — derfor 0.7.)
+- **Bevis:** `camera::preview::tests::the_preview_holds_four_a_second_from_one_session_through_a_recording`
+  (syntetisk kilde, 1280×720@30: 3–5 b/s før og under et opptak, nøyaktig én
+  ramme per lydplass, 0 droppede, kamerapush under 20 ms) og den ignorerte
+  `real_camera_preview_…` for ekte kamera (RIG-DAY (v5)).
+
 ### C5 — kameraet kobles til på nytt uavhengig av lyden
 
 - Mac: `AVCaptureDeviceWasDisconnected`/`…WasConnected`. Windows: kameradelen av
