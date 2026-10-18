@@ -390,7 +390,7 @@ export function exportAgain(): void {
 export async function cancelExport(): Promise<void> {
   // IKKE deaktivert etter klikk: legacy gjorde det, permanent, og en avbryting
   // som landet i et av eksportens barnløse opphold (kildeprobingen,
-  // loudnorm-JSON-parsingen) lot brukeren stirre på «Avbryter…» på en død knapp
+  // måle- og planleggingssteget) lot brukeren stirre på «Avbryter…» på en død knapp
   // mens eksporten gikk til ende. Et andre klikk er ufarlig — avbryting er
   // idempotent.
   cancelling.value = true;

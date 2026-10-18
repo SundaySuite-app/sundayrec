@@ -153,6 +153,32 @@ kommer først.
   ±0,5 LU med true peak ≤ −1,0 dBTP, kryssjekket med ffmpeg `ebur128` i en test.
   En 90-minutters eksport er raskere enn i dag.
 
+**Gjort (B1a + B1b).** `loudnorm`, JSON-parseren, `plan_pass2`, «Normalization Type»-sjekken
+og alle `loudnorm`-strengene er borte. Eksporten måler det kuttede, behandlede signalet i Rust
+(`sundayrec_core::pcm_stream`), planlegger én lineær forsterkning (`loudness::plan_gain`), og
+koder fra det jevnede signalet. `mastering_analyze` og forhåndslyttingen bruker samme måler og
+samme nivåsteg.
+
+**Avgjort på målt tid (B1b): behandlet PCM mellomlagres som f32 i temp.** Ekte 90-minutters
+fil (`2026.01.04.mp3`, 5400 s, `speech-clear`, ett kutt, mp3 256k, `--release`, Mac,
+ffmpeg 9.0.1), to kjøringer hver, sekunder:
+
+|                                                     | måling + kjede | dry-run (begrenseren) | koding      | sum               |
+| --------------------------------------------------- | -------------- | --------------------- | ----------- | ----------------- |
+| Før (`loudnorm`, to ffmpeg-kjøringer)               |                |                       |             | **222,6 / 222,0** |
+| Etter, disk-mellomlager                             | 21,2 / 21,3    | 26,3 / 26,4           | 47,6 / 47,8 | **95,1 / 95,6**   |
+| Etter, kjeden kjørt to ganger (+1 gang per dry-run) | 20,5 / 20,2    | 37,2 / 36,9           | 53,4 / 54,3 | **111,0 / 111,3** |
+
+Disk vinner med ca. 16 s fordi hver ekstra kjørelse av kjeden (dekoding + EQ + kompressor)
+koster mer enn å lese 2 GB tilbake fra disk, og fordi dry-runene (som korrigerer for
+limiterens lydstyrketap) kan kjøres over fila uten å dekode på nytt. Begge er klart raskere enn
+før, og før landet dessuten 6 LU under målet. Prisen: 2 GB ledig i OS-ens temp-mappe per
+90 minutter stereo (sjekkes før målingen; en krasjet eksport etterlater fila til neste oppstart,
+som sveiper den).
+
+Resultat på samme fil (uavhengig `ebur128` på den leverte mp3-fila): **−16,03 LUFS, −1,74 dBTP**
+mot mål −16 / tak −1,0. Målet nås med én dry-run (limiteren tok 5,6 dB av toppene).
+
 ### Fase 2 — lydkjeden i Rust
 
 - Mastring-presettene og `VocalChain` blir en liste av filmcraft-effekter
@@ -236,8 +262,7 @@ løser et annet problem enn én frivillig med ett spørsmål.
 - **Redigeringen er fortsatt `HARDWARE-UNVERIFIED`.** Fase 5 (avspilling) er den
   med mest maskinvare i seg, og den har sin egen riggsjekk.
 - **Minne og disk.** 90 min stereo f32 er rundt 2 GB. Ingenting holder hele
-  fila i minnet. Fase 1 avgjør om eksporten mellomlagrer på disk eller
-  kjører kjeden to ganger.
+  fila i minnet. Avgjort i B1b: eksporten mellomlagrer på disk (se Fase 1).
 
 ## Vedlegg: målingene, og hvordan de gjentas
 

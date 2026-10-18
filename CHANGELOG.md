@@ -5,6 +5,19 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **Eksport med mastring er mer enn dobbelt så rask, og treffer nivået.** Nivået
+  settes nå av appen selv i stedet for av ffmpegs `loudnorm`: lyden måles etter
+  at klippene og lydkjeden er lagt på, og får én jevn forsterkning til
+  presetets mål (for eksempel −16 LUFS for «Tale — tydelig»). Bare de sjeldne
+  toppene tas av en begrenser, så lyden komprimeres ikke. En eksport av en
+  gudstjeneste på 90 minutter gikk fra 3 minutter og 42 sekunder til 1 minutt
+  og 36 sekunder på vår testmaskin, og landet på −16,0 LUFS i stedet for
+  −21,9. Kvitteringen viser nivået fila faktisk fikk. Eksporten bruker
+  midlertidig ca. 2 GB ledig plass på systemdisken for 90 minutter, og sier fra
+  før den starter hvis det ikke er plass.
+- **Forhåndslytting og nivåmåling i «Lyd» bruker samme nivåsteg som eksporten**,
+  så det du hører og måler før du eksporterer er det eksporten starter fra.
+
 ## v0.26.0-beta.1 — én lydmotor, tydeligere feilmeldinger, til beta-ringen
 
 Første del av ombyggingen. Alle lydopptak går nå gjennom appens egen lydmotor,

@@ -6790,6 +6790,12 @@ mod tests {
                 took.as_secs_f64(),
                 out.loudness
             );
+            // What an independent meter says the delivered file is.
+            let done = measure_ebu_r128(&ffmpeg, std::path::Path::new(&out.output_path), None);
+            eprintln!(
+                "BENCH delivered file (ebur128): {:.2} LUFS, {:.2} dBTP",
+                done.input_i, done.input_tp
+            );
         }
 
         // ── F2-C-B, B1b: the mastering is ONE gain, and says what it landed on ─

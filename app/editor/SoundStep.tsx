@@ -10,7 +10,7 @@
  *
  *   **«Normaliser lydnivå»** (−1 dBFS via `editor_probe_peak`) — et løfte som
  *   uansett ble overstyrt av mastringen: bakenden hopper over `volume=`-
- *   filteret så snart et preset er aktivt, fordi loudnorm setter nivået. En
+ *   filteret så snart et preset er aktivt, fordi presetets nivåsteg setter nivået. En
  *   bryter som gjør noe bare når en annen bryter er av er ikke en bryter.
  *
  *   **Mastring-panelet** som skriver `<navn>_mastert.<ext>` ved siden av

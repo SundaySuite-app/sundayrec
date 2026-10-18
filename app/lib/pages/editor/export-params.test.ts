@@ -365,7 +365,7 @@ describe("jinglesSupportedForFile", () => {
 describe("exportLevelSummary", () => {
   it("says mastering owns the level whenever a preset is active", () => {
     // The backend SKIPS the normalize `volume=` filter under a mastering preset
-    // (loudnorm sets the delivery level), so the modal must not promise a gain
+    // (the preset's level step sets the delivery level), so the modal must not promise a gain
     // the export never applies — even when one was computed.
     expect(exportLevelSummary("speech-clear", 4.2)).toEqual({
       kind: "masterOwnsLevel",
