@@ -340,14 +340,19 @@ impl Preview {
                         match encoder.encode(&frame) {
                             Some(jpeg) => {
                                 drop(frame);
-                                counters.sent.fetch_add(1, Ordering::Relaxed);
                                 let mut slot = lock(&sink);
-                                // A page that is gone says so by refusing the
-                                // picture; the preview then idles until the
-                                // next page asks (the camera is not its to
-                                // close).
-                                if slot.as_mut().is_some_and(|send| !send(jpeg)) {
-                                    *slot = None;
+                                // The page may have left while this picture was
+                                // encoded: only a picture that reaches a sink
+                                // counts as sent.
+                                if let Some(send) = slot.as_mut() {
+                                    counters.sent.fetch_add(1, Ordering::Relaxed);
+                                    // A page that is gone says so by refusing
+                                    // the picture; the preview then idles until
+                                    // the next page asks (the camera is not its
+                                    // to close).
+                                    if !send(jpeg) {
+                                        *slot = None;
+                                    }
                                 }
                             }
                             None => {
@@ -762,6 +767,15 @@ mod tests {
     /// take turns.
     static SERIAL: Mutex<()> = Mutex::new(());
 
+    /// Take the camera-session lock and start from no session: a test that
+    /// panicked mid-way leaves its session behind, and the next one must not
+    /// read that session's numbers as its own.
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        let guard = lock(&SERIAL);
+        stop_all();
+        guard
+    }
+
     fn nv12(w: u32, h: u32, y: u8, u: u8, v: u8) -> Frame {
         let mut bytes = vec![y; (w * h) as usize];
         for _ in 0..(w * h / 4) {
@@ -1138,7 +1152,7 @@ mod tests {
 
     #[test]
     fn the_preview_holds_four_a_second_from_one_session_through_a_recording() {
-        let _serial = lock(&SERIAL);
+        let _serial = serial();
         let key = SessionKey {
             camera: "Synthetic".into(),
             width: 1280,
@@ -1224,7 +1238,7 @@ mod tests {
 
     #[test]
     fn a_page_that_leaves_and_returns_during_a_recording_keeps_one_camera() {
-        let _serial = lock(&SERIAL);
+        let _serial = serial();
         let key = synthetic_key();
         let (sink, _) = counting_sink();
         start(key.clone(), open_synthetic, sink).unwrap();
@@ -1279,7 +1293,7 @@ mod tests {
 
     #[test]
     fn a_recording_nobody_watches_closes_its_camera_at_the_end() {
-        let _serial = lock(&SERIAL);
+        let _serial = serial();
         let key = synthetic_key();
         // The recording opened its own camera (no page had one): adopted, so a
         // page that comes later can see it — but silent until then.
@@ -1307,7 +1321,7 @@ mod tests {
 
     #[test]
     fn a_session_closed_for_another_camera_hands_its_watcher_on() {
-        let _serial = lock(&SERIAL);
+        let _serial = serial();
         let key = synthetic_key();
         let (sink, got) = counting_sink();
         start(key.clone(), open_synthetic, sink).unwrap();
@@ -1340,7 +1354,7 @@ mod tests {
     #[test]
     #[ignore = "needs a real camera and camera permission for the terminal"]
     fn real_camera_preview_holds_four_a_second_through_a_recording() {
-        let _serial = lock(&SERIAL);
+        let _serial = serial();
         let name = std::env::var("SUNDAYREC_REAL_CAMERA").expect("SUNDAYREC_REAL_CAMERA");
         let cams = crate::camera::list().expect("camera list");
         let cam = crate::recorder::native_capture::video::find_camera(&cams, &name)
