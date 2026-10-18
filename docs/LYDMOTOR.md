@@ -497,3 +497,12 @@ avtagende hale (RT60 1,5 s), RMS målt i halen (0,3–0,95 s) og i direktelyden
 (0–0,05 s). Samme filer kjøres gjennom ffmpeg med SundayRecs egne
 filterstrenger. De hentes ut med `processing::vocal_chain_presets()` og
 `mastering::build_measure_pass_filters()`.
+
+**M2R #11: mikserens støyfjerning er gatet (samme `SpeechGate` som «Tale»).** `Chain::from_vocal_chain`
+pakker `denoise` inn i `Stage::SpeechGated`, så «mer støyfjerning» i mikseren ikke lenger mister
+musikkbeskyttelsen. Porten leser gulvet selv; mikseren har ingen analyse og gir bare et forhåndsgulv
+(−60 dBFS) for de to første sekundene. Målt på samme syntetiske gudstjeneste som B3a ved 12 dB
+(skyvens topp): akkorden +0,00 dB (ugatet: tapte hele reduksjonen, B2b −9,6 dB ved 10), gulvet i
+pausen −11,2 dB. Test: `the_mixers_denoise_leaves_a_held_chord_alone_but_cleans_the_pause`.
+`dereverb` i mikseren er fortsatt ugatet (B2b: −2,2 til −3,3 dB på en holdt tone). Samme kjente
+grense som «Tale»: trommer åpner porten.
