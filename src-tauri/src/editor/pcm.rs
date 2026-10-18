@@ -567,8 +567,52 @@ pub(super) fn decode_args(
     args
 }
 
+/// The loudness of the whole PROGRAMME the export will encode: the cut, run through `chain`,
+/// metered and thrown away (no staged copy, so no disk and no dry runs). This is what the
+/// windowed preview levels against, so a 20-second window gets the gain the export gives the
+/// programme and not the gain that happens to suit those 20 seconds (M2R #3c). It costs one
+/// full chain pass, the same as the export's own measure.
+#[allow(clippy::too_many_arguments)] // one call site; each argument is a different fact
+pub(super) async fn measure_program(
+    engine: &ExportEngine,
+    source: &str,
+    chain: &Chain,
+    keeps: &[sundayrec_core::editor::KeepSegment],
+    source_duration: f64,
+    kept_duration: f64,
+    fmt: PcmFormat,
+    stall_ms: u64,
+) -> AppResult<Loudness> {
+    let built = chain
+        .build(fmt.sample_rate as f32, fmt.channels)
+        .map_err(|e| AppError::Recording(format!("audio chain: {e}")))?;
+    let fmt_out = PcmFormat {
+        sample_rate: fmt.sample_rate,
+        channels: built.out_channels(),
+    };
+    let args = decode_args(source, keeps, source_duration, fmt);
+    let total_frames = (kept_duration * f64::from(fmt.sample_rate)) as u64;
+    let (loud, _frames) = run_chain(
+        engine,
+        &args,
+        total_frames,
+        stall_ms,
+        (0.0, 0.0),
+        EXPORT_PHASE_MEASURING,
+        &|_, _| {},
+        move |r, done| {
+            let mut processed = ChainReader::new(r, built);
+            pcm_stream::measure(&mut processed, fmt_out, None, |n| {
+                done.store(n, Ordering::Relaxed)
+            })
+        },
+    )
+    .await?;
+    Ok(loud)
+}
+
 /// The plan that leaves the level alone: no gain, no limiter.
-fn unity_plan() -> GainPlan {
+pub(super) fn unity_plan() -> GainPlan {
     GainPlan {
         gain_db: 0.0,
         limiter: None,
