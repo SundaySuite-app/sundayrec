@@ -7,9 +7,9 @@
 //! [`crate::pcm_stream`] runs that over a stream too long to hold in memory.
 //!
 //! What lives here: the preset table, the 16-bit dither table, `-progress` parsing, the preview
-//! window clamps and ffmpeg argv, and the in-flight job registry. There is no `loudnorm` anywhere
-//! (B1b): the old two-pass measure/apply strings, the JSON parser, the pass-2 plan that kept
-//! `loudnorm` in linear mode and the `Normalization Type` read-back are gone.
+//! window clamps and ffmpeg argv, and the in-flight job registry. ffmpeg no longer sets the
+//! level (B1b): the old two-pass measure/apply strings, their JSON parser, the pass-2 plan and
+//! the read-back of ffmpeg's report are gone.
 
 /// A mastering preset — a named target loudness + the ffmpeg filter chain that
 /// precedes the level setting. Mirrors `mastering.ts` `MasterPreset`. `label` and
@@ -469,7 +469,7 @@ mod tests {
         assert!(joined.contains("-f f32le"));
         assert!(joined.contains("-ar 44100 -ac 1"));
         assert!(joined.ends_with("pipe:1"));
-        assert!(!joined.contains("loudnorm"));
+        assert!(!joined.contains("-filter_complex"));
     }
 
     #[test]

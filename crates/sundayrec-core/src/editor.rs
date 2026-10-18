@@ -176,7 +176,7 @@ fn snap_rate(candidate: u32, supported: &[u32]) -> u32 {
 ///
 /// Two hazards this closes:
 ///   1. **Silent upsampling.** A filter graph that resamples internally (the old
-///      `loudnorm` ran at 192 kHz) with no `-ar` landed a mastered WAV/FLAC at
+///      two-pass level filter ran at 192 kHz) with no `-ar` landed a mastered WAV/FLAC at
 ///      192 kHz — four times the size of the service, for nothing. The pin stays
 ///      so no graph can ever decide the file's rate again.
 ///   2. **Silent downsampling.** The reverse pin ("always 48 k") would throw away
@@ -342,7 +342,7 @@ pub fn is_supported_export_format(fmt: &str) -> bool {
 /// which is the pre-F2-8 behaviour.
 ///
 /// Why it matters: with a mastering preset the audio pad reaching the encoder
-/// comes out of a graph that may resample internally (the old `loudnorm` ran at
+/// comes out of a graph that may resample internally (the old level filter ran at
 /// 192 kHz). Neither
 /// video builder emitted `-ar`, so the AAC encoder was handed that pad and
 /// picked whatever rate it could stand — a silent resample of the one file the

@@ -1,6 +1,6 @@
 //! Loudness in Rust (B1a, docs/LYDMOTOR.md fase 1): measurement and gain plan.
 //!
-//! The level is set in Rust, in steps we steer ourselves (B1b removed the ffmpeg `loudnorm` this replaced):
+//! The level is set in Rust, in steps we steer ourselves (the ffmpeg filter this replaced is gone, B1b):
 //!
 //! 1. **Measure** the processed signal with the BS.1770-4 / EBU R128 meter vendored from
 //!    filmcraft ([`Meter`], [`measure_planar`]).

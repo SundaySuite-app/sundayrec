@@ -4,8 +4,9 @@
 //! unit-tested core:
 //!   - cut/keep planning + filter-graph + codec + output-path + metadata →
 //!     [`sundayrec_core::editor`],
-//!   - EBU R128 loudness measure/apply filter chains + the loudnorm JSON parse →
-//!     [`sundayrec_core::mastering`],
+//!   - the mastering presets, dither table and preview argv →
+//!     [`sundayrec_core::mastering`]; EBU R128 loudness measure/gain/limiter →
+//!     [`sundayrec_core::loudness`] / [`sundayrec_core::pcm_stream`],
 //!   - VAD / content classification + sermon detection →
 //!     [`sundayrec_core::audio_analysis`],
 //!   - the ffprobe/decode/peaks argv + peak down-sampling →
@@ -204,7 +205,7 @@ pub struct EditorExportRequest {
     pub bitrate: Option<u32>,
     /// WAV bit depth (16/24); ignored for non-WAV.
     pub bit_depth: Option<u8>,
-    /// Optional mastering preset id (a two-pass loudnorm chain is applied first).
+    /// Optional mastering preset id (its chain runs first, then one measured gain to its loudness target).
     pub master_preset: Option<String>,
     /// Prepend the stored intro clip (`settings.editorIntroPath`) to the audio
     /// on export (non-mp4 only). A switch, not a path: Rust reads the clip from
@@ -245,7 +246,7 @@ pub struct EditorExportRequest {
     #[serde(default)]
     pub vocal_chain_preset: Option<String>,
     /// Full per-stage vocal-chain config. Overrides `vocalChainPreset`. The chain
-    /// runs BEFORE the mastering loudnorm (tone/dynamics first, loudness last).
+    /// runs BEFORE the mastering level step (tone/dynamics first, loudness last).
     #[serde(default)]
     pub processing: Option<EditorProcessing>,
     /// Channel repair to apply. Overrides the repair carried by `processing`/the
@@ -1382,7 +1383,7 @@ pub struct ExportEngine {
     ///
     /// Killing the parked child alone LOSES a cancel: a mastered export spends
     /// real time between passes with the slot empty (the source probe, the
-    /// loudnorm-JSON parse, the jingle duration probes), and a cancel landing in
+    /// measure/plan step, the jingle duration probes), and a cancel landing in
     /// one of those gaps killed nothing and was then forgotten — the export
     /// simply carried on and the next pass spawned as if nothing had happened.
     cancelled: std::sync::atomic::AtomicBool,
@@ -2805,7 +2806,7 @@ pub async fn master_preview(
     })
 }
 
-/// Build the pre-loudnorm filter graph, in order: normalize gain, THEN the
+/// Build the pre-level filter graph, in order: normalize gain, THEN the
 /// vocal chain, THEN the mastering preset's own filters.
 ///
 /// T12: the gain (the editor's "Normalize" button, a `volume=…dB` filter) goes
@@ -2814,7 +2815,7 @@ pub async fn master_preview(
 /// rendered peak. The previous order (gain appended AFTER the chain) let a
 /// positive gain push the already-limited signal back over 0 dBFS, undoing the
 /// limiter entirely. Gain is SKIPPED when a mastering preset is active:
-/// loudnorm sets the delivery level, so a volume shift ahead of it changes
+/// the preset's level step sets the delivery level, so a volume shift ahead of it changes
 /// nothing but the measured input (the export modal says so instead of
 /// claiming "Normalisert" — see `editor.volumeByMastering`). Pure; unit-tested
 /// without ffmpeg.
@@ -2966,8 +2967,8 @@ where
     let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
     // 1b. One probe, two answers: the source's sample rate (so the encoder can
-    //     be pinned to it — without this a mastered lossless export lands at
-    //     loudnorm's internal 192 kHz) and its channel count (so a stereo-only
+    //     be pinned to it — the old level filter ran at 192 kHz, and a
+    //     mastered lossless export landed there) and its channel count (so a stereo-only
     //     channel repair can be refused before the graph is built).
     //     Best-effort: a failed probe (no ffprobe sidecar, exotic container)
     //     means "emit no -ar" and "channel count unknown", i.e. the pre-Phase-4
@@ -2977,7 +2978,7 @@ where
     //     F2-8: this used to answer `None` for VIDEO, on the reasoning that the
     //     video path encodes AAC through `video_codec_args` and there is no -ar
     //     there. That was the bug, not the justification for it: with a
-    //     mastering preset the graph runs through loudnorm's internal 192 kHz,
+    //     mastering preset the graph ran through a 192 kHz internal rate,
     //     and an AAC encoder handed a 192 kHz pad picks the nearest rate it can
     //     stand — so the sermon a church uploads carried a resampled audio
     //     track nobody asked for. The rate is probed for video too now, and
@@ -3057,7 +3058,7 @@ where
         }
     }
 
-    // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
+    // 2. The pre-level graph G — everything that shapes the signal BEFORE
     //    delivery loudness is set:
     //      (normalize gain, only without a preset) → vocal chain → preset chain.
     //    T12: gain goes FIRST so the chain's limiter (its last stage) has the
@@ -3074,7 +3075,7 @@ where
     };
 
     // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
-    // loudnorm: shape the tone/dynamics first, set delivery loudness last. A full
+    // level step: shape the tone/dynamics first, set delivery loudness last. A full
     // `processing` object wins; otherwise resolve the one-click preset id.
     //
     // F2-C-E T5: `vocal_chain_preset_by_id` now takes a measured noise floor and
@@ -3630,7 +3631,7 @@ where
 /// Spawn one export ffmpeg pass, stream its `-progress` to `on_progress`, and
 /// wait for it under the kill-timer. The live child is parked in `engine` so
 /// [`cancel_export`] can reach it. Returns the tail of ffmpeg's stderr — which
-/// is where the mastering measure pass finds its `loudnorm` JSON block.
+/// is where a failure's message lives.
 ///
 /// `phase` labels the ticks; `span` maps this pass's 0–100 % onto its slice of
 /// the overall bar, so a two-pass mastered export reads 0→50 (measuring) then
@@ -3853,9 +3854,9 @@ async fn duration_hint(input_path: &str) -> Option<f64> {
 }
 
 /// Spawn ffmpeg with `args`, wait for it under `timeout`, and return its
-/// collected output. A non-zero exit is the caller's to interpret (the astats /
-/// loudnorm passes read their answer out of stderr and don't care about the
-/// exit code); the timeout is not.
+/// collected output. A non-zero exit is the caller's to interpret (the astats
+/// pass reads its answer out of stderr and doesn't care about the exit code);
+/// the timeout is not.
 ///
 /// On timeout the `wait_with_output` future is dropped, and `spawn_ffmpeg` sets
 /// `kill_on_drop(true)` — so the wedged ffmpeg is killed and reaped rather than
@@ -5213,7 +5214,7 @@ mod tests {
         assert_eq!(
             filters,
             vec![preset.filters.clone()],
-            "loudnorm owns the level with a preset active — no gain filter"
+            "the preset owns the level with a preset active — no gain filter"
         );
     }
 
@@ -5540,7 +5541,7 @@ mod tests {
 
     /// A cancel that lands BETWEEN two export passes finds an empty child slot.
     /// It must still be remembered, or the next pass spawns as if the user had
-    /// never pressed Avbryt (the mastered export's probe / loudnorm-parse /
+    /// never pressed Avbryt (the mastered export's probe / measure-plan /
     /// jingle-probe gaps are seconds wide on a long service).
     #[test]
     fn cancel_export_is_remembered_when_no_child_is_parked() {
@@ -6245,7 +6246,7 @@ mod tests {
         /// preset chain passes the range through instead of squashing it.
         ///
         /// The result measures LRA ≈ 15 — over every preset's LRA target, which
-        /// is exactly what makes `loudnorm` refuse linear mode.
+        /// is exactly what a gain rider would have squeezed.
         fn lavfi_wide_range_tone(
             ffmpeg: &std::path::Path,
             dir: &std::path::Path,
@@ -6273,7 +6274,7 @@ mod tests {
         /// High crest factor is the point: the bursts are too short to lift the
         /// gated integrated loudness much, but they set the true peak. That gap
         /// (≈ 20 dB) is what makes the preset's target unreachable with a single
-        /// gain — the second of `loudnorm`'s two linear-mode gates.
+        /// gain — the case that needs the true-peak limiter.
         fn lavfi_peaky_tone(
             ffmpeg: &std::path::Path,
             dir: &std::path::Path,
@@ -6677,7 +6678,7 @@ mod tests {
         /// ~18 LU below the loudness of the file. Measure the file and the
         /// finished mp3 lands ~18 LU dark; measure the edit and it lands on
         /// -16 LUFS. A normalize gain is thrown in too — with a preset active it
-        /// must be ignored (loudnorm owns the level), and applying it would
+        /// must be ignored (the preset owns the level), and applying it would
         /// shift the result by another 6 LU.
         #[test]
         fn mastered_export_lands_on_the_preset_target_or_skips() {
@@ -7215,7 +7216,7 @@ mod tests {
         }
 
         /// A 16-bit WAV export must be pcm_s16le AT THE SOURCE RATE. Without the
-        /// `-ar` pin, a mastered export inherits loudnorm's internal 192 kHz.
+        /// `-ar` pin, a mastered export inherited the old graph's 192 kHz.
         #[test]
         fn wav16_export_is_s16_at_the_source_rate_or_skips() {
             // F2-C-E T7: `sidecar_or_skip`, not `fetched_sidecar` directly — see
@@ -7240,7 +7241,7 @@ mod tests {
             assert_eq!(codec, "pcm_s16le", "wav16 must encode as pcm_s16le");
             assert_eq!(
                 rate, 48_000,
-                "the export must stay at the source rate, not loudnorm's 192 kHz"
+                "the export must stay at the source rate, not a 192 kHz internal rate"
             );
             eprintln!("editor export smoke: wav16 landed as {codec} @ {rate} Hz");
         }
@@ -7314,7 +7315,7 @@ mod tests {
         /// Until F2-8 the seam answered `None` for the video path's
         /// `source_rate` and neither video codec-arg builder emitted `-ar`, so
         /// the encoder took whatever the graph handed it — 192 kHz out of
-        /// `loudnorm` with a mastering preset, 96 kHz off a high-rate master
+        /// the old level filter with a mastering preset, 96 kHz off a high-rate master
         /// without one. Here a 96 kHz source is exported to mp4 and the audio
         /// stream must come back at 48 kHz: the cap `output_sample_rate`
         /// already states for every OTHER lossy target.

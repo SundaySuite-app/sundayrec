@@ -1,4 +1,4 @@
-//! B1b: the two ways to master an export without `loudnorm`, timed on a real file.
+//! B1b: the two ways to master an export without ffmpeg's level filter, timed on a real file.
 //!
 //! ```text
 //! cargo run --release --example export_pcm_bench -- <file> <duration_s> <preset> disk|rerun \
