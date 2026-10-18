@@ -507,6 +507,9 @@ pub enum StreamSink {
         plan: Vec<ChannelRoute>,
         prod: HeapProd<f32>,
         overrun: Arc<AtomicU64>,
+        /// A video session's audio clock tap (C3a): one `(sample, host time)`
+        /// pair per callback for the conformer. `None` for audio-only.
+        clock: Option<ClockTap>,
     },
     /// Pre-roll: route the chosen channels into the ring exactly like
     /// [`StreamSink::Capture`], but meter the **native** frame (every input
@@ -645,7 +648,7 @@ where
     let mut scratch: Vec<f32> = Vec::with_capacity(cap);
     device.build_input_stream(
         config,
-        move |data: &[T], _: &cpal::InputCallbackInfo| {
+        move |data: &[T], info: &cpal::InputCallbackInfo| {
             if total == 0 {
                 return;
             }
@@ -658,12 +661,18 @@ where
                     plan,
                     prod,
                     overrun,
+                    clock,
                 } => {
                     route_block(plan, &conv, total, &mut scratch);
                     // Meter what LANDS IN THE FILE (parity with ffmpeg's
                     // post-pan astats).
                     observe_levels(&scratch, plan.len(), meters);
-                    push_routed(&scratch, plan.len(), prod, overrun);
+                    let pushed = push_routed(&scratch, plan.len(), prod, overrun);
+                    if let Some(tap) = clock {
+                        let frames = (scratch.len() / plan.len().max(1)) as u64;
+                        let pushed_frames = (pushed / plan.len().max(1)) as u64;
+                        tap.observe(info, frames, pushed_frames);
+                    }
                 }
                 StreamSink::Preroll {
                     meters,
@@ -700,7 +709,12 @@ fn route_block(plan: &[ChannelRoute], conv: &[f32], total: usize, scratch: &mut 
 /// rest of the file. Never blocks — the dropped sample count is recorded in
 /// `overrun` and surfaces as the capture's xrun telemetry.
 #[inline]
-fn push_routed(scratch: &[f32], out_ch: usize, prod: &mut HeapProd<f32>, overrun: &AtomicU64) {
+fn push_routed(
+    scratch: &[f32],
+    out_ch: usize,
+    prod: &mut HeapProd<f32>,
+    overrun: &AtomicU64,
+) -> usize {
     use ringbuf::traits::Observer;
     let out_ch = out_ch.max(1);
     let want = scratch.len();
@@ -714,6 +728,88 @@ fn push_routed(scratch: &[f32], out_ch: usize, prod: &mut HeapProd<f32>, overrun
     debug_assert_eq!(pushed, take, "aligned push must fit fully");
     if take < want {
         overrun.fetch_add((want - take) as u64, Ordering::Relaxed);
+    }
+    take
+}
+
+// ── The audio clock tap (C3a) ────────────────────────────────────────────────
+
+/// One audio-clock observation: the WAV frame index of the first sample of a
+/// callback's block, and the host time (ns, the camera frames' clock) at which
+/// that sample was captured. What `sundayrec_core::av_clock::AudioClock::observe`
+/// takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct ClockPair {
+    pub sample: u64,
+    pub host_ns: u64,
+}
+
+/// Where a callback's capture time comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureTimeSource {
+    /// cpal's own capture timestamp, which IS the camera's host clock here:
+    /// CoreAudio's `mHostTime` (mach) and WASAPI's QPC position, both in ns.
+    Cpal,
+    /// The host clock read in the callback, minus the block's length. For
+    /// ASIO, whose cpal timestamps are `timeGetTime` (another clock, 1–16 ms
+    /// steps). ASIO calls back on a precise driver period, so its callback
+    /// time is far steadier than WASAPI's shared-mode scheduling.
+    /// ⚠️ RIG-UNVERIFIED: ASIO + video has never run.
+    HostNowMinusBlock,
+}
+
+impl CaptureTimeSource {
+    pub fn for_host(host: CpalHostKind) -> Self {
+        match host {
+            CpalHostKind::Asio => CaptureTimeSource::HostNowMinusBlock,
+            _ => CaptureTimeSource::Cpal,
+        }
+    }
+}
+
+/// The real-time half of the audio clock: pushes one [`ClockPair`] per
+/// callback into a lock-free ring the video thread drains. Never blocks or
+/// allocates — a full ring drops the pair (the clock's fit does not need every
+/// one).
+pub struct ClockTap {
+    prod: HeapProd<ClockPair>,
+    /// WAV frames before the current block — the index of its first sample.
+    frames: u64,
+    source: CaptureTimeSource,
+    sample_rate: u32,
+}
+
+impl ClockTap {
+    pub fn new(prod: HeapProd<ClockPair>, source: CaptureTimeSource, sample_rate: u32) -> Self {
+        Self {
+            prod,
+            frames: 0,
+            source,
+            sample_rate: sample_rate.max(1),
+        }
+    }
+
+    /// Record the block that just went to the ring: `frames` routed frames, of
+    /// which `pushed` reached it (an overrun drops the tail — those frames are
+    /// not in the WAV, so the next block's index does not count them; the
+    /// clock sees the hole as a host-time jump).
+    #[inline]
+    pub fn observe(&mut self, info: &cpal::InputCallbackInfo, frames: u64, pushed: u64) {
+        use ringbuf::traits::Producer;
+        let host_ns = match self.source {
+            CaptureTimeSource::Cpal => {
+                u64::try_from(info.timestamp().capture.as_nanos()).unwrap_or(0)
+            }
+            CaptureTimeSource::HostNowMinusBlock => crate::camera::host_now_ns()
+                .saturating_sub(frames * 1_000_000_000 / u64::from(self.sample_rate)),
+        };
+        if pushed > 0 && host_ns > 0 {
+            let _ = self.prod.try_push(ClockPair {
+                sample: self.frames,
+                host_ns,
+            });
+        }
+        self.frames += pushed;
     }
 }
 

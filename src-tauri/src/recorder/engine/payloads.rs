@@ -146,6 +146,11 @@ pub struct RecordingOpts {
     /// → audio-only, or the probe yielded nothing (legacy 720p guess).
     #[serde(skip)]
     pub video_input: Option<sundayrec_core::capture::VideoCaptureMode>,
+    /// Mirror the recorded picture (`Settings::video_flip`). Read only by the
+    /// native video track (C3a), which encodes with `hflip`. NOT sent by the
+    /// frontend and not part of the golden JSON.
+    #[serde(skip)]
+    pub video_flip: bool,
 }
 
 // `RecordingOpts` must NOT be `Deserialize` (see its doc comment): this does
@@ -334,6 +339,7 @@ mod tests {
             separate_audio_format: "wav".into(),
             classic_directshow: false,
             video_input: None,
+            video_flip: false,
         };
         let json = serde_json::to_string(&o).unwrap();
         // The wire shape is the struct's default snake_case keys (no rename_all).

@@ -983,11 +983,13 @@ mod tests {
                     primary_path: a.clone(),
                     fragments: vec![a],
                     started_at_ms: 1_700_000_000_000,
+                    video_fragments: Vec::new(),
                 },
                 DeliverableManifest {
                     primary_path: b.clone(),
                     fragments: vec![b],
                     started_at_ms: 1_700_000_600_000,
+                    video_fragments: Vec::new(),
                 },
             ],
         }
@@ -2097,6 +2099,7 @@ mod tests {
                 primary_path: mkv.clone(),
                 fragments: vec![mkv],
                 started_at_ms: 1_786_179_600_000,
+                video_fragments: Vec::new(),
             }],
         };
         (manifest, cap_dir)

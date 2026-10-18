@@ -20,6 +20,13 @@
 //!   7. DELIVER: encode/remux the merged capture into the user's chosen format
 //!      ([`DeliverySpec`]), then drop the capture.
 //!
+//! A NATIVE video session (C3a, [`DeliveryMode::MuxAudioVideo`]) adds a step 0
+//! and changes step 7: before the WAVs are merged, the MKV beside each WAV
+//! fragment is joined into `<primary>.mkv`, each declared as long as its WAV
+//! (`sundayrec_core::video_track::video_concat_plan` — a short or missing MKV
+//! never pulls the later picture ahead of the sound); delivery then muxes the
+//! WAV and the MKV into the mp4 (video `-c copy`, audio AAC).
+//!
 //! ## Codec matching — why the stitch is a lossless `-c copy`
 //!
 //! The capture format is decoupled from the delivery format: audio captures to
@@ -89,6 +96,12 @@ pub(crate) struct DeliverySpec {
     /// RemuxCopy only: tag the video stream `hvc1` (HEVC in mp4/mov — Apple
     /// players reject the default `hev1`).
     pub hvc1_tag: bool,
+    /// MuxAudioVideo only: leave the merged WAV on disk after the mp4 is
+    /// delivered, for the caller to deliver as the separate audio file
+    /// (`keep_separate_audio` — from the lossless capture, not re-extracted
+    /// from the AAC) and then remove. Not persisted: a recovery delivers the
+    /// mp4 only.
+    pub keep_audio_capture: bool,
 }
 
 impl DeliverySpec {
@@ -117,6 +130,7 @@ impl DeliverySpec {
             bitrate_kbps: enc.bitrate_kbps,
             mode: enc.mode,
             hvc1_tag: enc.hvc1_tag,
+            keep_audio_capture: false,
         }
     }
 }
@@ -220,6 +234,20 @@ pub(crate) async fn finalize_deliverable(
         existing_concat_fragments(&deliverable.fragments, |p| present.contains(p))
     };
 
+    // ── Step 0 (native video, C3a): join the video fragments ─────────────────────
+    // Before the audio merge deletes the WAV fragments: their lengths are what
+    // each MKV is declared as (see `video_concat_plan`), so a short or missing
+    // MKV can never pull the later video ahead of the sound.
+    let video_lead_secs = if delivery.is_some_and(|d| d.mode == DeliveryMode::MuxAudioVideo) {
+        let preroll_secs = match preroll {
+            Some(p) => wav_secs(Path::new(p)).await.unwrap_or(0.0),
+            None => 0.0,
+        };
+        preroll_secs + merge_video_fragments(&fragments, &primary).await?
+    } else {
+        0.0
+    };
+
     // ── Step 1: produce the merged capture file at `primary` ─────────────────────
     // When a concat is needed (multiple fragments or a pre-roll to prepend) we
     // stitch them losslessly (`-c copy`) into `primary`; otherwise the single
@@ -313,7 +341,13 @@ pub(crate) async fn finalize_deliverable(
                     ..spec.clone()
                 };
                 let primary = primary.clone();
-                async move { transcode_capture_to_delivery(&primary, &tmp_spec).await }
+                async move {
+                    if tmp_spec.mode == DeliveryMode::MuxAudioVideo {
+                        mux_capture_to_delivery(&primary, video_lead_secs, &tmp_spec).await
+                    } else {
+                        transcode_capture_to_delivery(&primary, &tmp_spec).await
+                    }
+                }
             })
             .await;
             let spec = &DeliverySpec {
@@ -333,6 +367,29 @@ pub(crate) async fn finalize_deliverable(
                 },
                 ..spec.clone()
             };
+            // Native video: the joined MKV is inside the mp4 now. The WAV is
+            // the lossless source of the separate audio file when the caller
+            // asked to keep it (it removes it itself, after).
+            if spec.mode == DeliveryMode::MuxAudioVideo {
+                if sync_file_and_dir(Path::new(&spec.delivery_path))
+                    .await
+                    .is_ok()
+                {
+                    let _ = tokio::fs::remove_file(
+                        sundayrec_core::video_track::video_fragment_path(&primary),
+                    )
+                    .await;
+                }
+                if spec.keep_audio_capture {
+                    tracing::info!(
+                        capture = %primary,
+                        delivery = %spec.delivery_path,
+                        "recorder: delivered (wav + mkv → {}); the wav is kept for the separate audio file",
+                        spec.ext
+                    );
+                    return Ok(spec.delivery_path.clone());
+                }
+            }
             // The delivery file is whole — the capture is now redundant litter,
             // but only once the delivery is durable on disk (a power cut right
             // after Stop must not leave a partial MP3 and no lossless source).
@@ -485,6 +542,13 @@ fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
                 spec.bitrate_kbps,
             ));
         }
+        // Built by `mux_capture_to_delivery` (two inputs); never reaches here.
+        DeliveryMode::MuxAudioVideo => {
+            args.push("-map".into());
+            args.push("0".into());
+            args.push("-c".into());
+            args.push("copy".into());
+        }
         DeliveryMode::RemuxCopy => {
             // Take every stream (video + audio) untouched.
             args.push("-map".into());
@@ -517,6 +581,143 @@ fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
 async fn transcode_capture_to_delivery(capture: &str, spec: &DeliverySpec) -> AppResult<()> {
     run_concat(&delivery_transcode_args(capture, spec)).await
+}
+
+/// Native video (C3a): the WAV capture and its joined MKV into the delivery
+/// mp4/mov — video stream-copied, shifted by `video_lead_secs` (the pre-roll the
+/// audio got, plus any fragments at the start without video), audio to AAC.
+/// No MKV at all (the encoder never started) still delivers the sound.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
+async fn mux_capture_to_delivery(
+    wav: &str,
+    video_lead_secs: f64,
+    spec: &DeliverySpec,
+) -> AppResult<()> {
+    let mkv = sundayrec_core::video_track::video_fragment_path(wav);
+    let video = tokio::fs::metadata(&mkv)
+        .await
+        .is_ok_and(|m| m.len() > 0)
+        .then_some(mkv);
+    if video.is_none() {
+        tracing::warn!(capture = %wav, "recorder: no video was recorded — delivering the sound alone");
+    }
+    let rate = read_wav_info(Path::new(wav)).await.map(|i| i.sample_rate);
+    let args = sundayrec_core::video_track::mux_args(
+        video.as_deref(),
+        video_lead_secs,
+        wav,
+        rate,
+        spec.bitrate_kbps,
+        &spec.ext,
+        spec.hvc1_tag,
+        &spec.delivery_path,
+    );
+    run_concat(&args).await
+}
+
+/// Seconds of audio in a PCM WAV: the bytes after its `data` chunk header over
+/// the frame size. Works for a growing or killed capture (the size fields are
+/// not trusted, the file length is).
+pub(crate) async fn wav_secs(path: &Path) -> Option<f64> {
+    use tokio::io::AsyncReadExt;
+    let mut f = tokio::fs::File::open(path).await.ok()?;
+    let len = f.metadata().await.ok()?.len();
+    let mut buf = vec![0u8; 4096];
+    let n = f.read(&mut buf).await.ok()?;
+    buf.truncate(n);
+    let info = sundayrec_core::wav::parse_header(&buf)?;
+    let data = buf.windows(4).position(|w| w == b"data")? as u64 + 8;
+    let frame = u64::from(info.channels) * u64::from(info.bits_per_sample / 8);
+    if frame == 0 || info.sample_rate == 0 {
+        return None;
+    }
+    Some((len.saturating_sub(data) / frame) as f64 / f64::from(info.sample_rate))
+}
+
+/// Join a deliverable's video fragments into the MKV beside its primary WAV,
+/// returning the lead (seconds of audio at the start with no video).
+///
+/// Each MKV is declared as long as ITS WAV fragment (`video_concat_plan`), so
+/// the joined video stays on the audio's timeline even when one fragment's
+/// video came up short or is missing. The other MKVs are removed once the
+/// join is in place; on any failure nothing is touched and the error returns
+/// before the audio is merged, so a retry sees the same fragments.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
+async fn merge_video_fragments(fragments: &[String], primary: &str) -> AppResult<f64> {
+    use sundayrec_core::video_track::{
+        build_video_concat_list, video_concat_plan, video_fragment_path,
+    };
+    let mut info = Vec::with_capacity(fragments.len());
+    for f in fragments {
+        let secs = wav_secs(Path::new(f)).await.unwrap_or(0.0);
+        let mkv = video_fragment_path(f);
+        let present = tokio::fs::metadata(&mkv).await.is_ok_and(|m| m.len() > 0);
+        info.push((secs, present));
+    }
+    let plan = video_concat_plan(&info);
+    let target = PathBuf::from(video_fragment_path(primary));
+    if plan.files.is_empty() {
+        return Ok(plan.lead_secs);
+    }
+    let entries: Vec<(String, f64)> = plan
+        .files
+        .iter()
+        .map(|&(i, secs)| (video_fragment_path(&fragments[i]), secs))
+        .collect();
+    if entries.len() == 1 && Path::new(&entries[0].0) == target {
+        return Ok(plan.lead_secs);
+    }
+    let stem = target
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "recording".into());
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    let list = dir.join(format!("{stem}_video_merge.txt"));
+    let tmp = dir.join(format!("{stem}_video_merge_tmp.mkv"));
+    tokio::fs::write(&list, build_video_concat_list(&entries, is_windows()))
+        .await
+        .map_err(|e| AppError::Recording(format!("concat: failed to write video list: {e}")))?;
+    let args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-f".into(),
+        "concat".into(),
+        "-safe".into(),
+        "0".into(),
+        "-i".into(),
+        list.to_string_lossy().into_owned(),
+        "-c".into(),
+        "copy".into(),
+        "-y".into(),
+        tmp.to_string_lossy().into_owned(),
+    ];
+    let joined = run_concat(&args).await;
+    let _ = tokio::fs::remove_file(&list).await;
+    if let Err(e) = joined {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    if let Err(e) = sync_file_and_dir(&tmp).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(AppError::Recording(format!(
+            "concat: could not flush the joined video for {primary}: {e}"
+        )));
+    }
+    atomic_replace(&tmp, &target).await?;
+    for (path, _) in &entries {
+        if Path::new(path) != target {
+            let _ = tokio::fs::remove_file(path).await;
+        }
+    }
+    tracing::info!(
+        inputs = entries.len(),
+        lead_secs = plan.lead_secs,
+        output = %target.display(),
+        "recorder: joined the video fragments (concat -c copy, declared durations)"
+    );
+    Ok(plan.lead_secs)
 }
 
 /// `true` if `path` exists and is past the pure size gate (non-empty enough to be
@@ -978,6 +1179,7 @@ mod tests {
             bitrate_kbps: 192,
             mode: DeliveryMode::AudioEncode,
             hvc1_tag: false,
+            keep_audio_capture: false,
         };
         let d = deliverable(&wav_s, &[&wav_s]);
         let out = {
@@ -1168,6 +1370,7 @@ mod tests {
             bitrate_kbps: 256,
             mode,
             hvc1_tag,
+            keep_audio_capture: false,
         }
     }
 

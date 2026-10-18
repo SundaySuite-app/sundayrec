@@ -111,6 +111,7 @@ pub async fn run_native_capture_bench(
         separate_audio_format: "wav".into(),
         classic_directshow: false,
         video_input: None,
+        video_flip: false,
     };
 
     let mut seg = spawn_native_segment(host, &opts, &out_str, None).await?;
@@ -198,6 +199,7 @@ fn native_probe_opts(
         separate_audio_format: "wav".into(),
         classic_directshow: false,
         video_input: None,
+        video_flip: false,
     }
 }
 
@@ -588,6 +590,7 @@ mod tests {
             separate_audio_format: "wav".into(),
             classic_directshow: false,
             video_input: None,
+            video_flip: false,
         };
 
         let wall_start = std::time::Instant::now();

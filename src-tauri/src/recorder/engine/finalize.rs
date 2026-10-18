@@ -122,7 +122,30 @@ pub(crate) fn delivery_encode_for(opts: &RecordingOpts, audio_only: bool) -> Aud
     }
 }
 
+/// [`delivery_encode_for`] for a NATIVE video session (C3a): the capture is a
+/// WAV plus an MKV beside every fragment, and finalisation muxes the two
+/// ([`DeliveryMode::MuxAudioVideo`]). Same folder, extension and audio
+/// settings as the other modes — only the mode differs.
+pub(crate) fn delivery_encode_for_native_video(opts: &RecordingOpts) -> AudioEncodeManifest {
+    AudioEncodeManifest {
+        mode: DeliveryMode::MuxAudioVideo,
+        ..delivery_encode_for(opts, false)
+    }
+}
+
+/// The delivery spec of THIS session's capture shape: audio-only (encode the
+/// WAV), native video (mux WAV + MKV) or ffmpeg video (remux the MKV).
+pub(crate) fn delivery_encode_for_session(ctx: &SessionContext) -> AudioEncodeManifest {
+    if ctx.is_native_video() {
+        delivery_encode_for_native_video(&ctx.opts)
+    } else {
+        delivery_encode_for(&ctx.opts, ctx.opts.video_device_name.is_none())
+    }
+}
+
 /// Snapshot the live session into a persistable crash-recovery manifest.
+/// `with_video`: a native video session — every deliverable lists the MKV
+/// beside each WAV fragment too.
 pub(super) fn session_manifest(
     session_id: &str,
     session: &RecordingSession,
@@ -130,6 +153,7 @@ pub(super) fn session_manifest(
     preroll_clip: &Option<PrerollClip>,
     start_ms: u64,
     delivery_encode: &Option<AudioEncodeManifest>,
+    with_video: bool,
 ) -> SessionManifest {
     SessionManifest {
         recovery_attempts: 0,
@@ -141,7 +165,11 @@ pub(super) fn session_manifest(
         deliverables: session
             .deliverables()
             .iter()
-            .map(DeliverableManifest::from_deliverable)
+            .map(if with_video {
+                DeliverableManifest::from_deliverable_with_video
+            } else {
+                DeliverableManifest::from_deliverable
+            })
             .collect(),
     }
 }
@@ -365,11 +393,13 @@ async fn finalize_one(
     // save folder with the delivery extension.
     // The SAME spec the crash-recovery manifest carries — a live stop and a
     // next-launch recovery must deliver identically (see `delivery_encode_for`).
-    let audio_only = ctx.opts.video_device_name.is_none();
-    let delivery_spec = DeliverySpec::from_manifest(
-        &delivery_encode_for(&ctx.opts, audio_only),
-        &deliverable.primary_path,
-    );
+    let native_video = ctx.is_native_video();
+    let delivery_spec = DeliverySpec {
+        // Native video + `keep_separate_audio`: the WAV stays for the
+        // separate audio file below (lossless source), then goes.
+        keep_audio_capture: native_video && ctx.opts.keep_separate_audio,
+        ..DeliverySpec::from_manifest(&delivery_encode_for_session(ctx), &deliverable.primary_path)
+    };
 
     // `delivered` = the recording reached the user's chosen format. A fallback to
     // the raw capture keeps the audio but is NOT a delivery — the manifest must
@@ -418,7 +448,14 @@ async fn finalize_one(
     }
     delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
+    // The WAV kept for the separate audio file (native video only): it is
+    // the source below, and is removed after, whatever happens.
+    let kept_wav =
+        (delivered && delivery_spec.keep_audio_capture).then(|| deliverable.primary_path.clone());
     let Some(pool) = &ctx.pool else {
+        if let Some(w) = &kept_wav {
+            let _ = tokio::fs::remove_file(w).await;
+        }
         return (delivered, landed);
     };
     let started_at = deliverable.started_at_ms;
@@ -442,16 +479,23 @@ async fn finalize_one(
     // standalone audio file next to it and write a SECOND history row. Guarded on
     // the recording actually having video (audio-only recordings are already the
     // audio, so there's nothing to extract).
+    //
+    // C3a: a native video session already HAS the audio as a lossless WAV —
+    // the separate file is made from that, not re-extracted from the mp4's AAC.
     if ctx.opts.keep_separate_audio && ctx.opts.video_device_name.is_some() {
         extract_separate_audio(
             pool,
             &final_path,
+            kept_wav.as_deref().unwrap_or(&final_path),
             started_at,
             duration_ms,
             &ctx.opts,
             &ctx.audio,
         )
         .await;
+    }
+    if let Some(w) = &kept_wav {
+        let _ = tokio::fs::remove_file(w).await;
     }
     (delivered, landed)
 }
@@ -463,10 +507,15 @@ async fn finalize_one(
 /// so it never clobbers an existing file. Validated with the same `output_is_valid`
 /// gate as the main file; a failed/empty extract is logged and skipped, never fatal.
 ///
+/// `final_path` names the file (and the folder) the sidecar goes beside;
+/// `source` is what it is encoded FROM — the finished video, or (native video,
+/// C3a) the lossless capture WAV.
+///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg against a real finished file.
 pub(crate) async fn extract_separate_audio(
     pool: &SqlitePool,
     final_path: &str,
+    source: &str,
     started_at: u64,
     duration_ms: f64,
     opts: &RecordingOpts,
@@ -487,7 +536,7 @@ pub(crate) async fn extract_separate_audio(
     let sep_path =
         sundayrec_core::filename::make_unique_path(&want, |p| std::path::Path::new(p).exists());
 
-    let args = build_separate_audio_args(final_path, &sep_path, opts);
+    let args = build_separate_audio_args(source, &sep_path, opts);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: extracting separate audio sidecar");
     let mut child = match crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
