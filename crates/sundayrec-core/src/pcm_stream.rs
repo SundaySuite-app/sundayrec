@@ -41,9 +41,54 @@ impl PcmFormat {
     }
 }
 
+/// ffmpeg output options that put the processed signal on stdout as raw f32 PCM.
+pub fn output_args(fmt: PcmFormat) -> Vec<String> {
+    [
+        "-f",
+        "f32le",
+        "-c:a",
+        "pcm_f32le",
+        "-ar",
+        &fmt.sample_rate.to_string(),
+        "-ac",
+        &fmt.channels.to_string(),
+        "pipe:1",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// ffmpeg input options that read raw f32 PCM from stdin (put before the `-i` they belong to:
+/// the returned list ends with `-i pipe:0`).
+pub fn input_args(fmt: PcmFormat) -> Vec<String> {
+    [
+        "-f",
+        "f32le",
+        "-ar",
+        &fmt.sample_rate.to_string(),
+        "-ac",
+        &fmt.channels.to_string(),
+        "-i",
+        "pipe:0",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// Filename prefix of the staged processed-PCM temp file in the OS temp dir (the startup sweep
+/// removes leftovers of a crashed export by this).
+pub const STAGED_PREFIX: &str = "sundayrec-export-pcm-";
+
+/// Whether a temp-dir entry is a leftover staged PCM file.
+pub fn is_staged_pcm_name(name: &str) -> bool {
+    name.starts_with(STAGED_PREFIX) && name.ends_with(".f32")
+}
+
 /// Read `r` to the end in blocks of [`BLOCK_FRAMES`] planar frames, handing each to `f`.
 /// A trailing partial frame (a cut-off stream) is dropped. Returns the number of frames read.
-pub fn for_each_block<R: Read>(
+pub fn for_each_block<R: Read + ?Sized>(
     r: &mut R,
     channels: usize,
     mut f: impl FnMut(&mut [Vec<f32>]) -> io::Result<()>,
@@ -99,7 +144,7 @@ pub fn write_interleaved<W: Write + ?Sized>(w: &mut W, planar: &[Vec<f32>]) -> i
 
 /// Measure the stream; with `tee`, also copy it there unchanged (the staging copy).
 /// `progress` is called with the frames read so far after every block.
-pub fn measure<R: Read>(
+pub fn measure<R: Read + ?Sized>(
     r: &mut R,
     fmt: PcmFormat,
     mut tee: Option<&mut dyn Write>,
@@ -123,7 +168,7 @@ pub fn measure<R: Read>(
 /// Run the plan over the stream: gain, then the limiter if planned. The result goes to `sink`
 /// (when given) as interleaved f32 and through a [`Meter`] (when `measure_output`). Returns the
 /// output loudness (`None` unless metered) and the frames read.
-pub fn render<R: Read>(
+pub fn render<R: Read + ?Sized>(
     r: &mut R,
     fmt: PcmFormat,
     plan: &GainPlan,
@@ -326,6 +371,20 @@ mod tests {
             &mut whole,
         );
         assert!((done.output.integrated_lufs - o.integrated_lufs).abs() < 0.01);
+    }
+
+    #[test]
+    fn ffmpeg_pcm_options_are_symmetric() {
+        let a = output_args(FMT).join(" ");
+        assert_eq!(a, "-f f32le -c:a pcm_f32le -ar 48000 -ac 2 pipe:1");
+        assert_eq!(input_args(FMT).join(" "), "-f f32le -ar 48000 -ac 2 -i pipe:0");
+    }
+
+    #[test]
+    fn staged_names_are_recognised_exactly() {
+        assert!(is_staged_pcm_name("sundayrec-export-pcm-0192.f32"));
+        assert!(!is_staged_pcm_name("sundayrec-export-pcm-0192.wav"));
+        assert!(!is_staged_pcm_name("other-0192.f32"));
     }
 
     #[test]

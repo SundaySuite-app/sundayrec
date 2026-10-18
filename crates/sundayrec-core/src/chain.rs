@@ -284,7 +284,7 @@ impl Chain {
     }
 
     /// The chain a mastering preset's `filters` string describes (the part
-    /// before `loudnorm`). The strings are the ones in
+    /// before the level is set). The strings are the ones in
     /// [`crate::mastering::master_presets`]; this reads them, it does not
     /// replace them. Understands exactly what those strings use (`highpass`,
     /// `equalizer`, `acompressor`) and fails loudly on anything else, so a
@@ -637,8 +637,8 @@ mod tests {
     #[test]
     fn unknown_filter_in_a_preset_string_is_an_error_not_a_dropped_stage() {
         assert_eq!(
-            Chain::from_filter_string("highpass=f=80,loudnorm=I=-16"),
-            Err(ChainError::UnknownFilter("loudnorm=I=-16".into()))
+            Chain::from_filter_string("highpass=f=80,dynaudnorm=f=150"),
+            Err(ChainError::UnknownFilter("dynaudnorm=f=150".into()))
         );
     }
 

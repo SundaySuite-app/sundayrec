@@ -58,6 +58,8 @@ use crate::error::AppResult;
 use sundayrec_core::detect::Detection;
 
 mod export_journal;
+#[cfg(feature = "editor")]
+mod pcm;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
 
@@ -134,8 +136,9 @@ pub struct EditorSegment {
     pub confidence: Option<f64>,
 }
 
-/// The measured loudness the mastering UI shows before/after a preset, mirroring
-/// the pass-1 `loudnorm` JSON the Electron mastering flow surfaced.
+/// The measured loudness the mastering UI shows before/after a preset: what
+/// `sundayrec_core::loudness` measures over the preset's processed signal, the same meter the
+/// export levels with.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "EditorLoudness.ts")]
 #[serde(rename_all = "camelCase")]
@@ -146,29 +149,8 @@ pub struct EditorLoudness {
     pub input_lra: f64,
     /// True peak (dBTP).
     pub input_tp: f64,
-    /// Measurement threshold (LUFS). Carried so an apply can REUSE this
-    /// measurement instead of re-running the pass that produced it — it is one
-    /// of the five values `loudnorm`'s linear mode needs.
-    pub input_thresh: f64,
-    /// Suggested gain offset (LU) — the fifth value the linear-mode apply needs.
-    pub target_offset: f64,
     /// The preset this was measured against (its target LUFS for the delta UI).
     pub target_lufs: f64,
-}
-
-#[cfg(feature = "editor")]
-impl EditorLoudness {
-    /// The five measured values as the core's `LoudnessMeasurement`.
-    /// `target_lufs` is the PRESET's, not a measurement, and is dropped here.
-    fn to_core(&self) -> sundayrec_core::mastering::LoudnessMeasurement {
-        sundayrec_core::mastering::LoudnessMeasurement {
-            input_i: self.input_i,
-            input_lra: self.input_lra,
-            input_tp: self.input_tp,
-            input_thresh: self.input_thresh,
-            target_offset: self.target_offset,
-        }
-    }
 }
 
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
@@ -601,48 +583,21 @@ pub fn master_presets() -> Vec<EditorMasterPreset> {
         .collect()
 }
 
-/// Which normalisation the mastering pass actually performed. Mirrors
-/// [`sundayrec_core::mastering::NormalizationMode`] — read out of ffmpeg's
-/// pass-2 report, never assumed.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export, export_to = "EditorLoudnessMode.ts")]
-#[serde(rename_all = "lowercase")]
-pub enum EditorLoudnessMode {
-    /// One gain over the whole file — what every preset promises.
-    Linear,
-    /// loudnorm's gain rider. Should not happen after F2-C-B; the seam warns if
-    /// it does, and this is how the renderer would find out.
-    Dynamic,
-}
-
-impl From<sundayrec_core::mastering::NormalizationMode> for EditorLoudnessMode {
-    fn from(m: sundayrec_core::mastering::NormalizationMode) -> Self {
-        match m {
-            sundayrec_core::mastering::NormalizationMode::Linear => Self::Linear,
-            sundayrec_core::mastering::NormalizationMode::Dynamic => Self::Dynamic,
-        }
-    }
-}
-
-/// What the mastering actually did to the delivery level (F2-C-B).
+/// What the mastering actually did to the delivery level (F2-C-B, B1b).
 ///
-/// Present only when a mastering preset ran AND ffmpeg's pass-2 report said
-/// which normalisation it performed. Absent is honest: "we did not read it back"
-/// is a different answer from "it was linear", and only the receipt knows which
-/// of those it can put on screen.
+/// Present only when a mastering preset ran on a recording that has a level to set. The numbers
+/// are measured on the PCM the encoder was handed, not promised by the plan.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "EditorExportLoudness.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportLoudness {
-    /// What ffmpeg reported doing.
-    pub mode: EditorLoudnessMode,
-    /// The integrated loudness the export was set to land on — the preset's
-    /// target, or the quieter one the true-peak ceiling allowed.
+    /// The integrated loudness the exported audio measures, LUFS.
     pub achieved_lufs: f64,
     /// The preset's own target, so the receipt can say what was asked for.
     pub target_lufs: f64,
-    /// True when the ceiling capped the gain, i.e. `achieved < target` for a
-    /// reason the user can act on (a hot recording).
+    /// True when the export landed noticeably under the target because the recording's peaks
+    /// left no room (a hot recording the limiter could not lift without eating the programme),
+    /// i.e. `achieved < target` for a reason the user can act on.
     pub peak_limited: bool,
 }
 
@@ -1327,53 +1282,6 @@ pub struct EditorMasterPreviewResult {
     pub preview_path: String,
 }
 
-/// A mastering *apply* request — apply (pass 2) `inputPath` to `outputPath`,
-/// tracked by `jobId` so the UI can [`master_cancel`] it. Mirrors `master-apply`.
-///
-/// Pass 1 (the loudness measure) is supplied by the caller in `measurement`
-/// whenever it already has one: the mastering panel runs
-/// `editor_mastering_analyze` to show "-23.4 LUFS → -16 LUFS" *before* the user
-/// presses Apply, and re-measuring the same unchanged file here is a second
-/// full-length ffmpeg read of a 90-minute service for a byte-identical answer.
-/// Optional for back-compat — absent means "measure it yourself".
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorMasterApplyRequest.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorMasterApplyRequest {
-    pub input_path: String,
-    pub output_path: String,
-    pub preset_id: String,
-    /// Client-supplied job id for cancellation; the apply is rejected if it is
-    /// already in flight (duplicate-id guard, via the core JobRegistry).
-    pub job_id: String,
-    /// Output bitrate (kbps) for lossy formats; `None` uses the codec default.
-    pub bitrate: Option<u32>,
-    /// A pass-1 loudness measurement of THIS file against THIS preset, from a
-    /// prior `editor_mastering_analyze`. `None` → the seam measures it itself.
-    #[serde(default)]
-    #[ts(optional)]
-    pub measurement: Option<EditorLoudness>,
-}
-
-/// Where the mastered file landed.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorMasterApplyResult.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorMasterApplyResult {
-    pub output_path: String,
-}
-
-/// A mastering-apply progress tick, emitted on the `editor-master-progress`
-/// event. Mirrors the Electron `master-progress` `{ currentSec, totalSec }`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "EditorMasterProgress.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct EditorMasterProgress {
-    pub job_id: String,
-    pub current_sec: f64,
-    pub total_sec: f64,
-}
-
 /// The mastering-apply engine: the pure [`JobRegistry`](sundayrec_core::mastering::JobRegistry)
 /// bookkeeping (which ids are legitimately live) plus the real abort handles the
 /// seam kills on cancel. At most a handful of jobs run; the registry answers the
@@ -1767,19 +1675,6 @@ pub async fn master_preview(
     _input_path: &str,
 ) -> AppResult<EditorMasterPreviewResult> {
     disabled("masterPreview")
-}
-
-/// Run the full two-pass mastering apply, tracked by job id.
-#[cfg(not(feature = "editor"))]
-pub async fn master_apply<F>(
-    _engine: &MasterEngine,
-    _req: &EditorMasterApplyRequest,
-    _on_progress: F,
-) -> AppResult<EditorMasterApplyResult>
-where
-    F: Fn(f64, f64),
-{
-    disabled("masterApply")
 }
 
 /// Abort an in-flight mastering apply by job id. Returns whether it was live.
@@ -2746,8 +2641,10 @@ pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
     disabled("autoProcess")
 }
 
-/// Measure loudness: run the preset's pass-1 measure chain to a null sink and
-/// parse the loudnorm JSON with the core. HARDWARE-UNVERIFIED.
+/// Measure loudness: run the preset's chain over the whole recording to raw PCM and meter it in
+/// Rust ([`sundayrec_core::loudness`]) — the SAME meter, the same chain and the same channel
+/// handling the export levels with, so the figure shown before an export is the figure the
+/// export starts from. HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<EditorLoudness> {
     use sundayrec_core::mastering::get_preset_by_id;
@@ -2757,13 +2654,43 @@ pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<E
     }
     let preset = get_preset_by_id(preset_id)
         .ok_or_else(|| AppError::Validation(format!("unknown_preset: {preset_id}")))?;
-    let m = measure_loudness(input_path, &preset).await?;
+    let info = load_recording(input_path).await.ok();
+    let fmt = pcm::pcm_format(
+        info.as_ref().and_then(|i| i.sample_rate),
+        info.as_ref().and_then(|i| i.channels),
+    );
+    let mut args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-i".into(),
+        input_path.to_string(),
+        "-vn".into(),
+        "-af".into(),
+        preset.filters.clone(),
+    ];
+    args.extend(sundayrec_core::pcm_stream::output_args(fmt));
+    let duration = duration_hint(input_path).await.unwrap_or(0.0);
+    // Not an export: a private engine nobody can cancel; the stall budget still applies.
+    let engine = ExportEngine::new();
+    let (m, _frames) = pcm::run_chain(
+        &engine,
+        &args,
+        (duration * f64::from(fmt.sample_rate)) as u64,
+        export_stall_ms(),
+        (0.0, 99.0),
+        EXPORT_PHASE_MEASURING,
+        &|_, _| {},
+        move |r, done| {
+            sundayrec_core::pcm_stream::measure(r, fmt, None, |n| {
+                done.store(n, std::sync::atomic::Ordering::Relaxed)
+            })
+        },
+    )
+    .await?;
     Ok(EditorLoudness {
-        input_i: m.input_i,
-        input_lra: m.input_lra,
-        input_tp: m.input_tp,
-        input_thresh: m.input_thresh,
-        target_offset: m.target_offset,
+        input_i: m.integrated_lufs,
+        input_lra: m.range_lu,
+        input_tp: m.true_peak_dbtp,
         target_lufs: preset.target_lufs,
     })
 }
@@ -2779,8 +2706,9 @@ pub async fn probe_streams(input_path: &str) -> AppResult<EditorStreamInfo> {
     })
 }
 
-/// Render a windowed single-pass mastering preview to a temp mp3, with the
-/// core's argv (`-ss`/`-t` before `-i`) + clamped start/duration. The renderer
+/// Render a windowed mastering preview to a temp mp3: the preset's chain over the window, then
+/// the same level step as the export (measure the window, one linear gain to the preset's
+/// target, a true-peak limiter only where the peaks need it), encoded at 320k. The renderer
 /// A/B-plays the result against the original. HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn master_preview(
@@ -2788,8 +2716,8 @@ pub async fn master_preview(
     input_path: &str,
 ) -> AppResult<EditorMasterPreviewResult> {
     use sundayrec_core::mastering::{
-        clamp_preview_duration, clamp_preview_start, get_preset_by_id, preview_args,
-        PREVIEW_TEMP_PREFIX,
+        clamp_preview_duration, clamp_preview_start, get_preset_by_id, preview_decode_args,
+        preview_encode_args, PREVIEW_TEMP_PREFIX,
     };
 
     if !std::path::Path::new(input_path).exists() {
@@ -2804,11 +2732,64 @@ pub async fn master_preview(
         uuid::Uuid::now_v7().simple()
     ));
     let out_str = out_path.to_string_lossy().into_owned();
-    let args = preview_args(input_path, &preset, start, dur, &out_str);
-    // A preview renders one clamped window (seconds of media), so the floor is
-    // the whole budget — no probe needed just to time a 15-second render.
-    let timeout = sundayrec_core::editor::editor_op_timeout(None);
-    run_ffmpeg(&args, timeout, "master preview").await?;
+
+    let info = load_recording(input_path).await.ok();
+    let fmt = pcm::pcm_format(
+        info.as_ref().and_then(|i| i.sample_rate),
+        info.as_ref().and_then(|i| i.channels),
+    );
+    // A preview renders one clamped window (seconds of media), so the stall floor is the
+    // whole budget — no probe needed just to time a 60-second render.
+    let stall_ms = sundayrec_core::editor::editor_op_timeout(None).as_millis() as u64;
+    let engine = ExportEngine::new();
+
+    // 1. The window through the preset's chain, to PCM in memory (at most 60 s).
+    let decode = preview_decode_args(input_path, &preset, start, dur, fmt);
+    let pcm_bytes: Vec<u8> = pcm::run_chain(
+        &engine,
+        &decode,
+        0,
+        stall_ms,
+        (0.0, 0.0),
+        EXPORT_PHASE_MEASURING,
+        &|_, _| {},
+        |r, _| {
+            let mut v = Vec::new();
+            std::io::Read::read_to_end(r, &mut v)?;
+            Ok(v)
+        },
+    )
+    .await?;
+
+    // 2. Level it exactly as the export does, and 3. encode it.
+    let target = (preset.target_lufs, preset.true_peak_db);
+    let encode = preview_encode_args(fmt, &out_str);
+    let feed: pcm::Feed = std::sync::Arc::new(move |w, _abort| {
+        let mut src = pcm_bytes.as_slice();
+        let (input, _) = sundayrec_core::pcm_stream::measure(&mut src, fmt, None, |_| {})?;
+        let planned = sundayrec_core::loudness::plan_gain_to(&input, target.0, target.1);
+        let settled = sundayrec_core::pcm_stream::settle(
+            &input,
+            planned,
+            fmt,
+            || Ok(pcm_bytes.as_slice()),
+            |_, _| {},
+        )?;
+        let mut src = pcm_bytes.as_slice();
+        sundayrec_core::pcm_stream::render(&mut src, fmt, &settled.plan, Some(w), false, |_| {})?;
+        Ok(())
+    });
+    run_export_ffmpeg(
+        &engine,
+        &encode,
+        dur,
+        stall_ms,
+        &|_, _| {},
+        EXPORT_PHASE_ENCODING,
+        (0.0, 99.0),
+        Some(&feed),
+    )
+    .await?;
     if !out_path.exists() {
         return Err(AppError::Recording(
             "master preview produced no file".into(),
@@ -2816,214 +2797,6 @@ pub async fn master_preview(
     }
     Ok(EditorMasterPreviewResult {
         preview_path: out_str,
-    })
-}
-
-/// Run the full two-pass mastering apply: measure (pass 1) then apply (pass 2)
-/// with the measured values, tracked by job id so the UI can cancel mid-render.
-/// The preset chain / loudnorm filters / codec args are the core's tested
-/// decisions; the seam spawns ffmpeg, streams `-progress`, and parses the
-/// current-second with the core. HARDWARE-UNVERIFIED.
-///
-/// ⚠️ F2-C-E T10 closed the `editor_master_apply` **Tauri command** — grep
-/// found no caller in `app/`, `e2e/`, or the tray, and it was already carried
-/// as `unreachable` (part of the "mastering-kvartetten") in
-/// `scripts/command-reachability-baseline.json`. This function itself stays,
-/// same as the sibling `probe_true_peak_db`/`probe_streams`/`read_file_guarded`
-/// precedent in `commands/editor.rs`: it still has a live Rust-level test, and
-/// `editor/mod.rs` surgery is exactly the risk that precedent named. A T10
-/// finding stands unfixed here as a result — `master_codec_args` (in
-/// `sundayrec_core::mastering`) has no `-ar`, so a two-pass loudnorm apply on a
-/// lossless target inherits `loudnorm`'s internal 192 kHz graph. Not worth
-/// fixing code no door reaches; worth knowing if this door ever reopens.
-#[cfg(feature = "editor")]
-pub async fn master_apply<F>(
-    engine: &MasterEngine,
-    req: &EditorMasterApplyRequest,
-    on_progress: F,
-) -> AppResult<EditorMasterApplyResult>
-where
-    F: Fn(f64, f64),
-{
-    use sundayrec_core::mastering::get_preset_by_id;
-
-    if !std::path::Path::new(&req.input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    if req.output_path.is_empty() {
-        return Err(AppError::Validation("invalid_output_path".into()));
-    }
-    let preset = get_preset_by_id(&req.preset_id)
-        .ok_or_else(|| AppError::Validation(format!("unknown_preset: {}", req.preset_id)))?;
-
-    // Reject a duplicate job id before doing any work (mirrors the Map guard).
-    if !engine
-        .registry
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(&req.job_id)
-    {
-        return Err(AppError::Validation("job_already_running".into()));
-    }
-
-    // Wrap the work so the registry record + child handle are always dropped.
-    let result = master_apply_inner(engine, req, &preset, &on_progress).await;
-    engine
-        .registry
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .complete(&req.job_id);
-    engine
-        .children
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&req.job_id);
-    result
-}
-
-/// The measure→apply work for [`master_apply`], split out so the registry record
-/// is dropped on every exit. HARDWARE-UNVERIFIED.
-#[cfg(feature = "editor")]
-async fn master_apply_inner<F>(
-    engine: &MasterEngine,
-    req: &EditorMasterApplyRequest,
-    preset: &sundayrec_core::mastering::MasterPreset,
-    on_progress: &F,
-) -> AppResult<EditorMasterApplyResult>
-where
-    F: Fn(f64, f64),
-{
-    use sundayrec_core::mastering::{
-        append_dither_for_ext, build_apply_pass_filters, master_codec_args, parse_progress_time,
-    };
-    use tokio::io::AsyncReadExt;
-
-    // 1. Pass 1 (measure) for the linear-mode apply chain — but only if the
-    //    caller didn't already do it. The panel measures before it offers Apply,
-    //    so re-measuring here read the whole recording a second time to arrive at
-    //    the same five numbers.
-    let measured = match req.measurement.as_ref() {
-        Some(m) => m.to_core(),
-        None => measure_loudness(&req.input_path, preset).await?,
-    };
-
-    // 2. Apply (pass 2): the preset+measured loudnorm, codec from the output ext.
-    let ext = std::path::Path::new(&req.output_path)
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_else(|| "mp3".into());
-    // Dither the float→16-bit step for a WAV master (no-op otherwise).
-    //
-    // The plan (F2-C-B) decides what pass 2 may ask for; the mastering PANEL has
-    // no receipt line to carry it, so unlike the export it only logs. That is
-    // still the difference between a master that rides the gain and one that
-    // does not — the filter string is the same one either way.
-    let (apply_filters, plan) = build_apply_pass_filters(preset, &measured);
-    if !plan.linear {
-        tracing::warn!(
-            preset = %preset.id,
-            input_lra = plan.measured.input_lra,
-            input_thresh = plan.measured.input_thresh,
-            "loudnorm cannot master this measurement linearly — it will be gain-ridden"
-        );
-    } else if plan.peak_limited {
-        tracing::info!(
-            preset = %preset.id,
-            target_lufs = plan.target_lufs,
-            preset_lufs = plan.preset_lufs,
-            "true-peak ceiling capped the mastering gain — landing quieter than \
-             the preset asks rather than compressing to reach it"
-        );
-    }
-    let filters = append_dither_for_ext(apply_filters, &ext);
-    let mut args: Vec<String> = vec![
-        "-nostdin".into(),
-        "-hide_banner".into(),
-        "-i".into(),
-        req.input_path.clone(),
-        "-af".into(),
-        filters,
-    ];
-    args.extend(master_codec_args(&ext, req.bitrate));
-    args.extend([
-        "-progress".into(),
-        "pipe:1".into(),
-        "-y".into(),
-        req.output_path.clone(),
-    ]);
-
-    // Spawn with stdout piped for -progress; store the child for cancellation.
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut child = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
-        .args(&arg_refs)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| AppError::Recording(format!("mastering spawn: {e}")))?;
-
-    let mut stdout = child.stdout.take();
-    // Register the live child so master_cancel can kill it.
-    engine
-        .children
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(req.job_id.clone(), child);
-
-    // The denominator for the percentage. This used to be hard-coded 0.0, which
-    // pinned the mastering bar at 0 % for the WHOLE apply — a 90-minute service
-    // looked hung for the entire render. A header-only ffprobe is nothing next
-    // to the encode it is measuring, so we just ask. `0.0` still means
-    // "unknown" (an unprobeable container) and the renderer keeps the
-    // indeterminate stripe for it.
-    let total_sec = crate::media::ffmpeg::probe_duration_secs(&req.input_path)
-        .await
-        .unwrap_or(0.0);
-
-    // Stream -progress.
-    if let Some(mut out) = stdout.take() {
-        let mut buf = String::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match out.read(&mut chunk).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
-                    if let Some(cur) = parse_progress_time(&buf) {
-                        on_progress(cur, total_sec);
-                    }
-                    // keep the tail so a split line still parses next read
-                    if buf.len() > 4096 {
-                        buf = buf[buf.len() - 4096..].to_string();
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    }
-
-    // Reclaim the child to await its exit (it may already be gone if cancelled).
-    let child = engine
-        .children
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&req.job_id);
-    let status = match child {
-        Some(mut c) => c
-            .wait()
-            .await
-            .map_err(|e| AppError::Recording(format!("mastering wait: {e}")))?,
-        None => return Err(AppError::Recording("cancelled".into())),
-    };
-    if !status.success() {
-        return Err(AppError::Recording("apply_failed (ffmpeg non-zero)".into()));
-    }
-    if !std::path::Path::new(&req.output_path).exists() {
-        return Err(AppError::Recording("mastering produced no output".into()));
-    }
-    Ok(EditorMasterApplyResult {
-        output_path: req.output_path.clone(),
     })
 }
 
@@ -3147,12 +2920,9 @@ where
         audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
         collision_free_path, editor_tmp_path, export_disk_is_low, export_estimated_bytes,
         ffmetadata, is_simple_audio_export, metadata_args, video_export_estimated_bytes,
-        video_filter_complex, CutRegion, RecordingMetadata,
+        video_filter_complex, video_only_filter_complex, CutRegion, RecordingMetadata,
     };
-    use sundayrec_core::mastering::{
-        dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
-        parse_normalization_mode, plan_pass2,
-    };
+    use sundayrec_core::mastering::{dither_filter_for, get_preset_by_id};
 
     if !Path::new(&inputs.source).exists() {
         return Err(AppError::Validation("file_not_found".into()));
@@ -3354,116 +3124,56 @@ where
     // Deliberately NOT scaled by the media length — see `export_stall_ms`.
     let timeout_ms = export_stall_ms();
 
-    // 2b. HONEST pass 1. The loudness that matters is the loudness of what we
-    //     are about to ENCODE — the cut, vocal-chained, gain-shifted signal —
-    //     not of the raw uncut original. Measuring the original (what this did
-    //     before) systematically misses the target: trim the quiet 20-minute
-    //     pre-service ambience off the front and the measured integrated
-    //     loudness is several LU below what the export actually contains.
+    // 2b. HONEST measure. The loudness that matters is the loudness of what we are about to
+    //     ENCODE — the cut, vocal-chained, gain-shifted signal — not of the raw uncut original.
+    //     Measuring the original systematically misses the target: trim the quiet 20-minute
+    //     pre-service ambience off the front and the measured integrated loudness is several LU
+    //     below what the export actually contains.
     //
-    //     So pass 1 runs the SAME graph G, plus a print_format=json loudnorm,
-    //     into the null muxer; pass 2 re-runs G with those measured values in
-    //     `linear=true` mode. Intro/outro are deliberately absent: the loudnorm
-    //     sits on the main content pad, before the jingles are concatenated, so
-    //     measuring them in would skew the target by the jingle's own level.
+    //     B1b: the level is set in Rust. ffmpeg decodes + cuts + runs graph G to raw f32 PCM,
+    //     `sundayrec_core::pcm_stream` meters it and parks a copy in the OS temp dir (90
+    //     minutes of stereo is 2 GB; the other choice, running the chain twice, was slower on
+    //     the real 90-minute file, see docs/LYDMOTOR.md). The plan is ONE linear gain to the
+    //     preset's target plus, only where the peaks need it, a true-peak limiter; the limiter's
+    //     cost in loudness is corrected by dry runs over the parked copy. Pass 2 then feeds the
+    //     encoder from that copy. Intro/outro are deliberately absent from the measured signal:
+    //     they are concatenated after the level is set, so a jingle cannot skew the target.
     let mut proc_filters = pre_filters.clone();
-    // The pass-2 plan, once pass 1 has measured. `None` without a preset.
-    let mut plan: Option<sundayrec_core::mastering::Pass2Plan> = None;
+    // The levelled PCM the encoder will be fed, once measured. `None` without a preset, and
+    // `None` for a recording that measures as silence.
+    let mut master: Option<pcm::MasteredPcm> = None;
     if let Some(p) = &preset {
-        // A full-file loudness measure on a long service takes minutes with
-        // NOTHING to show for it; say so instead of leaving the bar at 0.
+        // A full-file measure on a long service takes a while with NOTHING to show for it; say
+        // so instead of leaving the bar at 0.
         on_progress(0.0, EXPORT_PHASE_MEASURING);
-        let mut measure_filters = pre_filters.clone();
-        measure_filters.push(loudnorm_measure_filter(p));
-        let (fc, map) = audio_export_filter_complex(
-            &keeps,
-            0,
-            &measure_filters,
-            &[],
-            false,
-            false,
-            req.duration,
-            sundayrec_core::editor::ConcatFormat::default(),
-        );
-        let measure_args: Vec<String> = vec![
-            "-nostdin".into(),
-            "-hide_banner".into(),
-            "-i".into(),
-            inputs.source.clone(),
-            "-filter_complex".into(),
-            fc,
-            "-map".into(),
-            map,
-            "-progress".into(),
-            "pipe:1".into(),
-            "-nostats".into(),
-            "-f".into(),
-            "null".into(),
-            "-".into(),
-        ];
-        // Pass 1 owns the first half of the bar and its own timeout budget.
-        let stderr = run_export_ffmpeg(
+        master = pcm::measure_and_plan(
             engine,
-            &measure_args,
+            &inputs.source,
+            p,
+            &keeps,
+            &pre_filters,
+            req.duration,
             kept_duration,
+            pcm::pcm_format(source_rate, probed.as_ref().and_then(|i| i.channels)),
             timeout_ms,
             &on_progress,
-            EXPORT_PHASE_MEASURING,
-            (0.0, 50.0),
         )
         .await?;
-        let measured = match sundayrec_core::mastering::parse_loudnorm_json(&stderr) {
-            Some(m) => Some(m),
-            // Silence has no loudness to normalise: skip the gain and export
-            // the cut as it is, rather than fail the whole export with an error
-            // that blames the measurement.
-            None if sundayrec_core::mastering::loudnorm_measured_silence(&stderr) => {
-                tracing::warn!(
-                    preset = %p.id,
-                    "the export measures as silence — skipping the mastering gain"
-                );
-                on_progress(50.0, EXPORT_PHASE_ENCODING);
-                None
-            }
-            None => {
-                return Err(AppError::Recording(
-                    "could not parse loudnorm measurement".into(),
-                ))
-            }
-        };
-        if let Some(measured) = measured {
-            // 2c. What pass 2 can HONESTLY deliver from those numbers (F2-C-B).
-            //     `linear=true` alone was only ever a wish: loudnorm falls back to
-            //     its gain rider whenever the measured range overshoots the preset's
-            //     LRA gate or the gain the target implies would break the true-peak
-            //     ceiling — which is most real sermons. The plan widens the gate
-            //     (inert in linear mode) and, when the ceiling binds, aims at the
-            //     quieter level a single gain can reach and SAYS so.
-            let p2 = plan_pass2(&measured, p);
-            if !p2.linear {
-                tracing::warn!(
-                    preset = %p.id,
-                    input_i = p2.measured.input_i,
-                    input_lra = p2.measured.input_lra,
-                    input_tp = p2.measured.input_tp,
-                    input_thresh = p2.measured.input_thresh,
-                    "loudnorm cannot normalise this measurement linearly — the export \
-                     will be gain-ridden, not one clean gain"
-                );
-            } else if p2.peak_limited {
-                tracing::info!(
-                    preset = %p.id,
-                    target_lufs = p2.target_lufs,
-                    preset_lufs = p2.preset_lufs,
-                    input_tp = p2.measured.input_tp,
-                    "true-peak ceiling capped the mastering gain — landing quieter \
-                     than the preset asks rather than compressing to reach it"
-                );
-            }
-            plan = Some(p2);
-            proc_filters.push(loudnorm_apply_filter(&p2));
-            on_progress(50.0, EXPORT_PHASE_ENCODING);
+        if master.is_none() {
+            // Silence has no loudness to normalise: export the cut as it is (chain applied,
+            // no gain), rather than fail the whole export with an error that blames the
+            // measurement.
+            tracing::warn!(
+                preset = %p.id,
+                "the export measures as silence — skipping the mastering gain"
+            );
         }
+        if master.is_some() {
+            // The chain already ran, once, in the measured PCM; the encoder must not run it
+            // a second time.
+            proc_filters.clear();
+        }
+        on_progress(50.0, EXPORT_PHASE_ENCODING);
     }
     // The dither (16-bit PCM targets only) is a POST filter: it must see the
     // finished signal, jingles included, on its way into the encoder.
@@ -3526,8 +3236,10 @@ where
         }
         None => None,
     };
-    // The metadata file is appended after all real inputs (intro/main/outro).
-    let meta_input_idx = 1 + has_intro as usize + has_outro as usize;
+    // The metadata file is appended after all real inputs (intro/main/outro, plus — on the
+    // mastered VIDEO path, where the picture is input 0 — the levelled PCM that follows it).
+    let mastered_video = is_video && master.is_some();
+    let meta_input_idx = 1 + has_intro as usize + has_outro as usize + mastered_video as usize;
 
     // 4c. Video codec choice: H.264 (default) or H.265 when requested.
     let video_codec = match req.video_codec.as_deref() {
@@ -3549,6 +3261,23 @@ where
         0
     };
 
+    // The keeps the AUDIO graph trims. A mastered export's PCM arrives already cut: it is one
+    // whole segment of its own length (and no interior cut, so no de-click fade is added a
+    // second time — the fades were part of the graph that produced the PCM).
+    let pcm_keeps: Vec<sundayrec_core::editor::KeepSegment> = master
+        .as_ref()
+        .map(|m| {
+            vec![sundayrec_core::editor::KeepSegment {
+                start: 0.0,
+                end: m.seconds() + 1.0,
+            }]
+        })
+        .unwrap_or_default();
+    let (audio_keeps, audio_total): (&[sundayrec_core::editor::KeepSegment], f64) = match &master {
+        Some(_) => (&pcm_keeps, pcm_keeps[0].end),
+        None => (&keeps, req.duration),
+    };
+
     // 5. Build the ffmpeg args — all graph/codec decisions are the core's.
     //
     // The argv is a FUNCTION of the encoder choice, because a failed hardware
@@ -3559,7 +3288,17 @@ where
         if let Some(p) = intro {
             args.extend(["-i".into(), p.to_string()]);
         }
-        args.extend(["-i".into(), inputs.source.clone()]);
+        match &master {
+            // The audio of a mastered AUDIO export is the levelled PCM on stdin, already cut
+            // and processed: it takes the main input's place.
+            Some(m) if !is_video => args.extend(sundayrec_core::pcm_stream::input_args(m.fmt)),
+            _ => args.extend(["-i".into(), inputs.source.clone()]),
+        }
+        if let (Some(m), true) = (&master, is_video) {
+            // …on a mastered VIDEO export the source stays input 0 for its picture and the
+            // levelled PCM is input 1.
+            args.extend(sundayrec_core::pcm_stream::input_args(m.fmt));
+        }
         if let Some(p) = outro {
             args.extend(["-i".into(), p.to_string()]);
         }
@@ -3570,9 +3309,16 @@ where
             // `req.duration` (the SOURCE length) is what tells the core which
             // segment edges are interior cuts and therefore need the de-click
             // fade — the same argument the audio graph above already gets.
-            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters, req.duration);
-            args.extend(["-filter_complex".into(), fc]);
-            args.extend(["-map".into(), v_out, "-map".into(), a_out]);
+            if master.is_some() {
+                let (fc, v_out) = video_only_filter_complex(0, &keeps);
+                args.extend(["-filter_complex".into(), fc]);
+                args.extend(["-map".into(), v_out, "-map".into(), "1:a".into()]);
+            } else {
+                let (fc, v_out, a_out) =
+                    video_filter_complex(0, &keeps, &proc_filters, req.duration);
+                args.extend(["-filter_complex".into(), fc]);
+                args.extend(["-map".into(), v_out, "-map".into(), a_out]);
+            }
             args.extend(if use_hw {
                 sundayrec_core::editor::videotoolbox_codec_args(
                     fmt,
@@ -3583,27 +3329,27 @@ where
             } else {
                 sundayrec_core::editor::video_codec_args(fmt, video_codec, None, source_rate)
             });
-        } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
+        } else if is_simple_audio_export(audio_keeps, &proc_filters, has_intro, has_outro) {
             // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
             // for a video source exported to an audio format (see the core fn). The
             // simple path folds its own join fade + dither into the `-af`.
             args.extend(audio_simple_export_args(
-                &keeps[0],
+                &audio_keeps[0],
                 fmt,
                 req.bitrate,
                 req.bit_depth,
                 source_rate,
-                req.duration,
+                audio_total,
             ));
         } else {
             let (fc, map) = audio_export_filter_complex(
-                &keeps,
+                audio_keeps,
                 main_input_idx,
                 &proc_filters,
                 &post_filters,
                 has_intro,
                 has_outro,
-                req.duration,
+                audio_total,
                 concat_format,
             );
             args.extend(["-filter_complex".into(), fc]);
@@ -3647,6 +3393,11 @@ where
     // succeeded" must take it with it. `export()` returns early through `?` a
     // dozen times, and a cleanup line at the bottom would be reached by none of
     // them; the same reason `ExportSlot` is RAII rather than an `end()` call.
+    // The levelled PCM, fed to the encoder from the staged copy; what it measured on the way
+    // out is the level the file really has.
+    let measured_out: std::sync::Arc<std::sync::Mutex<Option<sundayrec_core::loudness::Loudness>>> =
+        Default::default();
+    let feed = master.as_ref().map(|m| m.feed(measured_out.clone()));
     let mut render = TempRender::armed(engine, &tmp_path);
     // …and the ways out no `Drop` can catch — a force quit, a crash, a power
     // cut — are covered by writing the path down FIRST (F2-4b). The startup
@@ -3662,6 +3413,7 @@ where
         &on_progress,
         EXPORT_PHASE_ENCODING,
         span,
+        feed.as_ref(),
     )
     .await;
     // A hardware render that ffmpeg refused (no VideoToolbox session free, an
@@ -3683,18 +3435,14 @@ where
             &on_progress,
             EXPORT_PHASE_ENCODING,
             span,
+            feed.as_ref(),
         )
         .await;
     }
     if let Some(p) = &meta_path {
         let _ = std::fs::remove_file(p); // best-effort temp cleanup
     }
-    // The render's stderr is not just a place errors come from: it carries
-    // loudnorm's pass-2 summary, and therefore the ONE fact nothing else in the
-    // app knows — whether the mastering was the single clean gain the preset
-    // promises, or loudnorm's gain rider (F2-C-B). Before, this was `result?;`
-    // and the summary went in the bin.
-    let render_stderr = result?;
+    result?;
     if !Path::new(&tmp_path).exists() {
         return Err(AppError::Recording("export produced no output file".into()));
     }
@@ -3716,43 +3464,27 @@ where
     })?;
     // Delivered. Nothing left for the guard to reap.
     render.delivered();
-    // What actually happened to the level. `None` without a preset, and `None`
-    // when the report did not say — "we did not read it back" must not render as
-    // "it was linear".
-    let loudness = plan.and_then(|p2| {
-        let mode = parse_normalization_mode(&render_stderr).map(EditorLoudnessMode::from);
-        if mode.is_none() {
-            tracing::warn!(
-                "loudnorm printed no Normalization Type — the export's level is \
-                 unverified, so the receipt will not claim one"
-            );
-        }
-        let mode = mode?;
-        match mode {
-            EditorLoudnessMode::Linear => tracing::info!(
-                achieved_lufs = p2.target_lufs,
-                target_lufs = p2.preset_lufs,
-                peak_limited = p2.peak_limited,
-                "mastered export normalised linearly"
-            ),
-            // The plan exists to make this unreachable; if it happens, the
-            // model of ffmpeg's gates is wrong and we want to hear about it.
-            EditorLoudnessMode::Dynamic => tracing::warn!(
-                planned_linear = p2.linear,
-                target_lufs = p2.target_lufs,
-                measured_lra = p2.measured.input_lra,
-                lra_gate = p2.target_lra,
-                measured_tp = p2.measured.input_tp,
-                offset = p2.offset,
-                "loudnorm normalised DYNAMICALLY against the plan — the export was \
-                 gain-ridden, not levelled"
-            ),
-        }
+    // What actually happened to the level: the loudness of the PCM the encoder was handed,
+    // metered on its way out. `None` without a preset, for a silent recording, and when the
+    // feed did not report — "we did not measure it" must not render as "it hit the target".
+    let loudness = master.as_ref().and_then(|m| {
+        let achieved = measured_out
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .filter(|l| l.integrated_lufs.is_finite())?
+            .integrated_lufs;
+        let peak_limited = m.target_lufs - achieved > sundayrec_core::loudness::SHORTFALL_REPORT_LU;
+        tracing::info!(
+            achieved_lufs = achieved,
+            target_lufs = m.target_lufs,
+            peak_limited,
+            limiter = m.plan.limiter.is_some(),
+            "mastered export levelled"
+        );
         Some(EditorExportLoudness {
-            mode,
-            achieved_lufs: p2.target_lufs,
-            target_lufs: p2.preset_lufs,
-            peak_limited: p2.peak_limited,
+            achieved_lufs: achieved,
+            target_lufs: m.target_lufs,
+            peak_limited,
         })
     });
     // The file is only real once ffmpeg has exited and the container is closed,
@@ -3910,12 +3642,11 @@ async fn run_export_ffmpeg<F>(
     on_progress: &F,
     phase: &str,
     span: (f32, f32),
+    feed: Option<&pcm::Feed>,
 ) -> AppResult<String>
 where
     F: Fn(f32, &str),
 {
-    use tokio::io::AsyncReadExt;
-
     // The one gate every export pass goes through: never spawn a render the
     // user has already cancelled (pass 2 after a cancel during the pass-1 parse,
     // or the software retry after a cancel during the hardware attempt).
@@ -3924,7 +3655,13 @@ where
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut child = crate::util::hidden_command(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
-        .stdin(std::process::Stdio::null())
+        // A mastered export pipes the levelled PCM in on stdin (`feed`); everything else
+        // has no use for it.
+        .stdin(if feed.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
@@ -3932,30 +3669,27 @@ where
         .map_err(|e| AppError::Recording(format!("export spawn: {e}")))?;
 
     let mut stdout = child.stdout.take();
-    // Drain stderr on its own task. A piped stream nobody reads fills the ~64 KB
-    // kernel buffer and then BLOCKS ffmpeg on write — the same self-throttling
-    // that cost the recorder 15–56 % of its samples (2026-07-31). We only keep
-    // the tail, which is what an ffmpeg failure message lives in.
-    let stderr = child.stderr.take();
-    let stderr_task = tokio::spawn(async move {
-        let mut tail = String::new();
-        if let Some(mut err) = stderr {
-            let mut chunk = [0u8; 4096];
-            while let Ok(n) = err.read(&mut chunk).await {
-                if n == 0 {
-                    break;
-                }
-                tail.push_str(&String::from_utf8_lossy(&chunk[..n]));
-                // Trim on CHARACTER boundaries — ffmpeg echoes the file path, and
-                // a Norwegian folder name would panic a byte slice.
-                let chars = tail.chars().count();
-                if chars > 4000 {
-                    tail = tail.chars().skip(chars - 2000).collect();
-                }
-            }
+    let stderr_task = spawn_stderr_tail(child.stderr.take());
+    // The feeder: reads the staged PCM, applies gain + limiter and writes the encoder's stdin on
+    // a blocking thread, concurrently with the progress pump below. Dropping the writer at the
+    // end closes the pipe, which is how ffmpeg learns the audio has ended.
+    let feed_abort = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let feeder = match (feed, child.stdin.take()) {
+        (Some(feed), Some(stdin)) => {
+            let (feed, abort) = (feed.clone(), feed_abort.clone());
+            let rt = tokio::runtime::Handle::current();
+            Some(tokio::task::spawn_blocking(move || {
+                let mut w = std::io::BufWriter::with_capacity(
+                    1 << 20,
+                    pcm::PipeWriter { rt, inner: stdin },
+                );
+                let r = feed(&mut w, &abort);
+                // A BufWriter's drop swallows a failed flush; say so.
+                r.and_then(|()| std::io::Write::flush(&mut w))
+            }))
         }
-        tail
-    });
+        _ => None,
+    };
     engine.hold(child);
     // Lost-cancel guard: a cancel that landed between the check above and this
     // hold found an EMPTY slot, killed nothing, and would otherwise let the
@@ -3993,6 +3727,8 @@ where
     }
     .await;
 
+    // The pump is over (EOF or stall): whatever the feeder still holds is moot.
+    feed_abort.store(true, std::sync::atomic::Ordering::Relaxed);
     let status = match waited {
         Ok(r) => r?,
         Err(()) => {
@@ -4009,31 +3745,66 @@ where
     };
     let tail = stderr_task.await.unwrap_or_default();
     if !status.success() {
-        let short: String = tail.chars().rev().take(500).collect::<String>();
-        let short: String = short.chars().rev().collect();
-        // A full disk is the one ffmpeg failure with an ACTIONABLE answer —
-        // classified from the SAME pattern list the recorder already matches
-        // ffmpeg's stderr against (`sundayrec_core::errors`), so "no space
-        // left"/"disk quota exceeded"/… map here exactly as they do
-        // mid-recording. Anything else stays the plain "ffmpeg failed" the
-        // renderer's `exportErrorKey` deliberately does not recognise — an
-        // unclassified failure gets the shell's OWN general sentence, not a
-        // guess dressed up as a diagnosis.
-        use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
-        let disk_full = classify_recording_error(&short) == RecordingErrorCode::DiskFull;
-        // Previously only the kill-timer branch above logged anything — a
-        // non-zero exit for any OTHER reason (unplugged drive, full disk,
-        // ffmpeg rejecting the args) left no trace at all, on either side of
-        // the IPC boundary. `tail` already went through the export request
-        // that produced it; nothing here adds a path beyond what
-        // `logfile.rs`'s own scrubber already redacts.
-        tracing::warn!(disk_full, tail = %short, "export: ffmpeg exited non-zero");
-        if disk_full {
-            return Err(AppError::Recording(format!("disk_full: {short}")));
+        return Err(ffmpeg_exit_error(&tail));
+    }
+    // ffmpeg is happy; was the feeder? (A failed feeder next to a failed ffmpeg is the
+    // ffmpeg error, above: it is the cause, the broken pipe the symptom.)
+    if let Some(feeder) = feeder {
+        match feeder.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(AppError::Recording(format!("export feed: {e}"))),
+            Err(e) => return Err(AppError::Recording(format!("export feed: {e}"))),
         }
-        return Err(AppError::Recording(format!("ffmpeg failed: {short}")));
     }
     Ok(tail)
+}
+
+/// Drain ffmpeg's stderr on its own task and keep only the tail. A piped stream nobody reads
+/// fills the ~64 KB kernel buffer and then BLOCKS ffmpeg on write — the same self-throttling that
+/// cost the recorder 15–56 % of its samples (2026-07-31). The tail is what an ffmpeg failure
+/// message lives in.
+#[cfg(feature = "editor")]
+fn spawn_stderr_tail(stderr: Option<tokio::process::ChildStderr>) -> tokio::task::JoinHandle<String> {
+    use tokio::io::AsyncReadExt;
+    tokio::spawn(async move {
+        let mut tail = String::new();
+        if let Some(mut err) = stderr {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = err.read(&mut chunk).await {
+                if n == 0 {
+                    break;
+                }
+                tail.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                // Trim on CHARACTER boundaries — ffmpeg echoes the file path, and
+                // a Norwegian folder name would panic a byte slice.
+                let chars = tail.chars().count();
+                if chars > 4000 {
+                    tail = tail.chars().skip(chars - 2000).collect();
+                }
+            }
+        }
+        tail
+    })
+}
+
+/// The error for an ffmpeg that exited non-zero, from the tail of its stderr.
+#[cfg(feature = "editor")]
+fn ffmpeg_exit_error(tail: &str) -> AppError {
+    let short: String = tail.chars().rev().take(500).collect::<String>();
+    let short: String = short.chars().rev().collect();
+    // A full disk is the one ffmpeg failure with an ACTIONABLE answer — classified from the SAME
+    // pattern list the recorder already matches ffmpeg's stderr against
+    // (`sundayrec_core::errors`), so "no space left"/"disk quota exceeded"/… map here exactly as
+    // they do mid-recording. Anything else stays the plain "ffmpeg failed" the renderer's
+    // `exportErrorKey` deliberately does not recognise — an unclassified failure gets the
+    // shell's OWN general sentence, not a guess dressed up as a diagnosis.
+    use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
+    let disk_full = classify_recording_error(&short) == RecordingErrorCode::DiskFull;
+    tracing::warn!(disk_full, tail = %short, "export: ffmpeg exited non-zero");
+    if disk_full {
+        return AppError::Recording(format!("disk_full: {short}"));
+    }
+    AppError::Recording(format!("ffmpeg failed: {short}"))
 }
 
 // ── seam helpers (feature on) ────────────────────────────────────────────────────
@@ -4053,37 +3824,6 @@ async fn probe_video_size(input_path: &str) -> Option<(u32, u32)> {
         .await
         .ok()?;
     parse_video_size(&String::from_utf8_lossy(&output.stdout))
-}
-
-/// Measure loudness against `preset` (pass 1), returning the parsed measurement
-/// the apply chain feeds back. Shared by [`mastering_analyze`] + [`export`].
-#[cfg(feature = "editor")]
-async fn measure_loudness(
-    input_path: &str,
-    preset: &sundayrec_core::mastering::MasterPreset,
-) -> AppResult<sundayrec_core::mastering::LoudnessMeasurement> {
-    use sundayrec_core::mastering::{build_measure_pass_filters, parse_loudnorm_json};
-
-    let filters = build_measure_pass_filters(preset);
-    let args = vec![
-        "-nostdin".to_string(),
-        "-hide_banner".to_string(),
-        "-i".to_string(),
-        input_path.to_string(),
-        "-af".to_string(),
-        filters,
-        "-f".to_string(),
-        "null".to_string(),
-        "-".to_string(),
-    ];
-    // Pass 1 reads the whole recording; on a 90-minute service that is minutes
-    // of honest work, but an ffmpeg that never returns must not hang the
-    // mastering panel (or the export that shares this function) indefinitely.
-    let timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
-    let out = ffmpeg_output_timed(&args, timeout, "loudness measure").await?;
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    parse_loudnorm_json(&stderr)
-        .ok_or_else(|| AppError::Recording("could not parse loudnorm measurement".into()))
 }
 
 /// The media length of `input_path` in seconds, for scaling an op's kill-timer.
@@ -4234,21 +3974,6 @@ where
         return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
     }
     on_progress(1.0);
-    Ok(())
-}
-
-/// Spawn ffmpeg with `args`, wait for it under `timeout`, and map a non-zero
-/// exit to an error carrying the tail of stderr (what the Electron
-/// `spawnFfmpeg` did).
-#[cfg(feature = "editor")]
-async fn run_ffmpeg(args: &[String], timeout: std::time::Duration, what: &str) -> AppResult<()> {
-    let out = ffmpeg_output_timed(args, timeout, what).await?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let tail: String = stderr.chars().rev().take(500).collect::<String>();
-        let tail: String = tail.chars().rev().collect();
-        return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
-    }
     Ok(())
 }
 
@@ -4542,20 +4267,6 @@ mod tests {
             duration_sec: 15.0,
         };
         assert!(master_preview(&prev, "/x.mp4")
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        let engine = MasterEngine::new();
-        let apply = EditorMasterApplyRequest {
-            input_path: "/x.mp4".into(),
-            output_path: "/tmp/out.mp3".into(),
-            preset_id: "speech-clear".into(),
-            job_id: "j1".into(),
-            bitrate: None,
-            measurement: None,
-        };
-        assert!(master_apply(&engine, &apply, |_, _| {})
             .await
             .unwrap_err()
             .to_string()
