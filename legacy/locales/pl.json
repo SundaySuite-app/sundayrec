@@ -685,6 +685,7 @@
       "after": "Po",
       "sample": "{at} — 20 sekund z kazania",
       "rendering": "Przygotowywanie próbki …",
+      "listenPreparing": "Przygotowuję odsłuch – za pierwszym razem to chwilę potrwa …",
       "listenFailed": "Nie udało się przygotować próbki. Eksport działa normalnie.",
       "said": {
         "hum": "Usunęliśmy buczenie z sieci",

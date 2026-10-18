@@ -679,6 +679,7 @@
       "after": "Efter",
       "sample": "{at} — 20 sekunder fra prædikenen",
       "rendering": "Laver smagsprøven …",
+      "listenPreparing": "Gør lytningen klar – første gang tager det lidt tid …",
       "listenFailed": "Kunne ikke lave smagsprøven. Eksporten kører som normalt.",
       "said": {
         "hum": "Vi fjernede brum fra elnettet",

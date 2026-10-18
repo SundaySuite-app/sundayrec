@@ -396,6 +396,15 @@ const PATH_FIELDS: &[(&str, &str, FieldHandling)] = &[
             proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
         },
     ),
+    // ── editor_prepare_listen: the same request as the preview, the same source.
+    (
+        "editor_prepare_listen",
+        "EditorMasterPreviewRequest.source_token",
+        Token {
+            resolver: "resolve_source(&chosen",
+            proof: "a_made_up_or_foreign_source_token_is_refused_with_its_own_code",
+        },
+    ),
     // ── settings_save: no longer a typed struct.
     // `settings_save` takes a PATCH (`serde_json::Value`: the fields the page
     // changed), so this parser sees no `Settings` parameter and there is no

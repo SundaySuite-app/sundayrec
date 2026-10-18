@@ -679,6 +679,7 @@
       "after": "After",
       "sample": "{at} — 20 seconds from the sermon",
       "rendering": "Preparing the sample …",
+      "listenPreparing": "Getting the listening ready – the first time takes a little while …",
       "listenFailed": "Could not prepare the sample. The export still runs.",
       "said": {
         "hum": "We removed mains hum",

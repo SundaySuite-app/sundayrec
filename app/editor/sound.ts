@@ -21,8 +21,9 @@
  * (profilen eller mikseren, kanalreparasjonen og «Tale»-beslutningen — én felles
  * Rust-funksjon) og setter nivået fra HELE programmet slik eksporten gjør, over et
  * klemt utsnitt, og skriver en mp3 i `std::env::temp_dir()` — ALDRI ved siden av
- * originalen. Første gjengivelse måler programmet (et helt kjedepass, ca. ett
- * minutt per 45 minutters program); neste er raske. `_mastert`-fila fra atlasets sted 2 finnes ikke i dette skallet,
+ * originalen. Programmet (et helt kjedepass, ca. ett minutt per 45 minutters
+ * program) måles i bakgrunnen når steget åpnes (`watchListenPrepare`), så første gjengivelse
+ * som regel finner det ferdig; ellers måler den selv, og neste er raske. `_mastert`-fila fra atlasets sted 2 finnes ikke i dette skallet,
  * og den er heller ikke det som lages her.
  *
  * ⚠️ Utsnittet blir liggende i OS-ens temp-mappe til OS-en selv rydder den.
@@ -36,7 +37,7 @@
  * siden av OPPTAKET, ikke forhåndsvisninger i OS-ens temp-mappe.
  */
 
-import { signal } from "@preact/signals";
+import { effect, signal } from "@preact/signals";
 import type {
   ExportChannelRepair,
   MasterPreviewParams,
@@ -44,7 +45,8 @@ import type {
 import { defaultProcessing, type Processing } from "@lib/pages/editor/mixer";
 
 import type { EditorTaleSaid } from "@legacy/bindings/EditorTaleSaid";
-import { E } from "./model";
+import { isRecording } from "../state/recording";
+import { cuts, E } from "./model";
 import { sermonWindow } from "./editor-core";
 import {
   DEFAULT_SOUND_PROFILE,
@@ -190,6 +192,9 @@ export const listenSide = signal<ListenSide>("after");
 export const listenPlaying = signal(false);
 export const listenBusy = signal(false);
 export const listenError = signal(false);
+/** «Etter» venter på at programmet måles (første gang for dette valget og disse kuttene),
+ *  ikke på at utsnittet gjengis. Teksten under knappen er en annen da. */
+export const listenPreparing = signal(false);
 
 /** Utsnittets startsekund, for linja «0:21:08 — 20 sekunder fra prekenen». */
 export const listenStart = signal(0);
@@ -320,17 +325,111 @@ async function renderPreview(
   key: string,
   request: MasterPreviewParams,
 ): Promise<string | null> {
+  const pk = programKey(request);
   listenBusy.value = true;
+  // Er programmet ikke målt ennå, er det DET man venter på — ikke på de tjue sekundene.
+  listenPreparing.value = !readyPlans.has(pk);
   try {
+    // Måles det allerede i bakgrunnen, vent på den målingen: bakenden ville ventet på den
+    // samme uansett (én måling per nøkkel), men her vet skjermen hva den venter på.
+    const pending = pendingPlans.get(pk);
+    if (pending) await pending;
     const res = await window.api.masterPreview(E.sourceToken, request);
     if (!res?.ok || !res.previewPath) return null;
     previews.set(key, res.previewPath);
+    readyPlans.add(pk);
     return res.previewPath;
   } catch {
     return null;
   } finally {
     listenBusy.value = false;
+    listenPreparing.value = false;
   }
+}
+
+// ── Lyttingen gjøres klar i bakgrunnen ──────────────────────────────────────
+
+/** Ventetid etter siste endring før målingen starter. En glidebryter i mikseren gir mange
+ *  endringer, og hver av dem ville ellers startet (og avbrutt) et helt kjedepass. */
+export const PREPARE_DEBOUNCE_MS = 800;
+
+/** Programmene bakenden har målt ferdig, og målingene som pågår. Nøkkelen er forespørselen
+ *  UTEN utsnittet: samme valg og samme kutt er samme program, uansett hvor man lytter. */
+const readyPlans = new Set<string>();
+const pendingPlans = new Map<string, Promise<boolean>>();
+let prepareTimer = 0;
+
+function programKey(request: MasterPreviewParams): string {
+  const { startSec: _start, durationSec: _span, ...program } = request;
+  return `${E.sourceToken}|${JSON.stringify(program)}`;
+}
+
+/** Be bakenden måle programmet nå — med mindre det er målt, pågår, eller et opptak går.
+ *  Bakenden vokter det siste også (opptak og eksport går foran), men det er billigere å ikke
+ *  spørre. */
+function prepareNow(): void {
+  if (isRecording.peek()) return;
+  const token = E.sourceToken;
+  if (!token) return;
+  const request = listenRequest(listenStart.peek());
+  if (!request) return;
+  const pk = programKey(request);
+  if (readyPlans.has(pk) || pendingPlans.has(pk)) return;
+  const run = (async () => {
+    try {
+      const ready = await window.api.prepareListen(token, request);
+      if (ready && E.sourceToken === token) readyPlans.add(pk);
+      return ready;
+    } catch {
+      return false;
+    } finally {
+      pendingPlans.delete(pk);
+    }
+  })();
+  pendingPlans.set(pk, run);
+}
+
+/** Planlegg en måling om `delayMs`; en ny planlegging erstatter den forrige. Kanalanalysen
+ *  avgjør forespørselen (reparasjonen er en del av den), så målingen venter på den. */
+export function scheduleListenPrepare(delayMs: number): void {
+  cancelListenPrepare();
+  if (isRecording.peek() || !E.sourceToken) return;
+  prepareTimer = window.setTimeout(() => {
+    prepareTimer = 0;
+    void ensureSoundAnalysis().then(prepareNow, prepareNow);
+  }, delayMs);
+}
+
+export function cancelListenPrepare(): void {
+  window.clearTimeout(prepareTimer);
+  prepareTimer = 0;
+}
+
+/**
+ * Hold «Etter» klar mens steget er åpent: mål programmet med en gang, og på nytt (med
+ * ventetid) når valget, mikseren, kanalreparasjonen eller kuttene endres. Under et opptak
+ * startes ingenting, og når opptaket er over, tas det igjen. Returnerer en funksjon som
+ * avslutter overvåkingen; en måling som alt pågår i bakenden får gå ferdig.
+ */
+export function watchListenPrepare(): () => void {
+  let first = true;
+  const dispose = effect(() => {
+    // Det som avgjør forespørselen. `cuts` er speilet av `E.cuts`; resten er signaler.
+    void [
+      soundProfile.value,
+      useMixer.value,
+      mixer.value,
+      channelRepair.value,
+      cuts.value,
+      isRecording.value,
+    ];
+    scheduleListenPrepare(first ? 0 : PREPARE_DEBOUNCE_MS);
+    first = false;
+  });
+  return () => {
+    dispose();
+    cancelListenPrepare();
+  };
 }
 
 async function playFile(
@@ -384,7 +483,11 @@ export function resetSound(): void {
   listenSide.value = "after";
   listenError.value = false;
   listenBusy.value = false;
+  listenPreparing.value = false;
   listenStart.value = 0;
+  cancelListenPrepare();
+  readyPlans.clear();
+  pendingPlans.clear();
   analysisFor = "";
   analysis = null;
   previews.clear();

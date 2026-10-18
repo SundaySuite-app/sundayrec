@@ -679,6 +679,7 @@
       "after": "Nachher",
       "sample": "{at} — 20 Sekunden aus der Predigt",
       "rendering": "Die Hörprobe wird erstellt …",
+      "listenPreparing": "Die Hörprobe wird vorbereitet – beim ersten Mal dauert es etwas …",
       "listenFailed": "Die Hörprobe konnte nicht erstellt werden. Der Export läuft wie gewohnt.",
       "said": {
         "hum": "Wir haben das Netzbrummen entfernt",

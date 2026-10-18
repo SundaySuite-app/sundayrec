@@ -679,6 +679,7 @@
       "after": "Etter",
       "sample": "{at} — 20 sekunder fra prekenen",
       "rendering": "Lager smakebiten …",
+      "listenPreparing": "Gjør klar lytting – første gang tar det litt tid …",
       "listenFailed": "Kunne ikke lage smakebiten. Eksporten går som vanlig.",
       "said": {
         "hum": "Vi fjernet brum fra strømnettet",

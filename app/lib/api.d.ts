@@ -397,6 +397,12 @@ declare global {
         sourceToken: string,
         listen: MasterPreviewParams,
       ) => Promise<{ ok: boolean; previewPath?: string; error?: string }>;
+      /** Measure the programme of a listen request in the background, so «Etter»
+       *  finds the level plan ready. Resolves to whether it is ready. */
+      prepareListen: (
+        sourceToken: string,
+        listen: MasterPreviewParams,
+      ) => Promise<boolean>;
       /** Reveal the rotating log folder in Finder/Explorer (falls back to the
        *  folder itself before the first line is written). No path in, none out —
        *  resolves to whether the OS actually opened something. */

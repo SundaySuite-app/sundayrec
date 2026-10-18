@@ -1665,6 +1665,13 @@ impl ExportEngine {
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Whether an export owns the engine right now (the background listen preparation does
+    /// not start then).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn is_exporting(&self) -> bool {
+        self.in_flight.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// Whether a cancel is pending for the export currently in flight.
     ///
     /// Read by the editor's export passes and by the (ungated) cancel tests;
@@ -1711,6 +1718,15 @@ pub async fn master_preview(
     _input_path: &str,
 ) -> AppResult<EditorMasterPreviewResult> {
     disabled("masterPreview")
+}
+
+/// Nothing to prepare without the editor: not ready, and not an error.
+#[cfg(not(feature = "editor"))]
+pub async fn prepare_listen(
+    _req: &EditorMasterPreviewRequest,
+    _input_path: &str,
+) -> AppResult<bool> {
+    Ok(false)
 }
 
 /// Abort an in-flight mastering apply by job id. Returns whether it was live.
@@ -1858,6 +1874,8 @@ pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
 /// `cancelled` to its own caller.
 pub async fn cancel_export_for_recording<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
     use tauri::Manager;
+    // The background listen preparation is the same kind of work, and nobody waits for it.
+    cancel_listen_prepare();
     let Some(engine) = app.try_state::<ExportEngine>() else {
         return false;
     };
@@ -2801,12 +2819,13 @@ pub async fn master_preview(
         PREVIEW_TEMP_PREFIX,
     };
 
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    let info = load_recording(input_path).await.ok();
-    let channels = info.as_ref().and_then(|i| i.channels);
-    let params = req.audio_params(channels)?;
+    // The stall floor is the budget of one windowed render. The programme measure is a
+    // full-length pass, but its progress counts frames like the export's, so a stall is a stall.
+    let stall_ms = export_stall_ms();
+    let engine = ExportEngine::new();
+
+    // 1. The chain — the export's — and the programme's level plan.
+    let ListenPlan { chain, plan, fmt } = listen_plan(&engine, req, input_path).await?;
     let start = clamp_preview_start(req.start_sec);
     let dur = clamp_preview_duration(req.duration_sec);
     let out_path = std::env::temp_dir().join(format!(
@@ -2814,45 +2833,6 @@ pub async fn master_preview(
         uuid::Uuid::now_v7().simple()
     ));
     let out_str = out_path.to_string_lossy().into_owned();
-
-    let fmt = pcm::pcm_format(info.as_ref().and_then(|i| i.sample_rate), channels);
-    // The stall floor is the budget of one windowed render. The programme measure below is a
-    // full-length pass, but its progress counts frames like the export's, so a stall is a stall.
-    let stall_ms = export_stall_ms();
-    let engine = ExportEngine::new();
-
-    // 1. The chain — the export's — and the programme's level plan.
-    let chain = pre_chain_for(&engine, input_path, channels, &params).await?;
-    let plan = match &params.preset {
-        Some(preset) => {
-            let cuts: Vec<sundayrec_core::editor::CutRegion> = req
-                .cut_regions
-                .iter()
-                .map(|c| sundayrec_core::editor::CutRegion {
-                    start: c.start,
-                    end: c.end,
-                })
-                .collect();
-            let source_duration = req
-                .full_length_sec
-                .filter(|d| d.is_finite() && *d > 0.0)
-                .or(info.as_ref().map(|i| i.duration_sec))
-                .filter(|d| d.is_finite() && *d > 0.0)
-                .ok_or_else(|| AppError::Validation("invalid_duration".into()))?;
-            program_plan(
-                &engine,
-                input_path,
-                &chain,
-                preset,
-                &cuts,
-                source_duration,
-                fmt,
-                &format!("{:?}|{:?}", params, req.cut_regions),
-            )
-            .await?
-        }
-        None => pcm::unity_plan(),
-    };
 
     // 2. The window through the chain, to PCM in memory (at most 60 s): ffmpeg decodes
     //    (no `-af`), the chain runs in Rust.
@@ -2911,6 +2891,117 @@ pub async fn master_preview(
     })
 }
 
+/// What a listen request resolves to before any window is rendered: the export's chain, the
+/// programme's level plan and the PCM format both run in.
+#[cfg(feature = "editor")]
+struct ListenPlan {
+    chain: sundayrec_core::chain::Chain,
+    plan: sundayrec_core::loudness::GainPlan,
+    fmt: sundayrec_core::pcm_stream::PcmFormat,
+}
+
+/// The slow, shared half of a listen request: «Tale»'s analysis and the programme measure.
+/// [`master_preview`] renders its window on top of this; [`prepare_listen`] stops here, which
+/// is what leaves the plan in [`PLAN_BOOK`] for the «Etter» that follows.
+#[cfg(feature = "editor")]
+async fn listen_plan(
+    engine: &ExportEngine,
+    req: &EditorMasterPreviewRequest,
+    input_path: &str,
+) -> AppResult<ListenPlan> {
+    if !std::path::Path::new(input_path).exists() {
+        return Err(AppError::Validation("file_not_found".into()));
+    }
+    let info = load_recording(input_path).await.ok();
+    let channels = info.as_ref().and_then(|i| i.channels);
+    let params = req.audio_params(channels)?;
+    let fmt = pcm::pcm_format(info.as_ref().and_then(|i| i.sample_rate), channels);
+    let chain = pre_chain_for(engine, input_path, channels, &params).await?;
+    let plan = match &params.preset {
+        Some(preset) => {
+            let cuts: Vec<sundayrec_core::editor::CutRegion> = req
+                .cut_regions
+                .iter()
+                .map(|c| sundayrec_core::editor::CutRegion {
+                    start: c.start,
+                    end: c.end,
+                })
+                .collect();
+            let source_duration = req
+                .full_length_sec
+                .filter(|d| d.is_finite() && *d > 0.0)
+                .or(info.as_ref().map(|i| i.duration_sec))
+                .filter(|d| d.is_finite() && *d > 0.0)
+                .ok_or_else(|| AppError::Validation("invalid_duration".into()))?;
+            program_plan(
+                engine,
+                input_path,
+                &chain,
+                preset,
+                &cuts,
+                source_duration,
+                fmt,
+                &format!("{:?}|{:?}", params, req.cut_regions),
+            )
+            .await?
+        }
+        None => pcm::unity_plan(),
+    };
+    Ok(ListenPlan { chain, plan, fmt })
+}
+
+/// Which preparation is the latest. A new one, an export and a starting recording all bump it;
+/// a preparation that sees it move on ends (its ffmpeg dies with the dropped future).
+#[cfg(any(feature = "editor", test))]
+fn prepare_epoch() -> &'static tokio::sync::watch::Sender<u64> {
+    static EPOCH: std::sync::OnceLock<tokio::sync::watch::Sender<u64>> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(|| tokio::sync::watch::channel(0).0)
+}
+
+/// End every background listen preparation (an export or a recording wants the CPU).
+pub fn cancel_listen_prepare() {
+    #[cfg(any(feature = "editor", test))]
+    prepare_epoch().send_modify(|v| *v += 1);
+}
+
+/// Race `work` against a newer epoch; `None` = superseded, `work` dropped.
+#[cfg(any(feature = "editor", test))]
+async fn until_superseded<F: std::future::Future>(
+    tx: &tokio::sync::watch::Sender<u64>,
+    work: F,
+) -> Option<F::Output> {
+    let mut mine = 0;
+    tx.send_modify(|v| {
+        *v += 1;
+        mine = *v;
+    });
+    let mut rx = tx.subscribe();
+    tokio::select! {
+        out = work => Some(out),
+        _ = rx.wait_for(|v| *v != mine) => None,
+    }
+}
+
+/// Measure the programme of a listen request in the background and keep the plan, so the
+/// «Etter» that follows finds it ([`PLAN_BOOK`]). Same request, same key as
+/// [`master_preview`], and the same single measurement if «Etter» is already waiting on it.
+///
+/// Returns whether the plan is ready. `false` = not prepared: this preparation was superseded
+/// by a newer one (the choice or the cuts changed) or ended by an export or a recording.
+/// A real failure is an error, and «Etter» will meet it itself.
+#[cfg(feature = "editor")]
+pub async fn prepare_listen(req: &EditorMasterPreviewRequest, input_path: &str) -> AppResult<bool> {
+    let engine = ExportEngine::new();
+    match until_superseded(prepare_epoch(), listen_plan(&engine, req, input_path)).await {
+        Some(Ok(_)) => Ok(true),
+        Some(Err(e)) => Err(e),
+        None => {
+            tracing::info!("listen preparation superseded");
+            Ok(false)
+        }
+    }
+}
+
 /// What the preview needs to know about the programme: the gain the export would give it.
 /// Measured once per recording + chain + cuts, then kept — a second profile tab, or the same
 /// window at another start, costs nothing. The first measure is one full pass of the chain over
@@ -2933,47 +3024,123 @@ async fn program_plan(
     fmt: sundayrec_core::pcm_stream::PcmFormat,
     params_key: &str,
 ) -> AppResult<sundayrec_core::loudness::GainPlan> {
-    static PLAN_CACHE: std::sync::Mutex<Vec<(String, sundayrec_core::loudness::GainPlan)>> =
-        std::sync::Mutex::new(Vec::new());
-
     let keeps = sundayrec_core::editor::build_keeps(cuts, source_duration);
     if keeps.is_empty() {
         return Err(AppError::Validation("no_audio_remaining".into()));
     }
     let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
     let key = tale_cache_key(source).map(|k| format!("{k:?}|{source_duration}|{params_key}"));
-    if let Some(k) = &key {
-        if let Ok(cache) = PLAN_CACHE.lock() {
-            if let Some((_, p)) = cache.iter().find(|(ck, _)| ck == k) {
-                return Ok(*p);
+    PLAN_BOOK
+        .get_or_measure(key, || async {
+            let loud = pcm::measure_program(
+                engine,
+                source,
+                chain,
+                &keeps,
+                source_duration,
+                kept_duration,
+                fmt,
+                export_stall_ms(),
+            )
+            .await?;
+            let plan = sundayrec_core::loudness::plan_gain(&loud, preset);
+            // Silence has no loudness to normalise: the export skips the gain, so the preview
+            // does too.
+            Ok(if plan.measurable {
+                plan
+            } else {
+                pcm::unity_plan()
+            })
+        })
+        .await
+}
+
+/// The programme plans already measured, and the measurements under way (M2R #3 follow-up).
+///
+/// One measurement per key, however many callers ask: «Etter» and the background
+/// preparation ([`prepare_listen`]) both come here, and whoever arrives second waits for the
+/// first instead of running a second full chain pass over the same programme. If the
+/// measuring caller goes away (a superseded preparation is dropped), a waiter takes over and
+/// measures itself — the cell is only ever filled by a measurement that finished.
+#[cfg(any(feature = "editor", test))]
+struct PlanBook {
+    done: std::sync::Mutex<Vec<(String, sundayrec_core::loudness::GainPlan)>>,
+    flights: std::sync::Mutex<Vec<(String, PlanFlight)>>,
+}
+
+#[cfg(any(feature = "editor", test))]
+type PlanFlight = std::sync::Arc<tokio::sync::OnceCell<sundayrec_core::loudness::GainPlan>>;
+
+/// How many plans are kept (one per recording + choice + cuts).
+#[cfg(any(feature = "editor", test))]
+const PLAN_CACHE_SIZE: usize = 8;
+
+#[cfg(feature = "editor")]
+static PLAN_BOOK: PlanBook = PlanBook::new();
+
+#[cfg(any(feature = "editor", test))]
+impl PlanBook {
+    const fn new() -> Self {
+        Self {
+            done: std::sync::Mutex::new(Vec::new()),
+            flights: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// The finished plan for `key`, if there is one.
+    fn cached(&self, key: &str) -> Option<sundayrec_core::loudness::GainPlan> {
+        let done = self.done.lock().unwrap_or_else(|e| e.into_inner());
+        done.iter().find(|(k, _)| k == key).map(|(_, p)| *p)
+    }
+
+    /// The plan for `key`: from the cache, from the measurement already running, or from
+    /// `measure`. `None` (the file is gone) is never shared or kept.
+    async fn get_or_measure<F, Fut>(
+        &self,
+        key: Option<String>,
+        measure: F,
+    ) -> AppResult<sundayrec_core::loudness::GainPlan>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = AppResult<sundayrec_core::loudness::GainPlan>>,
+    {
+        let Some(key) = key else {
+            return measure().await;
+        };
+        if let Some(p) = self.cached(&key) {
+            return Ok(p);
+        }
+        let flight = {
+            let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
+            match flights.iter().find(|(k, _)| k == &key) {
+                Some((_, f)) => f.clone(),
+                None => {
+                    let f = PlanFlight::default();
+                    flights.push((key.clone(), f.clone()));
+                    f
+                }
             }
+        };
+        let res = flight
+            .get_or_try_init(|| async {
+                let plan = measure().await?;
+                let mut done = self.done.lock().unwrap_or_else(|e| e.into_inner());
+                if done.len() >= PLAN_CACHE_SIZE {
+                    done.remove(0);
+                }
+                done.push((key.clone(), plan));
+                Ok(plan)
+            })
+            .await
+            .copied();
+        // Finished or failed: the flight is over (a waiter that took over a dropped
+        // measurement finds the cell empty and measures; a later caller starts afresh).
+        if res.is_ok() || flight.get().is_none() {
+            let mut flights = self.flights.lock().unwrap_or_else(|e| e.into_inner());
+            flights.retain(|(k, f)| !(k == &key && std::sync::Arc::ptr_eq(f, &flight)));
         }
+        res
     }
-    let loud = pcm::measure_program(
-        engine,
-        source,
-        chain,
-        &keeps,
-        source_duration,
-        kept_duration,
-        fmt,
-        export_stall_ms(),
-    )
-    .await?;
-    let plan = sundayrec_core::loudness::plan_gain(&loud, preset);
-    // Silence has no loudness to normalise: the export skips the gain, so the preview does too.
-    let plan = if plan.measurable {
-        plan
-    } else {
-        pcm::unity_plan()
-    };
-    if let (Some(k), Ok(mut cache)) = (key, PLAN_CACHE.lock()) {
-        if cache.len() >= 8 {
-            cache.remove(0);
-        }
-        cache.push((k, plan));
-    }
-    Ok(plan)
 }
 
 /// The mastering preset behind the «Tale» profile (`app/editor/sound-profiles.ts`,
@@ -3322,6 +3489,8 @@ where
     let _slot = engine
         .try_begin()
         .ok_or_else(|| AppError::Validation("export_already_running".into()))?;
+    // The export gets the CPU: a listen preparation still measuring in the background ends.
+    cancel_listen_prepare();
 
     // A cancel of the PREVIOUS export must not abort this one — the engine is
     // long-lived managed state, the flag is per-export.
@@ -4368,6 +4537,144 @@ where
 
 #[cfg(test)]
 mod tests {
+    // ── The programme plan: one measurement per key (M2R #3 follow-up) ──────────────────────
+    fn some_plan(gain_db: f64) -> sundayrec_core::loudness::GainPlan {
+        sundayrec_core::loudness::GainPlan {
+            gain_db,
+            limiter: None,
+            target_lufs: 0.0,
+            ceiling_dbtp: 0.0,
+            peak_overshoot_db: 0.0,
+            measurable: true,
+        }
+    }
+
+    async fn yield_a_few() {
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn two_asks_for_the_same_programme_measure_it_once() {
+        let book = PlanBook::new();
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        let gate = tokio::sync::Notify::new();
+        let ask = || {
+            book.get_or_measure(Some("k".into()), || async {
+                runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                gate.notified().await;
+                Ok(some_plan(3.0))
+            })
+        };
+        // The second ask arrives while the first is still measuring; the gate opens after both
+        // are in. No clock: the order is the single task's poll order.
+        let (a, b, ()) = tokio::join!(ask(), ask(), async {
+            yield_a_few().await;
+            gate.notify_waiters();
+            gate.notify_one();
+        });
+        assert_eq!(a.unwrap().gain_db, 3.0);
+        assert_eq!(b.unwrap().gain_db, 3.0);
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_finished_plan_is_not_measured_again() {
+        let book = PlanBook::new();
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        for _ in 0..3 {
+            let p = book
+                .get_or_measure(Some("k".into()), || async {
+                    runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(some_plan(-2.0))
+                })
+                .await
+                .unwrap();
+            assert_eq!(p.gain_db, -2.0);
+        }
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // Another key is another programme.
+        book.get_or_measure(Some("other".into()), || async { Ok(some_plan(1.0)) })
+            .await
+            .unwrap();
+        assert_eq!(book.cached("other").unwrap().gain_db, 1.0);
+        assert!(book.flights.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_waiter_takes_over_when_the_measuring_ask_is_dropped() {
+        let book = PlanBook::new();
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        let never = tokio::sync::Notify::new();
+        // The first ask measures and is dropped (a superseded preparation)…
+        let mut first = Box::pin(book.get_or_measure(Some("k".into()), || async {
+            runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            never.notified().await;
+            Ok(some_plan(9.0))
+        }));
+        // …while the second one waits on it, and then measures for itself.
+        let mut second = Box::pin(book.get_or_measure(Some("k".into()), || async {
+            runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(some_plan(4.0))
+        }));
+        tokio::select! {
+            // In order: the first ask must be the one that starts measuring.
+            biased;
+            _ = &mut first => panic!("the gate never opens"),
+            _ = &mut second => panic!("the second ask must wait for the first"),
+            () = yield_a_few() => {}
+        }
+        drop(first);
+        assert_eq!(second.await.unwrap().gain_db, 4.0);
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(book.cached("k").unwrap().gain_db, 4.0);
+    }
+
+    #[tokio::test]
+    async fn a_failed_measurement_is_not_kept() {
+        let book = PlanBook::new();
+        let r = book
+            .get_or_measure(Some("k".into()), || async {
+                Err(AppError::Recording("timeout".into()))
+            })
+            .await;
+        assert!(r.is_err());
+        assert!(book.cached("k").is_none());
+        assert!(book.flights.lock().unwrap().is_empty());
+        let ok = book
+            .get_or_measure(Some("k".into()), || async { Ok(some_plan(1.5)) })
+            .await;
+        assert_eq!(ok.unwrap().gain_db, 1.5);
+    }
+
+    #[tokio::test]
+    async fn a_newer_preparation_ends_the_older_one() {
+        let tx = tokio::sync::watch::channel(0u64).0;
+        let never = tokio::sync::Notify::new();
+        let old = until_superseded(&tx, never.notified());
+        let newer = async {
+            yield_a_few().await;
+            until_superseded(&tx, async { 7 }).await
+        };
+        let (old, newer) = tokio::join!(old, newer);
+        assert_eq!(old, None, "the older preparation was ended");
+        assert_eq!(newer, Some(7));
+    }
+
+    #[tokio::test]
+    async fn a_cancel_ends_a_running_preparation() {
+        let tx = tokio::sync::watch::channel(0u64).0;
+        let never = tokio::sync::Notify::new();
+        let prep = until_superseded(&tx, never.notified());
+        let cancel = async {
+            yield_a_few().await;
+            tx.send_modify(|v| *v += 1);
+        };
+        let (prep, ()) = tokio::join!(prep, cancel);
+        assert_eq!(prep, None);
+    }
+
     use super::*;
 
     // The DTOs + the sidecar/inline/cleanup fs seam compile in both feature

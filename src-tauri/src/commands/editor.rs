@@ -1120,6 +1120,25 @@ pub async fn editor_master_preview(
     Ok(preview)
 }
 
+/// Get the «Etter» listening ready in the background: measure the programme of this request
+/// (same request as `editor_master_preview`, same cache key) so the first «Etter» finds the
+/// level plan done. Returns whether the plan is ready; `false` when it was not started or was
+/// ended — a recording is running, an export is running, a newer request took over. Never
+/// competes with a recording or an export: it does not start then, and it ends if one starts.
+#[tauri::command]
+pub async fn editor_prepare_listen(
+    export: State<'_, ExportEngine>,
+    recorder: State<'_, crate::recorder::engine::RecorderEngine>,
+    chosen: State<'_, ChosenPaths>,
+    request: EditorMasterPreviewRequest,
+) -> AppResult<bool> {
+    if export_blocked_by_recording(recorder.current_state()) || export.is_exporting() {
+        return Ok(false);
+    }
+    let source = resolve_source(&chosen, &request.source_token).await?;
+    editor::prepare_listen(&request, &source).await
+}
+
 // `editor_master_apply` (the `#[tauri::command]` wrapper around
 // `editor::master_apply`) closed F2-C-E T10: no caller in app/e2e/tray, and
 // already carried as `unreachable` in `scripts/command-reachability-baseline.json`

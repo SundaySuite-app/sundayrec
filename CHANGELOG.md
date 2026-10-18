@@ -5,6 +5,13 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Uutgitt
 
+- **«Etter» er som regel klar når du trykker.** Appen begynner å måle hele
+  programmet så snart du åpner Rediger → Lyd, og måler på nytt et øyeblikk etter at
+  du endrer valget, mikseren eller kuttene. Første «Etter» trenger derfor som
+  regel ikke vente. Er målingen ikke ferdig, står det «Gjør klar lytting – første
+  gang tar det litt tid …» (på alle sju språk). Appen starter ikke målingen mens
+  det tas opp, og avbryter den hvis et opptak eller en eksport begynner.
+
 - **Forhåndslyttingen spiller det eksporten lager.** «Etter» i Rediger → Lyd er nå
   bygget av nøyaktig de samme valgene som eksporten: er den avanserte mikseren på,
   hører du mikserens lyd (ikke «Tale»), et opptak med en død kanal spilles reparert

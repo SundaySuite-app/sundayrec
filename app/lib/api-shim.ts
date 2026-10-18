@@ -1678,6 +1678,21 @@ const api: Record<string, unknown> = {
     editorCall("editor_master_preview", {
       request: { sourceToken, ...listen },
     }),
+  // Same request as `masterPreview`; Rust measures the programme in the background so the
+  // «Etter» that follows finds the plan ready. `true` = ready, `false` = not started/ended.
+  // A failure is silent on purpose (no notifier, no counter): nobody asked for this work, and
+  // «Etter» meets the same failure itself, with its own sentence.
+  prepareListen: async (sourceToken: string, listen: MasterPreviewParams) => {
+    try {
+      return (
+        (await invoke<boolean>("editor_prepare_listen", {
+          request: { sourceToken, ...listen },
+        })) === true
+      );
+    } catch {
+      return false;
+    }
+  },
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
 

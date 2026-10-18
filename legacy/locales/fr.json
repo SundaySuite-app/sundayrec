@@ -679,6 +679,7 @@
       "after": "Après",
       "sample": "{at} — 20 secondes de la prédication",
       "rendering": "Préparation de l’extrait…",
+      "listenPreparing": "Préparation de l’écoute – la première fois, cela prend un peu de temps…",
       "listenFailed": "Impossible de préparer l’extrait. L’export se déroule normalement.",
       "said": {
         "hum": "Nous avons retiré le ronflement du secteur",
